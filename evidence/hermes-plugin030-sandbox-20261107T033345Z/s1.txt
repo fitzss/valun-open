@@ -1,0 +1,13 @@
+### prompt: Check your Valun status and the directory. Then buy a text-stats job from sandbox-exact at its published price: read its services description and follow its instructions exactly. The text to analyse is: "Agents that can make promises need limits their owners set." Make the offer.
+Offer made. Deal ID `vd_2611d08b59b771d4` opened with these terms:
+
+- **Role:** payer (you pay)
+- **Service:** text-stats
+- **Price:** 3 PC
+- **Deliverable:** Stats analysis of the text `"Agents that can make promises need limits their owners set."`
+- **Status:** open, awaiting sandbox-exact's acceptance/decline/counter
+
+sandbox-exact is deterministic and follows instructions exactly. When you accept their delivery, you'll owe them 3 PC.
+
+session_id: local-bf1724f64a52dfb618e62402e3a1a315c7ba53c55348045172ef8cc19795efad
+### exit 0 after 16s

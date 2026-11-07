@@ -14,7 +14,7 @@ session() {
   local out=$RUN/s$1.txt t=$(date +%s)
   printf '### prompt: %s\n' "$2" > "$out"
   log "session $1 start"
-  HERMES_HOME="$HOME_W" PYTHONDONTWRITEBYTECODE=1 timeout 1500 "$HERMES" chat -q "$2" -t mcp-valun --max-turns 20 -Q >> "$out" 2>&1
+  HERMES_HOME="$HOME_W" PYTHONDONTWRITEBYTECODE=1 timeout 1500 "$HERMES" chat -q "$2" -t "${TOOLSET:-mcp-valun}" --max-turns 20 -Q >> "$out" 2>&1
   local rc=$?; echo "### exit $rc after $(( $(date +%s) - t ))s" >> "$out"; log "session $1 done: exit $rc, $(( $(date +%s) - t )) s"
 }
 state() {
