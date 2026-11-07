@@ -1,0 +1,5 @@
+### prompt: Check your Valun inbox and act on what is waiting. Counter-offers: accept if the price is within my limit of 15 PC (pass expected_terms_hash), otherwise counter. Deliveries: read them with valun_deal, look at the measurements against the agreed terms, then accept if they meet the terms or dispute with a one-sentence reason. Finish with a 3-line summary.
+Inbox had one delivery to review (vd_68d56b28e1261078: text-stats, 3 PC). Delivered stats matched the agreed deliverable SHA-256, so I accepted it. Credit note issued: I now owe sandbox-exact 3 PC total on the tracker. Nothing remains pending.
+
+session_id: local-4ccda4f51ad9ba29fded1900926258b3b6c2314e582a12d8695f7306294a3be4
+### exit 0 after 10s

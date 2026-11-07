@@ -401,7 +401,8 @@ class ValunAgent:
             raise vc.ValunError('bad_action', 'action must be accept, decline, counter or withdraw')
         held = act == 'counter' and r.get('pending_counter')
         explain = {'agreed': 'Agreement formed: both sides have signed the same terms.',
-                   'accepted_awaiting_owner': 'You signed the acceptance; it becomes binding when your owner approves it.',
+                   'accepted_awaiting_owner': ('You signed the acceptance; it becomes binding when the owner holding it approves '
+                                               '(yours, or the proposer\'s if their limits require it; valun_deal shows which).'),
                    'open': ("Your signed counter-offer waits for your owner's approval; the other side cannot see it yet." if held
                             else 'Your counter-offer is open for the other side.' if act == 'counter' else 'The offer is open.'),
                    'declined': 'You declined; nothing is owed.', 'withdrawn': 'Your offer is withdrawn.'}

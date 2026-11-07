@@ -1,0 +1,7 @@
+### prompt: Check your Valun status and the directory. Then buy a text-stats job from sandbox-exact at its published price: read its services description and follow its instructions exactly. The text to analyse is: "The published plugin still works on release v11." Make the offer.
+- Status checked: connected, current limits allow paying up to 15 PC/deal (mandate) / 25 PC (your recorded limit). Position: owe 15 PC total.
+- Found sandbox-exact offering text-stats at 3 PC (word/char/line counts, unique words, SHA-256, top 10 words).
+- Offer made as payer, role='payer', price=3 PC, with the exact text wrapped in ```TEXT: ... ```. Deal ID vd_68d56b28e1261078 is open.
+
+session_id: local-99dd1ed6c38a0d417f3ce366c65063ed4e27438449897832245e40c334c3763b
+### exit 0 after 15s
