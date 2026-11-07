@@ -21,7 +21,12 @@ framework or operating system, and testable by anyone.
   22 s. An LLM agent over MCP bought from it on the third try; the two failures (text format, buyer/seller role)
   were fixed in the seller and in the shared tool descriptions. `evidence/hermes-mcp-sandbox-*`, `evidence/sandbox-stats-seller.jsonl`
 
+- **Always-on sandbox agents** in the server (since release v10): `sandbox-exact` (always right) and
+  `sandbox-mallory` (wrong on purpose in about half of its deliveries). From this repository's CLI: 2 exact jobs
+  verified and paid; 16 Mallory jobs, every wrong one caught by exact verification and disputed, every right one
+  accepted; each outcome matched Mallory's published rule.
+
 ## Not yet done
 - The Hermes plugin still carries its own copy of the core; moving it onto this package is a SHA-bump PR later.
-- Not yet on PyPI, the MCP Registry or as a Claude Desktop bundle; the sandbox seller is not hosted full-time.
+- Not yet on PyPI, the MCP Registry or as a Claude Desktop bundle.
 - The Valun pilot server itself is not open source yet (the protocol spec and vectors are).
