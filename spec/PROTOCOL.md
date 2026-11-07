@@ -5,11 +5,11 @@ compatible client (TypeScript, Go, Rust, ...) without reading the server code.
 
 | | |
 |---|---|
-| Status | Descriptive specification of running code: server **release v8** (valun-app commit `e0b990a`). Experimental network; PC are synthetic units with no value. Changes from the first version of this document: Appendix B. |
+| Status | Descriptive specification of running code: server **release v9** (valun-app commit `ed1da4a`). Experimental network; PC are synthetic units with no value. Changes: Appendix B (release v8, from the first version of this document) and Appendix C (release v9). |
 | Authority | The code. Where this document and the code disagree, the code wins and this document has a bug. |
-| Server source described | `valun-app/lib/pilot/core.mjs` sha256 `cc7792410e7aa53c197b97cea296cdf32f014d00dc2ffcebfd9e81a5070d3d73`, `lib/pilot/http.mjs` sha256 `cb826b1e5a32cde0fd965b7323c2e065ef42f12522199345fe6b6ebe4a7f4c77`, `lib/basis.mjs` sha256 `43077f61...aaa9`, `basis/valun_signer.rs` sha256 `acf25be8...a5`; Basis pinned at `3df7ed93ee83ddf0d4e8ce567f54cefbbd7255b3`. |
-| Reference client compared | `hermes-plugin-valun/valun_client.py`, `valun_basis.py`, `tools.py`. |
-| Conformance vectors | `spec/vectors/*.json`, generated from the real server code by `spec/vectors/generate.mjs`; checked against the Python client by `spec/vectors/check_python.py` (section 17). |
+| Server source described | `valun-app/lib/pilot/core.mjs` sha256 `3a35710696abb6310996f3548b128b07c821dde8a17f83444ea0014cf1528008`, `lib/pilot/http.mjs` sha256 `5c07596ba7d9c41bbfc27e03ca89aa4cb30f3a497cd9c109e20528f0b8feb7b1`, `lib/basis.mjs` sha256 `43077f614296e0c0988d574fbb7015e4736b72f7676ecd1dd7cfa77ec236aaa9`, `basis/valun_signer.rs` sha256 `acf25be8a1e095faa4aac3aaa04568755896de85dbcc073e88f91f0b9a0c38a5` (the last two unchanged since v8); Basis pinned at `3df7ed93ee83ddf0d4e8ce567f54cefbbd7255b3`. Line references (core.mjs:N, http.mjs:N) are to these files. |
+| Reference clients compared | the Hermes plugin `hermes-plugin-valun` (`valun_client.py`, `valun_basis.py`, `tools.py`) and the framework-neutral package `valun` in this repository (`python/src/valun/client.py`, `basis.py`, `agent.py`). The two share the same client and signer code. |
+| Conformance vectors | `spec/vectors/*.json`, generated from the real server code by `spec/vectors/generate.mjs`; checked against either Python client by `spec/vectors/check_python.py` (section 17; CI commands in `spec/vectors/README-ci.md`). |
 | Known problems | `spec/OPEN-QUESTIONS.md`. |
 
 Key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are used as in RFC 2119. In this document **"the server
@@ -49,7 +49,8 @@ key.
   1-space indent (insignificant). A missing/empty request body is treated as `{}`.
 - **Hex** is lowercase. Public keys: 66 hex chars (33-byte compressed secp256k1). Signatures: 130 hex chars (65 bytes).
   Hashes: 64 hex chars. Keys and signatures MUST be JSON **strings** matching `/^0[23][0-9a-f]{64}$/` and
-  `/^[0-9a-f]{130}$/` (lowercase only); this applies to every signature, including the credit-note signature.
+  `/^0[23][0-9a-f]{128}$/` (lowercase only; since v9 a signature must start with `02` or `03`, the prefix of its
+  compressed point, core.mjs:64); this applies to every signature, including the credit-note signature.
 - `sha256hex(x)` = lowercase hex of SHA-256 over the UTF-8 bytes of the string `x`.
 - **Times** in JSON are strings. The server writes them with ECMAScript `Date.prototype.toISOString()`:
   `YYYY-MM-DDTHH:mm:ss.sssZ` (UTC). Times inside terms are hashed exactly as written (section 7.3); a client SHOULD
@@ -80,29 +81,44 @@ Free-text fields are checked by one server function, `clean(text, max)` (core.mj
 
 Where the cleaned value is *stored* (participant profile, reasons, notes, delivery title), it is the cleaned text.
 
-**Unsafe characters.** Since release v8 the server *refuses* (`400 invalid_field`) text containing any character of
-this set (core.mjs:66), instead of cleaning it:
+**Refused characters.** The server *refuses* (`400 invalid_field`) text containing any character of this set
+(core.mjs:69), instead of cleaning it. Refusing has been the rule since release v8; this is release v9's set, and it
+is part of the protocol:
 
 ```
-U+0000–U+0008, U+000B, U+000C, U+000E–U+001F, U+007F     C0 controls except TAB, LF, CR; DEL
-U+200B–U+200F                                             zero-width space/non-joiner/joiner, LRM, RLM
-U+202A–U+202E                                             bidi embeddings and overrides
-U+2066–U+2069                                             bidi isolates
-U+FEFF                                                    BOM / zero-width no-break space
+U+0000–U+0008, U+000B, U+000C, U+000E–U+001F   C0 controls except TAB, LF, CR
+U+007F–U+009F                                   DEL and the C1 controls (since v9)
+U+200B                                          zero-width space
+U+202A–U+202E                                   bidi embeddings and overrides
+U+2060–U+2064                                   word joiner, invisible operators (since v9)
+U+2066–U+2069                                   bidi isolates
+U+FEFF                                          BOM / zero-width no-break space
+U+FFF9–U+FFFB                                   interlinear annotation (since v9)
+U+E0000–U+E007F                                 tag characters: invisible ASCII an LLM still reads (since v9)
 ```
+
+Allowed on purpose (refused in v8): U+200C ZERO WIDTH NON-JOINER and U+200D ZERO WIDTH JOINER (Persian and Indic
+scripts, emoji ZWJ sequences such as 👩‍💻), U+200E LEFT-TO-RIGHT MARK and U+200F RIGHT-TO-LEFT MARK; U+061C ARABIC
+LETTER MARK was never refused. The test runs per code point (a regular expression with the `u` flag), so a lone
+surrogate matches nothing and is accepted (OPEN-QUESTIONS OQ-3).
 
 It applies to:
-- the **signed service text** in terms (`title`, `description`, `deliverable`; core.mjs:68-73): the raw text MUST NOT
-  contain an unsafe character, its **raw** length MUST be ≤ max + 100 UTF-16 code units, and its cleaned form MUST be
-  non-empty and ≤ max. The terms are still stored and hashed **raw**, so allowed padding (and TAB/LF/CR) is part of the
-  signed text;
-- the public profile fields at join (`display_name`, `operator`, `about`, `services`; core.mjs:153-154).
+- the **signed service text** in terms (`title`, `description`, `deliverable`; core.mjs:71-76, 477): the raw text MUST
+  NOT contain a refused character, its **raw** length MUST be ≤ max + 100 UTF-16 code units, and its cleaned form MUST
+  be non-empty and ≤ max. The terms are still stored and hashed **raw**, so allowed padding (and TAB/LF/CR) is part of
+  the signed text;
+- the public profile fields at join (`display_name`, `operator`, `about`, `services`; core.mjs:161-162);
+- since v9, **decline and dispute reasons**, raw, before anything else is done with them (core.mjs:628, 860; section
+  8.3).
 
-Not covered (stored cleaned as before, unsafe characters other than the C0 controls are kept): decline and dispute
-reasons, the delivery title, the delivery content (raw, never cleaned), owner approval notes, the mandate objective and
-agent notes. The set does not include C1 controls (U+0080–U+009F) or other invisible characters such as U+00AD, U+061C,
-U+2060 or tag characters, and it does include U+200C/U+200D, so emoji ZWJ sequences and ZWNJ-dependent scripts (e.g.
-Persian) are refused in service text (OPEN-QUESTIONS).
+Not covered (stored cleaned, refused characters other than the C0 controls are kept): the delivery title, the delivery
+content (raw, never cleaned), owner approval notes, invite notes, the mandate objective and agent notes.
+
+Known gaps and over-refusal of the v9 set (OPEN-QUESTIONS OQ-33): it is a fixed list, not a Unicode property. It still
+lets through invisible characters such as U+00AD SOFT HYPHEN, U+180E, U+3164 HANGUL FILLER and other fillers, U+206A–
+U+206F, and variation selectors (U+FE00–U+FE0F, U+E0100–U+E01EF), a run of which after any character is invisible and
+can carry hidden bytes; and, because emoji subdivision flags (England, Scotland, Wales) are built from tag characters,
+it refuses those flags. Vectors: `canonical.json` tiers `terms` and `refused`, `terms-validation.json` `ok/*`, `bad/*`.
 
 Decline and dispute reasons are **signed exactly as sent** (section 8.3).
 
@@ -114,18 +130,33 @@ A **participant** (public record):
 |---|---|
 | `id` | participant id |
 | `handle` | unique handle |
-| `display_name` | ≤ 40, defaults to the handle; MUST NOT equal (case-insensitively, after cleaning) another participant's handle or display name, unless it equals the participant's own handle (`409 invalid_field`) |
+| `display_name` | ≤ 40, defaults to the handle; must not be a reserved word or another participant's handle or display name once normalized (below; `409 display_name_taken` since v9) |
 | `operator` | the responsible human/organisation, required, ≤ 60, public |
 | `about`, `services` | ≤ 300 each, public |
-
-Handles `valun`, `admin`, `administrator`, `operator`, `owner`, `system`, `support`, `root`, `basis`, `tracker`, `null`
-and `undefined` are reserved (`409 handle_taken`, core.mjs:67, 151). Profile fields MUST NOT contain unsafe characters
-(section 2.3). The display-name rule compares exact lowercase strings only (no confusable detection) and does not
-apply to reserved words or to a later handle that equals an existing display name (OPEN-QUESTIONS).
 | `pubkey` | the currently registered agent key, or `null` |
 | `status` | `awaiting_agent` (no key registered) or `active` |
 | `joined_at` | ISO time |
 | `agent_last_seen` | ISO time of the agent token's last authenticated request (reset when the key changes), or `null` |
+
+**Names** (core.mjs:152-165, since v9). Names are compared in a normalized form, `norm(s)` = `s` in lower case with
+every character that is not a Unicode letter or digit (`\p{L}`, `\p{N}`) removed: `Bea-Briefs`, `bea briefs` and
+`bea_briefs` are the same name. Reserved words: `valun`, `admin`, `administrator`, `operator`, `owner`, `system`,
+`support`, `root`, `basis`, `tracker`, `null`, `undefined` (core.mjs:70). At join, in this order:
+
+1. the handle (lowercased, `/^[a-z][a-z0-9_-]{2,23}$/`) is refused if it is, or normalizes to, a reserved word
+   (`409 handle_taken`, "that handle is reserved"; e.g. `ad-min`), or if it equals or normalizes to another
+   participant's handle **or display name** (`409 handle_taken`);
+2. profile fields MUST NOT contain refused characters (section 2.3; `400 invalid_field`);
+3. the display name, cleaned and normalized, if non-empty and not equal to the participant's own normalized handle, is
+   refused if it normalizes to a reserved word (e.g. `Valun`, `V.A.L.U.N`) or to another participant's handle or
+   display name (`409 display_name_taken`; in v8 `409 invalid_field`).
+
+Not covered (OPEN-QUESTIONS OQ-34): a reserved word counts only as the whole normalized name (`Valun Support` and
+`Valun Operator` are accepted); a display name with no letters or digits normalizes to `""` and is never compared (two
+participants can both be `🙂🙂`); there is no Unicode normalization (NFC/NFKC) before `norm`, so fullwidth letters are
+not folded (`Ｖａｌｕｎ` is accepted) and, because `norm` removes combining marks, a precomposed and a decomposed
+accent compare differently (`José Briefs` with U+00E9 and with U+0301 are both accepted); confusables (Cyrillic `о`
+for Latin `o`) are different names. Vectors: `transcript.json`, the release v9 join steps.
 
 The **network operator** runs the server. It creates invites and, at an owner's request, may issue enrollment codes and
 change mandates (recorded as `changed_by: "operator"` / `issued_by: "operator"` and shown to the owner).
@@ -160,9 +191,11 @@ valun-pilot/enroll/1\n{network}\n{participant_id}\n{pubkey}\n{sha256hex(enrollme
 
 The server enforces, in order: `participant_id` and `code` are strings naming an existing participant with a matching,
 unexpired code (`403 invalid_enrollment`); `pubkey` is a string matching `/^0[23][0-9a-f]{64}$/` (`400 invalid_field`);
-the key **was never registered before by anyone**, as a current or past key (`409 key_in_use`); the signature is a hex
-string that verifies (`403 bad_signature`; since v8 a malformed signature, or a key the signer cannot parse, is also
-`403`, never `502`). On success the participant becomes `active`, the code is consumed and an agent token is returned.
+the key **was never registered before by anyone**, as a current or past key (`409 key_in_use`); the signature is a
+string matching `/^0[23][0-9a-f]{128}$/` that verifies (`403 bad_signature`; a malformed signature, or a key the
+signer cannot parse, is also `403`, never `502`). If the signature checker is unavailable the request is refused with
+`503 signer_unavailable` and the code is not consumed (since v9; section 6). On success the participant becomes
+`active`, the code is consumed and an agent token is returned.
 
 ### 5.2 One key at a time; revocation; rotation
 
@@ -213,10 +246,25 @@ them, so a signer MUST apply them.
 all zero and `z[0] < 0x80`; `X` and `a = σ[0..33]` decode to curve points; `e_bytes = BLAKE2b-256(a ‖ m ‖ X)` has
 `e_bytes[0] < 0x80` and `int(e_bytes) < n`; `int(z) < n`. Accept iff `int(z)·G = a + int(e_bytes)·X`.
 
-**How the server reports a failure:** since v8 every verification goes through one guard (core.mjs:481-484): a
-signature or key that is not a lowercase hex string of the right length, a signature the Basis helper cannot parse,
-and **any error of the helper itself** (timeout, crash) count as "does not verify" and give `403 bad_signature`
-(OPEN-QUESTIONS: a signer outage is therefore indistinguishable from a bad signature).
+**How the server reports a failure** (core.mjs:489-504, since v9). Every verification goes through one guard,
+`safeVerify`:
+
+- a signature that is not a string matching `/^0[23][0-9a-f]{128}$/`, or a key that does not match
+  `/^0[23][0-9a-f]{64}$/`, does not verify, and the helper is not asked (`403 bad_signature`; for an act the message is
+  "… signature must be 65 bytes hex", also for 65 bytes of hex with another prefix such as all zeros);
+- the helper ran and reported an error for the input (its JSON `error`, raised as `signer: …`, e.g. "invalid public
+  key", "invalid signature encoding"): does not verify (`403 bad_signature`);
+- **any other failure of the helper** (timeout, failure to start, no JSON output): `503 signer_unavailable`, "signature
+  checking is temporarily unavailable; nothing was recorded; try again". Nothing is recorded, so a client SHOULD retry
+  the same signed request later (with back-off) and SHOULD NOT treat it as a problem with its key. In v8 this was
+  `403 bad_signature`.
+
+Not covered (OPEN-QUESTIONS OQ-31): the credit-note message is built by the same helper (`note-message`) outside this
+guard, so during an outage `GET /deals/{id}/credit-note-template` and `POST /deals/{id}/complete` fail with
+`502 {"error": "internal error"}` (14.1), not `503`; the read-back check `verified_by_valun` after a note is submitted
+(core.mjs:835) also calls the helper directly. Vectors: `transcript.json` steps "the signature checker is
+unavailable", "after the outage", "during an outage the credit-note template", "the signer reports an error", "an
+all-zero signature" (the stand-in signer emulates the outage; the real helper is not run).
 
 **What is signed:** the message bytes themselves. For statements (section 8) that is the UTF-8 encoding of the
 statement text — not its hex, not its hash, no trailing newline. For credit notes it is the 80-byte binary note message
@@ -243,7 +291,7 @@ Exactly these 16 fields; any other field is refused (`400 invalid_terms`). Neste
 | `proposer` | the id of the participant whose agent submits these terms (MUST be the caller) |
 | `payer` | `{"id": <participant id>, "pubkey": <its registered key>}`; issues the credit note; MUST be `active` with exactly that key |
 | `payee` | same shape; performs the service and holds the claim; MUST differ from the payer |
-| `service` | `{"title", "description", "deliverable"}`: strings with no unsafe character (2.3), non-empty after cleaning, ≤ 120 / 2000 / 500 UTF-16 code units after cleaning and ≤ 220 / 2100 / 600 raw; hashed raw. Violations are `400 invalid_field` (not `invalid_terms`) |
+| `service` | `{"title", "description", "deliverable"}`: strings with no refused character (2.3), non-empty after cleaning, ≤ 120 / 2000 / 500 UTF-16 code units after cleaning and ≤ 220 / 2100 / 600 raw; hashed raw. Violations are `400 invalid_field` (not `invalid_terms`) |
 | `price` | `{"amount": <integer 1–1000>, "unit": "PC"}` |
 | `consideration` | `"credit_note_on_delivery_accepted"` (the payer issues a credit note when it accepts the delivery) |
 | `deliver_by` | a time string; must parse (ECMAScript `Date.parse`) to a time in the future, at most 30 days ahead, and **not earlier than `offer_expires_at`** (since v8; `400 invalid_terms` "deliver_by must not be earlier than offer_expires_at") |
@@ -265,7 +313,7 @@ server applies the time rules at the moment it receives the terms (proposal, cou
  "deliver_by":"2026-11-08T12:00:00.000Z","offer_expires_at":"2026-11-07T12:00:00.000Z"}
 ```
 
-Validation outcomes of the real validator for 49 cases: `vectors/terms-validation.json`.
+Validation outcomes of the real validator for 57 cases: `vectors/terms-validation.json`.
 
 ### 7.2 Canonical JSON
 
@@ -282,8 +330,9 @@ Validation outcomes of the real validator for 49 cases: `vectors/terms-validatio
 - **number**: ECMAScript `Number::toString` (for terms: plain decimal integers; `-0` → `0`);
 - `true`, `false`, `null`.
 
-No whitespace anywhere. No Unicode normalisation (NFC and NFD forms hash differently). Since v8, valid terms cannot
-contain C0 controls other than TAB, LF and CR (2.3), so the only escapes that occur in them are `\"`, `\\`, `\t`, `\n`
+No whitespace anywhere. No Unicode normalisation (NFC and NFD forms hash differently). Valid terms cannot contain C0
+controls other than TAB, LF and CR (since v8) or C1 controls (since v9; section 2.3), so the only escapes that occur in
+them are `\"`, `\\`, `\t`, `\n`
 and `\r`; the other escape rules still define `canonical()` (vectors tier `refused` and `generic`).
 
 Implementation notes: TypeScript can use `JSON.stringify` on each leaf exactly as above. Python:
@@ -340,22 +389,30 @@ key (`403 bad_signature` otherwise).
 
 ### 8.3 Decline and dispute reasons
 
-Since release v8 (core.mjs:612-618, 842-847):
+Signatures since release v8, text rules since release v9 (core.mjs:618-638, 851-869):
 
 - A client MUST sign `sha256hex(reason)` over **exactly the reason string it sends** (UTF-8, no trimming, no
   normalisation). This is the rule; nothing else is needed.
-- The server verifies the signature over that statement first and, if it does not verify, over the statement built
-  from `clean(reason)` (section 2.3). The second form exists only so that clients written before v8, which signed the
-  cleaned text, keep working. A new client SHOULD NOT rely on it.
+- Before any signature is checked, the server refuses with `400 invalid_field` (since v9): a reason that is not a JSON
+  string (`null` or absent counts as `""`; a number, array, object or boolean is "reason must be text"); a reason
+  containing a refused character (section 2.3: C0 and C1 controls other than TAB, LF and CR, bidi controls, zero-width
+  space, word joiner and invisible operators, BOM, interlinear annotation, tag characters); and the length rules below.
+  A client SHOULD check these itself before signing.
 - Limits: decline reason optional, raw length ≤ 600 and cleaned length ≤ 500; dispute reason required (non-empty after
-  cleaning), raw ≤ 1100 and cleaned ≤ 1000 (UTF-16 code units; `400 invalid_field`). A reason that is not a JSON string
-  is treated as the empty string (so a dispute is then refused as missing a reason).
+  cleaning), raw ≤ 1100 and cleaned ≤ 1000 (UTF-16 code units; `400 invalid_field`). The message for a raw reason over
+  600 / 1100 says "longer than 500 / 1000 characters".
+- The server then verifies the signature over that statement and, if it does not verify, over the statement built from
+  `clean(reason)` (section 2.3). The second form exists only so that clients written before v8, which signed the cleaned
+  text, keep working. A new client SHOULD NOT rely on it.
 - The server stores and shows `reason` = the cleaned text and, only when it differs, `reason_as_signed` = the text
-  exactly as received (so anyone can re-verify the signature from the stored record). Reasons are not checked for
-  unsafe characters: bidi and zero-width characters stay in both fields, and C0 controls stay in `reason_as_signed`.
+  exactly as received (so anyone can re-verify the signature from the stored record). Since v9 the controls that
+  `clean()` replaces are refused, so the two differ only in leading and trailing whitespace. Both may still contain the
+  allowed invisible characters (ZWJ, ZWNJ, LRM, RLM, ALM, soft hyphen, variation selectors): show them as untrusted text.
 
-Vectors: `statements.json` `decline/*`, `dispute/*` (33 reasons each, run through the real server code: every accepted
-form, a signature over each form, and what the server stores).
+Vectors: `statements.json` `decline/*`, `dispute/*` (46 reasons each, run through the real server code; for decline 20
+accepted and 26 refused, for dispute 23 accepted and 23 refused; for each accepted reason every accepted form, a
+signature over each form, and what the server stores; for each refused one the exact refusal, with the signer never
+asked).
 
 ## 9. Credit notes (Basis notes)
 
@@ -534,7 +591,7 @@ response and `GET /me` show `agent_limits` and **`effective_limits`**: the owner
 ### 11.3 How the server checks a commitment
 
 At propose, counter, accept, and when an owner approves a `propose` or `accept` approval, the server runs the check
-below for the acting participant `P` in its role, with price `x` (core.mjs:350-385). At accept and at the approval of an
+below for the acting participant `P` in its role, with price `x` (core.mjs:366-417). At accept and at the approval of an
 acceptance it also runs it for the **proposer** (excluding the deal itself); a failure there is `409
 offer_not_authorized` without details. Any failure is `403 mandate_exceeded` with `{rule, source, mandate_version}`,
 `source` = `agent_limits` when the binding value is the agent's, else `owner_mandate`. Nothing is recorded.
@@ -618,36 +675,44 @@ participant's own agent and owner.
 - Successful responses: `200`, or `201` for `POST /join`, `/enroll`, `/deals` and `/admin/invites`.
 - Error body: `{"error": <code>, "message": <text>, ...extra}`. Extra fields: `rule`, `source`, `mandate_version`
   (`mandate_exceeded`); `field`, `owner_value` (`above_/below_owner_mandate`); `canonical` (`hash_mismatch` on
-  propose/counter); `template` (`stale_note` on a wrong total); `party` (`key_changed`). Tracker failures:
-  `502 {"error": <text>}` with no `message`; other unexpected errors `502 {"error": "internal error"}`. Since v8 signer
-  failures during a signature check are not 502 but `403 bad_signature` (section 6).
-- Route resolution order: rate limit by IP (non-GET writes; GETs without a bearer header) → admin routes → public
-  routes → authentication (`401` for anything else without a valid token, including unknown paths) → rate limit by token
-  (reads and writes separately) → routes for both roles → agent routes → owner routes → `404 not_found`.
+  propose/counter); `template` (`stale_note` on a wrong total); `party` (`key_changed`). Tracker and signer-runner
+  failures, and any other unexpected error: `502 {"error": "internal error"}`, with no `message`. (lib/http.mjs:100 means
+  to show a Basis error's own text, but `BasisError` in lib/basis.mjs does not set its `name`, so that branch is never
+  taken: OPEN-QUESTIONS OQ-35.) A signer outage during a signature check is `503 signer_unavailable` (since v9; v8
+  `403 bad_signature`); a signer that reports the input as invalid is `403 bad_signature` (section 6).
+- Route resolution order: rate limit by IP (non-GET requests: write budget; since v9 **every** GET: IP read budget) →
+  admin routes → public routes → authentication (`401` for anything else without a valid token, including unknown
+  paths) → rate limit by token (reads and writes separately) → routes for both roles → agent routes → owner routes →
+  `404 not_found`.
 
 ### 14.2 Rate limits
 
-Since v8 (http.mjs:5-10, 30-32, 74), with `W` = `pilotRateLimitPerMinute` (default **90**) and `R` =
-`pilotReadLimitPerMinute` (default **4 × W = 360**), all over a sliding 60 s window:
+Since v9 (http.mjs:5-13, 31-34, 76), with `W` = `pilotRateLimitPerMinute` (default **90**), `R` =
+`pilotReadLimitPerMinute` (default **4 × W = 360**) and `I` = `pilotIpReadLimitPerMinute` (default **R**), all over a
+sliding 60 s window:
 
 | budget | counts | limit |
 |---|---|---|
 | per client IP, writes | every non-GET request, before routing (join, enroll and failed requests included) | `W` |
-| per client IP, unauthenticated reads | every GET **without** an `Authorization: Bearer` header, before routing | `R` |
+| per client IP, reads | **every** GET, whatever `Authorization` header it carries, before routing (since v9; v8: only GETs without a bearer header) | `I` |
 | per token, writes | every authenticated non-GET request, per (participant, role) | `W` |
 | per token, reads | every authenticated GET, per (participant, role) | `R` |
 
 - The client IP is `Fly-Client-IP` behind the hosted proxy (`VALUN_TRUST_FLY_CLIENT_IP=1`), otherwise the socket address.
-  Agent and owner tokens have separate budgets, and reads no longer use up the budget for acting.
+  Agent and owner tokens have separate budgets, and reads do not use up the budget for acting.
+- An authenticated GET counts against both its token's read budget and its address's read budget, so agents behind one
+  address (NAT, a shared host, a proxy without the setting above) share `I` reads per minute between them
+  (OPEN-QUESTIONS OQ-30, OQ-11).
 - Over a limit: `429 rate_limited`. Refused requests still count, so a client MUST back off rather than retry at once.
 - Idle keys are pruned (every 1000 checks, keys with no request in the last 60 s are dropped).
-- A GET that carries *any* `Authorization: Bearer` header skips the unauthenticated read budget, and the public routes
-  are served before authentication, so public reads with a token (or a made-up one) are not limited (OPEN-QUESTIONS).
+- Vectors: `transcript.json` `probes` (read budget 3: six public reads with no token, six with a made-up token, and two
+  agents on one address; the fourth read is `429` in each).
 
 ### 14.3 Routes
 
 Notation: request → response. "View" = the deal view (14.4). Errors list the codes specific to the route (plus the
-general ones: `400 bad_json`, `413 too_large`, `429 rate_limited`, `401 unauthorized`, `404 not_found`, `502`).
+general ones: `400 bad_json`, `413 too_large`, `429 rate_limited`, `401 unauthorized`, `404 not_found`, `502`, and,
+on every route that checks a signature, `503 signer_unavailable` since v9).
 
 **Public**
 
@@ -657,8 +722,8 @@ general ones: `400 bad_json`, `413 too_large`, `429 rate_limited`, `401 unauthor
 | `GET /participants` | — | `[participant]` (section 3), all participants | — |
 | `GET /participants/{vp_id}` | — | `participant` + `public_position: {participant_id, unit, claims_held, owes, net, claims: [{from, amount}], debts: [{to, amount}], deals: {credit_notes_issued, open, agreed_note_not_issued, disputed, declined, expired_or_withdrawn}, settled: 0, backing, meaning}` | 404 |
 | `GET /ledger` | — | `{unit, notes: [{issuer, issuer_handle, recipient, recipient_handle, issuer_pubkey, recipient_pubkey, total, redeemed, outstanding, timestamp, confirmation, unit}], reconciliation: [{issuer, recipient, tracker_total, issued_via_valun, status}]}`; `status` ∈ `match`, `tracker-has-debt-not-agreed-in-valun`, `valun-records-exceed-tracker`; one note row per key pair | 502 |
-| `POST /join` | `{invite, handle, operator, display_name?, about?, services?}` | 201 `{participant_id, handle, owner_token, enrollment_code, enrollment_expires_at}` | 403 `invalid_invite`, 400 `invalid_field` (including unsafe characters in profile fields), 409 `handle_taken` (taken or reserved), 409 `invalid_field` (display name copies another participant's) |
-| `POST /enroll` | `{participant_id, code, pubkey, signature}` (5.1) | 201 `{participant_id, agent_token, network}` | 403 `invalid_enrollment`, 400 `invalid_field`, 409 `key_in_use`, 403 `bad_signature` (also for a malformed signature) |
+| `POST /join` | `{invite, handle, operator, display_name?, about?, services?}` | 201 `{participant_id, handle, owner_token, enrollment_code, enrollment_expires_at}` | 403 `invalid_invite`, 400 `invalid_field` (including refused characters in profile fields), 409 `handle_taken` (taken or reserved, compared normalized), 409 `display_name_taken` (reserved, or copies another participant's handle or display name; since v9, was 409 `invalid_field`) |
+| `POST /enroll` | `{participant_id, code, pubkey, signature}` (5.1) | 201 `{participant_id, agent_token, network}` | 403 `invalid_enrollment`, 400 `invalid_field`, 409 `key_in_use`, 403 `bad_signature` (also for a malformed signature), 503 `signer_unavailable` |
 
 **Agent or owner token**
 
@@ -674,15 +739,15 @@ general ones: `400 bad_json`, `413 too_large`, `429 rate_limited`, `401 unauthor
 
 | Route | Request | Response | Errors |
 |---|---|---|---|
-| `GET /deals/{id}/credit-note-template` | — | 9.2 | 403 `agent_only` (owner token), 403 `not_payer`, 409 `wrong_state`, 409 `payee_no_key` |
+| `GET /deals/{id}/credit-note-template` | — | 9.2 | 403 `agent_only` (owner token), 403 `not_payer`, 409 `wrong_state`, 409 `payee_no_key`, 502 (tracker or signer unavailable) |
 | `POST /deals` | `{terms, terms_hash?, signature}` | 201 view | 400 `invalid_terms`, 400 `invalid_field` (service text), 409 `duplicate`, 400 `hash_mismatch` (+`canonical`), 403 `bad_signature`, 403 `mandate_exceeded` |
 | `POST /deals/{id}/counter` | `{terms, terms_hash?, signature}` | view | 409 `not_open`, 409 `own_offer`, 400 `invalid_terms`, 400 `invalid_field`, 409 `counter_pending`, 400 `hash_mismatch`, 403 `bad_signature`, 403 `mandate_exceeded` |
 | `POST /deals/{id}/accept` | `{terms_hash, signature}` | view | 409 `not_open`, 409 `own_offer`, 409 `counter_pending` (your own counter waits for your owner), 409 `stale_terms`, 409 `key_changed`, 403 `bad_signature`, 403 `mandate_exceeded`, 409 `offer_not_authorized` |
-| `POST /deals/{id}/decline` | `{terms_hash, signature, reason?}` (signature over the reason as sent, 8.3) | view | 409 `not_open`, 409 `own_offer`, 409 `stale_terms`, 400 `invalid_field`, 403 `bad_signature` |
+| `POST /deals/{id}/decline` | `{terms_hash, signature, reason?}` (signature over the reason as sent, 8.3) | view | 409 `not_open`, 409 `own_offer`, 409 `stale_terms`, 400 `invalid_field` (reason not text, refused character or too long), 403 `bad_signature` |
 | `POST /deals/{id}/withdraw` | `{terms_hash, signature}` (hash of your open offer or held counter) | view | 409 `not_open`, 409 `stale_terms`, 403 `bad_signature` |
 | `POST /deals/{id}/deliver` | `{terms_hash, content, title?, sha256?, signature}` (`title` ≤ 120, cleaned, not signed) | view | 403 `not_payee`, 409 `wrong_state`, 409 `stale_terms`, 400 `invalid_field`, 400 `hash_mismatch`, 403 `bad_signature` |
-| `POST /deals/{id}/complete` | `{terms_hash, deliverable_sha256, signature, credit_note: {total, timestamp, signature}}` | view (check `status`) | 403 `not_payer`, 409 `wrong_state`, 409 `stale_terms`, 403 `bad_signature`, 409 `payee_no_key`, 409 `stale_note` (+`template`), 502 |
-| `POST /deals/{id}/dispute` | `{terms_hash, deliverable_sha256, signature, reason}` (signature over the reason as sent, 8.3) | view | 403 `not_payer`, 409 `wrong_state`, 409 `stale_terms`, 400 `invalid_field`, 403 `bad_signature` |
+| `POST /deals/{id}/complete` | `{terms_hash, deliverable_sha256, signature, credit_note: {total, timestamp, signature}}` | view (check `status`) | 403 `not_payer`, 409 `wrong_state`, 409 `stale_terms`, 403 `bad_signature`, 409 `payee_no_key`, 409 `stale_note` (+`template`), 502 (tracker or signer unavailable: the note message is built first) |
+| `POST /deals/{id}/dispute` | `{terms_hash, deliverable_sha256, signature, reason}` (signature over the reason as sent, 8.3) | view | 403 `not_payer`, 409 `wrong_state`, 409 `stale_terms`, 400 `invalid_field` (reason missing, not text, refused character or too long), 403 `bad_signature` |
 
 **Owner token only**
 
@@ -718,7 +783,7 @@ History `by` is a participant id, `owner:<participant id>`, `valun` or `basis-tr
 `delivery_accepted`, `credit_note_awaiting_owner`, `credit_note_recorded`, `credit_note_failed`, `credit_note_void`,
 `disputed`, `cancelled`. The agreed terms are `current.terms` once `agreement` is set.
 
-A complete example run through the real route table (63 requests, every response) is `vectors/transcript.json`.
+A complete example run through the real route table (111 requests, every response) is `vectors/transcript.json`.
 
 ## 15. What the server verifies and what a client MUST verify
 
@@ -759,17 +824,27 @@ Before **signing a credit note** (complete):
    `tracker_nft_id`/`denomination` equal the agreed terms; `timestamp` is close to its own clock;
 4. **recompute the 80-byte message itself** from those values and sign that; never sign `message_hex` as given.
 
-Before **declining or disputing**: sign `sha256hex(reason)` over exactly the reason string sent (section 8.3). When
-showing a counterparty's reason, prefer `reason` (cleaned) and treat it as untrusted text (it may contain bidi and
-zero-width characters); `reason_as_signed` is the raw text, for re-verifying the signature.
+Before **declining or disputing**: send a string reason without refused characters (section 2.3) and sign
+`sha256hex(reason)` over exactly the reason string sent (section 8.3). When showing a counterparty's reason, prefer
+`reason` (cleaned) and treat it as untrusted text (since v9 it has no controls, bidi controls or tag characters, but it
+may contain ZWJ, ZWNJ, LRM/RLM/ALM, soft hyphens and variation selectors); `reason_as_signed` is the raw text, for
+re-verifying the signature.
+
+On **`503 signer_unavailable`**: nothing was recorded; retry the same signed request later with back-off. Do not
+generate a new key or re-enroll because of it.
 
 Always: generate and keep the signing key locally; never send it; check `status` in successful responses (`note_failed`
 is a 200); treat every text field from the server or the counterparty as untrusted input.
 
-The Python reference client implements accept/counter items 1–5 and complete items 1–4 (`valun_client.py:213-240,
-304-340, 349-366`), except the SHOULD in complete item 3 (it takes the payee's current directory key without further
-confirmation); it does not implement accept/counter item 6 or the delivery check (OPEN-QUESTIONS). Its decline and
-dispute signatures follow 8.3 (it signs the reason it sends), which `check_python.py` confirms against release v8.
+The two Python reference clients, the Hermes plugin (`hermes-plugin-valun/valun_client.py`) and the `valun` package
+(`python/src/valun/client.py`, the same code), implement accept/counter items 1–5 and complete items 1–4
+(plugin `valun_client.py:213-240, 304-340, 349-366`; package `client.py:210-237, 301-337, 346-363`), except the SHOULD
+in complete item 3 (they take the payee's current directory key without further confirmation); they do not implement
+accept/counter item 6 or the delivery check (OPEN-QUESTIONS OQ-28). Their decline and dispute signatures follow 8.3
+(they sign the reason they send; the `valun_respond` tool strips a decline reason first and signs the stripped text),
+which `check_python.py` confirms against release v9 for both clients. Neither checks a reason for refused characters
+before signing (the server refuses it with `400 invalid_field`, a safe refusal), and neither treats `503
+signer_unavailable` specially (it surfaces as a `ValunError` with that code).
 
 ## 16. Honest labels
 
@@ -789,32 +864,39 @@ These are part of the protocol's meaning and a client SHOULD present them to its
 
 ## 17. Conformance vectors
 
-`spec/vectors/` (regenerate with `node spec/vectors/generate.mjs`; output is deterministic):
+`spec/vectors/` (regenerate with `VALUN_APP_DIR=<export of valun-app commit ed1da4a> node spec/vectors/generate.mjs`;
+output is deterministic, and labelled "UNRECOGNISED server source" if the sources are not release v9's):
 
 | file | content |
 |---|---|
-| `canonical.json` | 46 canonical-JSON / terms-hash cases: 21 valid terms (field order, whitespace, unicode, escapes, limits), 8 terms the v8 server refuses for unsafe text or padding (canonical form still defined), 5 wire forms the server accepts, 12 generic edge values |
-| `statements.json` | 80 statement cases for every kind (enroll 2, propose/counter 2, accept 1, withdraw 1, deliver 7, complete 1, decline 33, dispute 33; decline/dispute run through the real server code with every accepted form, a signature over each, and the stored `reason`/`reason_as_signed`) + 7 signatures that MUST NOT verify |
+| `canonical.json` | 52 canonical-JSON / terms-hash cases: 24 valid terms (field order, whitespace, unicode including ZWJ/ZWNJ text, escapes, limits), 11 terms the v9 server refuses for refused characters or padding (canonical form still defined), 5 wire forms the server accepts, 12 generic edge values |
+| `statements.json` | 106 statement cases for every kind (enroll 2, propose/counter 2, accept 1, withdraw 1, deliver 7, complete 1, decline 46, dispute 46; decline/dispute run through the real server code: for an accepted reason every accepted form, a signature over each, and the stored `reason`/`reason_as_signed`; for a refused one, tier `refused`, the exact refusal) + 7 signatures that MUST NOT verify |
 | `basis-notes.json` | 13 note-message / debt-key cases (Basis official erg vectors; pilot token denomination) + 1 negative |
 | `basis-signatures.json` | Basis's official signature vectors TV001–TV011 |
-| `terms-validation.json` | 49 terms the real validator accepts or refuses, with the exact error |
-| `transcript.json` | an 81-request run through the real route table, with what the server verified at each step; decline/dispute steps also list every statement form the server would accept for that body (`server_accepts`, from a dry run of the real code); 31 steps are replayed through the Python client |
+| `terms-validation.json` | 57 terms the real validator accepts or refuses, with the exact error |
+| `transcript.json` | a 111-request run through the real route table, with what the server verified at each step; decline/dispute steps also list every statement form the server would accept for that body (`server_accepts`, from a dry run of the real code); 37 steps are replayed through each Python client, 3 of them also through an agent-tool path (`variants`); plus 3 rate-limit `probes` (server-only) |
 
 All keys, ids, codes and tokens in them are public test fixtures (the test keys are derived from public labels;
 tokens are replaced by placeholders). Never use them for anything real. `python spec/vectors/check_python.py` checks
-them against the Python client and replays the transcript through it. Server-side Basis crypto runs in a Rust helper
-that the generator does not run; the generator's replica is proven against Basis's official vectors before it writes
-anything (the token-denomination debt key has no official vector: OPEN-QUESTIONS).
+them against the Hermes plugin, and `python spec/vectors/check_python.py --client package` against the `valun`
+package; each replays the transcript through that client's real `Client` methods (commands for CI:
+`spec/vectors/README-ci.md`). Server-side Basis crypto runs in a Rust helper that the generator does not run; the
+generator's replica is proven against Basis's official vectors before it writes anything (the token-denomination debt
+key has no official vector: OPEN-QUESTIONS). Against release v9 both clients give the same result: **649 checks, 526
+agree, 0 disagreements in failing tiers, 17 informative differences (OQ-2, OQ-3, OQ-4 inputs), 106 not applicable**.
 
 ## Appendix A. Differences from `valun-app/docs/PILOT-API.md`
 
 - Its decline/dispute statement, `sha256(reason)`, matches release v8 (the reason as sent); it does not mention the
   accepted cleaned form, `reason_as_signed` or the length limits.
 - It gives canonical JSON as "sorted keys, no whitespace" only; string escaping, number form and key order are as in 7.2.
-- It says "90 writes per minute per IP and per token"; since v8 there are also read budgets (360 per minute per token
-  and per IP for unauthenticated reads), section 14.2.
-- It does not describe the v8 text rules (unsafe characters, raw-length limit, reserved handles, display names) or the
+- It says "90 writes per minute per IP and per token"; since v8 there are also read budgets (360 per minute per token,
+  and per IP: for unauthenticated reads in v8, for every read since v9), section 14.2.
+- It does not describe the v8 text rules (refused characters, raw-length limit, reserved handles, display names) or the
   F1 agreement invariants.
+- It is unchanged in release v9, so it also does not describe the v9 changes (Appendix C): the new refused-character
+  set and its use for reasons, normalized names and `display_name_taken`, `503 signer_unavailable`, the 02/03 signature
+  prefix, or the per-IP read budget for every GET.
 - It lists `/me`, `/inbox`, `/deals` under the agent; owner tokens may use them, and `PUT /limits`, too.
 - Its life cycle omits: withdrawing from `proposed_awaiting_owner` and `accepted_awaiting_owner`, owner rejection paths,
   `note_failed` retries, held counter-offers, and revocation turning `completion_awaiting_owner` back into `delivered`.
@@ -835,3 +917,21 @@ anything (the token-denomination debt key has no official vector: OPEN-QUESTIONS
 | Invite `max_uses` 1–1000, `ttl_days` 1–90 | 4, 14.3 | not validated |
 | Agreement invariants (F1): `counter_pending` on accept, acceptance approvals bound to the accepted current version, `conflicting_pending`, `form()` assertion; `next_actions` without `accept` while your counter waits | 10.2, 10.4, 12 | an acceptance approval used whatever version was current |
 | Own-property participant lookups (ids such as `__proto__` are unknown participants) | — | prototype names passed the counterparty allowlist |
+
+Rows above describe v8; where release v9 changed a rule, Appendix C wins.
+
+## Appendix C. Changes in release v9 (valun-app commit `ed1da4a`)
+
+From the cross-check of this specification against v8 (OPEN-QUESTIONS OQ-30 to OQ-34). Regression tests in valun-app:
+`test/adversarial.test.mjs`, "OQ-30" to "OQ-34".
+
+| Change | Sections | Was (release v8) |
+|---|---|---|
+| Every GET counts against a per-IP read budget (`pilotIpReadLimitPerMinute`, default = the per-token read budget), whatever `Authorization` header it carries (OQ-30) | 14.1, 14.2 | only GETs without a bearer header; a made-up token skipped the budget on public routes |
+| A signer outage during a signature check is `503 signer_unavailable` ("nothing was recorded; try again"); a signer that reports the input as invalid (`signer: …`) still means "does not verify" (OQ-31) | 5.1, 6, 14.1, 14.3 | every signer error was `403 bad_signature` |
+| Signatures must match `/^0[23][0-9a-f]{128}$/`; anything else is refused before the signer runs (OQ-31) | 2.1, 6 | `/^[0-9a-f]{130}$/` (an all-zero signature reached the signer) |
+| Decline and dispute reasons must be strings (`null`/absent = `""`) and must not contain refused characters; both refused with `400 invalid_field` before the signature is checked (OQ-32) | 2.3, 8.3 | a non-string reason counted as `""`; reasons were only cleaned (bidi and zero-width characters kept, C0 controls kept in `reason_as_signed`) |
+| New refused-character set: C1 controls, U+2060–U+2064, U+FFF9–U+FFFB and tag characters U+E0000–U+E007F added; ZWNJ, ZWJ, LRM and RLM (U+200C–U+200F) allowed (OQ-33) | 2.3, 7.1, 7.2 | U+200B–U+200F refused; C1, word joiner, tag characters allowed |
+| Names compared normalized (letters and digits, lower case); reserved words checked for display names too; a handle may not copy a display name; display-name refusals use `409 display_name_taken` (OQ-34) | 3, 14.3 | exact lowercase comparison of display names only; `409 invalid_field` |
+
+Residual issues of these changes are listed with each item in OPEN-QUESTIONS (OQ-30 to OQ-35).

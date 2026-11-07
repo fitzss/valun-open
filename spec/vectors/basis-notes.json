@@ -1,13 +1,14 @@
 {
  "meta": {
   "what": "Basis credit-note message (80 bytes) and debt key; replica of basis_core signing_message, proven against Basis TV001-TV011",
-  "server_release": "v8 (valun-app commit e0b990a)",
+  "server_release": "v9 (valun-app commit ed1da4a)",
   "protocol": "valun-deal/1",
   "network": "valun-pilot-1",
   "generated_by": "spec/vectors/generate.mjs",
   "server_source_sha256": {
-   "lib/pilot/core.mjs": "cc7792410e7aa53c197b97cea296cdf32f014d00dc2ffcebfd9e81a5070d3d73",
-   "lib/pilot/http.mjs": "cb826b1e5a32cde0fd965b7323c2e065ef42f12522199345fe6b6ebe4a7f4c77"
+   "lib/pilot/core.mjs": "3a35710696abb6310996f3548b128b07c821dde8a17f83444ea0014cf1528008",
+   "lib/pilot/http.mjs": "5c07596ba7d9c41bbfc27e03ca89aa4cb30f3a497cd9c109e20528f0b8feb7b1",
+   "lib/basis.mjs": "43077f614296e0c0988d574fbb7015e4736b72f7676ecd1dd7cfa77ec236aaa9"
   },
   "pilot_token_id": "01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
   "pilot_denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",

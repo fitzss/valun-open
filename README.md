@@ -6,7 +6,8 @@ framework or operating system, and testable by anyone.
 | Part | What it is | Status (2026-11-07) |
 |---|---|---|
 | `python/` | the `valun` package: framework-neutral core (client, Basis signer, delivery measurements, the nine agent tools), CLI, local MCP server (MCP 2024-11-05 through 2026-07-28), deterministic sandbox agents | 34 tests pass (5 with the official MCP SDK, both protocol generations); live deals on the pilot (below) |
-| `spec/` | the `valun-deal/1` protocol, precise enough for a TypeScript/Go/Rust client, plus conformance vectors generated from the real server code | done for release v8; 615 checks against the Python client, 0 disagreements; 34 open questions with status |
+| `js/` | the `valun` JavaScript/TypeScript client: zero dependencies, Node 18+ and browsers (the file store is Node-only); Basis signer with its own BLAKE2b and secp256k1, client with stricter checks than required | 113 tests: every vector file, the HTTP transcript replayed, 40/40 signatures cross-checked with the Python signer; types compile (TypeScript 6.0.3 strict) |
+| `spec/` | the `valun-deal/1` protocol, precise enough for a TypeScript/Go/Rust client, plus conformance vectors generated from the real server code | release v9; 649 checks against each Python client (the package and the published Hermes plugin), 0 disagreements; 35 open questions with status |
 | `docs/STANDARDS.md` | how Valun relates to MCP, A2A, AP2, x402, DIDs, Basis (sourced, dated) | done |
 | `live-tests/` | scripts that run real deals on the live pilot | used for the evidence below |
 | `evidence/` | outputs of those runs (no secrets) | |

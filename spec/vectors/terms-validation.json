@@ -1,13 +1,14 @@
 {
  "meta": {
   "what": "What the real validateTerms()/propose() accept and refuse at the fixture clock (server-only rules; no Python equivalent)",
-  "server_release": "v8 (valun-app commit e0b990a)",
+  "server_release": "v9 (valun-app commit ed1da4a)",
   "protocol": "valun-deal/1",
   "network": "valun-pilot-1",
   "generated_by": "spec/vectors/generate.mjs",
   "server_source_sha256": {
-   "lib/pilot/core.mjs": "cc7792410e7aa53c197b97cea296cdf32f014d00dc2ffcebfd9e81a5070d3d73",
-   "lib/pilot/http.mjs": "cb826b1e5a32cde0fd965b7323c2e065ef42f12522199345fe6b6ebe4a7f4c77"
+   "lib/pilot/core.mjs": "3a35710696abb6310996f3548b128b07c821dde8a17f83444ea0014cf1528008",
+   "lib/pilot/http.mjs": "5c07596ba7d9c41bbfc27e03ca89aa4cb30f3a497cd9c109e20528f0b8feb7b1",
+   "lib/basis.mjs": "43077f614296e0c0988d574fbb7015e4736b72f7676ecd1dd7cfa77ec236aaa9"
   },
   "pilot_token_id": "01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
   "pilot_denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
@@ -573,11 +574,11 @@
     "error": "invalid_field",
     "message": "service.title contains control, bidi or zero-width characters; remove them and sign again"
    },
-   "note": "Zero-width characters U+200B..U+200F are refused.",
+   "note": "Zero-width space U+200B is refused (since v9 the only refused character of U+200B..U+200F).",
    "fixture_now": "2026-11-06T12:00:00.000Z"
   },
   {
-   "name": "bad/zwj-emoji",
+   "name": "ok/zwj-emoji",
    "tier": "server",
    "terms": {
     "protocol": "valun-deal/1",
@@ -612,16 +613,12 @@
    },
    "proposer": "vp_a1a1a1a1a1a1",
    "terms_hash": "32e36c60546e1272220cf985fbad4bfd8a84699c15364591a9e1e7563f37694b",
-   "server_outcome": {
-    "status": 400,
-    "error": "invalid_field",
-    "message": "service.title contains control, bidi or zero-width characters; remove them and sign again"
-   },
-   "note": "Emoji ZWJ sequences contain U+200D and are refused (see OPEN-QUESTIONS).",
+   "server_outcome": "accepted",
+   "note": "Valid since v9 (refused in v8): emoji ZWJ sequences (U+200D).",
    "fixture_now": "2026-11-06T12:00:00.000Z"
   },
   {
-   "name": "bad/zwnj-persian",
+   "name": "ok/zwnj-persian",
    "tier": "server",
    "terms": {
     "protocol": "valun-deal/1",
@@ -656,12 +653,48 @@
    },
    "proposer": "vp_a1a1a1a1a1a1",
    "terms_hash": "959cb62ab1696a36dd639af99ec16251d7d0d0263bd0d9644ca703688c567b00",
-   "server_outcome": {
-    "status": 400,
-    "error": "invalid_field",
-    "message": "service.title contains control, bidi or zero-width characters; remove them and sign again"
+   "server_outcome": "accepted",
+   "note": "Valid since v9 (refused in v8): Persian with ZERO WIDTH NON-JOINER U+200C.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/lrm-rlm",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "price‎ 20 ‏PC",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
    },
-   "note": "Persian with ZERO WIDTH NON-JOINER U+200C is refused (see OPEN-QUESTIONS).",
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "c22bb433038e376d7e1fa7429943e46a5017c959372b0b349dbd52352244c34c",
+   "server_outcome": "accepted",
+   "note": "Valid since v9 (refused in v8): LEFT-TO-RIGHT MARK U+200E and RIGHT-TO-LEFT MARK U+200F.",
    "fixture_now": "2026-11-06T12:00:00.000Z"
   },
   {
@@ -709,7 +742,7 @@
    "fixture_now": "2026-11-06T12:00:00.000Z"
   },
   {
-   "name": "ok/c1-nel",
+   "name": "bad/c1-nel",
    "tier": "server",
    "terms": {
     "protocol": "valun-deal/1",
@@ -744,12 +777,16 @@
    },
    "proposer": "vp_a1a1a1a1a1a1",
    "terms_hash": "4ba598b1436e4e562b5a4d23bbd88aa6e353aaafa4f0b25a075562d7e1a34fcb",
-   "server_outcome": "accepted",
-   "note": "Not refused: C1 controls such as U+0085 are outside the refused set (see OPEN-QUESTIONS).",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.title contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "Refused since v9 (accepted in v8): C1 controls U+0080..U+009F, here U+0085.",
    "fixture_now": "2026-11-06T12:00:00.000Z"
   },
   {
-   "name": "ok/word-joiner-arabic-mark-soft-hyphen",
+   "name": "bad/c1-csi",
    "tier": "server",
    "terms": {
     "protocol": "valun-deal/1",
@@ -770,7 +807,51 @@
      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
     },
     "service": {
-     "title": "wj⁠x alm؜x shy­x",
+     "title": "Short research brief",
+     "description": "csi31mred",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "94fcbfbd273202129104a9cee057bc4f39b83190f4553792ca66cca4a44c3e54",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.description contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "Refused since v9: C1 control U+009B (CSI, an 8-bit terminal escape introducer).",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/word-joiner",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "wj⁠x",
      "description": "Summarise three sources on agent-to-agent credit.",
      "deliverable": "markdown, 300-500 words, 3 cited sources"
     },
@@ -783,13 +864,105 @@
     "offer_expires_at": "2026-11-07T12:00:00.000Z"
    },
    "proposer": "vp_a1a1a1a1a1a1",
-   "terms_hash": "f2a8f37a4f7a0e44f6644e7515cb5c7364c6fa65bef9657868b472b81af4cfca",
-   "server_outcome": "accepted",
-   "note": "Not refused: U+2060, U+061C, U+00AD (see OPEN-QUESTIONS).",
+   "terms_hash": "e6a9587e23c89fb4385fa4c3d49c58c579d366c44d6869a7d83e2dc721f649e1",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.title contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "Refused since v9 (accepted in v8): WORD JOINER U+2060.",
    "fixture_now": "2026-11-06T12:00:00.000Z"
   },
   {
-   "name": "ok/tag-characters",
+   "name": "bad/invisible-operators",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "f⁡(x) a⁢b a⁣b 1⁤2"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "eb42281276ec59f457b54a9f34e43d4fbbc85b21c3bd0fb0add1c5056cf5be4b",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.deliverable contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "Refused since v9: invisible operators U+2061..U+2064.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/interlinear-annotation",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "￹base￺annotation￻",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "23cd486376be3fc7f5e002dfa2ec695fa95bee52fd4d174b5a5d3d8544feb2ce",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.title contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "Refused since v9: interlinear annotation U+FFF9..U+FFFB.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/tag-characters",
    "tier": "server",
    "terms": {
     "protocol": "valun-deal/1",
@@ -824,8 +997,176 @@
    },
    "proposer": "vp_a1a1a1a1a1a1",
    "terms_hash": "fdf2a7b3855b28e431d8cf70171a859fcd1550a4f11b8b1cd178e14d940f6331",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.title contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "Refused since v9 (accepted in v8): Unicode tag characters U+E0000..U+E007F (invisible text).",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/subdivision-flag",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "UK brief 🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "d55d83aec2688f6df47f4d15b97b11db987d9114b55e87db14dd62daa4d0e4e8",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.title contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "Refused since v9: the England flag is a tag sequence (U+1F3F4, tag characters, U+E007F), so subdivision flags are refused with the tag characters (OPEN-QUESTIONS OQ-33).",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/arabic-mark-soft-hyphen",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "alm؜x shy­x",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "9398e67395a680c71831884ead598680bf24b752dd150ee5c13ad97b8afc6c7f",
    "server_outcome": "accepted",
-   "note": "Not refused: Unicode tag characters (invisible) (see OPEN-QUESTIONS).",
+   "note": "Not refused: ARABIC LETTER MARK U+061C (allowed on purpose) and SOFT HYPHEN U+00AD (invisible; not in the set).",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/variation-selectors",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "ok󠄀󠄁󠄂️",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "b99821eeea606c06c67dd0ed7540eec2029fa0c60e5a840d386c1a40791ddcd2",
+   "server_outcome": "accepted",
+   "note": "Not refused: variation selectors (U+FE00..U+FE0F, U+E0100..U+E01EF). Needed after emoji (U+FE0F), but a run of them after any character is invisible and can carry hidden bytes (OPEN-QUESTIONS OQ-33).",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/hangul-filler",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "xㅤy",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "f6ede2ae0089795dd88c7dd7a269f7243122a78a219dae4d059e4c782ebbe28d",
+   "server_outcome": "accepted",
+   "note": "Not refused: HANGUL FILLER U+3164, which renders as blank space (OPEN-QUESTIONS OQ-33).",
    "fixture_now": "2026-11-06T12:00:00.000Z"
   },
   {

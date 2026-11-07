@@ -3,6 +3,11 @@
 //
 //   node spec/vectors/generate.mjs        (VALUN_APP_DIR=<path to valun-app> overrides the default ../../../valun-app)
 //
+// Written against server release v9 = valun-app commit ed1da4a. Point VALUN_APP_DIR at an export of exactly that commit
+// (git archive ed1da4a), not at a working tree that may hold unreleased changes: the script records the sha256 of the
+// server sources it ran, and labels the output "UNRECOGNISED server source" (with a warning) when they are not v9's.
+// Every assertion below pins v9 behaviour; a server change that breaks one stops the script before anything is written.
+//
 // Writes, next to this file: canonical.json, statements.json, basis-notes.json, basis-signatures.json,
 // terms-validation.json, transcript.json. Output is deterministic: running it twice gives identical files, so a diff
 // after a server change shows exactly what changed on the wire.
@@ -20,6 +25,11 @@
 //   CC0-1.0). The token-denomination debt key has no official vector; see OPEN-QUESTIONS.md.
 // - The Basis tracker is an in-memory stand-in: tracker-side fields in the transcript (tracker_note, proof, ledger rows,
 //   positions) have the shapes Valun reads, not necessarily the real tracker's values.
+// - Signer failures (release v9, OQ-31) are emulated: the transcript's stand-in signer can throw the real BasisError
+//   class (imported from valun-app/lib/basis.mjs, which starts nothing on import) with the signer runner's messages, for
+//   an outage ("signer timed out") or for input the helper reports as invalid ("signer: ..."). The runner is not run.
+// - Errors become responses as lib/http.mjs:96-101 does it (replicated here, since lib/http.mjs serves the whole app).
+// - Rate-limit probes (OQ-30) use a second route table over the same Pilot with small budgets and the real clock.
 // - The text normalisation clean() is not exported by core.mjs; cleanText() below replicates its normalising part and the
 //   script asserts it equals what the real decline()/dispute() code signed over, for every reason vector.
 //
@@ -50,10 +60,23 @@ crypto.randomBytes = (n, cb) => {
 
 const core = await import(pathToFileURL(CORE).href);
 const {createPilotRoutes} = await import(pathToFileURL(HTTPM).href);
+// The real BasisError class (lib/basis.mjs; importing it starts nothing): the stand-in signer throws it for an outage,
+// exactly as makeSignerRunner does (lib/basis.mjs:22-30).
+const {BasisError} = await import(pathToFileURL(path.join(APP, 'lib', 'basis.mjs')).href);
 const {canonical, termsHash, statements, sha256, NETWORK, PROTOCOL, PILOT_TOKEN_ID, PILOT_DENOMINATION, DEFAULT_MANDATE, Pilot} = core;
 
 const fileSha = f => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
-const SOURCES = {'lib/pilot/core.mjs': fileSha(CORE), 'lib/pilot/http.mjs': fileSha(HTTPM)};
+const SOURCES = {'lib/pilot/core.mjs': fileSha(CORE), 'lib/pilot/http.mjs': fileSha(HTTPM), 'lib/basis.mjs': fileSha(path.join(APP, 'lib', 'basis.mjs'))};
+// Release v9 = valun-app commit ed1da4a (git archive ed1da4a). Other sources still run, but are labelled as such.
+const V9_SOURCES = {'lib/pilot/core.mjs': '3a35710696abb6310996f3548b128b07c821dde8a17f83444ea0014cf1528008',
+  'lib/pilot/http.mjs': '5c07596ba7d9c41bbfc27e03ca89aa4cb30f3a497cd9c109e20528f0b8feb7b1', 'lib/basis.mjs': '43077f614296e0c0988d574fbb7015e4736b72f7676ecd1dd7cfa77ec236aaa9'};
+const IS_V9 = Object.entries(V9_SOURCES).every(([f, h]) => SOURCES[f] === h);
+const SERVER_RELEASE = IS_V9 ? 'v9 (valun-app commit ed1da4a)' : 'UNRECOGNISED server source (not release v9 ed1da4a; see server_source_sha256)';
+if (!IS_V9) console.error(`WARNING: ${APP} is not release v9 (ed1da4a): ${JSON.stringify(SOURCES)}. The vectors are labelled accordingly; assertions may fail.`);
+// A signature with the shape the server checks before calling the signer (02/03 prefix, 130 lowercase hex: core.mjs:64)
+// that can never verify (z = 0). Used for dry runs that record which statements the server would accept. Since v9 an
+// all-zero signature ('00' x 65) is refused before the signer runs, so it no longer reveals anything.
+const DRY_SIG = '02' + '00'.repeat(64);
 const hx = h => Buffer.from(h, 'hex');
 const utf8hex = s => Buffer.from(s, 'utf8').toString('hex');
 
@@ -213,7 +236,8 @@ const signHex = (key, h) => schnorrSign(hx(h), key.sk).toString('hex');
 const keysMeta = Object.fromEntries(Object.values(K).map(k => [k.name, {pubkey: k.pub, label: k.label}]));
 
 // Normalising part of core.mjs clean() (lib/pilot/core.mjs:57): control characters except TAB, LF, CR -> space, then
-// ECMAScript String.prototype.trim(). Asserted below against the real decline()/dispute() code paths.
+// ECMAScript String.prototype.trim(). Asserted below against the real decline()/dispute() code paths. Since v9 a reason
+// containing such a control is refused before clean() runs, so for an accepted reason this is only the trim.
 const cleanText = s => String(s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ').trim();
 
 const T0 = Date.parse('2026-11-06T12:00:00.000Z');
@@ -223,7 +247,7 @@ const isoSec = t => new Date(Math.floor(t / 1000) * 1000).toISOString();   // th
 const H = 3600e3;
 
 const META = (what, extra = {}) => ({
-  what, server_release: 'v8 (valun-app commit e0b990a)', protocol: PROTOCOL, network: NETWORK, generated_by: 'spec/vectors/generate.mjs',
+  what, server_release: SERVER_RELEASE, protocol: PROTOCOL, network: NETWORK, generated_by: 'spec/vectors/generate.mjs',
   server_source_sha256: SOURCES, pilot_token_id: PILOT_TOKEN_ID, pilot_denomination: PILOT_DENOMINATION,
   fixture_clock: iso(T0), fixture_tracker_nft_id: FIXTURE_NFT, test_keys: keysMeta,
   warning: 'All keys, codes, ids and tokens here are PUBLIC TEST FIXTURES from an in-memory run. None is valid on any server. Never use the test keys for anything real.',
@@ -306,10 +330,14 @@ async function canonicalVectors() {
   const svc = [
     ['unicode-latin', 'Latin-1 and accents, precomposed (NFC): kept as UTF-8, never escaped.', {title: 'Résumé of café études', description: 'Ångström, naïve, façade, Øre, ß.'}],
     ['unicode-nfd', 'The same title in decomposed form (NFD: e + U+0301). No Unicode normalisation: a different hash from unicode-latin.', {title: 'Re\u0301sume\u0301 of cafe\u0301 e\u0301tudes', description: 'Ångström, naïve, façade, Øre, ß.'}],
-    ['unicode-cjk', 'CJK, Cyrillic, Greek.', {title: '東京の研究 — краткий обзор', description: 'Ελληνικά και 中文 текст.'}],
+    ['unicode-cjk', 'CJK, Cyrillic, Greek.', {title: '東京の研究 — \u043A\u0440\u0430\u0442\u043A\u0438\u0439 \u043E\u0431\u0437\u043E\u0440', description: 'Ελληνικά και 中文 \u0442\u0435\u043A\u0441\u0442.'}],
     ['unicode-astral', 'Characters outside the BMP (UTF-16 surrogate pairs in JS; 4 UTF-8 bytes each).', {title: 'Brief 🙂🚀 𝔘𝔫𝔦𝔠𝔬𝔡𝔢', description: 'Emoji and a flag (regional indicators): 🧑🏽 🇳🇿.'}],
-    ['unicode-rtl', 'Right-to-left scripts without bidi controls: kept literally.', {title: 'עברית ועربي', description: 'mixed עברית and English'}],
-    ['unicode-allowed-invisible', 'NBSP, soft hyphen (U+00AD), word joiner (U+2060) and C1 NEL (U+0085) are NOT refused by the server and are kept literally.', {title: 'nbsp\u00A0here', description: 'soft\u00ADhyphen word\u2060joiner nel\u0085end'}],
+    ['unicode-rtl', 'Right-to-left scripts without bidi controls: kept literally.', {title: '\u05E2\u05D1\u05E8\u05D9\u05EA \u05D5\u05E2\u0631\u0628\u064A', description: 'mixed \u05E2\u05D1\u05E8\u05D9\u05EA and English'}],
+    ['unicode-allowed-invisible', 'NBSP, soft hyphen (U+00AD), Arabic letter mark (U+061C), LRM (U+200E) and RLM (U+200F) are NOT refused (v9) and are kept literally. (Until v8 this vector also held U+2060 and U+0085, refused since v9: see refused/word-joiner-invisible-operators, refused/c1-controls.)',
+      {title: 'nbsp\u00A0here', description: 'soft\u00ADhyphen alm\u061Cmark lrm\u200Emark rlm\u200Fmark'}],
+    ['emoji-zwj-sequence', 'An emoji ZWJ sequence (U+200D inside \u{1F469}\u200D\u{1F4BB}): valid since v9 (refused in v8).', {title: 'Brief by \u{1F469}\u200D\u{1F4BB}'}],
+    ['persian-zwnj', 'Persian text with ZERO WIDTH NON-JOINER (U+200C), required by its orthography: valid since v9 (refused in v8).', {title: '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645'}],
+    ['emoji-modifiers-and-vs16', 'Skin-tone modifier, variation selector 16 (U+FE0F) and a keycap sequence: allowed.', {title: 'Thanks \u{1F44D}\u{1F3FD} \u2764\uFE0F 1\uFE0F\u20E3'}],
     ['line-separators', 'U+2028 and U+2029 are NOT escaped by canonical JSON (they are by some encoders, e.g. Go).', {title: 'line\u2028separator', description: 'para\u2029separator'}],
     ['html-chars', '< > & and \' are NOT escaped (Go\'s json.Marshal escapes <, >, & by default: do not use it unmodified).', {title: '<b>Tom & Jerry</b>', description: "it's \"quoted\" & <tagged>"}],
     ['escapes-required', 'Quote and backslash are escaped; "/" is not.', {title: 'say "hi" \\ path/to/file', description: 'C:\\Users\\x and a/b'}],
@@ -318,15 +346,18 @@ async function canonicalVectors() {
     ['padding-within-raw-limit', 'Padding is kept in the signed terms; the raw text may be up to max + 100 UTF-16 code units (title: 220).', {title: ' '.repeat(100) + 'padded' + ' '.repeat(100)}],
   ];
   for (const [n, d, s] of svc) await add(`terms/${n}`, 'terms', d, canonical(withService(s)));
-  // Canonical form is defined, but the server (release v8) refuses these in service text with 400 invalid_field.
+  // Canonical form is defined, but the server (release v9) refuses these in service text with 400 invalid_field.
   const refused = [
     ['escapes-bs-ff', 'BS and FF would use \\b \\f; refused in service text.', {title: 'back\bspace', description: 'form\ffeed'}],
     ['escapes-u00xx', 'Other C0 controls and DEL (\\u00XX, lowercase hex; DEL literal); refused in service text.', {title: 'ctl\u0001\u001f\u007fend', description: 'nul\u0000x vt\u000by esc\u001b[31mred'}],
+    ['c1-controls', 'C1 controls U+0080..U+009F (here NEL U+0085 and CSI U+009B; written literally by canonical JSON): refused since v9.', {title: 'nel\u0085x', description: 'csi\u009B31mred'}],
     ['bidi-override', 'Bidi override and pop (U+202E, U+202C); refused.', {title: 'invoice', description: 'abc\u202Edcba\u202C end'}],
     ['bidi-isolate', 'Bidi isolate (U+2066..U+2069); refused.', {title: 'a\u2066b\u2069c'}],
     ['zero-width-space-bom', 'Zero-width space (U+200B) and BOM (U+FEFF); refused.', {title: 'zero\u200Bwidth\uFEFFbom'}],
-    ['emoji-zwj-sequence', 'An emoji ZWJ sequence (U+200D inside 👩‍💻) is refused too: U+200D is in the refused range U+200B..U+200F.', {title: 'Brief by 👩‍💻'}],
-    ['persian-zwnj', 'Persian text with ZERO WIDTH NON-JOINER (U+200C), required by its orthography, is refused.', {title: 'می\u200Cخواهم'}],
+    ['word-joiner-invisible-operators', 'Word joiner U+2060 and invisible operators U+2061..U+2064: refused since v9.', {title: 'word\u2060joiner', description: 'f\u2061(x) a\u2062b a\u2063b 1\u20642'}],
+    ['interlinear-annotation', 'Interlinear annotation characters U+FFF9..U+FFFB: refused since v9.', {title: '\uFFF9base\uFFFAannotation\uFFFB'}],
+    ['tag-characters', 'Unicode tag characters U+E0000..U+E007F (invisible ASCII an LLM can still read; here "IGNORE"): refused since v9.', {title: 'Brief\u{E0049}\u{E0047}\u{E004E}\u{E004F}\u{E0052}\u{E0045}'}],
+    ['subdivision-flag', 'An emoji subdivision flag (England: U+1F3F4 + tag characters + U+E007F) is refused too, because it is built from tag characters (OPEN-QUESTIONS OQ-33).', {title: 'UK brief \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}'}],
     ['padding-over-raw-limit', 'A 401-character title that is 1 character after trimming: over max + 100 raw; refused.', {title: ' '.repeat(200) + 'x' + ' '.repeat(200)}],
   ];
   for (const [n, d, s] of refused) await add(`refused/${n}`, 'refused', d, canonical(withService(s)));
@@ -385,24 +416,39 @@ async function statementVectors() {
   const dh = sha256(contents[0][1]);
   push('complete/v1', 'core', 'complete', K.alice, {terms_hash: h, deliverable_sha256: dh}, statements.complete(h, dh));
 
-  // decline / dispute (release v8, e0b990a): the server verifies the signature over sha256(the reason EXACTLY as received)
-  // and, as an alternative for older clients, over sha256(clean(reason)); it stores the cleaned text as `reason`, plus
-  // `reason_as_signed` when they differ. Each case runs through the real Pilot.decline()/dispute() three times:
-  //   1. with a signature that cannot verify: the stand-in verifier then records every statement the server would accept,
-  //      in the order it tries them, and the request is refused (403) with nothing recorded;
+  // decline / dispute (since release v8, e0b990a): the server verifies the signature over sha256(the reason EXACTLY as
+  // received) and, as an alternative for older clients, over sha256(clean(reason)); it stores the cleaned text as
+  // `reason`, plus `reason_as_signed` when they differ. Since release v9 (ed1da4a) a reason that is not a string (null and
+  // absent count as ""), or that contains a refused character (the same set as service text), is refused with
+  // 400 invalid_field before any signature is checked. Each case runs through the real Pilot.decline()/dispute():
+  //   1. with a signature that has the right shape but cannot verify (DRY_SIG): a reason v9 refuses MUST give
+  //      400 invalid_field without the signer being asked; any other reason gives 403 bad_signature, and the stand-in
+  //      verifier records every statement the server would accept, in the order it tries them (nothing is recorded);
   //   2. with a test-key signature over the first (as-sent) form: MUST be accepted;
   //   3. when the cleaned form differs, with a signature over it: MUST be accepted too.
   const reasons = [
-    ['empty', ''], ['plain', 'Too expensive for me.'], ['padded', '  padded both sides  '], ['trailing-newline', 'Not this week, sorry.\n'],
-    ['internal-newline', 'line one\nline two'], ['crlf-trailing', 'reason\r\n'], ['tab-inside', 'tab\tinside'], ['bell-inside', 'bell\u0007inside'],
-    ['vertical-tab', 'vertical\u000btab'], ['nul-inside', 'nul\u0000char'], ['del-inside', 'del\u007fchar'], ['escape-sequence', '\u001b[31mred\u001b[0m'],
-    ['only-controls', '\u0001\u0002'], ['nel-leading', '\u0085NEL first'], ['nel-trailing', 'NEL last\u0085'], ['bom-leading', '﻿BOM first'],
-    ['nbsp-around', ' nbsp around '], ['line-separators-around', ' sep around '], ['ideographic-space', '　wide space　'],
-    ['bidi-inside', 'abc‮dcba'], ['zero-width-inside', 'zero​width'],
-    ['unicode', 'café, 東京, \u{1F642}'], ['nfd', 'café'], ['max-500', 'x'.repeat(500)], ['over-500', 'x'.repeat(501)],
-    ['padded-raw-550', 'x'.repeat(500) + ' '.repeat(50)], ['raw-over-600', ' '.repeat(101) + 'x'.repeat(500)],
-    ['max-1000', 'y'.repeat(1000)], ['over-1000', 'y'.repeat(1001)], ['padded-raw-1050', 'y'.repeat(1000) + ' '.repeat(50)], ['raw-over-1100', ' '.repeat(101) + 'y'.repeat(1000)],
-    ['non-string', 42], ['lone-surrogate', 'bad\ud800'],
+    // [name, reason, expected v9 outcome as two letters: decline, dispute. A = accepted (signature checked), R = refused
+    // with 400 invalid_field before any signature is checked]
+    ['empty', '', 'AR'], ['plain', 'Too expensive for me.', 'AA'], ['padded', '  padded both sides  ', 'AA'], ['trailing-newline', 'Not this week, sorry.\n', 'AA'],
+    ['internal-newline', 'line one\nline two', 'AA'], ['crlf-trailing', 'reason\r\n', 'AA'], ['tab-inside', 'tab\tinside', 'AA'],
+    // refused since v9 (OQ-32/33): C0 controls other than TAB/LF/CR, DEL, C1 controls, BOM, bidi controls, invisible characters
+    ['bell-inside', 'bell\u0007inside', 'RR'], ['vertical-tab', 'vertical\u000btab', 'RR'], ['nul-inside', 'nul\u0000char', 'RR'], ['del-inside', 'del\u007fchar', 'RR'],
+    ['escape-sequence', '\u001b[31mred\u001b[0m', 'RR'], ['only-controls', '\u0001\u0002', 'RR'], ['nel-leading', '\u0085NEL first', 'RR'], ['nel-trailing', 'NEL last\u0085', 'RR'],
+    ['c1-csi', 'csi\u009B31mred', 'RR'], ['bom-leading', '\uFEFFBOM first', 'RR'], ['bidi-inside', 'abc\u202Edcba', 'RR'], ['bidi-isolate', 'a\u2066b\u2069c', 'RR'],
+    ['zero-width-inside', 'zero\u200Bwidth', 'RR'], ['word-joiner', 'word\u2060joiner', 'RR'], ['invisible-operators', 'f\u2061(x) a\u2062b', 'RR'],
+    ['interlinear-annotation', '\uFFF9base\uFFFAannotation\uFFFB', 'RR'], ['tag-characters', 'No\u{E0049}\u{E0047}\u{E004E}\u{E004F}\u{E0052}\u{E0045}', 'RR'],
+    ['subdivision-flag', 'Not in \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}', 'RR'],
+    // allowed (v9): whitespace that trim() removes, ZWJ/ZWNJ, LRM/RLM/ALM, soft hyphen, variation selectors
+    ['nbsp-around', '\u00A0nbsp around\u00A0', 'AA'], ['line-separators-around', '\u2028sep around\u2029', 'AA'], ['ideographic-space', '\u3000wide space\u3000', 'AA'],
+    ['zwj-emoji', 'Booked up \u{1F469}\u200D\u{1F4BB} until December', 'AA'], ['zwnj-persian', '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645', 'AA'],
+    ['lrm-rlm-alm', 'price\u200E 20 \u200FPC \u061C.', 'AA'], ['soft-hyphen', 'soft\u00ADhyphen', 'AA'],
+    ['variation-selectors', 'ok\u{E0100}\u{E0101}\u{E0102}\uFE0F', 'AA'],
+    ['unicode', 'café, 東京, \u{1F642}', 'AA'], ['nfd', 'cafe\u0301', 'AA'],
+    // lengths (UTF-16 code units): decline raw <= 600 and cleaned <= 500; dispute raw <= 1100 and cleaned <= 1000
+    ['max-500', 'x'.repeat(500), 'AA'], ['over-500', 'x'.repeat(501), 'RA'], ['padded-raw-550', 'x'.repeat(500) + ' '.repeat(50), 'AA'], ['raw-over-600', ' '.repeat(101) + 'x'.repeat(500), 'RA'],
+    ['max-1000', 'y'.repeat(1000), 'RA'], ['over-1000', 'y'.repeat(1001), 'RR'], ['padded-raw-1050', 'y'.repeat(1000) + ' '.repeat(50), 'RA'], ['raw-over-1100', ' '.repeat(101) + 'y'.repeat(1000), 'RR'],
+    // not text: refused since v9 (OQ-32); a lone surrogate is still accepted (OQ-3)
+    ['non-string', 42, 'RR'], ['non-string-array', ['x'], 'RR'], ['lone-surrogate', 'bad\ud800', 'AA'],
   ];
   const setup = (pr, kind, rn) => {
     const id = 'vd_' + sha256(`statement-probe/${kind}/${rn}`).slice(0, 16);
@@ -415,7 +461,7 @@ async function statementVectors() {
     d.delivery = {by: BOB_ID, title: '', content: 'the work', sha256: sha256('the work'), bytes: 8, signature: '00'.repeat(65), at: iso(T0), late: false};
     return {id, th, dh: d.delivery.sha256};
   };
-  for (const kind of ['decline', 'dispute']) for (const [rn, raw] of reasons) {
+  for (const kind of ['decline', 'dispute']) for (const [rn, raw, expected] of reasons) {
     const signer = kind === 'decline' ? K.bob : K.alice;   // bob declines alice's offer; alice (payer) disputes bob's delivery
     const act = (pr, sig) => {
       const {id, th, dh} = setup(pr, kind, rn);
@@ -423,15 +469,22 @@ async function statementVectors() {
         : pr.pilot.dispute(pr.alice, id, {terms_hash: th, deliverable_sha256: dh, signature: sig, reason: raw});
     };
     const pr1 = probePilot({verify: 'reject'}), {id, th, dh} = setup(probePilot(), kind, rn);
-    const res1 = await outcome(() => act(pr1, '00'.repeat(65)));
+    const res1 = await outcome(() => act(pr1, DRY_SIG));
     const inputs = {terms_hash: th, ...(dh ? {deliverable_sha256: dh} : {}), reason: raw};
-    const tier = /surrogate|non-string/.test(rn) ? 'edge' : 'core';
-    if (res1.error !== 'bad_signature') {
-      out.push({name: `${kind}/${rn}`, tier: 'edge', kind, inputs, server_outcome: res1, note: 'Refused before any signature is checked.'});
+    const tier = /surrogate/.test(rn) ? 'edge' : 'core';
+    if (expected[kind === 'decline' ? 0 : 1] === 'R') {
+      // v9: refused with 400 invalid_field before any signature is checked (the signer is never asked).
+      assert.equal(res1.error, 'invalid_field', `${kind}/${rn}: v9 refuses this reason (${JSON.stringify(res1)})`);
+      assert.equal(res1.status, 400);
+      assert.equal(pr1.log.length, 0, `${kind}/${rn}: refused before the signer runs`);
+      out.push({name: `${kind}/${rn}`, tier: 'refused', kind, inputs, server_outcome: res1,
+        note: 'Refused by the real Pilot.' + kind + '() with 400 invalid_field before any signature is checked; a client must not send it.'});
       continue;
     }
+    assert.equal(res1.error, 'bad_signature', `${kind}/${rn}: v9 accepts this reason; only the dry-run signature is refused (${JSON.stringify(res1)})`);
     const forms = [...new Set(pr1.log.map(e => Buffer.from(e.message_hex, 'hex').toString('utf8')))];
-    const sent = typeof raw === 'string' ? raw : '', cleaned = cleanText(sent);
+    assert.equal(typeof raw, 'string');
+    const sent = raw, cleaned = cleanText(sent);
     const stmtOf = r => kind === 'decline' ? statements.decline(th, r) : statements.dispute(th, dh, r);
     assert.deepEqual(forms, [...new Set([stmtOf(sent), stmtOf(cleaned)])], `${kind}/${rn}: statement forms the server tries`);
     const sigSent = signText(signer, forms[0]), pr2 = probePilot();
@@ -448,8 +501,7 @@ async function statementVectors() {
     out.push({name: `${kind}/${rn}`, tier, kind, inputs: {...inputs, reason_sha256: sha256(sent), reason_cleaned: cleaned, reason_cleaned_sha256: sha256(cleaned)},
       statement: forms[0], statement_utf8_hex: utf8hex(forms[0]), signer: signer.name, pubkey: signer.pub, signature: sigSent, accepted_alternatives: alternatives,
       server_outcome: 'accepted', stored: {reason: stored.reason, ...(stored.reason_as_signed !== undefined ? {reason_as_signed: stored.reason_as_signed} : {})},
-      note: typeof raw === 'string' ? `Real Pilot.${kind}(): signature over sha256(reason as sent) accepted${forms[1] ? '; over sha256(cleaned reason) accepted too' : ''}. Stored reason is the cleaned text.`
-        : 'A reason that is not a string is treated as the empty string.'});
+      note: `Real Pilot.${kind}(): signature over sha256(reason as sent) accepted${forms[1] ? '; over sha256(cleaned reason) accepted too' : ''}. Stored reason is the cleaned text.`});
   }
   // Negative signatures: common mistakes. Each must NOT verify against the true statement bytes.
   const stmt = statements.accept(h), sb = Buffer.from(stmt, 'utf8');
@@ -526,15 +578,25 @@ async function validationVectors() {
     ['ok/tab-newline-cr-in-text', withService({title: 'tab\there', description: 'line1\nline2\r\nline3'}), 'alice', 'TAB, LF and CR are the only controls allowed in service text.'],
     ['bad/controls-in-title', withService({title: 'ok\u0007\u001b[31m'}), 'alice', 'Refused since v8: C0 controls (other than TAB/LF/CR) and DEL in service text.'],
     ['bad/del-in-deliverable', withService({deliverable: 'del\u007f'}), 'alice', 'DEL (U+007F) is refused.'],
-    ['bad/bidi-override-in-description', withService({description: 'abc‮dcba'}), 'alice', 'Bidi overrides U+202A..U+202E are refused.'],
-    ['bad/bidi-isolate-in-title', withService({title: 'a⁧b⁩'}), 'alice', 'Bidi isolates U+2066..U+2069 are refused.'],
-    ['bad/zero-width-space', withService({title: 'zero​width'}), 'alice', 'Zero-width characters U+200B..U+200F are refused.'],
-    ['bad/zwj-emoji', withService({title: 'by \u{1F469}‍\u{1F4BB}'}), 'alice', 'Emoji ZWJ sequences contain U+200D and are refused (see OPEN-QUESTIONS).'],
-    ['bad/zwnj-persian', withService({title: 'می‌خواهم'}), 'alice', 'Persian with ZERO WIDTH NON-JOINER U+200C is refused (see OPEN-QUESTIONS).'],
-    ['bad/bom', withService({title: '﻿title'}), 'alice', 'BOM U+FEFF is refused.'],
-    ['ok/c1-nel', withService({title: 'nel\u0085x'}), 'alice', 'Not refused: C1 controls such as U+0085 are outside the refused set (see OPEN-QUESTIONS).'],
-    ['ok/word-joiner-arabic-mark-soft-hyphen', withService({title: 'wj⁠x alm؜x shy­x'}), 'alice', 'Not refused: U+2060, U+061C, U+00AD (see OPEN-QUESTIONS).'],
-    ['ok/tag-characters', withService({title: 'tag\u{E0041}\u{E0042}x'}), 'alice', 'Not refused: Unicode tag characters (invisible) (see OPEN-QUESTIONS).'],
+    ['bad/bidi-override-in-description', withService({description: 'abc\u202Edcba'}), 'alice', 'Bidi overrides U+202A..U+202E are refused.'],
+    ['bad/bidi-isolate-in-title', withService({title: 'a\u2067b\u2069'}), 'alice', 'Bidi isolates U+2066..U+2069 are refused.'],
+    ['bad/zero-width-space', withService({title: 'zero\u200Bwidth'}), 'alice', 'Zero-width space U+200B is refused (since v9 the only refused character of U+200B..U+200F).'],
+    ['ok/zwj-emoji', withService({title: 'by \u{1F469}\u200D\u{1F4BB}'}), 'alice', 'Valid since v9 (refused in v8): emoji ZWJ sequences (U+200D).'],
+    ['ok/zwnj-persian', withService({title: '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645'}), 'alice', 'Valid since v9 (refused in v8): Persian with ZERO WIDTH NON-JOINER U+200C.'],
+    ['ok/lrm-rlm', withService({title: 'price\u200E 20 \u200FPC'}), 'alice', 'Valid since v9 (refused in v8): LEFT-TO-RIGHT MARK U+200E and RIGHT-TO-LEFT MARK U+200F.'],
+    ['bad/bom', withService({title: '\uFEFFtitle'}), 'alice', 'BOM U+FEFF is refused.'],
+    ['bad/c1-nel', withService({title: 'nel\u0085x'}), 'alice', 'Refused since v9 (accepted in v8): C1 controls U+0080..U+009F, here U+0085.'],
+    ['bad/c1-csi', withService({description: 'csi\u009B31mred'}), 'alice', 'Refused since v9: C1 control U+009B (CSI, an 8-bit terminal escape introducer).'],
+    ['bad/word-joiner', withService({title: 'wj\u2060x'}), 'alice', 'Refused since v9 (accepted in v8): WORD JOINER U+2060.'],
+    ['bad/invisible-operators', withService({deliverable: 'f\u2061(x) a\u2062b a\u2063b 1\u20642'}), 'alice', 'Refused since v9: invisible operators U+2061..U+2064.'],
+    ['bad/interlinear-annotation', withService({title: '\uFFF9base\uFFFAannotation\uFFFB'}), 'alice', 'Refused since v9: interlinear annotation U+FFF9..U+FFFB.'],
+    ['bad/tag-characters', withService({title: 'tag\u{E0041}\u{E0042}x'}), 'alice', 'Refused since v9 (accepted in v8): Unicode tag characters U+E0000..U+E007F (invisible text).'],
+    ['bad/subdivision-flag', withService({title: 'UK brief \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}'}), 'alice',
+      'Refused since v9: the England flag is a tag sequence (U+1F3F4, tag characters, U+E007F), so subdivision flags are refused with the tag characters (OPEN-QUESTIONS OQ-33).'],
+    ['ok/arabic-mark-soft-hyphen', withService({title: 'alm\u061Cx shy\u00ADx'}), 'alice', 'Not refused: ARABIC LETTER MARK U+061C (allowed on purpose) and SOFT HYPHEN U+00AD (invisible; not in the set).'],
+    ['ok/variation-selectors', withService({title: 'ok\u{E0100}\u{E0101}\u{E0102}\uFE0F'}), 'alice',
+      'Not refused: variation selectors (U+FE00..U+FE0F, U+E0100..U+E01EF). Needed after emoji (U+FE0F), but a run of them after any character is invisible and can carry hidden bytes (OPEN-QUESTIONS OQ-33).'],
+    ['ok/hangul-filler', withService({title: 'x\u3164y'}), 'alice', 'Not refused: HANGUL FILLER U+3164, which renders as blank space (OPEN-QUESTIONS OQ-33).'],
     ['ok/title-120-utf16', withService({title: '🙂'.repeat(60)}), 'alice', '60 astral characters = 120 UTF-16 code units: at the limit.'],
     ['bad/title-122-utf16', withService({title: '🙂'.repeat(61)}), 'alice', '61 astral characters = 122 UTF-16 code units > 120 (only 61 code points).'],
     ['ok/title-padded-to-raw-limit', withService({title: ' '.repeat(110) + 'x' + ' '.repeat(109)}), 'alice', 'Raw length 220 = 120 + 100: at the raw limit; the padding is hashed and stored.'],
@@ -585,10 +647,22 @@ async function transcriptVectors() {
   let now = T0;
   const tick = (s = 60) => { now += s * 1000; };
   // In-memory stand-in for the Basis tracker (no network). Verifies notes with the replica, keeps one note per key pair.
-  const notes = new Map(), verifyLog = [];
+  // signer.mode emulates the signer runner (lib/basis.mjs:11-34): 'ok' answers with the replica; 'outage' throws the
+  // runner's BasisError('signer timed out') (a timeout, failed start or no output); 'refuses' throws
+  // BasisError('signer: invalid signature encoding') (the helper ran and reported an error, valun_signer.rs:82).
+  const notes = new Map(), verifyLog = [], signer = {mode: 'ok'};
+  const signerFault = () => {
+    if (signer.mode === 'outage') throw new BasisError('signer timed out');
+    if (signer.mode === 'refuses') throw new BasisError('signer: invalid signature encoding');
+  };
   const basis = {nft: FIXTURE_NFT, denomination: PILOT_DENOMINATION, url: 'memory://stand-in-tracker',
-    async verify(pubkey, messageHex, sig) { const valid = schnorrVerify(hx(sig), hx(messageHex), hx(pubkey)); verifyLog.push({pubkey, message_hex: messageHex, signature: sig, valid}); return valid; },
+    async verify(pubkey, messageHex, sig) {
+      if (signer.mode === 'refuses') verifyLog.push({pubkey, message_hex: messageHex, signature: sig, valid: false, signer_refused: true});
+      signerFault();
+      const valid = schnorrVerify(hx(sig), hx(messageHex), hx(pubkey)); verifyLog.push({pubkey, message_hex: messageHex, signature: sig, valid}); return valid;
+    },
     async noteMessage({issuer, recipient, total, timestamp, denomination = PILOT_DENOMINATION}) {
+      signerFault();
       return {message_hex: noteMessage(hx(issuer), hx(recipient), total, timestamp, hx(FIXTURE_NFT), denomination).toString('hex'), debt_key_hex: debtKey(hx(issuer), hx(recipient), denomination).toString('hex')};
     },
     async note(issuer, recipient) { return notes.get(`${issuer}>${recipient}`) ?? null; },
@@ -613,17 +687,18 @@ async function transcriptVectors() {
   const redact = new Map([[ADMIN, '<admin_token>']]);
   const tokens = {};
 
-  async function http(method, p, {body, rawBody, auth, admin} = {}) {
+  async function http(method, p, {body, rawBody, auth, admin, bearer, via = routes, ip = '198.51.100.7'} = {}) {
     const raw = rawBody !== undefined ? rawBody : body === undefined ? '' : JSON.stringify(body);
-    const headers = {...(auth ? {authorization: `Bearer ${tokens[auth]}`} : {}), ...(admin ? {'x-valun-admin': ADMIN} : {}), ...(raw ? {'content-type': 'application/json'} : {})};
-    const req = {method, headers, socket: {remoteAddress: admin ? '127.0.0.1' : '198.51.100.7'}, async *[Symbol.asyncIterator]() { if (raw) yield Buffer.from(raw, 'utf8'); }};
+    const headers = {...(auth ? {authorization: `Bearer ${tokens[auth]}`} : bearer ? {authorization: `Bearer ${bearer}`} : {}), ...(admin ? {'x-valun-admin': ADMIN} : {}),
+      ...(raw ? {'content-type': 'application/json'} : {})};
+    const req = {method, headers, socket: {remoteAddress: admin ? '127.0.0.1' : ip}, async *[Symbol.asyncIterator]() { if (raw) yield Buffer.from(raw, 'utf8'); }};
     let res = null;
     const send = (_res, status, b) => { res = {status, body: b}; };
-    try { await routes(req, {}, new URL('/pilot/v1' + p, 'http://valun.invalid'), send, r => r.socket.remoteAddress); }
-    catch (e) {                                       // as lib/http.mjs:96-101 turns errors into responses
+    try { await via(req, {}, new URL('/pilot/v1' + p, 'http://valun.invalid'), send, r => r.socket.remoteAddress); }
+    catch (e) {                                       // exactly as lib/http.mjs:96-101 turns errors into responses
       if (e.name === 'PilotError') res = {status: e.status, body: {error: e.code, message: e.message, ...(e.extra || {})}};
-      else if (e.name === 'BasisError') res = {status: 502, body: {error: e.message}};
-      else throw e;
+      // lib/basis.mjs's BasisError does not set .name, so e.name is 'Error' and the body is always "internal error".
+      else res = {status: 502, body: {error: e.name === 'BasisError' ? e.message : 'internal error'}};
     }
     return {status: res.status, body: JSON.parse(JSON.stringify(res.body ?? null))};   // the wire: JSON.stringify(body, null, 1)
   }
@@ -633,7 +708,7 @@ async function transcriptVectors() {
   // verifier records what the server asked it to check.
   async function acceptedForms(method, p, body, auth) {
     const mark = verifyLog.length;
-    const r = await http(method, p, {body: {...body, signature: '00'.repeat(65)}, auth});
+    const r = await http(method, p, {body: {...body, signature: DRY_SIG}, auth});
     assert.equal(r.status, 403, `dry run of ${p}: ${JSON.stringify(r.body)}`);
     return [...new Map(verifyLog.slice(mark).map(e => [e.message_hex, {message_text: Buffer.from(e.message_hex, 'hex').toString('utf8'), message_hex: e.message_hex}])).values()];
   }
@@ -648,7 +723,8 @@ async function transcriptVectors() {
         ...(body !== undefined ? {body} : {}), ...(rawBody !== undefined ? {raw_body: rawBody} : {})},
       ...extra,
       response,
-      server_verified: verifyLog.slice(mark).map(e => ({pubkey: e.pubkey, message_hex: e.message_hex, ...(e.message_hex.length === 160 ? {kind: 'basis_note_message'} : {kind: 'statement', message_text: Buffer.from(e.message_hex, 'hex').toString('utf8')}), signature: e.signature, valid: e.valid})),
+      server_verified: verifyLog.slice(mark).map(e => ({pubkey: e.pubkey, message_hex: e.message_hex, ...(e.message_hex.length === 160 ? {kind: 'basis_note_message'} : {kind: 'statement', message_text: Buffer.from(e.message_hex, 'hex').toString('utf8')}), signature: e.signature, valid: e.valid,
+        ...(e.signer_refused ? {signer_refused: 'the signer reported an error for this input ("signer: ..."); the server counts it as does not verify'} : {})})),
       ...(client_call ? {client_call} : {}), ...(reads ? {client_reads: clientReads} : {})};
     steps.push(s); tick();
     return response.body;
@@ -695,12 +771,17 @@ async function transcriptVectors() {
     service: {title, description, deliverable}, price: {amount: price, unit: 'PC'}, consideration: 'credit_note_on_delivery_accepted',
     deliver_by: isoSec(now + dueH * H), offer_expires_at: isoSec(now + ttlH * H)});
   const agentOf = name => `${name}.agent`;
-  async function propose(name, otherName, role, svc, price, label, expect = 201) {
+  let lastProposal = null;          // the exact body of the last propose() step (to resend it unchanged)
+  async function propose(name, otherName, role, svc, price, label, expect = 201, expectError = null) {
     const me = P[name], other = P[otherName], dealId = nextDeal(), nonce = nextNonce();
     const t = terms({me, other, role, ...svc, price, dealId, nonce}), h = termsHash(t);
-    const v = await step(label, agentOf(name), 'POST', '/deals', {auth: agentOf(name), body: {terms: t, terms_hash: h, signature: signText(me.key, statements.propose(h))}, expect,
+    const body = {terms: t, terms_hash: h, signature: signText(me.key, statements.propose(h))};
+    lastProposal = {dealId, body};
+    const v = await step(label, agentOf(name), 'POST', '/deals', {auth: agentOf(name), body, expect,
       reads: [['/info'], [`/participants/${other.id}`]],
-      client_call: {method: 'propose', key: name, token_hex: [dealId.slice(3), nonce], args: {counterparty_id: other.id, role, ...svc, price, deliver_by_hours: 48, offer_ttl_hours: 24}}});
+      client_call: {method: 'propose', key: name, token_hex: [dealId.slice(3), nonce], args: {counterparty_id: other.id, role, ...svc, price, deliver_by_hours: 48, offer_ttl_hours: 24},
+        ...(expectError ? {expect_error: expectError, expected_statement: statements.propose(h),
+          note: 'the server verified no statement it could report (the signer did not answer), so the replay checks the signature against statements.propose(terms_hash)'} : {})}});
     return v.id ?? dealId;
   }
   const dealView = async (name, id) => (await http('GET', `/deals/${id}`, {auth: agentOf(name)})).body;
@@ -726,8 +807,14 @@ async function transcriptVectors() {
       client_call: {method: 'complete', key: name, args: {deal_id: id, expected_deliverable_sha256: dh}}});
   }
   // Reasons: since release v8 a client signs the reason exactly as it sends it (signForm 'as_sent'); 'cleaned' reproduces
-  // a pre-v8 client that signed clean(reason), which the server still accepts. `variants` record, for a client path that
-  // sends a different reason string (tools.py strips it), the reason it sends and the forms the server accepts for it.
+  // a pre-v8 client that signed clean(reason), which the server still accepts. `variants` record, for an agent-tool path
+  // that sends a different reason string (valun_respond strips it), the reason it sends and the forms the server accepts
+  // for it. They name the tool, not a file: check_python.py finds the call in each client's tool layer (hermes-plugin-valun
+  // tools.py, the valun package's agent.py) and checks that `strip` still describes it.
+  const RESPOND_DECLINE = {name: 'valun_respond', tool: 'valun_respond', client_method: 'decline', strip: true,
+    note: 'the valun_respond tool sends reason.strip() to Client.decline, which signs what it sends (Python str.strip() equals ECMAScript trim() for every reason v9 accepts)'};
+  const REVIEW_DISPUTE = {name: 'valun_review_delivery', tool: 'valun_review_delivery', client_method: 'dispute', strip: false,
+    note: 'the valun_review_delivery tool passes the reason unchanged to Client.dispute'};
   async function reasonVariants(method, path, body, variants, auth) {
     const out = [];
     for (const v of variants || []) {
@@ -781,7 +868,7 @@ async function transcriptVectors() {
   // ---- flow C: a decline reason with padding and a trailing newline, signed exactly as sent ----
   const C = await propose('alice', 'bob', 'payer', {...brief, title: 'Tiny fact check'}, 5, 'flow C: alice proposes 5 PC');
   await decline('bob', C, '  Not this week, sorry.\n', 'flow C: bob declines; the reason has leading spaces and a trailing newline and is signed exactly as sent (stored cleaned, with reason_as_signed)',
-    [{name: 'tools.respond', strip: true, note: 'hermes-plugin-valun tools.py:289 sends reason.strip() (here equal to ECMAScript trim()) and signs what it sends'}]);
+    [RESPOND_DECLINE]);
   // ---- flow C2: a pre-v8 client that signed the CLEANED reason is still accepted ----
   const C2 = await propose('alice', 'bob', 'payer', {...brief, title: 'Typo check'}, 4, 'flow C2: alice proposes 4 PC');
   await decline('bob', C2, 'Busy this week.\n', 'flow C2: bob declines, signing the cleaned reason as clients did before release v8 (still accepted)', undefined, 'cleaned');
@@ -810,7 +897,7 @@ async function transcriptVectors() {
   await accept('bob', F, 'flow F: bob accepts');
   await deliver('bob', F, 'All links checked.', '', 'flow F: bob delivers');
   await dispute('alice', F, 'Two of the three links are dead.\n', 'flow F: alice disputes; the reason ends with a newline and is signed exactly as sent',
-    [{name: 'tools.review_delivery', strip: false, note: 'hermes-plugin-valun tools.py:325 passes the reason unchanged to Client.dispute'}]);
+    [REVIEW_DISPUTE]);
 
   // ---- flow H (adversarial finding F1, fixed in v8): an agent cannot accept while its own counter-offer waits ----
   const Hd = await propose('bob', 'alice', 'payee', {...brief, title: 'Market scan'}, 70, 'flow H: bob (payee) offers a market scan for 70 PC');
@@ -868,10 +955,10 @@ async function transcriptVectors() {
     const inv = await step('operator creates an invite for the join refusals below', 'operator', 'POST', '/admin/invites', {admin: true, body: {note: 'join refusals', max_uses: 1, ttl_days: 1}, expect: 201});
     redact.set(inv.code, '<invite_code:refusals>');
     await step('error: a reserved handle (409 handle_taken, since v8)', 'anyone', 'POST', '/join', {expect: 409, body: {invite: inv.code, handle: 'admin', operator: 'x'}});
-    await step("error: a display_name copying another participant's display name (409 invalid_field, since v8)", 'anyone', 'POST', '/join', {expect: 409,
+    await step("error: a display_name copying another participant's display name (409 display_name_taken since v9; 409 invalid_field in v8)", 'anyone', 'POST', '/join', {expect: 409,
       body: {invite: inv.code, handle: 'dave', operator: 'x', display_name: 'Bob (spec test)'}});
     await step('error: a bidi override in a public profile field (400 invalid_field, since v8)', 'anyone', 'POST', '/join', {expect: 400,
-      body: {invite: inv.code, handle: 'dave', operator: 'x', about: 'trusted ‮etis‬'}});
+      body: {invite: inv.code, handle: 'dave', operator: 'x', about: 'trusted \u202Eetis\u202C'}});
   }
   const G = await propose('alice', 'bob', 'payer', brief, 8, 'flow G: alice proposes 8 PC');
   await step('error: accepting your own offer (409 own_offer)', 'alice.agent', 'POST', `/deals/${G}/accept`, {auth: 'alice.agent', expect: 409,
@@ -906,10 +993,114 @@ async function transcriptVectors() {
   P.carol.past_keys.push('carol-2'); P.carol.key = null;
   await step("carol's owner console: no agent, two past keys", 'carol.owner', 'GET', '/owner', {auth: 'carol.owner', expect: 200});
 
+  // ===================================================================================================================
+  // Release v9 (ed1da4a): OQ-31 signer failures, OQ-32 reasons, OQ-33 characters, OQ-34 names. Appended after the steps
+  // above so that those steps, and the ids they produce, are the same as in the v8 transcript.
+  // ===================================================================================================================
+  // ---- flow I: a decline reason with an emoji ZWJ sequence, a ZWNJ and an LRM (allowed since v9), signed as sent ----
+  const I = await propose('alice', 'bob', 'payer', {...brief, title: 'Glossary'}, 7, 'flow I: alice proposes 7 PC');
+  await decline('bob', I, 'Booked up \u{1F469}\u200D\u{1F4BB} until December (\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645, \u200Elater). \n',
+    'flow I: bob declines; the reason holds an emoji ZWJ sequence, a ZWNJ and an LRM (allowed since v9) and ends with a space and a newline', [RESPOND_DECLINE]);
+
+  // ---- OQ-32: decline reasons v9 refuses before any signature is checked (on flow G's open offer) ----
+  for (const [what, reason] of [['a bidi override', 'no thanks\u202Eevil'], ['tag characters (hidden text)', 'No\u{E0049}\u{E0047}\u{E004E}\u{E004F}\u{E0052}\u{E0045}'],
+    ['a C1 control', 'no\u0085thanks'], ['a number instead of text', 42]]) {
+    const h = (await dealView('bob', G)).current.terms_hash, mark = verifyLog.length;
+    await step(`error: a decline reason with ${what} (400 invalid_field, since v9)`, 'bob.agent', 'POST', `/deals/${G}/decline`, {auth: 'bob.agent', expect: 400,
+      body: {terms_hash: h, reason, signature: signText(P.bob.key, statements.decline(h, String(reason)))}});
+    assert.equal(verifyLog.length, mark, 'a refused reason never reaches the signer');
+  }
+
+  // ---- OQ-31: signer failures. An outage is 503 signer_unavailable and nothing is recorded; a signer that reports an
+  // error for the input ("signer: ...") means "does not verify"; a signature without a 02/03 prefix never reaches it. ----
+  signer.mode = 'outage';
+  const J = await propose('alice', 'bob', 'payer', {...brief, title: 'Citation check'}, 9,
+    'error: the signature checker is unavailable (503 signer_unavailable, since v9; v8 said 403 bad_signature); nothing is recorded', 503, 'signer_unavailable');
+  signer.mode = 'ok';
+  assert.equal((await http('GET', `/deals/${J}`, {auth: 'alice.agent'})).status, 404, 'an offer refused with 503 is not recorded');
+  await step('after the outage: the same signed offer sent again unchanged is accepted (201)', 'alice.agent', 'POST', '/deals', {auth: 'alice.agent', body: lastProposal.body, expect: 201});
+  await accept('bob', J, 'flow J: bob accepts: agreed');
+  await deliver('bob', J, 'Citations checked: 12 of 12 resolve.', 'Citation check', 'flow J: bob delivers');
+  signer.mode = 'outage';
+  await step('during an outage the credit-note template is 502 internal error, not 503 (the note message comes from the same signer; OPEN-QUESTIONS OQ-31)', 'alice.agent', 'GET',
+    `/deals/${J}/credit-note-template`, {auth: 'alice.agent', expect: 502});
+  signer.mode = 'ok';
+  await complete('alice', 'bob', J, 'flow J: after the outage alice accepts the delivery and signs the Basis note (cumulative total 29): note_issued');
+  {
+    const h = (await dealView('bob', G)).current.terms_hash, stmt = statements.decline(h, 'Not now.');
+    const good = signText(P.bob.key, stmt), offCurve = '02' + 'ff'.repeat(32) + good.slice(66);   // x >= p: not a curve point
+    signer.mode = 'refuses';
+    await step('error: the signer reports an error for the input ("signer: ...", here emulated by the stand-in): does not verify (403 bad_signature, not 503)', 'bob.agent', 'POST',
+      `/deals/${G}/decline`, {auth: 'bob.agent', expect: 403, body: {terms_hash: h, reason: 'Not now.', signature: offCurve}});
+    signer.mode = 'ok';
+    const ah = (await dealView('bob', G)).current.terms_hash, mark = verifyLog.length;
+    await step('error: an all-zero signature is refused before the signer runs (403 bad_signature; since v9 a signature must start with 02 or 03)', 'bob.agent', 'POST',
+      `/deals/${G}/accept`, {auth: 'bob.agent', expect: 403, body: {terms_hash: ah, signature: '00'.repeat(65)}});
+    assert.equal(verifyLog.length, mark, 'an all-zero signature never reaches the signer');
+  }
+
+  // ---- OQ-33/OQ-34: profile text and names at join ----
+  {
+    const inv = await step('operator creates an invite for the release v9 join checks below', 'operator', 'POST', '/admin/invites', {admin: true, body: {note: 'v9 join checks', max_uses: 7, ttl_days: 1}, expect: 201});
+    redact.set(inv.code, '<invite_code:v9>');
+    const join = (label, expect, body) => step(label, 'anyone', 'POST', '/join', {expect, body: {invite: inv.code, operator: 'x', ...body}});
+    await join('error: a reserved word as display_name (409 display_name_taken, since v9)', 409, {handle: 'dave', display_name: 'Valun'});
+    await join('error: a reserved word with punctuation as display_name ("V.A.L.U.N": 409 display_name_taken, since v9)', 409, {handle: 'dave', display_name: 'V.A.L.U.N'});
+    await join("error: a display_name equal to another participant's display name once normalized (letters and digits, lower case; 409 display_name_taken, since v9)", 409,
+      {handle: 'dave', display_name: 'BOB spec-test'});
+    await join("error: a display_name equal to another participant's handle once normalized (409 display_name_taken, since v9)", 409, {handle: 'dave', display_name: 'Al-ice'});
+    await join("error: a handle equal to another participant's display name once normalized (409 handle_taken, since v9)", 409, {handle: 'alice-spec-test'});
+    await join('error: a reserved word as a handle once normalized ("ad-min": 409 handle_taken, since v9)', 409, {handle: 'ad-min'});
+    await join('error: tag characters in a public profile field (400 invalid_field, since v9)', 400, {handle: 'dave', about: 'helpful\u{E0049}\u{E0047}\u{E004E}\u{E004F}\u{E0052}\u{E0045}'});
+    await join('error: a C1 control in a public profile field (400 invalid_field, since v9)', 400, {handle: 'dave', services: 'briefs\u009B31m'});
+    const joined = [
+      await join('join: an emoji ZWJ sequence and Persian with ZWNJ in profile fields are accepted (201, since v9); the display name has no letters or digits', 201,
+        {handle: 'dave', display_name: '\u{1F642}\u{1F642}', about: 'Research briefs \u{1F469}\u200D\u{1F4BB}', services: '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645'}),
+      await join("join: the same display name as dave's is accepted, because a name with no letters or digits is never compared (201; OPEN-QUESTIONS OQ-34)", 201,
+        {handle: 'erin', display_name: '\u{1F642}\u{1F642}'}),
+      await join("join: a confusable copy of bob's display name (CYRILLIC SMALL LETTER O for Latin o) is accepted (201; OPEN-QUESTIONS OQ-34)", 201,
+        {handle: 'frank', display_name: 'B\u043Eb (spec test)'}),
+      await join('join: a reserved word inside a longer display name ("Valun Support") is accepted: only whole normalized names are compared (201; OPEN-QUESTIONS OQ-34)', 201,
+        {handle: 'grace', display_name: 'Valun Support'}),
+      await join('join: a reserved word in fullwidth letters as display name is accepted: no compatibility normalization (NFKC) before comparing (201; OPEN-QUESTIONS OQ-34)', 201,
+        {handle: 'heidi', display_name: '\uFF36\uFF41\uFF4C\uFF55\uFF4E'}),
+      await join('join: a display name with a precomposed accent (NFC) is accepted (201)', 201, {handle: 'judy', display_name: 'José Briefs'}),
+      await join("join: the same name with a decomposed accent (NFD) is accepted too, although it looks identical: norm() removes the combining mark, so it compares as \"josebriefs\", not \"josébriefs\" (201; OPEN-QUESTIONS OQ-34)", 201,
+        {handle: 'kim', display_name: 'Jose\u0301 Briefs'}),
+    ];
+    joined.forEach((j, i) => redact.set(j.owner_token, `<${['dave', 'erin', 'frank', 'grace', 'heidi', 'judy', 'kim'][i]}.owner>`));
+  }
+
+  // ---- OQ-30: per-IP read budgets, on a second route table over the same Pilot with small budgets. Server-only
+  // behaviour, so these are `probes` (statuses only), not replayed steps. The limiter uses the real clock (60 s window). ----
+  const probes = [];
+  {
+    const cfg = {pilotRateLimitPerMinute: 5, pilotReadLimitPerMinute: 3, pilotIpReadLimitPerMinute: 3};
+    const limitedRoutes = createPilotRoutes({pilot, cfg, adminTokenHash: sha256(ADMIN)});
+    const probe = async (name, description, ip, reqs, expected) => {
+      const results = [];
+      for (const [method, p, opt = {}] of reqs) {
+        const r = await http(method, p, {...opt, via: limitedRoutes, ip});
+        results.push({method, path: '/pilot/v1' + p, authorization: opt.auth ? `Bearer <${opt.auth}>` : opt.bearer ? `Bearer ${opt.bearer}` : null, status: r.status,
+          ...(r.status >= 400 ? {body: r.body} : {})});
+      }
+      assert.deepEqual(results.map(r => r.status), expected, name);
+      probes.push({name, description, config: cfg, client_ip: ip, statuses: expected, requests: results});
+    };
+    await probe('rate-limit/public-reads-without-token', 'Six public reads without an Authorization header, read budget 3 per IP: the fourth and later are 429.', '198.51.100.8',
+      Array(6).fill(['GET', '/ledger']), [200, 200, 200, 429, 429, 429]);
+    await probe('rate-limit/public-reads-made-up-token', 'The same six reads with a made-up bearer token: since v9 they count against the same per-IP budget (in v8 all six were 200; OQ-30).', '198.51.100.9',
+      Array(6).fill(['GET', '/ledger', {bearer: 'vpa_made_up_token'}]), [200, 200, 200, 429, 429, 429]);
+    await probe('rate-limit/two-agents-one-address', 'Two agents behind one address, each well within its own token read budget (3): since v9 every read also counts against the per-IP read budget, so the fourth read is 429 (OQ-30 residual: pilotIpReadLimitPerMinute defaults to the per-token read budget).',
+      '198.51.100.10', [['GET', '/me', {auth: 'alice.agent'}], ['GET', '/me', {auth: 'alice.agent'}], ['GET', '/me', {auth: 'bob.agent'}], ['GET', '/me', {auth: 'bob.agent'}]], [200, 200, 200, 429]);
+  }
+
   let text = JSON.stringify({meta: META('HTTP transcript of a pilot run through the real route table and Pilot class (in memory, fixed clock, stand-in tracker)', {
     base_url: 'http://valun.invalid', placeholders: 'Bearer tokens, invite codes and the admin token are replaced by <name> placeholders; replace them with your own when replaying.',
-    replay: 'check_python.py replays every step with a client_call through the Python client: the client is given the recorded client_reads, its request body must equal the recorded one (signatures aside), and its signatures must verify over the exact bytes in server_verified.'}),
-    participants: Object.fromEntries(Object.entries(P).map(([n, x]) => [n, {participant_id: x.id, current_test_key: x.key?.name ?? null, past_test_keys: x.past_keys || []}])), steps}, null, 1);
+    replay: 'check_python.py replays every step with a client_call through a Python client (the Hermes plugin or the valun package): the client is given the recorded client_reads, its request body must equal the recorded one (signatures aside), and its signatures must verify over the exact bytes in server_verified.',
+    signer_stand_in: 'Steps marked as signer failures switch the stand-in signer to an outage (BasisError "signer timed out", as lib/basis.mjs throws for a timeout, a failed start or no output) or to reporting an error for the input (BasisError "signer: ..."). The real valun_signer is not run.',
+    probes: 'probes: server-only rate-limit behaviour on a second route table with small budgets (statuses only; not replayed by any client).'}),
+    participants: Object.fromEntries(Object.entries(P).map(([n, x]) => [n, {participant_id: x.id, current_test_key: x.key?.name ?? null, past_test_keys: x.past_keys || []}])), steps, probes}, null, 1);
   for (const [value, placeholder] of redact) text = text.split(value).join(placeholder);
   for (const value of redact.keys()) assert.ok(!text.includes(value));
   return text;
@@ -927,9 +1118,13 @@ crypto.randomBytes = realRandomBytes;
 
 write('canonical.json', {meta: META('Canonical JSON and terms_hash = sha256(canonical(terms)), computed by the real canonical()/termsHash()', {
   tiers: {terms: 'valid terms (server_validation shows the real validateTerms() result): every implementation MUST agree',
-    wire: 'terms the server accepts written in non-canonical JSON: the canonical form (not the input text) is hashed', generic: 'values outside the terms domain: informative only'}}), vectors: canon});
+    wire: 'terms the server accepts written in non-canonical JSON: the canonical form (not the input text) is hashed',
+    refused: 'terms the real validateTerms() refuses (server_validation shows how): the canonical form is still defined; informative for clients',
+    generic: 'values outside the terms domain: informative only'}}), vectors: canon});
 write('statements.json', {meta: META('Signed statements: exact UTF-8 text each act signs; signature = Basis Schnorr over those bytes', {
-  tiers: {core: 'MUST agree', edge: 'inputs a client should never produce (informative) or that the server refuses'}}), vectors: st.vectors, negative_signatures: st.negative_signatures});
+  tiers: {core: 'MUST agree', edge: 'inputs a client should never produce (informative)',
+    refused: 'decline/dispute reasons the real server refuses (400 invalid_field) before any signature is checked; server_outcome shows the refusal; a client must not send them'}}),
+  vectors: st.vectors, negative_signatures: st.negative_signatures});
 write('basis-notes.json', {meta: META('Basis credit-note message (80 bytes) and debt key; replica of basis_core signing_message, proven against Basis TV001-TV011'), vectors: notesV.vectors, negative_signatures: notesV.negative_signatures});
 write('basis-signatures.json', {meta: META('Basis Schnorr signature verification vectors (official Basis TV001-TV011)'), vectors: sigs});
 write('terms-validation.json', {meta: META('What the real validateTerms()/propose() accept and refuse at the fixture clock (server-only rules; no Python equivalent)'), vectors: valid});

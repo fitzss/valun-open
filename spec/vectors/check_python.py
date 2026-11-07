@@ -1,70 +1,148 @@
 #!/usr/bin/env python3
-"""Checks every valun-deal/1 vector against the Python client (hermes-plugin-valun), so the server and that client
-provably agree, or the disagreement is reported.
+"""Checks every valun-deal/1 vector against a Python client, so the server and that client provably agree, or the
+disagreement is reported. Two clients can be checked (one per run):
 
-    python spec/vectors/check_python.py            (VALUN_PLUGIN_DIR=<path> overrides ../../../hermes-plugin-valun)
+    python spec/vectors/check_python.py                    the Hermes plugin (default)
+    python spec/vectors/check_python.py --client package   the framework-neutral `valun` package
 
-The plugin's modules are imported by path and never modified (bytecode writing is switched off so not even a
-__pycache__ file is added). No network: replays of the transcript patch urllib.request.urlopen in this process only.
+  --client plugin   hermes-plugin-valun: valun_basis.py, valun_client.py (and tools.py, read as text). Directory:
+                    --plugin-dir, else VALUN_PLUGIN_DIR, else ../../../hermes-plugin-valun (next to this repository).
+  --client package  the `valun` package: valun/basis.py, valun/client.py (and agent.py, read as text), imported as the
+                    package `valun` from --package-src, else VALUN_PACKAGE_SRC, else python/src of this repository
+                    (so a fresh checkout of valun-open works with no install; an installed copy is never used).
+  VALUN_CLIENT=plugin|package selects the client when --client is not given.
+
+The client's modules are imported and never modified (bytecode writing is switched off so not even a __pycache__ file
+is added). Its tool layer (tools.py / agent.py) is only read as text. No network: replays of the transcript patch
+urllib.request.urlopen in this process only. Standard library only; Python 3.10 or later.
 
 What is checked
-- canonical.json        valun_client.canonical / terms_hash on json.loads(input_json)
-- statements.json       valun_client.statement(...) rebuilds each statement; valun_basis.verify checks each signature
-                        (and rejects each negative); for decline/dispute every form the real server accepts (the reason as
-                        sent and, since v8 as an alternative, its cleaned form), and whether the statement the plugin's
-                        Client.decline / Client.dispute would sign for that reason is one of them
-- basis-notes.json      valun_basis.debt_key / note_message, signatures where given
-- basis-signatures.json valun_basis.verify on Basis's official TV001-TV011
-- terms-validation.json terms_hash only (validation is server-only: the Python client has no validator)
+- canonical.json        canonical / terms_hash on json.loads(input_json)
+- statements.json       statement(...) rebuilds each statement; basis.verify checks each signature (and rejects each
+                        negative); for decline/dispute every form the real server accepts (the reason as sent and, since
+                        v8 as an alternative, its cleaned form), and whether the statement Client.decline /
+                        Client.dispute would sign for that reason is one of them. Reasons the server refuses (tier
+                        `refused`, since v9) are server-only and reported as not applicable.
+- basis-notes.json      debt_key / note_message, signatures where given
+- basis-signatures.json verify on Basis's official TV001-TV011
+- terms-validation.json terms_hash only (validation is server-only: neither Python client has a terms validator)
 - transcript.json       every signature the server verified; every terms_hash in every response; and every step with a
                         client_call is REPLAYED through the real Client method with the recorded responses: its request
                         body must equal the recorded one (signatures aside) and its signatures must verify over the exact
                         bytes the server verified (for decline/dispute: over one of the forms the server accepts for the
-                        body the client sent, recorded by a dry run of the real code). Variants (tools.py paths that send
-                        a different reason string) are replayed the same way. A step with expect_error must make the
-                        client raise that error code.
+                        body the client sent, recorded by a dry run of the real code). Variants (agent-tool paths that
+                        send a different reason string) are replayed the same way, after checking that the client's tool
+                        layer still calls Client.decline / Client.dispute the way the variant says. A step with
+                        expect_error must make the client raise that error code. `probes` are server-only.
 
 Outcomes: agree | differ | python_error | n/a. Exit status 1 when any `core`/`terms`/`client_path`/`replay`
-check does not agree; `wire`, `refused`, `edge` and `generic` results are informative and never fail the run.
+check does not agree; `wire`, `refused`, `edge` and `generic` results are informative and never fail the run. Exit
+status 2 when the client cannot be found or imported.
 """
 import sys
 
-sys.dont_write_bytecode = True  # never add files to the plugin directory
+sys.dont_write_bytecode = True  # never add files to the client's directory
 
+import argparse
 import copy
 import hashlib
+import importlib
 import importlib.util
+import inspect
 import io
 import json
 import os
+import re
 import types
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PLUGIN = os.path.abspath(os.environ.get('VALUN_PLUGIN_DIR') or os.path.join(HERE, '..', '..', '..', 'hermes-plugin-valun'))
+REPO = os.path.abspath(os.path.join(HERE, '..', '..'))      # the valun-open checkout
 BASE = 'http://valun.invalid'
 try:
     sys.stdout.reconfigure(errors='backslashreplace')
 except Exception:
     pass
 
-
-def load(name):
-    spec = importlib.util.spec_from_file_location(name, os.path.join(PLUGIN, name + '.py'))
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+vb = vc = None        # the client's basis and client modules, set by load_client()
+CLIENT = {}           # name, label, tool_file, refs
 
 
-vb = load('valun_basis')
-vc = load('valun_client')  # its `from . import valun_basis` fails outside the package; it then uses sys.modules['valun_basis']
-assert vc.vb is vb
+def fail(message):
+    """The client cannot be found or imported: exit status 2 (status 1 means a disagreement)."""
+    print(f'error: {message}', file=sys.stderr)
+    raise SystemExit(2)
+
+
+def load_plugin(plugin_dir):
+    plugin_dir = os.path.abspath(plugin_dir)
+    for f in ('valun_basis.py', 'valun_client.py'):
+        if not os.path.isfile(os.path.join(plugin_dir, f)):
+            fail(f'{f} not found in {plugin_dir} (set VALUN_PLUGIN_DIR or --plugin-dir to a checkout of hermes-plugin-valun)')
+
+    def load(name):
+        spec = importlib.util.spec_from_file_location(name, os.path.join(plugin_dir, name + '.py'))
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+
+    b = load('valun_basis')
+    c = load('valun_client')  # its `from . import valun_basis` fails outside the package; it then uses sys.modules['valun_basis']
+    assert c.vb is b
+    return b, c, os.path.join(plugin_dir, 'tools.py'), f'the Hermes plugin (hermes-plugin-valun) at {plugin_dir}'
+
+
+def load_package(src):
+    src = os.path.abspath(src)
+    if not os.path.isfile(os.path.join(src, 'valun', 'client.py')):
+        fail(f'valun/client.py not found in {src} (set VALUN_PACKAGE_SRC or --package-src to the python/src folder of a valun-open checkout)')
+    sys.path.insert(0, src)
+    for m in [k for k in sys.modules if k == 'valun' or k.startswith('valun.')]:
+        del sys.modules[m]
+    pkg = importlib.import_module('valun')
+    b = importlib.import_module('valun.basis')
+    c = importlib.import_module('valun.client')
+    for m in (pkg, b, c):   # never check an installed copy by accident
+        if not os.path.abspath(m.__file__).startswith(src + os.sep):
+            fail(f'{m.__name__} was imported from {m.__file__}, not from {src}')
+    assert c.vb is b
+    return b, c, os.path.join(src, 'valun', 'agent.py'), f'the valun package {getattr(pkg, "__version__", "?")} at {src}'
+
+
+def source_ref(func, needle):
+    """file:line of the first line of `func` containing `needle` (for labels; computed, so it never goes stale)."""
+    lines, start = inspect.getsourcelines(func)
+    name = os.path.basename(inspect.getsourcefile(func))
+    for i, line in enumerate(lines):
+        if needle in line:
+            return f'{name}:{start + i}'
+    return f'{name}:{start}'
+
+
+def tool_calls(method):
+    """Lines of the client's agent-tool layer (tools.py / agent.py, read as text) that call Client.<method>."""
+    path = CLIENT['tool_file']
+    if not os.path.isfile(path):
+        return []
+    with open(path, encoding='utf-8') as f:
+        return [(i + 1, line.strip()) for i, line in enumerate(f.read().split('\n')) if re.search(r'\bc\.' + method + r'\(', line)]
+
+
+def load_client(args):
+    global vb, vc
+    if args.client == 'plugin':
+        vb, vc, tool_file, label = load_plugin(args.plugin_dir)
+    else:
+        vb, vc, tool_file, label = load_package(args.package_src)
+    CLIENT.update(name=args.client, label=label, tool_file=tool_file,
+                  refs={'decline': source_ref(vc.Client.decline, "statement('decline'"), 'dispute': source_ref(vc.Client.dispute, "statement('dispute'")})
+
 
 RESULTS = []          # (file, name, check, tier, outcome, detail)
-FAILING_TIERS = {'core', 'terms', 'client_path', 'replay'}  # 'wire': the Python client refuses float-written numbers (a safe refusal)
+FAILING_TIERS = {'core', 'terms', 'client_path', 'replay'}  # 'wire': the Python clients refuse float-written numbers (a safe refusal)
 
 
 def record(file, name, check, tier, outcome, detail=''):
@@ -141,7 +219,8 @@ def check_statements():
     for v in data['vectors']:
         tier, name = v['tier'], v['name']
         if v.get('server_outcome', 'accepted') != 'accepted':
-            record('statements.json', name, 'server refuses the input', 'edge', 'n/a', v['server_outcome'].get('error', ''))
+            o = v['server_outcome']
+            record('statements.json', name, 'server refuses the input (server-only rule)', tier, 'n/a', f'{o.get("status")} {o.get("error", "")}: {o.get("message", "")}')
             continue
         s, err = attempt(lambda: vc.statement(v['kind'], *statement_parts(v)))
         if err:
@@ -162,14 +241,20 @@ def check_statements():
                 ok, err = attempt(lambda: verify_hex(alt['signature'], bytes.fromhex(alt['statement_utf8_hex']), v['pubkey']))
                 record('statements.json', name, f'accepted alternative ({alt["form"]}) signature', tier,
                        'python_error' if err else ('agree' if ok else 'differ'), err or '')
-            # What the plugin's Client.decline / Client.dispute signs for this reason (valun_client.py:289 / 347: the reason
-            # exactly as given, which is also what it sends). It must be one of the forms the server accepts.
-            line = 'valun_client.py:289' if v['kind'] == 'decline' else 'valun_client.py:347'
-            c, err = attempt(lambda: vc.statement(v['kind'], *pre, vc.sha256_hex(i['reason'])))
+            # The client's REAL Client.decline / Client.dispute, run for this reason against a stub server: it must send the
+            # reason unchanged, and its signature must verify over one of the forms the server accepts.
+            line = CLIENT['refs'][v['kind']]
             accepted = [v['statement']] + [a['statement'] for a in v.get('accepted_alternatives', [])]
             ctier = 'edge' if tier == 'edge' else 'client_path'
-            record('statements.json', name, f'Client.{v["kind"]} signs a form the server accepts ({line})', ctier,
-                   'python_error' if err else ('agree' if c in accepted else 'differ'), err or ('' if c in accepted else f'client would sign {c!r}'))
+            body, err = attempt(lambda: client_reason_request(v['kind'], i, data['meta']['test_keys'][v['signer']]))
+            problems = []
+            if not err:
+                if body.get('reason') != i['reason']:
+                    problems.append(f'sent reason {body.get("reason")!r}, not the reason it was given')
+                if not any(verify_hex(body.get('signature', ''), s.encode('utf-8'), v['pubkey']) for s in accepted):
+                    problems.append('its signature verifies over none of the statements the server accepts')
+            record('statements.json', name, f'Client.{v["kind"]} ({line}) sends the reason unchanged and signs a form the server accepts', ctier,
+                   'python_error' if err else ('differ' if problems else 'agree'), err or ' | '.join(problems))
     for v in data['negative_signatures']:
         ok, err = attempt(lambda: verify_hex(v['signature'], bytes.fromhex(v['statement_utf8_hex']), v['pubkey']))
         record('statements.json', v['name'], 'rejected by verify', v['tier'], 'python_error' if err else ('agree' if ok is False else 'differ'), err or v['why'])
@@ -269,6 +354,37 @@ class FakeStore:
         self._s, self._t = secret_hex, token
 
 
+def client_reason_request(kind, inputs, key):
+    """Runs the client's real Client.decline / Client.dispute for one reason against a stub server and returns the body
+    it POSTs. Only the reason handling is under test here: for a dispute the agreement check is bypassed (terms_hash is
+    pinned to the vector's), because full disputes, agreement check included, are replayed from transcript.json."""
+    th, deal_id = inputs['terms_hash'], 'vd_0000000000000000'
+    deal = {'id': deal_id, 'current': {'terms_hash': th}, 'agreement': {'terms_hash': th}, 'delivery': {'sha256': inputs.get('deliverable_sha256')}}
+    captured = {}
+
+    def urlopen(req, timeout=None):
+        if req.get_method() == 'GET' and req.full_url == f'{BASE}/pilot/v1/deals/{deal_id}':
+            return Resp(200, deal)
+        if req.get_method() == 'POST' and req.full_url == f'{BASE}/pilot/v1/deals/{deal_id}/{kind}':
+            captured['body'] = json.loads(req.data.decode('utf-8'))
+            return Resp(200, {'id': deal_id, 'status': 'declined' if kind == 'decline' else 'disputed'})
+        raise AssertionError(f'unexpected request {req.get_method()} {req.full_url}')
+
+    secret = test_key(key['label'])
+    saved = (urllib.request.urlopen, vc.terms_hash)
+    try:
+        urllib.request.urlopen = urlopen
+        vc.terms_hash = lambda _terms: th
+        client = vc.Client(FakeStore({'server': BASE, 'participant_id': 'vp_000000000000', 'pubkey': key['pubkey'], 'issued': {}}, secret.hex(), 'stub-token'))
+        client.verified_agreement = lambda _d: {}
+        getattr(client, kind)(deal_id, inputs['reason'])
+    finally:
+        urllib.request.urlopen, vc.terms_hash = saved
+    if 'body' not in captured:
+        raise AssertionError(f'Client.{kind} sent no request')
+    return captured['body']
+
+
 def strip_sigs(body):
     b = copy.deepcopy(body)
     if isinstance(b, dict):
@@ -351,7 +467,22 @@ def check_transcript():
         if not step.get('client_call'):
             continue
         for variant in [None] + step['client_call'].get('variants', []):
-            label = 'replay Client.%s%s' % (step['client_call']['method'], f' via {variant["name"]}' if variant else '')
+            label = 'replay Client.%s' % step['client_call']['method']
+            if variant:
+                # The variant describes an agent tool (e.g. valun_respond strips the reason before Client.decline). Check
+                # that this client's tool layer still makes exactly that call, then replay the reason it would send.
+                method = variant.get('client_method') or step['client_call']['method']
+                where, calls = os.path.basename(CLIENT['tool_file']), tool_calls(method)
+                if len(calls) != 1:
+                    record('transcript.json', sname, f'{variant["name"]}: one call of Client.{method} in {where}', 'client_path', 'differ',
+                           f'found {len(calls)}: ' + ' | '.join(f'{where}:{n}: {t}' for n, t in calls))
+                else:
+                    n, text = calls[0]
+                    ok = ('.strip()' in text) == bool(variant.get('strip'))
+                    record('transcript.json', sname, f'{variant["name"]} sends the reason {"stripped" if variant.get("strip") else "unchanged"} ({where}:{n})',
+                           'client_path', 'agree' if ok else 'differ', '' if ok else f'{where}:{n}: {text}')
+                    where = f'{where}:{n}'
+                label += f' via {variant["name"]} ({where})'
             tier = 'client_path' if variant else 'replay'
             out, err = attempt(lambda: replay(step, meta, participants, variant))
             if err:
@@ -401,8 +532,24 @@ def check_transcript():
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-def main():
-    print(f'valun-deal/1 vectors vs the Python client at {PLUGIN}')
+def parse_args(argv=None):
+    p = argparse.ArgumentParser(description='Check the valun-deal/1 conformance vectors against a Python client.')
+    p.add_argument('--client', choices=('plugin', 'package'), default=os.environ.get('VALUN_CLIENT') or 'plugin',
+                   help='plugin = hermes-plugin-valun (default), package = the valun package (default: env VALUN_CLIENT, else plugin)')
+    p.add_argument('--plugin-dir', default=os.environ.get('VALUN_PLUGIN_DIR') or os.path.join(HERE, '..', '..', '..', 'hermes-plugin-valun'),
+                   help='checkout of hermes-plugin-valun (default: env VALUN_PLUGIN_DIR, else ../../../hermes-plugin-valun)')
+    p.add_argument('--package-src', default=os.environ.get('VALUN_PACKAGE_SRC') or os.path.join(REPO, 'python', 'src'),
+                   help='folder that contains the valun package (default: env VALUN_PACKAGE_SRC, else python/src of this repository)')
+    a = p.parse_args(argv)
+    if a.client not in ('plugin', 'package'):
+        p.error(f'VALUN_CLIENT must be plugin or package, not {a.client!r}')
+    return a
+
+
+def main(argv=None):
+    load_client(parse_args(argv))
+    release = vec('canonical.json')['meta'].get('server_release', '?')
+    print(f'valun-deal/1 vectors (server release {release}) vs {CLIENT["label"]}')
     for f in (check_canonical, check_statements, check_notes, check_signatures, check_validation, check_transcript):
         f()
     by = {}
@@ -426,7 +573,7 @@ def main():
             print(f'  [{tier}/{o}] {file} {n} :: {c}' + (f'\n      {d[:400]}' if d else ''))
     total = len(RESULTS)
     agree = sum(1 for r in RESULTS if r[4] == 'agree')
-    print(f'\n{total} checks: {agree} agree, {len(failing)} disagreements in failing tiers, {len(informative)} informative differences, '
+    print(f'\n[{CLIENT["name"]}] {total} checks: {agree} agree, {len(failing)} disagreements in failing tiers, {len(informative)} informative differences, '
           f'{sum(1 for r in RESULTS if r[4] == "n/a")} not applicable.')
     return 1 if failing else 0
 

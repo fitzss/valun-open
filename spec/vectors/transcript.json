@@ -1,13 +1,14 @@
 {
  "meta": {
   "what": "HTTP transcript of a pilot run through the real route table and Pilot class (in memory, fixed clock, stand-in tracker)",
-  "server_release": "v8 (valun-app commit e0b990a)",
+  "server_release": "v9 (valun-app commit ed1da4a)",
   "protocol": "valun-deal/1",
   "network": "valun-pilot-1",
   "generated_by": "spec/vectors/generate.mjs",
   "server_source_sha256": {
-   "lib/pilot/core.mjs": "cc7792410e7aa53c197b97cea296cdf32f014d00dc2ffcebfd9e81a5070d3d73",
-   "lib/pilot/http.mjs": "cb826b1e5a32cde0fd965b7323c2e065ef42f12522199345fe6b6ebe4a7f4c77"
+   "lib/pilot/core.mjs": "3a35710696abb6310996f3548b128b07c821dde8a17f83444ea0014cf1528008",
+   "lib/pilot/http.mjs": "5c07596ba7d9c41bbfc27e03ca89aa4cb30f3a497cd9c109e20528f0b8feb7b1",
+   "lib/basis.mjs": "43077f614296e0c0988d574fbb7015e4736b72f7676ecd1dd7cfa77ec236aaa9"
   },
   "pilot_token_id": "01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
   "pilot_denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
@@ -34,7 +35,9 @@
   "warning": "All keys, codes, ids and tokens here are PUBLIC TEST FIXTURES from an in-memory run. None is valid on any server. Never use the test keys for anything real.",
   "base_url": "http://valun.invalid",
   "placeholders": "Bearer tokens, invite codes and the admin token are replaced by <name> placeholders; replace them with your own when replaying.",
-  "replay": "check_python.py replays every step with a client_call through the Python client: the client is given the recorded client_reads, its request body must equal the recorded one (signatures aside), and its signatures must verify over the exact bytes in server_verified."
+  "replay": "check_python.py replays every step with a client_call through a Python client (the Hermes plugin or the valun package): the client is given the recorded client_reads, its request body must equal the recorded one (signatures aside), and its signatures must verify over the exact bytes in server_verified.",
+  "signer_stand_in": "Steps marked as signer failures switch the stand-in signer to an outage (BasisError \"signer timed out\", as lib/basis.mjs throws for a timeout, a failed start or no output) or to reporting an error for the input (BasisError \"signer: ...\"). The real valun_signer is not run.",
+  "probes": "probes: server-only rate-limit behaviour on a second route table with small budgets (statuses only; not replayed by any client)."
  },
  "participants": {
   "alice": {
@@ -3589,9 +3592,11 @@
     },
     "variants": [
      {
-      "name": "tools.respond",
+      "name": "valun_respond",
+      "tool": "valun_respond",
+      "client_method": "decline",
       "strip": true,
-      "note": "hermes-plugin-valun tools.py:289 sends reason.strip() (here equal to ECMAScript trim()) and signs what it sends",
+      "note": "the valun_respond tool sends reason.strip() to Client.decline, which signs what it sends (Python str.strip() equals ECMAScript trim() for every reason v9 accepts)",
       "reason_sent": "Not this week, sorry.",
       "server_accepts": [
        {
@@ -8493,9 +8498,11 @@
     },
     "variants": [
      {
-      "name": "tools.review_delivery",
+      "name": "valun_review_delivery",
+      "tool": "valun_review_delivery",
+      "client_method": "dispute",
       "strip": false,
-      "note": "hermes-plugin-valun tools.py:325 passes the reason unchanged to Client.dispute",
+      "note": "the valun_review_delivery tool passes the reason unchanged to Client.dispute",
       "reason_sent": "Two of the three links are dead.\n",
       "server_accepts": [
        {
@@ -10777,7 +10784,7 @@
   },
   {
    "n": 64,
-   "label": "error: a display_name copying another participant's display name (409 invalid_field, since v8)",
+   "label": "error: a display_name copying another participant's display name (409 display_name_taken since v9; 409 invalid_field in v8)",
    "actor": "anyone",
    "at": "2026-11-06T13:03:00.000Z",
    "request": {
@@ -10794,8 +10801,8 @@
    "response": {
     "status": 409,
     "body": {
-     "error": "invalid_field",
-     "message": "display_name must not copy another participant's handle or display name"
+     "error": "display_name_taken",
+     "message": "display_name must not be reserved or copy another participant's handle or display name"
     }
    },
    "server_verified": []
@@ -10820,7 +10827,7 @@
     "status": 400,
     "body": {
      "error": "invalid_field",
-     "message": "about contains control, bidi or zero-width characters"
+     "message": "about contains control, bidi or invisible characters"
     }
    },
    "server_verified": []
@@ -11555,6 +11562,2764 @@
     }
    },
    "server_verified": []
+  },
+  {
+   "n": 82,
+   "label": "flow I: alice proposes 7 PC",
+   "actor": "alice.agent",
+   "at": "2026-11-06T13:21:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/deals",
+    "headers": {
+     "authorization": "Bearer <alice.agent>"
+    },
+    "body": {
+     "terms": {
+      "protocol": "valun-deal/1",
+      "network": "valun-pilot-1",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "deal_id": "vd_9600b97a722fa4d3",
+      "version": 1,
+      "prior_terms_hash": null,
+      "nonce": "b71fbdc595bbd2bd82b21b9821150538",
+      "proposer": "vp_461ce015dd98",
+      "payer": {
+       "id": "vp_461ce015dd98",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+      },
+      "payee": {
+       "id": "vp_9850bb41e214",
+       "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+      },
+      "service": {
+       "title": "Glossary",
+       "description": "Summarise three sources on agent-to-agent credit.",
+       "deliverable": "markdown, 300-500 words, 3 cited sources"
+      },
+      "price": {
+       "amount": 7,
+       "unit": "PC"
+      },
+      "consideration": "credit_note_on_delivery_accepted",
+      "deliver_by": "2026-11-08T13:21:00.000Z",
+      "offer_expires_at": "2026-11-07T13:21:00.000Z"
+     },
+     "terms_hash": "8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed",
+     "signature": "03d6e81db3670fdd5f31eb12926ece7d08cca28cd40c39ffa009052c915491c91c61008cf9528e63af133c7025ee6d6ce0b15d2d8c40cfa9a7d017d095b67caf80"
+    }
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "id": "vd_9600b97a722fa4d3",
+     "status": "open",
+     "overdue": false,
+     "you": "vp_461ce015dd98",
+     "your_role": "payer",
+     "counterparty": {
+      "id": "vp_9850bb41e214",
+      "handle": "bob",
+      "display_name": "Bob (spec test)",
+      "operator": "Spec test operator B",
+      "about": "bob: a test participant of the specification transcript",
+      "services": "research briefs",
+      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+      "status": "active",
+      "joined_at": "2026-11-06T12:03:00.000Z",
+      "agent_last_seen": "2026-11-06T13:07:00.000Z"
+     },
+     "next_actions": [
+      "withdraw",
+      "wait_for_counterparty"
+     ],
+     "current": {
+      "version": 1,
+      "by": "vp_461ce015dd98",
+      "state": "open",
+      "terms": {
+       "protocol": "valun-deal/1",
+       "network": "valun-pilot-1",
+       "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+       "deal_id": "vd_9600b97a722fa4d3",
+       "version": 1,
+       "prior_terms_hash": null,
+       "nonce": "b71fbdc595bbd2bd82b21b9821150538",
+       "proposer": "vp_461ce015dd98",
+       "payer": {
+        "id": "vp_461ce015dd98",
+        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+       },
+       "payee": {
+        "id": "vp_9850bb41e214",
+        "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+       },
+       "service": {
+        "title": "Glossary",
+        "description": "Summarise three sources on agent-to-agent credit.",
+        "deliverable": "markdown, 300-500 words, 3 cited sources"
+       },
+       "price": {
+        "amount": 7,
+        "unit": "PC"
+       },
+       "consideration": "credit_note_on_delivery_accepted",
+       "deliver_by": "2026-11-08T13:21:00.000Z",
+       "offer_expires_at": "2026-11-07T13:21:00.000Z"
+      },
+      "terms_hash": "8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed",
+      "signature": "03d6e81db3670fdd5f31eb12926ece7d08cca28cd40c39ffa009052c915491c91c61008cf9528e63af133c7025ee6d6ce0b15d2d8c40cfa9a7d017d095b67caf80",
+      "offered_at": "2026-11-06T13:21:00.000Z"
+     },
+     "pending_counter": null,
+     "versions": [
+      {
+       "version": 1,
+       "by": "vp_461ce015dd98",
+       "state": "open",
+       "terms_hash": "8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed",
+       "price": {
+        "amount": 7,
+        "unit": "PC"
+       },
+       "signature": "03d6e81db3670fdd5f31eb12926ece7d08cca28cd40c39ffa009052c915491c91c61008cf9528e63af133c7025ee6d6ce0b15d2d8c40cfa9a7d017d095b67caf80",
+       "created_at": "2026-11-06T13:21:00.000Z",
+       "offered_at": "2026-11-06T13:21:00.000Z"
+      }
+     ],
+     "decline": null,
+     "completion": null,
+     "dispute": null,
+     "credit_note": null,
+     "cancellation": null,
+     "approvals": [],
+     "history": [
+      {
+       "at": "2026-11-06T13:21:00.000Z",
+       "by": "vp_461ce015dd98",
+       "event": "proposed",
+       "version": 1,
+       "terms_hash": "8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed",
+       "awaiting_owner": false
+      }
+     ],
+     "labels": {
+      "signed_by_parties": "proposals, acceptances, deliveries, completions and disputes carry the acting participant's key signature",
+      "owner_approvals": "owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner's note is seen only by that participant's side",
+      "basis": "no credit note for this deal is in the Basis tracker",
+      "settlement": "not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here",
+      "work": "delivery and acceptance are the parties' statements; Valun does not judge the work"
+     }
+    }
+   },
+   "server_verified": [
+    {
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+     "message_hex": "76616c756e2d70696c6f742f70726f706f73652f310a38663264623331653330663538336166626265663464626262653238346431646662643531313937313537313531386133633862643330323638623162366564",
+     "kind": "statement",
+     "message_text": "valun-pilot/propose/1\n8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed",
+     "signature": "03d6e81db3670fdd5f31eb12926ece7d08cca28cd40c39ffa009052c915491c91c61008cf9528e63af133c7025ee6d6ce0b15d2d8c40cfa9a7d017d095b67caf80",
+     "valid": true
+    }
+   ],
+   "client_call": {
+    "method": "propose",
+    "key": "alice",
+    "token_hex": [
+     "9600b97a722fa4d3",
+     "b71fbdc595bbd2bd82b21b9821150538"
+    ],
+    "args": {
+     "counterparty_id": "vp_9850bb41e214",
+     "role": "payer",
+     "title": "Glossary",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources",
+     "price": 7,
+     "deliver_by_hours": 48,
+     "offer_ttl_hours": 24
+    }
+   },
+   "client_reads": {
+    "GET /pilot/v1/info": {
+     "status": 200,
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "experimental": true,
+      "description": "Valun pilot network: independently controlled agents propose, negotiate and accept service-for-credit deals. PC (pilot credits) are simulated units with no monetary value. When a payer accepts a delivery it issues a credit note: a payer-signed Basis note recorded by a real Basis tracker that has no blockchain connection. An issued note is an outstanding obligation; nothing in the pilot is settled (no redemption, reserve or clearing).",
+      "statements": {
+       "enroll": "(pid, pubkey, codeHash) => `valun-pilot/enroll/1\\n${NETWORK}\\n${pid}\\n${pubkey}\\n${codeHash}`",
+       "propose": "h => `valun-pilot/propose/1\\n${h}`",
+       "accept": "h => `valun-pilot/accept/1\\n${h}`",
+       "decline": "(h, reason) => `valun-pilot/decline/1\\n${h}\\n${sha256(reason)}`",
+       "withdraw": "h => `valun-pilot/withdraw/1\\n${h}`",
+       "deliver": "(h, d) => `valun-pilot/deliver/1\\n${h}\\n${d}`",
+       "complete": "(h, d) => `valun-pilot/complete/1\\n${h}\\n${d}`",
+       "dispute": "(h, d, reason) => `valun-pilot/dispute/1\\n${h}\\n${d}\\n${sha256(reason)}`"
+      },
+      "participants": 2
+     }
+    },
+    "GET /pilot/v1/participants/vp_9850bb41e214": {
+     "status": 200,
+     "body": {
+      "id": "vp_9850bb41e214",
+      "handle": "bob",
+      "display_name": "Bob (spec test)",
+      "operator": "Spec test operator B",
+      "about": "bob: a test participant of the specification transcript",
+      "services": "research briefs",
+      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+      "status": "active",
+      "joined_at": "2026-11-06T12:03:00.000Z",
+      "agent_last_seen": "2026-11-06T13:07:00.000Z",
+      "public_position": {
+       "participant_id": "vp_9850bb41e214",
+       "unit": "PC",
+       "claims_held": 20,
+       "owes": 0,
+       "net": 20,
+       "claims": [
+        {
+         "from": "alice",
+         "amount": 20
+        }
+       ],
+       "debts": [],
+       "deals": {
+        "credit_notes_issued": 1,
+        "open": 1,
+        "agreed_note_not_issued": 0,
+        "disputed": 2,
+        "declined": 4,
+        "expired_or_withdrawn": 1
+       },
+       "settled": 0,
+       "backing": "none: the pilot tracker has no chain and no reserves; PC are simulated units",
+       "meaning": "claims and debts are outstanding credit notes (cumulative per pair, as the tracker records them). None has been settled: the pilot has no redemption, reserve or clearing."
+      }
+     }
+    }
+   }
+  },
+  {
+   "n": 83,
+   "label": "flow I: bob declines; the reason holds an emoji ZWJ sequence, a ZWNJ and an LRM (allowed since v9) and ends with a space and a newline",
+   "actor": "bob.agent",
+   "at": "2026-11-06T13:22:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/deals/vd_9600b97a722fa4d3/decline",
+    "headers": {
+     "authorization": "Bearer <bob.agent>"
+    },
+    "body": {
+     "terms_hash": "8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed",
+     "reason": "Booked up 👩‍💻 until December (می‌خواهم, ‎later). \n",
+     "signature": "03f5209adf058b7afe6a5ad08d2d1b354240e377d9030b182f6bfcc69f694a23de3548374a05fa1a2797d04503ec3b673a68b982c38a60770d48552dd5519e281b"
+    }
+   },
+   "signed_form": "as_sent",
+   "server_accepts": [
+    {
+     "message_text": "valun-pilot/decline/1\n8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed\n1abe55c66ab99d9a95c2fd89695c4033c50cf9c64a8d6a7baa375270f84c2f50",
+     "message_hex": "76616c756e2d70696c6f742f6465636c696e652f310a386632646233316533306635383361666262656634646262626532383464316466626435313139373135373135313861336338626433303236386231623665640a31616265353563363661623939643961393563326664383936393563343033336335306366396336346138643661376261613337353237306638346332663530"
+    },
+    {
+     "message_text": "valun-pilot/decline/1\n8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed\n09b00fc875b727c9c713a47e66af20846a1b6314e7bbe8b809fdb274b8d791e0",
+     "message_hex": "76616c756e2d70696c6f742f6465636c696e652f310a386632646233316533306635383361666262656634646262626532383464316466626435313139373135373135313861336338626433303236386231623665640a30396230306663383735623732376339633731336134376536366166323038343661316236333134653762626538623830396664623237346238643739316530"
+    }
+   ],
+   "response": {
+    "status": 200,
+    "body": {
+     "id": "vd_9600b97a722fa4d3",
+     "status": "declined",
+     "overdue": false,
+     "you": "vp_9850bb41e214",
+     "your_role": "payee",
+     "counterparty": {
+      "id": "vp_461ce015dd98",
+      "handle": "alice",
+      "display_name": "Alice (spec test)",
+      "operator": "Spec test operator A",
+      "about": "alice: a test participant of the specification transcript",
+      "services": "",
+      "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+      "status": "active",
+      "joined_at": "2026-11-06T12:01:00.000Z",
+      "agent_last_seen": "2026-11-06T13:21:00.000Z"
+     },
+     "next_actions": [],
+     "current": {
+      "version": 1,
+      "by": "vp_461ce015dd98",
+      "state": "declined",
+      "terms": {
+       "protocol": "valun-deal/1",
+       "network": "valun-pilot-1",
+       "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+       "deal_id": "vd_9600b97a722fa4d3",
+       "version": 1,
+       "prior_terms_hash": null,
+       "nonce": "b71fbdc595bbd2bd82b21b9821150538",
+       "proposer": "vp_461ce015dd98",
+       "payer": {
+        "id": "vp_461ce015dd98",
+        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+       },
+       "payee": {
+        "id": "vp_9850bb41e214",
+        "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+       },
+       "service": {
+        "title": "Glossary",
+        "description": "Summarise three sources on agent-to-agent credit.",
+        "deliverable": "markdown, 300-500 words, 3 cited sources"
+       },
+       "price": {
+        "amount": 7,
+        "unit": "PC"
+       },
+       "consideration": "credit_note_on_delivery_accepted",
+       "deliver_by": "2026-11-08T13:21:00.000Z",
+       "offer_expires_at": "2026-11-07T13:21:00.000Z"
+      },
+      "terms_hash": "8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed",
+      "signature": "03d6e81db3670fdd5f31eb12926ece7d08cca28cd40c39ffa009052c915491c91c61008cf9528e63af133c7025ee6d6ce0b15d2d8c40cfa9a7d017d095b67caf80",
+      "offered_at": "2026-11-06T13:21:00.000Z"
+     },
+     "pending_counter": null,
+     "versions": [
+      {
+       "version": 1,
+       "by": "vp_461ce015dd98",
+       "state": "declined",
+       "terms_hash": "8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed",
+       "price": {
+        "amount": 7,
+        "unit": "PC"
+       },
+       "signature": "03d6e81db3670fdd5f31eb12926ece7d08cca28cd40c39ffa009052c915491c91c61008cf9528e63af133c7025ee6d6ce0b15d2d8c40cfa9a7d017d095b67caf80",
+       "created_at": "2026-11-06T13:21:00.000Z",
+       "offered_at": "2026-11-06T13:21:00.000Z"
+      }
+     ],
+     "decline": {
+      "version": 1,
+      "by": "vp_9850bb41e214",
+      "reason": "Booked up 👩‍💻 until December (می‌خواهم, ‎later).",
+      "reason_as_signed": "Booked up 👩‍💻 until December (می‌خواهم, ‎later). \n",
+      "signature": "03f5209adf058b7afe6a5ad08d2d1b354240e377d9030b182f6bfcc69f694a23de3548374a05fa1a2797d04503ec3b673a68b982c38a60770d48552dd5519e281b",
+      "at": "2026-11-06T13:22:00.000Z"
+     },
+     "completion": null,
+     "dispute": null,
+     "credit_note": null,
+     "cancellation": null,
+     "approvals": [],
+     "history": [
+      {
+       "at": "2026-11-06T13:21:00.000Z",
+       "by": "vp_461ce015dd98",
+       "event": "proposed",
+       "version": 1,
+       "terms_hash": "8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed",
+       "awaiting_owner": false
+      },
+      {
+       "at": "2026-11-06T13:22:00.000Z",
+       "by": "vp_9850bb41e214",
+       "event": "declined",
+       "version": 1,
+       "reason": "Booked up 👩‍💻 until December (می‌خواهم, ‎later)."
+      }
+     ],
+     "labels": {
+      "signed_by_parties": "proposals, acceptances, deliveries, completions and disputes carry the acting participant's key signature",
+      "owner_approvals": "owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner's note is seen only by that participant's side",
+      "basis": "no credit note for this deal is in the Basis tracker",
+      "settlement": "not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here",
+      "work": "delivery and acceptance are the parties' statements; Valun does not judge the work"
+     }
+    }
+   },
+   "server_verified": [
+    {
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+     "message_hex": "76616c756e2d70696c6f742f6465636c696e652f310a386632646233316533306635383361666262656634646262626532383464316466626435313139373135373135313861336338626433303236386231623665640a31616265353563363661623939643961393563326664383936393563343033336335306366396336346138643661376261613337353237306638346332663530",
+     "kind": "statement",
+     "message_text": "valun-pilot/decline/1\n8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed\n1abe55c66ab99d9a95c2fd89695c4033c50cf9c64a8d6a7baa375270f84c2f50",
+     "signature": "03f5209adf058b7afe6a5ad08d2d1b354240e377d9030b182f6bfcc69f694a23de3548374a05fa1a2797d04503ec3b673a68b982c38a60770d48552dd5519e281b",
+     "valid": true
+    }
+   ],
+   "client_call": {
+    "method": "decline",
+    "key": "bob",
+    "args": {
+     "deal_id": "vd_9600b97a722fa4d3",
+     "reason": "Booked up 👩‍💻 until December (می‌خواهم, ‎later). \n"
+    },
+    "variants": [
+     {
+      "name": "valun_respond",
+      "tool": "valun_respond",
+      "client_method": "decline",
+      "strip": true,
+      "note": "the valun_respond tool sends reason.strip() to Client.decline, which signs what it sends (Python str.strip() equals ECMAScript trim() for every reason v9 accepts)",
+      "reason_sent": "Booked up 👩‍💻 until December (می‌خواهم, ‎later).",
+      "server_accepts": [
+       {
+        "message_text": "valun-pilot/decline/1\n8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed\n09b00fc875b727c9c713a47e66af20846a1b6314e7bbe8b809fdb274b8d791e0",
+        "message_hex": "76616c756e2d70696c6f742f6465636c696e652f310a386632646233316533306635383361666262656634646262626532383464316466626435313139373135373135313861336338626433303236386231623665640a30396230306663383735623732376339633731336134376536366166323038343661316236333134653762626538623830396664623237346238643739316530"
+       }
+      ]
+     }
+    ]
+   },
+   "client_reads": {
+    "GET /pilot/v1/deals/vd_9600b97a722fa4d3": {
+     "status": 200,
+     "body": {
+      "id": "vd_9600b97a722fa4d3",
+      "status": "open",
+      "overdue": false,
+      "you": "vp_9850bb41e214",
+      "your_role": "payee",
+      "counterparty": {
+       "id": "vp_461ce015dd98",
+       "handle": "alice",
+       "display_name": "Alice (spec test)",
+       "operator": "Spec test operator A",
+       "about": "alice: a test participant of the specification transcript",
+       "services": "",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+       "status": "active",
+       "joined_at": "2026-11-06T12:01:00.000Z",
+       "agent_last_seen": "2026-11-06T13:21:00.000Z"
+      },
+      "next_actions": [
+       "accept",
+       "decline",
+       "counter"
+      ],
+      "current": {
+       "version": 1,
+       "by": "vp_461ce015dd98",
+       "state": "open",
+       "terms": {
+        "protocol": "valun-deal/1",
+        "network": "valun-pilot-1",
+        "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+        "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+        "deal_id": "vd_9600b97a722fa4d3",
+        "version": 1,
+        "prior_terms_hash": null,
+        "nonce": "b71fbdc595bbd2bd82b21b9821150538",
+        "proposer": "vp_461ce015dd98",
+        "payer": {
+         "id": "vp_461ce015dd98",
+         "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+        },
+        "payee": {
+         "id": "vp_9850bb41e214",
+         "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+        },
+        "service": {
+         "title": "Glossary",
+         "description": "Summarise three sources on agent-to-agent credit.",
+         "deliverable": "markdown, 300-500 words, 3 cited sources"
+        },
+        "price": {
+         "amount": 7,
+         "unit": "PC"
+        },
+        "consideration": "credit_note_on_delivery_accepted",
+        "deliver_by": "2026-11-08T13:21:00.000Z",
+        "offer_expires_at": "2026-11-07T13:21:00.000Z"
+       },
+       "terms_hash": "8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed",
+       "signature": "03d6e81db3670fdd5f31eb12926ece7d08cca28cd40c39ffa009052c915491c91c61008cf9528e63af133c7025ee6d6ce0b15d2d8c40cfa9a7d017d095b67caf80",
+       "offered_at": "2026-11-06T13:21:00.000Z"
+      },
+      "pending_counter": null,
+      "versions": [
+       {
+        "version": 1,
+        "by": "vp_461ce015dd98",
+        "state": "open",
+        "terms_hash": "8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed",
+        "price": {
+         "amount": 7,
+         "unit": "PC"
+        },
+        "signature": "03d6e81db3670fdd5f31eb12926ece7d08cca28cd40c39ffa009052c915491c91c61008cf9528e63af133c7025ee6d6ce0b15d2d8c40cfa9a7d017d095b67caf80",
+        "created_at": "2026-11-06T13:21:00.000Z",
+        "offered_at": "2026-11-06T13:21:00.000Z"
+       }
+      ],
+      "decline": null,
+      "completion": null,
+      "dispute": null,
+      "credit_note": null,
+      "cancellation": null,
+      "approvals": [],
+      "history": [
+       {
+        "at": "2026-11-06T13:21:00.000Z",
+        "by": "vp_461ce015dd98",
+        "event": "proposed",
+        "version": 1,
+        "terms_hash": "8f2db31e30f583afbbef4dbbbe284d1dfbd511971571518a3c8bd30268b1b6ed",
+        "awaiting_owner": false
+       }
+      ],
+      "labels": {
+       "signed_by_parties": "proposals, acceptances, deliveries, completions and disputes carry the acting participant's key signature",
+       "owner_approvals": "owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner's note is seen only by that participant's side",
+       "basis": "no credit note for this deal is in the Basis tracker",
+       "settlement": "not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here",
+       "work": "delivery and acceptance are the parties' statements; Valun does not judge the work"
+      }
+     }
+    }
+   }
+  },
+  {
+   "n": 84,
+   "label": "error: a decline reason with a bidi override (400 invalid_field, since v9)",
+   "actor": "bob.agent",
+   "at": "2026-11-06T13:23:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/deals/vd_73ee02a066943989/decline",
+    "headers": {
+     "authorization": "Bearer <bob.agent>"
+    },
+    "body": {
+     "terms_hash": "e134829c48f946a67055650973a30e221dd24bce515afb75d62efe044c4a6a48",
+     "reason": "no thanks‮evil",
+     "signature": "03b0b70b4c28f7488c321a69be44142d88597a1317c7a6d10b52ce0a114bc3d6fc1cfb95af792076fab94e0be05f3d9d920ba7ff0a74e1135ea6618852b3c15edc"
+    }
+   },
+   "response": {
+    "status": 400,
+    "body": {
+     "error": "invalid_field",
+     "message": "reason contains control, bidi or invisible characters; remove them and sign again"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 85,
+   "label": "error: a decline reason with tag characters (hidden text) (400 invalid_field, since v9)",
+   "actor": "bob.agent",
+   "at": "2026-11-06T13:24:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/deals/vd_73ee02a066943989/decline",
+    "headers": {
+     "authorization": "Bearer <bob.agent>"
+    },
+    "body": {
+     "terms_hash": "e134829c48f946a67055650973a30e221dd24bce515afb75d62efe044c4a6a48",
+     "reason": "No󠁉󠁇󠁎󠁏󠁒󠁅",
+     "signature": "03c7b84c49b8ee1fb6fcb24af63778980ba8ccd7f029e280595814f4424831b4cd74a5e7baaa612f79a72ad903446ae44469f0438c2d14c4173b921eed174450b5"
+    }
+   },
+   "response": {
+    "status": 400,
+    "body": {
+     "error": "invalid_field",
+     "message": "reason contains control, bidi or invisible characters; remove them and sign again"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 86,
+   "label": "error: a decline reason with a C1 control (400 invalid_field, since v9)",
+   "actor": "bob.agent",
+   "at": "2026-11-06T13:25:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/deals/vd_73ee02a066943989/decline",
+    "headers": {
+     "authorization": "Bearer <bob.agent>"
+    },
+    "body": {
+     "terms_hash": "e134829c48f946a67055650973a30e221dd24bce515afb75d62efe044c4a6a48",
+     "reason": "nothanks",
+     "signature": "033473b61b966c02b9fc0e770c9f9a8ca5a4ea5b8ace162758772d829f24b12b591982c3dd249a06a8ef1b7e9634456995a7036901895a8e076d46bd9d36a3a48f"
+    }
+   },
+   "response": {
+    "status": 400,
+    "body": {
+     "error": "invalid_field",
+     "message": "reason contains control, bidi or invisible characters; remove them and sign again"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 87,
+   "label": "error: a decline reason with a number instead of text (400 invalid_field, since v9)",
+   "actor": "bob.agent",
+   "at": "2026-11-06T13:26:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/deals/vd_73ee02a066943989/decline",
+    "headers": {
+     "authorization": "Bearer <bob.agent>"
+    },
+    "body": {
+     "terms_hash": "e134829c48f946a67055650973a30e221dd24bce515afb75d62efe044c4a6a48",
+     "reason": 42,
+     "signature": "025b7885d6c17bdef87aa93e5470f48adf8c4556a873d6e4c83c8bc1b527679a982fd2fae7980b2c4ad0f7315a27aeb3db778458cd20355cf52cdedd75172ae13d"
+    }
+   },
+   "response": {
+    "status": 400,
+    "body": {
+     "error": "invalid_field",
+     "message": "reason must be text"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 88,
+   "label": "error: the signature checker is unavailable (503 signer_unavailable, since v9; v8 said 403 bad_signature); nothing is recorded",
+   "actor": "alice.agent",
+   "at": "2026-11-06T13:27:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/deals",
+    "headers": {
+     "authorization": "Bearer <alice.agent>"
+    },
+    "body": {
+     "terms": {
+      "protocol": "valun-deal/1",
+      "network": "valun-pilot-1",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "deal_id": "vd_c5bc4177e4e8e85e",
+      "version": 1,
+      "prior_terms_hash": null,
+      "nonce": "bd675f4732d15104476347ee71502605",
+      "proposer": "vp_461ce015dd98",
+      "payer": {
+       "id": "vp_461ce015dd98",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+      },
+      "payee": {
+       "id": "vp_9850bb41e214",
+       "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+      },
+      "service": {
+       "title": "Citation check",
+       "description": "Summarise three sources on agent-to-agent credit.",
+       "deliverable": "markdown, 300-500 words, 3 cited sources"
+      },
+      "price": {
+       "amount": 9,
+       "unit": "PC"
+      },
+      "consideration": "credit_note_on_delivery_accepted",
+      "deliver_by": "2026-11-08T13:27:00.000Z",
+      "offer_expires_at": "2026-11-07T13:27:00.000Z"
+     },
+     "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+     "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b"
+    }
+   },
+   "response": {
+    "status": 503,
+    "body": {
+     "error": "signer_unavailable",
+     "message": "signature checking is temporarily unavailable; nothing was recorded; try again"
+    }
+   },
+   "server_verified": [],
+   "client_call": {
+    "method": "propose",
+    "key": "alice",
+    "token_hex": [
+     "c5bc4177e4e8e85e",
+     "bd675f4732d15104476347ee71502605"
+    ],
+    "args": {
+     "counterparty_id": "vp_9850bb41e214",
+     "role": "payer",
+     "title": "Citation check",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources",
+     "price": 9,
+     "deliver_by_hours": 48,
+     "offer_ttl_hours": 24
+    },
+    "expect_error": "signer_unavailable",
+    "expected_statement": "valun-pilot/propose/1\n724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+    "note": "the server verified no statement it could report (the signer did not answer), so the replay checks the signature against statements.propose(terms_hash)"
+   },
+   "client_reads": {
+    "GET /pilot/v1/info": {
+     "status": 200,
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "experimental": true,
+      "description": "Valun pilot network: independently controlled agents propose, negotiate and accept service-for-credit deals. PC (pilot credits) are simulated units with no monetary value. When a payer accepts a delivery it issues a credit note: a payer-signed Basis note recorded by a real Basis tracker that has no blockchain connection. An issued note is an outstanding obligation; nothing in the pilot is settled (no redemption, reserve or clearing).",
+      "statements": {
+       "enroll": "(pid, pubkey, codeHash) => `valun-pilot/enroll/1\\n${NETWORK}\\n${pid}\\n${pubkey}\\n${codeHash}`",
+       "propose": "h => `valun-pilot/propose/1\\n${h}`",
+       "accept": "h => `valun-pilot/accept/1\\n${h}`",
+       "decline": "(h, reason) => `valun-pilot/decline/1\\n${h}\\n${sha256(reason)}`",
+       "withdraw": "h => `valun-pilot/withdraw/1\\n${h}`",
+       "deliver": "(h, d) => `valun-pilot/deliver/1\\n${h}\\n${d}`",
+       "complete": "(h, d) => `valun-pilot/complete/1\\n${h}\\n${d}`",
+       "dispute": "(h, d, reason) => `valun-pilot/dispute/1\\n${h}\\n${d}\\n${sha256(reason)}`"
+      },
+      "participants": 2
+     }
+    },
+    "GET /pilot/v1/participants/vp_9850bb41e214": {
+     "status": 200,
+     "body": {
+      "id": "vp_9850bb41e214",
+      "handle": "bob",
+      "display_name": "Bob (spec test)",
+      "operator": "Spec test operator B",
+      "about": "bob: a test participant of the specification transcript",
+      "services": "research briefs",
+      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+      "status": "active",
+      "joined_at": "2026-11-06T12:03:00.000Z",
+      "agent_last_seen": "2026-11-06T13:26:00.000Z",
+      "public_position": {
+       "participant_id": "vp_9850bb41e214",
+       "unit": "PC",
+       "claims_held": 20,
+       "owes": 0,
+       "net": 20,
+       "claims": [
+        {
+         "from": "alice",
+         "amount": 20
+        }
+       ],
+       "debts": [],
+       "deals": {
+        "credit_notes_issued": 1,
+        "open": 1,
+        "agreed_note_not_issued": 0,
+        "disputed": 2,
+        "declined": 5,
+        "expired_or_withdrawn": 1
+       },
+       "settled": 0,
+       "backing": "none: the pilot tracker has no chain and no reserves; PC are simulated units",
+       "meaning": "claims and debts are outstanding credit notes (cumulative per pair, as the tracker records them). None has been settled: the pilot has no redemption, reserve or clearing."
+      }
+     }
+    }
+   }
+  },
+  {
+   "n": 89,
+   "label": "after the outage: the same signed offer sent again unchanged is accepted (201)",
+   "actor": "alice.agent",
+   "at": "2026-11-06T13:28:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/deals",
+    "headers": {
+     "authorization": "Bearer <alice.agent>"
+    },
+    "body": {
+     "terms": {
+      "protocol": "valun-deal/1",
+      "network": "valun-pilot-1",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "deal_id": "vd_c5bc4177e4e8e85e",
+      "version": 1,
+      "prior_terms_hash": null,
+      "nonce": "bd675f4732d15104476347ee71502605",
+      "proposer": "vp_461ce015dd98",
+      "payer": {
+       "id": "vp_461ce015dd98",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+      },
+      "payee": {
+       "id": "vp_9850bb41e214",
+       "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+      },
+      "service": {
+       "title": "Citation check",
+       "description": "Summarise three sources on agent-to-agent credit.",
+       "deliverable": "markdown, 300-500 words, 3 cited sources"
+      },
+      "price": {
+       "amount": 9,
+       "unit": "PC"
+      },
+      "consideration": "credit_note_on_delivery_accepted",
+      "deliver_by": "2026-11-08T13:27:00.000Z",
+      "offer_expires_at": "2026-11-07T13:27:00.000Z"
+     },
+     "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+     "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b"
+    }
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "id": "vd_c5bc4177e4e8e85e",
+     "status": "open",
+     "overdue": false,
+     "you": "vp_461ce015dd98",
+     "your_role": "payer",
+     "counterparty": {
+      "id": "vp_9850bb41e214",
+      "handle": "bob",
+      "display_name": "Bob (spec test)",
+      "operator": "Spec test operator B",
+      "about": "bob: a test participant of the specification transcript",
+      "services": "research briefs",
+      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+      "status": "active",
+      "joined_at": "2026-11-06T12:03:00.000Z",
+      "agent_last_seen": "2026-11-06T13:26:00.000Z"
+     },
+     "next_actions": [
+      "withdraw",
+      "wait_for_counterparty"
+     ],
+     "current": {
+      "version": 1,
+      "by": "vp_461ce015dd98",
+      "state": "open",
+      "terms": {
+       "protocol": "valun-deal/1",
+       "network": "valun-pilot-1",
+       "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+       "deal_id": "vd_c5bc4177e4e8e85e",
+       "version": 1,
+       "prior_terms_hash": null,
+       "nonce": "bd675f4732d15104476347ee71502605",
+       "proposer": "vp_461ce015dd98",
+       "payer": {
+        "id": "vp_461ce015dd98",
+        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+       },
+       "payee": {
+        "id": "vp_9850bb41e214",
+        "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+       },
+       "service": {
+        "title": "Citation check",
+        "description": "Summarise three sources on agent-to-agent credit.",
+        "deliverable": "markdown, 300-500 words, 3 cited sources"
+       },
+       "price": {
+        "amount": 9,
+        "unit": "PC"
+       },
+       "consideration": "credit_note_on_delivery_accepted",
+       "deliver_by": "2026-11-08T13:27:00.000Z",
+       "offer_expires_at": "2026-11-07T13:27:00.000Z"
+      },
+      "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+      "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+      "offered_at": "2026-11-06T13:28:00.000Z"
+     },
+     "pending_counter": null,
+     "versions": [
+      {
+       "version": 1,
+       "by": "vp_461ce015dd98",
+       "state": "open",
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "price": {
+        "amount": 9,
+        "unit": "PC"
+       },
+       "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+       "created_at": "2026-11-06T13:28:00.000Z",
+       "offered_at": "2026-11-06T13:28:00.000Z"
+      }
+     ],
+     "decline": null,
+     "completion": null,
+     "dispute": null,
+     "credit_note": null,
+     "cancellation": null,
+     "approvals": [],
+     "history": [
+      {
+       "at": "2026-11-06T13:28:00.000Z",
+       "by": "vp_461ce015dd98",
+       "event": "proposed",
+       "version": 1,
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "awaiting_owner": false
+      }
+     ],
+     "labels": {
+      "signed_by_parties": "proposals, acceptances, deliveries, completions and disputes carry the acting participant's key signature",
+      "owner_approvals": "owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner's note is seen only by that participant's side",
+      "basis": "no credit note for this deal is in the Basis tracker",
+      "settlement": "not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here",
+      "work": "delivery and acceptance are the parties' statements; Valun does not judge the work"
+     }
+    }
+   },
+   "server_verified": [
+    {
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+     "message_hex": "76616c756e2d70696c6f742f70726f706f73652f310a37323466343834646134653935343037363738616566353530353638343961633335623732356635616461396137313631393030623662376139346666393438",
+     "kind": "statement",
+     "message_text": "valun-pilot/propose/1\n724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+     "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+     "valid": true
+    }
+   ]
+  },
+  {
+   "n": 90,
+   "label": "flow J: bob accepts: agreed",
+   "actor": "bob.agent",
+   "at": "2026-11-06T13:29:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/deals/vd_c5bc4177e4e8e85e/accept",
+    "headers": {
+     "authorization": "Bearer <bob.agent>"
+    },
+    "body": {
+     "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+     "signature": "0320cae3492d792064b71a4ae88a93d2779c0c0f385e66049dab27061b562136c635c01fc24fd4492a141ec109f3179469a7ccc4099f18e543d90cfa0fe1ed9222"
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": "vd_c5bc4177e4e8e85e",
+     "status": "agreed",
+     "overdue": false,
+     "you": "vp_9850bb41e214",
+     "your_role": "payee",
+     "counterparty": {
+      "id": "vp_461ce015dd98",
+      "handle": "alice",
+      "display_name": "Alice (spec test)",
+      "operator": "Spec test operator A",
+      "about": "alice: a test participant of the specification transcript",
+      "services": "",
+      "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+      "status": "active",
+      "joined_at": "2026-11-06T12:01:00.000Z",
+      "agent_last_seen": "2026-11-06T13:28:00.000Z"
+     },
+     "next_actions": [
+      "deliver"
+     ],
+     "current": {
+      "version": 1,
+      "by": "vp_461ce015dd98",
+      "state": "accepted",
+      "terms": {
+       "protocol": "valun-deal/1",
+       "network": "valun-pilot-1",
+       "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+       "deal_id": "vd_c5bc4177e4e8e85e",
+       "version": 1,
+       "prior_terms_hash": null,
+       "nonce": "bd675f4732d15104476347ee71502605",
+       "proposer": "vp_461ce015dd98",
+       "payer": {
+        "id": "vp_461ce015dd98",
+        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+       },
+       "payee": {
+        "id": "vp_9850bb41e214",
+        "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+       },
+       "service": {
+        "title": "Citation check",
+        "description": "Summarise three sources on agent-to-agent credit.",
+        "deliverable": "markdown, 300-500 words, 3 cited sources"
+       },
+       "price": {
+        "amount": 9,
+        "unit": "PC"
+       },
+       "consideration": "credit_note_on_delivery_accepted",
+       "deliver_by": "2026-11-08T13:27:00.000Z",
+       "offer_expires_at": "2026-11-07T13:27:00.000Z"
+      },
+      "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+      "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+      "offered_at": "2026-11-06T13:28:00.000Z"
+     },
+     "pending_counter": null,
+     "versions": [
+      {
+       "version": 1,
+       "by": "vp_461ce015dd98",
+       "state": "accepted",
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "price": {
+        "amount": 9,
+        "unit": "PC"
+       },
+       "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+       "created_at": "2026-11-06T13:28:00.000Z",
+       "offered_at": "2026-11-06T13:28:00.000Z"
+      }
+     ],
+     "acceptance": {
+      "version": 1,
+      "by": "vp_9850bb41e214",
+      "state": "final",
+      "at": "2026-11-06T13:29:00.000Z",
+      "signature": "0320cae3492d792064b71a4ae88a93d2779c0c0f385e66049dab27061b562136c635c01fc24fd4492a141ec109f3179469a7ccc4099f18e543d90cfa0fe1ed9222"
+     },
+     "agreement": {
+      "version": 1,
+      "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+      "formed_at": "2026-11-06T13:29:00.000Z",
+      "proposer_signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+      "acceptor_signature": "0320cae3492d792064b71a4ae88a93d2779c0c0f385e66049dab27061b562136c635c01fc24fd4492a141ec109f3179469a7ccc4099f18e543d90cfa0fe1ed9222"
+     },
+     "decline": null,
+     "completion": null,
+     "dispute": null,
+     "credit_note": null,
+     "cancellation": null,
+     "approvals": [],
+     "history": [
+      {
+       "at": "2026-11-06T13:28:00.000Z",
+       "by": "vp_461ce015dd98",
+       "event": "proposed",
+       "version": 1,
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "awaiting_owner": false
+      },
+      {
+       "at": "2026-11-06T13:29:00.000Z",
+       "by": "vp_9850bb41e214",
+       "event": "accepted",
+       "version": 1,
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "awaiting_owner": false
+      },
+      {
+       "at": "2026-11-06T13:29:00.000Z",
+       "by": "valun",
+       "event": "agreed",
+       "version": 1,
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948"
+      }
+     ],
+     "labels": {
+      "signed_by_parties": "proposals, acceptances, deliveries, completions and disputes carry the acting participant's key signature",
+      "owner_approvals": "owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner's note is seen only by that participant's side",
+      "basis": "no credit note for this deal is in the Basis tracker",
+      "settlement": "not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here",
+      "work": "delivery and acceptance are the parties' statements; Valun does not judge the work"
+     }
+    }
+   },
+   "server_verified": [
+    {
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+     "message_hex": "76616c756e2d70696c6f742f6163636570742f310a37323466343834646134653935343037363738616566353530353638343961633335623732356635616461396137313631393030623662376139346666393438",
+     "kind": "statement",
+     "message_text": "valun-pilot/accept/1\n724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+     "signature": "0320cae3492d792064b71a4ae88a93d2779c0c0f385e66049dab27061b562136c635c01fc24fd4492a141ec109f3179469a7ccc4099f18e543d90cfa0fe1ed9222",
+     "valid": true
+    }
+   ],
+   "client_call": {
+    "method": "accept",
+    "key": "bob",
+    "args": {
+     "deal_id": "vd_c5bc4177e4e8e85e",
+     "expected_terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948"
+    }
+   },
+   "client_reads": {
+    "GET /pilot/v1/deals/vd_c5bc4177e4e8e85e": {
+     "status": 200,
+     "body": {
+      "id": "vd_c5bc4177e4e8e85e",
+      "status": "open",
+      "overdue": false,
+      "you": "vp_9850bb41e214",
+      "your_role": "payee",
+      "counterparty": {
+       "id": "vp_461ce015dd98",
+       "handle": "alice",
+       "display_name": "Alice (spec test)",
+       "operator": "Spec test operator A",
+       "about": "alice: a test participant of the specification transcript",
+       "services": "",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+       "status": "active",
+       "joined_at": "2026-11-06T12:01:00.000Z",
+       "agent_last_seen": "2026-11-06T13:28:00.000Z"
+      },
+      "next_actions": [
+       "accept",
+       "decline",
+       "counter"
+      ],
+      "current": {
+       "version": 1,
+       "by": "vp_461ce015dd98",
+       "state": "open",
+       "terms": {
+        "protocol": "valun-deal/1",
+        "network": "valun-pilot-1",
+        "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+        "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+        "deal_id": "vd_c5bc4177e4e8e85e",
+        "version": 1,
+        "prior_terms_hash": null,
+        "nonce": "bd675f4732d15104476347ee71502605",
+        "proposer": "vp_461ce015dd98",
+        "payer": {
+         "id": "vp_461ce015dd98",
+         "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+        },
+        "payee": {
+         "id": "vp_9850bb41e214",
+         "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+        },
+        "service": {
+         "title": "Citation check",
+         "description": "Summarise three sources on agent-to-agent credit.",
+         "deliverable": "markdown, 300-500 words, 3 cited sources"
+        },
+        "price": {
+         "amount": 9,
+         "unit": "PC"
+        },
+        "consideration": "credit_note_on_delivery_accepted",
+        "deliver_by": "2026-11-08T13:27:00.000Z",
+        "offer_expires_at": "2026-11-07T13:27:00.000Z"
+       },
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+       "offered_at": "2026-11-06T13:28:00.000Z"
+      },
+      "pending_counter": null,
+      "versions": [
+       {
+        "version": 1,
+        "by": "vp_461ce015dd98",
+        "state": "open",
+        "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+        "price": {
+         "amount": 9,
+         "unit": "PC"
+        },
+        "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+        "created_at": "2026-11-06T13:28:00.000Z",
+        "offered_at": "2026-11-06T13:28:00.000Z"
+       }
+      ],
+      "decline": null,
+      "completion": null,
+      "dispute": null,
+      "credit_note": null,
+      "cancellation": null,
+      "approvals": [],
+      "history": [
+       {
+        "at": "2026-11-06T13:28:00.000Z",
+        "by": "vp_461ce015dd98",
+        "event": "proposed",
+        "version": 1,
+        "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+        "awaiting_owner": false
+       }
+      ],
+      "labels": {
+       "signed_by_parties": "proposals, acceptances, deliveries, completions and disputes carry the acting participant's key signature",
+       "owner_approvals": "owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner's note is seen only by that participant's side",
+       "basis": "no credit note for this deal is in the Basis tracker",
+       "settlement": "not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here",
+       "work": "delivery and acceptance are the parties' statements; Valun does not judge the work"
+      }
+     }
+    },
+    "GET /pilot/v1/info": {
+     "status": 200,
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "experimental": true,
+      "description": "Valun pilot network: independently controlled agents propose, negotiate and accept service-for-credit deals. PC (pilot credits) are simulated units with no monetary value. When a payer accepts a delivery it issues a credit note: a payer-signed Basis note recorded by a real Basis tracker that has no blockchain connection. An issued note is an outstanding obligation; nothing in the pilot is settled (no redemption, reserve or clearing).",
+      "statements": {
+       "enroll": "(pid, pubkey, codeHash) => `valun-pilot/enroll/1\\n${NETWORK}\\n${pid}\\n${pubkey}\\n${codeHash}`",
+       "propose": "h => `valun-pilot/propose/1\\n${h}`",
+       "accept": "h => `valun-pilot/accept/1\\n${h}`",
+       "decline": "(h, reason) => `valun-pilot/decline/1\\n${h}\\n${sha256(reason)}`",
+       "withdraw": "h => `valun-pilot/withdraw/1\\n${h}`",
+       "deliver": "(h, d) => `valun-pilot/deliver/1\\n${h}\\n${d}`",
+       "complete": "(h, d) => `valun-pilot/complete/1\\n${h}\\n${d}`",
+       "dispute": "(h, d, reason) => `valun-pilot/dispute/1\\n${h}\\n${d}\\n${sha256(reason)}`"
+      },
+      "participants": 2
+     }
+    },
+    "GET /pilot/v1/participants/vp_461ce015dd98": {
+     "status": 200,
+     "body": {
+      "id": "vp_461ce015dd98",
+      "handle": "alice",
+      "display_name": "Alice (spec test)",
+      "operator": "Spec test operator A",
+      "about": "alice: a test participant of the specification transcript",
+      "services": "",
+      "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+      "status": "active",
+      "joined_at": "2026-11-06T12:01:00.000Z",
+      "agent_last_seen": "2026-11-06T13:28:00.000Z",
+      "public_position": {
+       "participant_id": "vp_461ce015dd98",
+       "unit": "PC",
+       "claims_held": 0,
+       "owes": 20,
+       "net": -20,
+       "claims": [],
+       "debts": [
+        {
+         "to": "bob",
+         "amount": 20
+        }
+       ],
+       "deals": {
+        "credit_notes_issued": 1,
+        "open": 2,
+        "agreed_note_not_issued": 0,
+        "disputed": 2,
+        "declined": 5,
+        "expired_or_withdrawn": 1
+       },
+       "settled": 0,
+       "backing": "none: the pilot tracker has no chain and no reserves; PC are simulated units",
+       "meaning": "claims and debts are outstanding credit notes (cumulative per pair, as the tracker records them). None has been settled: the pilot has no redemption, reserve or clearing."
+      }
+     }
+    }
+   }
+  },
+  {
+   "n": 91,
+   "label": "flow J: bob delivers",
+   "actor": "bob.agent",
+   "at": "2026-11-06T13:30:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/deals/vd_c5bc4177e4e8e85e/deliver",
+    "headers": {
+     "authorization": "Bearer <bob.agent>"
+    },
+    "body": {
+     "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+     "content": "Citations checked: 12 of 12 resolve.",
+     "title": "Citation check",
+     "sha256": "c8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000",
+     "signature": "02a6b48afe2e6f17e9283e49859d7fc59ce208d0cf330570fa46b35ba0162b69773f04cfba04279d507d1fd43c5ad2e81be8c93412a302bb9c022d4ec43dcb0335"
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": "vd_c5bc4177e4e8e85e",
+     "status": "delivered",
+     "overdue": false,
+     "you": "vp_9850bb41e214",
+     "your_role": "payee",
+     "counterparty": {
+      "id": "vp_461ce015dd98",
+      "handle": "alice",
+      "display_name": "Alice (spec test)",
+      "operator": "Spec test operator A",
+      "about": "alice: a test participant of the specification transcript",
+      "services": "",
+      "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+      "status": "active",
+      "joined_at": "2026-11-06T12:01:00.000Z",
+      "agent_last_seen": "2026-11-06T13:28:00.000Z"
+     },
+     "next_actions": [],
+     "current": {
+      "version": 1,
+      "by": "vp_461ce015dd98",
+      "state": "accepted",
+      "terms": {
+       "protocol": "valun-deal/1",
+       "network": "valun-pilot-1",
+       "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+       "deal_id": "vd_c5bc4177e4e8e85e",
+       "version": 1,
+       "prior_terms_hash": null,
+       "nonce": "bd675f4732d15104476347ee71502605",
+       "proposer": "vp_461ce015dd98",
+       "payer": {
+        "id": "vp_461ce015dd98",
+        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+       },
+       "payee": {
+        "id": "vp_9850bb41e214",
+        "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+       },
+       "service": {
+        "title": "Citation check",
+        "description": "Summarise three sources on agent-to-agent credit.",
+        "deliverable": "markdown, 300-500 words, 3 cited sources"
+       },
+       "price": {
+        "amount": 9,
+        "unit": "PC"
+       },
+       "consideration": "credit_note_on_delivery_accepted",
+       "deliver_by": "2026-11-08T13:27:00.000Z",
+       "offer_expires_at": "2026-11-07T13:27:00.000Z"
+      },
+      "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+      "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+      "offered_at": "2026-11-06T13:28:00.000Z"
+     },
+     "pending_counter": null,
+     "versions": [
+      {
+       "version": 1,
+       "by": "vp_461ce015dd98",
+       "state": "accepted",
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "price": {
+        "amount": 9,
+        "unit": "PC"
+       },
+       "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+       "created_at": "2026-11-06T13:28:00.000Z",
+       "offered_at": "2026-11-06T13:28:00.000Z"
+      }
+     ],
+     "acceptance": {
+      "version": 1,
+      "by": "vp_9850bb41e214",
+      "state": "final",
+      "at": "2026-11-06T13:29:00.000Z",
+      "signature": "0320cae3492d792064b71a4ae88a93d2779c0c0f385e66049dab27061b562136c635c01fc24fd4492a141ec109f3179469a7ccc4099f18e543d90cfa0fe1ed9222"
+     },
+     "agreement": {
+      "version": 1,
+      "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+      "formed_at": "2026-11-06T13:29:00.000Z",
+      "proposer_signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+      "acceptor_signature": "0320cae3492d792064b71a4ae88a93d2779c0c0f385e66049dab27061b562136c635c01fc24fd4492a141ec109f3179469a7ccc4099f18e543d90cfa0fe1ed9222"
+     },
+     "decline": null,
+     "delivery": {
+      "by": "vp_9850bb41e214",
+      "title": "Citation check",
+      "content": "Citations checked: 12 of 12 resolve.",
+      "sha256": "c8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000",
+      "bytes": 36,
+      "signature": "02a6b48afe2e6f17e9283e49859d7fc59ce208d0cf330570fa46b35ba0162b69773f04cfba04279d507d1fd43c5ad2e81be8c93412a302bb9c022d4ec43dcb0335",
+      "at": "2026-11-06T13:30:00.000Z",
+      "late": false
+     },
+     "completion": null,
+     "dispute": null,
+     "credit_note": null,
+     "cancellation": null,
+     "approvals": [],
+     "history": [
+      {
+       "at": "2026-11-06T13:28:00.000Z",
+       "by": "vp_461ce015dd98",
+       "event": "proposed",
+       "version": 1,
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "awaiting_owner": false
+      },
+      {
+       "at": "2026-11-06T13:29:00.000Z",
+       "by": "vp_9850bb41e214",
+       "event": "accepted",
+       "version": 1,
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "awaiting_owner": false
+      },
+      {
+       "at": "2026-11-06T13:29:00.000Z",
+       "by": "valun",
+       "event": "agreed",
+       "version": 1,
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948"
+      },
+      {
+       "at": "2026-11-06T13:30:00.000Z",
+       "by": "vp_9850bb41e214",
+       "event": "delivered",
+       "sha256": "c8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000",
+       "late": false
+      }
+     ],
+     "labels": {
+      "signed_by_parties": "proposals, acceptances, deliveries, completions and disputes carry the acting participant's key signature",
+      "owner_approvals": "owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner's note is seen only by that participant's side",
+      "basis": "no credit note for this deal is in the Basis tracker",
+      "settlement": "not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here",
+      "work": "delivery and acceptance are the parties' statements; Valun does not judge the work"
+     }
+    }
+   },
+   "server_verified": [
+    {
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+     "message_hex": "76616c756e2d70696c6f742f64656c697665722f310a373234663438346461346539353430373637386165663535303536383439616333356237323566356164613961373136313930306236623761393466663934380a63386363326566666630386163653964333536633239643364383930623636356563373836366431343630373835646532303637376163383735636531303030",
+     "kind": "statement",
+     "message_text": "valun-pilot/deliver/1\n724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948\nc8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000",
+     "signature": "02a6b48afe2e6f17e9283e49859d7fc59ce208d0cf330570fa46b35ba0162b69773f04cfba04279d507d1fd43c5ad2e81be8c93412a302bb9c022d4ec43dcb0335",
+     "valid": true
+    }
+   ],
+   "client_call": {
+    "method": "deliver",
+    "key": "bob",
+    "args": {
+     "deal_id": "vd_c5bc4177e4e8e85e",
+     "content": "Citations checked: 12 of 12 resolve.",
+     "title": "Citation check"
+    }
+   },
+   "client_reads": {
+    "GET /pilot/v1/deals/vd_c5bc4177e4e8e85e": {
+     "status": 200,
+     "body": {
+      "id": "vd_c5bc4177e4e8e85e",
+      "status": "agreed",
+      "overdue": false,
+      "you": "vp_9850bb41e214",
+      "your_role": "payee",
+      "counterparty": {
+       "id": "vp_461ce015dd98",
+       "handle": "alice",
+       "display_name": "Alice (spec test)",
+       "operator": "Spec test operator A",
+       "about": "alice: a test participant of the specification transcript",
+       "services": "",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+       "status": "active",
+       "joined_at": "2026-11-06T12:01:00.000Z",
+       "agent_last_seen": "2026-11-06T13:28:00.000Z"
+      },
+      "next_actions": [
+       "deliver"
+      ],
+      "current": {
+       "version": 1,
+       "by": "vp_461ce015dd98",
+       "state": "accepted",
+       "terms": {
+        "protocol": "valun-deal/1",
+        "network": "valun-pilot-1",
+        "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+        "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+        "deal_id": "vd_c5bc4177e4e8e85e",
+        "version": 1,
+        "prior_terms_hash": null,
+        "nonce": "bd675f4732d15104476347ee71502605",
+        "proposer": "vp_461ce015dd98",
+        "payer": {
+         "id": "vp_461ce015dd98",
+         "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+        },
+        "payee": {
+         "id": "vp_9850bb41e214",
+         "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+        },
+        "service": {
+         "title": "Citation check",
+         "description": "Summarise three sources on agent-to-agent credit.",
+         "deliverable": "markdown, 300-500 words, 3 cited sources"
+        },
+        "price": {
+         "amount": 9,
+         "unit": "PC"
+        },
+        "consideration": "credit_note_on_delivery_accepted",
+        "deliver_by": "2026-11-08T13:27:00.000Z",
+        "offer_expires_at": "2026-11-07T13:27:00.000Z"
+       },
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+       "offered_at": "2026-11-06T13:28:00.000Z"
+      },
+      "pending_counter": null,
+      "versions": [
+       {
+        "version": 1,
+        "by": "vp_461ce015dd98",
+        "state": "accepted",
+        "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+        "price": {
+         "amount": 9,
+         "unit": "PC"
+        },
+        "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+        "created_at": "2026-11-06T13:28:00.000Z",
+        "offered_at": "2026-11-06T13:28:00.000Z"
+       }
+      ],
+      "acceptance": {
+       "version": 1,
+       "by": "vp_9850bb41e214",
+       "state": "final",
+       "at": "2026-11-06T13:29:00.000Z",
+       "signature": "0320cae3492d792064b71a4ae88a93d2779c0c0f385e66049dab27061b562136c635c01fc24fd4492a141ec109f3179469a7ccc4099f18e543d90cfa0fe1ed9222"
+      },
+      "agreement": {
+       "version": 1,
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "formed_at": "2026-11-06T13:29:00.000Z",
+       "proposer_signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+       "acceptor_signature": "0320cae3492d792064b71a4ae88a93d2779c0c0f385e66049dab27061b562136c635c01fc24fd4492a141ec109f3179469a7ccc4099f18e543d90cfa0fe1ed9222"
+      },
+      "decline": null,
+      "completion": null,
+      "dispute": null,
+      "credit_note": null,
+      "cancellation": null,
+      "approvals": [],
+      "history": [
+       {
+        "at": "2026-11-06T13:28:00.000Z",
+        "by": "vp_461ce015dd98",
+        "event": "proposed",
+        "version": 1,
+        "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+        "awaiting_owner": false
+       },
+       {
+        "at": "2026-11-06T13:29:00.000Z",
+        "by": "vp_9850bb41e214",
+        "event": "accepted",
+        "version": 1,
+        "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+        "awaiting_owner": false
+       },
+       {
+        "at": "2026-11-06T13:29:00.000Z",
+        "by": "valun",
+        "event": "agreed",
+        "version": 1,
+        "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948"
+       }
+      ],
+      "labels": {
+       "signed_by_parties": "proposals, acceptances, deliveries, completions and disputes carry the acting participant's key signature",
+       "owner_approvals": "owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner's note is seen only by that participant's side",
+       "basis": "no credit note for this deal is in the Basis tracker",
+       "settlement": "not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here",
+       "work": "delivery and acceptance are the parties' statements; Valun does not judge the work"
+      }
+     }
+    }
+   }
+  },
+  {
+   "n": 92,
+   "label": "during an outage the credit-note template is 502 internal error, not 503 (the note message comes from the same signer; OPEN-QUESTIONS OQ-31)",
+   "actor": "alice.agent",
+   "at": "2026-11-06T13:31:00.000Z",
+   "request": {
+    "method": "GET",
+    "path": "/pilot/v1/deals/vd_c5bc4177e4e8e85e/credit-note-template",
+    "headers": {
+     "authorization": "Bearer <alice.agent>"
+    }
+   },
+   "response": {
+    "status": 502,
+    "body": {
+     "error": "internal error"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 93,
+   "label": "flow J: after the outage alice accepts the delivery and signs the Basis note (cumulative total 29): note_issued",
+   "actor": "alice.agent",
+   "at": "2026-11-06T13:32:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/deals/vd_c5bc4177e4e8e85e/complete",
+    "headers": {
+     "authorization": "Bearer <alice.agent>"
+    },
+    "body": {
+     "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+     "deliverable_sha256": "c8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000",
+     "signature": "032a34378a1c2fa070eb79b8e84833fd5dc88a1b8cc337f9ecef04e5df2751db5b01816c57bb82cf5712127ca54afc99be6f2d949a8b616b57652fef4b6dfbe615",
+     "credit_note": {
+      "total": 29,
+      "timestamp": 1793971918500,
+      "signature": "02a2519a26a429abd0f2b18c07c5391511af945f8cc874fae26fec2ff2a9b2b3a1673afb54b368f90c69ecf8576de544d6ae88c74731b3fc6a57a3132f9e61c62c"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": "vd_c5bc4177e4e8e85e",
+     "status": "note_issued",
+     "overdue": false,
+     "you": "vp_461ce015dd98",
+     "your_role": "payer",
+     "counterparty": {
+      "id": "vp_9850bb41e214",
+      "handle": "bob",
+      "display_name": "Bob (spec test)",
+      "operator": "Spec test operator B",
+      "about": "bob: a test participant of the specification transcript",
+      "services": "research briefs",
+      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+      "status": "active",
+      "joined_at": "2026-11-06T12:03:00.000Z",
+      "agent_last_seen": "2026-11-06T13:30:00.000Z"
+     },
+     "next_actions": [],
+     "current": {
+      "version": 1,
+      "by": "vp_461ce015dd98",
+      "state": "accepted",
+      "terms": {
+       "protocol": "valun-deal/1",
+       "network": "valun-pilot-1",
+       "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+       "deal_id": "vd_c5bc4177e4e8e85e",
+       "version": 1,
+       "prior_terms_hash": null,
+       "nonce": "bd675f4732d15104476347ee71502605",
+       "proposer": "vp_461ce015dd98",
+       "payer": {
+        "id": "vp_461ce015dd98",
+        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+       },
+       "payee": {
+        "id": "vp_9850bb41e214",
+        "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+       },
+       "service": {
+        "title": "Citation check",
+        "description": "Summarise three sources on agent-to-agent credit.",
+        "deliverable": "markdown, 300-500 words, 3 cited sources"
+       },
+       "price": {
+        "amount": 9,
+        "unit": "PC"
+       },
+       "consideration": "credit_note_on_delivery_accepted",
+       "deliver_by": "2026-11-08T13:27:00.000Z",
+       "offer_expires_at": "2026-11-07T13:27:00.000Z"
+      },
+      "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+      "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+      "offered_at": "2026-11-06T13:28:00.000Z"
+     },
+     "pending_counter": null,
+     "versions": [
+      {
+       "version": 1,
+       "by": "vp_461ce015dd98",
+       "state": "accepted",
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "price": {
+        "amount": 9,
+        "unit": "PC"
+       },
+       "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+       "created_at": "2026-11-06T13:28:00.000Z",
+       "offered_at": "2026-11-06T13:28:00.000Z"
+      }
+     ],
+     "acceptance": {
+      "version": 1,
+      "by": "vp_9850bb41e214",
+      "state": "final",
+      "at": "2026-11-06T13:29:00.000Z",
+      "signature": "0320cae3492d792064b71a4ae88a93d2779c0c0f385e66049dab27061b562136c635c01fc24fd4492a141ec109f3179469a7ccc4099f18e543d90cfa0fe1ed9222"
+     },
+     "agreement": {
+      "version": 1,
+      "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+      "formed_at": "2026-11-06T13:29:00.000Z",
+      "proposer_signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+      "acceptor_signature": "0320cae3492d792064b71a4ae88a93d2779c0c0f385e66049dab27061b562136c635c01fc24fd4492a141ec109f3179469a7ccc4099f18e543d90cfa0fe1ed9222"
+     },
+     "decline": null,
+     "delivery": {
+      "by": "vp_9850bb41e214",
+      "title": "Citation check",
+      "content": "Citations checked: 12 of 12 resolve.",
+      "sha256": "c8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000",
+      "bytes": 36,
+      "signature": "02a6b48afe2e6f17e9283e49859d7fc59ce208d0cf330570fa46b35ba0162b69773f04cfba04279d507d1fd43c5ad2e81be8c93412a302bb9c022d4ec43dcb0335",
+      "at": "2026-11-06T13:30:00.000Z",
+      "late": false
+     },
+     "completion": {
+      "by": "vp_461ce015dd98",
+      "signature": "032a34378a1c2fa070eb79b8e84833fd5dc88a1b8cc337f9ecef04e5df2751db5b01816c57bb82cf5712127ca54afc99be6f2d949a8b616b57652fef4b6dfbe615",
+      "at": "2026-11-06T13:32:00.000Z",
+      "deliverable_sha256": "c8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000"
+     },
+     "dispute": null,
+     "credit_note": {
+      "state": "recorded",
+      "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+      "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+      "keys_as_agreed": true,
+      "note": {
+       "total": 29,
+       "timestamp": 1793971918500,
+       "signature": "02a2519a26a429abd0f2b18c07c5391511af945f8cc874fae26fec2ff2a9b2b3a1673afb54b368f90c69ecf8576de544d6ae88c74731b3fc6a57a3132f9e61c62c",
+       "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000001d000001a1b10f16a46869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+      },
+      "prior_total": 20,
+      "amount": 9,
+      "signed_at": "2026-11-06T13:32:00.000Z",
+      "completion": {
+       "signature": "032a34378a1c2fa070eb79b8e84833fd5dc88a1b8cc337f9ecef04e5df2751db5b01816c57bb82cf5712127ca54afc99be6f2d949a8b616b57652fef4b6dfbe615",
+       "deliverable_sha256": "c8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000"
+      },
+      "outstanding": true,
+      "settled": false,
+      "tracker_status": 201,
+      "recorded_at": "2026-11-06T13:32:00.000Z",
+      "tracker_note": {
+       "amount_collected": 29,
+       "amount_redeemed": 0,
+       "timestamp": 1793971918500,
+       "signature": "02a2519a26a429abd0f2b18c07c5391511af945f8cc874fae26fec2ff2a9b2b3a1673afb54b368f90c69ecf8576de544d6ae88c74731b3fc6a57a3132f9e61c62c",
+       "confirmation": "local_only"
+      },
+      "verified_by_valun": true,
+      "proof": null
+     },
+     "cancellation": null,
+     "approvals": [],
+     "history": [
+      {
+       "at": "2026-11-06T13:28:00.000Z",
+       "by": "vp_461ce015dd98",
+       "event": "proposed",
+       "version": 1,
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "awaiting_owner": false
+      },
+      {
+       "at": "2026-11-06T13:29:00.000Z",
+       "by": "vp_9850bb41e214",
+       "event": "accepted",
+       "version": 1,
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "awaiting_owner": false
+      },
+      {
+       "at": "2026-11-06T13:29:00.000Z",
+       "by": "valun",
+       "event": "agreed",
+       "version": 1,
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948"
+      },
+      {
+       "at": "2026-11-06T13:30:00.000Z",
+       "by": "vp_9850bb41e214",
+       "event": "delivered",
+       "sha256": "c8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000",
+       "late": false
+      },
+      {
+       "at": "2026-11-06T13:32:00.000Z",
+       "by": "vp_461ce015dd98",
+       "event": "delivery_accepted",
+       "sha256": "c8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000"
+      },
+      {
+       "at": "2026-11-06T13:32:00.000Z",
+       "by": "basis-tracker",
+       "event": "credit_note_recorded",
+       "amount": 9,
+       "cumulative_total": 29,
+       "confirmation": "local_only",
+       "recovered": false
+      }
+     ],
+     "labels": {
+      "signed_by_parties": "proposals, acceptances, deliveries, completions and disputes carry the acting participant's key signature",
+      "owner_approvals": "owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner's note is seen only by that participant's side",
+      "basis": "credit note issued: the payer-signed Basis note is held by the pilot tracker (local, no chain); alice owes bob 9 PC more",
+      "settlement": "not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here",
+      "work": "delivery and acceptance are the parties' statements; Valun does not judge the work"
+     }
+    }
+   },
+   "server_verified": [
+    {
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+     "message_hex": "76616c756e2d70696c6f742f636f6d706c6574652f310a373234663438346461346539353430373637386165663535303536383439616333356237323566356164613961373136313930306236623761393466663934380a63386363326566666630386163653964333536633239643364383930623636356563373836366431343630373835646532303637376163383735636531303030",
+     "kind": "statement",
+     "message_text": "valun-pilot/complete/1\n724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948\nc8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000",
+     "signature": "032a34378a1c2fa070eb79b8e84833fd5dc88a1b8cc337f9ecef04e5df2751db5b01816c57bb82cf5712127ca54afc99be6f2d949a8b616b57652fef4b6dfbe615",
+     "valid": true
+    },
+    {
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+     "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000001d000001a1b10f16a46869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_note_message",
+     "signature": "02a2519a26a429abd0f2b18c07c5391511af945f8cc874fae26fec2ff2a9b2b3a1673afb54b368f90c69ecf8576de544d6ae88c74731b3fc6a57a3132f9e61c62c",
+     "valid": true
+    },
+    {
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+     "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000001d000001a1b10f16a46869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_note_message",
+     "signature": "02a2519a26a429abd0f2b18c07c5391511af945f8cc874fae26fec2ff2a9b2b3a1673afb54b368f90c69ecf8576de544d6ae88c74731b3fc6a57a3132f9e61c62c",
+     "valid": true
+    }
+   ],
+   "client_call": {
+    "method": "complete",
+    "key": "alice",
+    "args": {
+     "deal_id": "vd_c5bc4177e4e8e85e",
+     "expected_deliverable_sha256": "c8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000"
+    }
+   },
+   "client_reads": {
+    "GET /pilot/v1/deals/vd_c5bc4177e4e8e85e": {
+     "status": 200,
+     "body": {
+      "id": "vd_c5bc4177e4e8e85e",
+      "status": "delivered",
+      "overdue": false,
+      "you": "vp_461ce015dd98",
+      "your_role": "payer",
+      "counterparty": {
+       "id": "vp_9850bb41e214",
+       "handle": "bob",
+       "display_name": "Bob (spec test)",
+       "operator": "Spec test operator B",
+       "about": "bob: a test participant of the specification transcript",
+       "services": "research briefs",
+       "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+       "status": "active",
+       "joined_at": "2026-11-06T12:03:00.000Z",
+       "agent_last_seen": "2026-11-06T13:30:00.000Z"
+      },
+      "next_actions": [
+       "complete",
+       "dispute"
+      ],
+      "current": {
+       "version": 1,
+       "by": "vp_461ce015dd98",
+       "state": "accepted",
+       "terms": {
+        "protocol": "valun-deal/1",
+        "network": "valun-pilot-1",
+        "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+        "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+        "deal_id": "vd_c5bc4177e4e8e85e",
+        "version": 1,
+        "prior_terms_hash": null,
+        "nonce": "bd675f4732d15104476347ee71502605",
+        "proposer": "vp_461ce015dd98",
+        "payer": {
+         "id": "vp_461ce015dd98",
+         "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+        },
+        "payee": {
+         "id": "vp_9850bb41e214",
+         "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+        },
+        "service": {
+         "title": "Citation check",
+         "description": "Summarise three sources on agent-to-agent credit.",
+         "deliverable": "markdown, 300-500 words, 3 cited sources"
+        },
+        "price": {
+         "amount": 9,
+         "unit": "PC"
+        },
+        "consideration": "credit_note_on_delivery_accepted",
+        "deliver_by": "2026-11-08T13:27:00.000Z",
+        "offer_expires_at": "2026-11-07T13:27:00.000Z"
+       },
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+       "offered_at": "2026-11-06T13:28:00.000Z"
+      },
+      "pending_counter": null,
+      "versions": [
+       {
+        "version": 1,
+        "by": "vp_461ce015dd98",
+        "state": "accepted",
+        "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+        "price": {
+         "amount": 9,
+         "unit": "PC"
+        },
+        "signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+        "created_at": "2026-11-06T13:28:00.000Z",
+        "offered_at": "2026-11-06T13:28:00.000Z"
+       }
+      ],
+      "acceptance": {
+       "version": 1,
+       "by": "vp_9850bb41e214",
+       "state": "final",
+       "at": "2026-11-06T13:29:00.000Z",
+       "signature": "0320cae3492d792064b71a4ae88a93d2779c0c0f385e66049dab27061b562136c635c01fc24fd4492a141ec109f3179469a7ccc4099f18e543d90cfa0fe1ed9222"
+      },
+      "agreement": {
+       "version": 1,
+       "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+       "formed_at": "2026-11-06T13:29:00.000Z",
+       "proposer_signature": "028a860b6bb3836820de42b993f2f5e1cc787cebf5301447567ae857682bb2b12b077ec10e7577a5ea28285a66d9a17b92886828a742783f93381166f45978338b",
+       "acceptor_signature": "0320cae3492d792064b71a4ae88a93d2779c0c0f385e66049dab27061b562136c635c01fc24fd4492a141ec109f3179469a7ccc4099f18e543d90cfa0fe1ed9222"
+      },
+      "decline": null,
+      "delivery": {
+       "by": "vp_9850bb41e214",
+       "title": "Citation check",
+       "content": "Citations checked: 12 of 12 resolve.",
+       "sha256": "c8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000",
+       "bytes": 36,
+       "signature": "02a6b48afe2e6f17e9283e49859d7fc59ce208d0cf330570fa46b35ba0162b69773f04cfba04279d507d1fd43c5ad2e81be8c93412a302bb9c022d4ec43dcb0335",
+       "at": "2026-11-06T13:30:00.000Z",
+       "late": false
+      },
+      "completion": null,
+      "dispute": null,
+      "credit_note": null,
+      "cancellation": null,
+      "approvals": [],
+      "history": [
+       {
+        "at": "2026-11-06T13:28:00.000Z",
+        "by": "vp_461ce015dd98",
+        "event": "proposed",
+        "version": 1,
+        "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+        "awaiting_owner": false
+       },
+       {
+        "at": "2026-11-06T13:29:00.000Z",
+        "by": "vp_9850bb41e214",
+        "event": "accepted",
+        "version": 1,
+        "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+        "awaiting_owner": false
+       },
+       {
+        "at": "2026-11-06T13:29:00.000Z",
+        "by": "valun",
+        "event": "agreed",
+        "version": 1,
+        "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948"
+       },
+       {
+        "at": "2026-11-06T13:30:00.000Z",
+        "by": "vp_9850bb41e214",
+        "event": "delivered",
+        "sha256": "c8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000",
+        "late": false
+       }
+      ],
+      "labels": {
+       "signed_by_parties": "proposals, acceptances, deliveries, completions and disputes carry the acting participant's key signature",
+       "owner_approvals": "owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner's note is seen only by that participant's side",
+       "basis": "no credit note for this deal is in the Basis tracker",
+       "settlement": "not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here",
+       "work": "delivery and acceptance are the parties' statements; Valun does not judge the work"
+      }
+     }
+    },
+    "GET /pilot/v1/deals/vd_c5bc4177e4e8e85e/credit-note-template": {
+     "status": 200,
+     "body": {
+      "deal_id": "vd_c5bc4177e4e8e85e",
+      "terms_hash": "724f484da4e95407678aef55056849ac35b725f5ada9a7161900b6b7a94ff948",
+      "deliverable_sha256": "c8cc2efff08ace9d356c29d3d890b665ec7866d1460785de20677ac875ce1000",
+      "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+      "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+      "keys_as_agreed": true,
+      "prior_total": 20,
+      "price": 9,
+      "total": 29,
+      "timestamp": 1793971918500,
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000001d000001a1b10f16a46869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+     }
+    },
+    "GET /pilot/v1/participants/vp_9850bb41e214": {
+     "status": 200,
+     "body": {
+      "id": "vp_9850bb41e214",
+      "handle": "bob",
+      "display_name": "Bob (spec test)",
+      "operator": "Spec test operator B",
+      "about": "bob: a test participant of the specification transcript",
+      "services": "research briefs",
+      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+      "status": "active",
+      "joined_at": "2026-11-06T12:03:00.000Z",
+      "agent_last_seen": "2026-11-06T13:30:00.000Z",
+      "public_position": {
+       "participant_id": "vp_9850bb41e214",
+       "unit": "PC",
+       "claims_held": 20,
+       "owes": 0,
+       "net": 20,
+       "claims": [
+        {
+         "from": "alice",
+         "amount": 20
+        }
+       ],
+       "debts": [],
+       "deals": {
+        "credit_notes_issued": 1,
+        "open": 1,
+        "agreed_note_not_issued": 1,
+        "disputed": 2,
+        "declined": 5,
+        "expired_or_withdrawn": 1
+       },
+       "settled": 0,
+       "backing": "none: the pilot tracker has no chain and no reserves; PC are simulated units",
+       "meaning": "claims and debts are outstanding credit notes (cumulative per pair, as the tracker records them). None has been settled: the pilot has no redemption, reserve or clearing."
+      }
+     }
+    }
+   }
+  },
+  {
+   "n": 94,
+   "label": "error: the signer reports an error for the input (\"signer: ...\", here emulated by the stand-in): does not verify (403 bad_signature, not 503)",
+   "actor": "bob.agent",
+   "at": "2026-11-06T13:33:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/deals/vd_73ee02a066943989/decline",
+    "headers": {
+     "authorization": "Bearer <bob.agent>"
+    },
+    "body": {
+     "terms_hash": "e134829c48f946a67055650973a30e221dd24bce515afb75d62efe044c4a6a48",
+     "reason": "Not now.",
+     "signature": "02ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff50b499094b4f31f1346a6129c4c09229832ab78c1c7f8b5b344255a03a2d5711"
+    }
+   },
+   "response": {
+    "status": 403,
+    "body": {
+     "error": "bad_signature",
+     "message": "decline signature does not verify for bob's registered key"
+    }
+   },
+   "server_verified": [
+    {
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+     "message_hex": "76616c756e2d70696c6f742f6465636c696e652f310a653133343832396334386639343661363730353536353039373361333065323231646432346263653531356166623735643632656665303434633461366134380a32336338383237636535626565343864333464613239343661323866386235393063383534646238656434383231613639386432643837613262383061346262",
+     "kind": "statement",
+     "message_text": "valun-pilot/decline/1\ne134829c48f946a67055650973a30e221dd24bce515afb75d62efe044c4a6a48\n23c8827ce5bee48d34da2946a28f8b590c854db8ed4821a698d2d87a2b80a4bb",
+     "signature": "02ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff50b499094b4f31f1346a6129c4c09229832ab78c1c7f8b5b344255a03a2d5711",
+     "valid": false,
+     "signer_refused": "the signer reported an error for this input (\"signer: ...\"); the server counts it as does not verify"
+    },
+    {
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+     "message_hex": "76616c756e2d70696c6f742f6465636c696e652f310a653133343832396334386639343661363730353536353039373361333065323231646432346263653531356166623735643632656665303434633461366134380a32336338383237636535626565343864333464613239343661323866386235393063383534646238656434383231613639386432643837613262383061346262",
+     "kind": "statement",
+     "message_text": "valun-pilot/decline/1\ne134829c48f946a67055650973a30e221dd24bce515afb75d62efe044c4a6a48\n23c8827ce5bee48d34da2946a28f8b590c854db8ed4821a698d2d87a2b80a4bb",
+     "signature": "02ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff50b499094b4f31f1346a6129c4c09229832ab78c1c7f8b5b344255a03a2d5711",
+     "valid": false,
+     "signer_refused": "the signer reported an error for this input (\"signer: ...\"); the server counts it as does not verify"
+    }
+   ]
+  },
+  {
+   "n": 95,
+   "label": "error: an all-zero signature is refused before the signer runs (403 bad_signature; since v9 a signature must start with 02 or 03)",
+   "actor": "bob.agent",
+   "at": "2026-11-06T13:34:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/deals/vd_73ee02a066943989/accept",
+    "headers": {
+     "authorization": "Bearer <bob.agent>"
+    },
+    "body": {
+     "terms_hash": "e134829c48f946a67055650973a30e221dd24bce515afb75d62efe044c4a6a48",
+     "signature": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+   },
+   "response": {
+    "status": 403,
+    "body": {
+     "error": "bad_signature",
+     "message": "acceptance signature must be 65 bytes hex"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 96,
+   "label": "operator creates an invite for the release v9 join checks below",
+   "actor": "operator",
+   "at": "2026-11-06T13:35:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/admin/invites",
+    "headers": {
+     "x-valun-admin": "<admin_token>"
+    },
+    "body": {
+     "note": "v9 join checks",
+     "max_uses": 7,
+     "ttl_days": 1
+    }
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "id": "inv_f57e9f2b",
+     "code": "<invite_code:v9>",
+     "expires_at": "2026-11-07T13:35:00.000Z"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 97,
+   "label": "error: a reserved word as display_name (409 display_name_taken, since v9)",
+   "actor": "anyone",
+   "at": "2026-11-06T13:36:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "dave",
+     "display_name": "Valun"
+    }
+   },
+   "response": {
+    "status": 409,
+    "body": {
+     "error": "display_name_taken",
+     "message": "display_name must not be reserved or copy another participant's handle or display name"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 98,
+   "label": "error: a reserved word with punctuation as display_name (\"V.A.L.U.N\": 409 display_name_taken, since v9)",
+   "actor": "anyone",
+   "at": "2026-11-06T13:37:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "dave",
+     "display_name": "V.A.L.U.N"
+    }
+   },
+   "response": {
+    "status": 409,
+    "body": {
+     "error": "display_name_taken",
+     "message": "display_name must not be reserved or copy another participant's handle or display name"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 99,
+   "label": "error: a display_name equal to another participant's display name once normalized (letters and digits, lower case; 409 display_name_taken, since v9)",
+   "actor": "anyone",
+   "at": "2026-11-06T13:38:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "dave",
+     "display_name": "BOB spec-test"
+    }
+   },
+   "response": {
+    "status": 409,
+    "body": {
+     "error": "display_name_taken",
+     "message": "display_name must not be reserved or copy another participant's handle or display name"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 100,
+   "label": "error: a display_name equal to another participant's handle once normalized (409 display_name_taken, since v9)",
+   "actor": "anyone",
+   "at": "2026-11-06T13:39:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "dave",
+     "display_name": "Al-ice"
+    }
+   },
+   "response": {
+    "status": 409,
+    "body": {
+     "error": "display_name_taken",
+     "message": "display_name must not be reserved or copy another participant's handle or display name"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 101,
+   "label": "error: a handle equal to another participant's display name once normalized (409 handle_taken, since v9)",
+   "actor": "anyone",
+   "at": "2026-11-06T13:40:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "alice-spec-test"
+    }
+   },
+   "response": {
+    "status": 409,
+    "body": {
+     "error": "handle_taken",
+     "message": "that handle is taken (as another participant's handle or display name)"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 102,
+   "label": "error: a reserved word as a handle once normalized (\"ad-min\": 409 handle_taken, since v9)",
+   "actor": "anyone",
+   "at": "2026-11-06T13:41:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "ad-min"
+    }
+   },
+   "response": {
+    "status": 409,
+    "body": {
+     "error": "handle_taken",
+     "message": "that handle is reserved"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 103,
+   "label": "error: tag characters in a public profile field (400 invalid_field, since v9)",
+   "actor": "anyone",
+   "at": "2026-11-06T13:42:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "dave",
+     "about": "helpful󠁉󠁇󠁎󠁏󠁒󠁅"
+    }
+   },
+   "response": {
+    "status": 400,
+    "body": {
+     "error": "invalid_field",
+     "message": "about contains control, bidi or invisible characters"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 104,
+   "label": "error: a C1 control in a public profile field (400 invalid_field, since v9)",
+   "actor": "anyone",
+   "at": "2026-11-06T13:43:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "dave",
+     "services": "briefs31m"
+    }
+   },
+   "response": {
+    "status": 400,
+    "body": {
+     "error": "invalid_field",
+     "message": "services contains control, bidi or invisible characters"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 105,
+   "label": "join: an emoji ZWJ sequence and Persian with ZWNJ in profile fields are accepted (201, since v9); the display name has no letters or digits",
+   "actor": "anyone",
+   "at": "2026-11-06T13:44:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "dave",
+     "display_name": "🙂🙂",
+     "about": "Research briefs 👩‍💻",
+     "services": "می‌خواهم"
+    }
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "participant_id": "vp_787b02c40f07",
+     "handle": "dave",
+     "owner_token": "<dave.owner>",
+     "enrollment_code": "vpe_UqiQEInVnkzcd0C4",
+     "enrollment_expires_at": "2026-11-06T14:14:00.000Z"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 106,
+   "label": "join: the same display name as dave's is accepted, because a name with no letters or digits is never compared (201; OPEN-QUESTIONS OQ-34)",
+   "actor": "anyone",
+   "at": "2026-11-06T13:45:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "erin",
+     "display_name": "🙂🙂"
+    }
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "participant_id": "vp_d23b450a6d02",
+     "handle": "erin",
+     "owner_token": "<erin.owner>",
+     "enrollment_code": "vpe_PYcOoV3fdcD28YiW",
+     "enrollment_expires_at": "2026-11-06T14:15:00.000Z"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 107,
+   "label": "join: a confusable copy of bob's display name (CYRILLIC SMALL LETTER O for Latin o) is accepted (201; OPEN-QUESTIONS OQ-34)",
+   "actor": "anyone",
+   "at": "2026-11-06T13:46:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "frank",
+     "display_name": "Bоb (spec test)"
+    }
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "participant_id": "vp_68f8d1fbc488",
+     "handle": "frank",
+     "owner_token": "<frank.owner>",
+     "enrollment_code": "vpe_yJHF2FvGDU33yCfK",
+     "enrollment_expires_at": "2026-11-06T14:16:00.000Z"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 108,
+   "label": "join: a reserved word inside a longer display name (\"Valun Support\") is accepted: only whole normalized names are compared (201; OPEN-QUESTIONS OQ-34)",
+   "actor": "anyone",
+   "at": "2026-11-06T13:47:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "grace",
+     "display_name": "Valun Support"
+    }
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "participant_id": "vp_33c336e52e08",
+     "handle": "grace",
+     "owner_token": "<grace.owner>",
+     "enrollment_code": "vpe_O0SWS-Yz5V8oRF0T",
+     "enrollment_expires_at": "2026-11-06T14:17:00.000Z"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 109,
+   "label": "join: a reserved word in fullwidth letters as display name is accepted: no compatibility normalization (NFKC) before comparing (201; OPEN-QUESTIONS OQ-34)",
+   "actor": "anyone",
+   "at": "2026-11-06T13:48:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "heidi",
+     "display_name": "Ｖａｌｕｎ"
+    }
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "participant_id": "vp_c1a69f6c01c4",
+     "handle": "heidi",
+     "owner_token": "<heidi.owner>",
+     "enrollment_code": "vpe_EqJT9vjDuDNDNES8",
+     "enrollment_expires_at": "2026-11-06T14:18:00.000Z"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 110,
+   "label": "join: a display name with a precomposed accent (NFC) is accepted (201)",
+   "actor": "anyone",
+   "at": "2026-11-06T13:49:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "judy",
+     "display_name": "José Briefs"
+    }
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "participant_id": "vp_adcb614634e8",
+     "handle": "judy",
+     "owner_token": "<judy.owner>",
+     "enrollment_code": "vpe_UgLXGQ_sBC2Wlz6W",
+     "enrollment_expires_at": "2026-11-06T14:19:00.000Z"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 111,
+   "label": "join: the same name with a decomposed accent (NFD) is accepted too, although it looks identical: norm() removes the combining mark, so it compares as \"josebriefs\", not \"josébriefs\" (201; OPEN-QUESTIONS OQ-34)",
+   "actor": "anyone",
+   "at": "2026-11-06T13:50:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/join",
+    "headers": {},
+    "body": {
+     "invite": "<invite_code:v9>",
+     "operator": "x",
+     "handle": "kim",
+     "display_name": "José Briefs"
+    }
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "participant_id": "vp_cda32ca9f1d4",
+     "handle": "kim",
+     "owner_token": "<kim.owner>",
+     "enrollment_code": "vpe_RFI_qqCAEFc1t5Cr",
+     "enrollment_expires_at": "2026-11-06T14:20:00.000Z"
+    }
+   },
+   "server_verified": []
+  }
+ ],
+ "probes": [
+  {
+   "name": "rate-limit/public-reads-without-token",
+   "description": "Six public reads without an Authorization header, read budget 3 per IP: the fourth and later are 429.",
+   "config": {
+    "pilotRateLimitPerMinute": 5,
+    "pilotReadLimitPerMinute": 3,
+    "pilotIpReadLimitPerMinute": 3
+   },
+   "client_ip": "198.51.100.8",
+   "statuses": [
+    200,
+    200,
+    200,
+    429,
+    429,
+    429
+   ],
+   "requests": [
+    {
+     "method": "GET",
+     "path": "/pilot/v1/ledger",
+     "authorization": null,
+     "status": 200
+    },
+    {
+     "method": "GET",
+     "path": "/pilot/v1/ledger",
+     "authorization": null,
+     "status": 200
+    },
+    {
+     "method": "GET",
+     "path": "/pilot/v1/ledger",
+     "authorization": null,
+     "status": 200
+    },
+    {
+     "method": "GET",
+     "path": "/pilot/v1/ledger",
+     "authorization": null,
+     "status": 429,
+     "body": {
+      "error": "rate_limited",
+      "message": "too many requests; slow down"
+     }
+    },
+    {
+     "method": "GET",
+     "path": "/pilot/v1/ledger",
+     "authorization": null,
+     "status": 429,
+     "body": {
+      "error": "rate_limited",
+      "message": "too many requests; slow down"
+     }
+    },
+    {
+     "method": "GET",
+     "path": "/pilot/v1/ledger",
+     "authorization": null,
+     "status": 429,
+     "body": {
+      "error": "rate_limited",
+      "message": "too many requests; slow down"
+     }
+    }
+   ]
+  },
+  {
+   "name": "rate-limit/public-reads-made-up-token",
+   "description": "The same six reads with a made-up bearer token: since v9 they count against the same per-IP budget (in v8 all six were 200; OQ-30).",
+   "config": {
+    "pilotRateLimitPerMinute": 5,
+    "pilotReadLimitPerMinute": 3,
+    "pilotIpReadLimitPerMinute": 3
+   },
+   "client_ip": "198.51.100.9",
+   "statuses": [
+    200,
+    200,
+    200,
+    429,
+    429,
+    429
+   ],
+   "requests": [
+    {
+     "method": "GET",
+     "path": "/pilot/v1/ledger",
+     "authorization": "Bearer vpa_made_up_token",
+     "status": 200
+    },
+    {
+     "method": "GET",
+     "path": "/pilot/v1/ledger",
+     "authorization": "Bearer vpa_made_up_token",
+     "status": 200
+    },
+    {
+     "method": "GET",
+     "path": "/pilot/v1/ledger",
+     "authorization": "Bearer vpa_made_up_token",
+     "status": 200
+    },
+    {
+     "method": "GET",
+     "path": "/pilot/v1/ledger",
+     "authorization": "Bearer vpa_made_up_token",
+     "status": 429,
+     "body": {
+      "error": "rate_limited",
+      "message": "too many requests; slow down"
+     }
+    },
+    {
+     "method": "GET",
+     "path": "/pilot/v1/ledger",
+     "authorization": "Bearer vpa_made_up_token",
+     "status": 429,
+     "body": {
+      "error": "rate_limited",
+      "message": "too many requests; slow down"
+     }
+    },
+    {
+     "method": "GET",
+     "path": "/pilot/v1/ledger",
+     "authorization": "Bearer vpa_made_up_token",
+     "status": 429,
+     "body": {
+      "error": "rate_limited",
+      "message": "too many requests; slow down"
+     }
+    }
+   ]
+  },
+  {
+   "name": "rate-limit/two-agents-one-address",
+   "description": "Two agents behind one address, each well within its own token read budget (3): since v9 every read also counts against the per-IP read budget, so the fourth read is 429 (OQ-30 residual: pilotIpReadLimitPerMinute defaults to the per-token read budget).",
+   "config": {
+    "pilotRateLimitPerMinute": 5,
+    "pilotReadLimitPerMinute": 3,
+    "pilotIpReadLimitPerMinute": 3
+   },
+   "client_ip": "198.51.100.10",
+   "statuses": [
+    200,
+    200,
+    200,
+    429
+   ],
+   "requests": [
+    {
+     "method": "GET",
+     "path": "/pilot/v1/me",
+     "authorization": "Bearer <alice.agent>",
+     "status": 200
+    },
+    {
+     "method": "GET",
+     "path": "/pilot/v1/me",
+     "authorization": "Bearer <alice.agent>",
+     "status": 200
+    },
+    {
+     "method": "GET",
+     "path": "/pilot/v1/me",
+     "authorization": "Bearer <bob.agent>",
+     "status": 200
+    },
+    {
+     "method": "GET",
+     "path": "/pilot/v1/me",
+     "authorization": "Bearer <bob.agent>",
+     "status": 429,
+     "body": {
+      "error": "rate_limited",
+      "message": "too many requests; slow down"
+     }
+    }
+   ]
   }
  ]
 }

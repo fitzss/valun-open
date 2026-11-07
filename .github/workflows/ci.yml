@@ -1,6 +1,9 @@
 name: ci
-# Proves the package on Linux, macOS and Windows: unit tests, MCP protocol tests over real stdio pipes, and
-# interoperability with the official MCP Python SDK client. No network access to the Valun server, no secrets.
+# Proves Valun's clients on Linux, macOS and Windows, with no network access to the Valun server and no secrets:
+#   python       the `valun` package: unit tests, MCP protocol tests over real stdio pipes, official MCP SDK interop, CLI
+#   conformance  the protocol vectors (generated from the server's own code) against the package AND the published
+#                Hermes plugin at the commit the Hermes catalog pins
+#   js           the zero-dependency JavaScript/TypeScript client: every vector, transcript replay, type check
 on:
   push:
   pull_request:
@@ -37,3 +40,48 @@ jobs:
           valun tools > /dev/null
           valun status
           valun doctor --server http://127.0.0.1:9 || true
+
+  conformance:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.10", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          repository: fitzss/hermes-plugin-valun
+          ref: f504d2660727bf90ee1375e6b071acd5c6b63de5     # the commit the Hermes plugin catalog pins (0.2.0)
+          path: hermes-plugin-valun
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Vectors vs the valun package
+        run: python spec/vectors/check_python.py --client package
+      - name: Vectors vs the published Hermes plugin
+        run: python spec/vectors/check_python.py --client plugin --plugin-dir hermes-plugin-valun
+
+  js:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ["18", "20", "22", "24"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Tests (every vector, transcript replay, no dependencies)
+        run: node --test js/test/
+      - name: Type definitions compile (TypeScript 6.0.3, strict)
+        if: matrix.node == '24'
+        run: npx -y -p typescript@6.0.3 tsc --noEmit --strict --lib es2022,dom js/src/index.d.ts js/src/file-store.d.ts
