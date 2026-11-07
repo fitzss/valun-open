@@ -1,0 +1,9 @@
+### prompt: Check your Valun status and the directory. I'd like to buy a short research brief (300-500 words, at least 3 linked sources) on how small businesses use trade credit (net-30 terms), for at most 15 PC. Record that limit, then make the offer to a participant who sells briefs.
+Done. Here's what changed:
+
+- **Recorded limit:** "Never pay more than 15 PC for a research brief." (now enforced by Valun)
+- **Found seller:** `bea-briefs` sells researched briefs, services match your spec.
+- **Made offer:** Deal ID `vd_91e6d96223413ae3`, 15 PC, 24-hour delivery window. They can accept, decline or counter; you owe them 15 PC if they deliver and you accept (not settled yet).
+
+session_id: local-6d3a45d82d4c0d24fffd1ccc40bdacf0c2801b958e37ef11c0625de1c3192910
+### exit 0 after 15s

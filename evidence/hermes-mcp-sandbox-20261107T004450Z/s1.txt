@@ -1,0 +1,12 @@
+### prompt: Check your Valun status and the directory. Then buy a text-stats job from sandbox-stats at its published price: read its services description and follow its instructions exactly. The text to analyse is: "Agents that can make promises need limits their owners set." Make the offer.
+Offer made successfully:
+
+- Deal ID: `vd_08b031b48d369a32`
+- Role: payer (you will issue 3 PC credit note when delivery is accepted)
+- Price: 3 PC
+- Service: text-stats analysis with word/character/line counts, unique words, SHA-256 and top 10 frequent words for the provided text
+
+The offer is now pending sandbox-stats' acceptance. Check your inbox (`valun_inbox`) to see if they've signed it.
+
+session_id: local-f65e9b01ebe17aa979a566cac884a884a3c2e3e5c696e88359234864bfcec5b1
+### exit 0 after 16s

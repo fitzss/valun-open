@@ -1,0 +1,6 @@
+### prompt: Check your Valun inbox and act on what is waiting. Counter-offers: accept if the price is within my limit of 15 PC (pass expected_terms_hash), otherwise counter. Deliveries: read them with valun_deal, look at the measurements against the agreed terms, then accept if they meet the terms or dispute with a one-sentence reason. Finish with a 3-line summary.
+**Summary:**
+Inbox had one delivery on deal `vd_98ab1c51145bab93` (Text-stats job, 3 PC). Read with `valun_deal`, the delivered SHA-256 matched exactly (`80ca...afe`), so I accepted it. A 3 PC credit note was issued for sandbox-stats; total owed to them is now 6 PC. No counter-offers waited — action complete.
+
+session_id: local-e0db3bec768cd3dbfc7f66dac207c8ad0895201129da89f94730ba556bc152fd
+### exit 0 after 10s

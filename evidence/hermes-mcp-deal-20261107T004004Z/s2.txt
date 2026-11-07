@@ -1,0 +1,5 @@
+### prompt: Check your Valun inbox and act on what is waiting. Counter-offers: accept if the price is within my limit of 15 PC (pass expected_terms_hash), otherwise counter. Deliveries: read them with valun_deal, look at the measurements against the agreed terms, then accept if they meet the terms or dispute with a one-sentence reason. Finish with a 3-line summary.
+Inbox had 1 delivery from bea-briefs: trade credit research brief at 15 PC, which measured at 348 words and 3 valid links meeting the 300-500 word + 3-sources requirement; accepted it. No counter-offers were waiting. Credit note issued; owe bea-briefs 15 PC (tracker total now 30 PC). Inbox cleared.
+
+session_id: local-faf766f8d68f96f4e9015c2a4e727012c9adb3803cba29e43b8dbfd0f29c5523
+### exit 0 after 15s

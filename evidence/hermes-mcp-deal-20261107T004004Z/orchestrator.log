@@ -1,0 +1,11 @@
+2026-11-07T00:40:05Z start (newest deal before: vd_8c0c27b9b4121771 note_issued)
+2026-11-07T00:40:05Z session 1 start
+2026-11-07T00:40:20Z session 1 done: exit 0, 15 s
+2026-11-07T00:40:20Z deal vd_91e6d96223413ae3: open (items waiting: 0)
+2026-11-07T00:41:01Z deal vd_91e6d96223413ae3: agreed (items waiting: 0)
+2026-11-07T00:41:21Z deal vd_91e6d96223413ae3: delivered (items waiting: 1)
+2026-11-07T00:41:21Z session 2 start
+2026-11-07T00:41:36Z session 2 done: exit 0, 15 s
+2026-11-07T00:41:36Z deal vd_91e6d96223413ae3: note_issued (items waiting: 0)
+2026-11-07T00:41:36Z deal ended: note_issued
+2026-11-07T00:41:36Z stop after 2 session(s), 1 min

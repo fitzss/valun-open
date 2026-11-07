@@ -1,0 +1,236 @@
+{
+ "meta": {
+  "what": "Basis credit-note message (80 bytes) and debt key; replica of basis_core signing_message, proven against Basis TV001-TV011",
+  "server_release": "v8 (valun-app commit e0b990a)",
+  "protocol": "valun-deal/1",
+  "network": "valun-pilot-1",
+  "generated_by": "spec/vectors/generate.mjs",
+  "server_source_sha256": {
+   "lib/pilot/core.mjs": "cc7792410e7aa53c197b97cea296cdf32f014d00dc2ffcebfd9e81a5070d3d73",
+   "lib/pilot/http.mjs": "cb826b1e5a32cde0fd965b7323c2e065ef42f12522199345fe6b6ebe4a7f4c77"
+  },
+  "pilot_token_id": "01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+  "pilot_denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+  "fixture_clock": "2026-11-06T12:00:00.000Z",
+  "fixture_tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+  "test_keys": {
+   "alice": {
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "label": "valun-open/spec/test-key/alice"
+   },
+   "bob": {
+    "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    "label": "valun-open/spec/test-key/bob"
+   },
+   "carol": {
+    "pubkey": "0265ad727818ed16c0dc99185145ba5c0413efa30465f783b7de4b43c799a2e124",
+    "label": "valun-open/spec/test-key/carol"
+   },
+   "carol-2": {
+    "pubkey": "037627480266d48c06e9e05d121a1ff165e2659857eb20c55fdcbeb1d372232680",
+    "label": "valun-open/spec/test-key/carol-2"
+   }
+  },
+  "warning": "All keys, codes, ids and tokens here are PUBLIC TEST FIXTURES from an in-memory run. None is valid on any server. Never use the test keys for anything real."
+ },
+ "vectors": [
+  {
+   "name": "basis-official/TV001",
+   "tier": "core",
+   "description": "Basis official vector TV001 (denomination erg): the message must equal Basis's published bytes.",
+   "issuer_pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "recipient_pubkey": "023bc6f9ff8a2af3992d23c145de5a868bae6b80a3dd3b24a1de4c6486472e9dbd",
+   "total": "1000000000",
+   "timestamp": "1743379200000",
+   "tracker_nft_id": "4242424242424242424242424242424242424242424242424242424242424242",
+   "denomination": "erg",
+   "server_representable": true,
+   "debt_key_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f",
+   "message_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f000000003b9aca0000000195e97f78004242424242424242424242424242424242424242424242424242424242424242"
+  },
+  {
+   "name": "basis-official/TV003",
+   "tier": "core",
+   "description": "Basis official vector TV003 (denomination erg): the message must equal Basis's published bytes.",
+   "issuer_pubkey": "02b651a75c3cec621fa493dfa45fbb42ff77943acdceeb9543163d76e3d81cb645",
+   "recipient_pubkey": "023bc6f9ff8a2af3992d23c145de5a868bae6b80a3dd3b24a1de4c6486472e9dbd",
+   "total": "500000000",
+   "timestamp": "1743379201000",
+   "tracker_nft_id": "4242424242424242424242424242424242424242424242424242424242424242",
+   "denomination": "erg",
+   "server_representable": true,
+   "debt_key_hex": "52eb0beb0bd0e86206e0a817785aadabbef08730fd5654ea65ebcbe1ef1b3b9e",
+   "message_hex": "52eb0beb0bd0e86206e0a817785aadabbef08730fd5654ea65ebcbe1ef1b3b9e000000001dcd650000000195e97f7be84242424242424242424242424242424242424242424242424242424242424242"
+  },
+  {
+   "name": "basis-official/TV009",
+   "tier": "core",
+   "description": "Basis official vector TV009 (denomination erg): the message must equal Basis's published bytes.",
+   "issuer_pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "recipient_pubkey": "023bc6f9ff8a2af3992d23c145de5a868bae6b80a3dd3b24a1de4c6486472e9dbd",
+   "total": "18446744073709551615",
+   "timestamp": "18446744073709551615",
+   "tracker_nft_id": "4242424242424242424242424242424242424242424242424242424242424242",
+   "denomination": "erg",
+   "server_representable": false,
+   "debt_key_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f",
+   "message_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851fffffffffffffffffffffffffffffffff4242424242424242424242424242424242424242424242424242424242424242"
+  },
+  {
+   "name": "basis-official/TV010",
+   "tier": "core",
+   "description": "Basis official vector TV010 (denomination erg): the message must equal Basis's published bytes.",
+   "issuer_pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "recipient_pubkey": "023bc6f9ff8a2af3992d23c145de5a868bae6b80a3dd3b24a1de4c6486472e9dbd",
+   "total": "0",
+   "timestamp": "0",
+   "tracker_nft_id": "4242424242424242424242424242424242424242424242424242424242424242",
+   "denomination": "erg",
+   "server_representable": true,
+   "debt_key_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f",
+   "message_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f000000000000000000000000000000004242424242424242424242424242424242424242424242424242424242424242"
+  },
+  {
+   "name": "basis-official/TV011",
+   "tier": "core",
+   "description": "Basis official vector TV011 (denomination erg): the message must equal Basis's published bytes.",
+   "issuer_pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "recipient_pubkey": "023bc6f9ff8a2af3992d23c145de5a868bae6b80a3dd3b24a1de4c6486472e9dbd",
+   "total": "500000000",
+   "timestamp": "1743379202000",
+   "tracker_nft_id": "4242424242424242424242424242424242424242424242424242424242424242",
+   "denomination": "erg",
+   "server_representable": true,
+   "debt_key_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f",
+   "message_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f000000001dcd650000000195e97f7fd04242424242424242424242424242424242424242424242424242424242424242"
+  },
+  {
+   "name": "pilot/first-note",
+   "tier": "core",
+   "description": "Pilot PC note: alice owes bob a cumulative 20 PC (first note for the pair). Denomination token:<PILOT_TOKEN_ID>.",
+   "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+   "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+   "total": "20",
+   "timestamp": "1793966398500",
+   "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+   "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+   "server_representable": true,
+   "debt_key_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee",
+   "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000014000001a1b0badc246869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+   "signer": "alice",
+   "signature": "02911af431c9e94656d5f80779bca2456ed988aae6689d93ae603e8f170f3ee76d304bac9e73fee0eff3b5dcb3468a0eea69591e1e3527a5f5464d891f20070853"
+  },
+  {
+   "name": "pilot/cumulative",
+   "tier": "core",
+   "description": "Second deal of 25 PC for the same key pair: the note carries the running total 45, not 25.",
+   "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+   "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+   "total": "45",
+   "timestamp": "1793966460000",
+   "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+   "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+   "server_representable": true,
+   "debt_key_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee",
+   "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000002d000001a1b0bbcc606869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+   "signer": "alice",
+   "signature": "02f382e6844171f5c6d1d47fc1a93202e101af2ec80648e24945ec240fe2f68e2b4fc073a6616fef779eed98477c81558b86bb326cb53c586ad0c9044ee0b94c1b"
+  },
+  {
+   "name": "pilot/reverse-pair",
+   "tier": "core",
+   "description": "bob owes alice: issuer and recipient swapped give a different debt key.",
+   "issuer_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+   "recipient_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+   "total": "7",
+   "timestamp": "1793966400000",
+   "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+   "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+   "server_representable": true,
+   "debt_key_hex": "21ad741574ef92fb168ec851ad04227a8729cfde6b16d4250260b4c98a9a6ace",
+   "message_hex": "21ad741574ef92fb168ec851ad04227a8729cfde6b16d4250260b4c98a9a6ace0000000000000007000001a1b0bae2006869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+   "signer": "bob",
+   "signature": "036d2e8416897105b4ef87eaf3b64c6d991ed8ccf4e9097ca139fe4692218377f50673680d855ec31f61d39a8aa601fb0264857a0cf14a32a358b1b41dda50688a"
+  },
+  {
+   "name": "pilot/official-keys-token",
+   "tier": "core",
+   "description": "TV001 inputs, but with the pilot token denomination: debt key = blake2b256(issuer||recipient||token_id) (differs from TV001).",
+   "issuer_pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "recipient_pubkey": "023bc6f9ff8a2af3992d23c145de5a868bae6b80a3dd3b24a1de4c6486472e9dbd",
+   "total": "1000000000",
+   "timestamp": "1743379200000",
+   "tracker_nft_id": "4242424242424242424242424242424242424242424242424242424242424242",
+   "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+   "server_representable": true,
+   "debt_key_hex": "cab067e8177fa40c307534e1ccd805760694e3da6f53660cc94702e9d920593d",
+   "message_hex": "cab067e8177fa40c307534e1ccd805760694e3da6f53660cc94702e9d920593d000000003b9aca0000000195e97f78004242424242424242424242424242424242424242424242424242424242424242"
+  },
+  {
+   "name": "pilot/total-zero",
+   "tier": "edge",
+   "description": "Zero total and timestamp (never produced by the pilot: a note always adds a price >= 1).",
+   "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+   "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+   "total": "0",
+   "timestamp": "0",
+   "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+   "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+   "server_representable": true,
+   "debt_key_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee",
+   "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000000000000000000000006869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+  },
+  {
+   "name": "pilot/max-safe",
+   "tier": "edge",
+   "description": "2^53-1: the largest total/timestamp the JS server can represent exactly.",
+   "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+   "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+   "total": "9007199254740991",
+   "timestamp": "9007199254740991",
+   "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+   "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+   "server_representable": true,
+   "debt_key_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee",
+   "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee001fffffffffffff001fffffffffffff6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+  },
+  {
+   "name": "pilot/u64-max",
+   "tier": "edge",
+   "description": "2^64-1: valid for Basis (u64) but not representable by the JS server (server_representable: false).",
+   "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+   "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+   "total": "18446744073709551615",
+   "timestamp": "18446744073709551615",
+   "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+   "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+   "server_representable": false,
+   "debt_key_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee",
+   "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417eeffffffffffffffffffffffffffffffff6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+  },
+  {
+   "name": "pilot/erg-same-pair",
+   "tier": "core",
+   "description": "Same pair and amounts as pilot/first-note but denomination erg: a different message. A pilot note signed this way does not verify.",
+   "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+   "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+   "total": "20",
+   "timestamp": "1793966398500",
+   "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+   "denomination": "erg",
+   "server_representable": true,
+   "debt_key_hex": "7ccf5dd436a94f6705fc9b6e9fdd71f1ad58df84ae47f4ea4da0ef2247a3e929",
+   "message_hex": "7ccf5dd436a94f6705fc9b6e9fdd71f1ad58df84ae47f4ea4da0ef2247a3e9290000000000000014000001a1b0badc246869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+  }
+ ],
+ "negative_signatures": [
+  {
+   "name": "negative/erg-signature-for-token-note",
+   "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000014000001a1b0badc246869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+   "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+   "signature": "02898051536b62d6472498e20f56c39ecd8a1c9d2da7b8d8287c36895b067267f22d04f2ae40a0bbfa5d8a8354ae55ebec92c6a0ee309eefcbf55b3f86c430ea91",
+   "valid": false,
+   "why": "signed the erg-denomination message; the pilot verifies the token-denomination message"
+  }
+ ]
+}

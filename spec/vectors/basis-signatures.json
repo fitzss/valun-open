@@ -1,0 +1,137 @@
+{
+ "meta": {
+  "what": "Basis Schnorr signature verification vectors (official Basis TV001-TV011)",
+  "server_release": "v8 (valun-app commit e0b990a)",
+  "protocol": "valun-deal/1",
+  "network": "valun-pilot-1",
+  "generated_by": "spec/vectors/generate.mjs",
+  "server_source_sha256": {
+   "lib/pilot/core.mjs": "cc7792410e7aa53c197b97cea296cdf32f014d00dc2ffcebfd9e81a5070d3d73",
+   "lib/pilot/http.mjs": "cb826b1e5a32cde0fd965b7323c2e065ef42f12522199345fe6b6ebe4a7f4c77"
+  },
+  "pilot_token_id": "01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+  "pilot_denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+  "fixture_clock": "2026-11-06T12:00:00.000Z",
+  "fixture_tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+  "test_keys": {
+   "alice": {
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "label": "valun-open/spec/test-key/alice"
+   },
+   "bob": {
+    "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    "label": "valun-open/spec/test-key/bob"
+   },
+   "carol": {
+    "pubkey": "0265ad727818ed16c0dc99185145ba5c0413efa30465f783b7de4b43c799a2e124",
+    "label": "valun-open/spec/test-key/carol"
+   },
+   "carol-2": {
+    "pubkey": "037627480266d48c06e9e05d121a1ff165e2659857eb20c55fdcbeb1d372232680",
+    "label": "valun-open/spec/test-key/carol-2"
+   }
+  },
+  "warning": "All keys, codes, ids and tokens here are PUBLIC TEST FIXTURES from an in-memory run. None is valid on any server. Never use the test keys for anything real."
+ },
+ "vectors": [
+  {
+   "name": "basis-official/TV001",
+   "tier": "core",
+   "pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "message_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f000000003b9aca0000000195e97f78004242424242424242424242424242424242424242424242424242424242424242",
+   "signature": "027742dac59ea73f7f8710648f17b9fb8ccf570460a727c02b28a6e2f310ebf4711397afdac9e6cc799beedc3309ef2b4989598768f65ea78b95151c844e86408f",
+   "valid": true,
+   "source": "Basis cross-validation vectors (basis-tracker specs/SCHNORR_SIGNATURE_SPEC.md at 3df7ed93, CC0-1.0), as copied in hermes-plugin-valun/tests/test_valun_basis.py"
+  },
+  {
+   "name": "basis-official/TV002",
+   "tier": "core",
+   "pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "message_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f000000003b9aca0000000195e97f78004242424242424242424242424242424242424242424242424242424242424242",
+   "signature": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": false,
+   "source": "Basis cross-validation vectors (basis-tracker specs/SCHNORR_SIGNATURE_SPEC.md at 3df7ed93, CC0-1.0), as copied in hermes-plugin-valun/tests/test_valun_basis.py"
+  },
+  {
+   "name": "basis-official/TV003",
+   "tier": "core",
+   "pubkey": "02b651a75c3cec621fa493dfa45fbb42ff77943acdceeb9543163d76e3d81cb645",
+   "message_hex": "52eb0beb0bd0e86206e0a817785aadabbef08730fd5654ea65ebcbe1ef1b3b9e000000001dcd650000000195e97f7be84242424242424242424242424242424242424242424242424242424242424242",
+   "signature": "02d052ebc2a622f61681dc9ad52a8cd062acc4c6acf9ba6cfdd507ae886b8054701319d7378338904e89be9604c16825a06fd831afa598248e3f3902be9d270c39",
+   "valid": false,
+   "source": "Basis cross-validation vectors (basis-tracker specs/SCHNORR_SIGNATURE_SPEC.md at 3df7ed93, CC0-1.0), as copied in hermes-plugin-valun/tests/test_valun_basis.py"
+  },
+  {
+   "name": "basis-official/TV004",
+   "tier": "core",
+   "pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "message_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f000000003b9aca0000000195e97f78004242424242424242424242424242424242424242424242424242424242424242",
+   "signature": "0240d01f20717b244800f147d2c9b559cd836c19aea344071c1639be2a22870e772bdbbaf89bb715fcc8c4ec7d8df464fb196c83a9616ef0ccd392f5ae8022d072",
+   "valid": false,
+   "source": "Basis cross-validation vectors (basis-tracker specs/SCHNORR_SIGNATURE_SPEC.md at 3df7ed93, CC0-1.0), as copied in hermes-plugin-valun/tests/test_valun_basis.py"
+  },
+  {
+   "name": "basis-official/TV005",
+   "tier": "core",
+   "pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "message_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f000000003b9aca0000000195e97f78004242424242424242424242424242424242424242424242424242424242424242",
+   "signature": "036eb16f1611ae82edfd2ca30251e6fbbb3eae03173eb16e270e53ce7f755342a16d86d89db441bb8905f86110f3e615ffaf3ceb9d7b1992c0d14d0e3cbf7f3931",
+   "valid": false,
+   "source": "Basis cross-validation vectors (basis-tracker specs/SCHNORR_SIGNATURE_SPEC.md at 3df7ed93, CC0-1.0), as copied in hermes-plugin-valun/tests/test_valun_basis.py"
+  },
+  {
+   "name": "basis-official/TV006",
+   "tier": "core",
+   "pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "message_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f000000003b9aca0000000195e97f78004242424242424242424242424242424242424242424242424242424242424242",
+   "signature": "028c3d344aefd0caa6a16ffdab0bd154b457585cd998e5ac80b86286a796f33f1e53488afbc8e3160caab535bac018b81bd62acea9b64c2a426d08727d42193720",
+   "valid": false,
+   "source": "Basis cross-validation vectors (basis-tracker specs/SCHNORR_SIGNATURE_SPEC.md at 3df7ed93, CC0-1.0), as copied in hermes-plugin-valun/tests/test_valun_basis.py"
+  },
+  {
+   "name": "basis-official/TV007",
+   "tier": "core",
+   "pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "message_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f000000003b9aca0000000195e97f78004242424242424242424242424242424242424242424242424242424242424242",
+   "signature": "03baecb66840002c131c54134b0abde112a0405f3d6d1d384b5815857ee68b9e624ba6d7c176c8631633c7e609af34f9e389f99c6e3fd64e16aa743956d66e1e11",
+   "valid": false,
+   "source": "Basis cross-validation vectors (basis-tracker specs/SCHNORR_SIGNATURE_SPEC.md at 3df7ed93, CC0-1.0), as copied in hermes-plugin-valun/tests/test_valun_basis.py"
+  },
+  {
+   "name": "basis-official/TV008",
+   "tier": "core",
+   "pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "message_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f000000003b9aca0000000195e97f78004242424242424242424242424242424242424242424242424242424242424242",
+   "signature": "0282fcc89cb99e3491bb43d1797ff2567fde0620ea38d78f937ae122ae0acf2f897169bcb397037aeb94eda8ee6e5642781f8fe1d85f33bc6a8ed5a440760fd029",
+   "valid": false,
+   "source": "Basis cross-validation vectors (basis-tracker specs/SCHNORR_SIGNATURE_SPEC.md at 3df7ed93, CC0-1.0), as copied in hermes-plugin-valun/tests/test_valun_basis.py"
+  },
+  {
+   "name": "basis-official/TV009",
+   "tier": "core",
+   "pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "message_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851fffffffffffffffffffffffffffffffff4242424242424242424242424242424242424242424242424242424242424242",
+   "signature": "03917db7e61b54d50409c0447ebd27caa124d2702aa0ae5651381cd662162307c8055e54abdd0ba40be01c695edf95b9026c94f286a3353f63d1e2348e5d455c2f",
+   "valid": false,
+   "source": "Basis cross-validation vectors (basis-tracker specs/SCHNORR_SIGNATURE_SPEC.md at 3df7ed93, CC0-1.0), as copied in hermes-plugin-valun/tests/test_valun_basis.py"
+  },
+  {
+   "name": "basis-official/TV010",
+   "tier": "core",
+   "pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "message_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f000000000000000000000000000000004242424242424242424242424242424242424242424242424242424242424242",
+   "signature": "0235f9989903d1e2ee8c274ba5494119b6deef7cd0d0e15dc07190011b524c891d5deec9c943adce1891dc5977cda361da0a81e81bbf489b3a7f6b8d2c15116ad4",
+   "valid": true,
+   "source": "Basis cross-validation vectors (basis-tracker specs/SCHNORR_SIGNATURE_SPEC.md at 3df7ed93, CC0-1.0), as copied in hermes-plugin-valun/tests/test_valun_basis.py"
+  },
+  {
+   "name": "basis-official/TV011",
+   "tier": "core",
+   "pubkey": "02fc84de78d191f6b47b6ba97bf1eb5ba3b541c8ca247461f41dafdd6db11bc063",
+   "message_hex": "76a4d85b3cac6917e0f0565ebcdc2fbf7656662ca97ef40b9ed1db70c211851f000000001dcd650000000195e97f7fd04242424242424242424242424242424242424242424242424242424242424242",
+   "signature": "02001d67f568ace3b32c68bd9cfdd3795d5df0f5057b4d837935578697675c8e334668c7b923ae13df8dd9725ac66c63a4ca6f05cc2e7d1c3d23abdcb750dea923",
+   "valid": true,
+   "source": "Basis cross-validation vectors (basis-tracker specs/SCHNORR_SIGNATURE_SPEC.md at 3df7ed93, CC0-1.0), as copied in hermes-plugin-valun/tests/test_valun_basis.py"
+  }
+ ]
+}

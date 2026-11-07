@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69,<81"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "valun"
+version = "0.3.0.dev0"
+description = "Let any AI agent make service-for-credit deals with other, independently controlled agents (MCP server, CLI, core). Experimental pilot: synthetic units, nothing settled."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Fitz Doud" }]
+dependencies = []
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.scripts]
+valun = "valun.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/fitzss/valun-open"
+Hermes-plugin = "https://github.com/fitzss/hermes-plugin-valun"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,2120 @@
+{
+ "meta": {
+  "what": "What the real validateTerms()/propose() accept and refuse at the fixture clock (server-only rules; no Python equivalent)",
+  "server_release": "v8 (valun-app commit e0b990a)",
+  "protocol": "valun-deal/1",
+  "network": "valun-pilot-1",
+  "generated_by": "spec/vectors/generate.mjs",
+  "server_source_sha256": {
+   "lib/pilot/core.mjs": "cc7792410e7aa53c197b97cea296cdf32f014d00dc2ffcebfd9e81a5070d3d73",
+   "lib/pilot/http.mjs": "cb826b1e5a32cde0fd965b7323c2e065ef42f12522199345fe6b6ebe4a7f4c77"
+  },
+  "pilot_token_id": "01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+  "pilot_denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+  "fixture_clock": "2026-11-06T12:00:00.000Z",
+  "fixture_tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+  "test_keys": {
+   "alice": {
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "label": "valun-open/spec/test-key/alice"
+   },
+   "bob": {
+    "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    "label": "valun-open/spec/test-key/bob"
+   },
+   "carol": {
+    "pubkey": "0265ad727818ed16c0dc99185145ba5c0413efa30465f783b7de4b43c799a2e124",
+    "label": "valun-open/spec/test-key/carol"
+   },
+   "carol-2": {
+    "pubkey": "037627480266d48c06e9e05d121a1ff165e2659857eb20c55fdcbeb1d372232680",
+    "label": "valun-open/spec/test-key/carol-2"
+   }
+  },
+  "warning": "All keys, codes, ids and tokens here are PUBLIC TEST FIXTURES from an in-memory run. None is valid on any server. Never use the test keys for anything real."
+ },
+ "vectors": [
+  {
+   "name": "ok/base",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "5f7bccd0e836183a82fbab738a617faa25673c4ead77eeb3da94c7ef4c9e6003",
+   "server_outcome": "accepted",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/payee-proposes",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_b0b0b0b0b0b0",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_b0b0b0b0b0b0",
+   "terms_hash": "5b453b080acd01eec873d4ae1e85eaa0868decef616f9f035c8e242c857dedbb",
+   "server_outcome": "accepted",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/deliver-by-before-offer-expiry",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-06T13:00:00.000Z",
+    "offer_expires_at": "2026-11-13T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "63473f8961bd4e5864689b0e8e0d7787031bd82cd5013adb84dbec958c6046a1",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "deliver_by must not be earlier than offer_expires_at (a deal must not be agreed already overdue)"
+   },
+   "note": "Refused since release v8 (e0b990a): deliver_by must not be earlier than offer_expires_at.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/deliver-by-equals-offer-expiry",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-07T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "17e950bd1ed3313a34e34b7358ecd3daa7f8dd462af5c040da932e71c611b31f",
+   "server_outcome": "accepted",
+   "note": "deliver_by == offer_expires_at is allowed (>=).",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/date-only-strings",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08",
+    "offer_expires_at": "2026-11-07"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "8de428c56dc3026d6be9cd010eb7c9bf37f46c1d081a7d01e02c24b0e1437f66",
+   "server_outcome": "accepted",
+   "note": "Accepted: the server parses dates with Date.parse(), so date-only strings pass; they are hashed as written.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/rfc2822-date",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "Sat, 07 Nov 2026 06:00:00 GMT"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "3467976705d58000b66c70c0c3ce24bbf61aea6ffd1b891c10efa1fbe379554e",
+   "server_outcome": "accepted",
+   "note": "Accepted by Date.parse(); the Python client cannot parse it (it refuses to sign).",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/offset-date",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T20:00:00+08:00"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "6ed534cbb4536e0abb84763bf6efc2579cf6bef073dfc9a6975976344f28168f",
+   "server_outcome": "accepted",
+   "note": "Accepted: a UTC offset other than Z.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/tab-newline-cr-in-text",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "tab\there",
+     "description": "line1\nline2\r\nline3",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "7b375b300c83aa40700bbf6ba2c4b8e914d0f76c020a5b22af4914df9ce544c0",
+   "server_outcome": "accepted",
+   "note": "TAB, LF and CR are the only controls allowed in service text.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/controls-in-title",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "ok\u0007\u001b[31m",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "e26a40c180591e589713afa69ffcfda92406a89540d48291ab0d8c46ae5ece5e",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.title contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "Refused since v8: C0 controls (other than TAB/LF/CR) and DEL in service text.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/del-in-deliverable",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "del"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "47be1bd47103152d3dae95267459a1cd4979ade61c19ece77ee19fb7a33e0d77",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.deliverable contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "DEL (U+007F) is refused.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/bidi-override-in-description",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "abc‮dcba",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "24706cbf6e2ad2de014bc769021504ffb8dc0fedfd96106dd4e11e826cb08e0c",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.description contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "Bidi overrides U+202A..U+202E are refused.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/bidi-isolate-in-title",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "a⁧b⁩",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "af8e50e78f4f0870fbb03795c60828654db9bf48900a72fb054f89023d743cec",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.title contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "Bidi isolates U+2066..U+2069 are refused.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/zero-width-space",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "zero​width",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "4942082600ea01d37ec37bcbd108fc5a930081422a666cdc96b71a65ebc2bf7c",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.title contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "Zero-width characters U+200B..U+200F are refused.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/zwj-emoji",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "by 👩‍💻",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "32e36c60546e1272220cf985fbad4bfd8a84699c15364591a9e1e7563f37694b",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.title contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "Emoji ZWJ sequences contain U+200D and are refused (see OPEN-QUESTIONS).",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/zwnj-persian",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "می‌خواهم",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "959cb62ab1696a36dd639af99ec16251d7d0d0263bd0d9644ca703688c567b00",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.title contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "Persian with ZERO WIDTH NON-JOINER U+200C is refused (see OPEN-QUESTIONS).",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/bom",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "﻿title",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "6c0c83dd65ee12db7f7f1260e6af44bbd49f1d4af86fbe7338750b92834fa0a3",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.title contains control, bidi or zero-width characters; remove them and sign again"
+   },
+   "note": "BOM U+FEFF is refused.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/c1-nel",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "nelx",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "4ba598b1436e4e562b5a4d23bbd88aa6e353aaafa4f0b25a075562d7e1a34fcb",
+   "server_outcome": "accepted",
+   "note": "Not refused: C1 controls such as U+0085 are outside the refused set (see OPEN-QUESTIONS).",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/word-joiner-arabic-mark-soft-hyphen",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "wj⁠x alm؜x shy­x",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "f2a8f37a4f7a0e44f6644e7515cb5c7364c6fa65bef9657868b472b81af4cfca",
+   "server_outcome": "accepted",
+   "note": "Not refused: U+2060, U+061C, U+00AD (see OPEN-QUESTIONS).",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/tag-characters",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "tag󠁁󠁂x",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "fdf2a7b3855b28e431d8cf70171a859fcd1550a4f11b8b1cd178e14d940f6331",
+   "server_outcome": "accepted",
+   "note": "Not refused: Unicode tag characters (invisible) (see OPEN-QUESTIONS).",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/title-120-utf16",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "6a62f99c523d356037a747660ff99ce40ec32de7a060c8beae03609528b41066",
+   "server_outcome": "accepted",
+   "note": "60 astral characters = 120 UTF-16 code units: at the limit.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/title-122-utf16",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "5462d4eef8e2ec2114570a47bfdddb68890f0af5fe57dae8b2acc8f9e622b802",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.title is longer than 120 characters"
+   },
+   "note": "61 astral characters = 122 UTF-16 code units > 120 (only 61 code points).",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "ok/title-padded-to-raw-limit",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "                                                                                                              x                                                                                                             ",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "de596d86434ad81ebb17cb25b8523b5711cd11c43d77421c7efaf8fc7e5e5fcd",
+   "server_outcome": "accepted",
+   "note": "Raw length 220 = 120 + 100: at the raw limit; the padding is hashed and stored.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/title-padded-over-raw-limit",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "                                                                                                              x                                                                                                              ",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "68197ac826586bcc2bcbba9697643f3c6dbba0e81382386a6a76e3685fe8f215",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.title is longer than 120 characters (including padding)"
+   },
+   "note": "Raw length 221 > 120 + 100: refused since v8 even though the trimmed text is 1 character.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/title-only-spaces",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "   ",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "97ef66b75acc16da8a2e5d840d59728786952d2211501e9a3ef55e575e302356",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "service.title is required"
+   },
+   "note": "Required field that is empty after trimming.",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/unknown-field",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z",
+    "memo": "x"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "8ffe3eb0bb99c96b0747532ebb008b79beb34cf5816c29f857c4a8ed255e57a9",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "unknown terms field memo"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/missing-prior-terms-hash",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "54d3f2b0f5263624f4d496d582993ca04e2fd62890d96e65e0dd2dc6f2a3591c",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "a new deal starts at version 1 with prior_terms_hash null"
+   },
+   "note": "validateTerms() passes; propose() then refuses (\"a new deal starts at version 1 with prior_terms_hash null\").",
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/protocol",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/2",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "19d7a171c59b6619a57e4376e35dc88d315d12114d6971935aaa9cbe440da82f",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "protocol must be valun-deal/1"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/network",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-2",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "eb0a030849c73e6d210a8f3366ed038504b225a03e1146a7ed1c618210b0060a",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "network must be valun-pilot-1"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/tracker",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "0000000000000000000000000000000000000000000000000000000000000000",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "50ed4b592ebe301db92e06068a2d881d9ac5e83ebeac47e74a98b9738ade7cdb",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "tracker_nft_id does not match this pilot tracker"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/denomination",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "erg",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "bfeaaa838c49e8c06bf62ec80e1c7f52d9cd265ea829354dbfc5e5228d400f2e",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "denomination must be token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/deal-id-uppercase",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789ABCDEF",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "fcca39e3c023d4e12ce7e9bc5e7c15c19aaf8005ae20acfecf3199a16f6a97f3",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "deal_id must be vd_ + 16 hex"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/version-0",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 0,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "961a03f49238c4b8c9c869850e7a16c8fcd25fc04e635ae38e345ba2abe30bea",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "version must be 1..50"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/version-51",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 51,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "fd8b9ea8355b0dd358801b735ca9d8e9659b152eaa486d0bb0130e4318f32262",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "version must be 1..50"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/version-string",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": "1",
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "57015398b1989e224ae3bfff24f012f27a8022472cd1bad8d3c96017a614e2bf",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "version must be 1..50"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/nonce-short",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "abc",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "dc7cfe7da97b5de568306b201195a3426d72312bba7b434e06e91fcd8519c7eb",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "nonce must be 32 hex"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/proposer-not-caller",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_b0b0b0b0b0b0",
+   "terms_hash": "5f7bccd0e836183a82fbab738a617faa25673c4ead77eeb3da94c7ef4c9e6003",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "proposer must be the caller"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/payer-extra-field",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+     "handle": "alice"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "727654cca6ea679b1b7057a3cac958ca3fe7cbfd570ad72f9434ed608ab1f012",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "payer must be {id, pubkey}"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/payee-wrong-key",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "0265ad727818ed16c0dc99185145ba5c0413efa30465f783b7de4b43c799a2e124"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "885b67eff0165714568b00e5e508cda156852d3384a224c20643505e43298fa5",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "payee must be an active participant with its registered key"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/payer-equals-payee",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "f261a7af2a64aa3a14c2994ad597ca80da57448f451b1b5b9aa4fc0e92bf36de",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "payer and payee must differ"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/service-missing-field",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "x",
+     "description": "y"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "b29d67182bac55dee98117ce794108dbe280bdc93011c1459ffb36acc1c43b50",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "service must be {title, description, deliverable}"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/price-zero",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 0,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "a7eaf421808e5fece4a773f4d998ebfc7fe801a9c2cb48726d56bfe1b78c1ddc",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "price must be {amount: 1..1000, unit: \"PC\"}"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/price-1001",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 1001,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "aa7f283d42f24f63f64bde3a18f170da685f8e6efc20e0012e3671bc7a396a60",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "price must be {amount: 1..1000, unit: \"PC\"}"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/price-fraction",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 1.5,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "1f599e0656ece2517db15ad838e9af132bdf5f0d2bc9e14ce2fec0a62e49041e",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "price must be {amount: 1..1000, unit: \"PC\"}"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/price-unit",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "pc"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "eb0c311c5a80d38bbd8c381baabd234b151f644f6c1b396018f846f3a869a47a",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "price must be {amount: 1..1000, unit: \"PC\"}"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/consideration",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_acceptance",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "a4bb0e202ffb58552b36dc171482a7e8dc2f43516e0632b294b98558a20dc72d",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "consideration must be \"credit_note_on_delivery_accepted\" (the payer issues a credit note when it accepts the delivery)"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/offer-expired",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-06T11:59:59.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "f33269b1892d3b9b4ca5ca82cfd078200f7c021014272de2ff8fad476d5aa165",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "offer_expires_at must be in the future, at most 7 days ahead"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/offer-over-7-days",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-11-08T12:00:00.000Z",
+    "offer_expires_at": "2026-11-13T12:00:01.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "5bec4d8cb30bde9532aef506b787e0a0bae118cff6cd50254e88a59e8b2c6de8",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "offer_expires_at must be in the future, at most 7 days ahead"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/deliver-by-over-30-days",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "2026-12-06T12:00:01.000Z",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "01ad7c46a82f363aa57530e5818388e346f4a1991d3d87731fda2fdca5fc1c7e",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "deliver_by must be in the future, at most 30 days ahead"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  },
+  {
+   "name": "bad/deliver-by-unparseable",
+   "tier": "server",
+   "terms": {
+    "protocol": "valun-deal/1",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "deal_id": "vd_0123456789abcdef",
+    "version": 1,
+    "prior_terms_hash": null,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "proposer": "vp_a1a1a1a1a1a1",
+    "payer": {
+     "id": "vp_a1a1a1a1a1a1",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payee": {
+     "id": "vp_b0b0b0b0b0b0",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "service": {
+     "title": "Short research brief",
+     "description": "Summarise three sources on agent-to-agent credit.",
+     "deliverable": "markdown, 300-500 words, 3 cited sources"
+    },
+    "price": {
+     "amount": 20,
+     "unit": "PC"
+    },
+    "consideration": "credit_note_on_delivery_accepted",
+    "deliver_by": "next tuesday",
+    "offer_expires_at": "2026-11-07T12:00:00.000Z"
+   },
+   "proposer": "vp_a1a1a1a1a1a1",
+   "terms_hash": "cb2caa3ca84c0079d614b6317be9fdc350a0ee0b04ff35a2b22ee46dc0b0d694",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_terms",
+    "message": "deliver_by must be in the future, at most 30 days ahead"
+   },
+   "fixture_now": "2026-11-06T12:00:00.000Z"
+  }
+ ]
+}

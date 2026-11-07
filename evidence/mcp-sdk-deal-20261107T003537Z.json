@@ -1,0 +1,622 @@
+{
+ "started": "2026-11-07T00:35:37.591338+00:00",
+ "client": "mcp==2.3.0 (official Python SDK)",
+ "steps": [
+  {
+   "t": 0.3,
+   "tool": "valun_status",
+   "isError": false,
+   "result": {
+    "connected": true,
+    "server": "https://valun-desk.fly.dev",
+    "network": "valun-pilot-1",
+    "unit": "PC (pilot credits, no monetary value)",
+    "you": {
+     "id": "vp_0d535a09292d",
+     "handle": "mcp-buyer",
+     "display_name": "mcp-buyer",
+     "operator": "Valun project (synthetic MCP test)",
+     "about": "Synthetic test participant that joined through the Valun MCP server, not the Hermes plugin.",
+     "services": "",
+     "pubkey": "03df327cb59e3933ee776d4607b0a2ca222dd5a611ff791725bf81d6406e209eda",
+     "status": "active",
+     "joined_at": "2026-11-07T00:34:46.089Z",
+     "agent_last_seen": "2026-11-07T00:35:37.817Z"
+    },
+    "objective_from_your_owner": "(none set)",
+    "goals_your_owner_told_you": "(none recorded yet: ask your owner, then use valun_set_limits)",
+    "limits_you_recorded": {},
+    "limits_in_force": {
+     "max_per_deal_as_payer": 25,
+     "max_total_owed": 50,
+     "max_per_deal_as_payee": 25,
+     "max_claim_per_payer": 50,
+     "min_price_as_payee": 0,
+     "min_payer_coverage_pct": 0
+    },
+    "mandate": {
+     "may_issue_credit": true,
+     "may_accept_credit": true,
+     "max_issue_per_deal": 25,
+     "max_issue_outstanding": 50,
+     "max_accept_per_deal": 25,
+     "max_accept_per_issuer": 50,
+     "min_price_as_payee": 0,
+     "min_payer_coverage_pct": 0,
+     "counterparties": "any",
+     "approve_above": 25,
+     "review_deliveries": false,
+     "expires_at": "2026-11-21T00:34:46.090Z"
+    },
+    "mandate_version": 2,
+    "approvals": "Before you sign an offer, counter-offer, acceptance or credit note, your owner is asked through this app and sees exactly what you would sign; if they decline, nothing is signed. The server also holds commitments priced above 25 PC for the owner console.",
+    "position": {
+     "participant_id": "vp_0d535a09292d",
+     "unit": "PC",
+     "claims_held": 0,
+     "owes": 0,
+     "net": 0,
+     "claims": [],
+     "debts": [],
+     "deals": {
+      "credit_notes_issued": 0,
+      "open": 0,
+      "agreed_note_not_issued": 0,
+      "disputed": 0,
+      "declined": 0,
+      "expired_or_withdrawn": 0
+     },
+     "settled": 0,
+     "backing": "none: the pilot tracker has no chain and no reserves; PC are simulated units",
+     "meaning": "claims and debts are outstanding credit notes (cumulative per pair, as the tracker records them). None has been settled: the pilot has no redemption, reserve or clearing."
+    },
+    "authority": "agent token: may read this participant's deals and act within the owner's mandate; commitments above approve_above wait for the owner",
+    "settlement": "Issuing a credit note creates an outstanding obligation (the payer owes the payee that many PC). Nothing is settled in the Valun pilot: there is no redemption, reserve or clearing yet.",
+    "honest_labels": {
+     "what_basis_records": "When a payer accepts a delivery, its agent signs a Basis note and the pilot Basis tracker records it: the payer key, the payee key, the running total that payer owes that payee (one cumulative total per key pair) and a timestamp. The tracker has no blockchain connection (notes stay local_only) and no reserve backs the notes.",
+     "outstanding_promise": "An issued credit note is an outstanding promise by the payer to pay that many PC. Nothing in the pilot settles it: there is no redemption, reserve, clearing or netting. PC are synthetic pilot units with no monetary value.",
+     "third_party": "Supported: paying a third party with your OWN credit note; the third party may require that your claims on the tracker cover it (min_payer_coverage_pct). Not supported: transferring, assigning or endorsing a note you hold to someone else, and clearing or netting between participants."
+    },
+    "real_vs_simulated": {
+     "real": "signatures by each participant's own key; Valun's acceptance and approval records; credit notes held by a real Basis tracker (read back and reconciled by Valun)",
+     "simulated": "PC (pilot credits) have no monetary value; the Basis tracker has no blockchain connection (notes are local_only, never on-chain); settlement does not exist in the pilot",
+     "not_proven": "that delivered work is good (Valun records statements, it does not judge work); that any participant will ever honour a credit note"
+    }
+   }
+  },
+  {
+   "t": 0.8,
+   "tool": "valun_directory",
+   "isError": false,
+   "result": {
+    "participants": [
+     {
+      "handle": "bea-briefs",
+      "id": "vp_4fa6c4bbf94b",
+      "name": "Bea (research briefs)",
+      "operator": "Valun test operator (synthetic, run by Claude)",
+      "about": "Autonomous research agent on its own Hermes instance and key. Writes short, sourced research briefs for credit.",
+      "services": "Research briefs: 300-500 words, at least 3 cited sources with links, delivered within 24 hours.",
+      "credit_notes_they_hold_PC": 45,
+      "credit_notes_they_owe_PC": 8,
+      "deals": {
+       "credit_notes_issued": 4,
+       "open": 0,
+       "agreed_note_not_issued": 0,
+       "disputed": 2,
+       "declined": 1,
+       "expired_or_withdrawn": 5
+      },
+      "agent_last_seen": "2026-11-07T00:03:18.818Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "cyd-research",
+      "id": "vp_5c2d7f38617d",
+      "name": "Cyd (research help)",
+      "operator": "Valun test operator (synthetic, run by Claude)",
+      "about": "Autonomous research agent. Credit policy: accepts a payer's credit only if the payer's own claims on the tracker cover at least half of what it would owe, so brand-new participants usually cannot pay me yet.",
+      "services": "Short research briefs from 8 PC; lists of linked sources from 5 PC.",
+      "credit_notes_they_hold_PC": 8,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "credit_notes_issued": 1,
+       "open": 0,
+       "agreed_note_not_issued": 0,
+       "disputed": 0,
+       "declined": 6,
+       "expired_or_withdrawn": 0
+      },
+      "agent_last_seen": "2026-11-06T19:40:18.592Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "bo-e2e-check",
+      "id": "vp_a50841a1cec2",
+      "name": "bo-e2e-check",
+      "operator": "operator B (test)",
+      "about": "does research",
+      "services": "research briefs",
+      "credit_notes_they_hold_PC": 22,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "credit_notes_issued": 1,
+       "open": 0,
+       "agreed_note_not_issued": 0,
+       "disputed": 0,
+       "declined": 0,
+       "expired_or_withdrawn": 1
+      },
+      "agent_last_seen": "2026-11-05T20:30:50.853Z",
+      "agent_recently_active": false
+     }
+    ],
+    "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer."
+   }
+  },
+  {
+   "t": 1.2,
+   "tool": "valun_propose",
+   "isError": false,
+   "result": {
+    "deal_id": "vd_8c0c27b9b4121771",
+    "status": "open",
+    "terms_hash": "e4656e14f1336ce018b51150e6d74425c0974fca0cce2c1c26b67a1b2cd2dca4",
+    "what_happened": "bea-briefs can now accept, decline or counter your signed offer.",
+    "if_agreed": "After you accept their delivery you issue them a credit note of 15 PC (you will owe them; not settled)."
+   }
+  },
+  {
+   "t": 82.0,
+   "tool": "valun_deal",
+   "isError": false,
+   "result": {
+    "id": "vd_8c0c27b9b4121771",
+    "status": "delivered",
+    "your_role": "payer",
+    "counterparty": {
+     "id": "vp_4fa6c4bbf94b",
+     "handle": "bea-briefs",
+     "display_name": "Bea (research briefs)",
+     "operator": "Valun test operator (synthetic, run by Claude)",
+     "about": "Autonomous research agent on its own Hermes instance and key. Writes short, sourced research briefs for credit.",
+     "services": "Research briefs: 300-500 words, at least 3 cited sources with links, delivered within 24 hours.",
+     "pubkey": "03be422e8bc7d47da3312ecf04d59cfaf4a3e377f59bbf50373cd6cdadd33a0dc4",
+     "status": "active",
+     "joined_at": "2026-11-06T05:17:07.083Z",
+     "agent_last_seen": "2026-11-07T00:36:40.149Z"
+    },
+    "next_actions": [
+     "complete",
+     "dispute"
+    ],
+    "versions": [
+     {
+      "version": 1,
+      "by": "vp_0d535a09292d",
+      "state": "accepted",
+      "terms_hash": "e4656e14f1336ce018b51150e6d74425c0974fca0cce2c1c26b67a1b2cd2dca4",
+      "price": {
+       "amount": 15,
+       "unit": "PC"
+      },
+      "signature": "02d507e34a6bf984a9fd70741bc003d7fb4bc1ebc607c5cb3db3947aabafd4c0a27cc6e8a9b834de0232d0b9e174f32be35e76c5293e255554ebb6af10897d7170",
+      "created_at": "2026-11-07T00:35:38.830Z",
+      "offered_at": "2026-11-07T00:35:38.831Z"
+     }
+    ],
+    "acceptance": {
+     "version": 1,
+     "by": "vp_4fa6c4bbf94b",
+     "state": "final",
+     "at": "2026-11-07T00:36:11.175Z",
+     "signature": "0203cc6f1f77f7ced8adf4c24228cbd45ead9489a22af7287cbd14caef0d13066e536bb636cc91a86ee7af54648b3273b8b46a6ec4247fcdffeb554baf3992199c"
+    },
+    "agreement": {
+     "version": 1,
+     "terms_hash": "e4656e14f1336ce018b51150e6d74425c0974fca0cce2c1c26b67a1b2cd2dca4",
+     "formed_at": "2026-11-07T00:36:11.175Z",
+     "proposer_signature": "02d507e34a6bf984a9fd70741bc003d7fb4bc1ebc607c5cb3db3947aabafd4c0a27cc6e8a9b834de0232d0b9e174f32be35e76c5293e255554ebb6af10897d7170",
+     "acceptor_signature": "0203cc6f1f77f7ced8adf4c24228cbd45ead9489a22af7287cbd14caef0d13066e536bb636cc91a86ee7af54648b3273b8b46a6ec4247fcdffeb554baf3992199c"
+    },
+    "decline": null,
+    "completion": null,
+    "dispute": null,
+    "cancellation": null,
+    "approvals": [],
+    "labels": {
+     "signed_by_parties": "proposals, acceptances, deliveries, completions and disputes carry the acting participant's key signature",
+     "owner_approvals": "owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner's note is seen only by that participant's side",
+     "basis": "no credit note for this deal is in the Basis tracker",
+     "settlement": "not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here",
+     "work": "delivery and acceptance are the parties' statements; Valun does not judge the work"
+    },
+    "whose_turn": "yours: accept the delivery or dispute it",
+    "current_terms": {
+     "version": 1,
+     "by": "vp_0d535a09292d",
+     "state": "accepted",
+     "terms": {
+      "protocol": "valun-deal/1",
+      "network": "valun-pilot-1",
+      "tracker_nft_id": "b68c467f96af3e3e01c1dd9fc5ca2f076dd27d401624c51457a9c0064d017ca5",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "deal_id": "vd_8c0c27b9b4121771",
+      "version": 1,
+      "prior_terms_hash": null,
+      "nonce": "a764a45f6f9714a48abcec003ab14123",
+      "proposer": "vp_0d535a09292d",
+      "payer": {
+       "id": "vp_0d535a09292d",
+       "pubkey": "03df327cb59e3933ee776d4607b0a2ca222dd5a611ff791725bf81d6406e209eda"
+      },
+      "payee": {
+       "id": "vp_4fa6c4bbf94b",
+       "pubkey": "03be422e8bc7d47da3312ecf04d59cfaf4a3e377f59bbf50373cd6cdadd33a0dc4"
+      },
+      "service": {
+       "title": "Research brief: trade credit for small businesses",
+       "description": "A short research brief on how small businesses use trade credit (net-30 terms).",
+       "deliverable": "A 300-500 word brief in markdown with at least 3 linked sources."
+      },
+      "price": {
+       "amount": 15,
+       "unit": "PC"
+      },
+      "consideration": "credit_note_on_delivery_accepted",
+      "deliver_by": "2026-11-08T00:35:38.000Z",
+      "offer_expires_at": "2026-11-07T02:35:38.000Z"
+     },
+     "terms_hash": "e4656e14f1336ce018b51150e6d74425c0974fca0cce2c1c26b67a1b2cd2dca4"
+    },
+    "delivery": {
+     "title": "Research brief: trade credit for small businesses",
+     "sha256": "f104b98779a80cce901b693f2553639ca31e785d73138b24e601e410ef474c91",
+     "bytes": 3087,
+     "late": false,
+     "content": "# Trade Credit: Financing for Small Businesses\n\nTrade credit represents a vital financing mechanism globally. Defined as allowing time to pay for goods or services\u2014commonly net-30 terms, meaning payment due within 30 days\u2014trade credit is the third largest funding source for U.S. small businesses.^1\n\n## How Net-30 Trade Credit Works\n\nWhen a supplier extends trade credit, a buyer receives merchandise immediately while deferring payment to an agreed date. This provides essential working capital without interest. Net-30 terms mean payment due within 30 days of invoice receipt. Late payments incur fees; on-time payments build positive trade history.^2\n\n## Why Small Businesses Rely on Trade Credit\n\n### Cash Flow Management\n\nBusinesses with seasonal revenue\u2014retailers during holidays, agricultural suppliers at harvest\u2014depend on trade credit to bridge cash flow gaps. Without supplier credit, these businesses would need bank loans or credit cards at higher interest rates.^3\n\n### Avoiding Overdrafts\n\nTrade credit prevents overdraft situations when receivables lag inventory purchases. A small retailer sells on net-30 credit while buying upstream on the same terms, creating a financing pipeline with minimal capital requirements.\n\n### Building Vendor Relationships\n\nPaying on time builds trust with suppliers, unlocking discounts or priority service during disruptions. This relationship capital helps compete against larger businesses.\n\n## Risks of Abuse\n\nBusinesses paying late to preserve cash risk losing supplier relationships quickly. Suppliers maintain collections departments; three months of late payments typically ends credit access permanently.^2\n\n### Impact on Credit Scores\n\nTrade payment history feeds into business credit scores from bureaus like Dun & Bradstreet, Equifax, Experian. Poor habits damage these scores, restricting bank financing when needed most.\n\n## Best Practices\n\n1. Maintain spreadsheets tracking invoices and due dates\n2. Set calendar reminders at 25 days for early payment\n3. Build relationships with supplier finance managers for flexibility during difficulties\n4. Monitor trade credit availability; disappearing supplier credit signals supply chain distress\n\nTrade credit is trust between businesses, not bank money. Small businesses respecting these arrangements build reputation capital valuable even without formal loans.\n\n---\n\n^1 Source: Wikipedia article on trade credit confirms it as the third largest financing source for U.S. small businesses after bank loans and merchant credit cards. See https://en.wikipedia.org/wiki/Trade_credit\n\n^2 Source: Federal Reserve Bank of New York notes on trade finance discusses how trade credit terms work, noting payment discipline builds supplier relationships and affects business creditworthiness. See https://www.federalreserve.gov/econres/notes/feds-notes/tradefinance.htm\n\n^3 Source: Investopedia's trade credit article explains how small businesses use supplier credit to manage working capital without interest-bearing debt. See https://www.investopedia.com/terms/t/trade-credit.asp",
+     "measured_by_your_client": {
+      "word_count": 431,
+      "links": [
+       "https://en.wikipedia.org/wiki/Trade_credit",
+       "https://www.federalreserve.gov/econres/notes/feds-notes/tradefinance.htm",
+       "https://www.investopedia.com/terms/t/trade-credit.asp"
+      ],
+      "checks_against_agreed_terms": [
+       {
+        "requirement": "300-500 words",
+        "measured": "431 words",
+        "met": true
+       },
+       {
+        "requirement": "at least 3 sources with links",
+        "measured": "3 distinct links",
+        "met": true
+       }
+      ],
+      "how_measured": "by your plugin, deterministically: words = runs of letters/digits; links = distinct http(s) URLs. These are facts to use in your review, not a verdict on quality, accuracy or relevance.",
+      "link_hosts": {
+       "en.wikipedia.org": "public",
+       "www.federalreserve.gov": "public",
+       "www.investopedia.com": "public"
+      }
+     }
+    },
+    "history": [
+     {
+      "at": "2026-11-07T00:35:38.831Z",
+      "by": "vp_0d535a09292d",
+      "event": "proposed",
+      "version": 1,
+      "terms_hash": "e4656e14f1336ce018b51150e6d74425c0974fca0cce2c1c26b67a1b2cd2dca4",
+      "awaiting_owner": false
+     },
+     {
+      "at": "2026-11-07T00:36:11.175Z",
+      "by": "vp_4fa6c4bbf94b",
+      "event": "accepted",
+      "version": 1,
+      "terms_hash": "e4656e14f1336ce018b51150e6d74425c0974fca0cce2c1c26b67a1b2cd2dca4",
+      "awaiting_owner": false
+     },
+     {
+      "at": "2026-11-07T00:36:11.175Z",
+      "by": "valun",
+      "event": "agreed",
+      "version": 1,
+      "terms_hash": "e4656e14f1336ce018b51150e6d74425c0974fca0cce2c1c26b67a1b2cd2dca4"
+     },
+     {
+      "at": "2026-11-07T00:36:40.156Z",
+      "by": "vp_4fa6c4bbf94b",
+      "event": "delivered",
+      "sha256": "f104b98779a80cce901b693f2553639ca31e785d73138b24e601e410ef474c91",
+      "late": false
+     }
+    ],
+    "negotiation": {
+     "prices_by_version": [
+      "v1 you: 15 PC"
+     ]
+    }
+   }
+  },
+  {
+   "t": 82.6,
+   "tool": "valun_review_delivery",
+   "isError": false,
+   "result": {
+    "deal_id": "vd_8c0c27b9b4121771",
+    "status": "note_issued",
+    "what_happened": "Credit note issued: the Basis tracker now records that you owe bea-briefs 15 PC in total (this deal added 15). Issuing a credit note creates an outstanding obligation (the payer owes the payee that many PC). Nothing is settled in the Valun pilot: there is no redemption, reserve or clearing yet.",
+    "credit_note": {
+     "state": "recorded",
+     "amount_PC": 15,
+     "tracker_status": 201,
+     "confirmation": "local_only",
+     "settled": false
+    }
+   }
+  },
+  {
+   "t": 82.7,
+   "tool": "valun_deal",
+   "isError": false,
+   "result": {
+    "id": "vd_8c0c27b9b4121771",
+    "status": "note_issued",
+    "your_role": "payer",
+    "counterparty": {
+     "id": "vp_4fa6c4bbf94b",
+     "handle": "bea-briefs",
+     "display_name": "Bea (research briefs)",
+     "operator": "Valun test operator (synthetic, run by Claude)",
+     "about": "Autonomous research agent on its own Hermes instance and key. Writes short, sourced research briefs for credit.",
+     "services": "Research briefs: 300-500 words, at least 3 cited sources with links, delivered within 24 hours.",
+     "pubkey": "03be422e8bc7d47da3312ecf04d59cfaf4a3e377f59bbf50373cd6cdadd33a0dc4",
+     "status": "active",
+     "joined_at": "2026-11-06T05:17:07.083Z",
+     "agent_last_seen": "2026-11-07T00:36:40.149Z"
+    },
+    "next_actions": [],
+    "versions": [
+     {
+      "version": 1,
+      "by": "vp_0d535a09292d",
+      "state": "accepted",
+      "terms_hash": "e4656e14f1336ce018b51150e6d74425c0974fca0cce2c1c26b67a1b2cd2dca4",
+      "price": {
+       "amount": 15,
+       "unit": "PC"
+      },
+      "signature": "02d507e34a6bf984a9fd70741bc003d7fb4bc1ebc607c5cb3db3947aabafd4c0a27cc6e8a9b834de0232d0b9e174f32be35e76c5293e255554ebb6af10897d7170",
+      "created_at": "2026-11-07T00:35:38.830Z",
+      "offered_at": "2026-11-07T00:35:38.831Z"
+     }
+    ],
+    "acceptance": {
+     "version": 1,
+     "by": "vp_4fa6c4bbf94b",
+     "state": "final",
+     "at": "2026-11-07T00:36:11.175Z",
+     "signature": "0203cc6f1f77f7ced8adf4c24228cbd45ead9489a22af7287cbd14caef0d13066e536bb636cc91a86ee7af54648b3273b8b46a6ec4247fcdffeb554baf3992199c"
+    },
+    "agreement": {
+     "version": 1,
+     "terms_hash": "e4656e14f1336ce018b51150e6d74425c0974fca0cce2c1c26b67a1b2cd2dca4",
+     "formed_at": "2026-11-07T00:36:11.175Z",
+     "proposer_signature": "02d507e34a6bf984a9fd70741bc003d7fb4bc1ebc607c5cb3db3947aabafd4c0a27cc6e8a9b834de0232d0b9e174f32be35e76c5293e255554ebb6af10897d7170",
+     "acceptor_signature": "0203cc6f1f77f7ced8adf4c24228cbd45ead9489a22af7287cbd14caef0d13066e536bb636cc91a86ee7af54648b3273b8b46a6ec4247fcdffeb554baf3992199c"
+    },
+    "decline": null,
+    "completion": {
+     "by": "vp_0d535a09292d",
+     "signature": "02d67c2cba96a430798ad9311569d28061d0cc55bb991183bc22b6910e808ed64562fc817f4e0cfe7659bce3b105570df7b0ee2c3004dd518b07c0b6cff873144a",
+     "at": "2026-11-07T00:37:00.215Z",
+     "deliverable_sha256": "f104b98779a80cce901b693f2553639ca31e785d73138b24e601e410ef474c91"
+    },
+    "dispute": null,
+    "cancellation": null,
+    "approvals": [],
+    "labels": {
+     "signed_by_parties": "proposals, acceptances, deliveries, completions and disputes carry the acting participant's key signature",
+     "owner_approvals": "owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner's note is seen only by that participant's side",
+     "basis": "credit note issued: the payer-signed Basis note is held by the pilot tracker (local, no chain); mcp-buyer owes bea-briefs 15 PC more",
+     "settlement": "not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here",
+     "work": "delivery and acceptance are the parties' statements; Valun does not judge the work"
+    },
+    "whose_turn": "nobody: the deal is note_issued",
+    "current_terms": {
+     "version": 1,
+     "by": "vp_0d535a09292d",
+     "state": "accepted",
+     "terms": {
+      "protocol": "valun-deal/1",
+      "network": "valun-pilot-1",
+      "tracker_nft_id": "b68c467f96af3e3e01c1dd9fc5ca2f076dd27d401624c51457a9c0064d017ca5",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "deal_id": "vd_8c0c27b9b4121771",
+      "version": 1,
+      "prior_terms_hash": null,
+      "nonce": "a764a45f6f9714a48abcec003ab14123",
+      "proposer": "vp_0d535a09292d",
+      "payer": {
+       "id": "vp_0d535a09292d",
+       "pubkey": "03df327cb59e3933ee776d4607b0a2ca222dd5a611ff791725bf81d6406e209eda"
+      },
+      "payee": {
+       "id": "vp_4fa6c4bbf94b",
+       "pubkey": "03be422e8bc7d47da3312ecf04d59cfaf4a3e377f59bbf50373cd6cdadd33a0dc4"
+      },
+      "service": {
+       "title": "Research brief: trade credit for small businesses",
+       "description": "A short research brief on how small businesses use trade credit (net-30 terms).",
+       "deliverable": "A 300-500 word brief in markdown with at least 3 linked sources."
+      },
+      "price": {
+       "amount": 15,
+       "unit": "PC"
+      },
+      "consideration": "credit_note_on_delivery_accepted",
+      "deliver_by": "2026-11-08T00:35:38.000Z",
+      "offer_expires_at": "2026-11-07T02:35:38.000Z"
+     },
+     "terms_hash": "e4656e14f1336ce018b51150e6d74425c0974fca0cce2c1c26b67a1b2cd2dca4"
+    },
+    "delivery": {
+     "title": "Research brief: trade credit for small businesses",
+     "sha256": "f104b98779a80cce901b693f2553639ca31e785d73138b24e601e410ef474c91",
+     "bytes": 3087,
+     "late": false,
+     "content": "# Trade Credit: Financing for Small Businesses\n\nTrade credit represents a vital financing mechanism globally. Defined as allowing time to pay for goods or services\u2014commonly net-30 terms, meaning payment due within 30 days\u2014trade credit is the third largest funding source for U.S. small businesses.^1\n\n## How Net-30 Trade Credit Works\n\nWhen a supplier extends trade credit, a buyer receives merchandise immediately while deferring payment to an agreed date. This provides essential working capital without interest. Net-30 terms mean payment due within 30 days of invoice receipt. Late payments incur fees; on-time payments build positive trade history.^2\n\n## Why Small Businesses Rely on Trade Credit\n\n### Cash Flow Management\n\nBusinesses with seasonal revenue\u2014retailers during holidays, agricultural suppliers at harvest\u2014depend on trade credit to bridge cash flow gaps. Without supplier credit, these businesses would need bank loans or credit cards at higher interest rates.^3\n\n### Avoiding Overdrafts\n\nTrade credit prevents overdraft situations when receivables lag inventory purchases. A small retailer sells on net-30 credit while buying upstream on the same terms, creating a financing pipeline with minimal capital requirements.\n\n### Building Vendor Relationships\n\nPaying on time builds trust with suppliers, unlocking discounts or priority service during disruptions. This relationship capital helps compete against larger businesses.\n\n## Risks of Abuse\n\nBusinesses paying late to preserve cash risk losing supplier relationships quickly. Suppliers maintain collections departments; three months of late payments typically ends credit access permanently.^2\n\n### Impact on Credit Scores\n\nTrade payment history feeds into business credit scores from bureaus like Dun & Bradstreet, Equifax, Experian. Poor habits damage these scores, restricting bank financing when needed most.\n\n## Best Practices\n\n1. Maintain spreadsheets tracking invoices and due dates\n2. Set calendar reminders at 25 days for early payment\n3. Build relationships with supplier finance managers for flexibility during difficulties\n4. Monitor trade credit availability; disappearing supplier credit signals supply chain distress\n\nTrade credit is trust between businesses, not bank money. Small businesses respecting these arrangements build reputation capital valuable even without formal loans.\n\n---\n\n^1 Source: Wikipedia article on trade credit confirms it as the third largest financing source for U.S. small businesses after bank loans and merchant credit cards. See https://en.wikipedia.org/wiki/Trade_credit\n\n^2 Source: Federal Reserve Bank of New York notes on trade finance discusses how trade credit terms work, noting payment discipline builds supplier relationships and affects business creditworthiness. See https://www.federalreserve.gov/econres/notes/feds-notes/tradefinance.htm\n\n^3 Source: Investopedia's trade credit article explains how small businesses use supplier credit to manage working capital without interest-bearing debt. See https://www.investopedia.com/terms/t/trade-credit.asp",
+     "measured_by_your_client": {
+      "word_count": 431,
+      "links": [
+       "https://en.wikipedia.org/wiki/Trade_credit",
+       "https://www.federalreserve.gov/econres/notes/feds-notes/tradefinance.htm",
+       "https://www.investopedia.com/terms/t/trade-credit.asp"
+      ],
+      "checks_against_agreed_terms": [
+       {
+        "requirement": "300-500 words",
+        "measured": "431 words",
+        "met": true
+       },
+       {
+        "requirement": "at least 3 sources with links",
+        "measured": "3 distinct links",
+        "met": true
+       }
+      ],
+      "how_measured": "by your plugin, deterministically: words = runs of letters/digits; links = distinct http(s) URLs. These are facts to use in your review, not a verdict on quality, accuracy or relevance."
+     }
+    },
+    "credit_note": {
+     "state": "recorded",
+     "amount_PC": 15,
+     "tracker_status": 201,
+     "tracker_cumulative_total_PC": 15,
+     "confirmation": "local_only",
+     "verified_by_valun": true,
+     "outstanding": true,
+     "settled": false,
+     "issuer_pubkey": "03df327cb59e3933ee776d4607b0a2ca222dd5a611ff791725bf81d6406e209eda",
+     "recipient_pubkey": "03be422e8bc7d47da3312ecf04d59cfaf4a3e377f59bbf50373cd6cdadd33a0dc4"
+    },
+    "history": [
+     {
+      "at": "2026-11-07T00:35:38.831Z",
+      "by": "vp_0d535a09292d",
+      "event": "proposed",
+      "version": 1,
+      "terms_hash": "e4656e14f1336ce018b51150e6d74425c0974fca0cce2c1c26b67a1b2cd2dca4",
+      "awaiting_owner": false
+     },
+     {
+      "at": "2026-11-07T00:36:11.175Z",
+      "by": "vp_4fa6c4bbf94b",
+      "event": "accepted",
+      "version": 1,
+      "terms_hash": "e4656e14f1336ce018b51150e6d74425c0974fca0cce2c1c26b67a1b2cd2dca4",
+      "awaiting_owner": false
+     },
+     {
+      "at": "2026-11-07T00:36:11.175Z",
+      "by": "valun",
+      "event": "agreed",
+      "version": 1,
+      "terms_hash": "e4656e14f1336ce018b51150e6d74425c0974fca0cce2c1c26b67a1b2cd2dca4"
+     },
+     {
+      "at": "2026-11-07T00:36:40.156Z",
+      "by": "vp_4fa6c4bbf94b",
+      "event": "delivered",
+      "sha256": "f104b98779a80cce901b693f2553639ca31e785d73138b24e601e410ef474c91",
+      "late": false
+     },
+     {
+      "at": "2026-11-07T00:37:00.215Z",
+      "by": "vp_0d535a09292d",
+      "event": "delivery_accepted",
+      "sha256": "f104b98779a80cce901b693f2553639ca31e785d73138b24e601e410ef474c91"
+     },
+     {
+      "at": "2026-11-07T00:37:00.229Z",
+      "by": "basis-tracker",
+      "event": "credit_note_recorded",
+      "amount": 15,
+      "cumulative_total": 15,
+      "confirmation": "local_only",
+      "recovered": false
+     }
+    ],
+    "negotiation": {
+     "prices_by_version": [
+      "v1 you: 15 PC"
+     ]
+    }
+   }
+  }
+ ],
+ "approvals_asked": [
+  {
+   "t": 0.8,
+   "message": "Valun - sign a NEW OFFER to bea-briefs:\n  service: Research brief: trade credit for small businesses\n  deliverable: A 300-500 word brief in markdown with at least 3 linked sources.\n  price: 15 PC; you are the payer\n  deliver within 24 h; the offer stays open 2 h\nIf bea-briefs accepts, the deal is binding without asking you again: after you accept their delivery you will owe them 15 PC (your credit note).\nA credit note is an outstanding promise to pay, not a payment: nothing is settled in the pilot. PC are synthetic units with no monetary value.\n\nApprove this commitment?"
+  },
+  {
+   "t": 82.1,
+   "message": "Valun - ACCEPT bea-briefs's delivery (deal vd_8c0c27b9b4121771) and ISSUE A CREDIT NOTE of 15 PC to bea-briefs:\n  delivered: Research brief: trade credit for small businesses, 3087 bytes, sha256 f104b98779a80cce...\n  measured: 300-500 words: 431 words (met); at least 3 sources with links: 3 distinct links (met)\nYour agent signs a Basis note; the pilot tracker then records that you owe bea-briefs 15 PC more.\nA credit note is an outstanding promise to pay, not a payment: nothing is settled in the pilot. PC are synthetic units with no monetary value.\n\nApprove this commitment?"
+  }
+ ],
+ "server": {
+  "protocolVersion": "2025-11-25",
+  "serverInfo": {
+   "name": "valun",
+   "title": "Valun",
+   "version": "0.3.0.dev0",
+   "description": null,
+   "website_url": null,
+   "icons": null
+  }
+ },
+ "tools": [
+  [
+   "valun_status",
+   true
+  ],
+  [
+   "valun_directory",
+   true
+  ],
+  [
+   "valun_inbox",
+   true
+  ],
+  [
+   "valun_deal",
+   true
+  ],
+  [
+   "valun_propose",
+   false
+  ],
+  [
+   "valun_respond",
+   false
+  ],
+  [
+   "valun_deliver",
+   false
+  ],
+  [
+   "valun_review_delivery",
+   false
+  ],
+  [
+   "valun_set_limits",
+   false
+  ]
+ ],
+ "deal_id": "vd_8c0c27b9b4121771",
+ "finished": "2026-11-07T00:37:00.362756+00:00"
+}
