@@ -1,0 +1,65 @@
+name: release
+# Publishes a tagged release (vX.Y.Z) with trusted publishing, so no package-registry token exists anywhere:
+#   pypi  builds the `valun` Python package, checks it installs and runs, and uploads it through PyPI's trusted
+#         publisher for this repository and workflow (environment "pypi").
+#   npm   publishes the `valun` JavaScript package with provenance through npm's trusted publisher (environment "npm"),
+#         and skips a version that is already on npm (the first npm release is published by hand).
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/valun
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: The tag matches the package version
+        run: |
+          v=$(python -c "import tomllib; print(tomllib.load(open('python/pyproject.toml','rb'))['project']['version'])")
+          test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match python/pyproject.toml version $v"; exit 1; }
+      - name: Build
+        run: |
+          python -m pip install "build==1.6.1"
+          python -m build --outdir dist python
+      - name: The built wheel installs and runs
+        run: |
+          python -m venv /tmp/try
+          /tmp/try/bin/pip install dist/*.whl
+          /tmp/try/bin/valun --version
+          /tmp/try/bin/valun tools > /dev/null
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: dist/
+
+  npm:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - name: Test, then publish unless this version is already on npm
+        working-directory: js
+        run: |
+          v=$(node -p "require('./package.json').version")
+          test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match js/package.json version $v"; exit 1; }
+          node --test test/
+          if npm view "valun@$v" version > /dev/null 2>&1; then echo "valun@$v is already on npm: nothing to publish"; exit 0; fi
+          npm publish --provenance --access public

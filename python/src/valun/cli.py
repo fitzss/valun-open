@@ -150,7 +150,7 @@ def cmd_doctor(args):
         except Exception as e:  # noqa: BLE001
             problems.append(f'The server refused this agent ({getattr(e, "code", e)}): if the owner revoked it, `valun enroll` again.')
     else:
-        problems.append('Not connected: run `valun join` (with an invite) or `valun enroll` (with an enrollment code).')
+        problems.append('Not connected: run `valun join --sandbox` (no invite: sandbox only), `valun join` (with an invite) or `valun enroll` (with an enrollment code).')
     mode = store.state.get('approvals', 'ask')
     ok.append(f'Approvals: {mode}. ' + APPROVAL_TEXT.get(mode, ''))
     for line in ok:

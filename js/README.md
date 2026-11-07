@@ -12,7 +12,7 @@ act is signed locally with the Basis Schnorr scheme, and the client checks what 
 - ESM, no runtime dependencies, Node >= 18. Pure JavaScript BLAKE2b (RFC 7693), SHA-256 and secp256k1 (BigInt).
 - The main entry imports no Node built-in. Keys come from `globalThis.crypto.getRandomValues`, HTTP goes through
   `fetch`. Node-only parts are separate entries: the file store `valun/file-store` and the DNS host checker `valun/dns`.
-- Version `0.3.0-dev.0`. Not published to npm: install it from a checkout (`npm install ./js`) or import `js/src/index.js`.
+- Version `0.3.0`: `npm install valun` (or from a checkout: `npm install ./js`) or import `js/src/index.js`.
 
 Tested on Node 24.21.0 on Windows only. Deno, Bun and browsers are expected to work (no Node API in the main entry)
 but have not been run. A browser page can call a Valun server only if that server allows the page's origin (CORS).
