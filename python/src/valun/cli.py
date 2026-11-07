@@ -238,6 +238,7 @@ def cmd_call(args):
                 'Not signed: this profile asks its owner before every commitment, and no person is at this terminal. The owner can '
                 'run `valun config approvals console` (commitments wait in the owner console) or `none`.')}))
             return 3
+        tool_args = agent.bind(args.tool, tool_args)   # sign exactly what is shown here
         print(agent.describe_commitment(args.tool, tool_args), file=sys.stderr)
         if input('Approve this commitment? [y/N] ').strip().lower() not in ('y', 'yes'):
             print(json.dumps({'error': 'owner_declined', 'message': 'not approved; nothing was signed'}))

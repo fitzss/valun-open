@@ -1,0 +1,112 @@
+// The nine Valun tools in the shape most JavaScript agent frameworks accept: {name, description, parameters (JSON
+// Schema), execute(args)}, with the owner's approval asked before every commitment (ValunAgent.isCommitment: an offer,
+// an acceptance, a counter-offer, accepting a delivery, loosening a limit).
+//
+// Approvals fail closed: without an approve hook every commitment is refused (approval_unavailable) unless the caller
+// passes approvals: 'none' explicitly. The Valun server enforces the owner's mandate in every mode.
+
+import {APPROVAL_TEXT, errorPayload} from './agent.js';
+import {ValunError} from './errors.js';
+import {ALL} from './schemas.js';
+
+/** What the model is told about approvals when no approve hook is given (valun_status shows it). */
+export const NO_APPROVAL_STEP = 'Commitments cannot be signed here: this app has no way to ask your owner, so every offer, '
+  + 'counter-offer, acceptance, credit note and loosening of a limit is refused and nothing is signed. Reading, declining, '
+  + 'withdrawing, delivering and tightening limits still work.';
+
+function approvalUnavailable(message) {
+  return {error: 'approval_unavailable', message,
+    what_this_means: 'Nothing was signed. Tell your owner that this app cannot ask them to approve Valun commitments; '
+      + 'it needs an approval step, or an explicit choice to act without asking within the owner\'s mandate.'};
+}
+
+const NO_HOOK = 'Not signed. This app asks the owner before every commitment, but it has no approval step (no approve hook was given).';
+
+function deepFreeze(o) {
+  if (o && typeof o === 'object') {
+    for (const v of Object.values(o)) deepFreeze(v);
+    Object.freeze(o);
+  }
+  return o;
+}
+
+/** Tool arguments as plain JSON data: an object, a JSON string of one (raw tool-call arguments), or nothing. */
+function plainArgs(raw) {
+  if (raw === undefined || raw === null || raw === '') return {};
+  const v = typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(JSON.stringify(raw));
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) throw new TypeError('not a JSON object');
+  return v;
+}
+
+async function run(agent, name, raw, mode, approve) {
+  let args;
+  try {
+    args = plainArgs(raw);
+  } catch (e) {
+    return {error: 'bad_arguments', message: `arguments must be a JSON object: ${e?.message || e}`};
+  }
+  if (mode !== 'none') {
+    let commits;
+    try {
+      commits = await agent.isCommitment(name, args);
+    } catch {
+      commits = true;                           // when in doubt, it is a commitment
+    }
+    if (commits) {
+      if (mode !== 'ask') return approvalUnavailable(NO_HOOK);
+      try {
+        args = plainArgs(await agent.bind(name, args));   // the approval and the signature cover the same exact terms
+      } catch {
+        // binding is best effort (as in Python): the call itself reports real problems
+      }
+      let text;
+      try {
+        text = await agent.describeCommitment(name, args);
+      } catch {
+        text = `Valun: sign a commitment (${name}).`;
+      }
+      let answer;
+      try {
+        answer = await approve(text, name, deepFreeze(plainArgs(args)));
+      } catch (e) {
+        return approvalUnavailable(`Not signed: the approval step failed (${e?.message || String(e)}).`);
+      }
+      if (answer !== true) {
+        return errorPayload(new ValunError('owner_declined', 'your owner did not approve this commitment; nothing was signed'), agent.setupHint);
+      }
+    }
+  }
+  return agent.callSafe(name, args);
+}
+
+/**
+ * The nine tools of `agent` (a ValunAgent) as [{name, description, parameters, execute(args)}]. execute() takes the
+ * arguments as an object or as a JSON string, and always resolves to a plain object (an error payload on failure).
+ *
+ * options:
+ *   approve    async (commitmentText, name, args) => boolean, called before every commitment. The arguments are first
+ *              bound (ValunAgent.bind: an acceptance pinned to the current terms hash or deliverable hash); the hook gets
+ *              the text of describeCommitment() for them and a frozen copy of them, and exactly they are executed. Only
+ *              `true` approves. Otherwise the call is refused with owner_declined; if the hook throws, with
+ *              approval_unavailable.
+ *   approvals  'none' to sign commitments without asking anyone (the server still enforces the owner's mandate). Without
+ *              an approve hook and without 'none', every commitment is refused with approval_unavailable (fail closed).
+ * If agent.approvals (the sentence valun_status shows the model) is empty, it is set to match the mode chosen here.
+ */
+export function valunTools(agent, options = {}) {
+  for (const m of ['callSafe', 'isCommitment', 'describeCommitment', 'bind']) {
+    if (typeof agent?.[m] !== 'function') throw new TypeError('valunTools needs a ValunAgent');
+  }
+  const {approve = null, approvals = null} = options;
+  if (approve !== null && typeof approve !== 'function') throw new TypeError('approve must be a function');
+  if (approvals !== null && approvals !== 'ask' && approvals !== 'none') throw new TypeError("approvals must be 'ask' or 'none'");
+  if (approvals === 'none' && approve) throw new TypeError("approvals: 'none' and an approve hook contradict each other");
+  const mode = approvals === 'none' ? 'none' : approve ? 'ask' : 'unavailable';
+  if (!agent.approvals) agent.approvals = mode === 'none' ? APPROVAL_TEXT.none : mode === 'ask' ? APPROVAL_TEXT.ask : NO_APPROVAL_STEP;
+  return ALL.map(def => ({
+    name: def.name,
+    description: def.description,
+    parameters: JSON.parse(JSON.stringify(def.parameters)),
+    execute: args => run(agent, def.name, args, mode, approve),
+  }));
+}

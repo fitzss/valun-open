@@ -3,10 +3,11 @@
 //
 //   node spec/vectors/generate.mjs        (VALUN_APP_DIR=<path to valun-app> overrides the default ../../../valun-app)
 //
-// Written against server release v9 = valun-app commit ed1da4a. Point VALUN_APP_DIR at an export of exactly that commit
-// (git archive ed1da4a), not at a working tree that may hold unreleased changes: the script records the sha256 of the
-// server sources it ran, and labels the output "UNRECOGNISED server source" (with a warning) when they are not v9's.
-// Every assertion below pins v9 behaviour; a server change that breaks one stops the script before anything is written.
+// Written against server release v11 = valun-app commit 7880dcf. Point VALUN_APP_DIR at an export of exactly that commit
+// (git archive 7880dcf), not at a working tree that may hold unreleased changes: the script records the sha256 of the
+// server sources it ran, and labels the output "UNRECOGNISED server source" (with a warning) when they are not v11's.
+// Every assertion below pins v11 behaviour; a server change that breaks one stops the script before anything is written.
+// (Earlier releases: v8 e0b990a, v9 ed1da4a; the transcript keeps their steps first and appends later releases' steps.)
 //
 // Writes, next to this file: canonical.json, statements.json, basis-notes.json, basis-signatures.json,
 // terms-validation.json, transcript.json. Output is deterministic: running it twice gives identical files, so a diff
@@ -25,10 +26,12 @@
 //   CC0-1.0). The token-denomination debt key has no official vector; see OPEN-QUESTIONS.md.
 // - The Basis tracker is an in-memory stand-in: tracker-side fields in the transcript (tracker_note, proof, ledger rows,
 //   positions) have the shapes Valun reads, not necessarily the real tracker's values.
-// - Signer failures (release v9, OQ-31) are emulated: the transcript's stand-in signer can throw the real BasisError
-//   class (imported from valun-app/lib/basis.mjs, which starts nothing on import) with the signer runner's messages, for
-//   an outage ("signer timed out") or for input the helper reports as invalid ("signer: ..."). The runner is not run.
-// - Errors become responses as lib/http.mjs:96-101 does it (replicated here, since lib/http.mjs serves the whole app).
+// - Signer and tracker failures (OQ-31, OQ-35) are emulated: the transcript's stand-in signer and tracker throw the real
+//   BasisError class (imported from valun-app/lib/basis.mjs, which starts nothing on import) with the signer runner's
+//   messages and codes: an outage ("signer timed out", code signer_unavailable), input the helper reports as invalid
+//   ("signer: ...", code signer_error), a tracker that cannot be reached (code tracker_unavailable). The runner is not run.
+// - Errors become responses as lib/http.mjs:96-108 does it (replicated here, since lib/http.mjs serves the whole app;
+//   its sha256 is pinned with the other sources).
 // - Rate-limit probes (OQ-30) use a second route table over the same Pilot with small budgets and the real clock.
 // - The text normalisation clean() is not exported by core.mjs; cleanText() below replicates its normalising part and the
 //   script asserts it equals what the real decline()/dispute() code signed over, for every reason vector.
@@ -60,19 +63,21 @@ crypto.randomBytes = (n, cb) => {
 
 const core = await import(pathToFileURL(CORE).href);
 const {createPilotRoutes} = await import(pathToFileURL(HTTPM).href);
-// The real BasisError class (lib/basis.mjs; importing it starts nothing): the stand-in signer throws it for an outage,
-// exactly as makeSignerRunner does (lib/basis.mjs:22-30).
+// The real BasisError class (lib/basis.mjs; importing it starts nothing): the stand-in signer and tracker throw it, with
+// the codes makeSignerRunner and the tracker client use (lib/basis.mjs:16-45).
 const {BasisError} = await import(pathToFileURL(path.join(APP, 'lib', 'basis.mjs')).href);
 const {canonical, termsHash, statements, sha256, NETWORK, PROTOCOL, PILOT_TOKEN_ID, PILOT_DENOMINATION, DEFAULT_MANDATE, Pilot} = core;
 
 const fileSha = f => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
-const SOURCES = {'lib/pilot/core.mjs': fileSha(CORE), 'lib/pilot/http.mjs': fileSha(HTTPM), 'lib/basis.mjs': fileSha(path.join(APP, 'lib', 'basis.mjs'))};
-// Release v9 = valun-app commit ed1da4a (git archive ed1da4a). Other sources still run, but are labelled as such.
-const V9_SOURCES = {'lib/pilot/core.mjs': '3a35710696abb6310996f3548b128b07c821dde8a17f83444ea0014cf1528008',
-  'lib/pilot/http.mjs': '5c07596ba7d9c41bbfc27e03ca89aa4cb30f3a497cd9c109e20528f0b8feb7b1', 'lib/basis.mjs': '43077f614296e0c0988d574fbb7015e4736b72f7676ecd1dd7cfa77ec236aaa9'};
-const IS_V9 = Object.entries(V9_SOURCES).every(([f, h]) => SOURCES[f] === h);
-const SERVER_RELEASE = IS_V9 ? 'v9 (valun-app commit ed1da4a)' : 'UNRECOGNISED server source (not release v9 ed1da4a; see server_source_sha256)';
-if (!IS_V9) console.error(`WARNING: ${APP} is not release v9 (ed1da4a): ${JSON.stringify(SOURCES)}. The vectors are labelled accordingly; assertions may fail.`);
+const SOURCES = {'lib/pilot/core.mjs': fileSha(CORE), 'lib/pilot/http.mjs': fileSha(HTTPM), 'lib/basis.mjs': fileSha(path.join(APP, 'lib', 'basis.mjs')),
+  'lib/http.mjs': fileSha(path.join(APP, 'lib', 'http.mjs'))};
+// Release v11 = valun-app commit 7880dcf (git archive 7880dcf). Other sources still run, but are labelled as such.
+const V11_SOURCES = {'lib/pilot/core.mjs': '94b9fa3563316bdcc74abae8f1daaa32495b27777a0b0b6a06237ebf38514d5d',
+  'lib/pilot/http.mjs': '7fcef5a33758db33d1c64d1d488c6818b80b44a319ff7119b655dda4e1ba65f1', 'lib/basis.mjs': '991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617',
+  'lib/http.mjs': '2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf'};
+const IS_V11 = Object.entries(V11_SOURCES).every(([f, h]) => SOURCES[f] === h);
+const SERVER_RELEASE = IS_V11 ? 'v11 (valun-app commit 7880dcf)' : 'UNRECOGNISED server source (not release v11 7880dcf; see server_source_sha256)';
+if (!IS_V11) console.error(`WARNING: ${APP} is not release v11 (7880dcf): ${JSON.stringify(SOURCES)}. The vectors are labelled accordingly; assertions may fail.`);
 // A signature with the shape the server checks before calling the signer (02/03 prefix, 130 lowercase hex: core.mjs:64)
 // that can never verify (z = 0). Used for dry runs that record which statements the server would accept. Since v9 an
 // all-zero signature ('00' x 65) is refused before the signer runs, so it no longer reveals anything.
@@ -333,11 +338,14 @@ async function canonicalVectors() {
     ['unicode-cjk', 'CJK, Cyrillic, Greek.', {title: '東京の研究 — \u043A\u0440\u0430\u0442\u043A\u0438\u0439 \u043E\u0431\u0437\u043E\u0440', description: 'Ελληνικά και 中文 \u0442\u0435\u043A\u0441\u0442.'}],
     ['unicode-astral', 'Characters outside the BMP (UTF-16 surrogate pairs in JS; 4 UTF-8 bytes each).', {title: 'Brief 🙂🚀 𝔘𝔫𝔦𝔠𝔬𝔡𝔢', description: 'Emoji and a flag (regional indicators): 🧑🏽 🇳🇿.'}],
     ['unicode-rtl', 'Right-to-left scripts without bidi controls: kept literally.', {title: '\u05E2\u05D1\u05E8\u05D9\u05EA \u05D5\u05E2\u0631\u0628\u064A', description: 'mixed \u05E2\u05D1\u05E8\u05D9\u05EA and English'}],
-    ['unicode-allowed-invisible', 'NBSP, soft hyphen (U+00AD), Arabic letter mark (U+061C), LRM (U+200E) and RLM (U+200F) are NOT refused (v9) and are kept literally. (Until v8 this vector also held U+2060 and U+0085, refused since v9: see refused/word-joiner-invisible-operators, refused/c1-controls.)',
-      {title: 'nbsp\u00A0here', description: 'soft\u00ADhyphen alm\u061Cmark lrm\u200Emark rlm\u200Fmark'}],
+    ['unicode-allowed-invisible', 'NBSP, Arabic letter mark (U+061C), LRM (U+200E) and RLM (U+200F) are NOT refused (v11) and are kept literally. (In v9 this vector also held U+00AD SOFT HYPHEN, refused since v11: see refused/soft-hyphen; in v8 also U+2060 and U+0085, refused since v9.)',
+      {title: 'nbsp\u00A0here', description: 'alm\u061Cmark lrm\u200Emark rlm\u200Fmark'}],
     ['emoji-zwj-sequence', 'An emoji ZWJ sequence (U+200D inside \u{1F469}\u200D\u{1F4BB}): valid since v9 (refused in v8).', {title: 'Brief by \u{1F469}\u200D\u{1F4BB}'}],
     ['persian-zwnj', 'Persian text with ZERO WIDTH NON-JOINER (U+200C), required by its orthography: valid since v9 (refused in v8).', {title: '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645'}],
-    ['emoji-modifiers-and-vs16', 'Skin-tone modifier, variation selector 16 (U+FE0F) and a keycap sequence: allowed.', {title: 'Thanks \u{1F44D}\u{1F3FD} \u2764\uFE0F 1\uFE0F\u20E3'}],
+    ['emoji-modifiers-and-vs16', 'Skin-tone modifier, variation selector 16 (U+FE0F) directly after an emoji, and a keycap sequence: allowed (v11 refuses a variation selector only when it does not directly follow an emoji character).', {title: 'Thanks \u{1F44D}\u{1F3FD} \u2764\uFE0F 1\uFE0F\u20E3'}],
+    ['subdivision-flags', 'The three RGI subdivision flags (England, Scotland, Wales: U+1F3F4, tag letters, U+E007F): valid since v11 (refused in v9, which refused every tag character).',
+      {title: 'UK brief \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} \u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F} \u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}'}],
+    ['variation-selector-after-digit', 'A digit is an emoji character (Unicode property Emoji), so one variation selector of any value U+FE00..U+FE0F after it is allowed (see OPEN-QUESTIONS OQ-33).', {title: 'Brief 1\uFE03 2\uFE0A'}],
     ['line-separators', 'U+2028 and U+2029 are NOT escaped by canonical JSON (they are by some encoders, e.g. Go).', {title: 'line\u2028separator', description: 'para\u2029separator'}],
     ['html-chars', '< > & and \' are NOT escaped (Go\'s json.Marshal escapes <, >, & by default: do not use it unmodified).', {title: '<b>Tom & Jerry</b>', description: "it's \"quoted\" & <tagged>"}],
     ['escapes-required', 'Quote and backslash are escaped; "/" is not.', {title: 'say "hi" \\ path/to/file', description: 'C:\\Users\\x and a/b'}],
@@ -346,7 +354,7 @@ async function canonicalVectors() {
     ['padding-within-raw-limit', 'Padding is kept in the signed terms; the raw text may be up to max + 100 UTF-16 code units (title: 220).', {title: ' '.repeat(100) + 'padded' + ' '.repeat(100)}],
   ];
   for (const [n, d, s] of svc) await add(`terms/${n}`, 'terms', d, canonical(withService(s)));
-  // Canonical form is defined, but the server (release v9) refuses these in service text with 400 invalid_field.
+  // Canonical form is defined, but the server (release v11) refuses these in service text with 400 invalid_field.
   const refused = [
     ['escapes-bs-ff', 'BS and FF would use \\b \\f; refused in service text.', {title: 'back\bspace', description: 'form\ffeed'}],
     ['escapes-u00xx', 'Other C0 controls and DEL (\\u00XX, lowercase hex; DEL literal); refused in service text.', {title: 'ctl\u0001\u001f\u007fend', description: 'nul\u0000x vt\u000by esc\u001b[31mred'}],
@@ -357,7 +365,11 @@ async function canonicalVectors() {
     ['word-joiner-invisible-operators', 'Word joiner U+2060 and invisible operators U+2061..U+2064: refused since v9.', {title: 'word\u2060joiner', description: 'f\u2061(x) a\u2062b a\u2063b 1\u20642'}],
     ['interlinear-annotation', 'Interlinear annotation characters U+FFF9..U+FFFB: refused since v9.', {title: '\uFFF9base\uFFFAannotation\uFFFB'}],
     ['tag-characters', 'Unicode tag characters U+E0000..U+E007F (invisible ASCII an LLM can still read; here "IGNORE"): refused since v9.', {title: 'Brief\u{E0049}\u{E0047}\u{E004E}\u{E004F}\u{E0052}\u{E0045}'}],
-    ['subdivision-flag', 'An emoji subdivision flag (England: U+1F3F4 + tag characters + U+E007F) is refused too, because it is built from tag characters (OPEN-QUESTIONS OQ-33).', {title: 'UK brief \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}'}],
+    ['other-tag-flag', 'A tag sequence of the flag form (U+1F3F4, tag letters "usca", U+E007F) that is not one of the three RGI subdivision flags: still refused in v11, because such a sequence could spell hidden text.', {title: 'Brief \u{1F3F4}\u{E0075}\u{E0073}\u{E0063}\u{E0061}\u{E007F}'}],
+    ['soft-hyphen', 'SOFT HYPHEN U+00AD (invisible unless the word breaks): refused since v11 (accepted in v9).', {title: 'soft\u00ADhyphen'}],
+    ['hangul-fillers', 'Hangul fillers U+115F, U+1160, U+3164, U+FFA0 (they show as blank space): refused since v11.', {title: 'aᅟb', description: 'cᅠd eㅤf g\uFFA0h'}],
+    ['ideographic-variation-selectors', 'Ideographic variation selectors U+E0100..U+E01EF (invisible; one per byte value can carry hidden data): refused since v11.', {title: 'ok\u{E0100}\u{E0101}\u{E0102}'}],
+    ['stray-variation-selectors', 'A variation selector U+FE00..U+FE0F that does not directly follow an emoji character (after a letter, or a second one after an emoji): refused since v11.', {title: 'ok\uFE0F', description: 'heart ❤\uFE0F\uFE0F'}],
     ['padding-over-raw-limit', 'A 401-character title that is 1 character after trimming: over max + 100 raw; refused.', {title: ' '.repeat(200) + 'x' + ' '.repeat(200)}],
   ];
   for (const [n, d, s] of refused) await add(`refused/${n}`, 'refused', d, canonical(withService(s)));
@@ -419,15 +431,15 @@ async function statementVectors() {
   // decline / dispute (since release v8, e0b990a): the server verifies the signature over sha256(the reason EXACTLY as
   // received) and, as an alternative for older clients, over sha256(clean(reason)); it stores the cleaned text as
   // `reason`, plus `reason_as_signed` when they differ. Since release v9 (ed1da4a) a reason that is not a string (null and
-  // absent count as ""), or that contains a refused character (the same set as service text), is refused with
-  // 400 invalid_field before any signature is checked. Each case runs through the real Pilot.decline()/dispute():
-  //   1. with a signature that has the right shape but cannot verify (DRY_SIG): a reason v9 refuses MUST give
+  // absent count as ""), or that contains a refused character (the same set as service text; widened in v11), is refused
+  // with 400 invalid_field before any signature is checked. Each case runs through the real Pilot.decline()/dispute():
+  //   1. with a signature that has the right shape but cannot verify (DRY_SIG): a reason v11 refuses MUST give
   //      400 invalid_field without the signer being asked; any other reason gives 403 bad_signature, and the stand-in
   //      verifier records every statement the server would accept, in the order it tries them (nothing is recorded);
   //   2. with a test-key signature over the first (as-sent) form: MUST be accepted;
   //   3. when the cleaned form differs, with a signature over it: MUST be accepted too.
   const reasons = [
-    // [name, reason, expected v9 outcome as two letters: decline, dispute. A = accepted (signature checked), R = refused
+    // [name, reason, expected v11 outcome as two letters: decline, dispute. A = accepted (signature checked), R = refused
     // with 400 invalid_field before any signature is checked]
     ['empty', '', 'AR'], ['plain', 'Too expensive for me.', 'AA'], ['padded', '  padded both sides  ', 'AA'], ['trailing-newline', 'Not this week, sorry.\n', 'AA'],
     ['internal-newline', 'line one\nline two', 'AA'], ['crlf-trailing', 'reason\r\n', 'AA'], ['tab-inside', 'tab\tinside', 'AA'],
@@ -437,12 +449,16 @@ async function statementVectors() {
     ['c1-csi', 'csi\u009B31mred', 'RR'], ['bom-leading', '\uFEFFBOM first', 'RR'], ['bidi-inside', 'abc\u202Edcba', 'RR'], ['bidi-isolate', 'a\u2066b\u2069c', 'RR'],
     ['zero-width-inside', 'zero\u200Bwidth', 'RR'], ['word-joiner', 'word\u2060joiner', 'RR'], ['invisible-operators', 'f\u2061(x) a\u2062b', 'RR'],
     ['interlinear-annotation', '\uFFF9base\uFFFAannotation\uFFFB', 'RR'], ['tag-characters', 'No\u{E0049}\u{E0047}\u{E004E}\u{E004F}\u{E0052}\u{E0045}', 'RR'],
-    ['subdivision-flag', 'Not in \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}', 'RR'],
-    // allowed (v9): whitespace that trim() removes, ZWJ/ZWNJ, LRM/RLM/ALM, soft hyphen, variation selectors
+    // refused since v11 (OQ-33 residual): soft hyphen, Hangul fillers, ideographic and stray variation selectors, and tag
+    // sequences other than the three RGI subdivision flags
+    ['soft-hyphen', 'soft\u00ADhyphen', 'RR'], ['hangul-filler', 'x\u3164y', 'RR'], ['variation-selectors', 'ok\u{E0100}\u{E0101}\u{E0102}\uFE0F', 'RR'],
+    ['stray-variation-selector', 'ok\uFE0F', 'RR'], ['other-tag-flag', 'Not in \u{1F3F4}\u{E0075}\u{E0073}\u{E0063}\u{E0061}\u{E007F}', 'RR'],
+    // allowed: whitespace that trim() removes, ZWJ/ZWNJ, LRM/RLM/ALM (v9); RGI subdivision flags, emoji presentation (v11)
     ['nbsp-around', '\u00A0nbsp around\u00A0', 'AA'], ['line-separators-around', '\u2028sep around\u2029', 'AA'], ['ideographic-space', '\u3000wide space\u3000', 'AA'],
     ['zwj-emoji', 'Booked up \u{1F469}\u200D\u{1F4BB} until December', 'AA'], ['zwnj-persian', '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645', 'AA'],
-    ['lrm-rlm-alm', 'price\u200E 20 \u200FPC \u061C.', 'AA'], ['soft-hyphen', 'soft\u00ADhyphen', 'AA'],
-    ['variation-selectors', 'ok\u{E0100}\u{E0101}\u{E0102}\uFE0F', 'AA'],
+    ['lrm-rlm-alm', 'price\u200E 20 \u200FPC \u061C.', 'AA'],
+    ['subdivision-flag', 'Not in \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}', 'AA'], ['emoji-presentation', 'Love it \u2764\uFE0F but busy', 'AA'],
+    ['variation-selector-after-digit', 'Busy until 1\uFE03 2\uFE0A', 'AA'],
     ['unicode', 'café, 東京, \u{1F642}', 'AA'], ['nfd', 'cafe\u0301', 'AA'],
     // lengths (UTF-16 code units): decline raw <= 600 and cleaned <= 500; dispute raw <= 1100 and cleaned <= 1000
     ['max-500', 'x'.repeat(500), 'AA'], ['over-500', 'x'.repeat(501), 'RA'], ['padded-raw-550', 'x'.repeat(500) + ' '.repeat(50), 'AA'], ['raw-over-600', ' '.repeat(101) + 'x'.repeat(500), 'RA'],
@@ -473,15 +489,15 @@ async function statementVectors() {
     const inputs = {terms_hash: th, ...(dh ? {deliverable_sha256: dh} : {}), reason: raw};
     const tier = /surrogate/.test(rn) ? 'edge' : 'core';
     if (expected[kind === 'decline' ? 0 : 1] === 'R') {
-      // v9: refused with 400 invalid_field before any signature is checked (the signer is never asked).
-      assert.equal(res1.error, 'invalid_field', `${kind}/${rn}: v9 refuses this reason (${JSON.stringify(res1)})`);
+      // Refused with 400 invalid_field before any signature is checked (the signer is never asked); since v9, set widened in v11.
+      assert.equal(res1.error, 'invalid_field', `${kind}/${rn}: v11 refuses this reason (${JSON.stringify(res1)})`);
       assert.equal(res1.status, 400);
       assert.equal(pr1.log.length, 0, `${kind}/${rn}: refused before the signer runs`);
       out.push({name: `${kind}/${rn}`, tier: 'refused', kind, inputs, server_outcome: res1,
         note: 'Refused by the real Pilot.' + kind + '() with 400 invalid_field before any signature is checked; a client must not send it.'});
       continue;
     }
-    assert.equal(res1.error, 'bad_signature', `${kind}/${rn}: v9 accepts this reason; only the dry-run signature is refused (${JSON.stringify(res1)})`);
+    assert.equal(res1.error, 'bad_signature', `${kind}/${rn}: v11 accepts this reason; only the dry-run signature is refused (${JSON.stringify(res1)})`);
     const forms = [...new Set(pr1.log.map(e => Buffer.from(e.message_hex, 'hex').toString('utf8')))];
     assert.equal(typeof raw, 'string');
     const sent = raw, cleaned = cleanText(sent);
@@ -591,12 +607,20 @@ async function validationVectors() {
     ['bad/invisible-operators', withService({deliverable: 'f\u2061(x) a\u2062b a\u2063b 1\u20642'}), 'alice', 'Refused since v9: invisible operators U+2061..U+2064.'],
     ['bad/interlinear-annotation', withService({title: '\uFFF9base\uFFFAannotation\uFFFB'}), 'alice', 'Refused since v9: interlinear annotation U+FFF9..U+FFFB.'],
     ['bad/tag-characters', withService({title: 'tag\u{E0041}\u{E0042}x'}), 'alice', 'Refused since v9 (accepted in v8): Unicode tag characters U+E0000..U+E007F (invisible text).'],
-    ['bad/subdivision-flag', withService({title: 'UK brief \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}'}), 'alice',
-      'Refused since v9: the England flag is a tag sequence (U+1F3F4, tag characters, U+E007F), so subdivision flags are refused with the tag characters (OPEN-QUESTIONS OQ-33).'],
-    ['ok/arabic-mark-soft-hyphen', withService({title: 'alm\u061Cx shy\u00ADx'}), 'alice', 'Not refused: ARABIC LETTER MARK U+061C (allowed on purpose) and SOFT HYPHEN U+00AD (invisible; not in the set).'],
-    ['ok/variation-selectors', withService({title: 'ok\u{E0100}\u{E0101}\u{E0102}\uFE0F'}), 'alice',
-      'Not refused: variation selectors (U+FE00..U+FE0F, U+E0100..U+E01EF). Needed after emoji (U+FE0F), but a run of them after any character is invisible and can carry hidden bytes (OPEN-QUESTIONS OQ-33).'],
-    ['ok/hangul-filler', withService({title: 'x\u3164y'}), 'alice', 'Not refused: HANGUL FILLER U+3164, which renders as blank space (OPEN-QUESTIONS OQ-33).'],
+    ['ok/subdivision-flags', withService({title: 'UK brief \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} \u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F} \u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}'}), 'alice',
+      'Valid since v11 (refused in v9): the three RGI subdivision flags England, Scotland, Wales (U+1F3F4, tag letters, U+E007F); their tag characters are allowed only in exactly these sequences.'],
+    ['bad/other-tag-flag', withService({title: 'Brief \u{1F3F4}\u{E0075}\u{E0073}\u{E0063}\u{E0061}\u{E007F}'}), 'alice',
+      'Refused (v11): a flag-shaped tag sequence that is not one of the three RGI subdivision flags (here "usca"); such sequences could spell hidden text.'],
+    ['ok/arabic-letter-mark', withService({title: 'alm\u061Cx'}), 'alice', 'Not refused: ARABIC LETTER MARK U+061C (allowed on purpose, like LRM and RLM).'],
+    ['bad/soft-hyphen', withService({title: 'shy\u00ADx'}), 'alice', 'Refused since v11 (accepted in v9): SOFT HYPHEN U+00AD.'],
+    ...[[0x115F, 'HANGUL CHOSEONG FILLER'], [0x1160, 'HANGUL JUNGSEONG FILLER'], [0x3164, 'HANGUL FILLER'], [0xFFA0, 'HALFWIDTH HANGUL FILLER']].map(([cp, nm]) =>
+      [`bad/hangul-filler-${cp.toString(16)}`, withService({title: `x${String.fromCodePoint(cp)}y`}), 'alice', `Refused since v11 (accepted in v9): ${nm} U+${cp.toString(16).toUpperCase()}, which shows as blank space.`]),
+    ['bad/ideographic-variation-selectors', withService({title: 'ok\u{E0100}\u{E0101}\u{E0102}'}), 'alice', 'Refused since v11 (accepted in v9): ideographic variation selectors U+E0100..U+E01EF.'],
+    ['bad/stray-variation-selector', withService({title: 'ok\uFE0F'}), 'alice', 'Refused since v11 (accepted in v9): a variation selector after a letter, which is not an emoji character.'],
+    ['bad/repeated-variation-selector', withService({title: 'heart \u2764\uFE0F\uFE0F'}), 'alice', 'Refused since v11: a second variation selector after an emoji (it follows U+FE0F, not an emoji character).'],
+    ['ok/emoji-presentation', withService({title: 'Thanks \u2764\uFE0F \u{1F44D}\u{1F3FD} 1\uFE0F\u20E3'}), 'alice', 'Not refused: U+FE0F directly after an emoji, a skin-tone modifier, a keycap sequence.'],
+    ['ok/variation-selector-after-digit', withService({title: 'Brief 1\uFE03 2\uFE0A'}), 'alice',
+      'Not refused (v11): digits are emoji characters (Unicode property Emoji), so one variation selector of any value U+FE00..U+FE0F after each is allowed: 4 invisible bits per digit (OPEN-QUESTIONS OQ-33).'],
     ['ok/title-120-utf16', withService({title: '🙂'.repeat(60)}), 'alice', '60 astral characters = 120 UTF-16 code units: at the limit.'],
     ['bad/title-122-utf16', withService({title: '🙂'.repeat(61)}), 'alice', '61 astral characters = 122 UTF-16 code units > 120 (only 61 code points).'],
     ['ok/title-padded-to-raw-limit', withService({title: ' '.repeat(110) + 'x' + ' '.repeat(109)}), 'alice', 'Raw length 220 = 120 + 100: at the raw limit; the padding is hashed and stored.'],
@@ -647,14 +671,17 @@ async function transcriptVectors() {
   let now = T0;
   const tick = (s = 60) => { now += s * 1000; };
   // In-memory stand-in for the Basis tracker (no network). Verifies notes with the replica, keeps one note per key pair.
-  // signer.mode emulates the signer runner (lib/basis.mjs:11-34): 'ok' answers with the replica; 'outage' throws the
-  // runner's BasisError('signer timed out') (a timeout, failed start or no output); 'refuses' throws
-  // BasisError('signer: invalid signature encoding') (the helper ran and reported an error, valun_signer.rs:82).
-  const notes = new Map(), verifyLog = [], signer = {mode: 'ok'};
+  // signer.mode emulates the signer runner (lib/basis.mjs:23-47): 'ok' answers with the replica; 'outage' throws the
+  // runner's BasisError('signer timed out', code signer_unavailable) (a timeout, failed start or no output); 'refuses'
+  // throws BasisError('signer: invalid signature encoding', code signer_error) (the helper ran and reported an error,
+  // valun_signer.rs:82). tracker.mode 'down' makes note reads throw BasisError(code tracker_unavailable), as the tracker
+  // client does when the tracker cannot be reached (lib/basis.mjs, Basis.api).
+  const notes = new Map(), verifyLog = [], signer = {mode: 'ok'}, tracker = {mode: 'ok'};
   const signerFault = () => {
-    if (signer.mode === 'outage') throw new BasisError('signer timed out');
-    if (signer.mode === 'refuses') throw new BasisError('signer: invalid signature encoding');
+    if (signer.mode === 'outage') throw new BasisError('signer timed out', {code: 'signer_unavailable'});
+    if (signer.mode === 'refuses') throw new BasisError('signer: invalid signature encoding', {code: 'signer_error'});
   };
+  const trackerFault = () => { if (tracker.mode === 'down') throw new BasisError('tracker unreachable: ECONNREFUSED', {code: 'tracker_unavailable'}); };
   const basis = {nft: FIXTURE_NFT, denomination: PILOT_DENOMINATION, url: 'memory://stand-in-tracker',
     async verify(pubkey, messageHex, sig) {
       if (signer.mode === 'refuses') verifyLog.push({pubkey, message_hex: messageHex, signature: sig, valid: false, signer_refused: true});
@@ -665,8 +692,8 @@ async function transcriptVectors() {
       signerFault();
       return {message_hex: noteMessage(hx(issuer), hx(recipient), total, timestamp, hx(FIXTURE_NFT), denomination).toString('hex'), debt_key_hex: debtKey(hx(issuer), hx(recipient), denomination).toString('hex')};
     },
-    async note(issuer, recipient) { return notes.get(`${issuer}>${recipient}`) ?? null; },
-    async allNotes() { return [...notes.values()]; },
+    async note(issuer, recipient) { trackerFault(); return notes.get(`${issuer}>${recipient}`) ?? null; },
+    async allNotes() { trackerFault(); return [...notes.values()]; },
     async proof() { return null; },
     async api(method, p, body) {
       if (method === 'POST' && p === '/notes') {
@@ -695,10 +722,11 @@ async function transcriptVectors() {
     let res = null;
     const send = (_res, status, b) => { res = {status, body: b}; };
     try { await via(req, {}, new URL('/pilot/v1' + p, 'http://valun.invalid'), send, r => r.socket.remoteAddress); }
-    catch (e) {                                       // exactly as lib/http.mjs:96-101 turns errors into responses
+    catch (e) {                                       // exactly as lib/http.mjs:96-108 (v11) turns errors into responses
       if (e.name === 'PilotError') res = {status: e.status, body: {error: e.code, message: e.message, ...(e.extra || {})}};
-      // lib/basis.mjs's BasisError does not set .name, so e.name is 'Error' and the body is always "internal error".
-      else res = {status: 502, body: {error: e.name === 'BasisError' ? e.message : 'internal error'}};
+      // Since v11 BasisError has name, code and a fixed publicMessage: 503 for signer_unavailable, else 502 (OQ-35).
+      else if (e.name === 'BasisError') res = {status: e.code === 'signer_unavailable' ? 503 : 502, body: {error: e.code, message: e.publicMessage}};
+      else res = {status: 502, body: {error: 'internal error'}};
     }
     return {status: res.status, body: JSON.parse(JSON.stringify(res.body ?? null))};   // the wire: JSON.stringify(body, null, 1)
   }
@@ -1022,8 +1050,8 @@ async function transcriptVectors() {
   await accept('bob', J, 'flow J: bob accepts: agreed');
   await deliver('bob', J, 'Citations checked: 12 of 12 resolve.', 'Citation check', 'flow J: bob delivers');
   signer.mode = 'outage';
-  await step('during an outage the credit-note template is 502 internal error, not 503 (the note message comes from the same signer; OPEN-QUESTIONS OQ-31)', 'alice.agent', 'GET',
-    `/deals/${J}/credit-note-template`, {auth: 'alice.agent', expect: 502});
+  await step('during an outage the credit-note template is 503 signer_unavailable since v11 (v9: 502 internal error; the note message comes from the same signer, OQ-31)', 'alice.agent', 'GET',
+    `/deals/${J}/credit-note-template`, {auth: 'alice.agent', expect: 503});
   signer.mode = 'ok';
   await complete('alice', 'bob', J, 'flow J: after the outage alice accepts the delivery and signs the Basis note (cumulative total 29): note_issued');
   {
@@ -1064,11 +1092,121 @@ async function transcriptVectors() {
         {handle: 'grace', display_name: 'Valun Support'}),
       await join('join: a reserved word in fullwidth letters as display name is accepted: no compatibility normalization (NFKC) before comparing (201; OPEN-QUESTIONS OQ-34)', 201,
         {handle: 'heidi', display_name: '\uFF36\uFF41\uFF4C\uFF55\uFF4E'}),
-      await join('join: a display name with a precomposed accent (NFC) is accepted (201)', 201, {handle: 'judy', display_name: 'José Briefs'}),
+      await join('join: a display name with a precomposed accent (NFC) is accepted (201)', 201, {handle: 'judy', display_name: 'Jos\u00E9 Briefs'}),
       await join("join: the same name with a decomposed accent (NFD) is accepted too, although it looks identical: norm() removes the combining mark, so it compares as \"josebriefs\", not \"josébriefs\" (201; OPEN-QUESTIONS OQ-34)", 201,
         {handle: 'kim', display_name: 'Jose\u0301 Briefs'}),
     ];
     joined.forEach((j, i) => redact.set(j.owner_token, `<${['dave', 'erin', 'frank', 'grace', 'heidi', 'judy', 'kim'][i]}.owner>`));
+  }
+
+  // ===================================================================================================================
+  // Release v11 (7880dcf): OQ-35 error codes, OQ-25, OQ-13, OQ-24, OQ-6, F4/OQ-29, OQ-12, OQ-20 and, last because it
+  // moves the clock 9 days, OQ-8. Appended after the v9 steps so that those steps and their ids stay as they were.
+  // ===================================================================================================================
+  // ---- OQ-35: a tracker failure has its own code and a fixed message ----
+  tracker.mode = 'down';
+  await step('error: the Basis tracker cannot be reached (502 tracker_unavailable with a fixed message, since v11; v9 answered 502 internal error)', 'anyone', 'GET', '/ledger', {expect: 502});
+  tracker.mode = 'ok';
+
+  // ---- OQ-25: a proposal's signature is checked before its deal id is looked up ----
+  {
+    const reuse = lastProposal.body;                // flow J's offer: its deal id exists
+    await step("error: a proposal that reuses an existing deal id with a bad signature is 403 bad_signature, as for an unused id (since v11; v9 answered 409 duplicate, revealing that the id exists)",
+      'alice.agent', 'POST', '/deals', {auth: 'alice.agent', expect: 403, body: {...reuse, signature: signText(P.bob.key, statements.propose(reuse.terms_hash))}});
+    await step('error: a correctly signed proposal that reuses an existing deal id is still 409 duplicate', 'alice.agent', 'POST', '/deals', {auth: 'alice.agent', expect: 409, body: reuse});
+  }
+
+  // ---- OQ-13: a PUT that changes nothing does not make a new mandate version ----
+  {
+    const before = (await http('GET', '/owner', {auth: 'alice.owner'})).body.mandate_version;
+    const r = await step("alice's owner PUTs mandate values it already has: changed false, mandate_version unchanged (since v11)", 'alice.owner', 'PUT', '/owner/mandate',
+      {auth: 'alice.owner', expect: 200, body: {approve_above: 50, max_issue_per_deal: 100}});
+    assert.equal(r.changed, false); assert.equal(r.mandate_version, before);
+  }
+
+  // ---- OQ-24: owner token rotation ----
+  {
+    const r = await step("carol's owner rotates its owner token: a new one, shown once (POST /owner/rotate-token, since v11)", 'carol.owner', 'POST', '/owner/rotate-token', {auth: 'carol.owner', expect: 200});
+    tokens['carol.owner#2'] = r.owner_token; redact.set(r.owner_token, '<carol.owner#2>');
+    await step("carol's previous owner token no longer works (401)", 'carol.owner', 'GET', '/owner', {auth: 'carol.owner', expect: 401});
+    await step("carol's new owner token works; the console shows owner_token_rotated_at", 'carol.owner', 'GET', '/owner', {auth: 'carol.owner#2', expect: 200});
+  }
+
+  // ---- OQ-6 (flow K): withdrawing an offer whose acceptance waits for an owner voids the acceptance ----
+  const Kd = await propose('bob', 'alice', 'payee', {...brief, title: 'Source list'}, 60, 'flow K: bob (payee) offers a source list for 60 PC');
+  await accept('alice', Kd, "flow K: alice accepts; 60 PC is above her approve_above (50), so the acceptance waits for her owner");
+  await step("flow K: bob's view: next_actions lists withdraw while the acceptance waits (since v11)", 'bob.agent', 'GET', `/deals/${Kd}`, {auth: 'bob.agent', expect: 200});
+  {
+    const h = (await dealView('bob', Kd)).current.terms_hash;
+    await step("flow K: bob withdraws; alice's waiting acceptance becomes void_withdrawn and its approval void (since v11; v9 left it awaiting_owner)", 'bob.agent', 'POST', `/deals/${Kd}/withdraw`,
+      {auth: 'bob.agent', expect: 200, body: {terms_hash: h, signature: signText(P.bob.key, statements.withdraw(h))}, reads: [[`/deals/${Kd}`, 'bob.agent']],
+        client_call: {method: 'withdraw', key: 'bob', args: {deal_id: Kd}}});
+    assert.equal((await dealView('alice', Kd)).acceptance.state, 'void_withdrawn');
+  }
+
+  // ---- F4 / OQ-29 (flow L): an offer accepted after its owner lowered approve_above waits for that owner ----
+  const L1 = await propose('alice', 'bob', 'payer', {...brief, title: 'Survey summary'}, 40, 'flow L: alice proposes 40 PC (within her approve_above of 50: open at once)');
+  const L2 = await propose('alice', 'bob', 'payer', {...brief, title: 'Survey appendix'}, 45, 'flow L: alice proposes 45 PC (open at once)');
+  await step("flow L: alice's owner lowers approve_above to 30 (changed: true)", 'alice.owner', 'PUT', '/owner/mandate', {auth: 'alice.owner', expect: 200, body: {approve_above: 30}});
+  await accept('bob', L1, "flow L: bob accepts the 40 PC offer; it is above alice's owner's threshold now, so it waits for that owner (confirm_offer, held_for proposer_owner; since v11, v9 agreed at once)");
+  await accept('bob', L2, "flow L: bob accepts the 45 PC offer; held for alice's owner too");
+  {
+    const ow = await step("flow L: alice's owner console: two confirm_offer approvals (subject accepted_offer)", 'alice.owner', 'GET', '/owner', {auth: 'alice.owner', expect: 200});
+    const pend = id => ow.approvals.find(a => a.deal_id === id && a.kind === 'confirm_offer' && a.state === 'pending');
+    assert.ok(pend(L1) && pend(L2), 'two pending confirm_offer approvals');
+    await step("flow L: alice's owner confirms the 40 PC offer: agreed", 'alice.owner', 'POST', `/owner/approvals/${pend(L1).id}`, {auth: 'alice.owner', expect: 200, body: {decision: 'approve'}});
+    await step("flow L: alice's owner does not confirm the 45 PC offer: the offer is withdrawn and bob's acceptance void", 'alice.owner', 'POST', `/owner/approvals/${pend(L2).id}`,
+      {auth: 'alice.owner', expect: 200, body: {decision: 'reject'}});
+    assert.equal((await dealView('bob', L1)).status, 'agreed');
+    const d2 = await dealView('bob', L2);
+    assert.equal(d2.status, 'withdrawn'); assert.equal(d2.acceptance.state, 'void_withdrawn');
+  }
+  await step("alice's owner restores approve_above to 50", 'alice.owner', 'PUT', '/owner/mandate', {auth: 'alice.owner', expect: 200, body: {approve_above: 50}});
+
+  // ---- OQ-12 (flow L continued): the template's timestamp never exceeds the server's clock ----
+  await deliver('bob', L1, 'Survey summary: five surveys, two agree.', 'Survey summary', 'flow L: bob delivers');
+  signer.mode = 'refuses';
+  await step('error: the signer refuses the note-message request the server built (502 signer_error, since v11; emulated by the stand-in)', 'alice.agent', 'GET',
+    `/deals/${L1}/credit-note-template`, {auth: 'alice.agent', expect: 502});
+  signer.mode = 'ok';
+  {
+    // A note for the pair alice -> bob that alice's key signed outside Valun: same total, timestamp 60 s ahead of the clock.
+    const k = `${P.alice.key.pub}>${P.bob.key.pub}`, cur = notes.get(k), ts = now + 60e3;
+    const m = noteMessage(hx(P.alice.key.pub), hx(P.bob.key.pub), cur.amount_collected, ts, hx(FIXTURE_NFT), PILOT_DENOMINATION);
+    notes.set(k, {...cur, timestamp: ts, signature: schnorrSign(m, P.alice.key.sk).toString('hex')});
+    await step("flow L: the tracker holds a note for the pair that is 60 s ahead of the server's clock: the template is 409 note_timestamp_ahead with retry_after_ms (since v11; v9 returned a future timestamp that complete then refused)",
+      'alice.agent', 'GET', `/deals/${L1}/credit-note-template`, {auth: 'alice.agent', expect: 409,
+        extra: {stand_in_tracker: {note_set_outside_valun: {pair: 'alice -> bob', total: cur.amount_collected, timestamp: ts, signed_by: 'alice (test key)'}}}});
+  }
+  tick(60);
+  await complete('alice', 'bob', L1, "flow L: once the clock has passed that note, alice accepts the delivery and signs the Basis note (cumulative total 69): note_issued");
+
+  // ---- OQ-20 (flow N): a limit the owner records through PUT /limits is labelled as the owner's ----
+  await step("bob's owner records max_accept_per_deal 40 through PUT /limits with the owner token (agent_limits_recorded_by: owner, since v11)", 'bob.owner', 'PUT', '/limits',
+    {auth: 'bob.owner', expect: 200, body: {max_accept_per_deal: 40}});
+  const Nd = await propose('alice', 'bob', 'payer', {...brief, title: 'Market sizing'}, 45, 'flow N: alice proposes 45 PC');
+  {
+    const d = await dealView('bob', Nd), h = d.current.terms_hash;
+    await step('flow N: bob accepts: 403 mandate_exceeded, source agent_limits, recorded_by owner, "limit recorded by the owner (PUT /limits)" (since v11)', 'bob.agent', 'POST', `/deals/${Nd}/accept`,
+      {auth: 'bob.agent', expect: 403, body: {terms_hash: h, signature: signText(P.bob.key, statements.accept(h))},
+        reads: [[`/deals/${Nd}`, 'bob.agent'], ['/info'], [`/participants/${d.current.by}`]],
+        client_call: {method: 'accept', key: 'bob', args: {deal_id: Nd, expected_terms_hash: h}, expect_error: 'mandate_exceeded'}});
+  }
+  await step("bob's owner clears that limit (null)", 'bob.owner', 'PUT', '/limits', {auth: 'bob.owner', expect: 200, body: {max_accept_per_deal: null}});
+
+  // ---- OQ-8 (flow M): an agreed deal not delivered 7 days after deliver_by ends. Moves the clock: keep it last. ----
+  const M = await propose('alice', 'bob', 'payer', {...brief, title: 'Glossary check'}, 11, 'flow M: alice proposes 11 PC');
+  await accept('bob', M, 'flow M: bob accepts: agreed (the view shows delivery_grace_ends_at = deliver_by + 7 days, since v11)');
+  {
+    const d = await dealView('bob', M), h = d.agreement.terms_hash;
+    now = Date.parse(d.current.terms.deliver_by) + 7 * 24 * H + 60e3;      // the clock jumps past the grace period
+    await step('flow M: 7 days after deliver_by bob has not delivered: the deal is expired_undelivered (since v11; v9 kept it agreed forever)', 'bob.agent', 'GET', `/deals/${M}`,
+      {auth: 'bob.agent', expect: 200});
+    const content = 'Glossary: 40 terms checked.', dh = sha256(content);
+    await step('flow M: a delivery after the grace period is refused (409 wrong_state)', 'bob.agent', 'POST', `/deals/${M}/deliver`, {auth: 'bob.agent', expect: 409,
+      body: {terms_hash: h, content, title: '', sha256: dh, signature: signText(P.bob.key, statements.deliver(h, dh))}, reads: [[`/deals/${M}`, 'bob.agent']],
+      client_call: {method: 'deliver', key: 'bob', args: {deal_id: M, content, title: ''}, expect_error: 'wrong_state', expected_statement: statements.deliver(h, dh),
+        note: 'the server refuses before it checks any signature, so the replay checks the signature against statements.deliver(terms_hash, sha256(content))'}});
   }
 
   // ---- OQ-30: per-IP read budgets, on a second route table over the same Pilot with small budgets. Server-only
@@ -1098,7 +1236,7 @@ async function transcriptVectors() {
   let text = JSON.stringify({meta: META('HTTP transcript of a pilot run through the real route table and Pilot class (in memory, fixed clock, stand-in tracker)', {
     base_url: 'http://valun.invalid', placeholders: 'Bearer tokens, invite codes and the admin token are replaced by <name> placeholders; replace them with your own when replaying.',
     replay: 'check_python.py replays every step with a client_call through a Python client (the Hermes plugin or the valun package): the client is given the recorded client_reads, its request body must equal the recorded one (signatures aside), and its signatures must verify over the exact bytes in server_verified.',
-    signer_stand_in: 'Steps marked as signer failures switch the stand-in signer to an outage (BasisError "signer timed out", as lib/basis.mjs throws for a timeout, a failed start or no output) or to reporting an error for the input (BasisError "signer: ..."). The real valun_signer is not run.',
+    signer_stand_in: 'Steps marked as signer or tracker failures switch the stand-in to an outage (BasisError "signer timed out", code signer_unavailable, as lib/basis.mjs throws for a timeout, a failed start or no output), to reporting an error for the input (BasisError "signer: ...", code signer_error), or to an unreachable tracker (code tracker_unavailable). The real valun_signer and tracker are not run. One step sets a note on the stand-in tracker directly (stand_in_tracker), as a note submitted around Valun would be.',
     probes: 'probes: server-only rate-limit behaviour on a second route table with small budgets (statuses only; not replayed by any client).'}),
     participants: Object.fromEntries(Object.entries(P).map(([n, x]) => [n, {participant_id: x.id, current_test_key: x.key?.name ?? null, past_test_keys: x.past_keys || []}])), steps, probes}, null, 1);
   for (const [value, placeholder] of redact) text = text.split(value).join(placeholder);

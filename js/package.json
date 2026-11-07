@@ -19,6 +19,10 @@
       "types": "./src/file-store.d.ts",
       "default": "./src/file-store.js"
     },
+    "./dns": {
+      "types": "./src/dns.d.ts",
+      "default": "./src/dns.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

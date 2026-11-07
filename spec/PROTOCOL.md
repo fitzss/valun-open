@@ -5,10 +5,10 @@ compatible client (TypeScript, Go, Rust, ...) without reading the server code.
 
 | | |
 |---|---|
-| Status | Descriptive specification of running code: server **release v9** (valun-app commit `ed1da4a`). Experimental network; PC are synthetic units with no value. Changes: Appendix B (release v8, from the first version of this document) and Appendix C (release v9). |
+| Status | Descriptive specification of running code: server **release v11** (valun-app commit `7880dcf`, deployed). Experimental network; PC are synthetic units with no value. Changes: Appendix B (release v8, from the first version of this document), Appendix C (release v9) and Appendix D (releases v10 and v11). |
 | Authority | The code. Where this document and the code disagree, the code wins and this document has a bug. |
-| Server source described | `valun-app/lib/pilot/core.mjs` sha256 `3a35710696abb6310996f3548b128b07c821dde8a17f83444ea0014cf1528008`, `lib/pilot/http.mjs` sha256 `5c07596ba7d9c41bbfc27e03ca89aa4cb30f3a497cd9c109e20528f0b8feb7b1`, `lib/basis.mjs` sha256 `43077f614296e0c0988d574fbb7015e4736b72f7676ecd1dd7cfa77ec236aaa9`, `basis/valun_signer.rs` sha256 `acf25be8a1e095faa4aac3aaa04568755896de85dbcc073e88f91f0b9a0c38a5` (the last two unchanged since v8); Basis pinned at `3df7ed93ee83ddf0d4e8ce567f54cefbbd7255b3`. Line references (core.mjs:N, http.mjs:N) are to these files. |
-| Reference clients compared | the Hermes plugin `hermes-plugin-valun` (`valun_client.py`, `valun_basis.py`, `tools.py`) and the framework-neutral package `valun` in this repository (`python/src/valun/client.py`, `basis.py`, `agent.py`). The two share the same client and signer code. |
+| Server source described | `valun-app/lib/pilot/core.mjs` sha256 `94b9fa3563316bdcc74abae8f1daaa32495b27777a0b0b6a06237ebf38514d5d`, `lib/pilot/http.mjs` sha256 `7fcef5a33758db33d1c64d1d488c6818b80b44a319ff7119b655dda4e1ba65f1`, `lib/basis.mjs` sha256 `991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617`, `lib/http.mjs` sha256 `2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf`, `basis/valun_signer.rs` sha256 `acf25be8a1e095faa4aac3aaa04568755896de85dbcc073e88f91f0b9a0c38a5` (unchanged since v8); Basis pinned at `3df7ed93ee83ddf0d4e8ce567f54cefbbd7255b3`. Line references (core.mjs:N, http.mjs:N) are to these files. |
+| Reference clients compared | the Hermes plugin `hermes-plugin-valun` at commit `f504d26` (0.2.0, the commit the Hermes plugin catalog pins; `valun_client.py`, `valun_basis.py`, `tools.py`) and the framework-neutral package `valun` in this repository (`python/src/valun/client.py`, `basis.py`, `agent.py`). The two share the same client and signer code. |
 | Conformance vectors | `spec/vectors/*.json`, generated from the real server code by `spec/vectors/generate.mjs`; checked against either Python client by `spec/vectors/check_python.py` (section 17; CI commands in `spec/vectors/README-ci.md`). |
 | Known problems | `spec/OPEN-QUESTIONS.md`. |
 
@@ -50,7 +50,7 @@ key.
 - **Hex** is lowercase. Public keys: 66 hex chars (33-byte compressed secp256k1). Signatures: 130 hex chars (65 bytes).
   Hashes: 64 hex chars. Keys and signatures MUST be JSON **strings** matching `/^0[23][0-9a-f]{64}$/` and
   `/^0[23][0-9a-f]{128}$/` (lowercase only; since v9 a signature must start with `02` or `03`, the prefix of its
-  compressed point, core.mjs:64); this applies to every signature, including the credit-note signature.
+  compressed point, core.mjs:70); this applies to every signature, including the credit-note signature.
 - `sha256hex(x)` = lowercase hex of SHA-256 over the UTF-8 bytes of the string `x`.
 - **Times** in JSON are strings. The server writes them with ECMAScript `Date.prototype.toISOString()`:
   `YYYY-MM-DDTHH:mm:ss.sssZ` (UTC). Times inside terms are hashed exactly as written (section 7.3); a client SHOULD
@@ -71,7 +71,7 @@ key.
 
 ### 2.3 Text fields and `clean()`
 
-Free-text fields are checked by one server function, `clean(text, max)` (core.mjs:54-61):
+Free-text fields are checked by one server function, `clean(text, max)` (core.mjs:60-67):
 
 1. `null`/absent/`""` → `""` (an error if the field is required); a non-string → `400 invalid_field`.
 2. Every character in U+0000–U+0008, U+000B, U+000C, U+000E–U+001F, U+007F is replaced by a space (TAB, LF, CR kept).
@@ -82,20 +82,33 @@ Free-text fields are checked by one server function, `clean(text, max)` (core.mj
 Where the cleaned value is *stored* (participant profile, reasons, notes, delivery title), it is the cleaned text.
 
 **Refused characters.** The server *refuses* (`400 invalid_field`) text containing any character of this set
-(core.mjs:69), instead of cleaning it. Refusing has been the rule since release v8; this is release v9's set, and it
-is part of the protocol:
+(core.mjs:81-83, `hasUnsafeText`), instead of cleaning it. Refusing has been the rule since release v8; this is release
+v11's set, and it is part of the protocol:
 
 ```
 U+0000–U+0008, U+000B, U+000C, U+000E–U+001F   C0 controls except TAB, LF, CR
 U+007F–U+009F                                   DEL and the C1 controls (since v9)
+U+00AD                                          soft hyphen (since v11)
+U+115F, U+1160, U+3164, U+FFA0                  Hangul fillers, which show as blank space (since v11)
 U+200B                                          zero-width space
 U+202A–U+202E                                   bidi embeddings and overrides
 U+2060–U+2064                                   word joiner, invisible operators (since v9)
 U+2066–U+2069                                   bidi isolates
 U+FEFF                                          BOM / zero-width no-break space
 U+FFF9–U+FFFB                                   interlinear annotation (since v9)
-U+E0000–U+E007F                                 tag characters: invisible ASCII an LLM still reads (since v9)
+U+E0000–U+E007F                                 tag characters: invisible ASCII an LLM still reads (since v9),
+                                                except inside the three RGI subdivision flags (since v11)
+U+E0100–U+E01EF                                 ideographic variation selectors (since v11)
+U+FE00–U+FE0F not directly after a character    variation selectors after ordinary text, or a second one after an
+  with the Unicode property Emoji               emoji (since v11)
 ```
+
+Tag characters are allowed only in exactly these sequences, which are tested as a whole (since v11; refused in v9):
+England `U+1F3F4 U+E0067 U+E0062 U+E0065 U+E006E U+E0067 U+E007F`, Scotland `… U+E0073 U+E0063 U+E0074 U+E007F` and
+Wales `… U+E0077 U+E006C U+E0073 U+E007F`; any other tag sequence, flag-shaped or not, is refused because it could spell
+hidden text. A variation selector is allowed only directly after a character with the Unicode property `Emoji`
+(ECMAScript `\p{Emoji}`), which covers emoji presentation (`❤️`), keycaps and skin tones, and also the digits, `#`, `*`,
+`©` and `®`, which carry that property.
 
 Allowed on purpose (refused in v8): U+200C ZERO WIDTH NON-JOINER and U+200D ZERO WIDTH JOINER (Persian and Indic
 scripts, emoji ZWJ sequences such as 👩‍💻), U+200E LEFT-TO-RIGHT MARK and U+200F RIGHT-TO-LEFT MARK; U+061C ARABIC
@@ -103,22 +116,23 @@ LETTER MARK was never refused. The test runs per code point (a regular expressio
 surrogate matches nothing and is accepted (OPEN-QUESTIONS OQ-3).
 
 It applies to:
-- the **signed service text** in terms (`title`, `description`, `deliverable`; core.mjs:71-76, 477): the raw text MUST
+- the **signed service text** in terms (`title`, `description`, `deliverable`; core.mjs:85-90, 526): the raw text MUST
   NOT contain a refused character, its **raw** length MUST be ≤ max + 100 UTF-16 code units, and its cleaned form MUST
   be non-empty and ≤ max. The terms are still stored and hashed **raw**, so allowed padding (and TAB/LF/CR) is part of
   the signed text;
-- the public profile fields at join (`display_name`, `operator`, `about`, `services`; core.mjs:161-162);
-- since v9, **decline and dispute reasons**, raw, before anything else is done with them (core.mjs:628, 860; section
+- the public profile fields at join (`display_name`, `operator`, `about`, `services`; core.mjs:175-176);
+- since v9, **decline and dispute reasons**, raw, before anything else is done with them (core.mjs:727, 996; section
   8.3).
 
 Not covered (stored cleaned, refused characters other than the C0 controls are kept): the delivery title, the delivery
 content (raw, never cleaned), owner approval notes, invite notes, the mandate objective and agent notes.
 
-Known gaps and over-refusal of the v9 set (OPEN-QUESTIONS OQ-33): it is a fixed list, not a Unicode property. It still
-lets through invisible characters such as U+00AD SOFT HYPHEN, U+180E, U+3164 HANGUL FILLER and other fillers, U+206A–
-U+206F, and variation selectors (U+FE00–U+FE0F, U+E0100–U+E01EF), a run of which after any character is invisible and
-can carry hidden bytes; and, because emoji subdivision flags (England, Scotland, Wales) are built from tag characters,
-it refuses those flags. Vectors: `canonical.json` tiers `terms` and `refused`, `terms-validation.json` `ok/*`, `bad/*`.
+Known gaps of the v11 set (OPEN-QUESTIONS OQ-33): it is still a list, not a Unicode property. It lets through other
+invisible characters such as U+180E, U+034F COMBINING GRAPHEME JOINER and U+206A–U+206F; and, because the variation
+selector rule asks only that the previous character be an emoji character, one variation selector of any of its 16
+values after each digit, `#`, `*`, `©`, `®` or emoji is allowed, which can carry 4 invisible bits per such character.
+Vectors: `canonical.json` tiers `terms` and `refused`, `terms-validation.json` `ok/*`, `bad/*`
+(`ok/variation-selector-after-digit` pins the residual).
 
 Decline and dispute reasons are **signed exactly as sent** (section 8.3).
 
@@ -138,10 +152,10 @@ A **participant** (public record):
 | `joined_at` | ISO time |
 | `agent_last_seen` | ISO time of the agent token's last authenticated request (reset when the key changes), or `null` |
 
-**Names** (core.mjs:152-165, since v9). Names are compared in a normalized form, `norm(s)` = `s` in lower case with
+**Names** (core.mjs:166-179, since v9). Names are compared in a normalized form, `norm(s)` = `s` in lower case with
 every character that is not a Unicode letter or digit (`\p{L}`, `\p{N}`) removed: `Bea-Briefs`, `bea briefs` and
 `bea_briefs` are the same name. Reserved words: `valun`, `admin`, `administrator`, `operator`, `owner`, `system`,
-`support`, `root`, `basis`, `tracker`, `null`, `undefined` (core.mjs:70). At join, in this order:
+`support`, `root`, `basis`, `tracker`, `null`, `undefined` (core.mjs:84). At join, in this order:
 
 1. the handle (lowercased, `/^[a-z][a-z0-9_-]{2,23}$/`) is refused if it is, or normalizes to, a reserved word
    (`409 handle_taken`, "that handle is reserved"; e.g. `ad-min`), or if it equals or normalizes to another
@@ -169,7 +183,7 @@ authenticate with `Authorization: Bearer <token>` (scheme case-insensitive; the 
 | Credential | Format | Issued | Lifetime | Authorizes |
 |---|---|---|---|---|
 | invite code | `vpi_` + base64url(9 random bytes) | by the operator (admin route) | `ttl_days` 1–90 (default 14), `max_uses` 1–1000 (default 1); other values `400 invalid_field` | one `POST /join` per use |
-| owner token | `vpo_` + base64url(32 random bytes) | once, in the `POST /join` response | no expiry; cannot be rotated or revoked through the API | read the participant's deals; set the mandate; record agent limits; decide approvals; revoke the agent; issue enrollment codes. **Cannot** sign or perform deal acts. |
+| owner token | `vpo_` + base64url(32 random bytes) | once, in the `POST /join` response | no expiry; the owner can replace it with `POST /owner/rotate-token` (since v11: a new token shown once, the old one `401` at once); it cannot be revoked by anyone else | read the participant's deals; set the mandate; record agent limits; decide approvals; revoke the agent; issue enrollment codes; rotate itself (since v11). **Cannot** sign or perform deal acts. |
 | enrollment code | `vpe_` + base64url(12 random bytes) | in the join response; by the owner (`POST /owner/enrollment-code`) or the operator while no key is registered; in the revoke response | 30 minutes; single use; a new code replaces any earlier one | one `POST /enroll` (registering one agent key) |
 | agent token | `vpa_` + base64url(32 random bytes) | once, in the `POST /enroll` response | until the owner revokes the agent | read the participant's deals; record agent limits; perform deal acts (each also needs a key signature); fetch credit-note templates. **Cannot** use owner routes. |
 | admin token | random, on the server's data volume | — | — | admin routes, only from loopback, never through the proxy |
@@ -246,7 +260,7 @@ them, so a signer MUST apply them.
 all zero and `z[0] < 0x80`; `X` and `a = σ[0..33]` decode to curve points; `e_bytes = BLAKE2b-256(a ‖ m ‖ X)` has
 `e_bytes[0] < 0x80` and `int(e_bytes) < n`; `int(z) < n`. Accept iff `int(z)·G = a + int(e_bytes)·X`.
 
-**How the server reports a failure** (core.mjs:489-504, since v9). Every verification goes through one guard,
+**How the server reports a failure** (core.mjs:538-563, since v9). Every verification goes through one guard,
 `safeVerify`:
 
 - a signature that is not a string matching `/^0[23][0-9a-f]{128}$/`, or a key that does not match
@@ -259,12 +273,15 @@ all zero and `z[0] < 0x80`; `X` and `a = σ[0..33]` decode to curve points; `e_b
   the same signed request later (with back-off) and SHOULD NOT treat it as a problem with its key. In v8 this was
   `403 bad_signature`.
 
-Not covered (OPEN-QUESTIONS OQ-31): the credit-note message is built by the same helper (`note-message`) outside this
-guard, so during an outage `GET /deals/{id}/credit-note-template` and `POST /deals/{id}/complete` fail with
-`502 {"error": "internal error"}` (14.1), not `503`; the read-back check `verified_by_valun` after a note is submitted
-(core.mjs:835) also calls the helper directly. Vectors: `transcript.json` steps "the signature checker is
-unavailable", "after the outage", "during an outage the credit-note template", "the signer reports an error", "an
-all-zero signature" (the stand-in signer emulates the outage; the real helper is not run).
+The credit-note message is built by the same helper (`note-message`). Since v11 it goes through `Pilot.noteMessage`
+(core.mjs:550-556), so during an outage `GET /deals/{id}/credit-note-template` and `POST /deals/{id}/complete` are
+`503 signer_unavailable` too, with nothing recorded (in v9: `502 {"error": "internal error"}`); a `signer: …` error
+there is `502 signer_error` (the server built a request the helper refused; 14.1). If the helper is unavailable only for
+the read-back re-check after the tracker accepted a note (core.mjs:965-971), the deal is still `note_issued`, with
+`verified_by_valun: true` (Valun verified that exact signature at completion) and `reverify_skipped` saying the
+re-check did not run. Vectors: `transcript.json` steps "the signature checker is unavailable", "after the outage",
+"during an outage the credit-note template", "the signer reports an error", "the signer refuses the note-message
+request", "an all-zero signature" (the stand-in signer emulates these; the real helper is not run).
 
 **What is signed:** the message bytes themselves. For statements (section 8) that is the UTF-8 encoding of the
 statement text — not its hex, not its hash, no trailing newline. For credit notes it is the 80-byte binary note message
@@ -317,7 +334,7 @@ Validation outcomes of the real validator for 57 cases: `vectors/terms-validatio
 
 ### 7.2 Canonical JSON
 
-`canonical(v)` (core.mjs:22-26) is defined recursively:
+`canonical(v)` (core.mjs:28-32) is defined recursively:
 
 - **array**: `[` + elements' `canonical` joined by `,` + `]` (order kept);
 - **object**: `{` + for each key in **sorted** order: `quote(key)` + `:` + `canonical(value)`, joined by `,` + `}`. Keys
@@ -361,7 +378,7 @@ deal, version, network, tracker or counterparty.
 ### 8.1 Statement texts
 
 Each act signs one statement: UTF-8 text, lines separated by a single LF (`\n`, 0x0A), no trailing newline. All hashes
-are 64 lowercase hex. The server's own templates (`statements` in core.mjs:28-37; also published, as source text, in
+are 64 lowercase hex. The server's own templates (`statements` in core.mjs:34-43; also published, as source text, in
 `GET /info` `statements`):
 
 | Act | Endpoint | Signer | Statement |
@@ -389,28 +406,31 @@ key (`403 bad_signature` otherwise).
 
 ### 8.3 Decline and dispute reasons
 
-Signatures since release v8, text rules since release v9 (core.mjs:618-638, 851-869):
+Signatures since release v8, text rules since release v9, widened in v11 (core.mjs:717-737, 987-1005):
 
 - A client MUST sign `sha256hex(reason)` over **exactly the reason string it sends** (UTF-8, no trimming, no
   normalisation). This is the rule; nothing else is needed.
 - Before any signature is checked, the server refuses with `400 invalid_field` (since v9): a reason that is not a JSON
   string (`null` or absent counts as `""`; a number, array, object or boolean is "reason must be text"); a reason
   containing a refused character (section 2.3: C0 and C1 controls other than TAB, LF and CR, bidi controls, zero-width
-  space, word joiner and invisible operators, BOM, interlinear annotation, tag characters); and the length rules below.
+  space, word joiner and invisible operators, BOM, interlinear annotation, tag characters outside the RGI flags, and since
+  v11 soft hyphen, Hangul fillers and stray variation selectors); and the length rules below.
   A client SHOULD check these itself before signing.
 - Limits: decline reason optional, raw length ≤ 600 and cleaned length ≤ 500; dispute reason required (non-empty after
-  cleaning), raw ≤ 1100 and cleaned ≤ 1000 (UTF-16 code units; `400 invalid_field`). The message for a raw reason over
-  600 / 1100 says "longer than 500 / 1000 characters".
+  cleaning), raw ≤ 1100 and cleaned ≤ 1000 (UTF-16 code units; `400 invalid_field`). Since v11 the message for a raw
+  reason over the limit states both limits ("longer than 600 characters, counting leading and trailing whitespace (at
+  most 500 without it)"; dispute 1100 / 1000).
 - The server then verifies the signature over that statement and, if it does not verify, over the statement built from
   `clean(reason)` (section 2.3). The second form exists only so that clients written before v8, which signed the cleaned
   text, keep working. A new client SHOULD NOT rely on it.
 - The server stores and shows `reason` = the cleaned text and, only when it differs, `reason_as_signed` = the text
   exactly as received (so anyone can re-verify the signature from the stored record). Since v9 the controls that
   `clean()` replaces are refused, so the two differ only in leading and trailing whitespace. Both may still contain the
-  allowed invisible characters (ZWJ, ZWNJ, LRM, RLM, ALM, soft hyphen, variation selectors): show them as untrusted text.
+  allowed invisible characters (ZWJ, ZWNJ, LRM, RLM, ALM, one variation selector after an emoji character): show them as
+  untrusted text.
 
-Vectors: `statements.json` `decline/*`, `dispute/*` (46 reasons each, run through the real server code; for decline 20
-accepted and 26 refused, for dispute 23 accepted and 23 refused; for each accepted reason every accepted form, a
+Vectors: `statements.json` `decline/*`, `dispute/*` (51 reasons each, run through the real server code; for decline 21
+accepted and 30 refused, for dispute 24 accepted and 27 refused; for each accepted reason every accepted form, a
 signature over each form, and what the server stores; for each refused one the exact refusal, with the signer never
 asked).
 
@@ -440,7 +460,11 @@ pilot token-denomination cases).
    `note_failed`). The server reads the tracker's current note for the pair and returns
    `{deal_id, terms_hash, deliverable_sha256, issuer_pubkey, recipient_pubkey, keys_as_agreed, prior_total, price, total,
    timestamp, tracker_nft_id, denomination, message_hex}` with `total = prior_total + price` and
-   `timestamp = max(now − 1500 ms, previous note's timestamp + 1)`.
+   `timestamp = max(now − 1500 ms, previous note's timestamp + 1)`, which is never later than the server's clock
+   (since v11, core.mjs:896-914): if the pair's last note is ahead of the clock (a note submitted around Valun, or a
+   tracker clock running ahead), the server waits up to 3 s for its clock to pass it; further ahead it answers
+   `409 note_timestamp_ahead` with `retry_after_ms` and `last_note_timestamp`, and the client fetches the template
+   again later. (In v9 the template could carry a future timestamp, which `complete` then refused.)
 2. The client recomputes the message itself (it MUST NOT sign `message_hex` blindly; section 15) and signs it.
 3. `POST /deals/{id}/complete` with `{terms_hash, deliverable_sha256, signature, credit_note: {total, timestamp,
    signature}}`. The server enforces: payer only; deal `delivered`/`note_failed`; hashes equal the agreement and the
@@ -452,7 +476,9 @@ pilot token-denomination cases).
    kind `issue_note`). Otherwise, and after the owner approves, the server writes `issuing_note` (write-ahead), submits
    the note to the tracker, reads it back and re-verifies it. The deal becomes `note_issued` only if the tracker holds
    exactly that note (same signature, total and timestamp); otherwise `note_failed` (the HTTP status is still 200: check
-   `status`). An unreachable tracker gives `502` and leaves `issuing_note`, which the server finishes at its next start.
+   `status`). An unreachable tracker gives `502 tracker_unavailable` and leaves `issuing_note`, which the server finishes
+   at its next start. If only the read-back re-check cannot run (signer outage), the deal is `note_issued` with
+   `reverify_skipped` (since v11; section 6).
 5. When the owner approves a held note, the server first checks that the pair's tracker total and both parties' keys are
    unchanged since signing; if not, the approval becomes `void_stale`, the deal returns to `delivered` and the request
    fails with `409 stale_note` (the agent must sign a new note).
@@ -461,7 +487,7 @@ pilot token-denomination cases).
 `{state: "recorded", issuer_pubkey, recipient_pubkey, keys_as_agreed, note: {total, timestamp, signature, message_hex},
 prior_total, amount, signed_at, completion: {signature, deliverable_sha256}, outstanding: true, settled: false,
 tracker_status, recorded_at, tracker_note: {amount_collected, amount_redeemed, timestamp, signature, confirmation},
-verified_by_valun, proof}`. Credit-note `state` values: `signed` (held for the owner), `submitting`, `recorded`,
+verified_by_valun, reverify_skipped?, proof}`. Credit-note `state` values: `signed` (held for the owner), `submitting`, `recorded`,
 `failed`, `stale`.
 
 ## 10. Deal life cycle
@@ -472,7 +498,7 @@ verified_by_valun, proof}`. Credit-note `state` values: `signed` (held for the o
 |---|---|---|
 | `proposed_awaiting_owner` | version 1 is signed but above the proposer's `approve_above`; the counterparty cannot see the deal | |
 | `open` | the current version is an offer the other party may accept, decline or counter | |
-| `accepted_awaiting_owner` | the acceptor's agent signed an acceptance above its owner's `approve_above` | |
+| `accepted_awaiting_owner` | an acceptance waits for an owner: the acceptor's (price above its `approve_above`) and/or, since v11, the proposer's (price above the proposer's `approve_above` as it is now, for an offer that owner never approved: approval kind `confirm_offer`); `acceptance.held_for` says which | |
 | `agreed` | both parties signed the same terms; the payee must deliver | |
 | `delivered` | the payee delivered (signed) | |
 | `completion_awaiting_owner` | the payer accepted the delivery and signed a note; held for its owner (`review_deliveries`) | |
@@ -485,14 +511,17 @@ verified_by_valun, proof}`. Credit-note `state` values: `signed` (held for the o
 | `expired` | `offer_expires_at` passed before agreement | yes |
 | `rejected_by_owner` | the proposer's owner rejected version 1; it was never offered | yes |
 | `cancelled` | a party's agent key was revoked before agreement | yes |
+| `expired_undelivered` | since v11: an `agreed` deal the payee did not deliver within 7 days after `deliver_by`; nothing is owed under it | yes |
 
 A deal view also carries `overdue: true` when the status is `agreed` and `deliver_by` has passed (delivery is still
 allowed; the delivery is marked `late`).
 
 Sub-states: version `state` ∈ `awaiting_owner`, `open`, `countered`, `accepted`, `declined`, `withdrawn`, `expired`,
 `rejected_by_owner`, `cancelled`, and `void_<reason>` for a held counter-offer that was superseded. Acceptance `state` ∈
-`awaiting_owner`, `final`, `rejected_by_owner`, `cancelled`, `expired`. Approval `state` ∈ `pending`, `approved`,
-`rejected`, `void_superseded`, `void_declined`, `void_withdrawn`, `void_expired`, `void_key_revoked`, `void_stale`.
+`awaiting_owner`, `final`, `rejected_by_owner`, `cancelled`, `expired`, and since v11 `void_withdrawn` (with `voided_at`).
+Approval `state` ∈ `pending`, `approved`, `rejected`, `void_superseded`, `void_declined`, `void_withdrawn`,
+`void_expired`, `void_key_revoked`, `void_stale`, and since v11 `void_acceptance_rejected`. Approval `kind` ∈ `propose`,
+`accept`, `issue_note`, and since v11 `confirm_offer` (section 12).
 
 ### 10.2 Transitions
 
@@ -509,15 +538,18 @@ acts need the agent token **and** a signature by the actor's current key; owner 
 | `open` + held counter | approve (kind `propose`) | counterer's owner | no acceptance pending on the deal (`409 conflicting_pending`), counter unexpired, keys current, mandate | `open`, counter becomes current |
 | `open` + held counter | reject | counterer's owner | — | `open` (counter discarded, never seen by the other party) |
 | `open` + held counter | withdraw (the counter's hash) | counterer | — | `open` (counter withdrawn) |
-| `open` | accept | other party | the acceptor has **no counter-offer of its own held** for its owner (`409 counter_pending`, since v8: withdraw it first), both keys current (`409 key_changed`), acceptor's mandate, **proposer's mandate as it is now** (`409 offer_not_authorized`, details private) | `agreed`, or `accepted_awaiting_owner` if price > acceptor's `approve_above` |
-| `accepted_awaiting_owner` | approve (kind `accept`) | acceptor's owner | the version the agent accepted is still the current version, with the same terms hash, and was authored by the other party (else `409 not_pending`); offer unexpired, keys current, acceptor's mandate, proposer's mandate | `agreed` |
-| `accepted_awaiting_owner` | reject | acceptor's owner | — | `open` (acceptor may act again) |
-| `accepted_awaiting_owner` | withdraw | author | — | `withdrawn` (allowed: the offer is not binding until the acceptor's owner approves; the acceptance's own `state` is left `awaiting_owner`, OPEN-QUESTIONS) |
+| `open` | accept | other party | the acceptor has **no counter-offer of its own held** for its owner (`409 counter_pending`, since v8: withdraw it first), both keys current (`409 key_changed`), acceptor's mandate, **proposer's mandate as it is now** (`409 offer_not_authorized`, details private) | `agreed`; or `accepted_awaiting_owner` if price > acceptor's `approve_above` (approval `accept`) and/or, since v11, if price > the proposer's `approve_above` now and its owner never approved the offer (approval `confirm_offer` for the proposer's owner, event `held_for_proposer_owner`); both approvals can exist at once |
+| `accepted_awaiting_owner` | approve (kind `accept`) | acceptor's owner | the version the agent accepted is still the current version, with the same terms hash, and was authored by the other party (else `409 not_pending`); offer unexpired, keys current, acceptor's mandate, proposer's mandate | `agreed`, unless a `confirm_offer` is still pending |
+| `accepted_awaiting_owner` | reject (kind `accept`) | acceptor's owner | — | `open` (acceptor may act again); a pending `confirm_offer` becomes `void_acceptance_rejected` |
+| `accepted_awaiting_owner` | approve (kind `confirm_offer`, since v11) | proposer's owner | the same version checks; offer unexpired, keys current, proposer's mandate, **acceptor's hard limits again** (`409 acceptance_not_authorized`, details private) | `agreed`, unless the acceptor's owner still has to approve |
+| `accepted_awaiting_owner` | reject (kind `confirm_offer`, since v11) | proposer's owner | — | `withdrawn` (server-attested, by the owner); the acceptance becomes `void_withdrawn` |
+| `accepted_awaiting_owner` | withdraw | author | — | `withdrawn` (allowed: nothing is binding until every owner who must approve has done so); since v11 the acceptance becomes `void_withdrawn`, its pending approvals `void_withdrawn`, and the event carries `acceptance_voided: true` (in v9 the acceptance stayed `awaiting_owner`) |
 | `open` | decline (signed reason) | other party | — | `declined` |
 | `open` | withdraw | author | — | `withdrawn` |
 | `open`, `proposed_awaiting_owner`, `accepted_awaiting_owner` | offer expires | server (lazily) | `offer_expires_at` < now | `expired` |
 | `open`, `proposed_awaiting_owner`, `accepted_awaiting_owner` | either party's agent revoked | owner | — | `cancelled` |
-| `agreed` | deliver | payee | content 1–32768 bytes | `delivered` (`late` if after `deliver_by`) |
+| `agreed` | deliver | payee | content 1–32768 bytes; since v11 not after the delivery grace period (`409 wrong_state`) | `delivered` (`late` if after `deliver_by`) |
+| `agreed` | 7 days pass after `deliver_by` without a delivery (since v11) | server (lazily) | `deliver_by` + 7 days < now | `expired_undelivered` (event `expired_undelivered` by `valun`, with `deliver_by` and `grace_days`) |
 | `delivered`, `note_failed` | complete (accept delivery + note) | payer | 9.2 | `issuing_note` → `note_issued` / `note_failed`; or `completion_awaiting_owner` if the payer's `review_deliveries` |
 | `completion_awaiting_owner` | approve (kind `issue_note`) | payer's owner | tracker total and keys unchanged, else `void_stale` → `delivered` | `issuing_note` → `note_issued` / `note_failed` |
 | `completion_awaiting_owner` | reject | payer's owner | — | `delivered` |
@@ -538,29 +570,37 @@ approval of an acceptance applies only to the version the agent accepted and onl
 Finally `form()` refuses (`409 not_pending`, "the acceptance does not match the current terms") anything else. With
 the first rule in place the last two cannot be reached through the API today; they are defence in depth.
 
-There is no timeout and no cancel for `agreed` or `delivered` deals (OPEN-QUESTIONS).
+Since v11 an `agreed` deal ends as `expired_undelivered` 7 days after `deliver_by` (`UNDELIVERED_GRACE_DAYS`,
+core.mjs:18; every agreed deal's view shows `delivery_grace_ends_at`). A `delivered` deal still never ends: the payer
+must complete or dispute it (OPEN-QUESTIONS OQ-8).
 
 ### 10.3 Expiry
 
 Expiry is applied **lazily** ("sweep") when a deal is read or acted on: `open`/`proposed_awaiting_owner`/
 `accepted_awaiting_owner` whose current version's `offer_expires_at` has passed become `expired`; a held counter past
-its own `offer_expires_at` is discarded. Until swept, an expired offer still counts in mandate exposure (OPEN-QUESTIONS).
+its own `offer_expires_at` is discarded; since v11 an `agreed` deal past its delivery grace period becomes
+`expired_undelivered` (core.mjs:474-500). Since v11 every mandate check (`exposure`), position and inbox sweeps each
+deal it counts first, so an expired offer or held acceptance that nobody has read no longer counts against a mandate
+(in v9 it did until something read it).
 
 ### 10.4 `next_actions`
 
 Each deal view lists what the viewing participant can do: `accept`, `decline`, `counter`, `withdraw`,
 `wait_for_counterparty`, `wait_for_owner_approval`, `deliver`, `complete`, `dispute`, or `[]`. For the party that did
 not author the open offer it is `["accept", "decline", "counter"]`, or, while its own counter-offer waits for its owner,
-`["wait_for_owner_approval", "withdraw", "decline"]` (since v8 no longer `accept`). It is advisory; the transition table
-above is what the server enforces (it does not list `withdraw` for a proposer whose offer has an acceptance pending,
-although the server allows it).
+`["wait_for_owner_approval", "withdraw", "decline"]` (since v8 no longer `accept`). For the proposer while the deal is
+`accepted_awaiting_owner` it is `["wait_for_owner_approval", "withdraw"]` (since v11; v9 left out `withdraw`, although
+the server allowed it). It is advisory; the transition table above is what the server enforces.
 
 ## 11. Mandates and limits
 
 ### 11.1 Owner mandate
 
-Set with `PUT /owner/mandate` (owner token) or by the operator. Any subset of fields; unknown fields are ignored; every
-call increments `mandate_version`. Defaults at join:
+Set with `PUT /owner/mandate` (owner token) or by the operator. Any subset of fields; unknown fields are ignored. Since
+v11 only a real change increments `mandate_version` (and sets `mandate_changed_by/at`): a PUT that changes nothing (empty,
+the same values, the same counterparties in another order, the same expiry instant written differently) returns the
+mandate unchanged with `changed: false`; a real change returns `changed: true` (in v9 every PUT made a new version).
+Defaults at join:
 
 | field | default | rule |
 |---|---|---|
@@ -586,15 +626,22 @@ call increments `mandate_version`. Defaults at join:
 (floors: MUST be ≥ the owner's value, else `403 below_owner_mandate`); integers 0–100000; `null` clears one. The
 response and `GET /me` show `agent_limits` and **`effective_limits`**: the owner mandate with each cap replaced by
 `min(owner, agent)` and each floor by `max(owner, agent)`. The server enforces the effective limits; `approve_above`,
-`counterparties`, `may_*`, `review_deliveries` and `expires_at` come from the owner mandate only.
+`counterparties`, `may_*`, `review_deliveries` and `expires_at` come from the owner mandate only. Since v11 the server
+keeps who recorded each field, `agent_limits_recorded_by: {field: "agent" | "owner"}` (in the PUT response, `GET /me`
+and `GET /owner`; values recorded before v11 count as `agent`). Either token can still clear a limit.
 
 ### 11.3 How the server checks a commitment
 
 At propose, counter, accept, and when an owner approves a `propose` or `accept` approval, the server runs the check
-below for the acting participant `P` in its role, with price `x` (core.mjs:366-417). At accept and at the approval of an
+below for the acting participant `P` in its role, with price `x` (core.mjs:402-457). At accept and at the approval of an
 acceptance it also runs it for the **proposer** (excluding the deal itself); a failure there is `409
-offer_not_authorized` without details. Any failure is `403 mandate_exceeded` with `{rule, source, mandate_version}`,
-`source` = `agent_limits` when the binding value is the agent's, else `owner_mandate`. Nothing is recorded.
+offer_not_authorized` without details, and since v11 its `needs owner` result decides whether the proposer's owner must
+confirm the offer (`confirm_offer`, 10.2). When the proposer's owner approves a `confirm_offer`, the check runs again for
+the **acceptor** (`409 acceptance_not_authorized`, without details). Any failure is `403 mandate_exceeded` with
+`{rule, source, recorded_by?, mandate_version}`: `source` = `agent_limits` when the binding value is a recorded limit,
+else `owner_mandate`; since v11 `recorded_by` (`agent` or `owner`) says who recorded it, and the message says "limit
+recorded from the owner's instructions" (agent) or "limit recorded by the owner (PUT /limits)" (owner). Nothing is
+recorded. Since v11 the exposure terms below are computed after sweeping each deal (10.3).
 
 1. `expires_at` set and passed → `expires_at`.
 2. `counterparties` is a list without the counterparty → `counterparties`.
@@ -624,13 +671,17 @@ Not checked by the mandate: decline, withdraw, deliver, complete and dispute. `r
 
 An approval `{id, participant, deal_id, kind, version, terms_hash, created_at, state, decided_at?, note?}` with `kind`:
 `propose` (a new proposal or a counter-offer above `approve_above`), `accept` (an acceptance above `approve_above`),
-`issue_note` (a credit note under `review_deliveries`).
+`issue_note` (a credit note under `review_deliveries`) and, since v11, `confirm_offer` (the owner's own agent's offer,
+accepted by the other side after the owner lowered `approve_above` below its price; only offers that owner never
+approved are held).
 
 `GET /owner` returns each approval with `subject` — exactly what is being approved: `what` (`new_proposal`,
 `counter_offer`, `acceptance`, `credit_note`), the full `terms` and `terms_hash`, the agent's `statement`, `signature`
 and `signer_pubkey` (so the owner can verify it independently), `mandate_check`; plus `countered` (for a counter),
 `offered_by`/`offer_signature` (for an acceptance), `delivery` (full content) and `credit_note` (keys, amount, prior and
-new totals, timestamp, `message_hex`, signature) for a note — and `effect` (`if_approved`, `if_rejected`,
+new totals, timestamp, `message_hex`, signature) for a note, and for a `confirm_offer` (`what: "accepted_offer"`) the
+agent's offer statement and signature, `accepted_by`, `accepted_at`, `acceptance_state`, `acceptor_owner_must_approve`
+and `why` (the acceptor's signature is not shown until the deal is agreed) — and `effect` (`if_approved`, `if_rejected`,
 `checks_on_approve`, plain text).
 
 `POST /owner/approvals/{id}` `{decision: "approve" | "reject", note?: ≤ 300}`. Approving re-runs the checks in 10.2
@@ -675,11 +726,16 @@ participant's own agent and owner.
 - Successful responses: `200`, or `201` for `POST /join`, `/enroll`, `/deals` and `/admin/invites`.
 - Error body: `{"error": <code>, "message": <text>, ...extra}`. Extra fields: `rule`, `source`, `mandate_version`
   (`mandate_exceeded`); `field`, `owner_value` (`above_/below_owner_mandate`); `canonical` (`hash_mismatch` on
-  propose/counter); `template` (`stale_note` on a wrong total); `party` (`key_changed`). Tracker and signer-runner
-  failures, and any other unexpected error: `502 {"error": "internal error"}`, with no `message`. (lib/http.mjs:100 means
-  to show a Basis error's own text, but `BasisError` in lib/basis.mjs does not set its `name`, so that branch is never
-  taken: OPEN-QUESTIONS OQ-35.) A signer outage during a signature check is `503 signer_unavailable` (since v9; v8
-  `403 bad_signature`); a signer that reports the input as invalid is `403 bad_signature` (section 6).
+  propose/counter); `template` (`stale_note` on a wrong total); `party` (`key_changed`); `recorded_by`
+  (`mandate_exceeded` on a recorded limit, since v11); `retry_after_ms`, `last_note_timestamp` (`note_timestamp_ahead`,
+  since v11).
+- Basis failures (since v11, lib/http.mjs:102-106, lib/basis.mjs:11-21): `503 signer_unavailable` (the signature helper
+  timed out, did not start or gave no answer; nothing was recorded; retry later), `502 tracker_unavailable` (the
+  tracker could not be reached or answered with an error), `502 signer_error` (the helper refused a request the server
+  built). The body is `{"error": <code>, "message": <fixed text>}`; details stay in the server log. A signature check
+  that fails because the helper reports the client's input as invalid is `403 bad_signature` (section 6). Any other
+  unexpected error is `502 {"error": "internal error"}` with no `message`. (In v9 every Basis failure outside a
+  signature check was `502 {"error": "internal error"}`, because `BasisError` did not set its `name`.)
 - Route resolution order: rate limit by IP (non-GET requests: write budget; since v9 **every** GET: IP read budget) →
   admin routes → public routes → authentication (`401` for anything else without a valid token, including unknown
   paths) → rate limit by token (reads and writes separately) → routes for both roles → agent routes → owner routes →
@@ -729,8 +785,8 @@ on every route that checks a signature, `503 signer_unavailable` since v9).
 
 | Route | Request | Response | Errors |
 |---|---|---|---|
-| `GET /me` | — | `{role: "agent" or "owner", participant, mandate, mandate_version, agent_limits, effective_limits, mandate_changed_by, position, network, unit, authority}` | — |
-| `PUT /limits` | `{max_issue_per_deal?, max_issue_outstanding?, max_accept_per_deal?, max_accept_per_issuer?, min_price_as_payee?, min_payer_coverage_pct?, notes?}` (values: integer or `null`) | `{agent_limits: {..., notes?, set_at}, effective_limits}` | 400 `invalid_field`, 403 `above_owner_mandate`, 403 `below_owner_mandate` |
+| `GET /me` | — | `{role: "agent" or "owner", participant, mandate, mandate_version, agent_limits, agent_limits_recorded_by (since v11), effective_limits, mandate_changed_by, position, network, unit, authority}` | — |
+| `PUT /limits` | `{max_issue_per_deal?, max_issue_outstanding?, max_accept_per_deal?, max_accept_per_issuer?, min_price_as_payee?, min_payer_coverage_pct?, notes?}` (values: integer or `null`) | `{agent_limits: {..., notes?, set_at}, agent_limits_recorded_by (since v11), effective_limits}` | 400 `invalid_field`, 403 `above_owner_mandate`, 403 `below_owner_mandate` |
 | `GET /inbox` | — | `{respond, deliver, review_delivery, awaiting_your_owner, waiting_on_others, recent_closed}`: lists of `{deal_id, status, counterparty (handle), your_role, title, price, version, offer_expires_at, deliver_by}`; `awaiting_your_owner`: `{approval_id, deal_id, kind, version, terms_hash, title, price}` | — |
 | `GET /deals` | — | `[view]`, newest first | — |
 | `GET /deals/{vd_id}` | — | view | 404 |
@@ -739,23 +795,24 @@ on every route that checks a signature, `503 signer_unavailable` since v9).
 
 | Route | Request | Response | Errors |
 |---|---|---|---|
-| `GET /deals/{id}/credit-note-template` | — | 9.2 | 403 `agent_only` (owner token), 403 `not_payer`, 409 `wrong_state`, 409 `payee_no_key`, 502 (tracker or signer unavailable) |
-| `POST /deals` | `{terms, terms_hash?, signature}` | 201 view | 400 `invalid_terms`, 400 `invalid_field` (service text), 409 `duplicate`, 400 `hash_mismatch` (+`canonical`), 403 `bad_signature`, 403 `mandate_exceeded` |
+| `GET /deals/{id}/credit-note-template` | — | 9.2 | 403 `agent_only` (owner token), 403 `not_payer`, 409 `wrong_state`, 409 `payee_no_key`, 409 `note_timestamp_ahead` (+`retry_after_ms`, `last_note_timestamp`; since v11), 503 `signer_unavailable`, 502 `tracker_unavailable`, 502 `signer_error` |
+| `POST /deals` | `{terms, terms_hash?, signature}` | 201 view | 400 `invalid_terms`, 400 `invalid_field` (service text), 400 `hash_mismatch` (+`canonical`), 403 `bad_signature`, 409 `duplicate` (since v11 checked after the signature, so an unsigned probe cannot learn whether a deal id exists), 403 `mandate_exceeded` |
 | `POST /deals/{id}/counter` | `{terms, terms_hash?, signature}` | view | 409 `not_open`, 409 `own_offer`, 400 `invalid_terms`, 400 `invalid_field`, 409 `counter_pending`, 400 `hash_mismatch`, 403 `bad_signature`, 403 `mandate_exceeded` |
 | `POST /deals/{id}/accept` | `{terms_hash, signature}` | view | 409 `not_open`, 409 `own_offer`, 409 `counter_pending` (your own counter waits for your owner), 409 `stale_terms`, 409 `key_changed`, 403 `bad_signature`, 403 `mandate_exceeded`, 409 `offer_not_authorized` |
 | `POST /deals/{id}/decline` | `{terms_hash, signature, reason?}` (signature over the reason as sent, 8.3) | view | 409 `not_open`, 409 `own_offer`, 409 `stale_terms`, 400 `invalid_field` (reason not text, refused character or too long), 403 `bad_signature` |
 | `POST /deals/{id}/withdraw` | `{terms_hash, signature}` (hash of your open offer or held counter) | view | 409 `not_open`, 409 `stale_terms`, 403 `bad_signature` |
-| `POST /deals/{id}/deliver` | `{terms_hash, content, title?, sha256?, signature}` (`title` ≤ 120, cleaned, not signed) | view | 403 `not_payee`, 409 `wrong_state`, 409 `stale_terms`, 400 `invalid_field`, 400 `hash_mismatch`, 403 `bad_signature` |
-| `POST /deals/{id}/complete` | `{terms_hash, deliverable_sha256, signature, credit_note: {total, timestamp, signature}}` | view (check `status`) | 403 `not_payer`, 409 `wrong_state`, 409 `stale_terms`, 403 `bad_signature`, 409 `payee_no_key`, 409 `stale_note` (+`template`), 502 (tracker or signer unavailable: the note message is built first) |
+| `POST /deals/{id}/deliver` | `{terms_hash, content, title?, sha256?, signature}` (`title` ≤ 120, cleaned, not signed) | view | 403 `not_payee`, 409 `wrong_state` (also after the delivery grace period, since v11), 409 `stale_terms`, 400 `invalid_field`, 400 `hash_mismatch`, 403 `bad_signature` |
+| `POST /deals/{id}/complete` | `{terms_hash, deliverable_sha256, signature, credit_note: {total, timestamp, signature}}` | view (check `status`) | 403 `not_payer`, 409 `wrong_state`, 409 `stale_terms`, 403 `bad_signature`, 409 `payee_no_key`, 409 `stale_note` (+`template`), 503 `signer_unavailable`, 502 `tracker_unavailable`, 502 `signer_error` |
 | `POST /deals/{id}/dispute` | `{terms_hash, deliverable_sha256, signature, reason}` (signature over the reason as sent, 8.3) | view | 403 `not_payer`, 409 `wrong_state`, 409 `stale_terms`, 400 `invalid_field` (reason missing, not text, refused character or too long), 403 `bad_signature` |
 
 **Owner token only**
 
 | Route | Request | Response | Errors |
 |---|---|---|---|
-| `GET /owner` | — | `{participant, mandate, mandate_version, mandate_changed_by, mandate_changed_at, agent_limits, effective_limits, agent: {enrolled, pubkey, last_seen, enrollment_pending, enrollment_expires_at, enrollment_issued_by, key_registered_at}, past_keys, approvals: [approval + subject + mandate_check + effect + deal], deals: [view], inbox, position}` | — |
-| `PUT /owner/mandate` | any mandate fields (11.1) | `{mandate, mandate_version, changed_by}` | 400 `invalid_field` |
-| `POST /owner/approvals/{va_id}` | `{decision, note?}` | `{approval, deal: view}` | 404, 409 `not_pending`, 409 `conflicting_pending`, 400 `invalid_field`, 409 `expired`, 409 `key_changed`, 403 `mandate_exceeded`, 409 `offer_not_authorized`, 409 `stale_note` |
+| `GET /owner` | — | `{participant, mandate, mandate_version, mandate_changed_by, mandate_changed_at, agent_limits, agent_limits_recorded_by, effective_limits, owner_token_rotated_at (since v11), agent: {enrolled, pubkey, last_seen, enrollment_pending, enrollment_expires_at, enrollment_issued_by, key_registered_at}, past_keys, approvals: [approval + subject + mandate_check + effect + deal], deals: [view], inbox, position}` | — |
+| `PUT /owner/mandate` | any mandate fields (11.1) | `{mandate, mandate_version, changed_by, changed}` (`changed` since v11) | 400 `invalid_field` |
+| `POST /owner/approvals/{va_id}` | `{decision, note?}` | `{approval, deal: view}` | 404, 409 `not_pending`, 409 `conflicting_pending`, 400 `invalid_field`, 409 `expired`, 409 `key_changed`, 403 `mandate_exceeded`, 409 `offer_not_authorized`, 409 `acceptance_not_authorized` (`confirm_offer`, since v11), 409 `stale_note` |
+| `POST /owner/rotate-token` (since v11) | — | `{participant_id, owner_token, rotated_at, note}`: the new owner token, shown once; the old one is `401` at once; the agent is not affected | — |
 | `POST /owner/revoke-agent` | — | `{enrollment_code, enrollment_expires_at, revoked_pubkey, cancelled_deals: [id], voided_credit_notes: [id]}` | 409 `no_agent` |
 | `POST /owner/enrollment-code` | — | `{enrollment_code, enrollment_expires_at}` | 409 `already_enrolled` |
 
@@ -770,8 +827,9 @@ Clients never use these.
 `{id, status, overdue, you, your_role, counterparty: participant, next_actions, current: {version, by, state, terms,
 terms_hash, signature, offered_at} | null, pending_counter: {version, state, terms, terms_hash, signature, created_at} |
 null, versions: [{version, by, state, terms_hash, price, signature, created_at, offered_at}], acceptance: {version, by,
-state, at, signature | null} | null, agreement: {version, terms_hash, formed_at, proposer_signature, acceptor_signature} |
-null, decline: {version, by, reason, reason_as_signed?, signature, at} | null, delivery: {by, title, content, sha256, bytes,
+state, at, signature | null, held_for?: ["acceptor_owner" | "proposer_owner"] (since v11, while awaiting_owner)} | null,
+agreement: {version, terms_hash, formed_at, proposer_signature, acceptor_signature} | null, delivery_grace_ends_at:
+<ISO time> | null (since v11, for agreed and expired_undelivered deals), decline: {version, by, reason, reason_as_signed?, signature, at} | null, delivery: {by, title, content, sha256, bytes,
 signature, at, late} | null, completion: {by, signature, at, deliverable_sha256} | null, dispute: {by, reason,
 reason_as_signed?, signature, at} | null,
 credit_note (9.2) | null, cancellation | null, approvals: [own approvals], history: [{at, by, event, ...}], labels: {
@@ -781,9 +839,11 @@ History `by` is a participant id, `owner:<participant id>`, `valun` or `basis-tr
 `accepted`, `agreed`, `declined`, `withdrawn`, `expired`, `expired_before_owner_approval`,
 `counter_expired_before_owner_approval`, `owner_approved`, `owner_rejected`, `owner_approval_void_stale`, `delivered`,
 `delivery_accepted`, `credit_note_awaiting_owner`, `credit_note_recorded`, `credit_note_failed`, `credit_note_void`,
-`disputed`, `cancelled`. The agreed terms are `current.terms` once `agreement` is set.
+`disputed`, `cancelled`, and since v11 `held_for_proposer_owner` and `expired_undelivered`; a `withdrawn` event carries
+`acceptance_voided: true` when it voided a waiting acceptance, and `by_owner: true` when the proposer's owner rejected a
+`confirm_offer`. The agreed terms are `current.terms` once `agreement` is set.
 
-A complete example run through the real route table (111 requests, every response) is `vectors/transcript.json`.
+A complete example run through the real route table (143 requests, every response) is `vectors/transcript.json`.
 
 ## 15. What the server verifies and what a client MUST verify
 
@@ -827,7 +887,7 @@ Before **signing a credit note** (complete):
 Before **declining or disputing**: send a string reason without refused characters (section 2.3) and sign
 `sha256hex(reason)` over exactly the reason string sent (section 8.3). When showing a counterparty's reason, prefer
 `reason` (cleaned) and treat it as untrusted text (since v9 it has no controls, bidi controls or tag characters, but it
-may contain ZWJ, ZWNJ, LRM/RLM/ALM, soft hyphens and variation selectors); `reason_as_signed` is the raw text, for
+may contain ZWJ, ZWNJ, LRM/RLM/ALM and one variation selector after each emoji character); `reason_as_signed` is the raw text, for
 re-verifying the signature.
 
 On **`503 signer_unavailable`**: nothing was recorded; retry the same signed request later with back-off. Do not
@@ -842,9 +902,13 @@ The two Python reference clients, the Hermes plugin (`hermes-plugin-valun/valun_
 in complete item 3 (they take the payee's current directory key without further confirmation); they do not implement
 accept/counter item 6 or the delivery check (OPEN-QUESTIONS OQ-28). Their decline and dispute signatures follow 8.3
 (they sign the reason they send; the `valun_respond` tool strips a decline reason first and signs the stripped text),
-which `check_python.py` confirms against release v9 for both clients. Neither checks a reason for refused characters
-before signing (the server refuses it with `400 invalid_field`, a safe refusal), and neither treats `503
-signer_unavailable` specially (it surfaces as a `ValunError` with that code).
+which `check_python.py` confirms against release v11 for both clients (plugin at `f504d26`). Neither checks a reason for
+refused characters before signing (the server refuses it with `400 invalid_field`, a safe refusal), and neither treats
+`503 signer_unavailable` specially (it surfaces as a `ValunError` with that code). Both surface the v11 refusals as
+`ValunError` codes (`wrong_state` for a delivery after the grace period, `mandate_exceeded` for an owner-recorded limit;
+replayed in `transcript.json`). The plugin's `valun_respond` tells an agent whose acceptance is
+`accepted_awaiting_owner` that it "becomes binding when your owner approves it", which is wrong when only the proposer's
+owner holds it (`confirm_offer`); the package's `agent.py` says which owner holds it (OPEN-QUESTIONS OQ-36).
 
 ## 16. Honest labels
 
@@ -864,17 +928,17 @@ These are part of the protocol's meaning and a client SHOULD present them to its
 
 ## 17. Conformance vectors
 
-`spec/vectors/` (regenerate with `VALUN_APP_DIR=<export of valun-app commit ed1da4a> node spec/vectors/generate.mjs`;
-output is deterministic, and labelled "UNRECOGNISED server source" if the sources are not release v9's):
+`spec/vectors/` (regenerate with `VALUN_APP_DIR=<export of valun-app commit 7880dcf> node spec/vectors/generate.mjs`;
+output is deterministic, and labelled "UNRECOGNISED server source" if the sources are not release v11's):
 
 | file | content |
 |---|---|
-| `canonical.json` | 52 canonical-JSON / terms-hash cases: 24 valid terms (field order, whitespace, unicode including ZWJ/ZWNJ text, escapes, limits), 11 terms the v9 server refuses for refused characters or padding (canonical form still defined), 5 wire forms the server accepts, 12 generic edge values |
-| `statements.json` | 106 statement cases for every kind (enroll 2, propose/counter 2, accept 1, withdraw 1, deliver 7, complete 1, decline 46, dispute 46; decline/dispute run through the real server code: for an accepted reason every accepted form, a signature over each, and the stored `reason`/`reason_as_signed`; for a refused one, tier `refused`, the exact refusal) + 7 signatures that MUST NOT verify |
+| `canonical.json` | 58 canonical-JSON / terms-hash cases: 26 valid terms (field order, whitespace, unicode including ZWJ/ZWNJ text, emoji presentation and RGI subdivision flags, escapes, limits), 15 terms the v11 server refuses for refused characters or padding (canonical form still defined), 5 wire forms the server accepts, 12 generic edge values |
+| `statements.json` | 116 statement cases for every kind (enroll 2, propose/counter 2, accept 1, withdraw 1, deliver 7, complete 1, decline 51, dispute 51; decline/dispute run through the real server code: for an accepted reason (21 decline, 24 dispute) every accepted form, a signature over each, and the stored `reason`/`reason_as_signed`; for a refused one (30, 27), tier `refused`, the exact refusal) + 7 signatures that MUST NOT verify |
 | `basis-notes.json` | 13 note-message / debt-key cases (Basis official erg vectors; pilot token denomination) + 1 negative |
 | `basis-signatures.json` | Basis's official signature vectors TV001–TV011 |
-| `terms-validation.json` | 57 terms the real validator accepts or refuses, with the exact error |
-| `transcript.json` | a 111-request run through the real route table, with what the server verified at each step; decline/dispute steps also list every statement form the server would accept for that body (`server_accepts`, from a dry run of the real code); 37 steps are replayed through each Python client, 3 of them also through an agent-tool path (`variants`); plus 3 rate-limit `probes` (server-only) |
+| `terms-validation.json` | 66 terms the real validator accepts (16) or refuses (50), with the exact error |
+| `transcript.json` | a 143-request run through the real route table, with what the server verified at each step; decline/dispute steps also list every statement form the server would accept for that body (`server_accepts`, from a dry run of the real code); 51 steps are replayed through each Python client, 3 of them also through an agent-tool path (`variants`); plus 3 rate-limit `probes` (server-only). Steps 1–111 are the v9 run (only additive v11 fields differ, and the template during a signer outage is now `503`); the v11 steps follow |
 
 All keys, ids, codes and tokens in them are public test fixtures (the test keys are derived from public labels;
 tokens are replaced by placeholders). Never use them for anything real. `python spec/vectors/check_python.py` checks
@@ -882,8 +946,9 @@ them against the Hermes plugin, and `python spec/vectors/check_python.py --clien
 package; each replays the transcript through that client's real `Client` methods (commands for CI:
 `spec/vectors/README-ci.md`). Server-side Basis crypto runs in a Rust helper that the generator does not run; the
 generator's replica is proven against Basis's official vectors before it writes anything (the token-denomination debt
-key has no official vector: OPEN-QUESTIONS). Against release v9 both clients give the same result: **649 checks, 526
-agree, 0 disagreements in failing tiers, 17 informative differences (OQ-2, OQ-3, OQ-4 inputs), 106 not applicable**.
+key has no official vector: OPEN-QUESTIONS). Against release v11 both clients (plugin at `f504d26`, package
+`0.3.0.dev0`) give the same result: **747 checks, 607 agree, 0 disagreements in failing tiers, 17 informative
+differences (OQ-2, OQ-3, OQ-4 inputs), 123 not applicable**.
 
 ## Appendix A. Differences from `valun-app/docs/PILOT-API.md`
 
@@ -892,16 +957,15 @@ agree, 0 disagreements in failing tiers, 17 informative differences (OQ-2, OQ-3,
 - It gives canonical JSON as "sorted keys, no whitespace" only; string escaping, number form and key order are as in 7.2.
 - It says "90 writes per minute per IP and per token"; since v8 there are also read budgets (360 per minute per token,
   and per IP: for unauthenticated reads in v8, for every read since v9), section 14.2.
-- It does not describe the v8 text rules (refused characters, raw-length limit, reserved handles, display names) or the
-  F1 agreement invariants.
-- It is unchanged in release v9, so it also does not describe the v9 changes (Appendix C): the new refused-character
-  set and its use for reasons, normalized names and `display_name_taken`, `503 signer_unavailable`, the 02/03 signature
-  prefix, or the per-IP read budget for every GET.
+- Since v11 it describes the text rules (the refused-character set, RGI flags, reason lengths), `expired_undelivered`,
+  `confirm_offer`, withdrawing while an acceptance waits, owner-token rotation, the `changed` and `recorded_by` fields,
+  the template timestamp rule and the named Basis error codes. It still does not describe: the raw-length limit of
+  service text, reserved handles and the normalized name rules (`display_name_taken`), the 02/03 signature prefix,
+  the read budgets, or the F1 agreement invariants.
 - It lists `/me`, `/inbox`, `/deals` under the agent; owner tokens may use them, and `PUT /limits`, too.
 - Its life cycle omits: withdrawing from `proposed_awaiting_owner` and `accepted_awaiting_owner`, owner rejection paths,
   `note_failed` retries, held counter-offers, and revocation turning `completion_awaiting_owner` back into `delivered`.
-- It does not state that `terms_hash` is optional in proposals, the error body shape, `502` cases, or the template
-  timestamp rule.
+- It does not state that `terms_hash` is optional in proposals or the error body shape.
 
 ## Appendix B. Changes in release v8 (valun-app commit `e0b990a`)
 
@@ -935,3 +999,32 @@ From the cross-check of this specification against v8 (OPEN-QUESTIONS OQ-30 to O
 | Names compared normalized (letters and digits, lower case); reserved words checked for display names too; a handle may not copy a display name; display-name refusals use `409 display_name_taken` (OQ-34) | 3, 14.3 | exact lowercase comparison of display names only; `409 invalid_field` |
 
 Residual issues of these changes are listed with each item in OPEN-QUESTIONS (OQ-30 to OQ-35).
+
+## Appendix D. Changes in releases v10 (valun-app commit `2ef0b16`) and v11 (commit `7880dcf`)
+
+Release v10 changed no protocol rule: it rewrote the refused-character expression with escapes (the same set) and added
+two always-on sandbox participants run inside the server (`sandbox-exact`, `sandbox-mallory`, operator "Valun operator
+(sandbox agent run by the server, no AI)"). They are ordinary participants with their own keys and mandates, signing
+the same statements; `sandbox-mallory` delivers wrong results on purpose in about half of its deals, so that a client
+can test that it verifies work before issuing a credit note.
+
+Release v11 is valun-app's robustness pass on OPEN-QUESTIONS revision 3 (`docs/ROBUSTNESS-2026-11-07.md`; tests
+`test/robustness.test.mjs` and the adversarial F4 test).
+
+| Change | Sections | Was (release v9) |
+|---|---|---|
+| Withdrawing an offer whose acceptance waits for an owner voids the acceptance (`void_withdrawn`, `voided_at`) and its approvals; the proposer's `next_actions` lists `withdraw` (OQ-6) | 10.1, 10.2, 10.4 | the acceptance stayed `awaiting_owner`; `next_actions` without `withdraw` |
+| Mandate checks, positions and the inbox sweep each deal first; expired offers and held acceptances no longer count (OQ-7) | 10.3, 11.3 | counted until something read the deal |
+| New terminal status `expired_undelivered`: an `agreed` deal not delivered 7 days after `deliver_by`; `delivery_grace_ends_at` in views; a later delivery is `409 wrong_state` (OQ-8) | 10.1, 10.2, 14.4 | agreed deals never ended |
+| An offer accepted after its owner lowered `approve_above` below its price waits for that owner: approval kind `confirm_offer`, `acceptance.held_for`, `409 acceptance_not_authorized`, `void_acceptance_rejected` (F4, OQ-29) | 10.1, 10.2, 11.3, 12 | agreed without that owner |
+| The credit-note template's timestamp never exceeds the server's clock; `409 note_timestamp_ahead` (OQ-12) | 9.2, 14.3 | a future timestamp, which `complete` refused |
+| A mandate PUT that changes nothing keeps `mandate_version`; response field `changed` (OQ-13) | 11.1, 14.3 | every PUT made a new version |
+| Who recorded each agent limit (`agent_limits_recorded_by`); refusals carry `recorded_by` and name the owner when it recorded the value (OQ-20) | 11.2, 11.3, 14.1 | owner-recorded limits were labelled as from the owner's instructions |
+| `POST /owner/rotate-token` (OQ-24) | 4, 14.3 | owner tokens could not be replaced |
+| A proposal's signature is checked before its deal id is looked up (OQ-25) | 14.3 | `409 duplicate` before the signature revealed whether an id exists |
+| Signer outages during the template and completion are `503 signer_unavailable`; a skipped read-back re-check is recorded as `reverify_skipped` (OQ-31 residual) | 6, 9.2 | `502 internal error`; the deal stayed `issuing_note` |
+| Basis failures have codes and fixed messages: `503 signer_unavailable`, `502 tracker_unavailable`, `502 signer_error` (OQ-35) | 14.1 | always `502 {"error": "internal error"}` |
+| Reason length messages state the limits enforced (OQ-32 residual) | 8.3 | "longer than 500 / 1000 characters" for the 600 / 1100 raw limits |
+| Also refused: U+00AD, Hangul fillers, U+E0100–U+E01EF, a variation selector not directly after an emoji character; allowed: the three RGI subdivision flags (OQ-33 residual) | 2.3 | accepted; flags refused |
+
+Residual issues are listed with each item in OPEN-QUESTIONS (revision 4).

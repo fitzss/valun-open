@@ -166,12 +166,13 @@ class ValunAgent:
     def is_commitment(self, name, args):
         """Does this call sign something that commits the owner (or loosen a limit)? Adapters ask the owner first."""
         args = args or {}
+        # Fail closed: only the explicitly harmless actions skip the owner (a misspelt "Accept" must never skip them).
         if name == 'valun_propose':
             return True
         if name == 'valun_respond':
-            return args.get('action') in ('accept', 'counter')
+            return args.get('action') not in ('decline', 'withdraw')
         if name == 'valun_review_delivery':
-            return args.get('decision') == 'accept'
+            return args.get('decision') != 'dispute'
         if name == 'valun_set_limits':
             try:
                 me = self.client().me()
@@ -179,6 +180,25 @@ class ValunAgent:
             except Exception:  # noqa: BLE001 - when in doubt, ask the owner
                 return True
         return False
+
+    def bind(self, name, args):
+        """Pin what the owner is about to approve: an acceptance to the current terms hash, a delivery acceptance to the
+        current deliverable hash, unless the agent already passed them. Adapters call this BEFORE asking the owner and
+        sign with the returned arguments, so the signature covers exactly what the owner saw (the server refuses a
+        stale hash instead of silently signing newer terms)."""
+        args = dict(args or {})
+        try:
+            if name == 'valun_respond' and args.get('action') == 'accept' and not args.get('expected_terms_hash'):
+                cur = (self.client().deal(args['deal_id']).get('current') or {})
+                if cur.get('terms_hash'):
+                    args['expected_terms_hash'] = cur['terms_hash']
+            if name == 'valun_review_delivery' and args.get('decision') == 'accept' and not args.get('expected_deliverable_sha256'):
+                dl = self.client().deal(args['deal_id']).get('delivery') or {}
+                if dl.get('sha256'):
+                    args['expected_deliverable_sha256'] = dl['sha256']
+        except Exception:  # noqa: BLE001 - binding is best effort; the call itself reports real problems
+            pass
+        return args
 
     def describe_commitment(self, name, args):
         """Text for an approval prompt: exactly what the agent is about to sign, and what it means."""
@@ -218,7 +238,9 @@ class ValunAgent:
                     f"  service: {svc.get('title')}",
                     f"  deliverable: {svc.get('deliverable')}",
                     f"  price: {price} PC; you are the {role}; deliver by {t.get('deliver_by')}",
-                    f"  terms hash {(cur.get('terms_hash') or '')[:16]}... (rechecked by your Valun client before signing)",
+                    f"  terms hash {(args.get('expected_terms_hash') or cur.get('terms_hash') or '')[:16]}... (rechecked by your Valun client before signing)"
+                    + ('' if not args.get('expected_terms_hash') or args['expected_terms_hash'] == cur.get('terms_hash') else
+                       '\n  WARNING: the offer changed after your agent read it; signing these terms will be refused'),
                     'This makes the deal binding on both sides: '
                     + (f'after you accept the delivery you will owe {who} {price} PC.' if role == 'payer'
                        else f'you must deliver; {who} would then owe you {price} PC.'),
@@ -424,6 +446,8 @@ class ValunAgent:
                 'what_happened': 'Delivered and signed. The payer will accept it (issuing you a credit note) or dispute it.'}
 
     def review(self, a):
+        if a.get('decision') not in ('accept', 'dispute'):
+            raise vc.ValunError('bad_decision', "decision must be exactly 'accept' or 'dispute'; nothing was signed")
         c = self.client()
         if a['decision'] == 'dispute':
             if not (a.get('reason') or '').strip():

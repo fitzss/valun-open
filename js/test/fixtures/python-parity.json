@@ -1,0 +1,2601 @@
+{
+ "generated_by": "js/test/fixtures/generate_python_fixtures.py",
+ "python": "3.14.7",
+ "python_sources_sha256": {
+  "agent.py": "5e46e9732555cbe2af235510acf686a4f9160c47bcb994db578f6d28296f97ea",
+  "client.py": "5758bf5b37728b939a80fb005cf34b64791514f282cf63b801c8f3a9084b2983",
+  "measure.py": "f4305cf1fe54ac137fa3aa201b0904c0e88e6ecc8325a38a41c06197963579ec",
+  "sandbox.py": "6f04017d086dd1f72911004040edbc90250ee8d718f94115350d2a79498757cc",
+  "schemas.py": "8e61493802b60dbea05ef64f31fb9b390da9f93e336d939b42c3f993b417efd3"
+ },
+ "t0_ms": 1793966400000,
+ "word_count": [
+  [
+   "",
+   0
+  ],
+  [
+   "One two-three, four.",
+   3
+  ],
+  [
+   "It's Bob’s 2nd draft -- 3x faster",
+   6
+  ],
+  [
+   "Title\n=====\n\nOne two-three, four.\n---",
+   4
+  ],
+  [
+   "café naïve über",
+   4
+  ],
+  [
+   "A\u001cBC",
+   3
+  ],
+  [
+   "日本語 123",
+   1
+  ]
+ ],
+ "links": [
+  [
+   "See https://en.wikipedia.org/wiki/Decentralized_finance_(cryptocurrency)). And (https://bitcoin.org/bitcoin.pdf), plus [paper](https://arxiv.org/abs/2103.06749).",
+   [
+    "https://en.wikipedia.org/wiki/Decentralized_finance_(cryptocurrency)",
+    "https://bitcoin.org/bitcoin.pdf",
+    "https://arxiv.org/abs/2103.06749"
+   ]
+  ],
+  [
+   "HTTPS://Example.ORG/A? http://example.org/a?q=1&r=2#frag, https://example.org/a? https://example.org/a",
+   [
+    "HTTPS://Example.ORG/A",
+    "http://example.org/a?q=1&r=2#frag",
+    "https://example.org/a"
+   ]
+  ],
+  [
+   "quoted \"https://example.com/x\" and `https://example.com/y` and <https://example.com/z> [https://example.com/w]",
+   [
+    "https://example.com/x",
+    "https://example.com/y",
+    "https://example.com/z",
+    "https://example.com/w"
+   ]
+  ],
+  [
+   "odd httpſ://long-s.example/x and htTp://mixed.example/ and https:// alone",
+   [
+    "httpſ://long-s.example/x",
+    "htTp://mixed.example/"
+   ]
+  ],
+  [
+   "wrapped (see https://example.org/a_(b)_c).** done https://example.org/end!?;:",
+   [
+    "https://example.org/a_(b)_c",
+    "https://example.org/end"
+   ]
+  ],
+  [
+   "space https://x.example/ahttps://y.example/b　tail",
+   [
+    "https://x.example/a",
+    "https://y.example/b"
+   ]
+  ],
+  [
+   "no links here",
+   []
+  ],
+  [
+   "https://user@host.example:8080/path https://[::1]/v6",
+   [
+    "https://user@host.example:8080/path"
+   ]
+  ]
+ ],
+ "hosts": [
+  [
+   "https://en.wikipedia.org/wiki/Decentralized_finance_(cryptocurrency)",
+   "en.wikipedia.org"
+  ],
+  [
+   "https://bitcoin.org/bitcoin.pdf",
+   "bitcoin.org"
+  ],
+  [
+   "https://arxiv.org/abs/2103.06749",
+   "arxiv.org"
+  ],
+  [
+   "HTTPS://Example.ORG/A",
+   "example.org"
+  ],
+  [
+   "http://example.org/a?q=1&r=2#frag",
+   "example.org"
+  ],
+  [
+   "https://example.org/a",
+   "example.org"
+  ],
+  [
+   "https://example.com/x",
+   "example.com"
+  ],
+  [
+   "https://example.com/y",
+   "example.com"
+  ],
+  [
+   "https://example.com/z",
+   "example.com"
+  ],
+  [
+   "https://example.com/w",
+   "example.com"
+  ],
+  [
+   "httpſ://long-s.example/x",
+   "long-s.example"
+  ],
+  [
+   "htTp://mixed.example/",
+   "mixed.example"
+  ],
+  [
+   "https://example.org/a_(b)_c",
+   "example.org"
+  ],
+  [
+   "https://example.org/end",
+   "example.org"
+  ],
+  [
+   "https://x.example/a",
+   "x.example"
+  ],
+  [
+   "https://y.example/b",
+   "y.example"
+  ],
+  [
+   "https://user@host.example:8080/path",
+   "user@host.example"
+  ]
+ ],
+ "requirements": [
+  [
+   "Research brief. 300-500 word research brief with at least 3 cited sources each with a working-looking link",
+   {
+    "min_words": 300,
+    "max_words": 500,
+    "min_links": 3
+   }
+  ],
+  [
+   "markdown, under 400 words, at least 2 links",
+   {
+    "max_words": 400,
+    "min_links": 2
+   }
+  ],
+  [
+   "at least 150 words",
+   {
+    "min_words": 150
+   }
+  ],
+  [
+   "300–500 words",
+   {
+    "min_words": 300,
+    "max_words": 500
+   }
+  ],
+  [
+   "500 — 300 words",
+   {
+    "min_words": 300,
+    "max_words": 500
+   }
+  ],
+  [
+   "200 to 400 words",
+   {
+    "min_words": 200,
+    "max_words": 400
+   }
+  ],
+  [
+   "200 TO 400 WORDS",
+   {
+    "min_words": 200,
+    "max_words": 400
+   }
+  ],
+  [
+   "minimum of 250 words; maximum 900 words",
+   {
+    "min_words": 250,
+    "max_words": 900
+   }
+  ],
+  [
+   "min. 80 words, max. 120 words",
+   {
+    "min_words": 80,
+    "max_words": 120
+   }
+  ],
+  [
+   "no fewer than 100 words and no more than 2000 words",
+   {
+    "min_words": 100,
+    "max_words": 2000
+   }
+  ],
+  [
+   "up to 600 word summary",
+   {
+    "max_words": 600
+   }
+  ],
+  [
+   "at most 99 words",
+   {
+    "max_words": 99
+   }
+  ],
+  [
+   "a short note",
+   {}
+  ],
+  [
+   "٣٠٠-٥٠٠ words",
+   {
+    "min_words": 300,
+    "max_words": 500
+   }
+  ],
+  [
+   "３００ words at least ２ sources",
+   {
+    "min_links": 2
+   }
+  ],
+  [
+   "at leſt 120 wordſ",
+   {}
+  ],
+  [
+   "mInImum 300 words",
+   {
+    "min_words": 300
+   }
+  ],
+  [
+   "mınımum 300 words",
+   {
+    "min_words": 300
+   }
+  ],
+  [
+   "mİn 50 words",
+   {
+    "min_words": 50
+   }
+  ],
+  [
+   "at least 3 linKs",
+   {
+    "min_links": 3
+   }
+  ],
+  [
+   "at least 2 linked  references",
+   {
+    "min_links": 2
+   }
+  ],
+  [
+   "at least 4cited sources",
+   {
+    "min_links": 4
+   }
+  ],
+  [
+   "at least 1 citations",
+   {
+    "min_links": 1
+   }
+  ],
+  [
+   "at least 123 sources",
+   {}
+  ],
+  [
+   "300\u001c-500 words",
+   {
+    "min_words": 300,
+    "max_words": 500
+   }
+  ],
+  [
+   "12345678 words",
+   {}
+  ],
+  [
+   "10-20words",
+   {
+    "min_words": 10,
+    "max_words": 20
+   }
+  ],
+  [
+   "10 - 20 - words",
+   {
+    "min_words": 10,
+    "max_words": 20
+   }
+  ],
+  [
+   "between 300 and 500 words",
+   {}
+  ]
+ ],
+ "measure": [
+  {
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word  See https://example.org/a, https://example.com/b and (https://made-up.invalid/c).",
+   "terms": "A 300-500 word research brief with at least 3 cited sources.",
+   "check_hosts": true,
+   "out": {
+    "word_count": 495,
+    "links": [
+     "https://example.org/a",
+     "https://example.com/b",
+     "https://made-up.invalid/c"
+    ],
+    "checks_against_agreed_terms": [
+     {
+      "requirement": "300-500 words",
+      "measured": "495 words",
+      "met": true
+     },
+     {
+      "requirement": "at least 3 sources with links",
+      "measured": "3 distinct links",
+      "met": true
+     }
+    ],
+    "how_measured": "by your plugin, deterministically: words = runs of letters/digits; links = distinct http(s) URLs. These are facts to use in your review, not a verdict on quality, accuracy or relevance.",
+    "link_hosts": {
+     "example.org": "public",
+     "example.com": "public",
+     "made-up.invalid": "not_found"
+    },
+    "warning": "These link hosts do not exist in DNS, so those sources cannot be real: made-up.invalid. A source whose link cannot work does not count as a working link."
+   }
+  },
+  {
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word ",
+   "terms": "A 300-500 word research brief with at least 3 cited sources.",
+   "check_hosts": false,
+   "out": {
+    "word_count": 575,
+    "links": [],
+    "checks_against_agreed_terms": [
+     {
+      "requirement": "300-500 words",
+      "measured": "575 words",
+      "met": false
+     },
+     {
+      "requirement": "at least 3 sources with links",
+      "measured": "0 distinct links",
+      "met": false
+     }
+    ],
+    "how_measured": "by your plugin, deterministically: words = runs of letters/digits; links = distinct http(s) URLs. These are facts to use in your review, not a verdict on quality, accuracy or relevance."
+   }
+  },
+  {
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word ",
+   "terms": "A 300-500 word research brief with at least 3 cited sources.",
+   "check_hosts": true,
+   "out": {
+    "word_count": 575,
+    "links": [],
+    "checks_against_agreed_terms": [
+     {
+      "requirement": "300-500 words",
+      "measured": "575 words",
+      "met": false
+     },
+     {
+      "requirement": "at least 3 sources with links",
+      "measured": "0 distinct links",
+      "met": false
+     }
+    ],
+    "how_measured": "by your plugin, deterministically: words = runs of letters/digits; links = distinct http(s) URLs. These are facts to use in your review, not a verdict on quality, accuracy or relevance."
+   }
+  },
+  {
+   "text": "",
+   "terms": "",
+   "check_hosts": true,
+   "out": {
+    "word_count": 0,
+    "links": [],
+    "checks_against_agreed_terms": [],
+    "how_measured": "by your plugin, deterministically: words = runs of letters/digits; links = distinct http(s) URLs. These are facts to use in your review, not a verdict on quality, accuracy or relevance."
+   }
+  },
+  {
+   "text": "Only https://example.org/x",
+   "terms": "at least 2 sources",
+   "check_hosts": true,
+   "out": {
+    "word_count": 5,
+    "links": [
+     "https://example.org/x"
+    ],
+    "checks_against_agreed_terms": [
+     {
+      "requirement": "at least 2 sources with links",
+      "measured": "1 distinct links",
+      "met": false
+     }
+    ],
+    "how_measured": "by your plugin, deterministically: words = runs of letters/digits; links = distinct http(s) URLs. These are facts to use in your review, not a verdict on quality, accuracy or relevance.",
+    "link_hosts": {
+     "example.org": "public"
+    }
+   }
+  },
+  {
+   "text": "a b c https://intranet.example/x https://cgnat.example/ https://mapped.example/ https://mapped-public.example/ https://localhost.example/ https://docs.python.org/3/ https://nowhere.invalid/ https://another.invalid/",
+   "terms": "under 10 words, at least 5 links",
+   "check_hosts": true,
+   "out": {
+    "word_count": 30,
+    "links": [
+     "https://intranet.example/x",
+     "https://cgnat.example/",
+     "https://mapped.example/",
+     "https://mapped-public.example/",
+     "https://localhost.example/",
+     "https://docs.python.org/3/",
+     "https://nowhere.invalid/",
+     "https://another.invalid/"
+    ],
+    "checks_against_agreed_terms": [
+     {
+      "requirement": "at most 10 words",
+      "measured": "30 words",
+      "met": false
+     },
+     {
+      "requirement": "at least 5 sources with links",
+      "measured": "8 distinct links",
+      "met": true
+     }
+    ],
+    "how_measured": "by your plugin, deterministically: words = runs of letters/digits; links = distinct http(s) URLs. These are facts to use in your review, not a verdict on quality, accuracy or relevance.",
+    "link_hosts": {
+     "intranet.example": "private",
+     "cgnat.example": "private",
+     "mapped.example": "private",
+     "mapped-public.example": "public",
+     "localhost.example": "private",
+     "docs.python.org": "public",
+     "nowhere.invalid": "not_found",
+     "another.invalid": "not_found"
+    },
+    "warning": "These link hosts do not exist in DNS, so those sources cannot be real: nowhere.invalid, another.invalid. A source whose link cannot work does not count as a working link."
+   }
+  },
+  {
+   "text": "https://h0.invalid/ https://h1.invalid/ https://h2.invalid/ https://h3.invalid/ https://h4.invalid/ https://h5.invalid/ https://h6.invalid/ https://h7.invalid/ https://h8.invalid/ https://h9.invalid/ https://h10.invalid/ https://h11.invalid/",
+   "terms": "at least 3 links",
+   "check_hosts": true,
+   "out": {
+    "word_count": 36,
+    "links": [
+     "https://h0.invalid/",
+     "https://h1.invalid/",
+     "https://h2.invalid/",
+     "https://h3.invalid/",
+     "https://h4.invalid/",
+     "https://h5.invalid/",
+     "https://h6.invalid/",
+     "https://h7.invalid/",
+     "https://h8.invalid/",
+     "https://h9.invalid/",
+     "https://h10.invalid/",
+     "https://h11.invalid/"
+    ],
+    "checks_against_agreed_terms": [
+     {
+      "requirement": "at least 3 sources with links",
+      "measured": "12 distinct links",
+      "met": true
+     }
+    ],
+    "how_measured": "by your plugin, deterministically: words = runs of letters/digits; links = distinct http(s) URLs. These are facts to use in your review, not a verdict on quality, accuracy or relevance.",
+    "link_hosts": {
+     "h0.invalid": "not_found",
+     "h1.invalid": "not_found",
+     "h2.invalid": "not_found",
+     "h3.invalid": "not_found",
+     "h4.invalid": "not_found",
+     "h5.invalid": "not_found",
+     "h6.invalid": "not_found",
+     "h7.invalid": "not_found",
+     "h8.invalid": "not_found",
+     "h9.invalid": "not_found"
+    },
+    "warning": "These link hosts do not exist in DNS, so those sources cannot be real: h0.invalid, h1.invalid, h2.invalid, h3.invalid, h4.invalid, h5.invalid, h6.invalid, h7.invalid, h8.invalid, h9.invalid. A source whose link cannot work does not count as a working link."
+   }
+  },
+  {
+   "text": "words words words words words words words words words words words words words words words words words words words words ",
+   "terms": "at most 99 words",
+   "check_hosts": true,
+   "out": {
+    "word_count": 20,
+    "links": [],
+    "checks_against_agreed_terms": [
+     {
+      "requirement": "at most 99 words",
+      "measured": "20 words",
+      "met": true
+     }
+    ],
+    "how_measured": "by your plugin, deterministically: words = runs of letters/digits; links = distinct http(s) URLs. These are facts to use in your review, not a verdict on quality, accuracy or relevance."
+   }
+  }
+ ],
+ "dns": {
+  "example.org": [
+   "93.184.215.14"
+  ],
+  "example.com": [
+   "2606:2800:21f:cb07:6820:80da:af6b:8b2c"
+  ],
+  "docs.python.org": [
+   "151.101.0.223",
+   "2a04:4e42::223"
+  ],
+  "intranet.example": [
+   "10.1.2.3",
+   "fd00::1"
+  ],
+  "localhost.example": [
+   "127.0.0.1",
+   "::1"
+  ],
+  "cgnat.example": [
+   "100.64.1.1"
+  ],
+  "mapped.example": [
+   "::ffff:10.0.0.1"
+  ],
+  "mapped-public.example": [
+   "::ffff:8.8.8.8"
+  ],
+  "en.wikipedia.org": [
+   "185.15.59.224"
+  ],
+  "arxiv.org": [
+   "151.101.3.42"
+  ]
+ },
+ "is_global": [
+  [
+   "8.8.8.8",
+   true
+  ],
+  [
+   "10.0.0.1",
+   false
+  ],
+  [
+   "100.64.0.1",
+   false
+  ],
+  [
+   "100.127.255.255",
+   false
+  ],
+  [
+   "127.0.0.1",
+   false
+  ],
+  [
+   "169.254.1.1",
+   false
+  ],
+  [
+   "172.16.0.1",
+   false
+  ],
+  [
+   "172.32.0.1",
+   true
+  ],
+  [
+   "192.0.0.9",
+   true
+  ],
+  [
+   "192.0.0.10",
+   true
+  ],
+  [
+   "192.0.0.11",
+   false
+  ],
+  [
+   "192.0.0.170",
+   false
+  ],
+  [
+   "192.0.0.172",
+   false
+  ],
+  [
+   "192.0.2.1",
+   false
+  ],
+  [
+   "192.88.99.1",
+   true
+  ],
+  [
+   "198.18.0.1",
+   false
+  ],
+  [
+   "198.20.0.1",
+   true
+  ],
+  [
+   "203.0.113.9",
+   false
+  ],
+  [
+   "224.0.0.1",
+   true
+  ],
+  [
+   "240.0.0.1",
+   false
+  ],
+  [
+   "255.255.255.255",
+   false
+  ],
+  [
+   "0.0.0.0",
+   false
+  ],
+  [
+   "1.1.1.1",
+   true
+  ],
+  [
+   "::1",
+   false
+  ],
+  [
+   "::",
+   false
+  ],
+  [
+   "2001:4860:4860::8888",
+   true
+  ],
+  [
+   "2001:db8::1",
+   false
+  ],
+  [
+   "2001::1",
+   false
+  ],
+  [
+   "2001:1::1",
+   true
+  ],
+  [
+   "2001:1::3",
+   false
+  ],
+  [
+   "2001:3::1",
+   true
+  ],
+  [
+   "2001:4:112::1",
+   true
+  ],
+  [
+   "2001:20::1",
+   true
+  ],
+  [
+   "2001:30::1",
+   true
+  ],
+  [
+   "2001:40::1",
+   false
+  ],
+  [
+   "2002::1",
+   false
+  ],
+  [
+   "3fff::1",
+   false
+  ],
+  [
+   "3ffe::1",
+   true
+  ],
+  [
+   "fc00::1",
+   false
+  ],
+  [
+   "fd12:3456::1",
+   false
+  ],
+  [
+   "fe80::1",
+   false
+  ],
+  [
+   "ff02::1",
+   true
+  ],
+  [
+   "64:ff9b::808:808",
+   true
+  ],
+  [
+   "64:ff9b:1::1",
+   false
+  ],
+  [
+   "100::1",
+   false
+  ],
+  [
+   "100:0:0:1::1",
+   true
+  ],
+  [
+   "::ffff:8.8.8.8",
+   true
+  ],
+  [
+   "::ffff:10.0.0.1",
+   false
+  ],
+  [
+   "::ffff:100.64.0.1",
+   false
+  ],
+  [
+   "::8.8.8.8",
+   true
+  ],
+  [
+   "2606:4700::1111",
+   true
+  ],
+  [
+   "1:2:3:4:5:6:7:8",
+   true
+  ]
+ ],
+ "extract_text": [
+  [
+   "text-stats for this text:\n```\nhello  world\nsecond line\n```\nthanks",
+   "hello  world\nsecond line"
+  ],
+  [
+   "```text\nx\n```",
+   "x"
+  ],
+  [
+   "no fence here",
+   null
+  ],
+  [
+   "a ```inline``` mention\n```\nreal\n```",
+   "real"
+  ],
+  [
+   "x\r```\nnot at a line start\n```",
+   null
+  ],
+  [
+   "x\n```\n\n```",
+   ""
+  ],
+  [
+   "```\nunclosed",
+   null
+  ],
+  [
+   "stats please\nTEXT: line one\nline two",
+   "line one\nline two"
+  ],
+  [
+   "TEXT:   padded  ",
+   "padded"
+  ],
+  [
+   "intro\n  text :  lower label \u001c",
+   "lower label"
+  ],
+  [
+   "intro\nTEXT: one\nTEXT: two",
+   "one\nTEXT: two"
+  ],
+  [
+   "intro TEXT: not after a newline",
+   null
+  ],
+  [
+   "TEXT:\n\n",
+   ""
+  ],
+  [
+   "TEXT: 　x",
+   "x"
+  ],
+  [
+   "of “curly quoted”",
+   "curly quoted"
+  ],
+  [
+   "compare \"a\" with \"b\"",
+   null
+  ],
+  [
+   "compare \"a\" with “b”",
+   null
+  ],
+  [
+   "just \"one\" here",
+   "one"
+  ],
+  [
+   "\"\"",
+   null
+  ],
+  [
+   "\"line\nbreak\"",
+   null
+  ],
+  [
+   "emoji \"😀😀\"",
+   "😀😀"
+  ],
+  [
+   "long \"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\"",
+   "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+  ],
+  [
+   "long \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"",
+   null
+  ],
+  [
+   "",
+   null
+  ],
+  [
+   null,
+   null
+  ]
+ ],
+ "text_stats": [
+  [
+   "a\r\nb\rc\nd",
+   {
+    "words": 4,
+    "characters": 8,
+    "lines": 4,
+    "unique_words": 4,
+    "sha256": "cfe35286305b2abdc5b434e8b8d4a56c1b3cfbb104f13e964b1df54978b27046",
+    "top_words": [
+     [
+      "a",
+      1
+     ],
+     [
+      "b",
+      1
+     ],
+     [
+      "c",
+      1
+     ],
+     [
+      "d",
+      1
+     ]
+    ]
+   },
+   {
+    "sha256": "cfe35286305b2abdc5b434e8b8d4a56c1b3cfbb104f13e964b1df54978b27046",
+    "bytes": 8
+   }
+  ],
+  [
+   "x\u000by\fz\u001cw\u001dv\u001eu\u001ft",
+   {
+    "words": 7,
+    "characters": 13,
+    "lines": 6,
+    "unique_words": 7,
+    "sha256": "84acf086b5a601e45e2be082a14f9b3866ee1b5b1c804703ad6b83ad5a4e0529",
+    "top_words": [
+     [
+      "t",
+      1
+     ],
+     [
+      "u",
+      1
+     ],
+     [
+      "v",
+      1
+     ],
+     [
+      "w",
+      1
+     ],
+     [
+      "x",
+      1
+     ],
+     [
+      "y",
+      1
+     ],
+     [
+      "z",
+      1
+     ]
+    ]
+   },
+   {
+    "sha256": "84acf086b5a601e45e2be082a14f9b3866ee1b5b1c804703ad6b83ad5a4e0529",
+    "bytes": 13
+   }
+  ],
+  [
+   "pq r s",
+   {
+    "words": 4,
+    "characters": 7,
+    "lines": 4,
+    "unique_words": 4,
+    "sha256": "47ed14287e5e95c123bd74f4fdfc424459fe84412dca887baa13f20947c0148b",
+    "top_words": [
+     [
+      "p",
+      1
+     ],
+     [
+      "q",
+      1
+     ],
+     [
+      "r",
+      1
+     ],
+     [
+      "s",
+      1
+     ]
+    ]
+   },
+   {
+    "sha256": "47ed14287e5e95c123bd74f4fdfc424459fe84412dca887baa13f20947c0148b",
+    "bytes": 12
+   }
+  ],
+  [
+   "trailing\n\n",
+   {
+    "words": 1,
+    "characters": 10,
+    "lines": 2,
+    "unique_words": 1,
+    "sha256": "24654b1d0f58d481fb6058a852b76cbb0a461441da822ff9f9cad13bbdfa6139",
+    "top_words": [
+     [
+      "trailing",
+      1
+     ]
+    ]
+   },
+   {
+    "sha256": "24654b1d0f58d481fb6058a852b76cbb0a461441da822ff9f9cad13bbdfa6139",
+    "bytes": 10
+   }
+  ],
+  [
+   "İstanbul ISTANBUL istanbul",
+   {
+    "words": 3,
+    "characters": 26,
+    "lines": 1,
+    "unique_words": 2,
+    "sha256": "a530d3d146b8aa08d4f4ac990b09527a388e24fa6cec9764feb6dfd25caf182c",
+    "top_words": [
+     [
+      "istanbul",
+      2
+     ],
+     [
+      "i̇stanbul",
+      1
+     ]
+    ]
+   },
+   {
+    "sha256": "a530d3d146b8aa08d4f4ac990b09527a388e24fa6cec9764feb6dfd25caf182c",
+    "bytes": 27
+   }
+  ],
+  [
+   "b a c b a b w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14",
+   {
+    "words": 21,
+    "characters": 61,
+    "lines": 1,
+    "unique_words": 18,
+    "sha256": "1d75e0fe760f37f87567d8e40668c56f60ab9dbe8504abe7c56b5cb039b8197f",
+    "top_words": [
+     [
+      "b",
+      3
+     ],
+     [
+      "a",
+      2
+     ],
+     [
+      "c",
+      1
+     ],
+     [
+      "w0",
+      1
+     ],
+     [
+      "w1",
+      1
+     ],
+     [
+      "w10",
+      1
+     ],
+     [
+      "w11",
+      1
+     ],
+     [
+      "w12",
+      1
+     ],
+     [
+      "w13",
+      1
+     ],
+     [
+      "w14",
+      1
+     ]
+    ]
+   },
+   {
+    "sha256": "1d75e0fe760f37f87567d8e40668c56f60ab9dbe8504abe7c56b5cb039b8197f",
+    "bytes": 61
+   }
+  ],
+  [
+   "Ａ 😀 Ａ 😀 z",
+   {
+    "words": 5,
+    "characters": 9,
+    "lines": 1,
+    "unique_words": 3,
+    "sha256": "c7f8e0c4563bcd1f06e284b520fe7dc8d218d26c83beeed7503bcefa03a5f48d",
+    "top_words": [
+     [
+      "ａ",
+      2
+     ],
+     [
+      "😀",
+      2
+     ],
+     [
+      "z",
+      1
+     ]
+    ]
+   },
+   {
+    "sha256": "c7f8e0c4563bcd1f06e284b520fe7dc8d218d26c83beeed7503bcefa03a5f48d",
+    "bytes": 19
+   }
+  ],
+  [
+   "A​B C᠎D",
+   {
+    "words": 2,
+    "characters": 7,
+    "lines": 1,
+    "unique_words": 2,
+    "sha256": "bb45b3995949909610e59866c0970ca03247420114f6f4143a84cb32c30e353b",
+    "top_words": [
+     [
+      "a​b",
+      1
+     ],
+     [
+      "c᠎d",
+      1
+     ]
+    ]
+   },
+   {
+    "sha256": "bb45b3995949909610e59866c0970ca03247420114f6f4143a84cb32c30e353b",
+    "bytes": 11
+   }
+  ],
+  [
+   "\u0000 \u0001 nul",
+   {
+    "words": 3,
+    "characters": 7,
+    "lines": 1,
+    "unique_words": 3,
+    "sha256": "2e82efd80b84a13aec3408606242ac224cb95785f82994b424407a108f42f77f",
+    "top_words": [
+     [
+      "\u0000",
+      1
+     ],
+     [
+      "\u0001",
+      1
+     ],
+     [
+      "nul",
+      1
+     ]
+    ]
+   },
+   {
+    "sha256": "2e82efd80b84a13aec3408606242ac224cb95785f82994b424407a108f42f77f",
+    "bytes": 7
+   }
+  ],
+  [
+   "tab\there\tand\t\tthere",
+   {
+    "words": 4,
+    "characters": 19,
+    "lines": 1,
+    "unique_words": 4,
+    "sha256": "6eafc297be4b66503026130d07da2206b63597e96dd83217e0d783054d5429ac",
+    "top_words": [
+     [
+      "and",
+      1
+     ],
+     [
+      "here",
+      1
+     ],
+     [
+      "tab",
+      1
+     ],
+     [
+      "there",
+      1
+     ]
+    ]
+   },
+   {
+    "sha256": "6eafc297be4b66503026130d07da2206b63597e96dd83217e0d783054d5429ac",
+    "bytes": 19
+   }
+  ]
+ ],
+ "render": [
+  [
+   "text-stats",
+   {
+    "words": 7,
+    "characters": 28,
+    "lines": 2,
+    "unique_words": 5,
+    "sha256": "8f04b4b13ea98cfe9ff998f6354d157da61e2a5c635836734e97e5ede7759009",
+    "top_words": [
+     [
+      "the",
+      3
+     ],
+     [
+      "cat",
+      1
+     ],
+     [
+      "dog.",
+      1
+     ],
+     [
+      "end",
+      1
+     ],
+     [
+      "saw",
+      1
+     ]
+    ]
+   },
+   "The cat saw the dog.\nThe end",
+   "# text-stats result\n\nWords are runs of non-whitespace characters (Python str.split()); characters are Unicode code points; unique words and top words are lower-cased; SHA-256 is over the UTF-8 bytes of the text.\n\nText processed (exactly, as a JSON string): \"The cat saw the dog.\\nThe end\"\n\nThe result below is deterministic: anyone can recompute it from that text.\n\n```json\n{\n \"words\": 7,\n \"characters\": 28,\n \"lines\": 2,\n \"unique_words\": 5,\n \"sha256\": \"8f04b4b13ea98cfe9ff998f6354d157da61e2a5c635836734e97e5ede7759009\",\n \"top_words\": [\n  [\n   \"the\",\n   3\n  ],\n  [\n   \"cat\",\n   1\n  ],\n  [\n   \"dog.\",\n   1\n  ],\n  [\n   \"end\",\n   1\n  ],\n  [\n   \"saw\",\n   1\n  ]\n ]\n}\n```\n"
+  ],
+  [
+   "notary",
+   {
+    "sha256": "d362277b8d503a5c6e4937b5a01af8d6d5df6faa9e5545bb7ed012a0aaa0d449",
+    "bytes": 24
+   },
+   "naive \"quoted\" \\ text\n\t\u0001",
+   "# notary result\n\nSHA-256 and length are over the UTF-8 bytes of the text exactly as processed.\n\nText processed (exactly, as a JSON string): \"naive \\\"quoted\\\" \\\\ text\\n\\t\\u0001\"\n\nThe result below is deterministic: anyone can recompute it from that text.\n\n```json\n{\n \"sha256\": \"d362277b8d503a5c6e4937b5a01af8d6d5df6faa9e5545bb7ed012a0aaa0d449\",\n \"bytes\": 24\n}\n```\n"
+  ],
+  [
+   "text-stats",
+   {
+    "words": 2,
+    "characters": 10,
+    "lines": 2,
+    "unique_words": 2,
+    "sha256": "b95ec32d2f15f54b7e2848a7c8c6e32b2e152f48debe4cfe6cb9df2407bb5d44",
+    "top_words": [
+     [
+      "straße",
+      1
+     ],
+     [
+      "x",
+      1
+     ]
+    ]
+   },
+   null,
+   "# text-stats result\n\nWords are runs of non-whitespace characters (Python str.split()); characters are Unicode code points; unique words and top words are lower-cased; SHA-256 is over the UTF-8 bytes of the text.\n\nThe result below is deterministic: anyone can recompute it from that text.\n\n```json\n{\n \"words\": 2,\n \"characters\": 10,\n \"lines\": 2,\n \"unique_words\": 2,\n \"sha256\": \"b95ec32d2f15f54b7e2848a7c8c6e32b2e152f48debe4cfe6cb9df2407bb5d44\",\n \"top_words\": [\n  [\n   \"straße\",\n   1\n  ],\n  [\n   \"x\",\n   1\n  ]\n ]\n}\n```\n"
+  ]
+ ],
+ "parse_result": [
+  [
+   "",
+   null
+  ],
+  [
+   "no block",
+   null
+  ],
+  [
+   "```json\n{\"a\": 1}\n```",
+   {
+    "a": 1
+   }
+  ],
+  [
+   "x ```json\n[1, 2]\n``` y ```json\n{\"b\": 2}\n```",
+   [
+    1,
+    2
+   ]
+  ],
+  [
+   "```json\nnull\n```",
+   null
+  ],
+  [
+   "```JSON\n{\"a\": 1}\n```",
+   null
+  ],
+  [
+   "```json\n{\"a\":\n 1}\n```",
+   {
+    "a": 1
+   }
+  ]
+ ],
+ "check_delivery": [
+  [
+   {
+    "service": {
+     "title": "text-stats job",
+     "description": "text-stats for:\n```\nhello world hello\n```",
+     "deliverable": "JSON"
+    }
+   },
+   "# text-stats result\n\nWords are runs of non-whitespace characters (Python str.split()); characters are Unicode code points; unique words and top words are lower-cased; SHA-256 is over the UTF-8 bytes of the text.\n\nText processed (exactly, as a JSON string): \"hello world hello\"\n\nThe result below is deterministic: anyone can recompute it from that text.\n\n```json\n{\n \"words\": 3,\n \"characters\": 17,\n \"lines\": 1,\n \"unique_words\": 2,\n \"sha256\": \"9db07dad3f51e31144ae853a76bba4739609c14ae813ec2cd7080726acc10eb0\",\n \"top_words\": [\n  [\n   \"hello\",\n   2\n  ],\n  [\n   \"world\",\n   1\n  ]\n ]\n}\n```\n",
+   {
+    "service": "text-stats",
+    "checked": true,
+    "exact_result_matches": true,
+    "differs_in": [],
+    "how": "recomputed by your Valun client from the agreed text; a mismatch means the delivered result is wrong"
+   }
+  ],
+  [
+   {
+    "service": {
+     "title": "text-stats job",
+     "description": "text-stats for:\n```\nhello world hello\n```",
+     "deliverable": "JSON"
+    }
+   },
+   "# text-stats result\n\nWords are runs of non-whitespace characters (Python str.split()); characters are Unicode code points; unique words and top words are lower-cased; SHA-256 is over the UTF-8 bytes of the text.\n\nText processed (exactly, as a JSON string): \"hello world hello\"\n\nThe result below is deterministic: anyone can recompute it from that text.\n\n```json\n{\n \"words\": 4,\n \"characters\": 17,\n \"lines\": 1,\n \"unique_words\": 2,\n \"sha256\": \"9db07dad3f51e31144ae853a76bba4739609c14ae813ec2cd7080726acc10eb0\",\n \"top_words\": [\n  [\n   \"hello\",\n   2\n  ],\n  [\n   \"world\",\n   1\n  ]\n ]\n}\n```\n",
+   {
+    "service": "text-stats",
+    "checked": true,
+    "exact_result_matches": false,
+    "differs_in": [
+     "words"
+    ],
+    "expected": {
+     "words": 3
+    },
+    "delivered": {
+     "words": 4
+    },
+    "how": "recomputed by your Valun client from the agreed text; a mismatch means the delivered result is wrong"
+   }
+  ],
+  [
+   {
+    "service": {
+     "title": "text-stats job",
+     "description": "text-stats for:\n```\nhello world hello\n```",
+     "deliverable": "JSON"
+    }
+   },
+   "# text-stats result\n\nWords are runs of non-whitespace characters (Python str.split()); characters are Unicode code points; unique words and top words are lower-cased; SHA-256 is over the UTF-8 bytes of the text.\n\nText processed (exactly, as a JSON string): \"x\"\n\nThe result below is deterministic: anyone can recompute it from that text.\n\n```json\n{\n \"words\": 4,\n \"characters\": 17,\n \"lines\": 1,\n \"unique_words\": 2,\n \"sha256\": \"00\",\n \"top_words\": [\n  [\n   \"hello\",\n   2\n  ],\n  [\n   \"world\",\n   1\n  ]\n ],\n \"zeta\": 1,\n \"alpha\": null\n}\n```\n",
+   {
+    "service": "text-stats",
+    "checked": true,
+    "exact_result_matches": false,
+    "differs_in": [
+     "sha256",
+     "words",
+     "zeta"
+    ],
+    "expected": {
+     "sha256": "9db07dad3f51e31144ae853a76bba4739609c14ae813ec2cd7080726acc10eb0",
+     "words": 3,
+     "zeta": null
+    },
+    "delivered": {
+     "sha256": "00",
+     "words": 4,
+     "zeta": 1
+    },
+    "how": "recomputed by your Valun client from the agreed text; a mismatch means the delivered result is wrong"
+   }
+  ],
+  [
+   {
+    "service": {
+     "title": "text-stats job",
+     "description": "text-stats for:\n```\nhello world hello\n```",
+     "deliverable": "JSON"
+    }
+   },
+   "```json\n{\"words\": 3.0, \"characters\": 17, \"lines\": 1, \"unique_words\": 2, \"sha256\": \"9db07dad3f51e31144ae853a76bba4739609c14ae813ec2cd7080726acc10eb0\", \"top_words\": [[\"hello\", 2], [\"world\", 1]], \"extra\": null}\n```",
+   {
+    "service": "text-stats",
+    "checked": true,
+    "exact_result_matches": true,
+    "differs_in": [],
+    "how": "recomputed by your Valun client from the agreed text; a mismatch means the delivered result is wrong"
+   }
+  ],
+  [
+   {
+    "service": {
+     "title": "text-stats job",
+     "description": "text-stats for:\n```\nhello world hello\n```",
+     "deliverable": "JSON"
+    }
+   },
+   "```json\n{\"words\": 3, \"characters\": 17, \"unique_words\": 2, \"sha256\": \"9db07dad3f51e31144ae853a76bba4739609c14ae813ec2cd7080726acc10eb0\", \"top_words\": [[\"hello\", 2], [\"world\", 1]]}\n```",
+   {
+    "service": "text-stats",
+    "checked": true,
+    "exact_result_matches": false,
+    "differs_in": [
+     "lines"
+    ],
+    "expected": {
+     "lines": 1
+    },
+    "delivered": {
+     "lines": null
+    },
+    "how": "recomputed by your Valun client from the agreed text; a mismatch means the delivered result is wrong"
+   }
+  ],
+  [
+   {
+    "service": {
+     "title": "text-stats job",
+     "description": "text-stats for:\n```\nhello world hello\n```",
+     "deliverable": "JSON"
+    }
+   },
+   "```json\n{\"words\": 3, \"characters\": 17, \"lines\": true, \"unique_words\": 2, \"sha256\": \"9db07dad3f51e31144ae853a76bba4739609c14ae813ec2cd7080726acc10eb0\", \"top_words\": [[\"hello\", 2], [\"world\", 1]]}\n```",
+   {
+    "service": "text-stats",
+    "checked": true,
+    "exact_result_matches": true,
+    "differs_in": [],
+    "how": "recomputed by your Valun client from the agreed text; a mismatch means the delivered result is wrong"
+   }
+  ],
+  [
+   {
+    "service": {
+     "title": "text-stats job",
+     "description": "text-stats for:\n```\nhello world hello\n```",
+     "deliverable": "JSON"
+    }
+   },
+   "```json\n{\"words\": 3, \"characters\": 17, \"lines\": 1, \"unique_words\": 2, \"sha256\": \"9db07dad3f51e31144ae853a76bba4739609c14ae813ec2cd7080726acc10eb0\", \"top_words\": [[\"world\", 1], [\"hello\", 2]]}\n```",
+   {
+    "service": "text-stats",
+    "checked": true,
+    "exact_result_matches": false,
+    "differs_in": [
+     "top_words"
+    ],
+    "expected": {
+     "top_words": [
+      [
+       "hello",
+       2
+      ],
+      [
+       "world",
+       1
+      ]
+     ]
+    },
+    "delivered": {
+     "top_words": [
+      [
+       "world",
+       1
+      ],
+      [
+       "hello",
+       2
+      ]
+     ]
+    },
+    "how": "recomputed by your Valun client from the agreed text; a mismatch means the delivered result is wrong"
+   }
+  ],
+  [
+   {
+    "service": {
+     "title": "text-stats job",
+     "description": "text-stats for:\n```\nhello world hello\n```",
+     "deliverable": "JSON"
+    }
+   },
+   "no json here",
+   {
+    "service": "text-stats",
+    "checked": true,
+    "exact_result_matches": false,
+    "why": "the delivery has no ```json result block to compare",
+    "expected": {
+     "words": 3,
+     "characters": 17,
+     "lines": 1,
+     "unique_words": 2,
+     "sha256": "9db07dad3f51e31144ae853a76bba4739609c14ae813ec2cd7080726acc10eb0",
+     "top_words": [
+      [
+       "hello",
+       2
+      ],
+      [
+       "world",
+       1
+      ]
+     ]
+    }
+   }
+  ],
+  [
+   {
+    "service": {
+     "title": "text-stats job",
+     "description": "text-stats for:\n```\nhello world hello\n```",
+     "deliverable": "JSON"
+    }
+   },
+   "```json\nnull\n```",
+   {
+    "service": "text-stats",
+    "checked": true,
+    "exact_result_matches": false,
+    "why": "the delivery has no ```json result block to compare",
+    "expected": {
+     "words": 3,
+     "characters": 17,
+     "lines": 1,
+     "unique_words": 2,
+     "sha256": "9db07dad3f51e31144ae853a76bba4739609c14ae813ec2cd7080726acc10eb0",
+     "top_words": [
+      [
+       "hello",
+       2
+      ],
+      [
+       "world",
+       1
+      ]
+     ]
+    }
+   }
+  ],
+  [
+   {
+    "service": {
+     "title": "notary",
+     "description": "no text"
+    }
+   },
+   "x",
+   {
+    "service": "notary",
+    "checked": false,
+    "why": "the agreed terms contain no text to recompute from"
+   }
+  ],
+  [
+   {
+    "service": {
+     "title": "Notary please",
+     "description": "TEXT: abc"
+    }
+   },
+   "# notary result\n\nSHA-256 and length are over the UTF-8 bytes of the text exactly as processed.\n\nText processed (exactly, as a JSON string): \"abc\"\n\nThe result below is deterministic: anyone can recompute it from that text.\n\n```json\n{\n \"sha256\": \"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\",\n \"bytes\": 3\n}\n```\n",
+   {
+    "service": "notary",
+    "checked": true,
+    "exact_result_matches": true,
+    "differs_in": [],
+    "how": "recomputed by your Valun client from the agreed text; a mismatch means the delivered result is wrong"
+   }
+  ],
+  [
+   {
+    "service": {
+     "title": "write a poem"
+    }
+   },
+   "x",
+   null
+  ],
+  [
+   {},
+   "x",
+   null
+  ],
+  [
+   {
+    "service": null
+   },
+   "x",
+   null
+  ]
+ ],
+ "which_service": [
+  [
+   {
+    "service": {
+     "title": "Text statistics please"
+    }
+   },
+   "text-stats"
+  ],
+  [
+   {
+    "service": {
+     "description": "SHA-256 of this"
+    }
+   },
+   "notary"
+  ],
+  [
+   {
+    "service": {
+     "title": "write me a poem"
+    }
+   },
+   null
+  ],
+  [
+   {
+    "service": {
+     "deliverable": "a WORD COUNT"
+    }
+   },
+   "text-stats"
+  ],
+  [
+   {
+    "service": {
+     "title": "notarize this"
+    }
+   },
+   "notary"
+  ],
+  [
+   {
+    "service": {
+     "title": "notary and text-stats"
+    }
+   },
+   "text-stats"
+  ],
+  [
+   {
+    "service": {
+     "title": 5,
+     "description": null
+    }
+   },
+   null
+  ],
+  [
+   {},
+   null
+  ],
+  [
+   {
+    "service": {}
+   },
+   null
+  ]
+ ],
+ "recently_active": [
+  [
+   "2026-11-06T11:00:00.000Z",
+   24,
+   null,
+   true
+  ],
+  [
+   "2026-11-05T12:00:00.001Z",
+   24,
+   null,
+   true
+  ],
+  [
+   "2026-11-05T12:00:00.000Z",
+   24,
+   null,
+   false
+  ],
+  [
+   "2026-11-05T11:59:59.999Z",
+   24,
+   null,
+   false
+  ],
+  [
+   "2026-11-06T13:00:00+01:00",
+   24,
+   null,
+   true
+  ],
+  [
+   "2026-11-05T12:30:00+00:30",
+   24,
+   null,
+   false
+  ],
+  [
+   "2026-11-06T12:00:00",
+   24,
+   null,
+   false
+  ],
+  [
+   "2026-11-06",
+   24,
+   null,
+   false
+  ],
+  [
+   "2099-01-01T00:00:00Z",
+   24,
+   null,
+   true
+  ],
+  [
+   "2026-11-06T11:00Z",
+   24,
+   null,
+   true
+  ],
+  [
+   "2026-11-06T11Z",
+   24,
+   null,
+   true
+  ],
+  [
+   "2026-11-06 11:00:00Z",
+   24,
+   null,
+   true
+  ],
+  [
+   "20261106T110000Z",
+   24,
+   null,
+   true
+  ],
+  [
+   "2026-11-06T11:00:00,5Z",
+   24,
+   null,
+   true
+  ],
+  [
+   "2026-11-05T24:00:00Z",
+   24,
+   null,
+   true
+  ],
+  [
+   "2026-11-05T24:00:01Z",
+   24,
+   null,
+   false
+  ],
+  [
+   "2026-02-30T00:00:00Z",
+   24,
+   null,
+   false
+  ],
+  [
+   "2026-11-06T11:00:00+0100",
+   24,
+   null,
+   true
+  ],
+  [
+   "2026-11-06T11:00:00+01",
+   24,
+   null,
+   true
+  ],
+  [
+   "2026-11-06T11:00:00+01:00:30",
+   24,
+   null,
+   true
+  ],
+  [
+   "2026-11-06T11:00:00+24:00",
+   24,
+   null,
+   false
+  ],
+  [
+   "garbage",
+   24,
+   null,
+   false
+  ],
+  [
+   null,
+   24,
+   null,
+   false
+  ],
+  [
+   1730000000,
+   24,
+   null,
+   false
+  ],
+  [
+   "",
+   24,
+   null,
+   false
+  ],
+  [
+   null,
+   24,
+   "2026-11-06T10:00:00.000Z",
+   true
+  ],
+  [
+   "2026-11-01T00:00:00Z",
+   24,
+   "2026-10-01T00:00:00Z",
+   false
+  ],
+  [
+   "2026-11-06T06:00:00Z",
+   4,
+   null,
+   false
+  ],
+  [
+   "2026-11-06T09:00:00Z",
+   4,
+   null,
+   true
+  ]
+ ],
+ "limits_body": [
+  [
+   {},
+   {
+    "value": {}
+   }
+  ],
+  [
+   {
+    "max_per_deal_as_payer": 10
+   },
+   {
+    "value": {
+     "max_issue_per_deal": 10
+    }
+   }
+  ],
+  [
+   {
+    "max_per_deal_as_payer": "12",
+    "max_total_owed": 7.9,
+    "min_price_as_payee": true
+   },
+   {
+    "value": {
+     "max_issue_per_deal": 12,
+     "max_issue_outstanding": 7,
+     "min_price_as_payee": 1
+    }
+   }
+  ],
+  [
+   {
+    "clear": [
+     "max_total_owed",
+     "nope",
+     "min_payer_coverage_pct"
+    ]
+   },
+   {
+    "value": {
+     "max_issue_outstanding": null,
+     "min_payer_coverage_pct": null
+    }
+   }
+  ],
+  [
+   {
+    "max_total_owed": 5,
+    "clear": [
+     "max_total_owed"
+    ]
+   },
+   {
+    "value": {
+     "max_issue_outstanding": null
+    }
+   }
+  ],
+  [
+   {
+    "clear": "max_total_owed"
+   },
+   {
+    "value": {}
+   }
+  ],
+  [
+   {
+    "clear": {
+     "max_total_owed": 1
+    }
+   },
+   {
+    "value": {
+     "max_issue_outstanding": null
+    }
+   }
+  ],
+  [
+   {
+    "goals": "Be frugal."
+   },
+   {
+    "value": {
+     "notes": "Be frugal."
+    }
+   }
+  ],
+  [
+   {
+    "goals": 12
+   },
+   {
+    "value": {
+     "notes": "12"
+    }
+   }
+  ],
+  [
+   {
+    "goals": null,
+    "max_total_owed": null
+   },
+   {
+    "value": {}
+   }
+  ],
+  [
+   {
+    "max_total_owed": "lots"
+   },
+   {
+    "raises": "ValueError",
+    "message": "invalid literal for int() with base 10: 'lots'"
+   }
+  ],
+  [
+   {
+    "max_total_owed": [
+     1
+    ]
+   },
+   {
+    "raises": "TypeError",
+    "message": "int() argument must be a string, a bytes-like object or a real number, not 'list'"
+   }
+  ],
+  [
+   {
+    "clear": 5
+   },
+   {
+    "raises": "TypeError",
+    "message": "'int' object is not iterable"
+   }
+  ],
+  [
+   {
+    "clear": [
+     [
+      "x"
+     ]
+    ]
+   },
+   {
+    "raises": "TypeError",
+    "message": "cannot use 'list' as a dict key (unhashable type: 'list')"
+   }
+  ]
+ ],
+ "loosens": [
+  [
+   {},
+   {
+    "max_issue_per_deal": 50
+   },
+   {
+    "value": false
+   }
+  ],
+  [
+   {
+    "max_issue_per_deal": 20
+   },
+   {
+    "max_issue_per_deal": 25
+   },
+   {
+    "value": true
+   }
+  ],
+  [
+   {
+    "max_issue_per_deal": 20
+   },
+   {
+    "max_issue_per_deal": 15
+   },
+   {
+    "value": false
+   }
+  ],
+  [
+   {
+    "max_issue_per_deal": 20
+   },
+   {
+    "max_issue_per_deal": null
+   },
+   {
+    "value": true
+   }
+  ],
+  [
+   {
+    "min_price_as_payee": 8
+   },
+   {
+    "min_price_as_payee": 6
+   },
+   {
+    "value": true
+   }
+  ],
+  [
+   {
+    "min_price_as_payee": 8
+   },
+   {
+    "min_price_as_payee": 9
+   },
+   {
+    "value": false
+   }
+  ],
+  [
+   {
+    "max_issue_per_deal": null
+   },
+   {
+    "max_issue_per_deal": null
+   },
+   {
+    "value": false
+   }
+  ],
+  [
+   {
+    "notes": "x"
+   },
+   {
+    "notes": "y"
+   },
+   {
+    "value": false
+   }
+  ],
+  [
+   {
+    "max_issue_per_deal": 20
+   },
+   {
+    "max_issue_per_deal": 20,
+    "notes": "z"
+   },
+   {
+    "value": false
+   }
+  ],
+  [
+   {
+    "max_issue_per_deal": "20"
+   },
+   {
+    "max_issue_per_deal": 25
+   },
+   {
+    "raises": "TypeError",
+    "message": "'>' not supported between instances of 'int' and 'str'"
+   }
+  ]
+ ],
+ "terms_text": [
+  [
+   {},
+   "  "
+  ],
+  [
+   {
+    "current": null
+   },
+   "  "
+  ],
+  [
+   {
+    "current": {
+     "terms": {
+      "service": {
+       "title": "T",
+       "description": null,
+       "deliverable": 3
+      }
+     }
+    }
+   },
+   "T  3"
+  ],
+  [
+   {
+    "current": {
+     "terms": {}
+    }
+   },
+   "  "
+  ]
+ ],
+ "error_payload": [
+  [
+   "mandate_exceeded",
+   "too much",
+   {
+    "rule": "max_issue_per_deal",
+    "mandate_version": 3,
+    "limit": 20
+   },
+   {
+    "error": "mandate_exceeded",
+    "message": "too much",
+    "rule": "max_issue_per_deal",
+    "mandate_version": 3,
+    "what_this_means": "Your owner's mandate does not allow this. Nothing was recorded. Do not try to work around it; tell your owner if you think the limit should change."
+   },
+   {
+    "error": "mandate_exceeded",
+    "message": "too much",
+    "rule": "max_issue_per_deal",
+    "mandate_version": 3,
+    "what_this_means": "Your owner's mandate does not allow this. Nothing was recorded. Do not try to work around it; tell your owner if you think the limit should change."
+   }
+  ],
+  [
+   "offer_not_authorized",
+   "no longer allowed",
+   {},
+   {
+    "error": "offer_not_authorized",
+    "message": "no longer allowed",
+    "what_this_means": "The other side's owner no longer allows this offer (their mandate changed or is used up). Nothing was recorded. You may decline it or wait for a new offer."
+   },
+   {
+    "error": "offer_not_authorized",
+    "message": "no longer allowed",
+    "what_this_means": "The other side's owner no longer allows this offer (their mandate changed or is used up). Nothing was recorded. You may decline it or wait for a new offer."
+   }
+  ],
+  [
+   "key_changed",
+   "k",
+   {},
+   {
+    "error": "key_changed",
+    "message": "k",
+    "what_this_means": "A party's agent key was revoked or replaced by its owner. Offers that name the old key can no longer be agreed; agreed deals continue once the party has a new key."
+   },
+   {
+    "error": "key_changed",
+    "message": "k",
+    "what_this_means": "A party's agent key was revoked or replaced by its owner. Offers that name the old key can no longer be agreed; agreed deals continue once the party has a new key."
+   }
+  ],
+  [
+   "payee_no_key",
+   "k",
+   {},
+   {
+    "error": "payee_no_key",
+    "message": "k",
+    "what_this_means": "A party's agent key was revoked or replaced by its owner. Offers that name the old key can no longer be agreed; agreed deals continue once the party has a new key."
+   },
+   {
+    "error": "payee_no_key",
+    "message": "k",
+    "what_this_means": "A party's agent key was revoked or replaced by its owner. Offers that name the old key can no longer be agreed; agreed deals continue once the party has a new key."
+   }
+  ],
+  [
+   "unauthorized",
+   "bad token",
+   {},
+   {
+    "error": "unauthorized",
+    "message": "bad token",
+    "what_this_means": "This agent is not connected to Valun. Its owner must run `valun join` (or `valun enroll`) in a terminal."
+   },
+   {
+    "error": "unauthorized",
+    "message": "bad token",
+    "what_this_means": "This agent is not connected to Valun. Its owner must do X."
+   }
+  ],
+  [
+   "not_connected",
+   "x",
+   {},
+   {
+    "error": "not_connected",
+    "message": "x",
+    "what_this_means": "This agent is not connected to Valun. Its owner must run `valun join` (or `valun enroll`) in a terminal."
+   },
+   {
+    "error": "not_connected",
+    "message": "x",
+    "what_this_means": "This agent is not connected to Valun. Its owner must do X."
+   }
+  ],
+  [
+   "not_configured",
+   "y",
+   {},
+   {
+    "error": "not_configured",
+    "message": "y",
+    "what_this_means": "This agent is not connected to Valun. Its owner must run `valun join` (or `valun enroll`) in a terminal."
+   },
+   {
+    "error": "not_configured",
+    "message": "y",
+    "what_this_means": "This agent is not connected to Valun. Its owner must do X."
+   }
+  ],
+  [
+   "owner_declined",
+   "no",
+   {},
+   {
+    "error": "owner_declined",
+    "message": "no",
+    "what_this_means": "Your owner did not approve this commitment. Nothing was signed or sent."
+   },
+   {
+    "error": "owner_declined",
+    "message": "no",
+    "what_this_means": "Your owner did not approve this commitment. Nothing was signed or sent."
+   }
+  ],
+  [
+   "draft_does_not_meet_terms",
+   "Not sent.",
+   {
+    "measured": {
+     "word_count": 3
+    }
+   },
+   {
+    "error": "draft_does_not_meet_terms",
+    "message": "Not sent.",
+    "measured": {
+     "word_count": 3
+    }
+   },
+   {
+    "error": "draft_does_not_meet_terms",
+    "message": "Not sent.",
+    "measured": {
+     "word_count": 3
+    }
+   }
+  ],
+  [
+   "stale_note",
+   "retry",
+   {
+    "template": {
+     "a": 1
+    }
+   },
+   {
+    "error": "stale_note",
+    "message": "retry"
+   },
+   {
+    "error": "stale_note",
+    "message": "retry"
+   }
+  ]
+ ],
+ "int": [
+  [
+   5,
+   {
+    "value": 5
+   }
+  ],
+  [
+   5.7,
+   {
+    "value": 5
+   }
+  ],
+  [
+   -5.7,
+   {
+    "value": -5
+   }
+  ],
+  [
+   true,
+   {
+    "value": 1
+   }
+  ],
+  [
+   false,
+   {
+    "value": 0
+   }
+  ],
+  [
+   "12",
+   {
+    "value": 12
+   }
+  ],
+  [
+   " 12 ",
+   {
+    "value": 12
+   }
+  ],
+  [
+   "+3",
+   {
+    "value": 3
+   }
+  ],
+  [
+   "-0",
+   {
+    "value": 0
+   }
+  ],
+  [
+   "1_000",
+   {
+    "value": 1000
+   }
+  ],
+  [
+   "١٢",
+   {
+    "value": 12
+   }
+  ],
+  [
+   "１２",
+   {
+    "value": 12
+   }
+  ],
+  [
+   "12.0",
+   {
+    "raises": "ValueError",
+    "message": "invalid literal for int() with base 10: '12.0'"
+   }
+  ],
+  [
+   "",
+   {
+    "raises": "ValueError",
+    "message": "invalid literal for int() with base 10: ''"
+   }
+  ],
+  [
+   "abc",
+   {
+    "raises": "ValueError",
+    "message": "invalid literal for int() with base 10: 'abc'"
+   }
+  ],
+  [
+   "1__0",
+   {
+    "raises": "ValueError",
+    "message": "invalid literal for int() with base 10: '1__0'"
+   }
+  ],
+  [
+   "_1",
+   {
+    "raises": "ValueError",
+    "message": "invalid literal for int() with base 10: '_1'"
+   }
+  ],
+  [
+   null,
+   {
+    "raises": "TypeError",
+    "message": "int() argument must be a string, a bytes-like object or a real number, not 'NoneType'"
+   }
+  ],
+  [
+   [],
+   {
+    "raises": "TypeError",
+    "message": "int() argument must be a string, a bytes-like object or a real number, not 'list'"
+   }
+  ],
+  [
+   {},
+   {
+    "raises": "TypeError",
+    "message": "int() argument must be a string, a bytes-like object or a real number, not 'dict'"
+   }
+  ],
+  [
+   " 　 7",
+   {
+    "value": 7
+   }
+  ]
+ ],
+ "repr": [
+  [
+   "plain",
+   "'plain'"
+  ],
+  [
+   "it's",
+   "\"it's\""
+  ],
+  [
+   "say \"hi\"",
+   "'say \"hi\"'"
+  ],
+  [
+   "both ' and \"",
+   "'both \\' and \"'"
+  ],
+  [
+   "back\\slash",
+   "'back\\\\slash'"
+  ],
+  [
+   "tab\tnl\ncr\r",
+   "'tab\\tnl\\ncr\\r'"
+  ],
+  [
+   "bell\u0007del",
+   "'bell\\x07del\\x7f'"
+  ],
+  [
+   "nbsp soft­",
+   "'nbsp\\xa0soft\\xad'"
+  ],
+  [
+   "café 日本",
+   "'café 日本'"
+  ],
+  [
+   "zw​sp",
+   "'zw\\u200bsp'"
+  ],
+  [
+   "line sep",
+   "'line\\u2028sep'"
+  ],
+  [
+   "emoji 😀",
+   "'emoji 😀'"
+  ],
+  [
+   "private ",
+   "'private \\ue000'"
+  ],
+  [
+   "unassigned 󠂀",
+   "'unassigned \\U000e0080'"
+  ],
+  [
+   "next",
+   "'\\x85next'"
+  ],
+  [
+   5,
+   "5"
+  ],
+  [
+   -3,
+   "-3"
+  ],
+  [
+   2.5,
+   "2.5"
+  ],
+  [
+   -0.001,
+   "-0.001"
+  ],
+  [
+   1e-07,
+   "1e-07"
+  ],
+  [
+   123456.789,
+   "123456.789"
+  ],
+  [
+   1e+22,
+   "1e+22"
+  ],
+  [
+   0.1,
+   "0.1"
+  ],
+  [
+   true,
+   "True"
+  ],
+  [
+   false,
+   "False"
+  ],
+  [
+   null,
+   "None"
+  ],
+  [
+   [
+    1,
+    "a",
+    null
+   ],
+   "[1, 'a', None]"
+  ],
+  [
+   {
+    "k": "v'",
+    "n": [
+     true
+    ]
+   },
+   "{'k': \"v'\", 'n': [True]}"
+  ]
+ ]
+}

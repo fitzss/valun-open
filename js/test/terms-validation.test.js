@@ -4,7 +4,7 @@
 // client refuses on its own (safe refusals) and where it relies on the server (accepts locally what the server refuses).
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {Client, MemoryStore, ValunError, basis, bytesToHex, statements, termsHash, utf8} from '../src/index.js';
+import {Client, MemoryStore, ValunError, basis, bytesToHex, hasUnsafeText, statements, termsHash, utf8} from '../src/index.js';
 import {fakeFetch, testKeys, vec} from './helpers.js';
 
 const data = vec('terms-validation.json');
@@ -16,13 +16,15 @@ const CLIENT = {
   'ok/base': null, 'ok/payee-proposes': null, 'ok/deliver-by-equals-offer-expiry': null, 'ok/offset-date': null,
   'ok/date-only-strings': 'bad_terms', 'ok/rfc2822-date': 'bad_terms',               // not RFC 3339: the client refuses to sign
   'ok/tab-newline-cr-in-text': null, 'ok/zwj-emoji': null, 'ok/zwnj-persian': null, 'ok/lrm-rlm': null,
-  'ok/arabic-mark-soft-hyphen': null, 'ok/variation-selectors': null, 'ok/hangul-filler': null, 'ok/title-120-utf16': null,
-  'ok/title-padded-to-raw-limit': null, 'ok/c1-nel': null, 'ok/word-joiner-arabic-mark-soft-hyphen': null, 'ok/tag-characters': null,
-  // server-only rules: service text, lengths, ranges, id formats, deadlines
+  'ok/arabic-letter-mark': null, 'ok/emoji-presentation': null, 'ok/variation-selector-after-digit': null,
+  'ok/subdivision-flags': null, 'ok/title-120-utf16': null, 'ok/title-padded-to-raw-limit': null,
+  // server-only rules: service text (release v11's refused characters), lengths, ranges, id formats, deadlines
   'bad/deliver-by-before-offer-expiry': null, 'bad/controls-in-title': null, 'bad/del-in-deliverable': null,
   'bad/bidi-override-in-description': null, 'bad/bidi-isolate-in-title': null, 'bad/zero-width-space': null, 'bad/bom': null,
   'bad/c1-nel': null, 'bad/c1-csi': null, 'bad/word-joiner': null, 'bad/invisible-operators': null, 'bad/interlinear-annotation': null,
-  'bad/tag-characters': null, 'bad/subdivision-flag': null, 'bad/zwj-emoji': null, 'bad/zwnj-persian': null,
+  'bad/tag-characters': null, 'bad/other-tag-flag': null, 'bad/soft-hyphen': null, 'bad/hangul-filler-115f': null,
+  'bad/hangul-filler-1160': null, 'bad/hangul-filler-3164': null, 'bad/hangul-filler-ffa0': null,
+  'bad/ideographic-variation-selectors': null, 'bad/stray-variation-selector': null, 'bad/repeated-variation-selector': null,
   'bad/title-122-utf16': null, 'bad/title-padded-over-raw-limit': null, 'bad/title-only-spaces': null,
   'bad/deal-id-uppercase': null, 'bad/version-0': 'bad_terms', 'bad/version-51': 'bad_terms', 'bad/nonce-short': null,
   'bad/price-zero': null, 'bad/price-1001': null, 'bad/offer-over-7-days': null, 'bad/deliver-by-over-30-days': null,
@@ -82,7 +84,19 @@ test('terms-validation.json: Client.verifyOffer() on each case matches the table
     if (!(v.name in CLIENT)) { unknown.push(`${v.name} -> ${got ?? 'accepts'}`); continue; }
     assert.equal(got, CLIENT[v.name], v.name);
   }
-  if (unknown.length) console.log(`terms-validation cases not in the table (informative): ${unknown.join(', ')}`);
+  assert.deepEqual(unknown, [], 'every case has an entry in the table');
+  assert.deepEqual(Object.keys(CLIENT).filter(n => !data.vectors.some(v => v.name === n)), [], 'no entry for a case that is gone');
+});
+
+test('hasUnsafeText() refuses the service text of exactly the cases the server refuses for their characters (release v11)', () => {
+  const byChars = v => typeof v.server_outcome === 'object' && /contains control, bidi or zero-width characters/.test(v.server_outcome.message);
+  const unsafe = v => Object.values(v.terms.service || {}).some(f => typeof f === 'string' && hasUnsafeText(f));   // per field, as the server
+  let refused = 0;
+  for (const v of data.vectors) {
+    if (byChars(v)) { refused++; assert.equal(unsafe(v), true, v.name); }
+    else if (v.server_outcome === 'accepted') assert.equal(unsafe(v), false, v.name);
+  }
+  assert.ok(refused >= 20, `${refused} character cases`);
 });
 
 test('every terms case the server accepts is either accepted by the client or refused as a safe refusal (bad_terms)', async () => {

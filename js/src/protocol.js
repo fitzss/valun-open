@@ -84,20 +84,30 @@ export function cleanText(text) {
 }
 
 /**
- * Characters the server refuses in decline and dispute reasons since release v9 (statements.json tier "refused"):
- * C0 controls except TAB/LF/CR, DEL, C1 controls, ZERO WIDTH SPACE, bidi embeddings/overrides and isolates, word
- * joiner and invisible operators, BOM, interlinear annotation and tag characters. ZWJ, ZWNJ, LRM, RLM, ALM, soft hyphen
- * and variation selectors are allowed. Exactly the set of spec section 2.3 (release v9), which also applies to signed
- * service text and public profile fields.
+ * Characters the server refuses (spec 2.3, release v11; statements.json tier "refused", terms-validation.json bad/*):
+ * C0 controls except TAB/LF/CR, DEL and the C1 controls, SOFT HYPHEN, the Hangul fillers U+115F U+1160 U+3164 U+FFA0,
+ * ZERO WIDTH SPACE, bidi embeddings/overrides and isolates, word joiner and invisible operators, BOM, interlinear
+ * annotation, tag characters, the ideographic variation selectors U+E0100-U+E01EF, and a variation selector U+FE00-U+FE0F
+ * that does not directly follow a character with the Emoji property. ZWJ, ZWNJ, LRM, RLM and ALM are allowed.
+ * The three RGI subdivision flags (England, Scotland, Wales) are allowed although they contain tag characters: test text
+ * with hasUnsafeText(), which allows them, not with this expression alone. The server's expression (valun-app 7880dcf,
+ * core.mjs UNSAFE_TEXT); it applies to reasons, signed service text and public profile fields.
  */
-export const REASON_UNSAFE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u{200b}\u{202a}-\u{202e}\u{2060}-\u{2064}\u{2066}-\u{2069}\u{feff}\u{fff9}-\u{fffb}\u{e0000}-\u{e007f}]/u;
+export const REASON_UNSAFE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\xad\u{115f}\u{1160}\u{200b}\u{2060}-\u{2064}\u{202a}-\u{202e}\u{2066}-\u{2069}\u{3164}\u{feff}\u{ffa0}\u{fff9}-\u{fffb}\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]|(?<!\p{Emoji})[\u{fe00}-\u{fe0f}]/u;
+const RGI_TAG_FLAGS = /\u{1f3f4}\u{e0067}\u{e0062}(?:\u{e0065}\u{e006e}\u{e0067}|\u{e0073}\u{e0063}\u{e0074}|\u{e0077}\u{e006c}\u{e0073})\u{e007f}/gu;
+
+/** Does the text hold a character the server (release v11) refuses? The three RGI subdivision flags are allowed. */
+export function hasUnsafeText(text) {
+  return REASON_UNSAFE.test(String(text).replace(RGI_TAG_FLAGS, '\u{1f3f4}'));
+}
 
 const REASON_LIMITS = {decline: {max: 500, raw: 600, required: false}, dispute: {max: 1000, raw: 1100, required: true}};
 
 /**
- * The refusal the server (release v9) gives for a decline or dispute reason before checking any signature, as
- * {error: 'invalid_field', message}, or null when it accepts the reason. Lengths are UTF-16 code units: raw text at
- * most max + 100, cleaned text at most max (500 decline, 1000 dispute); a dispute needs a non-empty cleaned reason.
+ * The refusal the server (release v11) gives for a decline or dispute reason before checking any signature, as
+ * {error: 'invalid_field', message}, or null when it accepts the reason. In the server's order: the type, the raw length
+ * (at most 600 / 1100 UTF-16 code units), the refused characters, then clean(): a dispute needs a reason, and the cleaned
+ * text may have at most 500 / 1000 code units.
  */
 export function reasonProblem(kind, reason) {
   const lim = REASON_LIMITS[kind];
@@ -105,11 +115,14 @@ export function reasonProblem(kind, reason) {
   const refuse = message => ({error: 'invalid_field', message});
   if (reason === null || reason === undefined) reason = '';   // the server counts null/absent as ""
   if (typeof reason !== 'string') return refuse('reason must be text');
-  if (REASON_UNSAFE.test(reason)) return refuse('reason contains control, bidi or invisible characters; remove them and sign again');
+  if (reason.length > lim.raw) {
+    return refuse(`reason is longer than ${lim.raw} characters, counting leading and trailing whitespace (at most ${lim.max} without it)`);
+  }
+  if (hasUnsafeText(reason)) return refuse('reason contains control, bidi or invisible characters; remove them and sign again');
+  if (reason === '') return lim.required ? refuse('reason is required') : null;
   const cleaned = cleanText(reason);
-  if (reason.length > lim.raw) return refuse(`reason is longer than ${lim.max} characters`);
-  if (lim.required && cleaned === '') return refuse('reason is required');
   if (cleaned.length > lim.max) return refuse(`reason is longer than ${lim.max} characters`);
+  if (lim.required && cleaned === '') return refuse('reason is required');
   return null;
 }
 

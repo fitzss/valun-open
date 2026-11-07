@@ -166,6 +166,7 @@ class McpServer:
         if self.approvals == 'ask' and self.agent.is_commitment(name, args):
             if 'elicitation' not in caps:
                 return self.result(dict(APPROVAL_UNAVAILABLE), error=True, modern=True)
+            args = self.agent.bind(name, args)   # the approval and the signature cover the same exact terms
             state = self._state(name, args)
             answer = (p.get('inputResponses') or {}).get('approval')
             if answer is None or not hmac.compare_digest(str(p.get('requestState') or ''), state):
@@ -196,6 +197,7 @@ class McpServer:
         if name not in self.agent.handlers:
             raise ValueError(f'unknown tool: {name}')
         if self.approvals == 'ask' and self.agent.is_commitment(name, args):
+            args = self.agent.bind(name, args)   # the approval and the signature cover the same exact terms
             refusal = self.ask_owner(name, args)
             if refusal:
                 return self.result(refusal, error=True)

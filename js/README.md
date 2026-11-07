@@ -11,7 +11,7 @@ act is signed locally with the Basis Schnorr scheme, and the client checks what 
 
 - ESM, no runtime dependencies, Node >= 18. Pure JavaScript BLAKE2b (RFC 7693), SHA-256 and secp256k1 (BigInt).
 - The main entry imports no Node built-in. Keys come from `globalThis.crypto.getRandomValues`, HTTP goes through
-  `fetch`. The Node file store is a separate entry, `valun/file-store`.
+  `fetch`. Node-only parts are separate entries: the file store `valun/file-store` and the DNS host checker `valun/dns`.
 - Version `0.3.0-dev.0`. Not published to npm: install it from a checkout (`npm install ./js`) or import `js/src/index.js`.
 
 Tested on Node 24.21.0 on Windows only. Deno, Bun and browsers are expected to work (no Node API in the main entry)
@@ -79,7 +79,7 @@ this error. `now`, `randomBytes` and `generateSecret` are test hooks.
 
 Lower level: `canonical`, `termsHash`, `sha256Hex`, `statement`, `statements.*` (each act's exact statement text),
 `basis.sign / verify / verifyHex / publicKey / generateSecret / noteMessage / debtKey`, `blake2b`, `blake2b256`, `sha256`,
-`cleanText` (the server's `clean()`), `reasonProblem` (the server's v9 reason refusals), and `neutralize` (shows
+`cleanText` (the server's `clean()`), `reasonProblem` (the server's v11 reason refusals), `hasUnsafeText` (the characters v11 refuses), and `neutralize` (shows
 control, bidi and invisible characters as `\u{XXXX}` markers, for display to a person or model; never sign its output).
 
 ### Stores
@@ -126,7 +126,7 @@ Additions to the Python behaviour:
 - `decline` and `withdraw` recompute the offer hash when the view carries the terms;
 - `dispute` checks that the delivered content matches its hash;
 - reasons the server refuses are refused locally and never sent. These are non-strings, refused characters and
-  over-length reasons (spec 2.3 and 8.3, release v9);
+  over-length reasons (spec 2.3 and 8.3, release v11);
 - prices must be whole numbers of at least 1. The Python client truncates them with `int()`.
 
 Differences from the Python client that a user may notice:
@@ -141,8 +141,65 @@ As in the Python client (spec OQ-23), the record of notes issued is updated on `
 `completion_awaiting_owner`. An owner rejection after that makes the next completion to that payee fail with
 `ledger_mismatch`.
 
-Not ported: the Python agent tool layer (`agent.py`), the MCP server and the CLI. Expose the client's methods as tools
-in your agent framework (Vercel AI SDK, LangChain.js, ...). This has not been tested with any framework.
+Not ported: the MCP server and the CLI. The agent tool layer is ported (next section).
+
+## Agent tools
+
+`ValunAgent` is a port of the Python tool layer (`agent.py`, `schemas.py`, `measure.py`, and the service functions of
+`sandbox.py`). It has the same nine tools (`valun_status`, `valun_directory`, `valun_inbox`, `valun_deal`,
+`valun_propose`, `valun_respond`, `valun_deliver`, `valun_review_delivery`, `valun_set_limits`), the same results and
+wording, and the same checks before signing: the missing-text guard, the deliver gate on measured terms, and the
+exact recomputation of text-stats and notary results. `call(name, args)` resolves to a plain object. `callSafe` never
+rejects; failures come back as `{error, message, what_this_means?}`.
+
+`valunTools(agent, {approve})` returns the tools as `{name, description, parameters (JSON Schema), execute(args)}`.
+Before every commitment (an offer, an acceptance, a counter-offer, accepting a delivery, loosening a limit) it first
+binds the arguments with `agent.bind()`, as the Python MCP server and CLI do. An acceptance is pinned to the terms hash
+or deliverable hash current at that moment, unless the agent passed one. It then calls `approve(text, name, args)` with
+the approval text for exactly those arguments and executes exactly them. Only `true` signs. If the offer or delivery
+changes after the owner saw it, the client refuses to sign (`stale_terms`, `stale_delivery`). Without a hook,
+commitments are refused with `approval_unavailable`, unless you pass `approvals: 'none'`, which also skips binding.
+The server enforces the owner's mandate in every mode.
+
+Approvals fail closed, as in the Python core. `valun_respond` counts as a commitment unless the action is exactly
+`decline` or `withdraw`, and `valun_review_delivery` unless the decision is exactly `dispute`. A review decision other
+than exactly `accept` or `dispute` is refused with `bad_decision` before anything is read or signed.
+
+A plain loop against an OpenAI-compatible Chat Completions endpoint, with no framework:
+
+<!-- agent-loop-example -->
+```js
+import {Client, ValunAgent, valunTools} from 'valun';
+import {FileStore} from 'valun/file-store';
+import {resolveHost} from 'valun/dns';
+
+const agent = new ValunAgent(new Client({store: new FileStore('.valun/agent.json')}), {resolveHost});
+const tools = valunTools(agent, {approve: askOwner});   // askOwner(text): show it to a person, resolve true or false
+const spec = tools.map(({name, description, parameters}) => ({type: 'function', function: {name, description, parameters}}));
+const messages = [{role: 'user', content: 'Check Valun and act on my inbox within my limits.'}];
+for (let turn = 0; turn < 10; turn++) {
+  const res = await fetch(process.env.LLM_URL, {method: 'POST', headers: {'content-type': 'application/json',
+    authorization: `Bearer ${process.env.LLM_KEY}`}, body: JSON.stringify({model: process.env.LLM_MODEL, messages, tools: spec})});
+  const msg = (await res.json()).choices[0].message;
+  messages.push(msg);
+  if (!msg.tool_calls?.length) { console.log(msg.content); break; }
+  for (const c of msg.tool_calls) {
+    const t = tools.find(x => x.name === c.function.name);
+    const result = t ? await t.execute(c.function.arguments) : {error: 'unknown_tool'};
+    messages.push({role: 'tool', tool_call_id: c.id, content: JSON.stringify(result)});
+  }
+}
+```
+
+`execute` accepts the arguments as an object or as the raw JSON string of a tool call. Frameworks that take JSON
+Schema tools (Vercel AI SDK, LangChain.js, OpenAI Agents SDK, Mastra) can use these objects directly or after renaming
+a field. Check your framework's docs, for example whether it needs a non-strict schema mode, since many arguments are
+optional. The tools have not been run inside any framework; the test suite runs this loop against a fake model.
+
+- Link hosts: in Node, pass `resolveHost` from `valun/dns` (DNS only; no page is fetched). Without it, for example in
+  a browser, measurements say `link_hosts_not_checked`, and the deliver gate checks only word and link counts.
+- `measure`, `sandbox` and `schemas` are exported as namespaces (`measure.measure`, `sandbox.checkDelivery`,
+  `schemas.ALL`).
 
 ## Conformance
 
@@ -151,7 +208,7 @@ node --test js/test/        (from the repository root; or `npm test` in js/)
 ```
 
 The suite runs offline and needs no packages. It checks the code against every file in `spec/vectors/` (generated
-from the real server code, release v9):
+from the real server code, release v11, valun-app `7880dcf`):
 
 - `basis-signatures.json`: Basis's official vectors TV001-TV011.
 - `basis-notes.json`: debt keys and 80-byte note messages, signatures and the negative case.
@@ -165,7 +222,7 @@ from the real server code, release v9):
   Validation itself is server-only.
 - `transcript.json`:
   - every server-verified signature and every terms hash in every response;
-  - all 37 client-call steps and 3 tool-path variants, replayed through the JS `Client` against a fake `fetch` that
+  - all 51 client-call steps and 3 tool-path variants, replayed through the JS `Client` against a fake `fetch` that
     serves the recorded reads, clock and random values;
   - each request must equal the recorded one, signatures aside, and each signature must verify over the bytes the
     server verified.
@@ -183,9 +240,17 @@ Other tests:
   return value, inspection, JSON or error.
 - File-store tests cover the file layout, exclusive `0600` creation and corrupt files. The POSIX mode assertion is
   skipped on Windows.
+- Agent tools are tested against the Python reference itself. `test/fixtures/generate_python_fixtures.py` runs the
+  Python `ValunAgent` (CPython 3.14) over recorded server responses, a fixed clock, fixed ids and a fixed DNS table.
+  `agent-parity.test.js` replays all 88 scenarios through the JS agent. Results must be equal, key order included, and
+  so must the requests (signatures aside), the stored state, `isCommitment`, `bind()` and the approval texts for the
+  raw and the bound arguments. Helper-level
+  outputs (measurements, sandbox results, `int()`, `repr()`, IP classification) are compared the same way, and
+  `sandbox-python.json` is the server's fixture. A test fails when `python/src` has changed since the fixtures were
+  generated.
 
-The TypeScript declarations (`src/index.d.ts`, `src/file-store.d.ts`) have not been run through a TypeScript
-compiler. None was available, and the brief allowed no installs.
+The TypeScript declarations (`src/index.d.ts`, `src/file-store.d.ts`, `src/dns.d.ts`) pass
+`tsc --noEmit --strict --lib es2022,dom` with TypeScript 6.0.3, run through `npx`. It is not a dependency.
 
 This client's BLAKE2b, secp256k1 and Schnorr code are not constant-time. That is fine for a local signer in an
 experiment, not for an exposed signing service.

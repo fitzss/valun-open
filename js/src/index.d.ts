@@ -336,9 +336,14 @@ export const statements: {
 export function cleanText(text: string): string;
 /** Display-safe text: controls, format characters and lone surrogates as visible \u{XXXX} markers. Never sign it. */
 export function neutralize(text: string): string;
-/** Characters the server (release v9) refuses in decline/dispute reasons. */
+/**
+ * Characters the server (release v11) refuses in reasons, signed service text and profile fields. It also matches the
+ * tag characters of the three allowed RGI subdivision flags: test text with hasUnsafeText().
+ */
 export const REASON_UNSAFE: RegExp;
-/** The server's (release v9) refusal of a decline/dispute reason, or null if it accepts it. */
+/** Does the text hold a character the server (release v11) refuses? The England, Scotland and Wales flags are allowed. */
+export function hasUnsafeText(text: string): boolean;
+/** The server's (release v11) refusal of a decline/dispute reason, in its order and wording, or null if it accepts it. */
 export function reasonProblem(kind: 'decline' | 'dispute', reason: unknown): {error: 'invalid_field'; message: string} | null;
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -381,3 +386,259 @@ export function sha256(data: Bytes): Bytes;
 export function bytesToHex(bytes: Bytes): string;
 export function hexToBytes(hex: string): Bytes;
 export function utf8(text: string): Bytes;
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Agent tools: the nine Valun tools of the Python reference (agent.py, schemas.py, measure.py, sandbox.py)
+// ---------------------------------------------------------------------------------------------------------------------
+export type ToolName =
+  | 'valun_status' | 'valun_directory' | 'valun_inbox' | 'valun_deal' | 'valun_propose' | 'valun_respond' | 'valun_deliver'
+  | 'valun_review_delivery' | 'valun_set_limits';
+
+/** A JSON Schema (the subset the tools use: type, properties, required, enum, items, minimum, maximum, minLength, description). */
+export type JsonSchema = {readonly [keyword: string]: JsonValue | JsonSchema | undefined};
+
+/** What the model reads about a tool: its name, what it commits the agent to, and its arguments as a JSON Schema. */
+export interface ToolDefinition {
+  readonly name: ToolName;
+  readonly description: string;
+  readonly parameters: {readonly type: 'object'; readonly properties: {readonly [argument: string]: JsonSchema}; readonly required: readonly string[]};
+}
+
+/** Tool definitions equal to python/src/valun/schemas.py, frozen. */
+export namespace schemas {
+  const STATUS: ToolDefinition;
+  const DIRECTORY: ToolDefinition;
+  const INBOX: ToolDefinition;
+  const DEAL: ToolDefinition;
+  const PROPOSE: ToolDefinition;
+  const RESPOND: ToolDefinition;
+  const DELIVER: ToolDefinition;
+  const REVIEW: ToolDefinition;
+  const SET_LIMITS: ToolDefinition;
+  /** The nine tools, in the order every adapter lists them. */
+  const ALL: readonly ToolDefinition[];
+}
+
+/** Tool arguments as the model sends them (JSON). */
+export type ToolArgs = {[argument: string]: JsonValue | undefined};
+/** Every tool result is a plain JSON-compatible object; failures carry `error` (a stable code) and `message`. */
+export type ToolResult = Record<string, unknown>;
+
+/** A failure as a tool result. Never contains the signing key or the agent token. */
+export interface ToolError {
+  error: string;
+  message: string;
+  /** For mandate_exceeded, offer_not_authorized, key_changed/payee_no_key, unauthorized/not_connected/not_configured, owner_declined. */
+  what_this_means?: string;
+  rule?: unknown;
+  mandate_version?: unknown;
+  /** draft_does_not_meet_terms: the measurements of the draft. */
+  measured?: Measurement;
+}
+
+export type HostStatus = 'public' | 'private' | 'not_found' | 'unknown (lookup timed out)';
+/** 'public' if any address of the host is globally reachable, 'private' if none is, 'not_found' if the name does not exist. */
+export type ResolveHost = (host: string) => Promise<'public' | 'private' | 'not_found'> | 'public' | 'private' | 'not_found';
+
+export interface RequirementCheck {
+  requirement: string;
+  measured: string;
+  met: boolean;
+}
+
+/** Deterministic facts about a delivery (measure.measure in Python). */
+export interface Measurement {
+  word_count: number;
+  links: string[];
+  checks_against_agreed_terms: RequirementCheck[];
+  how_measured: string;
+  /** Host checks on, links present and a resolver given. */
+  link_hosts?: Record<string, HostStatus>;
+  /** Some link hosts do not exist in DNS. */
+  warning?: string;
+  /** JavaScript only: host checks on and links present, but no resolver (e.g. in a browser). */
+  link_hosts_not_checked?: string;
+}
+
+export interface Requirements {
+  min_words?: number;
+  max_words?: number;
+  min_links?: number;
+}
+
+/** Word, link and requirement measurements (python/src/valun/measure.py). No page is fetched; DNS only via resolveHost. */
+export namespace measure {
+  const MAX_LINKS_CHECKED: number;
+  const HOW_MEASURED: string;
+  const HOSTS_NOT_CHECKED: string;
+  function wordCount(text: string | null | undefined): number;
+  /** Distinct http(s) URLs, in order, without trailing punctuation or an unbalanced closing bracket. */
+  function links(text: string | null | undefined): string[];
+  function hostOf(url: string): string;
+  /** Numeric requirements written in the agreed service text ("300-500 words", "at least 3 cited sources"). */
+  function requirements(termsText: string | null | undefined): Requirements;
+  /** Python's ipaddress.ip_address(address).is_global. Throws TypeError for a string that is no IP address. */
+  function isGlobalAddress(address: string): boolean;
+  function classifyAddresses(addresses: readonly string[]): 'public' | 'private';
+  /** A ResolveHost from an address lookup (rejecting when the name does not exist). */
+  function hostResolver(lookupAll: (host: string) => Promise<readonly string[]> | readonly string[]): (host: string) => Promise<'public' | 'private' | 'not_found'>;
+  /** Looks up the distinct hosts of `urls` (at most MAX_LINKS_CHECKED) concurrently, at most timeoutMs (default 4000) in all. */
+  function hostStatus(urls: readonly string[], resolveHost: ResolveHost, options?: {timeoutMs?: number}): Promise<Record<string, HostStatus>>;
+  function measure(text: string | null | undefined, termsText: string | null | undefined,
+    options?: {checkHosts?: boolean; resolveHost?: ResolveHost | null; timeoutMs?: number}): Promise<Measurement>;
+}
+
+export type SandboxService = 'text-stats' | 'notary';
+
+export interface TextStats {
+  words: number;
+  characters: number;
+  lines: number;
+  unique_words: number;
+  sha256: string;
+  top_words: Array<[string, number]>;
+}
+
+export interface NotaryResult {
+  sha256: string;
+  bytes: number;
+}
+
+/** checked_exactly_by_your_client: the delivered result against the result recomputed from the agreed text. */
+export interface ExactCheck {
+  service: SandboxService;
+  checked: boolean;
+  why?: string;
+  exact_result_matches?: boolean;
+  differs_in?: string[];
+  expected?: Record<string, unknown>;
+  delivered?: Record<string, unknown>;
+  how?: string;
+}
+
+/** The exactly checkable services of the sandbox agents (python/src/valun/sandbox.py, the service functions). */
+export namespace sandbox {
+  const SERVICES: {readonly [service in SandboxService]: {readonly price: number; readonly keywords: readonly string[]}};
+  const SERVICES_TEXT: string;
+  const HOW_TO_SEND: string;
+  const COMPUTE: {readonly 'text-stats': (text: string) => TextStats; readonly notary: (text: string) => NotaryResult};
+  /** The text to process: the first ``` fenced block, else everything after a final TEXT: label, else the only quoted string. */
+  function extractText(description: string | null | undefined): string | null;
+  function textStats(text: string): TextStats;
+  function notary(text: string): NotaryResult;
+  function render(service: SandboxService, result: TextStats | NotaryResult, text?: string | null): string;
+  /** The parsed ```json block of a delivery, or null. Throws SyntaxError if the block is not JSON. */
+  function parseResult(content: string | null | undefined): unknown;
+  function whichService(terms: {[field: string]: unknown}): SandboxService | null;
+  /** null when the terms name no exactly checkable service. */
+  function checkDelivery(terms: {[field: string]: unknown}, content: string): ExactCheck | null;
+}
+
+export type LimitArgument =
+  | 'max_per_deal_as_payer' | 'max_total_owed' | 'max_per_deal_as_payee' | 'max_claim_per_payer' | 'min_price_as_payee'
+  | 'min_payer_coverage_pct';
+
+export const SETTLEMENT_NOTE: string;
+export const NOT_SETTLED: string;
+export const HONEST_LABELS: Readonly<{what_basis_records: string; outstanding_promise: string; third_party: string}>;
+export const REAL_VS_SIMULATED: Readonly<{real: string; simulated: string; not_proven: string}>;
+/** valun_set_limits argument -> [server field, 'cap' | 'floor']. */
+export const LIMIT_FIELDS: Readonly<Record<LimitArgument, readonly [string, 'cap' | 'floor']>>;
+export const TOOL_NAMES: readonly ToolName[];
+export const READ_ONLY_TOOLS: readonly ToolName[];
+export const DEFAULT_SETUP_HINT: string;
+/** The Python adapters' sentences for where approvals happen (valun_status shows the one in use). */
+export const APPROVAL_TEXT: Readonly<{ask: string; 'client-prompt': string; console: string; none: string}>;
+
+/** A ValunError (or anything thrown) as a tool result. */
+export function errorPayload(error: unknown, setupHint?: string): ToolError;
+/** valun_set_limits arguments as the server's /limits body. */
+export function limitsBody(args: ToolArgs): Record<string, number | string | null>;
+/** Would this /limits body loosen a limit recorded before (higher cap, lower floor, or removal)? */
+export function loosens(current: Record<string, unknown>, body: Record<string, unknown>): boolean;
+/** Seen (or joined) within the last `hours` (default 24)? Times without a UTC offset do not count. */
+export function recentlyActive(lastSeen: unknown, hours?: number, joinedAt?: unknown, nowMs?: number): boolean;
+/** The current terms' title, description and deliverable, joined by spaces. */
+export function termsText(deal: unknown): string;
+
+export interface ValunAgentOptions {
+  /** One sentence telling the model where commitments are approved (see APPROVAL_TEXT). valunTools() fills it in if empty. */
+  approvals?: string;
+  /** Check link hosts when measuring deliveries (default true). Needs resolveHost; without one the result says so. */
+  checkLinkHosts?: boolean;
+  /** Node: resolveHost from "valun/dns". Browsers have none. */
+  resolveHost?: ResolveHost | null;
+  /** All host lookups of one measurement together (default 4000 ms). */
+  hostTimeoutMs?: number;
+  /** What the owner must do to connect the agent, in error explanations. */
+  setupHint?: string | null;
+  /** Test hook: the clock in ms (who counts as recently active). */
+  now?: () => number;
+}
+
+/** The nine Valun tools over one participant's Client, with the Python reference's behaviour, wording and checks. */
+export class ValunAgent {
+  constructor(client: Client, options?: ValunAgentOptions);
+  approvals: string;
+  checkLinkHosts: boolean;
+  resolveHost: ResolveHost | null;
+  hostTimeoutMs: number;
+  setupHint: string;
+  readonly handlers: Readonly<Record<ToolName, (args: ToolArgs) => Promise<ToolResult>>>;
+  /** The Client, after checking it is enrolled (ValunError not_connected otherwise). */
+  client(requireConnection?: boolean): Client;
+  /** Runs one tool; rejects with a ValunError (or another error) on failure. */
+  call(name: ToolName | string, args?: ToolArgs | null): Promise<ToolResult>;
+  /** Like call(), but never rejects: failures resolve to a ToolError. */
+  callSafe(name: ToolName | string, args?: ToolArgs | null): Promise<ToolResult>;
+  /**
+   * Would this call sign a commitment or loosen a limit? Fails closed: valun_respond is one unless the action is exactly
+   * 'decline' or 'withdraw', valun_review_delivery unless the decision is exactly 'dispute'.
+   */
+  isCommitment(name: ToolName | string, args?: ToolArgs | null): Promise<boolean>;
+  /**
+   * A copy of the arguments with an acceptance pinned to the current terms hash (valun_respond accept) or deliverable
+   * hash (valun_review_delivery accept) when the agent passed none. Call it before asking the owner and execute exactly
+   * what it returns. Best effort: never rejects for a read that fails.
+   */
+  bind(name: ToolName | string, args?: ToolArgs | null): Promise<ToolArgs>;
+  /** The approval prompt: exactly what would be signed and what it means. Never rejects. */
+  describeCommitment(name: ToolName | string, args?: ToolArgs | null): Promise<string>;
+  status(args?: ToolArgs): Promise<ToolResult>;
+  directory(args: ToolArgs): Promise<ToolResult>;
+  inbox(args?: ToolArgs): Promise<ToolResult>;
+  deal(args: ToolArgs): Promise<ToolResult>;
+  propose(args: ToolArgs): Promise<ToolResult>;
+  respond(args: ToolArgs): Promise<ToolResult>;
+  deliver(args: ToolArgs): Promise<ToolResult>;
+  review(args: ToolArgs): Promise<ToolResult>;
+  setLimits(args: ToolArgs): Promise<ToolResult>;
+}
+
+/** A tool in the shape most JavaScript agent frameworks take: JSON Schema parameters and an execute function. */
+export interface FrameworkTool {
+  name: ToolName;
+  description: string;
+  /** A fresh copy for each tool list: a framework may change it. */
+  parameters: {type: 'object'; properties: {[argument: string]: JsonSchema}; required: string[]};
+  /** Arguments as an object or a JSON string. Always resolves (a ToolError on failure). */
+  execute(args?: ToolArgs | string | null): Promise<ToolResult>;
+}
+
+/** Asked before every commitment; only `true` approves. `args` is a frozen copy of the bound arguments that will be executed. */
+export type ApproveHook = (commitmentText: string, name: ToolName, args: Readonly<ToolArgs>) => boolean | Promise<boolean>;
+
+export interface ValunToolsOptions {
+  approve?: ApproveHook | null;
+  /** 'none': sign commitments without asking anyone. Without a hook and without 'none', commitments are refused. */
+  approvals?: 'ask' | 'none' | null;
+}
+
+/** What the model is told about approvals when no approve hook is given. */
+export const NO_APPROVAL_STEP: string;
+
+/**
+ * The nine tools of `agent` as FrameworkTool objects. Commitments ask `approve` first (owner_declined unless it returns
+ * true; approval_unavailable if it throws); without a hook they are refused (approval_unavailable) unless approvals is 'none'.
+ */
+export function valunTools(agent: ValunAgent, options?: ValunToolsOptions): FrameworkTool[];
