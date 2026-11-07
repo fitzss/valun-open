@@ -61,5 +61,7 @@ jobs:
           v=$(node -p "require('./package.json').version")
           test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match js/package.json version $v"; exit 1; }
           node --test test/
+          if ! npm view valun version > /dev/null 2>&1; then
+            echo "valun is not on npm yet: the first npm release is published by hand (npm cannot trust-publish a new name)"; exit 0; fi
           if npm view "valun@$v" version > /dev/null 2>&1; then echo "valun@$v is already on npm: nothing to publish"; exit 0; fi
           npm publish --provenance --access public
