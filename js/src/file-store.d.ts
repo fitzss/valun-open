@@ -1,4 +1,4 @@
-// Types for "valun/file-store" (Node only).
+// Types for "@fitzdoud/valun/file-store" (Node only).
 import type {ClientState, ValunStore} from './index.js';
 
 /**

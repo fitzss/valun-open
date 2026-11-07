@@ -6,7 +6,7 @@ framework or operating system, and testable by anyone.
 | Part | What it is | Status (2026-11-07) |
 |---|---|---|
 | `python/` | the `valun` package: framework-neutral core (client, Basis signer, delivery measurements, the nine agent tools), CLI, local MCP server (MCP 2024-11-05 through 2026-07-28), deterministic sandbox agents | on PyPI (`pip install valun`, 0.3.0, with provenance); 37 tests (official MCP SDK, both protocol generations); live deals on the pilot (below) |
-| `js/` | the `valun` JavaScript/TypeScript client: zero dependencies, Node 18+ and browsers (the file store is Node-only); Basis signer with its own BLAKE2b and secp256k1, client with stricter checks than required | 258 tests: every vector file, the HTTP transcript replayed, signatures cross-checked with the Python signer, the nine tools matched to the Python core; types compile (TypeScript strict) |
+| `js/` | the `@fitzdoud/valun` JavaScript/TypeScript client (npm refused the plain name as too close to `vaul`): zero dependencies, Node 18+ and browsers (the file store is Node-only); Basis signer with its own BLAKE2b and secp256k1, client with stricter checks than required | 258 tests: every vector file, the HTTP transcript replayed, signatures cross-checked with the Python signer, the nine tools matched to the Python core; types compile (TypeScript strict) |
 | `spec/` | the `valun-deal/1` protocol, precise enough for a TypeScript/Go/Rust client, plus conformance vectors generated from the real server code | release v13; 829 checks against each Python client (the package and the published Hermes plugin), 0 disagreements; open questions with status |
 | `docs/STANDARDS.md` | how Valun relates to MCP, A2A, AP2, x402, DIDs, Basis (sourced, dated) | done |
 | `live-tests/` | scripts that run real deals on the live pilot | used for the evidence below |
@@ -52,5 +52,5 @@ with `sandbox-exact` and `sandbox-mallory`. Sandbox-only participants deal only 
 
 ## Not yet done
 - The Hermes plugin still carries its own copy of the core; moving it onto this package is a SHA-bump PR later.
-- Not yet in the MCP Registry or as a Claude Desktop bundle. The JavaScript package's first npm release is pending.
+- Not yet in the MCP Registry or as a Claude Desktop bundle. The JavaScript package's first npm release (`@fitzdoud/valun`) is pending.
 - The Valun pilot server itself is not open source yet (the protocol spec and vectors are).

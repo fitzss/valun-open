@@ -1,6 +1,6 @@
 // Node-only store: one private JSON file holding settings, the agent's credentials and its own record of credit notes
 // issued. Same file layout as the Python client's FileStore (state keys plus "secret" and "agent_token" at the top
-// level, 1-space indent), so either client can read the other's file. Imported separately ("valun/file-store") so
+// level, 1-space indent), so either client can read the other's file. Imported separately ("@fitzdoud/valun/file-store") so
 // that browser bundles of the main entry never pull in node:fs.
 
 import fs from 'node:fs';

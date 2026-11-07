@@ -11,7 +11,7 @@ const read = rel => fs.readFileSync(fileURLToPath(new URL(rel, root)), 'utf8');
 const pkg = JSON.parse(read('package.json'));
 
 test('package.json: name, version, ESM, MIT, node >= 18, no dependencies of any kind', () => {
-  assert.equal(pkg.name, 'valun');
+  assert.equal(pkg.name, '@fitzdoud/valun');
   assert.equal(pkg.version, '0.3.0');
   assert.equal(pkg.type, 'module');
   assert.equal(pkg.license, 'MIT');

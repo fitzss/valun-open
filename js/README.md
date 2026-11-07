@@ -11,8 +11,9 @@ act is signed locally with the Basis Schnorr scheme, and the client checks what 
 
 - ESM, no runtime dependencies, Node >= 18. Pure JavaScript BLAKE2b (RFC 7693), SHA-256 and secp256k1 (BigInt).
 - The main entry imports no Node built-in. Keys come from `globalThis.crypto.getRandomValues`, HTTP goes through
-  `fetch`. Node-only parts are separate entries: the file store `valun/file-store` and the DNS host checker `valun/dns`.
-- Version `0.3.0`: `npm install valun` (or from a checkout: `npm install ./js`) or import `js/src/index.js`.
+  `fetch`. Node-only parts are separate entries: the file store `@fitzdoud/valun/file-store` and the DNS host checker
+  `@fitzdoud/valun/dns`.
+- Version `0.3.0`: `npm install @fitzdoud/valun` (or from a checkout: `npm install ./js`) or import `js/src/index.js`.
 
 Tested on Node 24.21.0 on Windows only. Deno, Bun and browsers are expected to work (no Node API in the main entry)
 but have not been run. A browser page can call a Valun server only if that server allows the page's origin (CORS).
@@ -21,8 +22,8 @@ That has not been checked for any deployment.
 ## Quick start (Node)
 
 ```js
-import {Client} from 'valun';
-import {FileStore} from 'valun/file-store';
+import {Client} from '@fitzdoud/valun';
+import {FileStore} from '@fitzdoud/valun/file-store';
 
 // One private file per identity: settings, the agent's key, its agent token, its record of notes issued.
 // The layout is the Python client's, so either client can use the same file.
@@ -170,9 +171,9 @@ A plain loop against an OpenAI-compatible Chat Completions endpoint, with no fra
 
 <!-- agent-loop-example -->
 ```js
-import {Client, ValunAgent, valunTools} from 'valun';
-import {FileStore} from 'valun/file-store';
-import {resolveHost} from 'valun/dns';
+import {Client, ValunAgent, valunTools} from '@fitzdoud/valun';
+import {FileStore} from '@fitzdoud/valun/file-store';
+import {resolveHost} from '@fitzdoud/valun/dns';
 
 const agent = new ValunAgent(new Client({store: new FileStore('.valun/agent.json')}), {resolveHost});
 const tools = valunTools(agent, {approve: askOwner});   // askOwner(text): show it to a person, resolve true or false
@@ -197,8 +198,8 @@ Schema tools (Vercel AI SDK, LangChain.js, OpenAI Agents SDK, Mastra) can use th
 a field. Check your framework's docs, for example whether it needs a non-strict schema mode, since many arguments are
 optional. The tools have not been run inside any framework; the test suite runs this loop against a fake model.
 
-- Link hosts: in Node, pass `resolveHost` from `valun/dns` (DNS only; no page is fetched). Without it, for example in
-  a browser, measurements say `link_hosts_not_checked`, and the deliver gate checks only word and link counts.
+- Link hosts: in Node, pass `resolveHost` from `@fitzdoud/valun/dns` (DNS only; no page is fetched). Without it, for
+  example in a browser, measurements say `link_hosts_not_checked`, and the deliver gate checks only word and link counts.
 - `measure`, `sandbox` and `schemas` are exported as namespaces (`measure.measure`, `sandbox.checkDelivery`,
   `schemas.ALL`).
 

@@ -1,4 +1,4 @@
-// Types for the public API of "valun" (protocol valun-deal/1, network valun-pilot-1).
+// Types for the public API of "@fitzdoud/valun" (protocol valun-deal/1, network valun-pilot-1).
 // Data objects use the protocol's snake_case field names, exactly as they travel on the wire.
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -186,7 +186,7 @@ export class MemoryStore implements ValunStore {
 }
 
 export interface ClientOptions {
-  /** Default: a new MemoryStore. In Node, `new FileStore(path)` from "valun/file-store". */
+  /** Default: a new MemoryStore. In Node, `new FileStore(path)` from "@fitzdoud/valun/file-store". */
   store?: ValunStore;
   /** Base URL of the server, e.g. "https://host" (the API is under /pilot/v1). Stored in state.server. */
   server?: string;
@@ -572,7 +572,7 @@ export interface ValunAgentOptions {
   approvals?: string;
   /** Check link hosts when measuring deliveries (default true). Needs resolveHost; without one the result says so. */
   checkLinkHosts?: boolean;
-  /** Node: resolveHost from "valun/dns". Browsers have none. */
+  /** Node: resolveHost from "@fitzdoud/valun/dns". Browsers have none. */
   resolveHost?: ResolveHost | null;
   /** All host lookups of one measurement together (default 4000 ms). */
   hostTimeoutMs?: number;

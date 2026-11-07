@@ -1,6 +1,6 @@
 // valun: zero-dependency client for the Valun agent credit network (protocol valun-deal/1, network valun-pilot-1).
-// Browser-safe entry: nothing here imports a Node built-in. Node only: the file store "valun/file-store" and the DNS
-// host checker "valun/dns".
+// Browser-safe entry: nothing here imports a Node built-in. Node only: the file store "@fitzdoud/valun/file-store" and the DNS
+// host checker "@fitzdoud/valun/dns".
 
 export {Client, MemoryStore} from './client.js';
 export {ValunError, SignatureError} from './errors.js';

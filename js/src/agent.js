@@ -162,7 +162,7 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
  *                   the Python adapters' sentences). valunTools() fills it in when it is empty.
  *   checkLinkHosts  look up link host names when measuring deliveries (default true; no page is fetched). Needs
  *                   resolveHost; without one the measurement says the hosts were not checked.
- *   resolveHost     async host => 'public' | 'private' | 'not_found' (Node: resolveHost from "valun/dns").
+ *   resolveHost     async host => 'public' | 'private' | 'not_found' (Node: resolveHost from "@fitzdoud/valun/dns").
  *   hostTimeoutMs   how long all host lookups of one measurement may take together (default 4000, as in Python).
  *   setupHint       what the owner must do to connect the agent (default: run `valun join` (or `valun enroll`) ...).
  *   now             clock in ms (test hook; the Client has its own).

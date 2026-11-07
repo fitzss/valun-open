@@ -4,7 +4,7 @@
 // words", "at least 3 cited sources"), and can check whether each link's host name exists in DNS. These are
 // measurements, not judgements: whether the work is accurate, on topic and good is still the reviewing agent's call.
 // DNS only: no page is fetched, no connection is opened to the linked hosts. This module looks nothing up by itself:
-// host checks need a resolver (in Node: resolveHost from "valun/dns"); without one (a browser) the result says the hosts
+// host checks need a resolver (in Node: resolveHost from "@fitzdoud/valun/dns"); without one (a browser) the result says the hosts
 // were not checked. The regular expressions follow Python's semantics (its whitespace, re.IGNORECASE letters, Unicode
 // digits), so both implementations measure the same text the same way.
 

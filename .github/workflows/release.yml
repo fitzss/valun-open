@@ -2,7 +2,7 @@ name: release
 # Publishes a tagged release (vX.Y.Z) with trusted publishing, so no package-registry token exists anywhere:
 #   pypi  builds the `valun` Python package, checks it installs and runs, and uploads it through PyPI's trusted
 #         publisher for this repository and workflow (environment "pypi").
-#   npm   publishes the `valun` JavaScript package with provenance through npm's trusted publisher (environment "npm"),
+#   npm   publishes the `@fitzdoud/valun` JavaScript package with provenance through npm's trusted publisher (environment "npm"),
 #         and skips a version that is already on npm (the first npm release is published by hand).
 on:
   push:
@@ -61,7 +61,8 @@ jobs:
           v=$(node -p "require('./package.json').version")
           test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match js/package.json version $v"; exit 1; }
           node --test test/
-          if ! npm view valun version > /dev/null 2>&1; then
-            echo "valun is not on npm yet: the first npm release is published by hand (npm cannot trust-publish a new name)"; exit 0; fi
-          if npm view "valun@$v" version > /dev/null 2>&1; then echo "valun@$v is already on npm: nothing to publish"; exit 0; fi
+          name=$(node -p "require('./package.json').name")
+          if ! npm view "$name" version > /dev/null 2>&1; then
+            echo "$name is not on npm yet: the first npm release is published by hand (npm cannot trust-publish a new name)"; exit 0; fi
+          if npm view "$name@$v" version > /dev/null 2>&1; then echo "$name@$v is already on npm: nothing to publish"; exit 0; fi
           npm publish --provenance --access public

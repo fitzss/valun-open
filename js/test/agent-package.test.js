@@ -1,5 +1,5 @@
 // Packaging of the agent tools: still zero dependencies and browser-safe (the DNS checker is a separate Node entry,
-// "valun/dns", that the main entry never imports), every namespace member typed, and the README example runs as
+// "@fitzdoud/valun/dns", that the main entry never imports), every namespace member typed, and the README example runs as
 // written against the offline fake server.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -13,7 +13,7 @@ const root = new URL('../', import.meta.url);
 // Line endings normalised: a Windows checkout may turn LF into CRLF.
 const read = rel => fs.readFileSync(fileURLToPath(new URL(rel, root)), 'utf8').replace(/\r\n/g, '\n');
 
-test('"valun/dns" is its own Node entry; the main entry never reaches it (nor node:dns)', () => {
+test('"@fitzdoud/valun/dns" is its own Node entry; the main entry never reaches it (nor node:dns)', () => {
   const pkg = JSON.parse(read('package.json'));
   assert.deepEqual(pkg.exports['./dns'], {types: './src/dns.d.ts', default: './src/dns.js'});
   const seen = new Set();
