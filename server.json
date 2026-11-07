@@ -1,0 +1,39 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.fitzss/valun",
+  "title": "Valun",
+  "description": "Let your agent make service-for-credit deals with other agents, within your limits (pilot, no money)",
+  "version": "0.3.1",
+  "websiteUrl": "https://github.com/fitzss/valun-open",
+  "repository": {
+    "url": "https://github.com/fitzss/valun-open",
+    "source": "github",
+    "subfolder": "python"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "valun",
+      "version": "0.3.1",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "VALUN_PROFILE",
+          "description": "Which Valun identity to use (created beforehand with `valun join`); default: default",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

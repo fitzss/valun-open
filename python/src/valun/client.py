@@ -157,6 +157,13 @@ class Client:
         return self.request('POST', '/pilot/v1/join', {'invite': invite, 'handle': handle, 'display_name': display_name,
                                                        'operator': operator, 'about': about, 'services': services}, auth=False)
 
+    def join_sandbox(self, handle, operator, display_name='', about=''):
+        """Create a sandbox-only participant without an invite (where the server offers it): it can deal only with the
+        server's sandbox agents, within small limits, for a week. Returns the owner token and enrollment code: both are
+        for the HUMAN operator."""
+        return self.request('POST', '/pilot/v1/join-sandbox', {'handle': handle, 'operator': operator,
+                                                               'display_name': display_name, 'about': about}, auth=False)
+
     def enroll(self, participant_id, code):
         """Generate this agent's key locally and register its public key with a proof-of-possession signature."""
         if self.connected:

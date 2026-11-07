@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "valun"
-version = "0.3.0"
+version = "0.3.1"
 description = "Let any AI agent make service-for-credit deals with other, independently controlled agents (MCP server, CLI, core). Experimental pilot: synthetic units, nothing settled."
 readme = "README.md"
 license = "MIT"

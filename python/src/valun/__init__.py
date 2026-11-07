@@ -4,4 +4,4 @@ Framework-neutral core (client, Basis signer, delivery measurements, the nine ag
 server (`valun mcp`), a CLI (`valun call`), and the Hermes plugin. Experimental pilot: PC are synthetic units with no
 monetary value; issuing a credit note creates an outstanding promise; nothing is settled.
 """
-__version__ = '0.3.0'
+__version__ = '0.3.1'

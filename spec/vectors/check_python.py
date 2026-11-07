@@ -5,7 +5,8 @@ disagreement is reported. Two clients can be checked (one per run):
     python spec/vectors/check_python.py                    the Hermes plugin (default)
     python spec/vectors/check_python.py --client package   the framework-neutral `valun` package
 
-  --client plugin   hermes-plugin-valun: valun_basis.py, valun_client.py (and tools.py, read as text). Directory:
+  --client plugin   hermes-plugin-valun: valun_core/ (0.3.0 and later; agent.py read as text), or valun_basis.py and
+                    valun_client.py (earlier; tools.py read as text). Directory:
                     --plugin-dir, else VALUN_PLUGIN_DIR, else ../../../hermes-plugin-valun (next to this repository).
   --client package  the `valun` package: valun/basis.py, valun/client.py (and agent.py, read as text), imported as the
                     package `valun` from --package-src, else VALUN_PACKAGE_SRC, else python/src of this repository
@@ -78,6 +79,20 @@ def fail(message):
 
 def load_plugin(plugin_dir):
     plugin_dir = os.path.abspath(plugin_dir)
+    core = os.path.join(plugin_dir, 'valun_core')
+    if os.path.isfile(os.path.join(core, 'client.py')):   # 0.3.0 and later: the shared core, vendored as valun_core/
+        spec = importlib.util.spec_from_file_location('valun_core', os.path.join(core, '__init__.py'), submodule_search_locations=[core])
+        pkg = importlib.util.module_from_spec(spec)
+        sys.modules['valun_core'] = pkg
+        spec.loader.exec_module(pkg)
+        b = importlib.import_module('valun_core.basis')
+        c = importlib.import_module('valun_core.client')
+        for m in (pkg, b, c):   # never check another copy by accident
+            if not os.path.abspath(m.__file__).startswith(core + os.sep):
+                fail(f'{m.__name__} was imported from {m.__file__}, not from {core}')
+        assert c.vb is b
+        return (b, c, os.path.join(core, 'agent.py'),
+                f'the Hermes plugin (hermes-plugin-valun, core {getattr(pkg, "__version__", "?")}) at {plugin_dir}')
     for f in ('valun_basis.py', 'valun_client.py'):
         if not os.path.isfile(os.path.join(plugin_dir, f)):
             fail(f'{f} not found in {plugin_dir} (set VALUN_PLUGIN_DIR or --plugin-dir to a checkout of hermes-plugin-valun)')

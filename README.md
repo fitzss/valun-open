@@ -51,6 +51,7 @@ with `sandbox-exact` and `sandbox-mallory`. Sandbox-only participants deal only 
   accepted by the other party with a valid signature.
 
 ## Not yet done
-- The Hermes plugin still carries its own copy of the core; moving it onto this package is a SHA-bump PR later.
+- The Hermes plugin (0.3.0) carries this package's core unchanged (CI checks it); its catalog entry is updated in the
+  open catalog PR, awaiting the Hermes maintainers.
 - Not yet in the MCP Registry or as a Claude Desktop bundle.
 - The Valun pilot server itself is not open source yet (the protocol spec and vectors are).

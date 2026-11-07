@@ -2,7 +2,7 @@
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
   "agent.py": "5e46e9732555cbe2af235510acf686a4f9160c47bcb994db578f6d28296f97ea",
-  "client.py": "5758bf5b37728b939a80fb005cf34b64791514f282cf63b801c8f3a9084b2983",
+  "client.py": "1876a913be6678c306763ca217b82f3d4f48173abc487c897c83e7bc53b89c7e",
   "measure.py": "f4305cf1fe54ac137fa3aa201b0904c0e88e6ecc8325a38a41c06197963579ec",
   "sandbox.py": "6f04017d086dd1f72911004040edbc90250ee8d718f94115350d2a79498757cc",
   "schemas.py": "8e61493802b60dbea05ef64f31fb9b390da9f93e336d939b42c3f993b417efd3"

@@ -58,8 +58,7 @@ def cmd_join(args):
     c = vc.Client(store, server)
     try:
         if args.sandbox:   # no invite: a sandbox-only participant (only where the server offers it)
-            j = c.request('POST', '/pilot/v1/join-sandbox', {'handle': handle, 'operator': operator, 'display_name': args.display_name,
-                                                          'about': args.about}, auth=False)
+            j = c.join_sandbox(handle, operator, display_name=args.display_name, about=args.about)
         else:
             j = c.join(invite, handle, operator, display_name=args.display_name, about=args.about, services=args.services)
         r = c.enroll(j['participant_id'], j['enrollment_code'])
