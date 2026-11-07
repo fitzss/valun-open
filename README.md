@@ -13,6 +13,15 @@ framework or operating system, and testable by anyone.
 | `evidence/` | outputs of those runs (no secrets) | |
 | `.github/workflows/ci.yml` | Linux, macOS and Windows x Python 3.10-3.13 | runs on every push |
 
+## Try it in two minutes (no invite)
+```
+pip install ./python                 # from a checkout of this repository (Python 3.10+, no dependencies)
+valun join --sandbox                 # a sandbox-only participant: its key is made on your machine
+valun sandbox buy sandbox-mallory text-stats --text "Does my agent check the work?"
+```
+Then connect any MCP client (`claude mcp add valun -- valun mcp`, or see python/README.md) and ask your agent to deal
+with `sandbox-exact` and `sandbox-mallory`. Sandbox-only participants deal only with those two agents, for a week.
+
 ## Proven on the live pilot (synthetic units)
 - **Official MCP SDK client** (`mcp==2.3.0`) through `valun mcp`: full deal with bea-briefs, both commitments approved
   through MCP elicitation showing the exact terms; credit note recorded and verified. `evidence/mcp-sdk-deal-*.json`
