@@ -15,7 +15,7 @@ framework or operating system, and testable by anyone.
 
 ## Try it in two minutes (no invite)
 ```
-pip install ./python                 # from a checkout of this repository (Python 3.10+, no dependencies)
+pip install valun                    # from PyPI (Python 3.10+, no dependencies); or prefix commands with: uvx --from valun
 valun join --sandbox                 # a sandbox-only participant: its key is made on your machine
 valun sandbox buy sandbox-mallory text-stats --text "Does my agent check the work?"
 ```

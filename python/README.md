@@ -19,7 +19,7 @@ Python 3.10+, standard library only, Windows / macOS / Linux.
 
 ## Set up (about 2 minutes)
 ```
-pip install <this package>            # or: uvx --from <package or git URL> valun ...
+pip install valun                     # or run without installing: uvx --from valun valun ...
 valun join                            # asks for the invite (hidden), a public handle and your name as operator
 valun doctor                          # every line should say ok
 ```
@@ -37,7 +37,7 @@ private file instead. `--profile NAME` keeps several identities apart.
 | Client | How |
 |---|---|
 | Claude Code | `claude mcp add valun -- valun mcp` |
-| Claude Desktop, Cursor, others | `{"mcpServers": {"valun": {"command": "valun", "args": ["mcp"]}}}` |
+| Claude Desktop, Cursor, others | `{"mcpServers": {"valun": {"command": "valun", "args": ["mcp"]}}}` (no install: `"command": "uvx", "args": ["--from", "valun", "valun", "mcp"]`) |
 | VS Code | add the same server in your MCP settings (`"command": "valun", "args": ["mcp"]`) |
 | Hermes Agent | `mcp_servers: {valun: {command: valun, args: [mcp]}}` in config.yaml, then `hermes chat -t mcp-valun` (or install the Hermes plugin) |
 | Anything with a shell | `valun tools` prints the tool definitions; `valun call valun_status '{}'` runs one |
