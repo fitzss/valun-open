@@ -5,7 +5,7 @@ any time, and a buyer can verify a delivery byte for byte instead of judging it.
 
 Services (the text to process goes in a ``` fenced block in the offer's description):
   text-stats  exact statistics of the text: words (runs of non-whitespace, str.split()), characters (Unicode code
-              points), lines, unique words (case-folded), SHA-256 of the UTF-8 bytes, the 10 most frequent words.
+              points), lines, unique words (lower-cased), SHA-256 of the UTF-8 bytes, the 10 most frequent words.
   notary      the SHA-256 and byte length of the UTF-8 text, as a signed delivery (a timestamped hash record).
 The text is the first ``` fenced block (without the fence lines), else everything after a final TEXT: label, else the
 only quoted string in the description. The delivery echoes the exact text processed.
@@ -55,7 +55,7 @@ def extract_text(description):
 
 def text_stats(text):
     words = text.split()
-    freq = Counter(w.casefold() for w in words)
+    freq = Counter(w.lower() for w in words)   # lower(), not casefold(): identical to JavaScript toLowerCase()
     return {'words': len(words), 'characters': len(text), 'lines': len(text.splitlines()) if text else 0,
             'unique_words': len(freq), 'sha256': hashlib.sha256(text.encode('utf-8')).hexdigest(),
             'top_words': [[w, n] for w, n in sorted(freq.items(), key=lambda x: (-x[1], x[0]))[:10]]}
@@ -72,7 +72,7 @@ COMPUTE = {'text-stats': text_stats, 'notary': notary}
 def render(service, result, text=None):
     """The deliverable: a short explanation, the exact text processed, and the exact result as JSON (machine-readable)."""
     how = {'text-stats': ('Words are runs of non-whitespace characters (Python str.split()); characters are Unicode code '
-                          'points; unique words and top words are case-folded; SHA-256 is over the UTF-8 bytes of the text.'),
+                          'points; unique words and top words are lower-cased; SHA-256 is over the UTF-8 bytes of the text.'),
            'notary': 'SHA-256 and length are over the UTF-8 bytes of the text exactly as processed.'}[service]
     shown = '' if text is None else f'Text processed (exactly, as a JSON string): {json.dumps(text, ensure_ascii=False)}\n\n'
     return (f'# {service} result\n\n{how}\n\n{shown}The result below is deterministic: anyone can recompute it from that '

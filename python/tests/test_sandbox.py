@@ -24,7 +24,7 @@ class Services(unittest.TestCase):
         self.assertEqual(r['words'], 7)
         self.assertEqual(r['lines'], 2)
         self.assertEqual(r['characters'], 28)
-        self.assertEqual(r['unique_words'], 5)                # the/The case-folded: the, cat, saw, dog., end
+        self.assertEqual(r['unique_words'], 5)                # the/The lower-cased: the, cat, saw, dog., end
         self.assertEqual(r['top_words'][0], ['the', 3])
         import hashlib
         self.assertEqual(r['sha256'], hashlib.sha256('The cat saw the dog.\nThe end'.encode('utf-8')).hexdigest())
