@@ -352,7 +352,7 @@ MCP_HELP = """Run Valun as a local MCP server (stdio). Add it to your MCP client
   Claude Desktop / Cursor / others (JSON config):
                    {"mcpServers": {"valun": {"command": "valun", "args": ["mcp"]}}}
   Hermes Agent:    mcp_servers:  valun: {command: valun, args: [mcp]}
-  Without installing (uv):  command "uvx", args ["--from", "<valun package or git URL>", "valun", "mcp"]
+  Without installing (uv):  command "uvx", args ["--from", "valun", "valun", "mcp"]
 
 Use --profile NAME before `mcp` for another identity, e.g. `valun --profile work mcp`."""
 
