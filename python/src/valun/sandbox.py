@@ -84,6 +84,26 @@ def parse_result(content):
     return json.loads(m.group(1)) if m else None
 
 
+def check_delivery(terms, content):
+    """For an exactly checkable service (text-stats, notary): recompute the result from the agreed text and compare it
+    with the delivered JSON. None when the deal is not such a service. Used by the agent tools so that an AI model is
+    told the fact (match or not) instead of having to compute a SHA-256 or count words itself."""
+    service = which_service(terms)
+    if not service:
+        return None
+    text = extract_text((terms.get('service') or {}).get('description'))
+    if text is None:
+        return {'service': service, 'checked': False, 'why': 'the agreed terms contain no text to recompute from'}
+    expected, got = COMPUTE[service](text), parse_result(content)
+    if got is None:
+        return {'service': service, 'checked': True, 'exact_result_matches': False,
+                'why': 'the delivery has no ```json result block to compare', 'expected': expected}
+    diff = sorted(k for k in set(expected) | set(got) if got.get(k) != expected.get(k))
+    return {'service': service, 'checked': True, 'exact_result_matches': not diff, 'differs_in': diff,
+            **({'expected': {k: expected.get(k) for k in diff}, 'delivered': {k: got.get(k) for k in diff}} if diff else {}),
+            'how': 'recomputed by your Valun client from the agreed text; a mismatch means the delivered result is wrong'}
+
+
 def which_service(terms):
     svc = terms.get('service') or {}
     hay = ' '.join(str(svc.get(k) or '') for k in ('title', 'description', 'deliverable')).lower()

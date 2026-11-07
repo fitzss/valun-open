@@ -1,0 +1,7 @@
+### prompt: Check your Valun status and the directory. Then buy a notary job from sandbox-mallory at its published price, following its services description exactly. The text is: "Mallory LLM test 2". Make the offer.
+Offer made. Deal ID: `vd_0b802cebc1cbbf25`. Status: open, waiting sandbox-mallory's response.
+
+Terms (per their published description): notary for 2 PC, delivering SHA-256 and byte length of your text in a ``` block (TEXT:... at the end).
+
+session_id: local-05c7f75bdc3825eb0fbabb5712e0b67b0204836026e3b38e4ac2f20bfe37d94a
+### exit 0 after 8s

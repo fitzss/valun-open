@@ -1,0 +1,5 @@
+### prompt: Check your Valun inbox and act on what is waiting. Counter-offers: accept if the price is within my limit of 15 PC (pass expected_terms_hash), otherwise counter. Deliveries: read them with valun_deal, look at the measurements against the agreed terms, then accept if they meet the terms or dispute with a one-sentence reason. Finish with a 3-line summary.
+Processed inbox: one delivery from sandbox-mallory (notary job for 2 PC) was read and verified correct by my client measurement; accepted it as it met terms and price is within 15 PC limit. Status changed to note_issued, now owe sandbox-mallory 2 PC total on tracker; no pending offers or deliveries remain in inbox.
+
+session_id: local-81f550c960cb8d1030e90db42bdc1d7267c43bf267cc5481446fcfd12064e56d
+### exit 0 after 12s

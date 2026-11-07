@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 from . import client as vc
 from . import measure
+from . import sandbox
 from . import schemas
 
 SETTLEMENT_NOTE = ('Issuing a credit note creates an outstanding obligation (the payer owes the payee that many PC). '
@@ -234,6 +235,10 @@ class ValunAgent:
                 dl = d.get('delivery') or {}
                 m = measure.measure(dl.get('content') or '', terms_text(d), check_hosts=False)
                 facts = [f"{x['requirement']}: {x['measured']} ({'met' if x['met'] else 'NOT met'})" for x in m['checks_against_agreed_terms']]
+                exact = sandbox.check_delivery(t, dl.get('content') or '')
+                if exact and exact.get('checked'):
+                    facts.append('exact result: ' + ('matches the agreed text' if exact.get('exact_result_matches')
+                                                     else f"DOES NOT MATCH (differs in {', '.join(exact.get('differs_in') or [])})"))
                 return '\n'.join([
                     f"Valun - ACCEPT {who}'s delivery (deal {d['id']}) and ISSUE A CREDIT NOTE of {price} PC to {who}:",
                     f"  delivered: {dl.get('title') or '(untitled)'}, {dl.get('bytes')} bytes, sha256 {(dl.get('sha256') or '')[:16]}...",
@@ -328,6 +333,13 @@ class ValunAgent:
             reviewing = d.get('your_role') == 'payer' and d.get('status') in ('delivered', 'note_failed')
             out['delivery']['measured_by_your_client'] = measure.measure(dl['content'], terms_text(d),
                                                                          check_hosts=reviewing and self.check_link_hosts)
+            exact = sandbox.check_delivery((d.get('current') or {}).get('terms') or {}, dl['content'])
+            if exact is not None:
+                out['delivery']['checked_exactly_by_your_client'] = exact
+                if reviewing and exact.get('checked') and not exact.get('exact_result_matches'):
+                    out['delivery']['advice'] = ('The delivered result does not match the exact result of the agreed text '
+                                                 f"(differs in: {', '.join(exact.get('differs_in') or ['the result block'])}). "
+                                                 'Dispute it with that reason instead of issuing a credit note.')
         if d.get('credit_note'):
             n = d['credit_note']
             out['credit_note'] = {'state': n.get('state'), 'amount_PC': n.get('amount'), 'tracker_status': n.get('tracker_status'),
@@ -352,6 +364,13 @@ class ValunAgent:
     def propose(self, a):
         c = self.client()
         other = self._resolve(c, a['counterparty'])
+        # A seller of exactly checkable work publishes that it needs the text in the description; check before signing.
+        if a.get('role') == 'payer' and '``` block' in str(other.get('services') or '') \
+                and sandbox.extract_text(a.get('description') or '') is None:
+            raise vc.ValunError('missing_text', (
+                f"Not signed. {other['handle']} needs the text to process inside the description, and yours has none. Put the "
+                'exact text in a ``` fenced block in the description (or as the only "quoted" string, or after TEXT: at the '
+                'end), then make the offer again.'))
         r = c.propose(other['id'], a['role'], a['title'], a['description'], a['deliverable'], int(a['price']),
                       int(a.get('deliver_within_hours') or 48), int(a.get('offer_valid_hours') or 24))
         waiting = r['status'] == 'proposed_awaiting_owner'

@@ -40,6 +40,19 @@ class Services(unittest.TestCase):
             res = sb.COMPUTE[svc]('a b c\nd')
             self.assertEqual(sb.parse_result(sb.render(svc, res)), res)
 
+    def test_check_delivery(self):
+        terms = {'service': {'title': 'text-stats job', 'description': 'text-stats for:\n```\nhello world hello\n```', 'deliverable': 'JSON'}}
+        right = sb.render('text-stats', sb.text_stats('hello world hello'), 'hello world hello')
+        self.assertTrue(sb.check_delivery(terms, right)['exact_result_matches'])
+        wrong_result = dict(sb.text_stats('hello world hello'), words=4)
+        bad = sb.check_delivery(terms, sb.render('text-stats', wrong_result, 'hello world hello'))
+        self.assertFalse(bad['exact_result_matches'])
+        self.assertEqual(bad['differs_in'], ['words'])
+        self.assertEqual((bad['expected']['words'], bad['delivered']['words']), (3, 4))
+        self.assertFalse(sb.check_delivery(terms, 'no json here')['exact_result_matches'])
+        self.assertFalse(sb.check_delivery({'service': {'title': 'notary', 'description': 'no text'}}, right)['checked'])
+        self.assertIsNone(sb.check_delivery({'service': {'title': 'write a poem'}}, right))
+
     def test_which_service(self):
         self.assertEqual(sb.which_service({'service': {'title': 'Text statistics please'}}), 'text-stats')
         self.assertEqual(sb.which_service({'service': {'description': 'SHA-256 of this'}}), 'notary')

@@ -1,0 +1,5 @@
+### prompt: Check your Valun inbox and act on what is waiting. Counter-offers: accept if the price is within my limit of 15 PC (pass expected_terms_hash), otherwise counter. Deliveries: read them with valun_deal, look at the measurements against the agreed terms, then accept if they meet the terms or dispute with a one-sentence reason. Finish with a 3-line summary.
+Deal vd_6ea3150f7730dfb5: delivery from sandbox-mallory (notary, 2 PC) checked — SHA-256 matched agreed terms, accepted, credit note issued. You now owe 2 PC to sandbox-mallory out of your current total obligation. Inbox clear.
+
+session_id: local-81f84f724a44fec8ebfb0a763cd8a426a5482ebfb54d4d93109c134626cc42df
+### exit 0 after 8s

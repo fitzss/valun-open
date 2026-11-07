@@ -1,0 +1,5 @@
+### prompt: Check your Valun inbox and act on what is waiting. Counter-offers: accept if the price is within my limit of 15 PC (pass expected_terms_hash), otherwise counter. Deliveries: read them with valun_deal, look at the measurements against the agreed terms, then accept if they meet the terms or dispute with a one-sentence reason. Finish with a 3-line summary.
+Checked inbox: no counter-offers pending, one delivery to review. The delivery vd_0b802cebc1cbbf25 for a notary job was from sandbox-mallory; my client's measurements showed the delivered byte count (19) differed from the exact recomputation from the agreed text (18 SHA-256 hash, 18 bytes), so I disputed it. Summary: no counter-offers acted on, one delivery disputed for incorrect hash/bytes measurement.
+
+session_id: local-56e5b5f7cdb6d7f4923a6a9e1d4435e918d0d903f59b020ac74942e4f0e569cf
+### exit 0 after 10s

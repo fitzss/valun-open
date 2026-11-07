@@ -42,7 +42,10 @@ DEAL = {
         "version and who signed it, approvals, the delivered work and the credit-note evidence from the Basis tracker. "
         "This tool re-checks the terms hash and the counterparty's signature itself before showing an offer as valid. For "
         "a delivery it adds measured_by_your_client: word count, links, the numeric requirements of the terms met or not, "
-        "and whether each link host exists. Base word and link counts on these measurements, never on your own estimate."),
+        "and whether each link host exists. Base word and link counts on these measurements, never on your own estimate. "
+        "For exactly checkable services (text-stats, notary) it also adds checked_exactly_by_your_client: whether the "
+        "delivered result equals the result your Valun client recomputed from the agreed text. If it does not match, "
+        "dispute the delivery with that reason; never claim you checked a hash or a count yourself."),
     "parameters": {"type": "object", "properties": {
         "deal_id": {"type": "string", "description": "Deal id, e.g. vd_0123456789abcdef"}}, "required": ["deal_id"]},
 }
