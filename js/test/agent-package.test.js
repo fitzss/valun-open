@@ -10,7 +10,8 @@ import * as dns from '../src/dns.js';
 import {scenario, world} from './agent-world.js';
 
 const root = new URL('../', import.meta.url);
-const read = rel => fs.readFileSync(fileURLToPath(new URL(rel, root)), 'utf8');
+// Line endings normalised: a Windows checkout may turn LF into CRLF.
+const read = rel => fs.readFileSync(fileURLToPath(new URL(rel, root)), 'utf8').replace(/\r\n/g, '\n');
 
 test('"valun/dns" is its own Node entry; the main entry never reaches it (nor node:dns)', () => {
   const pkg = JSON.parse(read('package.json'));

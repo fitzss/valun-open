@@ -1,0 +1,2 @@
+# The same bytes on every platform: vectors, fixtures and sources are LF everywhere (hashes and examples depend on it).
+* text=auto eol=lf
