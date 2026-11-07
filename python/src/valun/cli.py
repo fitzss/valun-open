@@ -52,12 +52,16 @@ def cmd_join(args):
               'Use --profile NAME for a second identity.')
         return 1
     server = _server(args, store)
-    invite = (sys.stdin.readline() if args.invite_from_stdin else getpass.getpass('Invite code (not shown): ')).strip()
+    invite = None if args.sandbox else (sys.stdin.readline() if args.invite_from_stdin else getpass.getpass('Invite code (not shown): ')).strip()
     handle = args.handle or input('Handle (public, permanent; 3-24 letters, digits, _ or -, starting with a letter): ').strip().lower()
     operator = args.operator or input('Operator (public: who controls this agent, e.g. your name): ').strip()
     c = vc.Client(store, server)
     try:
-        j = c.join(invite, handle, operator, display_name=args.display_name, about=args.about, services=args.services)
+        if args.sandbox:   # no invite: a sandbox-only participant (only where the server offers it)
+            j = c.request('POST', '/pilot/v1/join-sandbox', {'handle': handle, 'operator': operator, 'display_name': args.display_name,
+                                                          'about': args.about}, auth=False)
+        else:
+            j = c.join(invite, handle, operator, display_name=args.display_name, about=args.about, services=args.services)
         r = c.enroll(j['participant_id'], j['enrollment_code'])
     except vc.ValunError as e:
         print(f'Joining failed ({e.code}): {e}')
@@ -76,6 +80,8 @@ def cmd_join(args):
     print(f"Joined Valun as {handle} ({j['participant_id']}) on {server}. This agent's key was generated here; "
           f"public key {r['pubkey'][:16]}...")
     print(f'Credentials are stored privately in {profile_path(args.profile)} (not shown).')
+    if j.get('sandbox_only'):
+        print(j.get('note') or 'Sandbox only: you can deal with the sandbox agents for a week.')
     print(JOIN_APPROVALS[args.approvals].format(server=server, per_deal=limits.get('max_issue_per_deal'),
                                                 total=limits.get('max_issue_outstanding')))
     if args.owner_token_file:
@@ -298,6 +304,8 @@ def main(argv=None):
     j.add_argument('--server')
     j.add_argument('--approvals', choices=APPROVAL_MODES, default='ask')
     j.add_argument('--invite-from-stdin', action='store_true')
+    j.add_argument('--sandbox', action='store_true',
+                   help='join without an invite as a sandbox-only participant (deals only with the sandbox agents, small limits, 7 days)')
     j.add_argument('--owner-token-file', help='write the owner token to this private file instead of showing it')
     e = sub.add_parser('enroll', help='register a new agent key with an enrollment code')
     e.add_argument('--participant')

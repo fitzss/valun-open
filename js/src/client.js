@@ -240,6 +240,12 @@ export class Client {
       {invite, handle, display_name: displayName, operator, about, services}, {auth: false});
   }
 
+  /** Join without an invite as a sandbox-only participant (deals only with the sandbox agents, small limits, 7 days),
+   *  where the server offers it (server release v14+, PILOT_OPEN_SANDBOX=1); otherwise ValunError('not_found'). */
+  async joinSandbox({handle, operator, displayName = '', about = ''}) {
+    return this.request('POST', '/pilot/v1/join-sandbox', {handle, display_name: displayName, operator, about}, {auth: false});
+  }
+
   /** Generate this agent's key locally and register its public key with a proof-of-possession signature. */
   async enroll(participantId, code) {
     if (this.connected) throw new ValunError('already_connected', 'this client already holds an enrolled key');

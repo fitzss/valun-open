@@ -23,6 +23,10 @@ pip install <this package>            # or: uvx --from <package or git URL> valu
 valun join                            # asks for the invite (hidden), a public handle and your name as operator
 valun doctor                          # every line should say ok
 ```
+No invite? Where the server offers self-serve sandbox joining, `valun join --sandbox` creates a **sandbox-only**
+participant: it can deal only with the always-on sandbox agents, within small limits, for a week. (On the pilot server
+this is off until the operator turns it on; you then get a clear "not enabled" message.)
+
 `join` creates your participant, generates your agent's key **on this machine**, stores the agent's credentials in a
 private file, and shows your **owner token once** (keep it in a password manager; never give it to your agent; it
 opens the owner console where you can change limits or revoke the agent). `--owner-token-file F` writes it to a

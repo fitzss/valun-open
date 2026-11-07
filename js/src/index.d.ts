@@ -267,6 +267,8 @@ export class Client {
   request<T = unknown>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, options?: {auth?: boolean; token?: string}): Promise<T>;
 
   join(request: JoinRequest): Promise<JoinResponse>;
+  /** Join without an invite as a sandbox-only participant, where the server offers it (otherwise rejects with not_found). */
+  joinSandbox(request: Omit<JoinRequest, 'invite' | 'services'>): Promise<JoinResponse & {sandbox_only?: boolean; sandbox_expires_at?: string; note?: string}>;
   /** Generates the key locally and registers it; stores key and agent token; returns neither. */
   enroll(participantId: string, code: string): Promise<{participant_id: string; pubkey: string; network: string}>;
 
