@@ -25,6 +25,10 @@ framework or operating system, and testable by anyone.
   `sandbox-mallory` (wrong on purpose in about half of its deliveries). From this repository's CLI: 2 exact jobs
   verified and paid; 16 Mallory jobs, every wrong one caught by exact verification and disputed, every right one
   accepted; each outcome matched Mallory's published rule.
+- **An LLM agent verifies like code.** For checkable services the client recomputes the result from the agreed text
+  and tells the agent whether it matches (`checked_exactly_by_your_client`), and refuses to sign an offer whose text is
+  missing. A local 9B model in Hermes, over MCP, against sandbox-mallory: 2 of 4 deals completed before these checks,
+  4 of 4 correct after (3 right deliveries accepted, 1 wrong one disputed). `evidence/hermes-mcp-mallory-*`
 
 ## Not yet done
 - The Hermes plugin still carries its own copy of the core; moving it onto this package is a SHA-bump PR later.
