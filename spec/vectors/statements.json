@@ -1,13 +1,13 @@
 {
  "meta": {
   "what": "Signed statements: exact UTF-8 text each act signs; signature = Basis Schnorr over those bytes",
-  "server_release": "v11 (valun-app commit 7880dcf)",
+  "server_release": "v13 (valun-app commit 6a6a34b)",
   "protocol": "valun-deal/1",
   "network": "valun-pilot-1",
   "generated_by": "spec/vectors/generate.mjs",
   "server_source_sha256": {
-   "lib/pilot/core.mjs": "94b9fa3563316bdcc74abae8f1daaa32495b27777a0b0b6a06237ebf38514d5d",
-   "lib/pilot/http.mjs": "7fcef5a33758db33d1c64d1d488c6818b80b44a319ff7119b655dda4e1ba65f1",
+   "lib/pilot/core.mjs": "7dc469e0547ae0a518c022b93cff6181fd116f4fcc3f8f3b7a3deb0e0f240b2e",
+   "lib/pilot/http.mjs": "01a505623d64c0a2c00a221240d57b5631c91dec61f5caaeb37113e8497c0f0e",
    "lib/basis.mjs": "991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617",
    "lib/http.mjs": "2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf"
   },
@@ -981,24 +981,122 @@
   },
   {
    "name": "decline/variation-selector-after-digit",
-   "tier": "core",
+   "tier": "refused",
    "kind": "decline",
    "inputs": {
     "terms_hash": "e4e61197734017a765bcca89716f1295906f3014109eeb09ce72a04380fd10c7",
-    "reason": "Busy until 1︃ 2︊",
-    "reason_sha256": "61233ba0e011b3989a4ed8ddc030ca0cafac613fb2528baefe9a089c5203a8d3",
-    "reason_cleaned": "Busy until 1︃ 2︊",
-    "reason_cleaned_sha256": "61233ba0e011b3989a4ed8ddc030ca0cafac613fb2528baefe9a089c5203a8d3"
+    "reason": "Busy until 1︃ 2︊"
    },
-   "statement": "valun-pilot/decline/1\ne4e61197734017a765bcca89716f1295906f3014109eeb09ce72a04380fd10c7\n61233ba0e011b3989a4ed8ddc030ca0cafac613fb2528baefe9a089c5203a8d3",
-   "statement_utf8_hex": "76616c756e2d70696c6f742f6465636c696e652f310a653465363131393737333430313761373635626363613839373136663132393539303666333031343130396565623039636537326130343338306664313063370a36313233336261306530313162333938396134656438646463303330636130636166616336313366623235323862616566653961303839633532303361386433",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "reason contains control, bidi or invisible characters; remove them and sign again"
+   },
+   "note": "Refused by the real Pilot.decline() with 400 invalid_field before any signature is checked; a client must not send it."
+  },
+  {
+   "name": "decline/invisible-format",
+   "tier": "refused",
+   "kind": "decline",
+   "inputs": {
+    "terms_hash": "8ccb4abdd684620455eb6316a9e1d5eb298a329e68fa1be6aadfd96e2cdb1dc4",
+    "reason": "not᠎now"
+   },
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "reason contains control, bidi or invisible characters; remove them and sign again"
+   },
+   "note": "Refused by the real Pilot.decline() with 400 invalid_field before any signature is checked; a client must not send it."
+  },
+  {
+   "name": "decline/keycap",
+   "tier": "core",
+   "kind": "decline",
+   "inputs": {
+    "terms_hash": "6fc2796981f5916080ec181fd35af8091f4027a384620213e11375cca44b9d70",
+    "reason": "Press 1️⃣ to confirm",
+    "reason_sha256": "ddbfe1823b38ddd88c1fe1ecadf64dd96c4c1517a75c573b70ada63129786c22",
+    "reason_cleaned": "Press 1️⃣ to confirm",
+    "reason_cleaned_sha256": "ddbfe1823b38ddd88c1fe1ecadf64dd96c4c1517a75c573b70ada63129786c22"
+   },
+   "statement": "valun-pilot/decline/1\n6fc2796981f5916080ec181fd35af8091f4027a384620213e11375cca44b9d70\nddbfe1823b38ddd88c1fe1ecadf64dd96c4c1517a75c573b70ada63129786c22",
+   "statement_utf8_hex": "76616c756e2d70696c6f742f6465636c696e652f310a366663323739363938316635393136303830656331383166643335616638303931663430323761333834363230323133653131333735636361343462396437300a64646266653138323362333864646438386331666531656361646636346464393663346331353137613735633537336237306164613633313239373836633232",
    "signer": "bob",
    "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
-   "signature": "03425f7dcc706735483f6fce01a47dadd8f64ff7242ce9ba06819eeb4f3bd764134eac5a471d45e635d42675e2fc4744192c0ec744eb402789ba41676c8f907e0f",
+   "signature": "037175a8da7ba122160a14a278a9d620365542d1f92b66f6d140182bd3f86e93880e4f3abe0d45edcca2f7f6c51df4617c54bb40f607aaca374f49a67b098c763b",
    "accepted_alternatives": [],
    "server_outcome": "accepted",
    "stored": {
-    "reason": "Busy until 1︃ 2︊"
+    "reason": "Press 1️⃣ to confirm"
+   },
+   "note": "Real Pilot.decline(): signature over sha256(reason as sent) accepted. Stored reason is the cleaned text."
+  },
+  {
+   "name": "decline/mongolian-free-variation-selectors",
+   "tier": "refused",
+   "kind": "decline",
+   "inputs": {
+    "terms_hash": "eb60292e884b652a3cbdf9d4dbbe913351924a3c964c421b793056de709ff619",
+    "reason": "Busy᠋᠌᠏"
+   },
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "reason contains control, bidi or invisible characters; remove them and sign again"
+   },
+   "note": "Refused by the real Pilot.decline() with 400 invalid_field before any signature is checked; a client must not send it."
+  },
+  {
+   "name": "decline/run-of-joiners",
+   "tier": "refused",
+   "kind": "decline",
+   "inputs": {
+    "terms_hash": "92e4069ba3f049269ed20a7d18b1556780ad7fdb864e5675337cc99f28f9ad39",
+    "reason": "no‍‌thanks"
+   },
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "reason contains control, bidi or invisible characters; remove them and sign again"
+   },
+   "note": "Refused by the real Pilot.decline() with 400 invalid_field before any signature is checked; a client must not send it."
+  },
+  {
+   "name": "decline/arabic-number-sign",
+   "tier": "refused",
+   "kind": "decline",
+   "inputs": {
+    "terms_hash": "be3f6592ccf64bf8a0f84ef2172ebb6f1dd669bcc6625bc15aaaa8c4cadfbb40",
+    "reason": "؀١٢"
+   },
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "reason contains control, bidi or invisible characters; remove them and sign again"
+   },
+   "note": "Refused by the real Pilot.decline() with 400 invalid_field before any signature is checked; a client must not send it."
+  },
+  {
+   "name": "decline/single-marks-between-letters",
+   "tier": "core",
+   "kind": "decline",
+   "inputs": {
+    "terms_hash": "b3f48babe097ece2b595d13c2b85313dbd80b5505f36617acde8f4665405d24c",
+    "reason": "No th‍anks f‌or n‎o؜w",
+    "reason_sha256": "67b26bf5bb5a3fe8d4636eff6ce127161fb8734336b50401d3cddebbce839917",
+    "reason_cleaned": "No th‍anks f‌or n‎o؜w",
+    "reason_cleaned_sha256": "67b26bf5bb5a3fe8d4636eff6ce127161fb8734336b50401d3cddebbce839917"
+   },
+   "statement": "valun-pilot/decline/1\nb3f48babe097ece2b595d13c2b85313dbd80b5505f36617acde8f4665405d24c\n67b26bf5bb5a3fe8d4636eff6ce127161fb8734336b50401d3cddebbce839917",
+   "statement_utf8_hex": "76616c756e2d70696c6f742f6465636c696e652f310a623366343862616265303937656365326235393564313363326238353331336462643830623535303566333636313761636465386634363635343035643234630a36376232366266356262356133666538643436333665666636636531323731363166623837333433333662353034303164336364646562626365383339393137",
+   "signer": "bob",
+   "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+   "signature": "03e5446350c717938159e1e42b4b9cae06dbbbea94a07c678d3e2859d0a8e40f7d3428ff1c021b59a4f3c27a22e2a79b64340f4f31d9dbec445cde916df3c33276",
+   "accepted_alternatives": [],
+   "server_outcome": "accepted",
+   "stored": {
+    "reason": "No th‍anks f‌or n‎o؜w"
    },
    "note": "Real Pilot.decline(): signature over sha256(reason as sent) accepted. Stored reason is the cleaned text."
   },
@@ -2001,25 +2099,129 @@
   },
   {
    "name": "dispute/variation-selector-after-digit",
-   "tier": "core",
+   "tier": "refused",
    "kind": "dispute",
    "inputs": {
     "terms_hash": "561f0be609094a602c3ef605c710d1093b64d91af1e122c0aff9fc646286ef11",
     "deliverable_sha256": "22ac10dee62faec17dca47ff15c4387a0ba49d03382c8d541e2d512a81a82759",
-    "reason": "Busy until 1︃ 2︊",
-    "reason_sha256": "61233ba0e011b3989a4ed8ddc030ca0cafac613fb2528baefe9a089c5203a8d3",
-    "reason_cleaned": "Busy until 1︃ 2︊",
-    "reason_cleaned_sha256": "61233ba0e011b3989a4ed8ddc030ca0cafac613fb2528baefe9a089c5203a8d3"
+    "reason": "Busy until 1︃ 2︊"
    },
-   "statement": "valun-pilot/dispute/1\n561f0be609094a602c3ef605c710d1093b64d91af1e122c0aff9fc646286ef11\n22ac10dee62faec17dca47ff15c4387a0ba49d03382c8d541e2d512a81a82759\n61233ba0e011b3989a4ed8ddc030ca0cafac613fb2528baefe9a089c5203a8d3",
-   "statement_utf8_hex": "76616c756e2d70696c6f742f646973707574652f310a353631663062653630393039346136303263336566363035633731306431303933623634643931616631653132326330616666396663363436323836656631310a323261633130646565363266616563313764636134376666313563343338376130626134396430333338326338643534316532643531326138316138323735390a36313233336261306530313162333938396134656438646463303330636130636166616336313366623235323862616566653961303839633532303361386433",
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "reason contains control, bidi or invisible characters; remove them and sign again"
+   },
+   "note": "Refused by the real Pilot.dispute() with 400 invalid_field before any signature is checked; a client must not send it."
+  },
+  {
+   "name": "dispute/invisible-format",
+   "tier": "refused",
+   "kind": "dispute",
+   "inputs": {
+    "terms_hash": "81f37730f4d0c70df177154b409318db3901981e6fe389d85e7dd08802c34cab",
+    "deliverable_sha256": "22ac10dee62faec17dca47ff15c4387a0ba49d03382c8d541e2d512a81a82759",
+    "reason": "not᠎now"
+   },
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "reason contains control, bidi or invisible characters; remove them and sign again"
+   },
+   "note": "Refused by the real Pilot.dispute() with 400 invalid_field before any signature is checked; a client must not send it."
+  },
+  {
+   "name": "dispute/keycap",
+   "tier": "core",
+   "kind": "dispute",
+   "inputs": {
+    "terms_hash": "a17933e4657b68fb5043c74ebaf1fad7780a117875ef639104f93b50ae5e8b27",
+    "deliverable_sha256": "22ac10dee62faec17dca47ff15c4387a0ba49d03382c8d541e2d512a81a82759",
+    "reason": "Press 1️⃣ to confirm",
+    "reason_sha256": "ddbfe1823b38ddd88c1fe1ecadf64dd96c4c1517a75c573b70ada63129786c22",
+    "reason_cleaned": "Press 1️⃣ to confirm",
+    "reason_cleaned_sha256": "ddbfe1823b38ddd88c1fe1ecadf64dd96c4c1517a75c573b70ada63129786c22"
+   },
+   "statement": "valun-pilot/dispute/1\na17933e4657b68fb5043c74ebaf1fad7780a117875ef639104f93b50ae5e8b27\n22ac10dee62faec17dca47ff15c4387a0ba49d03382c8d541e2d512a81a82759\nddbfe1823b38ddd88c1fe1ecadf64dd96c4c1517a75c573b70ada63129786c22",
+   "statement_utf8_hex": "76616c756e2d70696c6f742f646973707574652f310a613137393333653436353762363866623530343363373465626166316661643737383061313137383735656636333931303466393362353061653565386232370a323261633130646565363266616563313764636134376666313563343338376130626134396430333338326338643534316532643531326138316138323735390a64646266653138323362333864646438386331666531656361646636346464393663346331353137613735633537336237306164613633313239373836633232",
    "signer": "alice",
    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
-   "signature": "0383fcf10bfb3cee3b44e6655856ab1d5754e50084fecdbd60f01cfc322284a97b4d889825c306685185e73e23bea99a887e529b762cf2187db713bf2964ef1609",
+   "signature": "0261c6f73f4fc433d8829759ac8fe33ed6b5f4cd40920fa7df7e1edeb471876cd272850d2ae3e95325ffaef1bc743627426eaaf08b22cdf13826d618e5cba1dc9d",
    "accepted_alternatives": [],
    "server_outcome": "accepted",
    "stored": {
-    "reason": "Busy until 1︃ 2︊"
+    "reason": "Press 1️⃣ to confirm"
+   },
+   "note": "Real Pilot.dispute(): signature over sha256(reason as sent) accepted. Stored reason is the cleaned text."
+  },
+  {
+   "name": "dispute/mongolian-free-variation-selectors",
+   "tier": "refused",
+   "kind": "dispute",
+   "inputs": {
+    "terms_hash": "c9d332886f0140de4f4113c3df5f3159cbc638cdb89a3694b8c11ee6168a0eb7",
+    "deliverable_sha256": "22ac10dee62faec17dca47ff15c4387a0ba49d03382c8d541e2d512a81a82759",
+    "reason": "Busy᠋᠌᠏"
+   },
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "reason contains control, bidi or invisible characters; remove them and sign again"
+   },
+   "note": "Refused by the real Pilot.dispute() with 400 invalid_field before any signature is checked; a client must not send it."
+  },
+  {
+   "name": "dispute/run-of-joiners",
+   "tier": "refused",
+   "kind": "dispute",
+   "inputs": {
+    "terms_hash": "70dbade408211deed210324ce365f41761adbec5b0ad50cfac6560c6dc990874",
+    "deliverable_sha256": "22ac10dee62faec17dca47ff15c4387a0ba49d03382c8d541e2d512a81a82759",
+    "reason": "no‍‌thanks"
+   },
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "reason contains control, bidi or invisible characters; remove them and sign again"
+   },
+   "note": "Refused by the real Pilot.dispute() with 400 invalid_field before any signature is checked; a client must not send it."
+  },
+  {
+   "name": "dispute/arabic-number-sign",
+   "tier": "refused",
+   "kind": "dispute",
+   "inputs": {
+    "terms_hash": "998e5e25045c57ffcaa8f2961bd9fbc2d22af8a9f19d85492d89dfa732c8a6eb",
+    "deliverable_sha256": "22ac10dee62faec17dca47ff15c4387a0ba49d03382c8d541e2d512a81a82759",
+    "reason": "؀١٢"
+   },
+   "server_outcome": {
+    "status": 400,
+    "error": "invalid_field",
+    "message": "reason contains control, bidi or invisible characters; remove them and sign again"
+   },
+   "note": "Refused by the real Pilot.dispute() with 400 invalid_field before any signature is checked; a client must not send it."
+  },
+  {
+   "name": "dispute/single-marks-between-letters",
+   "tier": "core",
+   "kind": "dispute",
+   "inputs": {
+    "terms_hash": "9cad2235e11a9770502a73b3a1b295ff1450be47667a5cca44c91d0b63fc0d40",
+    "deliverable_sha256": "22ac10dee62faec17dca47ff15c4387a0ba49d03382c8d541e2d512a81a82759",
+    "reason": "No th‍anks f‌or n‎o؜w",
+    "reason_sha256": "67b26bf5bb5a3fe8d4636eff6ce127161fb8734336b50401d3cddebbce839917",
+    "reason_cleaned": "No th‍anks f‌or n‎o؜w",
+    "reason_cleaned_sha256": "67b26bf5bb5a3fe8d4636eff6ce127161fb8734336b50401d3cddebbce839917"
+   },
+   "statement": "valun-pilot/dispute/1\n9cad2235e11a9770502a73b3a1b295ff1450be47667a5cca44c91d0b63fc0d40\n22ac10dee62faec17dca47ff15c4387a0ba49d03382c8d541e2d512a81a82759\n67b26bf5bb5a3fe8d4636eff6ce127161fb8734336b50401d3cddebbce839917",
+   "statement_utf8_hex": "76616c756e2d70696c6f742f646973707574652f310a396361643232333565313161393737303530326137336233613162323935666631343530626534373636376135636361343463393164306236336663306434300a323261633130646565363266616563313764636134376666313563343338376130626134396430333338326338643534316532643531326138316138323735390a36376232366266356262356133666538643436333665666636636531323731363166623837333433333662353034303164336364646562626365383339393137",
+   "signer": "alice",
+   "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+   "signature": "036dd206ab971d2558ca63ab0bb4d8fa84cd1423f53042ae0579f07bcab03e04de0263b32c4b4e93cb39aedd67f63a4c520776047a4edea974d0c74ad83c43393b",
+   "accepted_alternatives": [],
+   "server_outcome": "accepted",
+   "stored": {
+    "reason": "No th‍anks f‌or n‎o؜w"
    },
    "note": "Real Pilot.dispute(): signature over sha256(reason as sent) accepted. Stored reason is the cleaned text."
   },

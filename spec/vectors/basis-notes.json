@@ -1,13 +1,13 @@
 {
  "meta": {
   "what": "Basis credit-note message (80 bytes) and debt key; replica of basis_core signing_message, proven against Basis TV001-TV011",
-  "server_release": "v11 (valun-app commit 7880dcf)",
+  "server_release": "v13 (valun-app commit 6a6a34b)",
   "protocol": "valun-deal/1",
   "network": "valun-pilot-1",
   "generated_by": "spec/vectors/generate.mjs",
   "server_source_sha256": {
-   "lib/pilot/core.mjs": "94b9fa3563316bdcc74abae8f1daaa32495b27777a0b0b6a06237ebf38514d5d",
-   "lib/pilot/http.mjs": "7fcef5a33758db33d1c64d1d488c6818b80b44a319ff7119b655dda4e1ba65f1",
+   "lib/pilot/core.mjs": "7dc469e0547ae0a518c022b93cff6181fd116f4fcc3f8f3b7a3deb0e0f240b2e",
+   "lib/pilot/http.mjs": "01a505623d64c0a2c00a221240d57b5631c91dec61f5caaeb37113e8497c0f0e",
    "lib/basis.mjs": "991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617",
    "lib/http.mjs": "2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf"
   },

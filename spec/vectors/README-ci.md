@@ -2,8 +2,8 @@
 
 `check_python.py` proves that a Python client agrees with the Valun server on every byte it hashes or signs:
 canonical JSON and terms hashes, statement texts, Basis note messages and signatures, and a replay of a whole pilot run
-(`transcript.json`) through the client's real `Client` methods. The vectors were generated from server release v11
-(valun-app commit `7880dcf`). Run it once per client:
+(`transcript.json`) through the client's real `Client` methods. The vectors were generated from server release v13
+(valun-app commit `6a6a34b`). Run it once per client:
 
 | client | what is checked | where it comes from |
 |---|---|---|
@@ -35,11 +35,11 @@ Expected last line of each run against the committed vectors (the counts change 
 regenerated):
 
 ```
-[package] 747 checks: 607 agree, 0 disagreements in failing tiers, 17 informative differences, 123 not applicable.
-[plugin] 747 checks: 607 agree, 0 disagreements in failing tiers, 17 informative differences, 123 not applicable.
+[package] 829 checks: 658 agree, 0 disagreements in failing tiers, 17 informative differences, 154 not applicable.
+[plugin] 829 checks: 658 agree, 0 disagreements in failing tiers, 17 informative differences, 154 not applicable.
 ```
 
-These were obtained locally with Python 3.14.7 against release v11's vectors, with hermes-plugin-valun at commit
+These were obtained locally with Python 3.14.7 against release v13's vectors, with hermes-plugin-valun at commit
 `f504d26` (a fresh clone; the commit `.github/workflows/ci.yml` pins) and the package at version `0.3.0.dev0` from
 `python/src`. CI runs exactly these two commands on Linux, macOS and Windows with Python 3.10 and 3.13.
 
@@ -84,10 +84,10 @@ CI does not regenerate the vectors: `generate.mjs` runs the server's own code, w
 export the exact server release (never a working tree) and point the generator at it (tested with Node 24.21.0):
 
 ```sh
-v11="$(mktemp -d)" && git -C ../valun-app archive 7880dcf --prefix=valun-app-v11/ | tar -x -C "$v11"
-VALUN_APP_DIR="$v11/valun-app-v11" node spec/vectors/generate.mjs
+v13="$(mktemp -d)" && git -C ../valun-app archive 6a6a34b --prefix=valun-app-v13/ | tar -x -C "$v13"
+VALUN_APP_DIR="$v13/valun-app-v13" node spec/vectors/generate.mjs
 git diff --stat -- spec/vectors        # deterministic: no diff unless the server or generate.mjs changed
 ```
 
-The generator stops before writing anything if one of its assertions about v11 behaviour fails, and labels the output
-`UNRECOGNISED server source` if the sources are not release v11's. After regenerating, run both commands above.
+The generator stops before writing anything if one of its assertions about v13 behaviour fails, and labels the output
+`UNRECOGNISED server source` if the sources are not release v13's. After regenerating, run both commands above.

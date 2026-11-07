@@ -5,9 +5,9 @@ compatible client (TypeScript, Go, Rust, ...) without reading the server code.
 
 | | |
 |---|---|
-| Status | Descriptive specification of running code: server **release v11** (valun-app commit `7880dcf`, deployed). Experimental network; PC are synthetic units with no value. Changes: Appendix B (release v8, from the first version of this document), Appendix C (release v9) and Appendix D (releases v10 and v11). |
+| Status | Descriptive specification of running code: server **release v13** (valun-app commit `6a6a34b`, deployed). Experimental network; PC are synthetic units with no value. Changes: Appendix B (release v8, from the first version of this document), Appendix C (release v9), Appendix D (releases v10 and v11), Appendix E (release v12) and Appendix F (release v13). |
 | Authority | The code. Where this document and the code disagree, the code wins and this document has a bug. |
-| Server source described | `valun-app/lib/pilot/core.mjs` sha256 `94b9fa3563316bdcc74abae8f1daaa32495b27777a0b0b6a06237ebf38514d5d`, `lib/pilot/http.mjs` sha256 `7fcef5a33758db33d1c64d1d488c6818b80b44a319ff7119b655dda4e1ba65f1`, `lib/basis.mjs` sha256 `991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617`, `lib/http.mjs` sha256 `2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf`, `basis/valun_signer.rs` sha256 `acf25be8a1e095faa4aac3aaa04568755896de85dbcc073e88f91f0b9a0c38a5` (unchanged since v8); Basis pinned at `3df7ed93ee83ddf0d4e8ce567f54cefbbd7255b3`. Line references (core.mjs:N, http.mjs:N) are to these files. |
+| Server source described | `valun-app/lib/pilot/core.mjs` sha256 `7dc469e0547ae0a518c022b93cff6181fd116f4fcc3f8f3b7a3deb0e0f240b2e`, `lib/pilot/http.mjs` sha256 `01a505623d64c0a2c00a221240d57b5631c91dec61f5caaeb37113e8497c0f0e` (unchanged since v12), `lib/basis.mjs` sha256 `991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617` and `lib/http.mjs` sha256 `2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf` (both unchanged since v11), `basis/valun_signer.rs` sha256 `acf25be8a1e095faa4aac3aaa04568755896de85dbcc073e88f91f0b9a0c38a5` (unchanged since v8); Basis pinned at `3df7ed93ee83ddf0d4e8ce567f54cefbbd7255b3`. Line references (core.mjs:N, http.mjs:N) are to these files. |
 | Reference clients compared | the Hermes plugin `hermes-plugin-valun` at commit `f504d26` (0.2.0, the commit the Hermes plugin catalog pins; `valun_client.py`, `valun_basis.py`, `tools.py`) and the framework-neutral package `valun` in this repository (`python/src/valun/client.py`, `basis.py`, `agent.py`). The two share the same client and signer code. |
 | Conformance vectors | `spec/vectors/*.json`, generated from the real server code by `spec/vectors/generate.mjs`; checked against either Python client by `spec/vectors/check_python.py` (section 17; CI commands in `spec/vectors/README-ci.md`). |
 | Known problems | `spec/OPEN-QUESTIONS.md`. |
@@ -81,58 +81,75 @@ Free-text fields are checked by one server function, `clean(text, max)` (core.mj
 
 Where the cleaned value is *stored* (participant profile, reasons, notes, delivery title), it is the cleaned text.
 
-**Refused characters.** The server *refuses* (`400 invalid_field`) text containing any character of this set
-(core.mjs:81-83, `hasUnsafeText`), instead of cleaning it. Refusing has been the rule since release v8; this is release
-v11's set, and it is part of the protocol:
+**Refused characters (normative since release v13).** The server *refuses* (`400 invalid_field`) a text for which
+the following test says "refused", instead of cleaning it (core.mjs:84-113, `hasUnsafeText`). Refusing has been the
+rule since release v8; this definition replaces the lists of v8 to v12 (Appendix F) and is part of the protocol. A
+client that wants to know before signing whether the server will accept a text implements exactly this:
 
-```
-U+0000–U+0008, U+000B, U+000C, U+000E–U+001F   C0 controls except TAB, LF, CR
-U+007F–U+009F                                   DEL and the C1 controls (since v9)
-U+00AD                                          soft hyphen (since v11)
-U+115F, U+1160, U+3164, U+FFA0                  Hangul fillers, which show as blank space (since v11)
-U+200B                                          zero-width space
-U+202A–U+202E                                   bidi embeddings and overrides
-U+2060–U+2064                                   word joiner, invisible operators (since v9)
-U+2066–U+2069                                   bidi isolates
-U+FEFF                                          BOM / zero-width no-break space
-U+FFF9–U+FFFB                                   interlinear annotation (since v9)
-U+E0000–U+E007F                                 tag characters: invisible ASCII an LLM still reads (since v9),
-                                                except inside the three RGI subdivision flags (since v11)
-U+E0100–U+E01EF                                 ideographic variation selectors (since v11)
-U+FE00–U+FE0F not directly after a character    variation selectors after ordinary text, or a second one after an
-  with the Unicode property Emoji               emoji (since v11)
-```
+Read the text as a sequence of Unicode code points (a lone surrogate counts as one code point). For each code point
+`c`, with `p` the code point before it and `n` the code point after it (either may be absent), in order:
 
-Tag characters are allowed only in exactly these sequences, which are tested as a whole (since v11; refused in v9):
-England `U+1F3F4 U+E0067 U+E0062 U+E0065 U+E006E U+E0067 U+E007F`, Scotland `… U+E0073 U+E0063 U+E0074 U+E007F` and
-Wales `… U+E0077 U+E006C U+E0073 U+E007F`; any other tag sequence, flag-shaped or not, is refused because it could spell
-hidden text. A variation selector is allowed only directly after a character with the Unicode property `Emoji`
-(ECMAScript `\p{Emoji}`), which covers emoji presentation (`❤️`), keycaps and skin tones, and also the digits, `#`, `*`,
-`©` and `®`, which carry that property.
+1. `c` is U+0009 TAB, U+000A LF or U+000D CR: allowed.
+2. `c` is one of the five **single marks** U+200C ZERO WIDTH NON-JOINER, U+200D ZERO WIDTH JOINER, U+200E
+   LEFT-TO-RIGHT MARK, U+200F RIGHT-TO-LEFT MARK, U+061C ARABIC LETTER MARK: allowed, unless `n` is also one of the
+   five (two in a row are refused; a mark may stand anywhere else, also at the start or end).
+3. `c` is U+FE0E or U+FE0F (variation selectors 15 and 16): allowed if `p` exists, `p` is not 0–9, `#` or `*`, and
+   `p` has the Unicode property `Emoji` (ECMAScript `\p{Emoji}`); or if `p` is 0–9, `#` or `*`, `c` is U+FE0F and `n`
+   is U+20E3 COMBINING ENCLOSING KEYCAP (a keycap, `1️⃣`). Otherwise refused. `p` is the code point actually before
+   `c`, so a selector after another selector, after a single mark or after U+E007F is refused.
+4. `c` is U+1F3F4 WAVING BLACK FLAG: allowed. If the code points after it are exactly the tag letters of `gbeng`,
+   `gbsct` or `gbwls` (U+E0067 U+E0062 then U+E0065 U+E006E U+E0067, U+E0073 U+E0063 U+E0074, or U+E0077 U+E006C
+   U+E0073) followed by U+E007F CANCEL TAG, those code points are allowed too and the scan continues after U+E007F
+   (the RGI flags of England, Scotland and Wales). Any other tag character is tested by rule 5 and refused.
+5. Any other `c` is refused if its General_Category is Cc (control) or Cf (format), or it has the property
+   Default_Ignorable_Code_Point; otherwise allowed.
 
-Allowed on purpose (refused in v8): U+200C ZERO WIDTH NON-JOINER and U+200D ZERO WIDTH JOINER (Persian and Indic
-scripts, emoji ZWJ sequences such as 👩‍💻), U+200E LEFT-TO-RIGHT MARK and U+200F RIGHT-TO-LEFT MARK; U+061C ARABIC
-LETTER MARK was never refused. The test runs per code point (a regular expression with the `u` flag), so a lone
-surrogate matches nothing and is accepted (OPEN-QUESTIONS OQ-3).
+The text is refused if any code point is refused. Unicode properties are those of Unicode 17.0, the version of the
+server's JavaScript engine (Node.js 24.21.0, ICU 78.3, on which the vectors were generated); a client using another
+Unicode version can disagree only on code points whose properties differ between the versions. Escaped form of the
+exceptions: rule 1 `\u0009 \u000a \u000d`; rule 2 `‌ ‍ ‎ ‏ ؜`; rule 3 `︎ ️`,
+`⃣`; rule 4 `\u{1f3f4}`, tag letters `\u{e0061}`–`\u{e007a}`, `\u{e007f}`.
+
+What it covers: every control except TAB/LF/CR (C0, DEL, C1), every format character (soft hyphen, bidi embeddings,
+overrides and isolates, zero-width space, word joiner, invisible operators, BOM, interlinear annotation, tag
+characters, the shorthand and Egyptian hieroglyph format controls, and the prepended concatenation marks), and every
+default-ignorable code point, assigned or not (Hangul fillers, all variation selectors outside rule 3, the Mongolian
+free variation selectors, combining grapheme joiner, Khmer inherent vowels, U+2065, U+FFF0–U+FFF8, U+E0000–U+E0FFF).
+A sweep of every code point (each between two letters) found exactly U+0009, U+000A, U+000D, U+061C and U+200C–U+200F
+accepted among Cc, Cf and default-ignorable code points, and 3777 code points refused that v12 accepted, none the
+other way.
+
+**A deliberate trade-off:** the prepended concatenation marks are visible format characters (category Cf) and are
+refused with the others: U+0600–U+0605 (Arabic number signs, e.g. the sign that spans the digits of a page number),
+U+06DD ARABIC END OF AYAH, U+070F SYRIAC ABBREVIATION MARK, U+0890–U+0891, U+08E2, U+110BD and U+110CD (Kaithi). Text
+that needs them cannot be signed (vectors `refused/arabic-prepended-concatenation-mark`,
+`bad/format-or-ignorable-600`).
+
+Allowed on purpose: the five single marks (Persian and Indic scripts, emoji ZWJ sequences such as 👩‍💻, bidi marks),
+emoji presentation and text presentation selectors after emoji, keycaps, the three RGI subdivision flags.
 
 It applies to:
-- the **signed service text** in terms (`title`, `description`, `deliverable`; core.mjs:85-90, 526): the raw text MUST
+- the **signed service text** in terms (`title`, `description`, `deliverable`; core.mjs:115-120, 558): the raw text MUST
   NOT contain a refused character, its **raw** length MUST be ≤ max + 100 UTF-16 code units, and its cleaned form MUST
   be non-empty and ≤ max. The terms are still stored and hashed **raw**, so allowed padding (and TAB/LF/CR) is part of
   the signed text;
-- the public profile fields at join (`display_name`, `operator`, `about`, `services`; core.mjs:175-176);
-- since v9, **decline and dispute reasons**, raw, before anything else is done with them (core.mjs:727, 996; section
+- the public profile fields at join (`display_name`, `operator`, `about`, `services`; core.mjs:205-206);
+- since v9, **decline and dispute reasons**, raw, before anything else is done with them (core.mjs:759, 1028; section
   8.3).
 
 Not covered (stored cleaned, refused characters other than the C0 controls are kept): the delivery title, the delivery
 content (raw, never cleaned), owner approval notes, invite notes, the mandate objective and agent notes.
 
-Known gaps of the v11 set (OPEN-QUESTIONS OQ-33): it is still a list, not a Unicode property. It lets through other
-invisible characters such as U+180E, U+034F COMBINING GRAPHEME JOINER and U+206A–U+206F; and, because the variation
-selector rule asks only that the previous character be an emoji character, one variation selector of any of its 16
-values after each digit, `#`, `*`, `©`, `®` or emoji is allowed, which can carry 4 invisible bits per such character.
-Vectors: `canonical.json` tiers `terms` and `refused`, `terms-validation.json` `ok/*`, `bad/*`
-(`ok/variation-selector-after-digit` pins the residual).
+What the rule still lets through (OPEN-QUESTIONS OQ-33; no Cc, Cf or default-ignorable code point outside the
+exceptions passes):
+- the single marks are allowed between any two characters, also where they change nothing (between two Latin
+  letters): an invisible choice of six (none or one of five) after every character, about 2.6 bits per character
+  (vector `ok/single-marks-between-letters`); likewise U+FE0F, U+FE0E or nothing after each emoji;
+- characters that are not Cc, Cf or default-ignorable but render as blank space: U+2800 BRAILLE PATTERN BLANK and
+  U+1D159 MUSICAL SYMBOL NULL NOTEHEAD (category So; `ok/blank-looking-characters`), the space separators (U+00A0,
+  U+1680, U+2000–U+200A, U+202F, U+205F, U+3000) and U+2028/U+2029;
+- private-use characters (137,468 code points), unassigned code points that are not default-ignorable (810,961 in
+  Unicode 17.0, the 66 noncharacters among them) and lone surrogates (OQ-3), whose rendering depends on the fonts.
 
 Decline and dispute reasons are **signed exactly as sent** (section 8.3).
 
@@ -152,10 +169,10 @@ A **participant** (public record):
 | `joined_at` | ISO time |
 | `agent_last_seen` | ISO time of the agent token's last authenticated request (reset when the key changes), or `null` |
 
-**Names** (core.mjs:166-179, since v9). Names are compared in a normalized form, `norm(s)` = `s` in lower case with
+**Names** (core.mjs:196-209, since v9). Names are compared in a normalized form, `norm(s)` = `s` in lower case with
 every character that is not a Unicode letter or digit (`\p{L}`, `\p{N}`) removed: `Bea-Briefs`, `bea briefs` and
 `bea_briefs` are the same name. Reserved words: `valun`, `admin`, `administrator`, `operator`, `owner`, `system`,
-`support`, `root`, `basis`, `tracker`, `null`, `undefined` (core.mjs:84). At join, in this order:
+`support`, `root`, `basis`, `tracker`, `null`, `undefined` (core.mjs:114). At join, in this order:
 
 1. the handle (lowercased, `/^[a-z][a-z0-9_-]{2,23}$/`) is refused if it is, or normalizes to, a reserved word
    (`409 handle_taken`, "that handle is reserved"; e.g. `ad-min`), or if it equals or normalizes to another
@@ -183,7 +200,7 @@ authenticate with `Authorization: Bearer <token>` (scheme case-insensitive; the 
 | Credential | Format | Issued | Lifetime | Authorizes |
 |---|---|---|---|---|
 | invite code | `vpi_` + base64url(9 random bytes) | by the operator (admin route) | `ttl_days` 1–90 (default 14), `max_uses` 1–1000 (default 1); other values `400 invalid_field` | one `POST /join` per use |
-| owner token | `vpo_` + base64url(32 random bytes) | once, in the `POST /join` response | no expiry; the owner can replace it with `POST /owner/rotate-token` (since v11: a new token shown once, the old one `401` at once); it cannot be revoked by anyone else | read the participant's deals; set the mandate; record agent limits; decide approvals; revoke the agent; issue enrollment codes; rotate itself (since v11). **Cannot** sign or perform deal acts. |
+| owner token | `vpo_` + base64url(32 random bytes) | once, in the `POST /join` response | no expiry; the owner can replace it with `POST /owner/rotate-token` (since v11: a new token shown once, the old one `401` at once); since v12 the operator can issue a new one too (`POST /admin/participants/{id}/owner-token`, after confirming the owner out of band), for a lost or stolen token | read the participant's deals; set the mandate; record agent limits; decide approvals; revoke the agent; issue enrollment codes; rotate itself (since v11). **Cannot** sign or perform deal acts. |
 | enrollment code | `vpe_` + base64url(12 random bytes) | in the join response; by the owner (`POST /owner/enrollment-code`) or the operator while no key is registered; in the revoke response | 30 minutes; single use; a new code replaces any earlier one | one `POST /enroll` (registering one agent key) |
 | agent token | `vpa_` + base64url(32 random bytes) | once, in the `POST /enroll` response | until the owner revokes the agent | read the participant's deals; record agent limits; perform deal acts (each also needs a key signature); fetch credit-note templates. **Cannot** use owner routes. |
 | admin token | random, on the server's data volume | — | — | admin routes, only from loopback, never through the proxy |
@@ -260,7 +277,7 @@ them, so a signer MUST apply them.
 all zero and `z[0] < 0x80`; `X` and `a = σ[0..33]` decode to curve points; `e_bytes = BLAKE2b-256(a ‖ m ‖ X)` has
 `e_bytes[0] < 0x80` and `int(e_bytes) < n`; `int(z) < n`. Accept iff `int(z)·G = a + int(e_bytes)·X`.
 
-**How the server reports a failure** (core.mjs:538-563, since v9). Every verification goes through one guard,
+**How the server reports a failure** (core.mjs:570-595, since v9). Every verification goes through one guard,
 `safeVerify`:
 
 - a signature that is not a string matching `/^0[23][0-9a-f]{128}$/`, or a key that does not match
@@ -274,10 +291,10 @@ all zero and `z[0] < 0x80`; `X` and `a = σ[0..33]` decode to curve points; `e_b
   `403 bad_signature`.
 
 The credit-note message is built by the same helper (`note-message`). Since v11 it goes through `Pilot.noteMessage`
-(core.mjs:550-556), so during an outage `GET /deals/{id}/credit-note-template` and `POST /deals/{id}/complete` are
+(core.mjs:582-588), so during an outage `GET /deals/{id}/credit-note-template` and `POST /deals/{id}/complete` are
 `503 signer_unavailable` too, with nothing recorded (in v9: `502 {"error": "internal error"}`); a `signer: …` error
 there is `502 signer_error` (the server built a request the helper refused; 14.1). If the helper is unavailable only for
-the read-back re-check after the tracker accepted a note (core.mjs:965-971), the deal is still `note_issued`, with
+the read-back re-check after the tracker accepted a note (core.mjs:997-1003), the deal is still `note_issued`, with
 `verified_by_valun: true` (Valun verified that exact signature at completion) and `reverify_skipped` saying the
 re-check did not run. Vectors: `transcript.json` steps "the signature checker is unavailable", "after the outage",
 "during an outage the credit-note template", "the signer reports an error", "the signer refuses the note-message
@@ -330,7 +347,7 @@ server applies the time rules at the moment it receives the terms (proposal, cou
  "deliver_by":"2026-11-08T12:00:00.000Z","offer_expires_at":"2026-11-07T12:00:00.000Z"}
 ```
 
-Validation outcomes of the real validator for 57 cases: `vectors/terms-validation.json`.
+Validation outcomes of the real validator for 87 cases: `vectors/terms-validation.json`.
 
 ### 7.2 Canonical JSON
 
@@ -406,15 +423,14 @@ key (`403 bad_signature` otherwise).
 
 ### 8.3 Decline and dispute reasons
 
-Signatures since release v8, text rules since release v9, widened in v11 (core.mjs:717-737, 987-1005):
+Signatures since release v8, text rules since release v9, widened in v11 (core.mjs:749-769, 1019-1037):
 
 - A client MUST sign `sha256hex(reason)` over **exactly the reason string it sends** (UTF-8, no trimming, no
   normalisation). This is the rule; nothing else is needed.
 - Before any signature is checked, the server refuses with `400 invalid_field` (since v9): a reason that is not a JSON
   string (`null` or absent counts as `""`; a number, array, object or boolean is "reason must be text"); a reason
-  containing a refused character (section 2.3: C0 and C1 controls other than TAB, LF and CR, bidi controls, zero-width
-  space, word joiner and invisible operators, BOM, interlinear annotation, tag characters outside the RGI flags, and since
-  v11 soft hyphen, Hangul fillers and stray variation selectors); and the length rules below.
+  for which the refused-character test of section 2.3 says "refused" (the same test as for service text; widened in v11
+  and v12, defined by Unicode properties since v13); and the length rules below.
   A client SHOULD check these itself before signing.
 - Limits: decline reason optional, raw length ≤ 600 and cleaned length ≤ 500; dispute reason required (non-empty after
   cleaning), raw ≤ 1100 and cleaned ≤ 1000 (UTF-16 code units; `400 invalid_field`). Since v11 the message for a raw
@@ -429,8 +445,8 @@ Signatures since release v8, text rules since release v9, widened in v11 (core.m
   allowed invisible characters (ZWJ, ZWNJ, LRM, RLM, ALM, one variation selector after an emoji character): show them as
   untrusted text.
 
-Vectors: `statements.json` `decline/*`, `dispute/*` (51 reasons each, run through the real server code; for decline 21
-accepted and 30 refused, for dispute 24 accepted and 27 refused; for each accepted reason every accepted form, a
+Vectors: `statements.json` `decline/*`, `dispute/*` (57 reasons each, run through the real server code; for decline 22
+accepted and 35 refused, for dispute 25 accepted and 32 refused; for each accepted reason every accepted form, a
 signature over each form, and what the server stores; for each refused one the exact refusal, with the signer never
 asked).
 
@@ -461,7 +477,7 @@ pilot token-denomination cases).
    `{deal_id, terms_hash, deliverable_sha256, issuer_pubkey, recipient_pubkey, keys_as_agreed, prior_total, price, total,
    timestamp, tracker_nft_id, denomination, message_hex}` with `total = prior_total + price` and
    `timestamp = max(now − 1500 ms, previous note's timestamp + 1)`, which is never later than the server's clock
-   (since v11, core.mjs:896-914): if the pair's last note is ahead of the clock (a note submitted around Valun, or a
+   (since v11, core.mjs:928-946): if the pair's last note is ahead of the clock (a note submitted around Valun, or a
    tracker clock running ahead), the server waits up to 3 s for its clock to pass it; further ahead it answers
    `409 note_timestamp_ahead` with `retry_after_ms` and `last_note_timestamp`, and the client fetches the template
    again later. (In v9 the template could carry a future timestamp, which `complete` then refused.)
@@ -579,7 +595,7 @@ must complete or dispute it (OPEN-QUESTIONS OQ-8).
 Expiry is applied **lazily** ("sweep") when a deal is read or acted on: `open`/`proposed_awaiting_owner`/
 `accepted_awaiting_owner` whose current version's `offer_expires_at` has passed become `expired`; a held counter past
 its own `offer_expires_at` is discarded; since v11 an `agreed` deal past its delivery grace period becomes
-`expired_undelivered` (core.mjs:474-500). Since v11 every mandate check (`exposure`), position and inbox sweeps each
+`expired_undelivered` (core.mjs:506-532). Since v11 every mandate check (`exposure`), position and inbox sweeps each
 deal it counts first, so an expired offer or held acceptance that nobody has read no longer counts against a mandate
 (in v9 it did until something read it).
 
@@ -633,7 +649,7 @@ and `GET /owner`; values recorded before v11 count as `agent`). Either token can
 ### 11.3 How the server checks a commitment
 
 At propose, counter, accept, and when an owner approves a `propose` or `accept` approval, the server runs the check
-below for the acting participant `P` in its role, with price `x` (core.mjs:402-457). At accept and at the approval of an
+below for the acting participant `P` in its role, with price `x` (core.mjs:434-489). At accept and at the approval of an
 acceptance it also runs it for the **proposer** (excluding the deal itself); a failure there is `409
 offer_not_authorized` without details, and since v11 its `needs owner` result decides whether the proposer's owner must
 confirm the offer (`confirm_offer`, 10.2). When the proposer's owner approves a `confirm_offer`, the check runs again for
@@ -743,7 +759,7 @@ participant's own agent and owner.
 
 ### 14.2 Rate limits
 
-Since v9 (http.mjs:5-13, 31-34, 76), with `W` = `pilotRateLimitPerMinute` (default **90**), `R` =
+Since v9 (http.mjs:5-13, 31-34, 78), with `W` = `pilotRateLimitPerMinute` (default **90**), `R` =
 `pilotReadLimitPerMinute` (default **4 × W = 360**) and `I` = `pilotIpReadLimitPerMinute` (default **R**), all over a
 sliding 60 s window:
 
@@ -809,7 +825,7 @@ on every route that checks a signature, `503 signer_unavailable` since v9).
 
 | Route | Request | Response | Errors |
 |---|---|---|---|
-| `GET /owner` | — | `{participant, mandate, mandate_version, mandate_changed_by, mandate_changed_at, agent_limits, agent_limits_recorded_by, effective_limits, owner_token_rotated_at (since v11), agent: {enrolled, pubkey, last_seen, enrollment_pending, enrollment_expires_at, enrollment_issued_by, key_registered_at}, past_keys, approvals: [approval + subject + mandate_check + effect + deal], deals: [view], inbox, position}` | — |
+| `GET /owner` | — | `{participant, mandate, mandate_version, mandate_changed_by, mandate_changed_at, agent_limits, agent_limits_recorded_by, effective_limits, owner_token_rotated_at (since v11), owner_token_rotated_by (`owner` or `operator`, since v12), agent: {enrolled, pubkey, last_seen, enrollment_pending, enrollment_expires_at, enrollment_issued_by, key_registered_at}, past_keys, approvals: [approval + subject + mandate_check + effect + deal], deals: [view], inbox, position}` | — |
 | `PUT /owner/mandate` | any mandate fields (11.1) | `{mandate, mandate_version, changed_by, changed}` (`changed` since v11) | 400 `invalid_field` |
 | `POST /owner/approvals/{va_id}` | `{decision, note?}` | `{approval, deal: view}` | 404, 409 `not_pending`, 409 `conflicting_pending`, 400 `invalid_field`, 409 `expired`, 409 `key_changed`, 403 `mandate_exceeded`, 409 `offer_not_authorized`, 409 `acceptance_not_authorized` (`confirm_offer`, since v11), 409 `stale_note` |
 | `POST /owner/rotate-token` (since v11) | — | `{participant_id, owner_token, rotated_at, note}`: the new owner token, shown once; the old one is `401` at once; the agent is not affected | — |
@@ -819,7 +835,10 @@ on every route that checks a signature, `503 signer_unavailable` since v9).
 **Admin** (network operator only: request from loopback, header `X-Valun-Admin: <admin token>`, and none of
 `Fly-Client-IP`, `X-Forwarded-For`, `Fly-Forwarded-Port`; anything else is `404`): `POST /admin/invites`
 `{note?, max_uses?: 1–1000, ttl_days?: 1–90}` → 201 `{id, code, expires_at}` (400 `invalid_field` otherwise); `GET /admin/invites`;
-`POST /admin/participants/{id}/enrollment-code` (409 `already_enrolled`); `PUT /admin/participants/{id}/mandate`.
+`POST /admin/participants/{id}/enrollment-code` (409 `already_enrolled`); `PUT /admin/participants/{id}/mandate`;
+since v12 `POST /admin/participants/{id}/owner-token` (a new owner token for that participant, returned once as
+`{participant_id, owner_token, rotated_at, note}`; the previous one is `401` at once; the agent is not affected; the
+owner then sees `owner_token_rotated_by: "operator"`; audit `owner_token.reset_by_operator`).
 Clients never use these.
 
 ### 14.4 The deal view
@@ -843,7 +862,7 @@ History `by` is a participant id, `owner:<participant id>`, `valun` or `basis-tr
 `acceptance_voided: true` when it voided a waiting acceptance, and `by_owner: true` when the proposer's owner rejected a
 `confirm_offer`. The agreed terms are `current.terms` once `agreement` is set.
 
-A complete example run through the real route table (143 requests, every response) is `vectors/transcript.json`.
+A complete example run through the real route table (147 requests, every response) is `vectors/transcript.json`.
 
 ## 15. What the server verifies and what a client MUST verify
 
@@ -902,7 +921,7 @@ The two Python reference clients, the Hermes plugin (`hermes-plugin-valun/valun_
 in complete item 3 (they take the payee's current directory key without further confirmation); they do not implement
 accept/counter item 6 or the delivery check (OPEN-QUESTIONS OQ-28). Their decline and dispute signatures follow 8.3
 (they sign the reason they send; the `valun_respond` tool strips a decline reason first and signs the stripped text),
-which `check_python.py` confirms against release v11 for both clients (plugin at `f504d26`). Neither checks a reason for
+which `check_python.py` confirms against release v13 for both clients (plugin at `f504d26`). Neither checks a reason for
 refused characters before signing (the server refuses it with `400 invalid_field`, a safe refusal), and neither treats
 `503 signer_unavailable` specially (it surfaces as a `ValunError` with that code). Both surface the v11 refusals as
 `ValunError` codes (`wrong_state` for a delivery after the grace period, `mandate_exceeded` for an owner-recorded limit;
@@ -928,17 +947,17 @@ These are part of the protocol's meaning and a client SHOULD present them to its
 
 ## 17. Conformance vectors
 
-`spec/vectors/` (regenerate with `VALUN_APP_DIR=<export of valun-app commit 7880dcf> node spec/vectors/generate.mjs`;
-output is deterministic, and labelled "UNRECOGNISED server source" if the sources are not release v11's):
+`spec/vectors/` (regenerate with `VALUN_APP_DIR=<export of valun-app commit 6a6a34b> node spec/vectors/generate.mjs`;
+output is deterministic, and labelled "UNRECOGNISED server source" if the sources are not release v13's):
 
 | file | content |
 |---|---|
-| `canonical.json` | 58 canonical-JSON / terms-hash cases: 26 valid terms (field order, whitespace, unicode including ZWJ/ZWNJ text, emoji presentation and RGI subdivision flags, escapes, limits), 15 terms the v11 server refuses for refused characters or padding (canonical form still defined), 5 wire forms the server accepts, 12 generic edge values |
-| `statements.json` | 116 statement cases for every kind (enroll 2, propose/counter 2, accept 1, withdraw 1, deliver 7, complete 1, decline 51, dispute 51; decline/dispute run through the real server code: for an accepted reason (21 decline, 24 dispute) every accepted form, a signature over each, and the stored `reason`/`reason_as_signed`; for a refused one (30, 27), tier `refused`, the exact refusal) + 7 signatures that MUST NOT verify |
+| `canonical.json` | 70 canonical-JSON / terms-hash cases: 28 valid terms (field order, whitespace, unicode including ZWJ/ZWNJ text, emoji presentation, keycaps and RGI subdivision flags, escapes, limits, and two that pin the OQ-33 residual), 25 terms the v13 server refuses for refused characters or padding (canonical form still defined), 5 wire forms the server accepts, 12 generic edge values |
+| `statements.json` | 128 statement cases for every kind (enroll 2, propose/counter 2, accept 1, withdraw 1, deliver 7, complete 1, decline 57, dispute 57; decline/dispute run through the real server code: for an accepted reason (22 decline, 25 dispute) every accepted form, a signature over each, and the stored `reason`/`reason_as_signed`; for a refused one (35, 32), tier `refused`, the exact refusal) + 7 signatures that MUST NOT verify |
 | `basis-notes.json` | 13 note-message / debt-key cases (Basis official erg vectors; pilot token denomination) + 1 negative |
 | `basis-signatures.json` | Basis's official signature vectors TV001–TV011 |
-| `terms-validation.json` | 66 terms the real validator accepts (16) or refuses (50), with the exact error |
-| `transcript.json` | a 143-request run through the real route table, with what the server verified at each step; decline/dispute steps also list every statement form the server would accept for that body (`server_accepts`, from a dry run of the real code); 51 steps are replayed through each Python client, 3 of them also through an agent-tool path (`variants`); plus 3 rate-limit `probes` (server-only). Steps 1–111 are the v9 run (only additive v11 fields differ, and the template during a signer outage is now `503`); the v11 steps follow |
+| `terms-validation.json` | 87 terms the real validator accepts (19) or refuses (68), with the exact error |
+| `transcript.json` | a 147-request run through the real route table, with what the server verified at each step; decline/dispute steps also list every statement form the server would accept for that body (`server_accepts`, from a dry run of the real code); 51 steps are replayed through each Python client, 3 of them also through an agent-tool path (`variants`); plus 3 rate-limit `probes` (server-only). Steps 1–111 are the v9 run, 112–143 the v11 steps and 144–147 the v12 steps (release v13 changed no step); earlier steps differ from their first release only by additive response fields (and step 92, the template during a signer outage, `503` since v11) |
 
 All keys, ids, codes and tokens in them are public test fixtures (the test keys are derived from public labels;
 tokens are replaced by placeholders). Never use them for anything real. `python spec/vectors/check_python.py` checks
@@ -946,9 +965,9 @@ them against the Hermes plugin, and `python spec/vectors/check_python.py --clien
 package; each replays the transcript through that client's real `Client` methods (commands for CI:
 `spec/vectors/README-ci.md`). Server-side Basis crypto runs in a Rust helper that the generator does not run; the
 generator's replica is proven against Basis's official vectors before it writes anything (the token-denomination debt
-key has no official vector: OPEN-QUESTIONS). Against release v11 both clients (plugin at `f504d26`, package
-`0.3.0.dev0`) give the same result: **747 checks, 607 agree, 0 disagreements in failing tiers, 17 informative
-differences (OQ-2, OQ-3, OQ-4 inputs), 123 not applicable**.
+key has no official vector: OPEN-QUESTIONS). Against release v13 both clients (plugin at `f504d26`, package
+`0.3.0.dev0`) give the same result: **829 checks, 658 agree, 0 disagreements in failing tiers, 17 informative
+differences (OQ-2, OQ-3, OQ-4 inputs), 154 not applicable**.
 
 ## Appendix A. Differences from `valun-app/docs/PILOT-API.md`
 
@@ -1028,3 +1047,23 @@ Release v11 is valun-app's robustness pass on OPEN-QUESTIONS revision 3 (`docs/R
 | Also refused: U+00AD, Hangul fillers, U+E0100–U+E01EF, a variation selector not directly after an emoji character; allowed: the three RGI subdivision flags (OQ-33 residual) | 2.3 | accepted; flags refused |
 
 Residual issues are listed with each item in OPEN-QUESTIONS (revision 4).
+
+## Appendix E. Changes in release v12 (valun-app commit `a61c32e`)
+
+| Change | Sections | Was (release v11) |
+|---|---|---|
+| Variation selectors: U+FE00–U+FE0D refused everywhere; after an emoji only U+FE0E or U+FE0F; after 0–9, `#` or `*` only inside a keycap (followed by U+20E3) (OQ-33) | 2.3 | any of U+FE00–U+FE0F after any `Emoji`-property character, digits included (vector `ok/variation-selector-after-digit`, now `bad/…`) |
+| Also refused: U+180E, U+034F, U+206A–U+206F, U+1D173–U+1D17A (OQ-33) | 2.3 | accepted |
+| Operator owner-token recovery: `POST /admin/participants/{id}/owner-token` (loopback and admin token); `GET /owner` shows `owner_token_rotated_by` (`owner` or `operator`) (OQ-24) | 4, 14.3 | only the token holder could rotate it |
+
+Residual issues are listed with each item in OPEN-QUESTIONS (revision 5).
+
+## Appendix F. Changes in release v13 (valun-app commit `6a6a34b`)
+
+| Change | Sections | Was (release v12) |
+|---|---|---|
+| The refused-character test is defined by Unicode properties: every Cc (except TAB, LF, CR), Cf and Default_Ignorable_Code_Point code point is refused, with exactly the exceptions of rules 1–4 (five single marks, never two in a row; U+FE0E/U+FE0F after an emoji other than 0–9 `#` `*`; keycaps with U+FE0F; the three RGI flags) (OQ-33) | 2.3, 8.3 | a fixed list of ranges plus variation-selector context rules; runs of the single marks and keycaps with U+FE0E were allowed |
+
+In every code point between two letters, v13 refuses 3777 code points that v12 accepted (among them the Mongolian free
+variation selectors, Khmer inherent vowels, shorthand and Egyptian hieroglyph format controls, unassigned
+default-ignorable code points and the prepended concatenation marks) and accepts none that v12 refused.

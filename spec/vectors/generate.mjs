@@ -3,11 +3,12 @@
 //
 //   node spec/vectors/generate.mjs        (VALUN_APP_DIR=<path to valun-app> overrides the default ../../../valun-app)
 //
-// Written against server release v11 = valun-app commit 7880dcf. Point VALUN_APP_DIR at an export of exactly that commit
-// (git archive 7880dcf), not at a working tree that may hold unreleased changes: the script records the sha256 of the
-// server sources it ran, and labels the output "UNRECOGNISED server source" (with a warning) when they are not v11's.
-// Every assertion below pins v11 behaviour; a server change that breaks one stops the script before anything is written.
-// (Earlier releases: v8 e0b990a, v9 ed1da4a; the transcript keeps their steps first and appends later releases' steps.)
+// Written against server release v13 = valun-app commit 6a6a34b. Point VALUN_APP_DIR at an export of exactly that commit
+// (git archive 6a6a34b), not at a working tree that may hold unreleased changes: the script records the sha256 of the
+// server sources it ran, and labels the output "UNRECOGNISED server source" (with a warning) when they are not v13's.
+// Every assertion below pins v13 behaviour; a server change that breaks one stops the script before anything is written.
+// (Earlier releases: v8 e0b990a, v9 ed1da4a, v11 7880dcf, v12 a61c32e; the transcript keeps their steps first and
+// appends later releases' steps.)
 //
 // Writes, next to this file: canonical.json, statements.json, basis-notes.json, basis-signatures.json,
 // terms-validation.json, transcript.json. Output is deterministic: running it twice gives identical files, so a diff
@@ -71,13 +72,13 @@ const {canonical, termsHash, statements, sha256, NETWORK, PROTOCOL, PILOT_TOKEN_
 const fileSha = f => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 const SOURCES = {'lib/pilot/core.mjs': fileSha(CORE), 'lib/pilot/http.mjs': fileSha(HTTPM), 'lib/basis.mjs': fileSha(path.join(APP, 'lib', 'basis.mjs')),
   'lib/http.mjs': fileSha(path.join(APP, 'lib', 'http.mjs'))};
-// Release v11 = valun-app commit 7880dcf (git archive 7880dcf). Other sources still run, but are labelled as such.
-const V11_SOURCES = {'lib/pilot/core.mjs': '94b9fa3563316bdcc74abae8f1daaa32495b27777a0b0b6a06237ebf38514d5d',
-  'lib/pilot/http.mjs': '7fcef5a33758db33d1c64d1d488c6818b80b44a319ff7119b655dda4e1ba65f1', 'lib/basis.mjs': '991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617',
+// Release v13 = valun-app commit 6a6a34b (git archive 6a6a34b). Other sources still run, but are labelled as such.
+const V13_SOURCES = {'lib/pilot/core.mjs': '7dc469e0547ae0a518c022b93cff6181fd116f4fcc3f8f3b7a3deb0e0f240b2e',
+  'lib/pilot/http.mjs': '01a505623d64c0a2c00a221240d57b5631c91dec61f5caaeb37113e8497c0f0e', 'lib/basis.mjs': '991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617',
   'lib/http.mjs': '2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf'};
-const IS_V11 = Object.entries(V11_SOURCES).every(([f, h]) => SOURCES[f] === h);
-const SERVER_RELEASE = IS_V11 ? 'v11 (valun-app commit 7880dcf)' : 'UNRECOGNISED server source (not release v11 7880dcf; see server_source_sha256)';
-if (!IS_V11) console.error(`WARNING: ${APP} is not release v11 (7880dcf): ${JSON.stringify(SOURCES)}. The vectors are labelled accordingly; assertions may fail.`);
+const IS_V13 = Object.entries(V13_SOURCES).every(([f, h]) => SOURCES[f] === h);
+const SERVER_RELEASE = IS_V13 ? 'v13 (valun-app commit 6a6a34b)' : 'UNRECOGNISED server source (not release v13 6a6a34b; see server_source_sha256)';
+if (!IS_V13) console.error(`WARNING: ${APP} is not release v13 (6a6a34b): ${JSON.stringify(SOURCES)}. The vectors are labelled accordingly; assertions may fail.`);
 // A signature with the shape the server checks before calling the signer (02/03 prefix, 130 lowercase hex: core.mjs:64)
 // that can never verify (z = 0). Used for dry runs that record which statements the server would accept. Since v9 an
 // all-zero signature ('00' x 65) is refused before the signer runs, so it no longer reveals anything.
@@ -342,10 +343,12 @@ async function canonicalVectors() {
       {title: 'nbsp\u00A0here', description: 'alm\u061Cmark lrm\u200Emark rlm\u200Fmark'}],
     ['emoji-zwj-sequence', 'An emoji ZWJ sequence (U+200D inside \u{1F469}\u200D\u{1F4BB}): valid since v9 (refused in v8).', {title: 'Brief by \u{1F469}\u200D\u{1F4BB}'}],
     ['persian-zwnj', 'Persian text with ZERO WIDTH NON-JOINER (U+200C), required by its orthography: valid since v9 (refused in v8).', {title: '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645'}],
-    ['emoji-modifiers-and-vs16', 'Skin-tone modifier, variation selector 16 (U+FE0F) directly after an emoji, and a keycap sequence: allowed (v11 refuses a variation selector only when it does not directly follow an emoji character).', {title: 'Thanks \u{1F44D}\u{1F3FD} \u2764\uFE0F 1\uFE0F\u20E3'}],
+    ['emoji-modifiers-and-vs16', 'Skin-tone modifier, variation selector 16 (U+FE0F) directly after an emoji, and a keycap sequence: allowed (v12: after an emoji only U+FE0E/U+FE0F; after 0-9, # or * only inside a keycap, i.e. followed by U+20E3).', {title: 'Thanks \u{1F44D}\u{1F3FD} \u2764\uFE0F 1\uFE0F\u20E3'}],
+    ['text-presentation-and-keycaps', 'U+FE0E (text presentation) after an emoji, and keycaps with U+FE0F or without a selector: allowed (v13; a keycap with U+FE0E is refused since v13: refused/keycap-with-fe0e).', {title: 'Heart \u2764\uFE0E', description: 'Keys 1\uFE0F\u20E3 #\uFE0F\u20E3 *\u20E3'}],
+    ['single-marks-between-letters', 'Allowed in v13: ZWNJ, ZWJ, LRM, RLM and ALM, each singly, between any two characters, also where they change nothing (here between Latin letters): an invisible mark, or none, after every character (OPEN-QUESTIONS OQ-33).', {title: 'Th\u200Danks f\u200Cor th\u200Ee br\u200Fief\u061C'}],
+    ['blank-looking-characters', 'Allowed in v13 (not Cc, Cf or default-ignorable): U+2800 BRAILLE PATTERN BLANK and U+1D159 MUSICAL SYMBOL NULL NOTEHEAD (category So), which render as blank space (OPEN-QUESTIONS OQ-33).', {title: 'Brief\u2800\u2800 x\u{1D159}y'}],
     ['subdivision-flags', 'The three RGI subdivision flags (England, Scotland, Wales: U+1F3F4, tag letters, U+E007F): valid since v11 (refused in v9, which refused every tag character).',
       {title: 'UK brief \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} \u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F} \u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}'}],
-    ['variation-selector-after-digit', 'A digit is an emoji character (Unicode property Emoji), so one variation selector of any value U+FE00..U+FE0F after it is allowed (see OPEN-QUESTIONS OQ-33).', {title: 'Brief 1\uFE03 2\uFE0A'}],
     ['line-separators', 'U+2028 and U+2029 are NOT escaped by canonical JSON (they are by some encoders, e.g. Go).', {title: 'line\u2028separator', description: 'para\u2029separator'}],
     ['html-chars', '< > & and \' are NOT escaped (Go\'s json.Marshal escapes <, >, & by default: do not use it unmodified).', {title: '<b>Tom & Jerry</b>', description: "it's \"quoted\" & <tagged>"}],
     ['escapes-required', 'Quote and backslash are escaped; "/" is not.', {title: 'say "hi" \\ path/to/file', description: 'C:\\Users\\x and a/b'}],
@@ -367,9 +370,19 @@ async function canonicalVectors() {
     ['tag-characters', 'Unicode tag characters U+E0000..U+E007F (invisible ASCII an LLM can still read; here "IGNORE"): refused since v9.', {title: 'Brief\u{E0049}\u{E0047}\u{E004E}\u{E004F}\u{E0052}\u{E0045}'}],
     ['other-tag-flag', 'A tag sequence of the flag form (U+1F3F4, tag letters "usca", U+E007F) that is not one of the three RGI subdivision flags: still refused in v11, because such a sequence could spell hidden text.', {title: 'Brief \u{1F3F4}\u{E0075}\u{E0073}\u{E0063}\u{E0061}\u{E007F}'}],
     ['soft-hyphen', 'SOFT HYPHEN U+00AD (invisible unless the word breaks): refused since v11 (accepted in v9).', {title: 'soft\u00ADhyphen'}],
-    ['hangul-fillers', 'Hangul fillers U+115F, U+1160, U+3164, U+FFA0 (they show as blank space): refused since v11.', {title: 'aᅟb', description: 'cᅠd eㅤf g\uFFA0h'}],
+    ['hangul-fillers', 'Hangul fillers U+115F, U+1160, U+3164, U+FFA0 (they show as blank space): refused since v11.', {title: 'a\u115Fb', description: 'c\u1160d e\u3164f g\uFFA0h'}],
     ['ideographic-variation-selectors', 'Ideographic variation selectors U+E0100..U+E01EF (invisible; one per byte value can carry hidden data): refused since v11.', {title: 'ok\u{E0100}\u{E0101}\u{E0102}'}],
     ['stray-variation-selectors', 'A variation selector U+FE00..U+FE0F that does not directly follow an emoji character (after a letter, or a second one after an emoji): refused since v11.', {title: 'ok\uFE0F', description: 'heart ❤\uFE0F\uFE0F'}],
+    ['variation-selector-after-digit', 'Variation selectors after digits outside a keycap (U+FE03, U+FE0A; in v11 allowed, 4 invisible bits per digit): refused since v12.', {title: 'Brief 1\uFE03 2\uFE0A'}],
+    ['variation-selector-fe00-fe0d-after-emoji', 'U+FE00..U+FE0D after an emoji (only U+FE0E and U+FE0F may follow one): refused since v12.', {title: 'Brief \u{1F642}\uFE05'}],
+    ['digit-vs16-without-keycap', 'U+FE0F after a digit that is not followed by U+20E3 (not a keycap): refused since v12.', {title: 'Brief 1\uFE0F done'}],
+    ['invisible-format-characters', 'U+180E, U+034F, U+206A..U+206F and U+1D173..U+1D17A (invisible format characters): refused since v12.', {title: 'a\u180Eb c\u034Fd', description: 'e\u206Af g\u206Fh i\u{1D173}j k\u{1D17A}l'}],
+    ['mongolian-free-variation-selectors', 'A run of Mongolian free variation selectors U+180B..U+180D, U+180F (default-ignorable): refused since v13 (accepted in v12).', {title: 'Brief\u180B\u180C\u180D\u180F\u180B\u180F'}],
+    ['unassigned-default-ignorables', 'Unassigned default-ignorable code points (here U+E0080..U+E00FF): refused since v13 (accepted in v12).', {title: 'Brief\u{E0080}\u{E00A5}\u{E00FF}\u{E0081}'}],
+    ['other-default-ignorables-and-format', 'Khmer inherent vowel U+17B4, shorthand format control U+1BCA0 (default-ignorable), Egyptian hieroglyph format control U+13430 (Cf): refused since v13.', {title: 'a\u17B4b c\u{1BCA0}d', description: 'e\u{13430}f'}],
+    ['arabic-prepended-concatenation-mark', 'U+0600 ARABIC NUMBER SIGN (category Cf, a visible mark that spans the digits after it): refused since v13, a deliberate trade-off of the property rule (OPEN-QUESTIONS OQ-33).', {title: 'Number \u0600\u0661\u0662\u0663'}],
+    ['runs-of-single-marks', 'Two of ZWNJ, ZWJ, LRM, RLM, ALM in a row: refused since v13 (each is allowed only singly).', {title: 'a\u200D\u200Cb', description: 'c\u200E\u200Fd'}],
+    ['keycap-with-fe0e', 'A keycap with U+FE0E (# U+FE0E U+20E3): refused since v13 (keycaps need U+FE0F or no selector; accepted in v12).', {title: 'Keys #\uFE0E\u20E3'}],
     ['padding-over-raw-limit', 'A 401-character title that is 1 character after trimming: over max + 100 raw; refused.', {title: ' '.repeat(200) + 'x' + ' '.repeat(200)}],
   ];
   for (const [n, d, s] of refused) await add(`refused/${n}`, 'refused', d, canonical(withService(s)));
@@ -458,7 +471,10 @@ async function statementVectors() {
     ['zwj-emoji', 'Booked up \u{1F469}\u200D\u{1F4BB} until December', 'AA'], ['zwnj-persian', '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645', 'AA'],
     ['lrm-rlm-alm', 'price\u200E 20 \u200FPC \u061C.', 'AA'],
     ['subdivision-flag', 'Not in \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}', 'AA'], ['emoji-presentation', 'Love it \u2764\uFE0F but busy', 'AA'],
-    ['variation-selector-after-digit', 'Busy until 1\uFE03 2\uFE0A', 'AA'],
+    ['variation-selector-after-digit', 'Busy until 1\uFE03 2\uFE0A', 'RR'], ['invisible-format', 'not\u180Enow', 'RR'],
+    ['keycap', 'Press 1\uFE0F\u20E3 to confirm', 'AA'], ['mongolian-free-variation-selectors', 'Busy\u180B\u180C\u180F', 'RR'],
+    ['run-of-joiners', 'no\u200D\u200Cthanks', 'RR'], ['arabic-number-sign', '\u0600\u0661\u0662', 'RR'],
+    ['single-marks-between-letters', 'No th\u200Danks f\u200Cor n\u200Eo\u061Cw', 'AA'],
     ['unicode', 'café, 東京, \u{1F642}', 'AA'], ['nfd', 'cafe\u0301', 'AA'],
     // lengths (UTF-16 code units): decline raw <= 600 and cleaned <= 500; dispute raw <= 1100 and cleaned <= 1000
     ['max-500', 'x'.repeat(500), 'AA'], ['over-500', 'x'.repeat(501), 'RA'], ['padded-raw-550', 'x'.repeat(500) + ' '.repeat(50), 'AA'], ['raw-over-600', ' '.repeat(101) + 'x'.repeat(500), 'RA'],
@@ -619,8 +635,29 @@ async function validationVectors() {
     ['bad/stray-variation-selector', withService({title: 'ok\uFE0F'}), 'alice', 'Refused since v11 (accepted in v9): a variation selector after a letter, which is not an emoji character.'],
     ['bad/repeated-variation-selector', withService({title: 'heart \u2764\uFE0F\uFE0F'}), 'alice', 'Refused since v11: a second variation selector after an emoji (it follows U+FE0F, not an emoji character).'],
     ['ok/emoji-presentation', withService({title: 'Thanks \u2764\uFE0F \u{1F44D}\u{1F3FD} 1\uFE0F\u20E3'}), 'alice', 'Not refused: U+FE0F directly after an emoji, a skin-tone modifier, a keycap sequence.'],
-    ['ok/variation-selector-after-digit', withService({title: 'Brief 1\uFE03 2\uFE0A'}), 'alice',
-      'Not refused (v11): digits are emoji characters (Unicode property Emoji), so one variation selector of any value U+FE00..U+FE0F after each is allowed: 4 invisible bits per digit (OPEN-QUESTIONS OQ-33).'],
+    ['bad/variation-selector-after-digit', withService({title: 'Brief 1\uFE03 2\uFE0A'}), 'alice',
+      'Refused since v12 (accepted in v11, as ok/variation-selector-after-digit): a variation selector after a digit outside a keycap, and U+FE00..U+FE0D anywhere.'],
+    ['bad/variation-selector-fe05-after-emoji', withService({title: 'Brief \u{1F642}\uFE05'}), 'alice', 'Refused since v12: after an emoji only U+FE0E and U+FE0F are allowed.'],
+    ['bad/digit-vs16-without-keycap', withService({title: 'Brief 1\uFE0F done'}), 'alice', 'Refused since v12: U+FE0F after a digit is allowed only inside a keycap (followed by U+20E3).'],
+    ['ok/keycaps-and-text-presentation', withService({title: 'Keys 1\uFE0F\u20E3 #\uFE0F\u20E3 *\u20E3, heart \u2764\uFE0E'}), 'alice', 'Not refused (v13): keycaps with U+FE0F or no selector, and U+FE0E after an emoji. (v12 also allowed U+FE0E in a keycap: bad/keycap-with-fe0e.)'],
+    ['bad/keycap-with-fe0e', withService({title: 'Keys #\uFE0E\u20E3'}), 'alice', 'Refused since v13 (accepted in v12): a keycap needs U+FE0F (or no selector).'],
+    ...[[0x180E, 'MONGOLIAN VOWEL SEPARATOR'], [0x034F, 'COMBINING GRAPHEME JOINER'], [0x206A, 'INHIBIT SYMMETRIC SWAPPING'], [0x206F, 'NOMINAL DIGIT SHAPES'],
+      [0x1D173, 'MUSICAL SYMBOL BEGIN BEAM'], [0x1D17A, 'MUSICAL SYMBOL END PHRASE']].map(([cp, nm]) =>
+      [`bad/invisible-format-${cp.toString(16)}`, withService({title: `x${String.fromCodePoint(cp)}y`}), 'alice', `Refused since v12 (accepted in v11): ${nm} U+${cp.toString(16).toUpperCase()}.`]),
+    ['bad/mongolian-free-variation-selectors', withService({title: 'Brief\u180B\u180C\u180D\u180F\u180B\u180F'}), 'alice',
+      'Refused since v13 (accepted in v12 as ok/mongolian-free-variation-selectors): Mongolian free variation selectors are default-ignorable.'],
+    ['bad/unassigned-default-ignorables', withService({title: 'Brief\u{E0080}\u{E00A5}\u{E00FF}\u{E0081}'}), 'alice',
+      'Refused since v13 (accepted in v12 as ok/unassigned-default-ignorables): unassigned default-ignorable code points.'],
+    ...[[0x17B4, 'KHMER VOWEL INHERENT AQ (default-ignorable)'], [0x1BCA0, 'SHORTHAND FORMAT LETTER OVERLAP (Cf, default-ignorable)'], [0x13430, 'EGYPTIAN HIEROGLYPH VERTICAL JOINER (Cf)'],
+      [0x0600, 'ARABIC NUMBER SIGN (Cf; a visible prepended concatenation mark: a deliberate trade-off of the property rule)']].map(([cp, nm]) =>
+      [`bad/format-or-ignorable-${cp.toString(16)}`, withService({title: `x${String.fromCodePoint(cp)}\u0661y`}), 'alice', `Refused since v13 (accepted in v12): ${nm} U+${cp.toString(16).toUpperCase()}.`]),
+    ['bad/run-of-joiners', withService({title: 'a\u200D\u200Cb'}), 'alice', 'Refused since v13: ZWNJ, ZWJ, LRM, RLM and ALM are allowed only singly, never two in a row.'],
+    ['bad/run-of-direction-marks', withService({title: 'a\u200E\u200Fb'}), 'alice', 'Refused since v13: two direction marks in a row.'],
+    ['ok/single-marks-between-letters', withService({title: 'Th\u200Danks f\u200Cor th\u200Ee br\u200Fief\u061C'}), 'alice',
+      'Not refused (v13): single ZWNJ, ZWJ, LRM, RLM, ALM between Latin letters, where they change nothing visible: one invisible choice of six per character (OPEN-QUESTIONS OQ-33).'],
+    ['ok/blank-looking-characters', withService({title: 'Brief\u2800\u2800 x\u{1D159}y'}), 'alice',
+      'Not refused (v13): U+2800 BRAILLE PATTERN BLANK and U+1D159 MUSICAL SYMBOL NULL NOTEHEAD (category So) render as blank space (OPEN-QUESTIONS OQ-33).'],
+    ['ok/private-use', withService({title: 'Brief \uE000\uF8FF'}), 'alice', 'Not refused (v13): private-use characters (category Co); how they render depends on the fonts (OPEN-QUESTIONS OQ-33).'],
     ['ok/title-120-utf16', withService({title: '🙂'.repeat(60)}), 'alice', '60 astral characters = 120 UTF-16 code units: at the limit.'],
     ['bad/title-122-utf16', withService({title: '🙂'.repeat(61)}), 'alice', '61 astral characters = 122 UTF-16 code units > 120 (only 61 code points).'],
     ['ok/title-padded-to-raw-limit', withService({title: ' '.repeat(110) + 'x' + ' '.repeat(109)}), 'alice', 'Raw length 220 = 120 + 100: at the raw limit; the padding is hashed and stored.'],
@@ -1207,6 +1244,20 @@ async function transcriptVectors() {
       body: {terms_hash: h, content, title: '', sha256: dh, signature: signText(P.bob.key, statements.deliver(h, dh))}, reads: [[`/deals/${M}`, 'bob.agent']],
       client_call: {method: 'deliver', key: 'bob', args: {deal_id: M, content, title: ''}, expect_error: 'wrong_state', expected_statement: statements.deliver(h, dh),
         note: 'the server refuses before it checks any signature, so the replay checks the signature against statements.deliver(terms_hash, sha256(content))'}});
+  }
+
+  // ===================================================================================================================
+  // Release v12 (a61c32e): OQ-24 recovery. Appended after the v11 steps.
+  // ===================================================================================================================
+  {
+    const r = await step("operator: a new owner token for carol, at carol's owner's verified request (POST /admin/participants/{id}/owner-token, loopback and admin token; since v12)",
+      'operator', 'POST', `/admin/participants/${P.carol.id}/owner-token`, {admin: true, expect: 200});
+    tokens['carol.owner#3'] = r.owner_token; redact.set(r.owner_token, '<carol.owner#3>');
+    await step("carol's previous owner token (the one the owner rotated) no longer works (401)", 'carol.owner', 'GET', '/owner', {auth: 'carol.owner#2', expect: 401});
+    const o = await step("carol's owner console with the operator-issued token: owner_token_rotated_by operator (since v12)", 'carol.owner', 'GET', '/owner', {auth: 'carol.owner#3', expect: 200});
+    assert.equal(o.owner_token_rotated_by, 'operator');
+    await step('error: the owner-token reset is an admin route: without loopback and the admin token it does not exist (404)', 'anyone', 'POST',
+      `/admin/participants/${P.carol.id}/owner-token`, {expect: 404});
   }
 
   // ---- OQ-30: per-IP read budgets, on a second route table over the same Pilot with small budgets. Server-only

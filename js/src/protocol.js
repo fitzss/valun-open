@@ -84,27 +84,57 @@ export function cleanText(text) {
 }
 
 /**
- * Characters the server refuses (spec 2.3, release v11; statements.json tier "refused", terms-validation.json bad/*):
- * C0 controls except TAB/LF/CR, DEL and the C1 controls, SOFT HYPHEN, the Hangul fillers U+115F U+1160 U+3164 U+FFA0,
- * ZERO WIDTH SPACE, bidi embeddings/overrides and isolates, word joiner and invisible operators, BOM, interlinear
- * annotation, tag characters, the ideographic variation selectors U+E0100-U+E01EF, and a variation selector U+FE00-U+FE0F
- * that does not directly follow a character with the Emoji property. ZWJ, ZWNJ, LRM, RLM and ALM are allowed.
- * The three RGI subdivision flags (England, Scotland, Wales) are allowed although they contain tag characters: test text
- * with hasUnsafeText(), which allows them, not with this expression alone. The server's expression (valun-app 7880dcf,
- * core.mjs UNSAFE_TEXT); it applies to reasons, signed service text and public profile fields.
+ * The characters the text rule starts from (spec 2.3, release v13): controls (Cc), format characters (Cf) and
+ * Default_Ignorable_Code_Point characters. A superset of what the server refuses: TAB/LF/CR, the five single marks and
+ * the selectors, keycaps and flags of the rule's contexts are allowed. To test text, use hasUnsafeText(); a check with
+ * this expression alone is stricter than the server.
  */
-export const REASON_UNSAFE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\xad\u{115f}\u{1160}\u{200b}\u{2060}-\u{2064}\u{202a}-\u{202e}\u{2066}-\u{2069}\u{3164}\u{feff}\u{ffa0}\u{fff9}-\u{fffb}\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]|(?<!\p{Emoji})[\u{fe00}-\u{fe0f}]/u;
-const RGI_TAG_FLAGS = /\u{1f3f4}\u{e0067}\u{e0062}(?:\u{e0065}\u{e006e}\u{e0067}|\u{e0073}\u{e0063}\u{e0074}|\u{e0077}\u{e006c}\u{e0073})\u{e007f}/gu;
+export const REASON_UNSAFE = /[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/u;
+const EMOJI = /\p{Emoji}/u;
+// ZWNJ, ZWJ, LRM, RLM, ALM: allowed singly, never two in a row
+const SINGLE_OK = new Set([0x200c, 0x200d, 0x200e, 0x200f, 0x061c]);
+const FLAG_TAGS = new Set(['gbeng', 'gbsct', 'gbwls']);   // the RGI subdivision flags of England, Scotland, Wales
+const keycapBase = cp => (cp >= 0x30 && cp <= 0x39) || cp === 0x23 || cp === 0x2a;
 
-/** Does the text hold a character the server (release v11) refuses? The three RGI subdivision flags are allowed. */
-export function hasUnsafeText(text) {
-  return REASON_UNSAFE.test(String(text).replace(RGI_TAG_FLAGS, '\u{1f3f4}'));
+/**
+ * Does the server (release v13, valun-app 6a6a34b, core.mjs hasUnsafeText) refuse this text? Spec 2.3, normative: per
+ * code point (a lone surrogate counts as one), TAB/LF/CR are allowed; ZWNJ, ZWJ, LRM, RLM and ALM are allowed unless the
+ * next code point is one of them too; U+FE0E/U+FE0F are allowed directly after an emoji other than 0-9, # and *, and
+ * U+FE0F in a keycap (0-9, # or *, U+FE0F, U+20E3); U+1F3F4 followed by the tag letters gbeng, gbsct or gbwls and
+ * U+E007F is allowed as a whole (the RGI flags of England, Scotland and Wales); any other Cc, Cf or
+ * Default_Ignorable_Code_Point character is refused. Unicode properties are those of the JavaScript engine (the server's
+ * is Node.js 24.21.0, Unicode 17.0). The same port of the server's function, step for step.
+ */
+export function hasUnsafeText(s) {
+  const cps = Array.from(String(s), c => c.codePointAt(0));
+  for (let i = 0; i < cps.length; i++) {
+    const cp = cps[i];
+    if (cp === 9 || cp === 10 || cp === 13) continue;
+    if (SINGLE_OK.has(cp)) {
+      if (SINGLE_OK.has(cps[i + 1])) return true;
+      continue;
+    }
+    if (cp === 0xfe0e || cp === 0xfe0f) {
+      const prev = cps[i - 1];
+      if (prev !== undefined && !keycapBase(prev) && EMOJI.test(String.fromCodePoint(prev))) continue;
+      if (prev !== undefined && keycapBase(prev) && cp === 0xfe0f && cps[i + 1] === 0x20e3) continue;
+      return true;
+    }
+    if (cp === 0x1f3f4) {
+      let j = i + 1, tag = '';
+      while (j < cps.length && cps[j] >= 0xe0061 && cps[j] <= 0xe007a && tag.length < 6) tag += String.fromCharCode(cps[j++] - 0xe0000);
+      if (cps[j] === 0xe007f && FLAG_TAGS.has(tag)) i = j;
+      continue;
+    }
+    if (REASON_UNSAFE.test(String.fromCodePoint(cp))) return true;
+  }
+  return false;
 }
 
 const REASON_LIMITS = {decline: {max: 500, raw: 600, required: false}, dispute: {max: 1000, raw: 1100, required: true}};
 
 /**
- * The refusal the server (release v11) gives for a decline or dispute reason before checking any signature, as
+ * The refusal the server (release v13) gives for a decline or dispute reason before checking any signature, as
  * {error: 'invalid_field', message}, or null when it accepts the reason. In the server's order: the type, the raw length
  * (at most 600 / 1100 UTF-16 code units), the refused characters, then clean(): a dispute needs a reason, and the cleaned
  * text may have at most 500 / 1000 code units.

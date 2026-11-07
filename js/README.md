@@ -79,8 +79,9 @@ this error. `now`, `randomBytes` and `generateSecret` are test hooks.
 
 Lower level: `canonical`, `termsHash`, `sha256Hex`, `statement`, `statements.*` (each act's exact statement text),
 `basis.sign / verify / verifyHex / publicKey / generateSecret / noteMessage / debtKey`, `blake2b`, `blake2b256`, `sha256`,
-`cleanText` (the server's `clean()`), `reasonProblem` (the server's v11 reason refusals), `hasUnsafeText` (the characters v11 refuses), and `neutralize` (shows
-control, bidi and invisible characters as `\u{XXXX}` markers, for display to a person or model; never sign its output).
+`cleanText` (the server's `clean()`), `reasonProblem` (the server's v13 reason refusals), `hasUnsafeText` (the v13
+text rule of spec 2.3, the same as the server's function), and `neutralize` (shows control, bidi and invisible
+characters as `\u{XXXX}` markers, for display to a person or model; never sign its output).
 
 ### Stores
 
@@ -126,7 +127,7 @@ Additions to the Python behaviour:
 - `decline` and `withdraw` recompute the offer hash when the view carries the terms;
 - `dispute` checks that the delivered content matches its hash;
 - reasons the server refuses are refused locally and never sent. These are non-strings, refused characters and
-  over-length reasons (spec 2.3 and 8.3, release v11);
+  over-length reasons (spec 2.3 and 8.3, release v13);
 - prices must be whole numbers of at least 1. The Python client truncates them with `int()`.
 
 Differences from the Python client that a user may notice:
@@ -208,7 +209,7 @@ node --test js/test/        (from the repository root; or `npm test` in js/)
 ```
 
 The suite runs offline and needs no packages. It checks the code against every file in `spec/vectors/` (generated
-from the real server code, release v11, valun-app `7880dcf`):
+from the real server code, release v13, valun-app `6a6a34b`):
 
 - `basis-signatures.json`: Basis's official vectors TV001-TV011.
 - `basis-notes.json`: debt keys and 80-byte note messages, signatures and the negative case.

@@ -1,13 +1,13 @@
 {
  "meta": {
   "what": "HTTP transcript of a pilot run through the real route table and Pilot class (in memory, fixed clock, stand-in tracker)",
-  "server_release": "v11 (valun-app commit 7880dcf)",
+  "server_release": "v13 (valun-app commit 6a6a34b)",
   "protocol": "valun-deal/1",
   "network": "valun-pilot-1",
   "generated_by": "spec/vectors/generate.mjs",
   "server_source_sha256": {
-   "lib/pilot/core.mjs": "94b9fa3563316bdcc74abae8f1daaa32495b27777a0b0b6a06237ebf38514d5d",
-   "lib/pilot/http.mjs": "7fcef5a33758db33d1c64d1d488c6818b80b44a319ff7119b655dda4e1ba65f1",
+   "lib/pilot/core.mjs": "7dc469e0547ae0a518c022b93cff6181fd116f4fcc3f8f3b7a3deb0e0f240b2e",
+   "lib/pilot/http.mjs": "01a505623d64c0a2c00a221240d57b5631c91dec61f5caaeb37113e8497c0f0e",
    "lib/basis.mjs": "991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617",
    "lib/http.mjs": "2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf"
   },
@@ -5113,6 +5113,7 @@
       "expires_at": "2026-11-20T12:01:00.000Z"
      },
      "owner_token_rotated_at": null,
+     "owner_token_rotated_by": null,
      "agent": {
       "enrolled": true,
       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
@@ -11580,6 +11581,7 @@
       "expires_at": "2026-11-20T12:05:00.000Z"
      },
      "owner_token_rotated_at": null,
+     "owner_token_rotated_by": null,
      "agent": {
       "enrolled": false,
       "pubkey": null,
@@ -14521,6 +14523,7 @@
       "expires_at": "2026-11-20T12:05:00.000Z"
      },
      "owner_token_rotated_at": "2026-11-06T13:55:00.000Z",
+     "owner_token_rotated_by": "owner",
      "agent": {
       "enrolled": false,
       "pubkey": null,
@@ -16859,6 +16862,7 @@
       "expires_at": "2026-11-20T12:01:00.000Z"
      },
      "owner_token_rotated_at": null,
+     "owner_token_rotated_by": null,
      "agent": {
       "enrolled": true,
       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
@@ -23079,6 +23083,192 @@
      }
     }
    }
+  },
+  {
+   "n": 144,
+   "label": "operator: a new owner token for carol, at carol's owner's verified request (POST /admin/participants/{id}/owner-token, loopback and admin token; since v12)",
+   "actor": "operator",
+   "at": "2026-11-15T14:23:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/admin/participants/vp_db176cf4b54e/owner-token",
+    "headers": {
+     "x-valun-admin": "<admin_token>"
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "participant_id": "vp_db176cf4b54e",
+     "owner_token": "<carol.owner#3>",
+     "rotated_at": "2026-11-15T14:23:00.000Z",
+     "note": "Shown once: the server keeps only a hash. The previous owner token no longer works."
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 145,
+   "label": "carol's previous owner token (the one the owner rotated) no longer works (401)",
+   "actor": "carol.owner",
+   "at": "2026-11-15T14:24:00.000Z",
+   "request": {
+    "method": "GET",
+    "path": "/pilot/v1/owner",
+    "headers": {
+     "authorization": "Bearer <carol.owner#2>"
+    }
+   },
+   "response": {
+    "status": 401,
+    "body": {
+     "error": "unauthorized",
+     "message": "missing or invalid token (Authorization: Bearer vpa_… for an agent, vpo_… for an owner)"
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 146,
+   "label": "carol's owner console with the operator-issued token: owner_token_rotated_by operator (since v12)",
+   "actor": "carol.owner",
+   "at": "2026-11-15T14:25:00.000Z",
+   "request": {
+    "method": "GET",
+    "path": "/pilot/v1/owner",
+    "headers": {
+     "authorization": "Bearer <carol.owner#3>"
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "participant": {
+      "id": "vp_db176cf4b54e",
+      "handle": "carol",
+      "display_name": "Carol (spec test)",
+      "operator": "Spec test operator C",
+      "about": "carol: a test participant of the specification transcript",
+      "services": "",
+      "pubkey": null,
+      "status": "awaiting_agent",
+      "joined_at": "2026-11-06T12:05:00.000Z",
+      "agent_last_seen": null
+     },
+     "mandate": {
+      "objective": "",
+      "may_issue_credit": true,
+      "may_accept_credit": true,
+      "max_issue_per_deal": 25,
+      "max_issue_outstanding": 50,
+      "max_accept_per_deal": 25,
+      "max_accept_per_issuer": 50,
+      "min_price_as_payee": 0,
+      "min_payer_coverage_pct": 0,
+      "counterparties": [
+       "vp_461ce015dd98"
+      ],
+      "approve_above": 100,
+      "review_deliveries": false,
+      "expires_at": "2026-11-20T12:05:00.000Z"
+     },
+     "mandate_version": 2,
+     "mandate_changed_by": "owner",
+     "mandate_changed_at": "2026-11-06T12:11:00.000Z",
+     "agent_limits": {},
+     "agent_limits_recorded_by": {},
+     "effective_limits": {
+      "objective": "",
+      "may_issue_credit": true,
+      "may_accept_credit": true,
+      "max_issue_per_deal": 25,
+      "max_issue_outstanding": 50,
+      "max_accept_per_deal": 25,
+      "max_accept_per_issuer": 50,
+      "min_price_as_payee": 0,
+      "min_payer_coverage_pct": 0,
+      "counterparties": [
+       "vp_461ce015dd98"
+      ],
+      "approve_above": 100,
+      "review_deliveries": false,
+      "expires_at": "2026-11-20T12:05:00.000Z"
+     },
+     "owner_token_rotated_at": "2026-11-15T14:23:00.000Z",
+     "owner_token_rotated_by": "operator",
+     "agent": {
+      "enrolled": false,
+      "pubkey": null,
+      "last_seen": null,
+      "enrollment_pending": true,
+      "enrollment_expires_at": "2026-11-06T13:48:00.000Z",
+      "enrollment_issued_by": "owner",
+      "key_registered_at": null
+     },
+     "past_keys": [
+      {
+       "pubkey": "0265ad727818ed16c0dc99185145ba5c0413efa30465f783b7de4b43c799a2e124",
+       "registered_at": "2026-11-06T12:08:00.000Z",
+       "revoked_at": "2026-11-06T13:12:00.000Z"
+      },
+      {
+       "pubkey": "037627480266d48c06e9e05d121a1ff165e2659857eb20c55fdcbeb1d372232680",
+       "registered_at": "2026-11-06T13:16:00.000Z",
+       "revoked_at": "2026-11-06T13:18:00.000Z"
+      }
+     ],
+     "approvals": [],
+     "deals": [],
+     "inbox": {
+      "respond": [],
+      "deliver": [],
+      "review_delivery": [],
+      "awaiting_your_owner": [],
+      "waiting_on_others": [],
+      "recent_closed": []
+     },
+     "position": {
+      "participant_id": "vp_db176cf4b54e",
+      "unit": "PC",
+      "claims_held": 0,
+      "owes": 0,
+      "net": 0,
+      "claims": [],
+      "debts": [],
+      "deals": {
+       "credit_notes_issued": 0,
+       "open": 0,
+       "agreed_note_not_issued": 0,
+       "disputed": 0,
+       "declined": 0,
+       "expired_or_withdrawn": 0
+      },
+      "settled": 0,
+      "backing": "none: the pilot tracker has no chain and no reserves; PC are simulated units",
+      "meaning": "claims and debts are outstanding credit notes (cumulative per pair, as the tracker records them). None has been settled: the pilot has no redemption, reserve or clearing."
+     }
+    }
+   },
+   "server_verified": []
+  },
+  {
+   "n": 147,
+   "label": "error: the owner-token reset is an admin route: without loopback and the admin token it does not exist (404)",
+   "actor": "anyone",
+   "at": "2026-11-15T14:26:00.000Z",
+   "request": {
+    "method": "POST",
+    "path": "/pilot/v1/admin/participants/vp_db176cf4b54e/owner-token",
+    "headers": {}
+   },
+   "response": {
+    "status": 404,
+    "body": {
+     "error": "not_found",
+     "message": "not found"
+    }
+   },
+   "server_verified": []
   }
  ],
  "probes": [

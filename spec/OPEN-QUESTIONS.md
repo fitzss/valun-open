@@ -3,25 +3,27 @@
 Ambiguities, server/client inconsistencies, apparent bugs and security weaknesses found while writing `PROTOCOL.md`
 and its vectors. Nothing here was changed in either implementation by this work.
 
-**Revision 4 (2026-11-07), against server release v11 = valun-app commit `7880dcf`** (deployed; core.mjs sha256
-`94b9fa35…f38514d5d`, http.mjs sha256 `7fcef5a3…4e1ba65f1`; `PROTOCOL.md` lists all five sources). Release v11
-is valun-app's robustness pass on revision 3 (`docs/ROBUSTNESS-2026-11-07.md`); release v10 (`2ef0b16`) changed no
-protocol rule. Resolved in v11, each with the residual issues this revision found stated in the item: OQ-6, OQ-7, OQ-12,
-OQ-13, OQ-20, OQ-24, OQ-25, OQ-29 and OQ-35, the residuals of OQ-31 and OQ-32 named in revision 3, and most of OQ-33's;
-OQ-8 is partly resolved. OQ-36 is new. `PROTOCOL.md` and the vectors describe v11.
+**Revision 6 (2026-11-07), against server release v13 = valun-app commit `6a6a34b`** (deployed; core.mjs sha256
+`7dc469e0…e0f240b2e`; the other sources as in v12). Release v13 replaces the refused-character list by a rule over
+Unicode properties (OQ-33; `PROTOCOL.md` 2.3 states it as the normative definition). Everything else is as in revision 5
+(release v12 = valun-app commit `a61c32e`: OQ-24 operator recovery and the revision 4 OQ-33 residual), revision 4
+(release v11 = `7880dcf`) and earlier. `PROTOCOL.md` and the vectors describe v13.
 
-Line numbers: items and paragraphs marked "revision 4" cite v11 (`7880dcf`); "revision 3" text and OQ-30 to OQ-35 cite
-v9 (`ed1da4a`); the remaining text of OQ-1 to OQ-29 cites v8 (`e0b990a`). `PROTOCOL.md` cites v11 throughout.
-`core.mjs` = `valun-app/lib/pilot/core.mjs`, `http.mjs` = `valun-app/lib/pilot/http.mjs`. Client references are to
-`hermes-plugin-valun` at commit `f504d26` (0.2.0, the commit the Hermes plugin catalog pins; its `valun_client.py`,
-`valun_basis.py` and `tools.py` are identical to those of `6040499`, checked in revision 3) and to the framework-neutral
-`valun` package in this repository (`python/src/valun`), whose `client.py` and `basis.py` are the plugin's with a
-package import (client-side items apply to both unless stated).
+Line numbers: paragraphs marked "revision 6" cite v13 (`6a6a34b`); "revision 5" paragraphs cite v12 (`a61c32e`); "revision 4" paragraphs cite v11 (`7880dcf`);
+"revision 3" text and OQ-30 to OQ-35 cite v9 (`ed1da4a`); the remaining text of OQ-1 to OQ-29 cites v8 (`e0b990a`).
+`PROTOCOL.md` cites v13 throughout. `core.mjs` = `valun-app/lib/pilot/core.mjs`, `http.mjs` =
+`valun-app/lib/pilot/http.mjs`. Client references are to `hermes-plugin-valun` at commit `f504d26` (0.2.0, the commit
+the Hermes plugin catalog pins; its `valun_client.py`, `valun_basis.py` and `tools.py` are identical to those of
+`6040499`, checked in revision 3) and to the framework-neutral `valun` package in this repository (`python/src/valun`),
+whose `client.py` and `basis.py` are the plugin's with a package import (client-side items apply to both unless
+stated).
 
 Revision history: revision 1 (2026-11-06, core.mjs `82212e52…6558`); revision 2 (2026-11-07, release v8 `e0b990a`,
 core.mjs `cc779241…3d73`), which gave each item a status: **RESOLVED (commit)**, **CHANGED** (partly fixed, or the fix
 changed the question), or **OPEN**, and added OQ-29 to OQ-34; revision 3 (2026-11-07, release v9 `ed1da4a`, core.mjs
-`3a357106…cf1528008`), which added OQ-35.
+`3a357106…cf1528008`), which added OQ-35; revision 4 (2026-11-07, release v11 `7880dcf`, core.mjs `94b9fa35…f38514d5d`),
+which resolved OQ-6, 7, 12, 13, 20, 24, 25, 29 and 35 and added OQ-36; revision 5 (2026-11-07, release v12 `a61c32e`,
+core.mjs `0cf1bb6a…6778ef3ab27`), which resolved the OQ-24 residual and the OQ-33 residual of revision 4.
 
 How each item is known: **[vectors]** shown by `spec/vectors/check_python.py` or asserted by `generate.mjs` against the
 real code; **[probe]** reproduced by running the real server code in memory; **[code]** from reading the code only.
@@ -56,7 +58,7 @@ reachable cases; **low** = edge case, hardening or documentation.
 | OQ-21 | Keys are trusted from the server | medium | OPEN |
 | OQ-22 | Signed notes that were never issued stay on the server | medium | OPEN |
 | OQ-23 | Python clients' issued-notes record gets ahead of the tracker | medium | OPEN (both clients) |
-| OQ-24 | Owner tokens cannot be rotated | low | RESOLVED (7880dcf); residual: a holder of a stolen token can rotate it first |
+| OQ-24 | Owner tokens cannot be rotated | low | RESOLVED (7880dcf; operator recovery a61c32e); left: recovery rests on the operator's out-of-band check |
 | OQ-25 | Deal-id existence oracle | low | RESOLVED (7880dcf) |
 | OQ-26 | Coverage can be manufactured | low | OPEN (adversarial F3, open by design) |
 | OQ-27 | Public metadata | low | CHANGED: profile text filtered; metadata unchanged |
@@ -65,12 +67,13 @@ reachable cases; **low** = edge case, hardening or documentation.
 | OQ-30 | Any bearer header skips the unauthenticated read budget | medium | RESOLVED (ed1da4a); residual: agents behind one address share the read budget (OQ-11) |
 | OQ-31 | Signer failures look like bad signatures | medium | RESOLVED (ed1da4a; residual resolved 7880dcf); left: `verified_by_valun: true` when the re-check was skipped; split by message text |
 | OQ-32 | Reasons: bidi/zero-width kept, raw controls shown, non-string accepted | low | RESOLVED (ed1da4a; residual resolved 7880dcf) |
-| OQ-33 | Unsafe-character set: gaps and over-refusal | medium | RESOLVED (ed1da4a, 7880dcf) for the reported characters; residual: a 4-bit channel per emoji character, a few other invisible characters |
+| OQ-33 | Unsafe-character set: gaps and over-refusal | medium→low | RESOLVED (6a6a34b): a rule by Unicode property, no Cc/Cf/default-ignorable code point passes outside its exceptions; left (low): the single marks between any two characters, blank-looking non-ignorable characters; trade-off: prepended concatenation marks refused |
 | OQ-34 | Display-name rule: gaps and status code | low | RESOLVED (ed1da4a); residual (unchanged in v11): reserved words only as whole names, no NFKC, names without letters or digits, confusables |
 | OQ-35 | Every 502 says "internal error": `BasisError` has no `name` | low | RESOLVED (7880dcf) |
 | OQ-36 | The plugin tells an acceptor its own owner holds an acceptance the proposer's owner holds | low | OPEN (new in revision 4; plugin only) |
 
-Resolved: OQ-1, 5, 9, 10, 14 (v8), OQ-30 to 34 (v9, with residuals) and OQ-6, 7, 12, 13, 20, 24, 25, 29, 35 (v11).
+Resolved: OQ-1, 5, 9, 10, 14 (v8), OQ-30 to 34 (v9, with residuals), OQ-6, 7, 12, 13, 20, 24, 25, 29, 35 (v11), the
+OQ-24 and OQ-33 residuals named in revision 4 (v12), and OQ-33's list approach (v13: a rule by property).
 Partly fixed: OQ-8, 11, 16, 27. Still open: OQ-2, 3, 4, 15, 17, 18, 19, 21, 22, 23, 26, 28, and the new OQ-36.
 
 ## A. Server and Python clients
@@ -239,7 +242,7 @@ valun_client.py:337-338 (package: client.py:334-335) records the total on `compl
 rejects or the note goes stale, later completions to that payee key fail with `ledger_mismatch` (valun_client.py:324-326;
 package client.py:321-323). A 502 during submission has the opposite effect. Same code in both clients.
 
-### OQ-24 (low, security) Owner tokens cannot be rotated or revoked — RESOLVED (7880dcf) [vectors]
+### OQ-24 (low, security) Owner tokens cannot be rotated or revoked — RESOLVED (7880dcf; operator recovery a61c32e) [vectors]
 No route (core.mjs:158, 208).
 Revision 4 (v11): `POST /owner/rotate-token` (owner token) returns a new owner token once; the old one is `401` at
 once; the agent is not affected; `GET /owner` shows `owner_token_rotated_at` (core.mjs:272-281, http.mjs:121).
@@ -247,6 +250,16 @@ once; the agent is not affected; `GET /owner` shows `owner_token_rotated_at` (co
 Residual (low, [code]): rotation needs the current token, so whoever holds a stolen owner token can rotate it first
 and lock the real owner out; there is still no route for the operator to issue a new owner token (it can issue
 enrollment codes and change mandates only), and no revocation without the token.
+Revision 5 (v12): the residual is resolved. The operator can issue a new owner token for a participant whose
+token was lost or stolen: `POST /admin/participants/{id}/owner-token` (loopback and admin token only, like every
+admin route; http.mjs:46-47), which runs the same rotation with `by: operator` (core.mjs:275-285): the new token is
+returned once, the previous one (also one a thief rotated to) is `401` at once, the agent is not affected,
+`GET /owner` shows `owner_token_rotated_by: "operator"` (http.mjs:112), audit `owner_token.reset_by_operator`.
+`transcript.json` release v12 steps: the operator resets carol's token; the token carol's owner rotated to earlier
+is `401`; the new one shows `owner_token_rotated_by: operator`; the route without loopback and admin token is `404`.
+Left (low, process): the recovery is only as good as the operator's out-of-band check that the request comes from
+the owner; the protocol has no identity of its own for owners. Nothing tells the holder of the replaced token why it
+stopped working (`401` only).
 
 ### OQ-25 (low, security) Deal-id existence oracle — RESOLVED (7880dcf) [vectors]
 `duplicate` (core.mjs:530) is still checked before the signature (core.mjs:533).
@@ -355,7 +368,7 @@ leading and trailing whitespace (at most 500 without it)" (dispute 1100 / 1000; 
 (soft hyphen, ideographic variation selectors) are refused since v11 (`decline/soft-hyphen`,
 `decline/variation-selectors` now tier `refused`).
 
-### OQ-33 (medium, interop/UX) The unsafe-character set has gaps and refuses legitimate text — RESOLVED (ed1da4a, 7880dcf) for the reported characters [vectors, probe]
+### OQ-33 (medium, interop/UX) The unsafe-character set has gaps and refuses legitimate text — RESOLVED (6a6a34b): rule by Unicode property; low residual OPEN [vectors, probe]
 Was (v8): U+200C/U+200D (ZWNJ/ZWJ, needed by emoji sequences and Persian/Indic text) were refused; C1 controls,
 U+2060–U+2064 and the tag characters were allowed.
 Now (v9 core.mjs:69): refused = C0 controls other than TAB/LF/CR, U+007F–U+009F, U+200B, U+202A–U+202E,
@@ -402,6 +415,62 @@ Residual:
   remains.
 - (cosmetic) The service-text message still says "control, bidi or zero-width characters" (core.mjs:87).
 - LRM/RLM/ALM allowed (as in v9); lone surrogates accepted (OQ-3).
+Revision 5 (v12): the revision 4 residual is resolved (core.mjs:81-86): U+FE00–U+FE0D are refused everywhere; after an
+emoji only U+FE0E or U+FE0F may follow; after 0–9, `#` or `*` a selector is allowed only inside a keycap (followed by
+U+20E3); U+180E, U+034F, U+206A–U+206F and U+1D173–U+1D17A are refused. Vectors: `bad/variation-selector-after-digit`
+(was `ok/…` in v11), `bad/variation-selector-fe05-after-emoji`, `bad/digit-vs16-without-keycap`,
+`bad/invisible-format-*`, `ok/keycaps-and-text-presentation`; `canonical.json` `refused/variation-selector-after-digit`,
+`refused/variation-selector-fe00-fe0d-after-emoji`, `refused/digit-vs16-without-keycap`,
+`refused/invisible-format-characters`, `terms/text-presentation-and-keycaps`; `statements.json`
+`decline/variation-selector-after-digit` now refused, `decline/keycap` accepted.
+Residual (medium: the same hidden-data channel the tag-character rule closed; [vectors, probe]):
+- Default-ignorable characters outside the list are still accepted, also in runs after ordinary text: the Mongolian
+  free variation selectors U+180B–U+180D and U+180F (four values per character), the Khmer inherent vowels U+17B4
+  and U+17B5, the shorthand format controls U+1BCA0–U+1BCA3, and unassigned default-ignorable code points (U+2065,
+  U+FFF0–U+FFF8, U+E0080–U+E00FF next to the tag block, U+E01F0–U+E0FFF), which render as nothing; a run of
+  U+E0080–U+E00FF carries 7 bits per character. Also the Egyptian hieroglyph format controls from U+13430 (general
+  category Cf). Vectors: `terms-validation.json` `ok/mongolian-free-variation-selectors`,
+  `ok/unassigned-default-ignorables`; `canonical.json` `terms/mongolian-free-variation-selectors`,
+  `terms/unassigned-default-ignorables`; `statements.json` `decline/mongolian-free-variation-selectors`.
+- Suggest replacing the list by properties, as revision 2 did: refuse `\p{Default_Ignorable_Code_Point}` and
+  `\p{Cf}` (both supported by ECMAScript regular expressions), except U+200C, U+200D, U+200E, U+200F, U+061C and
+  U+FE0E/U+FE0F in the positions v12 allows (and, for `\p{Cf}`, the visible prepended concatenation marks such as
+  U+0600–U+0605). Probed: every residual character above has one of the two properties.
+- (low) Choosing U+FE0F, U+FE0E or nothing after an emoji is invisible for most emoji: a choice of three per emoji.
+- (cosmetic) The service-text message still says "control, bidi or zero-width characters" (core.mjs:90).
+- LRM/RLM/ALM allowed on purpose; lone surrogates accepted (OQ-3).
+Revision 6 (v13): the list is replaced by the rule revision 5 suggested (core.mjs:84-113, `hasUnsafeText`; stated as
+the normative definition in `PROTOCOL.md` 2.3): per code point, refuse every Cc (except TAB, LF, CR), Cf and
+Default_Ignorable_Code_Point code point, except ZWNJ, ZWJ, LRM, RLM and ALM singly (never two in a row), U+FE0E/U+FE0F
+directly after an emoji other than 0–9 `#` `*`, keycaps (0–9 `#` `*`, U+FE0F, U+20E3) and the three RGI subdivision
+flags. A sweep of every code point between two letters (probe, Unicode 17.0) accepts exactly U+0009, U+000A, U+000D,
+U+061C and U+200C–U+200F among Cc, Cf and default-ignorable code points, and refuses 3777 code points that v12
+accepted and none that v12 refused. Vectors: everything revision 5 pinned as accepted is now refused
+(`bad/mongolian-free-variation-selectors`, `bad/unassigned-default-ignorables`, `bad/format-or-ignorable-*`,
+`refused/other-default-ignorables-and-format`; `decline/mongolian-free-variation-selectors` refused), plus
+`bad/run-of-joiners`, `bad/run-of-direction-marks`, `bad/keycap-with-fe0e` (a keycap with U+FE0E, accepted in v12).
+Trade-off (by design): the prepended concatenation marks are visible format characters (Cf) and are refused with the
+rest: U+0600–U+0605 (Arabic number signs, which span the digits after them, e.g. in page or year numbers), U+06DD
+ARABIC END OF AYAH, U+070F SYRIAC ABBREVIATION MARK, U+0890–U+0891, U+08E2, U+110BD and U+110CD (all probed refused).
+Text that needs them cannot be signed (`refused/arabic-prepended-concatenation-mark`, `bad/format-or-ignorable-600`,
+`decline/arabic-number-sign`); rare in deal text, and refusing them keeps the rule a plain property test.
+Left (low; nothing Cc, Cf or default-ignorable passes outside the stated exceptions):
+- The single marks are allowed between any two characters, not only where a script needs them: after every
+  character of Latin text one of five invisible marks or none may follow, about 2.6 bits per character. A sentence
+  with 10 such marks is accepted and looks the same (probe; `ok/single-marks-between-letters`,
+  `terms/single-marks-between-letters`, `decline/single-marks-between-letters`). Likewise U+FE0F, U+FE0E or nothing
+  after each emoji. Restricting ZWNJ/ZWJ to the contexts of UAX #31 (after a virama, between joining letters, inside
+  emoji ZWJ sequences) and the direction marks to text with right-to-left characters would close most of it.
+- Characters outside the three properties that render as blank space: U+2800 BRAILLE PATTERN BLANK and U+1D159
+  MUSICAL SYMBOL NULL NOTEHEAD (category So; `ok/blank-looking-characters`), the space separators (U+00A0, U+1680,
+  U+2000–U+200A, U+202F, U+205F, U+3000) and U+2028/U+2029. They take up width (they look like spaces, not like
+  nothing), but a display name of U+2800 alone looks empty: two participants were both accepted as `⠀⠀` (probe; see
+  OQ-34, whose `norm` removes them, so such names are never compared).
+- Private-use code points (137,468; `ok/private-use`) and unassigned code points that are not default-ignorable
+  (810,961 in Unicode 17.0, the 66 noncharacters among them) are accepted; whether they show depends on the fonts.
+  Lone surrogates: OQ-3.
+- Property membership depends on the Unicode version; a client with another version can disagree on code points whose
+  properties changed between versions (`PROTOCOL.md` 2.3 names the server's: Unicode 17.0, Node.js 24.21.0).
 
 ### OQ-34 (low) Display-name rule: gaps and status code — RESOLVED (ed1da4a) [vectors]
 Was (v8): `409` with code `invalid_field`; reserved words not checked as display names; a handle could copy a display
@@ -456,32 +525,29 @@ their limits require it; valun_deal shows which)", and its `valun_deal` passes t
 `held_for`, through (agent.py:327). Fix: say which owner holds it from `acceptance.held_for`. Not a protocol
 disagreement (the signed bytes agree); `check_python.py` does not judge tool text.
 
-## H. What was and was not verified (revision 4)
+## H. What was and was not verified (revision 6)
 
-- Exported: valun-app commit `7880dcf` (release v11) with `git archive` into a scratch folder (the valun-app working
-  tree was not read; the v9→v11 changes were read from `git diff ed1da4a 7880dcf` and the committed
-  `docs/ROBUSTNESS-2026-11-07.md`). The generator checks the sha256 of core.mjs, pilot http.mjs, lib/basis.mjs and
-  lib/http.mjs (whose error mapping it replicates) against v11's; every vector file says
-  `server_release: "v11 (valun-app commit 7880dcf)"`.
-- Run: `generate.mjs` against that export (the real `canonical`, `termsHash`, `statements`, `hasUnsafeText` through
-  `validateTerms`/`decline`/`dispute`/`join`, `Pilot` class, HTTP route table and `BasisError` class, in memory, fixed
-  clock, stand-in tracker and signer; every assertion about accepted and refused inputs holds; two runs give
-  byte-identical files). The transcript's first 111 steps are the v9 run: compared with the v9 file they differ only by
-  additive v11 fields (`changed`, `agent_limits_recorded_by`, `delivery_grace_ends_at`, `owner_token_rotated_at`,
-  `recorded_by`) and by step 92 (the template during a signer outage, now `503`); steps 112 to 143 are new.
-- `check_python.py` against both clients. Hermes plugin, fresh clone of github.com/fitzss/hermes-plugin-valun at
-  `f504d2660727bf90ee1375e6b071acd5c6b63de5` (the commit CI pins): **747 checks: 607 agree, 0 disagreements in failing
-  tiers, 17 informative differences, 123 not applicable** (exit status 0). `valun` package (`python/src` of the valun-open working tree,
-  0.3.0.dev0; `client.py` and `basis.py` unchanged, `agent.py` at commit `93c7272` plus uncommitted changes by another
-  engineer: fail-closed `is_commitment`, `bind()`, `review` refusing unknown decisions): the same, **747 checks: 607 agree, 0 disagreements in failing
-  tiers, 17 informative differences, 123 not applicable** (exit status 0). The informative differences are the OQ-2,
-  OQ-3 and OQ-4 inputs, as in revision 3. `check_python.py` reads `agent.py`/`tools.py` only to find the one
-  `c.decline(` and `c.dispute(` call each (now agent.py:416 and 455); no change was needed for the new `agent.py`.
-- Negative control: the scratch copy of the package with a `Client.decline` that signs `reason + " "` and a
-  `valun_respond` that does not strip gives 29 disagreements against the v11 vectors (exit status 1).
-- Also probed in memory against v11: the character test on U+180E, U+034F, U+206A–U+206F, U+1D173, a variation
-  selector after a digit, `#` or `©`, lone surrogates (accepted), and a tag sequence without U+1F3F4 (refused).
-- Not run: the Rust `valun_signer`/basis_core, the real signer runner, the real Basis tracker, the valun-app test suites
-  (including `test/robustness.test.mjs`), the hosted server, any network except the one clone of the public plugin.
-- Revision 3 (release v9, for comparison): 649 checks, 526 agree, 0 disagreements, 17 informative, 106 not applicable,
-  for both clients.
+- Exported: valun-app commit `6a6a34b` (release v13) with `git archive` into a scratch folder (the valun-app working
+  tree was not read; the v12→v13 change was read from `git diff a61c32e 6a6a34b`: `hasUnsafeText` in
+  `lib/pilot/core.mjs` and a test). The generator checks the sha256 of core.mjs, pilot http.mjs, lib/basis.mjs and
+  lib/http.mjs against v13's; every vector file says `server_release: "v13 (valun-app commit 6a6a34b)"`.
+- Run: `generate.mjs` against that export (the real code in memory, as in revision 5; every assertion about accepted
+  and refused inputs holds; two runs give byte-identical files). `transcript.json` is the v12 run unchanged (v13
+  changed no step); `canonical.json`, `statements.json` and `terms-validation.json` gained the v13 cases, and the six
+  vectors that pinned the revision 5 residual as accepted (two canonical, two terms-validation, the decline and dispute
+  reasons) are now refused.
+- `check_python.py` against both clients: Hermes plugin (the clone at `f504d2660727bf90ee1375e6b071acd5c6b63de5`):
+  **829 checks: 658 agree, 0 disagreements in failing tiers, 17 informative differences, 154 not applicable** (exit
+  status 0); `valun` package (`python/src` of the valun-open working tree, 0.3.0.dev0): the same, **829 checks: 658
+  agree, 0 disagreements in failing tiers, 17 informative differences, 154 not applicable** (exit status 0). The
+  negative-control copy of the package gives 30 disagreements (exit status 1).
+- Probed in memory with the real v12 and v13 `hasUnsafeText`: every code point U+0000–U+10FFFF between two letters
+  (3777 more refused by v13, none fewer; the only Cc/Cf/default-ignorable code points accepted are U+0009, U+000A,
+  U+000D, U+061C, U+200C–U+200F; counts of accepted private-use, unassigned, surrogate and noncharacter code points);
+  runs and contexts of the single marks and variation selectors, keycaps, flag tag sequences (including extra cancel
+  tags); a sentence carrying 10 single marks (accepted, visible text unchanged); the prepended concatenation marks
+  (all refused); two joins with the display name U+2800 U+2800 (both accepted). Unicode 17.0 (Node.js 24.21.0, ICU 78.3).
+- Not run: the Rust `valun_signer`/basis_core, the real signer runner, the real Basis tracker, the valun-app test suites,
+  the hosted server, any network. Rendering of the blank-looking, private-use and unassigned characters was not checked.
+- Earlier results, for comparison: revision 5 (release v12) 791 checks, 636 agree; revision 4 (v11) 747, 607; revision
+  3 (v9) 649, 526; each time 0 disagreements and 17 informative differences, both clients alike.

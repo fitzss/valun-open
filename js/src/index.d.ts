@@ -337,13 +337,17 @@ export function cleanText(text: string): string;
 /** Display-safe text: controls, format characters and lone surrogates as visible \u{XXXX} markers. Never sign it. */
 export function neutralize(text: string): string;
 /**
- * Characters the server (release v11) refuses in reasons, signed service text and profile fields. It also matches the
- * tag characters of the three allowed RGI subdivision flags: test text with hasUnsafeText().
+ * Cc, Cf and Default_Ignorable_Code_Point: the characters the release v13 text rule starts from. Stricter than the server
+ * (TAB/LF/CR, single joiners and marks, emoji selectors, keycaps and the three flags are allowed there): test text with
+ * hasUnsafeText().
  */
 export const REASON_UNSAFE: RegExp;
-/** Does the text hold a character the server (release v11) refuses? The England, Scotland and Wales flags are allowed. */
+/**
+ * Does the server (release v13, spec 2.3) refuse this text (a reason, signed service text, a profile field)? The same
+ * rule as the server's hasUnsafeText, code point by code point, with the engine's Unicode properties.
+ */
 export function hasUnsafeText(text: string): boolean;
-/** The server's (release v11) refusal of a decline/dispute reason, in its order and wording, or null if it accepts it. */
+/** The server's (release v13) refusal of a decline/dispute reason, in its order and wording, or null if it accepts it. */
 export function reasonProblem(kind: 'decline' | 'dispute', reason: unknown): {error: 'invalid_field'; message: string} | null;
 
 // ---------------------------------------------------------------------------------------------------------------------

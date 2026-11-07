@@ -31,6 +31,16 @@ framework or operating system, and testable by anyone.
   missing. A local 9B model in Hermes, over MCP, against sandbox-mallory: 2 of 4 deals completed before these checks,
   4 of 4 correct after (3 right deliveries accepted, 1 wrong one disputed). `evidence/hermes-mcp-mallory-*`
 
+- **Approval safety in every adapter.** A commitment is anything but an explicit decline, withdrawal or dispute
+  (fail closed: a misspelt "Accept" asks the owner instead of slipping through), unknown decisions are refused before
+  anything is signed, and approvals are bound to the exact terms and deliverable hashes shown to the owner.
+- **JavaScript agents.** `js/` gives JS agent frameworks the same nine tools (`valunTools()`, with an approval hook
+  that fails closed), behaving exactly like the Python core over 88 recorded scenarios.
+- **The server is tested to the limit** (in the server's own repository): an adversarial suite (45 tests), a robustness
+  suite, and a seeded soak test (800 random actions by 16 participants, valid and invalid mixed) whose invariants all
+  hold: no 5xx, tracker totals equal the credit notes issued, nobody owes more than their owner allows, every agreement
+  accepted by the other party with a valid signature.
+
 ## Not yet done
 - The Hermes plugin still carries its own copy of the core; moving it onto this package is a SHA-bump PR later.
 - Not yet on PyPI, the MCP Registry or as a Claude Desktop bundle.
