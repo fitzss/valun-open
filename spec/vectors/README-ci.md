@@ -40,7 +40,7 @@ regenerated):
 ```
 
 These were obtained locally with Python 3.14.7 against release v13's vectors, with hermes-plugin-valun at commit
-`f504d26` (a fresh clone; the commit `.github/workflows/ci.yml` pins) and the package at version `0.3.0.dev0` from
+`94483e4` (0.2.1) (a fresh clone; the commit `.github/workflows/ci.yml` pins) and the package at version `0.3.0.dev0` from
 `python/src`. CI runs exactly these two commands on Linux, macOS and Windows with Python 3.10 and 3.13.
 
 ## The GitHub Actions job
@@ -63,7 +63,7 @@ commit the package is held to; a branch name would make the job follow the plugi
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
         with:
           repository: fitzss/hermes-plugin-valun
-          ref: f504d2660727bf90ee1375e6b071acd5c6b63de5   # the commit the Hermes plugin catalog pins (0.2.0)
+          ref: 94483e48f0bbd91df0fdd73e16e70170d18ccfea   # the commit the Hermes plugin catalog pins (0.2.0)
           path: hermes-plugin-valun
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
