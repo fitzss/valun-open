@@ -174,15 +174,16 @@ class McpServer:
             if refusal:
                 return self.result(refusal, error=True, modern=True)
             args, text = prepared['args'], prepared['text']
-            state = self._state(name, args)
-            answer = (p.get('inputResponses') or {}).get('approval')
-            if answer is None or not hmac.compare_digest(str(p.get('requestState') or ''), state):
-                return {'resultType': 'input_required', 'requestState': state, 'inputRequests': {'approval': {
-                    'method': 'elicitation/create', 'params': {'mode': 'form', 'message': text + '\n\nApprove this commitment?',
-                                                               'requestedSchema': APPROVAL_SCHEMA}}}}
-            if not (answer.get('action') == 'accept' and (answer.get('content') or {}).get('approve') is True):
-                return self.result({'error': 'owner_declined', 'owner_answer': answer.get('action') or 'unknown',
-                                    'message': 'your owner did not approve this commitment; nothing was signed'}, error=True, modern=True)
+            if text is not None:                # None: the read prepare() made shows this call commits nothing
+                state = self._state(name, args)
+                answer = (p.get('inputResponses') or {}).get('approval')
+                if answer is None or not hmac.compare_digest(str(p.get('requestState') or ''), state):
+                    return {'resultType': 'input_required', 'requestState': state, 'inputRequests': {'approval': {
+                        'method': 'elicitation/create', 'params': {'mode': 'form', 'message': text + '\n\nApprove this commitment?',
+                                                                   'requestedSchema': APPROVAL_SCHEMA}}}}
+                if not (answer.get('action') == 'accept' and (answer.get('content') or {}).get('approve') is True):
+                    return self.result({'error': 'owner_declined', 'owner_answer': answer.get('action') or 'unknown',
+                                        'message': 'your owner did not approve this commitment; nothing was signed'}, error=True, modern=True)
         try:
             return self.result(self.agent.call(name, args), modern=True)
         except Exception as e:  # noqa: BLE001
@@ -209,9 +210,10 @@ class McpServer:
             if refusal:
                 return self.result(refusal, error=True)
             args = prepared['args']
-            refusal = self.ask_owner(name, args, prepared['text'])
-            if refusal:
-                return self.result(refusal, error=True)
+            if prepared['text'] is not None:    # None: the read prepare() made shows this call commits nothing
+                refusal = self.ask_owner(name, args, prepared['text'])
+                if refusal:
+                    return self.result(refusal, error=True)
         try:
             return self.result(self.agent.call(name, args))
         except Exception as e:  # noqa: BLE001
@@ -236,6 +238,8 @@ class McpServer:
             if refusal:
                 return refusal
             text = prepared['text']
+            if text is None:
+                return None                     # this call commits nothing: there is nothing to approve
         self._next_id += 1
         rid = f'valun-approval-{self._next_id}'
         mode = {'mode': 'form'} if self.version >= '2025-11-25' else {}   # form mode: the client sees and shows the text

@@ -49,10 +49,11 @@ def _write_private(path, text):
 def _approval_mandate(mode, cap):
     """The owner-mandate change when approvals switch to or from console. Console holds every commitment for the
     owner: every price (approve_above 0) and every accepted delivery, whose credit note waits for the owner's review
-    (review_deliveries). Leaving console undoes both."""
+    (review_deliveries). Leaving console restores approve_above only: review_deliveries is the owner's own setting too
+    (it can be chosen in the owner console), so it is left as it is and the owner is told how to turn it off."""
     if mode == 'console':
         return {'approve_above': 0, 'review_deliveries': True}
-    return {'approve_above': cap, 'review_deliveries': False}
+    return {'approve_above': cap}
 
 
 def _pin(client):
@@ -94,8 +95,7 @@ def cmd_join(args):
     # The owner token is used here once, in memory, to set where approvals happen; it is never stored in the profile.
     limits = c.request('GET', '/pilot/v1/owner', token=owner)['mandate']
     cap = max(limits.get('max_issue_per_deal', 0), limits.get('max_accept_per_deal', 0))
-    c.request('PUT', '/pilot/v1/owner/mandate', {'approve_above': 0, 'review_deliveries': True} if args.approvals == 'console'
-              else {'approve_above': cap}, token=owner)
+    c.request('PUT', '/pilot/v1/owner/mandate', _approval_mandate(args.approvals, cap), token=owner)
     print(f"Joined Valun as {handle} ({j['participant_id']}) on {server}. This agent's key was generated here; "
           f"public key {r['pubkey'][:16]}...")
     print(f'Credentials are stored privately in {profile_path(args.profile)} (not shown).')
@@ -233,10 +233,13 @@ def cmd_config(args):
             except vc.ValunError as e:
                 print(f'Could not change the mandate ({e.code}): {e}')
                 return 1
-            print('Owner mandate updated: ' + ('every commitment now waits for you in the owner console, including accepted '
-                                               'deliveries (their credit notes wait for your review).' if val == 'console'
-                                               else f'commitments up to {cap} PC no longer wait in the console, and accepted '
-                                                    'deliveries issue their credit notes without your review.'))
+            if val == 'console':
+                print('Owner mandate updated: every commitment now waits for you in the owner console, including accepted '
+                      'deliveries (their credit notes wait for your review).')
+            else:
+                print(f'Owner mandate updated: commitments up to {cap} PC no longer wait in the console.'
+                      + (' Accepted deliveries still wait for your review (review_deliveries is on); turn that off in the '
+                         f'owner console ({_server(args, store)}/pilot#owner) if you no longer want it.' if m.get('review_deliveries') else ''))
         changes = {'approvals': val}
     elif key == 'server':
         changes = {'server': val.rstrip('/')}
@@ -285,10 +288,11 @@ def cmd_call(args):
             print(json.dumps(refusal, ensure_ascii=False, indent=1, default=str))
             return 3
         tool_args = prepared['args']
-        print(prepared['text'], file=sys.stderr)
-        if input('Approve this commitment? [y/N] ').strip().lower() not in ('y', 'yes'):
-            print(json.dumps({'error': 'owner_declined', 'message': 'not approved; nothing was signed'}))
-            return 3
+        if prepared['text'] is not None:                # None: the read prepare() made shows this call commits nothing
+            print(prepared['text'], file=sys.stderr)
+            if input('Approve this commitment? [y/N] ').strip().lower() not in ('y', 'yes'):
+                print(json.dumps({'error': 'owner_declined', 'message': 'not approved; nothing was signed'}))
+                return 3
     result = agent.call_safe(args.tool, tool_args)
     print(json.dumps(result, ensure_ascii=False, indent=1, default=str))
     return 1 if 'error' in result else 0

@@ -44,8 +44,17 @@ class Base(unittest.TestCase):
             return json.load(f)
 
     def assert_clean(self):
-        left = [f for f in os.listdir(self.tmp.name) if f.endswith(('.lock', '.tmp'))]
+        left = [f for f in os.listdir(self.tmp.name) if f.endswith(('.lock', '.tmp', '.break'))]
         self.assertEqual(left, [])
+
+    def make_lock(self, content=b'99999 0\n', age=0):
+        lock = self.path + '.lock'
+        with open(lock, 'wb') as f:
+            f.write(content)
+        if age:
+            old = time.time() - age
+            os.utime(lock, (old, old))
+        return lock
 
 
 class NoLostUpdates(Base):
@@ -132,6 +141,68 @@ class Locking(Base):
         vc.FileStore(self.path).update(lambda st: st.__setitem__('k', 3))
         self.assertEqual(self.disk()['k'], 3)
         self.assert_clean()
+
+    def test_a_waiter_never_removes_a_lock_taken_after_it_judged_the_old_one_stale(self):
+        # Two waiters find the same stale lock. The first removes it and takes the profile; the second judged the old
+        # lock stale just before that, and must not remove the first one's new lock (both would then hold the profile).
+        lock = self.make_lock(age=120)
+        first, taken = vc.FileStore(self.path), []
+
+        class Second(vc.FileStore):
+            def _age(self, path):
+                age = super()._age(path)
+                if path == lock and not taken:          # right after the second waiter looked at the stale lock
+                    taken.append(first._replace_stale(lock))
+                    fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_BINARY', 0))
+                    os.write(fd, b'first')
+                    os.close(fd)
+                return age
+        Second(self.path)._replace_stale(lock)
+        self.assertEqual(taken, [True])
+        with open(lock, 'rb') as f:
+            self.assertEqual(f.read(), b'first')        # the first waiter's lock is still in place
+        self.assertFalse(os.path.exists(lock + '.break'))
+        os.unlink(lock)
+
+    def test_a_holder_never_removes_a_lock_that_is_no_longer_its_own(self):
+        lock = self.path + '.lock'
+
+        def slow(st):           # held so long that another process replaced the lock as stale, and holds it now
+            os.unlink(lock)
+            with open(lock, 'wb') as f:
+                f.write(b'another process')
+            st['k'] = 4
+        vc.FileStore(self.path).update(slow)
+        with open(lock, 'rb') as f:
+            self.assertEqual(f.read(), b'another process')
+        os.unlink(lock)
+        self.assertEqual(self.disk()['k'], 4)
+
+    def test_a_break_file_left_by_a_dead_waiter_is_removed(self):
+        self.make_lock(age=120)
+        brk = self.path + '.lock.break'
+        with open(brk, 'wb'):
+            pass
+        old = time.time() - 120
+        os.utime(brk, (old, old))
+        vc.FileStore(self.path).update(lambda st: st.__setitem__('k', 5))
+        self.assertEqual(self.disk()['k'], 5)
+        self.assert_clean()
+
+    def test_a_live_break_file_makes_waiters_wait(self):
+        class Quick(vc.FileStore):
+            LOCK_WAIT_S = 0.3
+        self.make_lock(age=120)
+        brk = self.path + '.lock.break'
+        open(brk, 'wb').close()                         # another waiter is replacing the stale lock right now
+        try:
+            with self.assertRaises(vc.ValunError) as e:
+                Quick(self.path).update(lambda st: st.__setitem__('k', 6))
+            self.assertEqual(e.exception.code, 'profile_busy')
+            self.assertTrue(os.path.exists(self.path + '.lock'))
+        finally:
+            os.unlink(brk)
+            os.unlink(self.path + '.lock')
 
 
 class Safety(Base):

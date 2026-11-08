@@ -254,11 +254,57 @@ class Recording(unittest.TestCase):
                 return r
         self.assertEqual(Marking(w, s).complete('vd_1')['status'], 'note_issued')
         self.assertEqual([p['total'] for p in records.get(s.state['records'], w.pair)['pending']], [20])   # settled later
+        s.sent = False
+        with self.assertRaises(vc.ValunError) as e:
+            Marking(w, s).complete('vd_1')                        # a server that offers the paid deal again
+        self.assertEqual(e.exception.code, 'already_paid')       # the entry still pending is enough to refuse
+        w.add_deal('vd_2')
         w.complete_answer = ('error', 409, 'stale_note')
         s.sent = False
         with self.assertRaises(vc.ValunError) as e:
-            Marking(w, s).complete('vd_1')
+            Marking(w, s).complete('vd_2')
         self.assertEqual(e.exception.code, 'stale_note')          # the server's refusal, not the busy profile
+
+    def test_a_disk_error_after_the_answer_does_not_hide_it(self):
+        class DiskFullAfterSending(MemStore):
+            sent = False
+
+            def update(self, fn):
+                if self.sent:
+                    raise OSError(28, 'No space left on device')
+                work = json.loads(json.dumps(self.state))
+                result = fn(work)
+                self.state.clear()
+                self.state.update(work)
+                return result
+        w, s = World(), DiskFullAfterSending()
+        w.add_deal('vd_1')
+
+        class Marking(WorldClient):
+            def request(self, method, path, body=None, auth=True, token=None):
+                r = super().request(method, path, body, auth, token)
+                if method == 'POST':
+                    s.sent = True
+                return r
+        self.assertEqual(Marking(w, s).complete('vd_1')['status'], 'note_issued')     # issued: the answer is returned
+        self.assertEqual(w.tracker[w.pair]['total'], 20)
+        self.assertEqual([p['total'] for p in records.get(s.state['records'], w.pair)['pending']], [20])
+        w.add_deal('vd_2')
+        w.complete_answer = ('error', 409, 'stale_note')
+        s.sent = False
+        with self.assertRaises(vc.ValunError) as e:
+            Marking(w, s).complete('vd_2')
+        self.assertEqual(e.exception.code, 'stale_note')
+
+    def test_terms_other_than_the_ones_reviewed_are_not_paid(self):
+        w, s = World(), MemStore()
+        w.add_deal('vd_1')
+        with self.assertRaises(vc.ValunError) as e:
+            WorldClient(w, s).complete('vd_1', expected_terms_hash='e' * 64)
+        self.assertEqual(e.exception.code, 'stale_terms')
+        self.assertEqual(w.log, ['GET /pilot/v1/deals/vd_1'])     # refused before the template is even asked for
+        h = w.deals['vd_1']['agreement']['terms_hash']
+        self.assertEqual(WorldClient(w, s).complete('vd_1', w.deals['vd_1']['delivery']['sha256'], h)['status'], 'note_issued')
 
     def test_pending_is_written_before_the_note_is_sent(self):
         w, s = World(), MemStore()
@@ -406,6 +452,49 @@ class PriorNote(unittest.TestCase):
         w.add_deal('vd_1')
         w.template_ts = self.now // 1000 * 1000 - 1001
         self.assertEqual(WorldClient(w, s).complete('vd_1')['status'], 'note_issued')
+
+
+class PaidOnce(unittest.TestCase):
+    """A note of mine for a deal that may have applied is not signed again, even on the 0.3 ledger path and even for the
+    first note to a payee, when there is no confirmed record to compare with."""
+
+    def held_then_approved(self, s, features=None):
+        w = World(features=features, review_deliveries=True)
+        w.add_deal('vd_1')
+        self.assertEqual(WorldClient(w, s).complete('vd_1')['status'], 'completion_awaiting_owner')
+        w.owner_approve('vd_1')                                   # the tracker now holds the note
+        w.review_deliveries = False
+        return w
+
+    def test_a_first_note_approved_later_is_not_paid_again(self):
+        for s in (MemStore(), pinned_store()):                    # unpinned (0.3 path), and pinned with no features
+            w = self.held_then_approved(s, features=[] if 'pins' in s.state else None)
+            d = w.deals['vd_1']
+            d['status'], d['credit_note'] = 'delivered', None     # a server that hides the note and offers the deal again
+            with self.assertRaises(vc.ValunError) as e:
+                WorldClient(w, s).complete('vd_1')
+            self.assertEqual(e.exception.code, 'already_paid', s.state.get('pins'))
+            self.assertEqual(w.log.count('POST /pilot/v1/deals/vd_1/complete'), 1)
+            self.assertEqual(w.tracker[w.pair]['total'], 20)
+
+    def test_a_first_note_approved_later_is_confirmed_from_its_deal(self):
+        s = MemStore()
+        w = self.held_then_approved(s)
+        with self.assertRaises(vc.ValunError) as e:
+            WorldClient(w, s).complete('vd_1')                    # the deal itself says the note was issued
+        self.assertEqual(e.exception.code, 'already_paid')
+        self.assertEqual((s.state['issued'], records.get(s.state['records'], w.pair)['pending']), ({w.pair: 20}, []))
+
+    def test_a_first_note_the_owner_rejected_is_paid(self):
+        for s in (MemStore(), pinned_store()):
+            w = World(features=[] if 'pins' in s.state else None, review_deliveries=True)
+            w.add_deal('vd_1')
+            WorldClient(w, s).complete('vd_1')
+            w.owner_reject('vd_1')
+            w.review_deliveries = False
+            self.assertEqual(WorldClient(w, s).complete('vd_1')['status'], 'note_issued')
+            self.assertEqual((w.tracker[w.pair]['total'], s.state['issued']), (20, {w.pair: 20}))
+            self.assertEqual(records.get(s.state['records'], w.pair)['pending'], [])
 
 
 class DeliverySignature(unittest.TestCase):

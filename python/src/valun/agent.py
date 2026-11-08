@@ -9,8 +9,10 @@ Secrets never leave the store: no tool returns, logs or echoes the signing key o
 Ported from the Hermes plugin's tools.py (hermes-plugin-valun 0.2.0) with the Hermes-specific parts removed.
 
 Approvals fail closed. is_commitment() treats every tool name it does not know as a commitment, and prepare() returns
-the arguments to sign with and the owner's approval text from one snapshot of what would be signed; when that cannot
-be read it raises approval_unbound, and every adapter then refuses the call instead of asking with a generic text.
+the arguments to sign with and the owner's approval text from one snapshot of what would be signed. The text is built
+only from values checked against what is signed (recomputed hashes, which the arguments then pin); when the snapshot
+cannot be read or does not hold together it raises approval_unbound, and every adapter then refuses the call instead
+of asking with a generic text.
 """
 import json
 import re
@@ -61,7 +63,10 @@ LIMIT_TOOLS = ('valun_set_limits',)
 SIGNING_TOOLS = tuple(n for n in TOOL_NAMES if n not in NOT_COMMITMENT_TOOLS + LIMIT_TOOLS)
 UNBOUND_MESSAGE = 'could not read what you would sign; nothing was signed'
 GENERIC_TEXT = 'Valun: sign a commitment ({name}).'     # only for a tool this client does not know
+QUOTE_MAX_CHARS = 2000      # per quoted field of an approval text (the server's own limit for service.description)
+ROLE_WORDS = {'payer': 'payer', 'payee': 'payee (you do the work)'}
 _PLAIN = re.compile(r'[A-Za-z0-9_.:@+-]{1,120}')
+_DEAL_ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
 
 
 def quoted(value):
@@ -81,6 +86,24 @@ def shown(value):
     if isinstance(value, int) or (isinstance(value, str) and _PLAIN.fullmatch(value)):
         return str(value)
     return quoted(value)
+
+
+def quote_line(label, fields):
+    """The last line of an approval text: `label`, then `fields` (text a counterparty or the agent wrote) quoted as ONE
+    JSON line. A text field longer than QUOTE_MAX_CHARS is cut to that many characters, and the label says so."""
+    out, cut = {}, False
+    for k, v in fields.items():
+        if isinstance(v, str) and len(v) > QUOTE_MAX_CHARS:
+            v, cut = v[:QUOTE_MAX_CHARS], True
+        out[k] = v
+    note = f'; fields over {QUOTE_MAX_CHARS} characters are cut to their first {QUOTE_MAX_CHARS}' if cut else ''
+    return f'{label} (quoted exactly{note}): ' + quoted(out)
+
+
+def owes(role, who, price):
+    """What a binding deal means for this participant, in the role the signed terms give it."""
+    return (f'after you accept their delivery you will owe {who} {price} PC (your credit note).' if role == 'payer'
+            else f'you must deliver; {who} would then owe you {price} PC (their credit note).')
 
 
 def limits_body(args):
@@ -146,9 +169,10 @@ def error_payload(e, setup_hint='run `valun join` (or `valun enroll`) in a termi
             if k in e.extra:
                 out[k] = e.extra[k]
         if e.code == 'approval_unbound':
-            out['what_this_means'] = ('Nothing was signed and your owner was not asked: your Valun client could not read exactly '
-                                      'what this call would sign (the deal, offer or delivery could not be read, or it has no '
-                                      'hash). Read the deal again with valun_deal and retry; if it keeps failing, tell your owner.')
+            out['what_this_means'] = ('Nothing was signed and your owner was not asked: your Valun client could not read and check '
+                                      'exactly what this call would sign (the deal, offer or delivery could not be read, does not '
+                                      'match its hash, or changed after you read it). Read the deal again with valun_deal and retry; '
+                                      'if it keeps failing, tell your owner.')
         if e.code == 'tracker_mismatch':
             out['what_this_means'] = ('The Valun server now names a different Basis tracker or unit than the one this profile was '
                                       'set up with. Nothing was signed. Stop and tell your owner.')
@@ -159,8 +183,8 @@ def error_payload(e, setup_hint='run `valun join` (or `valun enroll`) in a termi
             out['what_this_means'] = ('Your Valun client cannot read its own records, so it signs nothing until they are fixed. '
                                       'Nothing was signed. Tell your owner.')
         if e.code == 'already_paid':
-            out['what_this_means'] = ('Your earlier credit note for this deal is already on the tracker: the deal is paid. Nothing '
-                                      'was signed. Do not try to pay it again; tell your owner.')
+            out['what_this_means'] = ('Your earlier credit note for this deal is (or may already be) on the tracker, so the deal '
+                                      'counts as paid. Nothing was signed. Do not try to pay it again; tell your owner.')
         if e.code == 'mandate_exceeded':
             out['what_this_means'] = ("Your owner's mandate does not allow this. Nothing was recorded. Do not try to work around "
                                       'it; tell your owner if you think the limit should change.')
@@ -251,15 +275,22 @@ class ValunAgent:
         return True
 
     def prepare(self, name, args):
-        """Bind and describe a commitment from ONE snapshot of what it would sign. Returns {'args': the arguments to sign
-        with (an acceptance pinned to the current terms hash, a delivery acceptance to the current deliverable hash,
-        unless the agent already passed them), 'text': the owner's approval text}. Adapters ask the owner with `text`
-        and then call the tool with exactly `args`, so the signature covers what the owner saw (the client refuses a
-        stale hash instead of signing newer terms). For a call that is not a commitment, text is None.
+        """Bind and describe a commitment from ONE snapshot of what it would sign. Returns {'args', 'text'}: the
+        arguments to sign with and the owner's approval text. Adapters ask the owner with `text`, then call the tool with
+        exactly `args`. text is None for a call that commits nothing (also a valun_set_limits call that this snapshot
+        shows loosens nothing): it runs without asking.
 
-        Raises ValunError('approval_unbound') when what would be signed cannot be read (any error, or a missing hash):
-        the adapter must then refuse the call. A tool this client does not know gets a generic text; a known
-        commitment never does."""
+        The text is built only from values checked against what is signed. An acceptance or counter-offer: the terms
+        shown hash to the stated terms hash, are this deal's, name this participant as exactly one party and were
+        offered by the other one, and the server's role and counterparty for the deal agree with them. A delivery
+        acceptance: the same, and the agreement has that terms hash and the delivered text hashes to its sha256. The
+        recomputed hashes are pinned in `args` (expected_terms_hash; for a delivery also expected_deliverable_sha256);
+        the client reads the deal again when it signs and refuses anything else (stale_terms, stale_delivery). A new
+        offer is pinned to the participant id the text shows. So the signature covers what the owner saw.
+
+        Raises ValunError('approval_unbound') when what would be signed cannot be read or checked (any error, a missing
+        or wrong hash, or a pin the agent passed that is not the snapshot's): the adapter must then refuse the call.
+        A tool this client does not know gets a generic text; a known commitment never does."""
         a = dict(args) if isinstance(args, dict) else {}
         if name not in self.handlers:
             return {'args': a, 'text': GENERIC_TEXT.format(name=shown(name))}
@@ -268,44 +299,48 @@ class ValunAgent:
         try:
             if args is not None and not isinstance(args, dict):
                 raise vc.ValunError('bad_arguments', 'the arguments are not a JSON object')
+            render = self._text_for(name, a)          # before any read: a misspelt action or decision has no text
             snap = self._snapshot(name, a)
-            bound = self._bind_from(name, a, snap)
-            text = self._describe_from(name, bound, snap)
-        except Exception as e:  # noqa: BLE001 - nothing may be approved that could not be read
+            if name in LIMIT_TOOLS and not loosens(snap['me'].get('agent_limits') or {}, limits_body(a)):
+                return {'args': a, 'text': None}      # this read shows nothing loosened: nothing to approve
+            bound = self._bind_from(name, a, snap, strict=True)
+            text = render(bound, snap)
+        except Exception as e:  # noqa: BLE001 - nothing may be approved that could not be read and checked
             raise self._unbound(e) from None
         return {'args': bound, 'text': text}
 
     def prepare_or_refusal(self, name, args):
-        """For adapters: (prepared, None) to ask the owner with prepared['text'] and then sign with prepared['args'];
-        or (None, refusal), a result to return instead of asking, when what would be signed cannot be read. The owner
-        is then never asked with a generic text, and nothing is signed (approval_unbound)."""
+        """For adapters: (prepared, None), or (None, refusal). Ask the owner with prepared['text'], then sign with
+        prepared['args']; when prepared['text'] is None the call commits nothing and runs without asking. The refusal is
+        the result to return instead of asking when what would be signed cannot be read or checked: the owner is then
+        never asked with a generic text, and nothing is signed (approval_unbound)."""
         try:
             prepared = self.prepare(name, args)
-            if isinstance(prepared, dict) and isinstance(prepared.get('text'), str) and prepared['text']:
-                return prepared, None
         except Exception:  # noqa: BLE001 - whatever went wrong, the answer is the same refusal
-            pass
+            prepared = None
+        if isinstance(prepared, dict) and isinstance(prepared.get('args'), dict) and \
+                (prepared.get('text') is None or (isinstance(prepared['text'], str) and prepared['text'])):
+            return prepared, None
         return None, error_payload(vc.ValunError('approval_unbound', UNBOUND_MESSAGE), self.setup_hint)
 
     def bind(self, name, args):
-        """prepare()'s arguments alone, for adapters that ask with their own text (kept for compatibility). Pins an
-        acceptance to the current terms hash and a delivery acceptance to the current deliverable hash, unless the agent
-        already passed them. For a commitment it no longer returns the arguments unpinned when the deal cannot be read:
-        it raises ValunError('approval_unbound')."""
+        """prepare()'s pins alone, for adapters that ask with their own text (kept for compatibility): an acceptance or
+        counter-offer is pinned to the recomputed hash of the terms shown, a delivery acceptance also to the recomputed
+        hash of the delivered text, each checked as prepare() checks it. Pins the agent passed are kept (the client
+        refuses to sign anything else). For a commitment it never returns the arguments unpinned: when the deal cannot be
+        read or checked it raises ValunError('approval_unbound')."""
         a = dict(args) if isinstance(args, dict) else {}
-        pins = (name == 'valun_respond' and a.get('action') == 'accept' and not a.get('expected_terms_hash')) or \
-               (name == 'valun_review_delivery' and a.get('decision') == 'accept' and not a.get('expected_deliverable_sha256'))
-        if not pins:
+        if not self._needs_pins(name, a):
             return a
         try:
-            return self._bind_from(name, a, self._snapshot(name, a))
+            return self._bind_from(name, a, self._snapshot(name, a), strict=False)
         except Exception as e:  # noqa: BLE001
             raise self._unbound(e) from None
 
     def describe_commitment(self, name, args):
         """Text for an approval prompt: exactly what the agent is about to sign, and what it means (prepare() gives it
         together with the arguments it binds). Raises ValunError('approval_unbound') for a known commitment it cannot
-        read: it never falls back to a generic text. None for a call that is not a commitment."""
+        read and check: it never falls back to a generic text. None for a call that is not a commitment."""
         return self.prepare(name, args)['text']
 
     @staticmethod
@@ -313,57 +348,138 @@ class ValunAgent:
         cause = e.code if isinstance(e, vc.ValunError) else type(e).__name__
         return vc.ValunError('approval_unbound', UNBOUND_MESSAGE, extra={'cause': cause})
 
+    @staticmethod
+    def _needs_pins(name, a):
+        if name == 'valun_respond' and a.get('action') in ('accept', 'counter'):
+            return not a.get('expected_terms_hash')
+        if name == 'valun_review_delivery' and a.get('decision') == 'accept':
+            return not (a.get('expected_deliverable_sha256') and a.get('expected_terms_hash'))
+        return False
+
     def _snapshot(self, name, a):
-        """The one read an approval is bound to and described from."""
+        """The one read an approval is bound to and described from (checked: see prepare)."""
         c = self.client()
         if name == 'valun_propose':
-            return {'counterparty': self._resolve(c, a.get('counterparty'))}
+            other = self._resolve(c, a.get('counterparty'))
+            if not (isinstance(other, dict) and isinstance(other.get('id'), str) and other['id']):
+                raise vc.ValunError('approval_unbound', 'the directory names no participant id')
+            return {'counterparty': other}
         if name == 'valun_set_limits':
             me = c.me()
-            if not isinstance(me.get('mandate'), dict):
-                raise vc.ValunError('approval_unbound', 'the server sent no owner mandate')
+            if not isinstance(me, dict):
+                raise vc.ValunError('approval_unbound', 'the server sent no participant record')
             return {'me': me}
         did = a.get('deal_id')
-        if not (isinstance(did, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,64}', did)):
+        if not (isinstance(did, str) and _DEAL_ID.fullmatch(did)):
             raise vc.ValunError('bad_arguments', 'deal_id is missing or malformed')
         d = c.deal(did)
         if not isinstance(d, dict):
             raise vc.ValunError('approval_unbound', 'the deal could not be read')
-        return {'deal': d}
+        return {'deal': d, 'checked': self._checked(d, did, c.participant_id, delivery=name == 'valun_review_delivery')}
 
     @staticmethod
-    def _bind_from(name, a, snap):
+    def _checked(d, did, me, delivery=False):
+        """The values an approval text is built from, each checked against what the call signs (prepare). Raises
+        ValunError when the deal as shown does not hold together."""
+        cur = d.get('current')
+        if not isinstance(cur, dict) or not cur:
+            raise vc.ValunError('no_offer', 'this deal has no visible offer')
+        t = cur.get('terms')
+        if not isinstance(t, dict):
+            raise vc.ValunError('approval_unbound', 'the offer shows no terms')
+        h = vc.terms_hash(t)
+        if cur.get('terms_hash') != h:
+            raise vc.ValunError('hash_mismatch', 'the terms shown do not hash to the stated terms hash')
+        if t.get('deal_id') != did:
+            raise vc.ValunError('deal_mismatch', 'the terms shown are for another deal')
+        ids = {r: t[r].get('id') if isinstance(t.get(r), dict) else None for r in ('payer', 'payee')}
+        mine = [r for r, pid in ids.items() if isinstance(me, str) and me and pid == me]
+        if len(mine) != 1:
+            raise vc.ValunError('not_a_party', 'the terms do not name you as exactly one of the two parties')
+        role = mine[0]
+        other = ids['payee' if role == 'payer' else 'payer']
+        if not (isinstance(other, str) and other):
+            raise vc.ValunError('not_a_party', 'the terms name no other party')
+        if d.get('your_role') is not None and d.get('your_role') != role:
+            raise vc.ValunError('role_mismatch', f'the server says you are the {shown(d.get("your_role"))}; the terms make you the {role}')
+        cp = d.get('counterparty') if isinstance(d.get('counterparty'), dict) else {}
+        if cp.get('id') is not None and cp.get('id') != other:
+            raise vc.ValunError('counterparty_mismatch', "the server's counterparty is not the other party in the terms")
+        price = t.get('price')
+        if not (isinstance(price, dict) and _whole(price.get('amount')) and price.get('unit') == vc.UNIT):
+            raise vc.ValunError('bad_terms', 'the price is not a whole number of PC')
+        out = {'terms': t, 'terms_hash': h, 'role': role, 'other_id': other, 'handle': cp.get('handle'), 'price': price['amount'],
+               'service': t['service'] if isinstance(t.get('service'), dict) else {}}
+        if not delivery:
+            if t.get('proposer') != other:
+                raise vc.ValunError('own_offer', 'the current offer is not the other party\'s: only they can be answered')
+            return out
+        if role != 'payer':
+            raise vc.ValunError('not_payer', 'only the payer accepts a delivery')
+        ag = d.get('agreement')
+        if not isinstance(ag, dict) or ag.get('terms_hash') != h:
+            raise vc.ValunError('hash_mismatch', "the agreement's terms hash is not the hash of the terms shown")
+        dl = d.get('delivery')
+        if not isinstance(dl, dict) or not dl:
+            raise vc.ValunError('not_delivered', 'nothing has been delivered on this deal')
+        content = dl.get('content')
+        if not isinstance(content, str):
+            raise vc.ValunError('approval_unbound', 'the delivery shows no text')
+        sha = vc.sha256_hex(content)
+        if dl.get('sha256') != sha:
+            raise vc.ValunError('hash_mismatch', 'the delivered content does not match its sha256')
+        out.update(delivery=dl, content=content, sha256=sha)
+        return out
+
+    @staticmethod
+    def _bind_from(name, a, snap, strict):
+        """The arguments to sign with: the agent's, plus the pins taken from the checked snapshot. With strict (prepare)
+        a pin the agent passed must be the snapshot's: the text describes the snapshot, so the call may sign nothing else."""
         a = dict(a)
-        if name == 'valun_respond' and a.get('action') == 'accept' and not a.get('expected_terms_hash'):
-            h = (snap['deal'].get('current') or {}).get('terms_hash')
-            if not (isinstance(h, str) and h):
-                raise vc.ValunError('approval_unbound', 'the offer has no terms hash')
-            a['expected_terms_hash'] = h
-        if name == 'valun_review_delivery' and a.get('decision') == 'accept' and not a.get('expected_deliverable_sha256'):
-            h = (snap['deal'].get('delivery') or {}).get('sha256')
-            if not (isinstance(h, str) and h):
-                raise vc.ValunError('approval_unbound', 'the delivery has no hash')
-            a['expected_deliverable_sha256'] = h
+        chk = snap.get('checked') or {}
+
+        def pin(key, value, code, why):
+            if not a.get(key):
+                a[key] = value
+            elif strict and a[key] != value:
+                raise vc.ValunError(code, why)
+        if name == 'valun_respond' and a.get('action') in ('accept', 'counter'):
+            pin('expected_terms_hash', chk['terms_hash'], 'stale_terms', 'the offer changed after your agent read it')
+        elif name == 'valun_review_delivery' and a.get('decision') == 'accept':
+            pin('expected_deliverable_sha256', chk['sha256'], 'stale_delivery', 'the delivery changed after your agent read it')
+            pin('expected_terms_hash', chk['terms_hash'], 'stale_terms', 'the agreed terms are not the ones your agent read')
+        elif name == 'valun_propose' and 'counterparty' in snap:
+            a['counterparty'] = snap['counterparty']['id']     # the offer is signed for exactly the participant shown
         return a
 
-    def _describe_from(self, name, a, snap):
-        """The approval text: computed lines first (values the client computed or checked, shown so that they cannot
-        carry layout), then text written by a counterparty or by the agent, quoted as one JSON line."""
+    def _text_for(self, name, a):
+        """The approval text builder for this call: (args, snapshot) -> text."""
         if name == 'valun_set_limits':
-            return self._text_limits(a, snap['me'])
+            return self._text_limits
         if name == 'valun_propose':
-            return self._text_propose(a, snap['counterparty'])
+            return self._text_propose
         if name == 'valun_respond' and a.get('action') == 'accept':
-            return self._text_accept(a, snap['deal'])
+            return self._text_accept
         if name == 'valun_respond' and a.get('action') == 'counter':
-            return self._text_counter(a, snap['deal'])
+            return self._text_counter
         if name == 'valun_review_delivery' and a.get('decision') == 'accept':
-            return self._text_review(a, snap['deal'])
+            return self._text_review
         raise vc.ValunError('approval_unbound', f'no approval text for {name} with these arguments')
 
+    # The texts: computed lines first (values the client computed or checked against what is signed, shown so that they
+    # cannot carry layout), then text written by a counterparty or by the agent, quoted as one JSON line (quote_line).
     @staticmethod
-    def _text_limits(a, me):
-        cur, mandate, body = me.get('agent_limits') or {}, me['mandate'], limits_body(a)
+    def _who(chk):
+        h = chk.get('handle')
+        return shown(h) if isinstance(h, str) and h else shown(chk['other_id'])
+
+    @staticmethod
+    def _text_limits(a, snap):
+        me = snap['me']
+        mandate = me.get('mandate')
+        if not isinstance(mandate, dict):
+            raise vc.ValunError('approval_unbound', 'the server sent no owner mandate')
+        cur, body = me.get('agent_limits') or {}, limits_body(a)
         names = {field: arg for arg, (field, _k) in LIMIT_FIELDS.items()}
         lines = ['Valun - LOOSEN limits recorded from your instructions (the Valun server enforces them):']
         for field, new in body.items():
@@ -376,72 +492,59 @@ class ValunAgent:
         return '\n'.join(lines)
 
     @staticmethod
-    def _text_propose(a, other):
+    def _text_propose(a, snap):
+        other = snap['counterparty']
         role = a.get('role')
         if role not in ('payer', 'payee'):
             raise vc.ValunError('bad_role', 'role must be payer or payee')
         price, due, ttl = int(a['price']), int(a.get('deliver_within_hours') or 48), int(a.get('offer_valid_hours') or 24)
         who = shown(other.get('handle'))
         return '\n'.join([
-            f"Valun - sign a NEW OFFER to {who} ({shown(other.get('id'))}):",
-            f'  price: {price} PC; you are the ' + ('payer' if role == 'payer' else 'payee (you do the work)'),
+            f"Valun - sign a NEW OFFER to {who} ({shown(other['id'])}):",
+            f'  you are the {ROLE_WORDS[role]}; price: {price} PC',
             f'  deliver within {due} h; the offer stays open {ttl} h',
-            f'If {who} accepts, the deal is binding without asking you again: '
-            + (f'after you accept their delivery you will owe them {price} PC (your credit note).' if role == 'payer'
-               else f'you must deliver; they would then owe you {price} PC (their credit note).'),
+            f'If {who} accepts, the deal is binding without asking you again: ' + owes(role, who, price),
             NOT_SETTLED,
-            'Offer text written by your agent (quoted exactly): ' + quoted({'service': a.get('title'), 'deliverable': a.get('deliverable')})])
+            quote_line('Offer text written by your agent', {k: a.get(k) for k in ('title', 'description', 'deliverable')})])
 
-    @staticmethod
-    def _deal_parts(d):
-        cur = d.get('current')
-        if not isinstance(cur, dict) or not cur:
-            raise vc.ValunError('no_offer', 'this deal has no visible offer')
-        t = cur.get('terms') or {}
-        return (cur, t, shown((d.get('counterparty') or {}).get('handle')), d.get('your_role'),
-                (t.get('price') or {}).get('amount'), t.get('service') or {})
+    def _text_accept(self, a, snap):
+        chk = snap['checked']
+        t, who, price, svc = chk['terms'], self._who(chk), chk['price'], chk['service']
+        return '\n'.join([
+            f"Valun - ACCEPT {who}'s offer ({shown(chk['other_id'])}, deal {shown(t['deal_id'])}, version {shown(t.get('version'))}):",
+            f"  you are the {ROLE_WORDS[chk['role']]}; price: {price} PC; deliver by {shown(t.get('deliver_by'))}",
+            f"  terms hash {chk['terms_hash'][:16]}... (recomputed from these terms; your Valun client checks it again before signing)",
+            'This makes the deal binding on both sides: ' + owes(chk['role'], who, price),
+            NOT_SETTLED,
+            quote_line(f'Offer text written by {who}', {k: svc.get(k) for k in ('title', 'description', 'deliverable')})])
 
-    def _text_accept(self, a, d):
-        cur, t, who, role, price, svc = self._deal_parts(d)
-        given = a.get('expected_terms_hash')
-        lines = [
-            f"Valun - ACCEPT {who}'s offer (deal {shown(d.get('id'))}, version {shown(cur.get('version'))}):",
-            f"  price: {shown(price)} PC; you are the {shown(role)}; deliver by {shown(t.get('deliver_by'))}",
-            f"  terms hash {shown(str(given or cur.get('terms_hash') or '')[:16])}... (rechecked by your Valun client before signing)"]
-        if given and given != cur.get('terms_hash'):
-            lines.append('  WARNING: the offer changed after your agent read it; signing these terms will be refused')
-        lines += ['This makes the deal binding on both sides: '
-                  + (f'after you accept the delivery you will owe {who} {shown(price)} PC.' if role == 'payer'
-                     else f'you must deliver; {who} would then owe you {shown(price)} PC.'),
-                  NOT_SETTLED,
-                  f'Offer text written by {who} (quoted exactly): ' + quoted({'service': svc.get('title'), 'deliverable': svc.get('deliverable')})]
-        return '\n'.join(lines)
+    def _text_counter(self, a, snap):
+        chk = snap['checked']
+        t, who, old, svc = chk['terms'], self._who(chk), chk['price'], chk['service']
+        # Exactly what Client.counter() signs: these arguments, and the rest copied from the terms pinned by hash.
+        price = int(a['price']) if a.get('price') is not None else old
+        hours = a.get('deliver_within_hours')
+        if hours is not None and not _whole(hours):
+            raise vc.ValunError('bad_arguments', 'deliver_within_hours must be a whole number of hours')
+        texts = [k for k in ('title', 'description', 'deliverable') if a.get(k)]
+        changes = ([f'price {old} -> {price} PC'] if a.get('price') is not None else []) \
+            + ([f'deliver within {hours} h'] if hours is not None else []) + [f'{k} (quoted below)' for k in texts]
+        return '\n'.join([
+            f"Valun - sign a COUNTER-OFFER to {who} ({shown(chk['other_id'])}, deal {shown(t['deal_id'])}), "
+            f"replacing their version {shown(t.get('version'))}:",
+            f"  you are the {ROLE_WORDS[chk['role']]}; price: {price} PC",
+            '  deliver ' + (f'within {hours} h of signing' if hours is not None else
+                            f"by {shown(t.get('deliver_by'))} as in their offer (rounded down to the hour, at least 1 h after signing)"),
+            '  your agent changes: ' + (', '.join(changes) or 'nothing') + '; the counter-offer stays open 24 h',
+            f'If {who} accepts it, the deal is binding without asking you again: ' + owes(chk['role'], who, price),
+            NOT_SETTLED,
+            quote_line(f"Counter-offer text, with what your agent did not change copied from {who}'s offer",
+                       {k: a[k] if a.get(k) else svc.get(k) for k in ('title', 'description', 'deliverable')})])
 
-    def _text_counter(self, a, d):
-        cur, _t, who, role, price, _svc = self._deal_parts(d)
-        changes = []
-        if a.get('price') not in (None, ''):
-            changes.append(f"price {int(a['price'])} PC")
-        if a.get('deliver_within_hours') not in (None, ''):
-            changes.append(f"deliver within {int(a['deliver_within_hours'])} h")
-        texts = {k: a[k] for k in ('title', 'description', 'deliverable') if a.get(k) not in (None, '')}
-        changes += [f'{k} (quoted below)' for k in texts]
-        lines = [f"Valun - sign a COUNTER-OFFER to {who} (deal {shown(d.get('id'))}), replacing their version "
-                 f'{shown(cur.get("version"))} at {shown(price)} PC:',
-                 '  changes: ' + (', '.join(changes) or 'none'),
-                 f'If {who} accepts it, the deal is binding without asking you again. You are the {shown(role)}.',
-                 NOT_SETTLED]
-        if texts:
-            lines.append('New text written by your agent (quoted exactly): ' + quoted(texts))
-        return '\n'.join(lines)
-
-    def _text_review(self, a, d):
-        _cur, t, who, _role, price, svc = self._deal_parts(d)
-        dl = d.get('delivery')
-        if not isinstance(dl, dict) or not dl:
-            raise vc.ValunError('not_delivered', 'nothing has been delivered on this deal')
-        content = dl.get('content') if isinstance(dl.get('content'), str) else ''
-        m = measure.measure(content, terms_text(d), check_hosts=False)
+    def _text_review(self, a, snap):
+        chk = snap['checked']
+        t, who, price, svc, dl, content = chk['terms'], self._who(chk), chk['price'], chk['service'], chk['delivery'], chk['content']
+        m = measure.measure(content, ' '.join(str(svc.get(k) or '') for k in ('title', 'description', 'deliverable')), check_hosts=False)
         facts = [f"{x['requirement']}: {x['measured']} ({'met' if x['met'] else 'NOT met'})" for x in m['checks_against_agreed_terms']]
         try:
             exact = sandbox.check_delivery(t, content)
@@ -451,17 +554,16 @@ class ValunAgent:
         if exact and exact.get('checked'):
             facts.append('exact result: ' + ('matches the agreed text' if exact.get('exact_result_matches') else
                                              'DOES NOT MATCH (differs in ' + ', '.join(shown(k) for k in (exact.get('differs_in') or [])) + ')'))
-        given = a.get('expected_deliverable_sha256')
-        lines = [f"Valun - ACCEPT {who}'s delivery (deal {shown(d.get('id'))}) and ISSUE A CREDIT NOTE of {shown(price)} PC to {who}:",
-                 f"  delivered: {shown(dl.get('bytes'))} bytes, sha256 {shown(str(given or dl.get('sha256') or '')[:16])}...",
-                 '  measured: ' + ('; '.join(facts) or f"{m['word_count']} words, {len(m['links'])} links")]
-        if given and given != dl.get('sha256'):
-            lines.append('  WARNING: the delivery changed after your agent read it; accepting it will be refused')
-        lines += [f'Your agent signs a Basis note; the pilot tracker then records that you owe {who} {shown(price)} PC more.',
-                  NOT_SETTLED,
-                  f'Written by {who} (quoted exactly): ' + quoted({'delivery_title': dl.get('title') or '', 'service': svc.get('title'),
-                                                                   'deliverable': svc.get('deliverable')})]
-        return '\n'.join(lines)
+        return '\n'.join([
+            f"Valun - ACCEPT {who}'s delivery ({shown(chk['other_id'])}, deal {shown(t['deal_id'])}) and ISSUE A CREDIT NOTE "
+            f'of {price} PC to {who}:',
+            f"  delivered: {len(content.encode('utf-8'))} bytes, sha256 {chk['sha256'][:16]}... (recomputed from the text measured here)",
+            '  measured: ' + ('; '.join(facts) or f"{m['word_count']} words, {len(m['links'])} links"),
+            f"  agreed terms hash {chk['terms_hash'][:16]}... (your Valun client checks both hashes again before signing)",
+            f'Your agent signs a Basis note; the pilot tracker then records that you owe {who} {price} PC more.',
+            NOT_SETTLED,
+            quote_line('Delivery title and agreed service text', {'delivery_title': dl.get('title') or '', 'title': svc.get('title'),
+                                                                  'deliverable': svc.get('deliverable')})])
 
     # ---------- tools ----------
     def status(self, a):
@@ -610,7 +712,7 @@ class ValunAgent:
             r = c.withdraw(did)
         elif act == 'counter':
             r = c.counter(did, price=a.get('price'), title=a.get('title'), description=a.get('description'), deliverable=a.get('deliverable'),
-                          deliver_by_hours=a.get('deliver_within_hours'))
+                          deliver_by_hours=a.get('deliver_within_hours'), expected_terms_hash=a.get('expected_terms_hash'))
         else:
             raise vc.ValunError('bad_action', 'action must be accept, decline, counter or withdraw')
         held = act == 'counter' and r.get('pending_counter')
@@ -646,7 +748,7 @@ class ValunAgent:
                 raise vc.ValunError('reason_required', 'a dispute needs a reason')
             r = c.dispute(a['deal_id'], a['reason'])
             return {'deal_id': r['id'], 'status': r['status'], 'what_happened': 'Disputed. No credit note was issued; the dispute is recorded.'}
-        r = c.complete(a['deal_id'], a.get('expected_deliverable_sha256'))
+        r = c.complete(a['deal_id'], a.get('expected_deliverable_sha256'), a.get('expected_terms_hash'))
         n = r.get('credit_note') or {}
         if r['status'] == 'completion_awaiting_owner':
             msg = 'You accepted the delivery and signed the credit note; your owner must approve before it is issued to the tracker.'

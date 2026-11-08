@@ -125,7 +125,10 @@ class FileStore:
     Several processes may use one profile (an MCP server and `valun call`, say). update(fn) changes it as one step
     they cannot interleave: it holds the lock file '<path>.lock' (created with O_CREAT|O_EXCL; waits up to LOCK_WAIT_S;
     a lock older than LOCK_STALE_S was left by a process that died and is replaced), reloads the file, applies fn and
-    saves atomically. The JavaScript client uses the same protocol on the same file."""
+    saves atomically. The lock file holds '<pid> <time> <random>': its holder removes it only while it still holds
+    exactly that. A stale lock is replaced only by a waiter holding '<path>.lock.break' (also O_CREAT|O_EXCL), after
+    judging the lock's age again under it (_replace_stale). The JavaScript client uses the same protocol on the same
+    files."""
     LOCK_WAIT_S = 5.0
     LOCK_STALE_S = 30.0
 
@@ -219,11 +222,11 @@ class FileStore:
         os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
         deadline = _systime.monotonic() + self.LOCK_WAIT_S
         while True:
-            try:
-                fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:        # O_BINARY (Windows): the mark is read back byte for byte when the lock is released
+                fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_BINARY', 0), 0o600)
                 break
             except FileExistsError:
-                if self._replace_stale(lock):
+                if self._replace_stale(lock) and _systime.monotonic() < deadline:
                     continue
             except PermissionError:            # Windows: the holder is deleting the lock file right now
                 if os.name != 'nt':
@@ -232,30 +235,72 @@ class FileStore:
                 raise ValunError('profile_busy', f'another Valun process is using the profile {self.path} (lock file {lock}); '
                                  'try again') from None
             _systime.sleep(0.005 + random.random() * 0.02)
+        mark = f'{os.getpid()} {_systime.time():.3f} {os.urandom(8).hex()}\n'.encode('ascii')    # this holder's own lock
         try:
             try:
-                os.write(fd, f'{os.getpid()} {_systime.time():.3f}\n'.encode('ascii'))
+                written = os.write(fd, mark) == len(mark)
             finally:
                 os.close(fd)
-            yield
-        finally:
+        except BaseException:
             with contextlib.suppress(OSError):
                 os.unlink(lock)
+            raise
+        try:
+            yield
+        finally:
+            self._release(lock, mark if written else None)
+
+    @staticmethod
+    def _release(lock, mark):
+        """Remove the lock, unless it is no longer this holder's: one that held it longer than LOCK_STALE_S may have been
+        replaced as stale, and the lock file then belongs to another process."""
+        if mark is not None:
+            try:
+                with open(lock, 'rb') as f:
+                    if f.read() != mark:
+                        return
+            except OSError:
+                return
+        with contextlib.suppress(OSError):
+            os.unlink(lock)
+
+    def _age(self, path):
+        """Seconds since `path` was last modified; None when it does not exist (or is being deleted right now)."""
+        try:
+            return _systime.time() - os.path.getmtime(path)
+        except OSError:
+            return None
 
     def _replace_stale(self, lock):
-        """True when the lock is gone or was left by a process that died (older than LOCK_STALE_S) and is now removed."""
-        try:
-            age = _systime.time() - os.path.getmtime(lock)
-        except OSError:
+        """True when the lock is gone, or was left by a process that died (older than LOCK_STALE_S) and is now removed.
+        Waiters that find it stale take turns through a second O_CREAT|O_EXCL file, '<lock>.break', and judge the lock's
+        age again while holding it. Only a holder of '<lock>.break' removes a stale lock, so a stale lock is removed once,
+        and a lock that another waiter created after removing it is never removed by mistake. '<lock>.break' is held for
+        a moment only: one older than LOCK_STALE_S was left by a waiter that died, and is removed."""
+        age = self._age(lock)
+        if age is None:
             return True                        # released meanwhile: try again at once
         if age <= self.LOCK_STALE_S:
             return False
+        brk = lock + '.break'
         try:
-            os.unlink(lock)
-        except FileNotFoundError:
-            pass
-        except OSError:
+            fd = os.open(brk, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except OSError:                        # another waiter is replacing it right now
+            held = self._age(brk)
+            if held is not None and held > self.LOCK_STALE_S:
+                with contextlib.suppress(OSError):
+                    os.unlink(brk)
             return False
+        try:
+            os.close(fd)
+            age = self._age(lock)              # again: the lock may have been replaced since it was judged stale
+            if age is not None and age > self.LOCK_STALE_S:
+                os.unlink(lock)
+        except OSError:
+            pass
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(brk)
         return True
 
 
@@ -506,9 +551,14 @@ class Client:
         h = terms_hash(t)
         return self.request('POST', '/pilot/v1/deals', {'terms': t, 'terms_hash': h, 'signature': self._sign(statement('propose', h))})
 
-    def counter(self, deal_id, price=None, title=None, description=None, deliverable=None, deliver_by_hours=None, offer_ttl_hours=24):
+    def counter(self, deal_id, price=None, title=None, description=None, deliverable=None, deliver_by_hours=None, offer_ttl_hours=24,
+                expected_terms_hash=None):
+        """Sign a counter-offer: the given changes, the rest copied from the current offer. With expected_terms_hash
+        (the hash of the offer the owner or agent inspected), refuses (stale_terms) if the current offer is another."""
         d = self.deal(deal_id)
         chk = self.verify_offer(d)
+        if expected_terms_hash and expected_terms_hash != chk['terms_hash']:
+            raise ValunError('stale_terms', 'the offer changed since you inspected it; inspect it again before countering')
         t0 = chk['terms']
         role = 'payer' if t0['payer']['id'] == self.participant_id else 'payee'
         other = t0['payee']['id'] if role == 'payer' else t0['payer']['id']
@@ -546,17 +596,20 @@ class Client:
         return self.request('POST', f'/pilot/v1/deals/{deal_id}/deliver', {'terms_hash': h, 'content': content, 'title': title, 'sha256': dh,
                                                                             'signature': self._sign(statement('deliver', h, dh))})
 
-    def complete(self, deal_id, expected_deliverable_sha256=None):
+    def complete(self, deal_id, expected_deliverable_sha256=None, expected_terms_hash=None):
         """Accept the delivery and pay: sign the Basis note for prior + price, after checking the template independently.
 
-        Checked before signing: the content matches its hash (and the one the caller reviewed); the agreement's hash and
-        both signatures; the payee's signature on the delivery; the template names this agent's key and the payee's
-        current key, adds exactly the agreed price, names the agreed (and pinned) tracker and unit, and is current. The
-        prior total must be one this client can stand behind: a prior note it signed itself and not older than its own
-        records (when the server offers bound_notes/1), otherwise its own record of the confirmed total (ledger_mismatch).
-        A pending note of its own that has applied is confirmed on the way, and that note's own deal is never paid again
-        (already_paid). The note is recorded as pending before it is sent, and confirmed only when the server answers
-        note_issued: an owner can still reject a held note (OQ-23)."""
+        Checked before signing: the content matches its hash (and the one the caller reviewed); the agreement's hash (and
+        the one the caller reviewed) and both signatures; the payee's signature on the delivery; the template names this
+        agent's key and the payee's current key, adds exactly the agreed price, names the agreed (and pinned) tracker and
+        unit, and is current. The prior total must be one this client can stand behind: a prior note it signed itself and
+        not older than its own records (when the server offers bound_notes/1), otherwise its own record of the confirmed
+        total (ledger_mismatch). A pending note of its own that its deal or the prior note shows applied is confirmed on
+        the way. A note of its own for THIS deal is never paid again while its records still hold it as pending and it
+        may have applied: its deal or the prior note shows it applied, or the edge's total has reached that note's total
+        (already_paid). Once a note is confirmed the records keep only the edge's total, not which deal it paid; the
+        server's deal status covers a deal paid before. The note is recorded as pending before it is sent, and confirmed
+        only when the server answers note_issued: an owner can still reject a held note (OQ-23)."""
         d = self.deal(deal_id)
         if not d.get('delivery') or not d.get('agreement'):
             raise ValunError('not_delivered', 'nothing has been delivered on this deal')
@@ -567,6 +620,8 @@ class Client:
             raise ValunError('stale_delivery', 'the delivery changed since you reviewed it')
         terms = self.verified_agreement(d)
         h = terms_hash(terms)
+        if expected_terms_hash and expected_terms_hash != h:
+            raise ValunError('stale_terms', 'the agreed terms are not the ones you reviewed; refusing to accept the delivery')
         # A pinned (0.4) profile reads /info: a server offering bound_notes/1 shows the prior note (?prior=1), and with
         # any feature the tracker keeps the timestamp residues 995-999 for other operations. Otherwise exactly as 0.3.
         features = self._features()
@@ -583,11 +638,7 @@ class Client:
         pair = f'{self.pubkey}>{payee}'
         verify = self._note_verifier(terms['tracker_nft_id'], terms['denomination'])
         self._reload()
-        prior = tpl.get('prior_note') if with_prior else None
-        if prior is not None:
-            self._check_prior(pair, prior, tpl, verify, deal_id)
-        else:
-            self._check_ledger(pair, tpl['prior_total'], payee, verify, deal_id)
+        self._check_records(pair, tpl, tpl.get('prior_note') if with_prior else None, payee, verify, deal_id, d)
         if tpl['tracker_nft_id'] != terms['tracker_nft_id'] or tpl['denomination'] != terms['denomination']:
             raise ValunError('bad_template', 'credit-note template names a different tracker or unit')
         self._check_pins(tpl['tracker_nft_id'], tpl['denomination'])
@@ -629,10 +680,11 @@ class Client:
 
     def _settle(self, fn):
         """Record an outcome after the server answered. The attempt was written ahead, so if this fails (the profile is
-        busy or unreadable) the entry simply stays pending and is settled later; the server's answer is what counts."""
+        busy or unreadable, or the disk refuses the write) the entry simply stays pending and is settled later; the
+        server's answer is what counts."""
         try:
             self._update(fn)
-        except ValunError:
+        except (ValunError, OSError):
             pass
 
     # ---------- records of credit notes (records.py) ----------
@@ -646,25 +698,47 @@ class Client:
         c = records.confirmed_total(_records_in(self.state, create=False), pair)
         return c if c is not None else _issued_in(self.state, create=False).get(pair)
 
-    def _check_ledger(self, pair, prior_total, payee, verify, deal_id):
-        """Without a prior note: the template's prior total must equal my record of the confirmed total, when I have one.
-        A held or issuing note of mine that its deal now records as issued is confirmed first (owner approvals happen
-        after this client signed)."""
+    def _check_records(self, pair, tpl, prior, payee, verify, deal_id, d):
+        """The template's prior must be one I can stand behind, and this deal must not be one my records may show paid.
+        With a prior note (a server offering bound_notes/1) it must be the template's prior, signed by me and not older
+        than my records; without one, the prior total must equal my record of the confirmed total, when I have one.
+        First, a held or issuing note of mine that its deal now records as issued is confirmed (owner approvals happen
+        after this client signed): when the totals disagree, and whenever a note of mine for this deal is pending."""
+        if prior is not None and (not isinstance(prior, dict) or prior.get('total') != tpl['prior_total']):
+            raise ValunError('bad_template', "the credit-note template's prior note does not match its prior total")
         known = self._known_total(pair)
-        if known is not None and known != prior_total:
-            self._confirm_issued(pair, payee, verify, deal_id)
+        if self._pending_notes(pair, deal_id) or (prior is None and known is not None and known != tpl['prior_total']):
+            self._confirm_issued(pair, payee, verify, deal_id, d)
+        if prior is not None:
+            self._check_prior(pair, prior, tpl, verify, deal_id)
+        else:
             known = self._known_total(pair)
-        if known is not None and known != prior_total:
-            raise ValunError('ledger_mismatch', f'the server says you have issued this payee {prior_total} PC of credit notes so far; your own record says {known}. Ask your operator.')
+            if known is not None and known != tpl['prior_total']:
+                raise ValunError('ledger_mismatch', f"the server says you have issued this payee {tpl['prior_total']} PC of credit notes so far; your own record says {known}. Ask your operator.")
+        for p in self._pending_notes(pair, deal_id):
+            # Still pending, so neither its deal nor the edge shows its outcome. If the edge has reached its total, it may
+            # have applied (an owner approved it after this client signed): paying the deal again could pay it twice.
+            if isinstance(p.get('total'), int) and not isinstance(p['total'], bool) and tpl['prior_total'] >= p['total']:
+                raise ValunError('already_paid', (f"your earlier credit note for this deal ({p['total']} PC in total to this payee) may "
+                                                  f"already be on the tracker: the edge's total is {tpl['prior_total']} PC now. Refusing "
+                                                  'to pay it again. Ask your operator.'))
 
-    def _confirm_issued(self, pair, payee, verify, deal_id):
+    def _pending_notes(self, pair, deal_id):
+        """My pending credit notes for this deal on this edge."""
+        return [p for p in records.get(_records_in(self.state, create=False), pair)['pending']
+                if isinstance(p, dict) and p.get('kind') == 'note' and p.get('ref') == deal_id]
+
+    def _confirm_issued(self, pair, payee, verify, deal_id, current=None):
+        """Confirm my pending notes on this edge that their deals record as issued (with the note's own signature)."""
         found = []
         for p in records.get(_records_in(self.state, create=False), pair)['pending']:
             if not (isinstance(p, dict) and p.get('kind') == 'note' and p.get('direction') == 'out' and isinstance(p.get('ref'), str)):
                 continue
             try:
-                d = self.deal(p['ref'])
+                d = current if current is not None and p['ref'] == deal_id else self.deal(p['ref'])
             except ValunError:
+                continue
+            if not isinstance(d, dict):
                 continue
             tn = ((d.get('credit_note') or {}).get('tracker_note') or {}) if d.get('status') == 'note_issued' else {}
             st = {'total': tn.get('amount_collected'), 'timestamp': tn.get('timestamp'), 'signature': tn.get('signature')}
@@ -677,10 +751,8 @@ class Client:
             self._refuse_paid_again(deal_id, [p for _st, p in found])
 
     def _check_prior(self, pair, prior, tpl, verify, deal_id):
-        """With a prior note (a 0.4 server): it must be the template's prior, signed by me, and not older than my records.
-        If it is one of my pending notes, that note applied: it is confirmed, and its own deal is never paid again."""
-        if not isinstance(prior, dict) or prior.get('total') != tpl['prior_total']:
-            raise ValunError('bad_template', "the credit-note template's prior note does not match its prior total")
+        """With a prior note (a 0.4 server): signed by me, and not older than my records. If it is one of my pending
+        notes, that note applied: it is confirmed, and its own deal is never paid again."""
         mine = _records_in(self.state, create=False)
         problem = records.prior_problem(mine, pair, prior, self.pubkey, verify)
         if problem == 'bad_prior_signature':
