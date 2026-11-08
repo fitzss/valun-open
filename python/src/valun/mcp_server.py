@@ -13,12 +13,19 @@ Approvals (the profile's `approvals` setting, chosen at `valun join`):
                  mandate has approve_above 0 and review_deliveries on).
   none           act within the owner's limits without asking.
 The Valun server enforces the owner's mandate in every mode.
+
+Consents (circulating credit): before every tool call that is not read-only the core signs the consents the owner's
+policy allows (at most once a minute). With the profile's consent_loop 'on' (the default for sandbox joins), a
+background thread also does so every CONSENT_LOOP_S seconds (with jitter) while the server offers circulation/1. Every
+agent call, the loop's included, holds the process-wide STORE_LOCK; the loop never writes to stdout.
 """
 import hashlib
 import hmac
 import json
+import random
 import secrets
 import sys
+import threading
 
 from . import __version__
 from . import client as vc
@@ -48,7 +55,13 @@ INSTRUCTIONS = ('Valun is an experimental network where agents make service-for-
                 'controlled agents. Call valun_status first in every session and follow your owner\'s recorded goals and '
                 'limits; record new instructions with valun_set_limits. Use valun_directory to find counterparties, '
                 'valun_deal to read exact terms before answering, and base word/link counts on the measurements it returns. '
-                'Accepting a delivery issues a credit note: an outstanding promise, not a payment. PC have no monetary value.')
+                'Accepting a delivery issues a credit note: an outstanding promise, not a payment. PC have no monetary value. '
+                'Accepting a delivery pays: with your own credit note, or with pay_with=<issuer> to pass on a note you hold. '
+                "Your Valun client signs net-neutral set-offs and, within your owner's policy, consents about your own debt "
+                'and payments to you; never ask your owner about those.')
+STORE_LOCK = threading.RLock()      # every agent call in this process holds it (the tools, and the consent loop)
+CONSENT_LOOP_S = 60                 # the consent loop's period (seconds), plus up to CONSENT_LOOP_JITTER_S
+CONSENT_LOOP_JITTER_S = 10
 APPROVAL_TEXT = {
     'ask': 'Before you sign an offer, counter-offer, acceptance or credit note, your owner is asked through this app and '
            'sees exactly what you would sign; if they decline, nothing is signed.',
@@ -74,6 +87,48 @@ def tool_list(approvals='ask'):
             tool['_meta'] = {'anthropic/requiresUserInteraction': True}
         out.append(tool)
     return out
+
+
+class ConsentLoop(threading.Thread):
+    """The optional consent loop (design 6.6): while the profile's consent_loop is 'on', every `interval_s` seconds plus
+    up to `jitter_s` of jitter it lets the core sign the consents the owner's policy allows (agent.consents_if_due(),
+    which asks GET /info and does nothing more unless the server lists circulation/1, and runs at most once a minute
+    whoever triggers it). Each run holds STORE_LOCK, so it never interleaves with a tool call of this process. It never
+    writes to stdout (stdout carries JSON-RPC only) and never raises; a daemon thread, stopped by stop()."""
+
+    def __init__(self, agent, interval_s=CONSENT_LOOP_S, jitter_s=CONSENT_LOOP_JITTER_S, lock=None):
+        super().__init__(name='valun-consent-loop', daemon=True)
+        self.agent, self.interval_s, self.jitter_s = agent, interval_s, jitter_s
+        self.lock = lock or STORE_LOCK
+        self.runs = 0
+        self._halt = threading.Event()     # not _stop: threading.Thread has a method of that name
+
+    def stop(self):
+        self._halt.set()
+
+    def enabled(self):
+        """consent_loop 'on' in the profile as it is now on disk (the owner may change it while this process runs)."""
+        store = getattr(self.agent, 'store', None)
+        reload = getattr(store, 'reload', None)
+        try:
+            if callable(reload):
+                reload()
+            return (getattr(store, 'state', None) or {}).get('consent_loop') == 'on'
+        except Exception:  # noqa: BLE001 - an unreadable profile: do nothing (the tools say why)
+            return False
+
+    def run_once(self):
+        with self.lock:
+            try:
+                if self.enabled():
+                    self.runs += 1
+                    self.agent.consents_if_due()
+            except Exception:  # noqa: BLE001 - a background run must never take the server down
+                pass
+
+    def run(self):
+        while not self._halt.wait(self.interval_s + random.uniform(0, self.jitter_s)):
+            self.run_once()
 
 
 class McpServer:
@@ -167,10 +222,11 @@ class McpServer:
         if name not in self.agent.handlers:
             raise ValueError(f'unknown tool: {name}')
         caps = meta.get('io.modelcontextprotocol/clientCapabilities') or {}
-        if self.approvals == 'ask' and self.agent.is_commitment(name, args):
+        if self.approvals == 'ask' and self._commits(name, args):
             if 'elicitation' not in caps:
                 return self.result(dict(APPROVAL_UNAVAILABLE), error=True, modern=True)
-            prepared, refusal = self.agent.prepare_or_refusal(name, args)   # approval and signature cover the same terms
+            with STORE_LOCK:
+                prepared, refusal = self.agent.prepare_or_refusal(name, args)   # approval and signature cover the same terms
             if refusal:
                 return self.result(refusal, error=True, modern=True)
             args, text = prepared['args'], prepared['text']
@@ -185,9 +241,18 @@ class McpServer:
                     return self.result({'error': 'owner_declined', 'owner_answer': answer.get('action') or 'unknown',
                                         'message': 'your owner did not approve this commitment; nothing was signed'}, error=True, modern=True)
         try:
-            return self.result(self.agent.call(name, args), modern=True)
+            return self.result(self._run(name, args), modern=True)
         except Exception as e:  # noqa: BLE001
             return self.result(error_payload(e, self.agent.setup_hint), error=True, modern=True)
+
+    # ---------- agent calls: each holds STORE_LOCK (never while waiting for the owner's answer) ----------
+    def _commits(self, name, args):
+        with STORE_LOCK:
+            return self.agent.is_commitment(name, args)
+
+    def _run(self, name, args):
+        with STORE_LOCK:
+            return self.agent.call(name, args)
 
     @staticmethod
     def ok(mid, result):
@@ -203,10 +268,11 @@ class McpServer:
     def call(self, name, args):
         if name not in self.agent.handlers:
             raise ValueError(f'unknown tool: {name}')
-        if self.approvals == 'ask' and self.agent.is_commitment(name, args):
+        if self.approvals == 'ask' and self._commits(name, args):
             if 'elicitation' not in self.client_caps:
                 return self.result(dict(APPROVAL_UNAVAILABLE), error=True)
-            prepared, refusal = self.agent.prepare_or_refusal(name, args)   # approval and signature cover the same terms
+            with STORE_LOCK:
+                prepared, refusal = self.agent.prepare_or_refusal(name, args)   # approval and signature cover the same terms
             if refusal:
                 return self.result(refusal, error=True)
             args = prepared['args']
@@ -215,7 +281,7 @@ class McpServer:
                 if refusal:
                     return self.result(refusal, error=True)
         try:
-            return self.result(self.agent.call(name, args))
+            return self.result(self._run(name, args))
         except Exception as e:  # noqa: BLE001
             return self.result(error_payload(e, self.agent.setup_hint), error=True)
 
@@ -228,18 +294,16 @@ class McpServer:
         return r
 
     # ---------- approvals (2025-11-25 and earlier: a server-to-client request) ----------
-    def ask_owner(self, name, args, text=None):
+    def ask_owner(self, name, args, text):
         """None if the owner approved; otherwise a refusal payload. Uses MCP elicitation (client asks the person) with
-        `text`, the prepared approval text (prepared here when not given)."""
+        `text`: the approval text prepare() built together with `args`, the exact arguments the call then signs with.
+        There is no default: asking with a text prepared here could approve a snapshot while the caller signs other,
+        unpinned arguments, so a missing or empty text is refused (nothing is asked, nothing is signed)."""
         if 'elicitation' not in self.client_caps:
             return dict(APPROVAL_UNAVAILABLE)
-        if text is None:
-            prepared, refusal = self.agent.prepare_or_refusal(name, args)
-            if refusal:
-                return refusal
-            text = prepared['text']
-            if text is None:
-                return None                     # this call commits nothing: there is nothing to approve
+        if not isinstance(text, str) or not text:
+            return error_payload(vc.ValunError('approval_unbound', 'could not read what you would sign; nothing was signed'),
+                                 self.agent.setup_hint)
         self._next_id += 1
         rid = f'valun-approval-{self._next_id}'
         mode = {'mode': 'form'} if self.version >= '2025-11-25' else {}   # form mode: the client sees and shows the text
@@ -258,7 +322,16 @@ class McpServer:
             self.pending.append(m)
 
 
-def run(store, approvals='ask', server=None, check_link_hosts=True):
+def run(store, approvals='ask', server=None, check_link_hosts=True, consent_loop_s=CONSENT_LOOP_S,
+        consent_loop_jitter_s=CONSENT_LOOP_JITTER_S):
     agent = ValunAgent(store, approvals=APPROVAL_TEXT.get(approvals, ''), check_link_hosts=check_link_hosts,
                        setup_hint='run `valun join` in a terminal', server=server)
-    return McpServer(agent, approvals).serve()
+    loop = None
+    if (getattr(store, 'state', None) or {}).get('consent_loop') == 'on':
+        loop = ConsentLoop(agent, consent_loop_s, consent_loop_jitter_s)
+        loop.start()
+    try:
+        return McpServer(agent, approvals).serve()
+    finally:
+        if loop is not None:
+            loop.stop()

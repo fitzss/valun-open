@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover
     ClientSession = None
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_mcp_server import FAKE, SRC  # noqa: E402
+from test_mcp_server import FAKE, ORIGINAL_ORDER, SRC  # noqa: E402
 
 
 @unittest.skipIf(ClientSession is None, 'official MCP SDK not installed (pip install mcp)')
@@ -42,6 +42,8 @@ class OfficialSdk(unittest.TestCase):
         init, tools, status, propose, asked = self.run_session(approve=True)
         self.assertEqual(init.server_info.name, 'valun')
         self.assertEqual(len(tools), 9)
+        self.assertEqual([t.name for t in tools], ORIGINAL_ORDER)
+        self.assertTrue(all(isinstance(t.title, str) and t.title.startswith('Valun: ') for t in tools))
         ann = {t.name: t.annotations for t in tools}
         self.assertTrue(ann['valun_deal'].read_only_hint)
         self.assertTrue(ann['valun_propose'].destructive_hint)
@@ -90,6 +92,7 @@ class OfficialSdk20260728(unittest.TestCase):
     def test_modern_approved(self):
         tools, status, propose, version, asked = self.run_modern(approve=True)
         self.assertEqual(len(tools), 9)
+        self.assertTrue(all(isinstance(t.title, str) and t.title.startswith('Valun: ') for t in tools))
         self.assertFalse(status.is_error)
         self.assertEqual(len(asked), 1)
         self.assertIn('NEW OFFER', asked[0])

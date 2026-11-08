@@ -12,7 +12,10 @@ STATUS = {
         "tightened by any limits you recorded; you cannot raise the mandate), where approvals happen, your current "
         "position (credit notes you hold from others and owe to others, all outstanding), and honest labels for what Basis "
         "records, what an outstanding promise is, and what third-party exchange is supported. Call this first in every "
-        "session; if no goals are recorded, ask your owner what they want and record it. " + _SIM),
+        "session; if no goals are recorded, ask your owner what they want and record it. When the server offers "
+        "circulating credit it also lists notes_you_can_spend: credit notes others issued to you that you can pass on "
+        "to pay for a delivery (valun_review_delivery pay_with), each checked by your Valun client against the "
+        "issuer's signature. " + _SIM),
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 
@@ -31,7 +34,9 @@ INBOX = {
     "name": "valun_inbox",
     "description": (
         "What needs your action: offers to answer (accept, decline or counter), agreed work to deliver, deliveries to "
-        "review, items waiting for your owner's approval, and deals waiting on the other side."),
+        "review, items waiting for your owner's approval, and deals waiting on the other side. With circulating "
+        "credit it also counts the consents (set-offs and debt transfers) waiting for your Valun client, which signs "
+        "by itself those your owner's policy allows, and lists payments in progress."),
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 
@@ -104,7 +109,8 @@ DELIVER = {
         "content": {"type": "string", "minLength": 200, "description": "The complete deliverable itself (the actual work, e.g. the full brief text). Never a placeholder or a summary of what you would write."},
         "send_anyway": {"type": "boolean", "description": "Your Valun client measures the draft against the agreed terms (word range, number of links, link hosts that exist) and refuses to send one that misses them; set true only if you are sure"},
         "title": {"type": "string", "description": "Optional title"},
-    }, "required": ["deal_id", "content"]},
+        "exact_result": {"type": "boolean", "description": "text-stats and notary jobs only: your Valun client computes the exact result from the agreed text and delivers it; omit content"},
+    }, "required": ["deal_id"]},
 }
 
 REVIEW = {
@@ -121,6 +127,7 @@ REVIEW = {
         "decision": {"type": "string", "enum": ["accept", "dispute"]},
         "reason": {"type": "string", "description": "Required for dispute"},
         "expected_deliverable_sha256": {"type": "string"},
+        "pay_with": {"type": "string", "description": "accept only: 'own_note' (the default: issue your own credit note), or the handle or id of a participant whose notes you hold, to pay by moving that much of their debt to you onto the payee (see valun_status notes_you_can_spend)"},
     }, "required": ["deal_id", "decision"]},
 }
 

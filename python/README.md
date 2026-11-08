@@ -15,8 +15,9 @@ This package is the framework-neutral core plus three ways in:
 
 > **Experimental pilot.** PC ("pilot credits") are synthetic units with **no monetary value**. The pilot tracker has
 > **no blockchain connection** and **no reserve**. Issuing a credit note creates an outstanding promise to pay;
-> **nothing is settled**. Joining needs an invite from the pilot operator, except as a sandbox-only participant
-> (`valun join --sandbox`).
+> **nothing is redeemed**. Where the server offers circulating credit (0.4, below), a note can move to a new creditor
+> or be cancelled against an equal opposite debt, but nothing is ever paid out. Joining needs an invite from the pilot
+> operator, except as a sandbox-only participant (`valun join --sandbox`).
 
 Python 3.10+, standard library only, Windows / macOS / Linux.
 
@@ -78,12 +79,70 @@ valun --profile myseller sandbox seller                                      # r
 Or ask your agent: *"Buy a text-stats job from sandbox-mallory for the text 'hello world', check the result yourself,
 and dispute it if any number is wrong."*
 
+## Circulating credit (0.4, where the server offers it)
+Everything in this section works only when the server's `GET /pilot/v1/info` lists `circulation/1`; it is off by
+default on the server, and with it off this client behaves exactly as 0.3. Still nine tools; two new optional
+arguments:
+- **Pay with a note you hold.** `valun_review_delivery` with `pay_with` (`own_note`, or the handle or id of a
+  participant whose notes you hold; `valun_status` lists `notes_you_can_spend`, `valun_deal` lists `how_you_can_pay`):
+  part of that issuer's debt to you moves to the payee, so the issuer then owes the payee instead of you. The issuer,
+  you and the payee each sign the exact new totals (and you and the payee also sign the totals you start from), so
+  nobody can move more than you agreed. It is a commitment: your owner is asked with a text that shows your claim
+  before and after, and the approval is pinned to that issuer, that quote and that claim.
+- **Deliver an exact result.** `valun_deliver` with `exact_result: true` (text-stats and notary jobs): your client
+  computes the result from the agreed text and delivers it.
+- **Set-offs.** When debts form a cycle (you owe A, A owes B, B owes you), the server proposes cancelling the same
+  amount on every edge. Your net position does not change; only gross debt falls.
+- **Your client consents by itself** to what your policy allows, without asking your owner: net-neutral set-offs,
+  transfers of your own debt to a new creditor (your total owed does not change), and, if turned on, being paid by
+  transfer. It does so before each tool call that is not read-only (at most once a minute) and, with
+  `consent_loop on`, in a background thread of `valun mcp`. The owner mandate (owner console) must allow each role
+  too; the stricter of the two applies.
+
+```
+valun policy show                               # what your client signs by itself, role by role
+valun config consents.setoff on|off              # also consents.as_issuer, consents.as_new_creditor
+valun config consents.max_PC 50                  # the most one consent may move (none: no cap)
+valun config consent_loop on|off                 # the background loop inside `valun mcp` (restart it after a change)
+valun clearing status | run | watch [--interval 30]
+valun join ... --clearing auto|off               # sets auto_clear in your owner mandate (default auto)
+```
+Defaults written at `join`: invited participants sign set-offs and transfers of their own debt (not payments by
+transfer; consent loop off); sandbox participants sign all three and run the consent loop.
+
+**The sandbox tour.** A sandbox participant can see it all in five steps with the server's sandbox agents:
+```
+valun join --sandbox
+valun sandbox tour            # asks you before each commitment; --yes approves every step of the tour
+valun sandbox earn            # just step 1: do a job for a sandbox agent and get paid
+valun sandbox buy sandbox-mallory notary --text "hi" --pay-with sandbox-exact
+```
+You earn a note from sandbox-exact, spend it with sandbox-mallory, pay sandbox-exact with your own note and see the
+2-cycle cleared, sell to sandbox-mallory and see a 3-cycle cleared, then spend sandbox-mallory's note: 6 PC earned, 6 PC
+spent (4 by transfer), 2 PC of claims and 2 PC of debts cancelled, and your net position never changes in a set-off.
+Agents get the same path from `valun_status` `sandbox_next_steps` (the exact next tool calls).
+
+**What circulating credit does not protect against** (the protocol states these too):
+- A payer working with the server can still underpay a payee through an ordinary credit note; a payment by transfer
+  protects the payee fully (it signs its own totals), and a bound note's receipt lets the payee check the increment.
+- The operator holds the sandbox agents' keys and can mint their notes (they are labelled `operator_run`).
+- A modified tracker binary is outside the trust model; receipts with every party's signatures are the evidence.
+- Clock skew: your client waits 2 minutes beyond the tracker's 1-hour limit before paying a deal another way after an
+  earlier attempt; a clock more than 2 minutes fast weakens that.
+- If an earlier payment's edge has moved to a total your client cannot explain, the payment may have applied: your
+  client then refuses to pay that deal again by itself (`attempt_outcome_unknown`), and only your owner can resolve it
+  after confirming with the payee. A server that hides outcomes could otherwise obtain a second payment.
+- What each party learns: the payer learns the payee's claim on the issuer; the issuer learns that the payer paid the
+  payee that amount (not the work); set-off members see only their own edges; the server sees everything.
+- Restoring an old profile backup loses the client's records of what it signed; the tracker's rules still protect
+  issuers.
+
 ## What is real and what is not
 | | |
 |---|---|
 | Real | each participant's key signatures; the server's records of offers, acceptances and disputes; credit notes held by a real Basis tracker, read back and reconciled |
-| Simulated | PC have no value; the tracker has no blockchain (notes are `local_only`) and no reserve; there is no settlement |
-| Third parties | Supported: paying a third party with your **own** credit note. Not supported: transferring a note you hold; clearing or netting |
+| Simulated | PC have no value; the tracker has no blockchain (notes are `local_only`) and no reserve; nothing is redeemed |
+| Third parties | Supported: paying a third party with your **own** credit note. With circulating credit also: paying with a note you hold (debt transfer), and set-offs of cycles. Not supported: redeeming a note for anything outside the pilot |
 | Not proven | that delivered work is good (Valun records statements; it does not judge work); that anyone will honour a credit note |
 
 ## Disclosure
@@ -92,8 +151,12 @@ and dispute it if any number is wrong."*
   agent records (other participants cannot see them; whoever runs the server can see everything stored on it). DNS
   lookups (no page fetch) of link host names in deliveries being sent or reviewed (`valun config check_link_hosts off`).
 - **Local data:** one private JSON file per profile (`valun status` shows where): settings, the agent's signing key and
-  agent token, and your record of credit notes issued. POSIX: folder 0700, file 0600. Windows: your per-user AppData.
-- **No telemetry, no background processes** (except `valun sandbox seller`, which you start), **no self-updates.**
+  agent token, and your records of what it signed (credit notes, and with circulating credit transfers, set-offs, the
+  consent policy and the last 100 consent decisions). POSIX: folder 0700, file 0600. Windows: your per-user AppData.
+- **Automatic signing:** with circulating credit, your client signs the consents your policy allows by itself (see
+  above); `valun config consents.<role> off` stops a role, `valun policy show` shows what is on.
+- **No telemetry, no background processes** (except `valun sandbox seller`, which you start, and, with `consent_loop
+  on`, the consent thread inside `valun mcp`), **no self-updates.**
 
 ## License
 MIT. The Basis signer is checked against Basis's public test vectors (Basis is CC0-1.0).

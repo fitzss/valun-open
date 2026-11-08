@@ -3,10 +3,15 @@
   valun join            invite -> participant -> agent key generated here -> credentials stored privately
   valun enroll          register a new agent key with an enrollment code from the owner console
   valun status | doctor what this profile is connected to; plain checks with a fix for each problem
-  valun config KEY VAL  approvals (ask|client-prompt|console|none), server, check_link_hosts (on|off)
+  valun config KEY VAL  approvals (ask|client-prompt|console|none), server, check_link_hosts (on|off),
+                        consents.setoff | consents.as_issuer | consents.as_new_creditor (on|off), consents.max_PC N,
+                        consent_loop (on|off)
   valun tools           the tool definitions (JSON), for any agent framework
   valun call TOOL JSON  run one tool and print its JSON result (for agents that have a shell)
   valun mcp             run the local MCP server on stdin/stdout (for MCP clients)
+  valun clearing status|run|watch   circulating credit: what your client signs by itself, and signing it now
+  valun policy show     the consent policy in force (local policy and owner mandate; the stricter applies)
+  valun sandbox ...     deterministic sandbox agents: seller, buy, earn, tour
 Add --profile NAME to keep several identities apart. Secrets are never printed (the owner token is shown once at
 join, or written to --owner-token-file).
 """
@@ -15,8 +20,10 @@ import getpass
 import json
 import os
 import sys
+import time
 
 from . import __version__
+from . import agent as va
 from . import client as vc
 from . import schemas
 from .agent import ValunAgent, error_payload
@@ -57,11 +64,18 @@ def _approval_mandate(mode, cap):
 
 
 def _pin(client):
-    """Read /info once: the client pins the network's tracker and unit in the profile (a later change is refused)."""
+    """Read /info once: the client pins the network's tracker and unit in the profile (a later change is refused).
+    Returns the feature tags it lists ([] when it lists none or cannot be read)."""
     try:
-        client.info()
+        return va.features_of(client.info())
     except vc.ValunError:
-        pass
+        return []
+
+
+def _on(value):
+    """A config value as a boolean: on/off (also true/false, yes/no, 1/0); None for anything else."""
+    v = str(value).strip().lower()
+    return True if v in ('on', 'true', '1', 'yes') else False if v in ('off', 'false', '0', 'no') else None
 
 
 def cmd_join(args):
@@ -85,17 +99,27 @@ def cmd_join(args):
         print(f'Joining failed ({e.code}): {e}')
         return 1
     owner = j['owner_token']
-    store.state.update({'server': server, 'approvals': args.approvals, 'check_link_hosts': True})
+    # The local consent policy (design 6.6): an invited participant's client signs set-offs and transfers of its own debt
+    # by itself; a sandbox participant's client also accepts payments by transfer, and its MCP server runs the consent
+    # loop. The owner's mandate must allow each role too (the stricter applies); `valun policy show` shows both.
+    store.state.update({'server': server, 'approvals': args.approvals, 'check_link_hosts': True,
+                        'consent_policy': dict(va.SANDBOX_CONSENT_POLICY if args.sandbox else va.INVITE_CONSENT_POLICY),
+                        'consent_loop': 'on' if args.sandbox else 'off'})
     store.save()
     try:
         c.me()          # the agent's first call: it shows as active in the directory from now on
     except vc.ValunError:
         pass
-    _pin(c)
-    # The owner token is used here once, in memory, to set where approvals happen; it is never stored in the profile.
+    circulating = va.CIRCULATION in _pin(c)
+    clearing = args.clearing or 'auto'
+    # The owner token is used here once, in memory, to set where approvals happen (and, where the server offers
+    # circulating credit, whether set-offs clear this participant's cycles: auto_clear); it is never stored in the profile.
     limits = c.request('GET', '/pilot/v1/owner', token=owner)['mandate']
     cap = max(limits.get('max_issue_per_deal', 0), limits.get('max_accept_per_deal', 0))
-    c.request('PUT', '/pilot/v1/owner/mandate', _approval_mandate(args.approvals, cap), token=owner)
+    body = _approval_mandate(args.approvals, cap)
+    if circulating:
+        body['auto_clear'] = clearing == 'auto'
+    c.request('PUT', '/pilot/v1/owner/mandate', body, token=owner)
     print(f"Joined Valun as {handle} ({j['participant_id']}) on {server}. This agent's key was generated here; "
           f"public key {r['pubkey'][:16]}...")
     print(f'Credentials are stored privately in {profile_path(args.profile)} (not shown).')
@@ -103,6 +127,16 @@ def cmd_join(args):
         print(j.get('note') or 'Sandbox only: you can deal with the sandbox agents for a week.')
     print(JOIN_APPROVALS[args.approvals].format(server=server, per_deal=limits.get('max_issue_per_deal'),
                                                 total=limits.get('max_issue_outstanding')))
+    if circulating:
+        print(f'Clearing: {clearing}. ' + ('Your Valun client signs set-offs that leave your net position unchanged, and '
+                                           'transfers of your own debt, by itself; ' if clearing == 'auto' else
+                                           'set-offs are off in your owner mandate; ')
+              + ('it also accepts payments by transfer from the sandbox agents, and `valun mcp` signs them in the background '
+                 '(consent_loop on). ' if args.sandbox else 'payments to you by transfer are off until you turn them on. ')
+              + 'See `valun policy show`; change it with `valun config consents.<role> on|off`.')
+    elif args.clearing:
+        print('This server does not offer circulating credit yet, so --clearing changes nothing now; once it does, '
+              'auto_clear is set in the owner console.')
     if args.owner_token_file:
         _write_private(args.owner_token_file, owner + '\n')
         print(f'Your OWNER token is in {args.owner_token_file}. Keep it private; never give it to your agent.')
@@ -144,7 +178,18 @@ def cmd_status(args):
     print(f"participant:      {st.get('participant_id') or '(not joined)'}")
     print(f"agent key stored: {'yes' if store.secret() else 'no'};  agent token stored: {'yes' if store.token() else 'no'}")
     print(f"approvals:        {st.get('approvals', 'ask')}")
+    if isinstance(st.get('consent_policy'), dict) or 'consent_loop' in st:
+        print(f"consents:         {_policy_line(st.get('consent_policy'))}; consent loop: {st.get('consent_loop', 'off')}")
     return 0
+
+
+def _policy_line(policy):
+    """The local consent policy in one line."""
+    p = policy if isinstance(policy, dict) else {}
+    on = lambda k: 'on' if p.get(k) is True else 'off'  # noqa: E731
+    cap = p.get('max_PC')
+    return (f"setoff {on('setoff')}, as_issuer {on('as_issuer')}, as_new_creditor {on('as_new_creditor')}, "
+            f"max_PC {cap if cap is not None else 'none'}")
 
 
 def cmd_doctor(args):
@@ -245,17 +290,55 @@ def cmd_config(args):
         changes = {'server': val.rstrip('/')}
     elif key == 'check_link_hosts':
         changes = {'check_link_hosts': val.lower() in ('on', 'true', '1', 'yes')}
+    elif key in ('consents.setoff', 'consents.as_issuer', 'consents.as_new_creditor', 'consent_loop'):
+        flag = _on(val)
+        if flag is None:
+            print(f'{key} must be on or off')
+            return 1
+        changes = {'consent_loop': 'on' if flag else 'off'} if key == 'consent_loop' else {key: flag}
+    elif key == 'consents.max_PC':
+        if val.strip().lower() == 'none':
+            changes = {key: None}
+        elif val.strip().isdigit() and int(val) <= 100000:
+            changes = {key: int(val)}
+        else:
+            print('consents.max_PC must be a whole number of PC (0..100000), or none for no cap')
+            return 1
     else:
-        print('keys: approvals, server, check_link_hosts')
+        print('keys: approvals, server, check_link_hosts, consents.setoff, consents.as_issuer, consents.as_new_creditor, '
+              'consents.max_PC, consent_loop')
         return 1
 
     def apply(state):       # on the profile as it is now (another process, such as `valun mcp`, may have changed it)
         if key == 'server':
             state.pop('pins', None)     # the owner chose the network: its tracker and unit are pinned again on the next call
-        state.update(changes)
+        if key.startswith('consents.'):
+            # A profile without a policy yet (0.3, or `valun enroll`) starts from every role off.
+            policy = state.get('consent_policy')
+            policy = dict(policy) if isinstance(policy, dict) else {'setoff': False, 'as_issuer': False, 'as_new_creditor': False}
+            policy[key.split('.', 1)[1]] = changes[key]
+            if policy.get('max_PC') is None:
+                policy.pop('max_PC', None)
+            state['consent_policy'] = policy
+        else:
+            state.update(changes)
     store.update(apply)
-    print(f'{key} = {store.state[key]}')
+    if key.startswith('consents.'):
+        print(f"{key} = {_shown_value((store.state.get('consent_policy') or {}).get(key.split('.', 1)[1]))}  "
+              f"({_policy_line(store.state.get('consent_policy'))})")
+        if key == 'consents.as_new_creditor' and changes[key]:
+            print('Payments to you by transfer also need your owner mandate to allow them (accept_transfers and '
+                  'accept_notes_from, in the owner console); the stricter of the two applies.')
+    else:
+        print(f'{key} = {store.state[key]}')
+        if key == 'consent_loop':
+            print('The consent loop runs inside `valun mcp` (restart it to start the loop); it signs only what your consent '
+                  'policy and owner mandate allow.')
     return 0
+
+
+def _shown_value(v):
+    return 'on' if v is True else 'off' if v is False else 'none' if v is None else str(v)
 
 
 def cmd_tools(args):
@@ -308,6 +391,127 @@ def cmd_mcp(args):
                check_link_hosts=store.state.get('check_link_hosts', True))
 
 
+def _connected(args):
+    """The profile's store and a client, or (store, None) after saying how to join."""
+    store = _store(args)
+    if not (store.state.get('participant_id') and store.secret() and store.token()):
+        print(f"Profile '{args.profile}' is not joined yet; run `valun --profile {args.profile} join` first.")
+        return store, None
+    return store, vc.Client(store, _server(args, store))
+
+
+def _decisions(report):
+    """process_consents() decisions, one line each."""
+    lines = []
+    for bucket in ('signed', 'refused', 'waiting'):
+        for e in report.get(bucket) or []:
+            what = f"{e.get('kind')} {e.get('id')} as {e.get('role')}"
+            if e.get('amount') is not None:
+                what += f", {e.get('amount')} PC (your net change {e.get('your_net_change_PC')} PC)"
+            why = e.get('code') or e.get('reason') or ''
+            lines.append(f'  {bucket:8} {what}' + (f': {why}' if why and bucket != 'signed' else ''))
+    return lines
+
+
+def cmd_clearing(args):
+    """valun clearing status|run|watch: circulating credit as this profile's client takes part in it."""
+    store, c = _connected(args)
+    if c is None:
+        return 1
+    try:
+        features = va.features_of(c.info())
+    except vc.ValunError as e:
+        print(f'Cannot read the server ({e.code}): {e}')
+        return 1
+    if va.CIRCULATION not in features:
+        print('This Valun server does not offer circulating credit (circulation/1): there is nothing to clear or consent to.')
+        return 0
+    if args.action == 'status':
+        try:
+            me = c.me()
+            items = c.consents().get('consents') or []
+        except vc.ValunError as e:
+            print(f'Cannot read your consents ({e.code}): {e}')
+            return 1
+        policy = va.consent_policy_in_force(store.state.get('consent_policy'),
+                                            next((me[k] for k in ('effective_limits', 'mandate') if isinstance(me.get(k), dict)), None))
+        signs = va.client_signs(policy)
+        pos = me.get('position') if isinstance(me.get('position'), dict) else {}
+        print('Your Valun client signs by itself: ' + ('; '.join(signs) if signs else 'nothing (every consent role is off)'))
+        print(f"Consents waiting for your client: {len([i for i in items if isinstance(i, dict) and i.get('state') == 'collecting'])}")
+        print(f"Cleared by set-off so far: {pos.get('cleared_by_setoff', pos.get('settled', 0))} PC; you hold "
+              f"{pos.get('claims_held')} PC and owe {pos.get('owes')} PC (net {pos.get('net')} PC).")
+        log = store.state.get('consent_log') if isinstance(store.state.get('consent_log'), list) else []
+        if log:
+            print('Recent decisions of your client:')
+            for e in log[-10:]:
+                if isinstance(e, dict):
+                    print(f"  {e.get('at')}  {e.get('decision'):8} {e.get('kind')} {e.get('id')} as {e.get('role')}"
+                          + (f" ({e.get('code')})" if e.get('code') else ''))
+        print(f"Consent loop in `valun mcp`: {store.state.get('consent_loop', 'off')}. `valun clearing run` signs now.")
+        return 0
+    if args.action == 'run':
+        try:
+            r = c.process_consents()
+        except vc.ValunError as e:
+            print(json.dumps(error_payload(e)))
+            return 1
+        lines = _decisions(r)
+        print('\n'.join(lines) if lines else 'Nothing waits for your client.')
+        return 0
+    print(f'Signing what your policy allows every {args.interval} s (Ctrl+C to stop).')
+    try:
+        while True:
+            try:
+                for line in _decisions(c.process_consents()):
+                    if not line.lstrip().startswith('waiting'):
+                        print(time.strftime('%H:%M:%S') + line)
+            except vc.ValunError as e:
+                print(f"{time.strftime('%H:%M:%S')}  {e.code}: {e}")
+            sys.stdout.flush()
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        return 0
+
+
+def cmd_policy(args):
+    """valun policy show: the consent policy in force, role by role (local policy and owner mandate)."""
+    store = _store(args)
+    local = store.state.get('consent_policy')
+    print(f'Local consent policy (this profile; `valun config consents.<role> on|off`): {_policy_line(local)}')
+    print(f"Consent loop in `valun mcp` (`valun config consent_loop on|off`): {store.state.get('consent_loop', 'off')}")
+    mandate = None
+    if store.state.get('participant_id') and store.secret() and store.token():
+        try:
+            c = vc.Client(store, _server(args, store))
+            if va.CIRCULATION not in va.features_of(c.info()):
+                print('This Valun server does not offer circulating credit (circulation/1): no consent is signed.')
+                return 0
+            me = c.me()
+            mandate = next((me[k] for k in ('effective_limits', 'mandate') if isinstance(me.get(k), dict)), None)
+        except vc.ValunError as e:
+            print(f'Cannot read your owner mandate ({e.code}): {e}')
+            return 1
+    if mandate is None:
+        print('Owner mandate: not read (this profile is not connected); nothing is signed without it.')
+        return 0
+    p = va.consent_policy_in_force(local, mandate)
+    print('Owner mandate (the owner console): ' + ', '.join(f'{k} {_shown_value(v)}' if not isinstance(v, list) else
+                                                             f"{k} {','.join(map(str, v)) or '[]'}"
+                                                             for k, v in p['owner_mandate'].items()))
+    for role, flag, what in (('setoff', 'auto_clear', 'set-offs (net-neutral)'),
+                             ('as_issuer', 'novate_own_debt', 'transfers of your own debt'),
+                             ('as_new_creditor', 'accept_transfers', 'payments to you by transfer')):
+        print(f"  {what}: {'signed by your client' if p[role] else 'not signed'} (local {_shown_value((local or {}).get(role) if isinstance(local, dict) else None)}, "
+              f"owner {flag} {_shown_value(mandate.get(flag))})")
+    return 0
+
+
+def _ask_terminal(text):
+    print(text)
+    return input('Approve this commitment? [y/N] ').strip().lower() in ('y', 'yes')
+
+
 def cmd_sandbox(args):
     from . import sandbox
     store = _store(args)
@@ -321,16 +525,33 @@ def cmd_sandbox(args):
         except KeyboardInterrupt:
             pass
         return 0
-    text = open(args.text_file, encoding='utf-8').read() if args.text_file else args.text
-    if not text:
-        print('give --text or --text-file')
-        return 1
+    if args.role == 'tour':
+        if not args.yes and not (sys.stdin.isatty() and sys.stdout.isatty()):
+            print('The tour asks you to approve each commitment here, and no person is at this terminal. Run it in a '
+                  'terminal, or with --yes to approve every step of the tour.')
+            return 3
+        try:
+            r = sandbox.tour(store, server=_server(args, store), yes=args.yes, ask=None if args.yes else _ask_terminal,
+                             log=lambda line: print(line, flush=True))
+        except vc.ValunError as e:
+            print(json.dumps(error_payload(e), ensure_ascii=False))
+            return 1
+        return 0 if r.get('done') else 1
     try:
-        r = sandbox.buy(store, args.seller, args.service, text, args.price, server=_server(args, store))
+        if args.role == 'earn':
+            r = sandbox.earn(store, server=_server(args, store))
+        else:
+            text = open(args.text_file, encoding='utf-8').read() if args.text_file else args.text
+            if not text:
+                print('give --text or --text-file')
+                return 1
+            r = sandbox.buy(store, args.seller, args.service, text, args.price, server=_server(args, store), pay_with=args.pay_with)
     except vc.ValunError as e:
         print(json.dumps(error_payload(e)))
         return 1
     print(json.dumps(r))
+    if args.role == 'earn':
+        return 0 if r.get('paid') else 1
     return 0 if r.get('verified') else 1
 
 
@@ -350,6 +571,9 @@ def main(argv=None):
     j.add_argument('--invite-from-stdin', action='store_true')
     j.add_argument('--sandbox', action='store_true',
                    help='join without an invite as a sandbox-only participant (deals only with the sandbox agents, small limits, 7 days)')
+    j.add_argument('--clearing', choices=['auto', 'off'], default=None,
+                   help='circulating credit: let set-offs clear your cycles of debts (auto, the default) or not (off); sets '
+                        'auto_clear in your owner mandate')
     j.add_argument('--owner-token-file', help='write the owner token to this private file instead of showing it')
     e = sub.add_parser('enroll', help='register a new agent key with an enrollment code')
     e.add_argument('--participant')
@@ -359,7 +583,8 @@ def main(argv=None):
     d = sub.add_parser('doctor', help='checks with a fix for each problem')
     d.add_argument('--server')
     c = sub.add_parser('config', help='change a setting')
-    c.add_argument('key', choices=['approvals', 'server', 'check_link_hosts'])
+    c.add_argument('key', choices=['approvals', 'server', 'check_link_hosts']
+                   + [f'consents.{k}' for k in va.CONSENT_POLICY_KEYS] + ['consent_loop'])
     c.add_argument('value')
     c.add_argument('--owner-token-file', help='needed when switching approvals to or from console')
     c.add_argument('--server')
@@ -368,6 +593,14 @@ def main(argv=None):
     k.add_argument('tool', choices=[t['name'] for t in schemas.ALL])
     k.add_argument('json', nargs='?', default='{}')
     sub.add_parser('mcp', help='run the MCP server on stdio', description=MCP_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
+    cl = sub.add_parser('clearing', help='circulating credit: what your client signs by itself (set-offs and transfers)')
+    cl.add_argument('action', choices=['status', 'run', 'watch'],
+                    help='status: what is signed and pending; run: sign what your policy allows now; watch: run every --interval s')
+    cl.add_argument('--interval', type=int, default=30)
+    cl.add_argument('--server')
+    po = sub.add_parser('policy', help='the consent policy in force (local policy and owner mandate)')
+    po.add_argument('action', choices=['show'])
+    po.add_argument('--server')
     sb = sub.add_parser('sandbox', help='deterministic test agents that need no AI model')
     sbs = sb.add_subparsers(dest='role', required=True)
     se = sbs.add_parser('seller', help='sell text-stats and notary jobs (polls the inbox; Ctrl+C to stop)')
@@ -381,13 +614,21 @@ def main(argv=None):
     bu.add_argument('--price', type=int)
     bu.add_argument('--text')
     bu.add_argument('--text-file')
+    bu.add_argument('--pay-with', metavar='ISSUER',
+                    help='circulating credit: pay with a note you hold from ISSUER (handle or id) instead of your own credit note')
     bu.add_argument('--server')
+    ea = sbs.add_parser('earn', help='circulating credit: do a job for a sandbox agent (the welcome job, or text-stats) and get paid')
+    ea.add_argument('--server')
+    to = sbs.add_parser('tour', help='circulating credit: the five-step tour for sandbox-only participants (earn, spend, clear)')
+    to.add_argument('--yes', action='store_true', help='approve every commitment of the tour without asking')
+    to.add_argument('--server')
     args = p.parse_args(argv)
     if not args.cmd:
         p.print_help()
         return 1
     return {'join': cmd_join, 'enroll': cmd_enroll, 'status': cmd_status, 'doctor': cmd_doctor, 'config': cmd_config,
-            'tools': cmd_tools, 'call': cmd_call, 'mcp': cmd_mcp, 'sandbox': cmd_sandbox}[args.cmd](args)
+            'tools': cmd_tools, 'call': cmd_call, 'mcp': cmd_mcp, 'clearing': cmd_clearing, 'policy': cmd_policy,
+            'sandbox': cmd_sandbox}[args.cmd](args)
 
 
 MCP_HELP = """Run Valun as a local MCP server (stdio). Add it to your MCP client, for example:

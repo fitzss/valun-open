@@ -13,13 +13,21 @@ the arguments to sign with and the owner's approval text from one snapshot of wh
 only from values checked against what is signed (recomputed hashes, which the arguments then pin); when the snapshot
 cannot be read or does not hold together it raises approval_unbound, and every adapter then refuses the call instead
 of asking with a generic text.
+
+Circulating credit (0.4; only where the server's GET /info lists circulation/1): valun_review_delivery can pay with a
+note the agent holds (pay_with, a commitment the owner approves with its own text), valun_deliver can deliver the exact
+result of a text-stats or notary job (exact_result), valun_status, valun_deal and valun_inbox show what can be spent,
+what is being paid and what the client clears, and the client signs the consents its owner's policy allows by itself
+(process_consents(), at most once per CONSENTS_EVERY_MS, before every tool call that is not read-only).
 """
 import json
 import re
 from datetime import datetime, timedelta, timezone
 
+from . import basis as vb
 from . import client as vc
 from . import measure
+from . import novation as nv
 from . import sandbox
 from . import schemas
 
@@ -47,6 +55,156 @@ REAL_VS_SIMULATED = {
     'not_proven': 'that delivered work is good (Valun records statements, it does not judge work); that any participant '
                   'will ever honour a credit note',
 }
+# The same labels where the server offers circulating credit (GET /info lists circulation/1): word for word the server's
+# deal label (PROTOCOL.md 16.1, design 4.12), and nothing that says notes cannot move or be cleared.
+CIRCULATION_SETTLEMENT = ('not settled: a credit note is an outstanding obligation. With circulating credit it can move to a '
+                          'new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an '
+                          'equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is '
+                          'redeemed, there is no reserve, and PC have no value.')
+SETTLEMENT_NOTE_CIRCULATION = CIRCULATION_SETTLEMENT
+NOT_SETTLED_CIRCULATION = CIRCULATION_SETTLEMENT
+HONEST_LABELS_CIRCULATION = {
+    'what_basis_records': ('The pilot Basis tracker keeps one running total per key pair: what the issuer key owes the '
+                           'recipient key, with a timestamp, signed by the issuer. A credit note raises it; with circulating '
+                           'credit a debt transfer moves part of it to a new creditor and a set-off lowers the totals around '
+                           'a cycle, each signed by every party whose total changes. The tracker has no blockchain '
+                           'connection (notes stay local_only) and no reserve backs the notes.'),
+    'outstanding_promise': CIRCULATION_SETTLEMENT,
+    'third_party': ("Supported: paying a third party with your OWN credit note, or with a note you hold (pay_with: the "
+                    "issuer's debt to you moves to the payee; the issuer, you and the payee each sign, and the issuer's "
+                    'total debt does not change), and set-offs that cancel equal debts around a cycle (every party signs; '
+                    'no net position changes). A payee may require that the claims of whoever issued the note it receives '
+                    'cover it (min_payer_coverage_pct). Not supported: redeeming a note for anything outside the pilot.'),
+}
+REAL_VS_SIMULATED_CIRCULATION = {
+    'real': "signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt "
+            'transfers and set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your '
+            'client against the signatures)',
+    'simulated': 'PC (pilot credits) have no monetary value; the Basis tracker has no blockchain connection (notes are '
+                 'local_only, never on-chain); nothing is redeemed and there is no reserve: a set-off only cancels equal '
+                 'opposite obligations',
+    'not_proven': REAL_VS_SIMULATED['not_proven'],
+}
+CIRCULATION = 'circulation/1'
+CONSENTS_EVERY_MS = 60_000      # process_consents() runs at most this often (state consents_last_run_ms; design 6.6)
+# The local consent policy a join writes (design 6.6, 8): an invited participant's client signs set-offs and transfers of
+# its own debt by itself, not payments to it by transfer (opt-in); a sandbox participant's client signs all three. The
+# owner's mandate still has to allow each role (the stricter of the two applies), and max_PC caps one consent.
+INVITE_CONSENT_POLICY = {'setoff': True, 'as_issuer': True, 'as_new_creditor': False, 'max_PC': 50}
+SANDBOX_CONSENT_POLICY = {'setoff': True, 'as_issuer': True, 'as_new_creditor': True, 'max_PC': 50}
+CONSENT_POLICY_KEYS = ('setoff', 'as_issuer', 'as_new_creditor', 'max_PC')
+# Where the payer may pay from: the deal statuses GET /deals/{id}/payment-options serves (PROTOCOL.md 18.6 step 1).
+PAYABLE = ('delivered', 'note_failed', 'payment_due')
+# How fast an issuer signs a transfer of its debt (payment options issuer_consents), in an approval text.
+CONSENT_SPEED_WORDS = {'immediate': 'immediately', 'auto': 'automatically',
+                       'when_online': 'when its agent is next online', 'unavailable': 'not at the moment (unavailable)'}
+# prepare() failures that keep their own code and setup hint instead of approval_unbound (still nothing is signed).
+UNBOUND_PASS_THROUGH = ('not_connected', 'not_configured', 'tracker_mismatch')
+# The server's sandbox agents (PROTOCOL.md 18.15) and the five-step tour a sandbox_only participant can take with them.
+SANDBOX_EXACT, SANDBOX_MALLORY = 'sandbox-exact', 'sandbox-mallory'
+SANDBOX_AGENTS = (SANDBOX_EXACT, SANDBOX_MALLORY)
+TOUR_GOALS = {
+    1: 'Earn: sandbox-exact buys text-stats from you (the welcome job, 3 PC). Deliver the exact result; it pays with its '
+       'own credit note.',
+    2: 'Spend a note you hold: buy notary from sandbox-mallory (2 PC) and pay with pay_with="sandbox-exact" (2 PC of '
+       "sandbox-exact's debt to you move to sandbox-mallory). Dispute a wrong delivery and buy again.",
+    3: 'Pay with your own note: buy notary from sandbox-exact (2 PC). Then the 2-cycle you -> sandbox-exact -> you (1 PC) '
+       'is cleared by a set-off your Valun client signs by itself.',
+    4: 'Sell: offer text-stats to sandbox-mallory (3 PC). It pays with its own note, and the 3-cycle sandbox-mallory -> '
+       'you -> sandbox-exact -> sandbox-mallory (1 PC) clears.',
+    5: 'Spend again: buy notary from sandbox-exact (2 PC) and pay with pay_with="sandbox-mallory". Then the server-only '
+       'cycle between sandbox-exact and sandbox-mallory clears.',
+}
+TOUR_TEXTS = {1: 'Valun sandbox tour, step 1: my first paid job.',
+              2: 'Valun sandbox tour, step 2: paid with a note I hold.',
+              3: 'Valun sandbox tour, step 3: paid with my own note.',
+              4: 'Valun sandbox tour, step 4: I sell my work.',
+              5: 'Valun sandbox tour, step 5: paid with a note I hold again.'}
+# What you hold / owe (PC) once each step is done, as tracker totals (design 9.2).
+TOUR_AFTER = {1: (3, 0), 2: (1, 0), 3: (0, 1), 4: (2, 0), 5: (0, 0)}
+
+
+def labels(circulating):
+    """The honest labels for a server with circulating credit (True) or without it: {settlement, not_settled,
+    honest_labels, real_vs_simulated}."""
+    if circulating:
+        return {'settlement': SETTLEMENT_NOTE_CIRCULATION, 'not_settled': NOT_SETTLED_CIRCULATION,
+                'honest_labels': HONEST_LABELS_CIRCULATION, 'real_vs_simulated': REAL_VS_SIMULATED_CIRCULATION}
+    return {'settlement': SETTLEMENT_NOTE, 'not_settled': NOT_SETTLED, 'honest_labels': HONEST_LABELS,
+            'real_vs_simulated': REAL_VS_SIMULATED}
+
+
+def features_of(info):
+    """The feature tags a GET /info answer lists ([] for a v15 server or circulation off; malformed: ['?'])."""
+    raw = info.get('features') if isinstance(info, dict) else None
+    if raw is None:
+        return []
+    return list(raw) if isinstance(raw, list) and all(isinstance(f, str) for f in raw) else ['?']
+
+
+def consent_policy_in_force(local, mandate):
+    """What a Valun client signs by itself, per consent role: the stricter of the local consent policy (the profile's
+    consent_policy, changed with `valun config consents.*`) and the owner's mandate as GET /me shows it (rule R8 of
+    PROTOCOL.md 15.3). Booleans per role, the local per-consent cap, and both sides as they are."""
+    p = local if isinstance(local, dict) else {}
+    m = mandate if isinstance(mandate, dict) else {}
+    return {'setoff': p.get('setoff') is True and m.get('auto_clear') is True,
+            'as_issuer': p.get('as_issuer') is True and m.get('novate_own_debt') is True,
+            'as_new_creditor': (p.get('as_new_creditor') is True and m.get('accept_transfers') is True
+                                and m.get('may_accept_credit') is not False),
+            'max_PC': p.get('max_PC'),
+            'local_policy': {k: p[k] for k in ('setoff', 'as_issuer', 'as_new_creditor', 'max_PC', 'accept_issuers',
+                                               'refuse_issuers') if k in p},
+            'owner_mandate': {k: m.get(k) for k in ('auto_clear', 'novate_own_debt', 'accept_transfers', 'accept_notes_from',
+                                                    'refuse_notes_from', 'pay_with_held_notes', 'max_accept_per_issuer')},
+            'how_to_change': ('your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|'
+                              'consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in '
+                              'the owner console; the stricter of the two applies')}
+
+
+def client_signs(policy):
+    """consent_policy_in_force() as sentences: what the client signs by itself, without asking the owner."""
+    cap = policy.get('max_PC')
+    upto = f', up to {cap} PC each' if _whole(cap) else ''
+    out = []
+    if policy.get('setoff'):
+        out.append(f'set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change){upto}')
+    if policy.get('as_issuer'):
+        out.append(f'debt transfers that move your own debt to a new creditor (your total owed does not change){upto}')
+    if policy.get('as_new_creditor'):
+        out.append(f'payments to you by debt transfer, of notes from issuers your owner accepts{upto}')
+    return out
+
+
+def wants_consents(state):
+    """Does this profile take part in consents at all? It has a consent policy (written at `valun join` since 0.4, or
+    with `valun config consents.*`), or it has paid by transfer (a regenerated transfer needs its signature again). A
+    0.3 profile has neither, so it is served exactly as by 0.3 (no consent request)."""
+    if not isinstance(state, dict):
+        return False
+    return (isinstance(state.get('consent_policy'), dict) or bool(state.get('approved_payments'))
+            or bool(state.get('transfer_attempts')))
+
+
+def consents_due(c, now_ms=None, every_ms=CONSENTS_EVERY_MS):
+    """Client.process_consents() for a profile that takes part in consents (wants_consents), when its last run
+    (consents_last_run_ms) is at least `every_ms` ago. Returns the run's report, or None when it did not run. Errors
+    are the caller's (the agent's hook swallows them)."""
+    state = c.state
+    if not wants_consents(state) or not c.connected:
+        return None
+    now = int(vc.time.time() * 1000) if now_ms is None else now_ms
+    last = state.get('consents_last_run_ms')
+    if _whole(last) and 0 <= now - last < every_ms:
+        return None
+    return c.process_consents(now_ms=now)
+
+
+def _verify_hex(pubkey_hex, msg, sig_hex):
+    """novation.py's verifier: a Basis signature (hex) over msg (bytes) by pubkey_hex."""
+    return vb.verify(bytes.fromhex(sig_hex), msg, bytes.fromhex(pubkey_hex))
+
+
 # valun_set_limits argument -> (server field, kind). Caps can only be lowered below the owner's mandate, floors raised.
 LIMIT_FIELDS = {
     'max_per_deal_as_payer': ('max_issue_per_deal', 'cap'), 'max_total_owed': ('max_issue_outstanding', 'cap'),
@@ -165,7 +323,8 @@ def error_payload(e, setup_hint='run `valun join` (or `valun enroll`) in a termi
     """A ValunError (or any exception) as a plain dict an agent can act on. Never includes secrets."""
     if isinstance(e, vc.ValunError):
         out = {'error': e.code, 'message': str(e)}
-        for k in ('rule', 'mandate_version', 'measured', 'retry_after_ms', 'template', 'fallback_after', 'what_this_means'):
+        for k in ('rule', 'mandate_version', 'measured', 'retry_after_ms', 'template', 'fallback_after', 'what_this_means',
+                  'cause'):
             if k in e.extra:
                 out[k] = e.extra[k]
         if e.code == 'approval_unbound':
@@ -198,6 +357,29 @@ def error_payload(e, setup_hint='run `valun join` (or `valun enroll`) in a termi
             out['what_this_means'] = f'This agent is not connected to Valun. Its owner must {setup_hint}.'
         if e.code == 'owner_declined':
             out['what_this_means'] = 'Your owner did not approve this commitment. Nothing was signed or sent.'
+        if e.code == 'attempt_outcome_unknown':
+            out['what_this_means'] = ('An earlier payment of this deal may have applied: the edge it would change has moved '
+                                      'past it to a total your Valun client cannot explain. Nothing was signed, and your client '
+                                      'will not pay this deal again by itself. Only your owner can resolve it, after confirming '
+                                      'with the payee whether the payment arrived. Tell your owner.')
+        if e.code == 'transfer_window_open':
+            out['what_this_means'] = ('An earlier payment attempt of this deal can still apply until it is more than an hour '
+                                      'old, so another kind of payment could pay the deal twice. Nothing was signed. Retry the '
+                                      'same payment, or wait retry_after_ms before paying another way.')
+        if e.code in ('stale_quote', 'stale_claim'):
+            out['what_this_means'] = ('The payment changed after it was approved (another quote, or your claim on the issuer '
+                                      'moved). Nothing was signed. Read the deal again and accept again; your owner is asked '
+                                      'again.')
+        if e.code == 'feature_unavailable':
+            out['what_this_means'] = ('This Valun server does not offer circulating credit (paying with notes you hold, '
+                                      'set-offs). Nothing was signed. Pay with your own credit note (leave pay_with out).')
+        if e.code == 'unknown_issuer':
+            out['what_this_means'] = ('The payment options for this deal list no note of yours from that issuer. Nothing was '
+                                      'signed. valun_status notes_you_can_spend and valun_deal how_you_can_pay give the exact '
+                                      'pay_with values.')
+        if e.code == 'not_exact_service':
+            out['what_this_means'] = ('exact_result works only for text-stats and notary jobs whose agreed description '
+                                      'carries the text to process. Nothing was sent. Deliver the content yourself.')
         return out
     return {'error': 'internal_error', 'message': f'{type(e).__name__}: {e}'}
 
@@ -216,6 +398,7 @@ class ValunAgent:
         self.check_link_hosts = check_link_hosts
         self.setup_hint = setup_hint or 'run `valun join` (or `valun enroll`) in a terminal'
         self.server = server
+        self.features = None        # the feature tags the last GET /info this agent read listed (None: none read yet)
         self.handlers = {'valun_status': self.status, 'valun_directory': self.directory, 'valun_inbox': self.inbox,
                          'valun_deal': self.deal, 'valun_propose': self.propose, 'valun_respond': self.respond,
                          'valun_deliver': self.deliver, 'valun_review_delivery': self.review, 'valun_set_limits': self.set_limits}
@@ -228,10 +411,60 @@ class ValunAgent:
         return c
 
     def call(self, name, args=None):
-        """Run one tool. Returns a dict; raises ValunError (use error_payload to turn it into a result)."""
+        """Run one tool. Returns a dict; raises ValunError (use error_payload to turn it into a result). Before a tool
+        that is not read-only, the client signs the consents its owner's policy allows (consents_if_due)."""
         if name not in self.handlers:
             raise vc.ValunError('unknown_tool', f'no Valun tool called {name!r}')
+        if name not in READ_ONLY_TOOLS:
+            self.consents_if_due()
         return self.handlers[name](args or {})
+
+    def consents_if_due(self, now_ms=None):
+        """Process consents (Client.process_consents: set-offs, transfers of my own debt, payments to me, regenerated
+        transfers of my payments) when they are due: at most once per CONSENTS_EVERY_MS, and only for a profile that
+        takes part in consents (wants_consents). Never from a read-only tool. Never raises: returns the report, or None
+        when it did not run or failed (a failed run counts as a run, so a server that cannot be reached is not asked
+        again before CONSENTS_EVERY_MS)."""
+        try:
+            c = self.client()
+        except Exception:  # noqa: BLE001 - not connected: there is nothing to consent to
+            return None
+        now = int(vc.time.time() * 1000) if now_ms is None else now_ms
+        try:
+            report = consents_due(c, now)
+        except Exception:  # noqa: BLE001 - a consent run must never stop the tool the agent asked for
+            self._mark_consents_run(c, now)
+            return None
+        if report is not None:
+            self._remember(c)
+        return report
+
+    @staticmethod
+    def _mark_consents_run(c, now):
+        def mark(state):
+            state['consents_last_run_ms'] = now
+        try:
+            upd = getattr(c.store, 'update', None)
+            if callable(upd):
+                upd(mark)
+            else:
+                mark(c.state)
+                c.store.save()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _remember(self, c_or_info):
+        """Remember (and return) the feature tags of a GET /info answer, or of the last one a client read."""
+        if isinstance(c_or_info, dict) or c_or_info is None:
+            self.features = features_of(c_or_info)
+        else:
+            self.features = list(getattr(c_or_info, '_advertised', None) or [])
+        return self.features
+
+    def _circulating(self, c=None):
+        """Does the server offer circulating credit, as the last GET /info read (by `c`, or by this agent) said?"""
+        seen = list(getattr(c, '_advertised', None) or []) if c is not None else []
+        return CIRCULATION in seen or CIRCULATION in (self.features or [])
 
     def call_safe(self, name, args=None):
         """Like call(), but never raises: errors come back as {'error': ...}."""
@@ -241,9 +474,15 @@ class ValunAgent:
             return error_payload(e, self.setup_hint)
 
     def _resolve(self, c, who):
+        """The directory entry `who` names: the participant with exactly that id; a handle only when no id matches (a
+        handle may look like another participant's id)."""
         who = (who or '').strip().lower()
-        for p in c.directory():
-            if p['id'] == who or p['handle'] == who:
+        people = [p for p in c.directory() if isinstance(p, dict)]
+        for p in people:
+            if p.get('id') == who:
+                return p
+        for p in people:
+            if p.get('handle') == who:
                 return p
         raise vc.ValunError('unknown_participant', f'no participant called {who!r}; use valun_directory')
 
@@ -288,6 +527,13 @@ class ValunAgent:
         the client reads the deal again when it signs and refuses anything else (stale_terms, stale_delivery). A new
         offer is pinned to the participant id the text shows. So the signature covers what the owner saw.
 
+        A delivery acceptance that pays with a held note (pay_with an issuer): also the issuer the deal's payment
+        options list under that name (an exact participant id first, else its handle), its current directory key, and
+        a fresh transfer template that novation.evaluate_payer_template accepts (PROTOCOL.md 15.3, decision D-1). The
+        args pin pay_with to the issuer's id, expected_quote_digest (the quote the client computed: deal, terms hash,
+        delivery, keys, amount) and expected_claim_total (my claim on the issuer the text shows); Client.pay_by_transfer
+        refuses another quote or claim (stale_quote, stale_claim).
+
         Raises ValunError('approval_unbound') when what would be signed cannot be read or checked (any error, a missing
         or wrong hash, or a pin the agent passed that is not the snapshot's): the adapter must then refuse the call.
         A tool this client does not know gets a generic text; a known commitment never does."""
@@ -313,15 +559,23 @@ class ValunAgent:
         """For adapters: (prepared, None), or (None, refusal). Ask the owner with prepared['text'], then sign with
         prepared['args']; when prepared['text'] is None the call commits nothing and runs without asking. The refusal is
         the result to return instead of asking when what would be signed cannot be read or checked: the owner is then
-        never asked with a generic text, and nothing is signed (approval_unbound)."""
+        never asked with a generic text, and nothing is signed (approval_unbound, with the code of the cause). A profile
+        that is not connected or configured, or whose pinned tracker the server no longer names, gets that refusal
+        itself (not_connected, not_configured, tracker_mismatch), with its own advice."""
+        extra = {}
         try:
             prepared = self.prepare(name, args)
-        except Exception:  # noqa: BLE001 - whatever went wrong, the answer is the same refusal
+        except Exception as e:  # noqa: BLE001 - whatever went wrong, nothing is asked and nothing is signed
             prepared = None
+            info = e.extra if isinstance(e, vc.ValunError) else {}
+            if info.get('cause') in UNBOUND_PASS_THROUGH:
+                return None, error_payload(vc.ValunError(info['cause'], info.get('cause_message') or UNBOUND_MESSAGE),
+                                           self.setup_hint)
+            extra = {k: info[k] for k in ('cause', 'retry_after_ms') if k in info}
         if isinstance(prepared, dict) and isinstance(prepared.get('args'), dict) and \
                 (prepared.get('text') is None or (isinstance(prepared['text'], str) and prepared['text'])):
             return prepared, None
-        return None, error_payload(vc.ValunError('approval_unbound', UNBOUND_MESSAGE), self.setup_hint)
+        return None, error_payload(vc.ValunError('approval_unbound', UNBOUND_MESSAGE, extra=extra), self.setup_hint)
 
     def bind(self, name, args):
         """prepare()'s pins alone, for adapters that ask with their own text (kept for compatibility): an acceptance or
@@ -346,14 +600,37 @@ class ValunAgent:
     @staticmethod
     def _unbound(e):
         cause = e.code if isinstance(e, vc.ValunError) else type(e).__name__
-        return vc.ValunError('approval_unbound', UNBOUND_MESSAGE, extra={'cause': cause})
+        extra = {'cause': cause}
+        if isinstance(e, vc.ValunError):
+            extra['cause_message'] = str(e)[:300]
+            if e.extra.get('retry_after_ms') is not None:
+                extra['retry_after_ms'] = e.extra['retry_after_ms']
+        return vc.ValunError('approval_unbound', UNBOUND_MESSAGE, extra=extra)
+
+    @staticmethod
+    def _pay_with(a):
+        """The issuer a delivery acceptance pays with (pay_with, stripped and lower-cased), or None for the agent's own
+        credit note (pay_with absent or 'own_note'). bad_arguments for anything else."""
+        pw = a.get('pay_with')
+        if pw is None or pw == 'own_note':
+            return None
+        if not isinstance(pw, str) or not pw.strip() or len(pw) > 64:
+            raise vc.ValunError('bad_arguments', "pay_with is 'own_note' or the handle or id of an issuer whose note you hold")
+        pw = pw.strip().lower()
+        return None if pw == 'own_note' else pw
 
     @staticmethod
     def _needs_pins(name, a):
         if name == 'valun_respond' and a.get('action') in ('accept', 'counter'):
             return not a.get('expected_terms_hash')
         if name == 'valun_review_delivery' and a.get('decision') == 'accept':
-            return not (a.get('expected_deliverable_sha256') and a.get('expected_terms_hash'))
+            pins = ('expected_deliverable_sha256', 'expected_terms_hash')
+            try:
+                if ValunAgent._pay_with(a) is not None:
+                    pins += ('expected_quote_digest', 'expected_claim_total')
+            except vc.ValunError:
+                return True                     # a malformed pay_with: binding refuses it (approval_unbound)
+            return not all(a.get(k) for k in pins)
         return False
 
     def _snapshot(self, name, a):
@@ -363,7 +640,7 @@ class ValunAgent:
             other = self._resolve(c, a.get('counterparty'))
             if not (isinstance(other, dict) and isinstance(other.get('id'), str) and other['id']):
                 raise vc.ValunError('approval_unbound', 'the directory names no participant id')
-            return {'counterparty': other}
+            return {'counterparty': other, 'not_settled': labels(self._circulating())['not_settled']}
         if name == 'valun_set_limits':
             me = c.me()
             if not isinstance(me, dict):
@@ -375,7 +652,94 @@ class ValunAgent:
         d = c.deal(did)
         if not isinstance(d, dict):
             raise vc.ValunError('approval_unbound', 'the deal could not be read')
-        return {'deal': d, 'checked': self._checked(d, did, c.participant_id, delivery=name == 'valun_review_delivery')}
+        snap = {'deal': d, 'checked': self._checked(d, did, c.participant_id, delivery=name == 'valun_review_delivery'),
+                'not_settled': labels(self._circulating())['not_settled']}
+        if name == 'valun_review_delivery' and a.get('decision') == 'accept' and self._pay_with(a) is not None:
+            snap['transfer'] = self._transfer_snapshot(c, did, snap['checked'], self._pay_with(a))
+            snap['not_settled'] = NOT_SETTLED_CIRCULATION
+        return snap
+
+    def _transfer_snapshot(self, c, did, chk, pay_with):
+        """What paying deal `did` with a held note would sign, read and checked once (see prepare): the server offers
+        circulation/1; the deal's payment options list a note of mine from the issuer `pay_with` names (an exact
+        participant id first, else a handle only one listed issuer has); the issuer's and the payee's current directory
+        keys; and a fresh transfer template for exactly that issuer and key, accepted by novation.evaluate_payer_template
+        for the deal, terms and delivery `chk` checked (with one GET /edges read-back when D-1 needs one)."""
+        if CIRCULATION not in self._remember(c.info()):
+            raise vc.ValunError('feature_unavailable', 'this Valun server does not offer circulating credit (circulation/1)')
+        option = self._held_note(c.payment_options(did), pay_with)
+        iid = option['issuer']['id']
+        issuer = self._current(c, iid)
+        payee = self._current(c, chk['other_id'])
+        me = c.me()
+        mandate = next((me[k] for k in ('effective_limits', 'mandate') if isinstance(me, dict) and isinstance(me.get(k), dict)), None)
+        tpl = c.transfer_template(did, iid)
+        iss = tpl.get('issuer') if isinstance(tpl, dict) else None
+        if not (isinstance(iss, dict) and iss.get('id') == iid and iss.get('pubkey') == issuer['pubkey']):
+            raise vc.ValunError('bad_template', "the transfer template is not for that issuer under its current key")
+        deal = nv.deal_context(chk['terms'], chk['terms_hash'], chk['sha256'])
+        r = self._evaluate_payment(c, tpl, deal, payee['pubkey'], mandate)
+        if not r['ok']:
+            s = r.get('summary') or {}
+            raise vc.ValunError(r['code'], s.get('reason') or r['code'],
+                                extra={'retry_after_ms': s['retry_after_ms']} if s.get('retry_after_ms') is not None else None)
+        before = tpl['to_edge'].get('before')
+        return {'template': tpl, 'option': option, 'issuer': {'id': iid, 'handle': issuer.get('handle') or option['issuer'].get('handle'),
+                                                               'pubkey': issuer['pubkey']},
+                'payee': {'id': chk['other_id'], 'handle': payee.get('handle'), 'pubkey': payee['pubkey']},
+                'quote_digest': r['summary']['quote_digest'], 'claim': tpl['from_edge']['before']['total'],
+                'to_prior': before['total'] if isinstance(before, dict) else 0}
+
+    @staticmethod
+    def _held_note(opts, pay_with):
+        """The payment option (a note I hold) `pay_with` names: an exact participant id first; a handle only when no id
+        matches and exactly one listed issuer has it. unknown_issuer otherwise."""
+        held = opts.get('held_notes') if isinstance(opts, dict) else None
+        rows = [h for h in (held if isinstance(held, list) else []) if isinstance(h, dict) and isinstance(h.get('issuer'), dict)
+                and isinstance(h['issuer'].get('id'), str) and h['issuer']['id']]
+        for h in rows:
+            if h['issuer']['id'] == pay_with:
+                return h
+        named = [h for h in rows if h['issuer'].get('handle') == pay_with]
+        if len(named) == 1:
+            return named[0]
+        raise vc.ValunError('unknown_issuer', f'the payment options for this deal list no note of yours from {pay_with[:64]!r}')
+
+    @staticmethod
+    def _current(c, pid):
+        """A participant's directory record, with its current (active) key."""
+        p = c.participant(pid)
+        if not (isinstance(p, dict) and p.get('status') == 'active' and isinstance(p.get('pubkey'), str) and p['pubkey']):
+            raise vc.ValunError('counterparty_inactive', f'{pid} has no active registered key')
+        return p
+
+    def _evaluate_payment(self, c, tpl, deal, payee_pk, mandate):
+        """novation.evaluate_payer_template on this profile's records as they are now, without recording anything (the
+        client evaluates again, and records, when it signs). D-1: an earlier attempt whose edge must be read gets one
+        GET /edges read-back (Client.sync_edges), as Client.pay_by_transfer does."""
+        reload = getattr(c.store, 'reload', None)
+        if callable(reload):
+            reload()
+        state = c.state
+        pins = state.get('pins') if isinstance(state.get('pins'), dict) and state['pins'].get('tracker_nft_id') else None
+        ctx = {'me_pk': c.pubkey, 'me_id': c.participant_id, 'now_ms': int(vc.time.time() * 1000), 'verify': _verify_hex,
+               'pins': pins, 'records': state.get('records'), 'signed': state.get('signed'),
+               'transfer_attempts': state.get('transfer_attempts'), 'novated_edges': state.get('novated_edges'),
+               'features': list(self.features or []), 'consent_policy': state.get('consent_policy'), 'deal': deal,
+               'payee_current_pk': payee_pk, 'approved_quote_digest': None, 'mandate': mandate, 'edges': None}
+        r = nv.evaluate_payer_template(tpl, ctx)
+        need = r['summary'].get('needs_read_back') if not r['ok'] and r['code'] == 'transfer_window_open' else None
+        if need:
+            try:
+                fresh = c.sync_edges()
+            except vc.ValunError:
+                return r
+            edges = dict(fresh['edges'])
+            for e in need:
+                if e not in fresh['doubtful']:
+                    edges.setdefault(e, None)
+            r = nv.evaluate_payer_template(tpl, dict(ctx, edges=edges))
+        return r
 
     @staticmethod
     def _checked(d, did, me, delivery=False):
@@ -448,6 +812,11 @@ class ValunAgent:
         elif name == 'valun_review_delivery' and a.get('decision') == 'accept':
             pin('expected_deliverable_sha256', chk['sha256'], 'stale_delivery', 'the delivery changed after your agent read it')
             pin('expected_terms_hash', chk['terms_hash'], 'stale_terms', 'the agreed terms are not the ones your agent read')
+            tr = snap.get('transfer')
+            if tr is not None:              # paying with a held note: exactly the issuer, quote and claim shown
+                a['pay_with'] = tr['issuer']['id']
+                pin('expected_quote_digest', tr['quote_digest'], 'stale_quote', 'the payment changed after your agent read it')
+                pin('expected_claim_total', tr['claim'], 'stale_claim', 'your claim on the issuer changed after your agent read it')
         elif name == 'valun_propose' and 'counterparty' in snap:
             a['counterparty'] = snap['counterparty']['id']     # the offer is signed for exactly the participant shown
         return a
@@ -463,7 +832,7 @@ class ValunAgent:
         if name == 'valun_respond' and a.get('action') == 'counter':
             return self._text_counter
         if name == 'valun_review_delivery' and a.get('decision') == 'accept':
-            return self._text_review
+            return self._text_pay if self._pay_with(a) is not None else self._text_review
         raise vc.ValunError('approval_unbound', f'no approval text for {name} with these arguments')
 
     # The texts: computed lines first (values the client computed or checked against what is signed, shown so that they
@@ -504,7 +873,7 @@ class ValunAgent:
             f'  you are the {ROLE_WORDS[role]}; price: {price} PC',
             f'  deliver within {due} h; the offer stays open {ttl} h',
             f'If {who} accepts, the deal is binding without asking you again: ' + owes(role, who, price),
-            NOT_SETTLED,
+            snap.get('not_settled', NOT_SETTLED),
             quote_line('Offer text written by your agent', {k: a.get(k) for k in ('title', 'description', 'deliverable')})])
 
     def _text_accept(self, a, snap):
@@ -515,7 +884,7 @@ class ValunAgent:
             f"  you are the {ROLE_WORDS[chk['role']]}; price: {price} PC; deliver by {shown(t.get('deliver_by'))}",
             f"  terms hash {chk['terms_hash'][:16]}... (recomputed from these terms; your Valun client checks it again before signing)",
             'This makes the deal binding on both sides: ' + owes(chk['role'], who, price),
-            NOT_SETTLED,
+            snap.get('not_settled', NOT_SETTLED),
             quote_line(f'Offer text written by {who}', {k: svc.get(k) for k in ('title', 'description', 'deliverable')})])
 
     def _text_counter(self, a, snap):
@@ -537,7 +906,7 @@ class ValunAgent:
                             f"by {shown(t.get('deliver_by'))} as in their offer (rounded down to the hour, at least 1 h after signing)"),
             '  your agent changes: ' + (', '.join(changes) or 'nothing') + '; the counter-offer stays open 24 h',
             f'If {who} accepts it, the deal is binding without asking you again: ' + owes(chk['role'], who, price),
-            NOT_SETTLED,
+            snap.get('not_settled', NOT_SETTLED),
             quote_line(f"Counter-offer text, with what your agent did not change copied from {who}'s offer",
                        {k: a[k] if a.get(k) else svc.get(k) for k in ('title', 'description', 'deliverable')})])
 
@@ -561,7 +930,43 @@ class ValunAgent:
             '  measured: ' + ('; '.join(facts) or f"{m['word_count']} words, {len(m['links'])} links"),
             f"  agreed terms hash {chk['terms_hash'][:16]}... (your Valun client checks both hashes again before signing)",
             f'Your agent signs a Basis note; the pilot tracker then records that you owe {who} {price} PC more.',
-            NOT_SETTLED,
+            snap.get('not_settled', NOT_SETTLED),
+            quote_line('Delivery title and agreed service text', {'delivery_title': dl.get('title') or '', 'title': svc.get('title'),
+                                                                  'deliverable': svc.get('deliverable')})])
+
+    def _text_pay(self, a, snap):
+        """A delivery acceptance paid with a held note (pay_with): what moves, from the checked transfer template."""
+        chk, tr = snap['checked'], snap['transfer']
+        t, svc, dl, content, price = chk['terms'], chk['service'], chk['delivery'], chk['content'], chk['price']
+        payee = self._who(chk)
+        iss = tr['issuer']
+        issuer = shown(iss['handle']) if isinstance(iss.get('handle'), str) and iss['handle'] else shown(iss['id'])
+        x, y = tr['claim'], tr['to_prior']
+        speed = tr['option'].get('issuer_consents')
+        m = measure.measure(content, ' '.join(str(svc.get(k) or '') for k in ('title', 'description', 'deliverable')), check_hosts=False)
+        facts = [f"{x_['requirement']}: {x_['measured']} ({'met' if x_['met'] else 'NOT met'})" for x_ in m['checks_against_agreed_terms']]
+        try:
+            exact = sandbox.check_delivery(t, content)
+        except Exception:  # noqa: BLE001 - a malformed result block is a fact to show, not a reason to hide the prompt
+            exact = None
+            facts.append('exact result: could not be checked')
+        if exact and exact.get('checked'):
+            facts.append('exact result: ' + ('matches the agreed text' if exact.get('exact_result_matches') else
+                                             'DOES NOT MATCH (differs in ' + ', '.join(shown(k) for k in (exact.get('differs_in') or [])) + ')'))
+        return '\n'.join([
+            f"Valun - PAY {payee} {price} PC for deal {shown(t['deal_id'])} by moving {price} PC of {issuer}'s debt from you "
+            f'to {payee}:',
+            f'  your claim on {issuer}: {x} -> {x - price} PC (issuer signature checked by your client)',
+            f'  {issuer} will owe {payee} {y} -> {y + price} PC; its total debt does not change',
+            '  you issue no credit note for this deal',
+            f'  {issuer} consents {CONSENT_SPEED_WORDS.get(speed, shown(speed))}; accepting is final: if the transfer does not '
+            'complete the deal stays accepted and you pay later',
+            f"  {issuer} is {shown(iss['id'])} and {payee} is {shown(chk['other_id'])}; quote {tr['quote_digest'][:16]}... "
+            '(computed by your Valun client; it checks it again before signing)',
+            f"  you accept the delivery: {len(content.encode('utf-8'))} bytes, sha256 {chk['sha256'][:16]}... (recomputed from "
+            'the text measured here); agreed terms hash ' + chk['terms_hash'][:16] + '...',
+            '  measured: ' + ('; '.join(facts) or f"{m['word_count']} words, {len(m['links'])} links"),
+            snap.get('not_settled', NOT_SETTLED_CIRCULATION),
             quote_line('Delivery title and agreed service text', {'delivery_title': dl.get('title') or '', 'title': svc.get('title'),
                                                                   'deliverable': svc.get('deliverable')})])
 
@@ -569,18 +974,208 @@ class ValunAgent:
     def status(self, a):
         c = self.client()
         me, info = c.me(), c.info()
+        circulating = CIRCULATION in self._remember(info)
+        lab = labels(circulating)
         recorded = me.get('agent_limits') or {}
         approvals = (self.approvals or 'Commitments are signed without asking your owner first.')
         approvals += f" The server also holds commitments priced above {me['mandate'].get('approve_above')} PC for the owner console."
-        return {'connected': True, 'server': c.state['server'], 'network': info['network'],
-                'unit': info['unit'] + ' (pilot credits, no monetary value)',
-                'you': me['participant'], 'objective_from_your_owner': me['mandate'].get('objective') or '(none set)',
-                'goals_your_owner_told_you': recorded.get('notes') or '(none recorded yet: ask your owner, then use valun_set_limits)',
-                'limits_you_recorded': {k: v for k, v in recorded.items() if k not in ('notes', 'set_at')},
-                'limits_in_force': {arg: (me.get('effective_limits') or me['mandate']).get(field) for arg, (field, _k) in LIMIT_FIELDS.items()},
-                'mandate': {k: v for k, v in me['mandate'].items() if k != 'objective'}, 'mandate_version': me['mandate_version'],
-                'approvals': approvals, 'position': me['position'], 'authority': me['authority'], 'settlement': SETTLEMENT_NOTE,
-                'honest_labels': HONEST_LABELS, 'real_vs_simulated': REAL_VS_SIMULATED}
+        out = {'connected': True, 'server': c.state['server'], 'network': info['network'],
+               'unit': info['unit'] + ' (pilot credits, no monetary value)',
+               'you': me['participant'], 'objective_from_your_owner': me['mandate'].get('objective') or '(none set)',
+               'goals_your_owner_told_you': recorded.get('notes') or '(none recorded yet: ask your owner, then use valun_set_limits)',
+               'limits_you_recorded': {k: v for k, v in recorded.items() if k not in ('notes', 'set_at')},
+               'limits_in_force': {arg: (me.get('effective_limits') or me['mandate']).get(field) for arg, (field, _k) in LIMIT_FIELDS.items()},
+               'mandate': {k: v for k, v in me['mandate'].items() if k != 'objective'}, 'mandate_version': me['mandate_version'],
+               'approvals': approvals, 'position': me['position'], 'authority': me['authority'], 'settlement': lab['settlement'],
+               'honest_labels': lab['honest_labels'], 'real_vs_simulated': lab['real_vs_simulated']}
+        if circulating:
+            out.update(self._circulation_status(c, me))
+        return out
+
+    def _circulation_status(self, c, me):
+        """valun_status with circulating credit: what you hold and owe, the notes you can spend (each checked against the
+        issuer's signature on the tracker state GET /edges shows), payments in progress, what your client clears by
+        itself, and for a sandbox_only participant the next tool calls of the five-step tour."""
+        pos = me.get('position') if isinstance(me.get('position'), dict) else {}
+        try:
+            box = c.inbox()
+        except vc.ValunError:
+            box = {}
+        box = box if isinstance(box, dict) else {}
+        try:
+            verified = c.sync_edges()['edges']
+        except vc.ValunError:
+            verified = {}
+        notes = self._notes_you_can_spend(c, pos, verified)
+        policy = consent_policy_in_force(c.state.get('consent_policy'),
+                                         next((me[k] for k in ('effective_limits', 'mandate') if isinstance(me.get(k), dict)), None))
+        signs = client_signs(policy)
+        hold, owe, net = pos.get('claims_held'), pos.get('owes'), pos.get('net')
+        cleared = pos.get('cleared_by_setoff', pos.get('settled', 0))
+        pending = box.get('consents_waiting_for_your_client')
+        if pending is None and isinstance(pos.get('pending'), dict):
+            pending = pos['pending'].get('consents_waiting_for_you')
+        log = c.state.get('consent_log') if isinstance(c.state.get('consent_log'), list) else []
+        spend = sum(n['amount_PC'] for n in notes)
+        summary = (f'You hold {shown(hold)} PC of credit notes others issued to you and owe {shown(owe)} PC (net {shown(net)} PC); '
+                   f'set-offs have cleared {shown(cleared)} PC so far. '
+                   + (f"You can spend {spend} PC of notes you hold ({', '.join(shown(n['issuer']) for n in notes)}) with pay_with "
+                      'when you accept a delivery. ' if notes else 'You hold no notes you can spend now. ')
+                   + ('Your Valun client signs by itself: ' + '; '.join(signs) + '.' if signs
+                      else 'Your Valun client signs no consents by itself.')
+                   + (f' {pending} consent(s) wait for your client.' if _whole(pending) and pending > 0 else ''))
+        out = {'summary': summary,
+               'money_view': {'you_hold_PC': hold, 'you_owe_PC': owe, 'net_PC': net, 'cleared_so_far_PC': cleared,
+                              'how_to_read': ('hold: credit notes others issued to you that are still outstanding (what they '
+                                              'owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note '
+                                              'you hold moves it to the payee (hold falls by the price); a set-off cancels equal '
+                                              'claims and debts around a cycle (hold and owe fall together, net does not change); '
+                                              'cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have '
+                                              'no value.')},
+               'notes_you_can_spend': notes,
+               'payments_in_progress': box.get('payments_in_progress') if isinstance(box.get('payments_in_progress'), list) else [],
+               'clearing': {'your_client_signs': signs, 'consents_pending': pending,
+                            'recent': [{k: e.get(k) for k in ('at', 'kind', 'decision', 'code', 'amount', 'your_net_change_PC')}
+                                       for e in log[-5:] if isinstance(e, dict)]},
+               'consent_policy_in_force': policy}
+        participant = me.get('participant') if isinstance(me.get('participant'), dict) else {}
+        if participant.get('sandbox_only') is True:
+            out['sandbox_next_steps'] = self._sandbox_next_steps(c, participant, pos, box, notes)
+        return out
+
+    @staticmethod
+    def _notes_you_can_spend(c, pos, verified):
+        """The notes I hold that the server says I can spend now (position.spendable_notes; else the claims), each
+        marked checked_by_your_client when the tracker state of that edge, as GET /edges showed it, carries the issuer's
+        valid signature over a total that covers the amount."""
+        rows = pos.get('spendable_notes')
+        if not isinstance(rows, list):
+            rows = [{'issuer_id': r.get('issuer_id'), 'issuer_handle': r.get('from'), 'issuer_pubkey': r.get('issuer_pubkey'),
+                     'spendable': r.get('amount'), 'issuer_consents': None}
+                    for r in (pos.get('claims') if isinstance(pos.get('claims'), list) else []) if isinstance(r, dict)]
+        out = []
+        for n in rows:
+            if not isinstance(n, dict):
+                continue
+            amount = n.get('spendable')
+            name = n.get('issuer_handle') or n.get('handle') or n.get('issuer_id')
+            if not (_whole(amount) and amount > 0 and isinstance(name, str) and name):
+                continue
+            st = verified.get(f"{n.get('issuer_pubkey')}>{c.pubkey}") if isinstance(verified, dict) else None
+            out.append({'issuer': name, 'amount_PC': amount,
+                        'checked_by_your_client': isinstance(st, dict) and _whole(st.get('total')) and st['total'] >= amount,
+                        'issuer_consents': n.get('issuer_consents'),
+                        'how': f"valun_review_delivery decision='accept' pay_with={quoted(name)}: pays a delivery by moving that "
+                               'much of their debt to you onto the payee'})
+        return out
+
+    def _sandbox_next_steps(self, c, participant, pos, box, notes):
+        """The exact next tool calls of the five-step sandbox tour (design 9.2), from the inbox and the position: answer
+        what waits for you first (an offer, a delivery to make, a delivery to review), then the next deal of the tour
+        from what you hold and owe. Wait (no calls) while the sandbox agents or a set-off are working."""
+        def amount(rows, key, who):
+            return sum(r['amount'] for r in (rows if isinstance(rows, list) else [])
+                       if isinstance(r, dict) and r.get(key) == who and _whole(r.get('amount')))
+        hx, hm = amount(pos.get('claims'), 'from', SANDBOX_EXACT), amount(pos.get('claims'), 'from', SANDBOX_MALLORY)
+        ox = amount(pos.get('debts'), 'to', SANDBOX_EXACT)
+        spendable = {n['issuer']: n['amount_PC'] for n in notes}
+        listed = {k: [x for x in (box.get(k) if isinstance(box.get(k), list) else [])
+                      if isinstance(x, dict) and (x.get('counterparty') in SANDBOX_AGENTS or k == 'awaiting_your_owner')]
+                  for k in ('respond', 'deliver', 'review_delivery', 'waiting_on_others', 'awaiting_your_owner', 'recent_closed')}
+        held = {SANDBOX_EXACT: {'you_hold_PC': hx, 'you_owe_PC': ox}, SANDBOX_MALLORY: {'you_hold_PC': hm, 'you_owe_PC': 0}}
+
+        def step_of(cp, role):
+            if cp == SANDBOX_EXACT:
+                return 1 if role == 'payee' else (5 if hm >= sandbox.SERVICES['notary']['price'] else 3)
+            return 2 if role == 'payer' else 4
+
+        def plan(step, calls, then):
+            done = TOUR_AFTER.get(step) if isinstance(step, int) else None
+            return {'tour_step': step, 'of': 5, 'goal': TOUR_GOALS.get(step, 'The tour is complete.'),
+                    'next_calls': calls, 'then': then, 'with_the_sandbox_agents': held,
+                    **({'when_done': {'you_hold_PC': done[0], 'you_owe_PC': done[1]}} if done else {})}
+
+        def call(tool, args, why):
+            return {'tool': tool, 'arguments': args, 'why': why}
+
+        def offer(step, cp, role, service):
+            price = sandbox.SERVICES[service]['price']
+            args = {'counterparty': cp, 'role': role, 'title': f'{service} job',
+                    'description': f'{service} for this text:\n```\n{TOUR_TEXTS[step]}\n```',
+                    'deliverable': f'The exact {service} result as JSON.', 'price': price, 'deliver_within_hours': 24,
+                    'offer_valid_hours': 1}
+            why = (f'buy {service} from {cp} for {price} PC' if role == 'payer' else f'offer to sell {service} to {cp} for {price} PC')
+            return plan(step, [call('valun_propose', args, why)],
+                        f'{cp} answers within a few seconds; call valun_status again for the next step.')
+        wait = 'The sandbox agents act within a few seconds: call valun_status again.'
+        if listed['awaiting_your_owner']:
+            x = listed['awaiting_your_owner'][0]
+            return plan(None, [], f"Your owner must first approve deal {shown(x.get('deal_id'))} in the owner console; then call "
+                                  'valun_status again.')
+        for x in listed['review_delivery']:
+            did, cp = x.get('deal_id'), x.get('counterparty')
+            step = step_of(cp, 'payer')
+            d = c.deal(did)
+            terms = ((d.get('current') or {}).get('terms') or {}) if isinstance(d, dict) else {}
+            dl = (d.get('delivery') or {}) if isinstance(d, dict) else {}
+            price = (terms.get('price') or {}).get('amount')
+            try:
+                exact = sandbox.check_delivery(terms, dl.get('content'))
+            except Exception:  # noqa: BLE001 - an unreadable result block is a wrong one
+                exact = {'checked': True, 'exact_result_matches': False, 'differs_in': ['the result block'],
+                         'service': sandbox.which_service(terms)}
+            if (isinstance(d, dict) and d.get('status') == 'payment_due') or (exact and exact.get('exact_result_matches')):
+                other = SANDBOX_MALLORY if cp == SANDBOX_EXACT else SANDBOX_EXACT
+                pay = other if _whole(price) and spendable.get(other, 0) >= price else 'own_note'
+                args = {'deal_id': did, 'decision': 'accept', 'expected_deliverable_sha256': dl.get('sha256'), 'pay_with': pay}
+                why = ('the delivery matches the exact result of the agreed text: accept it and pay '
+                       + ('with your own credit note' if pay == 'own_note' else f'with the note {pay} issued to you'))
+                return plan(step, [call('valun_review_delivery', args, why)],
+                            'Payment by transfer applies at once with the sandbox agents; call valun_status again.')
+            fields = ', '.join(str(k) for k in ((exact or {}).get('differs_in') or ['the result']))
+            reason = (f"The delivered result does not match the exact {(exact or {}).get('service') or 'result'} of the agreed "
+                      f'text (differs in: {fields}).')
+            return plan(step, [call('valun_review_delivery', {'deal_id': did, 'decision': 'dispute', 'reason': reason},
+                                    'the delivery is wrong: dispute it (nothing is paid), then buy again')],
+                        'After the dispute, call valun_status again: the next call buys again.')
+        for x in listed['deliver']:
+            return plan(step_of(x.get('counterparty'), 'payee'),
+                        [call('valun_deliver', {'deal_id': x.get('deal_id'), 'exact_result': True},
+                              'deliver the exact result your Valun client computes from the agreed text')],
+                        f"{x.get('counterparty')} checks it exactly and pays within a few seconds; call valun_status again.")
+        for x in listed['respond']:
+            role, price = x.get('your_role'), (x.get('price') or {}).get('amount') if isinstance(x.get('price'), dict) else None
+            ok = role == 'payee' or (_whole(price) and price <= max(s['price'] for s in sandbox.SERVICES.values()))
+            args = ({'deal_id': x.get('deal_id'), 'action': 'accept'} if ok else
+                    {'deal_id': x.get('deal_id'), 'action': 'decline', 'reason': 'above the published price'})
+            return plan(step_of(x.get('counterparty'), role),
+                        [call('valun_respond', args, 'accept the offer (your Valun client checks its signature and terms)'
+                              if ok else 'decline: the price is above the published one')],
+                        'Then deliver (or wait for the delivery); call valun_status again.')
+        if listed['waiting_on_others']:
+            x = listed['waiting_on_others'][0]
+            return plan(step_of(x.get('counterparty'), x.get('your_role')), [], wait)
+        if (hx > 0 or hm > 0) and ox > 0:
+            return plan(3 if hx > 0 else 4, [], ('A set-off of the cycle is due: your Valun client signs it by itself at its '
+                                                 'next consent run (within about a minute). Call valun_status again.'))
+        if hm >= sandbox.SERVICES['notary']['price']:
+            return offer(5, SANDBOX_EXACT, 'payer', 'notary')
+        if hx >= sandbox.SERVICES['notary']['price']:
+            return offer(2, SANDBOX_MALLORY, 'payer', 'notary')
+        if hx > 0:
+            return offer(3, SANDBOX_EXACT, 'payer', 'notary')
+        if ox > 0:
+            return offer(4, SANDBOX_MALLORY, 'payee', 'text-stats')
+        deals = pos.get('deals') if isinstance(pos.get('deals'), dict) else {}
+        if hm == 0 and _whole(deals.get('paid_by_transfer')) and deals['paid_by_transfer'] >= 2:
+            return plan('done', [], ('The tour is complete: you earned 6 PC and spent 6 PC (4 by transfer, 2 with your own note), '
+                                     'and set-offs cancelled 2 PC of your claims and 2 PC of your debts without changing your '
+                                     'net position. You can keep trading with the sandbox agents.'))
+        any_exact = any(x.get('counterparty') == SANDBOX_EXACT for k in listed for x in listed[k])
+        if not any_exact and recently_active(None, hours=10 / 60, joined_at=participant.get('joined_at')):
+            return plan(1, [], 'The welcome job from sandbox-exact usually arrives within a minute of joining; call '
+                               'valun_status again.')
+        return offer(1, SANDBOX_EXACT, 'payee', 'text-stats')
 
     def set_limits(self, a):
         c = self.client()
@@ -632,6 +1227,17 @@ class ValunAgent:
             out['whose_turn'] = 'yours: deliver the work' if d.get('your_role') == 'payee' else 'theirs: they deliver'
         elif st in ('delivered', 'note_failed'):
             out['whose_turn'] = 'yours: accept the delivery or dispute it' if d.get('your_role') == 'payer' else 'theirs: they review your delivery'
+        elif st == 'paying_by_transfer':
+            out['whose_turn'] = ('theirs: the issuer and the payee sign the debt transfer that pays this deal (your Valun client '
+                                 'signed your part)' if d.get('your_role') == 'payer' else
+                                 'theirs: the debt transfer that pays you collects its signatures (your Valun client signs '
+                                 'yours by itself if your owner allows it)')
+        elif st == 'payment_due':
+            out['whose_turn'] = ('yours: you accepted the delivery but it is not paid yet; pay it with valun_review_delivery '
+                                 "decision='accept' (see how_you_can_pay)" if d.get('your_role') == 'payer' else
+                                 'theirs: the payer accepted your delivery and must still pay it')
+        elif st == 'paid_by_transfer':
+            out['whose_turn'] = 'nobody: the deal is paid by debt transfer'
         else:
             out['whose_turn'] = f'nobody: the deal is {st}'
         out['current_terms'] = d['current'] and {'version': d['current']['version'], 'by': d['current']['by'], 'state': d['current']['state'],
@@ -665,6 +1271,13 @@ class ValunAgent:
                                   'issuer_pubkey': n.get('issuer_pubkey'), 'recipient_pubkey': n.get('recipient_pubkey')}
             if n.get('signature_withheld'):
                 out['credit_note']['signature'] = 'withheld until the Basis tracker records the note'
+        if d.get('payment') is not None:           # circulating credit: the payment by transfer, as the server shows it
+            out['payment'] = d['payment']
+        if d.get('your_role') == 'payer' and st in PAYABLE and self._offers_circulation(c):
+            try:
+                out['how_you_can_pay'] = self._how_you_can_pay(c, a['deal_id'])
+            except vc.ValunError as e:
+                out['how_you_can_pay'] = {'problem': e.code, 'message': str(e)}
         out['history'] = d.get('history', [])[-12:]
         prices = [(v['version'], 'you' if v['by'] == c.participant_id else (d.get('counterparty') or {}).get('handle'), v['price']['amount'])
                   for v in d.get('versions') or []]
@@ -676,6 +1289,36 @@ class ValunAgent:
                 out['negotiation']['stalemate'] = (f'Both sides have repeated the same price ({mine[0]} vs {theirs[0]} PC). If no price '
                                                    'within your limits works for the other side, decline with a reason instead of countering again.')
         return out
+
+    def _offers_circulation(self, c):
+        """GET /info lists circulation/1 (False when it cannot be read: the view is then as without it)."""
+        try:
+            return CIRCULATION in self._remember(c.info())
+        except vc.ValunError:
+            return False
+
+    @staticmethod
+    def _how_you_can_pay(c, deal_id):
+        """The payer's ways to pay a delivered (or note_failed, payment_due) deal, from GET payment-options: the own note
+        and each note held, with the exact pay_with value. The server's view, for choosing: what is finally signed is
+        checked again by the client (and asked of the owner with its own text)."""
+        opts = c.payment_options(deal_id)
+        opts = opts if isinstance(opts, dict) else {}
+        own = opts.get('own_note') if isinstance(opts.get('own_note'), dict) else {}
+        options = [{'pay_with': 'own_note', 'available': own.get('available') is True, 'why_not': own.get('why_not')}]
+        for h in opts.get('held_notes') if isinstance(opts.get('held_notes'), list) else []:
+            if not isinstance(h, dict) or not isinstance(h.get('issuer'), dict):
+                continue
+            iss = h['issuer']
+            options.append({'pay_with': iss.get('handle') or iss.get('id'), 'issuer_id': iss.get('id'),
+                            'operator_run': iss.get('operator_run'), 'spendable_PC': h.get('spendable'), 'enough': h.get('enough'),
+                            'payee_accepts': h.get('payee_accepts'), 'issuer_consents': h.get('issuer_consents'),
+                            'payee_consents': h.get('payee_consents'),
+                            'available': h.get('why_not') is None and h.get('enough') is True, 'why_not': h.get('why_not')})
+        return {'options': options, 'pending_transfer': opts.get('pending_transfer'), 'fallback_after': opts.get('fallback_after'),
+                'how': ("valun_review_delivery decision='accept' with pay_with set to an available option (own_note issues your "
+                        'own credit note; a handle passes on a note you hold). Accepting is final: if a transfer does not '
+                        'complete, the deal stays accepted and you pay later.')}
 
     def propose(self, a):
         c = self.client()
@@ -726,6 +1369,16 @@ class ValunAgent:
 
     def deliver(self, a):
         c = self.client()
+        exact = a.get('exact_result')
+        if exact is not None and not isinstance(exact, bool):
+            raise vc.ValunError('bad_arguments', 'exact_result is true or false')
+        if exact:
+            if a.get('content') is not None:
+                raise vc.ValunError('bad_arguments', 'with exact_result your Valun client computes the content: omit content')
+            return self._deliver_exact(c, a)
+        if not isinstance(a.get('content'), str) or not a['content']:
+            raise vc.ValunError('bad_arguments', 'give content (the complete deliverable), or exact_result=true for a text-stats '
+                                                 'or notary job')
         d = c.deal(a['deal_id'])
         m = measure.measure(a['content'], terms_text(d), check_hosts=self.check_link_hosts)
         problems = [f"{x['requirement']}: measured {x['measured']}" for x in m['checks_against_agreed_terms'] if not x['met']]
@@ -739,6 +1392,25 @@ class ValunAgent:
         return {'deal_id': r['id'], 'status': r['status'], 'sha256': r['delivery']['sha256'],
                 'what_happened': 'Delivered and signed. The payer will accept it (issuing you a credit note) or dispute it.'}
 
+    @staticmethod
+    def _deliver_exact(c, a):
+        """valun_deliver exact_result: the exact text-stats or notary result of the agreed text (the agreement's terms,
+        checked by hash and both signatures), rendered as sandbox.render() does and delivered. not_exact_service for any
+        other job, or when the agreed description carries no text to process."""
+        d = c.deal(a['deal_id'])
+        terms = c.verified_agreement(d)
+        service = sandbox.which_service(terms)
+        text = sandbox.extract_text((terms.get('service') or {}).get('description')) if service else None
+        if service is None or text is None:
+            raise vc.ValunError('not_exact_service', 'exact_result is for text-stats and notary jobs whose agreed description '
+                                                     'carries the text; nothing was sent')
+        result = sandbox.COMPUTE[service](text)
+        r = c.deliver(a['deal_id'], sandbox.render(service, result, text), a.get('title') or f'{service} result')
+        return {'deal_id': r['id'], 'status': r['status'], 'sha256': r['delivery']['sha256'],
+                'exact_result': {'service': service, 'result': result},
+                'what_happened': (f'Delivered and signed: the exact {service} result your Valun client computed from the agreed '
+                                  'text. The payer can recompute it, then accepts it (paying you) or disputes it.')}
+
     def review(self, a):
         if a.get('decision') not in ('accept', 'dispute'):
             raise vc.ValunError('bad_decision', "decision must be exactly 'accept' or 'dispute'; nothing was signed")
@@ -748,15 +1420,45 @@ class ValunAgent:
                 raise vc.ValunError('reason_required', 'a dispute needs a reason')
             r = c.dispute(a['deal_id'], a['reason'])
             return {'deal_id': r['id'], 'status': r['status'], 'what_happened': 'Disputed. No credit note was issued; the dispute is recorded.'}
+        issuer = self._pay_with(a)
+        if issuer is not None:
+            return self._review_pay_with(c, a, issuer)
         r = c.complete(a['deal_id'], a.get('expected_deliverable_sha256'), a.get('expected_terms_hash'))
         n = r.get('credit_note') or {}
         if r['status'] == 'completion_awaiting_owner':
             msg = 'You accepted the delivery and signed the credit note; your owner must approve before it is issued to the tracker.'
         elif r['status'] == 'note_issued':
             msg = (f"Credit note issued: the Basis tracker now records that you owe {r['counterparty']['handle']} "
-                   f"{(n.get('tracker_note') or {}).get('amount_collected')} PC in total (this deal added {n.get('amount')}). " + SETTLEMENT_NOTE)
+                   f"{(n.get('tracker_note') or {}).get('amount_collected')} PC in total (this deal added {n.get('amount')}). "
+                   + labels(self._circulating(c))['settlement'])
         else:
             msg = r['status']
         return {'deal_id': r['id'], 'status': r['status'], 'what_happened': msg,
                 'credit_note': {'state': n.get('state'), 'amount_PC': n.get('amount'), 'tracker_status': n.get('tracker_status'),
                                 'confirmation': (n.get('tracker_note') or {}).get('confirmation'), 'settled': False}}
+
+    def _review_pay_with(self, c, a, issuer):
+        """valun_review_delivery accept with pay_with: Client.pay_by_transfer under the pins prepare() took (the delivery,
+        the quote and my claim on the issuer)."""
+        claim = a.get('expected_claim_total')
+        r = c.pay_by_transfer(a['deal_id'], issuer, expected_deliverable_sha256=a.get('expected_deliverable_sha256'),
+                              expected_quote_digest=a.get('expected_quote_digest'),
+                              expected_claim_total=claim if _whole(claim) else None)
+        self._remember(c)
+        st = r.get('status') if isinstance(r, dict) else None
+        cp = (r.get('counterparty') or {}).get('handle') if isinstance(r, dict) and isinstance(r.get('counterparty'), dict) else None
+        pay = r.get('payment') if isinstance(r, dict) and isinstance(r.get('payment'), dict) else {}
+        iss = (pay.get('issuer') or {}).get('handle') if isinstance(pay.get('issuer'), dict) else None
+        price = ((((r.get('current') or {}).get('terms') or {}).get('price') or {}).get('amount')) if isinstance(r, dict) else None
+        who, by, amount = cp or 'the payee', iss or issuer, price if _whole(price) else 'the price in'
+        msgs = {'paid_by_transfer': (f'Paid by debt transfer: {by} now owes {who} {amount} PC more and you {amount} PC '
+                                     'less; you issued no credit note for this deal. ' + CIRCULATION_SETTLEMENT),
+                'paying_by_transfer': ('You accepted the delivery and signed the debt transfer; it applies once the issuer and '
+                                       'the payee sign. Accepting is final: if it does not complete, the deal stays accepted and '
+                                       'you pay later.'),
+                'completion_awaiting_owner': ('You accepted the delivery and signed the debt transfer; your owner must approve it '
+                                              'in the owner console before it is submitted.'),
+                'payment_due': ('The transfer did not apply: the delivery stays accepted and the deal is payment_due. Pay it '
+                                'again (valun_deal how_you_can_pay).')}
+        return {'deal_id': r.get('id') if isinstance(r, dict) else a['deal_id'], 'status': st, 'what_happened': msgs.get(st, st),
+                'payment': pay or None}
