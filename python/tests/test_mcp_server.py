@@ -24,6 +24,8 @@ FAKE = textwrap.dedent('''
             return name in ('valun_propose', 'valun_review_delivery') or (name == 'valun_respond' and (args or {{}}).get('action') in ('accept', 'counter'))
         def describe_commitment(self, name, args):
             return 'Valun - sign a NEW OFFER to bea-briefs: price 15 PC'
+        def prepare(self, name, args):
+            return {{'args': dict(args or {{}}), 'text': self.describe_commitment(name, args)}}
     sys.exit(McpServer(Fake(), {mode!r}).serve())
 ''')
 

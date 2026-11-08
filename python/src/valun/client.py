@@ -5,22 +5,35 @@ terms hash itself, checks the counterparty's signature against the key in the pu
 templates against the agreed price and its own record of what it has already paid that payee. The key and tokens are
 stored in a private state file and are never returned by any method.
 """
+import contextlib
+import copy
 import hashlib
 import json
 import os
+import random
 import secrets
 import stat
 import time
+import time as _systime          # the store's lock and retries: never the `time` a test or replay harness replaces
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
 from . import basis as vb
+from . import records
 
 NETWORK = 'valun-pilot-1'
 PROTOCOL = 'valun-deal/1'
 PILOT_TOKEN_ID = hashlib.sha256(b'valun-pilot-credit/1').hexdigest()
 UNIT = 'PC'
+# Optional state keys a store keeps for this client (every store must keep them; all may be absent):
+#   issued    {pair: confirmed total} of this client's outgoing edges (the 0.3 record, kept equal to records' confirmed)
+#   records   per-edge confirmed state and pending entries (records.py); pins {tracker_nft_id, denomination} (R13);
+#   the others belong to circulation (signed, novated_edges, transfer_attempts, approved_payments, consents, journal).
+CORE_STATE_KEYS = ('issued', 'records', 'signed', 'novated_edges', 'transfer_attempts', 'approved_payments', 'consent_policy',
+                   'consent_loop', 'consents_last_run_ms', 'consent_log', 'pins', 'journal_seq')
+# Timestamp residues (ts mod 1000) the v3 tracker keeps for other operations: an ordinary note never uses them.
+RESERVED_MS_FROM = 995
 
 
 class ValunError(Exception):
@@ -56,16 +69,71 @@ def _iso(dt) -> str:
     return dt.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
 
 
+def _records_in(state, create=True):
+    """state['records'] (created when absent, unless create is False: then {}); a value that is not a record refuses
+    everything (R9: records_unreadable)."""
+    r = state.get('records')
+    if r is None:
+        if not create:
+            return {}
+        r = state['records'] = {}
+    if not isinstance(r, dict):
+        raise ValunError('records_unreadable', "this profile's records cannot be read; nothing was signed")
+    return r
+
+
+def _issued_in(state, create=True):
+    r = state.get('issued')
+    if r is None:
+        if not create:
+            return {}
+        r = state['issued'] = {}
+    if not isinstance(r, dict):
+        raise ValunError('records_unreadable', "this profile's record of issued credit notes cannot be read; nothing was signed")
+    return r
+
+
+def _pins_of(state):
+    p = state.get('pins')
+    return p if isinstance(p, dict) and p.get('tracker_nft_id') else None
+
+
+def _pin_problem(pins, tracker_nft_id, denomination):
+    if pins and (pins.get('tracker_nft_id') != tracker_nft_id or pins.get('denomination') != denomination):
+        return ValunError('tracker_mismatch', (
+            f'this Valun server names tracker {str(tracker_nft_id)[:16]}... and unit {str(denomination)[:22]}..., but this '
+            f"profile is pinned to tracker {str(pins.get('tracker_nft_id'))[:16]}... and unit {str(pins.get('denomination'))[:22]}...; "
+            'nothing was signed. Ask your owner.'), extra={'pinned': dict(pins)})
+    return None
+
+
+def verify_note(issuer_pubkey, recipient_pubkey, total, timestamp, signature, tracker_nft_id, denomination):
+    """Is `signature` the issuer's Basis signature over the note (issuer, recipient, total, timestamp) on this tracker
+    and unit? Hex strings in; False for anything malformed."""
+    try:
+        msg = vb.note_message(bytes.fromhex(issuer_pubkey), bytes.fromhex(recipient_pubkey), total, timestamp,
+                              bytes.fromhex(tracker_nft_id), denomination)
+        return vb.verify(bytes.fromhex(signature), msg, bytes.fromhex(issuer_pubkey))
+    except (ValueError, TypeError, AttributeError, OverflowError):
+        return False
+
+
 class FileStore:
     """Standalone storage: one private JSON file holds settings, the agent's credentials and its own record of credit
-    notes issued. Used by the CLI and tests. (Inside Hermes the plugin uses Hermes's secret store instead.)"""
+    notes issued. Used by the CLI and tests. (Inside Hermes the plugin uses Hermes's secret store instead.)
+
+    Several processes may use one profile (an MCP server and `valun call`, say). update(fn) changes it as one step
+    they cannot interleave: it holds the lock file '<path>.lock' (created with O_CREAT|O_EXCL; waits up to LOCK_WAIT_S;
+    a lock older than LOCK_STALE_S was left by a process that died and is replaced), reloads the file, applies fn and
+    saves atomically. The JavaScript client uses the same protocol on the same file."""
+    LOCK_WAIT_S = 5.0
+    LOCK_STALE_S = 30.0
 
     def __init__(self, path):
         self.path = path
         self.state = {}
         if os.path.exists(path):
-            with open(path, encoding='utf-8') as f:
-                self.state = json.load(f)
+            self.state = self._load()
 
     def secret(self):
         return self.state.get('secret')
@@ -78,16 +146,117 @@ class FileStore:
         self.save()
 
     def save(self):
+        self._write(self.state)
+
+    def update(self, fn):
+        """Under the profile lock: reload the file (another process may have changed it), apply fn(state) and save.
+        self.state is updated in place to the saved state; if fn raises, nothing is saved or changed. Returns fn's
+        result. Changes made to self.state without saving are replaced by the file's contents."""
+        with self._locked():
+            work = self._read() if os.path.exists(self.path) else copy.deepcopy(self.state)
+            result = fn(work)
+            self._write(work)
+            self.state.clear()
+            self.state.update(work)
+        return result
+
+    def reload(self):
+        """Replace self.state (in place) with the file's current contents, if the file exists."""
+        if os.path.exists(self.path):
+            fresh = self._read()
+            self.state.clear()
+            self.state.update(fresh)
+
+    # ---------- file access ----------
+    def _load(self):
+        for attempt in range(50):
+            try:
+                with open(self.path, encoding='utf-8') as f:
+                    return json.load(f)
+            except PermissionError:            # Windows: the file is being replaced by another process right now
+                if attempt == 49:
+                    raise
+                _systime.sleep(0.02)
+
+    def _read(self):
+        try:
+            data = self._load()
+        except (OSError, ValueError):
+            raise ValunError('records_unreadable', f'cannot read the profile {self.path}; nothing was changed or signed') from None
+        if not isinstance(data, dict):
+            raise ValunError('records_unreadable', f'the profile {self.path} is not a JSON object; nothing was changed or signed')
+        return data
+
+    def _write(self, state):
         os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
-        tmp = self.path + '.tmp'
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            json.dump(self.state, f, indent=1)
-        os.replace(tmp, self.path)
+        tmp = f'{self.path}.{os.getpid()}.{os.urandom(4).hex()}.tmp'    # one per write: concurrent writers never share it
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(state, f, indent=1)
+                f.flush()
+                os.fsync(f.fileno())
+            for attempt in range(100):
+                try:
+                    os.replace(tmp, self.path)
+                    break
+                except PermissionError:        # Windows: another process has the profile open for reading right now
+                    if attempt == 99:
+                        raise
+                    _systime.sleep(0.01)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
         try:
             os.chmod(self.path, stat.S_IRUSR | stat.S_IWUSR)
         except OSError:
             pass
+
+    @contextlib.contextmanager
+    def _locked(self):
+        lock = self.path + '.lock'
+        os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
+        deadline = _systime.monotonic() + self.LOCK_WAIT_S
+        while True:
+            try:
+                fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                break
+            except FileExistsError:
+                if self._replace_stale(lock):
+                    continue
+            except PermissionError:            # Windows: the holder is deleting the lock file right now
+                if os.name != 'nt':
+                    raise                      # elsewhere it means the folder is not writable: say so at once
+            if _systime.monotonic() >= deadline:
+                raise ValunError('profile_busy', f'another Valun process is using the profile {self.path} (lock file {lock}); '
+                                 'try again') from None
+            _systime.sleep(0.005 + random.random() * 0.02)
+        try:
+            try:
+                os.write(fd, f'{os.getpid()} {_systime.time():.3f}\n'.encode('ascii'))
+            finally:
+                os.close(fd)
+            yield
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(lock)
+
+    def _replace_stale(self, lock):
+        """True when the lock is gone or was left by a process that died (older than LOCK_STALE_S) and is now removed."""
+        try:
+            age = _systime.time() - os.path.getmtime(lock)
+        except OSError:
+            return True                        # released meanwhile: try again at once
+        if age <= self.LOCK_STALE_S:
+            return False
+        try:
+            os.unlink(lock)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return False
+        return True
 
 
 class Client:
@@ -98,11 +267,37 @@ class Client:
         self.store = FileStore(store) if isinstance(store, (str, os.PathLike)) else store
         self.state = self.store.state
         self.timeout = timeout
-        if server:
-            self.state['server'] = server.rstrip('/')
+        self._server = server.rstrip('/') if server else None    # kept apart: a reloaded profile never redirects requests
+        if self._server:
+            self.state['server'] = self._server
 
     def _save(self):
         self.store.save()
+
+    def _update(self, fn):
+        """Change this client's records: fn(state) on the store's state, then save. With a store that has update()
+        (FileStore), under the profile lock and on the state reloaded from disk, so concurrent processes never lose
+        each other's records; other stores apply fn to their state and save(). If fn raises, nothing changes."""
+        upd = getattr(self.store, 'update', None)
+        if callable(upd):
+            result = upd(fn)
+        else:
+            work = copy.deepcopy(self.state)
+            result = fn(work)
+            self.state.clear()
+            self.state.update(work)
+            self.store.save()
+        if self._server:
+            self.state['server'] = self._server
+        return result
+
+    def _reload(self):
+        """Read the records again where the store can (another process may have recorded notes since this one loaded)."""
+        fn = getattr(self.store, 'reload', None)
+        if callable(fn):
+            fn()
+            if self._server:
+                self.state['server'] = self._server
 
     @property
     def connected(self):
@@ -129,10 +324,11 @@ class Client:
 
     # ---------- HTTP ----------
     def request(self, method, path, body=None, auth=True, token=None):
-        if not self.state.get('server'):
+        server = self._server or self.state.get('server')
+        if not server:
             raise ValunError('not_configured', 'no Valun server configured')
         data = json.dumps(body).encode('utf-8') if body is not None else None
-        req = urllib.request.Request(self.state['server'] + path, data=data, method=method)
+        req = urllib.request.Request(server + path, data=data, method=method)
         req.add_header('Content-Type', 'application/json')
         req.add_header('Accept', 'application/json')
         tok = token or (self.store.token() if auth else None)
@@ -149,7 +345,7 @@ class Client:
             raise ValunError(j.get('error', 'http_error'), j.get('message') or j.get('error') or f'HTTP {e.code}', e.code,
                              {k: v for k, v in j.items() if k not in ('error', 'message')}) from None
         except urllib.error.URLError as e:
-            raise ValunError('unreachable', f'cannot reach {self.state["server"]}: {e.reason}') from None
+            raise ValunError('unreachable', f'cannot reach {server}: {e.reason}') from None
 
     # ---------- joining ----------
     def join(self, invite, handle, operator, display_name='', about='', services=''):
@@ -180,7 +376,52 @@ class Client:
 
     # ---------- reads ----------
     def info(self):
-        return self.request('GET', '/pilot/v1/info', auth=False)
+        """The network's public description. Its tracker and unit are pinned in an enrolled profile the first time they
+        are read (at enroll, or on the first call after an upgrade); a later answer naming others is refused."""
+        r = self.request('GET', '/pilot/v1/info', auth=False)
+        self._pin(r)
+        return r
+
+    # ---------- pins (R13) ----------
+    def _pinned(self):
+        return _pins_of(self.state) is not None
+
+    def _check_pins(self, tracker_nft_id, denomination):
+        err = _pin_problem(_pins_of(self.state), tracker_nft_id, denomination)
+        if err:
+            raise err
+
+    def _pin(self, info):
+        if not isinstance(info, dict):
+            return
+        nft, denom = info.get('tracker_nft_id'), info.get('denomination')
+        if not (isinstance(nft, str) and nft and isinstance(denom, str) and denom):
+            return
+        if self._pinned():
+            self._check_pins(nft, denom)
+            return
+        if not self.state.get('participant_id'):
+            return                              # only an enrolled profile is pinned
+
+        def pin(state):
+            err = _pin_problem(_pins_of(state), nft, denom)
+            if err:
+                raise err
+            if not _pins_of(state):
+                state['pins'] = {'tracker_nft_id': nft, 'denomination': denom}
+        self._update(pin)
+
+    def _features(self):
+        """The feature tags the server advertises in GET /info (which also checks the pins), for a pinned profile. A
+        profile not pinned yet is served exactly as by 0.3 (no extra request): it is pinned by its first call."""
+        if not self._pinned():
+            return []
+        raw = self.info().get('features')
+        if raw is None:
+            return []
+        if isinstance(raw, list) and all(isinstance(f, str) for f in raw):
+            return list(raw)
+        return ['?']        # malformed: features count as advertised (the residue rule applies) and none is recognised
 
     def me(self):
         return self.request('GET', '/pilot/v1/me')
@@ -306,7 +547,16 @@ class Client:
                                                                             'signature': self._sign(statement('deliver', h, dh))})
 
     def complete(self, deal_id, expected_deliverable_sha256=None):
-        """Accept the delivery and pay: sign the Basis note for prior + price, after checking the template independently."""
+        """Accept the delivery and pay: sign the Basis note for prior + price, after checking the template independently.
+
+        Checked before signing: the content matches its hash (and the one the caller reviewed); the agreement's hash and
+        both signatures; the payee's signature on the delivery; the template names this agent's key and the payee's
+        current key, adds exactly the agreed price, names the agreed (and pinned) tracker and unit, and is current. The
+        prior total must be one this client can stand behind: a prior note it signed itself and not older than its own
+        records (when the server offers bound_notes/1), otherwise its own record of the confirmed total (ledger_mismatch).
+        A pending note of its own that has applied is confirmed on the way, and that note's own deal is never paid again
+        (already_paid). The note is recorded as pending before it is sent, and confirmed only when the server answers
+        note_issued: an owner can still reject a held note (OQ-23)."""
         d = self.deal(deal_id)
         if not d.get('delivery') or not d.get('agreement'):
             raise ValunError('not_delivered', 'nothing has been delivered on this deal')
@@ -316,7 +566,12 @@ class Client:
         if expected_deliverable_sha256 and expected_deliverable_sha256 != dh:
             raise ValunError('stale_delivery', 'the delivery changed since you reviewed it')
         terms = self.verified_agreement(d)
-        tpl = self.request('GET', f'/pilot/v1/deals/{deal_id}/credit-note-template')
+        h = terms_hash(terms)
+        # A pinned (0.4) profile reads /info: a server offering bound_notes/1 shows the prior note (?prior=1), and with
+        # any feature the tracker keeps the timestamp residues 995-999 for other operations. Otherwise exactly as 0.3.
+        features = self._features()
+        with_prior = 'bound_notes/1' in features
+        tpl = self.request('GET', f'/pilot/v1/deals/{deal_id}/credit-note-template' + ('?prior=1' if with_prior else ''))
         # The note is between the parties' CURRENT keys (an owner may have replaced an agent key after the deal was
         # agreed): it must be signed by this agent's key and credit the payee's key as the directory lists it now.
         payee = self._registered_key(terms['payee']['id'])
@@ -324,24 +579,152 @@ class Client:
             raise ValunError('bad_template', 'credit-note template names the wrong parties')
         if tpl['price'] != terms['price']['amount'] or tpl['total'] != tpl['prior_total'] + terms['price']['amount']:
             raise ValunError('bad_template', 'credit-note template does not add exactly the agreed price')
+        self.check_delivery_signature(d['delivery'], h, terms['payee']['pubkey'], payee)
         pair = f'{self.pubkey}>{payee}'
-        known = self.state.get('issued', {}).get(pair)
-        if known is not None and known != tpl['prior_total']:
-            raise ValunError('ledger_mismatch', f'the server says you have issued this payee {tpl["prior_total"]} PC of credit notes so far; your own record says {known}. Ask your operator.')
+        verify = self._note_verifier(terms['tracker_nft_id'], terms['denomination'])
+        self._reload()
+        prior = tpl.get('prior_note') if with_prior else None
+        if prior is not None:
+            self._check_prior(pair, prior, tpl, verify, deal_id)
+        else:
+            self._check_ledger(pair, tpl['prior_total'], payee, verify, deal_id)
         if tpl['tracker_nft_id'] != terms['tracker_nft_id'] or tpl['denomination'] != terms['denomination']:
             raise ValunError('bad_template', 'credit-note template names a different tracker or unit')
+        self._check_pins(tpl['tracker_nft_id'], tpl['denomination'])
         if abs(tpl['timestamp'] - int(time.time() * 1000)) > 10 * 60_000:
             raise ValunError('bad_template', 'credit-note template timestamp is not current')
+        if features and tpl['timestamp'] % 1000 >= RESERVED_MS_FROM:
+            raise ValunError('bad_template', (f"credit-note template timestamp {tpl['timestamp']} ends in {tpl['timestamp'] % 1000}: "
+                                              'the tracker keeps residues 995-999 for other operations; refusing to sign it as a credit note'))
         msg = vb.note_message(bytes.fromhex(self.pubkey), bytes.fromhex(payee), tpl['total'], tpl['timestamp'],
                               bytes.fromhex(tpl['tracker_nft_id']), tpl['denomination'])
-        h = terms_hash(terms)
         body = {'terms_hash': h, 'deliverable_sha256': dh, 'signature': self._sign(statement('complete', h, dh)),
                 'credit_note': {'total': tpl['total'], 'timestamp': tpl['timestamp'], 'signature': vb.sign(msg, self._secret(), bytes.fromhex(self.pubkey)).hex()}}
-        r = self.request('POST', f'/pilot/v1/deals/{deal_id}/complete', body)
-        if r.get('status') in ('note_issued', 'completion_awaiting_owner', 'issuing_note'):
-            self.state.setdefault('issued', {})[pair] = tpl['total']
-            self._save()
+        note = dict(body['credit_note'])
+        signed_at = _iso(datetime.now(timezone.utc))
+
+        def ahead(state):                       # written before the note is sent: its outcome is not known yet
+            err = _pin_problem(_pins_of(state), tpl['tracker_nft_id'], tpl['denomination'])
+            if err:
+                raise err
+            if not _pins_of(state):             # the first call after an upgrade pins the agreed tracker and unit
+                state['pins'] = {'tracker_nft_id': tpl['tracker_nft_id'], 'denomination': tpl['denomination']}
+            records.add_pending(_records_in(state), pair, note['total'], note['timestamp'], 'note', deal_id, 'out', signed_at)
+        self._update(ahead)
+
+        def forget(state):
+            records.remove_pending(_records_in(state), pair, note['total'], note['timestamp'], deal_id)
+        try:
+            r = self.request('POST', f'/pilot/v1/deals/{deal_id}/complete', body)
+        except ValunError as e:
+            if e.status is not None and 400 <= e.status < 500:     # refused: this note can never apply
+                self._settle(forget)
+            raise                               # otherwise (unreachable, 5xx) the outcome is unknown: it stays pending
+        status = r.get('status') if isinstance(r, dict) else None
+        if status == 'note_issued':
+            self._settle(lambda state: self._confirm_in(state, pair, note))
+        elif status not in ('completion_awaiting_owner', 'issuing_note'):
+            self._settle(forget)                # e.g. note_failed: the tracker does not hold it
         return r
+
+    def _settle(self, fn):
+        """Record an outcome after the server answered. The attempt was written ahead, so if this fails (the profile is
+        busy or unreadable) the entry simply stays pending and is settled later; the server's answer is what counts."""
+        try:
+            self._update(fn)
+        except ValunError:
+            pass
+
+    # ---------- records of credit notes (records.py) ----------
+    def _confirm_in(self, state, pair, edge):
+        e = records.confirm(_records_in(state), pair, edge)
+        if e['confirmed'] and pair.startswith(f'{self.pubkey}>'):
+            _issued_in(state)[pair] = e['confirmed']['total']    # the 0.3 record stays the confirmed total
+
+    def _known_total(self, pair):
+        """My own record of the confirmed total on an outgoing edge: the records' confirmed state, else the 0.3 record."""
+        c = records.confirmed_total(_records_in(self.state, create=False), pair)
+        return c if c is not None else _issued_in(self.state, create=False).get(pair)
+
+    def _check_ledger(self, pair, prior_total, payee, verify, deal_id):
+        """Without a prior note: the template's prior total must equal my record of the confirmed total, when I have one.
+        A held or issuing note of mine that its deal now records as issued is confirmed first (owner approvals happen
+        after this client signed)."""
+        known = self._known_total(pair)
+        if known is not None and known != prior_total:
+            self._confirm_issued(pair, payee, verify, deal_id)
+            known = self._known_total(pair)
+        if known is not None and known != prior_total:
+            raise ValunError('ledger_mismatch', f'the server says you have issued this payee {prior_total} PC of credit notes so far; your own record says {known}. Ask your operator.')
+
+    def _confirm_issued(self, pair, payee, verify, deal_id):
+        found = []
+        for p in records.get(_records_in(self.state, create=False), pair)['pending']:
+            if not (isinstance(p, dict) and p.get('kind') == 'note' and p.get('direction') == 'out' and isinstance(p.get('ref'), str)):
+                continue
+            try:
+                d = self.deal(p['ref'])
+            except ValunError:
+                continue
+            tn = ((d.get('credit_note') or {}).get('tracker_note') or {}) if d.get('status') == 'note_issued' else {}
+            st = {'total': tn.get('amount_collected'), 'timestamp': tn.get('timestamp'), 'signature': tn.get('signature')}
+            if (st['total'], st['timestamp']) == (p.get('total'), p.get('timestamp')) \
+                    and verify(self.pubkey, payee, st['total'], st['timestamp'], st['signature']):
+                found.append((st, p))
+        if found:
+            latest = max((st for st, _p in found), key=lambda s: s['timestamp'])
+            self._update(lambda state: self._confirm_in(state, pair, latest))
+            self._refuse_paid_again(deal_id, [p for _st, p in found])
+
+    def _check_prior(self, pair, prior, tpl, verify, deal_id):
+        """With a prior note (a 0.4 server): it must be the template's prior, signed by me, and not older than my records.
+        If it is one of my pending notes, that note applied: it is confirmed, and its own deal is never paid again."""
+        if not isinstance(prior, dict) or prior.get('total') != tpl['prior_total']:
+            raise ValunError('bad_template', "the credit-note template's prior note does not match its prior total")
+        mine = _records_in(self.state, create=False)
+        problem = records.prior_problem(mine, pair, prior, self.pubkey, verify)
+        if problem == 'bad_prior_signature':
+            raise ValunError('bad_prior_signature', "the server's prior credit note to this payee is not signed by your key; refusing to sign a new one")
+        if problem:
+            mine = records.get(mine, pair)['confirmed'] or {}
+            raise ValunError('ledger_mismatch', (f"the server shows an older prior credit note to this payee ({prior['total']} PC at "
+                                                 f"{prior['timestamp']}) than your own record ({mine.get('total')} PC at {mine.get('timestamp')}). "
+                                                 'Ask your operator.'))
+        applied = [p for p in records.get(mine, pair)['pending']
+                   if isinstance(p, dict) and (p.get('total'), p.get('timestamp')) == (prior['total'], prior['timestamp'])]
+        if applied:
+            edge = records.edge_state(prior)
+            self._update(lambda state: self._confirm_in(state, pair, edge))
+            self._refuse_paid_again(deal_id, applied)
+        if tpl['timestamp'] <= prior['timestamp']:
+            raise ValunError('bad_template', 'the credit-note template timestamp is not after the prior note')
+
+    @staticmethod
+    def _refuse_paid_again(deal_id, applied):
+        """A note of mine that applied paid its own deal: never sign a second payment for it, whatever the server says."""
+        for p in applied:
+            if p.get('kind') == 'note' and p.get('ref') == deal_id:
+                raise ValunError('already_paid', (f"your credit note for this deal ({p.get('total')} PC) is already on the tracker, so "
+                                                  'the deal is paid; refusing to pay it again. Ask your operator.'))
+
+    @staticmethod
+    def _note_verifier(tracker_nft_id, denomination):
+        return lambda issuer, recipient, total, ts, sig: verify_note(issuer, recipient, total, ts, sig, tracker_nft_id, denomination)
+
+    @staticmethod
+    def check_delivery_signature(delivery, terms_hash_hex, *payee_keys):
+        """The payee signed this delivery: statement('deliver', terms_hash, sha256) verifies under one of `payee_keys`
+        (the key the terms name, or the payee's current directory key after an owner replaced it). Else
+        bad_delivery_signature."""
+        sig, dh = delivery.get('signature'), delivery.get('sha256')
+        text = statement('deliver', terms_hash_hex, str(dh)).encode('utf-8')
+        for k in dict.fromkeys(payee_keys):
+            try:
+                if isinstance(sig, str) and isinstance(k, str) and vb.verify(bytes.fromhex(sig), text, bytes.fromhex(k)):
+                    return
+            except ValueError:
+                pass
+        raise ValunError('bad_delivery_signature', "the delivery is not signed by the payee's key; refusing to accept it")
 
     def dispute(self, deal_id, reason):
         d = self.deal(deal_id)

@@ -26,7 +26,8 @@ from .mcp_server import APPROVAL_TEXT
 JOIN_APPROVALS = {
     'ask': 'Approvals: before each offer, acceptance or credit note you are asked (in your MCP app, or in this terminal for `valun call`).',
     'client-prompt': "Approvals: your MCP app's own tool confirmation asks you; never 'always allow' the Valun signing tools.",
-    'console': 'Approvals: every commitment waits for you in the owner console ({server}/pilot#owner).',
+    'console': ('Approvals: every commitment waits for you in the owner console ({server}/pilot#owner), including accepting a '
+                'delivery: its credit note is issued only after you approve it.'),
     'none': 'Approvals: none. Your agent acts on its own within your limits (at most {per_deal} PC per deal, {total} PC owed in total).',
 }
 
@@ -43,6 +44,23 @@ def _write_private(path, text):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, 'w', encoding='utf-8') as f:
         f.write(text)
+
+
+def _approval_mandate(mode, cap):
+    """The owner-mandate change when approvals switch to or from console. Console holds every commitment for the
+    owner: every price (approve_above 0) and every accepted delivery, whose credit note waits for the owner's review
+    (review_deliveries). Leaving console undoes both."""
+    if mode == 'console':
+        return {'approve_above': 0, 'review_deliveries': True}
+    return {'approve_above': cap, 'review_deliveries': False}
+
+
+def _pin(client):
+    """Read /info once: the client pins the network's tracker and unit in the profile (a later change is refused)."""
+    try:
+        client.info()
+    except vc.ValunError:
+        pass
 
 
 def cmd_join(args):
@@ -72,10 +90,12 @@ def cmd_join(args):
         c.me()          # the agent's first call: it shows as active in the directory from now on
     except vc.ValunError:
         pass
+    _pin(c)
     # The owner token is used here once, in memory, to set where approvals happen; it is never stored in the profile.
     limits = c.request('GET', '/pilot/v1/owner', token=owner)['mandate']
     cap = max(limits.get('max_issue_per_deal', 0), limits.get('max_accept_per_deal', 0))
-    c.request('PUT', '/pilot/v1/owner/mandate', {'approve_above': 0 if args.approvals == 'console' else cap}, token=owner)
+    c.request('PUT', '/pilot/v1/owner/mandate', {'approve_above': 0, 'review_deliveries': True} if args.approvals == 'console'
+              else {'approve_above': cap}, token=owner)
     print(f"Joined Valun as {handle} ({j['participant_id']}) on {server}. This agent's key was generated here; "
           f"public key {r['pubkey'][:16]}...")
     print(f'Credentials are stored privately in {profile_path(args.profile)} (not shown).')
@@ -102,14 +122,16 @@ def cmd_enroll(args):
     server = _server(args, store)
     participant = (args.participant or input('Participant id (vp_..., from your owner console): ')).strip()
     code = (sys.stdin.readline() if args.code_from_stdin else getpass.getpass('Enrollment code (not shown): ')).strip()
+    c = vc.Client(store, server)
     try:
-        r = vc.Client(store, server).enroll(participant, code)
+        r = c.enroll(participant, code)
     except vc.ValunError as e:
         print(f'Enrollment failed ({e.code}): {e}')
         return 1
     store.state.update({'server': server})
     store.state.setdefault('approvals', 'ask')
     store.save()
+    _pin(c)
     print(f"Enrolled {participant} on {r['network']}. This agent's public key: {r['pubkey'][:16]}... (key stored privately)")
     return 0
 
@@ -136,6 +158,14 @@ def cmd_doctor(args):
     try:
         info = vc.Client(_Mem(), server).request('GET', '/pilot/v1/info', auth=False)
         ok.append(f"Server {server} reachable: {info['network']}, unit {info['unit']} (synthetic)")
+        pins = store.state.get('pins')
+        if isinstance(pins, dict) and pins.get('tracker_nft_id'):
+            if (pins.get('tracker_nft_id'), pins.get('denomination')) == (info.get('tracker_nft_id'), info.get('denomination')):
+                ok.append('Tracker and unit: the ones pinned in this profile')
+            else:
+                problems.append('The server names a different tracker or unit than the ones pinned in this profile, so this '
+                                'agent signs nothing (tracker_mismatch). Only if you know the network moved: '
+                                '`valun config server URL` pins it again.')
     except Exception as e:  # noqa: BLE001
         problems.append(f'Server {server} not reachable ({e}). Check `valun config server URL` and your connection.')
     if store.state.get('participant_id') and store.secret() and store.token():
@@ -199,21 +229,28 @@ def cmd_config(args):
             try:
                 m = c.request('GET', '/pilot/v1/owner', token=owner)['mandate']
                 cap = max(m.get('max_issue_per_deal', 0), m.get('max_accept_per_deal', 0))
-                c.request('PUT', '/pilot/v1/owner/mandate', {'approve_above': 0 if val == 'console' else cap}, token=owner)
+                c.request('PUT', '/pilot/v1/owner/mandate', _approval_mandate(val, cap), token=owner)
             except vc.ValunError as e:
                 print(f'Could not change the mandate ({e.code}): {e}')
                 return 1
-            print('Owner mandate updated: ' + ('every commitment now waits for you in the owner console.' if val == 'console'
-                                               else f'commitments up to {cap} PC no longer wait in the console.'))
-        store.state['approvals'] = val
+            print('Owner mandate updated: ' + ('every commitment now waits for you in the owner console, including accepted '
+                                               'deliveries (their credit notes wait for your review).' if val == 'console'
+                                               else f'commitments up to {cap} PC no longer wait in the console, and accepted '
+                                                    'deliveries issue their credit notes without your review.'))
+        changes = {'approvals': val}
     elif key == 'server':
-        store.state['server'] = val.rstrip('/')
+        changes = {'server': val.rstrip('/')}
     elif key == 'check_link_hosts':
-        store.state['check_link_hosts'] = val.lower() in ('on', 'true', '1', 'yes')
+        changes = {'check_link_hosts': val.lower() in ('on', 'true', '1', 'yes')}
     else:
         print('keys: approvals, server, check_link_hosts')
         return 1
-    store.save()
+
+    def apply(state):       # on the profile as it is now (another process, such as `valun mcp`, may have changed it)
+        if key == 'server':
+            state.pop('pins', None)     # the owner chose the network: its tracker and unit are pinned again on the next call
+        state.update(changes)
+    store.update(apply)
     print(f'{key} = {store.state[key]}')
     return 0
 
@@ -243,8 +280,12 @@ def cmd_call(args):
                 'Not signed: this profile asks its owner before every commitment, and no person is at this terminal. The owner can '
                 'run `valun config approvals console` (commitments wait in the owner console) or `none`.')}))
             return 3
-        tool_args = agent.bind(args.tool, tool_args)   # sign exactly what is shown here
-        print(agent.describe_commitment(args.tool, tool_args), file=sys.stderr)
+        prepared, refusal = agent.prepare_or_refusal(args.tool, tool_args)   # sign exactly what is shown here, read once
+        if refusal:                                     # nothing is signed, and nobody is asked with a generic text
+            print(json.dumps(refusal, ensure_ascii=False, indent=1, default=str))
+            return 3
+        tool_args = prepared['args']
+        print(prepared['text'], file=sys.stderr)
         if input('Approve this commitment? [y/N] ').strip().lower() not in ('y', 'yes'):
             print(json.dumps({'error': 'owner_declined', 'message': 'not approved; nothing was signed'}))
             return 3

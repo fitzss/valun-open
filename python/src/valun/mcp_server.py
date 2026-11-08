@@ -5,10 +5,12 @@ The participant's key and agent token stay in the local profile file; the server
 the Valun network over HTTPS. Nothing secret is ever written to stdout or stderr.
 
 Approvals (the profile's `approvals` setting, chosen at `valun join`):
-  ask            before signing a commitment, ask the person through the MCP client (elicitation). If the client
-                 cannot show such a prompt, the commitment is refused (fail closed) with an explanation.
+  ask            before signing a commitment, ask the person through the MCP client (elicitation), with the text and
+                 the bound arguments the core prepares from one read of what would be signed. If the client cannot
+                 show such a prompt, or that read fails, the commitment is refused (fail closed) with an explanation.
   client-prompt  rely on the MCP client's own per-tool confirmation (commitment tools are annotated as such).
-  console        sign, but the Valun server holds every commitment for the owner in the web owner console.
+  console        sign, but the Valun server holds every commitment for the owner in the web owner console (the owner
+                 mandate has approve_above 0 and review_deliveries on).
   none           act within the owner's limits without asking.
 The Valun server enforces the owner's mandate in every mode.
 """
@@ -21,7 +23,7 @@ import sys
 from . import __version__
 from . import client as vc
 from . import schemas
-from .agent import ValunAgent, error_payload, READ_ONLY_TOOLS
+from .agent import ValunAgent, error_payload, READ_ONLY_TOOLS, SIGNING_TOOLS
 
 PROTOCOL_VERSIONS = ('2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05')   # initialize handshake
 MODERN_VERSIONS = ('2026-07-28',)                                                 # per-request _meta, server/discover
@@ -41,7 +43,7 @@ TITLES = {'valun_status': 'Valun: status and instructions', 'valun_directory': '
           'valun_propose': 'Valun: sign a new offer', 'valun_respond': 'Valun: accept, counter, decline or withdraw',
           'valun_deliver': 'Valun: deliver agreed work', 'valun_review_delivery': 'Valun: accept (issue a credit note) or dispute',
           'valun_set_limits': "Valun: record the owner's goals and limits"}
-COMMITS = ('valun_propose', 'valun_respond', 'valun_review_delivery')
+COMMITS = SIGNING_TOOLS     # from the core's classification: every tool that can sign a commitment (fail closed)
 INSTRUCTIONS = ('Valun is an experimental network where agents make service-for-credit deals with other, independently '
                 'controlled agents. Call valun_status first in every session and follow your owner\'s recorded goals and '
                 'limits; record new instructions with valun_set_limits. Use valun_directory to find counterparties, '
@@ -52,7 +54,9 @@ APPROVAL_TEXT = {
            'sees exactly what you would sign; if they decline, nothing is signed.',
     'client-prompt': 'Your app asks your owner before each Valun tool that signs a commitment (if your owner has not '
                      'allowed it permanently).',
-    'console': 'Every commitment you sign waits for your owner in the Valun owner console before it takes effect.',
+    'console': ('Every commitment you sign waits for your owner in the Valun owner console before it takes effect: offers, '
+                'counter-offers and acceptances, and accepting a delivery (its credit note is issued only after your owner '
+                'approves it).'),
     'none': 'You act on your own within your owner\'s limits; nobody is asked before you sign.',
 }
 
@@ -166,11 +170,13 @@ class McpServer:
         if self.approvals == 'ask' and self.agent.is_commitment(name, args):
             if 'elicitation' not in caps:
                 return self.result(dict(APPROVAL_UNAVAILABLE), error=True, modern=True)
-            args = self.agent.bind(name, args)   # the approval and the signature cover the same exact terms
+            prepared, refusal = self.agent.prepare_or_refusal(name, args)   # approval and signature cover the same terms
+            if refusal:
+                return self.result(refusal, error=True, modern=True)
+            args, text = prepared['args'], prepared['text']
             state = self._state(name, args)
             answer = (p.get('inputResponses') or {}).get('approval')
             if answer is None or not hmac.compare_digest(str(p.get('requestState') or ''), state):
-                text = self.agent.describe_commitment(name, args)
                 return {'resultType': 'input_required', 'requestState': state, 'inputRequests': {'approval': {
                     'method': 'elicitation/create', 'params': {'mode': 'form', 'message': text + '\n\nApprove this commitment?',
                                                                'requestedSchema': APPROVAL_SCHEMA}}}}
@@ -197,8 +203,13 @@ class McpServer:
         if name not in self.agent.handlers:
             raise ValueError(f'unknown tool: {name}')
         if self.approvals == 'ask' and self.agent.is_commitment(name, args):
-            args = self.agent.bind(name, args)   # the approval and the signature cover the same exact terms
-            refusal = self.ask_owner(name, args)
+            if 'elicitation' not in self.client_caps:
+                return self.result(dict(APPROVAL_UNAVAILABLE), error=True)
+            prepared, refusal = self.agent.prepare_or_refusal(name, args)   # approval and signature cover the same terms
+            if refusal:
+                return self.result(refusal, error=True)
+            args = prepared['args']
+            refusal = self.ask_owner(name, args, prepared['text'])
             if refusal:
                 return self.result(refusal, error=True)
         try:
@@ -215,13 +226,18 @@ class McpServer:
         return r
 
     # ---------- approvals (2025-11-25 and earlier: a server-to-client request) ----------
-    def ask_owner(self, name, args):
-        """None if the owner approved; otherwise a refusal payload. Uses MCP elicitation (client asks the person)."""
+    def ask_owner(self, name, args, text=None):
+        """None if the owner approved; otherwise a refusal payload. Uses MCP elicitation (client asks the person) with
+        `text`, the prepared approval text (prepared here when not given)."""
         if 'elicitation' not in self.client_caps:
             return dict(APPROVAL_UNAVAILABLE)
+        if text is None:
+            prepared, refusal = self.agent.prepare_or_refusal(name, args)
+            if refusal:
+                return refusal
+            text = prepared['text']
         self._next_id += 1
         rid = f'valun-approval-{self._next_id}'
-        text = self.agent.describe_commitment(name, args)
         mode = {'mode': 'form'} if self.version >= '2025-11-25' else {}   # form mode: the client sees and shows the text
         self.send({'jsonrpc': '2.0', 'id': rid, 'method': 'elicitation/create', 'params': {**mode,
             'message': text + '\n\nApprove this commitment?', 'requestedSchema': APPROVAL_SCHEMA}})
