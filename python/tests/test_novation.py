@@ -210,8 +210,9 @@ def issuer_ctx(**over):
 
 
 def payee_ctx(**over):
+    # issuer_ids: the participant id the payee's client resolved itself for the issuer's key (the directory)
     c = base_ctx(C, C_ID, consent_policy=dict(POLICY), mandate=dict(MANDATE),
-                 deal=nv.deal_context(terms(), TH, DH, delivered=True, transfer_id=TID))
+                 deal=nv.deal_context(terms(), TH, DH, delivered=True, transfer_id=TID), issuer_ids={A.pk: A_ID})
     c.update(over)
     return c
 
@@ -318,6 +319,16 @@ CASES = [
     ('payer: another operation already signed at (A>B, T)', PT, payer_tpl,
      lambda: payer_ctx(signed={AB: {str(T999): {'op': 'pay:vd_ffffffffffffffff', 'slots': {AB + ':prior': 10}}}}),
      'timestamp_reused'),
+    # FX-PY: the payer roles need the mandate and this participant's id
+    ('payer: the template names another payer id', PT, lambda: edit(payer_tpl(), set_(['payer', 'id'], E_ID)), payer_ctx,
+     'deal_mismatch'),
+    ('payer: pins without a tracker', PT, payer_tpl, lambda: payer_ctx(pins={}), 'tracker_mismatch'),
+    ('payer: no mandate in the context', PT, payer_tpl, lambda: payer_ctx(mandate=None), 'policy_off'),
+    ('payer: no participant id in the context', PT, payer_tpl, lambda: payer_ctx(me_id=None), 'deal_mismatch'),
+    ('payer: my records confirm an earlier attempt that the edge has moved past', PT, payer_tpl,
+     lambda: payer_ctx(transfer_attempts={DEAL: [attempt('transfer', EB, 9, 6, T_OLD, prior_timestamp=TS_AB)]},
+                       records={EB: {'confirmed': {'total': 6, 'timestamp': T_OLD, 'signature': 'aa'}, 'pending': []}},
+                       edges={EB: st(E, B, 9, T_OLD + 1000)}), 'already_paid'),
 
     # --- evaluate_bound_template (pay with my own bound note) ---
     ('bound: sign', BT, bound_tpl, payer_ctx, None),
@@ -357,6 +368,12 @@ CASES = [
     ('bound: another operation already signed at (B>C, T)', BT, bound_tpl,
      lambda: payer_ctx(signed={BC: {str(T997): {'op': 'note:vd_ffffffffffffffff', 'slots': {BC + ':new': 9}}}}),
      'timestamp_reused'),
+    ('bound: no participant id in the context', BT, bound_tpl, lambda: payer_ctx(me_id=None), 'deal_mismatch'),
+    ('bound: my note for this deal is the prior shown, and my records know a later state', BT, bound_tpl,
+     lambda: payer_ctx(records={BC: {'confirmed': {'total': 8, 'timestamp': TS_BC + 10, 'signature': 'aa'},
+                                     'pending': [pending(6, TS_BC)]}}), 'already_paid'),
+    ('bound: a template for another deal', BT, lambda: edit(bound_tpl(), set_(['deal_id'], 'vd_ffffffffffffffff')),
+     payer_ctx, 'deal_mismatch'),
 
     # --- evaluate_consent, issuer ---
     ('issuer: sign', CO, issuer_item, issuer_ctx, None),
@@ -450,6 +467,22 @@ CASES = [
     ('payee: another operation already signed at (A>C, T)', CO, payee_item,
      lambda: payee_ctx(signed={AC: {str(T999): {'op': 'transfer:vt_ffffffffffffffff', 'slots': {AC + ':prior': 4}}}}),
      'timestamp_reused'),
+    ('payee: credited less than the price (new total Y + 2, amount 3)', CO,
+     lambda: edit(payee_item(), lambda o: o['edges'][0].update(new_total=6, change=2)), payee_ctx, 'deal_mismatch'),
+    ('payee: an edge from my key to itself', CO,
+     lambda: edit(payee_item(), set_(['edges', 0], row(C, C, 4, TS_AC, 7, T999, 'creditor', ['prior', 'new'], (C_ID, C_ID)))),
+     payee_ctx, 'self_edge'),
+    # FX-PY: issuer lists are checked against the id my client resolved for the issuer's key, never the item's labels
+    ('payee: my client could not resolve the issuer id', CO, payee_item, lambda: payee_ctx(issuer_ids={}), 'issuer_refused'),
+    ('payee: the mandate refuses the issuer, the item leaves out its ids', CO,
+     lambda: edit(payee_item(), lambda o: (o['edges'][0].pop('issuer'), o['context'].pop('issuer'))),
+     lambda: payee_ctx(mandate=dict(MANDATE, accept_notes_from='any', refuse_notes_from=[A_ID])), 'issuer_refused'),
+    ('payee: the item names another issuer id than the directory', CO,
+     lambda: edit(payee_item(), lambda o: (o['edges'][0]['issuer'].update(id=E_ID), o['context']['issuer'].update(id=E_ID))),
+     lambda: payee_ctx(mandate=dict(MANDATE, accept_notes_from=[A_ID, E_ID])), 'issuer_refused'),
+    ('payee: a local refusal by id, the id not resolved', CO, payee_item,
+     lambda: payee_ctx(issuer_ids={}, mandate=dict(MANDATE, accept_notes_from='any'),
+                       consent_policy=dict(POLICY, refuse_issuers=[A_ID])), 'issuer_refused'),
 
     # --- evaluate_consent, payer (a regenerated transfer) ---
     ('payer consent: sign (same prior as the earlier attempt)', CO, payer_item, regen_ctx, None),
@@ -467,6 +500,10 @@ CASES = [
     ('payer consent: nothing approved', CO, payer_item, lambda: regen_ctx(transfer_attempts={}), 'stale_quote'),
     ('payer consent: the quote changed', CO, payer_item,
      lambda: regen_ctx(transfer_attempts={DEAL: [attempt('transfer', AB, 10, 7, T_OLD, 'ab' * 32)]}), 'stale_quote'),
+    ('payer consent: no mandate in the context', CO, payer_item, lambda: regen_ctx(mandate=None), 'policy_off'),
+    ('payer consent: the destination at another timestamp', CO,
+     lambda: edit(payer_item(), set_(['edges', 1, 'timestamp'], T999 - 1000)), regen_ctx, 'bad_consent'),
+    ('payer consent: no participant id in the context', CO, payer_item, lambda: regen_ctx(me_id=None), 'deal_mismatch'),
 
     # --- evaluate_consent, member (a set-off) ---
     ('member: sign', CO, member_item, member_ctx, None),
@@ -475,6 +512,10 @@ CASES = [
      'records_unreadable'),
     ('member: an edge without a prior state', CO, lambda: edit(member_item(), set_(['edges', 0, 'before'], None)),
      member_ctx, 'bad_consent'),
+    ('member: a prior slot asked in a set-off', CO, lambda: edit(member_item(), set_(['edges', 0, 'slots'], ['prior', 'new'])),
+     member_ctx, 'bad_consent'),
+    ('member: an absent edge in a set-off', CO,
+     lambda: edit(member_item(), lambda o: o['edges'][0].update(before=None, change=8)), member_ctx, 'bad_consent'),
     ('member: the role on an edge does not fit its keys', CO,
      lambda: edit(member_item(), set_(['edges', 0, 'your_role'], 'issuer')), member_ctx, 'bad_consent'),
     ('member: the kind does not fit the role', CO, lambda: edit(member_item(), set_(['kind'], 'transfer')), member_ctx,
@@ -517,6 +558,22 @@ CASES = [
      'timestamp_reused'),
     ('member: the same operation signed again', CO, member_item,
      lambda: member_ctx(signed={AB: {str(T998): {'op': 'setoff:' + SID, 'slots': {AB + ':new': 8}}}}), None),
+    # R12: a pending BOUND note of mine later than the state shown does not block a set-off (it cannot apply out of turn)
+    ('member: a pending bound note of mine on B>E, later than the state shown', CO, member_item,
+     lambda: member_ctx(records={BE: {'confirmed': None, 'pending': [pending(9, res(NOW - 1000, 997), ref='vd_aaaaaaaaaaaaaaaa')]}}),
+     None),
+    # D-2 c on the client: ... unless the set-off brings B>E back to the prior that bound note acknowledged
+    ('member: B>E back to the prior of a live bound note of mine', CO, member_item,
+     lambda: member_ctx(transfer_attempts={'vd_bbbbbbbbbbbbbbbb': [dict(attempt('note', BE, 3, 6, res(NOW - 1000, 997)),
+                                                                          deal_id='vd_bbbbbbbbbbbbbbbb')]}),
+     'payment_attempt'),
+    ('member: a live bound note of mine whose prior is another total', CO, member_item,
+     lambda: member_ctx(transfer_attempts={'vd_bbbbbbbbbbbbbbbb': [dict(attempt('note', BE, 4, 7, res(NOW - 1000, 997)),
+                                                                          deal_id='vd_bbbbbbbbbbbbbbbb')]}), None),
+    ('issuer: A>B back to the prior of a live bound note of mine', CO, issuer_item,
+     lambda: issuer_ctx(transfer_attempts={'vd_bbbbbbbbbbbbbbbb': [dict(attempt('note', AB, 7, 10, res(NOW - 1000, 997)),
+                                                                          deal_id='vd_bbbbbbbbbbbbbbbb')]}),
+     'payment_attempt'),
 ]
 
 
@@ -593,7 +650,9 @@ class SignedBytes(unittest.TestCase):
         self.assertEqual(wa['pending'], [{'pair': AB, 'total': 7, 'timestamp': T999, 'kind': 'transfer', 'ref': DEAL,
                                           'direction': 'in'}])
         self.assertEqual(wa['attempt'], {'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10,
-                                         'prior_timestamp': TS_AB, 'total': 7, 'timestamp': T999, 'quote_digest': qd()})
+                                         'prior_timestamp': TS_AB, 'prior_signature': st(A, B, 10, TS_AB)['signature'],
+                                         'total': 7, 'timestamp': T999, 'quote_digest': qd()})
+        self.assertEqual(wa['attempts_seen'], [])
 
     def test_payer_template_ignores_the_server_hex(self):
         tpl = edit(payer_tpl(), set_(['messages'], {AB + ':new': vb.note_message(bytes.fromhex(A.pk), bytes.fromhex(B.pk), 1, 1, bytes.fromhex(NFT), DENOM).hex()}))
@@ -606,8 +665,8 @@ class SignedBytes(unittest.TestCase):
         s = r['summary']
         self.assertEqual((s['kind'], s['your_net_change_PC'], s['your_total_owed_change_PC']), ('bound_note', -3, 3))
         self.assertEqual(r['write_ahead']['attempt'], {'deal_id': DEAL, 'route': 'note', 'edge': BC, 'prior': 6,
-                                                       'prior_timestamp': TS_BC, 'total': 9, 'timestamp': T997,
-                                                       'quote_digest': None})
+                                                       'prior_timestamp': TS_BC, 'prior_signature': st(B, C, 6, TS_BC)['signature'],
+                                                       'total': 9, 'timestamp': T997, 'quote_digest': None})
         self.assertEqual(r['write_ahead']['pending'], [{'pair': BC, 'total': 9, 'timestamp': T997, 'kind': 'note',
                                                         'ref': DEAL, 'direction': 'out'}])
         r = BT(bound_tpl(prior=False), payer_ctx())
@@ -658,6 +717,11 @@ class SignedBytes(unittest.TestCase):
         self.assertEqual([s[0] for s in CO(it, payee_ctx())['to_sign']], [AC + ':new'])
         it = edit(member_item(), set_(['edges', 0, 'signed_by_you'], ['new']))
         self.assertEqual([s[0] for s in CO(it, member_ctx())['to_sign']], [BE + ':new'])
+        # the payer of a regenerated transfer, too (its write-ahead still records all three slots: R4)
+        it = edit(payer_item(), set_(['edges', 0, 'signed_by_you'], ['prior']))
+        r = CO(it, regen_ctx())
+        self.assertEqual([s[0] for s in r['to_sign']], [AB + ':new', AC + ':new'])
+        self.assertEqual(r['write_ahead']['signed'][0]['slots'], {AB + ':prior': 10, AB + ':new': 7})
 
     def test_the_seven_transfer_slots_agree_across_roles(self):
         """The payer's, the issuer's and the payee's messages are the seven slots of one tracker request (18.6)."""
@@ -701,8 +765,10 @@ class AttemptOutcome(unittest.TestCase):
                 ({'total': 12, 'timestamp': t - 5}, NOW, 'alive'), ({'total': 12, 'timestamp': t - 5}, late_a, 'dead'),
                 ({'total': 0, 'timestamp': 0}, late_a, 'dead'),
                 ({'total': 7, 'timestamp': t}, NOW, 'applied'), ({'total': 8, 'timestamp': t}, late_a, 'unknown'),
-                ({'total': 7, 'timestamp': t + 1}, late_a, 'applied'),
-                ({'total': 10, 'timestamp': t + 1}, NOW, 'alive'), ({'total': 10, 'timestamp': t + 1}, late_a, 'dead'),
+                # D-2 a: past T only its exact new state proves it applied, and its prior total no longer proves it did
+                # not (D-1 said 'applied' and 'alive' / 'dead' for these three)
+                ({'total': 7, 'timestamp': t + 1}, late_a, 'unknown'),
+                ({'total': 10, 'timestamp': t + 1}, NOW, 'unknown'), ({'total': 10, 'timestamp': t + 1}, late_a, 'unknown'),
                 ({'total': 5, 'timestamp': t + 1}, NOW, 'unknown'),
                 ({'total': 10, 'timestamp': t - 5}, late_a - 1, 'alive'),        # now == T + 1 h + 2 min: not yet dead
             ]
@@ -741,7 +807,8 @@ class AttemptOutcome(unittest.TestCase):
         far = NOW + 10 * nv.MAX_AGE_MS
         self.assertEqual(nv.attempt_outcome(a, far, None), 'alive')
         self.assertEqual(nv.attempt_outcome(a, far, {'total': 6, 'timestamp': NOW - 60_000}), 'alive')
-        self.assertEqual(nv.attempt_outcome(a, NOW, {'total': 6, 'timestamp': NOW - 40_000}), 'dead')    # moved past it
+        # moved past it, back at its prior total: D-1 said 'dead'; D-2 a: it may have applied in between
+        self.assertEqual(nv.attempt_outcome(a, NOW, {'total': 6, 'timestamp': NOW - 40_000}), 'unknown')
         self.assertEqual(nv.attempt_outcome(a, NOW, {'total': 9, 'timestamp': NOW - 50_000}), 'applied')
 
 
@@ -751,7 +818,10 @@ class OneLivePaymentAttempt(unittest.TestCase):
     def test_a_held_bound_note_that_failed_is_retried_with_the_same_prior(self):   # D-1 item 4
         for age in (30_000, nv.MAX_AGE_MS + 10 * 60_000):               # still usable, or long expired
             earlier = attempt('note', BC, 6, 9, res(NOW - age, 997))
-            r = BT(bound_tpl(), payer_ctx(transfer_attempts={DEAL: [earlier]}))
+            # the template shows the prior the earlier note acknowledged: a state older than that note (D-2 a: a state
+            # at a later timestamp would be another one, even at the same total; see test_d2a_*)
+            tpl = edit(bound_tpl(), set_(['prior_note'], st(B, C, 6, earlier['timestamp'] - 5_000)))
+            r = BT(tpl, payer_ctx(transfer_attempts={DEAL: [earlier]}))
             self.assertTrue(r['ok'], (age, r['summary']['reason']))
 
     def test_a_bound_note_on_a_moved_edge_waits_for_the_earlier_one(self):
@@ -806,7 +876,8 @@ class OneLivePaymentAttempt(unittest.TestCase):
 
     def test_my_confirmed_state_past_the_attempt_is_a_read_back(self):
         attempts = {DEAL: [attempt('transfer', EB, 9, 6, T_OLD, prior_timestamp=TS_AB)]}
-        for total, code in ((9, None), (6, 'already_paid'), (2, 'attempt_outcome_unknown')):
+        # D-2 a: past T, the prior total (D-1: signed) and the new total (D-1: already_paid) are other states too
+        for total, code in ((9, 'attempt_outcome_unknown'), (6, 'attempt_outcome_unknown'), (2, 'attempt_outcome_unknown')):
             recs = {EB: {'confirmed': {'total': total, 'timestamp': T_OLD + 1000, 'signature': 'aa'}, 'pending': []}}
             r = PT(payer_tpl(now=LATE), payer_ctx(now=LATE, transfer_attempts=attempts, records=recs))
             self.assertEqual(r['code'], code, total)
@@ -844,7 +915,9 @@ class OneLivePaymentAttempt(unittest.TestCase):
         far = NOW + 3 * nv.MAX_AGE_MS
         self.assertEqual(PT(payer_tpl(now=far), payer_ctx(now=far, records=recs))['code'], 'attempt_outcome_unknown')
         r = PT(payer_tpl(now=far), payer_ctx(now=far, records=recs, edges={BC: st(B, C, 6, NOW - 40_000)}))
-        self.assertTrue(r['ok'], r['summary']['reason'])          # the edge moved past it at its prior: it never can apply
+        # the edge moved past it, back at its prior: D-1 signed (it never can apply now); D-2 a: it may have applied
+        # in between, so only the owner can free the deal
+        self.assertEqual(r['code'], 'attempt_outcome_unknown')
         r = PT(payer_tpl(now=far), payer_ctx(now=far, records=recs, edges={BC: st(B, C, 9, NOW - 50_000)}))
         self.assertEqual(r['code'], 'already_paid')
 
@@ -857,6 +930,157 @@ class OneLivePaymentAttempt(unittest.TestCase):
         # other deals are not affected
         other = {'paid_deals': {'vd_ffffffffffffffff': paid['paid_deals'][DEAL]}}
         self.assertTrue(BT(bound_tpl(), payer_ctx(records=other))['ok'])
+
+
+def full(route, edge, prior, total, timestamp, prior_state, quote=None, deal_id=DEAL):
+    """An attempt record as 0.4.0 writes it: with the full state it acknowledged (decision D-2 a)."""
+    return dict(attempt(route, edge, prior, total, timestamp, quote), deal_id=deal_id,
+                prior_timestamp=prior_state['timestamp'], prior_signature=prior_state['signature'])
+
+
+class D2aFullEdgeStates(unittest.TestCase):
+    """Decision D-2 a: attempts are classified on full edge states (total, timestamp, signature)."""
+
+    def test_a_same_prior_retry_needs_exactly_the_acknowledged_state(self):
+        s0 = st(A, B, 10, TS_AB)
+        earlier = {DEAL: [full('transfer', AB, 10, 7, T_OLD, s0, qd())]}
+        self.assertTrue(PT(payer_tpl(), payer_ctx(transfer_attempts=earlier))['ok'])         # the edge is exactly s0
+        # the same total at a later timestamp (before the earlier T): the edge moved and came back, the earlier attempt
+        # could have applied in between (D-1 signed this)
+        later = edit(payer_tpl(), set_(['from_edge', 'before'], st(A, B, 10, TS_AB + 5)))
+        self.assertEqual(PT(later, payer_ctx(transfer_attempts=earlier))['code'], 'attempt_outcome_unknown')
+        # the same total and timestamp but not the signature recorded
+        other_sig = {DEAL: [dict(earlier[DEAL][0], prior_signature='ab' * 64)]}
+        self.assertEqual(PT(payer_tpl(), payer_ctx(transfer_attempts=other_sig))['code'], 'attempt_outcome_unknown')
+        # a regenerated transfer (the payer's consent) follows the same rule
+        self.assertTrue(CO(payer_item(), regen_ctx(transfer_attempts=earlier))['ok'])
+        moved = edit(payer_item(), set_(['edges', 0, 'before'], st(A, B, 10, TS_AB + 5)))
+        self.assertEqual(CO(moved, regen_ctx(transfer_attempts=earlier))['code'], 'attempt_outcome_unknown')
+
+    def test_an_acknowledged_absent_edge_must_still_be_absent(self):
+        first = {DEAL: [full('note', BC, 0, 3, res(NOW - 30_000, 997), {'timestamp': 0, 'signature': None})]}
+        self.assertTrue(BT(bound_tpl(prior=False), payer_ctx(transfer_attempts=first))['ok'])
+        self.assertEqual(nv.exact_prior(first[DEAL][0], {'total': 0, 'timestamp': 0}), True)
+        self.assertEqual(nv.exact_prior(first[DEAL][0], st(B, C, 0, TS_BC)), False)
+
+    def test_moved_past_the_attempt_back_to_its_prior_is_unknown(self):
+        attempts = {DEAL: [full('transfer', AB, 10, 7, T_OLD, st(A, B, 10, TS_AB), qd())]}
+        r = BT(bound_tpl(now=LATE), payer_ctx(now=LATE, transfer_attempts=attempts, edges={AB: st(A, B, 10, T_OLD + 1000)}))
+        self.assertEqual(r['code'], 'attempt_outcome_unknown')          # D-1 signed: 'moved past T at the prior total'
+        r = BT(bound_tpl(now=LATE), payer_ctx(now=LATE, transfer_attempts=attempts, edges={AB: st(A, B, 7, T_OLD + 1000)}))
+        self.assertEqual(r['code'], 'attempt_outcome_unknown')          # D-1: already_paid ('moved past T to its new total')
+
+    def test_my_own_later_note_on_the_same_prior_proves_an_attempt_dead(self):
+        # Deal DEAL's note N1 (prior s0) never applied: my note for another deal, N2, acknowledged the same s0 later and
+        # applied, and nothing else of mine changed B>C in between (only my signature lowers it).
+        s0 = st(B, C, 6, TS_BC)
+        t1, t2 = res(NOW - 50_000, 997), res(NOW - 20_000, 997)
+        n1 = full('note', BC, 6, 9, t1, s0)
+        n2 = full('note', BC, 6, 9, t2, s0, deal_id='vd_2222222222222222')
+        attempts = {DEAL: [n1], 'vd_2222222222222222': [n2]}
+        now_state = st(B, C, 9, t2)                                     # N2's new state
+        tpl = edit(bound_tpl(), lambda o: o.update(prior_note=now_state, prior_total=9, total=12))
+        r = BT(tpl, payer_ctx(transfer_attempts=attempts))
+        self.assertTrue(r['ok'], r['summary']['reason'])
+        self.assertEqual(list(r['summary']['paid_deals']), ['vd_2222222222222222'])     # and N2 is recorded as applied
+        # no proof: a set-off of mine lowered B>C between the two notes (the edge could have come back to 6)
+        signed = {BC: {str(t1 + 10_001): {'op': 'setoff:vs_ffffffffffffffff', 'slots': {BC + ':new': 6}}}}
+        self.assertEqual(BT(tpl, payer_ctx(transfer_attempts=attempts, signed=signed))['code'], 'attempt_outcome_unknown')
+        # no proof: N2 acknowledged another state
+        other = dict(attempts, **{'vd_2222222222222222': [dict(n2, prior_timestamp=TS_BC + 1)]})
+        self.assertEqual(BT(tpl, payer_ctx(transfer_attempts=other))['code'], 'attempt_outcome_unknown')
+        # no proof: N2 did not apply (the edge shows another state)
+        tpl2 = edit(bound_tpl(), lambda o: o.update(prior_note=st(B, C, 9, t2 + 1000), prior_total=9, total=12))
+        self.assertEqual(BT(tpl2, payer_ctx(transfer_attempts=attempts))['code'], 'attempt_outcome_unknown')
+
+    def test_an_item_showing_an_attempts_new_state_records_its_deal_paid(self):
+        # The pending entry of my note was forgotten (a refused answer); its attempt record stays, and a set-off item
+        # that shows B>E at exactly that note's new state proves the note applied.
+        attempts = {'vd_cccccccccccccccc': [dict(attempt('note', BE, 2, 5, TS_BE), deal_id='vd_cccccccccccccccc')]}
+        r = CO(member_item(), member_ctx(transfer_attempts=attempts))
+        self.assertTrue(r['ok'], r['summary']['reason'])
+        self.assertEqual(r['summary']['paid_deals'], {'vd_cccccccccccccccc': {'route': 'note', 'edge': BE, 'total': 5,
+                                                                              'timestamp': TS_BE}})
+
+
+class AbsentReadBack(unittest.TestCase):
+    def test_an_absent_edge_is_no_read_back_for_an_attempt_that_acknowledged_a_prior_above_0(self):
+        # my held-edge decrease is pending (no attempt record): its prior was 10, so A>B existed
+        recs = {AB: {'confirmed': None, 'pending': [pending(7, T_OLD, kind='transfer', direction='in')]}}
+        r = BT(bound_tpl(now=LATE), payer_ctx(now=LATE, records=recs, edges={AB: None}))
+        self.assertEqual((r['code'], r['summary']['needs_read_back']), ('transfer_window_open', [AB]))
+        attempts = {DEAL: [full('transfer', AB, 10, 7, T_OLD, st(A, B, 10, TS_AB), qd())]}
+        r = BT(bound_tpl(now=LATE), payer_ctx(now=LATE, transfer_attempts=attempts, edges={AB: None}))
+        self.assertEqual((r['code'], r['summary']['needs_read_back']), ('transfer_window_open', [AB]))
+        # a first note on a new edge acknowledged an absent edge: absent is its read-back
+        first = {DEAL: [full('note', BC, 0, 3, res(NOW - 30_000, 997), {'timestamp': 0, 'signature': None})]}
+        late = first[DEAL][0]['timestamp'] + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 5_000
+        self.assertTrue(PT(payer_tpl(now=late), payer_ctx(now=late, transfer_attempts=first, edges={BC: None}))['ok'])
+
+
+class SummaryIds(unittest.TestCase):
+    def test_ids_are_copied_only_in_their_format(self):
+        r = CO(member_item(), member_ctx())
+        self.assertEqual(r['summary']['id'], SID)
+        for bad in ('vs_1', 'vs_0123456789ABCDEF', 'vs_0123456789abcdef\nPAY 99', 'setoff 7'):
+            r = CO(edit(member_item(), set_(['id'], bad)), member_ctx())
+            self.assertTrue(r['ok'])                               # the id is not signed; it is only not shown
+            self.assertIsNone(r['summary']['id'], bad)
+        r = BT(edit(bound_tpl(), set_(['deal_id'], 'vd_ff\nPAY')), payer_ctx())
+        self.assertEqual((r['code'], r['summary']['deal_id']), ('deal_mismatch', None))
+        self.assertEqual(nv.check_payment('vd_x', PRICE, 'note', BC, 6, payer_ctx())['summary']['deal_id'], None)
+        self.assertEqual(nv.shown_id('vt_0123456789abcdef'), 'vt_0123456789abcdef')
+        self.assertIsNone(nv.shown_id('vp_0123456789abcdef'))      # a participant id is not one of these
+
+
+class WriteAheadConflicts(unittest.TestCase):
+    """apply_write_ahead re-checks what it writes against the state as it is now (two evaluations on one snapshot)."""
+
+    def test_another_operation_at_the_same_edge_and_timestamp(self):
+        one = CO(member_item(), member_ctx())
+        two = CO(edit(member_item(), set_(['id'], 'vs_1111111111111111')), member_ctx())
+        self.assertTrue(one['ok'] and two['ok'])                       # both evaluated on the same (stale) snapshot
+        state = {}
+        nv.apply_write_ahead(state, one['write_ahead'], 'x')
+        before = copy.deepcopy(state)
+        with self.assertRaises(nv.WriteAheadConflict) as e:
+            nv.apply_write_ahead(state, two['write_ahead'], 'x')
+        self.assertEqual(e.exception.code, 'timestamp_reused')
+        self.assertIsInstance(e.exception, ValueError)
+        self.assertEqual(state, before)                                # nothing written
+        nv.apply_write_ahead(state, one['write_ahead'], 'y')           # the same one again: idempotent
+        self.assertEqual(state, before)
+
+    def test_a_second_payment_attempt_of_the_deal_is_never_added_on_a_stale_snapshot(self):
+        bound, transfer = BT(bound_tpl(), payer_ctx()), PT(payer_tpl(), payer_ctx())
+        self.assertTrue(bound['ok'] and transfer['ok'])
+        state = {}
+        nv.apply_write_ahead(state, bound['write_ahead'], 'x')
+        before = copy.deepcopy(state)
+        with self.assertRaises(nv.WriteAheadConflict) as e:
+            nv.apply_write_ahead(state, transfer['write_ahead'], 'x')
+        self.assertEqual(e.exception.code, 'transfer_window_open')
+        self.assertEqual(state, before)
+        self.assertEqual([a['route'] for a in state['transfer_attempts'][DEAL]], ['note'])
+        # the same check sees a pending payment entry the other path wrote (an ordinary note, no attempt record)
+        state = {'records': {BC: {'confirmed': None, 'pending': [pending(9, NOW - 1000)]}}}
+        with self.assertRaises(nv.WriteAheadConflict):
+            nv.apply_write_ahead(state, transfer['write_ahead'], 'x')
+        # a deal recorded as paid meanwhile
+        state = {}
+        nv.mark_paid(state, DEAL, 'note', BC, 9, T997)
+        with self.assertRaises(nv.WriteAheadConflict) as e:
+            nv.apply_write_ahead(state, transfer['write_ahead'], 'x')
+        self.assertEqual(e.exception.code, 'already_paid')
+        # an attempt the evaluation weighed is no conflict (a same-prior retry)
+        state = {}
+        nv.apply_write_ahead(state, transfer['write_ahead'], 'x')
+        retry = PT(payer_tpl(T=T999 + 1000, now=NOW + 1000), payer_ctx(now=NOW + 1000, **{k: state.get(k) for k in
+                                                                       ('records', 'signed', 'transfer_attempts')}))
+        self.assertTrue(retry['ok'], retry['summary']['reason'])
+        self.assertEqual(len(retry['write_ahead']['attempts_seen']), 1)
+        nv.apply_write_ahead(state, retry['write_ahead'], 'y')
+        self.assertEqual(len(state['transfer_attempts'][DEAL]), 2)
 
 
 class RecordsHelpers(unittest.TestCase):
@@ -1013,6 +1237,8 @@ class ModuleContract(unittest.TestCase):
         self.assertEqual(siblings & {'cli', 'mcp_server', 'home', 'agent'}, set())
 
     def test_constants(self):
+        self.assertEqual(nv.RECORDS_KEEP_MS, vc.RECORDS_KEEP_MS)        # proven_dead relies on the client's R4 pruning
+        self.assertEqual(nv.ID_RE.pattern, r'v[dts]_[0-9a-f]{16}\Z')
         self.assertEqual(nv.RESIDUE, {'transfer': 999, 'setoff': 998, 'bound': 997})
         self.assertEqual(nv.RESERVED_MS, (995, 996, 997, 998, 999))
         self.assertEqual((nv.MAX_AGE_MS, nv.FALLBACK_MARGIN_MS), (3_600_000, 120_000))

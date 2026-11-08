@@ -123,6 +123,8 @@ class World:
         self.fail = {}                          # 'METHOD /route' -> [ValunError, ...]: raised once each, in order
         self.template_issuer = None             # force the transfer template's issuer pubkey (a lying server)
         self.bad_edge_signatures = False        # /edges rows signed by the wrong key
+        self.pay_due = False                    # pay-by-transfer ends payment_due (the transfer did not apply)
+        self.resolutions = []                   # (deal, attempt, body, token) of POST owner .../attempts/.../resolve
 
     # ---------- helpers ----------
     def pk(self, pid):
@@ -227,8 +229,8 @@ class World:
                'acceptance': None, 'agreement': copy.deepcopy(d['agreement']), 'decline': None, 'delivery': copy.deepcopy(d['delivery']),
                'completion': None, 'dispute': d['dispute'], 'credit_note': copy.deepcopy(d['credit_note']), 'cancellation': None,
                'approvals': [], 'history': [], 'labels': {}}
-        if d['payment'] is not None:
-            out['payment'] = copy.deepcopy(d['payment'])
+        if d['payment'] is not None or (self.features and 'circulation/1' in self.features):
+            out['payment'] = copy.deepcopy(d['payment'])        # as v16: the key is there in circulation modes (null: none)
         return out
 
     def brief(self, did):
@@ -415,6 +417,12 @@ class World:
         if method == 'PUT' and parts == ['owner', 'mandate']:
             self.puts.append(copy.deepcopy(body))
             return {'mandate': dict(self.mandate)}
+        if method == 'POST' and len(parts) == 6 and parts[:2] == ['owner', 'deals'] and parts[3] == 'attempts' \
+                and parts[5] == 'resolve' and circ:
+            if token != 'vpo_test-only':
+                raise vc.ValunError('unauthorized', 'owner token required', 401)
+            self.resolutions.append((parts[2], parts[4], copy.deepcopy(body), token))
+            return {'attempt': {'id': parts[4], 'state': body['outcome']}}
         if method == 'GET' and parts == ['participants']:
             return [self.public(p) for p in (S_ID, X_ID, M_ID) if p in self.keys or p == S_ID]
         if method == 'GET' and len(parts) == 2 and parts[0] == 'participants' and parts[1] in HANDLES:
@@ -576,6 +584,10 @@ class World:
         if not ok:
             raise vc.ValunError('bad_signature', 'a signature of the payment does not verify', 403)
         tid = self.new_id('vt_')
+        if self.pay_due:
+            d['status'] = 'payment_due'
+            d['payment'] = {'method': 'transfer', 'state': 'failed', 'transfer_id': tid, 'issuer': {'id': iid}, 'amount': a}
+            return self.view(did)
         self.set_edge(iid, S_ID, X_ - a, T, 'transfer_out', tid)
         self.set_edge(iid, d['payee'], Y_ + a, T, 'transfer_in', tid)
         d['status'] = 'paid_by_transfer'
@@ -752,6 +764,43 @@ class PayWith(Base):
             self.agent.call('valun_review_delivery', p['args'])
         self.assertEqual(e.exception.code, 'stale_claim')
         self.assertFalse([x for x in self.world.posts if x[0] == 'pay-by-transfer'])
+
+    def test_a_quote_that_changes_after_the_approval_is_not_signed(self):
+        p = self.agent.prepare('valun_review_delivery', self.args)
+        self.world.keys[M_ID] = key('test/tour/mallory-rotated')     # the payee's key is replaced: another quote
+        with self.assertRaises(vc.ValunError) as e:
+            self.agent.call('valun_review_delivery', p['args'])
+        self.assertEqual(e.exception.code, 'stale_quote')
+        self.assertFalse([x for x in self.world.posts if x[0] == 'pay-by-transfer'])
+
+    def test_a_claim_pin_compares_type_and_value(self):
+        # 3.0 == 3 and True == 1 in Python: a pin is the snapshot's only when it is the same whole number.
+        for v in (3.0, True):
+            with self.assertRaises(vc.ValunError) as e:
+                self.agent.prepare('valun_review_delivery', dict(self.args, expected_claim_total=v))
+            self.assertEqual((e.exception.code, e.exception.extra.get('cause')), ('approval_unbound', 'stale_claim'), v)
+        snap = {'checked': {'sha256': 'a' * 64, 'terms_hash': 'b' * 64},
+                'transfer': {'issuer': {'id': X_ID}, 'quote_digest': 'c' * 64, 'claim': 1}}
+        args = {'decision': 'accept', 'expected_deliverable_sha256': 'a' * 64, 'expected_terms_hash': 'b' * 64,
+                'expected_quote_digest': 'c' * 64}
+        with self.assertRaises(vc.ValunError) as e:
+            va.ValunAgent._bind_from('valun_review_delivery', dict(args, expected_claim_total=True), snap, strict=True)
+        self.assertEqual(e.exception.code, 'stale_claim')
+        self.assertEqual(va.ValunAgent._bind_from('valun_review_delivery', dict(args, expected_claim_total=1), snap,
+                                                  strict=True)['expected_claim_total'], 1)
+
+    def test_a_claim_pin_that_is_not_a_whole_number_is_refused_before_signing(self):
+        calls = []
+
+        class C:
+            def pay_by_transfer(self, *a, **kw):
+                calls.append((a, kw))
+                return {}
+        for v in (3.0, True, '3', -1):
+            with self.assertRaises(vc.ValunError) as e:
+                self.agent._review_pay_with(C(), dict(self.args, expected_claim_total=v), X_ID)
+            self.assertEqual(e.exception.code, 'bad_arguments', v)
+        self.assertEqual(calls, [])
 
     def test_a_pin_the_agent_passed_must_be_the_snapshots(self):
         for k, v, cause in (('expected_quote_digest', 'e' * 64, 'stale_quote'), ('expected_claim_total', 9, 'stale_claim'),
@@ -966,15 +1015,29 @@ class OnlyWhenAdvertised(unittest.TestCase):
         self.assertTrue(va.NOT_SETTLED.startswith('A credit note is an outstanding promise to pay, not a payment'))
         self.assertIn('Not supported: transferring, assigning or endorsing a note you hold', va.HONEST_LABELS['third_party'])
 
-    def test_approval_texts_use_the_circulation_label_once_the_server_advertised_it(self):
+    def test_approval_texts_use_the_circulation_label_in_a_fresh_process(self):
+        # Until FX-PY a fresh process showed the legacy label until a status read; now the snapshot reads /info itself
+        # when it does not know the features yet (and the deal view shows circulation is on).
         w = World(list(CIRC), welcome=False)
         did = w.delivered_deal(payee=M_ID)
         with routed(w):
             a = va.ValunAgent(MemStore(profile_state()), check_link_hosts=False)
-            before = a.prepare('valun_review_delivery', {'deal_id': did, 'decision': 'accept'})['text'].split('\n')
-            a.call('valun_status', {})
-            after = a.prepare('valun_review_delivery', {'deal_id': did, 'decision': 'accept'})['text'].split('\n')
-        self.assertEqual((before[-2], after[-2]), (va.NOT_SETTLED, va.NOT_SETTLED_CIRCULATION))
+            first = a.prepare('valun_review_delivery', {'deal_id': did, 'decision': 'accept'})['text'].split('\n')
+            reads = w.requests().count('GET /pilot/v1/info')
+            again = a.prepare('valun_review_delivery', {'deal_id': did, 'decision': 'accept'})['text'].split('\n')
+            propose = va.ValunAgent(MemStore(profile_state()), check_link_hosts=False).prepare(
+                'valun_propose', {'counterparty': 'sandbox-exact', 'role': 'payee', 'title': 't', 'description': 'd',
+                                  'deliverable': 'x', 'price': 3})['text'].split('\n')
+        self.assertEqual((first[-2], again[-2], propose[-2]), (va.NOT_SETTLED_CIRCULATION,) * 3)
+        self.assertEqual((reads, w.requests().count('GET /pilot/v1/info')), (1, 2))     # known after the first read
+        # circulation off: the legacy label, and no request more than 0.3 makes (decision D-2 h)
+        w = World(None, welcome=False)
+        did = w.delivered_deal(payee=M_ID)
+        with routed(w):
+            text = va.ValunAgent(MemStore(profile_state()), check_link_hosts=False).prepare(
+                'valun_review_delivery', {'deal_id': did, 'decision': 'accept'})['text'].split('\n')
+        self.assertEqual(text[-2], va.NOT_SETTLED)
+        self.assertEqual(w.requests(), [f'GET /pilot/v1/deals/{did}'])
 
 
 class Consents(Base):
@@ -1017,6 +1080,37 @@ class Consents(Base):
         self.assertNotIn('error', r)
         self.assertIn('consents_last_run_ms', self.store.state)
 
+    def test_an_agent_with_process_consents_off_never_processes_them(self):   # decision D-2 g (the Hermes plugin's switch)
+        agent = va.ValunAgent(self.store, check_link_hosts=False, process_consents=False)
+        self.assertIsNone(agent.consents_if_due())
+        agent.call_safe('valun_set_limits', {'goals': 'buy briefs'})
+        self.assertEqual(self.consent_reads(), [])
+        self.assertNotIn('consents_last_run_ms', self.store.state)
+        self.assertTrue(va.ValunAgent(self.store).process_consents)                     # on by default (CLI, MCP)
+
+
+class CirculationOffWire(unittest.TestCase):
+    """Decision D-2 h: with circulation off, the 0.4 agent makes no request more than 0.3 once it knows the features."""
+
+    def test_a_04_profile_against_a_v15_server(self):
+        w = World(None, welcome=False)
+        did = w.delivered_deal(payee=M_ID)
+        clock = [now_ms()]
+        with routed(w), mock.patch.object(vc, 'time', types.SimpleNamespace(time=lambda: clock[0] / 1000)):
+            a = va.ValunAgent(MemStore(profile_state()), check_link_hosts=False)      # has a consent policy (0.4 join)
+            a.call_safe('valun_set_limits', {'goals': 'one'})       # its first consent run reads /info once ...
+            clock[0] += 2 * va.CONSENTS_EVERY_MS
+            a.call_safe('valun_set_limits', {'goals': 'two'})       # ... and then knows: no more consent runs
+            a.call('valun_deal', {'deal_id': did})                   # no /info for a payer deal either
+        self.assertEqual(w.requests().count('GET /pilot/v1/info'), 1)
+        self.assertNotIn('GET /pilot/v1/consents', w.requests())
+        self.assertEqual(w.requests()[-1:], [f'GET /pilot/v1/deals/{did}'])
+        # a fresh agent: valun_deal reads nothing more than the deal (the view has no payment key: circulation off)
+        with routed(w):
+            w.log.clear()
+            d = va.ValunAgent(MemStore(profile_state()), check_link_hosts=False).call('valun_deal', {'deal_id': did})
+        self.assertEqual((w.requests(), 'how_you_can_pay' in d), ([f'GET /pilot/v1/deals/{did}'], False))
+
 
 class SandboxNextSteps(Base):
     def steps(self):
@@ -1048,6 +1142,17 @@ class SandboxNextSteps(Base):
         args = self.steps()['next_calls'][0]['arguments']
         self.assertEqual(args, {'deal_id': right, 'decision': 'accept', 'pay_with': 'sandbox-exact',
                                 'expected_deliverable_sha256': self.world.deals[right]['delivery']['sha256']})
+
+    def test_one_deal_that_cannot_be_read_gives_a_wait_plan(self):
+        self.world.welcome = False
+        self.hold(X_ID, 3)
+        did = self.world.delivered_deal(payee=M_ID)
+        self.world.fail[f'GET /pilot/v1/deals/{did}'] = [vc.ValunError('http_error', 'down', 503)]
+        st = self.agent.call('valun_status', {})               # does not fail
+        n = st['sandbox_next_steps']
+        self.assertEqual((n['tour_step'], n['next_calls']), (2, []))
+        self.assertIn(f'Deal {did} could not be read just now (http_error)', n['then'])
+        self.assertEqual(self.steps()['next_calls'][0]['tool'], 'valun_review_delivery')   # the next status decides
 
     def test_an_approval_waiting_for_the_owner_is_waited_for(self):
         inbox = self.world.inbox

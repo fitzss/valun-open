@@ -359,9 +359,10 @@ def error_payload(e, setup_hint='run `valun join` (or `valun enroll`) in a termi
             out['what_this_means'] = 'Your owner did not approve this commitment. Nothing was signed or sent.'
         if e.code == 'attempt_outcome_unknown':
             out['what_this_means'] = ('An earlier payment of this deal may have applied: the edge it would change has moved '
-                                      'past it to a total your Valun client cannot explain. Nothing was signed, and your client '
+                                      'past it to a state your Valun client cannot explain. Nothing was signed, and your client '
                                       'will not pay this deal again by itself. Only your owner can resolve it, after confirming '
-                                      'with the payee whether the payment arrived. Tell your owner.')
+                                      'with the payee whether the payment arrived (in a terminal: `valun attempts list`, then '
+                                      '`valun attempts resolve`). Tell your owner.')
         if e.code == 'transfer_window_open':
             out['what_this_means'] = ('An earlier payment attempt of this deal can still apply until it is more than an hour '
                                       'old, so another kind of payment could pay the deal twice. Nothing was signed. Retry the '
@@ -390,14 +391,17 @@ class ValunAgent:
     store: a path to a private state file, or any object with .state, .secret(), .token(), .save(), .save_credentials().
     approvals: one sentence telling the model where commitments are approved (adapter-specific).
     check_link_hosts: look up link host names in DNS when measuring deliveries (no page is fetched).
+    process_consents: sign the consents the owner's policy allows before tools that are not read-only (consents_if_due);
+      the CLI and the MCP server keep it on, the Hermes plugin passes its own setting (off unless the owner turns it on).
     """
 
-    def __init__(self, store, approvals='', check_link_hosts=True, setup_hint=None, server=None):
+    def __init__(self, store, approvals='', check_link_hosts=True, setup_hint=None, server=None, process_consents=True):
         self.store = store
         self.approvals = approvals
         self.check_link_hosts = check_link_hosts
         self.setup_hint = setup_hint or 'run `valun join` (or `valun enroll`) in a terminal'
         self.server = server
+        self.process_consents = process_consents is True
         self.features = None        # the feature tags the last GET /info this agent read listed (None: none read yet)
         self.handlers = {'valun_status': self.status, 'valun_directory': self.directory, 'valun_inbox': self.inbox,
                          'valun_deal': self.deal, 'valun_propose': self.propose, 'valun_respond': self.respond,
@@ -422,9 +426,15 @@ class ValunAgent:
     def consents_if_due(self, now_ms=None):
         """Process consents (Client.process_consents: set-offs, transfers of my own debt, payments to me, regenerated
         transfers of my payments) when they are due: at most once per CONSENTS_EVERY_MS, and only for a profile that
-        takes part in consents (wants_consents). Never from a read-only tool. Never raises: returns the report, or None
-        when it did not run or failed (a failed run counts as a run, so a server that cannot be reached is not asked
-        again before CONSENTS_EVERY_MS)."""
+        takes part in consents (wants_consents), with this agent's process_consents on, on a server not already known to
+        lack circulating credit (decision D-2 h: once a GET /info this agent read lists no circulation/1, no request is
+        made for consents). Never from a read-only tool. Never raises: returns the report, or None when it did not run or
+        failed (a failed run counts as a run, so a server that cannot be reached is not asked again before
+        CONSENTS_EVERY_MS)."""
+        if not self.process_consents:
+            return None
+        if self.features is not None and CIRCULATION not in self.features:
+            return None
         try:
             c = self.client()
         except Exception:  # noqa: BLE001 - not connected: there is nothing to consent to
@@ -465,6 +475,25 @@ class ValunAgent:
         """Does the server offer circulating credit, as the last GET /info read (by `c`, or by this agent) said?"""
         seen = list(getattr(c, '_advertised', None) or []) if c is not None else []
         return CIRCULATION in seen or CIRCULATION in (self.features or [])
+
+    def _known_circulation(self, c, deal=None):
+        """Does the server offer circulating credit? From the features this agent already knows when it knows them;
+        otherwise from one GET /info, read only when it can matter (decision D-2 h): always for a call that names no deal,
+        and for a deal only when its view carries the `payment` key, which a server shows only with circulation on. A
+        failed read counts as no circulation (the legacy label is not false), except a tracker the profile is not pinned
+        to (tracker_mismatch), which stops the call."""
+        if self.features is not None:
+            return CIRCULATION in self.features
+        if deal is not None and not (isinstance(deal, dict) and 'payment' in deal):
+            return False
+        try:
+            return CIRCULATION in self._remember(c.info())
+        except vc.ValunError as e:
+            if e.code == 'tracker_mismatch':
+                raise
+            return False
+        except Exception:  # noqa: BLE001 - a client that cannot read /info: as without circulation
+            return False
 
     def call_safe(self, name, args=None):
         """Like call(), but never raises: errors come back as {'error': ...}."""
@@ -640,7 +669,7 @@ class ValunAgent:
             other = self._resolve(c, a.get('counterparty'))
             if not (isinstance(other, dict) and isinstance(other.get('id'), str) and other['id']):
                 raise vc.ValunError('approval_unbound', 'the directory names no participant id')
-            return {'counterparty': other, 'not_settled': labels(self._circulating())['not_settled']}
+            return {'counterparty': other, 'not_settled': labels(self._known_circulation(c))['not_settled']}
         if name == 'valun_set_limits':
             me = c.me()
             if not isinstance(me, dict):
@@ -653,7 +682,7 @@ class ValunAgent:
         if not isinstance(d, dict):
             raise vc.ValunError('approval_unbound', 'the deal could not be read')
         snap = {'deal': d, 'checked': self._checked(d, did, c.participant_id, delivery=name == 'valun_review_delivery'),
-                'not_settled': labels(self._circulating())['not_settled']}
+                'not_settled': labels(self._known_circulation(c, d))['not_settled']}
         if name == 'valun_review_delivery' and a.get('decision') == 'accept' and self._pay_with(a) is not None:
             snap['transfer'] = self._transfer_snapshot(c, did, snap['checked'], self._pay_with(a))
             snap['not_settled'] = NOT_SETTLED_CIRCULATION
@@ -805,7 +834,7 @@ class ValunAgent:
         def pin(key, value, code, why):
             if not a.get(key):
                 a[key] = value
-            elif strict and a[key] != value:
+            elif strict and (type(a[key]) is not type(value) or a[key] != value):     # 3.0 is not 3, True is not 1
                 raise vc.ValunError(code, why)
         if name == 'valun_respond' and a.get('action') in ('accept', 'counter'):
             pin('expected_terms_hash', chk['terms_hash'], 'stale_terms', 'the offer changed after your agent read it')
@@ -1115,7 +1144,11 @@ class ValunAgent:
         for x in listed['review_delivery']:
             did, cp = x.get('deal_id'), x.get('counterparty')
             step = step_of(cp, 'payer')
-            d = c.deal(did)
+            try:
+                d = c.deal(did)
+            except vc.ValunError as e:          # one deal that cannot be read now never fails the whole status
+                return plan(step, [], f'Deal {shown(did)} could not be read just now ({shown(e.code)}); call valun_status '
+                                      'again in a few seconds.')
             terms = ((d.get('current') or {}).get('terms') or {}) if isinstance(d, dict) else {}
             dl = (d.get('delivery') or {}) if isinstance(d, dict) else {}
             price = (terms.get('price') or {}).get('amount')
@@ -1273,7 +1306,7 @@ class ValunAgent:
                 out['credit_note']['signature'] = 'withheld until the Basis tracker records the note'
         if d.get('payment') is not None:           # circulating credit: the payment by transfer, as the server shows it
             out['payment'] = d['payment']
-        if d.get('your_role') == 'payer' and st in PAYABLE and self._offers_circulation(c):
+        if d.get('your_role') == 'payer' and st in PAYABLE and self._offers_circulation(c, d):
             try:
                 out['how_you_can_pay'] = self._how_you_can_pay(c, a['deal_id'])
             except vc.ValunError as e:
@@ -1290,8 +1323,15 @@ class ValunAgent:
                                                    'within your limits works for the other side, decline with a reason instead of countering again.')
         return out
 
-    def _offers_circulation(self, c):
-        """GET /info lists circulation/1 (False when it cannot be read: the view is then as without it)."""
+    def _offers_circulation(self, c, d=None):
+        """Does the server offer circulation/1, for valun_deal? The features this agent already knows when it knows them;
+        else one GET /info, only for a deal view that carries the `payment` key (a server shows it only with circulation
+        on: with it off, valun_deal makes no request more than 0.3; decision D-2 h). False when /info cannot be read:
+        the view is then as without circulation."""
+        if self.features is not None:
+            return CIRCULATION in self.features
+        if not (isinstance(d, dict) and 'payment' in d):
+            return False
         try:
             return CIRCULATION in self._remember(c.info())
         except vc.ValunError:
@@ -1441,9 +1481,12 @@ class ValunAgent:
         """valun_review_delivery accept with pay_with: Client.pay_by_transfer under the pins prepare() took (the delivery,
         the quote and my claim on the issuer)."""
         claim = a.get('expected_claim_total')
+        if claim is not None and not (_whole(claim) and claim >= 0):
+            raise vc.ValunError('bad_arguments', 'expected_claim_total is the whole number of PC of your claim that your '
+                                                 'owner saw; nothing was signed')
         r = c.pay_by_transfer(a['deal_id'], issuer, expected_deliverable_sha256=a.get('expected_deliverable_sha256'),
                               expected_quote_digest=a.get('expected_quote_digest'),
-                              expected_claim_total=claim if _whole(claim) else None)
+                              expected_claim_total=claim)
         self._remember(c)
         st = r.get('status') if isinstance(r, dict) else None
         cp = (r.get('counterparty') or {}).get('handle') if isinstance(r, dict) and isinstance(r.get('counterparty'), dict) else None

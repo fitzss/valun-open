@@ -20,7 +20,7 @@ from valun import agent as va  # noqa: E402
 from valun import cli  # noqa: E402
 from valun import client as vc  # noqa: E402
 from valun import sandbox as sb  # noqa: E402
-from test_agent_circulation import CIRC, M_ID, SERVER, S_ID, X_ID, World, now_ms, routed, sign_note  # noqa: E402
+from test_agent_circulation import CIRC, M_ID, O_ID, SERVER, S_ID, X_ID, World, now_ms, routed, sign_note  # noqa: E402
 
 # S's edges (as `valun sandbox tour` prints them) after each step, and the sandbox agents' own edges at the end (design 9.2).
 TOUR_TOTALS = {1: {'sandbox-exact -> you': 3},
@@ -246,6 +246,173 @@ class TourWithoutCirculation(Cli):
         self.join()
         rc, out = self.run_cli('sandbox', 'tour', '--yes')
         self.assertEqual((rc, json.loads(out.strip().splitlines()[-1])['error']), (1, 'feature_unavailable'))
+
+    def test_the_seller_asks_nothing_more_once_the_server_shows_no_circulation(self):   # decision D-2 h
+        self.join()
+        seller = sb.Seller(vc.FileStore(os.path.join(self.home.name, 'profiles', 's.json')), server=SERVER, log=io.StringIO())
+        seller.step()
+        later = vc.time.time() + 2 * va.CONSENTS_EVERY_MS / 1000
+        with mock.patch.object(vc, 'time', types.SimpleNamespace(time=lambda: later)):
+            seller.step()                                        # a minute later: due again, but known to be off
+        self.assertEqual(self.world.requests().count('GET /pilot/v1/info'), 2)    # the join's read and the first step's
+        self.assertNotIn('GET /pilot/v1/consents', self.world.requests())
+
+
+class FakeTourClient:
+    """Just what tour() needs from a client, for the stop and rate-limit tests."""
+
+    def __init__(self):
+        self.state, self.connected, self.runs = {'consent_policy': dict(va.SANDBOX_CONSENT_POLICY)}, True, []
+
+    def me(self):
+        return {'participant': {'sandbox_only': True}}
+
+    def info(self):
+        return {'features': list(CIRC)}
+
+    def process_consents(self, policy=None, now_ms=None):
+        self.runs.append(now_ms)
+        self.state['consents_last_run_ms'] = now_ms
+        return {'signed': [], 'refused': [], 'waiting': []}
+
+
+class FakeTourAgent:
+    """An agent whose sandbox_next_steps always ask to pay a delivery, and whose prepare() always refuses."""
+
+    def __init__(self, refusal):
+        self.refusal, self.prepares, self.c = refusal, 0, FakeTourClient()
+
+    def client(self):
+        return self.c
+
+    def status(self, a):
+        return {'sandbox_next_steps': {'tour_step': 2, 'of': 5, 'goal': 'spend a note you hold', 'then': 'wait',
+                                       'next_calls': [{'tool': 'valun_review_delivery', 'why': 'pay it',
+                                                       'arguments': {'deal_id': 'vd_0123456789abcdef', 'decision': 'accept',
+                                                                     'pay_with': 'sandbox-exact'}}]}}
+
+    def is_commitment(self, name, args):
+        return True
+
+    def prepare_or_refusal(self, name, args):
+        self.prepares += 1
+        return None, dict(self.refusal)
+
+    def call(self, name, args):
+        raise AssertionError('nothing is called after a refusal')
+
+
+class TourStops(unittest.TestCase):
+    def setUp(self):
+        self.clock, self.sleeps = [1_793_966_460.0], []
+
+        def sleep(s):
+            self.sleeps.append(s)
+            self.clock[0] += max(s, 0.001)
+        p = mock.patch.object(sb, 'time', types.SimpleNamespace(time=lambda: self.clock[0], sleep=sleep))
+        p.start()
+        self.addCleanup(p.stop)
+
+    def refusal(self, cause):
+        return {'error': 'approval_unbound', 'message': 'could not read what you would sign; nothing was signed', 'cause': cause}
+
+    def test_the_tour_stops_on_the_cause_of_a_refusal(self):
+        for cause in ('attempt_outcome_unknown', 'records_unreadable', 'feature_unavailable'):
+            ag, lines = FakeTourAgent(self.refusal(cause)), []
+            with self.assertRaises(vc.ValunError) as e:
+                sb.tour(None, yes=True, log=lines.append, agent=ag)
+            self.assertEqual((e.exception.code, ag.prepares, self.sleeps), (cause, 1, []), cause)
+        self.assertIn('valun attempts resolve', va.error_payload(vc.ValunError('attempt_outcome_unknown', 'x'))['what_this_means'])
+
+    def test_a_failed_call_is_waited_on_and_consents_keep_their_rate(self):
+        ag = FakeTourAgent(self.refusal('insufficient_claim'))
+        with self.assertRaises(vc.ValunError) as e:
+            sb.tour(None, yes=True, log=lambda line: None, agent=ag, poll_s=3)
+        self.assertEqual(e.exception.code, 'tour_stuck')
+        self.assertEqual((ag.prepares, self.sleeps), (12, [3] * 12))      # one wait after each failed call
+        self.assertEqual(len(ag.c.runs), 1)                               # 36 s of waiting: one consent run (60 s rate)
+
+
+class EarnChecks(Cli):
+    def lying_inbox(self, did):
+        """The inbox says: the sandbox agent sandbox-exact offers you a job as payee."""
+        self.world.inbox = lambda: {'respond': [{'deal_id': did, 'counterparty': 'sandbox-exact', 'your_role': 'payee'}],
+                                    'deliver': [], 'review_delivery': [], 'awaiting_your_owner': [], 'waiting_on_others': [],
+                                    'recent_closed': []}
+
+    def test_earn_accepts_only_a_job_for_me_as_payee_from_a_sandbox_agent(self):
+        self.world.welcome = False
+        self.join()
+        job = ('text-stats job', 'text-stats for this text:\n```\nhi\n```', 'the exact result as JSON')
+        for payer, payee, proposer, code in ((S_ID, X_ID, X_ID, 'not_payee'),             # I would pay, not earn
+                                             (O_ID, S_ID, O_ID, 'not_sandbox_agent')):    # not from a sandbox agent
+            did = self.world.add_deal(payer, payee, *job, 3, proposer=proposer)['id']
+            self.lying_inbox(did)
+            rc, out = self.run_cli('sandbox', 'earn')
+            self.assertEqual((rc, json.loads(out.strip().splitlines()[-1])['error']), (1, code))
+            self.assertEqual(self.world.deals[did]['status'], 'open')                    # not accepted
+        self.assertFalse([p for m, p, _b in self.world.log if m == 'POST' and p.endswith('/accept')])
+
+
+class BuyExitCode(Cli):
+    def test_a_payment_that_did_not_apply_exits_non_zero(self):
+        self.world.welcome = False
+        self.world.wrong_left = 0
+        self.world.pay_due = True
+        self.join()
+        self.world.set_edge(X_ID, S_ID, 3, now_ms() - 60_000)
+        rc, out = self.run_cli('sandbox', 'buy', 'sandbox-mallory', 'notary', '--text', 'hello', '--pay-with', 'sandbox-exact')
+        r = json.loads(out.strip().splitlines()[-1])
+        self.assertEqual((rc, r['status'], r['verified'], r['paid']), (1, 'payment_due', True, False))
+
+
+class AttemptsCommands(Cli):
+    """`valun attempts list | resolve` (decision D-2 d): owner-run, at a terminal, with a confirmation and the owner
+    token used once."""
+
+    def with_attempt(self):
+        self.world.welcome = False
+        self.join()
+        disk = self.disk()
+        T = now_ms() - 120_000 - (now_ms() - 120_000) % 1000 + 999 - 1000
+        self.T, self.deal = T, 'vd_0123456789abcdef'
+        self.edge = f"{self.world.pk(X_ID)}>{self.world.pk(S_ID)}"
+        disk['transfer_attempts'] = {self.deal: [{'deal_id': self.deal, 'route': 'transfer', 'edge': self.edge, 'prior': 3,
+                                                  'prior_timestamp': T - 50_000, 'prior_signature': None, 'total': 1,
+                                                  'timestamp': T, 'quote_digest': None, 'signed_at': None,
+                                                  'attempt_id': 'vt_0123456789abcdef'}]}
+        with open(os.path.join(self.home.name, 'profiles', 's.json'), 'w', encoding='utf-8') as f:
+            json.dump(disk, f)
+
+    def test_list(self):
+        self.with_attempt()
+        rc, out = self.run_cli('attempts', 'list')
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f'deal {self.deal}', out)
+        self.assertIn('#1 paying with the note of ', out)
+        self.assertIn('your claim 3 -> 1 PC', out)
+        self.assertIn('server id vt_0123456789abcdef: can still apply', out)
+
+    def test_resolve_asks_at_a_terminal_and_uses_the_owner_token_once(self):
+        self.with_attempt()
+        args = ('attempts', 'resolve', self.deal, 'vt_0123456789abcdef', '--not-applied', '--owner-token-file', self.token_file)
+        rc, out = self.run_cli(*args)                               # no person at this terminal
+        self.assertEqual((rc, self.world.resolutions), (3, []))
+        rc, out = self.run_cli(*args, tty=True, answers=['n'])      # the owner says no
+        self.assertEqual((rc, self.world.resolutions), (3, []))
+        self.assertIn('NOT APPLIED', out)
+        rc, out = self.run_cli(*args, tty=True, answers=['y'])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.world.resolutions, [(self.deal, 'vt_0123456789abcdef', {'outcome': 'not_applied'}, 'vpo_test-only')])
+        self.assertEqual(self.disk()['transfer_attempts'][self.deal][0]['outcome'], 'not_applied')
+        self.assertNotIn('vpo_test-only', json.dumps(self.disk()))  # the owner token is not stored
+        # --applied, with the token from a hidden prompt: the deal is recorded as paid
+        with mock.patch.object(cli.getpass, 'getpass', return_value='vpo_test-only') as prompt:
+            rc, out = self.run_cli('attempts', 'resolve', self.deal, '#1', '--applied', tty=True, answers=['y'])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(prompt.call_count, 1)
+        self.assertEqual(self.world.resolutions[-1][2], {'outcome': 'applied'})
+        self.assertEqual(self.disk()['records']['paid_deals'][self.deal]['route'], 'transfer')
 
 
 class EarnAndBuy(Cli):

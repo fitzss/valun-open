@@ -11,6 +11,8 @@
   valun mcp             run the local MCP server on stdin/stdout (for MCP clients)
   valun clearing status|run|watch   circulating credit: what your client signs by itself, and signing it now
   valun policy show     the consent policy in force (local policy and owner mandate; the stricter applies)
+  valun attempts list | resolve DEAL ATTEMPT --not-applied|--applied
+                        the payment attempts your client records; the OWNER resolves one whose outcome is unknown
   valun sandbox ...     deterministic sandbox agents: seller, buy, earn, tour
 Add --profile NAME to keep several identities apart. Secrets are never printed (the owner token is shown once at
 join, or written to --owner-token-file).
@@ -21,6 +23,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
 
 from . import __version__
 from . import agent as va
@@ -507,6 +510,115 @@ def cmd_policy(args):
     return 0
 
 
+ATTEMPT_STATES = {'applied': 'applied: the deal is paid by it',
+                  'unknown': 'MAY HAVE APPLIED: your client pays this deal no more until you resolve it',
+                  'alive': 'can still apply',
+                  'dead': 'did not apply (and can no longer)',
+                  'unread': 'not known yet: its edge has not been read since its window closed'}
+
+
+def _who_key(c, pk):
+    return 'you' if pk == c.pubkey else f'{str(pk)[:16]}...'
+
+
+def _attempt_line(c, r):
+    """One payment attempt of `valun attempts list`, in plain words."""
+    i, rcp = (r['edge'].split('>') + [''])[:2]
+    when = datetime.fromtimestamp(r['timestamp'] / 1000, timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+    if r['route'] == 'note':
+        what = (f"your credit note to {_who_key(c, rcp)}: your debt {r['prior'] if r['prior'] is not None else '?'} -> "
+                f"{r['total']} PC")
+    else:
+        what = (f"paying with the note of {_who_key(c, i)}: your claim {r['prior'] if r['prior'] is not None else '?'} -> "
+                f"{r['total']} PC")
+    sid = f", server id {r['attempt_id']}" if r.get('attempt_id') else ''
+    decided = f"; you resolved it: {r['outcome']}" if r.get('outcome') in vc.ATTEMPT_OUTCOMES and r.get('outcome') != 'applied' else ''
+    return f"  {r['ref']} {what}, signed for {when}{sid}: {ATTEMPT_STATES.get(r['state'], r['state'])}{decided}"
+
+
+def cmd_attempts(args):
+    """valun attempts list | resolve: the payment attempts this profile's client records, and the OWNER's resolution of
+    one whose outcome is unknown (decision D-2 d). resolve runs only at a terminal, asks for confirmation, and uses the
+    owner token once, in memory (from --owner-token-file or a hidden prompt); it is never something an agent does."""
+    store, c = _connected(args)
+    if c is None:
+        return 1
+    if args.action == 'list':
+        edges, features = None, []
+        try:
+            features = va.features_of(c.info())
+        except vc.ValunError as e:
+            print(f'Cannot read the server ({e.code}); showing what your records hold.')
+        if 'bound_notes/1' in features or va.CIRCULATION in features:
+            try:
+                edges = c.sync_edges()['edges']      # the tracker states of your edges, each checked by your client
+            except vc.ValunError as e:
+                print(f'Cannot read your edges ({e.code}); showing what your records hold.')
+        rows = c.payment_attempts(edges=edges)
+        if not rows:
+            print('Your Valun client records no payment attempts.')
+            return 0
+        print('Payment attempts your Valun client records (how it judges each now, from its records'
+              + (' and the tracker states it just checked):' if edges is not None else '):'))
+        for deal_id in dict.fromkeys(r['deal_id'] for r in rows):
+            mine = [r for r in rows if r['deal_id'] == deal_id]
+            print(f"deal {deal_id}" + (': recorded as paid' if mine[0]['paid'] else ''))
+            for r in mine:
+                print(_attempt_line(c, r))
+        if any(r['state'] == 'unknown' for r in rows):
+            print('Resolve one only after asking the payee whether the payment arrived: `valun attempts resolve DEAL '
+                  "ATTEMPT --applied` (it arrived) or `--not-applied` (it did not). ATTEMPT is the server's id or #n.")
+        return 0
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        print('valun attempts resolve asks you, the owner, to confirm at this terminal, and no person is at it. Run it in '
+              'a terminal.')
+        return 3
+    outcome = 'applied' if args.applied else 'not_applied'
+    try:
+        features = va.features_of(c.info())
+    except vc.ValunError as e:
+        print(f'Cannot read the server ({e.code}): {e}')
+        return 1
+    with_server = va.CIRCULATION in features
+    rows = [r for r in c.payment_attempts() if r['deal_id'] == args.deal]
+    print(f'Valun - RESOLVE payment attempt {args.attempt} of deal {args.deal} as '
+          + ('APPLIED: the deal counts as paid by it, and your client never pays it again.' if outcome == 'applied' else
+             'NOT APPLIED: once its window has passed (its time + 1 h + 2 min), your client may pay this deal again, '
+             'so a wrong answer can pay it twice.'))
+    print('  Do this only after the payee told you whether this payment arrived.')
+    print('  ' + ('The server is told first (with your owner token, used once and not stored).' if with_server else
+                  'This server offers no circulating credit, so only your client\'s records change.'))
+    for r in rows:
+        print(_attempt_line(c, r))
+    if input('Resolve it? [y/N] ').strip().lower() not in ('y', 'yes'):
+        print('Nothing was changed.')
+        return 3
+    owner = None
+    if with_server:
+        try:
+            if args.owner_token_file:
+                with open(args.owner_token_file, encoding='utf-8') as f:
+                    owner = f.read().strip()
+            else:
+                owner = getpass.getpass('Owner token (not shown): ').strip()
+        except OSError as e:
+            print(f'Cannot read the owner token file: {e}')
+            return 1
+        if not owner:
+            print('No owner token given; nothing was changed.')
+            return 1
+    try:
+        r = c.resolve_attempt(args.deal, args.attempt, outcome, owner_token=owner, note=args.note)
+    except vc.ValunError as e:
+        print(json.dumps(error_payload(e), ensure_ascii=False))
+        return 1
+    print(('The server recorded your decision. ' if r['server'] is not None else '')
+          + (f"Your client's records now hold it for {len(r['matched'])} attempt(s) of this deal"
+             if r['matched'] else "Your client's records hold no attempt that matches it")
+          + ('; the deal is recorded as paid.' if r['paid'] else '.'))
+    return 0
+
+
 def _ask_terminal(text):
     print(text)
     return input('Approve this commitment? [y/N] ').strip().lower() in ('y', 'yes')
@@ -552,7 +664,8 @@ def cmd_sandbox(args):
     print(json.dumps(r))
     if args.role == 'earn':
         return 0 if r.get('paid') else 1
-    return 0 if r.get('verified') else 1
+    # A payment with a held note counts only once it applied (payment_due or still collecting: not paid).
+    return 0 if r.get('verified') and (r.get('paid_with') is None or r.get('paid')) else 1
 
 
 def main(argv=None):
@@ -601,6 +714,21 @@ def main(argv=None):
     po = sub.add_parser('policy', help='the consent policy in force (local policy and owner mandate)')
     po.add_argument('action', choices=['show'])
     po.add_argument('--server')
+    at = sub.add_parser('attempts', help="the payment attempts your client records, and the owner's resolution of one "
+                                         'whose outcome is unknown')
+    ats = at.add_subparsers(dest='action', required=True)
+    al = ats.add_parser('list', help='every payment attempt your client records, and how it judges each now')
+    al.add_argument('--server')
+    ar = ats.add_parser('resolve', help='OWNER only, at a terminal: record whether an attempt whose outcome is unknown '
+                                        'applied (after asking the payee)')
+    ar.add_argument('deal')
+    ar.add_argument('attempt', help="the server's id of the attempt (vt_...), or #n from `valun attempts list`")
+    how = ar.add_mutually_exclusive_group(required=True)
+    how.add_argument('--not-applied', action='store_true', help='the payment did not arrive')
+    how.add_argument('--applied', action='store_true', help='the payment arrived: the deal is paid by it')
+    ar.add_argument('--note', default=None, help='a short note for the server audit line')
+    ar.add_argument('--owner-token-file', help='the file holding your owner token (read once, not stored); else it is asked')
+    ar.add_argument('--server')
     sb = sub.add_parser('sandbox', help='deterministic test agents that need no AI model')
     sbs = sb.add_subparsers(dest='role', required=True)
     se = sbs.add_parser('seller', help='sell text-stats and notary jobs (polls the inbox; Ctrl+C to stop)')
@@ -628,7 +756,7 @@ def main(argv=None):
         return 1
     return {'join': cmd_join, 'enroll': cmd_enroll, 'status': cmd_status, 'doctor': cmd_doctor, 'config': cmd_config,
             'tools': cmd_tools, 'call': cmd_call, 'mcp': cmd_mcp, 'clearing': cmd_clearing, 'policy': cmd_policy,
-            'sandbox': cmd_sandbox}[args.cmd](args)
+            'attempts': cmd_attempts, 'sandbox': cmd_sandbox}[args.cmd](args)
 
 
 MCP_HELP = """Run Valun as a local MCP server (stdio). Add it to your MCP client, for example:

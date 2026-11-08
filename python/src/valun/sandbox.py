@@ -126,6 +126,7 @@ class Seller:
         self.c = vc.Client(store, server=server)
         self.log = log or sys.stdout
         self.countered = {}
+        self.features = None        # the features of the last GET /info a consent run read (None: none yet)
 
     def note(self, **kw):
         kw['t'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
@@ -178,12 +179,17 @@ class Seller:
 
     def consents(self):
         """Sign the consents this profile's policy allows (set-offs, transfers of its own debt, payments to it by
-        transfer), at most once a minute, as the agent tools do before every action (agent.consents_due)."""
+        transfer), at most once a minute, as the agent tools do before every action (agent.consents_due). Once a run has
+        read a GET /info without circulation/1, no more requests are made for consents (decision D-2 h)."""
         from . import agent as va           # here: agent.py imports this module
+        if self.features is not None and va.CIRCULATION not in self.features:
+            return None
         try:
             r = va.consents_due(self.c)
         except vc.ValunError as e:
             return self.note(action='error', error=e.code, message=str(e))
+        if r is not None:
+            self.features = list(getattr(self.c, '_advertised', None) or [])
         for bucket in ('signed', 'refused'):
             for e in (r or {}).get(bucket, []):
                 self.note(action=f'consent_{bucket}', id=e.get('id'), kind=e.get('kind'), role=e.get('role'),
@@ -260,10 +266,12 @@ def buy(store, seller, service, text, price=None, server=None, wait_s=600, log=p
         if pay_with in (None, 'own_note'):
             r = c.complete(did, d['delivery']['sha256'])
             log(f'delivery verified exactly; credit note: {r["status"]}')
-            return {'deal_id': did, 'status': r['status'], 'verified': True, 'amount': price}
+            return {'deal_id': did, 'status': r['status'], 'verified': True, 'amount': price,
+                    'paid': r['status'] in PAID_STATUSES}
         r = c.pay_by_transfer(did, pay_with, expected_deliverable_sha256=d['delivery']['sha256'])
         log(f'delivery verified exactly; paid with a note of {pay_with}: {r["status"]}')
-        return {'deal_id': did, 'status': r['status'], 'verified': True, 'amount': price, 'paid_with': pay_with}
+        return {'deal_id': did, 'status': r['status'], 'verified': True, 'amount': price, 'paid_with': pay_with,
+                'paid': r['status'] in PAID_STATUSES}
     diff = sorted(k for k in set(expected) | set(got or {}) if (got or {}).get(k) != expected.get(k))
     c.dispute(did, f'The delivered result does not match the exact {service} of the agreed text (differs in: {", ".join(diff)}).')
     log(f'delivery WRONG in {diff}; disputed')
@@ -333,8 +341,18 @@ def earn(store, server=None, wait_s=600, log=print, poll_s=TOUR_POLL_S, text=Non
         return sell(store, va.SANDBOX_EXACT, 'text-stats', text or va.TOUR_TEXTS[1], server=server, wait_s=wait_s, log=log,
                     poll_s=poll_s)
     did = offer['deal_id']
-    chk = c.verify_offer(c.deal(did))
+    d = c.deal(did)
+    chk = c.verify_offer(d)
     terms = chk['terms']
+    # Accepted without asking (the owner runs this to earn): only a job for this agent as payee, offered (and signed,
+    # verify_offer) by one of the sandbox agents as the directory lists them, never on the inbox's word.
+    if (terms.get('payee') or {}).get('id') != c.participant_id:
+        raise vc.ValunError('not_payee', f'the offer on {did} does not name you as the payee; nothing was signed')
+    agents = {p['id'] for p in c.directory() if isinstance(p, dict) and p.get('handle') in va.SANDBOX_AGENTS
+              and isinstance(p.get('id'), str) and p.get('status', 'active') == 'active'}
+    proposer = (d.get('current') or {}).get('by')
+    if proposer not in agents or (terms.get('payer') or {}).get('id') != proposer:
+        raise vc.ValunError('not_sandbox_agent', f'the offer on {did} is not from a sandbox agent; nothing was signed')
     service = which_service(terms)
     job = extract_text((terms.get('service') or {}).get('description')) if service else None
     if service is None or job is None:
@@ -359,29 +377,36 @@ def edge_totals(c):
     return out
 
 
-def _consents_now(c, log):
-    """process_consents() now (the tour does not wait for the agent layer's once-a-minute run)."""
+def _consents_due(c, log):
+    """process_consents() when it is due (agent.consents_due: at most once per CONSENTS_EVERY_MS, on the tour's clock,
+    across every process that uses the profile), so the tour keeps the client's once-a-minute rate (PROTOCOL.md 15.3,
+    design 6.6): a set-off is signed within about a minute, as valun_status says."""
+    from . import agent as va           # here: agent.py imports this module
     try:
-        r = c.process_consents()
+        r = va.consents_due(c, now_ms=int(time.time() * 1000))
     except vc.ValunError as e:
         log(f'  (consents: {e.code}: {e})')
         return None
-    for e in r['signed']:
+    for e in (r or {}).get('signed', []):
         log(f"  your Valun client signed a {e.get('kind')} as {e.get('role')} (your net change: {e.get('your_net_change_PC')} PC)")
-    for e in r['refused']:
+    for e in (r or {}).get('refused', []):
         log(f"  your Valun client refused a {e.get('kind')} ({e.get('code')})")
     return r
 
 
 def _tour_call(ag, call, yes, ask, log):
     """One call of sandbox_next_steps through the agent tools: a commitment is prepared (bound to what is shown), then
-    approved at the terminal (ask) unless `yes`, then called with exactly the prepared arguments."""
+    approved at the terminal (ask) unless `yes`, then called with exactly the prepared arguments. A refusal of the
+    preparation carries its cause (attempt_outcome_unknown, records_unreadable, ...): that cause is the error raised,
+    so the tour stops on it."""
     name, args = call.get('tool'), call.get('arguments') or {}
     log(f"  -> {name}: {call.get('why') or ''}")
     if ag.is_commitment(name, args):
         prepared, refusal = ag.prepare_or_refusal(name, args)
         if refusal:
-            raise vc.ValunError(refusal.get('error') or 'approval_unbound', refusal.get('message') or 'nothing was signed',
+            cause = refusal.get('cause')
+            code = cause if cause in TOUR_STOPS else (refusal.get('error') or 'approval_unbound')
+            raise vc.ValunError(code, refusal.get('message') or 'nothing was signed',
                                 extra={k: v for k, v in refusal.items() if k not in ('error', 'message')})
         args = prepared['args']
         if prepared['text'] is not None:
@@ -400,11 +425,13 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
     sandbox-mallory, pay sandbox-exact with your own note and see the 2-cycle cleared, sell to sandbox-mallory and see
     the 3-cycle cleared, and spend sandbox-mallory's note with sandbox-exact. It follows valun_status
     sandbox_next_steps through the agent tools, so it takes exactly the path an agent takes; every commitment is
-    approved through ask(text) -> bool unless `yes`. After each call, and while it waits, it processes consents; when a
-    step is done it logs your edges' tracker totals (GET /edges). Returns {done, steps: [{step, tracker_totals,
-    money_view}]}."""
+    approved through ask(text) -> bool unless `yes`. After each call, and while it waits, it processes consents when
+    they are due (at most once a minute; its agent does not process them itself); a call that fails is shown and the
+    tour waits poll_s before the next status decides again; a refusal whose cause is in TOUR_STOPS ends the tour with
+    that cause. When a step is done it logs your edges' tracker totals (GET /edges). Returns {done, steps: [{step,
+    tracker_totals, money_view}]}."""
     from . import agent as va           # here: agent.py imports this module
-    ag = agent or va.ValunAgent(store, approvals='', check_link_hosts=False, server=server)
+    ag = agent or va.ValunAgent(store, approvals='', check_link_hosts=False, server=server, process_consents=False)
     c = ag.client()
     if (c.me().get('participant') or {}).get('sandbox_only') is not True:
         raise vc.ValunError('not_sandbox_only', 'the tour is for sandbox-only participants (`valun join --sandbox`)')
@@ -440,6 +467,7 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
         if not calls and nxt.get('then') != said:
             said = nxt.get('then')
             log(f'  ... {said}')
+        failed = False
         for call in calls:
             calls_in_step += 1
             if calls_in_step > 12:
@@ -450,8 +478,10 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
                 if e.code in TOUR_STOPS:
                     raise
                 log(f'     {e.code}: {e}')
-        _consents_now(c, log)
-        if not calls:
+                failed = True                   # wait before trying again: the next status decides
+                break
+        _consents_due(c, log)
+        if not calls or failed:
             if time.time() >= deadline:
                 raise vc.ValunError('tour_timeout', f'step {current} did not finish in time; run the tour again to continue')
             time.sleep(poll_s)

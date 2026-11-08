@@ -26,7 +26,8 @@ rebuilds the bytes to sign (R1: nothing the server sent as hex is ever signed).
 
 Each evaluator returns {'ok', 'code', 'to_sign', 'summary', 'write_ahead'}:
   ok, code     True and None when every rule holds; else False and one refusal code (REFUSAL_CODES), to_sign [].
-  summary      role, kind, id, deal_id, timestamp, amount; edges [{edge, your_role, before_total, new_total, change,
+  summary      role, kind, id, deal_id (ids only in the form ^v[dts]_[0-9a-f]{16}$, else None: shown_id), timestamp,
+               amount; edges [{edge, your_role, before_total, new_total, change,
                timestamp}] (this participant's edges, plus the payer's destination edge with your_role 'payer');
                your_net_change_PC (changes as creditor minus changes as issuer), your_total_owed_change_PC (changes as
                issuer); quote_digest (payer roles); advisories [{code, edge, shown, recorded}] (an edge state that
@@ -37,8 +38,10 @@ Each evaluator returns {'ok', 'code', 'to_sign', 'summary', 'write_ahead'}:
                whether or not the item is signed; retry_after_ms and needs_read_back (transfer_window_open); reason
                (one sentence, for people).
   write_ahead  only when ok: {op, signed [{edge, timestamp, op, slots {slot_key: total}}], pending [{pair, total,
-               timestamp, kind, ref, direction}], attempt (a payment attempt) or None}. R9: the caller persists it
-               (apply_write_ahead) BEFORE it sends any signature.
+               timestamp, kind, ref, direction}], attempt (a payment attempt) or None, attempts_seen [[route, edge,
+               total, timestamp]] (the deal's earlier attempts this evaluation weighed)}. R9: the caller persists it
+               (apply_write_ahead, which refuses a state that changed since: WriteAheadConflict) BEFORE it sends any
+               signature, best in the same locked step as the evaluation.
 
 The checks, in this order (the first that fails gives the code; PROTOCOL.md 15.3 rule numbers):
   R9   records_unreadable    ctx records, records['paid_deals'], signed, transfer_attempts or novated_edges (or an
@@ -60,41 +63,52 @@ The checks, in this order (the first that fails gives the code; PROTOCOL.md 15.3
                              transfer), [now - 55 min, now + 5 s] for a consent; T later than every prior timestamp shown
   D-1  already_paid, attempt_outcome_unknown, transfer_window_open   (payer roles: one live payment attempt per deal)
   -    stale_quote           payer roles: the quote digest is not the approved one (a regenerated transfer needs one)
-  R8   policy_off, issuer_refused, policy_cap   the stricter of the local consent policy and the owner's mandate
+  R8   policy_off, issuer_refused, policy_cap   the stricter of the local consent policy and the owner's mandate (the
+                             payer roles need the mandate too); issuer lists are checked against the participant id the
+                             client itself resolved for the issuer's key (ctx issuer_ids), never an id the item names
   R12  pending_unbound_note  a novation on an edge where this client holds an ordinary credit note that can still
                              apply (pending, and later than the edge's state shown)
+       payment_attempt       a novation that brings an edge of mine (as issuer) to the acknowledged prior total of a
+                             bound note of mine on it that is later than the novation and can still apply (the client
+                             side of decision D-2 c: that note could then apply after it, and pay its deal twice)
   R4   timestamp_reused      a different operation (or other totals) already signed at the same (edge, timestamp)
 
-D-1, one live payment attempt per deal (R11 extended to own notes). An attempt is a signed bound note or a signed
-transfer, recorded in transfer_attempts[deal_id] (write_ahead.attempt); pending payment entries in the records count
-too. attempt_outcome() classifies each earlier attempt from the current state of the edge it would change (the
-template's, the item's or ctx['edges']; an absent edge is total 0 at timestamp 0): 'applied' (the edge shows its new
-total at its timestamp, or has moved past its timestamp to its new total, or my records confirm it) -> already_paid;
-'unknown' (the edge moved past its timestamp to a state that is neither its prior nor its new total, or holds another
-state at its timestamp) -> attempt_outcome_unknown, for the owner to resolve; 'alive' (it may still apply) and 'unread'
-(its window has passed but its edge was not read) -> transfer_window_open, unless the new attempt is a same-kind retry
-that acknowledges the same prior on the same edge (then the attempts exclude each other at the tracker); 'dead' (a
-read-back shows it did not apply and now > T + MAX_AGE_MS + FALLBACK_MARGIN_MS) -> no constraint. A state older than
-the one the attempt acknowledged (its prior_timestamp) or than this client's own confirmed state of the edge is no
-read-back (an edge's timestamps only increase); a confirmed state at or past T counts as one. An ordinary
-(unbound) note never expires, so while it may still apply any other payment is attempt_outcome_unknown. Residual risk,
-as D-1 states: an edge that moved past T back to the attempt's prior total counts as not applied, and one at its new
-total as applied; with an operator that hides outcomes and mints notes this can still be wrong (PROTOCOL.md 16.2 7).
+D-1, one live payment attempt per deal (R11 extended to own notes), with decision D-2 a (full edge states). An attempt
+is a signed bound note or a signed transfer, recorded in transfer_attempts[deal_id] (write_ahead.attempt) with the full
+edge state it acknowledged (prior, prior_timestamp, prior_signature); pending payment entries in the records count too.
+attempt_outcome() classifies each earlier attempt from the current state of the edge it would change (the template's,
+the item's or ctx['edges']; an absent edge is total 0 at timestamp 0, but only for an attempt that acknowledged an
+absent edge: one that acknowledged a prior above 0 reads an absent edge as no read-back): 'applied' (the edge shows its
+new state, its new total at its own timestamp, or my records confirm it) -> already_paid; 'unknown' (the edge holds any
+other state at or past its timestamp, including its prior or its new total at a later timestamp) ->
+attempt_outcome_unknown, for the owner to resolve, unless my own records prove it dead (proven_dead: a later bound note
+of mine acknowledged the same prior state and applied, and nothing else of mine changed the edge in between); 'alive'
+(it may still apply) and 'unread' (its window has passed but its edge was not read) -> transfer_window_open, unless
+the new attempt is a same-kind retry that acknowledges the same prior on the same edge and the edge is still exactly
+the acknowledged prior state (total, timestamp and signature: then the attempts exclude each other at the tracker;
+any other state gives attempt_outcome_unknown); 'dead' (a read-back shows it did not apply and now > T + MAX_AGE_MS +
+FALLBACK_MARGIN_MS) -> no constraint. A state older than the one the attempt acknowledged (its prior_timestamp) or
+than this client's own confirmed state of the edge is no read-back (an edge's timestamps only increase); a confirmed
+state at or past T counts as one. An ordinary (unbound) note never expires, so while it may still apply any other
+payment is attempt_outcome_unknown; it records no prior state, so its same-prior retries compare totals only, as do
+attempt records written before D-2 (no prior_timestamp). Residual risk: read-backs come from the server; a stale but
+genuine state is caught only through prior_timestamp and this client's own records (PROTOCOL.md 16.2 7).
 
 ctx keys (only me_pk, now_ms and verify are checked as arguments; the others give refusal codes when missing):
   me_pk            this participant's current public key (66 lowercase hex)
   now_ms           the time, ms since the epoch
   verify           verify(pubkey_hex, msg_bytes, sig_hex) -> bool (basis.verify over hex keys and signatures)
-  me_id            optional: this participant's id
+  me_id            this participant's id: required for the payer roles and bound notes (deal_mismatch without it)
   pins             {tracker_nft_id, denomination} pinned at enroll or on the first 0.4 run (R13)
   records          records.py records ({pair: {confirmed, pending}}), with records['paid_deals'] {deal_id: {route,
                    edge, total, timestamp}} (D-1 item 5); None = empty
   signed           R4 record {edge: {str(timestamp): {op, slots {slot_key: total}}}}; None = empty
   transfer_attempts  {deal_id: [attempt]}, attempt {deal_id, route 'note'|'transfer', edge (the edge whose prior it
-                   acknowledges: A>B for a transfer, B>C for a note), prior, prior_timestamp (of that acknowledged
-                   state; 0 for an absent edge), total (that edge's total once it applies), timestamp, quote_digest,
-                   signed_at; outcome 'applied' once the client learnt it applied, or 'not_applied' only by the owner's
-                   decision (attempt_outcome)}; None = empty
+                   acknowledges: A>B for a transfer, B>C for a note), prior, prior_timestamp and prior_signature (the
+                   acknowledged state: timestamp 0 and signature None for an absent edge), total (that edge's total
+                   once it applies), timestamp, quote_digest, signed_at; outcome 'applied' once the client learnt it
+                   applied, or 'not_applied' only by the owner's decision (attempt_outcome); attempt_id, the server's
+                   id of it, once known}; None = empty
   novated_edges    edges a novation changed (a dict keyed by edge, or a list of edges); None = none (R12)
   features         /info features (bound templates: bound_notes/1 makes an unbound template bound_note_required)
   deal             deal_context(...): the verified agreement (payer roles, bound notes, payee)
@@ -105,7 +119,9 @@ ctx keys (only me_pk, now_ms and verify are checked as arguments; the others giv
                    (participant ids or public keys; accept_issuers may be 'any')}; absent = every role off
   mandate          GET /me effective_limits (or mandate): auto_clear, novate_own_debt, accept_transfers,
                    may_accept_credit, accept_notes_from, refuse_notes_from, max_accept_per_issuer, pay_with_held_notes;
-                   absent = every consent role off
+                   absent = every role off (the payer roles too: policy_off)
+  issuer_ids       {issuer public key: participant id} as the client resolved them itself (the directory, GET
+                   /participants, by key): the participant ids the issuer lists of R8 are checked against
   edges            {edge: EdgeState or None (absent)} the caller read just now (GET /edges), for D-1 read-backs
 """
 import re
@@ -140,15 +156,30 @@ REFUSAL_CODES = (
     'records_unreadable', 'transfer_window_open', 'bound_note_required', 'pending_unbound_note', 'tracker_mismatch',
     # decision D-1
     'attempt_outcome_unknown', 'already_paid',
+    # decision D-2 c, on the client: a novation that would let a bound note of mine apply after it
+    'payment_attempt',
     # this module: a quote other than the approved one; an item that is not well formed
     'stale_quote', 'bad_template', 'bad_consent',
 )
+ID_RE = re.compile(r'v[dts]_[0-9a-f]{16}\Z')  # a deal, transfer or set-off id, the only ids a summary carries
+RECORDS_KEEP_MS = 604_800_000                 # = client.RECORDS_KEEP_MS: R4 records are kept this long (proven_dead)
 
 _PUBKEY_RE = re.compile(r'0[23][0-9a-f]{64}\Z')
 _HEX64_RE = re.compile(r'[0-9a-f]{64}\Z')
 _U64 = 2 ** 64
 _ABSENT = {'total': 0, 'timestamp': 0}        # the state of an edge that does not exist yet
 _UNREADABLE = "this profile's records cannot be read; nothing was signed"
+
+
+class WriteAheadConflict(ValueError):
+    """apply_write_ahead() found the state changed since the evaluation it records (another process signed or paid
+    meanwhile): nothing was written, and nothing may be signed; evaluate again. `code` is the refusal code:
+    timestamp_reused (another operation at the same edge and timestamp), already_paid (the deal is recorded as paid),
+    transfer_window_open (another payment attempt of the deal was recorded)."""
+
+    def __init__(self, code, message):
+        super().__init__(f'{code}: {message}')
+        self.code = code
 
 
 # ---------- small helpers ----------
@@ -213,9 +244,69 @@ def _pending(pair, total, timestamp, kind, ref, direction):
     return {'pair': pair, 'total': total, 'timestamp': timestamp, 'kind': kind, 'ref': ref, 'direction': direction}
 
 
-def _attempt(deal_id, route, edge, prior, prior_timestamp, total, timestamp, quote):
+def _attempt(deal_id, route, edge, prior, prior_timestamp, prior_signature, total, timestamp, quote):
     return {'deal_id': deal_id, 'route': route, 'edge': edge, 'prior': prior, 'prior_timestamp': prior_timestamp,
-            'total': total, 'timestamp': timestamp, 'quote_digest': quote}
+            'prior_signature': prior_signature, 'total': total, 'timestamp': timestamp, 'quote_digest': quote}
+
+
+def _attempt_ok(a):
+    """An attempt record of the shape the evaluators write (transfer_attempts[deal_id][i]); else R9 refuses."""
+    return (isinstance(a, dict) and a.get('route') in ROUTES and parse_edge(a.get('edge')) is not None
+            and _u64(a.get('prior')) and _u64(a.get('total')) and _u64(a.get('timestamp')))
+
+
+def _same_prior_state(a, b):
+    """Did attempts a and b acknowledge exactly the same edge state (total and timestamp, and signature where both
+    recorded one)? False when either recorded no prior state (no prior_timestamp)."""
+    if not (_u64(a.get('prior_timestamp')) and _u64(b.get('prior_timestamp'))):
+        return False
+    if (a['prior'], a['prior_timestamp']) != (b['prior'], b['prior_timestamp']):
+        return False
+    sa, sb = a.get('prior_signature'), b.get('prior_signature')
+    return not (isinstance(sa, str) and isinstance(sb, str)) or sa == sb
+
+
+def exact_prior(attempt, state):
+    """D-2 a: is `state` (the edge's current state, verified; None when not read) exactly the state `attempt`
+    acknowledged: its total, its timestamp (0: an absent edge) and its signature (when recorded)? An attempt that
+    recorded no prior state (an ordinary note, or a record from before D-2) is compared by its prior total alone, as
+    D-1 does: True."""
+    pt = attempt.get('prior_timestamp')
+    if not _u64(pt):
+        return True
+    if state is None:
+        return False
+    if pt == 0:
+        return 'signature' not in state and state['timestamp'] == 0 and state['total'] == 0
+    if (state.get('total'), state.get('timestamp')) != (attempt.get('prior'), pt):
+        return False
+    sig = attempt.get('prior_signature')
+    return not isinstance(sig, str) or state.get('signature') == sig
+
+
+def shown_id(v):
+    """`v` when it is a Valun deal, transfer or set-off id (^v[dts]_[0-9a-f]{16}$), else None: the only form in which an
+    id an item or template names is copied into a summary (and so reaches an agent, a log or a terminal)."""
+    return v if isinstance(v, str) and ID_RE.match(v) is not None else None
+
+
+def _attempt_keys(state, deal_id):
+    """(route, edge, total, timestamp) of every payment attempt of the deal that `state` records: attempt records and
+    pending payment entries (records). For apply_write_ahead's check that no attempt appeared since the evaluation."""
+    keys = set()
+    att = state.get('transfer_attempts')
+    for a in (att.get(deal_id) or []) if isinstance(att, dict) else ():
+        if isinstance(a, dict):
+            keys.add((a.get('route'), a.get('edge'), a.get('total'), a.get('timestamp')))
+    recs = state.get('records')
+    for pair, e in recs.items() if isinstance(recs, dict) else ():
+        if pair == PAID_DEALS_KEY or not isinstance(e, dict) or not isinstance(e.get('pending'), list):
+            continue
+        for p in e['pending']:
+            route = _payment_route(p) if isinstance(p, dict) else None
+            if route is not None and p.get('ref') == deal_id:
+                keys.add((route, pair, p.get('total'), p.get('timestamp')))
+    return keys
 
 
 # ---------- names, messages, digests ----------
@@ -292,24 +383,26 @@ def deal_context(terms, terms_hash, deliverable_sha256=None, delivered=False, tr
 
 # ---------- D-1: payment attempts ----------
 def attempt_outcome(attempt, now_ms, state=None):
-    """How an earlier payment attempt stands (decision D-1). `state` is the current, verified EdgeState of the edge the
-    attempt would change (an absent edge: {'total': 0, 'timestamp': 0}), or None when it was not read. Returns
-      'applied'  the edge holds its new total at its timestamp, or has moved past its timestamp to its new total, or the
-                 caller recorded it applied (attempt['outcome'] == 'applied')
-      'unknown'  the edge moved past its timestamp to a state that is neither its prior nor its new total, or holds
-                 another state at its timestamp: it may have applied
+    """How an earlier payment attempt stands (decision D-1, with D-2 a: edge states are compared in full). `state` is
+    the current, verified EdgeState of the edge the attempt would change (an absent edge: {'total': 0, 'timestamp':
+    0}), or None when it was not read. Returns
+      'applied'  the edge holds its new state (its new total at its own timestamp), or the caller recorded it applied
+                 (attempt['outcome'] == 'applied')
+      'unknown'  the edge holds any other state at or past its timestamp: it may have applied (D-2 a: also its prior
+                 total, or its new total, at a later timestamp; an edge can come back to a total)
       'alive'    it has not applied and may still apply (an ordinary, unbound note never stops being usable)
-      'dead'     a read-back shows it did not apply and now_ms > timestamp + MAX_AGE_MS + FALLBACK_MARGIN_MS (or the
-                 edge moved past the timestamp of a note that never expires)
+      'dead'     a read-back shows it did not apply (a state older than its timestamp) and now_ms > timestamp +
+                 MAX_AGE_MS + FALLBACK_MARGIN_MS
       'unread'   its window has passed but the edge was not read, so it is not known to be dead
     attempt['outcome'] == 'not_applied' records the OWNER's decision, after confirming with the payee, that an attempt
     did not apply (the way out of attempt_outcome_unknown; a client never sets it by itself): the attempt is then 'dead'
     once its window has passed ('alive' before; an ordinary note only once its edge has moved past it), unless the edge
-    holds exactly its new total at its timestamp."""
+    holds exactly its new total at its timestamp. The evaluators also accept proof from this client's own records that
+    an 'unknown' attempt is dead (proven_dead)."""
     outcome = attempt.get('outcome')
     if outcome == 'applied':
         return 'applied'
-    T, prior, total = attempt['timestamp'], attempt.get('prior'), attempt['total']
+    T, total = attempt['timestamp'], attempt['total']
     expired = now_ms > T + MAX_AGE_MS + FALLBACK_MARGIN_MS
     if state is not None and (state['timestamp'], state['total']) == (T, total):
         return 'applied'
@@ -319,18 +412,11 @@ def attempt_outcome(attempt, now_ms, state=None):
         return 'dead' if state is not None and state['timestamp'] > T else 'alive'   # an ordinary note never expires
     if state is None:
         return 'unread' if _expires(attempt) and expired else 'alive'
-    ts, st_total = state['timestamp'], state['total']
-    if ts == T:
-        return 'unknown'
-    if ts > T:
-        if st_total == total:
-            return 'applied'
-        if prior is None or st_total != prior:
-            return 'unknown'
-        # moved past T, at the prior total: it did not apply, and it never can now (timestamps only increase)
-    elif not _expires(attempt):
+    if state['timestamp'] >= T:
+        return 'unknown'          # not its new state, at or past its timestamp: it may have applied (D-2 a)
+    if not _expires(attempt):
         return 'alive'
-    return 'dead' if not _expires(attempt) or expired else 'alive'
+    return 'dead' if expired else 'alive'
 
 
 # ---------- one evaluation ----------
@@ -359,6 +445,7 @@ class _Run:
         self.ctx_edges = ctx.get('edges') or {}
         self.shown = {}                       # edge -> the state the item shows (verified), _ABSENT for an absent edge
         self.recs, self.paid, self.signed, self.attempts, self.novated = {}, {}, {}, {}, set()
+        self.seen = []                        # [route, edge, total, timestamp] of the deal's attempts weighed (D-1)
         self.summary = {'role': None, 'kind': None, 'id': None, 'deal_id': None, 'timestamp': None, 'amount': None,
                         'edges': [], 'your_net_change_PC': None, 'your_total_owed_change_PC': None,
                         'quote_digest': None, 'advisories': [], 'applied': [], 'paid_deals': {},
@@ -446,8 +533,7 @@ class _Run:
         records that no attempt record covers (their prior follows from the price)."""
         out = []
         for a in self.attempts.get(deal_id) or []:
-            if not (isinstance(a, dict) and a.get('route') in ROUTES and parse_edge(a.get('edge')) is not None
-                    and _u64(a.get('prior')) and _u64(a.get('total')) and _u64(a.get('timestamp'))):
+            if not _attempt_ok(a):
                 self.unreadable()
             out.append(a)
         for pair in list(self.recs):
@@ -461,8 +547,19 @@ class _Run:
                        for a in out):
                     continue
                 prior = p['total'] - price if route == 'note' else p['total'] + price
-                out.append(_attempt(deal_id, route, pair, prior if prior >= 0 else None, None, p['total'], p['timestamp'],
-                                    None))
+                out.append(_attempt(deal_id, route, pair, prior if prior >= 0 else None, None, None, p['total'],
+                                    p['timestamp'], None))
+        return out
+
+    def edge_attempts(self, edge):
+        """(deal_id, attempt) for every attempt record of mine, of any deal, on `edge` (R9: a malformed one refuses)."""
+        out = []
+        for deal_id, lst in self.attempts.items():
+            for a in lst or []:
+                if isinstance(a, dict) and a.get('edge') == edge:
+                    if not _attempt_ok(a):
+                        self.unreadable()
+                    out.append((deal_id, a))
         return out
 
     # ----- R13, R2, R5 -----
@@ -531,6 +628,13 @@ class _Run:
                 if route is not None and _text(p.get('ref')) and p['ref'] not in self.summary['paid_deals']:
                     self.summary['paid_deals'][p['ref']] = {'route': route, 'edge': edge, 'total': p['total'],
                                                             'timestamp': p['timestamp']}
+            # D-2 a: a payment attempt of mine whose exact new state the item shows applied, even when its pending entry
+            # was forgotten (a refused or failed answer keeps only the attempt record): its deal is paid
+            for deal_id, a in self.edge_attempts(edge):
+                if (a['total'], a['timestamp']) == (state['total'], state['timestamp']) \
+                        and deal_id not in self.summary['paid_deals']:
+                    self.summary['paid_deals'][deal_id] = {'route': a['route'], 'edge': edge, 'total': a['total'],
+                                                           'timestamp': a['timestamp']}
         if conf is not None:
             shown = state if state is not None else _ABSENT
             code = ('older_than_records' if conf['timestamp'] > shown['timestamp'] else
@@ -564,27 +668,74 @@ class _Run:
         if deal_id in self.paid:
             self.refuse('already_paid', 'your records show this deal is already paid; refusing to pay it again')
 
+    def read_back(self, a, conf):
+        """The current state of attempt a's edge as a D-1 read-back, or None when there is none: not read; absent
+        although the attempt acknowledged a prior above 0 (the edge existed; an absent row is no read-back); or older
+        than what this client already knows of the edge (an edge's timestamps only increase). My own confirmed state
+        counts as one once it is at or past the attempt's timestamp."""
+        state = self.state_of(a['edge'])
+        if state is not None and 'signature' not in state and not (a.get('prior') == 0):
+            state = None
+        floor = max(conf['timestamp'] if conf is not None else 0,
+                    a['prior_timestamp'] if _u64(a.get('prior_timestamp')) else 0)
+        if state is None or state['timestamp'] < floor:
+            state = conf if conf is not None and conf['timestamp'] >= a['timestamp'] else None
+        return state
+
+    def proven_dead(self, a, state):
+        """D-2 a: do my own records prove that attempt `a` (a note of mine whose edge moved past its timestamp to
+        `state`) never applied? Yes when a later bound note of mine on the same edge acknowledged exactly the same prior
+        state and applied (`state` is its new state, or my records hold its deal paid by it), and I signed no other
+        operation than credit notes on that edge between the two: only my signature lowers my own edge, so had `a`
+        applied, the edge could not have been back at that prior when the later note applied. Needs my records of every
+        operation since `a` (RECORDS_KEEP_MS)."""
+        edge = a['edge']
+        if state is None or a.get('route') != 'note' or state['timestamp'] <= a['timestamp'] \
+                or not _u64(a.get('prior_timestamp')) or a['timestamp'] < self.now - RECORDS_KEEP_MS:
+            return False
+        for deal_id, b in self.edge_attempts(edge):
+            if b is a or b['route'] != 'note' or b['timestamp'] <= a['timestamp'] or b['timestamp'] % 1000 != BOUND_MS \
+                    or not _same_prior_state(a, b):
+                continue
+            paid = self.paid.get(deal_id)
+            applied = ((state['total'], state['timestamp']) == (b['total'], b['timestamp']) or b.get('outcome') == 'applied'
+                       or (isinstance(paid, dict)
+                           and (paid.get('edge'), paid.get('total'), paid.get('timestamp')) == (edge, b['total'], b['timestamp'])))
+            if applied and not self.signed_between(edge, a['timestamp'], b['timestamp']):
+                return True
+        return False
+
+    def signed_between(self, edge, t1, t2):
+        """Did I sign an operation other than a credit note on `edge` at a timestamp strictly between t1 and t2 (R4)?"""
+        per = self.signed.get(edge) or {}
+        for k in per:
+            if isinstance(k, str) and k.isdigit() and t1 < int(k) < t2:
+                e = self.signed_entry(edge, int(k))
+                if e is not None and not e['op'].startswith('note:'):
+                    return True
+        return False
+
     def one_live_attempt(self, deal_id, price, route, edge, prior):
-        """D-1: refuse a new payment attempt (route, edge, acknowledged prior) for the deal unless every earlier attempt
-        is dead or is excluded by this one (same route, same edge, same prior)."""
+        """D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior) for the deal unless every
+        earlier attempt is dead or is excluded by this one at the tracker: the same route on the same edge,
+        acknowledging the same prior, while the edge is still exactly the state the earlier one acknowledged."""
         self.not_paid_yet(deal_id)
         if deal_id in self.summary['paid_deals']:
             self.refuse('already_paid', 'a payment of yours for this deal shows as applied; refusing to pay it again')
         looked = []
-        for a in self.deal_attempts(deal_id, price):
+        attempts = self.deal_attempts(deal_id, price)
+        self.seen = [[a['route'], a['edge'], a['total'], a['timestamp']] for a in attempts]
+        for a in attempts:
             conf = self.pair(a['edge'])[0]
             if conf is not None and (conf['total'], conf['timestamp']) == (a['total'], a['timestamp']):
-                looked.append((a, 'applied'))
+                looked.append((a, 'applied', None))
                 continue
-            state = self.state_of(a['edge'])
-            floor = max(conf['timestamp'] if conf is not None else 0,
-                        a['prior_timestamp'] if _u64(a.get('prior_timestamp')) else 0)
-            if state is None or state['timestamp'] < floor:
-                # not read, or older than what this client already knows of the edge (an edge's timestamps only
-                # increase): that is no read-back; my own confirmed state still counts once it is at or past T
-                state = conf if conf is not None and conf['timestamp'] >= a['timestamp'] else None
-            looked.append((a, attempt_outcome(a, self.now, state)))
-        for a, o in looked:
+            state = self.read_back(a, conf)
+            o = attempt_outcome(a, self.now, state)
+            if o == 'unknown' and self.proven_dead(a, state):
+                o = 'dead'
+            looked.append((a, o, state))
+        for a, o, _s in looked:
             if o == 'applied':
                 self.summary['paid_deals'][deal_id] = {'route': a['route'], 'edge': a['edge'], 'total': a['total'],
                                                        'timestamp': a['timestamp']}
@@ -593,10 +744,12 @@ class _Run:
         def same(a):
             return a['route'] == route and a['edge'] == edge and a['prior'] == prior
 
-        if any(o == 'unknown' or (o == 'alive' and not _expires(a) and not same(a)) for a, o in looked):
+        if any(o == 'unknown' or (o == 'alive' and same(a) and not exact_prior(a, s))
+               or (o == 'alive' and not _expires(a) and not same(a)) for a, o, s in looked):
             self.refuse('attempt_outcome_unknown', 'an earlier payment attempt for this deal may have applied (or may '
                                                    'still apply at any time); only your owner can resolve it, after '
                                                    'confirming with the payee')
+        looked = [(a, o) for a, o, _s in looked]
         blocking = [(a, o) for a, o in looked if o in ('alive', 'unread') and not same(a)]
         if blocking:
             waits = [a['timestamp'] + MAX_AGE_MS + FALLBACK_MARGIN_MS + 1 - self.now for a, o in blocking if o == 'alive']
@@ -630,8 +783,18 @@ class _Run:
         if cap is not None and (not _nat(cap) or amount > cap):
             self.refuse('policy_cap', f'{amount} PC is above the cap your local consent policy sets for one consent')
 
-    def issuer_accepted(self, p, m, issuer_pk, issuer_id):
-        names = {issuer_pk} | ({issuer_id} if issuer_id else set())
+    def issuer_accepted(self, p, m, issuer_pk, item_issuer_id):
+        """R8's issuer lists, local (participant ids or public keys) and the mandate's (participant ids), checked against
+        the issuer's key and the participant id this client resolved for that key itself (ctx issuer_ids, from the
+        directory), never an id the item names: an item naming another id than the directory's is refused, and so is
+        any list of ids when the client could not resolve the key."""
+        ids = self.ctx.get('issuer_ids')
+        resolved = ids.get(issuer_pk) if isinstance(ids, dict) else None
+        resolved = resolved if _text(resolved) else None
+        if item_issuer_id is not None and resolved is not None and item_issuer_id != resolved:
+            self.refuse('issuer_refused', 'the item names another participant as the issuer than the directory lists for '
+                                          "the issuer's key")
+        names = {issuer_pk} | ({resolved} if resolved else set())
         refused = p.get('refuse_issuers')
         accepted = p.get('accept_issuers')
         m_refused = m.get('refuse_notes_from')
@@ -639,18 +802,19 @@ class _Run:
         ok = True
         if refused is not None:
             s = _str_set(refused)
-            ok = ok and s is not None and not (s & names)
+            ok = ok and s is not None and not (s & names) and (resolved is not None or all(_is_pk(x) for x in s))
         if accepted is not None and accepted != 'any':
             s = _str_set(accepted)
             ok = ok and s is not None and bool(s & names)
         if m_refused is not None:
             s = _str_set(m_refused)
-            ok = ok and s is not None and issuer_id not in s
+            ok = ok and s is not None and (not s or (resolved is not None and resolved not in s))
         if m_accepted != 'any':
             s = _str_set(m_accepted)
-            ok = ok and s is not None and issuer_id is not None and issuer_id in s
+            ok = ok and s is not None and resolved is not None and resolved in s
         if not ok:
-            self.refuse('issuer_refused', 'your policy or your owner does not accept notes from this issuer')
+            self.refuse('issuer_refused', 'your policy or your owner does not accept notes from this issuer (as the '
+                                          'directory names it)')
 
     # ----- R12, R4 -----
     def no_pending_unbound(self, edges):
@@ -662,6 +826,26 @@ class _Run:
                         and p['timestamp'] > after:
                     self.refuse('pending_unbound_note', 'you hold an unapplied ordinary credit note on this edge; a '
                                                         'novation is signed only once it is settled either way')
+
+    def no_bound_note_restored(self, changes):
+        """R12 extended, the client side of decision D-2 c: never sign a novation that sets an edge of mine (as issuer)
+        to the acknowledged prior total of a bound note of mine on that edge that is later than the novation and can
+        still apply (within its maximum age, not known applied). That note could then apply after the novation: had an
+        earlier payment of its deal applied in between (a server can hide that), the deal would be paid twice.
+        `changes`: [(edge, new_total, timestamp)] of the novation's edges where I am the issuer."""
+        for edge, new_total, ts in changes:
+            for deal_id, b in self.edge_attempts(edge):
+                if b['route'] != 'note' or b['timestamp'] % 1000 != BOUND_MS or b['timestamp'] <= ts \
+                        or self.now > b['timestamp'] + MAX_AGE_MS + FALLBACK_MARGIN_MS or b.get('outcome') == 'applied':
+                    continue
+                paid = self.paid.get(deal_id)
+                if isinstance(paid, dict) and (paid.get('edge'), paid.get('total'), paid.get('timestamp')) \
+                        == (edge, b['total'], b['timestamp']):
+                    continue
+                if b['prior'] == new_total:
+                    self.refuse('payment_attempt', 'this would bring your edge back to the prior a bound credit note of '
+                                                   'yours acknowledged, which could then still apply; it is signed only '
+                                                   'once that note is past its maximum age')
 
     def no_reuse(self, op, slots):
         groups, order = {}, []
@@ -712,7 +896,7 @@ def _bound(run, tpl):
         run.bad('the template shows no prior note but a prior total above 0')
     if prior is not None and prior['total'] != P:
         run.bad("the template's prior note does not match its prior total")
-    s['deal_id'], s['timestamp'], s['amount'] = D, ts, price
+    s['deal_id'], s['timestamp'], s['amount'] = shown_id(D), ts, price
     run.not_paid_yet(D)
     run.pins(nft, denom)
     deal = run.deal()
@@ -720,8 +904,8 @@ def _bound(run, tpl):
     me_id = run.ctx.get('me_id')
     if D != deal['deal_id'] or tpl.get('terms_hash') not in (None, deal['terms_hash']) \
             or tpl.get('deliverable_sha256') not in (None, deal.get('deliverable_sha256')) \
-            or (me_id is not None and deal['payer']['id'] != me_id):
-        run.refuse('deal_mismatch', 'the template is not for the deal, terms and delivery you are paying')
+            or not _text(me_id) or deal['payer']['id'] != me_id:
+        run.refuse('deal_mismatch', 'the template is not for the deal, terms and delivery you are paying (as the payer)')
     if I != run.me:
         run.refuse('not_my_edge', 'the template is not for a credit note from your key')
     payee_now = run.ctx.get('payee_current_pk')
@@ -744,7 +928,9 @@ def _bound(run, tpl):
     slots = [(slot_key(edge, 'prior'), I, R, P, ts), (slot_key(edge, 'new'), I, R, total, ts)]
     signed = run.no_reuse(op, slots)
     return slots, {'op': op, 'signed': signed, 'pending': [_pending(edge, total, ts, 'note', D, 'out')],
-                   'attempt': _attempt(D, 'note', edge, P, 0 if prior is None else prior['timestamp'], total, ts, None)}
+                   'attempt': _attempt(D, 'note', edge, P, 0 if prior is None else prior['timestamp'],
+                                       None if prior is None else prior['signature'], total, ts, None),
+                   'attempts_seen': run.seen}
 
 
 # ---------- paying with a held note ----------
@@ -786,7 +972,7 @@ def _payer(run, v, consent):
     """The payer's rules, for a template it asked for and for a regenerated transfer it is shown as a consent."""
     s, me = run.summary, run.me
     D, A, C, a, T = v['deal_id'], v['A'], v['C'], v['amount'], v['T']
-    s['deal_id'], s['timestamp'], s['amount'] = D, T, a
+    s['deal_id'], s['timestamp'], s['amount'] = shown_id(D), T, a
     run.not_paid_yet(D)
     run.pins(v['nft'], v['denom'])
     deal = run.deal()
@@ -794,7 +980,7 @@ def _payer(run, v, consent):
     me_id = run.ctx.get('me_id')
     if D != deal['deal_id'] or v['terms_hash'] != deal['terms_hash'] or not _text(deal.get('deliverable_sha256')) \
             or (v['deliverable'] is not None and v['deliverable'] != deal['deliverable_sha256']) \
-            or (me_id is not None and deal['payer']['id'] != me_id) \
+            or not _text(me_id) or deal['payer']['id'] != me_id \
             or (v['B_id'] is not None and v['B_id'] != deal['payer']['id']):
         run.refuse('deal_mismatch', 'this payment is not for the deal, terms and delivery you accepted as payer')
     if v['B'] != me:
@@ -837,7 +1023,9 @@ def _payer(run, v, consent):
     if (consent and approved is None) or (approved is not None and approved != q):
         run.refuse('stale_quote', 'this payment is not the one your owner approved (the quote changed)')
     m = run.ctx.get('mandate')
-    if isinstance(m, dict) and m.get('pay_with_held_notes') == 'never':
+    if not isinstance(m, dict):
+        run.refuse('policy_off', "your owner's mandate could not be read, so nothing is paid with a held note")
+    if m.get('pay_with_held_notes') == 'never':
         run.refuse('policy_off', "your owner's mandate does not allow paying with held notes")
     op = 'pay:' + D
     slots = [(slot_key(held, 'prior'), A, me, X, T), (slot_key(held, 'new'), A, me, X - a, T),
@@ -845,7 +1033,8 @@ def _payer(run, v, consent):
     signed = run.no_reuse(op, slots)
     return ([x for x in slots if x[0] not in v['signed_by_you']],
             {'op': op, 'signed': signed, 'pending': [_pending(held, X - a, T, 'transfer', D, 'in')],
-             'attempt': _attempt(D, 'transfer', held, X, fb['timestamp'], X - a, T, q)})
+             'attempt': _attempt(D, 'transfer', held, X, fb['timestamp'], fb['signature'], X - a, T, q),
+             'attempts_seen': run.seen})
 
 
 # ---------- consents ----------
@@ -865,7 +1054,7 @@ def _consent(run, item):
     kind, iid, roles = item.get('kind'), item.get('id'), item.get('your_roles')
     if kind not in ('transfer', 'setoff') or not _text(iid):
         run.bad('a consent item is a transfer or a set-off with an id')
-    s['kind'], s['id'] = kind, iid
+    s['kind'], s['id'] = kind, shown_id(iid)
     if not (isinstance(roles, list) and len(roles) == 1 and roles[0] in ROLES):
         run.bad('a consent item gives exactly one role of yours')
     role = s['role'] = roles[0]
@@ -949,12 +1138,14 @@ def _member(run, item, edges, context):
     p, _m = run.policy('setoff', 'auto_clear')
     run.cap(p, as_creditor)
     run.no_pending_unbound([e['edge'] for e in edges if e['I'] == me])
+    run.no_bound_note_restored([(e['edge'], e['new'], e['ts']) for e in edges if e['I'] == me])
     op = 'setoff:' + item['id']
     slots = [(slot_key(e['edge'], 'new'), e['I'], e['R'], e['new'], e['ts']) for e in edges]
     signed = run.no_reuse(op, slots)
     done = {slot_key(e['edge'], x) for e in edges for x in e['done']}
     pending = [_pending(e['edge'], e['new'], e['ts'], 'setoff', item['id'], 'out' if e['I'] == me else 'in') for e in edges]
-    return [x for x in slots if x[0] not in done], {'op': op, 'signed': signed, 'pending': pending, 'attempt': None}
+    return [x for x in slots if x[0] not in done], {'op': op, 'signed': signed, 'pending': pending, 'attempt': None,
+                                                    'attempts_seen': []}
 
 
 def _issuer(run, item, edges, context):
@@ -992,12 +1183,14 @@ def _issuer(run, item, edges, context):
     p, _m = run.policy('as_issuer', 'novate_own_debt')
     run.cap(p, a)
     run.no_pending_unbound([fe['edge'], te['edge']])
+    run.no_bound_note_restored([(fe['edge'], fe['new'], T), (te['edge'], te['new'], T)])
     op = 'transfer:' + item['id']
     slots = [(slot_key(fe['edge'], 'new'), me, fe['R'], fe['new'], T), (slot_key(te['edge'], 'new'), me, te['R'], te['new'], T)]
     signed = run.no_reuse(op, slots)
     done = {slot_key(e['edge'], x) for e in (fe, te) for x in e['done']}
     pending = [_pending(e['edge'], e['new'], T, 'transfer', item['id'], 'out') for e in (fe, te)]
-    return [x for x in slots if x[0] not in done], {'op': op, 'signed': signed, 'pending': pending, 'attempt': None}
+    return [x for x in slots if x[0] not in done], {'op': op, 'signed': signed, 'pending': pending, 'attempt': None,
+                                                    'attempts_seen': []}
 
 
 def _payee(run, item, edges, context):
@@ -1014,7 +1207,7 @@ def _payee(run, item, edges, context):
     if e['I'] == me:
         run.refuse('self_edge', 'a transfer edge from your key to itself')
     deal = run.deal()
-    s['deal_id'] = deal['deal_id']
+    s['deal_id'] = shown_id(deal['deal_id'])
     run.same_tracker(deal)
     Y = _before_total(e)
     me_id = run.ctx.get('me_id')
@@ -1045,7 +1238,7 @@ def _payee(run, item, edges, context):
     done = {slot_key(e['edge'], x) for x in e['done']}
     return ([x for x in slots if x[0] not in done],
             {'op': op, 'signed': signed, 'pending': [_pending(e['edge'], e['new'], T, 'transfer', item['id'], 'in')],
-             'attempt': None})
+             'attempt': None, 'attempts_seen': []})
 
 
 def _payer_consent(run, item, edges, context):
@@ -1085,20 +1278,41 @@ def _sub(state, key):
 def apply_write_ahead(state, write_ahead, signed_at=None):
     """R9: record in the client's state (in place) what an evaluation is about to sign, before anything is sent:
     state['signed'] (R4), the pending entries in state['records'] (records.add_pending) and the payment attempt in
-    state['transfer_attempts'][deal_id] (D-1). Run it inside the store's update(). Idempotent."""
+    state['transfer_attempts'][deal_id] (D-1). Run it inside the store's update(), on the state the evaluation read
+    (evaluate and write ahead in one locked step). Idempotent.
+    It checks first, and writes nothing when the state changed since the evaluation (a concurrent process): another
+    operation already recorded at one of its (edge, timestamp) (WriteAheadConflict timestamp_reused, R4), the deal
+    recorded as paid (already_paid), or a payment attempt of the deal that the evaluation did not weigh
+    (write_ahead['attempts_seen']; transfer_window_open, D-1: so a second attempt is never added on a stale snapshot).
+    ValueError (records_unreadable) for a record that is not of its shape."""
     signed, recs, attempts = _sub(state, 'signed'), _sub(state, 'records'), _sub(state, 'transfer_attempts')
     for g in write_ahead['signed']:
-        per = signed.setdefault(g['edge'], {})
-        if not isinstance(per, dict):
+        per = signed.get(g['edge'])
+        if per is not None and not isinstance(per, dict):
             raise ValueError("records_unreadable: state['signed'] holds an edge that is not a JSON object")
-        per[str(g['timestamp'])] = {'op': g['op'], 'slots': dict(g['slots'])}
-    for p in write_ahead['pending']:
-        _records.add_pending(recs, p['pair'], p['total'], p['timestamp'], p['kind'], p['ref'], p['direction'], signed_at)
+        have = per.get(str(g['timestamp'])) if per else None
+        if have is not None and (not isinstance(have, dict) or have.get('op') != g['op'] or have.get('slots') != g['slots']):
+            raise WriteAheadConflict('timestamp_reused', 'another operation is already recorded at this edge and '
+                                                         'timestamp; nothing was signed')
     a = write_ahead.get('attempt')
     if a:
-        lst = attempts.setdefault(a['deal_id'], [])
-        if not isinstance(lst, list):
+        lst = attempts.get(a['deal_id'])
+        if lst is not None and not isinstance(lst, list):
             raise ValueError("records_unreadable: state['transfer_attempts'] holds a deal that is not a list")
+        paid = recs.get(PAID_DEALS_KEY)
+        if isinstance(paid, dict) and a['deal_id'] in paid:
+            raise WriteAheadConflict('already_paid', 'this deal is recorded as paid; nothing was signed')
+        mine = (a['route'], a['edge'], a['total'], a['timestamp'])
+        seen = {tuple(x) for x in write_ahead.get('attempts_seen') or [] if isinstance(x, (list, tuple))}
+        if any(k != mine and k not in seen for k in _attempt_keys(state, a['deal_id'])):
+            raise WriteAheadConflict('transfer_window_open', 'another payment attempt of this deal was recorded '
+                                                             'meanwhile; evaluate it again; nothing was signed')
+    for g in write_ahead['signed']:
+        signed.setdefault(g['edge'], {})[str(g['timestamp'])] = {'op': g['op'], 'slots': dict(g['slots'])}
+    for p in write_ahead['pending']:
+        _records.add_pending(recs, p['pair'], p['total'], p['timestamp'], p['kind'], p['ref'], p['direction'], signed_at)
+    if a:
+        lst = attempts.setdefault(a['deal_id'], [])
         keys = ('route', 'edge', 'prior', 'total', 'timestamp')
         if not any(isinstance(x, dict) and all(x.get(k) == a[k] for k in keys) for x in lst):
             lst.append(dict(a, signed_at=signed_at))
@@ -1156,7 +1370,7 @@ def check_payment(deal_id, price, route, edge, prior, ctx):
     summary} with the codes and summary fields of the evaluators."""
     def go(run, _item):
         s = run.summary
-        s['role'], s['kind'], s['deal_id'] = 'payer', route, deal_id
+        s['role'], s['kind'], s['deal_id'] = 'payer', route, shown_id(deal_id)
         run.load()
         if not (_text(deal_id) and _nat(price) and price > 0 and route in ROUTES and parse_edge(edge) is not None
                 and _nat(prior)):
