@@ -1,6 +1,8 @@
 """Client.complete() against a fake Valun server and tracker (offline, real signatures): what is recorded (pending vs
 confirmed), when the prior note is accepted, the reserved-residue refusal, the payee's delivery signature, the
-tracker pins, and that a profile not pinned yet is served exactly as by 0.3 (no /info read, no ?prior=1)."""
+tracker pins, and that a profile not pinned yet is served exactly as by 0.3 (no /info read, no ?prior=1). A server
+that lists bound_notes/1 serves bound templates (?prior=1&bound=1, timestamps ending in 997 ms) and checks bound
+notes as v16 does (PROTOCOL.md 18.5); test_client_circulation.py has the bound-note signing in detail."""
 import hashlib
 import json
 import os
@@ -118,6 +120,7 @@ class World:
         self._apply(deal_id, note)
 
     def _apply(self, deal_id, note):
+        note = {'total': note['total'], 'timestamp': note['timestamp'], 'signature': note['signature']}   # the EdgeState
         self.tracker[self.pair] = dict(note)
         self.deals[deal_id]['status'] = 'note_issued'
         self.deals[deal_id]['credit_note'] = {'state': 'recorded', 'note': dict(note), 'tracker_note': {
@@ -137,26 +140,37 @@ class World:
             if method == 'GET' and len(parts) == 5:
                 return json.loads(json.dumps(self.deals[did]))
             if method == 'GET' and parts[5:] == ['credit-note-template']:
-                return self.template(did, prior='?prior=1' in path)
+                query = path.partition('?')[2].split('&')
+                return self.template(did, prior='prior=1' in query, bound='bound=1' in query)
             if method == 'POST' and parts[5:] == ['complete']:
                 return self.complete(did, body)
         raise vc.ValunError('not_found', f'no route {method} {path}', 404)
 
-    def template(self, did, prior=False):
+    def template(self, did, prior=False, bound=False):
         d = self.deals[did]
         cur = self.tracker.get(self.pair)
         price = d['current']['terms']['price']['amount']
         last = cur['timestamp'] if cur else 0
-        ts = self.template_ts if self.template_ts is not None else max(int(time.time() * 1000) - 1500, last + 1)
-        if self.features and self.template_ts is None and ts % 1000 >= 995:
-            ts += 1000 - ts % 1000                 # what the v16 server does for ordinary notes
+        now = int(time.time() * 1000)
+        if self.template_ts is not None:
+            ts = self.template_ts
+        elif bound:                                # v16 ?bound=1: the largest ts ending in 997 ms, <= now - 1500, > last
+            ts = (now - 1500) - (now - 1500 - 997) % 1000
+            if ts <= last:
+                ts = last + 1 + (997 - (last + 1)) % 1000      # the next one (the server waits up to 3 s for it)
+        else:
+            ts = max(now - 1500, last + 1)
+            if self.features and ts % 1000 >= 995:
+                ts += 1000 - ts % 1000             # what the v16 server does for ordinary notes
         prior_total = cur['total'] if cur else 0
         tpl = {'deal_id': did, 'terms_hash': d['agreement']['terms_hash'], 'deliverable_sha256': d['delivery']['sha256'],
                'issuer_pubkey': ALICE['pubkey'], 'recipient_pubkey': self.payee_key['pubkey'], 'keys_as_agreed': True,
                'prior_total': prior_total, 'price': price, 'total': prior_total + price, 'timestamp': ts,
                'tracker_nft_id': self.nft, 'denomination': DENOM, 'message_hex': '00'}
-        if prior:
+        if prior or bound:
             tpl['prior_note'] = dict(cur) if cur else None
+        if bound:
+            tpl['prior_message_hex'] = '00'
         return tpl
 
     def complete(self, did, body):
@@ -166,6 +180,14 @@ class World:
         note = body['credit_note']
         if not vc.verify_note(ALICE['pubkey'], self.payee_key['pubkey'], note['total'], note['timestamp'], note['signature'], self.nft, DENOM):
             raise vc.ValunError('bad_signature', 'the Basis note signature does not verify', 403)
+        if self.features and note['timestamp'] % 1000 == 997:     # a bound note (v16, PROTOCOL.md 18.5)
+            cur = self.tracker.get(self.pair)
+            prior = cur['total'] if cur else 0
+            if note.get('prior_total') != prior:
+                raise vc.ValunError('stale_note', "a bound credit note's prior_total must be the pair's current total", 409)
+            if not vc.verify_note(ALICE['pubkey'], self.payee_key['pubkey'], prior, note['timestamp'], note.get('prior_signature'),
+                                  self.nft, DENOM):
+                raise vc.ValunError('bad_signature', 'the prior acknowledgment does not verify', 403)
         if self.complete_answer:
             self.deals[did]['status'] = self.complete_answer[1]
             return {'id': did, 'status': self.complete_answer[1]}
@@ -372,7 +394,7 @@ class PriorNote(unittest.TestCase):
     def test_pinned_profile_asks_for_the_prior_note(self):
         self.run_complete()
         self.assertIn('GET /pilot/v1/info', self.w.log)
-        self.assertIn('GET /pilot/v1/deals/vd_1/credit-note-template?prior=1', self.w.log)
+        self.assertIn('GET /pilot/v1/deals/vd_1/credit-note-template?prior=1&bound=1', self.w.log)   # a bound template (0.4)
 
     def test_a_lower_prior_i_signed_is_accepted_over_my_old_record(self):
         # My record says 50 (confirmed long ago); a set-off since lowered the edge to 30, signed by me as issuer.
@@ -440,13 +462,21 @@ class PriorNote(unittest.TestCase):
         self.assertEqual(e.exception.code, 'bad_template')
 
     def test_reserved_residue_refused_when_features_are_advertised(self):
-        for residue in (995, 997, 999):
-            w, s = World(features=['bound_notes/1']), pinned_store()
+        for residue in (995, 997, 999):            # an ordinary template (features advertised, but not bound_notes/1)
+            w, s = World(features=['example/1']), pinned_store()
             w.add_deal('vd_1')
             w.template_ts = self.now // 1000 * 1000 - 2000 + residue
             with self.assertRaises(vc.ValunError) as e:
                 WorldClient(w, s).complete('vd_1')
             self.assertEqual(e.exception.code, 'bad_template', residue)
+            self.assertNotIn('POST /pilot/v1/deals/vd_1/complete', w.log)
+        for residue in (0, 994, 995, 996, 998, 999):     # with bound_notes/1 only a bound template is signed (R3, R12)
+            w, s = World(features=['bound_notes/1']), pinned_store()
+            w.add_deal('vd_1')
+            w.template_ts = self.now // 1000 * 1000 - 2000 + residue
+            with self.assertRaises(vc.ValunError) as e:
+                WorldClient(w, s).complete('vd_1')
+            self.assertEqual(e.exception.code, 'bound_note_required', residue)
             self.assertNotIn('POST /pilot/v1/deals/vd_1/complete', w.log)
         w, s = World(features=[]), pinned_store()             # no features: the 0.3 rules
         w.add_deal('vd_1')

@@ -1,0 +1,1163 @@
+"""Client circulation methods against a fake Valun v16 server and tracker (offline, real signatures, throwaway keys):
+bound complete() with its prior acknowledgment, pay_by_transfer() (body shape, signatures, the one stale retry,
+stale_claim and stale_quote, the issuer resolution), cancel_transfer(), the D-1 fallback rule (R11 extended to own
+notes; attempt_outcome_unknown; records['paid_deals']), process_consents() and its report, sync_edges() and the 7-day
+pruning, the capability header, and that what is signed is saved before the HTTP POST is attempted (R9)."""
+import copy
+import hashlib
+import json
+import os
+import sys
+import tempfile
+import types
+import unittest
+import urllib.parse
+from unittest import mock
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
+from valun import basis as vb  # noqa: E402
+from valun import client as vc  # noqa: E402
+from valun import novation as nv  # noqa: E402
+from valun import records  # noqa: E402
+
+NFT = '6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa'
+DENOM = 'token:' + hashlib.sha256(b'valun-pilot-credit/1').hexdigest()
+PINS = {'tracker_nft_id': NFT, 'denomination': DENOM}
+SERVER = 'http://valun.invalid'
+NOW = 1_793_966_460_123
+DEAL, DEAL2, TID, SID = 'vd_0123456789abcdef', 'vd_1123456789abcdef', 'vt_0123456789abcdef', 'vs_0123456789abcdef'
+DAY = 24 * 3600 * 1000
+LATER = nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 60_000        # past an attempt's fallback window
+
+
+def key(label):
+    """Throwaway test key: secret = (sha256(label) mod (n - 1)) + 1, as in the spec vectors."""
+    s = (int(hashlib.sha256(label.encode()).hexdigest(), 16) % (vb.N - 1)) + 1
+    secret = s.to_bytes(32, 'big')
+    return {'secret': secret, 'pubkey': vb.public_key(secret).hex()}
+
+
+# A issues the note B (this client, by default) holds; C is the payee; E someone else; F an impostor whose handle is A's id.
+A_ID, B_ID, C_ID, E_ID, F_ID = 'vp_a0a0a0a0a0a0', 'vp_b0b0b0b0b0b0', 'vp_c0c0c0c0c0c0', 'vp_e0e0e0e0e0e0', 'vp_f0f0f0f0f0f0'
+A, B, C, E, F = (key(f'test/circulation/{n}') for n in ('issuer', 'payer', 'payee', 'other', 'impostor'))
+KEYS = {A_ID: A, B_ID: B, C_ID: C, E_ID: E, F_ID: F}
+HANDLES = {A_ID: 'issuer-a', B_ID: 'payer-b', C_ID: 'payee-c', E_ID: 'other-e', F_ID: A_ID}
+AB, AC, BC, EA = (f"{i['pubkey']}>{r['pubkey']}" for i, r in ((A, B), (A, C), (B, C), (E, A)))
+TS_AB, TS_AC, TS_BC, TS_EA = NOW - 900_000, NOW - 800_000 + 1, NOW - 700_000 + 2, NOW - 650_000 + 3     # ordinary residues
+
+
+def res(t, r):
+    """The largest timestamp <= t that ends in r ms."""
+    return t - ((t - r) % 1000)
+
+
+def next_ts(now, r, after):
+    """How v16 picks a novation or bound-note timestamp: the largest one ending in r ms, at most now - 1500 and later
+    than `after` (the next one when there is none yet: the server waits up to 3 s for it)."""
+    t = res(now - 1500, r)
+    return t if t > after else after + 1 + (r - (after + 1)) % 1000
+
+
+def sign_text(k, text):
+    return vb.sign(text.encode('utf-8'), k['secret'], bytes.fromhex(k['pubkey'])).hex()
+
+
+def msg(issuer, recipient, total, ts):
+    return vb.note_message(bytes.fromhex(issuer), bytes.fromhex(recipient), total, ts, bytes.fromhex(NFT), DENOM)
+
+
+def signed_by(k, data, sig):
+    return isinstance(sig, str) and vb.verify(bytes.fromhex(sig), data, bytes.fromhex(k['pubkey']))
+
+
+def st(issuer, recipient, total, ts, signer=None):
+    """An EdgeState: the issuer's (or `signer`'s, to make a bad one) signature over M(issuer, recipient, total, ts)."""
+    s = signer or issuer
+    return {'total': total, 'timestamp': ts,
+            'signature': vb.sign(msg(issuer['pubkey'], recipient['pubkey'], total, ts), s['secret'], bytes.fromhex(s['pubkey'])).hex()}
+
+
+def make_deal(deal_id=DEAL, price=3, payer=B_ID, payee=C_ID, content='# Brief\n\nThree sources.\n', status='delivered'):
+    pk, ek = KEYS[payer], KEYS[payee]
+    t = {'protocol': vc.PROTOCOL, 'network': vc.NETWORK, 'tracker_nft_id': NFT, 'denomination': DENOM, 'deal_id': deal_id,
+         'version': 1, 'prior_terms_hash': None, 'nonce': 'ab' * 16, 'proposer': payer,
+         'payer': {'id': payer, 'pubkey': pk['pubkey']}, 'payee': {'id': payee, 'pubkey': ek['pubkey']},
+         'service': {'title': 'Short research brief', 'description': 'Three sources.', 'deliverable': 'markdown'},
+         'price': {'amount': price, 'unit': 'PC'}, 'consideration': 'credit_note_on_delivery_accepted',
+         'deliver_by': '2099-01-02T00:00:00.000Z', 'offer_expires_at': '2099-01-01T00:00:00.000Z'}
+    h, dh = vc.terms_hash(t), vc.sha256_hex(content)
+    return {'id': deal_id, 'status': status, 'your_role': 'payer', 'counterparty': {'id': payee, 'handle': HANDLES[payee]},
+            'current': {'version': 1, 'by': payer, 'state': 'accepted', 'terms': t, 'terms_hash': h,
+                        'signature': sign_text(pk, vc.statement('propose', h))},
+            'agreement': {'version': 1, 'terms_hash': h, 'proposer_signature': sign_text(pk, vc.statement('propose', h)),
+                          'acceptor_signature': sign_text(ek, vc.statement('accept', h))},
+            'delivery': {'by': payee, 'title': 'Brief', 'content': content, 'sha256': dh, 'bytes': len(content.encode()),
+                         'signature': sign_text(ek, vc.statement('deliver', h, dh))},
+            'credit_note': None, 'payment': None}
+
+
+class Clock:
+    def __init__(self, now=NOW):
+        self.now = now
+
+    def time(self):
+        return self.now / 1000
+
+
+class Net:
+    """A fake Valun v16 server (circulation on) with its tracker: just enough of /pilot/v1 for the circulation methods.
+    A and C are server-run here: in transfer_mode 'apply' they sign at once and the transfer applies in the request."""
+
+    def __init__(self, clock, features=('bound_notes/1', 'circulation/1'), me_id=B_ID):
+        self.clock, self.me_id = clock, me_id
+        self.features = None if features is None else list(features)
+        self.tracker, self.journal, self.seq, self.bound_only = {}, [], 0, set()
+        self.deals, self.log, self.hooks = {}, [], []
+        self.mandate = {'pay_with_held_notes': 'when_asked', 'auto_clear': True, 'novate_own_debt': True,
+                        'accept_transfers': True, 'may_accept_credit': True, 'accept_notes_from': [A_ID],
+                        'refuse_notes_from': [], 'max_accept_per_issuer': 50}
+        self.option_issuers = [A_ID]
+        self.transfer_mode = 'apply'            # 'apply', 'collect' (A and C do not sign yet) or 'review' (B's owner)
+        self.review = False                     # complete(): hold the note for the owner
+        self.force = []                         # [(code, fn)]: answer the next POST pay-by-transfer with 409 code after fn()
+        self.pay_posts, self.consent_items, self.consent_posts, self.refusals = [], [], [], []
+        self.consent_state, self.page = {}, 200
+
+    # ---------- setup ----------
+    def pk(self, pid):
+        return KEYS[pid]['pubkey']
+
+    def set_edge(self, issuer, recipient, total, ts, signer=None, kind=None, ref=None):
+        edge = f"{issuer['pubkey']}>{recipient['pubkey']}"
+        before = self.tracker.get(edge, {'total': 0})['total']
+        s = self.tracker[edge] = st(issuer, recipient, total, ts, signer)
+        if kind:                                     # with an edge-journal entry (GET /edges journal)
+            self.seq += 1
+            self.journal.append({'seq': self.seq, 'at': '2026-11-08T12:00:00.000Z', 'kind': kind, 'ref': ref, 'edge': edge,
+                                 'issuer_pubkey': issuer['pubkey'], 'recipient_pubkey': recipient['pubkey'],
+                                 'delta': total - before, 'total_after': total, 'timestamp': ts, 'signature': s['signature']})
+        return s
+
+    def add_deal(self, deal_id=DEAL, **kw):
+        self.deals[deal_id] = make_deal(deal_id, **kw)
+        return self.deals[deal_id]
+
+    # ---------- the HTTP surface ----------
+    def handle(self, method, path, body=None):
+        self.log.append((method, path, copy.deepcopy(body)))
+        for hook in list(self.hooks):
+            hook(method, path, body)
+        route, _, query = path.partition('?')
+        q = dict(urllib.parse.parse_qsl(query))
+        parts = [urllib.parse.unquote(x) for x in route.split('/')[3:]]
+        if method == 'GET' and parts == ['info']:
+            out = {'network': vc.NETWORK, 'protocol': vc.PROTOCOL, 'unit': 'PC', 'tracker_nft_id': NFT, 'denomination': DENOM}
+            if self.features is not None:
+                out['features'] = list(self.features)
+            return out
+        if method == 'GET' and len(parts) == 2 and parts[0] == 'participants' and parts[1] in KEYS:
+            return {'id': parts[1], 'handle': HANDLES[parts[1]], 'status': 'active', 'pubkey': self.pk(parts[1])}
+        if method == 'GET' and parts == ['me']:
+            return {'role': 'agent', 'participant': {'id': self.me_id}, 'mandate': dict(self.mandate),
+                    'effective_limits': dict(self.mandate)}
+        if len(parts) >= 2 and parts[0] == 'deals' and parts[1] in self.deals:
+            did, rest = parts[1], parts[2:]
+            if method == 'GET' and not rest:
+                return copy.deepcopy(self.deals[did])
+            if method == 'GET' and rest == ['credit-note-template']:
+                return self.note_template(did, bound=q.get('bound') == '1')
+            if method == 'POST' and rest == ['complete']:
+                return self.complete(did, body)
+            if method == 'GET' and rest == ['payment-options']:
+                return self.payment_options(did)
+            if method == 'GET' and rest == ['transfer-template']:
+                return self.transfer_template(did, q.get('issuer'))
+            if method == 'POST' and rest == ['pay-by-transfer']:
+                return self.pay(did, body)
+            if method == 'POST' and rest == ['cancel-transfer']:
+                self.deals[did]['status'] = 'payment_due'
+                return copy.deepcopy(self.deals[did])
+            if method == 'POST' and rest == ['counter']:
+                return {'id': did, 'status': 'open'}
+        if parts == ['consents'] and method == 'GET':
+            return {'consents': copy.deepcopy(self.consent_items), 'recently_resolved': []}
+        if len(parts) == 2 and parts[0] == 'consents' and method == 'POST':
+            return self.consent(parts[1], body)
+        if len(parts) == 3 and parts[0] == 'consents' and parts[2] == 'refuse' and method == 'POST':
+            self.refusals.append((parts[1], body))
+            return {'id': parts[1], 'state': 'refused'}
+        if parts == ['edges'] and method == 'GET' and self.features:
+            return self.edges(int(q.get('since', '0')))
+        raise vc.ValunError('not_found', f'no route {method} {path}', 404)
+
+    def parties(self, did):
+        t = self.deals[did]['current']['terms']
+        return t, self.pk(t['payer']['id']), self.pk(t['payee']['id'])
+
+    def note_template(self, did, bound):
+        d = self.deals[did]
+        t, I, R = self.parties(did)
+        cur = self.tracker.get(f'{I}>{R}')
+        last = cur['timestamp'] if cur else 0
+        if bound:
+            ts = next_ts(self.clock.now, 997, last)
+        else:
+            ts = max(self.clock.now - 1500, last + 1)
+            if self.features and ts % 1000 >= 995:
+                ts += 1000 - ts % 1000
+        P, price = (cur['total'] if cur else 0), t['price']['amount']
+        tpl = {'deal_id': did, 'terms_hash': d['agreement']['terms_hash'], 'deliverable_sha256': d['delivery']['sha256'],
+               'issuer_pubkey': I, 'recipient_pubkey': R, 'keys_as_agreed': True, 'prior_total': P, 'price': price,
+               'total': P + price, 'timestamp': ts, 'tracker_nft_id': NFT, 'denomination': DENOM, 'message_hex': '00'}
+        if bound:
+            tpl.update(prior_note=dict(cur) if cur else None, prior_message_hex='00')
+        return tpl
+
+    def complete(self, did, body):
+        d = self.deals[did]
+        t, I, R = self.parties(did)
+        h, dh = d['agreement']['terms_hash'], d['delivery']['sha256']
+        payer = KEYS[t['payer']['id']]
+        if not signed_by(payer, vc.statement('complete', h, dh).encode(), body['signature']):
+            raise vc.ValunError('bad_signature', 'the completion statement does not verify', 403)
+        n, edge = body['credit_note'], f'{I}>{R}'
+        cur = self.tracker.get(edge)
+        P = cur['total'] if cur else 0
+        if n['total'] != P + t['price']['amount']:
+            raise vc.ValunError('stale_note', 'the credit note total is not the prior plus the price', 409)
+        if not signed_by(payer, msg(I, R, n['total'], n['timestamp']), n['signature']):
+            raise vc.ValunError('bad_signature', 'the Basis note signature does not verify', 403)
+        if n['timestamp'] % 1000 == 997:
+            if n.get('prior_total') != P:
+                raise vc.ValunError('stale_note', "a bound note's prior_total must be the pair's current total", 409)
+            if not signed_by(payer, msg(I, R, P, n['timestamp']), n.get('prior_signature')):
+                raise vc.ValunError('bad_signature', 'the prior acknowledgment does not verify', 403)
+        if self.review:
+            d['status'] = 'completion_awaiting_owner'
+            return copy.deepcopy(d)
+        self.tracker[edge] = {'total': n['total'], 'timestamp': n['timestamp'], 'signature': n['signature']}
+        self.seq += 1
+        self.journal.append(dict(seq=self.seq, at='2026-11-08T12:00:00.000Z', kind='issue', ref=did, edge=edge, issuer_pubkey=I,
+                                 recipient_pubkey=R, delta=n['total'] - P, total_after=n['total'], timestamp=n['timestamp'],
+                                 signature=n['signature']))
+        d['status'] = 'note_issued'
+        d['credit_note'] = {'state': 'recorded', 'note': {'total': n['total'], 'timestamp': n['timestamp'], 'signature': n['signature']},
+                            'tracker_note': {'amount_collected': n['total'], 'amount_redeemed': 0, 'timestamp': n['timestamp'],
+                                             'signature': n['signature'], 'confirmation': 'local_only'}}
+        return copy.deepcopy(d)
+
+    def payment_options(self, did):
+        t, Bk, _C = self.parties(did)
+        held = []
+        for iid in self.option_issuers:
+            cur = self.tracker.get(f'{self.pk(iid)}>{Bk}')
+            total = cur['total'] if cur else 0
+            held.append({'issuer': {'id': iid, 'handle': HANDLES[iid], 'pubkey': self.pk(iid), 'operator_run': True},
+                         'held': total, 'reserved': 0, 'spendable': total, 'enough': total >= t['price']['amount'],
+                         'payee_accepts': True, 'issuer_consents': 'immediate', 'payee_consents': 'immediate', 'why_not': None})
+        return {'deal_id': did, 'price': t['price']['amount'], 'payee': {'id': t['payee']['id']},
+                'own_note': {'available': True, 'why_not': None}, 'held_notes': held, 'pending_transfer': None, 'fallback_after': None}
+
+    def transfer_template(self, did, issuer_id):
+        if issuer_id not in KEYS:
+            raise vc.ValunError('not_found', 'no such participant', 404)
+        d = self.deals[did]
+        t, Bk, Ck = self.parties(did)
+        Ak = self.pk(issuer_id)
+        fb, tb = self.tracker.get(f'{Ak}>{Bk}'), self.tracker.get(f'{Ak}>{Ck}')
+        if fb is None:
+            raise vc.ValunError('insufficient_claim', 'you hold no note of this issuer', 409)
+        a = t['price']['amount']
+        T = next_ts(self.clock.now, 999, max(fb['timestamp'], tb['timestamp'] if tb else 0))
+        h, dh = d['agreement']['terms_hash'], d['delivery']['sha256']
+        q = nv.quote_digest({'network': vc.NETWORK, 'tracker_nft_id': NFT, 'denomination': DENOM, 'deal_id': did, 'terms_hash': h,
+                             'deliverable_sha256': dh, 'issuer_pubkey': Ak, 'payer_pubkey': Bk, 'payee_pubkey': Ck, 'amount': a})
+
+        def who(pid, pk):
+            return {'id': pid, 'handle': HANDLES[pid], 'pubkey': pk}
+        return {'deal_id': did, 'terms_hash': h, 'deliverable_sha256': dh, 'issuer': who(issuer_id, Ak),
+                'payer': who(t['payer']['id'], Bk), 'payee': who(t['payee']['id'], Ck), 'amount': a, 'timestamp': T,
+                'from_edge': {'before': dict(fb), 'new_total': fb['total'] - a},
+                'to_edge': {'before': dict(tb) if tb else None, 'new_total': (tb['total'] if tb else 0) + a},
+                'tracker_nft_id': NFT, 'denomination': DENOM, 'quote_digest': q, 'collect_until': '2026-11-08T12:20:00.000Z',
+                'messages': {f'{Ak}>{Bk}:prior': '00' * 80, f'{Ak}>{Bk}:new': '00' * 80, f'{Ak}>{Ck}:new': '00' * 80}}
+
+    def pay(self, did, body):
+        self.pay_posts.append(copy.deepcopy(body))
+        if self.force:
+            code, fn = self.force.pop(0)
+            if fn:
+                fn()
+            raise vc.ValunError(code, f'forced {code}', 409, {'template': self.transfer_template(did, body['issuer_id'])})
+        d = self.deals[did]
+        t, Bk, Ck = self.parties(did)
+        Ak, a, T = self.pk(body['issuer_id']), t['price']['amount'], body['timestamp']
+        fb, tb = self.tracker[f'{Ak}>{Bk}'], self.tracker.get(f'{Ak}>{Ck}')
+        X, Y = fb['total'], tb['total'] if tb else 0
+        if (body['from_prior_total'], body['to_prior_total']) != (X, Y):
+            raise vc.ValunError('transfer_stale', 'an edge moved', 409, {'template': self.transfer_template(did, body['issuer_id'])})
+        h, dh, payer = d['agreement']['terms_hash'], d['delivery']['sha256'], KEYS[t['payer']['id']]
+        q = self.transfer_template(did, body['issuer_id'])['quote_digest']
+        ok = (body['quote_digest'] == q and signed_by(payer, vc.statement('complete', h, dh).encode(), body['completion_signature'])
+              and signed_by(payer, nv.pay_statement(did, q).encode(), body['pay_signature'])
+              and set(body['signatures']) == {f'{Ak}>{Bk}:prior', f'{Ak}>{Bk}:new', f'{Ak}>{Ck}:new'}
+              and signed_by(payer, msg(Ak, Bk, X, T), body['signatures'][f'{Ak}>{Bk}:prior'])
+              and signed_by(payer, msg(Ak, Bk, X - a, T), body['signatures'][f'{Ak}>{Bk}:new'])
+              and signed_by(payer, msg(Ak, Ck, Y + a, T), body['signatures'][f'{Ak}>{Ck}:new']))
+        if not ok:
+            raise vc.ValunError('bad_signature', 'a signature of the payment does not verify', 403)
+        d['payment'] = {'method': 'transfer', 'transfer_id': TID}
+        if self.transfer_mode == 'apply':
+            issuer = KEYS[body['issuer_id']]
+            self.set_edge(issuer, KEYS[t['payer']['id']], X - a, T, kind='transfer_out', ref=TID)
+            self.set_edge(issuer, KEYS[t['payee']['id']], Y + a, T, kind='transfer_in', ref=TID)
+            self.bound_only |= {f'{Ak}>{Bk}', f'{Ak}>{Ck}'}
+            d['status'] = 'paid_by_transfer'
+        else:
+            d['status'] = 'completion_awaiting_owner' if self.transfer_mode == 'review' else 'paying_by_transfer'
+        return copy.deepcopy(d)
+
+    def consent(self, cid, body):
+        item = next((i for i in self.consent_items if i['id'] == cid), None)
+        if item is None:
+            raise vc.ValunError('not_found', 'no such consent', 404)
+        me = KEYS[self.me_id]
+        edges = {e['edge']: e for e in item['edges']}
+        for slot, sig in body['signatures'].items():
+            edge, _, which = slot.rpartition(':')
+            e = edges[edge]
+            total = (e['before']['total'] if e['before'] else 0) if which == 'prior' else e['new_total']
+            i, r = edge.split('>')
+            if not signed_by(me, msg(i, r, total, e['timestamp']), sig):
+                raise vc.ValunError('bad_signature', f'{slot} does not verify', 403)
+        self.consent_posts.append((cid, copy.deepcopy(body)))
+        return dict(copy.deepcopy(item), state=self.consent_state.get(cid, 'collecting'), rejected=[])
+
+    def edges(self, since):
+        me = self.pk(self.me_id)
+
+        def who(pk):
+            pid = next((p for p, k in KEYS.items() if k['pubkey'] == pk), None)
+            return {'id': pid, 'handle': HANDLES.get(pid)}
+
+        rows = []
+        for edge, s in self.tracker.items():
+            i, r = edge.split('>')
+            if me in (i, r):
+                rows.append(dict(s, edge=edge, issuer=who(i), recipient=who(r), issuer_pubkey=i, recipient_pubkey=r,
+                                 exact=True, bound_only=edge in self.bound_only, reserved=0, frozen=False))
+        entries = [e for e in self.journal if e['seq'] > since and me in (e['issuer_pubkey'], e['recipient_pubkey'])]
+        page = entries[:self.page]
+        return {'incoming': [x for x in rows if x['recipient_pubkey'] == me], 'outgoing': [x for x in rows if x['issuer_pubkey'] == me],
+                'journal': copy.deepcopy(page), 'next_seq': page[-1]['seq'] if len(entries) > self.page else self.seq}
+
+    # ---------- what the client asked ----------
+    def requests(self, method=None):
+        return [f'{m} {p}' for m, p, _b in self.log if method is None or m == method]
+
+
+class MemStore:
+    """A store without update(): the client applies changes and calls save()."""
+
+    def __init__(self, state, secret, token='vpa_test-only'):
+        self.state, self._s, self._t = state, secret, token
+
+    def secret(self):
+        return self._s
+
+    def token(self):
+        return self._t
+
+    def save(self):
+        pass
+
+    def save_credentials(self, secret_hex, token):
+        self._s, self._t = secret_hex, token
+
+
+def profile(me_id=B_ID, **extra):
+    k = KEYS[me_id]
+    state = {'server': SERVER, 'participant_id': me_id, 'pubkey': k['pubkey'], 'issued': {}, 'pins': dict(PINS)}
+    state.update(extra)
+    return MemStore(state, k['secret'].hex())
+
+
+class NetClient(vc.Client):
+    def __init__(self, net, store):
+        super().__init__(store, server=SERVER)
+        self.net = net
+
+    def request(self, method, path, body=None, auth=True, token=None):
+        return self.net.handle(method, path, json.loads(json.dumps(body)) if body is not None else None)
+
+
+class Base(unittest.TestCase):
+    def setUp(self):
+        self.clock = Clock()
+        p = mock.patch.object(vc, 'time', types.SimpleNamespace(time=self.clock.time))
+        p.start()
+        self.addCleanup(p.stop)
+        self.net = Net(self.clock)
+        self.net.add_deal()
+        self.net.set_edge(A, B, 10, TS_AB)           # B holds 10 PC of A's notes
+        self.net.set_edge(A, C, 4, TS_AC)            # C holds 4
+        self.net.set_edge(B, C, 6, TS_BC)            # B owes C 6
+
+    def client(self, store=None):
+        self.store = store or profile()
+        return NetClient(self.net, self.store)
+
+
+def att(state, deal_id=DEAL):
+    return (state.get('transfer_attempts') or {}).get(deal_id) or []
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+class BoundComplete(Base):
+    def test_the_note_and_its_prior_acknowledgment_are_signed_and_sent(self):
+        c = self.client()
+        r = c.complete(DEAL)
+        self.assertEqual(r['status'], 'note_issued')
+        self.assertIn(f'GET /pilot/v1/deals/{DEAL}/credit-note-template?prior=1&bound=1', self.net.requests())
+        (_m, _p, body), = [x for x in self.net.log if x[0] == 'POST']
+        n = body['credit_note']
+        self.assertEqual(set(n), {'total', 'timestamp', 'signature', 'prior_total', 'prior_signature'})
+        self.assertEqual((n['prior_total'], n['total'], n['timestamp'] % 1000), (6, 9, 997))
+        self.assertTrue(signed_by(B, msg(B['pubkey'], C['pubkey'], 9, n['timestamp']), n['signature']))
+        self.assertTrue(signed_by(B, msg(B['pubkey'], C['pubkey'], 6, n['timestamp']), n['prior_signature']))
+        s = self.store.state
+        self.assertEqual(records.get(s['records'], BC)['confirmed']['total'], 9)
+        self.assertEqual(s['issued'], {BC: 9})
+        self.assertEqual(s['records']['paid_deals'][DEAL], {'route': 'note', 'edge': BC, 'total': 9, 'timestamp': n['timestamp']})
+        self.assertEqual([(a['route'], a['edge'], a['prior'], a['total'], a['timestamp']) for a in att(s)],
+                         [('note', BC, 6, 9, n['timestamp'])])
+        self.assertEqual(s['signed'][BC][str(n['timestamp'])], {'op': f'note:{DEAL}', 'slots': {f'{BC}:prior': 6, f'{BC}:new': 9}})
+
+    def test_a_first_note_acknowledges_an_absent_edge(self):
+        del self.net.tracker[BC]
+        c = self.client()
+        self.assertEqual(c.complete(DEAL)['status'], 'note_issued')
+        n = [b for m, _p, b in self.net.log if m == 'POST'][0]['credit_note']
+        self.assertEqual((n['prior_total'], n['total']), (0, 3))
+        self.assertTrue(signed_by(B, msg(B['pubkey'], C['pubkey'], 0, n['timestamp']), n['prior_signature']))
+
+    def test_a_deal_recorded_as_paid_is_never_paid_again(self):
+        c = self.client()
+        c.complete(DEAL)
+        self.net.deals[DEAL].update(status='delivered', credit_note=None)      # a server that offers it again
+        with self.assertRaises(vc.ValunError) as e:
+            c.complete(DEAL)
+        self.assertEqual(e.exception.code, 'already_paid')
+        self.assertEqual(self.net.requests('POST'), [f'POST /pilot/v1/deals/{DEAL}/complete'])
+
+    def test_a_held_bound_note_that_failed_is_signed_again_with_the_same_prior(self):
+        # D-1 item 4: the owner approved too late, the tracker refused it (novation_expired) and the deal is note_failed.
+        self.net.review = True
+        c = self.client()
+        self.assertEqual(c.complete(DEAL)['status'], 'completion_awaiting_owner')
+        self.net.review = False
+        self.net.deals[DEAL]['status'] = 'note_failed'
+        self.clock.now += 20 * 60_000                   # within the first attempt's hour: a same-kind retry, same prior
+        self.assertEqual(c.complete(DEAL)['status'], 'note_issued')
+        first, second = [b['credit_note'] for m, _p, b in self.net.log if m == 'POST']
+        self.assertEqual((first['prior_total'], second['prior_total']), (6, 6))
+        self.assertGreater(second['timestamp'], first['timestamp'])
+        self.assertEqual(len(att(self.store.state)), 2)
+        self.assertEqual(records.get(self.store.state['records'], BC)['pending'], [])
+
+    def test_a_held_note_approved_later_pays_its_deal(self):
+        # Held for the owner, approved later: the deal view shows it issued. Asked to pay the deal again, the client
+        # confirms its note from the deal, records the deal as paid, and refuses.
+        self.net.review = True
+        c = self.client()
+        c.complete(DEAL)
+        n = [b for m, _p, b in self.net.log if m == 'POST'][0]['credit_note']
+        self.net.review = False
+        self.net.tracker[BC] = {'total': n['total'], 'timestamp': n['timestamp'], 'signature': n['signature']}
+        self.net.deals[DEAL].update(status='note_issued', credit_note={'state': 'recorded', 'tracker_note': {
+            'amount_collected': n['total'], 'amount_redeemed': 0, 'timestamp': n['timestamp'], 'signature': n['signature']}})
+        with self.assertRaises(vc.ValunError) as e:
+            c.complete(DEAL)
+        self.assertEqual(e.exception.code, 'already_paid')
+        s = self.store.state
+        self.assertEqual(s['records']['paid_deals'][DEAL], {'route': 'note', 'edge': BC, 'total': 9, 'timestamp': n['timestamp']})
+        self.assertEqual((records.get(s['records'], BC)['confirmed']['total'], s['issued']), (9, {BC: 9}))
+        self.assertEqual(len(self.net.requests('POST')), 1)
+
+    def test_a_refused_bound_note_is_forgotten_but_its_attempt_is_kept(self):
+        def refuse(method, path, body):
+            if method == 'POST':
+                raise vc.ValunError('bad_signature', 'forced', 403)
+        self.net.hooks.append(refuse)
+        c = self.client()
+        with self.assertRaises(vc.ValunError):
+            c.complete(DEAL)
+        self.assertEqual(records.get(self.store.state['records'], BC)['pending'], [])
+        self.assertEqual(len(att(self.store.state)), 1)
+
+
+class WriteAhead(Base):
+    """R9: what is about to be signed is on disk (a FileStore profile) before the HTTP POST that carries it is attempted."""
+
+    def file_client(self, me_id=B_ID, **extra):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        path = os.path.join(d.name, 'p.json')
+        state = dict(profile(me_id, **extra).state, secret=KEYS[me_id]['secret'].hex(), agent_token='vpa_test-only')
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(state, f)
+        self.disk = []
+
+        def snapshot(method, path_, body):
+            if method == 'POST':
+                with open(path, encoding='utf-8') as f:
+                    self.disk.append((path_, json.load(f)))
+        self.net.hooks.append(snapshot)
+        return NetClient(self.net, vc.FileStore(path))
+
+    def test_bound_complete(self):
+        self.file_client().complete(DEAL)
+        (path, disk), = self.disk
+        T = [b for m, _p, b in self.net.log if m == 'POST'][0]['credit_note']['timestamp']
+        self.assertEqual(path, f'/pilot/v1/deals/{DEAL}/complete')
+        self.assertEqual(disk['signed'][BC][str(T)]['op'], f'note:{DEAL}')
+        self.assertEqual([a['timestamp'] for a in disk['transfer_attempts'][DEAL]], [T])
+        self.assertEqual([(p['total'], p['timestamp'], p['kind'], p['ref']) for p in disk['records'][BC]['pending']],
+                         [(9, T, 'note', DEAL)])
+
+    def test_pay_by_transfer(self):
+        self.file_client().pay_by_transfer(DEAL, A_ID)
+        (path, disk), = self.disk
+        body = self.net.pay_posts[0]
+        T = body['timestamp']
+        self.assertEqual(path, f'/pilot/v1/deals/{DEAL}/pay-by-transfer')
+        self.assertEqual(disk['signed'][AB][str(T)], {'op': f'pay:{DEAL}', 'slots': {f'{AB}:prior': 10, f'{AB}:new': 7}})
+        self.assertEqual(disk['signed'][AC][str(T)], {'op': f'pay:{DEAL}', 'slots': {f'{AC}:new': 7}})
+        self.assertEqual([(a['route'], a['edge'], a['prior'], a['total']) for a in disk['transfer_attempts'][DEAL]],
+                         [('transfer', AB, 10, 7)])
+        self.assertEqual([(p['total'], p['timestamp'], p['kind'], p['ref'], p['direction']) for p in disk['records'][AB]['pending']],
+                         [(7, T, 'transfer', DEAL, 'in')])
+        self.assertEqual(disk['approved_payments'], {DEAL: body['quote_digest']})
+
+    def test_a_consent(self):
+        self.net.me_id = A_ID
+        self.net.consent_items = [issuer_item(res(NOW - 1500, 999))]
+        self.file_client(A_ID, consent_policy=dict(POLICY)).process_consents()
+        (path, disk), = self.disk
+        T = res(NOW - 1500, 999)
+        self.assertEqual(path, f'/pilot/v1/consents/{TID}')
+        self.assertEqual(disk['signed'][AB][str(T)], {'op': f'transfer:{TID}', 'slots': {f'{AB}:new': 7}})
+        self.assertEqual(disk['signed'][AC][str(T)], {'op': f'transfer:{TID}', 'slots': {f'{AC}:new': 7}})
+        self.assertEqual([(p['total'], p['ref']) for p in disk['records'][AB]['pending']], [(7, TID)])
+
+
+class PayByTransfer(Base):
+    def test_body_shape_and_signatures(self):
+        c = self.client()
+        r = c.pay_by_transfer(DEAL, A_ID)
+        self.assertEqual(r['status'], 'paid_by_transfer')
+        reqs = self.net.requests()
+        self.assertLess(reqs.index(f'GET /pilot/v1/deals/{DEAL}/payment-options'),
+                        reqs.index(f'GET /pilot/v1/deals/{DEAL}/transfer-template?issuer={A_ID}'))
+        body, = self.net.pay_posts
+        self.assertEqual(set(body), {'issuer_id', 'terms_hash', 'deliverable_sha256', 'quote_digest', 'timestamp', 'from_prior_total',
+                                     'to_prior_total', 'completion_signature', 'pay_signature', 'signatures'})
+        d = self.net.deals[DEAL]
+        h, dh, T = d['agreement']['terms_hash'], d['delivery']['sha256'], body['timestamp']
+        q = nv.quote_digest({'network': vc.NETWORK, 'tracker_nft_id': NFT, 'denomination': DENOM, 'deal_id': DEAL, 'terms_hash': h,
+                             'deliverable_sha256': dh, 'issuer_pubkey': A['pubkey'], 'payer_pubkey': B['pubkey'],
+                             'payee_pubkey': C['pubkey'], 'amount': 3})
+        self.assertEqual((body['issuer_id'], body['terms_hash'], body['deliverable_sha256'], body['quote_digest']), (A_ID, h, dh, q))
+        self.assertEqual((body['from_prior_total'], body['to_prior_total'], T % 1000), (10, 4, 999))
+        self.assertTrue(signed_by(B, vc.statement('complete', h, dh).encode(), body['completion_signature']))
+        pay = nv.pay_statement(DEAL, q).encode()
+        self.assertEqual(len(pay), 102)
+        self.assertTrue(signed_by(B, pay, body['pay_signature']))
+        self.assertEqual(set(body['signatures']), {f'{AB}:prior', f'{AB}:new', f'{AC}:new'})
+        for slot, (i, rcp, total) in {f'{AB}:prior': (A, B, 10), f'{AB}:new': (A, B, 7), f'{AC}:new': (A, C, 7)}.items():
+            self.assertTrue(signed_by(B, msg(i['pubkey'], rcp['pubkey'], total, T), body['signatures'][slot]), slot)
+        s = self.store.state
+        self.assertEqual(s['records']['paid_deals'][DEAL], {'route': 'transfer', 'edge': AB, 'total': 7, 'timestamp': T})
+        self.assertEqual(s['approved_payments'], {DEAL: q})
+
+    def test_terms_of_another_deal_are_not_paid(self):
+        self.net.deals[DEAL] = make_deal(DEAL2)            # the view of DEAL shows the (genuinely signed) terms of DEAL2
+        for pay in (lambda c: c.pay_by_transfer(DEAL, A_ID), lambda c: c.complete(DEAL)):
+            with self.assertRaises(vc.ValunError) as e:
+                pay(self.client())
+            self.assertEqual(e.exception.code, 'deal_mismatch')
+        self.assertEqual(self.net.requests('POST'), [])
+        self.assertEqual(self.net.requests(), [f'GET /pilot/v1/deals/{DEAL}'] * 2)
+
+    def test_a_template_for_another_issuer_key_is_refused(self):
+        real = self.net.transfer_template
+
+        def lying(did, issuer_id):
+            tpl = real(did, issuer_id)
+            tpl['issuer']['pubkey'] = E['pubkey']
+            return tpl
+        self.net.transfer_template = lying
+        with self.assertRaises(vc.ValunError) as e:
+            self.client().pay_by_transfer(DEAL, A_ID)
+        self.assertEqual(e.exception.code, 'bad_template')
+        self.assertEqual(self.net.pay_posts, [])
+
+    def moved(self, issuer, recipient, total, dt):
+        """For Net.force: an edge moves while the payment is posted (to a timestamp dt after the posted T), and time
+        passes, as when a server answers transfer_stale."""
+        def fn():
+            T = self.net.pay_posts[-1]['timestamp']
+            self.clock.now += 2000
+            self.net.set_edge(issuer, recipient, total, T + dt)
+        return fn
+
+    def test_a_stale_transfer_is_retried_once_under_the_same_quote(self):
+        # The payee's claim on A moved between the template and the POST; my claim did not: one retry, same quote.
+        self.net.force = [('transfer_stale', self.moved(A, C, 5, 1))]
+        c = self.client()
+        self.assertEqual(c.pay_by_transfer(DEAL, A_ID)['status'], 'paid_by_transfer')
+        first, second = self.net.pay_posts
+        self.assertEqual(first['quote_digest'], second['quote_digest'])
+        self.assertEqual((first['to_prior_total'], second['to_prior_total']), (4, 5))
+        self.assertEqual((first['from_prior_total'], second['from_prior_total']), (10, 10))
+        self.assertGreater(second['timestamp'], first['timestamp'])
+        self.assertEqual(len(att(self.store.state)), 2)
+        self.assertEqual(self.net.tracker[AC]['total'], 8)
+
+    def test_only_one_retry(self):
+        self.net.force = [('transfer_stale', self.moved(A, C, 5, 1)), ('transfer_stale', self.moved(A, C, 6, 1))]
+        c = self.client()
+        with self.assertRaises(vc.ValunError) as e:
+            c.pay_by_transfer(DEAL, A_ID)
+        self.assertEqual(e.exception.code, 'transfer_stale')
+        self.assertEqual(len(self.net.pay_posts), 2)
+        self.assertEqual(records.get(self.store.state['records'], AB)['pending'], [])      # refused: forgotten
+        self.assertEqual(len(att(self.store.state)), 2)                                   # the attempts stay (D-1)
+
+    def test_no_retry_when_my_own_claim_moved(self):
+        # The fresh template acknowledges another prior of my claim on A: not a same-kind retry with the same prior (D-1).
+        # Moved to a state before the first attempt's T: that attempt may still apply, so a new one waits for its window.
+        self.net.force = [('transfer_stale', self.moved(A, B, 12, -1))]
+        c = self.client()
+        with self.assertRaises(vc.ValunError) as e:
+            c.pay_by_transfer(DEAL, A_ID)
+        self.assertEqual(e.exception.code, 'transfer_window_open')
+        self.assertGreater(e.exception.extra['retry_after_ms'], 3_600_000)
+        self.assertEqual(len(self.net.pay_posts), 1)
+        # Moved past the first attempt's T to a total that is neither its prior nor its new total: it may have applied.
+        self.setUp()
+        self.net.force = [('transfer_stale', self.moved(A, B, 12, 1))]
+        c = self.client()
+        with self.assertRaises(vc.ValunError) as e:
+            c.pay_by_transfer(DEAL, A_ID)
+        self.assertEqual(e.exception.code, 'attempt_outcome_unknown')
+        self.assertEqual(len(self.net.pay_posts), 1)
+
+    def test_stale_claim_and_stale_quote_sign_nothing(self):
+        for kw, code in (({'expected_claim_total': 9}, 'stale_claim'), ({'expected_quote_digest': '00' * 32}, 'stale_quote')):
+            self.setUp()
+            c = self.client()
+            with self.assertRaises(vc.ValunError) as e:
+                c.pay_by_transfer(DEAL, A_ID, **kw)
+            self.assertEqual(e.exception.code, code)
+            self.assertEqual(self.net.pay_posts, [])
+            s = self.store.state
+            self.assertEqual((att(s), s.get('signed') or {}, records.get(s.get('records') or {}, AB)['pending']), ([], {}, []))
+
+    def test_the_pins_the_owner_saw_are_accepted(self):
+        tpl = self.net.transfer_template(DEAL, A_ID)
+        c = self.client()
+        d = self.net.deals[DEAL]
+        r = c.pay_by_transfer(DEAL, A_ID, d['delivery']['sha256'], tpl['quote_digest'], 10)
+        self.assertEqual(r['status'], 'paid_by_transfer')
+
+    def test_issuer_resolution_takes_an_exact_id_first(self):
+        self.net.option_issuers = [F_ID, A_ID]          # F's handle is A's id, and F is listed first
+        self.client().pay_by_transfer(DEAL, A_ID)
+        self.assertIn(f'GET /pilot/v1/deals/{DEAL}/transfer-template?issuer={A_ID}', self.net.requests())
+        self.assertNotIn(f'GET /pilot/v1/deals/{DEAL}/transfer-template?issuer={F_ID}', self.net.requests())
+
+    def test_issuer_resolution_by_handle_and_unknown(self):
+        self.net.option_issuers = [A_ID]
+        self.client().pay_by_transfer(DEAL, 'issuer-a')
+        self.assertEqual(self.net.pay_posts[0]['issuer_id'], A_ID)
+        self.setUp()
+        with self.assertRaises(vc.ValunError) as e:
+            self.client().pay_by_transfer(DEAL, 'nobody')
+        self.assertEqual(e.exception.code, 'unknown_issuer')
+        self.assertEqual(self.net.pay_posts, [])
+
+    def test_without_circulation_nothing_is_signed(self):
+        self.net.features = ['bound_notes/1']
+        with self.assertRaises(vc.ValunError) as e:
+            self.client().pay_by_transfer(DEAL, A_ID)
+        self.assertEqual(e.exception.code, 'feature_unavailable')
+        self.assertEqual(self.net.requests('POST'), [])
+        self.assertNotIn('transfer_attempts', self.store.state)
+
+    def test_a_held_note_the_mandate_forbids_is_refused(self):
+        self.net.mandate['pay_with_held_notes'] = 'never'
+        with self.assertRaises(vc.ValunError) as e:
+            self.client().pay_by_transfer(DEAL, A_ID)
+        self.assertEqual(e.exception.code, 'policy_off')
+        self.assertEqual(self.net.pay_posts, [])
+
+    def test_cancel_forgets_the_pending_entry_and_keeps_the_attempt(self):
+        self.net.transfer_mode = 'collect'
+        c = self.client()
+        self.assertEqual(c.pay_by_transfer(DEAL, A_ID)['status'], 'paying_by_transfer')
+        self.assertEqual(len(records.get(self.store.state['records'], AB)['pending']), 1)
+        self.assertEqual(c.cancel_transfer(DEAL)['status'], 'payment_due')
+        self.assertIn(('POST', f'/pilot/v1/deals/{DEAL}/cancel-transfer', {}), self.net.log)
+        self.assertEqual(records.get(self.store.state['records'], AB)['pending'], [])
+        self.assertEqual(len(att(self.store.state)), 1)
+
+
+class FallbackRule(Base):
+    """Decision D-1: one live payment attempt per deal, across own notes and transfers (R11 extended)."""
+
+    def failed_transfer(self):
+        self.net.transfer_mode = 'collect'
+        c = self.client()
+        c.pay_by_transfer(DEAL, A_ID)
+        c.cancel_transfer(DEAL)                      # payment_due: the transfer did not apply
+        return c, self.net.pay_posts[0]['timestamp']
+
+    def test_an_own_note_waits_until_the_transfer_attempt_is_dead(self):
+        c, T = self.failed_transfer()
+        with self.assertRaises(vc.ValunError) as e:
+            c.complete(DEAL)
+        self.assertEqual(e.exception.code, 'transfer_window_open')
+        self.assertEqual(e.exception.extra['retry_after_ms'], T + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 1 - self.clock.now)
+        self.assertNotIn(f'POST /pilot/v1/deals/{DEAL}/complete', self.net.requests())
+        # After T + 1 h + 2 min the attempt needs a read-back: GET /edges shows my claim on A untouched, so it is dead.
+        self.clock.now = T + LATER
+        self.assertEqual(c.complete(DEAL)['status'], 'note_issued')
+        reqs = self.net.requests()
+        self.assertLess(reqs.index('GET /pilot/v1/edges?since=0'), reqs.index(f'POST /pilot/v1/deals/{DEAL}/complete'))
+
+    def test_an_edge_state_that_does_not_verify_is_no_read_back(self):
+        c, T = self.failed_transfer()
+        self.net.tracker[AB] = st(A, B, 10, TS_AB, signer=E)      # GET /edges lists my claim on A, unverifiable
+        self.clock.now = T + LATER
+        with self.assertRaises(vc.ValunError) as e:
+            c.complete(DEAL)
+        self.assertEqual(e.exception.code, 'transfer_window_open')
+        self.assertEqual(e.exception.extra['needs_read_back'], [AB])
+        self.assertNotIn(f'POST /pilot/v1/deals/{DEAL}/complete', self.net.requests())
+
+    def test_an_unverifiable_state_of_a_new_edge_is_not_taken_for_its_absence(self):
+        # A first bound note acknowledges an absent edge (prior 0). It was held, then applied; the server hides that and
+        # lists the edge with a state that does not verify. That is no read-back, so the note is not taken for dead.
+        del self.net.tracker[BC]
+        self.net.review = True
+        c = self.client()
+        self.assertEqual(c.complete(DEAL)['status'], 'completion_awaiting_owner')
+        n = [b for m, _p, b in self.net.log if m == 'POST'][0]['credit_note']
+        self.net.deals[DEAL]['status'] = 'delivered'
+        self.net.tracker[BC] = st(B, C, 3, n['timestamp'], signer=E)
+        self.clock.now = n['timestamp'] + LATER
+        with self.assertRaises(vc.ValunError) as e:
+            c.pay_by_transfer(DEAL, A_ID)
+        self.assertEqual((e.exception.code, e.exception.extra['needs_read_back']), ('transfer_window_open', [BC]))
+        self.assertEqual(self.net.pay_posts, [])
+
+    def test_a_same_issuer_retry_is_allowed_at_once(self):
+        c, _T = self.failed_transfer()
+        self.net.transfer_mode = 'apply'
+        self.clock.now += 60_000
+        self.assertEqual(c.pay_by_transfer(DEAL, A_ID)['status'], 'paid_by_transfer')
+
+    def test_an_attempt_that_may_have_applied_stops_every_retry(self):
+        c, T = self.failed_transfer()
+        self.net.set_edge(A, B, 12, T + 5000)        # my claim moved past T to a total that is neither 10 nor 7
+        self.clock.now = T + LATER
+        for pay in (lambda: c.complete(DEAL), lambda: c.pay_by_transfer(DEAL, A_ID)):
+            with self.assertRaises(vc.ValunError) as e:
+                pay()
+            self.assertEqual(e.exception.code, 'attempt_outcome_unknown')
+        self.assertEqual(self.net.requests('POST'), [f'POST /pilot/v1/deals/{DEAL}/pay-by-transfer',
+                                                     f'POST /pilot/v1/deals/{DEAL}/cancel-transfer'])
+
+    def test_a_transfer_waits_for_an_own_note_that_is_held(self):
+        self.net.review = True
+        c = self.client()
+        self.assertEqual(c.complete(DEAL)['status'], 'completion_awaiting_owner')
+        with self.assertRaises(vc.ValunError) as e:
+            c.pay_by_transfer(DEAL, A_ID)
+        self.assertEqual(e.exception.code, 'transfer_window_open')
+        self.assertEqual(self.net.pay_posts, [])
+
+
+class OrdinaryPath(Base):
+    """complete() without bound notes (circulation off, or an older server): R12 and D-1 apply as well."""
+
+    def setUp(self):
+        super().setUp()
+        self.net.features = None
+
+    def test_a_novated_edge_takes_bound_notes_only(self):
+        c = self.client(profile(novated_edges={BC: True}))
+        with self.assertRaises(vc.ValunError) as e:
+            c.complete(DEAL)
+        self.assertEqual(e.exception.code, 'bound_note_required')
+        self.assertEqual(self.net.requests('POST'), [])
+
+    def test_a_deal_recorded_as_paid_is_refused(self):
+        c = self.client(profile(records={'paid_deals': {DEAL: {'route': 'transfer', 'edge': AB, 'total': 7, 'timestamp': 1}}}))
+        with self.assertRaises(vc.ValunError) as e:
+            c.complete(DEAL)
+        self.assertEqual(e.exception.code, 'already_paid')
+        self.assertEqual(self.net.requests('POST'), [])
+
+    def test_an_ordinary_note_records_its_deal_as_paid(self):
+        c = self.client(profile(issued={BC: 6}))
+        self.assertEqual(c.complete(DEAL)['status'], 'note_issued')
+        self.assertIn(f'GET /pilot/v1/deals/{DEAL}/credit-note-template', self.net.requests())
+        n = [b for m, _p, b in self.net.log if m == 'POST'][0]['credit_note']
+        self.assertEqual(set(n), {'total', 'timestamp', 'signature'})
+        self.assertEqual(self.store.state['records']['paid_deals'][DEAL]['route'], 'note')
+        self.assertNotIn('transfer_attempts', self.store.state)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# consent items, as GET /consents shows them (PROTOCOL.md 18.9)
+POLICY = {'setoff': True, 'as_issuer': True, 'as_new_creditor': True, 'max_PC': 20}
+
+
+def edge_row(issuer, recipient, before_total, before_ts, new_total, ts, your_role, slots, ids, signed_by_you=()):
+    before = None if before_total is None else st(issuer, recipient, before_total, before_ts)
+    return {'edge': f"{issuer['pubkey']}>{recipient['pubkey']}", 'issuer': {'id': ids[0], 'handle': HANDLES[ids[0]]},
+            'recipient': {'id': ids[1], 'handle': HANDLES[ids[1]]}, 'your_role': your_role, 'before': before,
+            'change': new_total - (before_total or 0), 'new_total': new_total, 'timestamp': ts, 'revision': 1,
+            'slots': list(slots), 'signed_by_you': list(signed_by_you)}
+
+
+def consent_item(kind, iid, role, edges, context, **over):
+    it = {'kind': kind, 'id': iid, 'state': 'collecting', 'your_roles': [role], 'created_at': '2026-11-08T12:00:00.000Z',
+          'expires_at': '2026-11-08T12:20:00.000Z', 'network': vc.NETWORK, 'tracker_nft_id': NFT, 'denomination': DENOM,
+          'edges': edges, 'context': context, 'summary': {'your_net_change_PC': 0, 'your_total_owed_change_PC': 0}}
+    it.update(over)
+    return it
+
+
+def who3():
+    return {'issuer': {'id': A_ID, 'handle': 'issuer-a'}, 'payer': {'id': B_ID, 'handle': 'payer-b'},
+            'payee': {'id': C_ID, 'handle': 'payee-c'}}
+
+
+def issuer_item(T, iid=TID, signed_by_you=(), **over):
+    return consent_item('transfer', iid, 'issuer',
+                        [edge_row(A, B, 10, TS_AB, 7, T, 'issuer', ['new'], (A_ID, B_ID), signed_by_you),
+                         edge_row(A, C, 4, TS_AC, 7, T, 'issuer', ['new'], (A_ID, C_ID), signed_by_you)],
+                        dict(who3(), amount=3), **over)
+
+
+def member_item(ts):
+    """A's two edges of a set-off: its debt to B falls by 2 and its claim on E falls by 2."""
+    return consent_item('setoff', SID, 'member',
+                        [edge_row(A, B, 10, TS_AB, 8, ts, 'issuer', ['new'], (A_ID, B_ID)),
+                         edge_row(E, A, 5, TS_EA, 3, ts, 'creditor', ['new'], (E_ID, A_ID))], {})
+
+
+class Consents(Base):
+    def setUp(self):
+        super().setUp()
+        self.net.me_id = A_ID
+        self.T = res(NOW - 1500, 999)
+
+    def test_the_report_and_what_is_posted(self):
+        T = self.T
+        self.net.consent_items = [
+            issuer_item(T),                                                       # signed
+            member_item(res(NOW - 1500, 998)),                                    # signed
+            issuer_item(T, iid='vt_1111111111111111', tracker_nft_id='11' * 32),  # refused: tracker_mismatch
+            issuer_item(T - 1000, iid='vt_2222222222222222', signed_by_you=['new']),   # nothing left to sign
+            issuer_item(T, iid='vt_3333333333333333', state='applying'),          # not collecting
+        ]
+        old_log = [{'at': 'x', 'id': f'vs_{i:016x}', 'decision': 'signed'} for i in range(98)]
+        c = self.client(profile(A_ID, consent_policy=dict(POLICY), consent_log=old_log))
+        rep = c.process_consents()
+        self.assertEqual(set(rep), {'signed', 'refused', 'waiting'})
+        self.assertEqual([(e['id'], e['role']) for e in rep['signed']], [(TID, 'issuer'), (SID, 'member')])
+        self.assertEqual([(e['id'], e['code']) for e in rep['refused']], [('vt_1111111111111111', 'tracker_mismatch')])
+        self.assertEqual([e['id'] for e in rep['waiting']], ['vt_2222222222222222', 'vt_3333333333333333'])
+        self.assertEqual(rep['signed'][0]['your_total_owed_change_PC'], 0)
+        self.assertEqual(rep['signed'][1]['your_net_change_PC'], 0)
+        (c1, b1), (c2, b2) = self.net.consent_posts
+        self.assertEqual((c1, set(b1['signatures']), b1['revisions']), (TID, {f'{AB}:new', f'{AC}:new'}, {AB: 1, AC: 1}))
+        self.assertEqual((c2, set(b2['signatures']), b2['revisions']), (SID, {f'{AB}:new', f'{EA}:new'}, {AB: 1, EA: 1}))
+        self.assertEqual(self.net.refusals, [('vt_1111111111111111', {'reason': 'tracker_mismatch'})])
+        s = self.store.state
+        self.assertEqual(len(s['consent_log']), vc.CONSENT_LOG_MAX)
+        self.assertEqual([(e['id'], e['decision']) for e in s['consent_log'][-5:]],
+                         [(TID, 'signed'), (SID, 'signed'), ('vt_1111111111111111', 'refused'),
+                          ('vt_2222222222222222', 'waiting'), ('vt_3333333333333333', 'waiting')])
+        self.assertEqual(s['consents_last_run_ms'], NOW)
+        self.assertEqual({p['ref'] for p in records.get(s['records'], AB)['pending']}, {TID, SID})
+
+    def test_without_a_policy_nothing_is_signed(self):
+        self.net.consent_items = [issuer_item(self.T)]
+        rep = self.client(profile(A_ID)).process_consents()
+        self.assertEqual([(e['id'], e['code']) for e in rep['refused']], [(TID, 'policy_off')])
+        self.assertEqual(self.net.consent_posts, [])
+        self.assertEqual(self.net.refusals, [(TID, {'reason': 'policy_off'})])
+
+    def test_the_policy_argument_is_used(self):
+        self.net.consent_items = [issuer_item(self.T)]
+        rep = self.client(profile(A_ID)).process_consents(policy=dict(POLICY))
+        self.assertEqual([e['id'] for e in rep['signed']], [TID])
+
+    def test_nothing_is_read_without_circulation(self):
+        self.net.features = ['bound_notes/1']
+        self.net.consent_items = [issuer_item(self.T)]
+        rep = self.client(profile(A_ID, consent_policy=dict(POLICY))).process_consents()
+        self.assertEqual(rep, {'signed': [], 'refused': [], 'waiting': []})
+        self.assertEqual(self.net.requests(), ['GET /pilot/v1/info'])
+        self.assertEqual(self.store.state['consents_last_run_ms'], NOW)              # a run, for the agent's rate limit
+
+    def test_a_payee_consent(self):
+        self.net.me_id = C_ID
+        d = self.net.deals[DEAL]
+        d.update(status='paying_by_transfer', your_role='payee', payment={'method': 'transfer', 'transfer_id': TID})
+        q = self.net.transfer_template(DEAL, A_ID)['quote_digest']
+        self.net.consent_items = [consent_item(
+            'transfer', TID, 'payee', [edge_row(A, C, 4, TS_AC, 7, self.T, 'creditor', ['prior', 'new'], (A_ID, C_ID))],
+            dict(who3(), amount=3, deal={'deal_id': DEAL, 'terms_hash': d['agreement']['terms_hash'], 'price': 3, 'quote_digest': q}))]
+        rep = self.client(profile(C_ID, consent_policy=dict(POLICY))).process_consents()
+        self.assertEqual([(e['id'], e['role'], e['deal_id']) for e in rep['signed']], [(TID, 'payee', DEAL)])
+        (_cid, body), = self.net.consent_posts
+        self.assertEqual(set(body['signatures']), {f'{AC}:prior', f'{AC}:new'})
+        self.assertIn(f'GET /pilot/v1/deals/{DEAL}', self.net.requests())
+
+    def test_a_payee_consent_is_refused_unless_this_transfer_pays_a_deal_it_delivered(self):
+        for change in ({'payment': {'method': 'transfer', 'transfer_id': 'vt_ffffffffffffffff'}},     # another transfer
+                       {'delivery_by': E_ID}):                                                     # someone else delivered
+            self.setUp()
+            self.net.me_id = C_ID
+            d = self.net.deals[DEAL]
+            d.update(status='paying_by_transfer', payment=change.get('payment', {'method': 'transfer', 'transfer_id': TID}))
+            d['delivery']['by'] = change.get('delivery_by', C_ID)
+            self.net.consent_items = [consent_item(
+                'transfer', TID, 'payee', [edge_row(A, C, 4, TS_AC, 7, self.T, 'creditor', ['prior', 'new'], (A_ID, C_ID))],
+                dict(who3(), amount=3, deal={'deal_id': DEAL, 'terms_hash': d['agreement']['terms_hash'], 'price': 3}))]
+            rep = self.client(profile(C_ID, consent_policy=dict(POLICY))).process_consents()
+            self.assertEqual([(e['id'], e['code']) for e in rep['refused']], [(TID, 'deal_mismatch')], change)
+            self.assertEqual(self.net.consent_posts, [])
+
+    def payer_item(self):
+        """A regenerated transfer of B's own payment through A (new T, the same prior of B's claim on A)."""
+        q = self.net.transfer_template(DEAL, A_ID)['quote_digest']
+        d = self.net.deals[DEAL]
+        return q, consent_item('transfer', TID, 'payer',
+                               [edge_row(A, B, 10, TS_AB, 7, self.T, 'creditor', ['prior', 'new'], (A_ID, B_ID)),
+                                edge_row(A, C, 4, TS_AC, 7, self.T, 'payer', ['new'], (A_ID, C_ID))],
+                               dict(who3(), amount=3, deal={'deal_id': DEAL, 'terms_hash': d['agreement']['terms_hash'],
+                                                            'price': 3, 'quote_digest': q}))
+
+    def test_a_regenerated_transfer_is_signed_again_under_the_approved_quote(self):
+        self.net.me_id = B_ID
+        q, it = self.payer_item()
+        self.net.consent_items = [it]
+        earlier = [{'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10, 'prior_timestamp': TS_AB, 'total': 7,
+                    'timestamp': self.T - 60_000, 'quote_digest': q, 'signed_at': None}]
+        self.net.consent_state[TID] = 'applied'
+        c = self.client(profile(B_ID, approved_payments={DEAL: q}, transfer_attempts={DEAL: earlier}))
+        rep = c.process_consents()
+        self.assertEqual([(e['id'], e['role'], e['state']) for e in rep['signed']], [(TID, 'payer', 'applied')])
+        (_cid, body), = self.net.consent_posts
+        self.assertEqual(set(body['signatures']), {f'{AB}:prior', f'{AB}:new', f'{AC}:new'})
+        self.assertEqual(self.store.state['records']['paid_deals'][DEAL]['route'], 'transfer')
+        self.assertEqual(len(att(self.store.state)), 2)
+
+    def test_a_regenerated_transfer_under_another_quote_is_refused(self):
+        self.net.me_id = B_ID
+        q, it = self.payer_item()
+        self.net.consent_items = [it]
+        earlier = [{'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10, 'prior_timestamp': TS_AB, 'total': 7,
+                    'timestamp': self.T - 60_000, 'quote_digest': q, 'signed_at': None}]
+        rep = self.client(profile(B_ID, approved_payments={DEAL: 'ff' * 32}, transfer_attempts={DEAL: earlier})).process_consents()
+        self.assertEqual([(e['id'], e['code']) for e in rep['refused']], [(TID, 'stale_quote')])
+        self.assertEqual(self.net.consent_posts, [])
+
+    def test_a_failed_post_waits_and_forgets_what_it_wrote(self):
+        self.net.consent_items = [issuer_item(self.T)]
+
+        def refuse(method, path, body):
+            if method == 'POST' and path == f'/pilot/v1/consents/{TID}':
+                raise vc.ValunError('payment_not_accepted', 'forced', 403)
+        self.net.hooks.append(refuse)
+        rep = self.client(profile(A_ID, consent_policy=dict(POLICY))).process_consents()
+        self.assertEqual([(e['id'], e['error']) for e in rep['waiting']], [(TID, 'payment_not_accepted')])
+        self.assertEqual(records.get(self.store.state['records'], AB)['pending'], [])
+        self.assertEqual(self.store.state['signed'][AB][str(self.T)]['op'], f'transfer:{TID}')    # R4 stays
+
+
+class CapabilityHeader(unittest.TestCase):
+    """X-Valun-Features: consents/1;roles=... only once /info lists circulation/1 and a consent role is on."""
+
+    def wire(self, features, policy):
+        state = {'server': SERVER, 'participant_id': B_ID, 'pubkey': B['pubkey'], 'pins': dict(PINS)}
+        if policy is not None:
+            state['consent_policy'] = policy
+        sent = []
+
+        class Resp:
+            def __init__(self, body):
+                self.b = json.dumps(body).encode()
+
+            def read(self):
+                return self.b
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def urlopen(req, timeout=None):
+            sent.append((req.full_url[len(SERVER):], req.get_header('X-valun-features')))
+            info = {'network': vc.NETWORK, 'tracker_nft_id': NFT, 'denomination': DENOM}
+            if features is not None:
+                info['features'] = features
+            return Resp(info if req.full_url.endswith('/info') else {})
+        c = vc.Client(MemStore(state, B['secret'].hex()))
+        with mock.patch.object(vc.urllib.request, 'urlopen', urlopen):
+            c.me()
+            c.info()
+            c.me()
+        return sent
+
+    def test_sent_only_when_advertised_and_a_role_is_on(self):
+        invite = {'setoff': True, 'as_issuer': True, 'as_new_creditor': False}
+        self.assertEqual(self.wire(['bound_notes/1', 'circulation/1'], invite),
+                         [('/pilot/v1/me', None), ('/pilot/v1/info', None), ('/pilot/v1/me', 'consents/1;roles=setoff,issuer')])
+        self.assertEqual(self.wire(['bound_notes/1', 'circulation/1'], dict(POLICY))[-1],
+                         ('/pilot/v1/me', 'consents/1;roles=setoff,issuer,creditor'))
+        for features, policy in ((['bound_notes/1'], dict(POLICY)), (None, dict(POLICY)),
+                                 (['bound_notes/1', 'circulation/1'], None),
+                                 (['bound_notes/1', 'circulation/1'], {'setoff': False, 'as_issuer': 'yes'})):
+            self.assertEqual([h for _p, h in self.wire(features, policy)], [None, None, None], (features, policy))
+
+    def test_consent_roles(self):
+        self.assertEqual(vc.consent_roles(None), [])
+        self.assertEqual(vc.consent_roles({'as_new_creditor': True, 'setoff': True}), ['setoff', 'creditor'])
+
+
+class SyncEdges(Base):
+    def test_states_confirm_records_mark_paid_deals_and_novated_edges(self):
+        T1, T2 = res(NOW - 120_000, 999), res(NOW - 60_000, 997)
+        self.net.set_edge(A, B, 7, T1, kind='transfer_out', ref=TID)      # my payment of DEAL by transfer applied
+        self.net.set_edge(B, C, 9, T2, kind='issue', ref=DEAL2)           # my bound note for DEAL2 applied
+        self.net.bound_only = {AB}
+        recs = {}
+        records.add_pending(recs, AB, 7, T1, 'transfer', DEAL, 'in')
+        records.add_pending(recs, BC, 9, T2, 'note', DEAL2, 'out')
+        c = self.client(profile(records=recs))
+        out = c.sync_edges()
+        s = self.store.state
+        self.assertEqual(sorted(out['paid_deals']), sorted([DEAL, DEAL2]))
+        self.assertEqual(s['records']['paid_deals'][DEAL], {'route': 'transfer', 'edge': AB, 'total': 7, 'timestamp': T1})
+        self.assertEqual(s['records']['paid_deals'][DEAL2], {'route': 'note', 'edge': BC, 'total': 9, 'timestamp': T2})
+        self.assertEqual((records.get(s['records'], AB)['confirmed']['total'], records.get(s['records'], BC)['confirmed']['total']), (7, 9))
+        self.assertEqual((records.get(s['records'], AB)['pending'], records.get(s['records'], BC)['pending']), ([], []))
+        self.assertEqual(s['issued'], {BC: 9})
+        self.assertEqual(s['novated_edges'], {AB: True})
+        self.assertEqual(out['novated'], [AB])
+        self.assertEqual((s['journal_seq'], out['journal_seq']), (self.net.seq, self.net.seq))
+        self.assertEqual(set(out['edges']), {AB, BC})
+        self.assertEqual(out['rejected'], [])
+        c.sync_edges()                                                    # from journal_seq on: nothing new
+        self.assertEqual(self.net.requests()[-1], f'GET /pilot/v1/edges?since={self.net.seq}')
+
+    def test_the_journal_shows_states_the_current_rows_no_longer_do(self):
+        # My bound note for DEAL2 applied at (9, T2); a set-off has lowered B->C since. Only the journal shows (9, T2), and
+        # only the journal says a set-off changed the edge (this row does not say bound_only).
+        T2, T3 = res(NOW - 60_000, 997), res(NOW - 30_000, 998)
+        self.net.set_edge(B, C, 9, T2, kind='issue', ref=DEAL2)
+        self.net.set_edge(B, C, 7, T3, kind='setoff', ref=SID)
+        recs = {}
+        records.add_pending(recs, BC, 9, T2, 'note', DEAL2, 'out')
+        out = self.client(profile(records=recs)).sync_edges()
+        s = self.store.state
+        self.assertEqual(out['paid_deals'], [DEAL2])
+        self.assertEqual([(a['pair'], a['ref']) for a in out['applied']], [(BC, DEAL2)])
+        self.assertEqual(records.get(s['records'], BC)['confirmed']['total'], 7)
+        self.assertEqual((out['novated'], s['novated_edges']), ([BC], {BC: True}))
+
+    def test_a_state_that_does_not_verify_is_used_for_nothing(self):
+        self.net.tracker[BC] = st(B, C, 99, NOW - 1000, signer=E)
+        recs = {}
+        records.add_pending(recs, BC, 9, res(NOW - 8 * DAY, 997), 'note', DEAL, 'out')     # old enough to prune, if it were read
+        out = self.client(profile(records=recs)).sync_edges()
+        self.assertEqual(out['rejected'], [{'edge': BC, 'seq': None, 'reason': 'bad_signature'}])
+        self.assertEqual(out['doubtful'], [BC])
+        self.assertNotIn(BC, out['edges'])
+        self.assertIsNone(records.get(self.store.state['records'], BC)['confirmed'])
+        self.assertEqual(len(records.get(self.store.state['records'], BC)['pending']), 1)      # no read-back: kept
+        self.assertEqual(out['pruned']['pending'], 0)
+
+    def test_an_attempt_whose_state_an_edge_shows_is_paid(self):
+        T1 = res(NOW - 120_000, 999)
+        self.net.set_edge(A, B, 7, T1)
+        a = {'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10, 'prior_timestamp': TS_AB, 'total': 7,
+             'timestamp': T1, 'quote_digest': None, 'signed_at': None}
+        c = self.client(profile(transfer_attempts={DEAL: [a]}))
+        self.assertEqual(c.sync_edges()['paid_deals'], [DEAL])
+        self.assertEqual(self.store.state['records']['paid_deals'][DEAL]['route'], 'transfer')
+
+    def test_pages(self):
+        for i in range(5):
+            self.net.set_edge(B, C, 7 + i, NOW - 50_000 + 1000 * i, kind='issue', ref=f'vd_{i:016x}')
+        self.net.page = 2
+        with mock.patch.object(vc, 'EDGES_PAGE', 2):
+            out = self.client().sync_edges()
+        self.assertEqual([r for r in self.net.requests() if 'edges' in r],
+                         ['GET /pilot/v1/edges?since=0', 'GET /pilot/v1/edges?since=2', 'GET /pilot/v1/edges?since=4'])
+        self.assertEqual(out['journal_seq'], 5)
+        self.assertEqual(records.get(self.store.state['records'], BC)['confirmed']['total'], 11)
+
+    def test_seven_day_pruning(self):
+        old, recent, older = NOW - 8 * DAY, NOW - DAY, NOW - 9 * DAY
+        self.net.set_edge(B, C, 6, older)                     # B->C has not moved for 9 days
+        recs = {}
+        records.add_pending(recs, BC, 9, res(old, 997), 'note', DEAL, 'out')        # a bound note: expired, never applied
+        records.add_pending(recs, BC, 9, old + 123 - old % 1000, 'note', DEAL2, 'out')   # an ordinary note never expires
+        records.add_pending(recs, BC, 9, res(recent, 997), 'note', 'vd_2123456789abcdef', 'out')
+        signed = {BC: {str(res(old, 997)): {'op': f'note:{DEAL}', 'slots': {}},
+                       str(res(recent, 997)): {'op': 'note:vd_2123456789abcdef', 'slots': {}}}}
+
+        def attempt(deal_id, ts):
+            return {'deal_id': deal_id, 'route': 'note', 'edge': BC, 'prior': 6, 'prior_timestamp': older, 'total': 9,
+                    'timestamp': ts, 'quote_digest': None, 'signed_at': None}
+        attempts = {DEAL: [attempt(DEAL, res(old, 997))], 'vd_2123456789abcdef': [attempt('vd_2123456789abcdef', res(recent, 997))],
+                    'vd_3123456789abcdef': [attempt('vd_3123456789abcdef', res(old - 5000, 997))],
+                    'vd_4123456789abcdef': [{'deal_id': 'vd_4123456789abcdef', 'route': 'note', 'edge': BC}],     # malformed
+                    # my claim on A moved past this old transfer's T to neither its prior nor its new total: unknown, kept
+                    'vd_5123456789abcdef': [{'deal_id': 'vd_5123456789abcdef', 'route': 'transfer', 'edge': AB, 'prior': 12,
+                                             'prior_timestamp': older, 'total': 9, 'timestamp': res(old, 999),
+                                             'quote_digest': None, 'signed_at': None}]}
+        recs['paid_deals'] = {'vd_3123456789abcdef': {'route': 'note', 'edge': BC, 'total': 9, 'timestamp': 1}}
+        out = self.client(profile(records=recs, signed=signed, transfer_attempts=attempts)).sync_edges()
+        s = self.store.state
+        self.assertEqual(out['pruned'], {'signed': 1, 'pending': 1, 'attempts': 2})
+        self.assertEqual(sorted(p['ref'] for p in records.get(s['records'], BC)['pending']), sorted([DEAL2, 'vd_2123456789abcdef']))
+        self.assertEqual(list(s['signed'][BC]), [str(res(recent, 997))])
+        self.assertEqual(sorted(s['transfer_attempts']), ['vd_2123456789abcdef', 'vd_4123456789abcdef', 'vd_5123456789abcdef'])
+
+
+class Counter(Base):
+    def test_the_new_version_follows_the_verified_terms(self):
+        d = make_deal(payer=C_ID, payee=B_ID, status='open')       # C (payer) offered; B, the payee, counters
+        d['current']['state'] = 'open'
+        d['current']['version'] = 7                                # the server's view; the hashed terms say 1
+        d.pop('agreement')
+        self.net.deals[DEAL] = d
+        self.client().counter(DEAL, price=5)
+        (_m, _p, body), = [x for x in self.net.log if x[0] == 'POST']
+        self.assertEqual((body['terms']['version'], body['terms']['price']['amount']), (2, 5))
+        self.assertEqual(body['terms']['prior_terms_hash'], d['current']['terms_hash'])
+
+
+if __name__ == '__main__':
+    unittest.main()
