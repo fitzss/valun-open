@@ -7,16 +7,20 @@
 // scenarios recorded from the Python code). Every tool result is a plain JSON-compatible object.
 //
 // Secrets never leave the store: no tool returns, logs or echoes the signing key or the agent token.
-// Approvals fail closed: isCommitment() is true unless the action is exactly a harmless one, valun_review_delivery
-// refuses any decision but exactly 'accept' or 'dispute' (bad_decision) before connecting, and bind() pins the terms
-// hash or deliverable hash an approval is about, so what is signed is what the owner saw.
+// Approvals fail closed, as in the Python core. isCommitment() treats every tool name it does not know as a commitment,
+// and prepare() returns the arguments to sign with and the owner's approval text from one snapshot of what would be
+// signed. The text is built only from values checked against what is signed (recomputed hashes, which the arguments then
+// pin); when the snapshot cannot be read or does not hold together it rejects with approval_unbound, and every adapter
+// then refuses the call instead of asking with a generic text.
 
 import {ValunError} from './errors.js';
 import {measure} from './measure.js';
+import {UNIT, sha256Hex, termsHash} from './protocol.js';
+import {utf8} from './bytes.js';
 import {checkDelivery, extractText} from './sandbox.js';
 import * as schemas from './schemas.js';
 import {
-  PyError, cpLength, cpSlice, dictCopy, get, int, isDict, isoAwareMs, item, items, iterate, lower, or, pyEq, repr, slice, str, strip, truthy,
+  PyError, cpLength, cpSlice, dictCopy, get, int, isDict, isoAwareMs, item, items, iterate, lower, or, pyEq, repr, str, strip, truthy,
   typeName,
 } from './py.js';
 
@@ -52,6 +56,19 @@ export const LIMIT_FIELDS = Object.freeze({
 });
 export const TOOL_NAMES = Object.freeze(schemas.ALL.map(t => t.name));
 export const READ_ONLY_TOOLS = Object.freeze(['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal']);
+// The classification every adapter takes from here (fail closed by name): these tools never commit the owner...
+export const NOT_COMMITMENT_TOOLS = Object.freeze([...READ_ONLY_TOOLS, 'valun_deliver']);
+// ...this one does only when it loosens a limit recorded before...
+export const LIMIT_TOOLS = Object.freeze(['valun_set_limits']);
+// ...and every other tool signs a commitment for some arguments (a new tool counts until it is classified above).
+export const SIGNING_TOOLS = Object.freeze(TOOL_NAMES.filter(n => !NOT_COMMITMENT_TOOLS.includes(n) && !LIMIT_TOOLS.includes(n)));
+/** The refusal when what would be signed cannot be read or checked (approval_unbound). */
+export const UNBOUND_MESSAGE = 'could not read what you would sign; nothing was signed';
+/** The approval text for a tool this client does not know ({name} is the tool name, shown). */
+export const GENERIC_TEXT = 'Valun: sign a commitment ({name}).';
+/** Per quoted field of an approval text (the server's own limit for service.description). */
+export const QUOTE_MAX_CHARS = 2000;
+export const ROLE_WORDS = Object.freeze({payer: 'payer', payee: 'payee (you do the work)'});
 export const DEFAULT_SETUP_HINT = 'run `valun join` (or `valun enroll`) in a terminal';
 /** Where approvals happen, as the Python MCP server and CLI tell the model (python/src/valun/mcp_server.py). */
 export const APPROVAL_TEXT = Object.freeze({
@@ -59,18 +76,91 @@ export const APPROVAL_TEXT = Object.freeze({
     + 'sees exactly what you would sign; if they decline, nothing is signed.',
   'client-prompt': 'Your app asks your owner before each Valun tool that signs a commitment (if your owner has not '
     + 'allowed it permanently).',
-  console: 'Every commitment you sign waits for your owner in the Valun owner console before it takes effect.',
+  console: 'Every commitment you sign waits for your owner in the Valun owner console before it takes effect: offers, '
+    + 'counter-offers and acceptances, and accepting a delivery (its credit note is issued only after your owner '
+    + 'approves it).',
   none: "You act on your own within your owner's limits; nobody is asked before you sign.",
 });
 
 const DEAL_FIELDS = ['id', 'status', 'your_role', 'counterparty', 'next_actions', 'versions', 'acceptance', 'agreement', 'decline',
   'completion', 'dispute', 'cancellation', 'approvals', 'labels'];
 const LIMITS_SHOWN = Object.entries(LIMIT_FIELDS);
+const PLAIN = /^[A-Za-z0-9_.:@+-]{1,120}$/;
+const DEAL_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const LONE_SURROGATE = /\p{Cs}/u;
+const TEXT_FIELDS = ['title', 'description', 'deliverable'];
 
-function pyCompare(a, b, op) {
-  const num = v => typeof v === 'number' || typeof v === 'boolean';
-  if (!num(a) || !num(b)) throw new PyError('TypeError', `'${op}' not supported between instances of '${typeName(a)}' and '${typeName(b)}'`);
-  return op === '>' ? Number(a) > Number(b) : Number(a) < Number(b);
+/** Python's isinstance(v, int) and not isinstance(v, bool), for JSON numbers (a safe integer). */
+const whole = v => typeof v === 'number' && Number.isSafeInteger(v);
+
+function jsonString(s) {
+  let out = '"';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i], c = s.charCodeAt(i);
+    if (ch === '"') out += '\\"';
+    else if (ch === '\\') out += '\\\\';
+    else if (ch === '\n') out += '\\n';
+    else if (ch === '\r') out += '\\r';
+    else if (ch === '\t') out += '\\t';
+    else if (ch === '\b') out += '\\b';
+    else if (ch === '\f') out += '\\f';
+    else if (c < 0x20 || c > 0x7e) out += '\\u' + c.toString(16).padStart(4, '0');
+    else out += ch;
+  }
+  return out + '"';
+}
+
+/**
+ * Untrusted text (written by a counterparty, or by the agent from what it read) as ONE line of JSON, exactly as Python's
+ * json.dumps(value, ensure_ascii=True, separators=(',', ':')) writes it. Newlines, control, bidi and all other non-ASCII
+ * characters are escaped, so it can never add, fake or reorder a line of an approval text.
+ */
+export function quoted(value) {
+  if (value === null || value === undefined) return 'null';
+  if (value === true) return 'true';
+  if (value === false) return 'false';
+  if (typeof value === 'number') return repr(value);
+  if (typeof value === 'string') return jsonString(value);
+  if (Array.isArray(value)) return '[' + value.map(quoted).join(',') + ']';
+  if (typeof value === 'object') return '{' + Object.entries(value).map(([k, v]) => jsonString(k) + ':' + quoted(v)).join(',') + '}';
+  return jsonString(String(value));
+}
+
+/**
+ * A server-supplied value for a computed line of an approval text: as is when it cannot carry layout (a whole number,
+ * or a short id, hash, handle or date), otherwise quoted as JSON.
+ */
+export function shown(value) {
+  if (value === null || value === undefined) return 'none';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (whole(value) || (typeof value === 'string' && PLAIN.test(value))) return String(value);
+  return quoted(value);
+}
+
+/**
+ * The last line of an approval text: `label`, then `fields` (text a counterparty or the agent wrote) quoted as ONE JSON
+ * line. A text field longer than QUOTE_MAX_CHARS (code points, as Python counts them) is cut to that many, and the label
+ * says so.
+ */
+export function quoteLine(label, fields) {
+  const out = {};
+  let cut = false;
+  for (const [k, value] of Object.entries(fields)) {
+    let v = value;
+    if (typeof v === 'string' && cpLength(v) > QUOTE_MAX_CHARS) {
+      v = cpSlice(v, QUOTE_MAX_CHARS);
+      cut = true;
+    }
+    out[k] = v;
+  }
+  const note = cut ? `; fields over ${QUOTE_MAX_CHARS} characters are cut to their first ${QUOTE_MAX_CHARS}` : '';
+  return `${label} (quoted exactly${note}): ` + quoted(out);
+}
+
+/** What a binding deal means for this participant, in the role the signed terms give it. */
+export function owes(role, who, price) {
+  return role === 'payer' ? `after you accept their delivery you will owe ${who} ${price} PC (your credit note).`
+    : `you must deliver; ${who} would then owe you ${price} PC (their credit note).`;
 }
 
 /** Map valun_set_limits arguments to the server's /limits body. */
@@ -89,14 +179,19 @@ export function limitsBody(args) {
 
 /**
  * True when a /limits body would loosen a limit the agent recorded before (a higher cap, a lower floor, or removing
- * one). Setting a limit for the first time is never looser than the owner's mandate (the server refuses that).
+ * one). Setting a limit for the first time is never looser than the owner's mandate (the server refuses that). Fails
+ * closed: a field this client does not know, a kind of limit it does not know, or a value that is not a whole number
+ * counts as loosening. 'notes' (the owner's goals, as text) is not a limit.
  */
 export function loosens(current, body) {
   const kinds = Object.fromEntries(Object.values(LIMIT_FIELDS));
-  for (const [field, next] of Object.entries(body)) {
-    if (!Object.hasOwn(kinds, field) || get(current, field) === null) continue;
-    const old = item(current, field);
-    if (next === null || (kinds[field] === 'cap' && pyCompare(next, old, '>')) || (kinds[field] === 'floor' && pyCompare(next, old, '<'))) {
+  for (const [field, next] of items(body)) {
+    if (field === 'notes') continue;
+    const kind = Object.hasOwn(kinds, field) ? kinds[field] : null;
+    if (kind !== 'cap' && kind !== 'floor') return true;
+    const old = get(current, field) ?? null;
+    if (old === null) continue;
+    if (next === null || next === undefined || !(whole(next) && whole(old)) || (kind === 'cap' && next > old) || (kind === 'floor' && next < old)) {
       return true;
     }
   }
@@ -119,11 +214,28 @@ export function recentlyActive(lastSeen, hours = 24, joinedAt = null, nowMs = Da
 /** The agreed (or current) service text: where numeric requirements such as '300-500 words' are written. */
 export function termsText(d) {
   const t = or(get(or(get(or(get(d, 'current'), {}), 'terms'), {}), 'service'), {});
-  return ['title', 'description', 'deliverable'].map(k => str(or(get(t, k), ''))).join(' ');
+  return TEXT_FIELDS.map(k => str(or(get(t, k), ''))).join(' ');
 }
 
 function isValunError(e) {
   return e instanceof ValunError || (e instanceof Error && e.name === 'ValunError' && typeof e.code === 'string');
+}
+
+/** Python's canonical() refuses what is not a whole number among the terms' numbers: ValunError bad_terms ('float'). */
+function pyTermsHash(t) {
+  const walk = v => {
+    if (typeof v === 'number' && !Number.isSafeInteger(v)) throw new ValunError('bad_terms', 'unsupported value in terms: float');
+    if (Array.isArray(v)) v.forEach(walk);
+    else if (isDict(v)) Object.values(v).forEach(walk);
+  };
+  walk(t);
+  return termsHash(t);
+}
+
+/** sha256 of the UTF-8 text, refusing a lone surrogate as Python's str.encode('utf-8') does. */
+function pySha256(s) {
+  if (LONE_SURROGATE.test(s)) throw new PyError('UnicodeEncodeError', "'utf-8' codec can't encode a surrogate: surrogates not allowed");
+  return sha256Hex(s);
 }
 
 /** A ValunError (or any exception) as a plain object an agent can act on. Never includes secrets. */
@@ -131,7 +243,31 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
   if (isValunError(e)) {
     const out = {error: e.code, message: e.message};
     const extra = isDict(e.extra) ? e.extra : {};
-    for (const k of ['rule', 'mandate_version', 'measured']) if (Object.hasOwn(extra, k)) out[k] = extra[k];
+    for (const k of ['rule', 'mandate_version', 'measured', 'retry_after_ms', 'template', 'fallback_after', 'what_this_means']) {
+      if (Object.hasOwn(extra, k)) out[k] = extra[k];
+    }
+    if (e.code === 'approval_unbound') {
+      out.what_this_means = 'Nothing was signed and your owner was not asked: your Valun client could not read and check '
+        + 'exactly what this call would sign (the deal, offer or delivery could not be read, does not '
+        + 'match its hash, or changed after you read it). Read the deal again with valun_deal and retry; '
+        + 'if it keeps failing, tell your owner.';
+    }
+    if (e.code === 'tracker_mismatch') {
+      out.what_this_means = 'The Valun server now names a different Basis tracker or unit than the one this profile was '
+        + 'set up with. Nothing was signed. Stop and tell your owner.';
+    }
+    if (e.code === 'bad_delivery_signature') {
+      out.what_this_means = "The delivery is not signed by the payee's key, so it may not come from the payee. Nothing "
+        + 'was signed. Do not accept it; tell your owner.';
+    }
+    if (e.code === 'records_unreadable') {
+      out.what_this_means = 'Your Valun client cannot read its own records, so it signs nothing until they are fixed. '
+        + 'Nothing was signed. Tell your owner.';
+    }
+    if (e.code === 'already_paid') {
+      out.what_this_means = 'Your earlier credit note for this deal is (or may already be) on the tracker, so the deal '
+        + 'counts as paid. Nothing was signed. Do not try to pay it again; tell your owner.';
+    }
     if (e.code === 'mandate_exceeded') {
       out.what_this_means = "Your owner's mandate does not allow this. Nothing was recorded. Do not try to work around "
         + 'it; tell your owner if you think the limit should change.';
@@ -153,7 +289,6 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
   if (e instanceof Error) return {error: 'internal_error', message: `${e.name}: ${e.message}`};
   return {error: 'internal_error', message: `Error: ${String(e)}`};
 }
-
 /**
  * The nine Valun tools over one participant's Client.
  *
@@ -231,14 +366,16 @@ export class ValunAgent {
   }
 
   // ---------- approvals ----------
-  /** Does this call sign something that commits the owner (or loosen a limit)? Adapters ask the owner first. */
+  /**
+   * Does this call sign something that commits the owner (or loosen a limit)? Adapters ask the owner first. Fails closed
+   * by name and by value: only these are not commitments: the read-only tools, valun_deliver, valun_respond with action
+   * exactly 'decline' or 'withdraw', valun_review_delivery with decision exactly 'dispute', and valun_set_limits calls
+   * that do not loosen a recorded limit. Every other call, including any tool name this client does not know and a
+   * misspelt "Accept", is a commitment.
+   */
   async isCommitment(name, args = null) {
-    args = or(args, {});
-    if (name === 'valun_propose') return true;
-    // Fail closed: only the explicitly harmless actions skip the owner (a misspelt "Accept" must never skip them).
-    if (name === 'valun_respond') return !['decline', 'withdraw'].includes(get(args, 'action'));
-    if (name === 'valun_review_delivery') return get(args, 'decision') !== 'dispute';
-    if (name === 'valun_set_limits') {
+    const a = isDict(args) ? args : {};
+    if (LIMIT_TOOLS.includes(name)) {
       try {
         const me = await this.client().me();
         return loosens(or(get(me, 'agent_limits'), {}), limitsBody(args));
@@ -246,111 +383,319 @@ export class ValunAgent {
         return true;    // when in doubt, ask the owner
       }
     }
-    return false;
+    return ValunAgent.#mayCommit(name, a);
+  }
+
+  /** The classification without any read: false only for calls that can never commit the owner. */
+  static #mayCommit(name, a) {
+    if (NOT_COMMITMENT_TOOLS.includes(name)) return false;
+    if (name === 'valun_respond') return !['decline', 'withdraw'].includes(get(a, 'action'));
+    if (name === 'valun_review_delivery') return get(a, 'decision') !== 'dispute';
+    return true;
   }
 
   /**
-   * Pin what the owner is about to approve: an acceptance to the current terms hash, a delivery acceptance to the
-   * current deliverable hash, unless the agent already passed them. Adapters call this BEFORE asking the owner and sign
-   * with the returned arguments, so the signature covers exactly what the owner saw (the client refuses a changed offer
-   * or delivery instead of silently signing it). Best effort: returns a copy of the arguments, pinned where it could.
+   * Bind and describe a commitment from ONE snapshot of what it would sign. Resolves to {args, text}: the arguments to
+   * sign with and the owner's approval text. Adapters ask the owner with `text`, then call the tool with exactly `args`.
+   * text is null for a call that commits nothing (also a valun_set_limits call that this snapshot shows loosens
+   * nothing): it runs without asking.
+   *
+   * The text is built only from values checked against what is signed. An acceptance or counter-offer: the terms shown
+   * hash to the stated terms hash, are this deal's, name this participant as exactly one party and were offered by the
+   * other one, and the server's role and counterparty for the deal agree with them. A delivery acceptance: the same, and
+   * the agreement has that terms hash and the delivered text hashes to its sha256. The recomputed hashes are pinned in
+   * `args` (expected_terms_hash; for a delivery also expected_deliverable_sha256); the client reads the deal again when
+   * it signs and refuses anything else (stale_terms, stale_delivery). A new offer is pinned to the participant id the
+   * text shows. So the signature covers what the owner saw.
+   *
+   * Rejects with ValunError('approval_unbound') when what would be signed cannot be read or checked (any error, a missing
+   * or wrong hash, or a pin the agent passed that is not the snapshot's): the adapter must then refuse the call. A tool
+   * this client does not know gets a generic text; a known commitment never does.
    */
-  async bind(name, args = null) {
-    const out = dictCopy(or(args, {}));
-    try {
-      if (name === 'valun_respond' && get(out, 'action') === 'accept' && !truthy(get(out, 'expected_terms_hash'))) {
-        const cur = or(get(await this.client().deal(item(out, 'deal_id')), 'current'), {});
-        if (truthy(get(cur, 'terms_hash'))) out.expected_terms_hash = item(cur, 'terms_hash');
-      }
-      if (name === 'valun_review_delivery' && get(out, 'decision') === 'accept' && !truthy(get(out, 'expected_deliverable_sha256'))) {
-        const dl = or(get(await this.client().deal(item(out, 'deal_id')), 'delivery'), {});
-        if (truthy(get(dl, 'sha256'))) out.expected_deliverable_sha256 = item(dl, 'sha256');
-      }
-    } catch {
-      // binding is best effort; the call itself reports real problems
+  async prepare(name, args = null) {
+    const a = isDict(args) ? dictCopy(args) : {};
+    if (Array.isArray(name) || isDict(name)) throw new PyError('TypeError', `unhashable type: '${typeName(name)}'`);
+    if (typeof name !== 'string' || !Object.hasOwn(this.handlers, name)) {
+      return {args: a, text: GENERIC_TEXT.replace('{name}', () => shown(name))};
     }
-    return out;
+    if (!ValunAgent.#mayCommit(name, a)) return {args: a, text: null};
+    let bound, text;
+    try {
+      if (args !== null && args !== undefined && !isDict(args)) throw new ValunError('bad_arguments', 'the arguments are not a JSON object');
+      const render = this.#textFor(name, a);          // before any read: a misspelt action or decision has no text
+      const snap = await this.#snapshot(name, a);
+      if (LIMIT_TOOLS.includes(name) && !loosens(or(get(snap.me, 'agent_limits'), {}), limitsBody(a))) {
+        return {args: a, text: null};                 // this read shows nothing loosened: nothing to approve
+      }
+      bound = ValunAgent.#bindFrom(name, a, snap, true);
+      text = await render(bound, snap);
+    } catch (e) {                                     // nothing may be approved that could not be read and checked
+      throw ValunAgent.#unbound(e);
+    }
+    return {args: bound, text};
   }
 
-  /** Text for an approval prompt: exactly what the agent is about to sign, and what it means. */
-  async describeCommitment(name, args = null) {
-    args = or(args, {});
+  /**
+   * For adapters: [prepared, null], or [null, refusal]. Ask the owner with prepared.text, then sign with prepared.args;
+   * when prepared.text is null the call commits nothing and runs without asking. The refusal is the result to return
+   * instead of asking when what would be signed cannot be read or checked: the owner is then never asked with a generic
+   * text, and nothing is signed (approval_unbound).
+   */
+  async prepareOrRefusal(name, args = null) {
+    let prepared;
     try {
-      const c = this.client();
-      if (name === 'valun_set_limits') {
-        const me = await c.me();
-        const cur = or(get(me, 'agent_limits'), {}), mandate = item(me, 'mandate'), body = limitsBody(args);
-        const names = Object.fromEntries(LIMITS_SHOWN.map(([arg, [field]]) => [field, arg]));
-        const lines = ['Valun - LOOSEN limits recorded from your instructions (the Valun server enforces them):'];
-        for (const [field, next] of Object.entries(body)) {
-          if (Object.hasOwn(names, field)) {
-            lines.push(`  ${names[field]}: ${str(get(cur, field, get(mandate, field)))} -> ${next !== null ? str(next) : 'removed'} (your owner mandate: ${str(get(mandate, field))})`);
-          }
-        }
-        lines.push('Approve only if you asked your agent for this.');
-        return lines.join('\n');
-      }
-      if (name === 'valun_propose') {
-        const role = get(args, 'role'), price = get(args, 'price'), who = get(args, 'counterparty');
-        return [
-          `Valun - sign a NEW OFFER to ${str(who)}:`,
-          `  service: ${str(get(args, 'title'))}`,
-          `  deliverable: ${str(get(args, 'deliverable'))}`,
-          `  price: ${str(price)} PC; you are the ` + (role === 'payer' ? 'payer' : 'payee (you do the work)'),
-          `  deliver within ${str(or(get(args, 'deliver_within_hours'), 48))} h; the offer stays open ${str(or(get(args, 'offer_valid_hours'), 24))} h`,
-          `If ${str(who)} accepts, the deal is binding without asking you again: `
-            + (role === 'payer' ? `after you accept their delivery you will owe them ${str(price)} PC (your credit note).`
-              : `you must deliver; they would then owe you ${str(price)} PC (their credit note).`),
-          NOT_SETTLED].join('\n');
-      }
-      const d = await c.deal(get(args, 'deal_id'));
-      const cur = or(get(d, 'current'), {});
-      const t = or(get(cur, 'terms'), {}), who = get(or(get(d, 'counterparty'), {}), 'handle'), role = get(d, 'your_role');
-      const price = get(or(get(t, 'price'), {}), 'amount'), svc = or(get(t, 'service'), {});
-      if (name === 'valun_respond' && get(args, 'action') === 'accept') {
-        return [
-          `Valun - ACCEPT ${str(who)}'s offer (deal ${str(item(d, 'id'))}, version ${str(get(cur, 'version'))}):`,
-          `  service: ${str(get(svc, 'title'))}`,
-          `  deliverable: ${str(get(svc, 'deliverable'))}`,
-          `  price: ${str(price)} PC; you are the ${str(role)}; deliver by ${str(get(t, 'deliver_by'))}`,
-          `  terms hash ${str(slice(or(get(args, 'expected_terms_hash'), or(get(cur, 'terms_hash'), '')), 16))}... (rechecked by your Valun client before signing)`
-            + (!truthy(get(args, 'expected_terms_hash')) || pyEq(item(args, 'expected_terms_hash'), get(cur, 'terms_hash')) ? ''
-              : '\n  WARNING: the offer changed after your agent read it; signing these terms will be refused'),
-          'This makes the deal binding on both sides: '
-            + (role === 'payer' ? `after you accept the delivery you will owe ${str(who)} ${str(price)} PC.`
-              : `you must deliver; ${str(who)} would then owe you ${str(price)} PC.`),
-          NOT_SETTLED].join('\n');
-      }
-      if (name === 'valun_respond' && get(args, 'action') === 'counter') {
-        const changes = ['price', 'title', 'description', 'deliverable', 'deliver_within_hours']
-          .filter(k => { const v = get(args, k); return v !== null && v !== ''; })
-          .map(k => `${k} ${str(item(args, k))}`);
-        return [
-          `Valun - sign a COUNTER-OFFER to ${str(who)} (deal ${str(item(d, 'id'))}), replacing their version ${str(get(cur, 'version'))} at ${str(price)} PC:`,
-          '  changes: ' + (changes.join(', ') || 'none'),
-          `If ${str(who)} accepts it, the deal is binding without asking you again. You are the ${str(role)}.`,
-          NOT_SETTLED].join('\n');
-      }
-      if (name === 'valun_review_delivery') {
-        const dl = or(get(d, 'delivery'), {});
-        const m = await measure(or(get(dl, 'content'), ''), termsText(d), {checkHosts: false});
-        const facts = m.checks_against_agreed_terms.map(x => `${x.requirement}: ${x.measured} (${x.met ? 'met' : 'NOT met'})`);
-        const exact = checkDelivery(t, or(get(dl, 'content'), ''));
-        if (truthy(exact) && truthy(exact.checked)) {
-          facts.push('exact result: ' + (truthy(exact.exact_result_matches) ? 'matches the agreed text'
-            : `DOES NOT MATCH (differs in ${or(exact.differs_in, []).join(', ')})`));
-        }
-        return [
-          `Valun - ACCEPT ${str(who)}'s delivery (deal ${str(item(d, 'id'))}) and ISSUE A CREDIT NOTE of ${str(price)} PC to ${str(who)}:`,
-          `  delivered: ${str(or(get(dl, 'title'), '(untitled)'))}, ${str(get(dl, 'bytes'))} bytes, sha256 ${str(slice(or(get(dl, 'sha256'), ''), 16))}...`,
-          '  measured: ' + (facts.join('; ') || `${m.word_count} words, ${m.links.length} links`),
-          `Your agent signs a Basis note; the pilot tracker then records that you owe ${str(who)} ${str(price)} PC more.`,
-          NOT_SETTLED].join('\n');
-      }
+      prepared = await this.prepare(name, args);
     } catch {
-      // the prompt must still appear
+      prepared = null;                                // whatever went wrong, the answer is the same refusal
     }
-    return `Valun: sign a commitment (${str(name)}).`;
+    if (isDict(prepared) && isDict(prepared.args)
+        && ((prepared.text ?? null) === null || (typeof prepared.text === 'string' && prepared.text))) {
+      return [prepared, null];
+    }
+    return [null, errorPayload(new ValunError('approval_unbound', UNBOUND_MESSAGE), this.setupHint)];
+  }
+
+  /**
+   * prepare()'s pins alone, for adapters that ask with their own text (kept for compatibility): an acceptance or
+   * counter-offer is pinned to the recomputed hash of the terms shown, a delivery acceptance also to the recomputed hash
+   * of the delivered text, each checked as prepare() checks it. Pins the agent passed are kept (the client refuses to
+   * sign anything else). For a commitment it never resolves to the arguments unpinned: when the deal cannot be read or
+   * checked it rejects with ValunError('approval_unbound').
+   */
+  async bind(name, args = null) {
+    const a = isDict(args) ? dictCopy(args) : {};
+    if (!ValunAgent.#needsPins(name, a)) return a;
+    try {
+      return ValunAgent.#bindFrom(name, a, await this.#snapshot(name, a), false);
+    } catch (e) {
+      throw ValunAgent.#unbound(e);
+    }
+  }
+
+  /**
+   * Text for an approval prompt: exactly what the agent is about to sign, and what it means (prepare() gives it together
+   * with the arguments it binds). Rejects with ValunError('approval_unbound') for a known commitment it cannot read and
+   * check: it never falls back to a generic text. null for a call that is not a commitment.
+   */
+  async describeCommitment(name, args = null) {
+    return (await this.prepare(name, args)).text;
+  }
+
+  static #unbound(e) {
+    const cause = isValunError(e) ? e.code : (e instanceof Error ? e.name : typeName(e));
+    return new ValunError('approval_unbound', UNBOUND_MESSAGE, undefined, {cause});
+  }
+
+  static #needsPins(name, a) {
+    if (name === 'valun_respond' && ['accept', 'counter'].includes(get(a, 'action'))) return !truthy(get(a, 'expected_terms_hash'));
+    if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept') {
+      return !(truthy(get(a, 'expected_deliverable_sha256')) && truthy(get(a, 'expected_terms_hash')));
+    }
+    return false;
+  }
+
+  /** The one read an approval is bound to and described from (checked: see prepare). */
+  async #snapshot(name, a) {
+    const c = this.client();
+    if (name === 'valun_propose') {
+      const other = await this.#resolve(c, get(a, 'counterparty'));
+      if (!(isDict(other) && typeof get(other, 'id') === 'string' && other.id)) {
+        throw new ValunError('approval_unbound', 'the directory names no participant id');
+      }
+      return {counterparty: other};
+    }
+    if (name === 'valun_set_limits') {
+      const me = await c.me();
+      if (!isDict(me)) throw new ValunError('approval_unbound', 'the server sent no participant record');
+      return {me};
+    }
+    const did = get(a, 'deal_id');
+    if (!(typeof did === 'string' && DEAL_ID.test(did))) throw new ValunError('bad_arguments', 'deal_id is missing or malformed');
+    const d = await c.deal(did);
+    if (!isDict(d)) throw new ValunError('approval_unbound', 'the deal could not be read');
+    return {deal: d, checked: ValunAgent.#checked(d, did, c.participantId, name === 'valun_review_delivery')};
+  }
+
+  /**
+   * The values an approval text is built from, each checked against what the call signs (prepare). Throws ValunError
+   * when the deal as shown does not hold together.
+   */
+  static #checked(d, did, me, delivery = false) {
+    const cur = get(d, 'current');
+    if (!isDict(cur) || !truthy(cur)) throw new ValunError('no_offer', 'this deal has no visible offer');
+    const t = get(cur, 'terms');
+    if (!isDict(t)) throw new ValunError('approval_unbound', 'the offer shows no terms');
+    const h = pyTermsHash(t);
+    if (get(cur, 'terms_hash') !== h) throw new ValunError('hash_mismatch', 'the terms shown do not hash to the stated terms hash');
+    if (get(t, 'deal_id') !== did) throw new ValunError('deal_mismatch', 'the terms shown are for another deal');
+    const ids = Object.fromEntries(['payer', 'payee'].map(r => [r, isDict(get(t, r)) ? get(t[r], 'id') : null]));
+    const mine = Object.entries(ids).filter(([, pid]) => typeof me === 'string' && me && pid === me).map(([r]) => r);
+    if (mine.length !== 1) throw new ValunError('not_a_party', 'the terms do not name you as exactly one of the two parties');
+    const role = mine[0];
+    const other = ids[role === 'payer' ? 'payee' : 'payer'];
+    if (!(typeof other === 'string' && other)) throw new ValunError('not_a_party', 'the terms name no other party');
+    const yourRole = get(d, 'your_role') ?? null;
+    if (yourRole !== null && yourRole !== role) {
+      throw new ValunError('role_mismatch', `the server says you are the ${shown(yourRole)}; the terms make you the ${role}`);
+    }
+    const cp = isDict(get(d, 'counterparty')) ? d.counterparty : {};
+    const cpId = get(cp, 'id') ?? null;
+    if (cpId !== null && cpId !== other) throw new ValunError('counterparty_mismatch', "the server's counterparty is not the other party in the terms");
+    const price = get(t, 'price');
+    if (!(isDict(price) && whole(get(price, 'amount')) && get(price, 'unit') === UNIT)) {
+      throw new ValunError('bad_terms', 'the price is not a whole number of PC');
+    }
+    const out = {terms: t, terms_hash: h, role, other_id: other, handle: get(cp, 'handle'), price: price.amount,
+      service: isDict(get(t, 'service')) ? t.service : {}};
+    if (!delivery) {
+      if (get(t, 'proposer') !== other) throw new ValunError('own_offer', "the current offer is not the other party's: only they can be answered");
+      return out;
+    }
+    if (role !== 'payer') throw new ValunError('not_payer', 'only the payer accepts a delivery');
+    const ag = get(d, 'agreement');
+    if (!isDict(ag) || get(ag, 'terms_hash') !== h) throw new ValunError('hash_mismatch', "the agreement's terms hash is not the hash of the terms shown");
+    const dl = get(d, 'delivery');
+    if (!isDict(dl) || !truthy(dl)) throw new ValunError('not_delivered', 'nothing has been delivered on this deal');
+    const content = get(dl, 'content');
+    if (typeof content !== 'string') throw new ValunError('approval_unbound', 'the delivery shows no text');
+    const sha = pySha256(content);
+    if (get(dl, 'sha256') !== sha) throw new ValunError('hash_mismatch', 'the delivered content does not match its sha256');
+    return {...out, delivery: dl, content, sha256: sha};
+  }
+
+  /**
+   * The arguments to sign with: the agent's, plus the pins taken from the checked snapshot. With strict (prepare) a pin
+   * the agent passed must be the snapshot's: the text describes the snapshot, so the call may sign nothing else.
+   */
+  static #bindFrom(name, a0, snap, strict) {
+    const a = dictCopy(a0);
+    const chk = or(snap.checked ?? null, {});
+    const pin = (key, value, code, why) => {
+      if (!truthy(get(a, key))) a[key] = value;
+      else if (strict && !pyEq(a[key], value)) throw new ValunError(code, why);
+    };
+    if (name === 'valun_respond' && ['accept', 'counter'].includes(get(a, 'action'))) {
+      pin('expected_terms_hash', item(chk, 'terms_hash'), 'stale_terms', 'the offer changed after your agent read it');
+    } else if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept') {
+      pin('expected_deliverable_sha256', item(chk, 'sha256'), 'stale_delivery', 'the delivery changed after your agent read it');
+      pin('expected_terms_hash', item(chk, 'terms_hash'), 'stale_terms', 'the agreed terms are not the ones your agent read');
+    } else if (name === 'valun_propose' && Object.hasOwn(snap, 'counterparty')) {
+      a.counterparty = snap.counterparty.id;          // the offer is signed for exactly the participant shown
+    }
+    return a;
+  }
+
+  /** The approval text builder for this call: (args, snapshot) => text. */
+  #textFor(name, a) {
+    if (name === 'valun_set_limits') return (b, s) => this.#textLimits(b, s);
+    if (name === 'valun_propose') return (b, s) => this.#textPropose(b, s);
+    if (name === 'valun_respond' && get(a, 'action') === 'accept') return (b, s) => this.#textAccept(b, s);
+    if (name === 'valun_respond' && get(a, 'action') === 'counter') return (b, s) => this.#textCounter(b, s);
+    if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept') return (b, s) => this.#textReview(b, s);
+    throw new ValunError('approval_unbound', `no approval text for ${name} with these arguments`);
+  }
+
+  // The texts: computed lines first (values the client computed or checked against what is signed, shown so that they
+  // cannot carry layout), then text written by a counterparty or by the agent, quoted as one JSON line (quoteLine).
+  #who(chk) {
+    const h = chk.handle;
+    return typeof h === 'string' && h ? shown(h) : shown(chk.other_id);
+  }
+
+  #textLimits(a, snap) {
+    const me = snap.me;
+    const mandate = get(me, 'mandate');
+    if (!isDict(mandate)) throw new ValunError('approval_unbound', 'the server sent no owner mandate');
+    const cur = or(get(me, 'agent_limits'), {}), body = limitsBody(a);
+    const names = Object.fromEntries(LIMITS_SHOWN.map(([arg, [field]]) => [field, arg]));
+    const lines = ['Valun - LOOSEN limits recorded from your instructions (the Valun server enforces them):'];
+    for (const [field, next] of Object.entries(body)) {
+      if (Object.hasOwn(names, field)) {
+        lines.push(`  ${names[field]}: ${shown(get(cur, field, get(mandate, field)))} -> `
+          + `${next !== null ? shown(next) : 'removed'} (your owner mandate: ${shown(get(mandate, field))})`);
+      }
+    }
+    lines.push('Approve only if you asked your agent for this.');
+    if (Object.hasOwn(body, 'notes')) lines.push('Goals written by your agent (quoted exactly): ' + quoted(body.notes));
+    return lines.join('\n');
+  }
+
+  #textPropose(a, snap) {
+    const other = snap.counterparty;
+    const role = get(a, 'role');
+    if (role !== 'payer' && role !== 'payee') throw new ValunError('bad_role', 'role must be payer or payee');
+    const price = int(item(a, 'price')), due = int(or(get(a, 'deliver_within_hours'), 48)), ttl = int(or(get(a, 'offer_valid_hours'), 24));
+    const who = shown(get(other, 'handle'));
+    return [
+      `Valun - sign a NEW OFFER to ${who} (${shown(item(other, 'id'))}):`,
+      `  you are the ${ROLE_WORDS[role]}; price: ${price} PC`,
+      `  deliver within ${due} h; the offer stays open ${ttl} h`,
+      `If ${who} accepts, the deal is binding without asking you again: ` + owes(role, who, price),
+      NOT_SETTLED,
+      quoteLine('Offer text written by your agent', Object.fromEntries(TEXT_FIELDS.map(k => [k, get(a, k)])))].join('\n');
+  }
+
+  #textAccept(a, snap) {
+    const chk = snap.checked;
+    const t = chk.terms, who = this.#who(chk), price = chk.price, svc = chk.service;
+    return [
+      `Valun - ACCEPT ${who}'s offer (${shown(chk.other_id)}, deal ${shown(t.deal_id)}, version ${shown(get(t, 'version'))}):`,
+      `  you are the ${ROLE_WORDS[chk.role]}; price: ${price} PC; deliver by ${shown(get(t, 'deliver_by'))}`,
+      `  terms hash ${chk.terms_hash.slice(0, 16)}... (recomputed from these terms; your Valun client checks it again before signing)`,
+      'This makes the deal binding on both sides: ' + owes(chk.role, who, price),
+      NOT_SETTLED,
+      quoteLine(`Offer text written by ${who}`, Object.fromEntries(TEXT_FIELDS.map(k => [k, get(svc, k)])))].join('\n');
+  }
+
+  #textCounter(a, snap) {
+    const chk = snap.checked;
+    const t = chk.terms, who = this.#who(chk), old = chk.price, svc = chk.service;
+    // Exactly what Client.counter() signs: these arguments, and the rest copied from the terms pinned by hash.
+    const price = get(a, 'price') !== null ? int(item(a, 'price')) : old;
+    const hours = get(a, 'deliver_within_hours');
+    if (hours !== null && !whole(hours)) throw new ValunError('bad_arguments', 'deliver_within_hours must be a whole number of hours');
+    const texts = TEXT_FIELDS.filter(k => truthy(get(a, k)));
+    const changes = [...(get(a, 'price') !== null ? [`price ${old} -> ${price} PC`] : []),
+      ...(hours !== null ? [`deliver within ${hours} h`] : []), ...texts.map(k => `${k} (quoted below)`)];
+    return [
+      `Valun - sign a COUNTER-OFFER to ${who} (${shown(chk.other_id)}, deal ${shown(t.deal_id)}), `
+        + `replacing their version ${shown(get(t, 'version'))}:`,
+      `  you are the ${ROLE_WORDS[chk.role]}; price: ${price} PC`,
+      '  deliver ' + (hours !== null ? `within ${hours} h of signing`
+        : `by ${shown(get(t, 'deliver_by'))} as in their offer (rounded down to the hour, at least 1 h after signing)`),
+      '  your agent changes: ' + (changes.join(', ') || 'nothing') + '; the counter-offer stays open 24 h',
+      `If ${who} accepts it, the deal is binding without asking you again: ` + owes(chk.role, who, price),
+      NOT_SETTLED,
+      quoteLine(`Counter-offer text, with what your agent did not change copied from ${who}'s offer`,
+        Object.fromEntries(TEXT_FIELDS.map(k => [k, truthy(get(a, k)) ? item(a, k) : get(svc, k)])))].join('\n');
+  }
+
+  async #textReview(a, snap) {
+    const chk = snap.checked;
+    const t = chk.terms, who = this.#who(chk), price = chk.price, svc = chk.service, dl = chk.delivery, content = chk.content;
+    const m = await measure(content, TEXT_FIELDS.map(k => str(or(get(svc, k), ''))).join(' '), {checkHosts: false});
+    const facts = m.checks_against_agreed_terms.map(x => `${x.requirement}: ${x.measured} (${x.met ? 'met' : 'NOT met'})`);
+    let exact;
+    try {
+      exact = checkDelivery(t, content);
+    } catch {                                         // a malformed result block is a fact to show, not a reason to hide the prompt
+      exact = null;
+      facts.push('exact result: could not be checked');
+    }
+    if (truthy(exact) && truthy(get(exact, 'checked'))) {
+      facts.push('exact result: ' + (truthy(get(exact, 'exact_result_matches')) ? 'matches the agreed text'
+        : 'DOES NOT MATCH (differs in ' + iterate(or(get(exact, 'differs_in'), [])).map(k => shown(k)).join(', ') + ')'));
+    }
+    return [
+      `Valun - ACCEPT ${who}'s delivery (${shown(chk.other_id)}, deal ${shown(t.deal_id)}) and ISSUE A CREDIT NOTE `
+        + `of ${price} PC to ${who}:`,
+      `  delivered: ${utf8(content).length} bytes, sha256 ${chk.sha256.slice(0, 16)}... (recomputed from the text measured here)`,
+      '  measured: ' + (facts.join('; ') || `${m.word_count} words, ${m.links.length} links`),
+      `  agreed terms hash ${chk.terms_hash.slice(0, 16)}... (your Valun client checks both hashes again before signing)`,
+      `Your agent signs a Basis note; the pilot tracker then records that you owe ${who} ${price} PC more.`,
+      NOT_SETTLED,
+      quoteLine('Delivery title and agreed service text', {delivery_title: or(get(dl, 'title'), ''), title: get(svc, 'title'),
+        deliverable: get(svc, 'deliverable')})].join('\n');
   }
 
   // ---------- tools ----------
@@ -529,7 +874,7 @@ export class ValunAgent {
       r = await c.withdraw(did);
     } else if (act === 'counter') {
       r = await c.counter(did, {price: get(a, 'price'), title: get(a, 'title'), description: get(a, 'description'),
-        deliverable: get(a, 'deliverable'), deliverByHours: get(a, 'deliver_within_hours')});
+        deliverable: get(a, 'deliverable'), deliverByHours: get(a, 'deliver_within_hours'), expectedTermsHash: get(a, 'expected_terms_hash')});
     } else {
       throw new ValunError('bad_action', 'action must be accept, decline, counter or withdraw');
     }
@@ -571,7 +916,8 @@ export class ValunAgent {
       const r = await c.dispute(item(a, 'deal_id'), item(a, 'reason'));
       return {deal_id: item(r, 'id'), status: item(r, 'status'), what_happened: 'Disputed. No credit note was issued; the dispute is recorded.'};
     }
-    const r = await c.complete(item(a, 'deal_id'), {expectedDeliverableSha256: get(a, 'expected_deliverable_sha256')});
+    const r = await c.complete(item(a, 'deal_id'), {expectedDeliverableSha256: get(a, 'expected_deliverable_sha256'),
+      expectedTermsHash: get(a, 'expected_terms_hash')});
     const n = or(get(r, 'credit_note'), {});
     const status = item(r, 'status');
     let msg;

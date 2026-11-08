@@ -40,8 +40,11 @@ function agreed(t = terms()) {
 }
 
 const CONTENT = '# Brief\nThree sources.\n';
+// Signed by the payee, as the server shows a delivery (since 0.4 complete() checks the payee's delivery signature).
 function delivered(t = terms(), content = CONTENT) {
-  return {...agreed(t), status: 'delivered', delivery: {by: BOB, title: 'Brief', content, sha256: sha256Hex(content)}};
+  const d = agreed(t);
+  return {...d, status: 'delivered', delivery: {by: BOB, title: 'Brief', content, sha256: sha256Hex(content),
+    signature: sig(B, statements.deliver(d.agreement.terms_hash, content))}};
 }
 
 function template(over = {}) {

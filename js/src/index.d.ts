@@ -104,7 +104,38 @@ export interface CreditNoteTemplate {
   tracker_nft_id: string;
   denomination: string;
   message_hex: string;
+  /** With ?prior=1 (a server offering bound_notes/1): the edge's current note, or null when the edge does not exist yet. */
+  prior_note?: EdgeState | null;
 }
+
+/** A tracker edge's current note: its total, timestamp and the issuer's signature over them (spec v14, 4.4). */
+export interface EdgeState {
+  total: number;
+  timestamp: number;
+  signature: string;
+}
+
+/** Something this client signed for an edge whose outcome is not known yet (records.js). */
+export interface PendingEntry {
+  total: number;
+  timestamp: number;
+  /** 'note' (a credit note) or a novation kind ('transfer', 'setoff'). */
+  kind: string;
+  /** The deal, transfer or set-off id. */
+  ref: string | null;
+  /** 'out': this client is the edge's issuer; 'in': its creditor. */
+  direction: 'out' | 'in';
+  signed_at: string | null;
+}
+
+/** One edge's record: the state last confirmed applied on the tracker, and what is signed but not known yet. */
+export interface EdgeRecord {
+  confirmed: EdgeState | null;
+  pending: PendingEntry[];
+}
+
+/** {"<issuer_pubkey>><recipient_pubkey>": EdgeRecord}: the same layout as the Python client's state['records']. */
+export type Records = Record<string, EdgeRecord>;
 
 export interface NetworkInfo {
   network: string;
@@ -131,7 +162,12 @@ export interface VerifiedOffer {
  * already_connected, unreachable, bad_response, no_offer, hash_mismatch, wrong_network, wrong_tracker, not_a_party,
  * wrong_key, wrong_deal, wrong_proposer, bad_terms, bad_signature, expired, counterparty_inactive, stale_terms,
  * not_agreed, not_delivered, stale_delivery, bad_template, ledger_mismatch, bad_role, bad_price, bad_content, bad_id,
- * bad_enrollment, bad_key, invalid_field (a reason the server would refuse; extra.local = true), bad_store.
+ * bad_enrollment, bad_key, invalid_field (a reason the server would refuse; extra.local = true), bad_store;
+ * since 0.4: bad_delivery_signature (the payee did not sign the delivery), bad_prior_signature (the prior note shown is
+ * not this agent's own signature), already_paid (a note of this agent for the deal is or may be on the tracker),
+ * tracker_mismatch (the server names another tracker or unit than the profile's pins; extra.pinned),
+ * records_unreadable (the profile or its records cannot be read: nothing is signed), profile_busy (another process held
+ * the profile lock for 5 s), approval_unbound (an approval could not be bound to what would be signed; extra.cause).
  */
 export class ValunError extends Error {
   constructor(code: string, message: string, status?: number, extra?: Record<string, unknown>);
@@ -156,14 +192,19 @@ export interface ClientState {
   pubkey?: string;
   network?: string;
   enrolled_at?: string;
-  /** Cumulative credit-note totals this agent issued, keyed "issuerPubkey>recipientPubkey". */
+  /** Confirmed cumulative credit-note totals this agent issued, keyed "issuerPubkey>recipientPubkey" (the 0.3 record). */
   issued?: Record<string, number>;
+  /** Per edge: the confirmed state and what is signed but not known yet (records.js). */
+  records?: Records;
+  /** The tracker and unit this profile is pinned to (set on its first /info read or completion; R13). */
+  pins?: {tracker_nft_id: string; denomination: string};
   [field: string]: unknown;
 }
 
 /**
  * Where the client keeps its state and secrets. secret() and token() are synchronous; save() and saveCredentials() may
- * be async. The client never returns or logs what secret() and token() give it.
+ * be async. The client never returns or logs what secret() and token() give it. A store with update(fn) (FileStore)
+ * gets every change to the records through it: fn(state) applied to the state as stored now, saved as one step.
  */
 export interface ValunStore {
   state: ClientState;
@@ -173,6 +214,10 @@ export interface ValunStore {
   token(): string | null;
   save(): void | Promise<void>;
   saveCredentials(secretHex: string, token: string): void | Promise<void>;
+  /** Optional: reload the stored state, apply fn (synchronous) to it, save it, and update `state` in place. */
+  update?<T>(fn: (state: ClientState) => T): T | Promise<T>;
+  /** Optional: replace `state` (in place) with what is stored now. */
+  reload?(): void | Promise<void>;
 }
 
 /** Keeps everything in memory; the key and token sit in private fields (not enumerable, not inspectable). */
@@ -251,6 +296,15 @@ export interface CounterRequest {
   deliverable?: string;
   deliverByHours?: number;
   offerTtlHours?: number;
+  /** The hash of the offer that was inspected: anything else is refused (stale_terms) before signing. */
+  expectedTermsHash?: string;
+}
+
+export interface CompleteOptions {
+  /** The sha256 of the delivery that was reviewed: anything else is refused (stale_delivery). */
+  expectedDeliverableSha256?: string;
+  /** The hash of the agreed terms that were reviewed: anything else is refused (stale_terms) before the template is read. */
+  expectedTermsHash?: string;
 }
 
 export class Client {
@@ -272,6 +326,7 @@ export class Client {
   /** Generates the key locally and registers it; stores key and agent token; returns neither. */
   enroll(participantId: string, code: string): Promise<{participant_id: string; pubkey: string; network: string}>;
 
+  /** GET /info. An enrolled profile is pinned to the tracker and unit it names the first time; another answer later is refused (tracker_mismatch). */
   info(): Promise<NetworkInfo>;
   me(): Promise<Record<string, unknown>>;
   inbox(): Promise<Record<string, unknown>>;
@@ -295,10 +350,46 @@ export class Client {
   decline(dealId: string, reason?: string | null): Promise<DealView>;
   withdraw(dealId: string): Promise<DealView>;
   deliver(dealId: string, content: string, options?: {title?: string}): Promise<DealView>;
-  /** Accept the delivery and sign the Basis credit note (prior + price). Check `status` of the result. */
-  complete(dealId: string, options?: {expectedDeliverableSha256?: string}): Promise<DealView>;
+  /**
+   * Accept the delivery and sign the Basis credit note (prior + price). Check `status` of the result. The payee's
+   * delivery signature, the template and the prior (the agent's own prior note with bound_notes/1, else its own record)
+   * are checked first; the note is recorded as pending before it is sent and confirmed only on note_issued.
+   */
+  complete(dealId: string, options?: CompleteOptions): Promise<DealView>;
   /** The reason is required; one the server would refuse is refused locally (invalid_field). */
   dispute(dealId: string, reason: string): Promise<DealView>;
+  /** The payee signed the delivery under one of these keys (bad_delivery_signature otherwise). */
+  static checkDeliverySignature(delivery: unknown, termsHash: string, ...payeeKeys: Array<string | null | undefined>): void;
+}
+
+/** The optional state keys every store must keep for the client (Python CORE_STATE_KEYS). */
+export const CORE_STATE_KEYS: readonly string[];
+/** Template timestamps whose ms residue (ts mod 1000) is at least this are kept by the v3 tracker for other operations. */
+export const RESERVED_MS_FROM: 995;
+/** Is `signature` the issuer's Basis note signature over (issuer, recipient, total, timestamp) on this tracker and unit? Never throws. */
+export function verifyNote(issuerPubkey: string, recipientPubkey: string, total: number, timestamp: number, signature: string,
+  trackerNftId: string, denomination: string): boolean;
+
+/** A participant's own records of its credit edges (port of python/src/valun/records.py; pure). Malformed input throws a ValueError. */
+export namespace records {
+  const MAX_U64: number;
+  function pairKey(issuerPubkey: string, recipientPubkey: string): string;
+  /** A checked copy of an EdgeState. */
+  function edgeState(state: unknown): EdgeState;
+  /** One edge's record, without adding it. */
+  function get(recs: Records | null | undefined, pair: string): EdgeRecord;
+  function confirmedTotal(recs: Records | null | undefined, pair: string): number | null;
+  function addPending(recs: Records, pair: string, total: number, timestamp: number, kind: string, ref?: string | null,
+    direction?: 'out' | 'in', signedAt?: string | null): PendingEntry;
+  function removePending(recs: Records, pair: string, total: number, timestamp: number, ref?: string | null): number;
+  /** `state` applied on `pair`: confirmed, a matching pending entry promoted, entries at or before it dropped; never back in time. */
+  function confirm(recs: Records, pair: string, state: EdgeState): EdgeRecord;
+  /** One row of the edge's current state ({edge} or {issuer_pubkey, recipient_pubkey}, plus an EdgeState). */
+  function syncEdge(recs: Records, edge: Record<string, unknown>): {pair: string; changed: boolean; promoted: PendingEntry | null;
+    dropped: unknown[]; confirmed: EdgeState | null};
+  type Verify = (issuerPubkey: string, recipientPubkey: string, total: number, timestamp: number, signature: string) => boolean;
+  function priorProblem(recs: Records, pair: string, priorNote: unknown, myPubkey: string, verify: Verify): 'bad_prior_signature' | 'stale_prior' | null;
+  function acceptPrior(recs: Records, pair: string, priorNote: unknown, myPubkey: string, verify: Verify): boolean;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -434,12 +525,20 @@ export type ToolResult = Record<string, unknown>;
 export interface ToolError {
   error: string;
   message: string;
-  /** For mandate_exceeded, offer_not_authorized, key_changed/payee_no_key, unauthorized/not_connected/not_configured, owner_declined. */
+  /**
+   * For approval_unbound, tracker_mismatch, bad_delivery_signature, records_unreadable, already_paid, mandate_exceeded,
+   * offer_not_authorized, key_changed/payee_no_key, unauthorized/not_connected/not_configured, owner_declined (or the
+   * server's own, passed through).
+   */
   what_this_means?: string;
   rule?: unknown;
   mandate_version?: unknown;
   /** draft_does_not_meet_terms: the measurements of the draft. */
   measured?: Measurement;
+  /** Passed through from the server's error: when to try again, the template it refers to, when a fallback opens. */
+  retry_after_ms?: unknown;
+  template?: unknown;
+  fallback_after?: unknown;
 }
 
 export type HostStatus = 'public' | 'private' | 'not_found' | 'unknown (lookup timed out)';
@@ -552,6 +651,19 @@ export const REAL_VS_SIMULATED: Readonly<{real: string; simulated: string; not_p
 export const LIMIT_FIELDS: Readonly<Record<LimitArgument, readonly [string, 'cap' | 'floor']>>;
 export const TOOL_NAMES: readonly ToolName[];
 export const READ_ONLY_TOOLS: readonly ToolName[];
+/** The classification (fail closed by name): these tools never commit the owner (the read-only tools and valun_deliver)... */
+export const NOT_COMMITMENT_TOOLS: readonly ToolName[];
+/** ...this one only when it loosens a recorded limit (valun_set_limits)... */
+export const LIMIT_TOOLS: readonly ToolName[];
+/** ...and these sign a commitment for some arguments. Any tool name not listed in the three is a commitment too. */
+export const SIGNING_TOOLS: readonly ToolName[];
+/** The approval_unbound message: 'could not read what you would sign; nothing was signed'. */
+export const UNBOUND_MESSAGE: string;
+/** The approval text for a tool this client does not know; '{name}' stands for the tool name. */
+export const GENERIC_TEXT: string;
+/** Text fields quoted in an approval text are cut to this many characters (code points). */
+export const QUOTE_MAX_CHARS: number;
+export const ROLE_WORDS: Readonly<{payer: string; payee: string}>;
 export const DEFAULT_SETUP_HINT: string;
 /** The Python adapters' sentences for where approvals happen (valun_status shows the one in use). */
 export const APPROVAL_TEXT: Readonly<{ask: string; 'client-prompt': string; console: string; none: string}>;
@@ -560,8 +672,19 @@ export const APPROVAL_TEXT: Readonly<{ask: string; 'client-prompt': string; cons
 export function errorPayload(error: unknown, setupHint?: string): ToolError;
 /** valun_set_limits arguments as the server's /limits body. */
 export function limitsBody(args: ToolArgs): Record<string, number | string | null>;
-/** Would this /limits body loosen a limit recorded before (higher cap, lower floor, or removal)? */
+/**
+ * Would this /limits body loosen a limit recorded before (higher cap, lower floor, or removal)? Fails closed: an unknown
+ * field, an unknown kind of limit or a value that is not a whole number counts as loosening.
+ */
 export function loosens(current: Record<string, unknown>, body: Record<string, unknown>): boolean;
+/** Untrusted text as ONE line of JSON, as Python's json.dumps(value, ensure_ascii=True, separators=(',', ':')) writes it. */
+export function quoted(value: unknown): string;
+/** A value for a computed line of an approval text: as is when it cannot carry layout, otherwise quoted(). */
+export function shown(value: unknown): string;
+/** The last line of an approval text: `label` and `fields` quoted as one JSON line (long fields cut, and the label says so). */
+export function quoteLine(label: string, fields: Record<string, unknown>): string;
+/** What a binding deal means for this participant in `role` ('payer' or 'payee'). */
+export function owes(role: string, who: string, price: number): string;
 /** Seen (or joined) within the last `hours` (default 24)? Times without a UTC offset do not count. */
 export function recentlyActive(lastSeen: unknown, hours?: number, joinedAt?: unknown, nowMs?: number): boolean;
 /** The current terms' title, description and deliverable, joined by spaces. */
@@ -598,18 +721,29 @@ export class ValunAgent {
   /** Like call(), but never rejects: failures resolve to a ToolError. */
   callSafe(name: ToolName | string, args?: ToolArgs | null): Promise<ToolResult>;
   /**
-   * Would this call sign a commitment or loosen a limit? Fails closed: valun_respond is one unless the action is exactly
-   * 'decline' or 'withdraw', valun_review_delivery unless the decision is exactly 'dispute'.
+   * Would this call sign a commitment or loosen a limit? Fails closed by name and by value: only the read-only tools,
+   * valun_deliver, valun_respond with action exactly 'decline' or 'withdraw', valun_review_delivery with decision
+   * exactly 'dispute' and valun_set_limits calls that loosen nothing are not; every other call, any tool name this
+   * client does not know included, is.
    */
   isCommitment(name: ToolName | string, args?: ToolArgs | null): Promise<boolean>;
   /**
-   * A copy of the arguments with an acceptance pinned to the current terms hash (valun_respond accept) or deliverable
-   * hash (valun_review_delivery accept) when the agent passed none. Call it before asking the owner and execute exactly
-   * what it returns. Best effort: never rejects for a read that fails.
+   * Bind and describe a commitment from ONE read of what it would sign: the arguments to sign with (pinned to the
+   * recomputed hashes, an offer to the participant id shown) and the owner's approval text, built only from values
+   * checked against what is signed. text is null when the call commits nothing (run it without asking). Rejects with
+   * ValunError('approval_unbound') (extra.cause says why) when that cannot be read or checked: then refuse the call.
+   */
+  prepare(name: ToolName | string, args?: ToolArgs | null): Promise<{args: ToolArgs; text: string | null}>;
+  /** For adapters: [prepared, null], or [null, refusal] where refusal is the approval_unbound tool result. Never rejects. */
+  prepareOrRefusal(name: ToolName | string, args?: ToolArgs | null): Promise<[{args: ToolArgs; text: string | null}, null] | [null, ToolError]>;
+  /**
+   * prepare()'s pins alone (kept for compatibility): an acceptance or counter-offer pinned to the recomputed terms
+   * hash, a delivery acceptance also to the recomputed deliverable hash, unless the agent passed them. Rejects with
+   * approval_unbound for a commitment it cannot read and check (it never returns such arguments unpinned).
    */
   bind(name: ToolName | string, args?: ToolArgs | null): Promise<ToolArgs>;
-  /** The approval prompt: exactly what would be signed and what it means. Never rejects. */
-  describeCommitment(name: ToolName | string, args?: ToolArgs | null): Promise<string>;
+  /** prepare()'s text: null for a call that commits nothing; rejects with approval_unbound, never a generic text for a known tool. */
+  describeCommitment(name: ToolName | string, args?: ToolArgs | null): Promise<string | null>;
   status(args?: ToolArgs): Promise<ToolResult>;
   directory(args: ToolArgs): Promise<ToolResult>;
   inbox(args?: ToolArgs): Promise<ToolResult>;
@@ -631,7 +765,10 @@ export interface FrameworkTool {
   execute(args?: ToolArgs | string | null): Promise<ToolResult>;
 }
 
-/** Asked before every commitment; only `true` approves. `args` is a frozen copy of the bound arguments that will be executed. */
+/**
+ * Asked before every commitment, with the text ValunAgent.prepare() built; only `true` approves. `args` is a frozen copy
+ * of the prepared arguments that will be executed. Not called when prepare() refuses (approval_unbound).
+ */
 export type ApproveHook = (commitmentText: string, name: ToolName, args: Readonly<ToolArgs>) => boolean | Promise<boolean>;
 
 export interface ValunToolsOptions {
@@ -644,7 +781,9 @@ export interface ValunToolsOptions {
 export const NO_APPROVAL_STEP: string;
 
 /**
- * The nine tools of `agent` as FrameworkTool objects. Commitments ask `approve` first (owner_declined unless it returns
- * true; approval_unavailable if it throws); without a hook they are refused (approval_unavailable) unless approvals is 'none'.
+ * The nine tools of `agent` as FrameworkTool objects. Commitments ask `approve` first with the prepared text and
+ * arguments (owner_declined unless it returns true; approval_unavailable if it throws; approval_unbound, without asking,
+ * when what would be signed cannot be read); without a hook they are refused (approval_unavailable) unless approvals is
+ * 'none'.
  */
 export function valunTools(agent: ValunAgent, options?: ValunToolsOptions): FrameworkTool[];

@@ -1,11 +1,14 @@
 // The nine Valun tools in the shape most JavaScript agent frameworks accept: {name, description, parameters (JSON
 // Schema), execute(args)}, with the owner's approval asked before every commitment (ValunAgent.isCommitment: an offer,
-// an acceptance, a counter-offer, accepting a delivery, loosening a limit).
+// an acceptance, a counter-offer, accepting a delivery, loosening a limit, and any call it cannot classify).
 //
 // Approvals fail closed: without an approve hook every commitment is refused (approval_unavailable) unless the caller
-// passes approvals: 'none' explicitly. The Valun server enforces the owner's mandate in every mode.
+// passes approvals: 'none' explicitly. With a hook, the approval text and the arguments that are signed come from ONE
+// read of what would be signed (ValunAgent.prepare); when that read fails or does not hold together, the call is
+// refused (approval_unbound) and the owner is never asked with a generic text. The Valun server enforces the owner's
+// mandate in every mode.
 
-import {APPROVAL_TEXT, errorPayload} from './agent.js';
+import {APPROVAL_TEXT, errorPayload, UNBOUND_MESSAGE} from './agent.js';
 import {ValunError} from './errors.js';
 import {ALL} from './schemas.js';
 
@@ -38,6 +41,17 @@ function plainArgs(raw) {
   return v;
 }
 
+/** prepareOrRefusal(), with anything unexpected (a thrown error, a malformed answer) turned into the same refusal. */
+async function prepared(agent, name, args) {
+  try {
+    const [p, refusal] = await agent.prepareOrRefusal(name, args);
+    if (refusal) return [null, refusal];
+    return [{args: plainArgs(p.args), text: p.text ?? null}, null];
+  } catch {
+    return [null, errorPayload(new ValunError('approval_unbound', UNBOUND_MESSAGE), agent.setupHint)];
+  }
+}
+
 async function run(agent, name, raw, mode, approve) {
   let args;
   try {
@@ -54,25 +68,21 @@ async function run(agent, name, raw, mode, approve) {
     }
     if (commits) {
       if (mode !== 'ask') return approvalUnavailable(NO_HOOK);
-      try {
-        args = plainArgs(await agent.bind(name, args));   // the approval and the signature cover the same exact terms
-      } catch {
-        // binding is best effort (as in Python): the call itself reports real problems
-      }
-      let text;
-      try {
-        text = await agent.describeCommitment(name, args);
-      } catch {
-        text = `Valun: sign a commitment (${name}).`;
-      }
-      let answer;
-      try {
-        answer = await approve(text, name, deepFreeze(plainArgs(args)));
-      } catch (e) {
-        return approvalUnavailable(`Not signed: the approval step failed (${e?.message || String(e)}).`);
-      }
-      if (answer !== true) {
-        return errorPayload(new ValunError('owner_declined', 'your owner did not approve this commitment; nothing was signed'), agent.setupHint);
+      // One read binds and describes: the approval and the signature cover the same exact terms. If that read fails,
+      // nothing is signed and the owner is not asked (approval_unbound).
+      const [p, refusal] = await prepared(agent, name, args);
+      if (refusal) return refusal;
+      args = p.args;
+      if (p.text !== null) {                    // null: the read prepare() made shows this call commits nothing
+        let answer;
+        try {
+          answer = await approve(p.text, name, deepFreeze(plainArgs(args)));
+        } catch (e) {
+          return approvalUnavailable(`Not signed: the approval step failed (${e?.message || String(e)}).`);
+        }
+        if (answer !== true) {
+          return errorPayload(new ValunError('owner_declined', 'your owner did not approve this commitment; nothing was signed'), agent.setupHint);
+        }
       }
     }
   }
@@ -84,17 +94,18 @@ async function run(agent, name, raw, mode, approve) {
  * arguments as an object or as a JSON string, and always resolves to a plain object (an error payload on failure).
  *
  * options:
- *   approve    async (commitmentText, name, args) => boolean, called before every commitment. The arguments are first
- *              bound (ValunAgent.bind: an acceptance pinned to the current terms hash or deliverable hash); the hook gets
- *              the text of describeCommitment() for them and a frozen copy of them, and exactly they are executed. Only
- *              `true` approves. Otherwise the call is refused with owner_declined; if the hook throws, with
- *              approval_unavailable.
+ *   approve    async (commitmentText, name, args) => boolean, called before every commitment. The text and the arguments
+ *              come from one read of what would be signed (ValunAgent.prepare: an acceptance pinned to the recomputed
+ *              terms hash or deliverable hash, an offer to the participant id shown); the hook gets that text and a
+ *              frozen copy of those arguments, and exactly they are executed. Only `true` approves. Otherwise the call
+ *              is refused with owner_declined; if the hook throws, with approval_unavailable. When what would be signed
+ *              cannot be read or checked, the call is refused with approval_unbound and the hook is not called.
  *   approvals  'none' to sign commitments without asking anyone (the server still enforces the owner's mandate). Without
  *              an approve hook and without 'none', every commitment is refused with approval_unavailable (fail closed).
  * If agent.approvals (the sentence valun_status shows the model) is empty, it is set to match the mode chosen here.
  */
 export function valunTools(agent, options = {}) {
-  for (const m of ['callSafe', 'isCommitment', 'describeCommitment', 'bind']) {
+  for (const m of ['callSafe', 'isCommitment', 'prepareOrRefusal', 'describeCommitment', 'bind']) {
     if (typeof agent?.[m] !== 'function') throw new TypeError('valunTools needs a ValunAgent');
   }
   const {approve = null, approvals = null} = options;

@@ -23,16 +23,18 @@ test('"@fitzdoud/valun/dns" is its own Node entry; the main entry never reaches 
     for (const m of read(rel).matchAll(/(?:import|export)\s[^'";]*?from\s*['"]\.\/([^'"]+)['"]/g)) visit(`src/${m[1]}`);
   };
   visit('src/index.js');
-  for (const f of ['src/agent.js', 'src/tools.js', 'src/measure.js', 'src/sandbox.js', 'src/schemas.js', 'src/py.js']) assert.ok(seen.has(f), f);
+  for (const f of ['src/agent.js', 'src/tools.js', 'src/measure.js', 'src/sandbox.js', 'src/schemas.js', 'src/py.js', 'src/records.js']) {
+    assert.ok(seen.has(f), f);
+  }
   assert.ok(!seen.has('src/dns.js'));
   assert.match(read('src/dns.js'), /from 'node:dns\/promises'/);
   assert.equal(typeof dns.resolveHost, 'function');
   assert.match(read('src/dns.d.ts'), /export function resolveHost\b/);
 });
 
-test('every member of the schemas, measure and sandbox namespaces is declared in the types', () => {
+test('every member of the schemas, measure, sandbox and records namespaces is declared in the types', () => {
   const dts = read('src/index.d.ts');
-  for (const ns of ['schemas', 'measure', 'sandbox']) {
+  for (const ns of ['schemas', 'measure', 'sandbox', 'records']) {
     const block = dts.slice(dts.indexOf(`export namespace ${ns} {`));
     const body = block.slice(0, block.indexOf('\n}\n'));
     for (const name of Object.keys(api[ns])) assert.match(body, new RegExp(`(?:function|const) ${name}\\b`), `${ns}.${name}`);
@@ -60,7 +62,7 @@ test('the README example (a plain tool-call loop) runs as written, offline', asy
   const printed = [];
   await run(api.valunTools, w.agent, fetchModel, async () => true, {log: s => printed.push(s)});
   assert.deepEqual(printed, ['You are connected as alice.']);
-  assert.equal(seen[0].tools.length, 9);
+  assert.deepEqual(seen[0].tools.map(t => t.function.name), [...api.TOOL_NAMES]);
   assert.equal(seen[0].tools[0].function.name, 'valun_status');
   const toolMsg = seen[1].messages.find(m => m.role === 'tool');
   assert.equal(JSON.parse(toolMsg.content).you.handle, 'alice');

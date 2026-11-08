@@ -94,6 +94,14 @@ fresh temporary file opened with `O_EXCL` and mode `0600`, which is then renamed
 created `0700`. On load, a file that others can read is tightened to `0600` (POSIX). A corrupt file is refused
 without quoting it in the error.
 
+A store may also have `update(fn)` (and `reload()`); the client then makes every change to its records through it.
+`FileStore.update(fn)` uses the Python FileStore's lock protocol on the same files: an `O_EXCL` lock file
+`<path>.lock` holding `<pid> <time> <random>`, removed by its holder only while it still holds exactly that; a wait of
+up to 5 s (then `profile_busy`); a lock older than 30 s is replaced as stale, by one waiter at a time
+(`<path>.lock.break`). Under the lock it reloads the file, applies `fn` and writes atomically, so a Python and a
+JavaScript client can share one profile without losing each other's records. One `Client` also makes its own changes
+one after another.
+
 ## What the client checks before it signs (spec 15.2)
 
 Accept and counter, as the Python client does them:
@@ -114,13 +122,22 @@ It also makes the SHOULD checks that the Python client does not make:
 
 Complete, as the Python client does it:
 
-- the delivered content must hash to `delivery.sha256`, which must be the delivery the user reviewed;
-- the agreement hash and both signatures must check out;
+- the delivered content must hash to `delivery.sha256`, which must be the delivery the user reviewed, and the agreed
+  terms must be the ones the user reviewed (`expectedTermsHash`, checked before the template is even read);
+- the agreement hash and both signatures must check out, and the payee must have signed the delivery (under the key the
+  terms name or the payee's current directory key: `bad_delivery_signature`);
 - the template issuer must be this agent, and the recipient the payee's current directory key;
 - the template must add exactly the agreed price;
-- `prior_total` must match the client's own record of notes issued;
-- the tracker and unit must be the agreed ones, and the timestamp within 10 minutes of the local clock;
+- the prior must be one the client can stand behind: when the server offers `bound_notes/1`, the prior note it shows
+  (`?prior=1`) must be this agent's own signature and not older than its records (`bad_prior_signature`,
+  `ledger_mismatch`); otherwise `prior_total` must match the client's own record of notes issued;
+- a deal is never paid twice while a note of this agent for it may have applied (`already_paid`);
+- the tracker and unit must be the agreed and pinned ones (`tracker_mismatch`), and the timestamp within 10 minutes of
+  the local clock; when the server advertises any feature, a timestamp ending in 995-999 ms is refused;
 - the 80-byte message is recomputed from these values, and the template's `message_hex` is never signed.
+
+A profile that is not pinned yet (none is, before its first `GET /info`) is served exactly as 0.3 was: no extra
+request, no `?prior=1`.
 
 Additions to the Python behaviour:
 
@@ -139,9 +156,9 @@ Differences from the Python client that a user may notice:
   and crashes on others.
 - the method signatures are camelCase with option objects.
 
-As in the Python client (spec OQ-23), the record of notes issued is updated on `note_issued`, `issuing_note` and
-`completion_awaiting_owner`. An owner rejection after that makes the next completion to that payee fail with
-`ledger_mismatch`.
+As in the Python client, a credit note is recorded as pending (`state.records`) before it is sent, and confirmed (and
+`state.issued` updated) only when the server answers `note_issued`, or when a later read shows it applied. A held note
+that its owner rejects is simply dropped, so the next completion to that payee succeeds (this fixes OQ-23).
 
 Not ported: the MCP server and the CLI. The agent tool layer is ported (next section).
 
@@ -155,17 +172,24 @@ exact recomputation of text-stats and notary results. `call(name, args)` resolve
 rejects; failures come back as `{error, message, what_this_means?}`.
 
 `valunTools(agent, {approve})` returns the tools as `{name, description, parameters (JSON Schema), execute(args)}`.
-Before every commitment (an offer, an acceptance, a counter-offer, accepting a delivery, loosening a limit) it first
-binds the arguments with `agent.bind()`, as the Python MCP server and CLI do. An acceptance is pinned to the terms hash
-or deliverable hash current at that moment, unless the agent passed one. It then calls `approve(text, name, args)` with
-the approval text for exactly those arguments and executes exactly them. Only `true` signs. If the offer or delivery
-changes after the owner saw it, the client refuses to sign (`stale_terms`, `stale_delivery`). Without a hook,
-commitments are refused with `approval_unavailable`, unless you pass `approvals: 'none'`, which also skips binding.
-The server enforces the owner's mandate in every mode.
+Before every commitment (an offer, an acceptance, a counter-offer, accepting a delivery, loosening a limit) it calls
+`agent.prepare()`, as the Python MCP server and CLI do: one read of what would be signed gives both the arguments to
+sign with and the approval text. The text is built only from values checked against what is signed: the terms must
+hash to the stated hash, name this agent as one party and be offered by the other, the server's role and counterparty
+must agree with them, and a delivery must hash to its sha256. Those recomputed hashes are pinned in the arguments (an
+offer is pinned to the participant id shown), the computed lines come first, and text a counterparty or the agent wrote
+is quoted after them as one line of JSON. It then calls `approve(text, name, args)` and executes exactly those
+arguments. Only `true` signs. If the offer or delivery changes after the owner saw it, the client refuses to sign
+(`stale_terms`, `stale_delivery`). When what would be signed cannot be read or does not hold together, the call is
+refused with `approval_unbound` and the owner is not asked. Without a hook, commitments are refused with
+`approval_unavailable`, unless you pass `approvals: 'none'`, which also skips preparing. The server enforces the
+owner's mandate in every mode.
 
-Approvals fail closed, as in the Python core. `valun_respond` counts as a commitment unless the action is exactly
-`decline` or `withdraw`, and `valun_review_delivery` unless the decision is exactly `dispute`. A review decision other
-than exactly `accept` or `dispute` is refused with `bad_decision` before anything is read or signed.
+Approvals fail closed, as in the Python core. Only the read-only tools, `valun_deliver`, `valun_respond` with the action
+exactly `decline` or `withdraw`, `valun_review_delivery` with the decision exactly `dispute`, and `valun_set_limits`
+calls that loosen nothing are not commitments; every other call, a tool name the client does not know included, is. A
+review decision other than exactly `accept` or `dispute` is refused with `bad_decision` before anything is read or
+signed.
 
 A plain loop against an OpenAI-compatible Chat Completions endpoint, with no framework:
 
@@ -241,15 +265,20 @@ Other tests:
 - Client tests cover every refusal above, HTTP error mapping, timeouts, and that the key and token appear in no state,
   return value, inspection, JSON or error.
 - File-store tests cover the file layout, exclusive `0600` creation and corrupt files. The POSIX mode assertion is
-  skipped on Windows.
+  skipped on Windows. `records.test.js` covers the records, `complete()` over them against a fake server and tracker
+  (OQ-23, prior notes, reserved residues, the payee's delivery signature, pins), and the profile lock: two stores, and a
+  Python and a JavaScript process, updating one profile at once lose nothing (skipped without `python/src` and
+  Python 3.10+). `approvals.test.js` covers fail-closed classification and `prepare()`.
 - Agent tools are tested against the Python reference itself. `test/fixtures/generate_python_fixtures.py` runs the
   Python `ValunAgent` (CPython 3.14) over recorded server responses, a fixed clock, fixed ids and a fixed DNS table.
-  `agent-parity.test.js` replays all 88 scenarios through the JS agent. Results must be equal, key order included, and
-  so must the requests (signatures aside), the stored state, `isCommitment`, `bind()` and the approval texts for the
-  raw and the bound arguments. Helper-level
-  outputs (measurements, sandbox results, `int()`, `repr()`, IP classification) are compared the same way, and
-  `sandbox-python.json` is the server's fixture. A test fails when `python/src` has changed since the fixtures were
-  generated.
+  `agent-parity.test.js` replays every recorded scenario through the JS agent. Results must be equal, key order
+  included, and so must the requests (signatures aside), every signature sent (it must verify over exactly the bytes
+  Python signed for that request), the stored state, `isCommitment`, `prepare()` (the bound arguments and the approval
+  text, or the refusal and its cause), `bind()` and the approval texts for the raw and the bound arguments.
+  Helper-level outputs (measurements, sandbox results, records, approval-text quoting, `int()`, `repr()`, IP
+  classification) and the shared constants (approval sentences, labels, tool classes) are compared the same way, and
+  `sandbox-python.json` is the server's fixture. A test fails when any `valun.*` module the generator imports has
+  changed since the fixtures were generated.
 
 The TypeScript declarations (`src/index.d.ts`, `src/file-store.d.ts`, `src/dns.d.ts`) pass
 `tsc --noEmit --strict --lib es2022,dom` with TypeScript 6.0.3, run through `npx`. It is not a dependency.

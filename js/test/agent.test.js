@@ -1,6 +1,7 @@
-// ValunAgent: the safety checks spelled out (what is refused before anything is signed or sent), the one deliberate
-// difference from agent.py (bad_decision), host checks with and without a DNS resolver, and that callSafe() never
-// rejects. Results equal to Python's are checked scenario by scenario in agent-parity.test.js. Offline.
+// ValunAgent: the safety checks spelled out (what is refused before anything is signed or sent: bad_decision, the
+// deliver gate, the missing-text guard, fail-closed classification and binding), host checks with and without a DNS
+// resolver, and that callSafe() never rejects. Results equal to Python's are checked scenario by scenario in
+// agent-parity.test.js; prepare() and the records in records.test.js. Offline.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {Client, MemoryStore, TOOL_NAMES, ValunAgent, ValunError, measure, sandbox} from '../src/index.js';
@@ -118,24 +119,32 @@ test("fail closed: a misspelt decision or action counts as a commitment, and rev
   assert.equal(w.fetch.calls.length, 0);
 });
 
-test('bind(): pins the current terms hash or deliverable hash unless the agent passed one; best effort, never throws', async () => {
+test('bind(): pins the recomputed terms hash or deliverable hash unless the agent passed one; fails closed for a commitment it cannot read', async () => {
   const acc = scenario('respond: accept held for my owner');
   const w = world(acc);
   const bound = await w.agent.bind(acc.tool, acc.args);
-  assert.equal(bound.expected_terms_hash, acc.bound.expected_terms_hash);
+  assert.equal(bound.expected_terms_hash, acc.bound.value.expected_terms_hash);
   assert.notEqual(bound, acc.args);
   assert.equal(acc.args.expected_terms_hash, undefined, 'the arguments given are not changed');
   const given = {...acc.args, expected_terms_hash: 'ab'.repeat(32)};
   assert.deepEqual(await world(acc).agent.bind(acc.tool, given), given, 'a hash the agent passed is kept');
   const rev = scenario('review: accept held for my owner');
-  assert.equal((await world(rev).agent.bind(rev.tool, rev.args)).expected_deliverable_sha256, rev.bound.expected_deliverable_sha256);
+  const revBound = await world(rev).agent.bind(rev.tool, rev.args);
+  assert.equal(revBound.expected_deliverable_sha256, rev.bound.value.expected_deliverable_sha256);
+  assert.equal(revBound.expected_terms_hash, rev.bound.value.expected_terms_hash);
   for (const [name, args] of [['valun_respond', {deal_id: 'vd_x', action: 'decline'}], ['valun_review_delivery', {deal_id: 'vd_x', decision: 'Accept'}],
-    ['valun_propose', {price: 3}], ['valun_respond', {action: 'accept'}]]) {
+    ['valun_propose', {price: 3}]]) {
     const w2 = world();
     assert.deepEqual(await w2.agent.bind(name, args), args, name);
   }
+  // Until 0.3.1 bind was best effort and returned these unpinned; since 0.4 (design 6.5) a commitment that cannot be
+  // bound is refused, so nobody is asked to approve an acceptance that is not pinned to what they saw.
+  const unbound = cause => e => e instanceof ValunError && e.code === 'approval_unbound'
+    && e.message === 'could not read what you would sign; nothing was signed' && e.extra.cause === cause;
+  await assert.rejects(world().agent.bind('valun_respond', {action: 'accept'}), unbound('bad_arguments'));
   const offline = world({store: 'unenrolled'});
-  assert.deepEqual(await offline.agent.bind(acc.tool, acc.args), acc.args, 'not connected: unchanged');
+  await assert.rejects(offline.agent.bind(acc.tool, acc.args), unbound('not_connected'));
+  assert.equal(offline.fetch.calls.length, 0);
   assert.deepEqual(await world().agent.bind('valun_respond', null), {});
 });
 

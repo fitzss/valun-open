@@ -1,6 +1,7 @@
 // valunTools(): the framework shape {name, description, parameters, execute} and the approval hook in front of every
-// commitment, with the arguments bound first (bind()) so that what is signed is what the owner saw. Fail closed: no hook
-// means commitments are refused unless approvals: 'none' is chosen explicitly. Offline.
+// commitment, with the arguments and the approval text prepared from one read (prepare()) so that what is signed is what
+// the owner saw. Fail closed: no hook means commitments are refused unless approvals: 'none' is chosen explicitly, and a
+// commitment whose read fails is refused (approval_unbound) without asking. Offline.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {APPROVAL_TEXT, NO_APPROVAL_STEP, basis, bytesToHex, schemas, statements, termsHash, utf8, valunTools} from '../src/index.js';
@@ -42,8 +43,8 @@ test('approve hook: approved -> signed; it sees the exact approval text, the too
   assert.equal(r.status, 'agreed');
   assert.equal(approve.calls.length, 1);
   const [c] = approve.calls;
-  assert.equal(c.text, ACCEPT.describe);                 // the Python reference's approval text, word for word
-  assert.match(c.text, /^Valun - ACCEPT bob's offer \(deal vd_1111111111111111, version 1\):/);
+  assert.equal(c.text, ACCEPT.prepare.value.text);       // the Python reference's approval text, word for word
+  assert.match(c.text, /^Valun - ACCEPT bob's offer \(vp_b0b0b0b0b0b0, deal vd_1111111111111111, version 1\):/);
   assert.equal(c.name, 'valun_respond');
   assert.deepEqual(c.args, ACCEPT.args);
   assert.ok(Object.isFrozen(c.args));
@@ -101,7 +102,7 @@ test('limits: tightening needs no approval, loosening asks with the Python appro
   const r = await tool(valunTools(w.agent, {approve}), 'valun_set_limits').execute(loosen.args);
   assert.ok(r.recorded);
   assert.equal(approve.calls.length, 1);
-  assert.equal(approve.calls[0].text, loosen.describe);
+  assert.equal(approve.calls[0].text, loosen.prepare.value.text);
   const w2 = world(loosen);
   const r2 = await tool(valunTools(w2.agent, {approve: async () => { throw new Error('approval window closed'); }}), 'valun_set_limits').execute(loosen.args);
   assert.equal(r2.error, 'approval_unavailable');
@@ -114,50 +115,58 @@ test('limits: tightening needs no approval, loosening asks with the Python appro
   assert.equal(posts(w3.fetch).length, 0);
 });
 
-test('when it cannot tell whether a call commits the owner, the adapter treats it as a commitment', async () => {
+test('when it cannot tell whether a call commits the owner, it is a commitment, and one it cannot read is refused without asking', async () => {
+  // Until 0.3.1 the owner was asked with the generic text 'Valun: sign a commitment (valun_set_limits).' here; since 0.4
+  // (design 6.5) a known commitment never gets the generic text: when what it would sign cannot be read, it is refused.
   const w = world({routes: {'GET /pilot/v1/me': {status: 503, body: {error: 'unavailable'}}}});
-  const approve = hook(false);
+  assert.equal(await w.agent.isCommitment('valun_set_limits', {max_per_deal_as_payer: 1}), true);
+  const approve = hook(true);
   const r = await tool(valunTools(w.agent, {approve}), 'valun_set_limits').execute({max_per_deal_as_payer: 1});
-  assert.equal(r.error, 'owner_declined');
-  assert.equal(approve.calls.length, 1);
-  assert.equal(approve.calls[0].text, 'Valun: sign a commitment (valun_set_limits).');
+  assert.equal(r.error, 'approval_unbound');
+  assert.equal(r.message, 'could not read what you would sign; nothing was signed');
+  assert.match(r.what_this_means, /^Nothing was signed and your owner was not asked/);
+  assert.equal(approve.calls.length, 0, 'the owner is never asked with a generic text');
+  assert.equal(w.fetch.calls.filter(c => c.key === 'PUT /pilot/v1/limits').length, 0);
 });
 
-test('a misspelt review decision asks the hook (fail closed) and is then refused without any request being sent', async () => {
+test('a misspelt review decision is a commitment (fail closed) with no approval text: refused without asking or sending anything', async () => {
+  // Until 0.3.1 the owner was asked (with a generic text) and the tool then refused with bad_decision; since 0.4 (design
+  // 6.5) prepare() has no text for it, so the call is refused (approval_unbound) before anything is read or signed.
   const sc = scenario('review: accept issues the note');
-  for (const answer of [true, false]) {
-    const w = world(sc);
-    let seenAtApproval;
-    const approve = hook((text, name, args) => { seenAtApproval = w.fetch.calls.length; return answer; });
-    const r = await tool(valunTools(w.agent, {approve}), 'valun_review_delivery').execute({...sc.args, decision: 'Accept'});
-    assert.equal(approve.calls.length, 1, 'the owner is asked');
-    assert.equal(approve.calls[0].args.decision, 'Accept');
-    assert.equal(r.error, answer ? 'bad_decision' : 'owner_declined');
-    if (answer) assert.equal(r.message, "decision must be exactly 'accept' or 'dispute'; nothing was signed");
-    assert.equal(w.fetch.calls.length, seenAtApproval, 'no request after the owner answered');
-    assert.equal(posts(w.fetch).length, 0, 'nothing signed or sent');
-    assert.ok(w.fetch.calls.every(c => c.key.startsWith('GET ')), 'before asking, only reads (the approval text)');
-  }
+  const w = world(sc);
+  const args = {...sc.args, decision: 'Accept'};
+  assert.equal(await w.agent.isCommitment('valun_review_delivery', args), true, 'a commitment');
+  const approve = hook(true);
+  const r = await tool(valunTools(w.agent, {approve}), 'valun_review_delivery').execute(args);
+  assert.equal(r.error, 'approval_unbound');
+  assert.equal(approve.calls.length, 0, 'the owner is not asked');
+  assert.equal(w.fetch.calls.length, 0, 'no request at all');
+  assert.deepEqual(await w.agent.callSafe('valun_review_delivery', args),
+    {error: 'bad_decision', message: "decision must be exactly 'accept' or 'dispute'; nothing was signed"}, 'the tool itself refuses it too');
 });
 
-test('bind() before the hook: the hook sees the pinned terms hash, and exactly that hash is signed', async () => {
+test('prepare() before the hook: the hook sees the pinned terms hash, and exactly that hash is signed', async () => {
   const sc = scenario('respond: accept held for my owner');   // the agent passed no expected_terms_hash
   const w = world(sc);
   const approve = hook(true);
   const r = await tool(valunTools(w.agent, {approve}), 'valun_respond').execute(sc.args);
   assert.equal(r.status, 'accepted_awaiting_owner');
   const [c] = approve.calls;
-  assert.equal(c.args.expected_terms_hash, sc.bound.expected_terms_hash);
-  assert.equal(c.text, sc.describe_bound);
+  assert.equal(c.args.expected_terms_hash, sc.bound.value.expected_terms_hash);
+  assert.equal(c.args.expected_terms_hash, sc.prepare.value.args.expected_terms_hash);
+  assert.equal(c.text, sc.prepare.value.text);
+  assert.equal(c.text, sc.describe_bound.value);
   const [p] = posts(w.fetch);
   assert.equal(p.key, `POST /pilot/v1/deals/${sc.args.deal_id}/accept`);
-  assert.equal(p.body.terms_hash, sc.bound.expected_terms_hash);
-  const rev = scenario('review: accept held for my owner');   // and the deliverable hash for accepting a delivery
+  assert.equal(p.body.terms_hash, sc.bound.value.expected_terms_hash);
+  const rev = scenario('review: accept held for my owner');   // and the deliverable hash (and terms hash) for a delivery
   const w2 = world(rev);
   const approve2 = hook(true);
   await tool(valunTools(w2.agent, {approve: approve2}), 'valun_review_delivery').execute(rev.args);
-  assert.equal(approve2.calls[0].args.expected_deliverable_sha256, rev.bound.expected_deliverable_sha256);
-  assert.equal(posts(w2.fetch)[0].body.deliverable_sha256, rev.bound.expected_deliverable_sha256);
+  assert.equal(approve2.calls[0].args.expected_deliverable_sha256, rev.bound.value.expected_deliverable_sha256);
+  assert.equal(approve2.calls[0].args.expected_terms_hash, rev.prepare.value.args.expected_terms_hash);
+  assert.equal(posts(w2.fetch)[0].body.deliverable_sha256, rev.bound.value.expected_deliverable_sha256);
+  assert.equal(posts(w2.fetch)[0].body.terms_hash, rev.prepare.value.args.expected_terms_hash);
 });
 
 test('an offer that changes after the owner approved it is not signed (stale_terms)', async () => {
@@ -170,7 +179,9 @@ test('an offer that changes after the owner approved it is not signed (stale_ter
   const after = {...before, current: {...before.current, terms, terms_hash: h,
     signature: bytesToHex(basis.sign(utf8(statements.propose(h)), KEYS.bob.secret))}};
   let reads = 0;
-  const w = world({routes: k => (k === key ? {body: ++reads <= 2 ? before : after} : sc.routes[k])});   // bind, describe: before
+  // The one read prepare() makes (bind and describe together): before; the read when signing: after. (Until 0.3.1
+  // bind and describe read the deal separately, so the switch came at the third read.)
+  const w = world({routes: k => (k === key ? {body: ++reads <= 1 ? before : after} : sc.routes[k])});
   const approve = hook(true);
   const r = await tool(valunTools(w.agent, {approve}), 'valun_respond').execute(sc.args);
   assert.match(approve.calls[0].text, /price: 20 PC/);

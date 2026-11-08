@@ -2,13 +2,154 @@
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python": "3.14.7",
  "python_sources_sha256": {
-  "agent.py": "5e46e9732555cbe2af235510acf686a4f9160c47bcb994db578f6d28296f97ea",
-  "client.py": "1876a913be6678c306763ca217b82f3d4f48173abc487c897c83e7bc53b89c7e",
+  "agent.py": "86db8612741526668df9019b326d13af6f98a5d61f6994a80d8d543c38cf5063",
+  "basis.py": "3bd5d7f482f562d9a898d7af637838d7c10aee6d9b4628a6aea69ff25eb26f6d",
+  "client.py": "d9291ed7ef8a6275961b243db79398e5d9977a8b3d9a2b9b1e574b71e9ae7f7e",
+  "mcp_server.py": "e74148966e9ccfcc347f1eefce7211d95d78a5e23dffd0e0de5e460ae83c6462",
   "measure.py": "f4305cf1fe54ac137fa3aa201b0904c0e88e6ecc8325a38a41c06197963579ec",
+  "records.py": "3852c33f2b16e6eae59c205d8482b93035d70fe6a7eb925e9076400fb577f46c",
   "sandbox.py": "6f04017d086dd1f72911004040edbc90250ee8d718f94115350d2a79498757cc",
   "schemas.py": "8e61493802b60dbea05ef64f31fb9b390da9f93e336d939b42c3f993b417efd3"
  },
  "t0_ms": 1793966400000,
+ "nft": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+ "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+ "keys": {
+  "alice": {
+   "label": "valun-open/spec/test-key/alice",
+   "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+  },
+  "bob": {
+   "label": "valun-open/spec/test-key/bob",
+   "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+  },
+  "carol": {
+   "label": "valun-open/spec/test-key/carol",
+   "pubkey": "0265ad727818ed16c0dc99185145ba5c0413efa30465f783b7de4b43c799a2e124"
+  },
+  "erin": {
+   "label": "valun-open/spec/test-key/erin",
+   "pubkey": "03f3c7e032e437231bbb64679e881cb442999b6f3bfe49d961ede03c9f109162db"
+  },
+  "frank": {
+   "label": "valun-open/spec/test-key/frank",
+   "pubkey": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297"
+  }
+ },
+ "constants": {
+  "APPROVAL_TEXT": {
+   "ask": "Before you sign an offer, counter-offer, acceptance or credit note, your owner is asked through this app and sees exactly what you would sign; if they decline, nothing is signed.",
+   "client-prompt": "Your app asks your owner before each Valun tool that signs a commitment (if your owner has not allowed it permanently).",
+   "console": "Every commitment you sign waits for your owner in the Valun owner console before it takes effect: offers, counter-offers and acceptances, and accepting a delivery (its credit note is issued only after your owner approves it).",
+   "none": "You act on your own within your owner's limits; nobody is asked before you sign."
+  },
+  "SETTLEMENT_NOTE": "Issuing a credit note creates an outstanding obligation (the payer owes the payee that many PC). Nothing is settled in the Valun pilot: there is no redemption, reserve or clearing yet.",
+  "NOT_SETTLED": "A credit note is an outstanding promise to pay, not a payment: nothing is settled in the pilot. PC are synthetic units with no monetary value.",
+  "HONEST_LABELS": {
+   "what_basis_records": "When a payer accepts a delivery, its agent signs a Basis note and the pilot Basis tracker records it: the payer key, the payee key, the running total that payer owes that payee (one cumulative total per key pair) and a timestamp. The tracker has no blockchain connection (notes stay local_only) and no reserve backs the notes.",
+   "outstanding_promise": "An issued credit note is an outstanding promise by the payer to pay that many PC. Nothing in the pilot settles it: there is no redemption, reserve, clearing or netting. PC are synthetic pilot units with no monetary value.",
+   "third_party": "Supported: paying a third party with your OWN credit note; the third party may require that your claims on the tracker cover it (min_payer_coverage_pct). Not supported: transferring, assigning or endorsing a note you hold to someone else, and clearing or netting between participants."
+  },
+  "REAL_VS_SIMULATED": {
+   "real": "signatures by each participant's own key; Valun's acceptance and approval records; credit notes held by a real Basis tracker (read back and reconciled by Valun)",
+   "simulated": "PC (pilot credits) have no monetary value; the Basis tracker has no blockchain connection (notes are local_only, never on-chain); settlement does not exist in the pilot",
+   "not_proven": "that delivered work is good (Valun records statements, it does not judge work); that any participant will ever honour a credit note"
+  },
+  "LIMIT_FIELDS": {
+   "max_per_deal_as_payer": [
+    "max_issue_per_deal",
+    "cap"
+   ],
+   "max_total_owed": [
+    "max_issue_outstanding",
+    "cap"
+   ],
+   "max_per_deal_as_payee": [
+    "max_accept_per_deal",
+    "cap"
+   ],
+   "max_claim_per_payer": [
+    "max_accept_per_issuer",
+    "cap"
+   ],
+   "min_price_as_payee": [
+    "min_price_as_payee",
+    "floor"
+   ],
+   "min_payer_coverage_pct": [
+    "min_payer_coverage_pct",
+    "floor"
+   ]
+  },
+  "TOOL_NAMES": [
+   "valun_status",
+   "valun_directory",
+   "valun_inbox",
+   "valun_deal",
+   "valun_propose",
+   "valun_respond",
+   "valun_deliver",
+   "valun_review_delivery",
+   "valun_set_limits"
+  ],
+  "READ_ONLY_TOOLS": [
+   "valun_status",
+   "valun_directory",
+   "valun_inbox",
+   "valun_deal"
+  ],
+  "NOT_COMMITMENT_TOOLS": [
+   "valun_status",
+   "valun_directory",
+   "valun_inbox",
+   "valun_deal",
+   "valun_deliver"
+  ],
+  "LIMIT_TOOLS": [
+   "valun_set_limits"
+  ],
+  "SIGNING_TOOLS": [
+   "valun_propose",
+   "valun_respond",
+   "valun_review_delivery"
+  ],
+  "COMMITS": [
+   "valun_propose",
+   "valun_respond",
+   "valun_review_delivery"
+  ],
+  "UNBOUND_MESSAGE": "could not read what you would sign; nothing was signed",
+  "GENERIC_TEXT": "Valun: sign a commitment ({name}).",
+  "QUOTE_MAX_CHARS": 2000,
+  "ROLE_WORDS": {
+   "payer": "payer",
+   "payee": "payee (you do the work)"
+  },
+  "DEFAULT_SETUP_HINT": "run `valun join` (or `valun enroll`) in a terminal",
+  "CORE_STATE_KEYS": [
+   "issued",
+   "records",
+   "signed",
+   "novated_edges",
+   "transfer_attempts",
+   "approved_payments",
+   "consent_policy",
+   "consent_loop",
+   "consents_last_run_ms",
+   "consent_log",
+   "pins",
+   "journal_seq"
+  ],
+  "RESERVED_MS_FROM": 995,
+  "NETWORK": "valun-pilot-1",
+  "PROTOCOL": "valun-deal/1",
+  "UNIT": "PC",
+  "PILOT_TOKEN_ID": "01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+  "FILESTORE": {
+   "LOCK_WAIT_S": 5.0,
+   "LOCK_STALE_S": 30.0
+  }
+ },
  "word_count": [
   [
    "",
@@ -2130,8 +2271,109 @@
     "max_issue_per_deal": 25
    },
    {
-    "raises": "TypeError",
-    "message": "'>' not supported between instances of 'int' and 'str'"
+    "value": true
+   }
+  ],
+  [
+   {
+    "max_issue_per_deal": 10
+   },
+   {
+    "auto_clear": true
+   },
+   {
+    "value": true
+   }
+  ],
+  [
+   {
+    "max_issue_per_deal": 10
+   },
+   {
+    "max_issue_per_deal": "5"
+   },
+   {
+    "value": true
+   }
+  ],
+  [
+   {
+    "max_issue_per_deal": 10
+   },
+   {
+    "max_issue_per_deal": 5.5
+   },
+   {
+    "value": true
+   }
+  ],
+  [
+   {
+    "max_issue_per_deal": 10
+   },
+   {
+    "max_issue_per_deal": true
+   },
+   {
+    "value": true
+   }
+  ],
+  [
+   {
+    "max_issue_per_deal": 10.5
+   },
+   {
+    "max_issue_per_deal": 5
+   },
+   {
+    "value": true
+   }
+  ],
+  [
+   {},
+   {
+    "notes": "goals only"
+   },
+   {
+    "value": false
+   }
+  ],
+  [
+   {
+    "min_payer_coverage_pct": 50
+   },
+   {
+    "min_payer_coverage_pct": 60
+   },
+   {
+    "value": false
+   }
+  ],
+  [
+   [],
+   {
+    "notes": "x"
+   },
+   {
+    "value": false
+   }
+  ],
+  [
+   [],
+   {
+    "max_issue_per_deal": 1
+   },
+   {
+    "raises": "AttributeError",
+    "message": "'list' object has no attribute 'get'"
+   }
+  ],
+  [
+   {},
+   [],
+   {
+    "raises": "AttributeError",
+    "message": "'list' object has no attribute 'items'"
    }
   ]
  ],
@@ -2331,12 +2573,2035 @@
    },
    {
     "error": "stale_note",
-    "message": "retry"
+    "message": "retry",
+    "template": {
+     "a": 1
+    }
    },
    {
     "error": "stale_note",
-    "message": "retry"
+    "message": "retry",
+    "template": {
+     "a": 1
+    }
    }
+  ],
+  [
+   "approval_unbound",
+   "could not read what you would sign; nothing was signed",
+   {
+    "cause": "hash_mismatch"
+   },
+   {
+    "error": "approval_unbound",
+    "message": "could not read what you would sign; nothing was signed",
+    "what_this_means": "Nothing was signed and your owner was not asked: your Valun client could not read and check exactly what this call would sign (the deal, offer or delivery could not be read, does not match its hash, or changed after you read it). Read the deal again with valun_deal and retry; if it keeps failing, tell your owner."
+   },
+   {
+    "error": "approval_unbound",
+    "message": "could not read what you would sign; nothing was signed",
+    "what_this_means": "Nothing was signed and your owner was not asked: your Valun client could not read and check exactly what this call would sign (the deal, offer or delivery could not be read, does not match its hash, or changed after you read it). Read the deal again with valun_deal and retry; if it keeps failing, tell your owner."
+   }
+  ],
+  [
+   "tracker_mismatch",
+   "other tracker",
+   {
+    "pinned": {
+     "tracker_nft_id": "x"
+    }
+   },
+   {
+    "error": "tracker_mismatch",
+    "message": "other tracker",
+    "what_this_means": "The Valun server now names a different Basis tracker or unit than the one this profile was set up with. Nothing was signed. Stop and tell your owner."
+   },
+   {
+    "error": "tracker_mismatch",
+    "message": "other tracker",
+    "what_this_means": "The Valun server now names a different Basis tracker or unit than the one this profile was set up with. Nothing was signed. Stop and tell your owner."
+   }
+  ],
+  [
+   "bad_delivery_signature",
+   "not the payee",
+   {},
+   {
+    "error": "bad_delivery_signature",
+    "message": "not the payee",
+    "what_this_means": "The delivery is not signed by the payee's key, so it may not come from the payee. Nothing was signed. Do not accept it; tell your owner."
+   },
+   {
+    "error": "bad_delivery_signature",
+    "message": "not the payee",
+    "what_this_means": "The delivery is not signed by the payee's key, so it may not come from the payee. Nothing was signed. Do not accept it; tell your owner."
+   }
+  ],
+  [
+   "records_unreadable",
+   "cannot read",
+   {},
+   {
+    "error": "records_unreadable",
+    "message": "cannot read",
+    "what_this_means": "Your Valun client cannot read its own records, so it signs nothing until they are fixed. Nothing was signed. Tell your owner."
+   },
+   {
+    "error": "records_unreadable",
+    "message": "cannot read",
+    "what_this_means": "Your Valun client cannot read its own records, so it signs nothing until they are fixed. Nothing was signed. Tell your owner."
+   }
+  ],
+  [
+   "already_paid",
+   "paid",
+   {},
+   {
+    "error": "already_paid",
+    "message": "paid",
+    "what_this_means": "Your earlier credit note for this deal is (or may already be) on the tracker, so the deal counts as paid. Nothing was signed. Do not try to pay it again; tell your owner."
+   },
+   {
+    "error": "already_paid",
+    "message": "paid",
+    "what_this_means": "Your earlier credit note for this deal is (or may already be) on the tracker, so the deal counts as paid. Nothing was signed. Do not try to pay it again; tell your owner."
+   }
+  ],
+  [
+   "note_timestamp_ahead",
+   "later",
+   {
+    "retry_after_ms": 1200,
+    "template": {
+     "total": 3
+    },
+    "fallback_after": "2026-11-08T01:00:00.000Z",
+    "what_this_means": "wait",
+    "internal": "x"
+   },
+   {
+    "error": "note_timestamp_ahead",
+    "message": "later",
+    "retry_after_ms": 1200,
+    "template": {
+     "total": 3
+    },
+    "fallback_after": "2026-11-08T01:00:00.000Z",
+    "what_this_means": "wait"
+   },
+   {
+    "error": "note_timestamp_ahead",
+    "message": "later",
+    "retry_after_ms": 1200,
+    "template": {
+     "total": 3
+    },
+    "fallback_after": "2026-11-08T01:00:00.000Z",
+    "what_this_means": "wait"
+   }
+  ],
+  [
+   "transfer_window_open",
+   "wait",
+   {
+    "fallback_after": "2026-11-08T01:00:00.000Z",
+    "retry_after_ms": 5
+   },
+   {
+    "error": "transfer_window_open",
+    "message": "wait",
+    "retry_after_ms": 5,
+    "fallback_after": "2026-11-08T01:00:00.000Z"
+   },
+   {
+    "error": "transfer_window_open",
+    "message": "wait",
+    "retry_after_ms": 5,
+    "fallback_after": "2026-11-08T01:00:00.000Z"
+   }
+  ],
+  [
+   "approval_unbound",
+   "what the server says",
+   {
+    "what_this_means": "from the server"
+   },
+   {
+    "error": "approval_unbound",
+    "message": "what the server says",
+    "what_this_means": "Nothing was signed and your owner was not asked: your Valun client could not read and check exactly what this call would sign (the deal, offer or delivery could not be read, does not match its hash, or changed after you read it). Read the deal again with valun_deal and retry; if it keeps failing, tell your owner."
+   },
+   {
+    "error": "approval_unbound",
+    "message": "what the server says",
+    "what_this_means": "Nothing was signed and your owner was not asked: your Valun client could not read and check exactly what this call would sign (the deal, offer or delivery could not be read, does not match its hash, or changed after you read it). Read the deal again with valun_deal and retry; if it keeps failing, tell your owner."
+   }
+  ]
+ ],
+ "quoted": [
+  [
+   "plain",
+   "\"plain\""
+  ],
+  [
+   "line\nbreak",
+   "\"line\\nbreak\""
+  ],
+  [
+   "tab\tcr\r",
+   "\"tab\\tcr\\r\""
+  ],
+  [
+   "quote \" and \\ backslash",
+   "\"quote \\\" and \\\\ backslash\""
+  ],
+  [
+   "bidi ‮ and   sep",
+   "\"bidi \\u202e and \\u2028 sep\""
+  ],
+  [
+   "café 日本",
+   "\"caf\\u00e9 \\u65e5\\u672c\""
+  ],
+  [
+   "emoji 😀",
+   "\"emoji \\ud83d\\ude00\""
+  ],
+  [
+   "del  nul \u0000 esc \u001b bell \u0007 bs \b ff \f",
+   "\"del \\u007f nul \\u0000 esc \\u001b bell \\u0007 bs \\b ff \\f\""
+  ],
+  [
+   "",
+   "\"\""
+  ],
+  [
+   5,
+   "5"
+  ],
+  [
+   -3,
+   "-3"
+  ],
+  [
+   0,
+   "0"
+  ],
+  [
+   2.5,
+   "2.5"
+  ],
+  [
+   1e-07,
+   "1e-07"
+  ],
+  [
+   123456.789,
+   "123456.789"
+  ],
+  [
+   1e+22,
+   "1e+22"
+  ],
+  [
+   true,
+   "true"
+  ],
+  [
+   false,
+   "false"
+  ],
+  [
+   null,
+   "null"
+  ],
+  [
+   [
+    1,
+    "a",
+    null,
+    [
+     true
+    ]
+   ],
+   "[1,\"a\",null,[true]]"
+  ],
+  [
+   {
+    "b": 1,
+    "a": [
+     "x\ny"
+    ],
+    "c": {
+     "d": null
+    }
+   },
+   "{\"b\":1,\"a\":[\"x\\ny\"],\"c\":{\"d\":null}}"
+  ],
+  [
+   {
+    "title": "T",
+    "description": null
+   },
+   "{\"title\":\"T\",\"description\":null}"
+  ]
+ ],
+ "shown": [
+  [
+   "plain",
+   "plain"
+  ],
+  [
+   "line\nbreak",
+   "\"line\\nbreak\""
+  ],
+  [
+   "tab\tcr\r",
+   "\"tab\\tcr\\r\""
+  ],
+  [
+   "quote \" and \\ backslash",
+   "\"quote \\\" and \\\\ backslash\""
+  ],
+  [
+   "bidi ‮ and   sep",
+   "\"bidi \\u202e and \\u2028 sep\""
+  ],
+  [
+   "café 日本",
+   "\"caf\\u00e9 \\u65e5\\u672c\""
+  ],
+  [
+   "emoji 😀",
+   "\"emoji \\ud83d\\ude00\""
+  ],
+  [
+   "del  nul \u0000 esc \u001b bell \u0007 bs \b ff \f",
+   "\"del \\u007f nul \\u0000 esc \\u001b bell \\u0007 bs \\b ff \\f\""
+  ],
+  [
+   "",
+   "\"\""
+  ],
+  [
+   5,
+   "5"
+  ],
+  [
+   -3,
+   "-3"
+  ],
+  [
+   0,
+   "0"
+  ],
+  [
+   2.5,
+   "2.5"
+  ],
+  [
+   1e-07,
+   "1e-07"
+  ],
+  [
+   123456.789,
+   "123456.789"
+  ],
+  [
+   1e+22,
+   "1e+22"
+  ],
+  [
+   true,
+   "true"
+  ],
+  [
+   false,
+   "false"
+  ],
+  [
+   null,
+   "none"
+  ],
+  [
+   [
+    1,
+    "a",
+    null,
+    [
+     true
+    ]
+   ],
+   "[1,\"a\",null,[true]]"
+  ],
+  [
+   {
+    "b": 1,
+    "a": [
+     "x\ny"
+    ],
+    "c": {
+     "d": null
+    }
+   },
+   "{\"b\":1,\"a\":[\"x\\ny\"],\"c\":{\"d\":null}}"
+  ],
+  [
+   {
+    "title": "T",
+    "description": null
+   },
+   "{\"title\":\"T\",\"description\":null}"
+  ],
+  [
+   "vp_b0b0b0b0b0b0",
+   "vp_b0b0b0b0b0b0"
+  ],
+  [
+   "2099-01-02T00:00:00.000Z",
+   "2099-01-02T00:00:00.000Z"
+  ],
+  [
+   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  [
+   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""
+  ],
+  [
+   "has space",
+   "\"has space\""
+  ],
+  [
+   "user@host.example",
+   "user@host.example"
+  ],
+  [
+   "x+y-z.w:v_u",
+   "x+y-z.w:v_u"
+  ],
+  [
+   "it's",
+   "\"it's\""
+  ]
+ ],
+ "quote_line": [
+  [
+   "Offer text written by bob",
+   {
+    "title": "T",
+    "description": "D\nE",
+    "deliverable": null
+   },
+   "Offer text written by bob (quoted exactly): {\"title\":\"T\",\"description\":\"D\\nE\",\"deliverable\":null}"
+  ],
+  [
+   "Offer text written by your agent",
+   {
+    "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "description": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+    "deliverable": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+   },
+   "Offer text written by your agent (quoted exactly; fields over 2000 characters are cut to their first 2000): {\"title\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"description\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\",\"deliverable\":\"\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\"}"
+  ],
+  [
+   "Delivery title and agreed service text",
+   {
+    "delivery_title": "",
+    "title": 5,
+    "deliverable": [
+     "a"
+    ]
+   },
+   "Delivery title and agreed service text (quoted exactly): {\"delivery_title\":\"\",\"title\":5,\"deliverable\":[\"a\"]}"
+  ],
+  [
+   "Empty",
+   {},
+   "Empty (quoted exactly): {}"
+  ]
+ ],
+ "owes": [
+  [
+   "payer",
+   "bob",
+   20,
+   "after you accept their delivery you will owe bob 20 PC (your credit note)."
+  ],
+  [
+   "payee",
+   "bob",
+   7,
+   "you must deliver; bob would then owe you 7 PC (their credit note)."
+  ],
+  [
+   "anything",
+   "\"x\\ny\"",
+   0,
+   "you must deliver; \"x\\ny\" would then owe you 0 PC (their credit note)."
+  ]
+ ],
+ "records": [
+  {
+   "fn": "add_pending",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    20,
+    1000,
+    "note",
+    "vd_1",
+    "out",
+    "2026-11-08T00:00:00.000Z"
+   ],
+   "outcome": {
+    "value": {
+     "total": 20,
+     "timestamp": 1000,
+     "kind": "note",
+     "ref": "vd_1",
+     "direction": "out",
+     "signed_at": "2026-11-08T00:00:00.000Z"
+    }
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": null,
+     "pending": [
+      {
+       "total": 20,
+       "timestamp": 1000,
+       "kind": "note",
+       "ref": "vd_1",
+       "direction": "out",
+       "signed_at": "2026-11-08T00:00:00.000Z"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "add_pending",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    20,
+    1000,
+    "note",
+    "vd_1",
+    "out",
+    "later"
+   ],
+   "outcome": {
+    "value": {
+     "total": 20,
+     "timestamp": 1000,
+     "kind": "note",
+     "ref": "vd_1",
+     "direction": "out",
+     "signed_at": "2026-11-08T00:00:00.000Z"
+    }
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": null,
+     "pending": [
+      {
+       "total": 20,
+       "timestamp": 1000,
+       "kind": "note",
+       "ref": "vd_1",
+       "direction": "out",
+       "signed_at": "2026-11-08T00:00:00.000Z"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "add_pending",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    10,
+    900,
+    "note",
+    "vd_0"
+   ],
+   "outcome": {
+    "value": {
+     "total": 10,
+     "timestamp": 900,
+     "kind": "note",
+     "ref": "vd_0",
+     "direction": "out",
+     "signed_at": null
+    }
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": null,
+     "pending": [
+      {
+       "total": 20,
+       "timestamp": 1000,
+       "kind": "note",
+       "ref": "vd_1",
+       "direction": "out",
+       "signed_at": "2026-11-08T00:00:00.000Z"
+      },
+      {
+       "total": 10,
+       "timestamp": 900,
+       "kind": "note",
+       "ref": "vd_0",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "add_pending",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    99,
+    1000,
+    "setoff",
+    "vs_1",
+    "in"
+   ],
+   "outcome": {
+    "value": {
+     "total": 99,
+     "timestamp": 1000,
+     "kind": "setoff",
+     "ref": "vs_1",
+     "direction": "in",
+     "signed_at": null
+    }
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": null,
+     "pending": [
+      {
+       "total": 20,
+       "timestamp": 1000,
+       "kind": "note",
+       "ref": "vd_1",
+       "direction": "out",
+       "signed_at": "2026-11-08T00:00:00.000Z"
+      },
+      {
+       "total": 10,
+       "timestamp": 900,
+       "kind": "note",
+       "ref": "vd_0",
+       "direction": "out",
+       "signed_at": null
+      },
+      {
+       "total": 99,
+       "timestamp": 1000,
+       "kind": "setoff",
+       "ref": "vs_1",
+       "direction": "in",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "add_pending",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    30,
+    3000,
+    "transfer",
+    "vt_1",
+    "out"
+   ],
+   "outcome": {
+    "value": {
+     "total": 30,
+     "timestamp": 3000,
+     "kind": "transfer",
+     "ref": "vt_1",
+     "direction": "out",
+     "signed_at": null
+    }
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": null,
+     "pending": [
+      {
+       "total": 20,
+       "timestamp": 1000,
+       "kind": "note",
+       "ref": "vd_1",
+       "direction": "out",
+       "signed_at": "2026-11-08T00:00:00.000Z"
+      },
+      {
+       "total": 10,
+       "timestamp": 900,
+       "kind": "note",
+       "ref": "vd_0",
+       "direction": "out",
+       "signed_at": null
+      },
+      {
+       "total": 99,
+       "timestamp": 1000,
+       "kind": "setoff",
+       "ref": "vs_1",
+       "direction": "in",
+       "signed_at": null
+      },
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "add_pending",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    true,
+    1,
+    "note"
+   ],
+   "outcome": {
+    "raises": "ValueError",
+    "message": "a pending entry needs a whole-number total and timestamp"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": null,
+     "pending": [
+      {
+       "total": 20,
+       "timestamp": 1000,
+       "kind": "note",
+       "ref": "vd_1",
+       "direction": "out",
+       "signed_at": "2026-11-08T00:00:00.000Z"
+      },
+      {
+       "total": 10,
+       "timestamp": 900,
+       "kind": "note",
+       "ref": "vd_0",
+       "direction": "out",
+       "signed_at": null
+      },
+      {
+       "total": 99,
+       "timestamp": 1000,
+       "kind": "setoff",
+       "ref": "vs_1",
+       "direction": "in",
+       "signed_at": null
+      },
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "add_pending",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    -1,
+    1,
+    "note"
+   ],
+   "outcome": {
+    "raises": "ValueError",
+    "message": "a pending entry needs a whole-number total and timestamp"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": null,
+     "pending": [
+      {
+       "total": 20,
+       "timestamp": 1000,
+       "kind": "note",
+       "ref": "vd_1",
+       "direction": "out",
+       "signed_at": "2026-11-08T00:00:00.000Z"
+      },
+      {
+       "total": 10,
+       "timestamp": 900,
+       "kind": "note",
+       "ref": "vd_0",
+       "direction": "out",
+       "signed_at": null
+      },
+      {
+       "total": 99,
+       "timestamp": 1000,
+       "kind": "setoff",
+       "ref": "vs_1",
+       "direction": "in",
+       "signed_at": null
+      },
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "add_pending",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    1,
+    1.5,
+    "note"
+   ],
+   "outcome": {
+    "raises": "ValueError",
+    "message": "a pending entry needs a whole-number total and timestamp"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": null,
+     "pending": [
+      {
+       "total": 20,
+       "timestamp": 1000,
+       "kind": "note",
+       "ref": "vd_1",
+       "direction": "out",
+       "signed_at": "2026-11-08T00:00:00.000Z"
+      },
+      {
+       "total": 10,
+       "timestamp": 900,
+       "kind": "note",
+       "ref": "vd_0",
+       "direction": "out",
+       "signed_at": null
+      },
+      {
+       "total": 99,
+       "timestamp": 1000,
+       "kind": "setoff",
+       "ref": "vs_1",
+       "direction": "in",
+       "signed_at": null
+      },
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "add_pending",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    "1",
+    1,
+    "note"
+   ],
+   "outcome": {
+    "raises": "ValueError",
+    "message": "a pending entry needs a whole-number total and timestamp"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": null,
+     "pending": [
+      {
+       "total": 20,
+       "timestamp": 1000,
+       "kind": "note",
+       "ref": "vd_1",
+       "direction": "out",
+       "signed_at": "2026-11-08T00:00:00.000Z"
+      },
+      {
+       "total": 10,
+       "timestamp": 900,
+       "kind": "note",
+       "ref": "vd_0",
+       "direction": "out",
+       "signed_at": null
+      },
+      {
+       "total": 99,
+       "timestamp": 1000,
+       "kind": "setoff",
+       "ref": "vs_1",
+       "direction": "in",
+       "signed_at": null
+      },
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "add_pending",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    1,
+    1,
+    "note",
+    null,
+    "sideways"
+   ],
+   "outcome": {
+    "raises": "ValueError",
+    "message": "direction is 'out' (I am the issuer) or 'in' (I am the creditor)"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": null,
+     "pending": [
+      {
+       "total": 20,
+       "timestamp": 1000,
+       "kind": "note",
+       "ref": "vd_1",
+       "direction": "out",
+       "signed_at": "2026-11-08T00:00:00.000Z"
+      },
+      {
+       "total": 10,
+       "timestamp": 900,
+       "kind": "note",
+       "ref": "vd_0",
+       "direction": "out",
+       "signed_at": null
+      },
+      {
+       "total": 99,
+       "timestamp": 1000,
+       "kind": "setoff",
+       "ref": "vs_1",
+       "direction": "in",
+       "signed_at": null
+      },
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "remove_pending",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    20,
+    1000,
+    "vd_other"
+   ],
+   "outcome": {
+    "value": 0
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": null,
+     "pending": [
+      {
+       "total": 20,
+       "timestamp": 1000,
+       "kind": "note",
+       "ref": "vd_1",
+       "direction": "out",
+       "signed_at": "2026-11-08T00:00:00.000Z"
+      },
+      {
+       "total": 10,
+       "timestamp": 900,
+       "kind": "note",
+       "ref": "vd_0",
+       "direction": "out",
+       "signed_at": null
+      },
+      {
+       "total": 99,
+       "timestamp": 1000,
+       "kind": "setoff",
+       "ref": "vs_1",
+       "direction": "in",
+       "signed_at": null
+      },
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "get",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+   ],
+   "outcome": {
+    "value": {
+     "confirmed": null,
+     "pending": [
+      {
+       "total": 20,
+       "timestamp": 1000,
+       "kind": "note",
+       "ref": "vd_1",
+       "direction": "out",
+       "signed_at": "2026-11-08T00:00:00.000Z"
+      },
+      {
+       "total": 10,
+       "timestamp": 900,
+       "kind": "note",
+       "ref": "vd_0",
+       "direction": "out",
+       "signed_at": null
+      },
+      {
+       "total": 99,
+       "timestamp": 1000,
+       "kind": "setoff",
+       "ref": "vs_1",
+       "direction": "in",
+       "signed_at": null
+      },
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": null,
+     "pending": [
+      {
+       "total": 20,
+       "timestamp": 1000,
+       "kind": "note",
+       "ref": "vd_1",
+       "direction": "out",
+       "signed_at": "2026-11-08T00:00:00.000Z"
+      },
+      {
+       "total": 10,
+       "timestamp": 900,
+       "kind": "note",
+       "ref": "vd_0",
+       "direction": "out",
+       "signed_at": null
+      },
+      {
+       "total": 99,
+       "timestamp": 1000,
+       "kind": "setoff",
+       "ref": "vs_1",
+       "direction": "in",
+       "signed_at": null
+      },
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "confirmed_total",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+   ],
+   "outcome": {
+    "value": null
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": null,
+     "pending": [
+      {
+       "total": 20,
+       "timestamp": 1000,
+       "kind": "note",
+       "ref": "vd_1",
+       "direction": "out",
+       "signed_at": "2026-11-08T00:00:00.000Z"
+      },
+      {
+       "total": 10,
+       "timestamp": 900,
+       "kind": "note",
+       "ref": "vd_0",
+       "direction": "out",
+       "signed_at": null
+      },
+      {
+       "total": 99,
+       "timestamp": 1000,
+       "kind": "setoff",
+       "ref": "vs_1",
+       "direction": "in",
+       "signed_at": null
+      },
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "confirm",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    {
+     "total": 20,
+     "timestamp": 1000,
+     "signature": "03dfbcff0fb1d932a10dfce42a29565cc0c4ca555a2c53104afd65d6daa7321ece3958d785e265213e0d0fdd2f3cb457b7ef406464ba1d3c48968bae1ab5b70fe0"
+    }
+   ],
+   "outcome": {
+    "value": {
+     "confirmed": {
+      "total": 20,
+      "timestamp": 1000,
+      "signature": "03dfbcff0fb1d932a10dfce42a29565cc0c4ca555a2c53104afd65d6daa7321ece3958d785e265213e0d0fdd2f3cb457b7ef406464ba1d3c48968bae1ab5b70fe0"
+     },
+     "pending": [
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 20,
+      "timestamp": 1000,
+      "signature": "03dfbcff0fb1d932a10dfce42a29565cc0c4ca555a2c53104afd65d6daa7321ece3958d785e265213e0d0fdd2f3cb457b7ef406464ba1d3c48968bae1ab5b70fe0"
+     },
+     "pending": [
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "confirm",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    {
+     "total": 5,
+     "timestamp": 500,
+     "signature": "030b7bf40b30121e44d4efda14d0e4a87f04579598506fe498da62fec09706aebc212340aaf136821d0b65ee4be4475bd4c429080e0d6dd55eea79e669f95daf6a"
+    }
+   ],
+   "outcome": {
+    "value": {
+     "confirmed": {
+      "total": 20,
+      "timestamp": 1000,
+      "signature": "03dfbcff0fb1d932a10dfce42a29565cc0c4ca555a2c53104afd65d6daa7321ece3958d785e265213e0d0fdd2f3cb457b7ef406464ba1d3c48968bae1ab5b70fe0"
+     },
+     "pending": [
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 20,
+      "timestamp": 1000,
+      "signature": "03dfbcff0fb1d932a10dfce42a29565cc0c4ca555a2c53104afd65d6daa7321ece3958d785e265213e0d0fdd2f3cb457b7ef406464ba1d3c48968bae1ab5b70fe0"
+     },
+     "pending": [
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "confirm",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    {
+     "total": 5,
+     "timestamp": 1500
+    }
+   ],
+   "outcome": {
+    "raises": "ValueError",
+    "message": "an edge state is {total, timestamp, signature}: two whole numbers and a signature"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 20,
+      "timestamp": 1000,
+      "signature": "03dfbcff0fb1d932a10dfce42a29565cc0c4ca555a2c53104afd65d6daa7321ece3958d785e265213e0d0fdd2f3cb457b7ef406464ba1d3c48968bae1ab5b70fe0"
+     },
+     "pending": [
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "confirmed_total",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+   ],
+   "outcome": {
+    "value": 20
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 20,
+      "timestamp": 1000,
+      "signature": "03dfbcff0fb1d932a10dfce42a29565cc0c4ca555a2c53104afd65d6daa7321ece3958d785e265213e0d0fdd2f3cb457b7ef406464ba1d3c48968bae1ab5b70fe0"
+     },
+     "pending": [
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "add_pending",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    40,
+    4000,
+    "note",
+    "vd_4"
+   ],
+   "outcome": {
+    "value": {
+     "total": 40,
+     "timestamp": 4000,
+     "kind": "note",
+     "ref": "vd_4",
+     "direction": "out",
+     "signed_at": null
+    }
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 20,
+      "timestamp": 1000,
+      "signature": "03dfbcff0fb1d932a10dfce42a29565cc0c4ca555a2c53104afd65d6daa7321ece3958d785e265213e0d0fdd2f3cb457b7ef406464ba1d3c48968bae1ab5b70fe0"
+     },
+     "pending": [
+      {
+       "total": 30,
+       "timestamp": 3000,
+       "kind": "transfer",
+       "ref": "vt_1",
+       "direction": "out",
+       "signed_at": null
+      },
+      {
+       "total": 40,
+       "timestamp": 4000,
+       "kind": "note",
+       "ref": "vd_4",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "sync_edge",
+   "args": [
+    {
+     "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+     "total": 30,
+     "timestamp": 3000,
+     "signature": "023651afc26fd4e13d9b9cabf28fa7f8c4f174abddb97d4e202df9abfdc792d96a37ab2c8d4081ff9967da1530750cad64f5a740f891d6b1e6e3b9a22ac9f9d213",
+     "exact": true
+    }
+   ],
+   "outcome": {
+    "value": {
+     "pair": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+     "changed": true,
+     "promoted": {
+      "total": 30,
+      "timestamp": 3000,
+      "kind": "transfer",
+      "ref": "vt_1",
+      "direction": "out",
+      "signed_at": null
+     },
+     "dropped": [],
+     "confirmed": {
+      "total": 30,
+      "timestamp": 3000,
+      "signature": "023651afc26fd4e13d9b9cabf28fa7f8c4f174abddb97d4e202df9abfdc792d96a37ab2c8d4081ff9967da1530750cad64f5a740f891d6b1e6e3b9a22ac9f9d213"
+     }
+    }
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 30,
+      "timestamp": 3000,
+      "signature": "023651afc26fd4e13d9b9cabf28fa7f8c4f174abddb97d4e202df9abfdc792d96a37ab2c8d4081ff9967da1530750cad64f5a740f891d6b1e6e3b9a22ac9f9d213"
+     },
+     "pending": [
+      {
+       "total": 40,
+       "timestamp": 4000,
+       "kind": "note",
+       "ref": "vd_4",
+       "direction": "out",
+       "signed_at": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "fn": "sync_edge",
+   "args": [
+    {
+     "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+     "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+     "total": 50,
+     "timestamp": 5000,
+     "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+    }
+   ],
+   "outcome": {
+    "value": {
+     "pair": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+     "changed": true,
+     "promoted": null,
+     "dropped": [
+      {
+       "total": 40,
+       "timestamp": 4000,
+       "kind": "note",
+       "ref": "vd_4",
+       "direction": "out",
+       "signed_at": null
+      }
+     ],
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     }
+    }
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "sync_edge",
+   "args": [
+    {
+     "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+     "total": 30,
+     "timestamp": 3000,
+     "signature": "02379a823aada316476653d3eb4088c394ed7c72741078b44df00a87e94ca72c2263621ff5a68c456a888050884d0db72fbf38b06ecb792be5dc4d52fa0b7f051f"
+    }
+   ],
+   "outcome": {
+    "value": {
+     "pair": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+     "changed": false,
+     "promoted": null,
+     "dropped": [],
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     }
+    }
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "sync_edge",
+   "args": [
+    {
+     "total": 1,
+     "timestamp": 1,
+     "signature": "s"
+    }
+   ],
+   "outcome": {
+    "raises": "ValueError",
+    "message": "an edge row names its edge as \"<issuer_pubkey>><recipient_pubkey>\""
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "sync_edge",
+   "args": [
+    {
+     "edge": "nokey",
+     "total": 1,
+     "timestamp": 1,
+     "signature": "s"
+    }
+   ],
+   "outcome": {
+    "raises": "ValueError",
+    "message": "an edge row names its edge as \"<issuer_pubkey>><recipient_pubkey>\""
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "sync_edge",
+   "args": [
+    {
+     "edge": "a>b>c",
+     "total": 1,
+     "timestamp": 1,
+     "signature": "s"
+    }
+   ],
+   "outcome": {
+    "raises": "ValueError",
+    "message": "an edge row names its edge as \"<issuer_pubkey>><recipient_pubkey>\""
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "sync_edge",
+   "args": [
+    {
+     "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+     "total": "1",
+     "timestamp": 1,
+     "signature": "s"
+    }
+   ],
+   "outcome": {
+    "raises": "ValueError",
+    "message": "an edge state is {total, timestamp, signature}: two whole numbers and a signature"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "sync_edge",
+   "args": [
+    [
+     "not",
+     "a",
+     "row"
+    ]
+   ],
+   "outcome": {
+    "raises": "ValueError",
+    "message": "an edge row is a JSON object"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "prior_problem",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    {
+     "total": 50,
+     "timestamp": 5000,
+     "signature": "0393e7926d9e7d1a2d8443f97bfaa44635f4c1c07c20f6e2d1ca9b02707aae28e00b2b4a774cae9649265dcb01770bcbd7fcfa211b1cd05bd648782df9ad2e12e8"
+    },
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "verify"
+   ],
+   "outcome": {
+    "value": null
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "prior_problem",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    {
+     "total": 40,
+     "timestamp": 4500,
+     "signature": "020280a7056ba6195fb230afda13d2b1d51bb3026f45fcd42832aa2455dfe84ad7186dfbdd656f0782f9b5533e8e38c6f7cc3ca31b528d130ac2e259b91d30594f"
+    },
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "verify"
+   ],
+   "outcome": {
+    "value": "stale_prior"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "prior_problem",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    {
+     "total": 51,
+     "timestamp": 5000,
+     "signature": "02e31788578b60aa37ce7ea8f665f47a20d9b7f38a36949ddac30cf43af2dbc91b40034937cb6b6d0fa3e3db5dca1f3000012406a1459c619b5577a1789d244eb7"
+    },
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "verify"
+   ],
+   "outcome": {
+    "value": "stale_prior"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "prior_problem",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    {
+     "total": 60,
+     "timestamp": 6000,
+     "signature": "03782406ca19af98ec0ec5279e3a324e727fb41da10db4188de9ec6fd44116c7617b4f0f7693c5a5bd28a707ec6f52b019d897cbbcf562c7db153b367d824d9288"
+    },
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "verify"
+   ],
+   "outcome": {
+    "value": null
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "prior_problem",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    {
+     "total": 60,
+     "timestamp": 6000,
+     "signature": "02109cfba633bfb52fecfadcbd6717a3160e5e692cb4535ba90b1f9860fa0b82b31abdf4e14eb9e07a4b245356930a79ceec58e076f2b84c47f9fb3be39ba9be7a"
+    },
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "verify"
+   ],
+   "outcome": {
+    "value": "bad_prior_signature"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "prior_problem",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    {
+     "total": 60,
+     "timestamp": 6000,
+     "signature": "03c499943d127f48a1ab18becb5248d33ad2090c6f7b6cfc14c4dee895b1653538742e9284e7a98a7d34a4c706b1ea1cf1df299728b7f96b2f5ce89afa9ea89220"
+    },
+    "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    "verify"
+   ],
+   "outcome": {
+    "value": "bad_prior_signature"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "prior_problem",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    {
+     "total": 60,
+     "timestamp": 6000
+    },
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "verify"
+   ],
+   "outcome": {
+    "value": "bad_prior_signature"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "prior_problem",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    {
+     "total": 60,
+     "timestamp": 6000,
+     "signature": "03dd63cda33fabe772ba1143121c0ec9b24f75589b0698e175722a01c02c7f80937c5f509192a83b04fa410ea23f4ab71ec985472ca57dbf9a938ee41bf50588b1"
+    },
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "broken"
+   ],
+   "outcome": {
+    "value": "bad_prior_signature"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "prior_problem",
+   "args": [
+    "nokey",
+    {
+     "total": 60,
+     "timestamp": 6000,
+     "signature": "03bb2b30c19886643b61d929b6e7565e9f4c6e893f8fabf068764f608434f3aff003a08257bced1d9a17a1f4f0ff11c8e2663d6ce6b9989f7848a2c612d7993c3b"
+    },
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "verify"
+   ],
+   "outcome": {
+    "value": "bad_prior_signature"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "accept_prior",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    {
+     "total": 60,
+     "timestamp": 6000,
+     "signature": "03a0b8a7b7e3de4a84dc721621718915904109c62f1b5607e734cb703aabefff0411e9db9c85273f61d6ad0e8db432e037da93454c15b5adb04241ce4c735f5d5e"
+    },
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "verify"
+   ],
+   "outcome": {
+    "value": true
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "edge_state",
+   "args": [
+    {
+     "total": 1,
+     "timestamp": 2,
+     "signature": "03969d1f227ee3e94efab53fd2a9b5bc9ba760f96c8955b02c7bbc147d1f0e7b35007f1237d63c310d58909c192bc6e9783c2f739e917966ff4a66b27a4906f397"
+    }
+   ],
+   "outcome": {
+    "value": {
+     "total": 1,
+     "timestamp": 2,
+     "signature": "03969d1f227ee3e94efab53fd2a9b5bc9ba760f96c8955b02c7bbc147d1f0e7b35007f1237d63c310d58909c192bc6e9783c2f739e917966ff4a66b27a4906f397"
+    }
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "edge_state",
+   "args": [
+    {
+     "total": 1,
+     "timestamp": 2,
+     "signature": ""
+    }
+   ],
+   "outcome": {
+    "raises": "ValueError",
+    "message": "an edge state is {total, timestamp, signature}: two whole numbers and a signature"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  },
+  {
+   "fn": "pair_key",
+   "args": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+   ],
+   "outcome": {
+    "value": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+   },
+   "records": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+     "confirmed": {
+      "total": 50,
+      "timestamp": 5000,
+      "signature": "03e70b481fd28b632074134dc775093ed177a9565974f9d06fb7aa933e6457b17401366920ec4f4dc8b207da063d0cd4af1525a1cdd774ce6aa3ae3b79159cb18e"
+     },
+     "pending": []
+    }
+   }
+  }
+ ],
+ "verify_note": [
+  [
+   [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    10,
+    1000,
+    "0257e3cf7095c4e8f8208c9b7be2b44a04f9aab30946ff40cfaf15d8d1f37ad44761361b813afbea023de2b4c9f0bc1845657273f8d610ad618c7fc397080c912d",
+    "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+   ],
+   true
+  ],
+  [
+   [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    11,
+    1000,
+    "03e9cd6539557fa59b8a15454aca46705a407fb5dcee0e450037e3e071d922757a27dbbb775379531df38269ef2fe64acb4b11c447382b992214aa017fdf04b7b1",
+    "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+   ],
+   false
+  ],
+  [
+   [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    10,
+    1000,
+    "02a354bdd07ede88e22dd8a3781f786599134ca23b8a3d520d51c03bfdb3e1b2cc39fd78230c639c50ed999790bba5b99457ef0425b8f17a3849457652b188de51",
+    "1111111111111111111111111111111111111111111111111111111111111111",
+    "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+   ],
+   false
+  ],
+  [
+   [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    10,
+    1000,
+    "027132dafeeb7868008fc3bc926b225dabf0e5dcd2eaa97b654e96a3eab1785a431a40430c3e7e98da589320a4750b3e4c5fc20246abe2803fb0370479a9d5ff64",
+    "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "erg"
+   ],
+   false
+  ],
+  [
+   [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    "10",
+    1000,
+    "03267f65215e0be59101a0f5626afd764dd7776d4fd85164360896563f798c396d0e1d7c5626d68cd1489139346df624ab6923a8c683754027f399922ce47b394a",
+    "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+   ],
+   false
+  ],
+  [
+   [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    10,
+    1000,
+    "zz",
+    "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+   ],
+   false
+  ],
+  [
+   [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    -1,
+    1000,
+    "039fbec036178d6e1344e7aa79e9f947dfaa1f88f42656b6d60aae5e0be1a66008149bc441e629a1c494ff8ecf9da0a5256ec02f5a6b1db914cc856a6f6ee6568d",
+    "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+   ],
+   false
+  ],
+  [
+   [
+    null,
+    "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    10,
+    1000,
+    "02debcf0aa707929bf9a697c39b47263ea43c69f082d9b6ea01f061a9b59a86f8b02e562435b34dd47b9ce5e4fac04176bfc7e84da3990be7e342fc872b9d5e535",
+    "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+   ],
+   false
   ]
  ],
  "int": [

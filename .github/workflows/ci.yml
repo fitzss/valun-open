@@ -87,7 +87,7 @@ jobs:
         run: node --test js/test/
       - name: Type definitions compile (TypeScript 6.0.3, strict)
         if: matrix.node == '24'
-        run: npx -y -p typescript@6.0.3 tsc --noEmit --strict --lib es2022,dom js/src/index.d.ts js/src/file-store.d.ts
+        run: npx -y -p typescript@6.0.3 tsc --noEmit --strict --lib es2022,dom js/src/index.d.ts js/src/file-store.d.ts js/src/dns.d.ts
 
   registry:
     runs-on: ubuntu-latest
