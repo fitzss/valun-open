@@ -1,35 +1,45 @@
 # Open questions: `valun-deal/1` as implemented
 
 Ambiguities, server/client inconsistencies, apparent bugs and security weaknesses found while writing `PROTOCOL.md`
-and its vectors. Nothing here was changed in either implementation by this work.
+and its vectors, and, since revision 7, the owner decisions that release v16 (circulating credit) still needs. Nothing
+here was changed in any implementation by this work.
 
-**Revision 6 (2026-11-07), against server release v13 = valun-app commit `6a6a34b`** (deployed; core.mjs sha256
-`7dc469e0…e0f240b2e`; the other sources as in v12). Release v13 replaces the refused-character list by a rule over
-Unicode properties (OQ-33; `PROTOCOL.md` 2.3 states it as the normative definition). Everything else is as in revision 5
-(release v12 = valun-app commit `a61c32e`: OQ-24 operator recovery and the revision 4 OQ-33 residual), revision 4
-(release v11 = `7880dcf`) and earlier. `PROTOCOL.md` and the vectors describe v13.
+**Revision 7 (2026-11-08), against server release v15 = valun-app commit `495624c`** (deployed; core.mjs sha256
+`ad47e6ae…a6d45043`, pilot http.mjs `30658094…353fc213`; release v14 = `0317239` added self-serve sandbox joining, off
+by default, and v15 turned it on with a server-wide daily cap: `PROTOCOL.md` Appendix G), **and the draft contract for
+release v16** (circulating credit, valun-app branch `circulation-v16`, built locally, not released: `PROTOCOL.md`
+section 18, 15.3, 16.1–16.2 and Appendix H, marked *draft until vectors are regenerated*). Revision 7 updates OQ-21,
+OQ-22, OQ-23, OQ-26, OQ-28 and OQ-36, adds the owner decisions for release v16 (OQ-37 to OQ-47) and two items found
+while writing its contract (OQ-48, OQ-49). The vectors still describe v13.
 
-Line numbers: paragraphs marked "revision 6" cite v13 (`6a6a34b`); "revision 5" paragraphs cite v12 (`a61c32e`); "revision 4" paragraphs cite v11 (`7880dcf`);
-"revision 3" text and OQ-30 to OQ-35 cite v9 (`ed1da4a`); the remaining text of OQ-1 to OQ-29 cites v8 (`e0b990a`).
-`PROTOCOL.md` cites v13 throughout. `core.mjs` = `valun-app/lib/pilot/core.mjs`, `http.mjs` =
-`valun-app/lib/pilot/http.mjs`. Client references are to `hermes-plugin-valun` at commit `f504d26` (0.2.0, the commit
-the Hermes plugin catalog pins; its `valun_client.py`, `valun_basis.py` and `tools.py` are identical to those of
-`6040499`, checked in revision 3) and to the framework-neutral `valun` package in this repository (`python/src/valun`),
-whose `client.py` and `basis.py` are the plugin's with a package import (client-side items apply to both unless
-stated).
+Line numbers: paragraphs marked "revision 7" cite v15 (`495624c`) and the clients named below; "revision 6"
+paragraphs cite v13 (`6a6a34b`); "revision 5" paragraphs cite v12 (`a61c32e`); "revision 4" paragraphs cite v11
+(`7880dcf`); "revision 3" text and OQ-30 to OQ-35 cite v9 (`ed1da4a`); the remaining text of OQ-1 to OQ-29 cites v8
+(`e0b990a`).
+`PROTOCOL.md` cites v13 in sections 1–17 and v15 in Appendix G. `core.mjs` = `valun-app/lib/pilot/core.mjs`,
+`http.mjs` = `valun-app/lib/pilot/http.mjs`. Client references before revision 7 are to `hermes-plugin-valun` at commit
+`f504d26` (0.2.0; its `valun_client.py`, `valun_basis.py` and `tools.py` are identical to those of `6040499`, checked
+in revision 3) and to the framework-neutral `valun` package in this repository (`python/src/valun`), whose `client.py`
+and `basis.py` are the plugin's with a package import (client-side items apply to both unless stated). Revision 7
+paragraphs cite the `valun` package 0.3.1 (commit `c75cfb0`), the plugin 0.3.0 (`5d01fbd`, the commit the Hermes
+plugin catalog entry pins, whose `valun_core/` is that package's code, byte-identical, so the same line numbers apply)
+and the JavaScript package `@fitzdoud/valun` 0.3.1 (`js/src`).
 
 Revision history: revision 1 (2026-11-06, core.mjs `82212e52…6558`); revision 2 (2026-11-07, release v8 `e0b990a`,
 core.mjs `cc779241…3d73`), which gave each item a status: **RESOLVED (commit)**, **CHANGED** (partly fixed, or the fix
 changed the question), or **OPEN**, and added OQ-29 to OQ-34; revision 3 (2026-11-07, release v9 `ed1da4a`, core.mjs
 `3a357106…cf1528008`), which added OQ-35; revision 4 (2026-11-07, release v11 `7880dcf`, core.mjs `94b9fa35…f38514d5d`),
 which resolved OQ-6, 7, 12, 13, 20, 24, 25, 29 and 35 and added OQ-36; revision 5 (2026-11-07, release v12 `a61c32e`,
-core.mjs `0cf1bb6a…6778ef3ab27`), which resolved the OQ-24 residual and the OQ-33 residual of revision 4.
+core.mjs `0cf1bb6a…6778ef3ab27`), which resolved the OQ-24 residual and the OQ-33 residual of revision 4; revision 6
+(2026-11-07, release v13 `6a6a34b`, core.mjs `7dc469e0…e0f240b2e`), which made OQ-33 a rule by Unicode property.
 
 How each item is known: **[vectors]** shown by `spec/vectors/check_python.py` or asserted by `generate.mjs` against the
-real code; **[probe]** reproduced by running the real server code in memory; **[code]** from reading the code only.
+real code; **[probe]** reproduced by running the real server code in memory; **[code]** from reading the code only;
+**[design]** (since revision 7) from the release v16 contract, before its code exists.
 
 Severity: **high** = a normal user action fails or a party can be misled; **medium** = wrong or surprising behaviour in
-reachable cases; **low** = edge case, hardening or documentation.
+reachable cases; **low** = edge case, hardening or documentation; **decision** (since revision 7) = a choice the owner
+has to make for release v16, not a defect.
 
 ## Summary
 
@@ -55,14 +65,14 @@ reachable cases; **low** = edge case, hardening or documentation.
 | OQ-18 | `/info` statements are JS source | low | OPEN |
 | OQ-19 | Defaults that block silently | low | OPEN |
 | OQ-20 | Owner-recorded "agent limits" | low | RESOLVED (7880dcf) |
-| OQ-21 | Keys are trusted from the server | medium | OPEN |
-| OQ-22 | Signed notes that were never issued stay on the server | medium | OPEN |
-| OQ-23 | Python clients' issued-notes record gets ahead of the tracker | medium | OPEN (both clients) |
+| OQ-21 | Keys are trusted from the server | medium | OPEN; with v16 (draft) it covers transfer destinations too |
+| OQ-22 | Signed notes that were never issued stay on the server | medium | OPEN; with v16 (draft) a failed note can still apply after a payment by transfer |
+| OQ-23 | Python clients' issued-notes record gets ahead of the tracker | medium | OPEN in 0.3.1 (Python and JS clients); fix specified for the 0.4.0 clients (v16, draft) |
 | OQ-24 | Owner tokens cannot be rotated | low | RESOLVED (7880dcf; operator recovery a61c32e); left: recovery rests on the operator's out-of-band check |
 | OQ-25 | Deal-id existence oracle | low | RESOLVED (7880dcf) |
-| OQ-26 | Coverage can be manufactured | low | OPEN (adversarial F3, open by design) |
+| OQ-26 | Coverage can be manufactured | low | OPEN (adversarial F3, open by design); CHANGED with circulation on (v16, draft): set-off removes circular coverage among clearing members |
 | OQ-27 | Public metadata | low | CHANGED: profile text filtered; metadata unchanged |
-| OQ-28 | Python clients' checks they do not make | low | OPEN (both clients) |
+| OQ-28 | Python clients' checks they do not make | low | OPEN (both clients, 0.3.1); partly addressed for 0.4.0 (v16, draft) |
 | OQ-29 | Lowering `approve_above` does not hold open offers | low | RESOLVED (7880dcf; adversarial F4) |
 | OQ-30 | Any bearer header skips the unauthenticated read budget | medium | RESOLVED (ed1da4a); residual: agents behind one address share the read budget (OQ-11) |
 | OQ-31 | Signer failures look like bad signatures | medium | RESOLVED (ed1da4a; residual resolved 7880dcf); left: `verified_by_valun: true` when the re-check was skipped; split by message text |
@@ -70,11 +80,26 @@ reachable cases; **low** = edge case, hardening or documentation.
 | OQ-33 | Unsafe-character set: gaps and over-refusal | medium→low | RESOLVED (6a6a34b): a rule by Unicode property, no Cc/Cf/default-ignorable code point passes outside its exceptions; left (low): the single marks between any two characters, blank-looking non-ignorable characters; trade-off: prepended concatenation marks refused |
 | OQ-34 | Display-name rule: gaps and status code | low | RESOLVED (ed1da4a); residual (unchanged in v11): reserved words only as whole names, no NFKC, names without letters or digits, confusables |
 | OQ-35 | Every 502 says "internal error": `BasisError` has no `name` | low | RESOLVED (7880dcf) |
-| OQ-36 | The plugin tells an acceptor its own owner holds an acceptance the proposer's owner holds | low | OPEN (new in revision 4; plugin only) |
+| OQ-36 | The plugin tells an acceptor its own owner holds an acceptance the proposer's owner holds | low | RESOLVED (plugin 0.3.0, `5d01fbd`); the 0.2.x plugin unchanged |
+| OQ-37 | Tracker v3: a Valun fork of the Basis tracker | decision | OPEN (owner decision) |
+| OQ-38 | Release naming: server v16, spec v14, Appendix G | decision | OPEN (owner decision) |
+| OQ-39 | Mandate defaults for the circulation fields | decision | OPEN (owner decision) |
+| OQ-40 | Client consent defaults | decision | OPEN (owner decision) |
+| OQ-41 | Console approval mode also turns on `review_deliveries` | decision | OPEN (owner decision) |
+| OQ-42 | Payment timing constants | decision | OPEN (owner decision; needed before the tracker build) |
+| OQ-43 | Partial payment by transfer refused | decision | OPEN (owner decision) |
+| OQ-44 | Sandbox economy numbers | decision | OPEN (owner decision) |
+| OQ-45 | Privacy of circulation data | decision | OPEN (owner decision) |
+| OQ-46 | Edges under revoked keys stay frozen | decision | OPEN (owner decision) |
+| OQ-47 | Phase-2 credit policies in 0.4 or 0.4.1 | decision | OPEN (owner decision) |
+| OQ-48 | Outcome reports: a server that hides an applied payment can obtain a second one | medium | OPEN (new in revision 7, v16 draft) |
+| OQ-49 | `/info` `description` still says "no clearing" with circulation on | low | OPEN (new in revision 7, v16 draft) |
 
 Resolved: OQ-1, 5, 9, 10, 14 (v8), OQ-30 to 34 (v9, with residuals), OQ-6, 7, 12, 13, 20, 24, 25, 29, 35 (v11), the
-OQ-24 and OQ-33 residuals named in revision 4 (v12), and OQ-33's list approach (v13: a rule by property).
-Partly fixed: OQ-8, 11, 16, 27. Still open: OQ-2, 3, 4, 15, 17, 18, 19, 21, 22, 23, 26, 28, and the new OQ-36.
+OQ-24 and OQ-33 residuals named in revision 4 (v12), OQ-33's list approach (v13: a rule by property), and OQ-36 in the
+plugin 0.3.0. Partly fixed: OQ-8, 11, 16, 27. Still open: OQ-2, 3, 4, 15, 17, 18, 19, 21, 22, 23, 26, 28 (for the v16
+draft, OQ-23 has a specified fix and OQ-26, OQ-28 are partly addressed), the owner decisions OQ-37 to 47 and the new
+OQ-48 and OQ-49.
 
 ## A. Server and Python clients
 
@@ -228,19 +253,47 @@ refused with `recorded_by: owner`, replayed through both clients). Either token 
 
 ## D. Security and trust
 
-### OQ-21 (medium, security) Keys are trusted from the server — OPEN [code]
+### OQ-21 (medium, security) Keys are trusted from the server — OPEN [code, design]
 The directory comes from the same server; a dishonest server can substitute keys consistently, and the Python client
 signs credit notes to the payee's current directory key (valun_client.py:316-320), so a claimed rotation can redirect a
 note. Suggest key pinning and independent confirmation when the note recipient differs from the agreed payee key.
+Revision 7: unchanged in the 0.3.1 clients (package `client.py:322-324`, the plugin 0.3.0 the same file; JavaScript
+`js/src/client.js:512-513`). With release v16 (draft) the same trust extends to payments by transfer: the payer's client
+binds the destination to the payee's current directory key (`PROTOCOL.md` 15.3 R7, `wrong_destination`), so a server
+that substitutes the payee's key consistently can redirect a transfer as it can a note. The 0.4.0 clients add a check
+of the payee's delivery signature (`PROTOCOL.md` 15.2), which does not close this (a substituted key can sign a
+delivery too), and they pin only `tracker_nft_id` and `denomination` (R13). The suggestion stands, for transfer
+destinations as for note recipients.
 
-### OQ-22 (medium, security) Signed notes that were never issued stay on the server — OPEN [code]
+### OQ-22 (medium, security) Signed notes that were never issued stay on the server — OPEN [code, design]
 Rejected, voided and stale payer-signed notes are kept with their signatures (core.mjs:235, 661, 674); any holder could
 submit them to the tracker while the pair's state allows. Withholding relies on the server (`noteView`, core.mjs:899).
+Revision 7: unchanged in v14 and v15. Release v16 (draft) purges the signatures of novations that end without
+applying, and the tracker refuses novation signatures older than one hour (`PROTOCOL.md` 18.8, 18.12), but held,
+voided and failed credit notes keep their signatures as before, and notes have no maximum age. This matters more in v16
+because a payer whose own note failed may then pay the same deal by transfer (`PROTOCOL.md` 18.10). The failed note
+(on B→C) and the transfer (on A→B and A→C) change different edges, so if the failed note can still apply (B→C's
+tracker timestamp is still earlier than the note's), whoever holds it could submit it after the transfer applied, and
+the payer would pay twice. A retry with an own note is safe, because two notes for one deal built on the same prior
+carry the same cumulative total. Suggest: the server refuses, and a client does not sign, a payment by transfer for a
+`note_failed` deal while its failed note could still apply; and purge failed notes' signatures as v16 purges
+unapplied novations'.
 
-### OQ-23 (medium, client bug) Python clients' issued-notes record gets ahead of the tracker — OPEN [code]
+### OQ-23 (medium, client bug) Python clients' issued-notes record gets ahead of the tracker — OPEN in 0.3.1; fix specified for 0.4.0 (draft) [code, design]
 valun_client.py:337-338 (package: client.py:334-335) records the total on `completion_awaiting_owner`; if the owner
 rejects or the note goes stale, later completions to that payee key fail with `ledger_mismatch` (valun_client.py:324-326;
 package client.py:321-323). A 502 during submission has the opposite effect. Same code in both clients.
+Revision 7: still present in the package 0.3.1 (`client.py:341-343` records the total on `completion_awaiting_owner` and
+`issuing_note`; `328-330` refuses with `ledger_mismatch`), in the plugin 0.3.0 (the same file) and in the JavaScript
+package 0.3.1 (`js/src/client.js:542-544`, `521-523`). The v16 contract specifies the fix for the 0.4.0 clients
+(draft): a per-pair record `{confirmed, pending[]}` in which a pending entry is promoted only when a recorded outcome
+or `GET /edges` shows it applied, so an owner's rejection or a `void_stale` no longer corrupts it; a self-authenticating
+`prior_note` (`?prior=1`, `PROTOCOL.md` 9.2 and 15.2), accepted when it is the client's own signature and not older than
+its confirmed record, on any tracker; and bound notes (18.5), with which the tracker enforces the prior, so the record
+no longer decides value. One protection of the old record must be kept: today a hidden applied note makes the next
+completion fail with `ledger_mismatch`; a 0.4 client must treat its own pending note appearing as a prior as applied
+and not pay that deal again (`PROTOCOL.md` 15.3, notes; OQ-48). A 0.3 client never signs a novation, so no transfer or
+set-off ever touches its edges (I-03SAFE) and the record's meaning does not change for it.
 
 ### OQ-24 (low, security) Owner tokens cannot be rotated or revoked — RESOLVED (7880dcf; operator recovery a61c32e) [vectors]
 No route (core.mjs:158, 208).
@@ -267,15 +320,23 @@ Revision 4 (v11): `propose` verifies the signature before looking up the deal id
 a reused deal id with a bad signature is `403 bad_signature` with the same message as for an unused id (step
 "signature by another key"); correctly signed, it is still `409 duplicate`.
 
-### OQ-26 (low, honest label) Coverage can be manufactured — OPEN (adversarial F3)
+### OQ-26 (low, honest label) Coverage can be manufactured — OPEN (adversarial F3); CHANGED with circulation on (v16, draft) [code, design]
 core.mjs:399-405 counts every note a payer holds, including circular or colluding credit.
+Revision 7: unchanged in v15. With circulation on (`PROTOCOL.md` 18, draft) the clearing engine cancels cycles of debts
+by set-off among members that have `auto_clear` on and can sign: circular credit between such members, which raised
+each one's coverage, disappears once the cycle is cleared, and `GET /clearing` publishes the gross total and the net
+floor. It does not close the item: members that keep `auto_clear` off, refuse a set-off, or are not present keep their
+circular claims, and a chain through a colluding party that does not close into a cycle is never cleared. For a payment
+by transfer coverage is judged on the issuer whose note is received (18.13). The phase-2 `max_issuer_net_debt`
+predicate counts claims on an issuer at no more than that issuer's own coverage (a one-level haircut, over reconciled
+edges only), which limits manufactured coverage further; it may be cut from v16 (OQ-47).
 
 ### OQ-27 (low) Public metadata — CHANGED
 Public profile text is now filtered (OQ-16). Unchanged: the directory lists every participant with operator names,
 `agent_last_seen` is public, position counts include deals waiting for the participant's own owner (core.mjs:344), and
 `last_seen_agent` is persisted only at the next save (core.mjs:207).
 
-### OQ-28 (low, client hardening) Python clients' checks they do not make — OPEN
+### OQ-28 (low, client hardening) Python clients' checks they do not make — OPEN (0.3.1); partly addressed for 0.4.0 (draft) [code, design]
 `deliver` does not verify the agreement (valun_client.py:296-302; package client.py:293-299); `verify_offer` does not
 check `deal_id`, `proposer`, the version chain, `price.unit` or `consideration` (valun_client.py:213-240; package
 client.py:210-237); text from terms, reasons and deliveries is passed to the model unsanitised. New with v9 (both
@@ -286,6 +347,15 @@ checker is unavailable" replays this for both).
 Revision 4 (v11): unchanged in both clients (plugin `f504d26`, package `client.py`). Both surface the new v11 codes as
 `ValunError` (`wrong_state`, `mandate_exceeded` with `recorded_by`, `signer_unavailable`; replayed). For the plugin's
 text about held acceptances see OQ-36.
+Revision 7: unchanged in the package 0.3.1 and the plugin 0.3.0: `deliver` does not verify the agreement
+(`client.py:300-306`); `verify_offer` (`217-244`) does not check `deal_id`, `proposer`, the version chain,
+`price.unit` or `consideration`; neither checks a reason for refused characters before signing; neither retries
+`503 signer_unavailable`. The JavaScript package 0.3.1 already makes the `verify_offer` checks
+(`js/src/client.js:345-364`: deal id, proposer, version chain, unit, consideration, exact field sets) and verifies the
+agreement before delivering (`484-488`). For the 0.4.0 clients the v16 contract (draft) adds: verification of the
+payee's delivery signature before paying (`PROTOCOL.md` 15.2), the signing firewall for every circulation signature
+(15.3), and approval prompts with the computed lines first and counterparty-written text quoted as one JSON line. The
+0.3.1 Python gaps above remain as listed.
 
 ## E. New in revision 2 (OQ-30 to OQ-34 resolved in release v9, with residuals)
 
@@ -514,7 +584,7 @@ outage at the template (`503`), the signer refusing a note-message request (`502
 
 ## G. New in revision 4
 
-### OQ-36 (low, client UX) The plugin tells an acceptor its own owner holds an acceptance the proposer's owner holds — OPEN [code]
+### OQ-36 (low, client UX) The plugin tells an acceptor its own owner holds an acceptance the proposer's owner holds — RESOLVED (plugin 0.3.0, `5d01fbd`) [code]
 Since v11 an acceptance can wait for the **proposer's** owner (`confirm_offer`, OQ-29), with the same status
 `accepted_awaiting_owner`. The Hermes plugin at `f504d26` answers every `accepted_awaiting_owner` from `valun_respond`
 with "You signed the acceptance; it becomes binding when your owner approves it." (tools.py:299), which is wrong for the
@@ -524,8 +594,131 @@ risk. The `valun` package's `agent.py:426` already says "when the owner holding 
 their limits require it; valun_deal shows which)", and its `valun_deal` passes the server's `acceptance` object, with
 `held_for`, through (agent.py:327). Fix: say which owner holds it from `acceptance.held_for`. Not a protocol
 disagreement (the signed bytes agree); `check_python.py` does not judge tool text.
+Revision 7: resolved in the plugin 0.3.0. Since `48c71ff` the plugin is a thin adapter over the package's code: its
+tools run `valun_core/agent.py` (`tools.py` calls `agent_for(ctx)`), whose `valun_respond` says "You signed the
+acceptance; it becomes binding when the owner holding it approves (yours, or the proposer's if their limits require it;
+valun_deal shows which)." (`valun_core/agent.py:426-427` at `5d01fbd`, the commit the catalog entry pins). The 0.2.x
+line keeps the old text (`tools.py:299` at `f504d26` and at `94483e4`, 0.2.1).
 
-## H. What was and was not verified (revision 6)
+## H. New in revision 7: owner decisions for release v16
+
+Release v16 (circulating credit, `PROTOCOL.md` section 18) is built locally and not deployed. These are the choices it
+leaves to the owner; each is OPEN until the owner decides. Deployment, publishing and workspace steps are owner
+decisions too, but they are operations, not protocol questions, and are not listed here.
+
+### OQ-37 (decision, trust) Tracker v3: a Valun fork of the Basis tracker — OPEN [design]
+Circulating credit rests on tracker rules that upstream Basis does not have (`PROTOCOL.md` 18.2): seven-signature
+transfers in which both creditors acknowledge the current totals; timestamp endings 995–999 ms reserved, one per
+operation; bound notes and bound-only edges; a fixed one-hour limit on how long novation signatures stay valid;
+`GET /capabilities`; a `pure_credit` mode. The design builds them as a fork ("v3", on Basis `a00233d`, branch
+`circulating-credit-v3`), which Valun uses only when its capabilities match and its binary's sha256 is pinned. To
+decide: whether to maintain that fork, and whether and when to offer the changes upstream
+(BetterMoneyLabs/basis-tracker). Without it the effective mode stays `off`.
+
+### OQ-38 (decision) Release naming: server v16, spec v14, Appendix G — OPEN [design]
+Circulating credit ships as server release v16 with spec revision v14; Appendix G documents releases v14 and v15
+(self-serve sandbox joining), which were deployed before the spec described them (`js/src/client.js:244` already calls
+the join-sandbox release "v14+"). To confirm.
+
+### OQ-39 (decision) Mandate defaults for the circulation fields — OPEN [design]
+`PROTOCOL.md` 18.13: new invited participants get `auto_clear` and `novate_own_debt` on, `accept_transfers` off and an
+empty `accept_notes_from`; participants who joined before get every new permission off until their owner opts in;
+sandbox joiners get everything on, inside the sandbox limits. `accept_notes_from` is never derived from
+`counterparties`. To confirm or change.
+
+### OQ-40 (decision) Client consent defaults — OPEN [design]
+(a) The background consent loop is on for sandbox profiles and opt-in for invited ones. (b) Automatic consent to being
+paid by transfer (the new-creditor role) is opt-in for invited profiles. (c) The Hermes plugin's `process_consents`
+defaults to false and becomes true after `hermes valun join --sandbox`. To confirm, keeping the Hermes catalog's
+disclosure rules (12 and 13) in mind: automatic signing must be disclosed where the plugin is listed.
+
+### OQ-41 (decision) Console approval mode also turns on `review_deliveries` — OPEN [design]
+So that credit notes and payments by transfer wait for the owner in console approval mode. This changes behaviour for
+existing console-mode users. To confirm.
+
+### OQ-42 (decision) Payment timing constants — OPEN [design]
+After a transfer attempt fails or expires, the payer may pay another way (its own note or another issuer's note) only
+after the attempt's timestamp + 1 hour + a margin (60 s at the server, 120 s at the client); a retry with the same
+issuer is allowed at once (`PROTOCOL.md` 18.8). Signatures are collected for at most 20 minutes for a transfer and 30
+minutes for a set-off. These are protocol constants (the one-hour limit is compiled into the tracker), so they must be
+chosen before the tracker is built. A consequence to weigh: a payee that refuses a transfer waits up to about 62
+minutes for its credit note.
+
+### OQ-43 (decision) Partial payment by transfer — OPEN [design]
+Refused in v16: a payment by transfer must cover the whole price (`409 insufficient_claim`). To confirm, or schedule
+split payments (several issuers, or a note plus a transfer) for a later release; a split payment needs its own
+exclusion argument (`PROTOCOL.md` 18.6, 18.8).
+
+### OQ-44 (decision) Sandbox economy numbers — OPEN [design]
+The operator-run sandbox agents would buy from strangers: one welcome job per sandbox participant (3 PC), at most 3
+purchases per stranger per day, and a stranger holds at most 20 PC of their notes. They issue operator-signed notes up
+to 1000 PC outstanding each, not counting debt to sandbox participants whose time has ended. There is no synthetic
+float and no trading between the agents (`PROTOCOL.md` 18.15). To confirm these numbers.
+
+### OQ-45 (decision) Privacy of circulation data — OPEN [design]
+Keep the public `GET /ledger` as it is (it already shows every edge total), keep transfer and set-off receipts visible
+only to their parties, publish only aggregates on `GET /clearing`, and publish no per-edge journal (`PROTOCOL.md` 18.12,
+16.2). Or schedule a party-scoped ledger.
+
+### OQ-46 (decision) Edges under revoked keys stay frozen — OPEN [design]
+In v16 an edge under a revoked (past) key cannot be spent or cleared, though it still counts in positions
+(`PROTOCOL.md` 18.13). To confirm, or plan a key-rotation novation that moves such edges to the current key.
+
+### OQ-47 (decision) Phase-2 credit policies in 0.4 or 0.4.1 — OPEN [design]
+`max_claims_total`, the `max_issuer_net_debt` predicate with a one-level haircut, `accept_operator_issuers` and the
+aggregate credit history: include them in v16 and the 0.4 clients, or defer them to 0.4.1 if time runs short (they are
+the first part to cut, `PROTOCOL.md` 18.13).
+
+## I. New in revision 7: found while writing the release v16 contract
+
+### OQ-48 (medium, security) Outcome reports: a server that hides an applied payment can obtain a second one — OPEN [design]
+Whether a note or a novation applied is decided by the server's read-back (I-DECIDE). A client can check it only
+through states it signed itself.
+- Credit notes. Every change on a payer's outgoing edge carries its own signature, so a later prior shows whether its
+  note applied. The 0.3 clients' issued record turns a hidden applied note into `ledger_mismatch` at the next
+  completion (OQ-23); a 0.4 client, which accepts a self-signed `prior_note` instead, keeps that protection only if it
+  treats its own pending note appearing as a prior as applied and refuses to pay that deal again (`PROTOCOL.md` 15.3,
+  notes). Without that rule it would sign a second note on top of the first.
+- Transfers. On a claim B holds (A→B) the issuer's notes change the edge without B. Once A→B has moved past an
+  attempt's timestamp, B cannot tell from the edge alone whether that attempt applied. A server that applies a
+  transfer, reports it as failed, waits for one of A's notes on A→B and then offers a regenerated same-issuer attempt
+  (which B's client re-signs by itself while the quote digest is unchanged, `PROTOCOL.md` 18.6 step 8) obtains a second
+  payment of the same deal. Each payment is signed by B for exactly the price, so I-VALUE holds; I-ONCE then rests on
+  the server's honesty.
+Suggest: before B's client re-signs a regenerated attempt after A→B moved through an operation B did not sign, it needs
+evidence that the earlier attempt did not apply (with bound notes every note A issues on A→B carries A's acknowledgment
+of the state before it, so the server can show the chain of states from the attempt's prior to the current one), or the
+owner's approval; and every party of an applied transfer gets its receipt, so the payee's view can contradict a false
+failure report.
+
+### OQ-49 (low, honest label) `/info` `description` still says "no clearing" with circulation on — OPEN [design]
+The v16 design keeps `GET /info` `description` unchanged in every mode (it must stay unchanged with circulation off,
+I-DARK). In v15 it ends "An issued note is an outstanding obligation; nothing in the pilot is settled (no redemption,
+reserve or clearing)." (http.mjs:62 at `495624c`). With circulation on, set-offs do clear obligations, and the deal and
+position labels say so (`PROTOCOL.md` 16.1), so the description contradicts them. Suggest: while `circulation/1` is
+advertised, end the description with the wording of the circulation settlement label, and pin it in the vectors.
+
+## J. What was and was not verified
+
+### Revision 7
+
+- Read, not run: valun-app commits `0317239` (release v14) and `495624c` (release v15) with `git show` (the diffs of
+  `lib/pilot/core.mjs`, `lib/pilot/http.mjs`, `lib/pilot/sandbox.mjs`, `server.mjs`, `fly.toml` and
+  `test/open-sandbox.test.mjs`) and the files at `495624c` with `git show <commit>:<path>` (the line numbers and sha256
+  values of `PROTOCOL.md` Appendix G); `docs/PILOT-API.md` at `495624c` (it never mentions the sandbox). The valun-app
+  working tree was not read. The tracker request field names of `PROTOCOL.md` 18.2 come from
+  `crates/basis_server/src/models.rs` at Basis `a00233d` (read only).
+- The v16 sections are written from the release v16 design, before its code: nothing in them was run, and they are
+  marked *draft until vectors are regenerated* in `PROTOCOL.md`.
+- Run: `check_python.py` against both clients, from clean exports (`git archive`) of valun-open `c75cfb0` (package
+  0.3.1) and hermes-plugin-valun `5d01fbd` (plugin 0.3.0), with Python 3.14.7: each **829 checks: 658 agree, 0
+  disagreements in failing tiers, 17 informative differences, 154 not applicable** (exit status 0), the same counts as
+  in revision 6. `node --test js/test/` on the same valun-open export (Node.js 24.21.0): 258 tests, 257 pass, 0 fail,
+  1 skipped.
+- Not run: `generate.mjs` (no file under `spec/vectors` changed in revision 7; the vectors still describe v13), the v16
+  server, the tracker v3, the valun-app test suites, the hosted server, any network.
+
+### Revision 6 (release v13: how the current vectors were made)
 
 - Exported: valun-app commit `6a6a34b` (release v13) with `git archive` into a scratch folder (the valun-app working
   tree was not read; the v12→v13 change was read from `git diff a61c32e 6a6a34b`: `hasUnsafeText` in
