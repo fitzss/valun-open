@@ -1243,23 +1243,27 @@ files). *(draft until vectors are regenerated)* The vectors were regenerated fro
 | `transcript.json` | a 236-request run through the real route table, with what the server verified at each step; decline/dispute steps also list every statement form the server would accept for that body (`server_accepts`, from a dry run of the real code). Steps 1-147 run with circulation off and are byte-identical to release v13's. Steps 148-236 run with circulation on (the stand-in tracker enforces the v3.1 rules of 18.2, its binary pinned for the in-memory Pilot only): two new participants (nina, a client agent; sam, an agent the server runs); owners opting in; a policy refusal (`payment_not_accepted`, payee); a payment by transfer with client parties and its consents; a bound note after the novation, with no `ledger_mismatch`; a set-off proposed by the clearing engine, superseded by a held note (`held_note`, D-2 c) and proposed again; a payment refused when posted, kept as an attempt (D-2 b), and the cross-kind window it opens (D-1); a held bound note refused by the tracker after its maximum age (`novation_expired`, D-1 item 4) and signed again; a server-run payee whose slots are signed at once, attacks the server refuses (a puppet destination, an amplified slot), an outcome the read-back cannot decide (`outcome_unknown`, D-1 item 3) and the owner's resolution (D-2 d); and the empty roles header (D-3 b). Each `server_verified` entry names the body field that held the signature (`field`, a JSON pointer) and the edge of a note message; replayed calls carry `client_state`, `signature_fields` and `client_state_after` |
 | `circulation.json` | circulating credit: 17 timestamp cases (residue classes, the ordinary clamp, the server's choice of T, limits beyond the safe integers), 14 messages (a bound note and its prior acknowledgment, all seven transfer slots, both set-off slots), 3 quote digests (with the 18.3 worked example), 2 pay statements, 13 transfer and 9 set-off tracker requests with the stand-in tracker's outcome (the valid ones, and a standalone raised edge, a missing residue, a puppet destination, the four- and five-signature bodies, amplification, a colluding payer, set-off signatures used as a transfer, too old, an unknown field, ...), and 55 decisions of the signing firewall (27 consents, 18 payer templates, 10 bound templates) that cover every refusal code of 15.3 (all 28), `needs_read_back`, `policy_off` without a mandate and `deal_mismatch` without `me_id` |
 
-All keys, ids, codes and tokens in them are public test fixtures (the test keys are derived from public labels;
-tokens are replaced by placeholders). Never use them for anything real. `python spec/vectors/check_python.py` checks
-them against the Hermes plugin, and `python spec/vectors/check_python.py --client package` against the `valun`
-package; each replays the transcript through that client's real `Client` methods (commands for CI:
-`spec/vectors/README-ci.md`). Server-side Basis crypto runs in a Rust helper that the generator does not run; the
-generator's replica is proven against Basis's official vectors before it writes anything (the token-denomination debt
-key has no official vector: OPEN-QUESTIONS). The circulation checks (tiers `circulation` and `consent`) count for a
-client that declares `circulation/1` in `PROTOCOL_FEATURES`, or for a run given `--require circulation/1`; otherwise
-they are not applicable. Against release v16: the package 0.4.0 with `--require circulation/1` gives **1386 checks,
-1188 agree, 0 disagreements in failing tiers, 17 informative differences (OQ-2, OQ-3, OQ-4 inputs), 181 not
-applicable**, and so does the Hermes plugin 0.4.0 (`e2c7640`) with `--require circulation/1`; without it, the plugin
-0.3.0 (`5d01fbd`, the CI pin), the plugin 0.4.0 and the package give **1384 checks, 1104 agree, 0 disagreements, 17
-informative differences, 263 not applicable** (exit status 0 for each, with Python 3.14.7 and 3.11.18 on Windows and
-3.12.3 on Linux). Against release v13's vectors both 0.3 clients gave 829 checks, 658 agree, 0 disagreements, 17
-informative differences, 154 not applicable, and the same files are still what an export of v13 produces.
-`scripts/check_plugin_core.py PLUGIN_DIR` checks that the plugin's `valun_core/` modules (six in 0.3.0, eight since
-0.4.0) are the package's, unchanged.
+All keys, ids, codes and tokens in them are public test fixtures (the test keys are derived from public labels; tokens
+are replaced by placeholders). Never use them for anything real. `python spec/vectors/check_python.py` checks them
+against the Hermes plugin, and `python spec/vectors/check_python.py --client package` against the `valun` package;
+each replays the transcript through that client's real `Client` methods (commands for CI:
+`spec/vectors/README-ci.md`): a replay must send the step's request exactly once, with the recorded `X-Valun-Features`
+header (none where none is recorded, as in steps 1-147, which ran with circulation off) and exactly the signatures the
+recorded body carries (no fewer and none extra), each verifying over what the server verified. Server-side Basis
+crypto runs in a Rust helper that the generator does not run; the generator's replica is proven against Basis's
+official vectors before it writes anything (the token-denomination debt key has no official vector: OPEN-QUESTIONS).
+The circulation checks (tiers `circulation` and `consent`) count for a client that declares `circulation/1` in
+`PROTOCOL_FEATURES`, or for a run given `--require circulation/1`; otherwise they are not applicable. A run given
+`--require circulation/1` with vectors that have no `circulation.json` or no transcript steps 148+ stops with exit
+status 2 instead of passing vacuously. Against release v16: the package 0.4.0 with `--require circulation/1` gives
+**1386 checks, 1188 agree, 0 disagreements in failing tiers, 17 informative differences (OQ-2, OQ-3, OQ-4 inputs), 181
+not applicable**, and so does the Hermes plugin 0.4.0 (`e2c7640`) with `--require circulation/1`; without it, the
+plugin 0.3.0 (`5d01fbd`, the CI pin), the plugin 0.4.0 and the package give **1384 checks, 1104 agree, 0
+disagreements, 17 informative differences, 263 not applicable** (exit status 0 for each, with Python 3.14.7 and
+3.11.18 on Windows and 3.12.3 on Linux). Against release v13's vectors both 0.3 clients gave 829 checks, 658 agree, 0
+disagreements, 17 informative differences, 154 not applicable, and the same files are still what an export of v13
+produces. `scripts/check_plugin_core.py PLUGIN_DIR` checks that the plugin's `valun_core/` modules (six in 0.3.0,
+eight since 0.4.0) are the package's, unchanged.
 
 ## 18. Circulating credit (server release v16) *(draft until vectors are regenerated)*
 
@@ -2465,7 +2469,10 @@ that lists no `circulation/1`, except these reads of `GET /info` (no other chang
 1. the `valun_propose` approval snapshot reads `GET /info` once per agent process while the features are unknown;
 2. the consent hook reads `GET /info` once per agent process, before the first tool that is not read-only, and only
    for profiles that take part in consents (a `consent_policy`, written at join since 0.4, or recorded transfer
-   attempts or approved payments); after that no more reads, and 0.3 profiles make none;
+   attempts or approved payments); with `consents_on_reads` and `process_consents` on (decision D-3 a: the Hermes
+   plugin 0.4.0), that one read can come instead before the first `valun_status` or `valun_inbox`, for a profile whose
+   `consent_policy` has a value-safe role on (`setoff` or `as_new_creditor`); after that no more reads (by either path:
+   once the features are known, neither asks again), and 0.3 profiles make none;
 3. `complete()` on a pinned profile reads `GET /info` once per accepted delivery (`bound_notes/1` detection and the
    reserved residues); `valun_deal` no longer pins profiles, as in 0.3.1;
 4. the sandbox Seller reads `GET /info` once, at its first step (it must be restarted to see circulation turned on
@@ -2474,7 +2481,8 @@ that lists no `circulation/1`, except these reads of `GET /info` (no other chang
    `attempts` reads `GET /edges` only when features are on, and `resolve` also reads `GET /transfers` (circulation
    only) and `GET /owner` (for local resolutions);
 6. with features off there is no `X-Valun-Features` header, no `GET /consents` and no `GET /edges`.
-`valun_deal`, `valun_status` and `valun_inbox` make exactly the 0.3.1 requests.
+`valun_deal` makes exactly the 0.3.1 requests, and so do `valun_status` and `valun_inbox`, except for the one read of
+item 2 that an adapter with `consents_on_reads` (D-3 a) can make before the first of them.
 
 **The server with circulation off** stays byte-identical to v15 (the 100-step flow and the sandbox flows give v15's
 snapshots on the old tracker and on v3.1; transcript steps 1-147 are unchanged): `sandbox-keys.json` is written as v15

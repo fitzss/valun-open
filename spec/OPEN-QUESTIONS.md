@@ -17,7 +17,7 @@ locally, not released; the `valun` package 0.4.0 at valun-open `1509cbe`; the He
 tracker v3.1, Valun fork `24675ec`) **and vectors regenerated from it** (`spec/vectors`, *draft until vectors are
 regenerated* for the release commit). It folds what the implementation found into `PROTOCOL.md` (15.3, 16.1, 16.2,
 17, 18.1-18.8, the new 18.16 and Appendix H), records the decisions D-1, D-2 and D-3 taken while building it, updates
-OQ-22, OQ-23, OQ-40, OQ-48 and OQ-49, and adds OQ-50 to OQ-56 (section J).
+OQ-22, OQ-23, OQ-40, OQ-48 and OQ-49, and adds OQ-50 to OQ-57 (section J).
 
 Line numbers: paragraphs marked "revision 7" cite v15 (`495624c`) and the clients named below; "revision 6"
 paragraphs cite v13 (`6a6a34b`); "revision 5" paragraphs cite v12 (`a61c32e`); "revision 4" paragraphs cite v11
@@ -109,13 +109,14 @@ has to make for release v16, not a defect.
 | OQ-54 | `valun config consents.max_PC` accepts non-ASCII digits | low | OPEN (new in revision 8) |
 | OQ-55 | `GET /clearing` `cleared_PC` is gross | low | OPEN (new in revision 8) |
 | OQ-56 | Two things a client cannot read: `retry_after_ms` on 429, clearing holds of an unpaid deal | low | OPEN (new in revision 8) |
+| OQ-57 | The vectors show no request after the empty roles header was taken | low | OPEN (new in revision 8) |
 
 Resolved: OQ-1, 5, 9, 10, 14 (v8), OQ-30 to 34 (v9, with residuals), OQ-6, 7, 12, 13, 20, 24, 25, 29, 35 (v11), the
 OQ-24 and OQ-33 residuals named in revision 4 (v12), OQ-33's list approach (v13: a rule by property), and OQ-36 in the
 plugin 0.3.0. Partly fixed: OQ-8, 11, 16, 27. Still open: OQ-2, 3, 4, 15, 17, 18, 19, 21, 22, 23, 26, 28 (for the v16
 draft, OQ-23 has a specified fix and OQ-26, OQ-28 are partly addressed), the owner decisions OQ-37 to 47 and the new
 OQ-48 and OQ-49. Revision 8: OQ-22 and OQ-48 CHANGED by decisions D-1 and D-2, OQ-23 resolved in the 0.4.0 clients,
-OQ-49 resolved in v16; new: the owner decisions OQ-50 and OQ-51, and OQ-52 to OQ-56.
+OQ-49 resolved in v16; new: the owner decisions OQ-50 and OQ-51, and OQ-52 to OQ-57.
 
 ## A. Server and Python clients
 
@@ -796,6 +797,15 @@ after the tour). Both are right; neither says which it is (`PROTOCOL.md` 18.16).
 the server process's memory); and a deal left unpaid keeps the edges its payment attempts would change out of clearing
 for as long as it stays unpaid (D-2 c; `PROTOCOL.md` 16.2 item 11).
 
+### OQ-57 (low, conformance) The vectors show no request after the empty roles header was taken — OPEN [vectors]
+
+Transcript step 231 shows a client withdrawing its consent roles: its request carries `X-Valun-Features:
+consents/1;roles=` and it then records `consent_roles_declared: ''`; `check_python.py` compares that header exactly, as
+it does on every replayed request (none where none is recorded). No later step replays the same profile, so a client
+that keeps sending the empty list on every request (harmless: the server has nothing more to forget) is not told apart
+from one that sends it once, as `PROTOCOL.md` 18.1 says. A step after 231 (a second request from that profile, recorded
+without the header) would show it; it changes the transcript, so the JavaScript replay (JS-2) has to map that step too.
+
 ## K. What was and was not verified
 
 ### Revision 8
@@ -804,25 +814,32 @@ for as long as it stays unpaid (D-2 c; `PROTOCOL.md` 16.2 item 11).
   twice: both runs write identical files (`git diff --exit-code -- spec/vectors` empty after the second), transcript
   steps 1-147 are byte-identical to release v13's, and an export of `6a6a34b` still gives exactly the v13 files.
   `check_python.py`: the package 0.4.0 with `--require circulation/1`, and the plugin 0.4.0 (`e2c7640`) with it,
-  **1386 checks: 1188 agree, 0 disagreements, 17 informative differences, 181 not applicable**; without it the package,
-  the plugin 0.4.0 and the plugin 0.3.0 (`5d01fbd`, the CI pin) **1384 checks: 1104 agree, 0 disagreements, 17
-  informative differences, 263 not applicable** (Python 3.14.7 and 3.11.18 on Windows, 3.12.3 in WSL). Eight mutants of
-  the package's circulation code (a firewall rule removed, R4 and freshness loosened, the empty roles header never sent,
-  a paid deal not recorded, a wrong pay statement, a wrong quote, a wrong residue) each make the check fail; the
-  unmutated control passes. `scripts/check_plugin_core.py` passes on the plugin 0.4.0 (eight files) and on the plugin
-  0.3.0 (six files, against a locally built valun 0.3.1 wheel served offline), and flags a changed file and a module the
-  package lacks.
+  **1386 checks: 1188 agree, 0 disagreements, 17 informative differences, 181 not applicable**; without it the
+  package, the plugin 0.4.0 and the plugin 0.3.0 (`5d01fbd`, the CI pin) **1384 checks: 1104 agree, 0 disagreements,
+  17 informative differences, 263 not applicable** (Python 3.14.7 and 3.11.18 on Windows, 3.12.3 in WSL). Eight
+  mutants of the package's circulation code (a firewall rule removed, R4 and freshness loosened, the empty roles
+  header never sent, a paid deal not recorded, a wrong pay statement, a wrong quote, a wrong residue) each make the
+  check fail; the unmutated control passes. Every replay also compares the request's `X-Valun-Features` header with
+  the recorded one (none where none is recorded), the exact set of signatures in its body (none missing, none extra)
+  and that it is sent once: each of fifteen package mutants (the header never sent, old roles sent after the
+  withdrawal, a header without `circulation/1`, the empty header never sent, a signature added to a v16 body, a
+  signature missing from or added to a v13 body, a request sent twice in a v16 and in a v13 step, and six firewall
+  mutants) makes the check fail, with the unmutated control passing; eight of them passed the checker before these
+  comparisons were added (OQ-57 names what the vectors still do not show). `scripts/check_plugin_core.py` passes on
+  the plugin 0.4.0 (eight files) and on the plugin 0.3.0 (six files, against a locally built valun 0.3.1 wheel served
+  offline), and flags a changed file and a module the package lacks.
 - `node --test js/test/` with the new vectors: 361 tests, 347 pass, 13 fail, 1 skipped. Twelve failures are the new
   replays of transcript steps 148+ (the JavaScript client has no 0.4 methods yet: JS-2 extends the replay); the
   thirteenth (`fixtures were generated from the Python sources as they are now`) fails on valun-open `1509cbe` with the
   old vectors too (347 tests, 345 pass, 1 fail).
 - Folded into `PROTOCOL.md` from the implementation round (each item's source task in brackets): the tracker v3.1
   contract and bound-note maximum age [TR-7] (18.2, 18.5, 18.8); the firewall's codes, order, D-1 attempts, R4 and R8
-  fields [PY-2, PY-3] (15.3, 16.2); server behaviour of payments, consents, set-offs, approvals, views, policies, edges,
-  clearing and the sandbox [SV-4, SV-5, SV-6, SV-7, SV-8, SV-9] (18.6, 18.8, 18.16); decisions D-1 and D-2 and the
-  owner's resolution [FX-SV, FX-PY] (15.3, 18.6, 18.8, Appendix H); the D-2 h list of circulation-off client reads
-  [FX-PY, FX2-PY] (Appendix H); the client and adapter notes [PY-4, FX2-PY, PL-1, PL-2, INT-1] (16.1, 18.16); and the
-  last round's server fixes and decisions D-3 b and d [FX3-SV] (18.1, 18.8, 18.13, 18.16, Appendix H).
+  fields [PY-2, PY-3] (15.3, 16.2); server behaviour of payments, consents, set-offs, approvals, views, policies,
+  edges, clearing and the sandbox [SV-4, SV-5, SV-6, SV-7, SV-8, SV-9] (18.6, 18.8, 18.16); decisions D-1 and D-2 and
+  the owner's resolution [FX-SV, FX-PY] (15.3, 18.6, 18.8, Appendix H); the D-2 h list of circulation-off client
+  reads, with D-3 a's read before `valun_status` or `valun_inbox` [FX-PY, FX2-PY, FX3-PY, PL-2] (Appendix H); the
+  client and adapter notes [PY-4, FX2-PY, PL-1, PL-2, INT-1] (16.1, 18.16); and the last round's server fixes and
+  decisions D-3 b and d [FX3-SV] (18.1, 18.8, 18.13, 18.16, Appendix H).
 - Not run: the hosted server, any network service, the real tracker binaries (the transcript's tracker is the in-memory
   stand-in of v3.1's rules), the valun-app test suites (FX3-SV ran them for `cfe698b`).
 

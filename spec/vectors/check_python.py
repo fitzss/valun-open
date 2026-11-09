@@ -35,10 +35,15 @@ What is checked
                         send a different reason string) are replayed the same way, after checking that the client's tool
                         layer still calls Client.decline / Client.dispute the way the variant says. A step with
                         expect_error must make the client raise that error code. `probes` are server-only.
+                        Every replay must send the step's request exactly once (a second send is a disagreement), with
+                        the recorded Authorization header and exactly the recorded X-Valun-Features header (none where
+                        none is recorded: steps 1-147 ran with circulation off), and its body must carry exactly the
+                        signatures the recorded body carries (keys `signature` / `*_signature` at any depth, slots of a
+                        `signatures` map): none missing and none extra.
                         Since release v16 (steps 148+, circulation on): each server-verified Basis message is rebuilt by
-                        the client for its edge; a replayed call starts from its client_state, must send the recorded
-                        X-Valun-Features header, must sign each signature_fields pointer over the message the server
-                        verified for that field (server_verified[].field), and must hold client_state_after afterwards.
+                        the client for its edge; a replayed call starts from its client_state, must sign exactly the
+                        signature_fields pointers, each over the message the server verified for that field
+                        (server_verified[].field), and must hold client_state_after afterwards.
 - circulation.json      (release v16) timestamp residue classes; the 80-byte messages of bound notes, transfer slots
                         and set-off slots; quote digests; the pay statement; the signatures of tracker requests; and the
                         decisions of the client signing firewall (novation.evaluate_consent / evaluate_payer_template /
@@ -47,12 +52,15 @@ What is checked
 Protocol features: the circulation checks (tiers `circulation` and `consent`) count for a client that declares
 'circulation/1' in PROTOCOL_FEATURES (its client or novation module), or for a run given --require circulation/1;
 otherwise each is n/a, so a client released before circulating credit is not failed by them.
-  --require circulation/1   hold the client to circulating credit whether or not it declares it (the package's CI run)
+  --require circulation/1   hold the client to circulating credit whether or not it declares it (the package's CI run);
+                            the vectors must then include circulation.json and transcript steps 148+ (exit status 2
+                            otherwise, so a wrong --vectors-dir or older vectors cannot pass these checks vacuously)
   --vectors-dir DIR         read the vector files from DIR (default: next to this script)
 
 Outcomes: agree | differ | python_error | n/a. Exit status 1 when any `core`/`terms`/`client_path`/`replay`/
 `circulation`/`consent` check does not agree (n/a never fails); `wire`, `refused`, `edge` and `generic` results are
-informative and never fail the run. Exit status 2 when the client cannot be found or imported.
+informative and never fail the run. Exit status 2 when the client cannot be found or imported, when the vectors folder
+lacks one of the six files every vector set has, or when --require names a feature the vectors do not cover.
 """
 import sys
 
@@ -86,7 +94,8 @@ CLIENT = {}           # name, label, tool_file, refs, features (declared), requi
 
 
 def fail(message):
-    """The client cannot be found or imported: exit status 2 (status 1 means a disagreement)."""
+    """The run cannot be made (the client cannot be found or imported, a vector file is missing, or the vectors lack what
+    --require needs): exit status 2 (status 1 means a disagreement)."""
     print(f'error: {message}', file=sys.stderr)
     raise SystemExit(2)
 
@@ -204,6 +213,8 @@ def attempt(fn):
 
 
 VECTORS = HERE        # --vectors-dir: the folder the vector files are read from (default: next to this script)
+# The files every vector set has (circulation.json only since release v16).
+VECTOR_FILES = ('canonical.json', 'statements.json', 'basis-notes.json', 'basis-signatures.json', 'terms-validation.json', 'transcript.json')
 
 
 def vec(name):
@@ -359,28 +370,45 @@ class Resp:
         return False
 
 
+FEATURES_HEADER = 'X-Valun-Features'      # PROTOCOL.md 18.1: the capability header (release v16)
+
+
+def header_of(req, name):
+    """The value of the request header `name` (compared case-insensitively), or None when the request has none."""
+    for k, v in req.header_items():
+        if k.lower() == name.lower():
+            return v
+    return None
+
+
 class Transport:
+    """Answers a replayed client from the step's records: the reads it recorded (client_reads, as often as the client
+    asks) and the step's own request, which the recorded run sent once. Of that request the first send is kept (body,
+    Authorization and X-Valun-Features headers) and every send is counted (sends), so a client that sends it twice is
+    reported."""
     def __init__(self, step, token_placeholder):
         self.reads = step.get('client_reads', {})
         self.req, self.res = step['request'], step['response']
         self.token = token_placeholder
         self.captured, self.sent, self.problems = None, False, []
-        self.features = None
+        self.features, self.sends = None, 0
 
     def urlopen(self, req, timeout=None):
         method, path = req.get_method(), req.full_url[len(BASE):]
-        auth = req.get_header('Authorization')
+        auth = header_of(req, 'Authorization')
         key = f'{method} {path}'
         if key in self.reads:
             r = self.reads[key]
             return self._answer(req, r['status'], r['body'])
         if method == self.req['method'] and path == self.req['path']:
-            want = self.req.get('headers', {}).get('authorization')
-            if want and auth != want:
-                self.problems.append(f'Authorization header {auth!r}, expected {want!r}')
-            self.captured = json.loads(req.data.decode('utf-8')) if req.data else None
-            self.sent = True
-            self.features = req.get_header('X-valun-features')
+            self.sends += 1
+            if self.sends == 1:
+                want = self.req.get('headers', {}).get('authorization')
+                if want and auth != want:
+                    self.problems.append(f'Authorization header {auth!r}, expected {want!r}')
+                self.captured = json.loads(req.data.decode('utf-8')) if req.data else None
+                self.features = header_of(req, FEATURES_HEADER)
+                self.sent = True
             return self._answer(req, self.res['status'], self.res['body'])
         self.problems.append(f'unexpected request {key}')
         raise urllib.error.HTTPError(req.full_url, 599, 'unexpected request in replay', {}, io.BytesIO(b'{"error":"unexpected_request"}'))
@@ -460,6 +488,43 @@ def strip_sigs(body):
     return out
 
 
+def pointer_escape(key):
+    """One reference token of a JSON pointer (RFC 6901): '~' as '~0', '/' as '~1'."""
+    return str(key).replace('~', '~0').replace('/', '~1')
+
+
+def sig_paths(body, base=''):
+    """The JSON pointers of every signature a request body carries: each key named 'signature' or ending in
+    '_signature', at any depth and inside lists too, and each slot of a 'signatures' map. These are exactly the values
+    strip_sigs takes out, so a replay compares this set on its own: a client must send exactly the signatures the
+    recorded request carries (no fewer, and none over anything else)."""
+    out = set()
+    if isinstance(body, list):
+        for i, x in enumerate(body):
+            out |= sig_paths(x, f'{base}/{i}')
+    elif isinstance(body, dict):
+        for k, v in body.items():
+            p = f'{base}/{pointer_escape(k)}'
+            if k == 'signature' or (isinstance(k, str) and k.endswith('_signature')):
+                out.add(p)
+            elif k == 'signatures' and isinstance(v, dict):
+                out |= {f'{p}/{pointer_escape(slot)}' for slot in v}
+            else:
+                out |= sig_paths(v, p)
+    return out
+
+
+def sig_path_problems(got, want_paths):
+    """The differences between the signatures a client's body carries and the ones it must carry (want_paths)."""
+    have, want = sig_paths(got), set(want_paths)
+    out = []
+    if have - want:
+        out.append('the request body carries signature(s) the recorded request does not: ' + ', '.join(sorted(have - want)))
+    if want - have:
+        out.append('the request body lacks signature(s) the recorded request carries: ' + ', '.join(sorted(want - have)))
+    return out
+
+
 def pointer_get(doc, ptr):
     """The value at JSON pointer `ptr` (RFC 6901) in doc, or a KeyError."""
     if ptr == '':
@@ -534,14 +599,18 @@ def replay(step, meta, participants, variant=None):
 
 
 def check_v16_request(step, call, got, key, variant=None):
-    """Release v16 steps: the body (signatures aside), the capability header, and each signature field the step names
-    (signature_fields, JSON pointers into the body): it must verify, under this client's key, over the message the
-    server verified for that field (server_verified[].field), or over client_call.expected_messages[field] when the
-    server refused before it verified anything."""
+    """Release v16 steps: the body (signatures aside); the signatures it carries, which must be exactly the fields the
+    step names (signature_fields, JSON pointers into the body; none other); and each of those signatures: it must
+    verify, under this client's key, over the message the server verified for that field (server_verified[].field), or
+    over client_call.expected_messages[field] when the server refused before it verified anything. (The capability
+    header is checked for every replay, in check_transcript.)"""
     problems = []
     want = step['request'].get('body')
     if strip_sigs(got) != strip_sigs(want):
         problems.append(f'request body differs: python {json.dumps(strip_sigs(got))[:300]} vs recorded {json.dumps(strip_sigs(want))[:300]}')
+    extra = sorted(sig_paths(got) - set(call['signature_fields']))
+    if extra:          # a missing one is reported below, field by field
+        problems.append('the request body carries signature(s) the step does not name (signature_fields): ' + ', '.join(extra))
     sent = got if got is not None else {}
     by_field = {e['field']: e for e in step['server_verified'] if 'field' in e}
     expected = call.get('expected_messages') or {}
@@ -659,6 +728,17 @@ def check_transcript():
                 problems.append(f'client raised {raised.code}: {raised}')
             if want_err and (raised is None or raised.code != want_err):
                 problems.append(f'expected the client to raise {want_err}')
+            if transport.sends > 1:
+                problems.append(f'the client sent the step\'s request ({step["request"]["method"]} {step["request"]["path"]}) {transport.sends} times; '
+                                'the recorded run sent it once')
+            if transport.sent:
+                # The capability header (PROTOCOL.md 18.1) exactly as recorded: none where none is recorded (steps 1-147
+                # ran with circulation off, so a client sends none there; decision D-2 h), the roles its records declare
+                # after GET /info lists circulation/1, and the empty list once to withdraw them (decision D-3 b).
+                hdr = step['request'].get('headers', {}).get(FEATURES_HEADER.lower())
+                if transport.features != hdr:
+                    problems.append(f'{FEATURES_HEADER} header {transport.features!r}, expected '
+                                    + (repr(hdr) if hdr is not None else 'none (the recorded request carries none)'))
             if not transport.sent and call.get('expect_no_request'):
                 pass                            # the client must refuse before it sends anything (checked by expect_error)
             elif transport.sent and call.get('expect_no_request'):
@@ -673,6 +753,7 @@ def check_transcript():
                     want = {**want, 'reason': variant['reason_sent']}
                 if strip_sigs(got) != strip_sigs(want):
                     problems.append(f'request body differs: python {json.dumps(strip_sigs(got))[:300]} vs recorded {json.dumps(strip_sigs(want))[:300]}')
+                problems += sig_path_problems(got, sig_paths(want))
                 stmts = [e for e in step['server_verified'] if e['kind'] == 'statement']
                 notes = [e for e in step['server_verified'] if e['kind'] == 'basis_note_message']
                 accepts = (variant or step).get('server_accepts')
@@ -858,10 +939,24 @@ def main(argv=None):
     global VECTORS
     args = parse_args(argv)
     VECTORS = os.path.abspath(args.vectors_dir)
+    absent = [f for f in VECTOR_FILES if not os.path.isfile(os.path.join(VECTORS, f))]
+    if absent:
+        fail(f'{VECTORS} holds no vector set: it has no {", ".join(absent)} (see --vectors-dir)')
     load_client(args)
     release = vec('canonical.json')['meta'].get('server_release', '?')
     print(f'valun-deal/1 vectors (server release {release}) vs {CLIENT["label"]}')
-    held = [f for f in ('circulation/1',) if supports(f)]
+    missing = []
+    if supports('circulation/1'):
+        missing = [] if os.path.isfile(os.path.join(VECTORS, 'circulation.json')) else ['circulation.json']
+        if not any((s.get('client_call') or {}).get('feature') == 'circulation/1' for s in vec('transcript.json')['steps']):
+            missing.append('transcript steps for circulation/1 (148 and later)')
+        if missing and 'circulation/1' in CLIENT['required']:
+            fail(f'--require circulation/1, but the vectors in {VECTORS} have no {" and no ".join(missing)}: they predate release v16, or '
+                 '--vectors-dir names the wrong folder, so the checks this run requires cannot be made')
+        if missing:
+            print(f'note: the vectors in {VECTORS} have no {" and no ".join(missing)} (vectors from before release v16): '
+                  'the circulation/1 checks are not made')
+    held = [f for f in ('circulation/1',) if supports(f) and not missing]
     print(f'protocol features: declared {list(CLIENT["features"]) or "none"}; required {list(CLIENT["required"]) or "none"}; '
           + (f'checked: {", ".join(held)}' if held else 'circulation/1 checks are n/a'))
     for f in (check_canonical, check_statements, check_notes, check_signatures, check_validation, check_transcript, check_circulation):

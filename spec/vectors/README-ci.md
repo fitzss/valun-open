@@ -42,19 +42,28 @@ loses the feature fails the run instead of skipping it. Neither the package 0.4.
 The first output line after the client's name says which features were declared, required and checked.
 
 Exit status: `0` every check in a failing tier agrees (or does not apply); `1` at least one disagreement (listed under
-"DISAGREEMENTS"); `2` the client was not found or could not be imported. The failing tiers are `core`, `terms`,
-`client_path`, `replay`, `circulation` and `consent`. Results in the tiers `wire`, `refused`, `edge` and `generic` are
-informative and never fail the run (`edge` includes the stand-in tracker's outcomes of tracker requests, which are
-tracker-side rules).
+"DISAGREEMENTS"); `2` the client was not found or could not be imported, the vectors folder lacks one of the six files
+every vector set has, or the run was given `--require circulation/1` with vectors that have no `circulation.json` or
+no transcript steps 148+ (older vectors, or a wrong `--vectors-dir`), so the required checks cannot pass vacuously. A
+client that only declares `circulation/1` gets a note instead, and those checks are not made. The failing tiers are
+`core`, `terms`, `client_path`, `replay`, `circulation` and `consent`. Results in the tiers `wire`, `refused`, `edge`
+and `generic` are informative and never fail the run (`edge` includes the stand-in tracker's outcomes of tracker
+requests, which are tracker-side rules).
 
 What the release v16 checks add:
+- `transcript.json`, every replayed step (1-147 too): the client sends the step's request exactly once (a second send
+  is a disagreement); with exactly the recorded `X-Valun-Features` header, so none where none is recorded (steps 1-147
+  ran with circulation off), the roles its records declare after `GET /info` lists `circulation/1`, and
+  `consents/1;roles=` when it withdraws them (decision D-3 b, step 231); and with exactly the signatures the recorded
+  body carries (every `signature` / `*_signature` key at any depth and every slot of a `signatures` map): none missing
+  and none extra, so a signature over anything else is caught.
 - `transcript.json`, steps 148+: each `server_verified` entry names the body field that held the signature (`field`, a
   JSON pointer) and, for a Basis note message, its edge; the client's message builder must rebuild every such message
   for its edge. A replayed `client_call` with a `feature` starts from `client_state` (the profile's records before the
   call), sends a body equal to the recorded one signatures aside (every `signature` / `*_signature` key dropped at any
-  depth; a `signatures` map keeps its slots), sends the same `X-Valun-Features` header, signs every
-  `signature_fields` pointer over the message the server verified for that field, and holds at least
-  `client_state_after` afterwards (a subset: only the keys given are compared).
+  depth; a `signatures` map keeps its slots), signs exactly the `signature_fields` pointers, each over the message the
+  server verified for that field, and holds at least `client_state_after` afterwards (a subset: only the keys given are
+  compared).
 - `circulation.json`: timestamp residue classes; the 80-byte messages of a bound note and its prior acknowledgment,
   all seven transfer slots and both set-off slots; quote digests (`canonical(Q)` and its sha256, and
   `novation.quote_digest`); the pay statement; the signatures of POST /notes/transfer and /notes/setoff requests, valid
