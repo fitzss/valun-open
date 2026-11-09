@@ -26,6 +26,7 @@ PINS = {'tracker_nft_id': NFT, 'denomination': DENOM}
 SERVER = 'http://valun.invalid'
 NOW = 1_793_966_460_123
 DEAL, DEAL2, TID, SID = 'vd_0123456789abcdef', 'vd_1123456789abcdef', 'vt_0123456789abcdef', 'vs_0123456789abcdef'
+OWNER_TOKEN, OTHER_OWNER = 'vpo_owner-test-only', 'vpo_another-participants-owner'
 DAY = 24 * 3600 * 1000
 LATER = nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 60_000        # past an attempt's fallback window
 
@@ -121,9 +122,13 @@ class Net:
         self.review = False                     # complete(): hold the note for the owner
         self.force = []                         # [(code, fn)]: answer the next POST pay-by-transfer with 409 code after fn()
         self.pay_posts, self.consent_items, self.consent_posts, self.refusals = [], [], [], []
-        self.consent_state, self.page = {}, 200
+        self.consent_state, self.consent_rejected, self.page = {}, {}, 200
         self.directory_ids = [A_ID, B_ID, C_ID, E_ID]   # the participants GET /participants lists
-        self.token, self.resolutions, self.resolved_attempt = None, [], {}
+        self.directory_extra = []               # more GET /participants rows (a lying or ambiguous directory)
+        self.token, self.resolutions = None, []
+        self.transfers = {}                     # the server's transfers by id, in valun-app FX-SV's states
+        self.lose_answer = False                # POST pay-by-transfer is recorded, then no answer reaches the client
+        self.transfer_view_edges = True         # GET /transfers shows the transfer's edges (False: a view without them)
 
     # ---------- setup ----------
     def pk(self, pid):
@@ -160,7 +165,13 @@ class Net:
         if method == 'GET' and len(parts) == 2 and parts[0] == 'participants' and parts[1] in KEYS:
             return {'id': parts[1], 'handle': HANDLES[parts[1]], 'status': 'active', 'pubkey': self.pk(parts[1])}
         if method == 'GET' and parts == ['participants']:          # the public directory
-            return [{'id': pid, 'handle': HANDLES[pid], 'status': 'active', 'pubkey': self.pk(pid)} for pid in self.directory_ids]
+            return [{'id': pid, 'handle': HANDLES[pid], 'status': 'active', 'pubkey': self.pk(pid)}
+                    for pid in self.directory_ids] + copy.deepcopy(self.directory_extra)
+        if method == 'GET' and parts == ['owner']:                  # the owner's view (owner token only)
+            pid = {OWNER_TOKEN: self.me_id, OTHER_OWNER: E_ID}.get(self.token)   # E's owner token is another's
+            if pid is None:
+                raise vc.ValunError('unauthorized', 'owner token required', 401)
+            return {'participant': {'id': pid, 'handle': HANDLES[pid]}, 'mandate': dict(self.mandate)}
         if method == 'GET' and parts == ['me']:
             return {'role': 'agent', 'participant': {'id': self.me_id}, 'mandate': dict(self.mandate),
                     'effective_limits': dict(self.mandate)}
@@ -177,9 +188,14 @@ class Net:
             if method == 'GET' and rest == ['transfer-template']:
                 return self.transfer_template(did, q.get('issuer'))
             if method == 'POST' and rest == ['pay-by-transfer']:
-                return self.pay(did, body)
+                out = self.pay(did, body)
+                if self.lose_answer:
+                    raise vc.ValunError('unreachable', 'cannot reach the server')
+                return out
             if method == 'POST' and rest == ['cancel-transfer']:
                 self.deals[did]['status'] = 'payment_due'
+                if TID in self.transfers:
+                    self.transfers[TID]['state'] = 'cancelled'
                 return copy.deepcopy(self.deals[did])
             if method == 'POST' and rest == ['counter']:
                 return {'id': did, 'status': 'open'}
@@ -192,13 +208,57 @@ class Net:
             return {'id': parts[1], 'state': 'refused'}
         if parts == ['edges'] and method == 'GET' and self.features:
             return self.edges(int(q.get('since', '0')))
+        circ = bool(self.features and 'circulation/1' in self.features)
+        if method == 'GET' and len(parts) == 2 and parts[0] == 'transfers' and circ:
+            if parts[1] not in self.transfers:
+                raise vc.ValunError('not_found', 'not found', 404)
+            view = self.transfer_view(self.transfers[parts[1]])
+            return view if self.transfer_view_edges else dict(view, edges=[])
         if method == 'POST' and len(parts) == 6 and parts[:2] == ['owner', 'deals'] and parts[3] == 'attempts' \
-                and parts[5] == 'resolve' and self.features and 'circulation/1' in self.features:
-            if self.token != 'vpo_owner-test-only':
-                raise vc.ValunError('unauthorized', 'owner token required', 401)
-            self.resolutions.append((parts[2], parts[4], copy.deepcopy(body)))
-            return {'attempt': dict(self.resolved_attempt, id=parts[4], state=body['outcome'])}
+                and parts[5] == 'resolve' and circ:
+            return self.resolve(parts[2], parts[4], body)
         raise vc.ValunError('not_found', f'no route {method} {path}', 404)
+
+    def transfer_view(self, t):
+        """GET /transfers/:vt as valun-app FX-SV shows it to the payer (transferView: both edges, the deal)."""
+        return {'id': t['id'], 'kind': 'transfer', 'state': t['state'], 'your_roles': ['payer'], 'attempt': 1,
+                'regenerated_from': None, 'regenerated_as': None, 'timestamp': t['timestamp'], 'amount': t['amount'],
+                'issuer': {'id': A_ID, 'handle': HANDLES[A_ID]}, 'payer': {'id': B_ID, 'handle': HANDLES[B_ID]},
+                'payee': {'id': C_ID, 'handle': HANDLES[C_ID]},
+                'edges': [{'edge': e, 'before': copy.deepcopy(b), 'new_total': n, 'change': n - (b['total'] if b else 0),
+                           'timestamp': t['timestamp']} for e, b, n in (t['from'], t['to'])],
+                'deal': {'deal_id': t['deal_id'], 'terms_hash': self.deals[t['deal_id']]['agreement']['terms_hash'],
+                         'price': t['amount'], 'quote_digest': t['quote_digest']},
+                'result': None, 'fallback_after': None, 'signatures': None,
+                'signatures_withheld': 'withheld until the Basis tracker records the transfer',
+                **({'resolution': {'outcome': t['resolution']['outcome'], 'at': t['resolution']['at']}}
+                   if t.get('resolution') else {})}
+
+    def resolve(self, did, tid, body):
+        """POST /owner/deals/:vd/attempts/:vt/resolve as valun-app FX-SV answers it (resolveAttempt)."""
+        if self.token != OWNER_TOKEN:
+            raise vc.ValunError('unauthorized', 'owner token required', 401)
+        t = self.transfers.get(tid)
+        if t is None or t['deal_id'] != did:
+            raise vc.ValunError('not_found', f'unknown payment attempt {tid}', 404)
+        if t['state'] not in ('outcome_unknown', 'inconsistent'):
+            raise vc.ValunError('wrong_state', f"this payment attempt is {t['state']}; only one whose outcome is unknown "
+                                               '(outcome_unknown or inconsistent) is resolved by its owner', 409)
+        if body.get('outcome') not in ('not_applied', 'applied'):
+            raise vc.ValunError('invalid_field', 'outcome must be "not_applied" or "applied"', 400)
+        note = body.get('note')
+        if note is not None and (not isinstance(note, str) or len(note.strip()) > 300
+                                 or any(not ch.isprintable() for ch in note)):
+            raise vc.ValunError('invalid_field', 'note is longer than 300 characters', 400)
+        self.resolutions.append((did, tid, copy.deepcopy(body)))
+        previous = t['state']
+        t['state'] = 'applied' if body['outcome'] == 'applied' else 'resolved_not_applied'
+        t['resolution'] = {'outcome': body['outcome'], 'at': '2026-11-08T13:00:00.000Z'}
+        if body['outcome'] == 'applied':
+            self.deals[did].update(status='paid_by_transfer', payment={'method': 'transfer', 'transfer_id': tid})
+        return {'resolution': {'attempt_id': tid, 'outcome': body['outcome'], 'previous_state': previous,
+                               'at': '2026-11-08T13:00:00.000Z', 'note': (note or '').strip()},
+                'deal': copy.deepcopy(self.deals[did]), 'transfer': self.transfer_view(t)}
 
     def parties(self, did):
         t = self.deals[did]['current']['terms']
@@ -301,14 +361,15 @@ class Net:
             if extra:                            # the answer of a transfer the server recorded (no fresh template)
                 raise vc.ValunError(code, f'forced {code}', 409, copy.deepcopy(extra[0]))
             raise vc.ValunError(code, f'forced {code}', 409, {'template': self.transfer_template(did, body['issuer_id'])})
-        if self.transfer_mode == 'due':          # the server ended the transfer without applying it
-            self.deals[did].update(status='payment_due', payment={'method': 'transfer', 'transfer_id': TID, 'state': 'failed'})
-            return copy.deepcopy(self.deals[did])
         d = self.deals[did]
         t, Bk, Ck = self.parties(did)
         Ak, a, T = self.pk(body['issuer_id']), t['price']['amount'], body['timestamp']
         fb, tb = self.tracker[f'{Ak}>{Bk}'], self.tracker.get(f'{Ak}>{Ck}')
         X, Y = fb['total'], tb['total'] if tb else 0
+        if self.transfer_mode == 'due':          # the server ended the transfer without applying it
+            self.record_transfer(did, 'failed', T, (f'{Ak}>{Bk}', fb, X - a), (f'{Ak}>{Ck}', tb, Y + a), a, body)
+            self.deals[did].update(status='payment_due', payment={'method': 'transfer', 'transfer_id': TID, 'state': 'failed'})
+            return copy.deepcopy(self.deals[did])
         if (body['from_prior_total'], body['to_prior_total']) != (X, Y):
             raise vc.ValunError('transfer_stale', 'an edge moved', 409, {'template': self.transfer_template(did, body['issuer_id'])})
         h, dh, payer = d['agreement']['terms_hash'], d['delivery']['sha256'], KEYS[t['payer']['id']]
@@ -322,6 +383,8 @@ class Net:
         if not ok:
             raise vc.ValunError('bad_signature', 'a signature of the payment does not verify', 403)
         d['payment'] = {'method': 'transfer', 'transfer_id': TID}
+        self.record_transfer(did, {'apply': 'applied', 'review': 'awaiting_owner'}.get(self.transfer_mode, 'collecting'), T,
+                             (f'{Ak}>{Bk}', fb, X - a), (f'{Ak}>{Ck}', tb, Y + a), a, body)
         if self.transfer_mode == 'apply':
             issuer = KEYS[body['issuer_id']]
             self.set_edge(issuer, KEYS[t['payer']['id']], X - a, T, kind='transfer_out', ref=TID)
@@ -331,6 +394,12 @@ class Net:
         else:
             d['status'] = 'completion_awaiting_owner' if self.transfer_mode == 'review' else 'paying_by_transfer'
         return copy.deepcopy(d)
+
+    def record_transfer(self, did, state, T, frm, to, amount, body):
+        """The server records the transfer (id TID: one per deal here), as GET /transfers shows it later."""
+        self.transfers[TID] = {'id': TID, 'deal_id': did, 'state': state, 'timestamp': T, 'amount': amount,
+                               'from': (frm[0], copy.deepcopy(frm[1]), frm[2]), 'to': (to[0], copy.deepcopy(to[1]), to[2]),
+                               'quote_digest': body.get('quote_digest')}
 
     def consent(self, cid, body):
         item = next((i for i in self.consent_items if i['id'] == cid), None)
@@ -346,7 +415,8 @@ class Net:
             if not signed_by(me, msg(i, r, total, e['timestamp']), sig):
                 raise vc.ValunError('bad_signature', f'{slot} does not verify', 403)
         self.consent_posts.append((cid, copy.deepcopy(body)))
-        return dict(copy.deepcopy(item), state=self.consent_state.get(cid, 'collecting'), rejected=[])
+        return dict(copy.deepcopy(item), state=self.consent_state.get(cid, 'collecting'),
+                    rejected=copy.deepcopy(self.consent_rejected.get(cid, [])))
 
     def edges(self, since):
         me = self.pk(self.me_id)
@@ -1104,6 +1174,71 @@ class Consents(Base):
         self.assertEqual([(e['id'], e['error']) for e in rep['waiting']], [(TID, 'http_error')])
         self.assertEqual((self.net.refusals, self.net.consent_posts), ([], []))
 
+    def test_a_key_the_directory_lists_twice_or_only_inactive_is_not_resolved(self):
+        # A lying directory lists the issuer's key under a second id the mandate also accepts: the client cannot tell
+        # which participant it is, so it resolves no id for the key and the id-based mandate list refuses the payment.
+        # (The item names no issuer id here, so only the directory can name one: whichever of the two ids a client took,
+        # the mandate would accept it.)
+        mirror = 'vp_f1f1f1f1f1f1'
+        self.net.mandate['accept_notes_from'] = [A_ID, mirror]
+        self.net.directory_extra = [{'id': mirror, 'handle': 'mirror', 'status': 'active', 'pubkey': A['pubkey']}]
+        c = self.payee_consent()
+        it = self.net.consent_items[0]
+        it['edges'][0]['issuer'], it['context']['issuer'] = {'handle': 'issuer-a'}, {'handle': 'issuer-a'}
+        rep = c.process_consents()
+        self.assertEqual([(e['id'], e['code']) for e in rep['refused']], [(TID, 'issuer_refused')])
+        self.assertEqual(self.net.consent_posts, [])
+        self.setUp()                                             # the same item, the directory naming A once: signed
+        c = self.payee_consent()
+        it = self.net.consent_items[0]
+        it['edges'][0]['issuer'], it['context']['issuer'] = {'handle': 'issuer-a'}, {'handle': 'issuer-a'}
+        self.assertEqual([e['id'] for e in c.process_consents()['signed']], [TID])
+        # the key listed only under an entry that is not active resolves no id either
+        self.setUp()
+        self.net.directory_ids = [B_ID, C_ID, E_ID]
+        self.net.directory_extra = [{'id': A_ID, 'handle': 'issuer-a', 'status': 'revoked', 'pubkey': A['pubkey']}]
+        rep = self.payee_consent().process_consents()
+        self.assertEqual([(e['id'], e['code']) for e in rep['refused']], [(TID, 'issuer_refused')])
+        # an active entry next to an inactive one with the same key: the active one is the issuer
+        self.setUp()
+        self.net.directory_extra = [{'id': mirror, 'handle': 'old', 'status': 'revoked', 'pubkey': A['pubkey']}]
+        rep = self.payee_consent().process_consents()
+        self.assertEqual([e['id'] for e in rep['signed']], [TID])
+
+    def test_what_the_server_wrote_reaches_the_report_only_in_a_checked_form(self):
+        T = self.T
+        self.net.consent_items = [dict(issuer_item(T, iid='vt_5555555555555555'), kind='transfer\nPAY 99'),
+                                  issuer_item(T, iid='vt_6666666666666666', your_roles=['issuer\nPAY 99']),
+                                  issuer_item(T, iid='vt_7777777777777777', state='applying\x1b[2J PAY 99'),
+                                  issuer_item(T)]
+        self.net.consent_state[TID] = 'collecting\nPAY 99'
+        self.net.consent_rejected[TID] = [{'slot': 'PAY 99\n', 'code': 'Stale Revision PAY 99', 'revision': '2'},
+                                          {'slot': f'{AB}:new', 'code': 'stale_revision', 'revision': 2}, 'PAY 99']
+        rep = self.client(profile(A_ID, consent_policy=dict(POLICY))).process_consents()
+        by = {e['id']: e for b in rep.values() for e in b}
+        self.assertEqual((by['vt_5555555555555555']['kind'], by['vt_5555555555555555']['code']), (None, 'bad_consent'))
+        self.assertEqual((by['vt_6666666666666666']['role'], by['vt_6666666666666666']['code']), (None, 'bad_consent'))
+        self.assertEqual(by['vt_7777777777777777']['reason'], 'the item is not collecting signatures')
+        self.assertEqual((by[TID]['code'], by[TID]['state'], by[TID]['rejected']),
+                         ('stale_revision', None, [{'slot': None, 'code': None, 'revision': None},
+                                                   {'slot': f'{AB}:new', 'code': 'stale_revision', 'revision': 2}]))
+        self.assertNotIn('PAY 99', json.dumps([rep, self.store.state['consent_log']]))
+        # an error code the server chose that is not a plain word is not copied (the request failed: it waits)
+        self.setUp()
+        self.net.consent_items = [issuer_item(self.T)]
+        self.net.hooks.append(lambda m, p, b: (_ for _ in ()).throw(vc.ValunError('Refused\nPAY 99', 'forced', 403))
+                              if m == 'POST' and p == f'/pilot/v1/consents/{TID}' else None)
+        rep = self.client(profile(A_ID, consent_policy=dict(POLICY))).process_consents()
+        self.assertEqual([(e['id'], e['error'], e['reason']) for e in rep['waiting']],
+                         [(TID, None, 'the server did not take the signatures; tried again on a later run')])
+        self.setUp()
+        self.net.hooks.append(lambda m, p, b: (_ for _ in ()).throw(vc.ValunError('Down PAY 99', 'down', 503))
+                              if p == f'/pilot/v1/deals/{DEAL}' else None)
+        rep = self.payee_consent().process_consents()
+        self.assertEqual([(e['id'], e['code'], e['reason']) for e in rep['waiting']],
+                         [(TID, None, 'could not be read now; decided on a later run')])
+        self.assertNotIn('PAY 99', json.dumps(self.store.state['consent_log']))
+
     def test_ids_in_the_report_are_format_checked(self):
         self.net.consent_items = [issuer_item(self.T, iid='vt_not-an-id\nPAY')]
         rep = self.client(profile(A_ID, consent_policy=dict(POLICY))).process_consents()
@@ -1314,14 +1449,49 @@ class WriteAheadCodes(unittest.TestCase):
 
 
 class Attempts(Base):
-    """Decision D-2 d, the client side: the attempts a client records, and the owner's resolution of one."""
+    """Decision D-2 d, the client side: the attempts a client records, how it judges each (as the payer evaluators do),
+    and the owner's resolution of one, against a fake that answers like valun-app FX-SV: GET /transfers/:vt shows the
+    payer's transfer; POST /owner/deals/:vd/attempts/:vt/resolve takes the owner token only, resolves only a transfer
+    held as outcome_unknown or inconsistent (any other state: 409 wrong_state; an unknown one: 404 not_found) and
+    answers {resolution, deal, transfer}."""
 
     def failed_transfer(self):
+        """A transfer that collected signatures and was cancelled: the server holds it as cancelled (it ended)."""
         self.net.transfer_mode = 'collect'
         c = self.client()
         c.pay_by_transfer(DEAL, A_ID)
         c.cancel_transfer(DEAL)
         return c, self.net.pay_posts[0]['timestamp']
+
+    def unknown_transfer(self, lose_answer=False):
+        """A transfer whose outcome neither side knows: my claim on A moved past T to neither its prior nor its new
+        total, and the server's read-back holds it as outcome_unknown. lose_answer: the POST got no answer, so my client
+        never recorded the server's id of it."""
+        self.net.transfer_mode = 'collect'
+        self.net.lose_answer = lose_answer
+        c = self.client()
+        try:
+            c.pay_by_transfer(DEAL, A_ID)
+        except vc.ValunError as e:
+            self.assertEqual((lose_answer, e.code), (True, 'unreachable'))
+        self.net.lose_answer = False
+        T = self.net.pay_posts[0]['timestamp']
+        self.net.transfers[TID]['state'] = 'outcome_unknown'
+        self.net.set_edge(A, B, 12, T + 5000)
+        self.clock.now = T + LATER
+        return c, T
+
+    def held_bound_note_moved(self):
+        """My bound note was held for my owner, who rejected it; then a set-off moved B>C past its timestamp (to neither
+        its prior nor its new total), so my client cannot tell whether it applied. The server holds no attempt for it."""
+        self.net.review = True
+        c = self.client()
+        self.assertEqual(c.complete(DEAL)['status'], 'completion_awaiting_owner')
+        ts = [b for m, _p, b in self.net.log if m == 'POST'][0]['credit_note']['timestamp']
+        self.net.review = False
+        self.net.deals[DEAL]['status'] = 'delivered'             # rejected by the owner
+        self.net.set_edge(B, C, 4, ts + 1001, kind='setoff', ref=SID)
+        return c, ts
 
     def test_the_attempts_are_listed_with_how_the_client_judges_them(self):
         c, T = self.failed_transfer()
@@ -1334,26 +1504,65 @@ class Attempts(Base):
         self.assertEqual(c.payment_attempts(edges=c.sync_edges()['edges'])[0]['state'], 'unknown')
         self.assertEqual(c.payment_attempts()[0]['state'], 'unknown')           # my records now hold that state
 
+    def test_the_list_judges_attempts_as_the_payer_evaluators_do(self):
+        # (a) proof from my own records: note N1 (DEAL) was held and rejected; note N2 (DEAL2) acknowledged the same prior
+        # state of B>C later and applied. attempt_outcome alone says N1 'unknown'; my records prove it dead.
+        self.net.review = True
+        c = self.client()
+        c.complete(DEAL)
+        self.net.review = False
+        self.net.deals[DEAL]['status'] = 'delivered'
+        self.net.add_deal(DEAL2)
+        self.clock.now += 30_000
+        self.assertEqual(c.complete(DEAL2)['status'], 'note_issued')
+        read = c.sync_edges()
+        rows = {r['deal_id']: r for r in c.payment_attempts(edges=read['edges'], doubtful=read['doubtful'])}
+        n1 = att(self.store.state)[0]
+        self.assertEqual(nv.attempt_outcome(n1, self.clock.now, read['edges'][BC]), 'unknown')
+        self.assertEqual((rows[DEAL]['state'], rows[DEAL2]['state']), ('dead', 'applied'))
+        # (b) an absent edge: a first bound note acknowledged an absent B>C and was rejected; past its window, an edge
+        # GET /edges does not list is its read-back (dead), while not reading the edges leaves it unread
+        self.setUp()
+        del self.net.tracker[BC]
+        self.net.review = True
+        c = self.client()
+        c.complete(DEAL)
+        ts = [b for m, _p, b in self.net.log if m == 'POST'][0]['credit_note']['timestamp']
+        self.net.review = False
+        self.clock.now = ts + LATER
+        read = c.sync_edges()
+        self.assertNotIn(BC, read['edges'])
+        self.assertEqual(c.payment_attempts(edges=read['edges'], doubtful=read['doubtful'])[0]['state'], 'dead')
+        self.assertEqual(c.payment_attempts()[0]['state'], 'unread')
+        # the owner's resolution shows the attempts as the list does, from the same read-back
+        self.assertEqual(c.resolution_plan(DEAL, '#1', edges=read['edges'], doubtful=read['doubtful'])['attempt']['state'],
+                         'dead')
+        self.assertEqual(c.payment_attempts(edges=read['edges'], doubtful=[BC])[0]['state'], 'unread')   # listed, unreadable
+
     def test_the_owner_resolves_an_unknown_attempt_as_not_applied(self):
-        c, T = self.failed_transfer()
-        self.net.set_edge(A, B, 12, T + 5000)
-        self.clock.now = T + LATER
+        c, T = self.unknown_transfer()
         with self.assertRaises(vc.ValunError) as e:
             c.complete(DEAL)
         self.assertEqual(e.exception.code, 'attempt_outcome_unknown')
+        plan = c.resolution_plan(DEAL, TID)
+        self.assertEqual((plan['server'], plan['local'], plan['attempt']['ref'], plan['transfer']['state']),
+                         (True, None, '#1', 'outcome_unknown'))
         with self.assertRaises(vc.ValunError) as e:
             c.resolve_attempt(DEAL, TID, 'not_applied', owner_token='vpa_not-the-owner')
         self.assertEqual(e.exception.code, 'unauthorized')          # the owner token only; nothing changed
         self.assertNotIn('outcome', att(self.store.state)[0])
-        r = c.resolve_attempt(DEAL, TID, 'not_applied', owner_token='vpo_owner-test-only', note='payee says not received')
+        r = c.resolve_attempt(DEAL, TID, 'not_applied', owner_token=OWNER_TOKEN, note='payee says not received')
         self.assertEqual(self.net.resolutions, [(DEAL, TID, {'outcome': 'not_applied', 'note': 'payee says not received'})])
-        self.assertEqual((r['attempt_id'], r['outcome'], len(r['matched']), r['paid']), (TID, 'not_applied', 1, False))
+        self.assertEqual((r['attempt_id'], r['outcome'], len(r['matched']), r['paid'], r['local']),
+                         (TID, 'not_applied', 1, False, None))
+        self.assertEqual(r['server']['resolution']['attempt_id'], TID)
         self.assertEqual(att(self.store.state)[0]['outcome'], 'not_applied')
+        self.assertEqual(self.net.transfers[TID]['state'], 'resolved_not_applied')
         self.assertEqual(c.complete(DEAL)['status'], 'note_issued')      # its window has passed: the deal is paid now
 
     def test_the_owner_resolves_an_attempt_as_applied(self):
-        c, T = self.failed_transfer()
-        r = c.resolve_attempt(DEAL, '#1', 'applied', owner_token='vpo_owner-test-only')
+        c, T = self.unknown_transfer()
+        r = c.resolve_attempt(DEAL, '#1', 'applied', owner_token=OWNER_TOKEN)
         self.assertEqual(self.net.resolutions, [(DEAL, TID, {'outcome': 'applied'})])     # the recorded server id
         self.assertTrue(r['paid'])
         self.assertEqual(self.store.state['records']['paid_deals'][DEAL], {'route': 'transfer', 'edge': AB, 'total': 7,
@@ -1361,6 +1570,177 @@ class Attempts(Base):
         with self.assertRaises(vc.ValunError) as e:
             c.complete(DEAL)
         self.assertEqual(e.exception.code, 'already_paid')
+
+    def test_a_transfer_whose_id_was_never_recorded_is_found_by_the_server_id_the_owner_gives(self):
+        # The POST got no answer (the usual case): the server recorded the transfer, my client never learnt its id.
+        c, T = self.unknown_transfer(lose_answer=True)
+        read = c.sync_edges()
+        (row,) = c.payment_attempts(edges=read['edges'], doubtful=read['doubtful'])
+        self.assertEqual((row['attempt_id'], row['state']), (None, 'unknown'))
+        self.assertEqual(c.resolution_plan(DEAL, '#1')['local'], 'no_server_id')
+        with self.assertRaises(vc.ValunError) as e:
+            c.resolve_attempt(DEAL, '#1', 'not_applied', OWNER_TOKEN)      # not without the owner's explicit choice
+        self.assertEqual((e.exception.code, e.exception.extra['local_possible']), ('attempt_id_unknown', True))
+        # The owner gives the id the owner console shows: GET /transfers identifies my attempt (its timestamp, my held
+        # edge and its new total), the server resolves it and answers {resolution, deal, transfer} as FX-SV does.
+        plan = c.resolution_plan(DEAL, TID)
+        self.assertEqual((plan['server'], plan['attempt']['ref'], plan['transfer']['timestamp']), (True, '#1', T))
+        r = c.resolve_attempt(DEAL, TID, 'not_applied', OWNER_TOKEN)
+        self.assertEqual(self.net.resolutions, [(DEAL, TID, {'outcome': 'not_applied'})])
+        self.assertEqual((r['server']['resolution']['attempt_id'], r['server']['transfer']['state']),
+                         (TID, 'resolved_not_applied'))
+        (rec,) = att(self.store.state)
+        self.assertEqual((rec['outcome'], rec['attempt_id'], len(r['matched'])), ('not_applied', TID, 1))
+        self.assertEqual(c.complete(DEAL)['status'], 'note_issued')
+        # once resolved there, the server holds it as ended: asking it again is the owner's explicit local choice
+        with self.assertRaises(vc.ValunError) as e:
+            c.resolve_attempt(DEAL, TID, 'applied', OWNER_TOKEN)
+        self.assertEqual((e.exception.code, e.exception.extra['local']), ('wrong_state', 'server_ended'))
+        self.assertEqual(len(self.net.resolutions), 1)
+
+    def test_the_resolve_answer_identifies_the_attempt_when_the_transfer_view_cannot(self):
+        # GET /transfers shows the transfer without its edges, so the plan cannot tell which attempt of mine it is; the
+        # transfer FX-SV's answer carries can (its timestamp, my held edge, its new total), and its id is recorded.
+        c, T = self.unknown_transfer(lose_answer=True)
+        self.net.transfer_view_edges = False
+        plan = c.resolution_plan(DEAL, TID)
+        self.assertEqual((plan['server'], plan['attempt']), (True, None))
+        r = c.resolve_attempt(DEAL, TID, 'not_applied', OWNER_TOKEN)
+        (rec,) = att(self.store.state)
+        self.assertEqual((rec['outcome'], rec['attempt_id'], len(r['matched'])), ('not_applied', TID, 1))
+        # applied, with no record of mine left to match: the deal is recorded paid by what the answer shows
+        self.setUp()
+        c, T = self.unknown_transfer(lose_answer=True)
+        self.net.transfer_view_edges = False
+        self.store.state['transfer_attempts'] = {}
+        self.store.state['records'][AB]['pending'] = []
+        r = c.resolve_attempt(DEAL, TID, 'applied', OWNER_TOKEN)
+        self.assertEqual((r['matched'], r['paid']), ([], True))
+        self.assertEqual(self.store.state['records']['paid_deals'][DEAL], {'route': 'transfer', 'edge': AB, 'total': 7,
+                                                                           'timestamp': T})
+
+    def test_a_transfer_the_server_ended_is_resolved_in_the_records_by_the_owners_choice(self):
+        # Cancelled at the server; later my claim on A moved past T: my client cannot tell, and the server has nothing to
+        # resolve (409 wrong_state). The owner's decision is recorded in my records only, after a second choice.
+        c, T = self.failed_transfer()
+        self.net.set_edge(A, B, 12, T + 5000)
+        self.clock.now = T + LATER
+        with self.assertRaises(vc.ValunError) as e:
+            c.complete(DEAL)
+        self.assertEqual(e.exception.code, 'attempt_outcome_unknown')
+        plan = c.resolution_plan(DEAL, '#1')
+        self.assertEqual((plan['server'], plan['local'], plan['transfer']['state']), (False, 'server_ended', 'cancelled'))
+        with self.assertRaises(vc.ValunError) as e:
+            c.resolve_attempt(DEAL, '#1', 'not_applied', OWNER_TOKEN)
+        self.assertEqual((e.exception.code, e.exception.extra['local_possible']), ('wrong_state', True))
+        self.assertNotIn('outcome', att(self.store.state)[0])
+        r = c.resolve_attempt(DEAL, '#1', 'not_applied', OWNER_TOKEN, local_only=True)
+        self.assertEqual((r['server'], r['local'], len(r['matched']), self.net.resolutions), (None, 'server_ended', 1, []))
+        self.assertIn('GET /pilot/v1/owner', self.net.requests())       # the owner token was checked
+        self.assertEqual(c.complete(DEAL)['status'], 'note_issued')
+
+    def test_a_409_from_the_server_is_raised_for_the_owners_choice(self):
+        # GET /transfers showed outcome_unknown, then the server ended it before the owner's POST: 409 wrong_state.
+        c, T = self.unknown_transfer()
+
+        def ended(method, path, body):
+            if method == 'POST' and path.endswith('/resolve'):
+                self.net.transfers[TID]['state'] = 'failed'
+        self.net.hooks.append(ended)
+        with self.assertRaises(vc.ValunError) as e:
+            c.resolve_attempt(DEAL, TID, 'not_applied', OWNER_TOKEN)
+        self.assertEqual((e.exception.code, e.exception.status, e.exception.extra['local_possible']), ('wrong_state', 409, True))
+        self.assertEqual(e.exception.extra['server']['error'], 'wrong_state')
+        self.assertNotIn('outcome', att(self.store.state)[0])
+        r = c.resolve_attempt(DEAL, TID, 'not_applied', OWNER_TOKEN, local_only=True)
+        self.assertEqual((r['server'], r['local'], att(self.store.state)[0]['outcome']), (None, 'server_ended', 'not_applied'))
+
+    def test_a_bound_note_is_resolved_in_the_records_only(self):
+        # The server holds no payment attempt for a credit note (its route takes transfers only): the owner's decision
+        # is recorded in my records, after the owner token is checked, and the deal can be paid once the window passed.
+        c, ts = self.held_bound_note_moved()
+        with self.assertRaises(vc.ValunError) as e:
+            c.complete(DEAL)
+        self.assertEqual(e.exception.code, 'attempt_outcome_unknown')
+        self.assertEqual(c.resolution_plan(DEAL, '#1')['local'], 'note')
+        for token, code in (('vpa_not-the-owner', 'not_owner'), (OTHER_OWNER, 'not_owner')):
+            with self.assertRaises(vc.ValunError) as e:
+                c.resolve_attempt(DEAL, '#1', 'not_applied', token)
+            self.assertEqual(e.exception.code, code)
+        self.assertNotIn('outcome', att(self.store.state)[0])
+        r = c.resolve_attempt(DEAL, '#1', 'not_applied', OWNER_TOKEN)
+        self.assertEqual((r['server'], r['local'], len(r['matched']), self.net.resolutions), (None, 'note', 1, []))
+        self.assertFalse([p for m, p, _b in self.net.log if m == 'POST' and p.startswith('/pilot/v1/owner')])
+        with self.assertRaises(vc.ValunError) as e:
+            c.complete(DEAL)
+        self.assertEqual(e.exception.code, 'transfer_window_open')      # not before its window has passed
+        self.clock.now = ts + LATER
+        self.assertEqual(c.complete(DEAL)['status'], 'note_issued')
+
+    def test_an_attempt_recorded_applied_stays_applied(self):
+        c, T = self.unknown_transfer()
+        # my records hold it applied (the owner's earlier decision): never resolved as not applied, nothing is sent
+        c.resolve_attempt(DEAL, '#1', 'applied', OWNER_TOKEN)
+        self.net.transfers[TID]['state'] = 'outcome_unknown'             # as if the server had not taken it
+        posts = len(self.net.resolutions)
+        with self.assertRaises(vc.ValunError) as e:
+            c.resolve_attempt(DEAL, '#1', 'not_applied', OWNER_TOKEN)
+        self.assertEqual(e.exception.code, 'already_paid')
+        self.assertEqual((len(self.net.resolutions), att(self.store.state)[0]['outcome']), (posts, 'applied'))
+        # another process records it applied while the owner's not_applied is on its way: the evidence is kept
+        self.setUp()
+        c, T = self.unknown_transfer()
+
+        def applied_meanwhile(method, path, body):
+            if method == 'POST' and path.endswith('/resolve'):
+                att(self.store.state)[0]['outcome'] = 'applied'
+        self.net.hooks.append(applied_meanwhile)
+        r = c.resolve_attempt(DEAL, '#1', 'not_applied', OWNER_TOKEN)
+        self.assertEqual((r['matched'][0]['outcome'], att(self.store.state)[0]['outcome']), ('applied', 'applied'))
+
+    def test_a_live_transfer_or_a_bad_name_is_refused_before_anything_changes(self):
+        self.net.transfer_mode = 'collect'
+        c = self.client()
+        c.pay_by_transfer(DEAL, A_ID)                                   # collecting signatures at the server
+        with self.assertRaises(vc.ValunError) as e:
+            c.resolve_attempt(DEAL, '#1', 'not_applied', OWNER_TOKEN)
+        self.assertEqual(e.exception.code, 'attempt_in_progress')
+        for deal, attempt in ((DEAL, 'vs_0123456789abcdef'), (DEAL, '#0'), (DEAL, 'vt_0123'), ('vd_1', '#1'),
+                              (DEAL, '#1\nx')):
+            with self.assertRaises(vc.ValunError) as e:
+                c.resolve_attempt(deal, attempt, 'not_applied', OWNER_TOKEN)
+            self.assertEqual(e.exception.code, 'bad_arguments', (deal, attempt))
+        # the server's transfer of the id my records hold is not this attempt (another deal's): the owner may only
+        # record a decision locally; an id the owner gives that names no payment of mine, nor any record, is unknown
+        self.net.add_deal(DEAL2)
+        self.net.transfers[TID]['deal_id'] = DEAL2
+        with self.assertRaises(vc.ValunError) as e:
+            c.resolve_attempt(DEAL, TID, 'not_applied', OWNER_TOKEN)
+        self.assertEqual((e.exception.code, e.exception.extra['local']), ('not_found', 'server_unknown'))
+        with self.assertRaises(vc.ValunError) as e:
+            c.resolve_attempt(DEAL, 'vt_9999999999999999', 'not_applied', OWNER_TOKEN)
+        self.assertEqual(e.exception.code, 'unknown_attempt')
+        self.net.transfers[TID]['deal_id'] = DEAL
+        self.net.transfers[TID]['timestamp'] += 1000                   # or another timestamp than my record's
+        self.assertEqual(c.resolution_plan(DEAL, '#1')['local'], 'server_unknown')
+        for token in (None, '', '  '):
+            with self.assertRaises(vc.ValunError) as e:
+                c.resolve_attempt(DEAL, '#1', 'not_applied', token)
+            self.assertEqual(e.exception.code, 'bad_arguments')
+        self.assertEqual(self.net.resolutions, [])
+        self.assertNotIn('outcome', att(self.store.state)[0])
+
+    def test_the_note_is_checked_before_anything_is_sent(self):
+        c, T = self.unknown_transfer()
+        for bad in ('x' * 301, 'payee said no‮', 'zero​width', 'bell\x07', 'ok️', '\U0001F600' * 151):
+            del self.net.log[:]
+            with self.assertRaises(vc.ValunError) as e:
+                c.resolve_attempt(DEAL, TID, 'not_applied', OWNER_TOKEN, note=bad)
+            self.assertEqual(e.exception.code, 'bad_arguments', repr(bad))
+            self.assertEqual(self.net.log, [], repr(bad))                 # nothing read or sent
+        r = c.resolve_attempt(DEAL, TID, 'not_applied', OWNER_TOKEN, note='  ' + 'y' * 300 + '\n')
+        self.assertEqual(self.net.resolutions, [(DEAL, TID, {'outcome': 'not_applied', 'note': 'y' * 300})])
+        self.assertEqual(r['outcome'], 'not_applied')
 
     def test_without_the_server_only_the_records_change_and_a_pending_entry_becomes_a_record(self):
         # An ordinary note held, then (unknown to the client) rejected: the owner resolves it locally (no circulation).
@@ -1371,15 +1751,15 @@ class Attempts(Base):
         self.net.review = False
         (row,) = c.payment_attempts()
         self.assertEqual((row['route'], row['prior'], row['attempt_id']), ('note', None, None))
-        r = c.resolve_attempt(DEAL, '#1', 'not_applied')
+        r = c.resolve_attempt(DEAL, '#1', 'not_applied', OWNER_TOKEN)
         self.assertEqual((r['server'], len(r['matched']), self.net.resolutions), (None, 1, []))
         rec, = att(self.store.state)
         self.assertEqual((rec['route'], rec['edge'], rec['prior'], rec['total'], rec['outcome']), ('note', BC, 6, 9, 'not_applied'))
         with self.assertRaises(vc.ValunError) as e:
-            c.resolve_attempt(DEAL, '#2', 'applied')
+            c.resolve_attempt(DEAL, '#2', 'applied', OWNER_TOKEN)
         self.assertEqual(e.exception.code, 'unknown_attempt')
         with self.assertRaises(vc.ValunError) as e:
-            c.resolve_attempt(DEAL, '#1', 'maybe')
+            c.resolve_attempt(DEAL, '#1', 'maybe', OWNER_TOKEN)
         self.assertEqual(e.exception.code, 'bad_arguments')
 
 

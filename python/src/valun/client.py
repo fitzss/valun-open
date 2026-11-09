@@ -11,10 +11,12 @@ import hashlib
 import json
 import os
 import random
+import re
 import secrets
 import stat
 import time
 import time as _systime          # the store's lock and retries: never the `time` a test or replay harness replaces
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -50,12 +52,28 @@ CONSENT_LOG_MAX = 100                         # process_consents() keeps the las
 RECORDS_KEEP_MS = 7 * 24 * 3600 * 1000        # what did not apply is dropped after 7 days (design 11)
 SIGNATURES_KEEP_MS = 30 * 24 * 3600 * 1000    # a confirmed (applied) state keeps its signature 30 days (design 11)
 ATTEMPT_OUTCOMES = ('not_applied', 'applied')  # what the owner can decide about a payment attempt (decision D-2 d)
+# The owner's resolution of a payment attempt (decision D-2 d; resolution_plan, resolve_attempt). The server resolves
+# only a transfer it holds as UNRESOLVED_TRANSFER (POST /owner/deals/{vd}/attempts/{vt}/resolve, an owner note of at
+# most RESOLVE_NOTE_MAX characters); a credit note's attempt, or a transfer on a server without circulation/1, is
+# resolved in this client's records only; LOCAL_CHOICES are the cases where a transfer is resolved in this client's
+# records only by the owner's explicit choice (resolve_attempt(local_only=True); the CLI asks a second time).
+UNRESOLVED_TRANSFER = ('outcome_unknown', 'inconsistent')
+LIVE_TRANSFER = ('awaiting_owner', 'collecting', 'applying')
+LOCAL_CHOICES = ('no_server_id', 'server_unknown', 'server_ended')
+RESOLVE_NOTE_MAX = 300
 EDGES_PAGE = 200                              # GET /edges answers at most this many journal entries at a time
 EDGES_MAX_PAGES = 50                          # sync_edges() reads at most this many pages per call
 _JOURNAL_NOVATIONS = ('transfer_out', 'transfer_in', 'setoff')     # journal kinds that make an edge bound-only
 # Residues of what stops being usable after novation.MAX_AGE_MS: bound notes, set-offs, transfers (novation.BOUND_MS,
 # SETOFF_MS, TRANSFER_MS; written out because novation.py imports this module, so nv is not complete at import time).
 _EXPIRING_MS = (997, 998, 999)
+_DEAL_ID_RE = re.compile(r'vd_[0-9a-f]{16}\Z')
+_TRANSFER_ID_RE = re.compile(r'vt_[0-9a-f]{16}\Z')
+_ATTEMPT_REF_RE = re.compile(r'#[1-9][0-9]{0,3}\Z')
+_SERVER_WORD_RE = re.compile(r'[a-z_]{1,40}\Z')
+# Default_Ignorable_Code_Point characters outside the categories C* (they hide text): refused in the owner's note.
+_IGNORABLE = ((0x034F, 0x034F), (0x115F, 0x1160), (0x17B4, 0x17B5), (0x180B, 0x180F), (0x3164, 0x3164),
+              (0xFE00, 0xFE0F), (0xFFA0, 0xFFA0), (0xE0100, 0xE01EF))
 
 
 class ValunError(Exception):
@@ -250,6 +268,86 @@ def _attempt_shape(a):
     """A payment attempt record as novation.py writes it (transfer_attempts[deal_id][i])."""
     return (isinstance(a, dict) and a.get('route') in ('note', 'transfer') and isinstance(a.get('edge'), str)
             and _nat(a.get('prior')) and _nat(a.get('total')) and _nat(a.get('timestamp')))
+
+
+def _server_word(v):
+    """A code or state the server chose (an HTTP error code, a consent or transfer state), copied into what this client
+    reports or records only in the form ^[a-z_]{1,40}$; else None."""
+    return v if isinstance(v, str) and _SERVER_WORD_RE.match(v) is not None else None
+
+
+def _said(code):
+    """' (code)' for a reason text, or '' without a code."""
+    return f' ({code})' if code else ''
+
+
+def _unsafe_text(s):
+    """Does `s` hold a character that hides text or displays differently: a control other than tab, LF and CR, a
+    format (bidi, zero-width), surrogate, private-use or unassigned character, or another Default_Ignorable_Code_Point
+    (variation selectors, Hangul fillers)? Stricter than the server's rule (hasUnsafeText), never looser."""
+    for ch in s:
+        if ch in '\t\n\r':
+            continue
+        cp = ord(ch)
+        if unicodedata.category(ch) in ('Cc', 'Cf', 'Cs', 'Co', 'Cn') or any(lo <= cp <= hi for lo, hi in _IGNORABLE):
+            return True
+    return False
+
+
+def _owner_note(note):
+    """The owner's note for the server's audit line of a resolution, as the server takes it (decision D-2 d): None when
+    absent or blank; else the note trimmed, at most RESOLVE_NOTE_MAX characters (UTF-16 code units, as the server
+    counts them), without control, bidi or invisible characters. Anything else is refused here (bad_arguments), before
+    anything is sent."""
+    if note is None:
+        return None
+    if not isinstance(note, str):
+        raise ValunError('bad_arguments', 'the note is text; nothing was changed')
+    t = note.strip()
+    if not t:
+        return None
+    if _unsafe_text(t):
+        raise ValunError('bad_arguments', 'the note contains control, bidi or invisible characters; remove them '
+                                          '(nothing was changed)')
+    if len(t.encode('utf-16-le')) // 2 > RESOLVE_NOTE_MAX:
+        raise ValunError('bad_arguments', f'the note is longer than {RESOLVE_NOTE_MAX} characters; shorten it '
+                                          '(nothing was changed)')
+    return t
+
+
+def _attempt_edges(state):
+    """The edges of this client's payment attempts: those of its attempt records, and those of its pending payment
+    entries."""
+    edges = set()
+    att = state.get('transfer_attempts')
+    for lst in (att.values() if isinstance(att, dict) else ()):
+        for a in (lst if isinstance(lst, list) else ()):
+            if isinstance(a, dict) and isinstance(a.get('edge'), str):
+                edges.add(a['edge'])
+    recs = state.get('records')
+    for pair, e in (recs.items() if isinstance(recs, dict) else ()):
+        if pair != nv.PAID_DEALS_KEY and isinstance(e, dict) and isinstance(e.get('pending'), list) \
+                and any(_paid_route(p) is not None for p in e['pending']):
+            edges.add(pair)
+    return edges
+
+
+def _attempt_deals(state):
+    """The deals this client records payment attempts of: its attempt records (transfer_attempts) and the deals of its
+    pending payment entries (records)."""
+    deals = set()
+    att = state.get('transfer_attempts')
+    for deal_id, lst in (att.items() if isinstance(att, dict) else ()):
+        if isinstance(deal_id, str) and lst:
+            deals.add(deal_id)
+    recs = state.get('records')
+    for pair, e in (recs.items() if isinstance(recs, dict) else ()):
+        if pair == nv.PAID_DEALS_KEY or not isinstance(e, dict) or not isinstance(e.get('pending'), list):
+            continue
+        for p in e['pending']:
+            if _paid_route(p) is not None:
+                deals.add(p['ref'])
+    return deals
 
 
 def _mark_novated(state, edge):
@@ -1291,113 +1389,242 @@ class Client:
         return r
 
     # ---------- payment attempts, and the owner's resolution of one (decisions D-1 item 3, D-2 d) ----------
-    @staticmethod
-    def _local_attempts(state):
-        """{deal_id: [attempt]}: my attempt records (transfer_attempts), then each pending payment entry of the deal that
-        no record covers (as an attempt with prior None: its prior follows from a price the records do not hold)."""
-        out = {}
-        att = state.get('transfer_attempts')
-        for deal_id, lst in (att.items() if isinstance(att, dict) else ()):
-            rows = [a for a in lst if _attempt_shape(a)] if isinstance(lst, list) else []
-            if rows:
-                out[deal_id] = list(rows)
-        recs = state.get('records')
-        for pair, e in (recs.items() if isinstance(recs, dict) else ()):
-            if pair == nv.PAID_DEALS_KEY or not isinstance(e, dict) or not isinstance(e.get('pending'), list):
-                continue
-            for p in e['pending']:
-                route = _paid_route(p)
-                if route is None or not (_nat(p.get('total')) and _nat(p.get('timestamp'))):
-                    continue
-                rows = out.setdefault(p['ref'], [])
-                if not any((a['route'], a['edge'], a['total'], a['timestamp']) == (route, pair, p['total'], p['timestamp'])
-                           for a in rows):
-                    rows.append({'deal_id': p['ref'], 'route': route, 'edge': pair, 'prior': None, 'prior_timestamp': None,
-                                 'prior_signature': None, 'total': p['total'], 'timestamp': p['timestamp'],
-                                 'quote_digest': None, 'signed_at': p.get('signed_at')})
-        return out
+    def _deal_rows(self, state, deal_id, now_ms, edges=None):
+        """[(attempt, outcome)] of the deal's payment attempts in `state`, as the payer evaluators weigh them
+        (novation.classify_attempts: attempt records, the objects of `state`, then pending payment entries that no
+        record covers, with prior None). records_unreadable when the records cannot be read."""
+        if not self.pubkey:
+            raise ValunError('not_connected', 'this agent has no Valun signing key; the operator must enroll it')
+        r = nv.classify_attempts(deal_id, self._ctx(state, now_ms, [], edges=edges or None))
+        if not r['ok']:
+            raise ValunError(r['code'] if r['code'] in nv.REFUSAL_CODES else 'records_unreadable',
+                             "this profile's record of payment attempts cannot be read, or an edge state read does not "
+                             'verify; nothing was changed')
+        return [(x['attempt'], x['outcome']) for x in r['attempts']]
 
-    def payment_attempts(self, edges=None, now_ms=None):
-        """This client's payment attempts, deal by deal, as its records hold them, each with how this client classifies
-        it now (novation.attempt_outcome): on the edge's state in `edges` ({edge: EdgeState} this client verified, such
-        as sync_edges()['edges']; an edge it does not list is not read), else on my own confirmed state of the edge once
-        that is at or past the attempt. For `valun attempts list`; makes no request.
-        Returns [{deal_id, ref ('#n': the deal's n-th attempt, for resolve_attempt), attempt_id (the server's id, when
-        known), route, edge, prior, total, timestamp, outcome (the owner's decision or the client's evidence, if any),
-        state ('applied' | 'unknown' | 'alive' | 'dead' | 'unread'), paid (the deal is recorded as paid)}]."""
+    def payment_attempts(self, edges=None, now_ms=None, doubtful=None):
+        """This client's payment attempts, deal by deal, as its records hold them, each with how the payer evaluators
+        classify it now (novation.classify_attempts: the same read-back rules and the same proof from my own records as
+        when a payment is signed). `edges` is a read-back of my edges, {edge: EdgeState} this client verified
+        (sync_edges()['edges']): as for the evaluators' read-back, an edge of my attempts that it does not list does not
+        exist, unless `doubtful` (sync_edges()['doubtful']) lists it (shown with a state that did not verify: not read);
+        None: nothing was read. My own confirmed state of an edge counts once it is at or past the attempt. For `valun
+        attempts list`; makes no request.
+        Returns [{deal_id, ref ('#n': the deal's n-th attempt, for resolve_attempt), attempt_id (the server's id of a
+        transfer, when known), route ('note' | 'transfer'), edge, prior (None: a pending entry without a record), total,
+        timestamp, outcome (the owner's decision, if any), state ('applied' | 'unknown' | 'alive' | 'dead' | 'unread'),
+        paid (the deal is recorded as paid)}]. records_unreadable when the records cannot be read."""
         now = int(time.time() * 1000) if now_ms is None else now_ms
-        recs = _records_in(self.state, create=False)
+        state = self.state
+        recs = _records_in(state, create=False)
         paid = recs.get(nv.PAID_DEALS_KEY) if isinstance(recs.get(nv.PAID_DEALS_KEY), dict) else {}
+        read = None
+        if edges is not None:
+            read, skip = dict(edges), set(doubtful or ())
+            for e in _attempt_edges(state):
+                if e not in read and e not in skip:
+                    read[e] = None              # not listed: the edge does not exist
         out = []
-        for deal_id, lst in sorted(self._local_attempts(self.state).items()):
-            for n, a in enumerate(lst, 1):
-                conf = records.get(recs, a['edge'])['confirmed']
-                if isinstance(conf, dict) and (conf.get('total'), conf.get('timestamp')) == (a['total'], a['timestamp']):
-                    st_name = 'applied'
-                else:
-                    st = edges.get(a['edge']) if isinstance(edges, dict) else None
-                    floor = max(conf['timestamp'] if isinstance(conf, dict) and _nat(conf.get('timestamp')) else 0,
-                                a['prior_timestamp'] if _nat(a.get('prior_timestamp')) else 0)
-                    if not isinstance(st, dict) or not _nat(st.get('timestamp')) or st['timestamp'] < floor:
-                        st = conf if isinstance(conf, dict) and _nat(conf.get('timestamp')) \
-                            and conf['timestamp'] >= a['timestamp'] else None
-                    st_name = nv.attempt_outcome(a, now, st)
-                out.append({'deal_id': deal_id, 'ref': f'#{n}', 'attempt_id': a.get('attempt_id'), 'route': a['route'],
-                            'edge': a['edge'], 'prior': a.get('prior'), 'total': a['total'], 'timestamp': a['timestamp'],
-                            'outcome': a.get('outcome'), 'state': st_name, 'paid': deal_id in paid})
+        for deal_id in sorted(_attempt_deals(state)):
+            for n, (a, o) in enumerate(self._deal_rows(state, deal_id, now, read), 1):
+                out.append({'deal_id': deal_id, 'ref': f'#{n}', 'attempt_id': nv.shown_id(a.get('attempt_id')),
+                            'route': a['route'], 'edge': a['edge'], 'prior': a.get('prior'), 'total': a['total'],
+                            'timestamp': a['timestamp'],
+                            'outcome': a.get('outcome') if a.get('outcome') in ATTEMPT_OUTCOMES else None,
+                            'state': o, 'paid': deal_id in paid})
         return out
 
-    def resolve_attempt(self, deal_id, attempt, outcome, owner_token=None, note=None):
+    def resolution_plan(self, deal_id, attempt, edges=None, now_ms=None, doubtful=None):
+        """How resolve_attempt() would resolve payment attempt `attempt` of deal `deal_id` (decision D-2 d), so that the
+        owner sees it before deciding. Reads GET /info, and GET /transfers/{id} (with the agent's token) for a transfer
+        whose server id is known, given or recorded, on a server that lists circulation/1. Changes nothing.
+          attempt  '#n' (the deal's n-th attempt as payment_attempts() lists it), or the server's id of a transfer
+                   attempt (vt_ and 16 hex digits)
+        Returns {deal_id, attempt (its payment_attempts() row; None when a server id names none of my records),
+        attempts (the deal's rows), attempt_id (the server's id, or None), route ('note' | 'transfer'), transfer (what
+        GET /transfers showed: {id, state, timestamp, edge, total}, edge and total those of my held edge; or None),
+        server (True: the server resolves it first, then my records follow), local (None, or why only my records
+        change: 'note' (the server holds no payment attempt for a credit note), 'no_circulation' (the server lists no
+        circulation/1), 'no_server_id' (a transfer whose server id my client never recorded: its request got no answer,
+        or the server refused it), 'server_unknown' (the server shows no such transfer of mine as this attempt: 404,
+        or another deal's, timestamp or edge), 'server_ended' (the server holds it as ended: transfer.state))}. The three LOCAL_CHOICES need the owner's explicit choice
+        (resolve_attempt(local_only=True)): if the server holds the attempt after all, it keeps blocking the deal
+        there, which fails safe. ValunError: bad_arguments; unknown_attempt (no such attempt of the deal in my records,
+        or a server id the owner gave that names neither a payment of mine for this deal nor any of my records);
+        attempt_in_progress (the server shows the transfer still awaiting its owner, collecting or applying: it can
+        still apply); records_unreadable; a read that fails."""
+        if not (isinstance(deal_id, str) and _DEAL_ID_RE.match(deal_id)):
+            raise ValunError('bad_arguments', 'name the deal by its id (vd_ and 16 hex digits)')
+        by_ref = isinstance(attempt, str) and _ATTEMPT_REF_RE.match(attempt) is not None
+        if not (by_ref or (isinstance(attempt, str) and _TRANSFER_ID_RE.match(attempt))):
+            raise ValunError('bad_arguments', "name the attempt as #n from `valun attempts list`, or by the server's id "
+                                              'of a transfer (vt_ and 16 hex digits)')
+        circulation = 'circulation/1' in _features_of(self.info())
+        rows = [r for r in self.payment_attempts(edges=edges, now_ms=now_ms, doubtful=doubtful) if r['deal_id'] == deal_id]
+        if by_ref:
+            n = int(attempt[1:])
+            if n > len(rows):
+                raise ValunError('unknown_attempt', f'your records hold no attempt {attempt} of this deal; see `valun '
+                                                    'attempts list`; nothing was changed')
+            target = rows[n - 1]
+            sid = target['attempt_id'] if target['route'] == 'transfer' else None
+        else:
+            sid = attempt
+            target = next((r for r in rows if r['attempt_id'] == sid), None)
+        plan = {'deal_id': deal_id, 'attempt': target, 'attempts': rows, 'attempt_id': sid,
+                'route': target['route'] if target is not None else 'transfer', 'transfer': None, 'server': False,
+                'local': None}
+        if plan['route'] == 'note':
+            plan['local'] = 'note'
+        elif not circulation:
+            plan['local'] = 'no_circulation'
+        elif sid is None:
+            plan['local'] = 'no_server_id'
+        else:
+            self._plan_transfer(plan)
+        return plan
+
+    def _plan_transfer(self, plan):
+        """resolution_plan() for a transfer with a server id, on a circulation server: GET /transfers/{id} says whether
+        the server can resolve it (UNRESOLVED_TRANSFER), and, when my records hold no attempt with that id, which of my
+        transfer attempts it is (its timestamp, and my held edge at its new total). A transfer the server does not show
+        as this attempt of mine (404; another deal's, not mine as payer, or another timestamp or edge than the record of
+        mine that holds the id) is 'server_unknown' for an attempt my records hold, and unknown_attempt for an id the
+        owner gave that none of them holds."""
+        sid, target = plan['attempt_id'], plan['attempt']
+        try:
+            t = self.request('GET', f'/pilot/v1/transfers/{_seg(sid)}')
+        except ValunError as e:
+            if e.status != 404:
+                raise
+            t = None
+        t = t if isinstance(t, dict) else {}
+        deal = t.get('deal') if isinstance(t.get('deal'), dict) else {}
+        roles = t.get('your_roles') if isinstance(t.get('your_roles'), list) else []
+        info = dict(self._held_of(t), id=sid, state=_server_word(t.get('state')))
+
+        def same(r):
+            return (r['route'] == 'transfer' and info['timestamp'] is not None and r['timestamp'] == info['timestamp']
+                    and r['edge'] == info['edge'] and (info['total'] is None or r['total'] == info['total']))
+        mine = bool(t) and deal.get('deal_id') == plan['deal_id'] and 'payer' in roles and t.get('id') in (None, sid)
+        if mine and target is None:
+            found = [r for r in plan['attempts'] if same(r)]
+            plan['attempt'] = target = found[0] if len(found) == 1 else None
+        if not mine or (target is not None and not same(target)):
+            if target is None:
+                raise ValunError('unknown_attempt', f'the server shows no transfer {sid} of yours for this deal, and your '
+                                                    'records hold no attempt with that id; name it as #n from `valun '
+                                                    'attempts list` (nothing was changed)')
+            plan['local'] = 'server_unknown'
+            return
+        plan['transfer'] = info
+        if info['state'] in UNRESOLVED_TRANSFER:
+            plan['server'] = True
+        elif info['state'] in LIVE_TRANSFER:
+            raise ValunError('attempt_in_progress', f"the server shows this transfer {info['state']}: it can still apply. "
+                                                    'Wait until it ends (or cancel it); nothing was changed')
+        else:
+            plan['local'] = 'server_ended'
+
+    def _held_of(self, t):
+        """{timestamp, edge, total} of a transfer view (GET /transfers, or the transfer a resolve answer carries): its
+        timestamp, and my held edge (the one to my key) at its new total; None for what the view does not show."""
+        t = t if isinstance(t, dict) else {}
+        held = [e for e in (t.get('edges') if isinstance(t.get('edges'), list) else [])
+                if isinstance(e, dict) and isinstance(e.get('edge'), str) and nv.parse_edge(e['edge'])
+                and e['edge'].endswith(f'>{self.pubkey}')]
+        return {'timestamp': t.get('timestamp') if _nat(t.get('timestamp')) else None,
+                'edge': held[0]['edge'] if len(held) == 1 else None,
+                'total': held[0].get('new_total') if len(held) == 1 and _nat(held[0].get('new_total')) else None}
+
+    def _check_owner(self, owner_token):
+        """The owner token is the owner's of this profile's participant: GET /pilot/v1/owner with it (read only). For a
+        resolution only this client's records record (the server is not told, so it does not check the token)."""
+        try:
+            me = self.request('GET', '/pilot/v1/owner', token=owner_token)
+        except ValunError as e:
+            if e.status in (401, 403, 404):
+                raise ValunError('not_owner', 'this is not the owner token of this participant; nothing was changed',
+                                 e.status) from None
+            raise
+        p = me.get('participant') if isinstance(me, dict) and isinstance(me.get('participant'), dict) else {}
+        if not p.get('id') or p.get('id') != self.participant_id:
+            raise ValunError('not_owner', 'this owner token is not the owner\'s of this profile\'s participant; nothing '
+                                          'was changed')
+
+    def resolve_attempt(self, deal_id, attempt, outcome, owner_token, note=None, local_only=False, edges=None,
+                        now_ms=None, doubtful=None):
         """The OWNER's resolution of a payment attempt whose outcome is unknown (attempt_outcome_unknown, or a transfer
         the server holds as outcome_unknown or inconsistent), after confirming with the payee whether the payment arrived
         (decision D-2 d). Never called by an agent: `valun attempts resolve` runs it at a terminal, after asking.
-          attempt   the server's id of the attempt (a transfer id, vt_...), or '#n', this client's n-th attempt of the
-                    deal as payment_attempts() lists it (its server id is then the one recorded for it, when known)
-          outcome   'not_applied': it did not apply; the deal can be paid again once its window has passed (D-1)
-                    'applied': it applied; the deal is recorded as paid by it, and never paid again
-        With owner_token, the server is told first: POST /pilot/v1/owner/deals/{deal}/attempts/{id}/resolve {outcome,
-        note?} (owner token only); then this client's records follow (the same step under the profile lock): the
-        attempts it matches (the '#n' one, or those recorded with that server id, or of the timestamp the server's answer
-        names) get outcome and attempt_id, a pending entry matched becomes an attempt record (its prior from the deal's
-        verified price), and 'applied' records the deal as paid (records['paid_deals']). Without owner_token only the
-        records change (a server without circulating credit has no such route). Returns {deal_id, attempt_id, outcome,
-        server: its answer or None, matched: [the attempts as now recorded], paid: whether the deal is recorded paid}."""
+          attempt      '#n' (the deal's n-th attempt as payment_attempts() lists it), or the server's id of a transfer
+          outcome      'not_applied': it did not apply; the deal can be paid again once its window has passed (D-1)
+                       'applied': it applied; the deal is recorded as paid by it, and never paid again
+          owner_token  the owner token, used once as the bearer of one request and never stored (required)
+          note         for the server's audit line: at most RESOLVE_NOTE_MAX characters, no control, bidi or invisible
+                       characters (bad_arguments otherwise, before anything is sent)
+          local_only   record the decision in this client's records only (the owner chose it: LOCAL_CHOICES)
+        resolution_plan() decides the path. The server resolves it first when it holds the transfer as
+        UNRESOLVED_TRANSFER: POST /pilot/v1/owner/deals/{deal}/attempts/{vt}/resolve {outcome, note?}; its answer
+        {resolution {attempt_id, outcome, previous_state, at, note}, deal, transfer} says which attempt it resolved. A 404
+        not_found or 409 wrong_state answer (it holds no such attempt, or holds it as ended) is raised with extra
+        {local_possible: True, server: {error, message}}: nothing changed; the owner may then resolve it locally. A
+        credit note's attempt ('note': the server holds none), or a transfer on a server without circulation/1, is
+        resolved in this client's records only, as is, with local_only, a transfer of the LOCAL_CHOICES (without it,
+        those are refused with local_possible: attempt_id_unknown, not_found, wrong_state); the owner token is then
+        checked first (GET /pilot/v1/owner: not_owner when it is not this participant's). A payment my records show
+        applied is never resolved as not applied (already_paid), nor one the server shows still in progress
+        (attempt_in_progress).
+        Then this client's records follow, under the profile lock: the attempt the plan identified (by '#n', by the
+        server id my records hold, or by the timestamp, held edge and total GET /transfers showed) gets outcome,
+        attempt_id (the id the server was asked about) and resolved_at (a pending entry becomes an attempt record, its
+        prior from the deal's verified price); 'applied' records the deal as paid (records['paid_deals']), and an
+        attempt recorded applied stays applied. not_applied for an attempt none of my records holds, when the server was
+        not told, changes nothing (unknown_attempt).
+        Returns {deal_id, attempt_id, outcome, server (its answer, or None), local (why only the records changed, or
+        None), matched: [the attempts as now recorded], paid (the deal is recorded as paid)}."""
         if outcome not in ATTEMPT_OUTCOMES:
             raise ValunError('bad_arguments', "outcome is 'not_applied' or 'applied'")
-        if not (isinstance(deal_id, str) and deal_id and len(deal_id) <= 64):
-            raise ValunError('bad_arguments', 'name the deal (vd_...)')
-        local = self._local_attempts(self.state).get(deal_id) or []
-        target, server_id = None, None
-        if isinstance(attempt, str) and attempt.startswith('#'):
-            n = int(attempt[1:]) if attempt[1:].isdigit() else 0
-            if not 1 <= n <= len(local):
-                raise ValunError('unknown_attempt', f'your records hold no attempt {attempt[:8]} of this deal; see `valun '
-                                                    'attempts list`')
-            target = local[n - 1]
-            server_id = nv.shown_id(target.get('attempt_id'))
-        elif isinstance(attempt, str) and 0 < len(attempt) <= 64 and all(c.isalnum() or c in '_-' for c in attempt):
-            server_id = attempt
-        else:
-            raise ValunError('bad_arguments', "name the attempt by the server's id (vt_...) or as #n from `valun attempts list`")
-        # Read first what the records need, so that once the server is told nothing but a busy profile can stop them: a
-        # pending entry that becomes an attempt record needs its prior, from the deal's verified price.
+        if not (isinstance(owner_token, str) and owner_token.strip()):
+            raise ValunError('bad_arguments', 'the owner token is needed to resolve a payment attempt; nothing was changed')
+        owner_token = owner_token.strip()
+        note = _owner_note(note)
+        now = int(time.time() * 1000) if now_ms is None else now_ms
+        plan = self.resolution_plan(deal_id, attempt, edges=edges, now_ms=now, doubtful=doubtful)
+        target, shown = plan['attempt'], plan['transfer'] or {}
+        if outcome == 'not_applied' and ((target is not None and target['state'] == 'applied')
+                                         or shown.get('state') == 'applied'):
+            raise ValunError('already_paid', 'your records (or the server) show this payment applied, so the deal is '
+                                             'paid; it is not resolved as not applied; nothing was changed')
+        if plan['local'] in LOCAL_CHOICES and not local_only:
+            code = {'no_server_id': 'attempt_id_unknown', 'server_unknown': 'not_found', 'server_ended': 'wrong_state'}
+            raise ValunError(code[plan['local']], 'the server cannot resolve this transfer; only your owner can choose to '
+                                                  "record the decision in your client's records only; nothing was changed",
+                             extra={'local_possible': True, 'local': plan['local']})
         price = None
-        if any(a.get('prior') is None for a in ([target] if target is not None else local)):
+        if target is not None and target['prior'] is None:     # a pending entry: its record needs the verified price
             price = self.verified_agreement(self.deal(deal_id))['price']['amount']
         answer = None
-        if owner_token is not None:
-            if not server_id:
-                raise ValunError('unknown_attempt', "the server's id of this attempt is not known to your client: give it "
-                                                    '(the deal view or the owner console shows it); nothing was changed')
-            body = {'outcome': outcome}
-            if note:
-                body['note'] = str(note)[:500]
-            answer = self.request('POST', f'/pilot/v1/owner/deals/{_seg(deal_id)}/attempts/{_seg(server_id)}/resolve',
-                                  body, token=owner_token)
-        shown = answer.get('attempt') if isinstance(answer, dict) and isinstance(answer.get('attempt'), dict) else \
-            (answer if isinstance(answer, dict) else {})
-        named_ts = shown.get('timestamp') if _nat(shown.get('timestamp')) else None
+        if plan['server'] and not local_only:
+            body = {'outcome': outcome} if note is None else {'outcome': outcome, 'note': note}
+            try:
+                answer = self.request('POST', f"/pilot/v1/owner/deals/{_seg(deal_id)}/attempts/{_seg(plan['attempt_id'])}"
+                                              '/resolve', body, token=owner_token)
+            except ValunError as e:
+                if (e.status, e.code) in ((404, 'not_found'), (409, 'wrong_state')):
+                    raise ValunError(e.code, f'the server did not resolve it: {str(e)[:300]}', e.status,
+                                     extra={'local_possible': True, 'server': {'error': e.code, 'message': str(e)[:300]}}) \
+                        from None
+                raise
+        else:
+            self._check_owner(owner_token)
+        # The server's id of the attempt: the one it was asked to resolve (its answer names it: resolution.attempt_id).
+        # When the plan could not tell which attempt of mine it is, the transfer the answer carries can: its timestamp,
+        # and my held edge at its new total (the same view as GET /transfers).
+        sid = plan['attempt_id'] if plan['route'] == 'transfer' else None
+        resolved = self._held_of(answer.get('transfer')) if target is None and isinstance(answer, dict) else {}
         signed_at = _iso(datetime.now(timezone.utc))
+        key = (lambda a: (a['route'], a['edge'], a['total'], a['timestamp']))
 
         def apply(state):
             att = _dict_in(state, 'transfer_attempts')
@@ -1406,14 +1633,14 @@ class Client:
                 lst = att[deal_id] = []
             if not isinstance(lst, list):
                 raise ValunError('records_unreadable', "this profile's record of payment attempts cannot be read")
-            rows = self._local_attempts(state).get(deal_id) or []
+            rows = [a for a, _o in self._deal_rows(state, deal_id, now)]
             if target is not None:
-                hits = [a for a in rows if (a['route'], a['edge'], a['total'], a['timestamp']) ==
-                        (target['route'], target['edge'], target['total'], target['timestamp'])]
-            else:
-                hits = [a for a in rows if server_id and a.get('attempt_id') == server_id]
-                if not hits and named_ts is not None:
-                    hits = [a for a in rows if a['timestamp'] == named_ts]
+                hits = [a for a in rows if key(a) == key(target)]
+            else:                               # recorded with the server's id meanwhile, or the one the answer shows
+                hits = [a for a in rows if sid and a['route'] == 'transfer' and a.get('attempt_id') == sid]
+                if not hits and resolved.get('timestamp') is not None and resolved.get('edge'):
+                    hits = [a for a in rows if a['route'] == 'transfer' and a['timestamp'] == resolved['timestamp']
+                            and a['edge'] == resolved['edge'] and resolved.get('total') in (None, a['total'])][:1]
             matched = []
             for a in hits:
                 rec = next((x for x in lst if x is a), None)
@@ -1426,23 +1653,26 @@ class Client:
                     lst.append(rec)
                 if outcome == 'applied' or rec.get('outcome') != 'applied':     # evidence that it applied is kept
                     rec['outcome'] = outcome
-                if server_id and not rec.get('attempt_id'):
-                    rec['attempt_id'] = server_id
+                if sid and rec['route'] == 'transfer' and not rec.get('attempt_id'):
+                    rec['attempt_id'] = sid
                 rec['resolved_at'] = signed_at
                 matched.append(dict(rec))
                 if outcome == 'applied':
                     _guarded(nv.mark_paid, state, deal_id, rec['route'], rec['edge'], rec['total'], rec['timestamp'])
             if outcome == 'applied' and not matched:
-                kind = shown.get('kind') or shown.get('route')
-                route = 'transfer' if kind == 'transfer' or (kind is None and str(server_id).startswith('vt_')) else 'note'
-                _guarded(nv.mark_paid, state, deal_id, route, nv.parse_edge(shown.get('edge')) and shown.get('edge'),
-                         shown.get('total') if _nat(shown.get('total')) else None, named_ts)
+                seen = shown if shown.get('edge') else resolved
+                _guarded(nv.mark_paid, state, deal_id, plan['route'], seen.get('edge'), seen.get('total'),
+                         seen.get('timestamp'))
             if not lst:
                 del att[deal_id]
+            if outcome == 'not_applied' and not matched and answer is None:
+                raise ValunError('unknown_attempt', 'your records hold no attempt this names, so nothing is resolved in '
+                                                    'them; name it as #n from `valun attempts list`')
             paid = _records_in(state).get(nv.PAID_DEALS_KEY)
             return matched, isinstance(paid, dict) and deal_id in paid
         matched, paid = self._update(apply)
-        return {'deal_id': deal_id, 'attempt_id': server_id, 'outcome': outcome, 'server': answer, 'matched': matched,
+        return {'deal_id': deal_id, 'attempt_id': sid, 'outcome': outcome, 'server': answer,
+                'local': None if answer is not None else (plan['local'] or 'owner_choice'), 'matched': matched,
                 'paid': paid}
 
     @staticmethod
@@ -1491,7 +1721,10 @@ class Client:
 
         Returns {signed: [entry], refused: [entry], waiting: [entry]}, entry = {id, kind, role, deal_id, amount,
         your_net_change_PC, your_total_owed_change_PC, code, reason} (signed entries add state and rejected; an entry
-        whose request failed adds error). Each decision is appended to consent_log (the last CONSENT_LOG_MAX), and
+        whose request failed adds error). What the server wrote reaches an entry only in a checked form (_consent_entry:
+        ids as novation.shown_id, kind and role from their lists, error codes and states as plain words, ^[a-z_]{1,40}$,
+        else None; a waiting item's own state is not quoted); a waiting entry's code may be internal_error (the item
+        raised something unexpected). Each decision is appended to consent_log (the last CONSENT_LOG_MAX), and
         consents_last_run_ms is set to now_ms. Every item is handled on its own: one that raises (the profile is busy or
         unreadable, a request fails) waits with its code, and the next is handled; what the run decided is recorded even
         when it stops early (an unreadable GET /consents answer)."""
@@ -1524,10 +1757,10 @@ class Client:
                     try:
                         bucket, entry = self._consent(item, policy, mandate, features, now, run, read_back)
                     except Exception as e:  # noqa: BLE001 - one item never stops the others, nor the record of the run
-                        code = e.code if isinstance(e, ValunError) else 'internal_error'
+                        code = _server_word(e.code) if isinstance(e, ValunError) else 'internal_error'
                         bucket, entry = 'waiting', self._consent_entry(
                             item, None, code=code, error=code,
-                            reason=f'this item could not be handled now ({code}); it is handled again on a later run')
+                            reason=f'this item could not be handled now{_said(code)}; it is handled again on a later run')
                     report[bucket].append(entry)
                     log.append({'at': _iso(datetime.now(timezone.utc)), 'id': entry['id'], 'kind': entry['kind'],
                                 'role': entry['role'], 'decision': bucket, 'code': entry['code'], 'deal_id': entry['deal_id'],
@@ -1541,7 +1774,7 @@ class Client:
         if not isinstance(item, dict) or not isinstance(item.get('id'), str) or not item['id']:
             return 'waiting', self._consent_entry(item, None, code='bad_consent', reason='a consent item without an id')
         if item.get('state') != 'collecting':
-            return 'waiting', self._consent_entry(item, None, reason=f"the item is {str(item.get('state'))[:32]}, not collecting signatures")
+            return 'waiting', self._consent_entry(item, None, reason='the item is not collecting signatures')
         roles = item.get('your_roles')
         role = roles[0] if isinstance(roles, list) and len(roles) == 1 else None
         deal, payee_pk, issuer_ids = None, None, None
@@ -1551,8 +1784,9 @@ class Client:
                 if role == 'payee':
                     issuer_ids = self._consent_issuer_ids(run)
             except ValunError as e:             # the deal or the directory could not be read now: decide on a later run
-                return 'waiting', self._consent_entry(item, None, code=e.code, error=e.code,
-                                                      reason=f'could not be read now ({e.code}); decided on a later run')
+                code = _server_word(e.code)
+                return 'waiting', self._consent_entry(item, None, code=code, error=code,
+                                                      reason=f'could not be read now{_said(code)}; decided on a later run')
         signed_at = _iso(datetime.now(timezone.utc))
 
         def evaluate(state, edges):
@@ -1569,7 +1803,7 @@ class Client:
             try:
                 self.refuse_consent(item['id'], r['code'])
             except ValunError as e:
-                return 'refused', self._consent_entry(item, r, error=e.code)
+                return 'refused', self._consent_entry(item, r, error=_server_word(e.code))
             return 'refused', self._consent_entry(item, r)
         if not r['to_sign']:
             return 'waiting', self._consent_entry(item, r, reason='you have signed every slot of yours; waiting for the others')
@@ -1582,11 +1816,16 @@ class Client:
         except ValunError as e:
             if e.status is not None and 400 <= e.status < 500:     # refused: the server recorded none of these signatures
                 self._settle(lambda state: self._forget_pending(state, r['write_ahead']['pending']))
-            return 'waiting', self._consent_entry(item, r, error=e.code,
-                                                  reason=f'the server did not take the signatures ({e.code}); tried again '
-                                                         'on a later run')
-        answer = ans.get('state') if isinstance(ans, dict) else None
-        rejected = ans.get('rejected') if isinstance(ans, dict) and isinstance(ans.get('rejected'), list) else []
+            code = _server_word(e.code)
+            return 'waiting', self._consent_entry(item, r, error=code,
+                                                  reason=f'the server did not take the signatures{_said(code)}; tried '
+                                                         'again on a later run')
+        answer = _server_word(ans.get('state')) if isinstance(ans, dict) else None
+        rejected = [{'slot': x['slot'] if isinstance(x.get('slot'), str) and x['slot'] in sigs else None,
+                     'code': _server_word(x.get('code')),
+                     'revision': x.get('revision') if _nat(x.get('revision')) else None}
+                    for x in (ans.get('rejected') if isinstance(ans, dict) and isinstance(ans.get('rejected'), list) else [])
+                    if isinstance(x, dict)]
         a = r['write_ahead']['attempt']
         tid = nv.shown_id(item['id'])
         if a is not None and tid:                # a regenerated transfer of my payment: the server's id of this attempt
@@ -1651,12 +1890,18 @@ class Client:
 
     @staticmethod
     def _consent_entry(item, r, **more):
+        """One entry of process_consents()'s report (and its consent_log line). What the server wrote is copied only in
+        a checked form: ids as novation.shown_id, kind ('transfer' | 'setoff') and role (novation.ROLES) from their
+        lists, codes and states as _server_word (the caller passes those already checked); the rest is what the
+        evaluator computed (its summary, its code and its reason)."""
         s = (r or {}).get('summary') or {}
         it = item if isinstance(item, dict) else {}
         roles = it.get('your_roles')
-        e = {'id': nv.shown_id(it.get('id')), 'kind': it.get('kind') if isinstance(it.get('kind'), str) else None,
-             'role': s.get('role') or (roles[0] if isinstance(roles, list) and len(roles) == 1 and isinstance(roles[0], str) else None),
-             'deal_id': s.get('deal_id'), 'amount': s.get('amount'), 'your_net_change_PC': s.get('your_net_change_PC'),
+        role = s.get('role') if s.get('role') in nv.ROLES else (
+            roles[0] if isinstance(roles, list) and len(roles) == 1 and roles[0] in nv.ROLES else None)
+        e = {'id': nv.shown_id(it.get('id')), 'kind': it.get('kind') if it.get('kind') in ('transfer', 'setoff') else None,
+             'role': role, 'deal_id': nv.shown_id(s.get('deal_id')), 'amount': s.get('amount'),
+             'your_net_change_PC': s.get('your_net_change_PC'),
              'your_total_owed_change_PC': s.get('your_total_owed_change_PC'), 'code': (r or {}).get('code'),
              'reason': s.get('reason')}
         e.update(more)

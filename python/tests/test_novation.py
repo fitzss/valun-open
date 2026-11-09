@@ -957,6 +957,17 @@ class D2aFullEdgeStates(unittest.TestCase):
         moved = edit(payer_item(), set_(['edges', 0, 'before'], st(A, B, 10, TS_AB + 5)))
         self.assertEqual(CO(moved, regen_ctx(transfer_attempts=earlier))['code'], 'attempt_outcome_unknown')
 
+    def test_a_record_without_a_prior_signature_is_compared_on_total_and_timestamp(self):
+        # An attempt record of the 0.4 development builds before D-2: prior_timestamp, but no prior_signature.
+        earlier = {DEAL: [attempt('transfer', AB, 10, 7, T_OLD, qd(), prior_timestamp=TS_AB)]}
+        self.assertNotIn('prior_signature', earlier[DEAL][0])
+        self.assertTrue(PT(payer_tpl(), payer_ctx(transfer_attempts=earlier))['ok'])        # exactly (10, TS_AB)
+        # the same prior total at another timestamp, still before the earlier T: another state of the edge
+        later = edit(payer_tpl(), set_(['from_edge', 'before'], st(A, B, 10, TS_AB + 5)))
+        self.assertEqual(PT(later, payer_ctx(transfer_attempts=earlier))['code'], 'attempt_outcome_unknown')
+        self.assertFalse(nv.exact_prior(earlier[DEAL][0], st(A, B, 10, TS_AB + 5)))
+        self.assertTrue(nv.exact_prior(earlier[DEAL][0], st(A, B, 10, TS_AB)))
+
     def test_an_acknowledged_absent_edge_must_still_be_absent(self):
         first = {DEAL: [full('note', BC, 0, 3, res(NOW - 30_000, 997), {'timestamp': 0, 'signature': None})]}
         self.assertTrue(BT(bound_tpl(prior=False), payer_ctx(transfer_attempts=first))['ok'])
@@ -1003,6 +1014,64 @@ class D2aFullEdgeStates(unittest.TestCase):
                                                                               'timestamp': TS_BE}})
 
 
+class ClassifyAttempts(unittest.TestCase):
+    """classify_attempts: a deal's payment attempts as the payer evaluators weigh them (for `valun attempts list` and the
+    owner's resolution)."""
+
+    def test_the_deals_attempts_and_how_each_stands(self):
+        a1 = full('transfer', AB, 10, 7, T_OLD, st(A, B, 10, TS_AB), qd())
+        recs = {BC: {'confirmed': None, 'pending': [pending(9, NOW - 50_000)]}}         # an ordinary note, no record
+        ctx = payer_ctx(transfer_attempts={DEAL: [a1]}, records=recs)
+        r = nv.classify_attempts(DEAL, ctx)
+        self.assertEqual((r['ok'], r['code']), (True, None))
+        self.assertEqual([(x['attempt']['route'], x['attempt']['prior'], x['outcome']) for x in r['attempts']],
+                         [('transfer', 10, 'alive'), ('note', None, 'alive')])
+        self.assertIs(r['attempts'][0]['attempt'], a1)                  # the record itself, for the caller to update
+        self.assertEqual(nv.classify_attempts(DEAL, ctx, price=PRICE)['attempts'][1]['attempt']['prior'], 6)
+        self.assertEqual(nv.classify_attempts('vd_ffffffffffffffff', ctx)['attempts'], [])
+        # a read-back past T at another state: unknown; the same, with my records holding the deal paid by it: applied
+        moved = {AB: st(A, B, 12, T_OLD + 1000)}
+        self.assertEqual(nv.classify_attempts(DEAL, payer_ctx(transfer_attempts={DEAL: [a1]}, edges=moved))['attempts'][0]
+                         ['outcome'], 'unknown')
+        paid = {'paid_deals': {DEAL: {'route': 'transfer', 'edge': AB, 'total': 7, 'timestamp': T_OLD}}}
+        self.assertEqual(nv.classify_attempts(DEAL, payer_ctx(transfer_attempts={DEAL: [a1]}, records=paid, edges=moved))
+                         ['attempts'][0]['outcome'], 'applied')
+        other_paid = {'paid_deals': {DEAL: {'route': 'note', 'edge': BC, 'total': 9, 'timestamp': T997}}}
+        self.assertEqual(nv.classify_attempts(DEAL, payer_ctx(transfer_attempts={DEAL: [a1]}, records=other_paid,
+                                                              edges=moved))['attempts'][0]['outcome'], 'unknown')
+        # without pins the edges read cannot be verified: they are not used
+        self.assertEqual(nv.classify_attempts(DEAL, payer_ctx(pins=None, transfer_attempts={DEAL: [a1]}, edges=moved))
+                         ['attempts'][0]['outcome'], 'alive')
+        # past the window: an attempt that acknowledged an absent edge reads an absent edge as dead; one that
+        # acknowledged a prior above 0 does not (no read-back)
+        late = T_OLD + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 1
+        first = full('note', BC, 0, 3, T_OLD - 2, {'timestamp': 0, 'signature': None})
+        r = nv.classify_attempts(DEAL, payer_ctx(now=late, transfer_attempts={DEAL: [first, a1]}, edges={BC: None, AB: None}))
+        self.assertEqual([x['outcome'] for x in r['attempts']], ['dead', 'unread'])
+
+    def test_my_own_records_prove_an_attempt_dead(self):
+        s0 = st(B, C, 6, TS_BC)
+        t1, t2 = res(NOW - 50_000, 997), res(NOW - 20_000, 997)
+        attempts = {DEAL: [full('note', BC, 6, 9, t1, s0)], 'vd_2222222222222222': [full('note', BC, 6, 9, t2, s0,
+                                                                                         deal_id='vd_2222222222222222')]}
+        ctx = payer_ctx(transfer_attempts=attempts, edges={BC: st(B, C, 9, t2)})
+        self.assertEqual(nv.attempt_outcome(attempts[DEAL][0], NOW, st(B, C, 9, t2)), 'unknown')
+        self.assertEqual(nv.classify_attempts(DEAL, ctx)['attempts'][0]['outcome'], 'dead')
+        self.assertEqual(nv.classify_attempts('vd_2222222222222222', ctx)['attempts'][0]['outcome'], 'applied')
+
+    def test_what_cannot_be_read_or_verified_is_refused(self):
+        self.assertEqual(nv.classify_attempts(DEAL, payer_ctx(transfer_attempts={DEAL: 'x'})),
+                         {'ok': False, 'code': 'records_unreadable', 'attempts': []})
+        self.assertEqual(nv.classify_attempts(DEAL, payer_ctx(transfer_attempts={DEAL: [{'route': 'x'}]}))['code'],
+                         'records_unreadable')
+        a1 = full('transfer', AB, 10, 7, T_OLD, st(A, B, 10, TS_AB), qd())
+        self.assertEqual(nv.classify_attempts(DEAL, payer_ctx(transfer_attempts={DEAL: [a1]},
+                                                              edges={AB: st(A, B, 12, T_OLD + 1000, signer=E)}))['code'],
+                         'bad_prior_signature')
+        for deal, price in (('', None), (None, None), (DEAL, 0), (DEAL, 2.5), (DEAL, True)):
+            self.assertEqual(nv.classify_attempts(deal, payer_ctx(), price=price)['code'], 'bad_template', (deal, price))
+
+
 class AbsentReadBack(unittest.TestCase):
     def test_an_absent_edge_is_no_read_back_for_an_attempt_that_acknowledged_a_prior_above_0(self):
         # my held-edge decrease is pending (no attempt record): its prior was 10, so A>B existed
@@ -1027,6 +1096,11 @@ class SummaryIds(unittest.TestCase):
             self.assertTrue(r['ok'])                               # the id is not signed; it is only not shown
             self.assertIsNone(r['summary']['id'], bad)
         r = BT(edit(bound_tpl(), set_(['deal_id'], 'vd_ff\nPAY')), payer_ctx())
+        self.assertEqual((r['code'], r['summary']['deal_id']), ('deal_mismatch', None))
+        # the payer roles: a transfer template, and a regenerated transfer whose deal id is the server's context.deal text
+        r = PT(edit(payer_tpl(), set_(['deal_id'], 'vd_ff\nPAY')), payer_ctx())
+        self.assertEqual((r['code'], r['summary']['deal_id']), ('deal_mismatch', None))
+        r = CO(edit(payer_item(), set_(['context', 'deal', 'deal_id'], 'vd_ff\nPAY')), regen_ctx())
         self.assertEqual((r['code'], r['summary']['deal_id']), ('deal_mismatch', None))
         self.assertEqual(nv.check_payment('vd_x', PRICE, 'note', BC, 6, payer_ctx())['summary']['deal_id'], None)
         self.assertEqual(nv.shown_id('vt_0123456789abcdef'), 'vt_0123456789abcdef')

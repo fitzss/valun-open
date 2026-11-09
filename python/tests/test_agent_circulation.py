@@ -124,7 +124,10 @@ class World:
         self.template_issuer = None             # force the transfer template's issuer pubkey (a lying server)
         self.bad_edge_signatures = False        # /edges rows signed by the wrong key
         self.pay_due = False                    # pay-by-transfer ends payment_due (the transfer did not apply)
+        self.pay_unknown = False                # pay-by-transfer is recorded and its outcome stays unknown (outcome_unknown)
+        self.lose_pay_answer = False            # pay-by-transfer is recorded, then no answer reaches the client
         self.resolutions = []                   # (deal, attempt, body, token) of POST owner .../attempts/.../resolve
+        self.transfers = {}                     # the server's transfers by id, in valun-app FX-SV's states
 
     # ---------- helpers ----------
     def pk(self, pid):
@@ -413,16 +416,19 @@ class World:
             self.keys[S_ID] = {'pubkey': body['pubkey']}
             return {'network': vc.NETWORK, 'agent_token': 'vpa_test-only'}
         if method == 'GET' and parts == ['owner']:
-            return {'mandate': dict(self.mandate)}
+            if token != 'vpo_test-only':
+                raise vc.ValunError('unauthorized', 'owner token required', 401)
+            return {'participant': self.public(S_ID), 'mandate': dict(self.mandate)}
         if method == 'PUT' and parts == ['owner', 'mandate']:
             self.puts.append(copy.deepcopy(body))
             return {'mandate': dict(self.mandate)}
         if method == 'POST' and len(parts) == 6 and parts[:2] == ['owner', 'deals'] and parts[3] == 'attempts' \
                 and parts[5] == 'resolve' and circ:
-            if token != 'vpo_test-only':
-                raise vc.ValunError('unauthorized', 'owner token required', 401)
-            self.resolutions.append((parts[2], parts[4], copy.deepcopy(body), token))
-            return {'attempt': {'id': parts[4], 'state': body['outcome']}}
+            return self.resolve(parts[2], parts[4], body, token)
+        if circ and method == 'GET' and len(parts) == 2 and parts[0] == 'transfers':
+            if parts[1] not in self.transfers:
+                raise vc.ValunError('not_found', 'not found', 404)
+            return self.transfer_view(self.transfers[parts[1]])
         if method == 'GET' and parts == ['participants']:
             return [self.public(p) for p in (S_ID, X_ID, M_ID) if p in self.keys or p == S_ID]
         if method == 'GET' and len(parts) == 2 and parts[0] == 'participants' and parts[1] in HANDLES:
@@ -490,7 +496,10 @@ class World:
         if circ and method == 'GET' and rest == ['transfer-template']:
             return self.transfer_template(did, q.get('issuer'))
         if circ and method == 'POST' and rest == ['pay-by-transfer']:
-            return self.pay(did, body)
+            out = self.pay(did, body)
+            if self.lose_pay_answer:
+                raise vc.ValunError('unreachable', 'cannot reach the server')
+            return out
         raise vc.ValunError('not_found', f'no route {method} {rest}', 404)
 
     def note_template(self, did, bound):
@@ -584,9 +593,13 @@ class World:
         if not ok:
             raise vc.ValunError('bad_signature', 'a signature of the payment does not verify', 403)
         tid = self.new_id('vt_')
-        if self.pay_due:
-            d['status'] = 'payment_due'
-            d['payment'] = {'method': 'transfer', 'state': 'failed', 'transfer_id': tid, 'issuer': {'id': iid}, 'amount': a}
+        fb, tb = self.tracker.get(self.edge(iid, S_ID)), self.tracker.get(self.edge(iid, d['payee']))
+        self.add_transfer(tid, did, 'failed' if self.pay_due else 'outcome_unknown' if self.pay_unknown else 'applied', T,
+                          (self.edge(iid, S_ID), fb, X_ - a), (self.edge(iid, d['payee']), tb, Y_ + a), a)
+        if self.pay_due or self.pay_unknown:
+            d['status'] = 'payment_due' if self.pay_due else 'paying_by_transfer'
+            d['payment'] = {'method': 'transfer', 'state': self.transfers[tid]['state'], 'transfer_id': tid,
+                            'issuer': {'id': iid}, 'amount': a}
             return self.view(did)
         self.set_edge(iid, S_ID, X_ - a, T, 'transfer_out', tid)
         self.set_edge(iid, d['payee'], Y_ + a, T, 'transfer_in', tid)
@@ -594,6 +607,44 @@ class World:
         d['payment'] = {'method': 'transfer', 'state': 'applied', 'transfer_id': tid, 'issuer': {'id': iid, 'handle': HANDLES[iid]},
                         'amount': a}
         return self.view(did)
+
+    def add_transfer(self, tid, did, state, T, frm, to, amount):
+        """The server records a transfer (FX-SV states), as GET /transfers/:vt shows it later."""
+        self.transfers[tid] = {'id': tid, 'deal_id': did, 'state': state, 'timestamp': T, 'amount': amount,
+                               'from': (frm[0], copy.deepcopy(frm[1]), frm[2]), 'to': (to[0], copy.deepcopy(to[1]), to[2])}
+
+    def transfer_view(self, t):
+        """GET /transfers/:vt as valun-app FX-SV shows it to the payer (transferView: both edges, the deal)."""
+        d = self.deals.get(t['deal_id'])
+        return {'id': t['id'], 'kind': 'transfer', 'state': t['state'], 'your_roles': ['payer'], 'attempt': 1,
+                'regenerated_from': None, 'regenerated_as': None, 'timestamp': t['timestamp'], 'amount': t['amount'],
+                'edges': [{'edge': e, 'before': copy.deepcopy(b), 'new_total': n, 'change': n - (b['total'] if b else 0),
+                           'timestamp': t['timestamp']} for e, b, n in (t['from'], t['to'])],
+                'deal': {'deal_id': t['deal_id'], 'terms_hash': d['current']['terms_hash'] if d else None,
+                         'price': t['amount'], 'quote_digest': None},
+                'result': None, 'fallback_after': None, 'signatures': None,
+                'signatures_withheld': 'withheld until the Basis tracker records the transfer'}
+
+    def resolve(self, did, tid, body, token):
+        """POST /owner/deals/:vd/attempts/:vt/resolve as valun-app FX-SV answers it (resolveAttempt)."""
+        if token != 'vpo_test-only':
+            raise vc.ValunError('unauthorized', 'owner token required', 401)
+        t = self.transfers.get(tid)
+        if t is None or t['deal_id'] != did:
+            raise vc.ValunError('not_found', f'unknown payment attempt {tid}', 404)
+        if t['state'] not in ('outcome_unknown', 'inconsistent'):
+            raise vc.ValunError('wrong_state', f"this payment attempt is {t['state']}; only one whose outcome is unknown "
+                                               '(outcome_unknown or inconsistent) is resolved by its owner', 409)
+        if body.get('outcome') not in ('not_applied', 'applied'):
+            raise vc.ValunError('invalid_field', 'outcome must be "not_applied" or "applied"', 400)
+        self.resolutions.append((did, tid, copy.deepcopy(body), token))
+        previous = t['state']
+        t['state'] = 'applied' if body['outcome'] == 'applied' else 'resolved_not_applied'
+        if body['outcome'] == 'applied' and did in self.deals:
+            self.deals[did].update(status='paid_by_transfer', payment={'method': 'transfer', 'transfer_id': tid})
+        return {'resolution': {'attempt_id': tid, 'outcome': body['outcome'], 'previous_state': previous,
+                               'at': iso(now_ms()), 'note': (body.get('note') or '').strip()},
+                'deal': self.view(did) if did in self.deals else None, 'transfer': self.transfer_view(t)}
 
     def consent(self, sid, body):
         item, cyc = self.items[sid], self.cycles[sid]

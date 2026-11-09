@@ -536,38 +536,97 @@ def _attempt_line(c, r):
     return f"  {r['ref']} {what}, signed for {when}{sid}: {ATTEMPT_STATES.get(r['state'], r['state'])}{decided}"
 
 
+def _edges_now(c):
+    """A read-back of this profile's edges, each state checked by its client (sync_edges: {'edges', 'doubtful'}), where
+    the server offers bound notes or circulating credit; {} when there is none to read or it cannot be read now."""
+    try:
+        features = va.features_of(c.info())
+    except vc.ValunError as e:
+        print(f'Cannot read the server ({e.code}); going by what your records hold.')
+        return {}
+    if 'bound_notes/1' not in features and va.CIRCULATION not in features:
+        return {}
+    try:
+        read = c.sync_edges()
+    except vc.ValunError as e:
+        print(f'Cannot read your edges ({e.code}); going by what your records hold.')
+        return {}
+    return {'edges': read['edges'], 'doubtful': read['doubtful']}
+
+
+# Why a resolution changes only your client's records (Client.resolution_plan local), for `valun attempts resolve`.
+LOCAL_WHY = {
+    'note': 'The server holds no payment attempt for a credit note: only your client\'s records change (your owner token '
+            'is checked first, used once and not stored).',
+    'no_circulation': 'This server offers no circulating credit, so only your client\'s records change (your owner token '
+                      'is checked first, used once and not stored).',
+    'no_server_id': "Your client did not record the server's id of this transfer (its request got no answer, or the "
+                    'server refused it). If the owner console shows a transfer of this deal (vt_...), stop here and run '
+                    'this again with that id, so that the server records your decision too.',
+    'server_unknown': 'The server shows no such transfer of yours as this attempt (it may have refused it when it was '
+                      'posted).',
+    'server_ended': 'The server holds this transfer as {state}: it ended there, so the server has nothing to resolve; '
+                    'your client still counts it as a payment that may have applied.',
+}
+
+
+def _terminal_text(s, limit=300):
+    """Server text for this terminal: one line, printable characters only, at most `limit` characters."""
+    return ''.join(ch if ch.isprintable() else ' ' for ch in str(s))[:limit]
+
+
+def _ask_local():
+    print("  Recording it in your client's records only changes what your client does: if the server does hold this "
+          'payment as unresolved, it keeps blocking the deal there.')
+    return input("Record your decision in your client's records only? [y/N] ").strip().lower() in ('y', 'yes')
+
+
+def _owner_token(args):
+    """The owner token from --owner-token-file or a hidden prompt (None, after saying why, when there is none)."""
+    try:
+        if args.owner_token_file:
+            with open(args.owner_token_file, encoding='utf-8') as f:
+                owner = f.read().strip()
+        else:
+            owner = getpass.getpass('Owner token (not shown): ').strip()
+    except OSError as e:
+        print(f'Cannot read the owner token file: {e}')
+        return None
+    if not owner:
+        print('No owner token given; nothing was changed.')
+        return None
+    return owner
+
+
 def cmd_attempts(args):
     """valun attempts list | resolve: the payment attempts this profile's client records, and the OWNER's resolution of
-    one whose outcome is unknown (decision D-2 d). resolve runs only at a terminal, asks for confirmation, and uses the
-    owner token once, in memory (from --owner-token-file or a hidden prompt); it is never something an agent does."""
+    one whose outcome is unknown (decision D-2 d). resolve runs only at a terminal, asks for confirmation (twice when a
+    transfer is recorded in the client's records only), and uses the owner token once, in memory (from
+    --owner-token-file or a hidden prompt); it is never something an agent does."""
     store, c = _connected(args)
     if c is None:
         return 1
     if args.action == 'list':
-        edges, features = None, []
+        read = _edges_now(c)
         try:
-            features = va.features_of(c.info())
+            rows = c.payment_attempts(**read)
         except vc.ValunError as e:
-            print(f'Cannot read the server ({e.code}); showing what your records hold.')
-        if 'bound_notes/1' in features or va.CIRCULATION in features:
-            try:
-                edges = c.sync_edges()['edges']      # the tracker states of your edges, each checked by your client
-            except vc.ValunError as e:
-                print(f'Cannot read your edges ({e.code}); showing what your records hold.')
-        rows = c.payment_attempts(edges=edges)
+            print(f'Cannot read your records ({e.code}): {e}')
+            return 1
         if not rows:
             print('Your Valun client records no payment attempts.')
             return 0
-        print('Payment attempts your Valun client records (how it judges each now, from its records'
-              + (' and the tracker states it just checked):' if edges is not None else '):'))
+        print('Payment attempts your Valun client records (how it judges each now, as it does before it pays, from its '
+              'records' + (' and the tracker states it just checked):' if read else '):'))
         for deal_id in dict.fromkeys(r['deal_id'] for r in rows):
             mine = [r for r in rows if r['deal_id'] == deal_id]
-            print(f"deal {deal_id}" + (': recorded as paid' if mine[0]['paid'] else ''))
+            print(f"deal {_terminal_text(deal_id, 40)}" + (': recorded as paid' if mine[0]['paid'] else ''))
             for r in mine:
                 print(_attempt_line(c, r))
         if any(r['state'] == 'unknown' for r in rows):
             print('Resolve one only after asking the payee whether the payment arrived: `valun attempts resolve DEAL '
-                  "ATTEMPT --applied` (it arrived) or `--not-applied` (it did not). ATTEMPT is the server's id or #n.")
+                  "ATTEMPT --applied` (it arrived) or `--not-applied` (it did not). ATTEMPT is #n, or the server's id of "
+                  'a transfer (vt_...).')
         return 0
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         print('valun attempts resolve asks you, the owner, to confirm at this terminal, and no person is at it. Run it in '
@@ -575,43 +634,56 @@ def cmd_attempts(args):
         return 3
     outcome = 'applied' if args.applied else 'not_applied'
     try:
-        features = va.features_of(c.info())
+        vc._owner_note(args.note)                  # a note the server would refuse is refused before anything is asked
     except vc.ValunError as e:
-        print(f'Cannot read the server ({e.code}): {e}')
+        print(f'{e}')
         return 1
-    with_server = va.CIRCULATION in features
-    rows = [r for r in c.payment_attempts() if r['deal_id'] == args.deal]
+    read = _edges_now(c)
+    try:
+        plan = c.resolution_plan(args.deal, args.attempt, **read)
+    except vc.ValunError as e:
+        print(json.dumps(error_payload(e), ensure_ascii=False))
+        return 1
     print(f'Valun - RESOLVE payment attempt {args.attempt} of deal {args.deal} as '
           + ('APPLIED: the deal counts as paid by it, and your client never pays it again.' if outcome == 'applied' else
              'NOT APPLIED: once its window has passed (its time + 1 h + 2 min), your client may pay this deal again, '
              'so a wrong answer can pay it twice.'))
     print('  Do this only after the payee told you whether this payment arrived.')
-    print('  ' + ('The server is told first (with your owner token, used once and not stored).' if with_server else
-                  'This server offers no circulating credit, so only your client\'s records change.'))
-    for r in rows:
-        print(_attempt_line(c, r))
+    if plan['server']:
+        print('  The server is told first (with your owner token, used once and not stored); then your client\'s records.')
+    else:
+        print('  ' + LOCAL_WHY[plan['local']].format(state=(plan.get('transfer') or {}).get('state') or 'ended'))
+    for r in plan['attempts']:
+        print(_attempt_line(c, r) + ('   <- this one' if r is plan['attempt'] else ''))
+    if plan['attempt'] is None:
+        print("  (your client's records hold no attempt that this id names)")
     if input('Resolve it? [y/N] ').strip().lower() not in ('y', 'yes'):
         print('Nothing was changed.')
         return 3
-    owner = None
-    if with_server:
-        try:
-            if args.owner_token_file:
-                with open(args.owner_token_file, encoding='utf-8') as f:
-                    owner = f.read().strip()
-            else:
-                owner = getpass.getpass('Owner token (not shown): ').strip()
-        except OSError as e:
-            print(f'Cannot read the owner token file: {e}')
-            return 1
-        if not owner:
-            print('No owner token given; nothing was changed.')
-            return 1
-    try:
-        r = c.resolve_attempt(args.deal, args.attempt, outcome, owner_token=owner, note=args.note)
-    except vc.ValunError as e:
-        print(json.dumps(error_payload(e), ensure_ascii=False))
+    local_only = plan['local'] in vc.LOCAL_CHOICES
+    if local_only and not _ask_local():
+        print('Nothing was changed.')
+        return 3
+    owner = _owner_token(args)
+    if owner is None:
         return 1
+    try:
+        r = c.resolve_attempt(args.deal, args.attempt, outcome, owner, note=args.note, local_only=local_only, **read)
+    except vc.ValunError as e:
+        if not (e.extra or {}).get('local_possible') or local_only:
+            print(json.dumps(error_payload(e), ensure_ascii=False))
+            return 1
+        srv = (e.extra or {}).get('server') or {}
+        print(f"The server did not resolve it ({_terminal_text(srv.get('error') or e.code, 40)}): "
+              f"{_terminal_text(srv.get('message') or e)}")
+        if not _ask_local():
+            print('Nothing was changed.')
+            return 3
+        try:
+            r = c.resolve_attempt(args.deal, args.attempt, outcome, owner, note=args.note, local_only=True, **read)
+        except vc.ValunError as e2:
+            print(json.dumps(error_payload(e2), ensure_ascii=False))
+            return 1
     print(('The server recorded your decision. ' if r['server'] is not None else '')
           + (f"Your client's records now hold it for {len(r['matched'])} attempt(s) of this deal"
              if r['matched'] else "Your client's records hold no attempt that matches it")

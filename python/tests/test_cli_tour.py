@@ -367,22 +367,50 @@ class BuyExitCode(Cli):
 
 
 class AttemptsCommands(Cli):
-    """`valun attempts list | resolve` (decision D-2 d): owner-run, at a terminal, with a confirmation and the owner
-    token used once."""
+    """`valun attempts list | resolve` (decision D-2 d): owner-run, at a terminal, with a confirmation (two when only the
+    client's records record it) and the owner token used once, against a World that answers like valun-app FX-SV
+    (GET /transfers/:vt; the resolve route takes transfers held as outcome_unknown or inconsistent only)."""
 
-    def with_attempt(self):
-        self.world.welcome = False
-        self.join()
+    def with_attempt(self, tid='vt_0123456789abcdef', server_state='outcome_unknown', join=True):
+        """A transfer attempt of mine (paying with sandbox-exact's note: my claim 3 -> 1 PC) whose server id my client
+        recorded, on a delivered deal; the server holds it as server_state."""
+        if join:
+            self.world.welcome = False
+            self.join()
         disk = self.disk()
         T = now_ms() - 120_000 - (now_ms() - 120_000) % 1000 + 999 - 1000
-        self.T, self.deal = T, 'vd_0123456789abcdef'
+        deal = self.world.add_deal(S_ID, M_ID, 'notary job', 'notary for this text:\n```\nhi\n```', 'the exact result', 2,
+                                   proposer=M_ID)['id']            # offered by sandbox-mallory (the World holds its key)
+        self.world.deals[deal]['status'] = 'delivered'
+        self.T, self.deal = T, deal
         self.edge = f"{self.world.pk(X_ID)}>{self.world.pk(S_ID)}"
-        disk['transfer_attempts'] = {self.deal: [{'deal_id': self.deal, 'route': 'transfer', 'edge': self.edge, 'prior': 3,
-                                                  'prior_timestamp': T - 50_000, 'prior_signature': None, 'total': 1,
-                                                  'timestamp': T, 'quote_digest': None, 'signed_at': None,
-                                                  'attempt_id': 'vt_0123456789abcdef'}]}
+        disk.setdefault('transfer_attempts', {})[deal] = [{
+            'deal_id': deal, 'route': 'transfer', 'edge': self.edge, 'prior': 3, 'prior_timestamp': T - 50_000,
+            'prior_signature': None, 'total': 1, 'timestamp': T, 'quote_digest': None, 'signed_at': None, 'attempt_id': tid}]
+        self.write(disk)
+        self.world.add_transfer(tid, deal, server_state, T, (self.edge, {'total': 3, 'timestamp': T - 50_000, 'signature': '00'}, 1),
+                                (self.world.edge(X_ID, M_ID), None, 2), 2)
+        return deal
+
+    def write(self, disk):
         with open(os.path.join(self.home.name, 'profiles', 's.json'), 'w', encoding='utf-8') as f:
             json.dump(disk, f)
+
+    def keyed_profile(self):
+        """A joined profile with the stranger's throwaway key (written here), so that the World can hold states S signed."""
+        from test_agent_circulation import NFT, DENOM, S
+        self.world.keys[S_ID] = S
+        self.world.welcome = False
+        os.makedirs(os.path.join(self.home.name, 'profiles'), exist_ok=True)
+        self.write({'server': SERVER, 'participant_id': S_ID, 'pubkey': S['pubkey'], 'secret': S['secret'].hex(),
+                    'agent_token': 'vpa_test-only', 'approvals': 'none', 'consent_policy': dict(va.SANDBOX_CONSENT_POLICY),
+                    'consent_loop': 'off', 'pins': {'tracker_nft_id': NFT, 'denomination': DENOM}})
+        with open(self.token_file, 'w', encoding='utf-8') as f:
+            f.write('vpo_test-only\n')
+        return S
+
+    def client(self):
+        return vc.Client(vc.FileStore(os.path.join(self.home.name, 'profiles', 's.json')), server=SERVER)
 
     def test_list(self):
         self.with_attempt()
@@ -401,18 +429,122 @@ class AttemptsCommands(Cli):
         rc, out = self.run_cli(*args, tty=True, answers=['n'])      # the owner says no
         self.assertEqual((rc, self.world.resolutions), (3, []))
         self.assertIn('NOT APPLIED', out)
+        self.assertIn('The server is told first', out)
+        posts = len(self.world.log)                                  # a note the server would refuse: nothing asked
+        rc, out = self.run_cli(*args, '--note', 'x' * 301, tty=True, answers=[])
+        self.assertEqual((rc, len(self.world.log)), (1, posts))
+        self.assertIn('longer than 300 characters', out)
         rc, out = self.run_cli(*args, tty=True, answers=['y'])
         self.assertEqual(rc, 0, out)
         self.assertEqual(self.world.resolutions, [(self.deal, 'vt_0123456789abcdef', {'outcome': 'not_applied'}, 'vpo_test-only')])
         self.assertEqual(self.disk()['transfer_attempts'][self.deal][0]['outcome'], 'not_applied')
         self.assertNotIn('vpo_test-only', json.dumps(self.disk()))  # the owner token is not stored
-        # --applied, with the token from a hidden prompt: the deal is recorded as paid
+        self.assertIn('The server recorded your decision.', out)
+        # --applied, with the token from a hidden prompt, for another attempt: the deal is recorded as paid
+        other = self.with_attempt('vt_1123456789abcdef', join=False)
         with mock.patch.object(cli.getpass, 'getpass', return_value='vpo_test-only') as prompt:
-            rc, out = self.run_cli('attempts', 'resolve', self.deal, '#1', '--applied', tty=True, answers=['y'])
+            rc, out = self.run_cli('attempts', 'resolve', other, '#1', '--applied', tty=True, answers=['y'])
         self.assertEqual(rc, 0, out)
         self.assertEqual(prompt.call_count, 1)
-        self.assertEqual(self.world.resolutions[-1][2], {'outcome': 'applied'})
-        self.assertEqual(self.disk()['records']['paid_deals'][self.deal]['route'], 'transfer')
+        self.assertEqual(self.world.resolutions[-1][:3], (other, 'vt_1123456789abcdef', {'outcome': 'applied'}))
+        self.assertEqual(self.disk()['records']['paid_deals'][other]['route'], 'transfer')
+
+    def test_a_bound_note_whose_outcome_is_unknown_is_resolved_in_the_records_and_the_deal_paid_later(self):
+        # A bound note of mine (held for my owner and rejected, say) acknowledged my debt to sandbox-mallory at 2 PC; a
+        # set-off later moved that edge past it to 1 PC, so my client cannot tell whether it applied. The server holds no
+        # payment attempt for a credit note: `resolve #1 --not-applied` changes my records only, and once the note's
+        # window has passed the deal is paid with a new note.
+        S = self.keyed_profile()
+        w = self.world
+        did = w.delivered_deal(payer=S_ID, payee=M_ID, service='notary', text='hello')
+        mk = w.pk(M_ID)
+        t0 = now_ms() - 3 * 3_600_000
+        ts = t0 + 600_000 - (t0 + 600_000) % 1000 + 997
+        w.set_edge(S_ID, M_ID, 2, t0, signature=sign_note(S, mk, 2, t0))
+        disk = self.disk()
+        disk['transfer_attempts'] = {did: [{'deal_id': did, 'route': 'note', 'edge': w.edge(S_ID, M_ID), 'prior': 2,
+                                            'prior_timestamp': t0, 'prior_signature': sign_note(S, mk, 2, t0), 'total': 4,
+                                            'timestamp': ts, 'quote_digest': None, 'signed_at': None}]}
+        self.write(disk)
+        w.set_edge(S_ID, M_ID, 1, ts + 1001, kind='setoff', ref='vs_0123456789abcdef', signature=sign_note(S, mk, 1, ts + 1001))
+        rc, out = self.run_cli('attempts', 'list')
+        self.assertEqual(rc, 0, out)
+        self.assertIn('#1 your credit note to ', out)
+        self.assertIn('MAY HAVE APPLIED', out)
+        with self.assertRaises(vc.ValunError) as e:
+            self.client().complete(did)
+        self.assertEqual(e.exception.code, 'attempt_outcome_unknown')
+        rc, out = self.run_cli('attempts', 'resolve', did, '#1', '--not-applied', '--owner-token-file', self.token_file,
+                               tty=True, answers=['y'])                # one confirmation: the server holds nothing here
+        self.assertEqual(rc, 0, out)
+        self.assertIn('The server holds no payment attempt for a credit note', out)
+        self.assertEqual(w.resolutions, [])
+        self.assertIn('GET /pilot/v1/owner', w.requests())           # the owner token was checked
+        self.assertEqual(self.disk()['transfer_attempts'][did][0]['outcome'], 'not_applied')
+        self.assertEqual(self.client().complete(did)['status'], 'note_issued')   # its window passed long ago
+        self.assertEqual(w.total(S_ID, M_ID), 3)
+
+    def test_a_transfer_the_server_holds_as_ended_needs_a_second_confirmation(self):
+        # The server ended the transfer (failed): it has nothing to resolve (it would answer 409 wrong_state). The owner
+        # is told so and asked a second time before the decision is recorded in the client's records only.
+        self.with_attempt(server_state='failed')
+        args = ('attempts', 'resolve', self.deal, '#1', '--not-applied', '--owner-token-file', self.token_file)
+        rc, out = self.run_cli(*args, tty=True, answers=['y', 'n'])
+        self.assertEqual(rc, 3, out)
+        self.assertIn('The server holds this transfer as failed', out)
+        self.assertNotIn('outcome', self.disk()['transfer_attempts'][self.deal][0])
+        rc, out = self.run_cli(*args, tty=True, answers=['y', 'y'])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.world.resolutions, [])
+        self.assertEqual(self.disk()['transfer_attempts'][self.deal][0]['outcome'], 'not_applied')
+        self.assertNotIn('The server recorded your decision', out)
+
+    def test_a_409_from_the_server_is_shown_and_asked_about(self):
+        # GET /transfers showed it unresolved; the server ended it before the POST and answers 409 wrong_state.
+        self.with_attempt()
+        route = f'POST /pilot/v1/owner/deals/{self.deal}/attempts/vt_0123456789abcdef/resolve'
+        refused = vc.ValunError('wrong_state', 'this payment attempt is failed\x1b[2J; only one whose outcome is unknown is '
+                                               'resolved by its owner', 409)
+        args = ('attempts', 'resolve', self.deal, '#1', '--not-applied', '--owner-token-file', self.token_file)
+        self.world.fail[route] = [refused]
+        rc, out = self.run_cli(*args, tty=True, answers=['y', 'n'])     # asked again after the 409: no
+        self.assertEqual(rc, 3, out)
+        self.assertNotIn('outcome', self.disk()['transfer_attempts'][self.deal][0])
+        self.world.fail[route] = [refused]
+        rc, out = self.run_cli(*args, tty=True, answers=['y', 'y'])
+        self.assertEqual(rc, 0, out)
+        self.assertIn('The server did not resolve it (wrong_state): ', out)
+        self.assertNotIn('\x1b', out)                                 # server text is shown as plain text
+        self.assertEqual(self.world.resolutions, [])
+        self.assertEqual(self.disk()['transfer_attempts'][self.deal][0]['outcome'], 'not_applied')
+
+    def test_a_transfer_whose_id_was_never_recorded_is_resolved_by_the_id_the_owner_gives(self):
+        # The POST of my payment got no answer: the server recorded the transfer (its outcome unknown), my client never
+        # learnt its id. The owner gives the id; GET /transfers identifies my attempt; FX-SV's answer is taken.
+        self.keyed_profile()
+        w = self.world
+        w.wrong_left = 0
+        w.set_edge(X_ID, S_ID, 3, now_ms() - 60_000)
+        did = w.delivered_deal(payer=S_ID, payee=M_ID, service='notary', text='hello')
+        w.pay_unknown = w.lose_pay_answer = True
+        with self.assertRaises(vc.ValunError) as e:
+            self.client().pay_by_transfer(did, X_ID)
+        self.assertEqual(e.exception.code, 'unreachable')
+        w.pay_unknown = w.lose_pay_answer = False
+        (tid,) = list(w.transfers)
+        self.assertNotIn('attempt_id', self.disk()['transfer_attempts'][did][0])
+        rc, out = self.run_cli('attempts', 'resolve', did, '#1', '--not-applied', '--owner-token-file', self.token_file,
+                               tty=True, answers=['y', 'n'])
+        self.assertEqual(rc, 3, out)
+        self.assertIn("Your client did not record the server's id of this transfer", out)
+        rc, out = self.run_cli('attempts', 'resolve', did, tid, '--not-applied', '--owner-token-file', self.token_file,
+                               tty=True, answers=['y'])
+        self.assertEqual(rc, 0, out)
+        self.assertIn('<- this one', out)
+        self.assertEqual(w.resolutions, [(did, tid, {'outcome': 'not_applied'}, 'vpo_test-only')])
+        rec = self.disk()['transfer_attempts'][did][0]
+        self.assertEqual((rec['outcome'], rec['attempt_id']), ('not_applied', tid))
+        self.assertIn("Your client's records now hold it for 1 attempt(s)", out)
 
 
 class EarnAndBuy(Cli):

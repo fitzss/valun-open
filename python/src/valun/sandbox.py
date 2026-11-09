@@ -180,7 +180,9 @@ class Seller:
     def consents(self):
         """Sign the consents this profile's policy allows (set-offs, transfers of its own debt, payments to it by
         transfer), at most once a minute, as the agent tools do before every action (agent.consents_due). Once a run has
-        read a GET /info without circulation/1, no more requests are made for consents (decision D-2 h)."""
+        read a GET /info without circulation/1, no more requests are made for consents (decision D-2 h): GET /info is
+        not read again, so a seller started before its server offered circulating credit signs no consents until it is
+        restarted (`valun sandbox seller` again)."""
         from . import agent as va           # here: agent.py imports this module
         if self.features is not None and va.CIRCULATION not in self.features:
             return None

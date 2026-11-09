@@ -90,9 +90,12 @@ any other state gives attempt_outcome_unknown); 'dead' (a read-back shows it did
 FALLBACK_MARGIN_MS) -> no constraint. A state older than the one the attempt acknowledged (its prior_timestamp) or
 than this client's own confirmed state of the edge is no read-back (an edge's timestamps only increase); a confirmed
 state at or past T counts as one. An ordinary (unbound) note never expires, so while it may still apply any other
-payment is attempt_outcome_unknown; it records no prior state, so its same-prior retries compare totals only, as do
-attempt records written before D-2 (no prior_timestamp). Residual risk: read-backs come from the server; a stale but
-genuine state is caught only through prior_timestamp and this client's own records (PROTOCOL.md 16.2 7).
+payment is attempt_outcome_unknown. A pending payment entry that no attempt record covers (an ordinary note, say)
+records no prior state, so its same-prior retries compare totals only; attempt records written by the 0.4 development
+builds before D-2 carry prior_timestamp but no prior_signature, and are compared on total and timestamp.
+classify_attempts() gives the same classification for one deal (for `valun attempts list` and the owner's resolution).
+Residual risk: read-backs come from the server; a stale but genuine state is caught only through prior_timestamp and
+this client's own records (PROTOCOL.md 16.2 7).
 
 ctx keys (only me_pk, now_ms and verify are checked as arguments; the others give refusal codes when missing):
   me_pk            this participant's current public key (66 lowercase hex)
@@ -268,9 +271,10 @@ def _same_prior_state(a, b):
 
 def exact_prior(attempt, state):
     """D-2 a: is `state` (the edge's current state, verified; None when not read) exactly the state `attempt`
-    acknowledged: its total, its timestamp (0: an absent edge) and its signature (when recorded)? An attempt that
-    recorded no prior state (an ordinary note, or a record from before D-2) is compared by its prior total alone, as
-    D-1 does: True."""
+    acknowledged: its total, its timestamp (0: an absent edge) and its signature (when recorded: a record of the 0.4
+    development builds before D-2 has prior_timestamp but no prior_signature, and is compared on total and timestamp)?
+    An attempt that recorded no prior state (a pending payment entry no attempt record covers) is compared by its prior
+    total alone, as D-1 does: True."""
     pt = attempt.get('prior_timestamp')
     if not _u64(pt):
         return True
@@ -530,7 +534,7 @@ class _Run:
 
     def deal_attempts(self, deal_id, price):
         """Earlier payment attempts for the deal: its attempt records, plus pending payment entries of it in the
-        records that no attempt record covers (their prior follows from the price)."""
+        records that no attempt record covers (their prior follows from the price; None when the price is None)."""
         out = []
         for a in self.attempts.get(deal_id) or []:
             if not _attempt_ok(a):
@@ -546,9 +550,9 @@ class _Run:
                 if any(a['route'] == route and a['edge'] == pair and (a['total'], a['timestamp']) == (p['total'], p['timestamp'])
                        for a in out):
                     continue
-                prior = p['total'] - price if route == 'note' else p['total'] + price
-                out.append(_attempt(deal_id, route, pair, prior if prior >= 0 else None, None, None, p['total'],
-                                    p['timestamp'], None))
+                prior = None if price is None else p['total'] - price if route == 'note' else p['total'] + price
+                out.append(_attempt(deal_id, route, pair, prior if prior is not None and prior >= 0 else None, None, None,
+                                    p['total'], p['timestamp'], None))
         return out
 
     def edge_attempts(self, edge):
@@ -715,19 +719,19 @@ class _Run:
                     return True
         return False
 
-    def one_live_attempt(self, deal_id, price, route, edge, prior):
-        """D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior) for the deal unless every
-        earlier attempt is dead or is excluded by this one at the tracker: the same route on the same edge,
-        acknowledging the same prior, while the edge is still exactly the state the earlier one acknowledged."""
-        self.not_paid_yet(deal_id)
-        if deal_id in self.summary['paid_deals']:
-            self.refuse('already_paid', 'a payment of yours for this deal shows as applied; refusing to pay it again')
+    def classify(self, deal_id, price):
+        """[(attempt, outcome, read-back state)] for each earlier payment attempt of the deal (deal_attempts), as D-1 and
+        D-2 a weigh it: 'applied' when my own confirmed state of its edge is its new state, or my records hold the deal
+        paid by it (records['paid_deals']: the payer evaluators refuse a paid deal before they get here); else
+        attempt_outcome() on its read-back (read_back), an 'unknown' one my own records prove dead (proven_dead) being
+        'dead'."""
         looked = []
-        attempts = self.deal_attempts(deal_id, price)
-        self.seen = [[a['route'], a['edge'], a['total'], a['timestamp']] for a in attempts]
-        for a in attempts:
+        paid = self.paid.get(deal_id)
+        paid_by = (paid.get('route'), paid.get('edge'), paid.get('total'), paid.get('timestamp')) if paid else None
+        for a in self.deal_attempts(deal_id, price):
             conf = self.pair(a['edge'])[0]
-            if conf is not None and (conf['total'], conf['timestamp']) == (a['total'], a['timestamp']):
+            if (conf is not None and (conf['total'], conf['timestamp']) == (a['total'], a['timestamp'])) \
+                    or paid_by == (a['route'], a['edge'], a['total'], a['timestamp']):
                 looked.append((a, 'applied', None))
                 continue
             state = self.read_back(a, conf)
@@ -735,6 +739,17 @@ class _Run:
             if o == 'unknown' and self.proven_dead(a, state):
                 o = 'dead'
             looked.append((a, o, state))
+        return looked
+
+    def one_live_attempt(self, deal_id, price, route, edge, prior):
+        """D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior) for the deal unless every
+        earlier attempt is dead or is excluded by this one at the tracker: the same route on the same edge,
+        acknowledging the same prior, while the edge is still exactly the state the earlier one acknowledged."""
+        self.not_paid_yet(deal_id)
+        if deal_id in self.summary['paid_deals']:
+            self.refuse('already_paid', 'a payment of yours for this deal shows as applied; refusing to pay it again')
+        looked = self.classify(deal_id, price)
+        self.seen = [[a['route'], a['edge'], a['total'], a['timestamp']] for a, _o, _s in looked]
         for a, o, _s in looked:
             if o == 'applied':
                 self.summary['paid_deals'][deal_id] = {'route': a['route'], 'edge': a['edge'], 'total': a['total'],
@@ -1380,3 +1395,28 @@ def check_payment(deal_id, price, route, edge, prior, ctx):
         return [], None
     r = _Run(ctx, 'bad_template', INITIATE_WINDOW_MS).execute(go, None)
     return {'ok': r['ok'], 'code': r['code'], 'summary': r['summary']}
+
+
+def classify_attempts(deal_id, ctx, price=None):
+    """The earlier payment attempts of a deal and how the evaluators weigh each now (D-1 with D-2 a), for listing them
+    (`valun attempts list`) and for the owner's resolution of one: the deal's attempt records in their order, then its
+    pending payment entries that no record covers (their prior from `price`, or None without it), each with its
+    outcome as the payer evaluators classify it: 'applied' (my confirmed state of its edge, its read-back, or the
+    owner's decision shows it applied), 'unknown' (it may have applied: only the owner can resolve it), 'alive',
+    'unread' or 'dead' (also an 'unknown' one that my own records prove dead, proven_dead). Read-backs follow the
+    evaluators' rules: ctx['edges'] (verified on the pinned tracker; not used without pins), where an absent edge is no
+    read-back for an attempt that acknowledged a prior above 0, and a state older than its prior state or than my
+    confirmed state is none; my confirmed state at or past the attempt counts as one. ctx: me_pk, now_ms, verify, pins,
+    records, signed, transfer_attempts, edges. Returns {ok, code, attempts: [{attempt, outcome}]}: ok False (and no
+    attempts) with records_unreadable for records that cannot be read, bad_prior_signature for an edge state that does
+    not verify, bad_template for arguments that are not a deal id and a positive price (or None)."""
+    def go(run, _item):
+        run.load()
+        if not (_text(deal_id) and (price is None or (_nat(price) and price > 0))):
+            run.bad('classify_attempts takes a deal id and its price (or None)')
+        p = run.ctx.get('pins')
+        if not (isinstance(p, dict) and _text(p.get('tracker_nft_id')) and _text(p.get('denomination'))):
+            run.ctx_edges = {}                 # nothing to verify a read-back against: none is used
+        return [{'attempt': a, 'outcome': o} for a, o, _s in run.classify(deal_id, price)], None
+    r = _Run(ctx, 'bad_template', INITIATE_WINDOW_MS).execute(go, None)
+    return {'ok': r['ok'], 'code': r['code'], 'attempts': r['to_sign'] if r['ok'] else []}
