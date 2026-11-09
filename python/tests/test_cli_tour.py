@@ -693,6 +693,8 @@ class PrintedCommandsNameTheProfile(Cli):
         self.assertEqual((rc, run.call_count), (0, 1))
         self.assertIn("valun mcp: profile 's' is not joined yet; run `valun --profile s join` first.", err.getvalue())
         self.assertNamesProfile(err.getvalue())
+        # and what its tools tell the agent while the profile is not joined names the profile too
+        self.assertEqual(run.call_args.kwargs.get('setup_hint'), 'run `valun --profile s join` in a terminal')
 
     def test_the_policy_clearing_and_consent_loop_hints(self):
         rc, out = self.run_cli('policy', 'show')                              # not joined: the local lines only

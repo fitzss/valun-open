@@ -334,5 +334,38 @@ class ConsentLoop(unittest.TestCase):
             self.assertNotIn(b'Z' * 20, b''.join(s.raw) + err)
 
 
+class SetupHint(unittest.TestCase):
+    """What the tools tell the agent while its profile is not joined: mcp_server.run's setup_hint (FX3-PY item 5:
+    `valun --profile NAME mcp` passes one that names the profile; without one it stays as in 0.3)."""
+
+    def serve_with(self, **kw):
+        sys.path.insert(0, SRC)
+        from unittest import mock
+        from valun import client, mcp_server
+        seen = {}
+
+        def serve(server):
+            seen['hint'] = server.agent.setup_hint
+            seen['status'] = server.call('valun_status', {})        # the tool result while not joined
+            return 0
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'p.json')
+            with open(path, 'w') as f:
+                json.dump({'server': 'http://127.0.0.1:9'}, f)     # not joined: no participant, key or token
+            with mock.patch.object(mcp_server.McpServer, 'serve', serve):
+                rc = mcp_server.run(client.FileStore(path), approvals='ask', **kw)
+        self.assertEqual(rc, 0)
+        return seen
+
+    def test_the_default_hint_is_unchanged(self):
+        seen = self.serve_with()
+        self.assertEqual(seen['hint'], 'run `valun join` in a terminal')
+
+    def test_a_given_hint_reaches_the_tools(self):
+        seen = self.serve_with(setup_hint='run `valun --profile work join` in a terminal')
+        self.assertEqual(seen['hint'], 'run `valun --profile work join` in a terminal')
+        self.assertIn('`valun --profile work join`', json.dumps(seen['status']))
+
+
 if __name__ == '__main__':
     unittest.main()

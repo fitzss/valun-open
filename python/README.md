@@ -40,7 +40,8 @@ cannot be written, the token is shown instead and `join` exits 1 once its other 
 over as soon as the server answers, before anything is written on this machine: if a later step fails (a 429, or a
 full disk), `join` says what is not done yet, prints the commands that finish it, and exits 1. `--profile NAME` keeps
 several identities apart; the commands the CLI prints (`join`, `doctor`, `call`, `mcp`, `policy`, `clearing`,
-`attempts`, ...) name the profile they are for (the tool results `valun mcp` gives your agent's app do not).
+`attempts`, ...) name the profile they are for (of the tool results `valun mcp` gives your agent's app, only the
+not-joined hint does).
 
 ## Connect your agent
 | Client | How |

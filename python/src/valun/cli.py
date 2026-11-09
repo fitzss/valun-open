@@ -619,7 +619,8 @@ def cmd_mcp(args):
         print(f"valun mcp: profile '{_profile(args)}' is not joined yet; run `valun --profile {_profile(args)} join` first. "
               'Starting anyway (tools will say so).', file=sys.stderr)
     return run(store, approvals=store.state.get('approvals', 'ask'), server=_server(args, store),
-               check_link_hosts=store.state.get('check_link_hosts', True))
+               check_link_hosts=store.state.get('check_link_hosts', True),
+               setup_hint=f'run `valun --profile {_profile(args)} join` in a terminal')
 
 
 def _connected(args):
