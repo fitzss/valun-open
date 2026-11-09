@@ -97,18 +97,37 @@ def cmd_join(args):
             j = c.join_sandbox(handle, operator, display_name=args.display_name, about=args.about)
         else:
             j = c.join(invite, handle, operator, display_name=args.display_name, about=args.about, services=args.services)
-        r = c.enroll(j['participant_id'], j['enrollment_code'])
     except vc.ValunError as e:
         print(f'Joining failed ({e.code}): {e}')
         return 1
     owner = j['owner_token']
+    # From here on the participant exists, and its owner token is shown only in this answer: it is handed over before
+    # anything else can fail (_hand_over), and every later step that fails says how to finish it with that token.
+    try:
+        r = c.enroll(j['participant_id'], j['enrollment_code'])
+    except vc.ValunError as e:
+        print(f"Your participant {j['participant_id']} was created, but this agent's key could not be registered "
+              f'({e.code}): {_terminal_text(e)}')
+        _hand_over(args, owner, server)
+        print(f'To finish: issue an enrollment code in the owner console ({server}/pilot#owner) with your owner token, '
+              f"then run `valun --profile {args.profile} enroll --participant {j['participant_id']}`.")
+        return 1
     # The local consent policy (design 6.6): an invited participant's client signs set-offs and transfers of its own debt
     # by itself; a sandbox participant's client also accepts payments by transfer, and its MCP server runs the consent
     # loop. The owner's mandate must allow each role too (the stricter applies); `valun policy show` shows both.
-    store.state.update({'server': server, 'approvals': args.approvals, 'check_link_hosts': True,
+    # Console approvals are recorded only once the mandate holds every commitment for the owner (below); until then
+    # this profile asks (the default), so that a mandate step that fails leaves it on the safe side.
+    store.state.update({'server': server, 'approvals': 'ask' if args.approvals == 'console' else args.approvals,
+                        'check_link_hosts': True,
                         'consent_policy': dict(va.SANDBOX_CONSENT_POLICY if args.sandbox else va.INVITE_CONSENT_POLICY),
                         'consent_loop': 'on' if args.sandbox else 'off'})
     store.save()
+    print(f"Joined Valun as {handle} ({j['participant_id']}) on {server}. This agent's key was generated here; "
+          f"public key {r['pubkey'][:16]}...")
+    print(f'Credentials are stored privately in {profile_path(args.profile)} (not shown).')
+    if j.get('sandbox_only'):
+        print(j.get('note') or 'Sandbox only: you can deal with the sandbox agents for a week.')
+    _hand_over(args, owner, server)
     try:
         c.me()          # the agent's first call: it shows as active in the directory from now on
     except vc.ValunError:
@@ -117,17 +136,20 @@ def cmd_join(args):
     clearing = args.clearing or 'auto'
     # The owner token is used here once, in memory, to set where approvals happen (and, where the server offers
     # circulating credit, whether set-offs clear this participant's cycles: auto_clear); it is never stored in the profile.
-    limits = c.request('GET', '/pilot/v1/owner', token=owner)['mandate']
-    cap = max(limits.get('max_issue_per_deal', 0), limits.get('max_accept_per_deal', 0))
-    body = _approval_mandate(args.approvals, cap)
-    if circulating:
-        body['auto_clear'] = clearing == 'auto'
-    c.request('PUT', '/pilot/v1/owner/mandate', body, token=owner)
-    print(f"Joined Valun as {handle} ({j['participant_id']}) on {server}. This agent's key was generated here; "
-          f"public key {r['pubkey'][:16]}...")
-    print(f'Credentials are stored privately in {profile_path(args.profile)} (not shown).')
-    if j.get('sandbox_only'):
-        print(j.get('note') or 'Sandbox only: you can deal with the sandbox agents for a week.')
+    try:
+        got = c.request('GET', '/pilot/v1/owner', token=owner)
+        limits = got.get('mandate') if isinstance(got, dict) else None
+        if not isinstance(limits, dict):
+            raise vc.ValunError('bad_response', 'GET /owner did not answer the owner mandate')
+        cap = max(limits.get('max_issue_per_deal', 0), limits.get('max_accept_per_deal', 0))
+        body = _approval_mandate(args.approvals, cap)
+        if circulating:
+            body['auto_clear'] = clearing == 'auto'
+        c.request('PUT', '/pilot/v1/owner/mandate', body, token=owner)
+    except vc.ValunError as e:
+        return _mandate_not_set(args, store, e, server, circulating, clearing)
+    if args.approvals == 'console':
+        store.update(lambda state: state.update(approvals='console'))
     print(JOIN_APPROVALS[args.approvals].format(server=server, per_deal=limits.get('max_issue_per_deal'),
                                                 total=limits.get('max_issue_outstanding')))
     if circulating:
@@ -140,15 +162,47 @@ def cmd_join(args):
     elif args.clearing:
         print('This server does not offer circulating credit yet, so --clearing changes nothing now; once it does, '
               'auto_clear is set in the owner console.')
-    if args.owner_token_file:
-        _write_private(args.owner_token_file, owner + '\n')
-        print(f'Your OWNER token is in {args.owner_token_file}. Keep it private; never give it to your agent.')
-    else:
-        print('Your OWNER token (shown once; keep it in a password manager, never give it to your agent; it opens '
-              f'{server}/pilot#owner where you can change limits or revoke this agent):')
-        print('  ' + owner)
     print('Next: `valun doctor`, then add Valun to your agent (see `valun mcp --help`).')
     return 0
+
+
+def _hand_over(args, owner, server):
+    """The owner token, to the owner, once: written to --owner-token-file (a private file), or shown. A file that cannot
+    be written does not lose it: it is shown instead."""
+    if args.owner_token_file:
+        try:
+            _write_private(args.owner_token_file, owner + '\n')
+            print(f'Your OWNER token is in {args.owner_token_file}. Keep it private; never give it to your agent.')
+            return
+        except OSError as e:
+            print(f'Cannot write {args.owner_token_file} ({e.strerror or e}), so your owner token is shown here instead.')
+    print('Your OWNER token (shown once; keep it in a password manager, never give it to your agent; it opens '
+          f'{server}/pilot#owner where you can change limits or revoke this agent):')
+    print('  ' + owner)
+
+
+def _mandate_not_set(args, store, e, server, circulating, clearing):
+    """`valun join` after GET /owner or PUT /owner/mandate failed (a 429, say): the participant and this agent's key
+    exist and the owner token was handed over already, so this says what is not in force and how to finish it. The
+    profile stays on the safe side: console approvals are not recorded (it asks before each commitment, the default,
+    until the mandate holds them for the owner), and with --clearing off its client signs no set-off (consents.setoff
+    off) while auto_clear is not set. Returns the exit code, 1."""
+    print(f'Your owner mandate could not be set ({e.code}): {_terminal_text(e)}')
+    if args.approvals == 'console':
+        print('  Approvals: not yet held in the owner console, so this profile asks before each commitment (approvals '
+              'ask) until you run `valun config approvals console --owner-token-file FILE` (FILE: your owner token).')
+    else:
+        print(f'  Approvals: {args.approvals}; approve_above in your owner mandate was not set, so the owner console may '
+              f'hold some commitments for you until you set it there ({server}/pilot#owner).')
+    if circulating and clearing == 'off':
+        def no_setoff(state):
+            policy = state.get('consent_policy')
+            state['consent_policy'] = dict(policy if isinstance(policy, dict) else {}, setoff=False)
+        store.update(no_setoff)
+        print('  Clearing: auto_clear was not turned off, so your client signs no set-off by itself (consents.setoff '
+              'off); turn auto_clear off in the owner console too.')
+    print('Then run `valun doctor`.')
+    return 1
 
 
 def cmd_enroll(args):
@@ -515,6 +569,10 @@ ATTEMPT_STATES = {'applied': 'applied: the deal is paid by it',
                   'alive': 'can still apply',
                   'dead': 'did not apply (and can no longer)',
                   'unread': 'not known yet: its edge has not been read since its window closed'}
+# An 'unknown' attempt of a deal recorded as paid: the deal is never paid again, so it blocks nothing and there is
+# nothing for the owner to resolve. (D-2 a: a raise of an incoming edge needs no signature of this client, so its own
+# records cannot prove such an attempt dead; the server proves it from its journal.)
+UNKNOWN_BUT_PAID = "cannot be proven dead from your client's records, but the deal is {paid}: nothing to resolve"
 
 
 def _who_key(c, pk):
@@ -533,7 +591,11 @@ def _attempt_line(c, r):
                 f"{r['total']} PC")
     sid = f", server id {r['attempt_id']}" if r.get('attempt_id') else ''
     decided = f"; you resolved it: {r['outcome']}" if r.get('outcome') in vc.ATTEMPT_OUTCOMES and r.get('outcome') != 'applied' else ''
-    return f"  {r['ref']} {what}, signed for {when}{sid}: {ATTEMPT_STATES.get(r['state'], r['state'])}{decided}"
+    if r['state'] == 'unknown' and r.get('paid'):
+        state = UNKNOWN_BUT_PAID.format(paid=f"paid by {r['paid_by']}" if r.get('paid_by') else 'recorded as paid')
+    else:
+        state = ATTEMPT_STATES.get(r['state'], r['state'])
+    return f"  {r['ref']} {what}, signed for {when}{sid}: {state}{decided}"
 
 
 def _edges_now(c):
@@ -623,7 +685,7 @@ def cmd_attempts(args):
             print(f"deal {_terminal_text(deal_id, 40)}" + (': recorded as paid' if mine[0]['paid'] else ''))
             for r in mine:
                 print(_attempt_line(c, r))
-        if any(r['state'] == 'unknown' for r in rows):
+        if any(r['state'] == 'unknown' and not r['paid'] for r in rows):     # a paid deal has nothing to resolve
             print('Resolve one only after asking the payee whether the payment arrived: `valun attempts resolve DEAL '
                   "ATTEMPT --applied` (it arrived) or `--not-applied` (it did not). ATTEMPT is #n, or the server's id of "
                   'a transfer (vt_...).')
@@ -657,6 +719,10 @@ def cmd_attempts(args):
         print(_attempt_line(c, r) + ('   <- this one' if r is plan['attempt'] else ''))
     if plan['attempt'] is None:
         print("  (your client's records hold no attempt that this id names)")
+    if plan['attempts'] and plan['attempts'][0]['paid']:
+        by = plan['attempts'][0].get('paid_by')
+        print('  This deal is recorded as paid' + (f' by {by}' if by else '') + ': your client never pays it again, '
+              'whatever you decide here.')
     if input('Resolve it? [y/N] ').strip().lower() not in ('y', 'yes'):
         print('Nothing was changed.')
         return 3
@@ -667,8 +733,13 @@ def cmd_attempts(args):
     owner = _owner_token(args)
     if owner is None:
         return 1
+    # resolve_attempt plans again: it resolves only the attempt shown above ('<- this one'), or refuses with
+    # attempt_changed (nothing changed) when another process changed the deal's attempts since, so that #n would name
+    # another one.
+    confirmed = vc.attempt_key(plan['attempt'])
     try:
-        r = c.resolve_attempt(args.deal, args.attempt, outcome, owner, note=args.note, local_only=local_only, **read)
+        r = c.resolve_attempt(args.deal, args.attempt, outcome, owner, note=args.note, local_only=local_only,
+                              expected_attempt=confirmed, **read)
     except vc.ValunError as e:
         if not (e.extra or {}).get('local_possible') or local_only:
             print(json.dumps(error_payload(e), ensure_ascii=False))
@@ -680,7 +751,8 @@ def cmd_attempts(args):
             print('Nothing was changed.')
             return 3
         try:
-            r = c.resolve_attempt(args.deal, args.attempt, outcome, owner, note=args.note, local_only=True, **read)
+            r = c.resolve_attempt(args.deal, args.attempt, outcome, owner, note=args.note, local_only=True,
+                                  expected_attempt=confirmed, **read)
         except vc.ValunError as e2:
             print(json.dumps(error_payload(e2), ensure_ascii=False))
             return 1

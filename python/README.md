@@ -81,8 +81,10 @@ and dispute it if any number is wrong."*
 
 ## Circulating credit (0.4, where the server offers it)
 Everything in this section works only when the server's `GET /pilot/v1/info` lists `circulation/1`; it is off by
-default on the server, and with it off this client behaves exactly as 0.3. Still nine tools; two new optional
-arguments:
+default on the server, and with it off the tool results are as in 0.3; the few extra reads this client makes then
+(mostly of `GET /pilot/v1/info`) are listed in
+[PROTOCOL.md](https://github.com/fitzss/valun-open/blob/main/spec/PROTOCOL.md) Appendix H. Still nine tools; two new
+optional arguments:
 - **Pay with a note you hold.** `valun_review_delivery` with `pay_with` (`own_note`, or the handle or id of a
   participant whose notes you hold; `valun_status` lists `notes_you_can_spend`, `valun_deal` lists `how_you_can_pay`):
   part of that issuer's debt to you moves to the payee, so the issuer then owes the payee instead of you. The issuer,

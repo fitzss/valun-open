@@ -39,6 +39,7 @@ NFT = '6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa'
 DENOM = 'token:' + hashlib.sha256(b'valun-pilot-credit/1').hexdigest()
 SERVER = 'http://valun.invalid'
 CIRC = ('bound_notes/1', 'circulation/1')
+AGENT_TOKEN = 'vpa_test-only'                   # the agent token the World enrolls (a throwaway test value)
 UNBOUND = 'could not read what you would sign; nothing was signed'
 SERVER_SETTLEMENT = ('not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new '
                      'creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal '
@@ -414,8 +415,10 @@ class World:
             return {'participant_id': S_ID, 'owner_token': 'vpo_test-only', 'enrollment_code': 'code'}
         if method == 'POST' and parts == ['enroll']:
             self.keys[S_ID] = {'pubkey': body['pubkey']}
-            return {'network': vc.NETWORK, 'agent_token': 'vpa_test-only'}
+            return {'network': vc.NETWORK, 'agent_token': AGENT_TOKEN}
         if method == 'GET' and parts == ['owner']:
+            if token == AGENT_TOKEN:            # FX-SV: the owner routes do not exist for an agent token (404)
+                raise vc.ValunError('not_found', 'not found', 404)
             if token != 'vpo_test-only':
                 raise vc.ValunError('unauthorized', 'owner token required', 401)
             return {'participant': self.public(S_ID), 'mandate': dict(self.mandate)}
@@ -626,7 +629,10 @@ class World:
                 'signatures_withheld': 'withheld until the Basis tracker records the transfer'}
 
     def resolve(self, did, tid, body, token):
-        """POST /owner/deals/:vd/attempts/:vt/resolve as valun-app FX-SV answers it (resolveAttempt)."""
+        """POST /owner/deals/:vd/attempts/:vt/resolve as valun-app FX-SV answers it (resolveAttempt). The owner routes
+        do not exist for an agent token: 404 not_found, as for an attempt it does not hold (http.mjs)."""
+        if token == AGENT_TOKEN:
+            raise vc.ValunError('not_found', 'not found', 404)
         if token != 'vpo_test-only':
             raise vc.ValunError('unauthorized', 'owner token required', 401)
         t = self.transfers.get(tid)
@@ -701,7 +707,7 @@ def profile_state(policy=va.SANDBOX_CONSENT_POLICY, loop='on', **extra):
 class MemStore:
     """A store without update() or reload(): the client applies changes and calls save()."""
 
-    def __init__(self, state, secret=S['secret'].hex(), token='vpa_test-only'):
+    def __init__(self, state, secret=S['secret'].hex(), token=AGENT_TOKEN):
         self.state, self._s, self._t = state, secret, token
 
     def secret(self):

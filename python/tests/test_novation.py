@@ -483,6 +483,13 @@ CASES = [
     ('payee: a local refusal by id, the id not resolved', CO, payee_item,
      lambda: payee_ctx(issuer_ids={}, mandate=dict(MANDATE, accept_notes_from='any'),
                        consent_policy=dict(POLICY, refuse_issuers=[A_ID])), 'issuer_refused'),
+    # FX2-PY: the mandate's refuse list names only another participant, but without the issuer's id my client cannot
+    # tell that the issuer is not on it (a directory that leaves out a refused issuer's key must not get it paid)
+    ('payee: the mandate refuses by id and my client could not resolve the issuer', CO, payee_item,
+     lambda: payee_ctx(issuer_ids={}, mandate=dict(MANDATE, accept_notes_from='any', refuse_notes_from=[E_ID])),
+     'issuer_refused'),
+    ('payee: sign, the mandate refuses only another id and my client resolved the issuer', CO, payee_item,
+     lambda: payee_ctx(mandate=dict(MANDATE, accept_notes_from='any', refuse_notes_from=[E_ID])), None),
 
     # --- evaluate_consent, payer (a regenerated transfer) ---
     ('payer consent: sign (same prior as the earlier attempt)', CO, payer_item, regen_ctx, None),

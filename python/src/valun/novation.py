@@ -39,9 +39,11 @@ Each evaluator returns {'ok', 'code', 'to_sign', 'summary', 'write_ahead'}:
                (one sentence, for people).
   write_ahead  only when ok: {op, signed [{edge, timestamp, op, slots {slot_key: total}}], pending [{pair, total,
                timestamp, kind, ref, direction}], attempt (a payment attempt) or None, attempts_seen [[route, edge,
-               total, timestamp]] (the deal's earlier attempts this evaluation weighed)}. R9: the caller persists it
-               (apply_write_ahead, which refuses a state that changed since: WriteAheadConflict) BEFORE it sends any
-               signature, best in the same locked step as the evaluation.
+               total, timestamp]] (the key of each earlier attempt of the deal this evaluation weighed: its attempt
+               records and pending payment entries, in classify_attempts order; [] for an evaluation that makes no
+               payment attempt)}. R9: the caller persists it (apply_write_ahead, which refuses a state that changed
+               since: WriteAheadConflict; it compares the deal's attempts in the state with attempts_seen) BEFORE it
+               sends any signature, best in the same locked step as the evaluation.
 
 The checks, in this order (the first that fails gives the code; PROTOCOL.md 15.3 rule numbers):
   R9   records_unreadable    ctx records, records['paid_deals'], signed, transfer_attempts or novated_edges (or an
@@ -111,7 +113,8 @@ ctx keys (only me_pk, now_ms and verify are checked as arguments; the others giv
                    acknowledged state: timestamp 0 and signature None for an absent edge), total (that edge's total
                    once it applies), timestamp, quote_digest, signed_at; outcome 'applied' once the client learnt it
                    applied, or 'not_applied' only by the owner's decision (attempt_outcome); attempt_id, the server's
-                   id of it, once known}; None = empty
+                   id of it, once known; resolved_at, the time (ISO 8601, UTC) of the owner's decision, written with
+                   outcome by Client.resolve_attempt (for people: no rule here reads it)}; None = empty
   novated_edges    edges a novation changed (a dict keyed by edge, or a list of edges); None = none (R12)
   features         /info features (bound templates: bound_notes/1 makes an unbound template bound_note_required)
   deal             deal_context(...): the verified agreement (payer roles, bound notes, payee)
@@ -124,7 +127,13 @@ ctx keys (only me_pk, now_ms and verify are checked as arguments; the others giv
                    may_accept_credit, accept_notes_from, refuse_notes_from, max_accept_per_issuer, pay_with_held_notes;
                    absent = every role off (the payer roles too: policy_off)
   issuer_ids       {issuer public key: participant id} as the client resolved them itself (the directory, GET
-                   /participants, by key): the participant ids the issuer lists of R8 are checked against
+                   /participants, by key): the participant ids the issuer lists of R8 are checked against. The
+                   client's _consent_issuer_ids builds it for the payee role: each key that exactly one active
+                   directory entry holds. A key it leaves out (listed under two ids, only under inactive entries, or
+                   not at all), like an absent issuer_ids, resolves no id; the issuer then passes only if the
+                   mandate's accept_notes_from is 'any' and its refuse_notes_from is empty or absent, a local
+                   refuse_issuers names public keys only (not the issuer's), and a local accept_issuers is absent,
+                   'any' or names the issuer's key; else issuer_refused
   edges            {edge: EdgeState or None (absent)} the caller read just now (GET /edges), for D-1 read-backs
 """
 import re

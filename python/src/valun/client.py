@@ -270,6 +270,19 @@ def _attempt_shape(a):
             and _nat(a.get('prior')) and _nat(a.get('total')) and _nat(a.get('timestamp')))
 
 
+def attempt_key(a):
+    """[route, edge, total, timestamp]: what names one payment attempt (an attempt record, a pending payment entry seen
+    as an attempt, a payment_attempts() row, resolution_plan()['attempt']), whatever its place (#n) in its deal's list;
+    the same key as novation's write_ahead.attempts_seen and records['paid_deals']. None for None. For
+    resolve_attempt(expected_attempt=...)."""
+    if a is None:
+        return None
+    return [a.get('route'), a.get('edge'), a.get('total'), a.get('timestamp')]
+
+
+_UNCHECKED = object()                          # resolve_attempt(expected_attempt=...) not given: no check
+
+
 def _server_word(v):
     """A code or state the server chose (an HTTP error code, a consent or transfer state), copied into what this client
     reports or records only in the form ^[a-z_]{1,40}$; else None."""
@@ -1413,7 +1426,10 @@ class Client:
         Returns [{deal_id, ref ('#n': the deal's n-th attempt, for resolve_attempt), attempt_id (the server's id of a
         transfer, when known), route ('note' | 'transfer'), edge, prior (None: a pending entry without a record), total,
         timestamp, outcome (the owner's decision, if any), state ('applied' | 'unknown' | 'alive' | 'dead' | 'unread'),
-        paid (the deal is recorded as paid)}]. records_unreadable when the records cannot be read."""
+        paid (the deal is recorded as paid), paid_by (the ref of the attempt records['paid_deals'] names as the deal's
+        payment, by attempt_key; None when the deal is not recorded as paid, or is paid by a payment this list does not
+        show)}]. On a paid deal an 'unknown' attempt blocks nothing (the deal is never paid again) and leaves nothing
+        for the owner to resolve. records_unreadable when the records cannot be read."""
         now = int(time.time() * 1000) if now_ms is None else now_ms
         state = self.state
         recs = _records_in(state, create=False)
@@ -1426,12 +1442,17 @@ class Client:
                     read[e] = None              # not listed: the edge does not exist
         out = []
         for deal_id in sorted(_attempt_deals(state)):
-            for n, (a, o) in enumerate(self._deal_rows(state, deal_id, now, read), 1):
-                out.append({'deal_id': deal_id, 'ref': f'#{n}', 'attempt_id': nv.shown_id(a.get('attempt_id')),
-                            'route': a['route'], 'edge': a['edge'], 'prior': a.get('prior'), 'total': a['total'],
-                            'timestamp': a['timestamp'],
-                            'outcome': a.get('outcome') if a.get('outcome') in ATTEMPT_OUTCOMES else None,
-                            'state': o, 'paid': deal_id in paid})
+            rows = [{'deal_id': deal_id, 'ref': f'#{n}', 'attempt_id': nv.shown_id(a.get('attempt_id')),
+                     'route': a['route'], 'edge': a['edge'], 'prior': a.get('prior'), 'total': a['total'],
+                     'timestamp': a['timestamp'],
+                     'outcome': a.get('outcome') if a.get('outcome') in ATTEMPT_OUTCOMES else None,
+                     'state': o, 'paid': deal_id in paid}
+                    for n, (a, o) in enumerate(self._deal_rows(state, deal_id, now, read), 1)]
+            by = attempt_key(paid[deal_id]) if isinstance(paid.get(deal_id), dict) else None
+            ref = next((r['ref'] for r in rows if by is not None and attempt_key(r) == by), None)
+            for r in rows:
+                r['paid_by'] = ref
+            out.extend(rows)
         return out
 
     def resolution_plan(self, deal_id, attempt, edges=None, now_ms=None, doubtful=None):
@@ -1553,7 +1574,7 @@ class Client:
                                           'was changed')
 
     def resolve_attempt(self, deal_id, attempt, outcome, owner_token, note=None, local_only=False, edges=None,
-                        now_ms=None, doubtful=None):
+                        now_ms=None, doubtful=None, expected_attempt=_UNCHECKED):
         """The OWNER's resolution of a payment attempt whose outcome is unknown (attempt_outcome_unknown, or a transfer
         the server holds as outcome_unknown or inconsistent), after confirming with the payee whether the payment arrived
         (decision D-2 d). Never called by an agent: `valun attempts resolve` runs it at a terminal, after asking.
@@ -1564,17 +1585,25 @@ class Client:
           note         for the server's audit line: at most RESOLVE_NOTE_MAX characters, no control, bidi or invisible
                        characters (bad_arguments otherwise, before anything is sent)
           local_only   record the decision in this client's records only (the owner chose it: LOCAL_CHOICES)
+          expected_attempt  attempt_key() of the attempt the owner confirmed (resolution_plan()['attempt'] as shown to
+                       the owner; None when that plan named no attempt of my records): resolve_attempt plans again, on
+                       the profile reloaded from its store, and when the attempt it would resolve is another (another
+                       process recorded, resolved or pruned an attempt of the deal meanwhile, so '#n' names another
+                       one) refuses with attempt_changed before anything is sent or changed. Not given: not checked. A
+                       list or tuple of four, or None (bad_arguments otherwise).
         resolution_plan() decides the path. The server resolves it first when it holds the transfer as
         UNRESOLVED_TRANSFER: POST /pilot/v1/owner/deals/{deal}/attempts/{vt}/resolve {outcome, note?}; its answer
-        {resolution {attempt_id, outcome, previous_state, at, note}, deal, transfer} says which attempt it resolved. A 404
-        not_found or 409 wrong_state answer (it holds no such attempt, or holds it as ended) is raised with extra
-        {local_possible: True, server: {error, message}}: nothing changed; the owner may then resolve it locally. A
-        credit note's attempt ('note': the server holds none), or a transfer on a server without circulation/1, is
-        resolved in this client's records only, as is, with local_only, a transfer of the LOCAL_CHOICES (without it,
-        those are refused with local_possible: attempt_id_unknown, not_found, wrong_state); the owner token is then
-        checked first (GET /pilot/v1/owner: not_owner when it is not this participant's). A payment my records show
-        applied is never resolved as not applied (already_paid), nor one the server shows still in progress
-        (attempt_in_progress).
+        {resolution {attempt_id, outcome, previous_state, at, note}, deal, transfer} says which attempt it resolved. A 409
+        wrong_state answer (it holds the attempt as ended) is raised with extra {local_possible: True, server: {error,
+        message}}: nothing changed; the owner may then resolve it locally. So is a 404 not_found answer (it holds no such
+        attempt), but only once the owner token is checked (GET /pilot/v1/owner): the server also answers 404 to a token
+        that is not an owner's (an agent token) and to another participant's owner token, and those are raised as
+        not_owner, with nothing changed and no local resolution offered. A credit note's attempt ('note': the server
+        holds none), or a transfer on a server without circulation/1, is resolved in this client's records only, as is,
+        with local_only, a transfer of the LOCAL_CHOICES (without it, those are refused with local_possible:
+        attempt_id_unknown, not_found, wrong_state); the owner token is then checked first (GET /pilot/v1/owner:
+        not_owner when it is not this participant's). A payment my records show applied is never resolved as not
+        applied (already_paid), nor one the server shows still in progress (attempt_in_progress).
         Then this client's records follow, under the profile lock: the attempt the plan identified (by '#n', by the
         server id my records hold, or by the timestamp, held edge and total GET /transfers showed) gets outcome,
         attempt_id (the id the server was asked about) and resolved_at (a pending entry becomes an attempt record, its
@@ -1587,11 +1616,21 @@ class Client:
             raise ValunError('bad_arguments', "outcome is 'not_applied' or 'applied'")
         if not (isinstance(owner_token, str) and owner_token.strip()):
             raise ValunError('bad_arguments', 'the owner token is needed to resolve a payment attempt; nothing was changed')
+        if not (expected_attempt is _UNCHECKED or expected_attempt is None
+                or (isinstance(expected_attempt, (list, tuple)) and len(expected_attempt) == 4)):
+            raise ValunError('bad_arguments', 'expected_attempt is the attempt_key() of the attempt confirmed, or None; '
+                                              'nothing was changed')
         owner_token = owner_token.strip()
         note = _owner_note(note)
         now = int(time.time() * 1000) if now_ms is None else now_ms
+        self._reload()                          # plan again on the records as they are now (another process may write)
         plan = self.resolution_plan(deal_id, attempt, edges=edges, now_ms=now, doubtful=doubtful)
         target, shown = plan['attempt'], plan['transfer'] or {}
+        if expected_attempt is not _UNCHECKED and attempt_key(target) != (
+                None if expected_attempt is None else list(expected_attempt)):
+            raise ValunError('attempt_changed', f"the deal's payment attempts changed since you confirmed: {attempt} no "
+                                                'longer names the attempt you were shown; nothing was changed; look at '
+                                                'them again (`valun attempts list`) and resolve the one you mean')
         if outcome == 'not_applied' and ((target is not None and target['state'] == 'applied')
                                          or shown.get('state') == 'applied'):
             raise ValunError('already_paid', 'your records (or the server) show this payment applied, so the deal is '
@@ -1612,6 +1651,11 @@ class Client:
                                               '/resolve', body, token=owner_token)
             except ValunError as e:
                 if (e.status, e.code) in ((404, 'not_found'), (409, 'wrong_state')):
+                    if e.status == 404:
+                        # The owner routes do not exist for an agent token, and another participant's owner token is
+                        # no party to the deal: the server answers both with 404 too. A resolution in my records only is
+                        # offered for a 404 only with this participant's owner token (not_owner otherwise).
+                        self._check_owner(owner_token)
                     raise ValunError(e.code, f'the server did not resolve it: {str(e)[:300]}', e.status,
                                      extra={'local_possible': True, 'server': {'error': e.code, 'message': str(e)[:300]}}) \
                         from None
@@ -1928,14 +1972,17 @@ class Client:
         beyond the 1-hour maximum age that a clock error cannot make a pruned entry signable or applicable again):
         R4 records of timestamps older than that, pending bound-note, transfer and set-off entries older than that
         which a current row shows did not apply, and payment attempts older than that which are dead
-        (novation.attempt_outcome) or whose deal is recorded as paid. Ordinary credit notes never expire, so their
-        pending entries are kept until a newer state of their edge is confirmed. journal_seq advances to next_seq.
-        Pages of EDGES_PAGE journal entries are read until a shorter one (at most EDGES_MAX_PAGES), in one step.
+        (novation.attempt_outcome) or whose deal is recorded as paid; and a confirmed (applied) state keeps its total
+        and timestamp but drops its signature SIGNATURES_KEEP_MS (30 days) after its timestamp. Ordinary credit notes
+        never expire, so their pending entries are kept until a newer state of their edge is confirmed. journal_seq
+        advances to next_seq. Pages of EDGES_PAGE journal entries are read until a shorter one (at most
+        EDGES_MAX_PAGES), in one step.
 
         Returns {edges: {edge: EdgeState} (each verified edge's current state, as the D-1 read-back), applied: [entries
         promoted], paid_deals: [deal ids newly recorded as paid], novated: [edges newly marked], rejected: [{edge, seq,
         reason}], doubtful: [edges listed only with a state that did not verify: not read], pruned: {signed, pending,
-        attempts}, journal_seq}."""
+        attempts, signatures} (how many R4 records, pending entries and payment attempts were dropped, and how many
+        confirmed states dropped their signature), journal_seq}."""
         if not self._pinned():
             self.info()                         # pins an enrolled profile
         pins = _pins_of(self.state)

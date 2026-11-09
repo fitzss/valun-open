@@ -27,6 +27,7 @@ SERVER = 'http://valun.invalid'
 NOW = 1_793_966_460_123
 DEAL, DEAL2, TID, SID = 'vd_0123456789abcdef', 'vd_1123456789abcdef', 'vt_0123456789abcdef', 'vs_0123456789abcdef'
 OWNER_TOKEN, OTHER_OWNER = 'vpo_owner-test-only', 'vpo_another-participants-owner'
+AGENT_TOKEN = 'vpa_test-only'                  # this client's agent token (MemStore's), a throwaway test value
 DAY = 24 * 3600 * 1000
 LATER = nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 60_000        # past an attempt's fallback window
 
@@ -168,6 +169,8 @@ class Net:
             return [{'id': pid, 'handle': HANDLES[pid], 'status': 'active', 'pubkey': self.pk(pid)}
                     for pid in self.directory_ids] + copy.deepcopy(self.directory_extra)
         if method == 'GET' and parts == ['owner']:                  # the owner's view (owner token only)
+            if self.token == AGENT_TOKEN:       # FX-SV: the owner routes do not exist for an agent token (404)
+                raise vc.ValunError('not_found', 'not found', 404)
             pid = {OWNER_TOKEN: self.me_id, OTHER_OWNER: E_ID}.get(self.token)   # E's owner token is another's
             if pid is None:
                 raise vc.ValunError('unauthorized', 'owner token required', 401)
@@ -235,7 +238,13 @@ class Net:
                    if t.get('resolution') else {})}
 
     def resolve(self, did, tid, body):
-        """POST /owner/deals/:vd/attempts/:vt/resolve as valun-app FX-SV answers it (resolveAttempt)."""
+        """POST /owner/deals/:vd/attempts/:vt/resolve as valun-app FX-SV answers it (resolveAttempt). Like an attempt
+        it does not hold, an agent token (the owner routes do not exist for it, http.mjs) and another participant's
+        owner token (no party to the deal, partyDeal) get 404 not_found; a token it does not know gets 401."""
+        if self.token == AGENT_TOKEN:
+            raise vc.ValunError('not_found', 'not found', 404)
+        if self.token == OTHER_OWNER:
+            raise vc.ValunError('not_found', f'unknown deal {did}', 404)
         if self.token != OWNER_TOKEN:
             raise vc.ValunError('unauthorized', 'owner token required', 401)
         t = self.transfers.get(tid)
@@ -1761,6 +1770,95 @@ class Attempts(Base):
         with self.assertRaises(vc.ValunError) as e:
             c.resolve_attempt(DEAL, '#1', 'maybe', OWNER_TOKEN)
         self.assertEqual(e.exception.code, 'bad_arguments')
+
+    # ----- FX2-PY -----
+    def test_a_404_for_a_token_that_is_not_this_owners_offers_no_local_resolution(self):
+        # FX-SV answers the owner route with 404 not_found for an agent token (the owner routes do not exist for it)
+        # and for another participant's owner token (no party to the deal), as for an attempt it does not hold. The
+        # owner token is checked with GET /owner before a resolution in the records only is offered.
+        c, T = self.unknown_transfer()
+        route = f'POST /pilot/v1/owner/deals/{DEAL}/attempts/{TID}/resolve'
+        for token in (AGENT_TOKEN, OTHER_OWNER):
+            del self.net.log[:]
+            with self.assertRaises(vc.ValunError) as e:
+                c.resolve_attempt(DEAL, TID, 'not_applied', token)
+            self.assertEqual(e.exception.code, 'not_owner', token)
+            self.assertNotIn('local_possible', e.exception.extra or {}, token)
+            self.assertEqual(self.net.requests()[-2:], [route, 'GET /pilot/v1/owner'], token)
+        self.assertEqual((self.net.resolutions, self.net.transfers[TID]['state']), ([], 'outcome_unknown'))
+        self.assertNotIn('outcome', att(self.store.state)[0])
+        # This participant's owner token: a 404 means the server holds no such attempt of the deal (it moved to another
+        # deal before the POST, here), and the owner may then choose to record the decision locally.
+        self.net.add_deal(DEAL2)
+
+        def moved(method, path, body):
+            if method == 'POST' and path.endswith('/resolve'):
+                self.net.transfers[TID]['deal_id'] = DEAL2
+        self.net.hooks.append(moved)
+        del self.net.log[:]
+        with self.assertRaises(vc.ValunError) as e:
+            c.resolve_attempt(DEAL, TID, 'not_applied', OWNER_TOKEN)
+        self.assertEqual((e.exception.code, e.exception.status, e.exception.extra['local_possible']), ('not_found', 404, True))
+        self.assertEqual(e.exception.extra['server']['error'], 'not_found')
+        self.assertEqual(self.net.requests()[-2:], [route, 'GET /pilot/v1/owner'])
+        self.assertNotIn('outcome', att(self.store.state)[0])
+        r = c.resolve_attempt(DEAL, TID, 'not_applied', OWNER_TOKEN, local_only=True)
+        self.assertEqual((r['server'], r['local'], att(self.store.state)[0]['outcome']), (None, 'server_unknown', 'not_applied'))
+
+    def test_only_the_attempt_the_owner_confirmed_is_resolved(self):
+        # `valun attempts resolve` shows the plan for '#n', asks, then calls resolve_attempt with the confirmed attempt's
+        # key. resolve_attempt plans again: if the deal's attempts changed in between (another process pruned the first,
+        # here), '#1' names another attempt, and it refuses (attempt_changed) before anything is sent or changed.
+        c, T = self.unknown_transfer()
+        unknown = att(self.store.state)[0]
+        earlier = dict(copy.deepcopy(unknown), timestamp=T - 2000, attempt_id=None)
+        self.store.state['transfer_attempts'][DEAL].insert(0, earlier)
+        plan = c.resolution_plan(DEAL, '#1')
+        self.assertEqual((plan['attempt']['timestamp'], plan['local']), (T - 2000, 'no_server_id'))
+        confirmed = vc.attempt_key(plan['attempt'])
+        self.assertEqual(confirmed, ['transfer', AB, 7, T - 2000])
+        self.store.state['transfer_attempts'][DEAL].pop(0)              # meanwhile: '#1' is now the unknown transfer
+        del self.net.log[:]
+        for expected in (confirmed, tuple(confirmed), None):
+            with self.assertRaises(vc.ValunError) as e:
+                c.resolve_attempt(DEAL, '#1', 'not_applied', OWNER_TOKEN, local_only=True, expected_attempt=expected)
+            self.assertEqual(e.exception.code, 'attempt_changed', expected)
+        self.assertEqual(self.net.requests('POST'), [])
+        self.assertNotIn('GET /pilot/v1/owner', self.net.requests())
+        self.assertNotIn('outcome', att(self.store.state)[0])
+        for bad in ('#1', ['transfer', AB, 7], 7):
+            with self.assertRaises(vc.ValunError) as e:
+                c.resolve_attempt(DEAL, '#1', 'not_applied', OWNER_TOKEN, expected_attempt=bad)
+            self.assertEqual(e.exception.code, 'bad_arguments', bad)
+        # the attempt shown is the one resolved
+        r = c.resolve_attempt(DEAL, '#1', 'not_applied', OWNER_TOKEN,
+                              expected_attempt=vc.attempt_key(c.resolution_plan(DEAL, '#1')['attempt']))
+        self.assertEqual((r['attempt_id'], self.net.resolutions), (TID, [(DEAL, TID, {'outcome': 'not_applied'})]))
+        self.assertEqual(att(self.store.state)[0]['outcome'], 'not_applied')
+        self.assertIsNone(vc.attempt_key(None))
+
+    def test_a_paid_deal_names_the_attempt_that_paid_it(self):
+        # INT-1: a transfer that was rejected (or cancelled) acknowledged the same prior state as the retry that then
+        # paid the deal. A raise of an incoming edge needs no signature of mine (D-2 a), so my records cannot prove the
+        # first dead; the deal is recorded as paid by the second, and payment_attempts names it (paid_by).
+        c = self.client()
+        T1, T2 = res(NOW - 120_000, 999), res(NOW - 60_000, 999)
+        first = {'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10, 'prior_timestamp': TS_AB,
+                 'prior_signature': self.net.tracker[AB]['signature'], 'total': 7, 'timestamp': T1, 'quote_digest': None,
+                 'signed_at': None, 'attempt_id': 'vt_1111111111111111'}
+        self.store.state['transfer_attempts'] = {DEAL: [first, dict(first, timestamp=T2, attempt_id='vt_2222222222222222')]}
+        self.store.state['records'] = {'paid_deals': {DEAL: {'route': 'transfer', 'edge': AB, 'total': 7, 'timestamp': T2}}}
+        self.net.set_edge(A, B, 7, T2)                                  # the retry applied
+        read = c.sync_edges()
+        rows = c.payment_attempts(edges=read['edges'], doubtful=read['doubtful'])
+        self.assertEqual([(r['ref'], r['state'], r['paid'], r['paid_by']) for r in rows],
+                         [('#1', 'unknown', True, '#2'), ('#2', 'applied', True, '#2')])
+        self.assertEqual(list(rows[0])[-2:], ['paid', 'paid_by'])        # appended last (the JS mirror keeps the order)
+        # paid by a payment the list does not show, or not paid: no ref
+        self.store.state['records']['paid_deals'][DEAL]['timestamp'] = T2 + 1000
+        self.assertEqual([(r['paid'], r['paid_by']) for r in c.payment_attempts(edges=read['edges'])], [(True, None)] * 2)
+        del self.store.state['records']['paid_deals'][DEAL]
+        self.assertEqual([(r['paid'], r['paid_by']) for r in c.payment_attempts(edges=read['edges'])], [(False, None)] * 2)
 
 
 class Counter(Base):
