@@ -6,12 +6,12 @@ document.
 
 | | |
 |---|---|
-| Status | Sections 1–17 and Appendices A–G: descriptive specification of running code up to server **release v15** (valun-app commit `495624c`, deployed). Section 18, section 15.3, sections 16.1–16.2, Appendix H and every paragraph marked *(draft until vectors are regenerated)*: the contract for server **release v16** ("circulating credit", valun-app branch `circulation-v16`; built locally, not released, not deployed), written before its code so that the server, the clients and the tracker are built against it. Circulating credit is **off by default**, and with it off v16 answers like v15 (18.1). Experimental network; PC are synthetic units with no value. Changes: Appendix B (release v8, from the first version of this document), Appendix C (release v9), Appendix D (releases v10 and v11), Appendix E (release v12), Appendix F (release v13), Appendix G (releases v14 and v15) and Appendix H (release v16, draft). |
+| Status | Sections 1–17 and Appendices A–G: descriptive specification of running code up to server **release v15** (valun-app commit `495624c`, deployed). Section 18, section 15.3, sections 16.1–16.2, Appendix H and every paragraph marked *(draft until vectors are regenerated)*: the contract for server **release v16** ("circulating credit", valun-app branch `circulation-v16`; built locally, not released, not deployed), written before its code so that the server, the clients and the tracker are built against it, then corrected from the implementation (decisions D-1, D-2 and D-3; section 18.16) and from vectors regenerated from it (valun-app `cfe698b`, section 17). Circulating credit is **off by default**, and with it off v16 answers like v15 (18.1). Experimental network; PC are synthetic units with no value. Changes: Appendix B (release v8, from the first version of this document), Appendix C (release v9), Appendix D (releases v10 and v11), Appendix E (release v12), Appendix F (release v13), Appendix G (releases v14 and v15) and Appendix H (release v16, draft). |
 | Authority | Up to release v15: the code. Where this document and the code disagree, the code wins and this document has a bug. For release v16 this document is the contract: until the vectors are regenerated from the v16 code (section 17) and the draft marks are removed, a disagreement between the two is a bug in one of them, settled by the regenerated vectors. |
 | Server source described | Release v15 (`495624c`): `valun-app/lib/pilot/core.mjs` sha256 `ad47e6aee53be872e2d41c734b219243fff2d4502a86b72fe94c24a0a6d45043` (changed in v14 and v15), `lib/pilot/http.mjs` sha256 `3065809458c2538dc4b586247438ffec8a6db9102b9252cc8fc98939353fc213` (changed in v14), `lib/basis.mjs` sha256 `991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617` and `lib/http.mjs` sha256 `2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf` (both unchanged since v11), `basis/valun_signer.rs` sha256 `acf25be8a1e095faa4aac3aaa04568755896de85dbcc073e88f91f0b9a0c38a5` (unchanged since v8); Basis pinned at `3df7ed93ee83ddf0d4e8ce567f54cefbbd7255b3`. Line references (core.mjs:N, http.mjs:N) in sections 1–17 are to the release v13 files (core.mjs sha256 `7dc469e0547ae0a518c022b93cff6181fd116f4fcc3f8f3b7a3deb0e0f240b2e`, http.mjs sha256 `01a505623d64c0a2c00a221240d57b5631c91dec61f5caaeb37113e8497c0f0e`), to which v14 and v15 only added the sandbox-join code (so later v15 line numbers are shifted); Appendix G cites the v15 files. Release v16 is described by its contract (section 18), not by source hashes, and needs the tracker v3 (18.2). |
-| Reference clients compared | the Hermes plugin `hermes-plugin-valun` 0.3.0 at commit `5d01fbd` (the commit the Hermes plugin catalog entry pins; its core `valun_core/` is the `valun` package 0.3.1, byte-identical) and the framework-neutral package `valun` 0.3.1 in this repository (`python/src/valun/client.py`, `basis.py`, `agent.py`; commit `c75cfb0`). The JavaScript package `@fitzdoud/valun` 0.3.1 (`js/src`) is held to the same vectors by its own tests (`node --test js/test/`). None of them implements release v16 yet; the 0.4.0 clients are being built against section 18. |
-| Conformance vectors | `spec/vectors/*.json`, generated from the real server code by `spec/vectors/generate.mjs` (release v13; releases v14–v16 have no vectors yet); checked against either Python client by `spec/vectors/check_python.py` (section 17; CI commands in `spec/vectors/README-ci.md`). |
-| Known problems | `spec/OPEN-QUESTIONS.md` (revision 7). |
+| Reference clients compared | the Hermes plugin `hermes-plugin-valun` 0.3.0 at commit `5d01fbd` (the commit the Hermes plugin catalog entry pins; its core `valun_core/` is the `valun` package 0.3.1, byte-identical) and the framework-neutral package `valun` 0.3.1 in this repository (`python/src/valun/client.py`, `basis.py`, `agent.py`; commit `c75cfb0`). The JavaScript package `@fitzdoud/valun` 0.3.1 (`js/src`) is held to the same vectors by its own tests (`node --test js/test/`). None of them implements release v16. *(draft until vectors are regenerated)* For release v16: the package `valun` 0.4.0 (this repository, `python/src`, commit `1509cbe`) and the Hermes plugin 0.4.0 (`e2c7640`, local; its `valun_core/` is the package 0.4.0, byte-identical) pass every v16 vector (section 17); the JavaScript package 0.4.0 is built to the same vectors. |
+| Conformance vectors | `spec/vectors/*.json`, generated from the real server code by `spec/vectors/generate.mjs` *(draft until vectors are regenerated)* from release v16 (valun-app `cfe698b`): transcript steps 1-147 as release v13's, with circulation off, steps 148-236 and `circulation.json` with circulation on (releases v14 and v15 have no vectors of their own); checked against either Python client by `spec/vectors/check_python.py` (section 17; CI commands in `spec/vectors/README-ci.md`). |
+| Known problems | `spec/OPEN-QUESTIONS.md` (revision 8). |
 
 Key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are used as in RFC 2119. In this document **"the server
 enforces"** means the code refuses the request (nothing is recorded); **"a client MUST"** means the server cannot or
@@ -1075,27 +1075,47 @@ decision for each case, `sign` or a refusal code, and a client that declares `ci
 | R8 Policy | apply the stricter of its local consent policy (which roles it signs by itself, a cap in PC per consent, issuers it accepts or refuses) and the owner's mandate (18.13): a role that is off, an amount over a cap, an issuer not accepted | `policy_off`, `policy_cap`, `issuer_refused` |
 | R9 Write-ahead | persist what it is about to sign (the `signed` record, the attempt, pending entries for every edge it changes) before sending it; if its records cannot be read, refuse everything | `records_unreadable` |
 | R10 Destination | send signatures only to the Valun server it pinned at enrollment | — |
-| R11 Fallback | for a deal with an earlier unapplied transfer attempt, sign neither an own note nor a transfer from another issuer before that attempt's T + 3 600 000 + 120 000 ms by its own clock (18.8) | `transfer_window_open` |
-| R12 Bound stickiness | once the server has advertised `bound_notes/1`, use bound templates; on an edge in its `novated_edges` record never sign an unbound note; never sign a novation on an edge where it holds an unapplied unbound note | `bound_note_required`; `pending_unbound_note` |
+| R11 One live payment attempt per deal (decision D-1) | an attempt is any payment it signed for the deal: a transfer, a bound note or an ordinary note (recorded in `transfer_attempts`, with the full EdgeState it acknowledged). Classify each earlier attempt from its edge's current state: applied (its new state, or the records say so) → `already_paid`; another state at or past its timestamp, or an ordinary note that may still apply (ordinary notes never expire) → `attempt_outcome_unknown`, which only the owner resolves (18.8); may still apply, or its window has passed but its edge was not read back → `transfer_window_open` (the evaluation names the edges to read back, `needs_read_back`; the client reads `GET /edges` once and decides again); dead (read back at its prior state after T + 3 600 000 + 120 000 ms by its own clock) → no constraint. A same-kind retry that acknowledges the same prior on the same edge, while the edge is exactly that prior state, may be signed at once: the tracker lets only one of them apply | `transfer_window_open`, `attempt_outcome_unknown`, `already_paid` |
+| R12 Bound stickiness | once the server has advertised `bound_notes/1`, use bound templates; on an edge in its `novated_edges` record never sign an unbound note; never sign a novation on an edge where it holds an unapplied unbound note (`pending_unbound_note`); never sign a novation that brings an edge of its own (as issuer) back to the acknowledged prior of a bound note of its own that is later than the novation and may still apply (`payment_attempt`: the note could then apply after it, the client side of decision D-2 c) | `bound_note_required`; `pending_unbound_note`; `payment_attempt` |
 | R13 Pins | `tracker_nft_id` and `denomination` equal the values it pinned at enrollment (or on its first run as a 0.4 client) | `tracker_mismatch` |
 
 The normative refusal codes, all of them: `bad_prior_signature`, `timestamp_domain`, `timestamp_reused`,
 `timestamp_stale`, `not_net_neutral`, `increase_in_setoff`, `duplicate_edge`, `self_edge`, `not_my_edge`,
 `total_owed_changes`, `pay_with_is_payee`, `wrong_destination`, `amount_mismatch`, `deal_mismatch`, `policy_off`,
 `policy_cap`, `issuer_refused`, `records_unreadable`, `transfer_window_open`, `bound_note_required`,
-`pending_unbound_note`, `tracker_mismatch`. Each case in the vectors breaks one rule; when several rules fail, any of
-their codes is a correct refusal.
+`pending_unbound_note`, `tracker_mismatch`; since decision D-1, `attempt_outcome_unknown` and `already_paid`; since
+D-2 c, `payment_attempt`; and three for items that cannot be signed as they are: `stale_quote` (a payment that is not
+the quote the owner approved), `bad_template` and `bad_consent` (a template or consent item that is not well formed).
+Each case in the vectors breaks one rule, and the vectors give the code of that rule. The checks run in this order,
+and the first that fails gives the code: R9 (records), well-formedness (`bad_template`, `bad_consent`),
+`already_paid` (records), R13, the party checks of R6/R7, R3, the amounts of R6/R7, R2, R5, R11 (D-1), `stale_quote`,
+R8, R12, R4. The evaluator's other inputs: `me_id` is required for the payer roles and bound notes (without it,
+`deal_mismatch`); a missing mandate turns every role off (`policy_off`), the payer's too; the issuer lists of R8 are
+checked against the participant id the client resolved for the issuer's key itself from the directory, never an id
+the item names (`issuer_refused`). R4's record is `signed {edge: {timestamp: {op, slots {slot: total}}}}`, with the
+operations `note:<deal>`, `pay:<deal>`, `transfer:<vt>` and `setoff:<vs>`. R8's fields: local `setoff`, `as_issuer`,
+`as_new_creditor`, `max_PC` (per consent), `accept_issuers` (`any`, ids or public keys) and `refuse_issuers`; the
+mandate's `auto_clear`, `novate_own_debt`, `accept_transfers`, `may_accept_credit`, `accept_notes_from` (`any` or ids;
+absent or `[]`: nobody), `refuse_notes_from`, `max_accept_per_issuer` (checked against Y + a) and
+`pay_with_held_notes` (`never` refuses).
 
 Notes:
 - A difference between an item and the client's own records is reported, not refused: the tracker enforces prior
-  acknowledgments and bound notes, so the records no longer decide value (OQ-23). One case is not a difference: a
+  acknowledgments and bound notes, so the records no longer decide value (OQ-23). The one exception is the payer's own
+  bound note: `complete` refuses a prior that is older than, or conflicts with, its own confirmed state of that edge
+  (`ledger_mismatch`, nothing signed). One case is not a difference: a
   pending entry of the client's own that appears as a prior, or as an edge's current state, has applied. The client
   MUST then record it as confirmed and MUST NOT pay that entry's deal again, whatever the server says about the deal
   (16.2, item 7).
 - A consent the firewall refuses is refused at the server with the code as its reason (18.9), so the proposal ends
   instead of waiting for its expiry.
 - When it runs: a client processes consents at most once per 60 s, before its own non-read-only actions, on an
-  explicit command, or in a background loop its profile enables; never on a read-only call. Default local policies
+  explicit command, or in a background loop its profile enables; never on a read-only call, with one exception
+  (decision D-3 a): an adapter without a background loop (the Hermes plugin; CLI runs that are not loops) may, before
+  the read-only `valun_status` and `valun_inbox`, at most once per 60 s, sign the value-safe consents its owner's
+  standing policy allows: set-offs (net-neutral by construction) and new-creditor consents. It never signs or refuses
+  an issuer consent, and makes no payer action, from a read-only tool; the tool's result lists what it signed
+  (`consents_signed_now`). Default local policies
   (OPEN-QUESTIONS OQ-40): a sandbox profile signs set-offs, issuer consents and new-creditor consents; an invited
   profile signs set-offs and issuer consents only.
 - A payment by transfer is a commitment and follows the owner's approval rules like any acceptance; set-off, issuer
@@ -1146,9 +1166,15 @@ server and in the 0.4 Python and JavaScript clients:
   set-offs on its pair are in `credit_note.pair_changes_since`, and the pair's current total in `GET /edges` and the
   ledger.
 - Owner approval texts for a payment by transfer: 18.11.
-- `GET /info` `description` is unchanged in v16 in every mode, so with circulation on it still says "nothing in the
-  pilot is settled (no redemption, reserve or clearing)"; the labels above are the accurate statement (OPEN-QUESTIONS
-  OQ-49).
+- `GET /info` `description`: modes off and bound keep v15's text word for word. Modes sandbox and on keep its first
+  three sentences, then say "An issued note is not settled: a credit note is an outstanding obligation. With
+  circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be
+  cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is
+  redeemed, there is no reserve, and PC have no value."; mode sandbox adds " On this server circulating credit is on
+  for sandbox participants only: the sandbox agents and those who joined with join-sandbox." (OPEN-QUESTIONS OQ-49,
+  resolved).
+- The texts a client shows with circulating credit (its own labels, `valun_status` and `valun_deal` fields, the words
+  for consent speeds) are the client's own, not protocol; only the server texts in this section are fixed.
 - **Coverage is not solvency** still holds; for a payment by transfer coverage is judged on the issuer whose note is
   received, and cycles cleared by set-off no longer add to anyone's coverage (OPEN-QUESTIONS OQ-26).
 
@@ -1181,19 +1207,31 @@ What circulating credit does not protect against, stated so that no party relies
    prior shows whether its note applied (15.3, notes). On a claim it holds (A→B) the issuer's notes change the edge
    without it: once that edge has moved past an attempt's timestamp, the holder cannot tell from the edge alone whether
    the attempt applied. A server that hides an applied transfer and offers a regenerated one could obtain a second
-   payment of the same deal, each signed for exactly the price (OPEN-QUESTIONS OQ-48).
-8. **A failed credit note that is still valid.** Notes have no maximum age. A payer whose own note failed may pay the
-   same deal by transfer (18.10); if whoever holds the failed note (the server) submits it later, while the pair's
-   tracker state is still older than that note, both payments apply (OPEN-QUESTIONS OQ-22).
+   payment of the same deal, each signed for exactly the price (OPEN-QUESTIONS OQ-48). Since decision D-1 a client
+   keeps one live payment attempt per deal (15.3 R11): an edge that moved past T back to the attempt's prior total
+   counts as not applied, one at its new total as applied, and any other state past T is `attempt_outcome_unknown`,
+   which only the owner resolves (18.8). Read-backs still come from the server, so a stale but validly signed state is
+   caught only through the attempt's acknowledged `prior_timestamp` and the client's own records.
+8. **A failed credit note that is still valid.** Ordinary notes have no maximum age; bound notes do (one hour, tracker
+   v3.1). Since decision D-1 a payment of another kind waits: after a failed bound note the server refuses a transfer
+   until the note's timestamp + 1 h + 60 s; a failed ordinary note that can still apply makes it refuse with
+   `409 attempt_outcome_unknown`, and one shown applied with `409 already_paid` (OPEN-QUESTIONS OQ-22). What remains:
+   the server keeps a failed ordinary note's signature, so a server that submits it later while the pair's state is
+   still older than it could still make it apply; a client never pays such a deal again while that note may apply.
 9. **Old backups.** Restoring an old client profile loses its R4 and R12 records; the tracker's bound-only edges
    still protect issuers.
 10. **0.3 clients** never sign a novation, so their edges never fall and never become bound-only; they keep paying and
     being paid by credit notes only, as in v15.
+11. **Held notes and set-offs** (D-2 c). A set-off whose timestamp on a pair precedes a held note's still applies; the
+    held note then becomes `void_stale` at its owner's decision, and the payer waits about an hour before a new note
+    with the new prior. A deal left unpaid keeps the edges its attempts would change out of clearing indefinitely.
 
 ## 17. Conformance vectors
 
-`spec/vectors/` (regenerate with `VALUN_APP_DIR=<export of valun-app commit 6a6a34b> node spec/vectors/generate.mjs`;
-output is deterministic, and labelled "UNRECOGNISED server source" if the sources are not release v13's):
+`spec/vectors/` (regenerate with `node spec/vectors/generate.mjs`, which exports valun-app commit `cfe698b` with
+`git archive` itself, or with `VALUN_APP_DIR=<export>`; output is deterministic, and labelled "UNRECOGNISED server
+source" if the sources are not a known release's; an export of release v13 `6a6a34b` still gives exactly the v13
+files). *(draft until vectors are regenerated)* The vectors were regenerated from release v16 (valun-app `cfe698b`):
 
 | file | content |
 |---|---|
@@ -1202,7 +1240,8 @@ output is deterministic, and labelled "UNRECOGNISED server source" if the source
 | `basis-notes.json` | 13 note-message / debt-key cases (Basis official erg vectors; pilot token denomination) + 1 negative |
 | `basis-signatures.json` | Basis's official signature vectors TV001–TV011 |
 | `terms-validation.json` | 87 terms the real validator accepts (19) or refuses (68), with the exact error |
-| `transcript.json` | a 147-request run through the real route table, with what the server verified at each step; decline/dispute steps also list every statement form the server would accept for that body (`server_accepts`, from a dry run of the real code); 51 steps are replayed through each Python client, 3 of them also through an agent-tool path (`variants`); plus 3 rate-limit `probes` (server-only). Steps 1–111 are the v9 run, 112–143 the v11 steps and 144–147 the v12 steps (release v13 changed no step); earlier steps differ from their first release only by additive response fields (and step 92, the template during a signer outage, `503` since v11) |
+| `transcript.json` | a 236-request run through the real route table, with what the server verified at each step; decline/dispute steps also list every statement form the server would accept for that body (`server_accepts`, from a dry run of the real code). Steps 1-147 run with circulation off and are byte-identical to release v13's. Steps 148-236 run with circulation on (the stand-in tracker enforces the v3.1 rules of 18.2, its binary pinned for the in-memory Pilot only): two new participants (nina, a client agent; sam, an agent the server runs); owners opting in; a policy refusal (`payment_not_accepted`, payee); a payment by transfer with client parties and its consents; a bound note after the novation, with no `ledger_mismatch`; a set-off proposed by the clearing engine, superseded by a held note (`held_note`, D-2 c) and proposed again; a payment refused when posted, kept as an attempt (D-2 b), and the cross-kind window it opens (D-1); a held bound note refused by the tracker after its maximum age (`novation_expired`, D-1 item 4) and signed again; a server-run payee whose slots are signed at once, attacks the server refuses (a puppet destination, an amplified slot), an outcome the read-back cannot decide (`outcome_unknown`, D-1 item 3) and the owner's resolution (D-2 d); and the empty roles header (D-3 b). Each `server_verified` entry names the body field that held the signature (`field`, a JSON pointer) and the edge of a note message; replayed calls carry `client_state`, `signature_fields` and `client_state_after` |
+| `circulation.json` | circulating credit: 17 timestamp cases (residue classes, the ordinary clamp, the server's choice of T, limits beyond the safe integers), 14 messages (a bound note and its prior acknowledgment, all seven transfer slots, both set-off slots), 3 quote digests (with the 18.3 worked example), 2 pay statements, 13 transfer and 9 set-off tracker requests with the stand-in tracker's outcome (the valid ones, and a standalone raised edge, a missing residue, a puppet destination, the four- and five-signature bodies, amplification, a colluding payer, set-off signatures used as a transfer, too old, an unknown field, ...), and 55 decisions of the signing firewall (27 consents, 18 payer templates, 10 bound templates) that cover every refusal code of 15.3 (all 28), `needs_read_back`, `policy_off` without a mandate and `deal_mismatch` without `me_id` |
 
 All keys, ids, codes and tokens in them are public test fixtures (the test keys are derived from public labels;
 tokens are replaced by placeholders). Never use them for anything real. `python spec/vectors/check_python.py` checks
@@ -1210,22 +1249,17 @@ them against the Hermes plugin, and `python spec/vectors/check_python.py --clien
 package; each replays the transcript through that client's real `Client` methods (commands for CI:
 `spec/vectors/README-ci.md`). Server-side Basis crypto runs in a Rust helper that the generator does not run; the
 generator's replica is proven against Basis's official vectors before it writes anything (the token-denomination debt
-key has no official vector: OPEN-QUESTIONS). Against release v13 both clients (plugin 0.3.0 at `5d01fbd`, package
-0.3.1 at `c75cfb0`) give the same result: **829 checks, 658 agree, 0 disagreements in failing tiers, 17 informative
-differences (OQ-2, OQ-3, OQ-4 inputs), 154 not applicable** (exit status 0 for each, rechecked for this revision with
-Python 3.14.7 on clean exports of both commits; the same counts as with plugin `f504d26` and package `0.3.0.dev0` in
-revision v13). The JavaScript package's own tests read the same files (`node --test js/test/` at `c75cfb0`, Node
-24.21.0: 258 tests, 257 pass, 0 fail, 1 skipped).
-
-The vectors describe release v13. Releases v14 and v15 only add self-serve sandbox joining (Appendix G), which no
-vector step uses, and the vectors were not regenerated for them. *(draft until vectors are regenerated)* For release v16
-they will be regenerated from an export of the v16 release commit, deterministically: transcript steps 1–147 stay
-byte-identical with circulation off; steps 148 onwards run with circulation on (bound notes, payments by transfer with
-server-run and client parties, consents, a set-off, a policy refusal, the attacks the server and the tracker refuse);
-and a new `circulation.json` holds the timestamps and residues, every slot message, quote digests, the pay statement,
-transfers and set-offs with their tracker outcomes (including the negative cases of 18.6 and 18.7) and the consent
-decisions of 15.3, one case per refusal code. `check_python.py` gains a `consent` tier, failing for a client that
-declares `circulation/1`.
+key has no official vector: OPEN-QUESTIONS). The circulation checks (tiers `circulation` and `consent`) count for a
+client that declares `circulation/1` in `PROTOCOL_FEATURES`, or for a run given `--require circulation/1`; otherwise
+they are not applicable. Against release v16: the package 0.4.0 with `--require circulation/1` gives **1386 checks,
+1188 agree, 0 disagreements in failing tiers, 17 informative differences (OQ-2, OQ-3, OQ-4 inputs), 181 not
+applicable**, and so does the Hermes plugin 0.4.0 (`e2c7640`) with `--require circulation/1`; without it, the plugin
+0.3.0 (`5d01fbd`, the CI pin), the plugin 0.4.0 and the package give **1384 checks, 1104 agree, 0 disagreements, 17
+informative differences, 263 not applicable** (exit status 0 for each, with Python 3.14.7 and 3.11.18 on Windows and
+3.12.3 on Linux). Against release v13's vectors both 0.3 clients gave 829 checks, 658 agree, 0 disagreements, 17
+informative differences, 154 not applicable, and the same files are still what an export of v13 produces.
+`scripts/check_plugin_core.py PLUGIN_DIR` checks that the plugin's `valun_core/` modules (six in 0.3.0, eight since
+0.4.0) are the package's, unchanged.
 
 ## 18. Circulating credit (server release v16) *(draft until vectors are regenerated)*
 
@@ -1308,10 +1342,18 @@ A client MUST treat a feature as present only when `features` lists it; a server
 
 **Capability header.** A client that can sign consents sends `X-Valun-Features: consents/1;roles=<roles>` on its
 requests, `<roles>` being a comma-separated subset of `setoff`, `issuer` and `creditor` that lists only the roles its
-local policy will sign. It sends the header only when `/info` lists `circulation/1`. The server records the roles with
-the time; a participant counts as able to sign a role for 7 days after its last request that listed it (server-run
-sandbox agents always can), and the server never proposes to it a novation that needs another role. A participant is
-**present** when its agent was seen in the last 10 minutes (server-run agents always are).
+local policy will sign (the local policy's `setoff`, `as_issuer` and `as_new_creditor`, not intersected with the
+mandate). It sends the header on every request once the last `GET /info` it read listed `circulation/1`. The server
+takes the header from an agent request it authenticates; each header replaces the roles the one before declared, and
+each role counts for 7 days from that header (server-run sandbox agents always can sign), and the server never
+proposes to it a novation that needs another role. A request without the header, or with one the server cannot read,
+changes nothing. **An empty list** (decision D-3 b): a client whose consent roles are all off (or whose adapter signs
+no consent by itself: the Hermes plugin while `process_consents` is off) sends `X-Valun-Features: consents/1;roles=`
+once, on its next request, if it declared roles before; the server forgets the recorded roles at once (no 7-day
+carry-over), and `/me` then shows `features.consent_roles` `[]`, `consents_declared_at` the time of that request and
+`consents_count_until` `null`. Such a participant takes part in no new consent: it is left out of set-offs, payments to
+it by transfer are refused, and so are payments with its notes (`issuer_consent`). A participant is **present** when
+its agent was seen in the last 10 minutes (server-run agents always are).
 
 **What stays identical with the effective mode `off`** (I-DARK): `DEFAULT_MANDATE` (the new mandate fields exist only
 once circulation has been enabled); the `statements` object and `/info` `statements`; `/info`, `/me`, `/owner`, deal
@@ -1335,20 +1377,22 @@ on the server:
 
 - **pure credit** (`[server] pure_credit = true`): no chain scanner and no box updater; the tracker refuses to start if
   any confirmation has a confirmed or pending on-chain total, or if notes or confirmations fail to load or decode;
-- **POST /notes**: residues 995, 996, 998 and 999 refused; residue 997 only as a bound note; any other residue refused
-  on a bound-only edge (18.5);
+- **POST /notes**: residues 995, 996, 998 and 999 refused; residue 997 only as a bound note, at most 1 hour old
+  (tracker v3.1, decision D-1 item 1); any other residue refused on a bound-only edge (18.5);
 - **POST /notes/transfer**, version 3: seven signatures, both creditors' prior acknowledgments, residue 999, at most
   1 hour old (18.6);
 - **POST /notes/setoff**, version 3: residue 998, per-edge timestamps, per-key balance, at most 1 hour old (18.7);
 - **bound-only edges**: every edge a transfer or set-off changes is marked bound-only, in the same write, for good;
-- **maximum age** `NOVATION_MAX_AGE_MS = 3600000`, compiled in, not configurable (18.8);
+- **maximum age** `NOVATION_MAX_AGE_MS = 3600000`, compiled in, not configurable (18.8): for transfers, every set-off
+  edge and, since tracker v3.1 (D-1 item 1), bound notes; ordinary notes still have none;
 - **strict requests**: transfer and set-off bodies refuse unknown fields (so an older binary that silently dropped a
   signature cannot pass for this one); both routes need the tracker's Write role; signatures never appear in its logs
   (8-hex fingerprints only);
 - **error codes**, in the `code` field of the tracker's JSON answers, for diagnostics only (Valun decides every outcome
   by reading the edges back): `reserved_timestamp`, `bound_note_required`, `invalid_prior_signature`,
   `not_an_increase`, `invalid_request`, `invalid_transfer`, `invalid_setoff`, `invalid_signature`, `past_timestamp`,
-  `future_timestamp`, `novation_expired`, `stale_prior` (409), `staged_exchange` (409), `onchain_scope` (409),
+  `future_timestamp`, `novation_expired` (the novation routes and, since v3.1, POST /notes for a bound note),
+  `stale_prior` (409), `staged_exchange` (409), `onchain_scope` (409),
   `tracker_id_mismatch` (409), `not_found` (404), `storage_error` (500) and `novations_disabled` (503: a tracker outside
   pure-credit mode whose confirmations failed to load).
 
@@ -1358,7 +1402,7 @@ on the server:
 {"success": true, "data": {
   "tracker": "basis", "build": "valun-circulating-credit/3", "commit": "<git sha>",
   "pure_credit": true, "reserved_ms": [995, 996, 997, 998, 999],
-  "bound_notes": {"ms": 997, "version": 1}, "bound_only_edges": true,
+  "bound_notes": {"ms": 997, "version": 2, "max_age_ms": 3600000}, "bound_only_edges": true,
   "novation": {"max_age_ms": 3600000,
     "transfer": {"ms": 999, "version": 3, "signatures": ["issuer_from", "issuer_to",
       "from_recipient_prior", "from_recipient", "from_recipient_to", "to_recipient_prior", "to_recipient"]},
@@ -1367,10 +1411,19 @@ on the server:
   "onchain_edges": 0, "novations_disabled_reason": null}}
 ```
 
-The server requires exactly these values of `build`, `pure_credit`, `reserved_ms`, `bound_notes`, `bound_only_edges`,
+This is tracker v3.1 (Valun fork commit `24675ec`, binary sha256 `cc0a6adea0c4b457f7d6b61f76f7e9444c6353eea1b9c1a2b482d71f3c76a0a8`, the one hash `lib/pilot/pins.mjs`
+pins). TR-6's v3 build reported `"bound_notes": {"ms": 997, "version": 1}`; the server no longer accepts it. The server
+requires exactly these values of `build`, `pure_credit`, `reserved_ms`, `bound_notes` (`ms` 997, `version` 2,
+`max_age_ms` 3600000), `bound_only_edges`,
 `novation.max_age_ms`, `novation.transfer`, `novation.setoff` (`ms`, `version`, `signatures_per_edge`), `onchain_edges`
 and `novations_disabled_reason`; `commit` is informative and `per_edge_timestamps` may be `false` (18.7). The trackers
 `3df7ed93`, `caa2e86` and `a00233d` answer this route with `404`, so with them the effective mode is `off`.
+
+**POST /notes at residue 997, in this order** (after the checks every note has: range, future, past, decrease, note
+signature, so an expired bound note older than the edge's own note is still `past_timestamp`): `prior_signature`
+required (else 400 `reserved_timestamp`); a timestamp older than now − 3 600 000 → 400 `novation_expired`; then
+`stale_prior` (409), `invalid_prior_signature` (400) and `not_an_increase` (400) as 18.5 says. `prior_total` without
+`prior_signature` is 400 `reserved_timestamp` at residues 995-999 and 400 `invalid_request` at ordinary residues.
 
 **Tracker requests** (the server builds them; for reference): a bound note is `POST /notes` with `prior_signature`
 (65-byte hex) and `prior_total`; a transfer is `{issuer_pubkey, from_recipient_pubkey, to_recipient_pubkey,
@@ -1478,7 +1531,11 @@ prior_signature}`. A timestamp with residue 997 makes it a bound note: `prior_to
 prior acknowledgment stays with the note (also while it is held for the owner) and goes to the tracker with it. Against
 a v3 tracker this holds in every mode, while the other reserved residues are `409 stale_note` with a fresh ordinary
 template (9.2); in mode `off` the server offers no bound template, and a client sends bound notes only to a server
-that lists `bound_notes/1` (R12). Against an older tracker, mode `off` is exactly v15.
+that lists `bound_notes/1` (R12). Against an older tracker, mode `off` is exactly v15. A bound note older than the
+maximum age (tracker v3.1) is `409 stale_note` with a fresh bound `template`; a held one released after it fails at the
+tracker (`novation_expired`): the deal is `note_failed` with `credit_note.error_code` `novation_expired`, and the payer
+signs a new bound note on the same prior at once (decision D-1 item 4, 18.8). The template also chooses a timestamp
+later than every live set-off's on the pair (D-2 b).
 
 **The tracker's rule** (POST /notes, after all its existing checks, so their precedence is kept):
 - residue 995, 996, 998 or 999 → `400 reserved_timestamp`;
@@ -1581,21 +1638,41 @@ client can check for itself is in 16.2, item 7.
    refused by the tracker (once a read-back shows the prior state), or is voided because a party's key was revoked
    (`void_key_revoked`). The acceptance stands, so no dispute is possible. The signatures are purged (their sha256
    kept), and `fallback_after` = T + 3 600 000 + 60 000.
-8. **From `payment_due`.** A transfer with the same issuer may be retried at once. Paying with another issuer, or with
-   an own note, is refused until `fallback_after` (`409 transfer_window_open` with `retry_after_ms`; R11 waits a little
-   longer). A stale same-issuer transfer is regenerated (new T, new priors) at most 3 times per deal per 24 hours; the
-   payer's slots then come back to it as a consent item with role `payer`. B's client re-signs by itself only while
-   `quote_digest` is unchanged; A and C re-sign under their own rules.
-9. **Unknown outcome.** On a network error, a tracker 5xx or a timeout, the transfer stays `applying` (the deal
-   `paying_by_transfer`) until recovery decides by read-back (18.8).
+8. **From `payment_due`.** A transfer with the same issuer may be retried at once only on the same acknowledged prior
+   (the Retries paragraph below; decision D-1 item 2). Paying with another issuer, or with an own note, is refused until
+   `fallback_after` (`409 transfer_window_open` with `retry_after_ms`; R11 waits a little longer). A stale same-issuer
+   transfer is regenerated (new T, new priors) at most 3 times per deal per 24 hours; the payer's slots then come back
+   to it as a consent item with role `payer`. B's client re-signs by itself only while `quote_digest` is unchanged and
+   its held claim's acknowledged prior is the same; A and C re-sign under their own rules. In practice a stale answer
+   caused by a move of the payer's own claim needs the owner or the one-hour window.
+9. **Unknown outcome.** On a network error, a tracker 5xx or a timeout, the server reads both edges back at once; if
+   that read fails too, the transfer stays `applying` (the deal `paying_by_transfer`) until recovery decides by
+   read-back (18.8). A read-back that cannot decide ends it `outcome_unknown` (18.8).
 10. **Edge reservation.** While a transfer collects signatures, both its edges are reserved for it alone: A's own
     credit-note template on either edge answers `409 novation_pending` with `consent_ids`, so A's client first signs or
     refuses the consent (server-run issuers defer such a payment to their next round).
 
 Transfer states: `awaiting_owner`, `collecting`, `applying`, `applied`, and the ends without effect `failed`, `expired`,
-`cancelled`, `refused`, `void_key_revoked`, `void_stale` and `void_rejected` (18.11). Tracker refusals reach a client as
-`409 transfer_failed` (with the tracker's `code`) or `409 transfer_stale`, never as `502`; `502 tracker_unavailable`
-means only that the tracker could not be reached.
+`cancelled`, `refused`, `void_key_revoked`, `void_stale`, `void_rejected` and `void_expired` (18.11); the unresolved
+ends `outcome_unknown` (the read-back cannot decide whether it applied) and `inconsistent` (one edge applied and the
+other not: an alarm), which only the payer's owner resolves (18.8), to `applied` or `resolved_not_applied`. Tracker
+refusals reach a client as `409 transfer_failed` (with the tracker's `code`) or `409 transfer_stale`, never as `502`;
+`502 tracker_unavailable` means only that the tracker could not be reached. pay-by-transfer and cancel-transfer answer
+with the deal view plus `transfer`. After an apply in the same request fails, pay-by-transfer answers
+`409 transfer_failed {code, transfer_id, regenerated_as, deal}` or `409 transfer_stale` (with `template` when the post
+itself was stale, and then nothing is recorded but the refused attempt, D-2 b); the state is saved either way. The
+payer's body sends `to_prior_total` 0 for an absent A->C. Refusals before anything is recorded add `400 self_edge`
+(issuer = payer), `400 pay_with_is_payee` (issuer = payee), `404 not_found` (unknown issuer), `400 invalid_field`
+(malformed issuer or signatures), `403 bad_signature` (a slot, the completion or the pay statement does not verify for
+the payer's registered key: a puppet destination or an amplified slot is refused so) and `403 payment_not_accepted`
+(18.13).
+
+**Retries (decision D-1 item 2).** A transfer with the same issuer may be retried at once only while the held edge is
+exactly the prior state the earlier attempt acknowledged (the tracker lets only one of them apply). Otherwise, and for
+a regenerated transfer, the server answers `409 transfer_window_open` until the earlier attempt's `fallback_after`, and a
+client re-signs a regenerated transfer by itself only under the same quote and only while its held claim's acknowledged
+prior is unchanged; a move of the held edge past T to a total that is neither the prior nor the new total is
+`attempt_outcome_unknown` (18.8).
 
 ### 18.7 Multilateral set-off *(draft until vectors are regenerated)*
 
@@ -1629,20 +1706,58 @@ means only that the tracker could not be reached.
 
 ### 18.8 Maximum age, collection windows and the fallback rule *(draft until vectors are regenerated)*
 
-- The tracker refuses any transfer, and any set-off edge, whose timestamp is more than `NOVATION_MAX_AGE_MS` =
-  3 600 000 ms (1 hour) old. The value is compiled in. It bounds how long unapplied novation signatures stay usable,
-  whoever holds them.
+- The tracker refuses any transfer, any set-off edge and (tracker v3.1, decision D-1 item 1) any bound note whose
+  timestamp is more than `NOVATION_MAX_AGE_MS` = 3 600 000 ms (1 hour) old. The value is compiled in. It bounds how
+  long unapplied novation and bound-note signatures stay usable, whoever holds them. Ordinary notes have no maximum age.
+  A held bound note released after the maximum age is refused (`novation_expired`): the deal is `note_failed` with
+  `credit_note.error_code` `novation_expired`, and the payer signs a new bound note on the same prior (D-1 item 4);
+  `complete` itself refuses a bound note older than the maximum age with `409 stale_note` and a fresh bound template.
 - The server collects a transfer's signatures for at most 20 minutes (`transfer_ttl_ms`) and a set-off's for at most 30
   minutes (`setoff_ttl_ms`), both shorter than the maximum age, and applies expiry lazily on every read.
-- **The fallback rule.** After a transfer attempt for deal D failed, expired, was refused, cancelled or voided, its
-  signatures could still be applied by whoever holds them until T + 1 hour. So no other kind of payment for D may be
-  signed before then: the server refuses an own note or another issuer's transfer until `fallback_after` =
-  T + 3 600 000 + 60 000 (`409 transfer_window_open` with `retry_after_ms`), and a client MUST NOT sign one before
-  T + 3 600 000 + 120 000 by its own clock (R11). A retry with the same issuer is allowed at once (18.6).
-- **Recovery** runs at startup and every 60 s for every novation in `applying`: every edge at its new state → applied;
-  every edge at its prior state, with T within the maximum age → resubmitted; prior state with T expired, or an edge
-  moved past T → failed; a mix → `inconsistent`, with an audit alarm (one-write tracker batches make this impossible).
-  Reservations are released, and fallback payments allowed, only after a read-back shows that nothing applied.
+- **The fallback rule, across kinds (decision D-1).** A payment attempt is any payment the payer signed for deal D: a
+  transfer, a bound note or an ordinary note. After one ends without effect (failed, expired, refused, cancelled,
+  voided; a bound note failed, stale, rejected by the owner, voided by a revocation or replaced), its signatures could
+  still be applied by whoever holds them until T + 1 hour. So no other kind of payment for D may be signed before then:
+  the server refuses an own note or a transfer (template and post) until `fallback_after` = T + 3 600 000 + 60 000
+  (`409 transfer_window_open` with `retry_after_ms`; next_actions offer `wait_for_transfer_window`), and a client MUST
+  NOT sign one before T + 3 600 000 + 120 000 by its own clock (R11). An own ordinary note that could still be recorded
+  (it never expires) blocks a transfer with `409 pending_unbound_note`, and next_actions never offer what the route
+  refuses. A same-kind retry on the same prior is allowed at once (18.6). `void_rejected` and `void_stale` keep
+  `fallback_after` while the same note on the same prior can be used at once.
+- **Refused attempts are attempts (D-2 b).** A payment the payer posted and the server refused is recorded on the
+  server, never shown: its kind, T, edges, prior and new totals and the sha256 of its signatures, at most 32 per deal
+  (during a signature-checker outage, flagged `unverified`; audit `payment.refused_attempt`). It counts for the windows
+  above and holds the payer's own edge against set-offs. A refused ordinary note at a residue tracker v3 reserves (995,
+  996, 998, 999) is not an attempt: the tracker can never record it. Transfer and bound templates choose T later than
+  every live set-off's `ts_e` on their edges.
+- **Proven dead (D-2 e).** An attempt that Valun's own edge journal proves dead never blocks a payment: the first
+  journal entry on its edge after its T changed the edge from exactly that attempt's prior total. The journal proves
+  nothing unless the entries the server read cover every seq from 1 to `counters.edge_seq` (decision D-3 d): a gap (the
+  log file lost or cut after the in-memory tail rolled over) marks it partial until the next start, and is logged and
+  audited once (`journal.incomplete {where, missing_from, missing_to}`).
+- **Unknown outcomes (D-1 item 3) and the owner's resolution (D-2 d).** A read-back that cannot decide (an edge moved
+  past T to a total that is neither its prior nor its new total, or another state at T) ends the transfer
+  `outcome_unknown` (an alarm in the log); mixed edges end it `inconsistent`. The deal is `payment_due` and every
+  payment of it is refused with `409 attempt_outcome_unknown` until the payer's owner resolves it, after confirming with
+  the payee: `POST /owner/deals/{vd}/attempts/{vt}/resolve {outcome: "not_applied" | "applied", note?}` (owner token of
+  the payer; modes sandbox and on only, so attempts are resolved before switching to bound or off; `note` at most 300
+  characters after trimming, no control, bidi or invisible characters). `not_applied` ends it `resolved_not_applied`
+  (signatures purged, sha256 kept; `fallback_after` = T + 3 600 000 + 60 000); `applied` journals it and the deal
+  becomes `paid_by_transfer`. Both add the deal event `payment_attempt_resolved` and the audit line
+  `transfer.resolved_by_owner`. The answer is `{resolution {attempt_id, outcome, previous_state, at, note}, attempt {id,
+  kind: "transfer", timestamp}, deal, transfer}`; errors `403 not_payer`, `404 not_found` (an unknown attempt, one of
+  another deal, or an agent token), `409 wrong_state` (any state but `outcome_unknown` or `inconsistent`),
+  `400 invalid_field`. Only payments by transfer (`vt_`) are resolved at the server: the server decides its own notes
+  by its own read-back and never answers `attempt_outcome_unknown` for one, so a client resolves an own note's attempt
+  in its own records only (needing the owner token, checked through `GET /owner`'s `participant.id`).
+- **Recovery** runs at startup and every 60 s for every novation in `applying` (and applies one left `collecting` with
+  every signature): every edge at its new state, or moved past T at its new total → applied; every edge at its prior
+  state, with T within the maximum age → resubmitted; prior state with T expired, or an edge moved past T back at its
+  prior total → failed; an edge moved past T at another total, or another state at T → `outcome_unknown`; a mix →
+  `inconsistent`, with an audit alarm (one-write tracker batches make this impossible). A set-off held by a payment
+  attempt (D-2 c, 18.7) is never resubmitted: it fails with `held_note` or `payment_attempt`. Reservations are
+  released, and fallback payments allowed, only after a read-back shows that nothing applied. The same read-back runs
+  in the request that applied when the tracker's answer is lost.
 
 ### 18.9 Consents *(draft until vectors are regenerated)*
 
@@ -1894,6 +2009,251 @@ v15, apart from the always-on fixes of Appendix H.
 Over the tour S earns 6 PC and spends 6 PC: 4 by transfer and 2 with its own note; 2 PC of its claims and 2 PC of its
 debts are cancelled by set-off, and no set-off changes its net position.
 
+### 18.16 Details of the release v16 implementation *(draft until vectors are regenerated)*
+
+Sections 18.1-18.15 state the contract; this section records what the release v16 implementation (valun-app
+`cfe698b`, valun 0.4.0, the Hermes plugin 0.4.0) does where they are silent or less precise. Where it says MUST, it is
+part of the contract; the rest describes the server so clients know what to expect.
+
+**Set-offs and payment attempts (18.7, decision D-2 c).**
+- An edge is not eligible for clearing while an earlier payment attempt of a deal that is neither paid nor ended would
+  change it: every transfer of the deal that is neither live nor applied (both its edges, at T), and every credit note
+  the payer signed for it that the tracker has not recorded (held, issuing, failed, stale, rejected by the owner, voided
+  by a revocation or replaced; on payer>payee at the note's timestamp). The hold lasts until the deal is paid or ends.
+- A collecting set-off that has an edge with a held note or a payment attempt ends `superseded` at once, with code
+  `held_note` or `payment_attempt` (no cooldown); recording a refused attempt supersedes one too. A set-off made before
+  such an attempt applies only if its `ts_e` on that edge is earlier than every such attempt's timestamp. A held note
+  whose timestamp precedes a set-off's on its pair (a template fetched less than about 1 s after the set-off was made)
+  supersedes that set-off (`payment_attempt`); a set-off whose timestamp precedes a held note's still applies, and the
+  held note becomes `void_stale` at its owner's decision, so the payer waits about an hour (`transfer_window_open`)
+  before a new note with the new prior.
+- Set-off states add `inconsistent` (an alarm; counted under `proposals.failed` in `GET /clearing`). Supersession
+  codes: `insufficient`, `not_reconciled`, `edge_changed` (without per-edge timestamps), `timestamp_ahead`,
+  `held_note`, `payment_attempt`. Failure codes: `mandate_changed` (with `rule`), `circulation_off`, `not_balanced`,
+  `edge_changed` (the read-back shows the edge moved without it), the tracker's code after a 4xx with nothing changed,
+  `novation_expired`, `key_revoked`, `held_note` and `payment_attempt`.
+- While a set-off is being applied its edges are busy: credit notes, templates and transfers get `409 edge_busy`, a
+  complete set-off sharing one of the edges waits, still collecting, no new one is proposed on them, and payment options
+  show `why_not` `edge_busy`. A server-only set-off edge made again never reuses its own earlier timestamp.
+- Without per-edge timestamps every edge takes one timestamp when the proposal is made, and a moved edge supersedes the
+  proposal (`edge_changed`); the engine proposes the cycle again on a later trigger.
+- A refusal starts a 24-hour cooldown keyed by the member and the edge set (and by the edge set of each cycle packaged
+  in it); who refused and why are kept for the operator only.
+
+**Consents (18.9).**
+- The item shapes. Transfer: `your_roles` names one role; the issuer sees both edges and the amount, never the deal;
+  the payee sees A->C and the deal; the payer (a regenerated transfer) both edges and the deal. Set-off: `your_roles`
+  `["member"]`, slots `["new"]` on each of the caller's edges, `context {amount}` (what it clears of the caller's
+  claims; no issuer, payer, payee or deal), `summary {your_net_change_PC: 0, your_total_owed_change_PC}`. A transfer
+  item is listed only while the caller has an unsigned slot on it.
+- `POST /consents/:id` answers 200 with the item and `result` (even when the apply in that request failed or was left
+  applying) and `rejected`; `POST /consents/:id/refuse` answers the item and `result {code, at, tracker_status?}`. New
+  errors: `409 already_signed` (no unsigned slot left) and `409 key_changed`. A consent whose caller's own check fails
+  ends the novation (`failed`, `mandate_changed`, `result.rule`) and answers `403 payment_not_accepted {rule, by}`, where
+  `by` may also be `member` or `payer`; for a member, the consent and the check before apply look only at what its owner
+  controls (active, `auto_clear`, `expires_at`), not at the consent-role declaration or a cooldown.
+- The payee's `deal_mismatch` (R7) also requires that the deal view's `payment.transfer_id` is the item's id and that
+  the terms name the payee's current key.
+- A client posts only its unsigned slots, with the revision of each edge it signs on; the refuse body is
+  `{reason: <refusal code>}` (`{}` without one), the cancel-transfer body `{}`. Items with nothing left to sign, not
+  collecting, whose deal cannot be read now, whose post fails, or answered with stale revisions wait for a later run;
+  they are not refused. What a client reports or logs of a server answer it copies only in a checked form: ids as
+  `^v[dts]_[0-9a-f]{16}$`, kinds and roles from their lists, codes and states as `^[a-z_]{1,40}$`, else null.
+
+**Statuses, approvals and next_actions (18.10, 18.11, 10.4).**
+- Any held approval reached from `payment_due` (an `issue_note` or a `pay_by_transfer` approval) returns the deal to
+  `payment_due` on reject, `void_stale` and key revocation, and keeps the completion; `if_rejected` has a
+  `payment_due` text, and names the D-1 wait.
+- A transfer awaiting its owner expires 20 minutes after it was created (when the agent posted it): the approval
+  becomes `void_expired` and the deal returns to `delivered` (or `payment_due`). An approved one collects for at most
+  20 more minutes and never past T + 50 minutes; `503 signer_unavailable` leaves the approval pending. If the window
+  passes during the decision, the decision answers `409 not_pending` ("approval is void_expired") and changes nothing;
+  the same answer comes when a deal or offer expired during the decision's mandate checks (every mode, every kind).
+- Approve answers `200 {approval, deal, transfer}`, even when the transfer applied in that request fails at the tracker
+  (`transfer.state` `failed`, `transfer.result {code, at, tracker_status}`, the deal `payment_due` with its completion
+  standing; after an edge change the transfer is made again, `regenerated_from` naming the approved one). A stale one
+  answers `409 stale_payment {reason, rule?, by?, transfer_id, deal_status}`, reason one of `circulation_off`,
+  `key_changed`, `edge_changed` (total, timestamp or signature), `quote_changed`, `payment_not_accepted` (with `rule`
+  and `by`: payer, payee or issuer; `sandbox_only` included), `edge_busy`, `insufficient_claim`,
+  `transfer_window_open`, `attempt_outcome_unknown`, `already_paid`, `pending_unbound_note`; the deal returns to
+  `delivered`, or to `payment_due` if it was there. With circulation off (or in mode bound) a pending `pay_by_transfer`
+  approval is still listed; approving answers `stale_payment` with reason `circulation_off`, rejecting voids it.
+- The `pay_by_transfer` subject adds `version`, `signer`, `signer_pubkey`, `signed_at`, `mandate_check`, `completion
+  {statement, signature}` and `transfer {id, state, expires_at}`; parties are `{id, handle, pubkey}`, edges `{edge,
+  issuer, recipient, before, new_total, change}`. A bound note's `issue_note` subject adds `bound`, `prior_signature`
+  and `expires_at` (T + 1 h), and `if_approved` a bound sentence (also in mode bound).
+- next_actions: `[]` while an earlier attempt's outcome is unknown or one applied (`already_paid`); `delivered` with a
+  window open gives `[wait_for_transfer_window, pay_by_transfer, dispute]`; `pay_by_transfer` appears only when the mode
+  allows it for both parties and `pay_with_held_notes` is not `never`, and never while an own note could still apply;
+  `cancel_transfer` only while collecting; `note_failed` with the payer's bound note still in its window gives
+  `[complete, wait_for_transfer_window]`.
+- The deal history events are `payment_by_transfer`, `payment_awaiting_owner`, `paid_by_transfer`, `payment_due`,
+  `payment_void`, `payment_outcome_unknown`, `payment_by_transfer_regenerated` and `payment_attempt_resolved`, and the
+  owner events with kind `pay_by_transfer`; set-offs add none (the names `transfer_created`, `transfer_applied`,
+  `transfer_failed`, `transfer_expired` and `setoff_applied` are not used).
+- A failed bound note's `credit_note.error` is, in modes bound, sandbox and on, the server's own sentence "the tracker
+  did not record the note (HTTP <status>[, <code>])", with `credit_note.tracker_status` and `error_code` (decision D-2
+  f); mode off keeps v15's text.
+
+**Views and receipts (18.12).**
+- `GET /transfers/:vt`: `id, kind, state, your_roles, attempt, regenerated_from, regenerated_as, created_at, expires_at,
+  updated_at, timestamp, amount, issuer, payer, payee`; `edges` (issuer and payer both, payee only A->C); `deal` (payer
+  and payee only); `result`, `fallback_after`; `signatures` null until applied, then per party (A all seven; B the A->B
+  slots and its own A->C slot; C the A->C slots); `signatures_withheld`, or `tracker_after` once applied; and
+  `signature_sha256` of each purged signature. `tracker_after`, `signature_sha256` and the read-back classes of an
+  edge go only to that edge's parties.
+- `GET /setoffs/:vs`: `id, kind, state, your_roles, created_at, expires_at, updated_at, applied_at, edges` (the
+  caller's own), `summary, result, signatures` (applied: own edges only; else null), `tracker_after` or
+  `signatures_withheld`, `signature_sha256` (own edges, once purged). Other members see only `result.code` and `at`.
+- The deal view's payment block is present in every view in modes sandbox and on (null when no transfer was
+  attempted); `signatures_withheld` is null once applied. `credit_note.pair_changes_since` lists `[{kind, ref, delta}]`
+  over transfer_out, transfer_in and set-off entries (`[]` for a note not recorded).
+- Novation records are pruned (design 11): ended ones 7 days after ending (a transfer of a deal not yet paid stays,
+  without its signatures); applied ones drop their signatures after 30 days; unresolved ones stay.
+
+**Credit policy (18.13).**
+- `payment_not_accepted` also has `by: "payer"` (rules `pay_with_held_notes`, `expires_at`,
+  `max_collecting_transfers`, `max_attempts_per_deal`); the receiving check also counts the payee's own open offers to
+  the issuer (exposure `reserved`).
+- Phase-2 fields (modes sandbox and on; ignored in other modes): `max_claims_total` and `max_issuer_net_debt` (null or
+  0..100000), `accept_operator_issuers` (boolean); absent means null, null, true, and `max_claims_total` 40 for a
+  `sandbox_only` participant. A sandbox owner may lower `max_claims_total` but not raise it above 40 or set null
+  (`403 sandbox_only`); the operator may. For a `sandbox_only` participant whose mandate predates the field,
+  `credit_policy` and `effective_limits` (`/me`, `/owner`) show the enforced 40, and an agent limit below it shows in
+  `effective_limits`; the stored mandate is unchanged.
+- The rules, in order: `refuse_notes_from` (also at an agreement: `403 mandate_exceeded`, rule `refuse_notes_from`),
+  `accept_notes_from` (transfers only), `accept_operator_issuers` ("operator-run": the server signs for the
+  participant), `max_accept_per_issuer`, `max_claims_total`, `max_issuer_net_debt`.
+- `max_claims_total` counts each payment once: the claims on the tracker; committed deals as payee, leaving out the deal
+  being agreed or paid and any deal with a live transfer to the payee (awaiting_owner, collecting or applying); live
+  transfers to the payee, leaving out the one being checked and any transfer for the deal being agreed or paid; and the
+  amount. An `outcome_unknown` or `inconsistent` transfer is not live, so its deal counts as committed. Its own open
+  offers are not counted.
+- `max_issuer_net_debt`: q(I) = 1 if owes(I) = 0, else min(1, claims(I)/owes(I)); claims count reconciled edges only,
+  debts every tracker edge; net = max(0, owes(X) + committed_as_payer(X) + delta − adjusted claims(X)), delta the amount
+  at an agreement and 0 for a transfer; it refuses when net exceeds the limit, computed exactly.
+- `mandate_check` entries (only for a rule that is set, after the existing ones): `refuse_notes_from {rule,
+  issuer_listed: false}`, `accept_operator_issuers {rule, issuer_operator_run: false, limit: false}`, `max_claims_total
+  {rule, claims_on_tracker, committed, pending_in, this_deal, limit}`, `max_issuer_net_debt {rule,
+  issuer_owes_on_tracker, issuer_committed, this_deal, issuer_adjusted_claims (to the cent, rounded down),
+  issuer_net_debt (to the cent, rounded up), limit}`; `max_accept_per_issuer` gains `pending_in` when it is above 0. A
+  refusal at an agreement names `source: "agent_limits"` (with `recorded_by`) when the agent's recorded value refused.
+- `PUT /limits` (modes sandbox and on) takes the new fields with the kinds `ncap` (`max_claims_total`,
+  `max_issuer_net_debt`), `off_only` (`accept_operator_issuers`, `auto_clear`, `novate_own_debt`, `accept_transfers`,
+  `pay_with_held_notes`), `allow` (`accept_notes_from`) and `deny` (`refuse_notes_from`); they only ever tighten.
+- `GET /participants/{id}` (modes sandbox and on) adds `public_position.credit_policy {accept_transfers,
+  accept_notes_from, refuse_notes_from, accept_operator_issuers, max_issuer_net_debt}` (effective values, never a cap)
+  and `credit_history {notes_issued {count, PC}, paid_by_transfer {count, PC}, received_by_transfer {count, PC},
+  cleared_by_setoff {count, PC}, payment_due, disputes {raised, received}, expired_undelivered_as_payee,
+  first_activity_at, operator_run}`; neither is in `/me` or `/owner` positions. `/me` and `/owner` add `credit_policy`
+  and `features {server, consent_roles, server_run, consents_declared_at, consents_count_until}`.
+- The mandate's circulation fields exist only in modes sandbox and on (where `/info` lists `circulation/1`), so a client
+  sends `auto_clear` at join only then; in mode bound `--clearing` has no effect.
+
+**Routes, edges and clearing (18.14).**
+- `GET /edges` pages hold at most 200 journal entries; `next_seq` is the last entry's seq when more remain, else the
+  newest seq, so a client reads pages while a page is full (at most 50). A page that needs `pilot-edge-log.jsonl` while
+  it cannot be read is `503 journal_unavailable`; one whose entries the server no longer has in full (D-3 d) is
+  `503 journal_unavailable {missing_from, missing_to}` ("the edge journal is missing entries a..b
+  (pilot-edge-log.jsonl was lost or cut): this page cannot be answered in full until the operator restores the
+  file"); a page whose `since` is after the missing seqs is answered. A file that does not exist is an empty journal.
+- Clients use verified journal entries as evidence too: to promote pending entries, and to mark paid deals and novated
+  edges (kinds `transfer_out`, `transfer_in`, `setoff`); an exact (total, T) state of a payment attempt's edge means
+  that attempt applied. Only expiring kinds (residues 997-999) can be shown dead; an ordinary note is kept until a newer
+  confirmed state drops it. In a full read-back an attempt edge that is not listed counts as absent, unless it is
+  listed as doubtful.
+- Positions: `spendable_notes` (`issuer_handle`, `issuer_pubkey`, ...) and `pending` only in the participant's own
+  position; `consents_waiting_for_your_client` counts only items with an unsigned slot; `payments_in_progress` lists
+  transfers `awaiting_owner`, `collecting`, `applying`, `outcome_unknown` or `inconsistent`.
+- `GET /clearing`: `engine.last_run.excluded` counts edges by reason (`not_current_key`, `not_member`, `sandbox_only`,
+  `not_reconciled`, `busy`, `reserved`; edges held by payment attempts count as busy); `totals.cleared_PC` is gross (the
+  sum of the decreases over every edge of the applied set-offs), while a participant's `cleared_by_setoff` and a
+  client's `cleared_so_far_PC` count one side only; it carries `sandbox.dormant_PC`.
+- `POST /admin/clearing/run` returns the run record `{id, at, reason, eligible_edges, excluded, cycles_found,
+  expansions, truncated, proposed, applied_now, skipped, setoffs}`, or `409 clearing_not_running`; `GET /admin/clearing`
+  returns diagnostics with ids, members, edges and which slots are signed, never a signature.
+- Making a transfer again (regeneration) may hold the server's lock for up to 3 s while it waits for a timestamp
+  ending in 999 ms.
+- `429 rate_limited` carries no `retry_after_ms`; self-serve sandbox joins are limited to 3 per address per hour, held
+  in the server process's memory.
+- Payment options: `pending_transfer` is the latest ended attempt still inside its fallback window, `{id, state, issuer,
+  timestamp, fallback_after}` (an ISO time); a held note's `why_not` is a code such as `payment_not_accepted:payee`,
+  `not_reconciled`, `edge_busy` or `attempt_outcome_unknown`.
+- `/api/status` `basis.pin` for a tracker v3, in every mode, is the tracker's own report: "Basis tracker v3.1: Valun
+  fork commit <commit> (branch circulating-credit-v3 on Basis 6a6ebfe + caa2e86 + a00233d), as the tracker reports
+  itself", followed by " (binary not pinned)" unless `PILOT_TRACKER_SHA256` is pinned; a tracker without capabilities
+  keeps v15's text; `BASIS_PIN` overrides both. The launchers compute `PILOT_TRACKER_SHA256` from the `basis_server` they
+  run, never from the environment (an unknown hash leaves circulation off).
+
+**Sandbox circulation (18.15).**
+- Each agent buys at most 3 jobs from one stranger in 24 hours, the welcome job included, counted from when the
+  agreement formed (or from the agent's own acceptance while it waits for an owner); at most 3 welcome jobs a tick, and
+  none while sandbox-exact's room under its own `max_issue_outstanding` is below the welcome price.
+- The earn cap counts the stranger's claims on the agents: tracker claims, purchases agreed and not yet paid, and live
+  incoming transfers of the agents' notes for deals no agent pays (the deal being decided left out).
+- The agents buy, in mode on, from anyone but themselves; in mode sandbox only from sandbox participants, and decline
+  anyone else with a signed reason ("Circulating credit is on for sandbox participants only, so I buy only from them
+  (participants who joined with join-sandbox), not from you; you can still buy from me. " followed by the services text
+  cut at 300 characters); in mode off the reason stays v15's.
+- sandbox-mallory pays with held notes of the other sandbox agent only, only when the payee's consent speed is `auto`
+  or `immediate`, and never by transfer again on a deal whose payee refused one (its own note then waits for the window).
+- The server signer: `signFor(pid, msgHex, {op})` (`signHex` an alias); it signs only 80-byte note messages for the
+  pilot's tracker at residues 997-999, at most 1 h old and 5 s ahead, one operation per (agent, edge, timestamp), and
+  rebuilds every message itself (R1). Its write-ahead record is `sandbox-records.json` (mode 0600; attempts kept by the
+  sha256 of the signature and of the prior state's signature, never a signature). The agents' own notes use the
+  client's margin (120 s); the server's transfers use the server's (60 s).
+- `operator_run` also appears on position claim rows and the agents' own debt rows, with the 16.1 label "issued with
+  keys the operator holds"; `dormant_PC` is reported per agent in the `max_issue_outstanding` check entry.
+- The exact check names the first differing field in the key order of the computed result, then any extra delivered
+  keys; a delivery with no json block is disputed without naming a field.
+- An agreed but undelivered purchase stays committed until `deliver_by` + 7 days; an open welcome offer reserves 3 PC
+  for 24 h, and an accepted, undelivered welcome job holds 3 PC for about 9 days (bounding `deliver_by` on sandbox
+  purchases is an owner decision, OPEN-QUESTIONS OQ-50).
+- In ask mode the tour prompts the owner for each proposal and each acceptance: 9 times with one wrong delivery from
+  sandbox-mallory (the welcome acceptance, 3 in step 2, 2 in step 3, 1 in step 4, 2 in step 5).
+- The client tour (`valun sandbox tour`) stops with `tour_stuck` after 12 tool calls in a step that do not finish it;
+  each disputed wrong delivery allows two more calls, up to 20 disputes in one step. The X->M and M->X edges are
+  server-only and appear in the public ledger, not in the stranger's `GET /edges`.
+
+**Clients and adapters.**
+- Records (design 6.1): `records {pair: {confirmed, pending}}` with `records.paid_deals {deal_id: {route, edge, total,
+  timestamp}}` (deals never paid again); `transfer_attempts {deal_id: [attempt]}` with the acknowledged EdgeState
+  (attempts written before D-2 have `prior_timestamp` without `prior_signature` and are compared on total and
+  timestamp); `approved_payments {deal_id: quote_digest}`; `novated_edges {edge: true}`; `consent_log` (the last 100
+  decisions); `consent_roles_declared` (what the last header the server took declared; `''` after the empty list);
+  `consents_last_run_ms` and, for D-3 a, `consents_last_safe_run_ms`.
+- Owner tokens are never lost (decision D-3 c): every client and the plugin hand the token to the owner (a file or the
+  screen) right after the server's join answer and before any local write that can fail; a failure after that still
+  ends with the token shown. A join answer without a non-empty owner token is `bad_response`, and nothing is written.
+- The Hermes plugin: its clients declare consent roles only while `process_consents` is on (off: the empty list, D-3
+  b), and run the value-safe consents of D-3 a before `valun_status` and `valun_inbox`; `consents.max_PC` takes `none`
+  (no cap) and a bad value means 0; its records live in `plugin-data/valun/valun-records.json` (0.3's
+  `issued-notes.json` is their starting point); a commitment that reached its handler without the approval hook's
+  binding is refused with the adapter code `approval_missing`. These are adapter behaviour, not protocol.
+- A client's resolution of an attempt (`valun attempts resolve`): a credit-note attempt (bound or ordinary), or a
+  transfer on a server without `circulation/1`, is resolved in the client's records only; so is a transfer the server
+  does not show as this attempt, or holds as ended, and only by the owner's explicit second choice; a live transfer
+  (awaiting_owner, collecting or applying) is not resolved (`attempt_in_progress`); `not_applied` is refused for an
+  attempt the records show applied (`already_paid`). Every resolution needs the owner token (checked by the server, or
+  by `GET /owner` for a local one: `not_owner`); before asking the owner, the client reads `GET /transfers/{vt}` and
+  matches its own attempt by timestamp, held edge and new total. `valun attempts list` classifies attempts exactly as
+  the payer evaluators do.
+- The Python core exposes these as options of its agent layer: `ValunAgent(process_consents=...)` (decision D-2 g:
+  whether the agent runs the consent firewall before its own non-read-only tools) and `consents_on_reads` (D-3 a), with
+  `declare_roles` following `process_consents` unless set.
+- The owner console (not protocol): its clearing panel is read-only; the resolve action is offered only to the payer's
+  owner and needs the payee's confirmation ticked; only changed credit-policy fields are sent; the card of a payment by
+  transfer that ended without effect says, for a deal back at `payment_due`, that the delivery stays accepted so the
+  payment is due again, for one back at `delivered`, that the delivery is not accepted yet and may still be accepted
+  or disputed, and otherwise only that it ended without effect and nothing moved.
+- Client texts (non-normative): the agent layer's circulation labels (`HONEST_LABELS_CIRCULATION`,
+  `REAL_VS_SIMULATED_CIRCULATION`), `valun_status` (`money_view`, `notes_you_can_spend`, `clearing`,
+  `consent_policy_in_force`, `sandbox_next_steps`), `valun_deal.how_you_can_pay` and the consent-speed words are worded
+  by each client; only the server's texts of 16.1 are fixed.
+- Conformance: a client declares the protocol features it implements in `PROTOCOL_FEATURES` (for example
+  `("bound_notes/1", "circulation/1")`); the checker holds a client that declares `circulation/1`, or a run given
+  `--require circulation/1`, to the circulation vectors (17). Neither 0.4.0 client declares it yet (OQ-52).
+
 ## Appendix A. Differences from `valun-app/docs/PILOT-API.md`
 
 - Its decline/dispute statement, `sha256(reason)`, matches release v8 (the reason as sent); it does not mention the
@@ -2056,8 +2416,9 @@ the JavaScript `Client.joinSandbox()` since 0.3.0; the Hermes plugin's `hermes v
 
 ## Appendix H. Changes in release v16 (valun-app branch `circulation-v16`, not released) *(draft until vectors are regenerated)*
 
-Release v16 is built locally and is neither released nor deployed. Its rows are the contract it is built against; the
-commit, the source hashes and the vectors will be added when it is released.
+Release v16 is built locally and is neither released nor deployed. Its rows are the contract it is built against. The
+vectors were regenerated from valun-app commit `cfe698b` (branch `circulation-v16`; `generate.mjs` `RELEASES` pins the
+sha256 of every server source it imports); if the release commit differs, they are regenerated from it.
 
 **In every mode** (no visible change in normal operation):
 
@@ -2070,6 +2431,9 @@ commit, the source hashes and the vectors will be added when it is released.
 | `GET /ledger` keeps only notes in the pilot denomination | 14.3 | notes in every denomination the tracker returned |
 | `?prior=1` on the credit-note template adds `prior_note` | 9.2 | query strings ignored |
 | Against a tracker that reports reserved timestamps (v3): ordinary template timestamps skip 995–999 ms (at most 5 ms later); a completion at a reserved residue other than 997 (a bound note, 18.5) is `409 stale_note` with a fresh template | 9.2, 18.4 | — (older trackers accept every residue) |
+| Handles shaped like participant ids (`vp_` + 12 hex) are refused at join and join-sandbox (`400 invalid_field`) | 3, G | accepted |
+| `GET /api/status` `basis.pin` for a tracker v3 is the tracker's own report ("…, as the tracker reports itself", plus " (binary not pinned)" unless its sha256 is pinned), in every mode; `BASIS_PIN` overrides | 18.16 | v15's text for every tracker |
+| `POST /owner/approvals/{va}`: `409 not_pending` when the deal or offer expired during the decision's mandate checks; nothing is decided | 12 | the expired approval could be decided |
 | The sandbox agents count only successful actions against their per-round budget (at most 32 attempts a round, with a growing back-off per item) and decline, with a signed reason, offers their own mandate cannot accept | D | failed items used up the round; such offers stayed open |
 
 **With circulation on** (bound notes from mode `bound` up, everything else in modes `sandbox` and `on`; 18):
@@ -2087,3 +2451,39 @@ commit, the source hashes and the vectors will be added when it is released.
 | `GET /edges`, `GET /transfers/{vt}`, `GET /setoffs/{vs}`, loopback clearing admin routes; reconciliation, positions and inbox additions | 14.3, 18.14 | — |
 | Labels with circulation on | 16.1 | 16 |
 | Client rules R1–R13 and their refusal codes | 15.3 | — |
+| Tracker v3.1: bound notes expire after one hour (`novation_expired`); `bound_notes` version 2 with `max_age_ms` (decision D-1 item 1) | 18.2, 18.8 | — |
+| One live payment attempt per deal, across kinds (D-1): `409 transfer_window_open`, `409 attempt_outcome_unknown`, `409 already_paid`, `409 pending_unbound_note`; transfer states `outcome_unknown`, `inconsistent`, `resolved_not_applied`, `void_expired` | 15.3, 18.6, 18.8 | — |
+| Refused payments recorded as attempts (D-2 b); held notes and attempts keep their edges out of set-offs (D-2 c, `held_note`, `payment_attempt`); the journal proves attempts dead (D-2 e); a failed bound note's error is the server's own sentence (D-2 f) | 18.7, 18.8, 18.16 | — |
+| The owner's resolution of an attempt whose outcome is unknown: `POST /owner/deals/{vd}/attempts/{vt}/resolve` (D-2 d; transfers only) | 18.8 | — |
+| `X-Valun-Features: consents/1;roles=` (empty) forgets the recorded roles at once (D-3 b); the journal is partial unless it covers every seq (D-3 d: `503 journal_unavailable {missing_from, missing_to}`, audit `journal.incomplete`) | 18.1, 18.8, 18.14 | — |
+| Phase-2 credit policies (`max_claims_total`, `max_issuer_net_debt`, `accept_operator_issuers`), public `credit_policy` and `credit_history`; `max_claims_total` counts each payment once, and a `sandbox_only` participant shows its enforced 40 | 18.13, 18.16 | — |
+| `GET /info` `description` with circulation on names transfers and set-offs (modes off and bound keep v15's text) | 16.1 | "no redemption, reserve or clearing" |
+
+**Clients with circulation off** (decision D-2 h). The 0.4 clients make exactly the 0.3.1 requests against a server
+that lists no `circulation/1`, except these reads of `GET /info` (no other change; no `X-Valun-Features` header, no
+`GET /consents` and no `GET /edges` with features off):
+1. the `valun_propose` approval snapshot reads `GET /info` once per agent process while the features are unknown;
+2. the consent hook reads `GET /info` once per agent process, before the first tool that is not read-only, and only
+   for profiles that take part in consents (a `consent_policy`, written at join since 0.4, or recorded transfer
+   attempts or approved payments); after that no more reads, and 0.3 profiles make none;
+3. `complete()` on a pinned profile reads `GET /info` once per accepted delivery (`bound_notes/1` detection and the
+   reserved residues); `valun_deal` no longer pins profiles, as in 0.3.1;
+4. the sandbox Seller reads `GET /info` once, at its first step (it must be restarted to see circulation turned on
+   later; the agent re-reads `/info` through `valun_status`);
+5. the new owner CLI commands read `GET /info`: `valun attempts`, `clearing`, `policy show`, and join's pin read;
+   `attempts` reads `GET /edges` only when features are on, and `resolve` also reads `GET /transfers` (circulation
+   only) and `GET /owner` (for local resolutions);
+6. with features off there is no `X-Valun-Features` header, no `GET /consents` and no `GET /edges`.
+`valun_deal`, `valun_status` and `valun_inbox` make exactly the 0.3.1 requests.
+
+**The server with circulation off** stays byte-identical to v15 (the 100-step flow and the sandbox flows give v15's
+snapshots on the old tracker and on v3.1; transcript steps 1-147 are unchanged): `sandbox-keys.json` is written as v15
+writes it; `sandbox-records.json` is written only in modes sandbox and on; `payment.refused_attempt` and
+`transfer.resolved_by_owner` occur only in modes sandbox and on; the resolve route is 404 in modes off and bound. A v15
+rollback (`scripts/pilot-downgrade-check.mjs`) is refused while any transfer is awaiting_owner, collecting, applying,
+outcome_unknown or inconsistent, any set-off is collecting or applying, a deal is paying_by_transfer, a
+`pay_by_transfer` approval is pending or a bound note is held or being issued; otherwise it backs up the state and maps
+payment_due to note_failed. v15's `migrate()` turns a v16 deal's payment-by-transfer record into a credit-note record
+with no note (display-only in v15; a re-upgrade loses that deal's payment block; OPEN-QUESTIONS OQ-51). v15 code on
+tracker v3.1 gets an occasional note_failed (ordinary templates may end in 995-999 ms) and cannot pay novated edges with
+its unbound notes: run v15 with the `3df7ed93` tracker instead.

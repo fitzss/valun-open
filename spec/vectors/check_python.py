@@ -35,10 +35,24 @@ What is checked
                         send a different reason string) are replayed the same way, after checking that the client's tool
                         layer still calls Client.decline / Client.dispute the way the variant says. A step with
                         expect_error must make the client raise that error code. `probes` are server-only.
+                        Since release v16 (steps 148+, circulation on): each server-verified Basis message is rebuilt by
+                        the client for its edge; a replayed call starts from its client_state, must send the recorded
+                        X-Valun-Features header, must sign each signature_fields pointer over the message the server
+                        verified for that field (server_verified[].field), and must hold client_state_after afterwards.
+- circulation.json      (release v16) timestamp residue classes; the 80-byte messages of bound notes, transfer slots
+                        and set-off slots; quote digests; the pay statement; the signatures of tracker requests; and the
+                        decisions of the client signing firewall (novation.evaluate_consent / evaluate_payer_template /
+                        evaluate_bound_template: sign exactly these slots, or refuse with this code; PROTOCOL.md 15.3).
 
-Outcomes: agree | differ | python_error | n/a. Exit status 1 when any `core`/`terms`/`client_path`/`replay`
-check does not agree; `wire`, `refused`, `edge` and `generic` results are informative and never fail the run. Exit
-status 2 when the client cannot be found or imported.
+Protocol features: the circulation checks (tiers `circulation` and `consent`) count for a client that declares
+'circulation/1' in PROTOCOL_FEATURES (its client or novation module), or for a run given --require circulation/1;
+otherwise each is n/a, so a client released before circulating credit is not failed by them.
+  --require circulation/1   hold the client to circulating credit whether or not it declares it (the package's CI run)
+  --vectors-dir DIR         read the vector files from DIR (default: next to this script)
+
+Outcomes: agree | differ | python_error | n/a. Exit status 1 when any `core`/`terms`/`client_path`/`replay`/
+`circulation`/`consent` check does not agree (n/a never fails); `wire`, `refused`, `edge` and `generic` results are
+informative and never fail the run. Exit status 2 when the client cannot be found or imported.
 """
 import sys
 
@@ -67,8 +81,8 @@ try:
 except Exception:
     pass
 
-vb = vc = None        # the client's basis and client modules, set by load_client()
-CLIENT = {}           # name, label, tool_file, refs
+vb = vc = nv = None   # the client's basis, client and (0.4 and later) novation modules, set by load_client()
+CLIENT = {}           # name, label, tool_file, refs, features (declared), required
 
 
 def fail(message):
@@ -87,11 +101,12 @@ def load_plugin(plugin_dir):
         spec.loader.exec_module(pkg)
         b = importlib.import_module('valun_core.basis')
         c = importlib.import_module('valun_core.client')
-        for m in (pkg, b, c):   # never check another copy by accident
-            if not os.path.abspath(m.__file__).startswith(core + os.sep):
+        n = importlib.import_module('valun_core.novation') if os.path.isfile(os.path.join(core, 'novation.py')) else None
+        for m in (pkg, b, c, n):   # never check another copy by accident
+            if m is not None and not os.path.abspath(m.__file__).startswith(core + os.sep):
                 fail(f'{m.__name__} was imported from {m.__file__}, not from {core}')
         assert c.vb is b
-        return (b, c, os.path.join(core, 'agent.py'),
+        return (b, c, n, os.path.join(core, 'agent.py'),
                 f'the Hermes plugin (hermes-plugin-valun, core {getattr(pkg, "__version__", "?")}) at {plugin_dir}')
     for f in ('valun_basis.py', 'valun_client.py'):
         if not os.path.isfile(os.path.join(plugin_dir, f)):
@@ -107,7 +122,7 @@ def load_plugin(plugin_dir):
     b = load('valun_basis')
     c = load('valun_client')  # its `from . import valun_basis` fails outside the package; it then uses sys.modules['valun_basis']
     assert c.vb is b
-    return b, c, os.path.join(plugin_dir, 'tools.py'), f'the Hermes plugin (hermes-plugin-valun) at {plugin_dir}'
+    return b, c, None, os.path.join(plugin_dir, 'tools.py'), f'the Hermes plugin (hermes-plugin-valun) at {plugin_dir}'
 
 
 def load_package(src):
@@ -120,11 +135,12 @@ def load_package(src):
     pkg = importlib.import_module('valun')
     b = importlib.import_module('valun.basis')
     c = importlib.import_module('valun.client')
-    for m in (pkg, b, c):   # never check an installed copy by accident
-        if not os.path.abspath(m.__file__).startswith(src + os.sep):
+    n = importlib.import_module('valun.novation') if os.path.isfile(os.path.join(src, 'valun', 'novation.py')) else None
+    for m in (pkg, b, c, n):   # never check an installed copy by accident
+        if m is not None and not os.path.abspath(m.__file__).startswith(src + os.sep):
             fail(f'{m.__name__} was imported from {m.__file__}, not from {src}')
     assert c.vb is b
-    return b, c, os.path.join(src, 'valun', 'agent.py'), f'the valun package {getattr(pkg, "__version__", "?")} at {src}'
+    return b, c, n, os.path.join(src, 'valun', 'agent.py'), f'the valun package {getattr(pkg, "__version__", "?")} at {src}'
 
 
 def source_ref(func, needle):
@@ -147,17 +163,33 @@ def tool_calls(method):
 
 
 def load_client(args):
-    global vb, vc
+    global vb, vc, nv
     if args.client == 'plugin':
-        vb, vc, tool_file, label = load_plugin(args.plugin_dir)
+        vb, vc, nv, tool_file, label = load_plugin(args.plugin_dir)
     else:
-        vb, vc, tool_file, label = load_package(args.package_src)
-    CLIENT.update(name=args.client, label=label, tool_file=tool_file,
+        vb, vc, nv, tool_file, label = load_package(args.package_src)
+    # The protocol features the client declares (PROTOCOL_FEATURES in its client or novation module, e.g.
+    # ('bound_notes/1', 'circulation/1')); --require holds it to a feature whether or not it declares it.
+    declared = getattr(vc, 'PROTOCOL_FEATURES', None) or getattr(nv, 'PROTOCOL_FEATURES', None) or ()
+    CLIENT.update(name=args.client, label=label, tool_file=tool_file, features=tuple(declared), required=tuple(args.require or ()),
                   refs={'decline': source_ref(vc.Client.decline, "statement('decline'"), 'dispute': source_ref(vc.Client.dispute, "statement('dispute'")})
 
 
+def supports(feature):
+    """Whether the checks of `feature` (circulation/1: transcript steps 148+ and circulation.json) count for this run:
+    the client declares it in PROTOCOL_FEATURES, or the run requires it (--require). Otherwise they are n/a, so a
+    client released before the feature (for example the Hermes plugin 0.3.0 CI pins) is not failed by them."""
+    return feature in CLIENT.get('features', ()) or feature in CLIENT.get('required', ())
+
+
+def feature_tier(feature):
+    return 'circulation' if feature in ('circulation/1', 'bound_notes/1') else 'replay'
+
+
 RESULTS = []          # (file, name, check, tier, outcome, detail)
-FAILING_TIERS = {'core', 'terms', 'client_path', 'replay'}  # 'wire': the Python clients refuse float-written numbers (a safe refusal)
+FAILING_TIERS = {'core', 'terms', 'client_path', 'replay', 'circulation', 'consent'}  # 'wire': the Python clients refuse float-written numbers (a safe refusal)
+# 'circulation' and 'consent' (release v16) are recorded only when the client declares circulation/1 or the run requires
+# it (supports()); otherwise each such check is n/a.
 
 
 def record(file, name, check, tier, outcome, detail=''):
@@ -171,8 +203,11 @@ def attempt(fn):
         return None, f'{type(e).__name__}: {e}'
 
 
+VECTORS = HERE        # --vectors-dir: the folder the vector files are read from (default: next to this script)
+
+
 def vec(name):
-    with open(os.path.join(HERE, name), encoding='utf-8') as f:
+    with open(os.path.join(VECTORS, name), encoding='utf-8') as f:
         return json.load(f)
 
 
@@ -226,6 +261,8 @@ def statement_parts(v):
         return [i['terms_hash'], i['deliverable_sha256']]
     if k == 'dispute':
         return [i['terms_hash'], i['deliverable_sha256'], vc.sha256_hex(i['reason'])]
+    if k == 'pay':                       # release v16 (circulation.json): valun-pilot/pay/1 LF deal_id LF quote_digest
+        return [i['deal_id'], i['quote_digest']]
     raise ValueError(k)
 
 
@@ -327,7 +364,8 @@ class Transport:
         self.reads = step.get('client_reads', {})
         self.req, self.res = step['request'], step['response']
         self.token = token_placeholder
-        self.captured, self.problems = None, []
+        self.captured, self.sent, self.problems = None, False, []
+        self.features = None
 
     def urlopen(self, req, timeout=None):
         method, path = req.get_method(), req.full_url[len(BASE):]
@@ -341,6 +379,8 @@ class Transport:
             if want and auth != want:
                 self.problems.append(f'Authorization header {auth!r}, expected {want!r}')
             self.captured = json.loads(req.data.decode('utf-8')) if req.data else None
+            self.sent = True
+            self.features = req.get_header('X-valun-features')
             return self._answer(req, self.res['status'], self.res['body'])
         self.problems.append(f'unexpected request {key}')
         raise urllib.error.HTTPError(req.full_url, 599, 'unexpected request in replay', {}, io.BytesIO(b'{"error":"unexpected_request"}'))
@@ -401,15 +441,45 @@ def client_reason_request(kind, inputs, key):
 
 
 def strip_sigs(body):
-    b = copy.deepcopy(body)
-    if isinstance(b, dict):
-        b.pop('signature', None)
-        if isinstance(b.get('credit_note'), dict):
-            b['credit_note'].pop('signature', None)
-    return b
+    """The body with its signatures taken out, for comparing request bodies (signature bytes may differ between
+    implementations: each must verify, which is checked separately). Every key named 'signature' or ending in
+    '_signature' is dropped, at any depth and inside lists too; a 'signatures' map (slot -> signature) keeps its slots,
+    each with the value '<signature>', so the set of slots signed is still compared."""
+    if isinstance(body, list):
+        return [strip_sigs(x) for x in body]
+    if not isinstance(body, dict):
+        return copy.deepcopy(body)
+    out = {}
+    for k, v in body.items():
+        if k == 'signature' or (isinstance(k, str) and k.endswith('_signature')):
+            continue
+        if k == 'signatures' and isinstance(v, dict):
+            out[k] = {slot: '<signature>' for slot in v}
+            continue
+        out[k] = strip_sigs(v)
+    return out
+
+
+def pointer_get(doc, ptr):
+    """The value at JSON pointer `ptr` (RFC 6901) in doc, or a KeyError."""
+    if ptr == '':
+        return doc
+    cur = doc
+    for raw in ptr.split('/')[1:]:
+        part = raw.replace('~1', '/').replace('~0', '~')
+        if isinstance(cur, list):
+            cur = cur[int(part)]
+        elif isinstance(cur, dict):
+            cur = cur[part]
+        else:
+            raise KeyError(ptr)
+    return cur
 
 
 def replay(step, meta, participants, variant=None):
+    """Runs the step's client_call through the client's real Client method against the recorded answers. Returns
+    (transport, key, raised, state after the call). client_call.client_state (release v16 steps) is the profile's
+    records before the call, merged over the enrolled profile (server, participant_id, pubkey, issued)."""
     call = step['client_call']
     key = meta['test_keys'][call['key']]
     secret = test_key(key['label'])
@@ -444,7 +514,9 @@ def replay(step, meta, participants, variant=None):
             vb.generate_secret = lambda: secret
             client = vc.Client(FakeStore({'server': BASE}, None, None))
         else:
-            client = vc.Client(FakeStore({'server': BASE, 'participant_id': pid, 'pubkey': key['pubkey'], 'issued': {}}, secret.hex(), token))
+            state = {'server': BASE, 'participant_id': pid, 'pubkey': key['pubkey'], 'issued': {}}
+            state.update(copy.deepcopy(call.get('client_state') or {}))
+            client = vc.Client(FakeStore(state, secret.hex(), token))
         args = dict(call['args'])
         if variant and variant.get('strip'):
             args['reason'] = args['reason'].strip()
@@ -458,7 +530,74 @@ def replay(step, meta, participants, variant=None):
             raised = e
     finally:
         vc.datetime, vc.time, vc.secrets, urllib.request.urlopen, vb.generate_secret = saved
-    return transport, key, raised
+    return transport, key, raised, client.state
+
+
+def check_v16_request(step, call, got, key, variant=None):
+    """Release v16 steps: the body (signatures aside), the capability header, and each signature field the step names
+    (signature_fields, JSON pointers into the body): it must verify, under this client's key, over the message the
+    server verified for that field (server_verified[].field), or over client_call.expected_messages[field] when the
+    server refused before it verified anything."""
+    problems = []
+    want = step['request'].get('body')
+    if strip_sigs(got) != strip_sigs(want):
+        problems.append(f'request body differs: python {json.dumps(strip_sigs(got))[:300]} vs recorded {json.dumps(strip_sigs(want))[:300]}')
+    sent = got if got is not None else {}
+    by_field = {e['field']: e for e in step['server_verified'] if 'field' in e}
+    expected = call.get('expected_messages') or {}
+    for ptr in call['signature_fields']:
+        try:
+            sig = pointer_get(sent, ptr)
+        except (KeyError, IndexError, ValueError):
+            problems.append(f'no signature at {ptr} in the request body')
+            continue
+        e = by_field.get(ptr)
+        msg = bytes.fromhex(e['message_hex']) if e else bytes.fromhex(expected[ptr]) if ptr in expected else None
+        if msg is None:
+            problems.append(f'the vectors name no message for the signature at {ptr}')
+        elif e is not None and e['pubkey'] != key['pubkey']:
+            problems.append(f'the server verified the signature at {ptr} under another key')
+        elif not (isinstance(sig, str) and verify_hex(sig, msg, key['pubkey'])):
+            problems.append(f'the signature at {ptr} does not verify over ' + (f'the message the server verified ({e["kind"]})' if e else 'the expected message'))
+    return problems
+
+
+def state_problems(state, want, path='state'):
+    """client_state_after: the records a client must hold after the call (a subset: only the keys given are compared;
+    a dict compares its given keys, a list compares element by element and must have the same length, other values
+    compare equal; the value None means the key must be absent or None)."""
+    out = []
+    if isinstance(want, dict):
+        if want and not isinstance(state, dict):
+            return [f'{path} is {json.dumps(state)[:120]}, not an object']
+        for k, v in want.items():
+            if v is None:
+                if isinstance(state, dict) and state.get(k) is not None:
+                    out.append(f'{path}.{k} is {json.dumps(state.get(k))[:120]}, expected none')
+                continue
+            if not isinstance(state, dict) or k not in state:
+                out.append(f'{path}.{k} is missing')
+                continue
+            out += state_problems(state[k], v, f'{path}.{k}')
+        return out
+    if isinstance(want, list):
+        if not isinstance(state, list) or len(state) != len(want):
+            return [f'{path} is {json.dumps(state)[:160]}, expected {len(want)} item(s) like {json.dumps(want)[:160]}']
+        for i, (x, y) in enumerate(zip(state, want)):
+            out += state_problems(x, y, f'{path}[{i}]')
+        return out
+    return [] if state == want else [f'{path} is {json.dumps(state)[:120]}, expected {json.dumps(want)[:120]}']
+
+
+def rebuilt_message(edge, message_hex, meta):
+    """note_message(issuer, recipient, total, timestamp, tracker, unit) for the edge, with the total and the timestamp
+    read from the message itself (bytes 32-40 and 40-48, big-endian): equal to message_hex when the client's message
+    builder agrees on the debt key and the layout."""
+    issuer, recipient = edge.split('>')
+    raw = bytes.fromhex(message_hex)
+    total, ts = int.from_bytes(raw[32:40], 'big'), int.from_bytes(raw[40:48], 'big')
+    return vb.note_message(bytes.fromhex(issuer), bytes.fromhex(recipient), total, ts, bytes.fromhex(meta['fixture_tracker_nft_id']),
+                           meta['pilot_denomination']).hex()
 
 
 def check_transcript():
@@ -470,6 +609,10 @@ def check_transcript():
             ok, err = attempt(lambda: verify_hex(e['signature'], bytes.fromhex(e['message_hex']), e['pubkey']))
             record('transcript.json', sname, f'server-verified signature {i + 1} ({e["kind"]}) == {e["valid"]}', 'core',
                    'python_error' if err else ('agree' if ok == e['valid'] else 'differ'), err or '')
+            if e.get('edge'):           # release v16: the 80-byte message rebuilt from its edge, total and timestamp
+                m, err = attempt(lambda: rebuilt_message(e['edge'], e['message_hex'], meta))
+                record('transcript.json', sname, f'server-verified message {i + 1} rebuilt for edge {e["edge"][:8]}..>{e["edge"].split(">")[1][:8]}..', 'core',
+                       'python_error' if err else ('agree' if m == e['message_hex'] else 'differ'), err or '')
         bodies = [step['response']['body']] + [r['body'] for r in step.get('client_reads', {}).values()]
         for b in bodies:
             for x in ([b] if isinstance(b, dict) else b if isinstance(b, list) else []):
@@ -498,21 +641,32 @@ def check_transcript():
                            'client_path', 'agree' if ok else 'differ', '' if ok else f'{where}:{n}: {text}')
                     where = f'{where}:{n}'
                 label += f' via {variant["name"]} ({where})'
-            tier = 'client_path' if variant else 'replay'
+            feature = step['client_call'].get('feature')
+            tier = 'client_path' if variant else feature_tier(feature) if feature else 'replay'
+            if feature and not supports(feature):
+                record('transcript.json', sname, label, tier, 'n/a', f'the client does not declare {feature} (PROTOCOL_FEATURES) and the run does not --require it')
+                continue
             out, err = attempt(lambda: replay(step, meta, participants, variant))
             if err:
                 record('transcript.json', sname, label, tier, 'python_error', err)
                 continue
-            transport, key, raised = out
+            transport, key, raised, after = out
             problems = list(transport.problems)
             got = transport.captured
-            want_err = step['client_call'].get('expect_error')
+            call = step['client_call']
+            want_err = call.get('expect_error')
             if raised is not None and raised.code != want_err:
                 problems.append(f'client raised {raised.code}: {raised}')
             if want_err and (raised is None or raised.code != want_err):
                 problems.append(f'expected the client to raise {want_err}')
-            if got is None:
+            if not transport.sent and call.get('expect_no_request'):
+                pass                            # the client must refuse before it sends anything (checked by expect_error)
+            elif transport.sent and call.get('expect_no_request'):
+                problems.append('the client sent the request, but it must refuse before sending anything')
+            elif not transport.sent:
                 problems.append('the client sent no request for this step')
+            elif 'signature_fields' in call:
+                problems += check_v16_request(step, call, got, key, variant)
             else:
                 want = step['request'].get('body')
                 if variant:
@@ -543,7 +697,142 @@ def check_transcript():
                         problems.append('the client\'s Basis note signature does not verify over the note message the server verified')
                 if got.get('pubkey') and got['pubkey'] != key['pubkey']:
                     problems.append('enrolled a different public key')
+            if 'client_state_after' in call:
+                problems += [f'client records after the call: {x}' for x in state_problems(after, call['client_state_after'])]
             record('transcript.json', sname, label, tier, 'differ' if problems else 'agree', ' | '.join(problems))
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# circulation.json (release v16, circulating credit; PROTOCOL.md 15.3 and 18)
+def guarded_verify(pubkey_hex, msg, sig_hex):
+    """The evaluators' verify(pubkey_hex, msg_bytes, sig_hex): False for anything that is not a valid signature."""
+    try:
+        return vb.verify(bytes.fromhex(sig_hex), msg, bytes.fromhex(pubkey_hex))
+    except Exception:  # noqa: BLE001 - not hex, wrong length: does not verify
+        return False
+
+
+EVALUATORS = {'consent': 'evaluate_consent', 'payer_template': 'evaluate_payer_template', 'bound_template': 'evaluate_bound_template'}
+
+
+def evaluate(v):
+    """Runs the client's own evaluator for one decision vector (novation.evaluate_consent / evaluate_payer_template /
+    evaluate_bound_template) with the vector's context and this client's Basis verifier."""
+    ctx = copy.deepcopy(v['ctx'])
+    ctx['verify'] = guarded_verify
+    return getattr(nv, EVALUATORS[v['evaluator']])(copy.deepcopy(v['input']), ctx)
+
+
+def check_decision(v, meta, file):
+    name, tier = v['name'], 'consent'
+    if not supports('circulation/1'):
+        record(file, name, f'{v["evaluator"]} decision', tier, 'n/a', 'the client does not declare circulation/1 and the run does not --require it')
+        return
+    if nv is None or not hasattr(nv, EVALUATORS[v['evaluator']]):
+        record(file, name, f'{v["evaluator"]} decision', tier, 'python_error', f'the client has no novation.{EVALUATORS[v["evaluator"]]}')
+        return
+    r, err = attempt(lambda: evaluate(v))
+    if err:
+        record(file, name, f'{v["evaluator"]} decision', tier, 'python_error', err)
+        return
+    want = v['expected']
+    problems = []
+    if want == 'sign':
+        if not r.get('ok'):
+            problems.append(f'refused with {r.get("code")}: {str((r.get("summary") or {}).get("reason"))[:160]}')
+        else:
+            slots = [t[0] for t in r['to_sign']]
+            if slots != v['slots']:
+                problems.append(f'signs slots {slots}, expected {v["slots"]}')
+            else:
+                msgs, e2 = attempt(lambda: nv.slot_messages(r['to_sign'], meta['fixture_tracker_nft_id'], meta['pilot_denomination']))
+                if e2:
+                    problems.append(f'slot_messages: {e2}')
+                else:
+                    for slot in slots:
+                        if msgs[slot].hex() != v['messages'][slot]:
+                            problems.append(f'the message for {slot} differs')
+    else:
+        code = want['refuse']
+        if r.get('ok'):
+            problems.append(f'would sign {[t[0] for t in r.get("to_sign") or []]}; expected the refusal {code}')
+        elif r.get('code') != code:
+            problems.append(f'refused with {r.get("code")}, expected {code}: {str((r.get("summary") or {}).get("reason"))[:160]}')
+    for k, x in (v.get('summary') or {}).items():
+        got = (r.get('summary') or {}).get(k)
+        if got != x:
+            problems.append(f'summary.{k} is {json.dumps(got)[:120]}, expected {json.dumps(x)[:120]}')
+    label = f'{v["evaluator"]} decision: ' + ('sign ' + ', '.join(sl.split(':')[-1] for sl in v.get('slots', [])) if want == 'sign' else f'refuse {want["refuse"]}')
+    record(file, name, label, tier, 'differ' if problems else 'agree', ' | '.join(problems))
+
+
+def check_circulation():
+    path = os.path.join(VECTORS, 'circulation.json')
+    if not os.path.isfile(path):
+        return
+    data = vec('circulation.json')
+    meta, file = data['meta'], 'circulation.json'
+    nft, denom = meta['fixture_tracker_nft_id'], meta['pilot_denomination']
+    circ = supports('circulation/1')
+    # Timestamp residues (PROTOCOL.md 18.4): which operation each ending is for, and whether an ordinary note may use it.
+    for v in data['timestamps']:
+        if 'accepted_as' not in v:      # the server's choice of a timestamp (novationTimestamp): server-side, informative
+            record(file, v['name'], 'server choice of the timestamp (server-side rule)', 'edge', 'n/a', json.dumps(v.get('server_choice')))
+            continue
+        if not circ or nv is None:
+            record(file, v['name'], 'residue classes', 'circulation', 'n/a' if not circ else 'python_error',
+                   'the client does not declare circulation/1 and the run does not --require it' if not circ else 'the client has no novation module')
+            continue
+        def classes(ts):
+            safe = isinstance(ts, int) and not isinstance(ts, bool) and 0 <= ts <= nv.MAX_SAFE_INTEGER   # every signed number is a safe integer
+            return {'ordinary': safe and ts % 1000 not in nv.RESERVED_MS, **{k: safe and ts % 1000 == nv.RESIDUE[k] for k in ('bound', 'transfer', 'setoff')}}
+        got, err = attempt(lambda: classes(v['ts']))
+        record(file, v['name'], 'residue classes', 'circulation', 'python_error' if err else ('agree' if got == v['accepted_as'] else 'differ'),
+               err or ('' if got == v['accepted_as'] else f'python {got} vs {v["accepted_as"]}'))
+    # Every message a circulation operation signs is the 80-byte Basis note message M(I,R,t,ts).
+    for v in data['messages']:
+        m, err = attempt(lambda: vb.note_message(bytes.fromhex(v['issuer_pubkey']), bytes.fromhex(v['recipient_pubkey']), v['total'], v['timestamp'],
+                                                 bytes.fromhex(v['tracker_nft_id']), v['denomination']).hex())
+        record(file, v['name'], 'note message', 'core', 'python_error' if err else ('agree' if m == v['message_hex'] else 'differ'), err or '')
+        ok, err = attempt(lambda: verify_hex(v['signature'], bytes.fromhex(v['message_hex']), v['signer_pubkey']))
+        record(file, v['name'], f'signature verifies == {v.get("valid", True)}', 'core', 'python_error' if err else ('agree' if ok == v.get('valid', True) else 'differ'), err or '')
+    # The transfer quote and its digest (PROTOCOL.md 18.3 item 4).
+    for v in data['quote_digests']:
+        c, err = attempt(lambda: vc.canonical(v['quote']))
+        record(file, v['name'], 'canonical(Q)', 'core', 'python_error' if err else ('agree' if c == v['canonical'] else 'differ'), err or '')
+        h, err = attempt(lambda: vc.sha256_hex(v['canonical']))
+        record(file, v['name'], 'quote_digest = sha256hex(canonical(Q))', 'core', 'python_error' if err else ('agree' if h == v['quote_digest'] else 'differ'), err or '')
+        if not circ:
+            record(file, v['name'], 'novation.quote_digest', 'circulation', 'n/a', 'the client does not declare circulation/1 and the run does not --require it')
+            continue
+        q, err = attempt(lambda: nv.quote_digest(v['quote']))
+        record(file, v['name'], 'novation.quote_digest', 'circulation', 'python_error' if err else ('agree' if q == v['quote_digest'] else 'differ'), err or '')
+    # The pay statement (valun-pilot/pay/1): text, bytes, signature.
+    for v in data['statements']:
+        st, err = attempt(lambda: vc.statement(v['kind'], *statement_parts(v)))
+        ok = not err and st == v['statement'] and st.encode('utf-8').hex() == v['statement_utf8_hex']
+        record(file, v['name'], 'statement text', 'core', 'python_error' if err else ('agree' if ok else 'differ'), err or ('' if ok else f'python {st!r}'))
+        ok, err = attempt(lambda: verify_hex(v['signature'], bytes.fromhex(v['statement_utf8_hex']), v['pubkey']))
+        record(file, v['name'], f'signature verifies == {v.get("valid", True)}', 'core', 'python_error' if err else ('agree' if ok == v.get('valid', True) else 'differ'), err or '')
+        if circ and nv is not None and v['kind'] == 'pay':
+            ps, err = attempt(lambda: nv.pay_statement(v['inputs']['deal_id'], v['inputs']['quote_digest']))
+            record(file, v['name'], 'novation.pay_statement', 'circulation', 'python_error' if err else ('agree' if ps == v['statement'] else 'differ'), err or '')
+    # Tracker requests (POST /notes/transfer, /notes/setoff): each signature over the message the tracker checks for its
+    # field, rebuilt by the client; the tracker's answer itself is tracker-side (informative).
+    for group in ('transfers', 'setoffs'):
+        for v in data[group]:
+            for sg in v['signatures']:
+                m, err = attempt(lambda: vb.note_message(bytes.fromhex(sg['issuer_pubkey']), bytes.fromhex(sg['recipient_pubkey']), sg['total'], sg['timestamp'],
+                                                         bytes.fromhex(nft), denom).hex())
+                record(file, v['name'], f'{sg["field"]}: message', 'core', 'python_error' if err else ('agree' if m == sg['message_hex'] else 'differ'), err or '')
+                ok, err = attempt(lambda: guarded_verify(sg['signer_pubkey'], bytes.fromhex(sg['message_hex']), sg['signature']))
+                record(file, v['name'], f'{sg["field"]}: verifies == {sg["valid"]}', 'core', 'python_error' if err else ('agree' if ok == sg['valid'] else 'differ'), err or '')
+            o = v['tracker_outcome']
+            record(file, v['name'], 'tracker outcome (tracker-side rule)', 'edge', 'n/a', f'{o.get("status")} {o.get("code") or ""}'.strip())
+    # The client's signing firewall (PROTOCOL.md 15.3): sign exactly these slots, or refuse with this code.
+    for group in ('consents', 'payer_templates', 'bound_templates'):
+        for v in data[group]:
+            check_decision(v, meta, file)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -555,6 +844,10 @@ def parse_args(argv=None):
                    help='checkout of hermes-plugin-valun (default: env VALUN_PLUGIN_DIR, else ../../../hermes-plugin-valun)')
     p.add_argument('--package-src', default=os.environ.get('VALUN_PACKAGE_SRC') or os.path.join(REPO, 'python', 'src'),
                    help='folder that contains the valun package (default: env VALUN_PACKAGE_SRC, else python/src of this repository)')
+    p.add_argument('--vectors-dir', default=HERE, help='folder holding the vector files (default: the folder of this script)')
+    p.add_argument('--require', action='append', metavar='FEATURE', choices=('circulation/1',),
+                   help='hold the client to a protocol feature (circulation/1: transcript steps 148+ and circulation.json) even if it '
+                        'does not declare it in PROTOCOL_FEATURES; without it those checks count only for a client that declares it')
     a = p.parse_args(argv)
     if a.client not in ('plugin', 'package'):
         p.error(f'VALUN_CLIENT must be plugin or package, not {a.client!r}')
@@ -562,10 +855,16 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
-    load_client(parse_args(argv))
+    global VECTORS
+    args = parse_args(argv)
+    VECTORS = os.path.abspath(args.vectors_dir)
+    load_client(args)
     release = vec('canonical.json')['meta'].get('server_release', '?')
     print(f'valun-deal/1 vectors (server release {release}) vs {CLIENT["label"]}')
-    for f in (check_canonical, check_statements, check_notes, check_signatures, check_validation, check_transcript):
+    held = [f for f in ('circulation/1',) if supports(f)]
+    print(f'protocol features: declared {list(CLIENT["features"]) or "none"}; required {list(CLIENT["required"]) or "none"}; '
+          + (f'checked: {", ".join(held)}' if held else 'circulation/1 checks are n/a'))
+    for f in (check_canonical, check_statements, check_notes, check_signatures, check_validation, check_transcript, check_circulation):
         f()
     by = {}
     for file, _n, _c, tier, outcome, _d in RESULTS:
@@ -576,7 +875,7 @@ def main(argv=None):
         print(f'  {file}')
         for tier, outs in sorted(by[file].items()):
             print(f'    {tier:12} ' + ', '.join(f'{k} {v}' for k, v in sorted(outs.items())))
-    failing = [r for r in RESULTS if r[3] in FAILING_TIERS and r[4] != 'agree']
+    failing = [r for r in RESULTS if r[3] in FAILING_TIERS and r[4] not in ('agree', 'n/a')]   # n/a: a check that does not apply to this client
     informative = [r for r in RESULTS if r[3] not in FAILING_TIERS and r[4] not in ('agree', 'n/a')]
     if informative:
         print(f'\nInformative differences (edge/generic inputs; do not fail the run): {len(informative)}')

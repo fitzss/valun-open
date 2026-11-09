@@ -1,15 +1,23 @@
 {
  "meta": {
   "what": "Basis Schnorr signature verification vectors (official Basis TV001-TV011)",
-  "server_release": "v13 (valun-app commit 6a6a34b)",
+  "server_release": "v16 (valun-app commit cfe698b)",
   "protocol": "valun-deal/1",
   "network": "valun-pilot-1",
   "generated_by": "spec/vectors/generate.mjs",
   "server_source_sha256": {
-   "lib/pilot/core.mjs": "7dc469e0547ae0a518c022b93cff6181fd116f4fcc3f8f3b7a3deb0e0f240b2e",
-   "lib/pilot/http.mjs": "01a505623d64c0a2c00a221240d57b5631c91dec61f5caaeb37113e8497c0f0e",
-   "lib/basis.mjs": "991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617",
-   "lib/http.mjs": "2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf"
+   "lib/pilot/core.mjs": "95d280fdbd1dbce120dd92e124e83a9745b458f425890ab18f984ea6f4ebf2b1",
+   "lib/pilot/http.mjs": "09b8c7ac8eabe0465db794f7152ca38623996ea7ff520a1cb5e00dfe071affa5",
+   "lib/basis.mjs": "733953129eb86708e6c3424887cef3c0d32bcdc0cc282d5434286c2cab9d3a96",
+   "lib/http.mjs": "2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf",
+   "lib/pilot/caps.mjs": "b64bc079b84d8180aa0025259539eb18a1dc9676b74f6a25b772cc1851ad9596",
+   "lib/pilot/clearing.mjs": "681a1248fc10c399d45d8015fba678359848917f960f9f0c55a5c97d314b4b9f",
+   "lib/pilot/journal.mjs": "68138d43ee9fd36882abba7a5df483d212dcc09c574a84642c1bc5ab7ed3ac2a",
+   "lib/pilot/novation.mjs": "d028a288071eddf728c25417fc07fdc910862d0830b5c5adbf6b3851b298bc53",
+   "lib/pilot/pins.mjs": "af6525ef61361a49b0644a83dbee516bba687fddf51db821a0d91ede64e4324a",
+   "lib/pilot/policy.mjs": "da7e9fff13fb29408182db4d08a2816fb48463c2685b47b733fdb15c5c169e8f",
+   "lib/pilot/sandbox.mjs": "152704f4ab60395febda391008038b99fa4517f8f063b61133da2b754c8acb00",
+   "lib/pilot/status.mjs": "9a2d9ae94fe90cca700977c5024e64ead164bc6f167e86b8c83f3495be56286c"
   },
   "pilot_token_id": "01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
   "pilot_denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
@@ -31,6 +39,14 @@
    "carol-2": {
     "pubkey": "037627480266d48c06e9e05d121a1ff165e2659857eb20c55fdcbeb1d372232680",
     "label": "valun-open/spec/test-key/carol-2"
+   },
+   "nina": {
+    "pubkey": "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6",
+    "label": "valun-open/spec/test-key/nina"
+   },
+   "sam": {
+    "pubkey": "023d2b6b0032159369b372c9a68d7c2ad47a10f73fc469179d5eb464d4c9d76744",
+    "label": "valun-open/spec/test-key/sam"
    }
   },
   "warning": "All keys, codes, ids and tokens here are PUBLIC TEST FIXTURES from an in-memory run. None is valid on any server. Never use the test keys for anything real."

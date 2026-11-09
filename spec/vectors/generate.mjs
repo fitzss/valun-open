@@ -1,24 +1,31 @@
 #!/usr/bin/env node
 // Conformance vectors for valun-deal/1 (network valun-pilot-1), generated from the REAL server code.
 //
-//   node spec/vectors/generate.mjs        (VALUN_APP_DIR=<path to valun-app> overrides the default ../../../valun-app)
+//   node spec/vectors/generate.mjs
 //
-// Written against server release v13 = valun-app commit 6a6a34b. Point VALUN_APP_DIR at an export of exactly that commit
-// (git archive 6a6a34b), not at a working tree that may hold unreleased changes: the script records the sha256 of the
-// server sources it ran, and labels the output "UNRECOGNISED server source" (with a warning) when they are not v13's.
-// Every assertion below pins v13 behaviour; a server change that breaks one stops the script before anything is written.
-// (Earlier releases: v8 e0b990a, v9 ed1da4a, v11 7880dcf, v12 a61c32e; the transcript keeps their steps first and
-// appends later releases' steps.)
+// Written against server release v16 (valun-app commit cfe698b, branch circulation-v16; circulating credit, spec
+// revision v14). The script never runs a working tree: by default it exports exactly that commit with `git archive` from
+// the valun-app repository next to this one (VALUN_APP_REPO=<path> names another clone) into a temporary folder, runs
+// it, and removes the folder at the end. VALUN_APP_DIR=<path> runs an export made by hand instead (README-ci.md). The
+// script records the sha256 of every server source it ran (RELEASES below) and labels the output "UNRECOGNISED server
+// source" (with a warning) when they are not a known release's. Every assertion below pins that release's behaviour; a
+// server change that breaks one stops the script before anything is written.
+// Release v13 (6a6a34b) is still recognised: its export gives the v13 vectors (steps 1-147, no circulation.json).
+// (Earlier releases: v8 e0b990a, v9 ed1da4a, v11 7880dcf, v12 a61c32e, v13 6a6a34b; the transcript keeps their steps
+// first and appends later releases' steps. Steps 1-147 run with circulation off and are byte-identical to v13's.)
 //
 // Writes, next to this file: canonical.json, statements.json, basis-notes.json, basis-signatures.json,
-// terms-validation.json, transcript.json. Output is deterministic: running it twice gives identical files, so a diff
-// after a server change shows exactly what changed on the wire.
+// terms-validation.json, transcript.json and (v16) circulation.json. Output is deterministic: running it twice gives
+// identical files, so a diff after a server change shows exactly what changed on the wire.
 //
 // What is real and what is a stand-in:
-// - canonical(), termsHash(), sha256(), statements.*, Pilot (validateTerms, propose, counter, accept, decline, withdraw,
-//   deliver, noteTemplate, complete, dispute, approvals, mandates, revocation, views) and the HTTP route table
-//   (createPilotRoutes) are imported from valun-app/lib/pilot/{core,http}.mjs and run unchanged, in memory, with a
-//   fixed clock. Nothing listens on a port; nothing touches the network or the disk except the output files here.
+// - canonical(), termsHash(), sha256(), statements.*, circulationStatements.pay, Pilot (validateTerms, propose,
+//   counter, accept, decline, withdraw, deliver, noteTemplate, complete, dispute, approvals, mandates, revocation,
+//   views; since v16 the circulation modes: bound notes, payment by transfer, consents, set-offs, the edge journal,
+//   credit policies, the owner's resolution of an attempt), the clearing engine (lib/pilot/clearing.mjs Clearing) and the
+//   HTTP route table (createPilotRoutes) are imported from valun-app/lib and run unchanged, in memory, with a fixed
+//   clock. Nothing listens on a port; nothing touches the network or the disk except the output files here (and the
+//   temporary export).
 // - The server checks Basis signatures and builds Basis note messages in a Rust helper (basis/valun_signer.rs ->
 //   basis_core, Basis pinned at 3df7ed93). That helper is NOT run here. This script carries a minimal replica
 //   (BLAKE2b-256 per RFC 7693, secp256k1, the Basis Schnorr scheme, the 80-byte note message) and refuses to write
@@ -26,7 +33,15 @@
 //   hermes-plugin-valun/tests/test_valun_basis.py, which cites basis-tracker specs/SCHNORR_SIGNATURE_SPEC.md; Basis is
 //   CC0-1.0). The token-denomination debt key has no official vector; see OPEN-QUESTIONS.md.
 // - The Basis tracker is an in-memory stand-in: tracker-side fields in the transcript (tracker_note, proof, ledger rows,
-//   positions) have the shapes Valun reads, not necessarily the real tracker's values.
+//   positions) have the shapes Valun reads, not necessarily the real tracker's values. From step 148 on it enforces
+//   the tracker v3.1 contract Valun relies on (GET /capabilities; POST /notes residues and bound notes with their
+//   one-hour maximum age; POST /notes/transfer with seven signatures and both prior acknowledgments; POST /notes/setoff
+//   with per-key balance and per-edge timestamps; bound-only edges; unknown fields refused), every signature checked with
+//   the replica, and answers with the real tracker's status codes and `code` values (basis_server api.rs). Its binary
+//   "sha256" is a fixed fixture value, pinned only for this in-memory Pilot (trackerPins), so the circulation modes can
+//   take effect; no real tracker has it.
+// - Server-run parties (the sandbox's operator-held agent keys, pilot.serverSigner) are a stand-in signer over public test
+//   keys, as the Sandbox installs one: has(id) and signFor(id, messageHex).
 // - Signer and tracker failures (OQ-31, OQ-35) are emulated: the transcript's stand-in signer and tracker throw the real
 //   BasisError class (imported from valun-app/lib/basis.mjs, which starts nothing on import) with the signer runner's
 //   messages and codes: an outage ("signer timed out", code signer_unavailable), input the helper reports as invalid
@@ -36,6 +51,10 @@
 // - Rate-limit probes (OQ-30) use a second route table over the same Pilot with small budgets and the real clock.
 // - The text normalisation clean() is not exported by core.mjs; cleanText() below replicates its normalising part and the
 //   script asserts it equals what the real decline()/dispute() code signed over, for every reason vector.
+// - The client side of circulating credit (circulation.json consents[], payer_templates[], bound_templates[]) is
+//   normative, PROTOCOL.md 15.3: each case is built here to meet or break one rule, from views the real server produced
+//   in this run, and states the decision every conforming client must reach ('sign' with the exact slots, or the refusal
+//   code). The client records expected after a replayed step (client_state_after) are stated the same way.
 //
 // Keys: fixed PUBLIC TEST KEYS derived from public labels (TEST_KEY_LABELS). Anyone can sign with them. Never use them
 // for anything real. No real secret is generated, read or written. During generation crypto.randomBytes is replaced by
@@ -43,13 +62,76 @@
 // in-memory server produces is replaced by a placeholder (e.g. "<alice.agent>") in transcript.json. Enrollment codes are
 // kept (sha256(code) is part of the signed enroll statement); they are fixtures of this in-memory run, valid nowhere.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const APP = path.resolve(process.env.VALUN_APP_DIR || path.join(here, '..', '..', '..', 'valun-app'));
+
+// ---- the server release: pinned sources, exported with git archive (never a working tree) -------------------------
+// Each release names its valun-app commit and the sha256 of every server source the generator imports (as `git archive`
+// writes them: the committed bytes). v13 is kept so its export is still recognised (it has no circulation sources).
+const RELEASES = {
+  v13: {commit: '6a6a34b', label: 'v13 (valun-app commit 6a6a34b)', sources: {
+    'lib/pilot/core.mjs': '7dc469e0547ae0a518c022b93cff6181fd116f4fcc3f8f3b7a3deb0e0f240b2e',
+    'lib/pilot/http.mjs': '01a505623d64c0a2c00a221240d57b5631c91dec61f5caaeb37113e8497c0f0e',
+    'lib/basis.mjs': '991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617',
+    'lib/http.mjs': '2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf'}},
+  v16: {commit: 'cfe698b2c2ddb0ba57559404e3b69bcd863c188b', label: 'v16 (valun-app commit cfe698b)', sources: {
+    'lib/pilot/core.mjs': '95d280fdbd1dbce120dd92e124e83a9745b458f425890ab18f984ea6f4ebf2b1',
+    'lib/pilot/http.mjs': '09b8c7ac8eabe0465db794f7152ca38623996ea7ff520a1cb5e00dfe071affa5',
+    'lib/basis.mjs': '733953129eb86708e6c3424887cef3c0d32bcdc0cc282d5434286c2cab9d3a96',
+    'lib/http.mjs': '2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf',
+    'lib/pilot/caps.mjs': 'b64bc079b84d8180aa0025259539eb18a1dc9676b74f6a25b772cc1851ad9596',
+    'lib/pilot/clearing.mjs': '681a1248fc10c399d45d8015fba678359848917f960f9f0c55a5c97d314b4b9f',
+    'lib/pilot/journal.mjs': '68138d43ee9fd36882abba7a5df483d212dcc09c574a84642c1bc5ab7ed3ac2a',
+    'lib/pilot/novation.mjs': 'd028a288071eddf728c25417fc07fdc910862d0830b5c5adbf6b3851b298bc53',
+    'lib/pilot/pins.mjs': 'af6525ef61361a49b0644a83dbee516bba687fddf51db821a0d91ede64e4324a',
+    'lib/pilot/policy.mjs': 'da7e9fff13fb29408182db4d08a2816fb48463c2685b47b733fdb15c5c169e8f',
+    'lib/pilot/sandbox.mjs': '152704f4ab60395febda391008038b99fa4517f8f063b61133da2b754c8acb00',
+    'lib/pilot/status.mjs': '9a2d9ae94fe90cca700977c5024e64ead164bc6f167e86b8c83f3495be56286c'}},
+};
+const CURRENT_RELEASE = 'v16';
+
+// A minimal reader of the tar stream `git archive` writes (ustar, with pax headers for long paths): regular files and
+// folders only, every path kept inside `dir`.
+function untar(buf, dir) {
+  const root = path.resolve(dir);
+  let off = 0, paxPath = null;
+  const field = (b, o, n) => b.subarray(o, o + n).toString('utf8').replace(/\0.*$/s, '');
+  while (off + 512 <= buf.length) {
+    const h = buf.subarray(off, off + 512);
+    if (h.every(x => x === 0)) break;
+    const size = parseInt(field(h, 124, 12).trim() || '0', 8), type = String.fromCharCode(h[156] || 48);
+    const name = paxPath ?? ((field(h, 345, 155) ? field(h, 345, 155) + '/' : '') + field(h, 0, 100));
+    const data = buf.subarray(off + 512, off + 512 + size);
+    off += 512 + Math.ceil(size / 512) * 512;
+    if (type === 'x' || type === 'g') {
+      if (type === 'x') { const m = /(?:^|\n)\d+ path=([^\n]*)\n/.exec(data.toString('utf8')); paxPath = m ? m[1] : null; }
+      continue;
+    }
+    paxPath = null;
+    const out = path.resolve(root, name);
+    if (out !== root && !out.startsWith(root + path.sep)) throw Error(`git archive: a path outside the export: ${name}`);
+    if (type === '5') fs.mkdirSync(out, {recursive: true});
+    else if (type === '0' || type === '7') { fs.mkdirSync(path.dirname(out), {recursive: true}); fs.writeFileSync(out, data); }
+  }
+}
+let EXPORTED = null;   // the temporary export, removed at the end
+function exportRelease() {
+  const repo = path.resolve(process.env.VALUN_APP_REPO || path.join(here, '..', '..', '..', 'valun-app'));
+  const commit = RELEASES[CURRENT_RELEASE].commit;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'valun-vectors-app-'));
+  try { untar(execFileSync('git', ['-C', repo, 'archive', '--format=tar', commit], {maxBuffer: 1 << 30}), dir); }
+  catch (e) { fs.rmSync(dir, {recursive: true, force: true}); throw Error(`could not export valun-app ${commit} from ${repo} with git archive: ${e.message}`); }
+  EXPORTED = dir;
+  process.on('exit', () => fs.rmSync(dir, {recursive: true, force: true}));   // also when an assertion stops the run
+  return dir;
+}
+const APP = path.resolve(process.env.VALUN_APP_DIR || exportRelease());
 const CORE = path.join(APP, 'lib', 'pilot', 'core.mjs'), HTTPM = path.join(APP, 'lib', 'pilot', 'http.mjs');
 
 // ---- deterministic randomness for the in-memory server (ids, codes); restored at the end ---------------------------
@@ -66,19 +148,27 @@ const core = await import(pathToFileURL(CORE).href);
 const {createPilotRoutes} = await import(pathToFileURL(HTTPM).href);
 // The real BasisError class (lib/basis.mjs; importing it starts nothing): the stand-in signer and tracker throw it, with
 // the codes makeSignerRunner and the tracker client use (lib/basis.mjs:16-45).
-const {BasisError} = await import(pathToFileURL(path.join(APP, 'lib', 'basis.mjs')).href);
+const basisModule = await import(pathToFileURL(path.join(APP, 'lib', 'basis.mjs')).href);
+const {BasisError} = basisModule;
 const {canonical, termsHash, statements, sha256, NETWORK, PROTOCOL, PILOT_TOKEN_ID, PILOT_DENOMINATION, DEFAULT_MANDATE, Pilot} = core;
+// Release v16: the clearing engine (multilateral set-off), run in memory by the transcript (never on a timer here), and
+// the server's own ordinary-note clamp (lib/basis.mjs ordinaryTimestamp) and novation timestamp rule (novation.mjs).
+const clearingModule = fs.existsSync(path.join(APP, 'lib', 'pilot', 'clearing.mjs')) ? await import(pathToFileURL(path.join(APP, 'lib', 'pilot', 'clearing.mjs')).href) : null;
+const novationModule = fs.existsSync(path.join(APP, 'lib', 'pilot', 'novation.mjs')) ? await import(pathToFileURL(path.join(APP, 'lib', 'pilot', 'novation.mjs')).href) : null;
 
 const fileSha = f => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
-const SOURCES = {'lib/pilot/core.mjs': fileSha(CORE), 'lib/pilot/http.mjs': fileSha(HTTPM), 'lib/basis.mjs': fileSha(path.join(APP, 'lib', 'basis.mjs')),
-  'lib/http.mjs': fileSha(path.join(APP, 'lib', 'http.mjs'))};
-// Release v13 = valun-app commit 6a6a34b (git archive 6a6a34b). Other sources still run, but are labelled as such.
-const V13_SOURCES = {'lib/pilot/core.mjs': '7dc469e0547ae0a518c022b93cff6181fd116f4fcc3f8f3b7a3deb0e0f240b2e',
-  'lib/pilot/http.mjs': '01a505623d64c0a2c00a221240d57b5631c91dec61f5caaeb37113e8497c0f0e', 'lib/basis.mjs': '991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617',
-  'lib/http.mjs': '2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf'};
-const IS_V13 = Object.entries(V13_SOURCES).every(([f, h]) => SOURCES[f] === h);
-const SERVER_RELEASE = IS_V13 ? 'v13 (valun-app commit 6a6a34b)' : 'UNRECOGNISED server source (not release v13 6a6a34b; see server_source_sha256)';
-if (!IS_V13) console.error(`WARNING: ${APP} is not release v13 (6a6a34b): ${JSON.stringify(SOURCES)}. The vectors are labelled accordingly; assertions may fail.`);
+const ALL_SOURCES = [...new Set(Object.values(RELEASES).flatMap(r => Object.keys(r.sources)))];
+const PRESENT = Object.fromEntries(ALL_SOURCES.filter(f => fs.existsSync(path.join(APP, f))).map(f => [f, fileSha(path.join(APP, f))]));
+const RELEASE = Object.entries(RELEASES).sort((a, b) => Object.keys(b[1].sources).length - Object.keys(a[1].sources).length)
+  .find(([, r]) => Object.entries(r.sources).every(([f, h]) => PRESENT[f] === h))?.[0] ?? null;
+// The sources recorded in every file's meta: the recognised release's own list, else every source found.
+const SOURCES = RELEASE ? Object.fromEntries(Object.keys(RELEASES[RELEASE].sources).map(f => [f, PRESENT[f]])) : PRESENT;
+// Circulating credit (release v16): the Pilot takes a circulation mode and the tracker's capabilities.
+const CIRCULATION = typeof Pilot.prototype.circulationStatus === 'function';
+const KNOWN = Object.entries(RELEASES).map(([k, r]) => `${k} ${r.commit.slice(0, 7)}`).join(', ');
+const SERVER_RELEASE = RELEASE ? RELEASES[RELEASE].label : `UNRECOGNISED server source (not release ${KNOWN.replace(', ', ' or ')}; see server_source_sha256)`;
+if (!RELEASE) console.error(`WARNING: ${APP} is not a known release (${KNOWN}): ${JSON.stringify(SOURCES)}. The vectors are labelled accordingly; assertions may fail.`);
+if (!CIRCULATION) console.error(`NOTE: ${APP} has no circulating credit (release ${RELEASE ?? 'unknown'}): transcript steps 148+ and circulation.json are not generated.`);
 // A signature with the shape the server checks before calling the signer (02/03 prefix, 130 lowercase hex: core.mjs:64)
 // that can never verify (z = 0). Used for dry runs that record which statements the server would accept. Since v9 an
 // all-zero signature ('00' x 65) is refused before the signer runs, so it no longer reveals anything.
@@ -232,14 +322,17 @@ for (const [name, issuer, total, ts, msg, sig, ok] of OFFICIAL) {
 
 // ---- fixed PUBLIC test keys --------------------------------------------------------------------------------------
 // secret = (int(sha256(utf8(label))) mod (n - 1)) + 1. check_python.py derives the same keys from the same labels.
-const TEST_KEY_LABELS = {alice: 'valun-open/spec/test-key/alice', bob: 'valun-open/spec/test-key/bob', carol: 'valun-open/spec/test-key/carol', 'carol-2': 'valun-open/spec/test-key/carol-2'};
+// nina (a client agent) and sam (an agent the server runs, as the sandbox's are) join in release v16's steps (148+).
+const TEST_KEY_LABELS = {alice: 'valun-open/spec/test-key/alice', bob: 'valun-open/spec/test-key/bob', carol: 'valun-open/spec/test-key/carol', 'carol-2': 'valun-open/spec/test-key/carol-2',
+  nina: 'valun-open/spec/test-key/nina', sam: 'valun-open/spec/test-key/sam'};
 const K = Object.fromEntries(Object.entries(TEST_KEY_LABELS).map(([name, label]) => {
   const sk = int(crypto.createHash('sha256').update(label, 'utf8').digest()) % (N - 1n) + 1n;
   return [name, {name, label, sk, pub: pubOf(sk).toString('hex')}];
 }));
 const signText = (key, text) => schnorrSign(Buffer.from(text, 'utf8'), key.sk).toString('hex');
 const signHex = (key, h) => schnorrSign(hx(h), key.sk).toString('hex');
-const keysMeta = Object.fromEntries(Object.values(K).map(k => [k.name, {pubkey: k.pub, label: k.label}]));
+// The keys of release v16's steps are listed only when they are used (an export of v13 gives exactly v13's files).
+const keysMeta = Object.fromEntries(Object.values(K).filter(k => CIRCULATION || !['nina', 'sam'].includes(k.name)).map(k => [k.name, {pubkey: k.pub, label: k.label}]));
 
 // Normalising part of core.mjs clean() (lib/pilot/core.mjs:57): control characters except TAB, LF, CR -> space, then
 // ECMAScript String.prototype.trim(). Asserted below against the real decline()/dispute() code paths. Since v9 a reason
@@ -248,6 +341,16 @@ const cleanText = s => String(s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001
 
 const T0 = Date.parse('2026-11-06T12:00:00.000Z');
 const FIXTURE_NFT = sha256('valun-open/spec/fixture-tracker-nft-id');   // a fixed public 32-byte id; no tracker has it
+// The stand-in tracker v3.1 (transcript steps 148+): its GET /capabilities data, exactly what basis_server v3.1 reports
+// (design 3.6 with decision D-1 item 1: bound notes version 2, with the maximum age) except the informative `commit`, and
+// the fixed "sha256 of its binary", pinned only for the generator's in-memory Pilot (trackerPins).
+const STAND_IN_CAPS = Object.freeze({tracker: 'basis', build: 'valun-circulating-credit/3', commit: 'stand-in (valun-open spec/vectors/generate.mjs)',
+  pure_credit: true, reserved_ms: [995, 996, 997, 998, 999], bound_notes: {ms: 997, version: 2, max_age_ms: 3600000}, bound_only_edges: true,
+  novation: {max_age_ms: 3600000,
+    transfer: {ms: 999, version: 3, signatures: ['issuer_from', 'issuer_to', 'from_recipient_prior', 'from_recipient', 'from_recipient_to', 'to_recipient_prior', 'to_recipient']},
+    setoff: {ms: 998, version: 3, max_edges: 64, per_edge_timestamps: true, signatures_per_edge: ['issuer', 'recipient']}},
+  onchain_edges: 0, novations_disabled_reason: null});
+const STAND_IN_SHA = sha256('valun-open/spec/stand-in-tracker-binary');
 const iso = t => new Date(t).toISOString();
 const isoSec = t => new Date(Math.floor(t / 1000) * 1000).toISOString();   // the Python client writes whole seconds, ".000Z"
 const H = 3600e3;
@@ -264,7 +367,9 @@ const META = (what, extra = {}) => ({
 // A probe Pilot: the real class, in memory, fixed clock; the stand-in Basis records what the server asked it to verify.
 // =====================================================================================================================
 const ALICE_ID = 'vp_a1a1a1a1a1a1', BOB_ID = 'vp_b0b0b0b0b0b0';
-function probePilot({verify = 'replica'} = {}) {
+// Since v16 it is built as the transcript's Pilot is: with the stand-in tracker v3.1's capabilities and pinned fixture sha,
+// circulation off unless `circulation` says otherwise (the statement and validation probes run with it off).
+function probePilot({verify = 'replica', circulation = 'off'} = {}) {
   const participant = (id, handle, key) => ({id, handle, display_name: handle, operator: `test operator of ${handle}`, about: '', services: '',
     pubkey: key.pub, status: 'active', created_at: iso(T0), past_pubkeys: [], mandate: {...DEFAULT_MANDATE, max_issue_per_deal: 1000, max_issue_outstanding: 100000,
       max_accept_per_deal: 1000, max_accept_per_issuer: 100000, approve_above: 1000, expires_at: null}, mandate_version: 1});
@@ -280,7 +385,8 @@ function probePilot({verify = 'replica'} = {}) {
     async noteMessage({issuer, recipient, total, timestamp, denomination = PILOT_DENOMINATION}) {
       return {message_hex: noteMessage(hx(issuer), hx(recipient), total, timestamp, hx(FIXTURE_NFT), denomination).toString('hex'), debt_key_hex: debtKey(hx(issuer), hx(recipient), denomination).toString('hex')};
     }};
-  const pilot = new Pilot({store: {state, save() {}, audit() {}}, basis, now: () => T0});
+  const pilot = new Pilot({store: {state, save() {}, audit() {}, appendEdgeLog() {}}, basis, now: () => T0,
+    ...(CIRCULATION ? {circulation, trackerCaps: STAND_IN_CAPS, trackerSha256: STAND_IN_SHA, trackerPins: [STAND_IN_SHA], log: () => {}} : {})});
   return {pilot, state, log, alice: state.participants[ALICE_ID], bob: state.participants[BOB_ID]};
 }
 const outcome = async f => { try { await f(); return 'accepted'; } catch (e) { if (e.name !== 'PilotError') throw e; return {status: e.status, error: e.code, message: e.message}; } };
@@ -704,6 +810,8 @@ async function validationVectors() {
 // =====================================================================================================================
 // transcript.json: a whole pilot run through the real HTTP route table (createPilotRoutes) and the real Pilot class.
 // =====================================================================================================================
+// circulation.json (release v16): built by transcriptVectors() from what its run produced; written below.
+let CIRCULATION_VECTORS = null, CIRCULATION_REDACT = null;
 async function transcriptVectors() {
   let now = T0;
   const tick = (s = 60) => { now += s * 1000; };
@@ -713,12 +821,150 @@ async function transcriptVectors() {
   // throws BasisError('signer: invalid signature encoding', code signer_error) (the helper ran and reported an error,
   // valun_signer.rs:82). tracker.mode 'down' makes note reads throw BasisError(code tracker_unavailable), as the tracker
   // client does when the tracker cannot be reached (lib/basis.mjs, Basis.api).
-  const notes = new Map(), verifyLog = [], signer = {mode: 'ok'}, tracker = {mode: 'ok'};
+  const notes = new Map(), verifyLog = [], signer = {mode: 'ok'}, tracker = {mode: 'ok', v3: false, novation: 'ok', applyOnTimeout: false};
   const signerFault = () => {
     if (signer.mode === 'outage') throw new BasisError('signer timed out', {code: 'signer_unavailable'});
     if (signer.mode === 'refuses') throw new BasisError('signer: invalid signature encoding', {code: 'signer_error'});
   };
   const trackerFault = () => { if (tracker.mode === 'down') throw new BasisError('tracker unreachable: ECONNREFUSED', {code: 'tracker_unavailable'}); };
+  // ---- tracker v3.1 rules (from step 148; before it the stand-in is exactly the v13 one above) -----------------------
+  // The checks and their order are basis_store's (lib.rs: create_note, transfer_note, set_off) and the answers are
+  // basis_server's (api.rs: HTTP status, `code`); the error texts are the stand-in's own (Valun never reads them).
+  // tracker.v3 switches the rules on; tracker.novation 'timeout' makes the next novation write throw the tracker
+  // client's BasisError (no answer: the write may or may not have happened), with tracker.applyOnTimeout deciding which.
+  const MAX_AGE = 3600000, I64_MAX = 2n ** 63n - 1n;
+  const boundOnly = new Set(), trackerRequests = [];
+  const refuse = (status, code, error) => ({status, json: {success: false, error, ...(code ? {code} : {})}, text: ''});
+  const noteKey = (i, r) => `${i}>${r}`;
+  const msgOf = (i, r, total, ts) => noteMessage(hx(i), hx(r), total, ts, hx(FIXTURE_NFT), PILOT_DENOMINATION);
+  const sigOk = (sig, m, pk) => typeof sig === 'string' && /^0[23][0-9a-f]{128}$/.test(sig) && schnorrVerify(hx(sig), m, hx(pk));
+  const u64ok = v => Number.isSafeInteger(v) && v >= 0;
+  const store3 = (i, r, total, ts, sig, prev) => notes.set(noteKey(i, r), {issuer_pubkey: i, recipient_pubkey: r, amount_collected: total,
+    amount_redeemed: prev?.amount_redeemed ?? 0, timestamp: ts, signature: sig, denomination: PILOT_DENOMINATION, confirmation: {status: 'local_only'}});
+  // Fields a request struct allows (deny_unknown_fields): anything else is 422, as axum's Json extractor answers.
+  const unknownField = (body, allowed) => Object.keys(body || {}).find(k => !allowed.includes(k));
+  const unprocessable = text => ({status: 422, json: null, text});
+  function v3Note(body) {
+    const {issuer_pubkey: I, recipient_pubkey: R, amount: total, timestamp: ts} = body, key = noteKey(I, R), prev = notes.get(key) ?? null;
+    if (!u64ok(total) || !u64ok(ts)) return refuse(400, null, 'amount and timestamp must be whole numbers');
+    if (ts > now) return refuse(400, 'future_timestamp', 'timestamp is in the future');
+    if (prev && ts <= prev.timestamp) return refuse(400, 'past_timestamp', "timestamp must be newer than the edge's current timestamp");
+    if (prev && total < prev.amount_collected) return refuse(400, null, 'a note never lowers the debt');
+    if (!sigOk(body.signature, msgOf(I, R, total, ts), I)) return refuse(400, 'invalid_signature', 'Invalid signature');
+    const residue = ts % 1000, P = prev?.amount_collected ?? 0;
+    if ([995, 996, 998, 999].includes(residue)) return refuse(400, 'reserved_timestamp', `timestamps ending in ${residue} ms are reserved; ordinary notes use 000-994 ms`);
+    if (residue === 997) {
+      if (body.prior_signature === undefined) return refuse(400, 'reserved_timestamp', 'a bound note needs prior_signature');
+      if (ts < now - MAX_AGE) return refuse(400, 'novation_expired', 'the bound note is older than the maximum novation age');
+      if (body.prior_total !== undefined && body.prior_total !== P) return refuse(409, 'stale_prior', "prior_total is not the edge's current total");
+      if (!sigOk(body.prior_signature, msgOf(I, R, P, ts), I)) return refuse(400, 'invalid_prior_signature', "the issuer's prior acknowledgment does not verify");
+      if (!(total > P)) return refuse(400, 'not_an_increase', 'a bound note must raise the total');
+    } else {
+      if (body.prior_signature !== undefined || body.prior_total !== undefined) return refuse(400, 'invalid_request', 'prior_signature and prior_total belong to bound notes (timestamps ending in 997 ms)');
+      if (boundOnly.has(key)) return refuse(400, 'bound_note_required', 'a novation changed this edge: it takes bound notes only');
+    }
+    store3(I, R, total, ts, body.signature, prev);
+    return {status: 201, json: {success: true, data: null}, text: ''};
+  }
+  const TRANSFER_FIELDS = ['issuer_pubkey', 'from_recipient_pubkey', 'to_recipient_pubkey', 'denomination', 'amount', 'timestamp', 'issuer_from_signature', 'issuer_to_signature',
+    'from_recipient_prior_signature', 'from_recipient_signature', 'from_recipient_to_signature', 'to_recipient_prior_signature', 'to_recipient_signature', 'from_prior_total', 'to_prior_total'];
+  const TRANSFER_REQUIRED = TRANSFER_FIELDS.filter(k => !k.endsWith('_prior_total'));
+  // POST /notes/transfer (version 3): A = issuer, B = old creditor, C = new creditor, a = amount, T = timestamp.
+  function v3Transfer(body) {
+    const extra = unknownField(body, TRANSFER_FIELDS);
+    if (extra) return unprocessable(`Failed to deserialize the JSON body into the target type: unknown field \`${extra}\``);
+    const missing = TRANSFER_REQUIRED.find(k => body[k] === undefined);
+    if (missing) return unprocessable(`Failed to deserialize the JSON body into the target type: missing field \`${missing}\``);
+    const {issuer_pubkey: A, from_recipient_pubkey: B, to_recipient_pubkey: C, amount: a, timestamp: T} = body;
+    if (B === C) return refuse(400, 'invalid_transfer', 'Invalid transfer: the old and new creditor must differ');
+    if (A === B || A === C) return refuse(400, 'invalid_transfer', 'Invalid transfer: the issuer cannot be a creditor');
+    if (!u64ok(a) || a === 0) return refuse(400, 'invalid_transfer', 'Invalid transfer: the amount must be positive');
+    if (!u64ok(T) || T % 1000 !== 999) return refuse(400, 'invalid_transfer', 'Invalid transfer: a transfer timestamp ends in 999 ms');
+    if (T > now) return refuse(400, 'future_timestamp', 'timestamp is in the future');
+    if (T < now - MAX_AGE) return refuse(400, 'novation_expired', "the novation's timestamp is older than the maximum novation age");
+    const from = notes.get(noteKey(A, B)) ?? null, to = notes.get(noteKey(A, C)) ?? null;
+    if (!from) return refuse(404, 'not_found', 'Note not found');
+    const X = from.amount_collected, Y = to?.amount_collected ?? 0;
+    if ((body.from_prior_total !== undefined && body.from_prior_total !== X) || (body.to_prior_total !== undefined && body.to_prior_total !== Y))
+      return refuse(409, 'stale_prior', "from_prior_total or to_prior_total is not the edge's current total");
+    if (X < a) return refuse(400, 'invalid_transfer', 'Invalid transfer: the amount exceeds the from-edge total');
+    if (X - a < from.amount_redeemed) return refuse(400, 'invalid_transfer', 'Invalid transfer: below the redeemed amount');
+    if (BigInt(Y) + BigInt(a) > I64_MAX) return refuse(400, 'invalid_transfer', 'Invalid transfer: the new to-edge total overflows');
+    if (T <= from.timestamp || (to && T <= to.timestamp)) return refuse(400, 'past_timestamp', "timestamp must be newer than both edges' current timestamps");
+    const slots = [['issuer_from_signature', A, msgOf(A, B, X - a, T)], ['issuer_to_signature', A, msgOf(A, C, Y + a, T)],
+      ['from_recipient_prior_signature', B, msgOf(A, B, X, T)], ['from_recipient_signature', B, msgOf(A, B, X - a, T)], ['from_recipient_to_signature', B, msgOf(A, C, Y + a, T)],
+      ['to_recipient_prior_signature', C, msgOf(A, C, Y, T)], ['to_recipient_signature', C, msgOf(A, C, Y + a, T)]];
+    for (const [field, signer, m] of slots) if (!sigOk(body[field], m, signer))
+      return refuse(400, field.endsWith('prior_signature') ? 'invalid_prior_signature' : 'invalid_signature', `Invalid signature (${field})`);
+    store3(A, B, X - a, T, body.issuer_from_signature, from); store3(A, C, Y + a, T, body.issuer_to_signature, to);
+    boundOnly.add(noteKey(A, B)); boundOnly.add(noteKey(A, C));
+    return {status: 200, json: {success: true, data: {from_new_total: X - a, to_new_total: Y + a, timestamp: T, from_prior_total: X, to_prior_total: Y}}, text: ''};
+  }
+  const SETOFF_FIELDS = ['denomination', 'timestamp', 'edges'], SETOFF_EDGE_FIELDS = ['issuer_pubkey', 'recipient_pubkey', 'decrease', 'timestamp', 'issuer_signature', 'recipient_signature'];
+  // POST /notes/setoff (version 3): every edge I->R lowered by d at its own timestamp ts_e (default: the request's).
+  function v3Setoff(body) {
+    const extra = unknownField(body, SETOFF_FIELDS) ?? (Array.isArray(body?.edges) ? body.edges.map(e => unknownField(e, SETOFF_EDGE_FIELDS)).find(Boolean) : undefined);
+    if (extra) return unprocessable(`Failed to deserialize the JSON body into the target type: unknown field \`${extra}\``);
+    if (!Array.isArray(body?.edges) || !u64ok(body.timestamp)) return unprocessable('Failed to deserialize the JSON body into the target type: missing field `edges` or `timestamp`');
+    const edges = body.edges.map(e => ({...e, ts: e.timestamp ?? body.timestamp}));
+    if (edges.length < 2) return refuse(400, 'invalid_setoff', 'Invalid set-off: a set-off lowers at least two edges');
+    if (edges.length > 64) return refuse(400, 'invalid_setoff', 'Invalid set-off: a set-off lowers at most 64 edges');
+    for (const e of edges) {
+      if (!u64ok(e.ts) || e.ts % 1000 !== 998) return refuse(400, 'invalid_setoff', "Invalid set-off: every edge's timestamp must end in 998 ms");
+      if (e.ts > now) return refuse(400, 'future_timestamp', 'timestamp is in the future');
+      if (e.ts < now - MAX_AGE) return refuse(400, 'novation_expired', "the novation's timestamp is older than the maximum novation age");
+    }
+    const seen = new Set();
+    for (const e of edges) {
+      if (e.issuer_pubkey === e.recipient_pubkey) return refuse(400, 'invalid_setoff', "Invalid set-off: an edge's issuer and creditor must differ");
+      if (!u64ok(e.decrease) || e.decrease === 0) return refuse(400, 'invalid_setoff', 'Invalid set-off: every decrease must be positive');
+      if (seen.has(noteKey(e.issuer_pubkey, e.recipient_pubkey))) return refuse(400, 'invalid_setoff', 'Invalid set-off: an edge appears more than once');
+      seen.add(noteKey(e.issuer_pubkey, e.recipient_pubkey));
+    }
+    const asCreditor = new Map(), asIssuer = new Map();
+    for (const e of edges) {
+      asCreditor.set(e.recipient_pubkey, (asCreditor.get(e.recipient_pubkey) ?? 0) + e.decrease);
+      asIssuer.set(e.issuer_pubkey, (asIssuer.get(e.issuer_pubkey) ?? 0) + e.decrease);
+    }
+    for (const k of new Set([...asCreditor.keys(), ...asIssuer.keys()]))
+      if ((asCreditor.get(k) ?? 0) !== (asIssuer.get(k) ?? 0)) return refuse(400, 'invalid_setoff', 'Invalid set-off: the decreases do not balance for one participant');
+    const plan = [];
+    for (const e of edges) {
+      const cur = notes.get(noteKey(e.issuer_pubkey, e.recipient_pubkey)) ?? null;
+      if (!cur) return refuse(404, 'not_found', 'Note not found');
+      if (e.decrease > cur.amount_collected) return refuse(400, 'invalid_setoff', "Invalid set-off: a decrease exceeds the edge's total");
+      if (cur.amount_collected - e.decrease < cur.amount_redeemed) return refuse(400, 'invalid_setoff', 'Invalid set-off: below the redeemed amount');
+      if (e.ts <= cur.timestamp) return refuse(400, 'past_timestamp', "timestamp must be newer than the edge's current timestamp");
+      const m = msgOf(e.issuer_pubkey, e.recipient_pubkey, cur.amount_collected - e.decrease, e.ts);
+      if (!sigOk(e.issuer_signature, m, e.issuer_pubkey) || !sigOk(e.recipient_signature, m, e.recipient_pubkey)) return refuse(400, 'invalid_signature', 'Invalid signature');
+      plan.push([e, cur]);
+    }
+    for (const [e, cur] of plan) { store3(e.issuer_pubkey, e.recipient_pubkey, cur.amount_collected - e.decrease, e.ts, e.issuer_signature, cur); boundOnly.add(noteKey(e.issuer_pubkey, e.recipient_pubkey)); }
+    return {status: 200, json: {success: true, data: {edges: plan.map(([e, cur]) => ({issuer_pubkey: e.issuer_pubkey, recipient_pubkey: e.recipient_pubkey, new_total: cur.amount_collected - e.decrease, timestamp: e.ts}))}}, text: ''};
+  }
+  // The tracker client's novation answer (lib/basis.mjs novation()): {status, success, code, error, data}.
+  const novationAnswer = r => ({status: r.status, success: r.json?.success === true, code: typeof r.json?.code === 'string' ? r.json.code : null,
+    error: r.json ? (r.json.error ?? null) : (r.text ? r.text.slice(0, 300) : null), data: r.json?.data ?? null});
+  // The notes a novation request reads (its edges' states before it), for circulation.json.
+  const novationBefore = (kind, body) => Object.fromEntries((kind === 'transfer'
+    ? [noteKey(body.issuer_pubkey, body.from_recipient_pubkey), noteKey(body.issuer_pubkey, body.to_recipient_pubkey)]
+    : (Array.isArray(body?.edges) ? body.edges : []).map(e => noteKey(e.issuer_pubkey, e.recipient_pubkey)))
+    .map(k => { const n = notes.get(k); return [k, n ? {total: n.amount_collected, timestamp: n.timestamp, signature: n.signature} : null]; }));
+  async function novation(kind, body) {
+    trackerFault();
+    const run = kind === 'transfer' ? v3Transfer : v3Setoff, before = novationBefore(kind, body), at = now;
+    if (tracker.novation === 'timeout') {
+      tracker.novation = 'ok';
+      const r = tracker.applyOnTimeout ? run(body) : null;
+      trackerRequests.push({route: `POST /notes/${kind}`, at, before, request: body, answer: 'none (timeout)', applied: !!(r && r.status < 300)});
+      // another write that reaches the tracker before Valun reads the edges back (tracker.onTimeout, once)
+      if (tracker.onTimeout) { const f = tracker.onTimeout; tracker.onTimeout = null; f(); }
+      throw new BasisError('tracker unreachable: UND_ERR_HEADERS_TIMEOUT', {code: 'tracker_unavailable'});
+    }
+    const r = run(body);
+    trackerRequests.push({route: `POST /notes/${kind}`, at, before, request: body, answer: {status: r.status, ...(r.json ? {json: r.json} : {text: r.text})}});
+    return novationAnswer(r);
+  }
   const basis = {nft: FIXTURE_NFT, denomination: PILOT_DENOMINATION, url: 'memory://stand-in-tracker',
     async verify(pubkey, messageHex, sig) {
       if (signer.mode === 'refuses') verifyLog.push({pubkey, message_hex: messageHex, signature: sig, valid: false, signer_refused: true});
@@ -733,6 +979,11 @@ async function transcriptVectors() {
     async allNotes() { trackerFault(); return [...notes.values()]; },
     async proof() { return null; },
     async api(method, p, body) {
+      if (method === 'POST' && p === '/notes' && tracker.v3) {
+        const r = v3Note(body);
+        trackerRequests.push({route: 'POST /notes', request: body, answer: {status: r.status, json: r.json}});
+        return r;
+      }
       if (method === 'POST' && p === '/notes') {
         const prev = notes.get(`${body.issuer_pubkey}>${body.recipient_pubkey}`);
         const m = noteMessage(hx(body.issuer_pubkey), hx(body.recipient_pubkey), body.amount, body.timestamp, hx(body.tracker_nft_id), body.denomination);
@@ -743,18 +994,28 @@ async function transcriptVectors() {
         return {status: 201, json: {success: true, data: null}, text: ''};
       }
       return {status: 404, json: {success: false, error: 'not found'}, text: ''};
-    }};
+    },
+    // Tracker v3 (from step 148): GET /capabilities, and the novation writes (lib/basis.mjs transfer() / setoff()).
+    async capabilities() { return tracker.v3 ? STAND_IN_CAPS : null; },
+    transfer(body) { return novation('transfer', body); },
+    setoff(body) { return novation('setoff', body); }};
   const state = {version: 1, network: NETWORK, createdAt: iso(T0), participants: {}, deals: {}, approvals: {}, invites: {}};
-  const pilot = new Pilot({store: {state, save() {}, audit() {}}, basis, now: () => now});
+  // Since v16 the Pilot is built as server.mjs builds it for a pinned tracker v3: with the tracker's capabilities and its
+  // binary's sha256 (the stand-in's fixture value, pinned for this Pilot only). PILOT_CIRCULATION starts off, so steps
+  // 1-147 run exactly as before; step 148 switches it on (the operator restarts with PILOT_CIRCULATION=on).
+  const auditLog = [], pilotLog = [];
+  const store = {state, save() {}, audit(e) { auditLog.push(e); }, appendEdgeLog() {}};
+  const pilot = new Pilot({store, basis, now: () => now,
+    ...(CIRCULATION ? {circulation: 'off', trackerCaps: STAND_IN_CAPS, trackerSha256: STAND_IN_SHA, trackerPins: [STAND_IN_SHA], log: m => pilotLog.push(m)} : {})});
   const ADMIN = 'TEST-ONLY-admin-token';
   const routes = createPilotRoutes({pilot, cfg: {pilotRateLimitPerMinute: 1e9}, adminTokenHash: sha256(ADMIN)});
   const redact = new Map([[ADMIN, '<admin_token>']]);
   const tokens = {};
 
-  async function http(method, p, {body, rawBody, auth, admin, bearer, via = routes, ip = '198.51.100.7'} = {}) {
+  async function http(method, p, {body, rawBody, auth, admin, bearer, via = routes, ip = '198.51.100.7', features} = {}) {
     const raw = rawBody !== undefined ? rawBody : body === undefined ? '' : JSON.stringify(body);
     const headers = {...(auth ? {authorization: `Bearer ${tokens[auth]}`} : bearer ? {authorization: `Bearer ${bearer}`} : {}), ...(admin ? {'x-valun-admin': ADMIN} : {}),
-      ...(raw ? {'content-type': 'application/json'} : {})};
+      ...(raw ? {'content-type': 'application/json'} : {}), ...(features !== undefined ? {'x-valun-features': features} : {})};
     const req = {method, headers, socket: {remoteAddress: admin ? '127.0.0.1' : ip}, async *[Symbol.asyncIterator]() { if (raw) yield Buffer.from(raw, 'utf8'); }};
     let res = null;
     const send = (_res, status, b) => { res = {status, body: b}; };
@@ -777,19 +1038,42 @@ async function transcriptVectors() {
     assert.equal(r.status, 403, `dry run of ${p}: ${JSON.stringify(r.body)}`);
     return [...new Map(verifyLog.slice(mark).map(e => [e.message_hex, {message_text: Buffer.from(e.message_hex, 'hex').toString('utf8'), message_hex: e.message_hex}])).values()];
   }
-  async function step(label, actor, method, p, {body, rawBody, auth, admin, client_call, reads, expect, extra = {}} = {}) {
+  // From step 148 on (circ.on) a server_verified entry also names the field of the request body that holds the signature
+  // the server verified (field, a JSON pointer, RFC 6901; absent when the signature was not in the body: a stored or
+  // server-made one) and, for a Basis note message, the edge it is for (edge '<issuer key>><recipient key>').
+  const circ = {on: false, edges: new Map()};
+  const pointerTo = (v, sig, ptr = '') => {
+    if (v === sig) return ptr;
+    if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) {
+      const r = pointerTo(x, sig, `${ptr}/${String(k).replace(/~/g, '~0').replace(/\//g, '~1')}`);
+      if (r !== null) return r;
+    }
+    return null;
+  };
+  const edgeOfMessage = mh => {
+    if (mh.length !== 160) return null;
+    const dk = mh.slice(0, 64);
+    if (!circ.edges.has(dk)) for (const a of Object.values(K)) for (const b of Object.values(K)) if (a !== b) circ.edges.set(debtKey(hx(a.pub), hx(b.pub), PILOT_DENOMINATION).toString('hex'), `${a.pub}>${b.pub}`);
+    return circ.edges.get(dk) ?? null;
+  };
+  async function step(label, actor, method, p, {body, rawBody, auth, admin, client_call, reads, expect, extra = {}, features} = {}) {
     const clientReads = {};
-    for (const [rp, ra] of reads || []) clientReads[`GET /pilot/v1${rp}`] = await http('GET', rp, {auth: ra});
+    for (const [rp, ra] of reads || []) clientReads[`GET /pilot/v1${rp}`] = await http('GET', rp, {auth: ra, features: ra ? features : undefined});
     const mark = verifyLog.length;
-    const response = await http(method, p, {body, rawBody, auth, admin});
+    const response = await http(method, p, {body, rawBody, auth, admin, features});
     if (expect !== undefined) assert.equal(response.status, expect, `${label}: ${JSON.stringify(response.body).slice(0, 400)}`);
     const s = {n: steps.length + 1, label, actor, at: iso(now),
-      request: {method, path: '/pilot/v1' + p, headers: {...(auth ? {authorization: `Bearer <${auth}>`} : {}), ...(admin ? {'x-valun-admin': '<admin_token>'} : {})},
+      request: {method, path: '/pilot/v1' + p, headers: {...(auth ? {authorization: `Bearer <${auth}>`} : {}), ...(admin ? {'x-valun-admin': '<admin_token>'} : {}),
+        ...(features !== undefined ? {'x-valun-features': features} : {})},
         ...(body !== undefined ? {body} : {}), ...(rawBody !== undefined ? {raw_body: rawBody} : {})},
       ...extra,
       response,
-      server_verified: verifyLog.slice(mark).map(e => ({pubkey: e.pubkey, message_hex: e.message_hex, ...(e.message_hex.length === 160 ? {kind: 'basis_note_message'} : {kind: 'statement', message_text: Buffer.from(e.message_hex, 'hex').toString('utf8')}), signature: e.signature, valid: e.valid,
-        ...(e.signer_refused ? {signer_refused: 'the signer reported an error for this input ("signer: ..."); the server counts it as does not verify'} : {})})),
+      server_verified: verifyLog.slice(mark).map(e => {
+        const where = circ.on ? pointerTo(body, e.signature) : null, edge = circ.on ? edgeOfMessage(e.message_hex) : null;
+        return {pubkey: e.pubkey, message_hex: e.message_hex, ...(e.message_hex.length === 160 ? {kind: 'basis_note_message'} : {kind: 'statement', message_text: Buffer.from(e.message_hex, 'hex').toString('utf8')}), signature: e.signature, valid: e.valid,
+          ...(e.signer_refused ? {signer_refused: 'the signer reported an error for this input ("signer: ..."); the server counts it as does not verify'} : {}),
+          ...(where !== null ? {field: where} : {}), ...(edge ? {edge} : {})};
+      }),
       ...(client_call ? {client_call} : {}), ...(reads ? {client_reads: clientReads} : {})};
     steps.push(s); tick();
     return response.body;
@@ -1284,6 +1568,760 @@ async function transcriptVectors() {
       '198.51.100.10', [['GET', '/me', {auth: 'alice.agent'}], ['GET', '/me', {auth: 'alice.agent'}], ['GET', '/me', {auth: 'bob.agent'}], ['GET', '/me', {auth: 'bob.agent'}]], [200, 200, 200, 429]);
   }
 
+  // ==== CIRCULATION BEGIN ============================================================================================
+  // Release v16 (valun-app cfe698b): circulating credit, appended after every earlier release's steps and after the
+  // probes (steps 148+). The operator restarts with PILOT_CIRCULATION=on on the pinned tracker v3.1 (here: the
+  // stand-in switches its v3.1 rules on and the Pilot's mode becomes on); every request below that an agent's client
+  // makes carries the capability header its consent policy gives (X-Valun-Features, PROTOCOL.md 18.1).
+  const circulation = {first_step: null, consent_items: {}, templates: {}, notes: {}, transfers: {}, setoffs: {}, tracker: trackerRequests, pilot_log: pilotLog};
+  if (CIRCULATION) {
+    pilot.circulation = 'on'; tracker.v3 = true; circ.on = true;
+    assert.equal(pilot.mode, 'on', `the in-memory Pilot did not take mode on: ${JSON.stringify(pilot.circulationStatus())}`);
+    circulation.first_step = steps.length + 1;
+    const FEAT = 'consents/1;roles=setoff,issuer,creditor';
+    const PINS = {tracker_nft_id: FIXTURE_NFT, denomination: PILOT_DENOMINATION};
+    const POLICY_ALL = {setoff: true, as_issuer: true, as_new_creditor: true, max_PC: 50, accept_issuers: 'any', refuse_issuers: []};
+    const MANDATE_ON = {auto_clear: true, novate_own_debt: true, accept_transfers: true, accept_notes_from: 'any', pay_with_held_notes: 'when_asked'};
+    const edgeK = (a, b) => `${P[a].key.pub}>${P[b].key.pub}`;
+    const msgHex = (i, r, total, ts) => noteMessage(hx(P[i].key.pub), hx(P[r].key.pub), total, ts, hx(FIXTURE_NFT), PILOT_DENOMINATION).toString('hex');
+    // VALUN_VECTORS_DEBUG=1: when a step of this part fails, its steps so far and the server's log lines go to debug-steps.json.
+    const sdump = () => { if (process.env.VALUN_VECTORS_DEBUG) fs.writeFileSync(path.join(OUT, 'debug-steps.json'), JSON.stringify({steps: steps.slice(circulation.first_step - 1), pilot_log: pilotLog}, null, 1)); };
+    try {
+      const info16 = await step('public: network info with circulating credit on (since v16: features bound_notes/1 and circulation/1, the novation constants and the pay statement)', 'anyone', 'GET', '/info',
+        {expect: 200, extra: {server_config: {PILOT_CIRCULATION: 'on', tracker: 'stand-in tracker v3.1 (GET /capabilities validates; its binary sha256 is pinned for this Pilot)', capabilities: STAND_IN_CAPS}}});
+      assert.deepEqual(info16.features, ['bound_notes/1', 'circulation/1']);
+
+      // ---- two new participants: nina (a client agent) and sam (an agent the server runs; its consents are signed at once) ----
+      for (const [name, op] of [['nina', 'Spec test operator N'], ['sam', 'Spec test operator S (runs the agent on the server)']]) {
+        const inv = await step(`operator creates an invite for ${name}`, 'operator', 'POST', '/admin/invites', {admin: true, body: {note: `for ${name}`, max_uses: 1, ttl_days: 14}, expect: 201});
+        redact.set(inv.code, `<invite_code:${name}>`);
+        const j = await step(`${name}'s owner joins with the invite`, `${name}.owner`, 'POST', '/join', {body: {invite: inv.code, handle: name, display_name: `${name[0].toUpperCase()}${name.slice(1)} (spec test)`, operator: op,
+          about: `${name}: a test participant of the specification transcript`, services: name === 'nina' ? 'glossaries' : 'summaries'}, expect: 201});
+        tokens[`${name}.owner`] = j.owner_token; redact.set(j.owner_token, `<${name}.owner>`);
+        P[name] = {id: j.participant_id, key: K[name], code: j.enrollment_code};
+        const x = P[name], stmt = statements.enroll(x.id, x.key.pub, sha256(x.code));
+        const e = await step(`${name}'s agent enrolls its locally generated key (proof of possession)`, `${name}.agent`, 'POST', '/enroll', {body: {participant_id: x.id, code: x.code, pubkey: x.key.pub, signature: signText(x.key, stmt)},
+          client_call: {method: 'enroll', key: name, args: {participant_id: x.id, code: x.code}}, expect: 201});
+        tokens[`${name}.agent`] = e.agent_token; redact.set(e.agent_token, `<${name}.agent>`);
+      }
+      // sam's agent runs on the server (as the sandbox's agents do): pilot.serverSigner signs its consent slots.
+      pilot.serverSigner = {has: id => id === P.sam.id, async signFor(id, messageHex) { assert.equal(id, P.sam.id); return signHex(K.sam, messageHex); }};
+
+      // ---- owners opt in to circulating credit (participants who joined before start with every new permission off) ----
+      const limits16 = {approve_above: 100, max_issue_per_deal: 100, max_issue_outstanding: 300, max_accept_per_deal: 100, max_accept_per_issuer: 200};
+      await step("alice's owner turns circulating credit on in the mandate (auto_clear, novate_own_debt, accept_transfers, accept_notes_from any, pay_with_held_notes when_asked; since v16)",
+        'alice.owner', 'PUT', '/owner/mandate', {auth: 'alice.owner', expect: 200, body: MANDATE_ON});
+      await step("bob's owner turns circulating credit on in the mandate", 'bob.owner', 'PUT', '/owner/mandate', {auth: 'bob.owner', expect: 200, body: MANDATE_ON});
+      await step("nina's owner sets the mandate: set-offs and own bound notes, but no payments by transfer yet (accept_transfers false)", 'nina.owner', 'PUT', '/owner/mandate',
+        {auth: 'nina.owner', expect: 200, body: {objective: 'Sell glossaries.', ...limits16, auto_clear: true, novate_own_debt: true, accept_transfers: false, pay_with_held_notes: 'when_asked'}});
+      await step("sam's owner sets the mandate with circulating credit on", 'sam.owner', 'PUT', '/owner/mandate', {auth: 'sam.owner', expect: 200, body: {objective: 'Sell summaries.', ...limits16, ...MANDATE_ON}});
+      for (const name of ['alice', 'bob', 'nina']) {
+        const me = await step(`${name}'s agent: who am I, with the capability header ${FEAT} (the roles its client signs by itself; since v16)`, `${name}.agent`, 'GET', '/me', {auth: `${name}.agent`, features: FEAT, expect: 200});
+        assert.deepEqual(me.features?.consent_roles, ['setoff', 'issuer', 'creditor'], JSON.stringify(me.features));
+      }
+      { const n = notes.get(edgeK('alice', 'bob')); circulation.notes.alice_bob_flowL = {total: n.amount_collected, timestamp: n.timestamp, signature: n.signature}; }
+      // ---- reference client of release v16 (mirrors the valun 0.4 package: every message rebuilt here, rule R1) ----
+      const svc16 = (title, description, deliverable = 'plain text') => ({title, description, deliverable});
+      // The capability header each agent's client sends (its consent policy's roles); undefined: none.
+      const featuresOf = {alice: FEAT, bob: FEAT, nina: FEAT, sam: FEAT};
+      const hdr = name => Object.hasOwn(featuresOf, name) ? featuresOf[name] : FEAT;
+      async function propose16(name, otherName, role, svc, price, label) {
+        const me = P[name], other = P[otherName], dealId = nextDeal(), nonce = nextNonce();
+        const t = terms({me, other, role, ...svc, price, dealId, nonce}), h = termsHash(t);
+        const v = await step(label, agentOf(name), 'POST', '/deals', {auth: agentOf(name), features: hdr(name), expect: 201, body: {terms: t, terms_hash: h, signature: signText(me.key, statements.propose(h))}});
+        return v.id ?? dealId;
+      }
+      async function accept16(name, id, label) {
+        const d = await dealView(name, id), h = d.current.terms_hash;
+        return step(label, agentOf(name), 'POST', `/deals/${id}/accept`, {auth: agentOf(name), features: hdr(name), expect: 200, body: {terms_hash: h, signature: signText(P[name].key, statements.accept(h))}});
+      }
+      async function deliver16(name, id, content, title, label) {
+        const d = await dealView(name, id), h = d.agreement.terms_hash, dh = sha256(content);
+        return step(label, agentOf(name), 'POST', `/deals/${id}/deliver`, {auth: agentOf(name), features: hdr(name), expect: 200,
+          body: {terms_hash: h, content, title, sha256: dh, signature: signText(P[name].key, statements.deliver(h, dh))}});
+      }
+      // A deal from proposal to delivery: `payer` proposes, `payee` accepts and delivers.
+      async function dealToDelivery(payer, payee, svc, price, content, tag) {
+        const id = await propose16(payer, payee, 'payer', svc, price, `${tag}: ${payer} proposes ${price} PC for '${svc.title}' to ${payee}`);
+        await accept16(payee, id, `${tag}: ${payee} accepts`);
+        await deliver16(payee, id, content, svc.title, `${tag}: ${payee} delivers`);
+        return id;
+      }
+      // Q = valun-transfer-quote/1 and its digest (PROTOCOL.md 18.3), built here from checked values.
+      const quoteOf = (d, A, B, C, a) => ({kind: 'valun-transfer-quote/1', network: NETWORK, tracker_nft_id: d.current.terms.tracker_nft_id, denomination: d.current.terms.denomination,
+        deal_id: d.id, terms_hash: d.agreement.terms_hash, deliverable_sha256: d.delivery.sha256, issuer_pubkey: A, payer_pubkey: B, payee_pubkey: C, amount: a});
+      const digestOf = Q => sha256(canonical(Q));
+      const payStatement = (dealId, q) => `valun-pilot/pay/1\n${dealId}\n${q}`;
+      // The payer's request body for a payment by transfer (the valun package's order of fields), from a template it
+      // checked: the five signatures of B over the complete statement, the pay statement and its three slots.
+      function payBody(name, d, tpl, {sign = (slot, m) => signHex(P[name].key, m), quote} = {}) {
+        const A = tpl.issuer.pubkey, B = tpl.payer.pubkey, C = tpl.payee.pubkey, a = tpl.amount, T = tpl.timestamp;
+        const X = tpl.from_edge.before.total, Y = tpl.to_edge.before ? tpl.to_edge.before.total : 0;
+        assert.equal(B, P[name].key.pub); assert.equal(T % 1000, 999); assert.equal(tpl.from_edge.new_total, X - a); assert.equal(tpl.to_edge.new_total, Y + a);
+        const q = quote ?? digestOf(quoteOf(d, A, B, C, a));
+        if (!quote) assert.equal(q, tpl.quote_digest, 'quote digest: the reference recomputation vs the template');
+        const h = d.agreement.terms_hash, dh = d.delivery.sha256;
+        const slots = [[`${A}>${B}:prior`, noteMessage(hx(A), hx(B), X, T, hx(FIXTURE_NFT), PILOT_DENOMINATION)], [`${A}>${B}:new`, noteMessage(hx(A), hx(B), X - a, T, hx(FIXTURE_NFT), PILOT_DENOMINATION)],
+          [`${A}>${C}:new`, noteMessage(hx(A), hx(C), Y + a, T, hx(FIXTURE_NFT), PILOT_DENOMINATION)]];
+        return {issuer_id: tpl.issuer.id, terms_hash: h, deliverable_sha256: dh, quote_digest: q, timestamp: T, from_prior_total: X, to_prior_total: Y,
+          completion_signature: signText(P[name].key, statements.complete(h, dh)), pay_signature: signText(P[name].key, payStatement(d.id, q)),
+          signatures: Object.fromEntries(slots.map(([slot, m]) => [slot, sign(slot, m.toString('hex'))]))};
+      }
+      // The JSON pointers of every signature in a request body (client_call.signature_fields).
+      const sigFields = (v, ptr = '') => v && typeof v === 'object' ? Object.entries(v).flatMap(([k, x]) => {
+        const q = `${ptr}/${String(k).replace(/~/g, '~0').replace(/\//g, '~1')}`;
+        return typeof x === 'string' && (k === 'signature' || k.endsWith('_signature') || ptr.endsWith('/signatures')) ? [q] : sigFields(x, q);
+      }) : [];
+      const transferTemplate = async (name, id, issuer) => (await http('GET', `/deals/${id}/transfer-template?issuer=${P[issuer].id}`, {auth: agentOf(name), features: FEAT})).body;
+      // The consent item `name` sees for id (GET /consents), and the body that signs its unsigned slots (R1: each
+      // message from the item's own edges: prior = before.total, new = new_total).
+      const consentItem = async (name, id) => (await http('GET', '/consents', {auth: agentOf(name), features: FEAT})).body.consents.find(c => c.id === id);
+      function consentBody(name, item) {
+        const signatures = {}, revisions = {};
+        for (const e of item.edges) {
+          const [I, R] = e.edge.split('>');
+          for (const slot of e.slots) {
+            if (e.signed_by_you.includes(slot)) continue;
+            const total = slot === 'prior' ? (e.before?.total ?? 0) : e.new_total;
+            signatures[`${e.edge}:${slot}`] = signHex(P[name].key, noteMessage(hx(I), hx(R), total, e.timestamp, hx(FIXTURE_NFT), PILOT_DENOMINATION).toString('hex'));
+          }
+          revisions[e.edge] = e.revision;
+        }
+        return {signatures, revisions};
+      }
+
+      // ---- payment by debt transfer, client parties only: bob pays nina with part of alice's note (A = alice, B = bob, C = nina) ----
+      const N1 = await dealToDelivery('bob', 'nina', svc16('Glossary of credit terms', 'Twenty terms with one-line definitions.'), 10,
+        'Glossary: twenty terms, one line each.', 'flow T (v16)');
+      await step("flow T: bob's payment options: his own note, or alice's note he holds (held, spendable, payee_accepts, consent speeds; since v16)", 'bob.agent', 'GET',
+        `/deals/${N1}/payment-options`, {auth: 'bob.agent', features: FEAT, expect: 200});
+      await step("flow T: a policy refusal: nina's owner does not accept payments by transfer, so the transfer template is 403 payment_not_accepted (rule, by payee; since v16)", 'bob.agent', 'GET',
+        `/deals/${N1}/transfer-template?issuer=${P.alice.id}`, {auth: 'bob.agent', features: FEAT, expect: 403});
+      await step("flow T: nina's owner accepts payments by transfer, with notes from any issuer", 'nina.owner', 'PUT', '/owner/mandate',
+        {auth: 'nina.owner', expect: 200, body: {accept_transfers: true, accept_notes_from: 'any'}});
+      {
+        const d = await dealView('bob', N1), tpl = await transferTemplate('bob', N1, 'alice');
+        circulation.templates.transfer_N1 = {tpl, now_ms: now};
+        const body = payBody('bob', d, tpl);
+        const r = await step("flow T: bob accepts nina's delivery and pays by transfer with 10 PC of alice's note: five signatures (complete, pay, A>B:prior, A>B:new, A>C:new); the transfer collects alice's and nina's",
+          'bob.agent', 'POST', `/deals/${N1}/pay-by-transfer`, {auth: 'bob.agent', features: FEAT, expect: 200, body,
+            reads: [[`/deals/${N1}`, 'bob.agent'], ['/info'], [`/participants/${P.nina.id}`], [`/deals/${N1}/payment-options`, 'bob.agent'], [`/participants/${P.alice.id}`], ['/me', 'bob.agent'],
+              [`/deals/${N1}/transfer-template?issuer=${P.alice.id}`, 'bob.agent']],
+            client_call: {method: 'pay_by_transfer', key: 'bob', feature: 'circulation/1', args: {deal_id: N1, issuer: P.alice.id, expected_deliverable_sha256: d.delivery.sha256},
+              client_state: {pins: PINS, consent_policy: POLICY_ALL}, signature_fields: sigFields(body), client_state_after: {}}});
+        assert.equal(r.status, 'paying_by_transfer', JSON.stringify(r).slice(0, 300));
+        circulation.transfers.T1 = r.transfer?.id ?? r.payment?.transfer_id;
+      }
+      {
+        const vt = circulation.transfers.T1;
+        const ia = await step('flow T: alice (the issuer) reads her consents: her two slots on this transfer, never the deal', 'alice.agent', 'GET', '/consents', {auth: 'alice.agent', features: FEAT, expect: 200});
+        const itemA = ia.consents.find(c => c.id === vt);
+        circulation.consent_items.issuer_T1 = {item: itemA, now_ms: now - 60e3};
+        const bodyA = consentBody('alice', itemA);
+        await step('flow T: alice signs her issuer slots (A>B:new, A>C:new) after her client checked them', 'alice.agent', 'POST', `/consents/${vt}`,
+          {auth: 'alice.agent', features: FEAT, expect: 200, body: bodyA, reads: [['/info'], ['/consents', 'alice.agent'], ['/me', 'alice.agent']],
+            client_call: {method: 'process_consents', key: 'alice', feature: 'circulation/1', args: {}, client_state: {pins: PINS, consent_policy: POLICY_ALL},
+              signature_fields: sigFields(bodyA), client_state_after: {}}});
+        const ic = await step('flow T: nina (the payee, new creditor) reads her consents: her edge A>C and the deal', 'nina.agent', 'GET', '/consents', {auth: 'nina.agent', features: FEAT, expect: 200});
+        const itemC = ic.consents.find(c => c.id === vt);
+        circulation.consent_items.payee_T1 = {item: itemC, now_ms: now - 60e3};
+        const bodyC = consentBody('nina', itemC);
+        const done = await step("flow T: nina signs her payee slots (A>C:prior, A>C:new): the last signature applies the transfer on the tracker (read back: applied)", 'nina.agent', 'POST', `/consents/${vt}`,
+          {auth: 'nina.agent', features: FEAT, expect: 200, body: bodyC, reads: [['/info'], ['/consents', 'nina.agent'], ['/me', 'nina.agent'], [`/deals/${N1}`, 'nina.agent'], ['/participants']],
+            client_call: {method: 'process_consents', key: 'nina', feature: 'circulation/1', args: {}, client_state: {pins: PINS, consent_policy: POLICY_ALL},
+              signature_fields: sigFields(bodyC), client_state_after: {}}});
+        assert.equal(done.state, 'applied', JSON.stringify(done).slice(0, 400));
+        const dv = await step('flow T: bob reads the deal: paid_by_transfer', 'bob.agent', 'GET', `/deals/${N1}`, {auth: 'bob.agent', features: FEAT, expect: 200});
+        assert.equal(dv.status, 'paid_by_transfer');
+        await step("flow T: bob's receipt: GET /transfers/{vt} with the signatures on his edge", 'bob.agent', 'GET', `/transfers/${vt}`, {auth: 'bob.agent', features: FEAT, expect: 200});
+      }
+      // ---- expected client records (client_state_after, PROTOCOL.md 15.3 R4 and R9; design 6.1): helpers ----
+      const xSigned = (T, slots) => { const out = {}; for (const [edge, slot, total] of slots) ((out[edge] ??= {})[String(T)] ??= {slots: {}}).slots[`${edge}:${slot}`] = total; return out; };
+      const xPending = rows => { const out = {}; for (const [edge, total, ts, kind, ref, direction] of rows) (out[edge] ??= {pending: []}).pending.push({total, timestamp: ts, kind, ref, direction}); return out; };
+      const merge = (...xs) => { const out = {}; for (const x of xs) for (const [k, v] of Object.entries(x)) out[k] = out[k] && typeof v === 'object' && !Array.isArray(v) ? merge(out[k], v) : v; return out; };
+      const edgeState = (a, b) => { const n = notes.get(edgeK(a, b)); return n ? {total: n.amount_collected, timestamp: n.timestamp, signature: n.signature} : null; };
+      // Bound credit note (PROTOCOL.md 18.5): the payer signs M(B,C,P+a,T) and its prior acknowledgment M(B,C,P,T), T
+      // ending in 997, from the template asked for with ?prior=1&bound=1 (values checked here, messages rebuilt).
+      async function completeBound(name, payeeName, id, label, {expect = 200, client_state, client_state_after, extraReads = [], features = FEAT, mutate} = {}) {
+        const d = await dealView(name, id);
+        const tpl = (await http('GET', `/deals/${id}/credit-note-template?prior=1&bound=1`, {auth: agentOf(name), features})).body;
+        const I = P[name].key.pub, R = P[payeeName].key.pub, h = d.agreement.terms_hash, dh = d.delivery.sha256;
+        assert.equal(tpl.timestamp % 1000, 997, JSON.stringify(tpl).slice(0, 200)); assert.equal(tpl.issuer_pubkey, I); assert.equal(tpl.recipient_pubkey, R);
+        assert.equal(tpl.prior_message_hex, msgHex(name, payeeName, tpl.prior_total, tpl.timestamp)); assert.equal(tpl.message_hex, msgHex(name, payeeName, tpl.total, tpl.timestamp));
+        const body = {terms_hash: h, deliverable_sha256: dh, signature: signText(P[name].key, statements.complete(h, dh)),
+          credit_note: {total: tpl.total, timestamp: tpl.timestamp, signature: signHex(P[name].key, tpl.message_hex), prior_total: tpl.prior_total, prior_signature: signHex(P[name].key, tpl.prior_message_hex)}};
+        if (mutate) mutate(body, tpl);
+        const out = await step(label, agentOf(name), 'POST', `/deals/${id}/complete`, {auth: agentOf(name), features, expect, body,
+          reads: [[`/deals/${id}`, agentOf(name)], ['/info'], [`/deals/${id}/credit-note-template?prior=1&bound=1`, agentOf(name)], [`/participants/${P[payeeName].id}`], ...extraReads],
+          ...(client_state ? {client_call: {method: 'complete', key: name, feature: 'circulation/1', args: {deal_id: id, expected_deliverable_sha256: dh},
+            client_state, signature_fields: sigFields(body), ...(client_state_after ? {client_state_after: client_state_after(tpl)} : {})}} : {})});
+        return {out, tpl, body};
+      }
+
+      // ---- a completion after a novation, without ledger_mismatch: alice pays bob with a bound note on the edge the transfer lowered ----
+      {
+        const C2 = await dealToDelivery('alice', 'bob', svc16('Two-source check', 'Check two claims against their sources.'), 5, 'Checked: both claims hold.', 'flow U (v16)');
+        const T1 = circulation.templates.transfer_N1.tpl.timestamp, vt = circulation.transfers.T1;
+        const ab = edgeK('alice', 'bob'), an = edgeK('alice', 'nina');
+        // alice's client records: her note of flow L (69 PC, confirmed) and her consent to transfer T1 (pending)
+        const before = {pins: PINS, consent_policy: POLICY_ALL,
+          records: {[ab]: {confirmed: circulation.notes.alice_bob_flowL, pending: [{total: 59, timestamp: T1, kind: 'transfer', ref: vt, direction: 'out', signed_at: iso(now - 20 * 60e3)}]},
+            [an]: {confirmed: null, pending: [{total: 10, timestamp: T1, kind: 'transfer', ref: vt, direction: 'out', signed_at: iso(now - 20 * 60e3)}]}},
+          signed: xSigned(T1, [[ab, 'new', 59], [an, 'new', 10]])};
+        const {out, tpl} = await completeBound('alice', 'bob', C2,
+          "flow U: alice accepts bob's delivery and pays with a BOUND note (timestamp ending in 997, with her prior acknowledgment of the edge the transfer lowered to 59): note_issued, no ledger_mismatch",
+          {client_state: before, client_state_after: t => ({records: {[ab]: {confirmed: {total: t.total, timestamp: t.timestamp}}, paid_deals: {[C2]: {route: 'note', edge: ab, total: t.total, timestamp: t.timestamp}}},
+            signed: xSigned(t.timestamp, [[ab, 'prior', t.prior_total], [ab, 'new', t.total]]),
+            transfer_attempts: {[C2]: [{route: 'note', edge: ab, prior: t.prior_total, prior_timestamp: t.prior_note.timestamp, total: t.total, timestamp: t.timestamp}]}})});
+        assert.equal(out.status, 'note_issued', JSON.stringify(out).slice(0, 300));
+        assert.equal(tpl.prior_total, 59); assert.equal(tpl.prior_note.timestamp, T1);
+        circulation.templates.bound_C2 = {tpl, now_ms: now - 60e3};
+      }
+      // ---- set-off (multilateral clearing, here a cycle of two): nina owes alice, alice owes nina ----
+      {
+        const na = edgeK('nina', 'alice'), an = edgeK('alice', 'nina');
+        const N2 = await dealToDelivery('nina', 'alice', svc16('Source list', 'Five sources on credit clearing.'), 4, 'Sources: five, with links.', 'flow V (v16)');
+        const {out: o2, tpl: t2} = await completeBound('nina', 'alice', N2, "flow V: nina pays alice with a bound note on a new edge (prior total 0, no prior note): note_issued",
+          {client_state: {pins: PINS, consent_policy: POLICY_ALL}, client_state_after: t => ({records: {[na]: {confirmed: {total: t.total, timestamp: t.timestamp}}, paid_deals: {[N2]: {route: 'note', edge: na, total: t.total, timestamp: t.timestamp}}},
+            signed: xSigned(t.timestamp, [[na, 'prior', 0], [na, 'new', t.total]]), transfer_attempts: {[N2]: [{route: 'note', edge: na, prior: 0, prior_timestamp: 0, total: t.total, timestamp: t.timestamp}]}})});
+        assert.equal(o2.status, 'note_issued'); assert.equal(t2.prior_note, null);
+        circulation.templates.bound_N2 = {tpl: t2, now_ms: now - 60e3};
+        // The clearing engine (lib/pilot/clearing.mjs), as server.mjs starts it, except that it never runs on a timer here:
+        // it proposes when a member's agent reads its consents (presence) or the operator asks (POST /admin/clearing/run).
+        pilot.clearing = new clearingModule.Clearing({pilot, log: m => pilotLog.push(m)});
+        pilot.clearing.later = () => null;
+        await step("flow V: nina's owner reviews deliveries before her notes are issued (review_deliveries: a completion waits for the owner, its note held)", 'nina.owner', 'PUT', '/owner/mandate',
+          {auth: 'nina.owner', expect: 200, body: {review_deliveries: true}});
+        const c1 = await step("flow V: nina's agent reads its consents: the clearing engine finds the cycle alice -> nina -> alice and proposes a set-off of 4 PC (each member signs its own edges; since v16)",
+          'nina.agent', 'GET', '/consents', {auth: 'nina.agent', features: FEAT, expect: 200});
+        const S1 = c1.consents.find(c => c.kind === 'setoff');
+        assert.ok(S1, `no set-off proposed: ${JSON.stringify(c1).slice(0, 300)} ${JSON.stringify(pilot.clearing.lastRun)}`);
+        circulation.setoffs.S1 = S1.id; circulation.consent_items.member_S1_nina = {item: S1, now_ms: now - 60e3};
+        const a1 = await step('flow V: alice reads her consents: the same set-off, her two edges', 'alice.agent', 'GET', '/consents', {auth: 'alice.agent', features: FEAT, expect: 200});
+        const S1a = a1.consents.find(c => c.id === S1.id);
+        circulation.consent_items.member_S1_alice = {item: S1a, now_ms: now - 60e3};
+        const bA = consentBody('alice', S1a);
+        await step('flow V: alice signs her slots of the set-off (net change 0 for her: as much off her claims as off her debts)', 'alice.agent', 'POST', `/consents/${S1.id}`,
+          {auth: 'alice.agent', features: FEAT, expect: 200, body: bA, reads: [['/info'], ['/consents', 'alice.agent'], ['/me', 'alice.agent']],
+            client_call: {method: 'process_consents', key: 'alice', feature: 'circulation/1', args: {}, client_state: {pins: PINS, consent_policy: POLICY_ALL}, signature_fields: sigFields(bA),
+              client_state_after: {signed: xSigned(S1a.edges[0].timestamp === S1a.edges[1].timestamp ? S1a.edges[0].timestamp : 0, []), records: xPending(S1a.edges.map(e => [e.edge, e.new_total, e.timestamp, 'setoff', S1.id, e.your_role === 'issuer' ? 'out' : 'in']))}}});
+        // decision D-2 c: a held note on a pair of a collecting set-off supersedes it (held_note); none is proposed while it waits
+        const N3 = await dealToDelivery('nina', 'alice', svc16('Short summary', 'One paragraph on set-off.'), 2, 'Set-off cancels equal opposite debts.', 'flow V (v16)');
+        const {out: o3} = await completeBound('nina', 'alice', N3, "flow V: nina accepts a second delivery from alice; her owner reviews deliveries, so the bound note is HELD (completion_awaiting_owner): the collecting set-off on that pair is superseded (held_note, decision D-2 c)");
+        assert.equal(o3.status, 'completion_awaiting_owner', JSON.stringify(o3).slice(0, 300));
+        const c2 = await step('flow V: nina reads her consents: the set-off was superseded (held_note), and no new one is proposed while her note is held', 'nina.agent', 'GET', '/consents',
+          {auth: 'nina.agent', features: FEAT, expect: 200});
+        assert.ok(c2.recently_resolved.some(x => x.id === S1.id && x.state === 'superseded'), JSON.stringify(c2).slice(0, 400));
+        assert.ok(!c2.consents.some(c => c.kind === 'setoff'), 'a set-off was proposed while the note is held');
+        await step('flow V: the set-off as its member sees it: superseded with code held_note', 'nina.agent', 'GET', `/setoffs/${S1.id}`, {auth: 'nina.agent', features: FEAT, expect: 200});
+        const ap = Object.values(state.approvals).find(a => a.deal_id === N3 && a.state === 'pending');
+        assert.ok(ap, 'no pending approval for the held note');
+        await step("flow V: nina's owner approves the held completion: the bound note is recorded (nina -> alice now 6)", 'nina.owner', 'POST', `/owner/approvals/${ap.id}`,
+          {auth: 'nina.owner', expect: 200, body: {decision: 'approve'}});
+        await step("flow V: nina's owner stops reviewing deliveries", 'nina.owner', 'PUT', '/owner/mandate', {auth: 'nina.owner', expect: 200, body: {review_deliveries: false}});
+        tick(60);
+        const c3 = await step('flow V: nina reads her consents: a new set-off of 6 PC (alice -> nina 10 and nina -> alice 6 each fall by 6)', 'nina.agent', 'GET', '/consents',
+          {auth: 'nina.agent', features: FEAT, expect: 200});
+        const S2 = c3.consents.find(c => c.kind === 'setoff');
+        assert.ok(S2, `no second set-off: ${JSON.stringify(c3).slice(0, 300)}`);
+        circulation.setoffs.S2 = S2.id; circulation.consent_items.member_S2_nina = {item: S2, now_ms: now - 60e3};
+        const bN = consentBody('nina', S2);
+        await step('flow V: nina signs her slots of the set-off', 'nina.agent', 'POST', `/consents/${S2.id}`,
+          {auth: 'nina.agent', features: FEAT, expect: 200, body: bN, reads: [['/info'], ['/consents', 'nina.agent'], ['/me', 'nina.agent']],
+            client_call: {method: 'process_consents', key: 'nina', feature: 'circulation/1', args: {}, client_state: {pins: PINS, consent_policy: POLICY_ALL}, signature_fields: sigFields(bN),
+              client_state_after: {records: xPending(S2.edges.map(e => [e.edge, e.new_total, e.timestamp, 'setoff', S2.id, e.your_role === 'issuer' ? 'out' : 'in']))}}});
+        const S2a = await consentItem('alice', S2.id);
+        circulation.consent_items.member_S2_alice = {item: S2a, now_ms: now};
+        const done = await step('flow V: alice signs hers: the last signature applies the set-off on the tracker (both edges lowered by 6, each at its own timestamp ending in 998)', 'alice.agent', 'POST', `/consents/${S2.id}`,
+          {auth: 'alice.agent', features: FEAT, expect: 200, body: consentBody('alice', S2a)});
+        assert.equal(done.state, 'applied', JSON.stringify(done).slice(0, 400));
+        await step("flow V: alice's receipt: GET /setoffs/{vs} with the signatures on her edges", 'alice.agent', 'GET', `/setoffs/${S2.id}`, {auth: 'alice.agent', features: FEAT, expect: 200});
+        await step('public: GET /clearing: aggregates only (PC cleared by set-off; no participant ids, handles or keys; since v16)', 'anyone', 'GET', '/clearing', {expect: 200});
+        assert.equal(edgeState('nina', 'alice').total, 0); assert.equal(edgeState('alice', 'nina').total, 4);
+      }
+      // ---- decision D-2 b and D-1 item 2: a payment refused when posted is still an attempt; another kind waits for its window ----
+      {
+        const ab = edgeK('alice', 'bob'), an = edgeK('alice', 'nina'), bn = edgeK('bob', 'nina');
+        const X1 = await dealToDelivery('bob', 'nina', svc16('Term check', 'Check one term against two glossaries.'), 2, 'The term matches both glossaries.', 'flow W (v16)');
+        const d = await dealView('bob', X1), tpl = await transferTemplate('bob', X1, 'alice');
+        const body = payBody('bob', d, tpl);
+        tick(11 * 60);   // a slow client: the template's timestamp is now more than 10 minutes old
+        const st = await step("flow W: bob's client posts a payment by transfer signed over a template 11 minutes old: 409 transfer_stale with a fresh template; the server keeps the refused attempt (decision D-2 b)",
+          'bob.agent', 'POST', `/deals/${X1}/pay-by-transfer`, {auth: 'bob.agent', features: FEAT, expect: 409, body});
+        assert.equal(st.error, 'transfer_stale');
+        const T = tpl.timestamp, X = tpl.from_edge.before.total, attemptRec = {deal_id: X1, route: 'transfer', edge: ab, prior: X, prior_timestamp: tpl.from_edge.before.timestamp,
+          prior_signature: tpl.from_edge.before.signature, total: X - 2, timestamp: T, quote_digest: tpl.quote_digest, signed_at: iso(now - 12 * 60e3)};
+        const bobBefore = {pins: PINS, consent_policy: POLICY_ALL, transfer_attempts: {[X1]: [attemptRec]}, signed: xSigned(T, [[ab, 'prior', X], [ab, 'new', X - 2], [edgeK('alice', 'nina'), 'new', (edgeState('alice', 'nina')?.total ?? 0) + 2]])};
+        // the server (D-1 across kinds) and bob's own client (R11) refuse his own note until the window has passed
+        const w = await step("flow W: bob tries to pay with his own bound note instead: the template is 409 transfer_window_open (retry_after_ms) until T + 1 h + 60 s (decision D-1 across kinds); nothing is signed",
+          'bob.agent', 'GET', `/deals/${X1}/credit-note-template?prior=1&bound=1`, {auth: 'bob.agent', features: FEAT, expect: 409, reads: [[`/deals/${X1}`, 'bob.agent'], ['/info']],
+            client_call: {method: 'complete', key: 'bob', feature: 'circulation/1', args: {deal_id: X1, expected_deliverable_sha256: d.delivery.sha256}, client_state: bobBefore,
+              signature_fields: [], expect_error: 'transfer_window_open'}});
+        assert.equal(w.error, 'transfer_window_open', JSON.stringify(w).slice(0, 300));
+        await step('flow W: the deal says what is possible now: wait for the transfer window (next_actions)', 'bob.agent', 'GET', `/deals/${X1}`, {auth: 'bob.agent', features: FEAT, expect: 200});
+        now = T + 3600e3 + 125e3;   // past T + 1 h + 2 min, the client's own margin
+        const ok = await completeBound('bob', 'nina', X1, 'flow W: after the window bob pays with his own bound note: note_issued (the refused attempt can never apply now)',
+          {extraReads: [['/edges?since=0', 'bob.agent']], client_state: bobBefore,
+            client_state_after: t => ({records: {[bn]: {confirmed: {total: t.total, timestamp: t.timestamp}}, paid_deals: {[X1]: {route: 'note', edge: bn, total: t.total, timestamp: t.timestamp}}},
+              signed: xSigned(t.timestamp, [[bn, 'prior', t.prior_total], [bn, 'new', t.total]])})});
+        assert.equal(ok.out.status, 'note_issued', JSON.stringify(ok.out).slice(0, 300));
+      }
+      // ---- decision D-1 item 4: a held bound note older than one hour is refused by the tracker (novation_expired) ----
+      {
+        const ab = edgeK('alice', 'bob');
+        await step("flow X: alice's owner reviews deliveries (each completion waits for the owner)", 'alice.owner', 'PUT', '/owner/mandate', {auth: 'alice.owner', expect: 200, body: {review_deliveries: true}});
+        const E1 = await dealToDelivery('alice', 'bob', svc16('Fact check', 'Check one figure.'), 6, 'The figure is right.', 'flow X (v16)');
+        const first = await completeBound('alice', 'bob', E1, "flow X: alice signs a bound note; her owner reviews deliveries, so it is held (completion_awaiting_owner)");
+        assert.equal(first.out.status, 'completion_awaiting_owner');
+        tick(61 * 60);
+        const ap = Object.values(state.approvals).find(a => a.deal_id === E1 && a.state === 'pending');
+        await step("flow X: 61 minutes later alice's owner approves: the tracker refuses the held bound note as older than its maximum age (400 novation_expired): note_failed, with the tracker's code (decision D-1 item 4)",
+          'alice.owner', 'POST', `/owner/approvals/${ap.id}`, {auth: 'alice.owner', expect: 200, body: {decision: 'approve'}});
+        const dv = await step('flow X: the deal: note_failed, credit_note.error_code novation_expired; alice may sign a new bound note at once (it acknowledges the same prior)', 'alice.agent', 'GET', `/deals/${E1}`,
+          {auth: 'alice.agent', features: FEAT, expect: 200});
+        assert.equal(dv.status, 'note_failed'); assert.equal(dv.credit_note?.error_code, 'novation_expired', JSON.stringify(dv.credit_note));
+        const t0 = first.tpl, prior = edgeState('alice', 'bob');
+        const aliceBefore = {pins: PINS, consent_policy: POLICY_ALL, records: {[ab]: {confirmed: {total: prior.total, timestamp: prior.timestamp, signature: prior.signature}, pending: []}},
+          transfer_attempts: {[E1]: [{deal_id: E1, route: 'note', edge: ab, prior: t0.prior_total, prior_timestamp: t0.prior_note.timestamp, prior_signature: t0.prior_note.signature,
+            total: t0.total, timestamp: t0.timestamp, quote_digest: null, signed_at: iso(now - 62 * 60e3)}]},
+          signed: xSigned(t0.timestamp, [[ab, 'prior', t0.prior_total], [ab, 'new', t0.total]])};
+        const again = await completeBound('alice', 'bob', E1, 'flow X: alice signs a fresh bound note (new timestamp, the same acknowledged prior): held for her owner again',
+          {client_state: aliceBefore, client_state_after: t => ({transfer_attempts: {[E1]: [{route: 'note', timestamp: t0.timestamp}, {route: 'note', edge: ab, prior: t.prior_total, total: t.total, timestamp: t.timestamp}]},
+            signed: xSigned(t.timestamp, [[ab, 'prior', t.prior_total], [ab, 'new', t.total]])})});
+        assert.equal(again.out.status, 'completion_awaiting_owner');
+        const ap2 = Object.values(state.approvals).find(a => a.deal_id === E1 && a.state === 'pending');
+        await step("flow X: alice's owner approves at once: the bound note is recorded (note_issued)", 'alice.owner', 'POST', `/owner/approvals/${ap2.id}`, {auth: 'alice.owner', expect: 200, body: {decision: 'approve'}});
+        await step("flow X: alice's owner stops reviewing deliveries", 'alice.owner', 'PUT', '/owner/mandate', {auth: 'alice.owner', expect: 200, body: {review_deliveries: false}});
+        assert.equal((await dealView('alice', E1)).status, 'note_issued');
+      }
+      // ---- a server-run party (sam) and a client party (alice); attacks the server refuses; an outcome nobody can read
+      //      back (decision D-1 item 3) and the owner's resolution of it (D-2 d) ----
+      {
+        const ab = edgeK('alice', 'bob'), as = edgeK('alice', 'sam');
+        const S3 = await dealToDelivery('bob', 'sam', svc16('One-line summary', 'Summarise one paragraph in one line.'), 3, 'Set-off cancels equal debts; nothing is redeemed.', 'flow Y (v16)');
+        const d = await dealView('bob', S3), tpl = await transferTemplate('bob', S3, 'alice');
+        const A = tpl.issuer.pubkey, B = tpl.payer.pubkey, C = tpl.payee.pubkey, T = tpl.timestamp, X = tpl.from_edge.before.total, Y = 0, a = tpl.amount;
+        // attack 1: a "puppet" destination, the to-slot signed for a key bob controls (here the public test key carol-2)
+        // instead of sam's
+        const puppetKey = K['carol-2'].pub;
+        const puppet = payBody('bob', d, tpl, {sign: (slot, m) => slot.endsWith(`>${C}:new`) ? signHex(P.bob.key, noteMessage(hx(A), hx(puppetKey), Y + a, T, hx(FIXTURE_NFT), PILOT_DENOMINATION).toString('hex')) : signHex(P.bob.key, m)});
+        await step("flow Y: an attack the server refuses: bob's A>C:new slot is signed for another destination key (a puppet), so it does not verify over the message for sam's key: 403 bad_signature, nothing recorded",
+          'bob.agent', 'POST', `/deals/${S3}/pay-by-transfer`, {auth: 'bob.agent', features: FEAT, expect: 403, body: puppet});
+        // attack 2: amplification, the from-edge lowered by twice the price
+        const amplified = payBody('bob', d, tpl, {sign: (slot, m) => slot === `${A}>${B}:new` ? signHex(P.bob.key, noteMessage(hx(A), hx(B), X - 2 * a, T, hx(FIXTURE_NFT), PILOT_DENOMINATION).toString('hex')) : signHex(P.bob.key, m)});
+        await step("flow Y: another: bob's A>B:new slot lowers his claim by twice the price (amplification): 403 bad_signature, nothing recorded",
+          'bob.agent', 'POST', `/deals/${S3}/pay-by-transfer`, {auth: 'bob.agent', features: FEAT, expect: 403, body: amplified});
+        const tplNow = await transferTemplate('bob', S3, 'alice'), body = payBody('bob', d, tplNow);
+        const r = await step("flow Y: bob pays sam by transfer with 3 PC of alice's note: sam's agent runs on the server, so its slots (A>C:prior, A>C:new) are signed at once; alice's are missing",
+          'bob.agent', 'POST', `/deals/${S3}/pay-by-transfer`, {auth: 'bob.agent', features: FEAT, expect: 200, body,
+            reads: [[`/deals/${S3}`, 'bob.agent'], ['/info'], [`/participants/${P.sam.id}`], [`/deals/${S3}/payment-options`, 'bob.agent'], [`/participants/${P.alice.id}`], ['/me', 'bob.agent'],
+              [`/deals/${S3}/transfer-template?issuer=${P.alice.id}`, 'bob.agent']],
+            client_call: {method: 'pay_by_transfer', key: 'bob', feature: 'circulation/1', args: {deal_id: S3, issuer: P.alice.id, expected_deliverable_sha256: d.delivery.sha256},
+              client_state: {pins: PINS, consent_policy: POLICY_ALL}, signature_fields: sigFields(body),
+              client_state_after: {transfer_attempts: {[S3]: [{route: 'transfer', edge: ab, prior: X, prior_timestamp: tplNow.from_edge.before.timestamp, total: X - a, timestamp: tplNow.timestamp, quote_digest: tplNow.quote_digest}]},
+                signed: xSigned(tplNow.timestamp, [[ab, 'prior', X], [ab, 'new', X - a], [as, 'new', Y + a]]), records: xPending([[ab, X - a, tplNow.timestamp, 'transfer', S3, 'in']]), approved_payments: {[S3]: tplNow.quote_digest}}}});
+        const vt = r.transfer?.id ?? r.payment?.transfer_id;
+        circulation.transfers.T3 = vt; circulation.templates.transfer_S3 = {tpl: tplNow, now_ms: now - 60e3};
+        // The tracker applies the transfer but its answer is lost (a timeout); before Valun reads the edges back, alice's key
+        // raises A>B with a bound note submitted around Valun: A>B is then past T at a total that is neither the transfer's
+        // new total nor its prior, so the read-back cannot decide (decision D-1 item 3).
+        let outside = null;
+        tracker.novation = 'timeout'; tracker.applyOnTimeout = true;
+        tracker.onTimeout = () => {
+          const cur = notes.get(ab), x = now - 1000, T2 = x - (x % 1000) + 997 - ((x % 1000) < 997 ? 1000 : 0);
+          outside = {issuer_pubkey: A, recipient_pubkey: B, amount: cur.amount_collected + 2, timestamp: T2, signature: signHex(K.alice, msgHex('alice', 'bob', cur.amount_collected + 2, T2)),
+            tracker_nft_id: FIXTURE_NFT, denomination: PILOT_DENOMINATION, prior_signature: signHex(K.alice, msgHex('alice', 'bob', cur.amount_collected, T2)), prior_total: cur.amount_collected};
+          const ans = v3Note(outside);
+          assert.equal(ans.status, 201, JSON.stringify(ans));
+        };
+        const item = await consentItem('alice', vt);
+        circulation.consent_items.issuer_T3 = {item, now_ms: now};
+        const x = await step("flow Y: alice signs her issuer slots: the last signature applies the transfer, but the tracker's answer is lost, and before the read-back a bound note signed by alice's key, submitted around Valun, raises A>B: the read-back cannot decide (outcome_unknown)",
+          'alice.agent', 'POST', `/consents/${vt}`, {auth: 'alice.agent', features: FEAT, expect: 200, body: consentBody('alice', item),
+            extra: {stand_in_tracker: {novation: 'applied; its answer lost (timeout)', then: 'a bound note on alice -> bob, +2 PC, signed by alice (test key) and submitted around Valun'}}});
+        tracker.applyOnTimeout = false;
+        assert.ok(outside, 'the outside note was not written');
+        assert.equal(x.state, 'outcome_unknown', JSON.stringify(x).slice(0, 300));
+        const dv = await step("flow Y: bob reads the deal: payment_due, and the transfer's outcome is unknown; only the payer's owner can resolve it (decision D-1 item 3)",
+          'bob.agent', 'GET', `/deals/${S3}`, {auth: 'bob.agent', features: FEAT, expect: 200});
+        assert.equal(dv.status, 'payment_due', JSON.stringify(dv).slice(0, 300));
+        const po = await step("flow Y: bob's payment options while the outcome is unknown: none is available (why_not attempt_outcome_unknown)", 'bob.agent', 'GET',
+          `/deals/${S3}/payment-options`, {auth: 'bob.agent', features: FEAT, expect: 200});
+        assert.equal(po.own_note?.why_not, 'attempt_outcome_unknown', JSON.stringify(po).slice(0, 300));
+        const again = await step('flow Y: any payment of the deal is refused while the outcome is unknown: the own-note template is 409 attempt_outcome_unknown', 'bob.agent', 'GET',
+          `/deals/${S3}/credit-note-template?prior=1&bound=1`, {auth: 'bob.agent', features: FEAT, expect: 409});
+        assert.equal(again.error, 'attempt_outcome_unknown', JSON.stringify(again).slice(0, 300));
+        const again2 = await step('flow Y: so is another transfer: the transfer template is 409 attempt_outcome_unknown', 'bob.agent', 'GET',
+          `/deals/${S3}/transfer-template?issuer=${P.alice.id}`, {auth: 'bob.agent', features: FEAT, expect: 409});
+        assert.equal(again2.error, 'attempt_outcome_unknown', JSON.stringify(again2).slice(0, 300));
+        await step("flow Y: bob's owner sees the attempt to resolve in the owner console", 'bob.owner', 'GET', '/owner', {auth: 'bob.owner', expect: 200});
+        const res = await step("flow Y: bob's owner, after sam confirmed the payment arrived, resolves the attempt as applied (POST /owner/deals/{vd}/attempts/{vt}/resolve, decision D-2 d): paid_by_transfer",
+          'bob.owner', 'POST', `/owner/deals/${S3}/attempts/${vt}/resolve`, {auth: 'bob.owner', expect: 200, body: {outcome: 'applied', note: 'sam confirmed that 3 PC arrived'}});
+        assert.equal(res.deal?.status, 'paid_by_transfer', JSON.stringify(res).slice(0, 300));
+        await step('error: an attempt that is not unresolved cannot be resolved again (409 wrong_state)', 'bob.owner', 'POST', `/owner/deals/${S3}/attempts/${vt}/resolve`,
+          {auth: 'bob.owner', expect: 409, body: {outcome: 'not_applied'}});
+      }
+      // ---- decision D-3 b: a client whose consent roles are all off declares the empty list once; the server forgets its roles at once ----
+      {
+        const off = {setoff: false, as_issuer: false, as_new_creditor: false, max_PC: 50, accept_issuers: 'any', refuse_issuers: []};
+        await step("flow Z: nina's client turns every consent role off: its next request declares none (X-Valun-Features: consents/1;roles=) and the server forgets her roles at once (decision D-3 b)",
+          'nina.agent', 'GET', '/consents', {auth: 'nina.agent', features: 'consents/1;roles=', expect: 200, reads: [['/info']],
+            client_call: {method: 'process_consents', key: 'nina', feature: 'circulation/1', args: {}, client_state: {pins: PINS, consent_policy: off, consent_roles_declared: 'setoff,issuer,creditor'},
+              signature_fields: [], client_state_after: {consent_roles_declared: ''}}});
+        featuresOf.nina = undefined;     // her client sends no header from now on (consent_roles_declared is '')
+        const me = await step("flow Z: nina's agent: who am I (no header): consent_roles [] and consents_count_until null", 'nina.agent', 'GET', '/me', {auth: 'nina.agent', expect: 200});
+        assert.deepEqual(me.features.consent_roles, []); assert.equal(me.features.consents_count_until, null);
+        const Z1 = await dealToDelivery('bob', 'nina', svc16('Definition', 'Define one term.'), 1, 'Set-off: cancelling equal opposite debts.', 'flow Z (v16)');
+        const po = await step("flow Z: bob's payment options for a deal with nina: her consent as payee is unavailable now", 'bob.agent', 'GET', `/deals/${Z1}/payment-options`, {auth: 'bob.agent', features: FEAT, expect: 200});
+        circulation.payment_options_Z1 = po;
+      }
+      // =================================================================================================================
+      // circulation.json: the bytes and the decisions of circulating credit, from what this run produced
+      // =================================================================================================================
+      {
+        const V = {timestamps: [], messages: [], quote_digests: [], statements: [], transfers: [], setoffs: [], consents: [], payer_templates: [], bound_templates: []};
+        const pk = n => P[n].key.pub, M = (i, r, t, ts) => noteMessage(hx(i), hx(r), t, ts, hx(FIXTURE_NFT), PILOT_DENOMINATION).toString('hex');
+        const keyName = pub => Object.values(K).find(k => k.pub === pub)?.name ?? null;
+        const meOf = async name => (await http('GET', '/me', {auth: agentOf(name)})).body;
+        const mandates = {};
+        for (const n of ['alice', 'bob', 'nina']) mandates[n] = (await meOf(n)).effective_limits;
+        circulation.mandates = mandates;
+        const dealOf = async (name, id, {delivered = false, transferId = null} = {}) => {
+          const d = await dealView(name, id), t = d.current.terms;
+          return {deal_id: t.deal_id, network: t.network, tracker_nft_id: t.tracker_nft_id, denomination: t.denomination, terms_hash: d.agreement.terms_hash,
+            deliverable_sha256: d.delivery.sha256, price: t.price.amount, payer: {id: t.payer.id, pubkey: t.payer.pubkey}, payee: {id: t.payee.id, pubkey: t.payee.pubkey},
+            delivered, transfer_id: transferId};
+        };
+
+        // ---- timestamps (PROTOCOL.md 18.4): residues, the ordinary clamp, the novation rule, boundaries ----
+        const classes = ts => ({ordinary: Number.isSafeInteger(ts) && ![995, 996, 997, 998, 999].includes(ts % 1000), bound: Number.isSafeInteger(ts) && ts % 1000 === 997,
+          transfer: Number.isSafeInteger(ts) && ts % 1000 === 999, setoff: Number.isSafeInteger(ts) && ts % 1000 === 998});
+        const base = Date.parse('2026-11-15T15:00:00.000Z');
+        for (const [name, ts] of [['zero', 0], ['ordinary-994', base + 994], ['exchange-995', base + 995], ['compress-996', base + 996], ['bound-997', base + 997],
+          ['setoff-998', base + 998], ['transfer-999', base + 999], ['next-second-000', base + 1000], ['max-safe-integer', Number.MAX_SAFE_INTEGER]]) {
+          V.timestamps.push({name: `residue/${name}`, ts, residue: ts % 1000, accepted_as: classes(ts),
+            ordinary_clamp: basisModule.ordinaryTimestamp(ts), why: 'ordinary notes use 000-994 ms; 995 exchange and 996 compress are reserved, 997 bound note, 998 set-off, 999 transfer; the server moves an ordinary timestamp ending in 995-999 to the next whole second (ordinaryTimestamp)'});
+        }
+        // Beyond the safe integers (2^53 - 1): written as exact JSON numbers. No client signs them (every number a client
+        // signs is a safe integer, for JavaScript parity); the tracker's own limit for totals is i64::MAX.
+        for (const [name, digits] of [['above-max-safe-integer', '9007199254740993'], ['i64-max', '9223372036854775807'], ['u64-max', '18446744073709551615']])
+          V.timestamps.push({name: `residue/${name}`, ts: `@@int:${digits}@@`, residue: Number(BigInt(digits) % 1000n), accepted_as: {ordinary: false, bound: false, transfer: false, setoff: false},
+            ordinary_clamp: null, why: 'not a safe integer: no client signs it, whatever its residue (the server clamp refuses it too: ordinaryTimestamp throws)'});
+        // the server's choice of T for each operation: the largest t <= now - 1500 with the residue and t > after, or ahead_ms
+        for (const [name, nowT, residue, after] of [['transfer', base + 30000, 999, base], ['setoff', base + 30000, 998, base + 28998], ['bound', base + 30000, 997, base + 27997],
+          ['bound-wait', base + 30000, 997, base + 28997], ['transfer-at-lag-boundary', base + 1500 + 999, 999, base + 998]]) {
+          V.timestamps.push({name: `choice/${name}`, now: nowT, residue, after, server_choice: novationModule.novationTimestamp({now: nowT, residue, after}),
+            why: 'novationTimestamp (lib/pilot/novation.mjs): T ending in the residue, at least 1.5 s before the clock and after the edge state (or every live set-off on it); otherwise the server waits ahead_ms (at most 3 s) or answers 409 note_timestamp_ahead'});
+        }
+
+        // ---- messages: a bound note and its prior, the seven transfer slots, the set-off slots (deterministic signatures) ----
+        const bC2 = circulation.templates.bound_C2.tpl;
+        const pushMsg = (name, slot, i, r, total, ts, signer) => {
+          const message_hex = M(i, r, total, ts);
+          V.messages.push({name, slot, issuer_pubkey: i, recipient_pubkey: r, total, timestamp: ts, tracker_nft_id: FIXTURE_NFT, denomination: PILOT_DENOMINATION,
+            message_hex, signer: keyName(signer), signer_pubkey: signer, signature: signHex(Object.values(K).find(k => k.pub === signer), message_hex), valid: true});
+        };
+        pushMsg('bound-note/prior-acknowledgment', `${bC2.issuer_pubkey}>${bC2.recipient_pubkey}:prior`, bC2.issuer_pubkey, bC2.recipient_pubkey, bC2.prior_total, bC2.timestamp, bC2.issuer_pubkey);
+        pushMsg('bound-note/note', `${bC2.issuer_pubkey}>${bC2.recipient_pubkey}:new`, bC2.issuer_pubkey, bC2.recipient_pubkey, bC2.total, bC2.timestamp, bC2.issuer_pubkey);
+        const tN1 = circulation.templates.transfer_N1.tpl;
+        {
+          const A = tN1.issuer.pubkey, B = tN1.payer.pubkey, C = tN1.payee.pubkey, a = tN1.amount, T = tN1.timestamp, X = tN1.from_edge.before.total, Y = tN1.to_edge.before?.total ?? 0;
+          for (const [slot, signer, i, r, total] of [['issuer_from', A, A, B, X - a], ['issuer_to', A, A, C, Y + a], ['from_recipient_prior', B, A, B, X], ['from_recipient', B, A, B, X - a],
+            ['from_recipient_to', B, A, C, Y + a], ['to_recipient_prior', C, A, C, Y], ['to_recipient', C, A, C, Y + a]]) pushMsg(`transfer/${slot}`, slot, i, r, total, T, signer);
+        }
+        const S2item = circulation.consent_items.member_S2_alice.item;
+        for (const e of S2item.edges) {
+          const [I, R] = e.edge.split('>');
+          pushMsg(`setoff/${keyName(I)}>${keyName(R)}/issuer`, `${e.edge}:new`, I, R, e.new_total, e.timestamp, I);
+          pushMsg(`setoff/${keyName(I)}>${keyName(R)}/recipient`, `${e.edge}:new`, I, R, e.new_total, e.timestamp, R);
+        }
+        V.messages.push({...V.messages[0], name: 'bound-note/prior-acknowledgment-signed-by-the-creditor', signer: keyName(bC2.recipient_pubkey), signer_pubkey: bC2.recipient_pubkey,
+          signature: V.messages[0].signature, valid: false, why: "the issuer's signature does not verify under the creditor's key"});
+
+        // ---- quote digests (PROTOCOL.md 18.3 item 4) ----
+        const quoteCase = (name, Q, why) => { const text = canonical(Q); V.quote_digests.push({name, quote: Q, canonical: text, quote_digest: sha256(text), why}); };
+        {
+          const d = await dealView('bob', N1);
+          quoteCase('transfer-T1', quoteOf(d, tN1.issuer.pubkey, tN1.payer.pubkey, tN1.payee.pubkey, tN1.amount), 'the quote bob approved for paying nina with 10 PC of alice\'s note');
+          assert.equal(V.quote_digests[0].quote_digest, tN1.quote_digest);
+          // the cross-check of PROTOCOL.md 18.3 (SP-1): canonical.json base terms (alice pays bob 20), issuer carol, delivery 'example delivery'
+          const tb = baseTerms();
+          const Q = {kind: 'valun-transfer-quote/1', network: NETWORK, tracker_nft_id: tb.tracker_nft_id, denomination: tb.denomination, deal_id: tb.deal_id, terms_hash: termsHash(tb),
+            deliverable_sha256: sha256('example delivery'), issuer_pubkey: K.carol.pub, payer_pubkey: K.alice.pub, payee_pubkey: K.bob.pub, amount: 20};
+          quoteCase('worked-example-18.3', Q, 'PROTOCOL.md 18.3 worked example: base terms of canonical.json, issuer carol, deliverable sha256("example delivery")');
+          assert.equal(V.quote_digests[1].quote_digest, '377beb8f1235b91ee4f71a3b6cad819e4d29e67fa1267a074531a4557782ad1e', 'the PROTOCOL.md 18.3 worked example');
+          quoteCase('another-payee-key', {...V.quote_digests[0].quote, payee_pubkey: K.carol.pub}, 'any field changed (here the payee key) gives another digest, so the owner approves exactly one destination');
+        }
+        // ---- the pay statement: valun-pilot/pay/1 LF deal_id LF quote_digest (102 bytes) ----
+        {
+          const q = tN1.quote_digest, text = payStatement(tN1.deal_id, q);
+          assert.equal(text, core.circulationStatements.pay(tN1.deal_id, q)); assert.equal(Buffer.byteLength(text), 102);
+          V.statements.push({name: 'pay/T1', kind: 'pay', tier: 'core', inputs: {deal_id: tN1.deal_id, quote_digest: q}, statement: text, statement_utf8_hex: utf8hex(text),
+            signer: 'bob', pubkey: K.bob.pub, signature: signText(K.bob, text), valid: true});
+          V.statements.push({...V.statements[0], name: 'pay/T1-signed-as-a-note-message', signature: signHex(K.bob, M(tN1.issuer.pubkey, tN1.payer.pubkey, tN1.from_edge.new_total, tN1.timestamp)),
+            valid: false, why: 'a slot signature is over an 80-byte note message, never over the 102-byte pay statement'});
+        }
+        circulation.vectors = V; CIRCULATION_VECTORS = V; CIRCULATION_REDACT = redact;
+      }
+      // ---- tracker requests (POST /notes/transfer, /notes/setoff), each run on the stand-in tracker v3.1 in the state the
+      //      transcript's request found, at its time; negatives are the attacks and mistakes the tracker refuses ----
+      {
+        const V = circulation.vectors, pk = n => K[n].pub;
+        const M = (i, r, t, ts) => noteMessage(hx(i), hx(r), t, ts, hx(FIXTURE_NFT), PILOT_DENOMINATION).toString('hex');
+        const keyOf = pub => Object.values(K).find(k => k.pub === pub);
+        const sg = (pub, m) => signHex(keyOf(pub), m);
+        // run fn on the stand-in with exactly the notes `before` ({edge: state or null}) at tracker time t; restored after
+        function probe(before, t, fn) {
+          const savedNotes = new Map(notes), savedBound = new Set(boundOnly), savedNow = now;
+          try {
+            for (const [k, st] of Object.entries(before)) {
+              if (st === null) notes.delete(k);
+              else { const [i, r] = k.split('>'); notes.set(k, {issuer_pubkey: i, recipient_pubkey: r, amount_collected: st.total, amount_redeemed: 0, timestamp: st.timestamp, signature: st.signature, denomination: PILOT_DENOMINATION, confirmation: {status: 'local_only'}}); }
+            }
+            now = t;
+            const r = fn();
+            return {status: r.status, ...(r.json?.code ? {code: r.json.code} : {}), ...(r.status >= 300 ? {error: r.json ? r.json.error : r.text} : {})};
+          } finally { notes.clear(); for (const [k, v] of savedNotes) notes.set(k, v); boundOnly.clear(); for (const k of savedBound) boundOnly.add(k); now = savedNow; }
+        }
+        // what the tracker checks for each signature of a transfer body, given the state before
+        const transferSigs = (b, before) => {
+          const A = b.issuer_pubkey, B = b.from_recipient_pubkey, C = b.to_recipient_pubkey, a = b.amount, T = b.timestamp;
+          const X = before[`${A}>${B}`]?.total ?? 0, Y = before[`${A}>${C}`]?.total ?? 0;
+          return [['issuer_from_signature', A, A, B, X - a], ['issuer_to_signature', A, A, C, Y + a], ['from_recipient_prior_signature', B, A, B, X], ['from_recipient_signature', B, A, B, X - a],
+            ['from_recipient_to_signature', B, A, C, Y + a], ['to_recipient_prior_signature', C, A, C, Y], ['to_recipient_signature', C, A, C, Y + a]]
+            .filter(([f]) => typeof b[f] === 'string' && Number.isSafeInteger(a) && Number.isSafeInteger(T) && X - a >= 0)
+            .map(([field, signer, i, r, total]) => { const message_hex = M(i, r, total, T); return {field, signer_pubkey: signer, issuer_pubkey: i, recipient_pubkey: r, total, timestamp: T, message_hex, signature: b[field], valid: schnorrVerify(hx(b[field]), hx(message_hex), hx(signer))}; });
+        };
+        const setoffSigs = (b, before) => (b.edges || []).flatMap((e, n) => {
+          const P0 = before[`${e.issuer_pubkey}>${e.recipient_pubkey}`]?.total ?? 0, ts = e.timestamp ?? b.timestamp, total = P0 - e.decrease;
+          if (!(total >= 0) || !Number.isSafeInteger(ts)) return [];
+          const message_hex = M(e.issuer_pubkey, e.recipient_pubkey, total, ts);
+          return [['issuer_signature', e.issuer_pubkey], ['recipient_signature', e.recipient_pubkey]].filter(([f]) => typeof e[f] === 'string')
+            .map(([f, signer]) => ({field: `edges/${n}/${f}`, signer_pubkey: signer, issuer_pubkey: e.issuer_pubkey, recipient_pubkey: e.recipient_pubkey, total, timestamp: ts, message_hex, signature: e[f],
+              valid: schnorrVerify(hx(e[f]), hx(message_hex), hx(signer))}));
+        });
+        const T1req = trackerRequests.find(x => x.route === 'POST /notes/transfer');
+        const add = (group, name, route, before, at, request, why, expect) => {
+          const outcome = probe(before, at, () => route === 'POST /notes' ? v3Note(request) : route === 'POST /notes/transfer' ? v3Transfer(request) : v3Setoff(request));
+          if (expect !== undefined) assert.equal(outcome.code ?? outcome.status, expect, `${name}: ${JSON.stringify(outcome)}`);
+          V[group].push({name, route, valid: outcome.status < 300, why, state_before: before, tracker_now: at, tracker_request: request, tracker_outcome: outcome,
+            signatures: route === 'POST /notes/setoff' ? setoffSigs(request, before) : route === 'POST /notes/transfer' ? transferSigs(request, before) : []});
+        };
+        {
+          const b0 = T1req.request, before = T1req.before, at = T1req.at;
+          const A = b0.issuer_pubkey, B = b0.from_recipient_pubkey, C = b0.to_recipient_pubkey, a = b0.amount, T = b0.timestamp;
+          const X = before[`${A}>${B}`].total, Y = before[`${A}>${C}`]?.total ?? 0;
+          // a transfer body for other values, every slot signed by its true signer (an honest body for those values)
+          const signedBody = ({A: A2 = A, B: B2 = B, C: C2 = C, a: a2 = a, T: T2 = T, X: X2 = X, Y: Y2 = Y} = {}) => ({issuer_pubkey: A2, from_recipient_pubkey: B2, to_recipient_pubkey: C2, denomination: PILOT_DENOMINATION,
+            amount: a2, timestamp: T2, issuer_from_signature: sg(A2, M(A2, B2, X2 - a2, T2)), issuer_to_signature: sg(A2, M(A2, C2, Y2 + a2, T2)),
+            from_recipient_prior_signature: sg(B2, M(A2, B2, X2, T2)), from_recipient_signature: sg(B2, M(A2, B2, X2 - a2, T2)), from_recipient_to_signature: sg(B2, M(A2, C2, Y2 + a2, T2)),
+            to_recipient_prior_signature: sg(C2, M(A2, C2, Y2, T2)), to_recipient_signature: sg(C2, M(A2, C2, Y2 + a2, T2)), from_prior_total: X2, to_prior_total: Y2});
+          add('transfers', 'transfer/T1-as-applied', 'POST /notes/transfer', before, at, b0, 'the seven signatures of transfer T1 (transcript), each over M(I,R,t,T) for its slot: applied', 200);
+          add('transfers', 'transfer/standalone-raised-edge', 'POST /notes', before, at,
+            {issuer_pubkey: A, recipient_pubkey: C, amount: Y + a, timestamp: T, signature: b0.issuer_to_signature, tracker_nft_id: FIXTURE_NFT, denomination: PILOT_DENOMINATION},
+            "the issuer's raise of the new creditor's edge, sent alone as a note: a timestamp ending in 999 belongs to transfers", 'reserved_timestamp');
+          add('transfers', 'transfer/missing-residue', 'POST /notes/transfer', before, at, signedBody({T: T - 999}), 'every slot signed, but the timestamp does not end in 999 ms', 'invalid_transfer');
+          const puppet = K['carol-2'].pub;
+          add('transfers', 'transfer/puppet-destination', 'POST /notes/transfer', {...before, [`${A}>${puppet}`]: null}, at,
+            {...b0, to_recipient_pubkey: puppet, from_recipient_to_signature: sg(B, M(A, puppet, a, T)), to_recipient_prior_signature: sg(puppet, M(A, puppet, 0, T)), to_recipient_signature: sg(puppet, M(A, puppet, a, T)), to_prior_total: 0},
+            "the payer and a key it controls sign a destination the issuer never signed: the issuer's to-slot does not verify for it", 'invalid_signature');
+          const four = {issuer_pubkey: A, from_recipient_pubkey: B, to_recipient_pubkey: C, denomination: PILOT_DENOMINATION, amount: a, timestamp: T,
+            issuer_from_signature: b0.issuer_from_signature, issuer_to_signature: b0.issuer_to_signature, from_recipient_signature: b0.from_recipient_signature, to_recipient_signature: b0.to_recipient_signature};
+          add('transfers', 'transfer/four-signature-body', 'POST /notes/transfer', before, at, four, 'the four-signature body of tracker versions before v3: refused (422, missing fields)', 422);
+          add('transfers', 'transfer/five-signature-body', 'POST /notes/transfer', before, at, {...four, from_recipient_to_signature: b0.from_recipient_to_signature},
+            "five signatures (no prior acknowledgments): refused (422), so neither creditor's current total can be skipped", 422);
+          add('transfers', 'transfer/amplification', 'POST /notes/transfer', before, at, {...b0, amount: 2 * a},
+            'twice the amount with the signatures of the true transfer: the decrease and the increase must each be exactly what was signed', 'invalid_signature');
+          add('transfers', 'transfer/colluding-payer', 'POST /notes/transfer', {...before, [`${A}>${C}`]: {total: 5, timestamp: T - 5000, signature: sg(A, M(A, C, 5, T - 5000))}}, at,
+            (({to_prior_total, ...rest}) => ({...rest, issuer_to_signature: sg(A, M(A, C, 5 + a, T)), from_recipient_to_signature: sg(B, M(A, C, 5 + a, T))}))(b0),
+            "the issuer and a colluding payer sign the destination over a note they hid from the new creditor (its edge at 5): the creditor's own prior acknowledgment (over 0) does not verify for the tracker's prior (5)", 'invalid_prior_signature');
+          const T998 = T - 1;
+          add('transfers', 'transfer/setoff-signatures-used-as-a-transfer', 'POST /notes/transfer', before, at, signedBody({T: T998}),
+            'signatures over a timestamp ending in 998 ms (a set-off) presented as a transfer: refused before any signature is checked', 'invalid_transfer');
+          add('transfers', 'transfer/too-old', 'POST /notes/transfer', before, T + 3600001, b0, 'the same body one hour and 1 ms after T: novation_expired, the maximum age (also for bound notes)', 'novation_expired');
+          add('transfers', 'transfer/unknown-field', 'POST /notes/transfer', before, at, {...b0, memo: 'thanks'}, 'a field the version-3 request does not have: refused (422, deny_unknown_fields)', 422);
+          add('transfers', 'transfer/stale-prior-total', 'POST /notes/transfer', before, at, {...b0, from_prior_total: X + 1}, "from_prior_total is not the edge's current total", 'stale_prior');
+          add('transfers', 'transfer/self-transfer', 'POST /notes/transfer', before, at, {...b0, to_recipient_pubkey: B}, 'the old and the new creditor are the same key', 'invalid_transfer');
+        }
+        {
+          const Sreq = trackerRequests.filter(x => x.route === 'POST /notes/setoff' && x.answer?.status === 200).at(-1);
+          const b0 = Sreq.request, before = Sreq.before, at = Sreq.at;
+          const resign = b => ({...b, edges: b.edges.map(e => {
+            const P0 = before[`${e.issuer_pubkey}>${e.recipient_pubkey}`]?.total ?? 0, m = M(e.issuer_pubkey, e.recipient_pubkey, P0 - e.decrease, e.timestamp ?? b.timestamp);
+            return {...e, issuer_signature: sg(e.issuer_pubkey, m), recipient_signature: sg(e.recipient_pubkey, m)};
+          })});
+          add('setoffs', 'setoff/S2-as-applied', 'POST /notes/setoff', before, at, b0, 'every member signed M(I,R,P-d,ts_e) on each of its edges (per-edge timestamps ending in 998): applied', 200);
+          add('setoffs', 'setoff/unbalanced', 'POST /notes/setoff', before, at, resign({...b0, edges: [{...b0.edges[0], decrease: b0.edges[0].decrease - 1}, ...b0.edges.slice(1)]}),
+            "honestly signed, but one participant's decreases as creditor and as issuer differ", 'invalid_setoff');
+          add('setoffs', 'setoff/one-edge', 'POST /notes/setoff', before, at, {...b0, edges: b0.edges.slice(0, 1)}, 'a set-off lowers at least two edges', 'invalid_setoff');
+          add('setoffs', 'setoff/residue-997', 'POST /notes/setoff', before, at, resign({...b0, edges: b0.edges.map(e => ({...e, timestamp: e.timestamp - 1}))}),
+            "every edge's timestamp must end in 998 ms", 'invalid_setoff');
+          add('setoffs', 'setoff/too-old', 'POST /notes/setoff', before, Math.max(...b0.edges.map(e => e.timestamp)) + 3600001, b0, 'one hour and 1 ms after an edge timestamp: novation_expired', 'novation_expired');
+          add('setoffs', 'setoff/recipient-signature-missing', 'POST /notes/setoff', before, at, {...b0, edges: [{...b0.edges[0], recipient_signature: b0.edges[0].issuer_signature}, ...b0.edges.slice(1)]},
+            "the creditor's slot holds the issuer's signature: every edge needs both", 'invalid_signature');
+          add('setoffs', 'setoff/decrease-above-total', 'POST /notes/setoff', before, at, {...b0, edges: b0.edges.map(e => ({...e, decrease: e.decrease + 100}))}, "a decrease larger than the edge's total (refused before any signature is checked)", 'invalid_setoff');
+          add('setoffs', 'setoff/past-timestamp', 'POST /notes/setoff', before, at, resign({...b0, edges: b0.edges.map(e => ({...e, timestamp: before[`${e.issuer_pubkey}>${e.recipient_pubkey}`].timestamp - (before[`${e.issuer_pubkey}>${e.recipient_pubkey}`].timestamp % 1000) - 2}))}),
+            "an edge timestamp before the edge's current note", 'past_timestamp');
+          add('setoffs', 'setoff/unknown-field', 'POST /notes/setoff', before, at, {...b0, edges: [{...b0.edges[0], memo: 'x'}, ...b0.edges.slice(1)]}, 'an edge field the version-3 request does not have (422)', 422);
+        }
+      }
+      // ---- the client signing firewall (PROTOCOL.md 15.3): decisions every conforming client reaches ----
+      // Each case starts from an item or template the server produced in this run (its consent view or template, the
+      // participant's mandate as GET /me shows it, its pins) and breaks at most one rule, so the expected code is the
+      // rule's; 'sign' cases name the exact slots, in order, and the bytes of each.
+      {
+        const V = circulation.vectors, CI = circulation.consent_items, TP = circulation.templates, MD = circulation.mandates;
+        const M = (i, r, t, ts) => noteMessage(hx(i), hx(r), t, ts, hx(FIXTURE_NFT), PILOT_DENOMINATION).toString('hex');
+        const clone = x => JSON.parse(JSON.stringify(x));
+        const other = K['carol-2'].pub, otherSig = (st, I, R) => signHex(K['carol-2'], M(I, R, st.total, st.timestamp));
+        const FEATS = ['bound_notes/1', 'circulation/1'];
+        // an edge state at another timestamp, signed by its issuer (so it verifies: only the timestamp rule is broken)
+        const keyOfPub = pub => Object.values(K).find(k => k.pub === pub);
+        const restamp = (st, I, R, ts) => ({total: st.total, timestamp: ts, signature: signHex(keyOfPub(I), M(I, R, st.total, ts))});
+        const ctxFor = (name, now_ms, extra = {}) => ({me_pk: K[name].pub, me_id: P[name].id, now_ms, pins: {...PINS}, consent_policy: {...POLICY_ALL}, mandate: clone(MD[name]),
+          records: null, signed: null, transfer_attempts: null, novated_edges: null, features: [...FEATS], ...extra});
+        const dealCtx = async (name, id, extra = {}) => {
+          const d = await dealView(name, id), t = d.current.terms;
+          return {deal_id: t.deal_id, network: t.network, tracker_nft_id: t.tracker_nft_id, denomination: t.denomination, terms_hash: d.agreement.terms_hash,
+            deliverable_sha256: d.delivery.sha256, price: t.price.amount, payer: {id: t.payer.id, pubkey: t.payer.pubkey}, payee: {id: t.payee.id, pubkey: t.payee.pubkey},
+            delivered: false, transfer_id: null, ...extra};
+        };
+        // the slots and messages a 'sign' decision names, from the input as given
+        const consentSlots = item => item.edges.flatMap(e => {
+          const [I, R] = e.edge.split('>');
+          return e.slots.filter(sl => !e.signed_by_you.includes(sl)).map(sl => [`${e.edge}:${sl}`, M(I, R, sl === 'prior' ? (e.before?.total ?? 0) : e.new_total, e.timestamp)]);
+        });
+        const payerSlots = t => {
+          const A = t.issuer.pubkey, B = t.payer.pubkey, C = t.payee.pubkey, X = t.from_edge.before.total, Y = t.to_edge.before?.total ?? 0, a = t.amount, T = t.timestamp;
+          return [[`${A}>${B}:prior`, M(A, B, X, T)], [`${A}>${B}:new`, M(A, B, X - a, T)], [`${A}>${C}:new`, M(A, C, Y + a, T)]];
+        };
+        const boundSlots = t => [[`${t.issuer_pubkey}>${t.recipient_pubkey}:prior`, M(t.issuer_pubkey, t.recipient_pubkey, t.prior_total, t.timestamp)],
+          [`${t.issuer_pubkey}>${t.recipient_pubkey}:new`, M(t.issuer_pubkey, t.recipient_pubkey, t.total, t.timestamp)]];
+        const push = (group, name, evaluator, rule, input, ctx, expected, why, summary) => {
+          const slotsOf = {consent: consentSlots, payer_template: payerSlots, bound_template: boundSlots}[evaluator];
+          const sl = expected === 'sign' ? slotsOf(input) : null;
+          V[group].push({name, tier: 'consent', evaluator, rule, input, ctx, expected: expected === 'sign' ? 'sign' : {refuse: expected},
+            ...(sl ? {slots: sl.map(x => x[0]), messages: Object.fromEntries(sl)} : {}), ...(summary ? {summary} : {}), why});
+        };
+
+        // ---- set-off member (alice's view of set-off S2) ----
+        {
+          const {item, now_ms} = CI.member_S2_alice, base = () => [clone(item), ctxFor('alice', now_ms)];
+          const e0 = item.edges[0], mineAsIssuer = item.edges.find(e => e.your_role === 'issuer');
+          const c = (name, rule, f, expected, why, summary) => { const [i, x] = base(); f(i, x); push('consents', `member/${name}`, 'consent', rule, i, x, expected, why, summary); };
+          c('sign', 'R6', () => {}, 'sign', 'a balanced set-off of her own edges: sign the new slot of each, in item order');
+          c('not-net-neutral', 'R6', i => { i.edges[0].new_total += 1; i.edges[0].change += 1; }, 'not_net_neutral', 'one edge falls by 1 PC less: her claims and debts would not fall by the same amount');
+          c('increase-in-setoff', 'R6', i => { for (const e of i.edges) { e.new_total = (e.before?.total ?? 0) + 1; e.change = 1; } }, 'increase_in_setoff', 'a set-off only lowers edges');
+          c('duplicate-edge', 'R6', i => { i.edges = [clone(e0), clone(e0)]; }, 'duplicate_edge', 'the same edge twice');
+          c('self-edge', 'R6', i => { i.edges[0].edge = `${K.alice.pub}>${K.alice.pub}`; }, 'self_edge', 'an edge from her key to itself');
+          c('not-my-edge', 'R6', i => { i.edges[0].edge = `${K.bob.pub}>${K.nina.pub}`; }, 'not_my_edge', 'an edge she is not a party to');
+          c('timestamp-domain', 'R3', i => { for (const e of i.edges) e.timestamp -= 1; }, 'timestamp_domain', 'set-off timestamps end in 998 ms');
+          c('bad-prior-signature', 'R2', i => { const [I, R] = i.edges[0].edge.split('>'); i.edges[0].before.signature = otherSig(i.edges[0].before, I, R); }, 'bad_prior_signature',
+            "the prior state shown is not its issuer's signature");
+          c('timestamp-stale', 'R5', (i, x) => { x.now_ms = Math.max(...i.edges.map(e => e.timestamp)) + 56 * 60e3; }, 'timestamp_stale', 'a consent is signed only within 55 minutes of its timestamp');
+          c('timestamp-not-later-than-the-prior', 'R5', i => { const [I, R] = i.edges[0].edge.split('>'); i.edges[0].before = restamp(i.edges[0].before, I, R, i.edges[0].timestamp); }, 'timestamp_stale',
+            'an edge timestamp equal to the state it changes (a novation is later than every prior shown)');
+          c('policy-off-local', 'R8', (i, x) => { x.consent_policy.setoff = false; }, 'policy_off', 'her local consent policy does not sign set-offs');
+          c('policy-off-without-a-mandate', 'R8', (i, x) => { delete x.mandate; }, 'policy_off', "no mandate in the context (GET /me not read): every role is off");
+          c('policy-cap', 'R8', (i, x) => { x.consent_policy.max_PC = 1; }, 'policy_cap', 'above the cap of one consent');
+          c('timestamp-reused', 'R4', (i, x) => { x.signed = {[e0.edge]: {[String(e0.timestamp)]: {op: 'transfer:vt_0000000000000000', slots: {[`${e0.edge}:new`]: e0.new_total}}}}; }, 'timestamp_reused',
+            'she already signed another operation at this edge and timestamp');
+          c('records-unreadable', 'R9', (i, x) => { x.records = 'not a record'; }, 'records_unreadable', 'records that cannot be read refuse everything');
+          c('tracker-mismatch', 'R13', (i, x) => { x.pins.tracker_nft_id = '11'.repeat(32); }, 'tracker_mismatch', 'another tracker than the pinned one');
+          c('not-collecting', '-', i => { i.state = 'applied'; }, 'bad_consent', 'an item that is not collecting signatures is not well formed for signing');
+          c('pending-unbound-note', 'R12', (i, x) => { x.records = {[mineAsIssuer.edge]: {confirmed: null, pending: [{total: mineAsIssuer.before.total + 3, timestamp: mineAsIssuer.before.timestamp + 1000 - (mineAsIssuer.before.timestamp % 1000) + 500, kind: 'note', ref: 'vd_00000000000000aa', direction: 'out', signed_at: iso(now_ms)}]}}; },
+            'pending_unbound_note', 'she holds an ordinary note of hers on the edge that may still apply');
+          c('payment-attempt', 'D-2 c', (i, x) => {
+            const e = i.edges.find(z => z.your_role === 'issuer'), ts = e.timestamp - (e.timestamp % 1000) + 1997;
+            x.now_ms = Math.max(x.now_ms, ts + 1000);
+            x.transfer_attempts = {vd_00000000000000ab: [{deal_id: 'vd_00000000000000ab', route: 'note', edge: e.edge, prior: e.new_total, prior_timestamp: e.before.timestamp, prior_signature: e.before.signature,
+              total: e.new_total + 3, timestamp: ts, quote_digest: null, signed_at: iso(x.now_ms)}]};
+          }, 'payment_attempt', 'a bound note of hers acknowledged the total this set-off brings her edge back to, and it could still apply after it');
+        }
+        // ---- transfer issuer (alice's view of transfer T1) ----
+        {
+          const {item, now_ms} = CI.issuer_T1, base = () => [clone(item), ctxFor('alice', now_ms)];
+          const c = (name, rule, f, expected, why, summary) => { const [i, x] = base(); f(i, x); push('consents', `issuer/${name}`, 'consent', rule, i, x, expected, why, summary); };
+          c('sign', 'R6', () => {}, 'sign', 'her debt moves from bob to nina, unchanged in total: sign both new slots, the decreased edge first');
+          c('total-owed-changes', 'R6', i => { const t = i.edges.find(e => e.change > 0); t.new_total += 1; t.change += 1; }, 'total_owed_changes', 'the raised edge rises by more than the lowered one falls');
+          c('not-my-edge', 'R6', i => { i.edges[0].edge = `${K.bob.pub}>${i.edges[0].edge.split('>')[1]}`; }, 'not_my_edge', 'an edge whose issuer is not her key');
+        }
+        // ---- transfer payee (nina's view of transfer T1) ----
+        {
+          const {item, now_ms} = CI.payee_T1, deal = await dealCtx('nina', item.context.deal.deal_id, {delivered: true, transfer_id: item.id});
+          const base = () => [clone(item), ctxFor('nina', now_ms, {deal: clone(deal), issuer_ids: {[K.alice.pub]: P.alice.id}})];
+          const c = (name, rule, f, expected, why, summary) => { const [i, x] = base(); f(i, x); push('consents', `payee/${name}`, 'consent', rule, i, x, expected, why, summary); };
+          c('sign', 'R7', () => {}, 'sign', 'paid for her own delivered deal by exactly its price: sign the prior and the new slot of her edge');
+          c('not-delivered', 'R7', (i, x) => { x.deal.delivered = false; }, 'deal_mismatch', 'not a deal she delivered on');
+          c('another-transfer', 'R7', (i, x) => { x.deal.transfer_id = 'vt_0000000000000000'; }, 'deal_mismatch', 'the deal view names another transfer as its payment');
+          c('issuer-refused', 'R8', (i, x) => { x.consent_policy.refuse_issuers = [P.alice.id]; }, 'issuer_refused', 'her local policy refuses notes from this issuer (resolved through the directory)');
+          c('policy-off-mandate', 'R8', (i, x) => { x.mandate.accept_transfers = false; }, 'policy_off', "her owner's mandate does not accept payments by transfer");
+        }
+        // ---- payer template (bob paying nina with alice's note: transfer T1's template) ----
+        {
+          const {tpl, now_ms} = TP.transfer_N1, deal = await dealCtx('bob', tpl.deal_id);
+          const base = () => [clone(tpl), ctxFor('bob', now_ms, {deal: clone(deal), payee_current_pk: K.nina.pub, approved_quote_digest: null})];
+          const c = (name, rule, f, expected, why, summary) => { const [i, x] = base(); f(i, x); push('payer_templates', `payer/${name}`, 'payer_template', rule, i, x, expected, why, summary); };
+          const held = `${tpl.issuer.pubkey}>${tpl.payer.pubkey}`, bn = `${K.bob.pub}>${K.nina.pub}`;
+          c('sign', 'R7', () => {}, 'sign', 'the three slots of the payer: prior and new on the held edge, new on the destination', {quote_digest: tpl.quote_digest});
+          c('pay-with-is-payee', 'R7', i => { i.issuer = {...i.issuer, id: P.nina.id, pubkey: K.nina.pub}; }, 'pay_with_is_payee', 'the note to pay with is the payee\'s own');
+          c('wrong-destination', 'R7', (i, x) => { x.payee_current_pk = other; }, 'wrong_destination', "the destination is not the payee's current directory key");
+          c('amount-mismatch', 'R7', i => { i.amount += 1; i.from_edge.new_total -= 1; i.to_edge.new_total += 1; }, 'amount_mismatch', 'the amount is not the agreed price');
+          c('self-edge', 'R7', i => { i.issuer = {...i.issuer, id: P.bob.id, pubkey: K.bob.pub}; }, 'self_edge', 'paying with a note he issued himself');
+          c('timestamp-domain', 'R3', i => { i.timestamp -= 1; }, 'timestamp_domain', 'a transfer timestamp ends in 999 ms');
+          c('bad-prior-signature', 'R2', i => { i.from_edge.before.signature = otherSig(i.from_edge.before, i.issuer.pubkey, i.payer.pubkey); }, 'bad_prior_signature', "the held edge's state is not the issuer's signature");
+          c('timestamp-stale', 'R5', (i, x) => { x.now_ms = i.timestamp + 11 * 60e3; }, 'timestamp_stale', 'what the client starts is signed only within 10 minutes of its timestamp');
+          c('timestamp-equal-to-the-held-state', 'R5', i => { i.from_edge.before = restamp(i.from_edge.before, i.issuer.pubkey, i.payer.pubkey, i.timestamp); }, 'timestamp_stale',
+            'T equal to the held edge state (it must be later than every prior shown)');
+          c('already-paid', 'D-1', (i, x) => { x.records = {paid_deals: {[tpl.deal_id]: {route: 'note', edge: bn, total: 10, timestamp: i.timestamp - 60e3}}}; }, 'already_paid', 'his records show the deal paid');
+          c('attempt-outcome-unknown', 'D-1', (i, x) => {
+            x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'note', edge: bn, prior: 0, prior_timestamp: 0, prior_signature: null, total: 10, timestamp: i.timestamp - 120e3 - 499,
+              quote_digest: null, signed_at: iso(x.now_ms - 120e3)}]};
+          }, 'attempt_outcome_unknown', 'an ordinary note of his for the deal may still apply at any time: only his owner can resolve it');
+          c('transfer-window-open', 'D-1', (i, x) => {
+            x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'note', edge: bn, prior: 0, prior_timestamp: 0, prior_signature: null, total: 10, timestamp: i.timestamp - (i.timestamp % 1000) - 2003,
+              quote_digest: null, signed_at: iso(x.now_ms - 60e3)}]};
+          }, 'transfer_window_open', 'a bound note of his for the deal can still apply until its timestamp + 1 h: another kind of payment waits');
+          c('needs-read-back', 'D-1', (i, x) => {
+            const T0b = i.timestamp - (i.timestamp % 1000) - 3600e3 - 180e3 - 3;
+            x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'note', edge: bn, prior: 0, prior_timestamp: 0, prior_signature: null, total: 10, timestamp: T0b,
+              quote_digest: null, signed_at: iso(T0b)}]};
+          }, 'transfer_window_open', "a bound note's window has passed, but its edge was not read back: the client reads GET /edges and decides again", {needs_read_back: [bn]});
+          c('stale-quote', '-', (i, x) => { x.approved_quote_digest = '00'.repeat(32); }, 'stale_quote', 'not the quote his owner approved');
+          c('bad-template', '-', i => { i.amount = String(i.amount); }, 'bad_template', 'a template field of the wrong type');
+          c('deal-mismatch-without-me-id', 'R7', (i, x) => { delete x.me_id; }, 'deal_mismatch', 'without its own participant id the client cannot check that it is the payer: refuse');
+          c('policy-off-without-a-mandate', 'R8', (i, x) => { delete x.mandate; }, 'policy_off', "no mandate in the context: nothing is paid with a held note");
+          c('policy-off-never', 'R8', (i, x) => { x.mandate.pay_with_held_notes = 'never'; }, 'policy_off', "his owner's mandate never pays with held notes");
+        }
+        // ---- bound credit-note templates (alice paying bob after the novation; nina's first note to alice) ----
+        {
+          const {tpl, now_ms} = TP.bound_C2, deal = await dealCtx('alice', tpl.deal_id);
+          const base = () => [clone(tpl), ctxFor('alice', now_ms, {deal: clone(deal), payee_current_pk: K.bob.pub})];
+          const c = (name, rule, f, expected, why, summary) => { const [i, x] = base(); f(i, x); push('bound_templates', `bound/${name}`, 'bound_template', rule, i, x, expected, why, summary); };
+          const ab = `${tpl.issuer_pubkey}>${tpl.recipient_pubkey}`;
+          c('sign', 'R12', () => {}, 'sign', 'a bound note on the edge the transfer lowered: prior acknowledgment then note, both at the timestamp ending in 997');
+          c('bound-note-required', 'R12', i => { i.timestamp = i.timestamp - (i.timestamp % 1000) + 500; }, 'bound_note_required', 'bound_notes/1 is advertised (and the edge was novated): an ordinary timestamp is refused');
+          c('timestamp-domain', 'R3', (i, x) => { i.timestamp = i.timestamp - (i.timestamp % 1000) + 998; x.features = []; }, 'timestamp_domain', 'without bound_notes/1 and on an edge not novated: a bound note ends in 997 ms');
+          c('amount-mismatch', 'R7', i => { i.total += 1; }, 'amount_mismatch', 'the note adds more than the agreed price');
+          c('wrong-destination', 'R7', (i, x) => { x.payee_current_pk = other; }, 'wrong_destination', "the recipient is not the payee's current key");
+          c('not-my-edge', 'R6', i => { i.issuer_pubkey = K.bob.pub; }, 'not_my_edge', 'a note from another key');
+          c('bad-prior-signature', 'R2', i => { i.prior_note.signature = otherSig(i.prior_note, tpl.issuer_pubkey, tpl.recipient_pubkey); }, 'bad_prior_signature', 'the prior note shown is not signed by her key');
+          c('deal-mismatch-without-me-id', 'R7', (i, x) => { delete x.me_id; }, 'deal_mismatch', 'without its own participant id the client cannot check that it is the payer: refuse');
+          c('transfer-window-open', 'D-1', (i, x) => {
+            const T = i.timestamp - (i.timestamp % 1000) - 1001, held = `${K.carol.pub}>${K.alice.pub}`;
+            x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'transfer', edge: held, prior: 9, prior_timestamp: T - 60e3, prior_signature: signHex(K.carol, M(K.carol.pub, K.alice.pub, 9, T - 60e3)),
+              total: 4, timestamp: T, quote_digest: '22'.repeat(32), signed_at: iso(x.now_ms - 60e3)}]};
+          }, 'transfer_window_open', 'a payment by transfer of hers for this deal can still apply until its timestamp + 1 h');
+          const nb = TP.bound_N2, dealN = await dealCtx('nina', nb.tpl.deal_id);
+          push('bound_templates', 'bound/sign-new-edge', 'bound_template', 'R12', clone(nb.tpl), ctxFor('nina', nb.now_ms, {deal: dealN, payee_current_pk: K.alice.pub}), 'sign',
+            'the first note on an edge: prior total 0 and prior_note null; the prior acknowledgment is M(I,R,0,T)');
+        }
+      }
+    } catch (e) { sdump(); throw e; }
+    if (process.env.VALUN_VECTORS_DEBUG) sdump();
+  }
+  // ==== CIRCULATION END ==============================================================================================
+
   let text = JSON.stringify({meta: META('HTTP transcript of a pilot run through the real route table and Pilot class (in memory, fixed clock, stand-in tracker)', {
     base_url: 'http://valun.invalid', placeholders: 'Bearer tokens, invite codes and the admin token are replaced by <name> placeholders; replace them with your own when replaying.',
     replay: 'check_python.py replays every step with a client_call through a Python client (the Hermes plugin or the valun package): the client is given the recorded client_reads, its request body must equal the recorded one (signatures aside), and its signatures must verify over the exact bytes in server_verified.',
@@ -1296,7 +2334,9 @@ async function transcriptVectors() {
 }
 
 // =====================================================================================================================
-const write = (file, obj) => { fs.writeFileSync(path.join(here, file), typeof obj === 'string' ? obj + '\n' : JSON.stringify(obj, null, 1) + '\n'); return file; };
+// The output folder: next to this file, or VALUN_VECTORS_OUT (to compare two runs without touching the committed files).
+const OUT = path.resolve(process.env.VALUN_VECTORS_OUT || here);
+const write = (file, obj) => { fs.writeFileSync(path.join(OUT, file), typeof obj === 'string' ? obj + '\n' : JSON.stringify(obj, null, 1) + '\n'); return file; };
 const canon = await canonicalVectors();
 const st = await statementVectors();
 const notesV = noteVectors();
@@ -1304,6 +2344,7 @@ const sigs = signatureVectors();
 const valid = await validationVectors();
 const transcript = await transcriptVectors();
 crypto.randomBytes = realRandomBytes;
+if (EXPORTED) fs.rmSync(EXPORTED, {recursive: true, force: true});
 
 write('canonical.json', {meta: META('Canonical JSON and terms_hash = sha256(canonical(terms)), computed by the real canonical()/termsHash()', {
   tiers: {terms: 'valid terms (server_validation shows the real validateTerms() result): every implementation MUST agree',
@@ -1318,9 +2359,23 @@ write('basis-notes.json', {meta: META('Basis credit-note message (80 bytes) and 
 write('basis-signatures.json', {meta: META('Basis Schnorr signature verification vectors (official Basis TV001-TV011)'), vectors: sigs});
 write('terms-validation.json', {meta: META('What the real validateTerms()/propose() accept and refuse at the fixture clock (server-only rules; no Python equivalent)'), vectors: valid});
 write('transcript.json', transcript);
+if (CIRCULATION_VECTORS) {
+  let text = JSON.stringify({meta: META('Circulating credit (release v16, PROTOCOL.md 15.3 and 18): timestamp residues, the 80-byte messages every operation signs, quote digests, the pay statement, tracker requests with the stand-in tracker v3.1 outcome, and the decisions of the client signing firewall', {
+    tiers: {core: 'bytes every implementation MUST agree on (messages, signatures, canonical quote, pay statement)',
+      circulation: 'client-side rules of circulating credit (residue classes, novation.quote_digest, novation.pay_statement): checked for a client that declares circulation/1 (or is required to)',
+      consent: 'the client signing firewall: given the item or template and the context, sign exactly these slots or refuse with this code (normative, PROTOCOL.md 15.3); checked for a client that declares circulation/1 (or is required to)',
+      edge: 'tracker-side outcomes (the stand-in tracker v3.1): informative for clients'},
+    decisions: 'consents[], payer_templates[], bound_templates[]: input (a GET /consents item, a transfer template or a bound credit-note template, as the server produced it in transcript.json, or changed to break one rule), ctx (the evaluator context: me_pk, me_id, now_ms, pins, records, signed, transfer_attempts, novated_edges, features, deal, payee_current_pk, approved_quote_digest, consent_policy, mandate, issuer_ids, edges; verify is the Basis verifier), expected "sign" with slots (in order) and their messages, or {refuse: code}; summary: fields the evaluation summary must also show'}),
+    ...CIRCULATION_VECTORS}, null, 1);
+  for (const [value, placeholder] of CIRCULATION_REDACT) text = text.split(value).join(placeholder);
+  for (const value of CIRCULATION_REDACT.keys()) assert.ok(!text.includes(value));
+  text = text.replace(/"@@int:(\d+)@@"/g, '$1');      // exact integers beyond 2^53 (timestamps[])
+  write('circulation.json', text);
+}
 const count = (xs, f) => xs.reduce((m, x) => ({...m, [f(x)]: (m[f(x)] || 0) + 1}), {});
 console.log(JSON.stringify({
   canonical: count(canon, v => v.tier), statements: count(st.vectors, v => v.kind), statement_negatives: st.negative_signatures.length,
   basis_notes: notesV.vectors.length, basis_note_negatives: notesV.negative_signatures.length, basis_signatures: sigs.length, terms_validation: valid.length,
   transcript_steps: JSON.parse(transcript).steps.length, transcript_client_calls: JSON.parse(transcript).steps.filter(s => s.client_call).length,
+  ...(CIRCULATION_VECTORS ? {circulation: Object.fromEntries(Object.entries(CIRCULATION_VECTORS).map(([k, v]) => [k, v.length]))} : {}),
 }, null, 1));
