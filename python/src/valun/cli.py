@@ -46,6 +46,13 @@ def _store(args):
     return vc.FileStore(profile_path(args.profile))
 
 
+def _profile(args):
+    """This profile's name as profile_path() reads it ('default' for an empty --profile or VALUN_PROFILE), for the
+    commands `valun join` and the not-joined hints print (`valun --profile NAME ...`): run elsewhere, whatever
+    VALUN_PROFILE says there, each acts on this identity."""
+    return (args.profile or 'default').strip().lower()
+
+
 def _server(args, store):
     return (getattr(args, 'server', None) or store.state.get('server') or os.environ.get('VALUN_SERVER') or DEFAULT_SERVER).rstrip('/')
 
@@ -109,8 +116,9 @@ def cmd_join(args):
         print(f"Your participant {j['participant_id']} was created, but this agent's key could not be registered "
               f'({e.code}): {_terminal_text(e)}')
         _hand_over(args, owner, server)
+        # The profile is not saved (it holds no key yet), so the command names the server as well as the profile.
         print(f'To finish: issue an enrollment code in the owner console ({server}/pilot#owner) with your owner token, '
-              f"then run `valun --profile {args.profile} enroll --participant {j['participant_id']}`.")
+              f"then run `valun --profile {_profile(args)} enroll --server {server} --participant {j['participant_id']}`.")
         return 1
     # The local consent policy (design 6.6): an invited participant's client signs set-offs and transfers of its own debt
     # by itself; a sandbox participant's client also accepts payments by transfer, and its MCP server runs the consent
@@ -127,12 +135,18 @@ def cmd_join(args):
     print(f'Credentials are stored privately in {profile_path(args.profile)} (not shown).')
     if j.get('sandbox_only'):
         print(j.get('note') or 'Sandbox only: you can deal with the sandbox agents for a week.')
-    _hand_over(args, owner, server)
+    handed = _hand_over(args, owner, server)
     try:
         c.me()          # the agent's first call: it shows as active in the directory from now on
     except vc.ValunError:
         pass
-    circulating = va.CIRCULATION in _pin(c)
+    # The pin step: GET /info pins the network's tracker and unit in the profile and says whether the server offers
+    # circulating credit. When it cannot be read (a 429, say), that is not known: auto_clear is then not sent (a server
+    # without circulating credit has no such field), so an explicit --clearing is not applied (below).
+    try:
+        circulating, unread = va.CIRCULATION in va.features_of(c.info()), None
+    except vc.ValunError as e:
+        circulating, unread = False, e
     clearing = args.clearing or 'auto'
     # The owner token is used here once, in memory, to set where approvals happen (and, where the server offers
     # circulating credit, whether set-offs clear this participant's cycles: auto_clear); it is never stored in the profile.
@@ -147,61 +161,87 @@ def cmd_join(args):
             body['auto_clear'] = clearing == 'auto'
         c.request('PUT', '/pilot/v1/owner/mandate', body, token=owner)
     except vc.ValunError as e:
-        return _mandate_not_set(args, store, e, server, circulating, clearing)
+        return _mandate_not_set(args, store, e, server, circulating or unread is not None, clearing)
     if args.approvals == 'console':
         store.update(lambda state: state.update(approvals='console'))
     print(JOIN_APPROVALS[args.approvals].format(server=server, per_deal=limits.get('max_issue_per_deal'),
                                                 total=limits.get('max_issue_outstanding')))
+    finished, name = handed, _profile(args)
     if circulating:
         print(f'Clearing: {clearing}. ' + ('Your Valun client signs set-offs that leave your net position unchanged, and '
                                            'transfers of your own debt, by itself; ' if clearing == 'auto' else
                                            'set-offs are off in your owner mandate; ')
-              + ('it also accepts payments by transfer from the sandbox agents, and `valun mcp` signs them in the background '
-                 '(consent_loop on). ' if args.sandbox else 'payments to you by transfer are off until you turn them on. ')
-              + 'See `valun policy show`; change it with `valun config consents.<role> on|off`.')
+              + (f'it also accepts payments by transfer from the sandbox agents, and `valun --profile {name} mcp` signs them '
+                 'in the background (consent_loop on). ' if args.sandbox else
+                 'payments to you by transfer are off until you turn them on. ')
+              + f'See `valun --profile {name} policy show`; change it with `valun --profile {name} config consents.<role> '
+                'on|off`.')
+    elif unread is not None and args.clearing:
+        # Not known whether the server offers circulating credit: --clearing is not in force, and with off this
+        # profile's client signs no set-off by itself (as when the mandate step fails), whatever auto_clear says.
+        finished = False
+        print(f'Clearing: whether this server offers circulating credit could not be read ({unread.code}), so '
+              f'--clearing {clearing} was not set in your owner mandate (auto_clear).')
+        if clearing == 'off':
+            store.update(_no_setoff)
+            print('  Your client signs no set-off by itself (consents.setoff off); if the server offers circulating '
+                  f'credit, turn auto_clear off in the owner console ({server}/pilot#owner) too.')
+        else:
+            print(f'  If the server offers circulating credit, auto_clear is in the owner console ({server}/pilot#owner).')
     elif args.clearing:
         print('This server does not offer circulating credit yet, so --clearing changes nothing now; once it does, '
               'auto_clear is set in the owner console.')
-    print('Next: `valun doctor`, then add Valun to your agent (see `valun mcp --help`).')
-    return 0
+    print(f'Next: `valun --profile {name} doctor`, then add `valun --profile {name} mcp` to your agent (see '
+          '`valun mcp --help`).')
+    if not handed:
+        print(f'Exit code 1: {args.owner_token_file} was not written (your owner token is shown above instead).')
+    return 0 if finished else 1
 
 
 def _hand_over(args, owner, server):
     """The owner token, to the owner, once: written to --owner-token-file (a private file), or shown. A file that cannot
-    be written does not lose it: it is shown instead."""
+    be written does not lose it: it is shown instead, and False is returned (join then exits 1 once its other steps are
+    done, so that a script that relies on the file notices). True otherwise."""
     if args.owner_token_file:
         try:
             _write_private(args.owner_token_file, owner + '\n')
             print(f'Your OWNER token is in {args.owner_token_file}. Keep it private; never give it to your agent.')
-            return
+            return True
         except OSError as e:
             print(f'Cannot write {args.owner_token_file} ({e.strerror or e}), so your owner token is shown here instead.')
     print('Your OWNER token (shown once; keep it in a password manager, never give it to your agent; it opens '
           f'{server}/pilot#owner where you can change limits or revoke this agent):')
     print('  ' + owner)
+    return not args.owner_token_file
+
+
+def _no_setoff(state):
+    """consents.setoff off in the profile's local consent policy (its other roles as they are)."""
+    policy = state.get('consent_policy')
+    state['consent_policy'] = dict(policy if isinstance(policy, dict) else {}, setoff=False)
 
 
 def _mandate_not_set(args, store, e, server, circulating, clearing):
     """`valun join` after GET /owner or PUT /owner/mandate failed (a 429, say): the participant and this agent's key
-    exist and the owner token was handed over already, so this says what is not in force and how to finish it. The
-    profile stays on the safe side: console approvals are not recorded (it asks before each commitment, the default,
-    until the mandate holds them for the owner), and with --clearing off its client signs no set-off (consents.setoff
-    off) while auto_clear is not set. Returns the exit code, 1."""
+    exist and the owner token was handed over already, so this says what is not in force and how to finish it, with
+    commands that name this profile. The profile stays on the safe side: console approvals are not recorded (it asks
+    before each commitment, the default, until the mandate holds them for the owner), and with --clearing off its client
+    signs no set-off (consents.setoff off) while auto_clear is not set (circulating: the server offers circulating
+    credit, or whether it does could not be read). Returns the exit code, 1."""
+    name = _profile(args)
     print(f'Your owner mandate could not be set ({e.code}): {_terminal_text(e)}')
     if args.approvals == 'console':
         print('  Approvals: not yet held in the owner console, so this profile asks before each commitment (approvals '
-              'ask) until you run `valun config approvals console --owner-token-file FILE` (FILE: your owner token).')
+              f'ask) until you run `valun --profile {name} config approvals console --owner-token-file FILE` (FILE: the '
+              'file holding your owner token).')
     else:
         print(f'  Approvals: {args.approvals}; approve_above in your owner mandate was not set, so the owner console may '
               f'hold some commitments for you until you set it there ({server}/pilot#owner).')
     if circulating and clearing == 'off':
-        def no_setoff(state):
-            policy = state.get('consent_policy')
-            state['consent_policy'] = dict(policy if isinstance(policy, dict) else {}, setoff=False)
-        store.update(no_setoff)
+        store.update(_no_setoff)
         print('  Clearing: auto_clear was not turned off, so your client signs no set-off by itself (consents.setoff '
               'off); turn auto_clear off in the owner console too.')
-    print('Then run `valun doctor`.')
+    print(f'Then run `valun --profile {name} doctor`.')
     return 1
 
 
@@ -325,15 +365,24 @@ def cmd_config(args):
                 print('Switching to or from console approvals changes your owner mandate on the server. Run again with '
                       '--owner-token-file FILE (the file holding your owner token; it is read once and not stored).')
                 return 1
-            with open(args.owner_token_file, encoding='utf-8') as f:
-                owner = f.read().strip()
+            owner = _owner_token(args)
+            if owner is None:
+                return 1
             c = vc.Client(store, _server(args, store))
             try:
-                m = c.request('GET', '/pilot/v1/owner', token=owner)['mandate']
+                # An owner token changes the mandate of its own participant: it must be this profile's participant's,
+                # or this profile would stop asking (console) while another participant's mandate changed (not_owner).
+                m = c._check_owner(owner).get('mandate')
+                if not isinstance(m, dict):
+                    raise vc.ValunError('bad_response', 'GET /owner did not answer the owner mandate; nothing was changed')
                 cap = max(m.get('max_issue_per_deal', 0), m.get('max_accept_per_deal', 0))
                 c.request('PUT', '/pilot/v1/owner/mandate', _approval_mandate(val, cap), token=owner)
             except vc.ValunError as e:
                 print(f'Could not change the mandate ({e.code}): {e}')
+                if e.code == 'not_owner':
+                    pid = store.state.get('participant_id') or 'none: it is not joined'
+                    print(f"  Profile '{_profile(args)}' needs the owner token of its participant ({pid}); "
+                          '`valun --profile NAME config ...` changes another profile.')
                 return 1
             if val == 'console':
                 print('Owner mandate updated: every commitment now waits for you in the owner console, including accepted '
@@ -452,7 +501,7 @@ def _connected(args):
     """The profile's store and a client, or (store, None) after saying how to join."""
     store = _store(args)
     if not (store.state.get('participant_id') and store.secret() and store.token()):
-        print(f"Profile '{args.profile}' is not joined yet; run `valun --profile {args.profile} join` first.")
+        print(f"Profile '{_profile(args)}' is not joined yet; run `valun --profile {_profile(args)} join` first.")
         return store, None
     return store, vc.Client(store, _server(args, store))
 
@@ -772,7 +821,7 @@ def cmd_sandbox(args):
     from . import sandbox
     store = _store(args)
     if not (store.state.get('participant_id') and store.secret()):
-        print(f"Profile '{args.profile}' is not joined yet; run `valun --profile {args.profile} join` first.")
+        print(f"Profile '{_profile(args)}' is not joined yet; run `valun --profile {_profile(args)} join` first.")
         return 1
     if args.role == 'seller':
         log = open(args.log, 'a', encoding='utf-8') if args.log else None
@@ -830,8 +879,11 @@ def main(argv=None):
                    help='join without an invite as a sandbox-only participant (deals only with the sandbox agents, small limits, 7 days)')
     j.add_argument('--clearing', choices=['auto', 'off'], default=None,
                    help='circulating credit: let set-offs clear your cycles of debts (auto, the default) or not (off); sets '
-                        'auto_clear in your owner mandate')
-    j.add_argument('--owner-token-file', help='write the owner token to this private file instead of showing it')
+                        "auto_clear in your owner mandate (when the server's features cannot be read, it is not set and "
+                        'join exits 1; with off your client then signs no set-off by itself)')
+    j.add_argument('--owner-token-file',
+                   help='write the owner token to this private file instead of showing it (a file that cannot be written: '
+                        'the token is shown instead, and join exits 1 once its other steps are done)')
     e = sub.add_parser('enroll', help='register a new agent key with an enrollment code')
     e.add_argument('--participant')
     e.add_argument('--server')
@@ -843,7 +895,8 @@ def main(argv=None):
     c.add_argument('key', choices=['approvals', 'server', 'check_link_hosts']
                    + [f'consents.{k}' for k in va.CONSENT_POLICY_KEYS] + ['consent_loop'])
     c.add_argument('value')
-    c.add_argument('--owner-token-file', help='needed when switching approvals to or from console')
+    c.add_argument('--owner-token-file', help="needed when switching approvals to or from console: the owner token of "
+                                              "this profile's participant (read once, not stored)")
     c.add_argument('--server')
     sub.add_parser('tools', help='print the tool definitions (JSON)')
     k = sub.add_parser('call', help='run one tool, print its JSON result')

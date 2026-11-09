@@ -7,6 +7,8 @@ import contextlib
 import io
 import json
 import os
+import re
+import shlex
 import sys
 import tempfile
 import types
@@ -82,6 +84,37 @@ class Cli(unittest.TestCase):
     def disk(self):
         with open(os.path.join(self.home.name, 'profiles', 's.json'), encoding='utf-8') as f:
             return json.load(f)
+
+    def main(self, argv, env=None):
+        """cli.main(argv) as given (no --profile added), with VALUN_PROFILE and VALUN_SERVER unset (then `env` set), as a
+        command run in another shell: (rc, output)."""
+        out = io.StringIO()
+        with mock.patch.dict(os.environ), contextlib.redirect_stdout(out):
+            for k in ('VALUN_PROFILE', 'VALUN_SERVER'):
+                os.environ.pop(k, None)
+            os.environ.update(env or {})
+            rc = cli.main(argv)
+        return rc, out.getvalue()
+
+    def printed(self, out, before):
+        """The command the CLI printed (in backquotes) after the words `before`, as argv for main(): exactly as printed,
+        but for the placeholder FILE, which stands for the owner token file."""
+        m = re.search(re.escape(before) + r' `valun ([^`]+)`', out)
+        self.assertIsNotNone(m, out)
+        return [self.token_file if a == 'FILE' else a for a in shlex.split(m.group(1))]
+
+    def other_profile(self, name, **state):
+        """Another identity's profile file (another participant: O_ID unless given); returns its path and its bytes."""
+        path = os.path.join(self.home.name, 'profiles', f'{name}.json')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(dict({'server': SERVER, 'participant_id': O_ID, 'approvals': 'ask'}, **state), f)
+        with open(path, 'rb') as f:
+            return path, f.read()
+
+    def unchanged(self, path, before):
+        with open(path, 'rb') as f:
+            self.assertEqual(f.read(), before, path)
 
 
 class Join(Cli):
@@ -172,30 +205,181 @@ class JoinKeepsTheOwnerToken(Cli):
         disk = self.disk()
         self.assertEqual(disk['approvals'], 'ask')
         self.assertEqual(disk['consent_policy'], dict(va.SANDBOX_CONSENT_POLICY, setoff=False))
-        self.assertIn('`valun config approvals console --owner-token-file FILE`', out)
+        self.assertIn('`valun --profile s config approvals console --owner-token-file FILE`', out)
+        self.assertIn('Then run `valun --profile s doctor`.', out)
         self.assertIn('auto_clear was not turned off', out)
         rc, out = self.run_cli('config', 'approvals', 'console', '--owner-token-file', self.token_file)
         self.assertEqual(rc, 0, out)
         self.assertEqual(self.world.puts, [{'approve_above': 0, 'review_deliveries': True}])
         self.assertEqual(self.disk()['approvals'], 'console')
 
+    def test_the_commands_join_prints_finish_this_profile_and_no_other(self):
+        # FX2-PY attempt 2: another identity is in the default profile (its own participant, approvals ask). This join
+        # (profile s, console approvals) gets a 429 on its mandate PUT. The commands it prints name profile s: run exactly
+        # as printed, in a shell without VALUN_PROFILE, they finish profile s and leave the default profile untouched.
+        default, before = self.other_profile('default')
+        self.rate_limit('PUT /pilot/v1/owner/mandate')
+        rc, joined = self.run_join('--approvals', 'console')
+        self.assertEqual(rc, 1, joined)
+        config, doctor = self.printed(joined, 'until you run'), self.printed(joined, 'Then run')
+        rc, out = self.main(config)
+        self.assertEqual(rc, 0, out)
+        self.assertIn('Owner mandate updated: every commitment now waits for you in the owner console', out)
+        self.assertEqual(self.world.puts, [{'approve_above': 0, 'review_deliveries': True}])     # S's mandate (S's token)
+        self.assertEqual(self.disk()['approvals'], 'console')
+        self.unchanged(default, before)
+        rc, out = self.main(doctor)
+        self.assertEqual(rc, 0, out)
+        self.assertIn('Agent accepted by the server as stranger', out)                          # profile s, joined as S
+        self.assertIn('Approvals: console.', out)
+        self.unchanged(default, before)
+        self.assertEqual(config, ['--profile', 's', 'config', 'approvals', 'console', '--owner-token-file', self.token_file])
+        self.assertEqual(doctor, ['--profile', 's', 'doctor'])
+
+    def test_a_join_names_its_profile_in_the_commands_it_prints(self):
+        # Every command a join prints names its profile (only `valun mcp --help`, the same for every profile, does not).
+        out = self.join()
+        self.assertEqual([x for x in re.findall(r'`valun ([^`]+)`', out) if not x.startswith('--profile s ')], ['mcp --help'])
+        self.assertEqual(self.printed(out, 'Next:'), ['--profile', 's', 'doctor'])
+        self.assertIn('then add `valun --profile s mcp` to your agent', out)
+        self.assertIn('change it with `valun --profile s config consents.<role> on|off`', out)
+        # VALUN_PROFILE set but empty selects the default profile: the commands name it (not an empty --profile).
+        rc, out = self.main(['join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--approvals', 'none',
+                             '--server', SERVER, '--owner-token-file', os.path.join(self.home.name, 'owner-2.txt')],
+                            env={'VALUN_PROFILE': ''})
+        self.assertEqual(rc, 0, out)
+        self.assertEqual([x for x in re.findall(r'`valun ([^`]+)`', out) if not x.startswith('--profile default ')],
+                         ['mcp --help'])
+        self.assertTrue(os.path.exists(os.path.join(self.home.name, 'profiles', 'default.json')))
+
     def test_a_429_at_enrolment_still_hands_the_token_over(self):
-        # The participant exists once join answered: its owner token is the way to a new enrollment code.
+        # The participant exists once join answered: its owner token is the way to a new enrollment code. The profile is
+        # not saved, so the enroll command join prints names the server as well as the profile: run exactly as printed
+        # (in a shell without VALUN_SERVER), it registers this profile's key with the server the participant is on.
         self.rate_limit('POST /pilot/v1/enroll')
         rc, out = self.run_join(file=False)
         self.assertEqual(rc, 1, out)
         self.assertIn("this agent's key could not be registered (rate_limited)", out)
         self.assertIn('\n  vpo_test-only\n', out)
-        self.assertIn(f'enroll --participant {S_ID}', out)
         path = os.path.join(self.home.name, 'profiles', 's.json')
         self.assertFalse(os.path.exists(path) and 'participant_id' in self.disk())
+        enroll = self.printed(out, 'then run')
+        self.assertEqual(enroll, ['--profile', 's', 'enroll', '--server', SERVER, '--participant', S_ID])
+        servers = []
+
+        def request(client, method, p, body=None, auth=True, token=None):
+            servers.append(client._server or client.state.get('server'))
+            return self.world.handle(method, p, json.loads(json.dumps(body)) if body is not None else None, token)
+        with mock.patch.object(vc.Client, 'request', request), mock.patch.object(cli.getpass, 'getpass', return_value='code'):
+            rc, out = self.main(enroll)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.world.requests()[-2:], ['POST /pilot/v1/enroll', 'GET /pilot/v1/info'])
+        self.assertEqual(set(servers), {SERVER})
+        self.assertEqual((self.disk()['participant_id'], self.disk()['server']), (S_ID, SERVER))
 
     def test_a_token_file_that_cannot_be_written_shows_the_token(self):
+        # The token is shown instead; join does its other steps, then exits 1 (a script that relies on the file sees it).
         self.token_file = os.path.join(self.home.name, 'no-such-folder', 'owner.txt')
         rc, out = self.run_join('--approvals', 'none')
-        self.assertEqual(rc, 0, out)
+        self.assertEqual(rc, 1, out)
         self.assertIn(f'Cannot write {self.token_file}', out)
         self.assertIn('\n  vpo_test-only\n', out)
+        self.assertEqual(self.world.puts, [{'approve_above': 5, 'auto_clear': True}])        # the mandate step was done
+        self.assertEqual((self.disk()['participant_id'], self.disk()['approvals']), (S_ID, 'none'))
+        self.assertNotIn('vpo_test-only', json.dumps(self.disk()))
+        self.assertEqual(out.rstrip().splitlines()[-1],
+                         f'Exit code 1: {self.token_file} was not written (your owner token is shown above instead).')
+        self.assertFalse(os.path.exists(self.token_file))
+
+    def test_an_unreadable_info_leaves_clearing_on_the_safe_side(self):
+        # GET /info gets a 429 at the pin step, so whether the server offers circulating credit is not known and
+        # auto_clear is not sent. With --clearing off this profile's client signs no set-off by itself, and join exits 1
+        # (--clearing is not in force); so it does with --clearing auto. Without --clearing nothing asked for is missing.
+        for name, extra, rc_wanted, setoff in (('c-off', ['--clearing', 'off'], 1, False),
+                                               ('c-auto', ['--clearing', 'auto'], 1, True), ('c-default', [], 0, True)):
+            self.rate_limit('GET /pilot/v1/info')
+            puts = len(self.world.puts)
+            token = os.path.join(self.home.name, f'{name}.txt')
+            rc, out = self.main(['--profile', name, 'join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann',
+                                 '--approvals', 'none', '--server', SERVER, '--owner-token-file', token, *extra])
+            self.assertEqual(rc, rc_wanted, out)
+            with open(token, encoding='utf-8') as f:
+                self.assertEqual(f.read(), 'vpo_test-only\n', name)
+            self.assertEqual(self.world.puts[puts:], [{'approve_above': 5}], name)          # no auto_clear sent
+            with open(os.path.join(self.home.name, 'profiles', f'{name}.json'), encoding='utf-8') as f:
+                self.assertEqual(json.load(f)['consent_policy'], dict(va.SANDBOX_CONSENT_POLICY, setoff=setoff), name)
+            self.assertNotIn('does not offer circulating credit', out, name)
+            if extra:
+                self.assertIn('Clearing: whether this server offers circulating credit could not be read (rate_limited), '
+                              f'so --clearing {extra[1]} was not set in your owner mandate (auto_clear).', out)
+            else:
+                self.assertNotIn('Clearing:', out)
+            self.assertEqual('Your client signs no set-off by itself (consents.setoff off)' in out, not setoff, name)
+        # The pin step and the mandate step both fail: with --clearing off the client still signs no set-off by itself.
+        self.rate_limit('GET /pilot/v1/info')
+        self.rate_limit('PUT /pilot/v1/owner/mandate')
+        puts = len(self.world.puts)
+        rc, out = self.main(['--profile', 'c-both', 'join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann',
+                             '--approvals', 'none', '--server', SERVER, '--clearing', 'off', '--owner-token-file',
+                             os.path.join(self.home.name, 'c-both.txt')])
+        self.assertEqual((rc, len(self.world.puts)), (1, puts), out)
+        with open(os.path.join(self.home.name, 'profiles', 'c-both.json'), encoding='utf-8') as f:
+            self.assertEqual(json.load(f)['consent_policy'], dict(va.SANDBOX_CONSENT_POLICY, setoff=False))
+        self.assertIn('Clearing: auto_clear was not turned off, so your client signs no set-off by itself', out)
+
+
+class ConsoleSwitchChecksTheOwner(Cli):
+    """FX2-PY attempt 2: `valun config approvals` to or from console changes the owner mandate of the owner token's
+    participant, so it refuses (not_owner; nothing sent after GET /owner, no profile changed) unless GET /owner names
+    this profile's participant: else the profile would stop asking while another participant's mandate changed."""
+
+    def test_only_the_owner_token_of_this_profiles_participant_switches(self):
+        self.join()                                 # profile s: participant S, approvals none, S's owner token in a file
+        joined = self.disk()
+        default, before = self.other_profile('default')                      # another participant's, approvals ask
+        held, held_before = self.other_profile('held', approvals='console')  # another participant's, approvals console
+        agent, empty = (os.path.join(self.home.name, n) for n in ('agent.txt', 'empty.txt'))
+        for path, text in ((agent, AGENT_TOKEN + '\n'), (empty, ' \n')):
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(text)
+        puts = len(self.world.puts)
+        for argv in (['config', 'approvals', 'console', '--owner-token-file', self.token_file],     # S's token, default
+                     ['--profile', 'held', 'config', 'approvals', 'none', '--owner-token-file', self.token_file],
+                     ['--profile', 's', 'config', 'approvals', 'console', '--owner-token-file', agent]):   # 404 there
+            n = len(self.world.log)
+            rc, out = self.main(argv)
+            self.assertEqual(rc, 1, out)
+            self.assertIn('Could not change the mandate (not_owner): ', out)
+            self.assertIn('needs the owner token of its participant', out)
+            self.assertEqual(self.world.requests()[n:], ['GET /pilot/v1/owner'], argv)
+        n = len(self.world.log)
+        rc, out = self.main(['--profile', 's', 'config', 'approvals', 'console', '--owner-token-file', empty])
+        self.assertEqual((rc, out.strip(), self.world.requests()[n:]), (1, 'No owner token given; nothing was changed.', []))
+        # An answer that names no participant does not show whose mandate the token changes: refused too.
+        handle = self.world.handle
+
+        def anonymous(method, path, body=None, token=None):
+            got = handle(method, path, body, token)
+            if (method, path) == ('GET', '/pilot/v1/owner'):
+                got.pop('participant', None)
+            return got
+        self.world.handle = anonymous
+        rc, out = self.main(['--profile', 's', 'config', 'approvals', 'console', '--owner-token-file', self.token_file])
+        self.world.handle = handle
+        self.assertEqual(rc, 1, out)
+        self.assertIn('Could not change the mandate (not_owner): ', out)
+        self.assertEqual(len(self.world.puts), puts)
+        self.unchanged(default, before)
+        self.unchanged(held, held_before)
+        self.assertEqual(self.disk(), joined)
+        # This profile's own owner token: the switch is made, both ways.
+        rc, out = self.main(['--profile', 's', 'config', 'approvals', 'console', '--owner-token-file', self.token_file])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.disk()['approvals'], 'console')
+        rc, out = self.main(['--profile', 's', 'config', 'approvals', 'none', '--owner-token-file', self.token_file])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.world.puts[puts:], [{'approve_above': 0, 'review_deliveries': True}, {'approve_above': 5}])
+        self.assertEqual(self.disk()['approvals'], 'none')
 
 
 class Settings(Cli):

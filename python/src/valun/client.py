@@ -1560,7 +1560,10 @@ class Client:
 
     def _check_owner(self, owner_token):
         """The owner token is the owner's of this profile's participant: GET /pilot/v1/owner with it (read only). For a
-        resolution only this client's records record (the server is not told, so it does not check the token)."""
+        resolution only this client's records record (the server is not told, so it does not check the token), and
+        for `valun config approvals` to or from console (an owner token changes the mandate of its own participant).
+        Returns the GET /owner answer (a dict that names this participant); not_owner when the server refuses the
+        token (401, 403, 404: an agent token gets 404) or names another participant, or none."""
         try:
             me = self.request('GET', '/pilot/v1/owner', token=owner_token)
         except ValunError as e:
@@ -1572,6 +1575,7 @@ class Client:
         if not p.get('id') or p.get('id') != self.participant_id:
             raise ValunError('not_owner', 'this owner token is not the owner\'s of this profile\'s participant; nothing '
                                           'was changed')
+        return me
 
     def resolve_attempt(self, deal_id, attempt, outcome, owner_token, note=None, local_only=False, edges=None,
                         now_ms=None, doubtful=None, expected_attempt=_UNCHECKED):

@@ -35,7 +35,10 @@ For dealing with other participants, ask the pilot operator for an invite.
 `join` creates your participant, generates your agent's key **on this machine**, stores the agent's credentials in a
 private file, and shows your **owner token once** (keep it in a password manager; never give it to your agent; it
 opens the owner console where you can change limits or revoke the agent). `--owner-token-file F` writes it to a
-private file instead. `--profile NAME` keeps several identities apart.
+private file instead (if F cannot be written, the token is shown and `join` exits 1 once its other steps are done).
+The token is handed over as soon as your agent's key is registered: if a later step fails (a 429, say), `join` says
+what is not set yet, prints the commands that finish it, and exits 1. `--profile NAME` keeps several identities
+apart; the commands `join` prints name the profile they are for.
 
 ## Connect your agent
 | Client | How |
@@ -57,7 +60,7 @@ Chosen at `join` (`--approvals`), changed with `valun config approvals MODE`:
 |---|---|
 | `ask` (default) | your MCP app asks you, showing exactly what would be signed (MCP elicitation); if the app cannot ask, the commitment is **refused**. `valun call` asks in the terminal. |
 | `client-prompt` | your MCP app's own per-tool confirmation asks you (signing tools are annotated as such); never "always allow" them |
-| `console` | every commitment waits for you in the web owner console (a server-side setting; needs `--owner-token-file`) |
+| `console` | every commitment waits for you in the web owner console (a server-side setting; needs `--owner-token-file` with the owner token of this profile's participant) |
 | `none` | your agent acts on its own within your limits |
 
 In every mode the **server** enforces your mandate (per-deal and total limits, counterparties, expiry). An app's

@@ -638,7 +638,10 @@ class Terminal(unittest.TestCase):
         tok = os.path.join(self.home.name, 'owner.txt')
         with open(tok, 'w') as f:
             f.write('vpo_test-only\n')
-        routes = {'GET /pilot/v1/owner': {'mandate': {'max_issue_per_deal': 25, 'max_accept_per_deal': 20, 'review_deliveries': True}},
+        # GET /owner names the token's participant, as every server version does (PROTOCOL.md: GET /owner); the CLI
+        # switches only with the owner token of this profile's participant (FX2-PY).
+        routes = {'GET /pilot/v1/owner': {'participant': {'id': 'vp_a1a1a1a1a1a1'},
+                                          'mandate': {'max_issue_per_deal': 25, 'max_accept_per_deal': 20, 'review_deliveries': True}},
                   'PUT /pilot/v1/owner/mandate': {}}
         printed = io.StringIO()
         with self.fake_request(routes), contextlib.redirect_stdout(printed):
