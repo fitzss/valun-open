@@ -233,6 +233,24 @@ class Tour(Cli):
         self.assertEqual(len(asked), 9)
         self.assertIn("Valun - ACCEPT sandbox-exact's offer", out)
 
+    def test_wrong_deliveries_in_a_row_are_disputed_and_bought_again(self):
+        # sandbox-mallory is wrong on purpose for about half of all deal ids (design 5.8): against the real server, 6 or
+        # more wrong deliveries in a row happen in 1 tour of 64 (INT-1). Each is disputed and the job bought again
+        # (design 9.2); neither counts toward the stuck limit, so the tour still ends with the totals of design 9.2.
+        self.world.wrong_left = 7
+        self.join()
+        rc, out = self.run_cli('sandbox', 'tour', '--yes')
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.tour_lines(out), TOUR_TOTALS)
+        self.assertEqual([d['status'] for d in self.world.deals.values()].count('disputed'), 7)
+
+    def test_the_tour_stops_after_too_many_wrong_deliveries_in_one_step(self):
+        self.world.wrong_left = sb.TOUR_DISPUTES_PER_STEP + 5
+        self.join()
+        rc, out = self.run_cli('sandbox', 'tour', '--yes')
+        self.assertEqual((rc, json.loads(out.strip().splitlines()[-1])['error']), (1, 'tour_stuck'))
+        self.assertEqual([d['status'] for d in self.world.deals.values()].count('disputed'), sb.TOUR_DISPUTES_PER_STEP)
+
     def test_the_tour_is_only_for_sandbox_participants_on_a_circulating_server(self):
         self.join(sandbox=False)
         rc, out = self.run_cli('sandbox', 'tour', '--yes')

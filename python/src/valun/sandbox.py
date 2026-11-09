@@ -285,6 +285,12 @@ END_STATUSES = ('note_issued', 'paid_by_transfer', 'disputed', 'declined', 'expi
                 'expired_undelivered', 'rejected_by_owner')
 PAID_STATUSES = ('note_issued', 'paid_by_transfer')
 TOUR_POLL_S = 3
+# The tour stops (tour_stuck) after TOUR_CALLS_PER_STEP tool calls in one step that did not finish it. Disputing a wrong
+# delivery and buying again (design 9.2) does not count: sandbox-mallory is wrong on purpose for about half of all deal
+# ids, so 6 or more wrong deliveries in a row happen in about 1 tour of 64. At most TOUR_DISPUTES_PER_STEP are disputed
+# in one step (20 in a row: about 1 in a million) before the tour stops.
+TOUR_CALLS_PER_STEP = 12
+TOUR_DISPUTES_PER_STEP = 20
 # Refusals the tour stops on (any other error of one call is shown, and the next status decides again).
 TOUR_STOPS = ('owner_declined', 'not_sandbox_only', 'feature_unavailable', 'attempt_outcome_unknown', 'records_unreadable',
               'tracker_mismatch', 'not_connected', 'not_configured')
@@ -430,7 +436,9 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
     approved through ask(text) -> bool unless `yes`. After each call, and while it waits, it processes consents when
     they are due (at most once a minute; its agent does not process them itself); a call that fails is shown and the
     tour waits poll_s before the next status decides again; a refusal whose cause is in TOUR_STOPS ends the tour with
-    that cause. When a step is done it logs your edges' tracker totals (GET /edges). Returns {done, steps: [{step,
+    that cause. A step that does not finish after TOUR_CALLS_PER_STEP tool calls ends the tour with tour_stuck; a wrong
+    delivery disputed, and the purchase made again after it, do not count, up to TOUR_DISPUTES_PER_STEP disputes in the
+    step. When a step is done it logs your edges' tracker totals (GET /edges). Returns {done, steps: [{step,
     tracker_totals, money_view}]}."""
     from . import agent as va           # here: agent.py imports this module
     ag = agent or va.ValunAgent(store, approvals='', check_link_hosts=False, server=server, process_consents=False)
@@ -440,6 +448,7 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
     if va.CIRCULATION not in va.features_of(c.info()):
         raise vc.ValunError('feature_unavailable', 'this Valun server does not offer circulating credit (circulation/1) yet')
     steps, current, said, calls_in_step, deadline = [], None, None, 0, time.time() + timeout_s
+    disputes_in_step = 0
     while True:
         try:
             st = ag.status({})
@@ -464,7 +473,7 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
                 return {'done': True, 'steps': steps}
             if isinstance(step, int):
                 log(f'step {step} of 5: {nxt.get("goal")}')
-            current, calls_in_step = step, 0
+            current, calls_in_step, disputes_in_step = step, 0, 0
         calls = nxt.get('next_calls') or []
         if not calls and nxt.get('then') != said:
             said = nxt.get('then')
@@ -472,8 +481,13 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
         failed = False
         for call in calls:
             calls_in_step += 1
-            if calls_in_step > 12:
-                raise vc.ValunError('tour_stuck', f'step {current} did not finish after 12 tool calls; stopped')
+            # Each wrong delivery disputed allows two more calls: the dispute itself and the purchase made again.
+            if calls_in_step > TOUR_CALLS_PER_STEP + 2 * disputes_in_step:
+                raise vc.ValunError('tour_stuck', f'step {current} did not finish after {calls_in_step - 1} tool calls; stopped')
+            dispute = call.get('tool') == 'valun_review_delivery' and (call.get('arguments') or {}).get('decision') == 'dispute'
+            if dispute and disputes_in_step >= TOUR_DISPUTES_PER_STEP:
+                raise vc.ValunError('tour_stuck', f'step {current}: {TOUR_DISPUTES_PER_STEP} wrong deliveries were disputed '
+                                                  'and none was right; stopped')
             try:
                 _tour_call(ag, call, yes, ask, log)
             except vc.ValunError as e:
@@ -482,6 +496,8 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
                 log(f'     {e.code}: {e}')
                 failed = True                   # wait before trying again: the next status decides
                 break
+            if dispute:
+                disputes_in_step += 1
         _consents_due(c, log)
         if not calls or failed:
             if time.time() >= deadline:
