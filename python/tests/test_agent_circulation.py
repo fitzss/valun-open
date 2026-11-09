@@ -20,7 +20,9 @@ import tempfile
 import time
 import types
 import unittest
+import urllib.error
 import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from unittest import mock
 
@@ -129,6 +131,10 @@ class World:
         self.lose_pay_answer = False            # pay-by-transfer is recorded, then no answer reaches the client
         self.resolutions = []                   # (deal, attempt, body, token) of POST owner .../attempts/.../resolve
         self.transfers = {}                     # the server's transfers by id, in valun-app FX-SV's states
+        # The consent roles the server took from S's X-Valun-Features header (a set; wired() records them). None: no gate,
+        # for the tests whose requests carry no header. A set: as the v16 server, a set-off through S is proposed only
+        # while S declared the setoff role (its clearing participant check; decision D-3 b withdraws it at once).
+        self.s_roles = None
 
     # ---------- helpers ----------
     def pk(self, pid):
@@ -361,6 +367,8 @@ class World:
                 self.set_edge(i, r, self.total(i, r) - d, next_ts(now_ms(), 998, self.last_ts(i, r)), 'setoff', 'vs_server')
         if any(i['state'] == 'collecting' for i in self.items.values()):
             return
+        if self.s_roles is not None and 'setoff' not in self.s_roles:
+            return None                         # setoff_consent: S is left out of every set-off
         for a in (X_ID, M_ID):
             if self.total(S_ID, a) > 0 and self.total(a, S_ID) > 0:
                 return self.propose_setoff([(S_ID, a), (a, S_ID)])
@@ -728,6 +736,59 @@ def routed(world):
     def request(client, method, path, body=None, auth=True, token=None):
         return world.handle(method, path, json.loads(json.dumps(body)) if body is not None else None, token)
     return mock.patch.object(vc.Client, 'request', request)
+
+
+REAL_REQUEST = vc.Client.request                # as imported: no routed() patch is started at import time
+# The v16 server's routes answered before it authenticates the caller (valun-app lib/pilot/http.mjs), and
+# GET /participants/{id}: no X-Valun-Features header sent to one of them reaches its record of the agent's roles.
+PUBLIC_ROUTES = ('GET /pilot/v1/info', 'GET /pilot/v1/participants', 'GET /pilot/v1/ledger', 'GET /pilot/v1/clearing',
+                 'POST /pilot/v1/join', 'POST /pilot/v1/join-sandbox', 'POST /pilot/v1/enroll')
+
+
+class _Answer:
+    def __init__(self, body):
+        self.body = json.dumps(body).encode('utf-8')
+
+    def read(self):
+        return self.body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def wired(world, heads):
+    """Two patches (start both): every vc.Client request goes to `world` through the real Client.request and urllib, even
+    where routed() is started, so its headers and error answers are as on the wire. `heads` collects (method, route,
+    X-Valun-Features) of each request. With world.s_roles a set, the world takes the roles as the v16 server does: from
+    a request it authenticated with the agent token on an authenticated route and answered with 2xx; the empty list
+    'consents/1;roles=' withdraws them at once (decision D-3 b); a request without the header leaves them as they are."""
+    def urlopen(req, timeout=None):
+        if not req.full_url.startswith(SERVER):
+            raise urllib.error.URLError(f'not the test server: {req.full_url}')
+        path, method = req.full_url[len(SERVER):], req.get_method()
+        auth = req.get_header('Authorization') or ''
+        tok = auth[len('Bearer '):] if auth.startswith('Bearer ') else None
+        caps = req.get_header('X-valun-features')
+        heads.append((method, path.split('?', 1)[0], caps))
+        # The token world.handle() takes, as routed() gives it: an explicit (owner) token, else None for the agent's own;
+        # on an owner route the agent token is passed as it is (the server answers it 404, as the world does).
+        token = tok if tok != AGENT_TOKEN or path.startswith('/pilot/v1/owner') else None
+        try:
+            out = world.handle(method, path, json.loads(req.data.decode('utf-8')) if req.data else None, token)
+        except vc.ValunError as e:
+            if e.status is None:
+                raise urllib.error.URLError(str(e)) from None
+            body = json.dumps(dict(e.extra or {}, error=e.code, message=str(e))).encode('utf-8')
+            raise urllib.error.HTTPError(req.full_url, e.status, e.code, {}, io.BytesIO(body)) from None
+        route = path.split('?', 1)[0]
+        public = f'{method} {route}' in PUBLIC_ROUTES or (method == 'GET' and route.startswith('/pilot/v1/participants/'))
+        if world.s_roles is not None and caps is not None and tok == AGENT_TOKEN and not public:
+            world.s_roles = {r for r in caps.split('roles=', 1)[-1].split(',') if r}
+        return _Answer(out)
+    return [mock.patch.object(vc.Client, 'request', REAL_REQUEST), mock.patch.object(vc.urllib.request, 'urlopen', urlopen)]
 
 
 class Base(unittest.TestCase):
@@ -1234,6 +1295,24 @@ class ConsentsOnReads(Base):
             r = self.agent.call('valun_status')
             self.assertEqual((self.consent_reads(), r['consents_signed_now']), (2, []))
 
+    def test_a_read_run_that_failed_never_delays_a_full_run(self):
+        # The read's run fails (GET /consents gets a 429): the read is answered as without it, the failure counts as a
+        # read run only (consents_last_safe_run_ms), and the next tool call that is not read-only makes the full run at once.
+        clock = [now_ms()]
+        self.world.fail['GET /pilot/v1/consents'] = [vc.ValunError('rate_limited', 'too many requests; slow down', 429)]
+        with mock.patch.object(vc, 'time', types.SimpleNamespace(time=lambda: clock[0] / 1000)):
+            r = self.agent.call('valun_status')
+            self.assertNotIn('consents_signed_now', r)
+            self.assertEqual(self.consent_reads(), 1)
+            self.assertEqual(self.store.state.get('consents_last_safe_run_ms'), clock[0])
+            self.assertNotIn('consents_last_run_ms', self.store.state)
+            clock[0] += 1000
+            self.agent.call('valun_inbox')                                   # a read within the minute: no run
+            self.assertEqual(self.consent_reads(), 1)
+            self.agent.call_safe('valun_set_limits', {'goals': 'x'})
+            self.assertEqual(self.consent_reads(), 2)                        # the full run, at once
+            self.assertEqual(self.store.state.get('consents_last_run_ms'), clock[0])
+
     def test_only_with_the_option_process_consents_and_a_value_safe_role(self):
         self.cycle()
         for agent in (va.ValunAgent(self.store, check_link_hosts=False),                                  # off by default
@@ -1246,18 +1325,36 @@ class ConsentsOnReads(Base):
         self.assertFalse(va.ValunAgent(self.store).consents_on_reads)
 
     def test_without_circulation_the_results_are_as_without_the_option(self):
-        # Decision D-2 h: the first run reads GET /info, finds no circulation/1, and no consent is asked for after it.
+        # Decision D-2 h: the first run reads GET /info, finds no circulation/1, and no consent is asked for after it;
+        # nor, once a run is due again (a minute later, and after), is GET /info read or the profile written for one: a
+        # long-lived adapter makes exactly the requests and writes it makes without the option.
         w = World(None, welcome=False)
-        with routed(w):
+        clock = [now_ms()]
+        with routed(w), mock.patch.object(vc, 'time', types.SimpleNamespace(time=lambda: clock[0] / 1000)):
             plain, safe = (va.ValunAgent(MemStore(profile_state()), check_link_hosts=False, consents_on_reads=on)
                            for on in (False, True))
             for name in ('valun_status', 'valun_inbox', 'valun_status'):
                 self.assertEqual(safe.call(name), plain.call(name), name)
+            writes = {}
+            for agent in (plain, safe):
+                agent.store.save = lambda key=id(agent): writes.__setitem__(key, writes.get(key, 0) + 1)
+            for _ in range(3):
+                clock[0] += va.CONSENTS_EVERY_MS + 1
+                for name in ('valun_status', 'valun_inbox'):
+                    n = len(w.log)
+                    a = plain.call(name)
+                    asked_plain, n = w.requests()[n:], len(w.log)
+                    self.assertEqual(safe.call(name), a, name)
+                    self.assertEqual(w.requests()[n:], asked_plain, name)
+            self.assertEqual(writes.get(id(safe), 0), writes.get(id(plain), 0))
         self.assertEqual([r for r in w.requests() if 'consents' in r or 'edges' in r], [])
 
     def test_process_consents_off_declares_no_roles(self):                          # decision D-3 b
         self.assertTrue(self.agent.client().declare_roles)
         self.assertFalse(va.ValunAgent(self.store, process_consents=False).client().declare_roles)
+        # An adapter that signs consents by itself with the hook off (the sandbox tour) declares them all the same.
+        self.assertTrue(va.ValunAgent(self.store, process_consents=False, declare_roles=True).client().declare_roles)
+        self.assertFalse(va.ValunAgent(self.store, declare_roles=False).client().declare_roles)
 
 
 class CirculationOffWire(unittest.TestCase):

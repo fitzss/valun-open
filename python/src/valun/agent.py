@@ -406,7 +406,11 @@ class ValunAgent:
     check_link_hosts: look up link host names in DNS when measuring deliveries (no page is fetched).
     process_consents: sign the consents the owner's policy allows before tools that are not read-only (consents_if_due);
       the CLI and the MCP server keep it on, the Hermes plugin passes its own setting (off unless the owner turns it on).
-      Off, its clients also declare no consent role to the server (Client declare_roles; decision D-3 b).
+    declare_roles (None: as process_consents): do this agent's clients declare the consent roles their policy signs to
+      the server (X-Valun-Features; Client declare_roles; decision D-3 b)? With it off they declare none, and withdraw
+      the roles declared before. An adapter that turns process_consents off only because it signs consents through this
+      agent's client by itself (the sandbox tour; a consent loop of its own) passes True: a client that signs consents
+      must declare its roles, or the server leaves its participant out of every set-off and refuses transfers to it.
     consents_on_reads (decision D-3 a; off by default): for an adapter without a background consent loop (the Hermes
       plugin, and `valun call`): before valun_status and valun_inbox, sign the value-safe consents only (set-offs, and
       payments to me by transfer as the standing policy allows; never an issuer's or a payer's), at most once per
@@ -415,7 +419,7 @@ class ValunAgent:
     """
 
     def __init__(self, store, approvals='', check_link_hosts=True, setup_hint=None, server=None, process_consents=True,
-                 consents_on_reads=False):
+                 consents_on_reads=False, declare_roles=None):
         self.store = store
         self.approvals = approvals
         self.check_link_hosts = check_link_hosts
@@ -423,6 +427,7 @@ class ValunAgent:
         self.server = server
         self.process_consents = process_consents is True
         self.consents_on_reads = consents_on_reads is True
+        self.declare_roles = self.process_consents if declare_roles is None else declare_roles is True
         self.features = None        # the feature tags the last GET /info this agent read listed (None: none read yet)
         self.handlers = {'valun_status': self.status, 'valun_directory': self.directory, 'valun_inbox': self.inbox,
                          'valun_deal': self.deal, 'valun_propose': self.propose, 'valun_respond': self.respond,
@@ -430,7 +435,7 @@ class ValunAgent:
 
     # ---------- plumbing ----------
     def client(self, require_connection=True):
-        c = vc.Client(self.store, server=self.server, declare_roles=self.process_consents)
+        c = vc.Client(self.store, server=self.server, declare_roles=self.declare_roles)
         if require_connection and (not c.connected or not c.participant_id):
             raise vc.ValunError('not_connected', f'not enrolled: the owner must {self.setup_hint}')
         return c

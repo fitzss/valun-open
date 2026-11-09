@@ -434,14 +434,19 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
     the 3-cycle cleared, and spend sandbox-mallory's note with sandbox-exact. It follows valun_status
     sandbox_next_steps through the agent tools, so it takes exactly the path an agent takes; every commitment is
     approved through ask(text) -> bool unless `yes`. After each call, and while it waits, it processes consents when
-    they are due (at most once a minute; its agent does not process them itself); a call that fails is shown and the
+    they are due (at most once a minute; its agent does not process them itself, but its clients declare the consent
+    roles the profile signs, as a client that signs consents must); a call that fails is shown and the
     tour waits poll_s before the next status decides again; a refusal whose cause is in TOUR_STOPS ends the tour with
     that cause. A step that does not finish after TOUR_CALLS_PER_STEP tool calls ends the tour with tour_stuck; a wrong
     delivery disputed, and the purchase made again after it, do not count, up to TOUR_DISPUTES_PER_STEP disputes in the
     step. When a step is done it logs your edges' tracker totals (GET /edges). Returns {done, steps: [{step,
     tracker_totals, money_view}]}."""
     from . import agent as va           # here: agent.py imports this module
-    ag = agent or va.ValunAgent(store, approvals='', check_link_hosts=False, server=server, process_consents=False)
+    # Its agent's hook is off because the tour runs the consents itself, on this agent's client (_consents_due below), so
+    # its clients declare the consent roles the profile signs (declare_roles; decision D-3 b): without them the server
+    # leaves this participant out of every set-off, and steps 3 and 4 never clear.
+    ag = agent or va.ValunAgent(store, approvals='', check_link_hosts=False, server=server, process_consents=False,
+                                declare_roles=True)
     c = ag.client()
     if (c.me().get('participant') or {}).get('sandbox_only') is not True:
         raise vc.ValunError('not_sandbox_only', 'the tour is for sandbox-only participants (`valun join --sandbox`)')

@@ -137,6 +137,8 @@ def cmd_join(args):
         print(f'Joining stopped ({_failure(e)}): {_terminal_text(e)}')
         print(f'  Your participant {pid} exists, and your owner token was handed over above. Not done: '
               + JOIN_NOT_DONE[step[0]].format(name=name, server=server, pid=pid) + '.')
+        if step[0] == 'mandate' and args.clearing == 'off':
+            _no_setoff_after_stop(store, name)
         print(f'Then run `valun --profile {name} doctor`.')
         finished = False
     if not handed:
@@ -169,6 +171,19 @@ def _failure(e):
     return e.code if isinstance(e, vc.ValunError) else type(e).__name__
 
 
+def _no_setoff_after_stop(store, name):
+    """`valun join --clearing off` stopped in the mandate step (an OSError while it pinned the network, say), so auto_clear
+    was not turned off: as when the mandate request fails (_mandate_not_set), this profile's client then signs no set-off
+    by itself (consents.setoff off). When even that cannot be written, join prints the command that does it."""
+    try:
+        store.update(_no_setoff)
+    except Exception as e:  # noqa: BLE001 - say how to do it instead
+        print(f'  Not done either ({_failure(e)}): ' + JOIN_NOT_DONE['clearing'].format(name=name) + '.')
+        return
+    print('  Clearing: auto_clear was not turned off, so your client signs no set-off by itself (consents.setoff off); '
+          'turn auto_clear off in the owner console too.')
+
+
 def _key_stored(args, participant_id):
     """Does this profile, as saved on disk, hold this participant's agent key and token? (An enrolment whose request
     and first save succeeded, although a later save of the same profile failed.)"""
@@ -189,11 +204,24 @@ def _join_steps(args, store, c, j, server, handle, owner, step):
         r = c.enroll(pid, j['enrollment_code'])
     except Exception as e:  # noqa: BLE001 - a request refused, or a key that could not be stored (OSError)
         if not _key_stored(args, pid):
-            print(f"Your participant {pid} was created, but this agent's key could not be registered "
-                  f'({_failure(e)}): {_terminal_text(e)}')
             # The profile is not saved (it holds no key), so the command names the server as well as the profile.
-            print(f'To finish: issue an enrollment code in the owner console ({server}/pilot#owner) with your owner token, '
-                  f'then run `valun --profile {_profile(args)} enroll --server {server} --participant {pid}`.')
+            enroll = f'`valun --profile {_profile(args)} enroll --server {server} --participant {pid}`'
+            if isinstance(e, vc.ValunError):    # refused, or never reached the server: no key is registered
+                print(f"Your participant {pid} was created, but this agent's key could not be registered "
+                      f'({_failure(e)}): {_terminal_text(e)}')
+                print(f'To finish: issue an enrollment code in the owner console ({server}/pilot#owner) with your owner '
+                      f'token, then run {enroll}.')
+                return False
+            # Not the request: the server registered the key (its answer reached this client, which then holds the
+            # participant id) or may have (no answer was read), and the key was not stored here. While a key is
+            # registered the server refuses a new enrollment code (already_enrolled); revoking the agent gives one.
+            held = 'holds' if c.state.get('participant_id') == pid else 'may hold'
+            print(f"Your participant {pid} was created, and the server {held} this agent's key, but the key could not be "
+                  f'stored here ({_failure(e)}): {_terminal_text(e)}')
+            print(f'To finish: in the owner console ({server}/pilot#owner), with your owner token, revoke this agent, which '
+                  'gives a new enrollment code (a new code is refused while a key is registered)'
+                  + ('' if held == 'holds' else '; if the console shows no agent key, issue an enrollment code instead')
+                  + f', then run {enroll}.')
             return False
         # The key was registered and stored; a later save of the same profile failed. Go on with the profile as saved.
         store = _store(args)
@@ -549,7 +577,8 @@ def _agent(args, store):
     it also signs the value-safe consents (consents_on_reads; decision D-3 a)."""
     mode = store.state.get('approvals', 'ask')
     return ValunAgent(store, approvals=APPROVAL_TEXT.get(mode, ''), check_link_hosts=store.state.get('check_link_hosts', True),
-                      setup_hint='run `valun join` in a terminal', server=_server(args, store), consents_on_reads=True), mode
+                      setup_hint=f'run `valun --profile {_profile(args)} join` in a terminal', server=_server(args, store),
+                      consents_on_reads=True), mode
 
 
 def cmd_call(args):
@@ -562,9 +591,11 @@ def cmd_call(args):
         return 2
     if mode in ('ask', 'client-prompt') and agent.is_commitment(args.tool, tool_args):   # no app here: this terminal asks
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            name = _profile(args)
             print(json.dumps({'error': 'approval_unavailable', 'message': (
                 'Not signed: this profile asks its owner before every commitment, and no person is at this terminal. The owner can '
-                'run `valun config approvals console` (commitments wait in the owner console) or `none`.')}))
+                f'run `valun --profile {name} config approvals console --owner-token-file FILE` (commitments wait in the owner '
+                f'console; FILE: the file holding the owner token) or `valun --profile {name} config approvals none`.')}))
             return 3
         prepared, refusal = agent.prepare_or_refusal(args.tool, tool_args)   # sign exactly what is shown here, read once
         if refusal:                                     # nothing is signed, and nobody is asked with a generic text

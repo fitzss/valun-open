@@ -39,8 +39,8 @@ private file instead: F is created, never replaced (if F exists already, it may 
 cannot be written, the token is shown instead and `join` exits 1 once its other steps are done). The token is handed
 over as soon as the server answers, before anything is written on this machine: if a later step fails (a 429, or a
 full disk), `join` says what is not done yet, prints the commands that finish it, and exits 1. `--profile NAME` keeps
-several identities apart; the commands the CLI prints (`join`, `doctor`, `policy`, `clearing`, `attempts`, ...) name
-the profile they are for.
+several identities apart; the commands the CLI prints (`join`, `doctor`, `call`, `mcp`, `policy`, `clearing`,
+`attempts`, ...) name the profile they are for (the tool results `valun mcp` gives your agent's app do not).
 
 ## Connect your agent
 | Client | How |

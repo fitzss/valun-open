@@ -23,7 +23,7 @@ from valun import cli  # noqa: E402
 from valun import client as vc  # noqa: E402
 from valun import sandbox as sb  # noqa: E402
 from test_agent_circulation import (AGENT_TOKEN, CIRC, M_ID, O_ID, SERVER, S_ID, X_ID, World, now_ms, routed,  # noqa: E402
-                                    sign_note)
+                                    sign_note, wired)
 
 # S's edges (as `valun sandbox tour` prints them) after each step, and the sandbox agents' own edges at the end (design 9.2).
 TOUR_TOTALS = {1: {'sandbox-exact -> you': 3},
@@ -344,18 +344,63 @@ class JoinKeepsTheOwnerToken(Cli):
         self.assertFalse(os.path.exists(os.path.join(self.home.name, 'profiles', 's.json')))
 
     def test_a_key_that_cannot_be_stored_still_hands_the_token_over(self):
-        # The enrolment's save fails (OSError, not a ValunError): no traceback; the token is in its file; the enroll
-        # command join prints finishes it (the key registered at the server was never stored: a new code replaces it).
+        # The enrolment's save fails (OSError, not a ValunError): no traceback; the token is in its file. POST /enroll
+        # was answered, so the server holds this agent's key, and it refuses a new enrollment code while it does
+        # (already_enrolled): join says so, and that revoking the agent gives the code the printed enroll command needs.
         with self.failing_save(lambda n, state: True):
             rc, out = self.run_join('--approvals', 'none')
         self.assertEqual(rc, 1, out)
-        self.assertIn(f"Your participant {S_ID} was created, but this agent's key could not be registered (OSError): "
-                      '[Errno 28] No space left on device', out)
+        self.assertIn(f"Your participant {S_ID} was created, and the server holds this agent's key, but the key could not "
+                      'be stored here (OSError): [Errno 28] No space left on device', out)
+        self.assertIn(f'To finish: in the owner console ({SERVER}/pilot#owner), with your owner token, revoke this agent, '
+                      'which gives a new enrollment code (a new code is refused while a key is registered), then run '
+                      f'`valun --profile s enroll --server {SERVER} --participant {S_ID}`.', out)
+        self.assertNotIn('could not be registered', out)
+        self.assertNotIn('issue an enrollment code', out)
         self.assertEqual(self.printed(out, 'then run'), ['--profile', 's', 'enroll', '--server', SERVER, '--participant', S_ID])
         self.assertNotIn('Traceback', out)
         self.assertEqual(self.token_in_file(), 'vpo_test-only\n')
         self.assertFalse(os.path.exists(os.path.join(self.home.name, 'profiles', 's.json')))
         self.assertEqual(self.world.puts, [])
+
+    def test_an_enrolment_whose_answer_was_not_read_may_have_registered_the_key(self):
+        # POST /enroll times out while its answer is read (not a ValunError): whether the server holds the key is not
+        # known, so join says how to finish either way.
+        handle = self.world.handle
+
+        def slow(method, path, body=None, token=None):
+            out = handle(method, path, body, token)
+            if path == '/pilot/v1/enroll':
+                raise TimeoutError('The read operation timed out')
+            return out
+        self.world.handle = slow
+        rc, out = self.run_join('--approvals', 'none')
+        self.assertEqual(rc, 1, out)
+        self.assertIn(f"Your participant {S_ID} was created, and the server may hold this agent's key, but the key could "
+                      'not be stored here (TimeoutError): The read operation timed out', out)
+        self.assertIn('revoke this agent, which gives a new enrollment code (a new code is refused while a key is '
+                      'registered); if the console shows no agent key, issue an enrollment code instead, then run '
+                      f'`valun --profile s enroll --server {SERVER} --participant {S_ID}`.', out)
+        self.assertEqual(self.token_in_file(), 'vpo_test-only\n')
+        self.assertNotIn('Traceback', out)
+
+    def test_a_join_answer_without_an_owner_token_writes_nothing(self):
+        # Nothing to hand over: join says so and exits 1 before any agent key, token file or profile is written.
+        route = self.world.route
+        for answer in ({'owner_token': None}, {'owner_token': ''}, {'owner_token': 7}, {}):
+            def no_token(method, r, q, body, token, answer=answer):
+                out = route(method, r, q, body, token)
+                if r == '/pilot/v1/join-sandbox':
+                    out = {k: v for k, v in dict(out, **answer).items() if answer or k != 'owner_token'}
+                return out
+            self.world.route = no_token
+            asked = len(self.world.log)
+            rc, out = self.run_join('--approvals', 'none')
+            self.assertEqual(rc, 1, out)
+            self.assertEqual(out, 'Joining failed (bad_response): the server did not answer an owner token.\n', answer)
+            self.assertEqual(self.world.requests()[asked:], ['POST /pilot/v1/join-sandbox'], answer)
+            self.assertFalse(os.path.exists(self.token_file), answer)
+            self.assertFalse(os.path.exists(os.path.join(self.home.name, 'profiles', 's.json')), answer)
 
     def test_a_key_stored_before_a_later_save_failed_carries_on(self):
         # The enrolment stored the key and token (its first save), and its second save of the same profile failed: the
@@ -389,6 +434,34 @@ class JoinKeepsTheOwnerToken(Cli):
         self.stopped(out, "your owner mandate's approve_above and auto_clear")
         self.assertEqual(self.world.puts, [])
         self.assertNotIn('pins', self.disk())
+        self.assertIs(self.disk()['consent_policy']['setoff'], True)              # --clearing auto: as it was
+
+    def test_with_clearing_off_a_stop_before_the_mandate_turns_set_offs_off_here(self):
+        # --clearing off, and the pin write fails (OSError) before auto_clear was sent: as when the mandate request
+        # fails, this profile's client then signs no set-off by itself (consents.setoff off), and join says so.
+        with self.failing_update(lambda state: 'pins' in state):
+            rc, out = self.run_join('--approvals', 'none', '--clearing', 'off')
+        self.assertEqual(rc, 1, out)
+        self.stopped(out, "your owner mandate's approve_above and auto_clear")
+        self.assertIn('  Clearing: auto_clear was not turned off, so your client signs no set-off by itself (consents.setoff '
+                      'off); turn auto_clear off in the owner console too.\nThen run `valun --profile s doctor`.', out)
+        self.assertEqual(self.world.puts, [])
+        policy = self.disk()['consent_policy']
+        self.assertEqual(policy, dict(va.SANDBOX_CONSENT_POLICY, setoff=False))     # its other roles as they were
+
+    def test_with_clearing_off_a_set_off_switch_that_cannot_be_written_after_a_stop_says_how(self):
+        # The same, and consents.setoff off cannot be written either: join prints the command that does it, and that
+        # command, run as printed in another shell, turns it off.
+        with self.failing_update(lambda state: 'pins' in state or (state.get('consent_policy') or {}).get('setoff') is False):
+            rc, out = self.run_join('--approvals', 'none', '--clearing', 'off')
+        self.assertEqual(rc, 1, out)
+        self.stopped(out, "your owner mandate's approve_above and auto_clear")
+        self.assertIn('  Not done either (OSError): consents.setoff off in this profile, so its client may still sign '
+                      'set-offs by itself: run `valun --profile s config consents.setoff off`.', out)
+        self.assertIs(self.disk()['consent_policy']['setoff'], True)
+        rc, done = self.main(self.printed(out, 'by itself: run'))
+        self.assertEqual(rc, 0, done)
+        self.assertIs(self.disk()['consent_policy']['setoff'], False)
 
     def test_console_approvals_that_cannot_be_recorded_stop_join_on_the_safe_side(self):
         # The mandate holds every commitment for the owner, but the profile cannot record console: it still asks before
@@ -640,6 +713,25 @@ class PrintedCommandsNameTheProfile(Cli):
         self.assertIn('The consent loop runs inside `valun --profile s mcp` (restart it to start the loop)', out)
         self.assertNamesProfile(out)
 
+    def test_valun_calls_join_and_approval_hints(self):
+        rc, out = self.run_cli('call', 'valun_status')                        # not joined
+        self.assertEqual(rc, 1, out)
+        self.assertIn('run `valun --profile s join` in a terminal', out)
+        self.assertNamesProfile(out)
+        # Approvals ask, a commitment, and no person at this terminal: the advice names this profile; its commands, run
+        # as printed in another shell, change this profile (console with this participant's owner token).
+        self.join('--approvals', 'ask')
+        rc, out = self.run_cli('call', 'valun_propose', json.dumps({'counterparty': X_ID, 'title': 't', 'price': 1}), stdin='')
+        self.assertEqual((rc, json.loads(out)['error']), (3, 'approval_unavailable'), out)
+        self.assertNamesProfile(out)
+        console, none = self.commands(json.loads(out)['message'])
+        self.assertEqual((console, none), ('--profile s config approvals console --owner-token-file FILE',
+                                           '--profile s config approvals none'))
+        rc, done = self.main(shlex.split(none))
+        self.assertEqual((rc, self.disk()['approvals']), (0, 'none'), done)
+        rc, done = self.main(self.printed(json.loads(out)['message'], 'The owner can run'))
+        self.assertEqual((rc, self.disk()['approvals']), (0, 'console'), done)
+
 
 class Settings(Cli):
     def test_consent_settings_and_policy_show(self):
@@ -831,6 +923,57 @@ class TourWithoutCirculation(Cli):
             seller.step()                                        # a minute later: due again, but known to be off
         self.assertEqual(self.world.requests().count('GET /pilot/v1/info'), 2)    # the join's read and the first step's
         self.assertNotIn('GET /pilot/v1/consents', self.world.requests())
+
+
+class TourDeclaresItsRoles(Cli):
+    """FX3-PY attempt 2: `valun sandbox tour` turns its agent's consent hook off only because it signs the consents itself,
+    on that agent's client, so its clients declare the roles the profile signs (ValunAgent declare_roles). Here every
+    request goes through the real Client.request and urllib (wired: the X-Valun-Features header reaches the fake server),
+    and the server, as v16, proposes a set-off through S only while S declared the setoff role: a tour whose clients
+    declared no role, or withdrew the roles `valun call` declared (consents/1;roles=), never got past step 3."""
+    FULL = 'consents/1;roles=setoff,issuer,creditor'      # a sandbox join signs all three roles
+
+    def setUp(self):
+        super().setUp()
+        self.heads = []
+        self.world.s_roles = set()                        # the server took no role from S yet
+        for p in wired(self.world, self.heads):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def sent(self):
+        """The X-Valun-Features values sent since the last call (None: no header), in order."""
+        out = [caps for _m, _route, caps in self.heads]
+        del self.heads[:]
+        return out
+
+    def tour(self):
+        rc, out = self.run_cli('sandbox', 'tour', '--yes')
+        self.assertEqual(rc, 0, out[-3000:])
+        self.assertEqual(Tour.tour_lines(self, out), TOUR_TOTALS)
+        self.assertIn('The tour is complete', out)
+        setoffs = [j for j in self.world.journal if j['kind'] == 'setoff' and j['ref'] != 'vs_server']
+        self.assertEqual(len({j['ref'] for j in setoffs}), 2)                     # the 2-cycle and the 3-cycle, signed by S
+        self.assertEqual(self.world.s_roles, {'setoff', 'issuer', 'creditor'})
+        self.assertEqual(self.disk()['consent_roles_declared'], 'setoff,issuer,creditor')
+
+    def test_a_fresh_joiners_tour_declares_the_roles_it_signs(self):
+        self.join()
+        self.assertEqual(self.world.s_roles, set())       # join's own agent requests come before it read GET /info
+        self.sent()
+        self.tour()
+        heads = self.sent()
+        self.assertIn(self.FULL, heads)
+        self.assertEqual(set(heads) - {None}, {self.FULL})                         # never another list, never the empty one
+
+    def test_the_tour_never_withdraws_the_roles_valun_call_declared(self):
+        self.join()
+        rc, out = self.run_cli('call', 'valun_status')     # its hook is on: it declares the roles the profile signs
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.world.s_roles, {'setoff', 'issuer', 'creditor'})
+        self.sent()
+        self.tour()
+        self.assertNotIn('consents/1;roles=', self.sent())
 
 
 class FakeTourClient:
