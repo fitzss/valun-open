@@ -1146,6 +1146,120 @@ class Consents(Base):
         self.assertTrue(va.ValunAgent(self.store).process_consents)                     # on by default (CLI, MCP)
 
 
+class ConsentsOnReads(Base):
+    """FX3-PY, decision D-3 a: ValunAgent(consents_on_reads=True), for adapters without a background consent loop (the
+    Hermes plugin, `valun call`). Before valun_status and valun_inbox its client signs the value-safe consents (set-offs;
+    payments to it by transfer as the standing policy allows) at most once a minute, and the result says what it signed
+    (consents_signed_now). A consent in the issuer or payer role is never signed or refused from a read."""
+
+    def setUp(self):
+        super().setUp()
+        self.world.welcome = False
+        self.agent = va.ValunAgent(self.store, check_link_hosts=False, consents_on_reads=True)
+
+    def cycle(self):
+        """S owes X 2 PC and holds 1 PC of X's notes: the World proposes S a set-off of 1 PC (S signs as member)."""
+        self.world.set_edge(X_ID, S_ID, 1, now_ms() - 120_000 + 1)
+        self.world.set_edge(S_ID, X_ID, 2, now_ms() - 110_000 + 2, signature=sign_note(S, X['pubkey'], 2, now_ms() - 110_000 + 2))
+        self.world.clear()
+        (sid,) = [i for i, it in self.world.items.items() if it['state'] == 'collecting']
+        return sid
+
+    def issuer_item(self):
+        """A consent in S's issuer role (a transfer of S's own debt). It moves no edge, so a full run refuses it at once:
+        what matters here is only whether a run touches it."""
+        tid = 'vt_' + 'e' * 16
+        self.world.items[tid] = {'kind': 'transfer', 'id': tid, 'state': 'collecting', 'your_roles': ['issuer'],
+                                 'created_at': iso(now_ms()), 'expires_at': iso(now_ms() + 1_200_000), 'network': vc.NETWORK,
+                                 'tracker_nft_id': NFT, 'denomination': DENOM, 'edges': [], 'context': {'amount': 1},
+                                 'summary': {'your_net_change_PC': 0, 'your_total_owed_change_PC': 0}}
+        return tid
+
+    def consent_reads(self):
+        return self.world.requests().count('GET /pilot/v1/consents')
+
+    def test_valun_status_signs_a_set_off_first_and_says_so(self):
+        sid = self.cycle()
+        r = self.agent.call('valun_status')
+        self.assertEqual([(e['id'], e['kind'], e['role'], e['your_net_change_PC']) for e in r['consents_signed_now']],
+                         [(sid, 'setoff', 'member', 0)])
+        self.assertEqual(list(r['consents_signed_now'][0]), list(va.SIGNED_NOW_KEYS))
+        self.assertEqual((self.world.total(X_ID, S_ID), self.world.total(S_ID, X_ID)), (0, 1))
+        self.assertEqual((r['money_view']['you_hold_PC'], r['money_view']['you_owe_PC']), (0, 1))   # read after it
+        self.assertEqual(self.store.state['consent_log'][-1]['decision'], 'signed')
+        self.assertIn('consents_last_safe_run_ms', self.store.state)
+        self.assertNotIn('consents_last_run_ms', self.store.state)
+
+    def test_an_issuers_consent_is_never_signed_or_refused_from_a_read(self):
+        sid, tid = self.cycle(), self.issuer_item()
+        for name in ('valun_status', 'valun_inbox', 'valun_directory'):
+            self.assertNotIn('error', self.agent.call_safe(name, {}), name)
+        self.assertEqual([r for r in self.world.requests() if tid in r], [])        # not posted, not refused
+        self.assertEqual((self.world.items[tid]['state'], self.world.items[sid]['state']), ('collecting', 'applied'))
+        self.assertNotIn(tid, json.dumps(self.store.state.get('consent_log')))
+        self.agent.call_safe('valun_set_limits', {'goals': 'x'})                      # not read-only: a full run
+        self.assertEqual([r for r in self.world.requests() if tid in r], [f'POST /pilot/v1/consents/{tid}/refuse'])
+
+    def test_reads_run_at_most_once_a_minute_and_never_delay_a_full_run(self):
+        clock = [now_ms()]
+        with mock.patch.object(vc, 'time', types.SimpleNamespace(time=lambda: clock[0] / 1000)):
+            r = self.agent.call('valun_status')
+            self.assertEqual((self.consent_reads(), r['consents_signed_now']), (1, []))
+            r = self.agent.call('valun_inbox')
+            self.assertEqual(self.consent_reads(), 1)
+            self.assertNotIn('consents_signed_now', r)                      # no run in this call
+            self.agent.call_safe('valun_set_limits', {'goals': 'x'})
+            self.assertEqual(self.consent_reads(), 2)                        # a full run, although a read's ran just now
+            r = self.agent.call('valun_status')
+            self.assertEqual(self.consent_reads(), 2)                        # a full run counts for reads too
+            self.assertNotIn('consents_signed_now', r)
+            clock[0] += va.CONSENTS_EVERY_MS
+            r = self.agent.call('valun_inbox')
+            self.assertEqual((self.consent_reads(), r['consents_signed_now']), (3, []))
+            clock[0] += va.CONSENTS_EVERY_MS
+            self.agent.call_safe('valun_directory', {})
+            self.agent.call_safe('valun_deal', {'deal_id': 'vd_' + '0' * 16})
+            self.assertEqual(self.consent_reads(), 3)                        # only before valun_status and valun_inbox
+
+    def test_a_full_run_counts_for_reads_too(self):
+        # A run before a tool call that is not read-only handled every role: a read within the next minute runs none.
+        clock = [now_ms()]
+        with mock.patch.object(vc, 'time', types.SimpleNamespace(time=lambda: clock[0] / 1000)):
+            self.agent.call_safe('valun_set_limits', {'goals': 'x'})
+            self.assertEqual(self.consent_reads(), 1)
+            self.assertNotIn('consents_last_safe_run_ms', self.store.state)
+            self.assertNotIn('consents_signed_now', self.agent.call('valun_status'))
+            self.assertEqual(self.consent_reads(), 1)
+            clock[0] += va.CONSENTS_EVERY_MS
+            r = self.agent.call('valun_status')
+            self.assertEqual((self.consent_reads(), r['consents_signed_now']), (2, []))
+
+    def test_only_with_the_option_process_consents_and_a_value_safe_role(self):
+        self.cycle()
+        for agent in (va.ValunAgent(self.store, check_link_hosts=False),                                  # off by default
+                      va.ValunAgent(self.store, check_link_hosts=False, process_consents=False, consents_on_reads=True)):
+            for name in ('valun_status', 'valun_inbox'):
+                self.assertNotIn('consents_signed_now', agent.call(name))
+        self.store.state['consent_policy'] = dict(va.SANDBOX_CONSENT_POLICY, setoff=False, as_new_creditor=False)
+        self.assertNotIn('consents_signed_now', self.agent.call('valun_status'))     # only as_issuer: nothing value-safe
+        self.assertEqual(self.consent_reads(), 0)
+        self.assertFalse(va.ValunAgent(self.store).consents_on_reads)
+
+    def test_without_circulation_the_results_are_as_without_the_option(self):
+        # Decision D-2 h: the first run reads GET /info, finds no circulation/1, and no consent is asked for after it.
+        w = World(None, welcome=False)
+        with routed(w):
+            plain, safe = (va.ValunAgent(MemStore(profile_state()), check_link_hosts=False, consents_on_reads=on)
+                           for on in (False, True))
+            for name in ('valun_status', 'valun_inbox', 'valun_status'):
+                self.assertEqual(safe.call(name), plain.call(name), name)
+        self.assertEqual([r for r in w.requests() if 'consents' in r or 'edges' in r], [])
+
+    def test_process_consents_off_declares_no_roles(self):                          # decision D-3 b
+        self.assertTrue(self.agent.client().declare_roles)
+        self.assertFalse(va.ValunAgent(self.store, process_consents=False).client().declare_roles)
+
+
 class CirculationOffWire(unittest.TestCase):
     """Decision D-2 h: with circulation off, the 0.4 agent makes no request more than 0.3 once it knows the features."""
 

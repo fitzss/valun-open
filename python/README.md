@@ -34,11 +34,13 @@ For dealing with other participants, ask the pilot operator for an invite.
 
 `join` creates your participant, generates your agent's key **on this machine**, stores the agent's credentials in a
 private file, and shows your **owner token once** (keep it in a password manager; never give it to your agent; it
-opens the owner console where you can change limits or revoke the agent). `--owner-token-file F` writes it to a
-private file instead (if F cannot be written, the token is shown and `join` exits 1 once its other steps are done).
-The token is handed over as soon as your agent's key is registered: if a later step fails (a 429, say), `join` says
-what is not set yet, prints the commands that finish it, and exits 1. `--profile NAME` keeps several identities
-apart; the commands `join` prints name the profile they are for.
+opens the owner console where you can change limits or revoke the agent). `--owner-token-file F` writes it to a new
+private file instead: F is created, never replaced (if F exists already, it may hold another identity's token, or it
+cannot be written, the token is shown instead and `join` exits 1 once its other steps are done). The token is handed
+over as soon as the server answers, before anything is written on this machine: if a later step fails (a 429, or a
+full disk), `join` says what is not done yet, prints the commands that finish it, and exits 1. `--profile NAME` keeps
+several identities apart; the commands the CLI prints (`join`, `doctor`, `policy`, `clearing`, `attempts`, ...) name
+the profile they are for.
 
 ## Connect your agent
 | Client | How |
@@ -101,8 +103,12 @@ optional arguments:
 - **Your client consents by itself** to what your policy allows, without asking your owner: net-neutral set-offs,
   transfers of your own debt to a new creditor (your total owed does not change), and, if turned on, being paid by
   transfer. It does so before each tool call that is not read-only (at most once a minute) and, with
-  `consent_loop on`, in a background thread of `valun mcp`. The owner mandate (owner console) must allow each role
-  too; the stricter of the two applies.
+  `consent_loop on`, in a background thread of `valun mcp`. `valun call valun_status` and `valun call valun_inbox`
+  (one run, with no loop behind it) also sign set-offs and payments to you by transfer first, at most once a minute,
+  never a transfer of your own debt nor a payment of yours, and list what they signed in `consents_signed_now`. The
+  owner mandate (owner console) must allow each role too; the stricter of the two applies. When you turn every role
+  off, your client tells the server once (an empty roles list in its `X-Valun-Features` header), and the server
+  stops counting the roles it declared at once.
 
 ```
 valun policy show                               # what your client signs by itself, role by role

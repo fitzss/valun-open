@@ -40,14 +40,27 @@ UNIT = 'PC'
 #             payment by transfer was signed with); consent_policy {setoff, as_issuer, as_new_creditor, max_PC,
 #             accept_issuers, refuse_issuers} (absent: every role off); consent_loop (for the agent layer);
 #             consents_last_run_ms and consent_log (the last CONSENT_LOG_MAX decisions of process_consents());
-#             journal_seq (the GET /edges journal position sync_edges() has read up to).
+#             journal_seq (the GET /edges journal position sync_edges() has read up to);
+#             consents_last_safe_run_ms (the last process_consents(value_safe_only=True) run, decision D-3 a);
+#             consent_roles_declared (the roles, 'setoff,issuer' say, that the server last took from this client's
+#             X-Valun-Features header; '' once it took the empty list, decision D-3 b).
 CORE_STATE_KEYS = ('issued', 'records', 'signed', 'novated_edges', 'transfer_attempts', 'approved_payments', 'consent_policy',
-                   'consent_loop', 'consents_last_run_ms', 'consent_log', 'pins', 'journal_seq')
+                   'consent_loop', 'consents_last_run_ms', 'consent_log', 'pins', 'journal_seq', 'consents_last_safe_run_ms',
+                   'consent_roles_declared')
 # Timestamp residues (ts mod 1000) the v3 tracker keeps for other operations: an ordinary note never uses them.
 RESERVED_MS_FROM = 995
 # Circulating credit (PROTOCOL.md 18; design 4.1, 6.3, 6.6, 11).
 FEATURES_HEADER = 'X-Valun-Features'          # 'consents/1;roles=<roles>', sent once /info lists circulation/1
 CONSENT_ROLES = (('setoff', 'setoff'), ('as_issuer', 'issuer'), ('as_new_creditor', 'creditor'))   # (policy flag, header role)
+# The consent roles (novation.ROLES) a run before a read-only tool may sign (decision D-3 a): a set-off (member; it
+# leaves the net position unchanged by construction) and a payment to me by transfer (payee: a new creditor, signed
+# only as the standing policy allows). Never issuer or payer. VALUE_SAFE_HEADER_ROLES: the same as header roles.
+VALUE_SAFE_ROLES = ('member', 'payee')
+VALUE_SAFE_HEADER_ROLES = ('setoff', 'creditor')
+# The routes the server answers before it authenticates the caller (GET /info, the public directory and ledger, GET
+# /clearing, join and enroll): a request to one of them never records the roles its X-Valun-Features header declares.
+_PUBLIC_ROUTES = ('/pilot/v1/info', '/pilot/v1/participants', '/pilot/v1/ledger', '/pilot/v1/clearing', '/pilot/v1/join',
+                  '/pilot/v1/join-sandbox', '/pilot/v1/enroll')
 CONSENT_LOG_MAX = 100                         # process_consents() keeps the last 100 decisions in consent_log
 RECORDS_KEEP_MS = 7 * 24 * 3600 * 1000        # what did not apply is dropped after 7 days (design 11)
 SIGNATURES_KEEP_MS = 30 * 24 * 3600 * 1000    # a confirmed (applied) state keeps its signature 30 days (design 11)
@@ -164,6 +177,20 @@ def consent_roles(policy):
     if not isinstance(policy, dict):
         return []
     return [role for flag, role in CONSENT_ROLES if policy.get(flag) is True]
+
+
+def _authenticated_route(path):
+    """Does the server authenticate the caller of this request path (every /pilot/v1 route but _PUBLIC_ROUTES and
+    GET /participants/{id})? Only there does an agent's X-Valun-Features header reach the server's record of its
+    roles."""
+    route = path.split('?', 1)[0]
+    return route.startswith('/pilot/v1/') and not any(route == r or route.startswith(r + '/') for r in _PUBLIC_ROUTES)
+
+
+def _one_role(item):
+    """The one role a GET /consents item gives this client (novation.ROLES), or None (no list, several, or unknown)."""
+    roles = item.get('your_roles') if isinstance(item, dict) else None
+    return roles[0] if isinstance(roles, list) and len(roles) == 1 and roles[0] in nv.ROLES else None
 
 
 def _features_of(info):
@@ -569,9 +596,13 @@ class FileStore:
 
 class Client:
     """`store` is a FileStore path (str) or any object with .state (non-secret dict), .secret(), .token(),
-    .save() and .save_credentials(secret_hex, token)."""
+    .save() and .save_credentials(secret_hex, token).
 
-    def __init__(self, store, server=None, timeout=30):
+    declare_roles: False for a client whose adapter signs no consent by itself (its process_consents is off, as the
+    Hermes plugin's is by default): it declares no consent role in X-Valun-Features, whatever its consent policy says,
+    and withdraws the roles it declared before (features_header; decision D-3 b). It changes only that header."""
+
+    def __init__(self, store, server=None, timeout=30, declare_roles=True):
         self.store = FileStore(store) if isinstance(store, (str, os.PathLike)) else store
         self.state = self.store.state
         self.timeout = timeout
@@ -579,6 +610,7 @@ class Client:
         if self._server:
             self.state['server'] = self._server
         self._advertised = []                   # the features the last GET /info listed (for the capability header)
+        self.declare_roles = bool(declare_roles)
 
     def _save(self):
         self.store.save()
@@ -648,7 +680,10 @@ class Client:
             req.add_header(FEATURES_HEADER, caps)
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as r:
-                return json.loads(r.read().decode('utf-8') or 'null')
+                out = json.loads(r.read().decode('utf-8') or 'null')
+            if caps and token is None and auth and tok and _authenticated_route(path):
+                self._roles_declared(caps)      # the server authenticated this agent, so it took the roles
+            return out
         except urllib.error.HTTPError as e:
             try:
                 j = json.loads(e.read().decode('utf-8'))
@@ -698,12 +733,36 @@ class Client:
 
     def features_header(self):
         """The X-Valun-Features value this client sends with its requests (PROTOCOL.md 18.1; design 4.1):
-        'consents/1;roles=<roles>', the consent roles its local consent_policy signs by itself (consent_roles), once
-        the server's GET /info has listed circulation/1. None when it has not, or when no role is on."""
+        'consents/1;roles=<roles>', the consent roles its local consent_policy signs by itself (consent_roles; none
+        with declare_roles False), once the server's GET /info has listed circulation/1. None when it has not.
+
+        With no role on (every role off, or declare_roles False), the empty list 'consents/1;roles=' is sent while the
+        server may still count roles this client declared before (consent_roles_declared names some), so that the
+        server forgets them at once instead of counting them for 7 more days (decision D-3 b); once the server has taken
+        it, no header is sent (None). The server takes a header from an agent request it authenticated and answered
+        with 2xx (request() then records it in consent_roles_declared)."""
         if 'circulation/1' not in getattr(self, '_advertised', ()):
             return None
-        roles = consent_roles(self.state.get('consent_policy'))
-        return f"consents/1;roles={','.join(roles)}" if roles else None
+        roles = consent_roles(self.state.get('consent_policy')) if getattr(self, 'declare_roles', True) else []
+        if roles:
+            return f"consents/1;roles={','.join(roles)}"
+        declared = self.state.get('consent_roles_declared')
+        return 'consents/1;roles=' if isinstance(declared, str) and declared else None
+
+    def _roles_declared(self, caps):
+        """Record (consent_roles_declared) the roles a header the server took declared: '' for the empty list, after
+        which no header is sent until a role is on again. Written only when it changes; a write that fails is not
+        retried (the header is then sent again on a later request, which changes nothing at the server)."""
+        roles = caps.split('roles=', 1)[1] if 'roles=' in caps else ''
+        if self.state.get('consent_roles_declared') == roles:
+            return
+
+        def note(state):
+            state['consent_roles_declared'] = roles
+        try:
+            self._update(note)
+        except (ValunError, OSError):
+            pass
 
     # ---------- pins (R13) ----------
     def _pinned(self):
@@ -1749,9 +1808,17 @@ class Client:
         cooldown). Not signed: a refusal cannot move value."""
         return self.request('POST', f'/pilot/v1/consents/{_seg(consent_id)}/refuse', {} if reason is None else {'reason': reason})
 
-    def process_consents(self, policy=None, now_ms=None):
+    def process_consents(self, policy=None, now_ms=None, value_safe_only=False):
         """Sign by itself the consents its owner's policy allows, and refuse the others (PROTOCOL.md 15.3, 18.9; design
         6.6). Deterministic; no rate limit here (the agent layer runs it at most once per 60 s).
+
+        value_safe_only (decision D-3 a): the run an adapter without a consent loop makes before a read-only tool
+        (valun_status, valun_inbox). It handles only the items whose one role is in VALUE_SAFE_ROLES (member: a set-off;
+        payee: a payment to me by transfer), and only by signing what the firewall and the policy allow: it refuses
+        nothing (an item they refuse waits, with their code, for a full run), and an item in any other role (issuer,
+        payer, or none it can name) is neither read further, signed nor refused (waiting, code 'not_value_safe'; not
+        written to consent_log). The run is recorded in consents_last_safe_run_ms, never in consents_last_run_ms, so it
+        never delays a full run.
 
         `policy` is the local consent policy ({setoff, as_issuer, as_new_creditor, max_PC, accept_issuers,
         refuse_issuers}); None takes the profile's consent_policy, and an absent policy signs nothing. The owner's side
@@ -1780,11 +1847,15 @@ class Client:
         report = {'signed': [], 'refused': [], 'waiting': []}
         now = int(time.time() * 1000) if now_ms is None else now_ms
         log = []
+        ran = 'consents_last_safe_run_ms' if value_safe_only else 'consents_last_run_ms'
 
         def logged(state):
             old = state.get('consent_log')
             state['consent_log'] = ((old if isinstance(old, list) else []) + log)[-CONSENT_LOG_MAX:]
-            state['consents_last_run_ms'] = now
+            state[ran] = now
+
+        def skipped(item):                      # value_safe_only: an item this run leaves as it is
+            return value_safe_only and _one_role(item) not in VALUE_SAFE_ROLES
         try:
             features = _features_of(self.info())
             if 'circulation/1' not in features:
@@ -1793,7 +1864,7 @@ class Client:
             items = data.get('consents') if isinstance(data, dict) else None
             if not isinstance(items, list):
                 raise ValunError('bad_response', 'GET /consents did not answer {consents: [...]}')
-            if items:
+            if any(not skipped(item) for item in items):
                 mandate = _mandate_of(self.me())
                 run = {'deals': {}, 'edges': None, 'read': False, 'issuer_ids': None}
 
@@ -1801,24 +1872,31 @@ class Client:
                     if not run['read']:
                         run['read'], run['edges'] = True, self._read_back()
                     return run['edges']
-                for item in items:
-                    try:
-                        bucket, entry = self._consent(item, policy, mandate, features, now, run, read_back)
-                    except Exception as e:  # noqa: BLE001 - one item never stops the others, nor the record of the run
-                        code = _server_word(e.code) if isinstance(e, ValunError) else 'internal_error'
-                        bucket, entry = 'waiting', self._consent_entry(
-                            item, None, code=code, error=code,
-                            reason=f'this item could not be handled now{_said(code)}; it is handled again on a later run')
-                    report[bucket].append(entry)
-                    log.append({'at': _iso(datetime.now(timezone.utc)), 'id': entry['id'], 'kind': entry['kind'],
-                                'role': entry['role'], 'decision': bucket, 'code': entry['code'], 'deal_id': entry['deal_id'],
-                                'amount': entry['amount'], 'your_net_change_PC': entry['your_net_change_PC']})
+            for item in items:
+                if skipped(item):
+                    report['waiting'].append(self._consent_entry(
+                        item, None, code='not_value_safe',
+                        reason='a consent in this role is signed or refused only before a tool call that is not read-only'))
+                    continue
+                try:
+                    bucket, entry = self._consent(item, policy, mandate, features, now, run, read_back,
+                                                  refuse=not value_safe_only)
+                except Exception as e:  # noqa: BLE001 - one item never stops the others, nor the record of the run
+                    code = _server_word(e.code) if isinstance(e, ValunError) else 'internal_error'
+                    bucket, entry = 'waiting', self._consent_entry(
+                        item, None, code=code, error=code,
+                        reason=f'this item could not be handled now{_said(code)}; it is handled again on a later run')
+                report[bucket].append(entry)
+                log.append({'at': _iso(datetime.now(timezone.utc)), 'id': entry['id'], 'kind': entry['kind'],
+                            'role': entry['role'], 'decision': bucket, 'code': entry['code'], 'deal_id': entry['deal_id'],
+                            'amount': entry['amount'], 'your_net_change_PC': entry['your_net_change_PC']})
             return report
         finally:
             self._settle(logged)
 
-    def _consent(self, item, policy, mandate, features, now, run, read_back):
-        """process_consents() for one item: (bucket, entry)."""
+    def _consent(self, item, policy, mandate, features, now, run, read_back, refuse=True):
+        """process_consents() for one item: (bucket, entry). refuse False (a value_safe_only run): an item the evaluator
+        refuses is not refused at the server; it waits, with the evaluator's code, for a full run."""
         if not isinstance(item, dict) or not isinstance(item.get('id'), str) or not item['id']:
             return 'waiting', self._consent_entry(item, None, code='bad_consent', reason='a consent item without an id')
         if item.get('state') != 'collecting':
@@ -1847,6 +1925,9 @@ class Client:
                 mandate=mandate, deal=deal, payee_current_pk=payee_pk, approved_quote_digest=approved, edges=edges,
                 issuer_ids=issuer_ids))
         r = self._decide(evaluate, signed_at, edges=run['edges']['edges'] if run['edges'] else None, read_back=read_back)
+        if not r['ok'] and not refuse:
+            return 'waiting', self._consent_entry(item, r, reason='refused only by a consent run before a tool call that '
+                                                                  'is not read-only')
         if not r['ok']:
             try:
                 self.refuse_consent(item['id'], r['code'])

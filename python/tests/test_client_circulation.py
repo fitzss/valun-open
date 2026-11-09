@@ -5,12 +5,14 @@ notes; attempt_outcome_unknown; records['paid_deals']), process_consents() and i
 pruning, the capability header, and that what is signed is saved before the HTTP POST is attempted (R9)."""
 import copy
 import hashlib
+import io
 import json
 import os
 import sys
 import tempfile
 import types
 import unittest
+import urllib.error
 import urllib.parse
 from unittest import mock
 
@@ -1317,6 +1319,200 @@ class CapabilityHeader(unittest.TestCase):
     def test_consent_roles(self):
         self.assertEqual(vc.consent_roles(None), [])
         self.assertEqual(vc.consent_roles({'as_new_creditor': True, 'setoff': True}), ['setoff', 'creditor'])
+
+
+class ValueSafeRun(Base):
+    """FX3-PY, decision D-3 a: process_consents(value_safe_only=True), the run an adapter without a consent loop makes
+    before valun_status and valun_inbox. It signs set-offs (member) and payments to me by transfer (payee) as the
+    firewall and the standing policy allow, refuses nothing, and never reads further, signs or refuses a consent in the
+    issuer or payer role; it is recorded in consents_last_safe_run_ms only."""
+
+    def setUp(self):
+        super().setUp()
+        self.net.me_id = A_ID
+        self.T = res(NOW - 1500, 999)
+
+    def test_a_set_off_is_signed_and_an_issuers_consent_is_never_signed_or_refused(self):
+        T = self.T
+        self.net.consent_items = [issuer_item(T), member_item(res(NOW - 1500, 998))]
+        c = self.client(profile(A_ID, consent_policy=dict(POLICY)))
+        rep = c.process_consents(value_safe_only=True)
+        self.assertEqual([(e['id'], e['role']) for e in rep['signed']], [(SID, 'member')])
+        self.assertEqual([(e['id'], e['role'], e['code']) for e in rep['waiting']], [(TID, 'issuer', 'not_value_safe')])
+        self.assertEqual(rep['refused'], [])
+        self.assertEqual([cid for cid, _body in self.net.consent_posts], [SID])      # nothing posted for the issuer's
+        self.assertEqual(self.net.refusals, [])
+        s = self.store.state
+        self.assertNotIn(AC, s.get('signed') or {})                 # no write-ahead (R4) for the issuer's edges either
+        self.assertEqual(s['consents_last_safe_run_ms'], NOW)
+        self.assertNotIn('consents_last_run_ms', s)                 # it never delays a full run
+        self.assertEqual([(e['id'], e['decision']) for e in s['consent_log']], [(SID, 'signed')])
+        # The same issuer's consent is signed by a full run (before a tool call that is not read-only).
+        self.net.consent_items = [issuer_item(T)]
+        rep = c.process_consents()
+        self.assertEqual([(e['id'], e['role']) for e in rep['signed']], [(TID, 'issuer')])
+        self.assertEqual(self.store.state['consents_last_run_ms'], NOW)
+
+    def test_a_payers_consent_is_not_read_signed_or_refused(self):
+        self.net.me_id = B_ID
+        q, it = Consents.payer_item(self)
+        self.net.consent_items = [it]
+        earlier = [{'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10, 'prior_timestamp': TS_AB, 'total': 7,
+                    'timestamp': self.T - 60_000, 'quote_digest': q, 'signed_at': None}]
+        self.net.consent_state[TID] = 'applied'
+        c = self.client(profile(B_ID, approved_payments={DEAL: q}, transfer_attempts={DEAL: earlier},
+                                consent_policy=dict(POLICY)))
+        rep = c.process_consents(value_safe_only=True)
+        self.assertEqual([(e['id'], e['role'], e['code']) for e in rep['waiting']], [(TID, 'payer', 'not_value_safe')])
+        self.assertEqual((rep['signed'], rep['refused'], self.net.consent_posts, self.net.refusals), ([], [], [], []))
+        self.assertEqual(self.net.requests(), ['GET /pilot/v1/info', 'GET /pilot/v1/consents'])   # nothing read further
+        self.assertEqual(len(att(self.store.state)), 1)            # no attempt written ahead
+        self.assertEqual(self.store.state['consent_log'], [])      # nothing decided
+        rep = c.process_consents()                                  # a full run signs it again, as before
+        self.assertEqual([(e['id'], e['role']) for e in rep['signed']], [(TID, 'payer')])
+
+    def test_a_payment_to_me_is_signed_only_as_the_standing_policy_allows(self):
+        c = Consents.payee_consent(self)
+        rep = c.process_consents(value_safe_only=True)
+        self.assertEqual([(e['id'], e['role'], e['deal_id']) for e in rep['signed']], [(TID, 'payee', DEAL)])
+        (_cid, body), = self.net.consent_posts
+        self.assertEqual(set(body['signatures']), {f'{AC}:prior', f'{AC}:new'})
+        # as_new_creditor off: the evaluator refuses it, and a read refuses nothing: it waits for a full run
+        self.setUp()
+        c = Consents.payee_consent(self)
+        c.state['consent_policy'] = dict(POLICY, as_new_creditor=False)
+        rep = c.process_consents(value_safe_only=True)
+        self.assertEqual([(e['id'], e['role'], e['code']) for e in rep['waiting']], [(TID, 'payee', 'policy_off')])
+        self.assertEqual((rep['signed'], rep['refused'], self.net.consent_posts, self.net.refusals), ([], [], [], []))
+        self.assertEqual([(e['id'], e['decision'], e['code']) for e in self.store.state['consent_log']],
+                         [(TID, 'waiting', 'policy_off')])
+        rep = c.process_consents()
+        self.assertEqual([(e['id'], e['code']) for e in rep['refused']], [(TID, 'policy_off')])
+        self.assertEqual(self.net.refusals, [(TID, {'reason': 'policy_off'})])
+
+    def test_a_set_off_the_policy_refuses_waits_and_is_not_refused(self):
+        self.net.consent_items = [member_item(res(NOW - 1500, 998))]
+        c = self.client(profile(A_ID, consent_policy=dict(POLICY, setoff=False)))
+        rep = c.process_consents(value_safe_only=True)
+        self.assertEqual([(e['id'], e['code']) for e in rep['waiting']], [(SID, 'policy_off')])
+        self.assertEqual((self.net.consent_posts, self.net.refusals), ([], []))
+        rep = c.process_consents()
+        self.assertEqual(self.net.refusals, [(SID, {'reason': 'policy_off'})])
+
+    def test_the_value_safe_roles(self):
+        self.assertEqual(vc.VALUE_SAFE_ROLES, ('member', 'payee'))
+        self.assertEqual(vc.VALUE_SAFE_HEADER_ROLES, ('setoff', 'creditor'))
+        self.assertTrue({'consents_last_safe_run_ms', 'consent_roles_declared'} <= set(vc.CORE_STATE_KEYS))
+
+
+class _Resp:
+    def __init__(self, body):
+        self.b = json.dumps(body).encode()
+
+    def read(self):
+        return self.b
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class RolesWithdrawn(unittest.TestCase):
+    """FX3-PY, decision D-3 b: with every consent role off, or declare_roles False (an adapter whose process_consents is
+    off), the client sends X-Valun-Features: consents/1;roles= (empty) while the server may still count roles it
+    declared (consent_roles_declared), until a request the server authenticated has carried it with a 2xx answer; then
+    it sends no header, also from another process on the same profile."""
+    R = 'consents/1;roles='
+
+    def setUp(self):
+        self.sent, self.fail, self.features = [], {}, ['bound_notes/1', 'circulation/1']
+
+    def client(self, policy, declare_roles=True, **extra):
+        state = dict({'server': SERVER, 'participant_id': B_ID, 'pubkey': B['pubkey'], 'pins': dict(PINS)}, **extra)
+        if policy is not None:
+            state['consent_policy'] = policy
+        self.store = MemStore(state, B['secret'].hex())
+        return vc.Client(self.store, declare_roles=declare_roles)
+
+    def urlopen(self, req, timeout=None):
+        path = req.full_url[len(SERVER):]
+        self.sent.append(req.get_header('X-valun-features'))
+        code = self.fail.pop(path, None)
+        if code:
+            err = urllib.error.HTTPError(req.full_url, code, 'refused', {}, io.BytesIO(b'{"error": "rate_limited"}'))
+            self.addCleanup(err.close)
+            raise err
+        info = {'network': vc.NETWORK, 'tracker_nft_id': NFT, 'denomination': DENOM}
+        if self.features is not None:
+            info['features'] = self.features
+        return _Resp(info if path == '/pilot/v1/info' else {})
+
+    def wire(self, c, *calls):
+        with mock.patch.object(vc.urllib.request, 'urlopen', self.urlopen):
+            for call in calls:
+                try:
+                    call(c)
+                except vc.ValunError:
+                    pass
+        out, self.sent = self.sent, []
+        return out
+
+    def test_roles_turned_off_are_withdrawn_once(self):
+        c = self.client({'setoff': True, 'as_issuer': True, 'as_new_creditor': False})
+        self.assertEqual(self.wire(c, vc.Client.info, vc.Client.me), [None, 'consents/1;roles=setoff,issuer'])
+        self.assertEqual(self.store.state['consent_roles_declared'], 'setoff,issuer')
+        c.state['consent_policy'] = {'setoff': False, 'as_issuer': False, 'as_new_creditor': False}
+        self.assertEqual(self.wire(c, vc.Client.me, vc.Client.me, vc.Client.inbox), [self.R, None, None])
+        self.assertEqual(self.store.state['consent_roles_declared'], '')
+        c.state['consent_policy'] = {'setoff': True}                       # a role on again is declared again
+        self.assertEqual(self.wire(c, vc.Client.me), ['consents/1;roles=setoff'])
+        self.assertEqual(self.store.state['consent_roles_declared'], 'setoff')
+
+    def test_with_process_consents_off_the_roles_declared_before_are_withdrawn(self):
+        c = self.client(dict(POLICY), declare_roles=False, consent_roles_declared='setoff,issuer,creditor')
+        self.assertEqual(self.wire(c, vc.Client.info, vc.Client.me, vc.Client.me), [None, self.R, None])
+        self.assertEqual(self.store.state['consent_roles_declared'], '')
+        c = self.client(dict(POLICY), declare_roles=False)                 # it never declared any: no header at all
+        self.assertEqual(self.wire(c, vc.Client.info, vc.Client.me), [None, None])
+        self.assertNotIn('consent_roles_declared', self.store.state)
+
+    def test_only_a_request_the_server_authenticated_and_answered_withdraws_them(self):
+        # Public routes (the directory, a participant, GET /clearing) are answered before authentication, even when a
+        # request to one carries the agent token; an owner token's request never sets the agent's roles; and a 429 may
+        # come before authentication: each sends it again later.
+        c = self.client({'setoff': False}, consent_roles_declared='setoff')
+        self.fail['/pilot/v1/me'] = 429
+        heads = self.wire(c, vc.Client.info, vc.Client.directory, lambda c: c.participant(C_ID),
+                          lambda c: c.request('GET', '/pilot/v1/participants'),
+                          lambda c: c.request('GET', f'/pilot/v1/participants/{C_ID}'),
+                          lambda c: c.request('GET', '/pilot/v1/clearing'),
+                          lambda c: c.request('GET', '/pilot/v1/owner', token=OWNER_TOKEN), vc.Client.me)
+        self.assertEqual(heads, [None] + [self.R] * 7)
+        self.assertEqual(self.store.state['consent_roles_declared'], 'setoff')
+        self.assertEqual(self.wire(c, vc.Client.me, vc.Client.me), [self.R, None])
+        self.assertEqual(self.store.state['consent_roles_declared'], '')
+
+    def test_never_without_circulation(self):
+        self.features = ['bound_notes/1']
+        c = self.client({'setoff': False}, consent_roles_declared='setoff')
+        self.assertEqual(self.wire(c, vc.Client.info, vc.Client.me, vc.Client.me), [None, None, None])
+        self.assertEqual(self.store.state['consent_roles_declared'], 'setoff')
+
+    def test_once_per_profile_across_processes(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'p.json')
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump({'server': SERVER, 'participant_id': B_ID, 'pubkey': B['pubkey'], 'pins': dict(PINS),
+                           'secret': B['secret'].hex(), 'agent_token': AGENT_TOKEN, 'consent_policy': dict(POLICY)}, f)
+            self.assertEqual(self.wire(vc.Client(vc.FileStore(path)), vc.Client.info, vc.Client.me),
+                             [None, 'consents/1;roles=setoff,issuer,creditor'])
+            for heads in ([None, self.R, None], [None, None, None]):        # process_consents off, in two processes
+                self.assertEqual(self.wire(vc.Client(vc.FileStore(path), declare_roles=False), vc.Client.info,
+                                           vc.Client.me, vc.Client.me), heads)
+            with open(path, encoding='utf-8') as f:
+                self.assertEqual(json.load(f)['consent_roles_declared'], '')
 
 
 class SyncEdges(Base):

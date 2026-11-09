@@ -18,7 +18,9 @@ Circulating credit (0.4; only where the server's GET /info lists circulation/1):
 note the agent holds (pay_with, a commitment the owner approves with its own text), valun_deliver can deliver the exact
 result of a text-stats or notary job (exact_result), valun_status, valun_deal and valun_inbox show what can be spent,
 what is being paid and what the client clears, and the client signs the consents its owner's policy allows by itself
-(process_consents(), at most once per CONSENTS_EVERY_MS, before every tool call that is not read-only).
+(process_consents(), at most once per CONSENTS_EVERY_MS, before every tool call that is not read-only; with
+consents_on_reads, an adapter without a consent loop also signs the value-safe ones, set-offs and payments to it by
+transfer, before valun_status and valun_inbox: decision D-3 a).
 """
 import json
 import re
@@ -186,18 +188,25 @@ def wants_consents(state):
             or bool(state.get('transfer_attempts')))
 
 
-def consents_due(c, now_ms=None, every_ms=CONSENTS_EVERY_MS):
+def consents_due(c, now_ms=None, every_ms=CONSENTS_EVERY_MS, value_safe_only=False):
     """Client.process_consents() for a profile that takes part in consents (wants_consents), when its last run
     (consents_last_run_ms) is at least `every_ms` ago. Returns the run's report, or None when it did not run. Errors
-    are the caller's (the agent's hook swallows them)."""
+    are the caller's (the agent's hook swallows them).
+
+    value_safe_only (decision D-3 a; before a read-only tool): process_consents(value_safe_only=True), only for a
+    local consent policy with a value-safe role on (consents.setoff or consents.as_new_creditor), and only when
+    neither kind of run (consents_last_run_ms, consents_last_safe_run_ms) is less than `every_ms` ago."""
     state = c.state
     if not wants_consents(state) or not c.connected:
         return None
+    if value_safe_only and not set(vc.consent_roles(state.get('consent_policy'))) & set(vc.VALUE_SAFE_HEADER_ROLES):
+        return None                     # nothing a read could sign: no request at all
     now = int(vc.time.time() * 1000) if now_ms is None else now_ms
-    last = state.get('consents_last_run_ms')
-    if _whole(last) and 0 <= now - last < every_ms:
-        return None
-    return c.process_consents(now_ms=now)
+    for key in ('consents_last_run_ms', 'consents_last_safe_run_ms') if value_safe_only else ('consents_last_run_ms',):
+        last = state.get(key)
+        if _whole(last) and 0 <= now - last < every_ms:
+            return None
+    return c.process_consents(now_ms=now, value_safe_only=True) if value_safe_only else c.process_consents(now_ms=now)
 
 
 def _verify_hex(pubkey_hex, msg, sig_hex):
@@ -213,6 +222,10 @@ LIMIT_FIELDS = {
 }
 TOOL_NAMES = [t['name'] for t in schemas.ALL]
 READ_ONLY_TOOLS = ('valun_status', 'valun_directory', 'valun_inbox', 'valun_deal')
+# The read-only tools before which an agent with consents_on_reads signs the value-safe consents (decision D-3 a), and
+# the keys of each entry of their consents_signed_now.
+CONSENTS_ON_READ_TOOLS = ('valun_status', 'valun_inbox')
+SIGNED_NOW_KEYS = ('id', 'kind', 'role', 'deal_id', 'amount', 'your_net_change_PC', 'your_total_owed_change_PC', 'state')
 # The classification every adapter takes from here (fail closed by name): these tools never commit the owner...
 NOT_COMMITMENT_TOOLS = READ_ONLY_TOOLS + ('valun_deliver',)
 # ...this one does only when it loosens a limit recorded before...
@@ -393,15 +406,23 @@ class ValunAgent:
     check_link_hosts: look up link host names in DNS when measuring deliveries (no page is fetched).
     process_consents: sign the consents the owner's policy allows before tools that are not read-only (consents_if_due);
       the CLI and the MCP server keep it on, the Hermes plugin passes its own setting (off unless the owner turns it on).
+      Off, its clients also declare no consent role to the server (Client declare_roles; decision D-3 b).
+    consents_on_reads (decision D-3 a; off by default): for an adapter without a background consent loop (the Hermes
+      plugin, and `valun call`): before valun_status and valun_inbox, sign the value-safe consents only (set-offs, and
+      payments to me by transfer as the standing policy allows; never an issuer's or a payer's), at most once per
+      CONSENTS_EVERY_MS (consents_on_read); the tool's result then says what was signed (consents_signed_now). Only with
+      process_consents on. The MCP server leaves it off: it has its optional background loop instead.
     """
 
-    def __init__(self, store, approvals='', check_link_hosts=True, setup_hint=None, server=None, process_consents=True):
+    def __init__(self, store, approvals='', check_link_hosts=True, setup_hint=None, server=None, process_consents=True,
+                 consents_on_reads=False):
         self.store = store
         self.approvals = approvals
         self.check_link_hosts = check_link_hosts
         self.setup_hint = setup_hint or 'run `valun join` (or `valun enroll`) in a terminal'
         self.server = server
         self.process_consents = process_consents is True
+        self.consents_on_reads = consents_on_reads is True
         self.features = None        # the feature tags the last GET /info this agent read listed (None: none read yet)
         self.handlers = {'valun_status': self.status, 'valun_directory': self.directory, 'valun_inbox': self.inbox,
                          'valun_deal': self.deal, 'valun_propose': self.propose, 'valun_respond': self.respond,
@@ -409,19 +430,28 @@ class ValunAgent:
 
     # ---------- plumbing ----------
     def client(self, require_connection=True):
-        c = vc.Client(self.store, server=self.server)
+        c = vc.Client(self.store, server=self.server, declare_roles=self.process_consents)
         if require_connection and (not c.connected or not c.participant_id):
             raise vc.ValunError('not_connected', f'not enrolled: the owner must {self.setup_hint}')
         return c
 
     def call(self, name, args=None):
         """Run one tool. Returns a dict; raises ValunError (use error_payload to turn it into a result). Before a tool
-        that is not read-only, the client signs the consents its owner's policy allows (consents_if_due)."""
+        that is not read-only, the client signs the consents its owner's policy allows (consents_if_due). With
+        consents_on_reads, before valun_status and valun_inbox it signs the value-safe ones (consents_on_read), and when
+        that run took place the result adds consents_signed_now: one entry (SIGNED_NOW_KEYS) for each consent it signed
+        ([]: none)."""
         if name not in self.handlers:
             raise vc.ValunError('unknown_tool', f'no Valun tool called {name!r}')
         if name not in READ_ONLY_TOOLS:
             self.consents_if_due()
-        return self.handlers[name](args or {})
+            return self.handlers[name](args or {})
+        report = self.consents_on_read() if name in CONSENTS_ON_READ_TOOLS else None
+        out = self.handlers[name](args or {})
+        if report is not None and isinstance(out, dict):
+            out['consents_signed_now'] = [{k: e.get(k) for k in SIGNED_NOW_KEYS} for e in report.get('signed') or []
+                                          if isinstance(e, dict)]
+        return out
 
     def consents_if_due(self, now_ms=None):
         """Process consents (Client.process_consents: set-offs, transfers of my own debt, payments to me, regenerated
@@ -449,10 +479,37 @@ class ValunAgent:
             self._remember(c)
         return report
 
+    def consents_on_read(self, now_ms=None):
+        """Decision D-3 a: before valun_status and valun_inbox, for an agent with consents_on_reads and process_consents
+        on, sign the value-safe consents (Client.process_consents(value_safe_only=True): set-offs, and payments to me by
+        transfer as the standing policy allows; an issuer's or a payer's consent is never signed or refused here) when
+        they are due: at most once per CONSENTS_EVERY_MS (consents_due; a full run before a tool that is not read-only
+        counts too, and this run never delays one), for a profile whose local policy has a value-safe role on, on a
+        server not already known to lack circulating credit (decision D-2 h). Never raises: returns the report, or None
+        when it did not run, failed (a failed run counts as a run, in consents_last_safe_run_ms) or found that the server
+        does not offer circulating credit (the tool's result is then as in 0.3: no consents_signed_now)."""
+        if not (self.consents_on_reads and self.process_consents):
+            return None
+        if self.features is not None and CIRCULATION not in self.features:
+            return None
+        try:
+            c = self.client()
+        except Exception:  # noqa: BLE001 - not connected: there is nothing to consent to
+            return None
+        now = int(vc.time.time() * 1000) if now_ms is None else now_ms
+        try:
+            report = consents_due(c, now, value_safe_only=True)
+        except Exception:  # noqa: BLE001 - a consent run must never stop the read the agent asked for
+            self._mark_consents_run(c, now, 'consents_last_safe_run_ms')
+            return None
+        if report is None:
+            return None
+        return report if CIRCULATION in self._remember(c) else None
+
     @staticmethod
-    def _mark_consents_run(c, now):
+    def _mark_consents_run(c, now, key='consents_last_run_ms'):
         def mark(state):
-            state['consents_last_run_ms'] = now
+            state[key] = now
         try:
             upd = getattr(c.store, 'update', None)
             if callable(upd):

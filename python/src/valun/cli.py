@@ -58,9 +58,23 @@ def _server(args, store):
 
 
 def _write_private(path, text):
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, 'w', encoding='utf-8') as f:
-        f.write(text)
+    """Create `path` as a new private file (0600) holding `text`. An existing file is never replaced (O_EXCL: it may
+    hold another identity's owner token; FileExistsError). If writing fails, the file this call created is removed."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        try:
+            f = os.fdopen(fd, 'w', encoding='utf-8')
+        except BaseException:
+            os.close(fd)
+            raise
+        with f:
+            f.write(text)
+    except BaseException:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        raise
 
 
 def _approval_mandate(mode, cap):
@@ -107,35 +121,101 @@ def cmd_join(args):
     except vc.ValunError as e:
         print(f'Joining failed ({e.code}): {e}')
         return 1
-    owner = j['owner_token']
-    # From here on the participant exists, and its owner token is shown only in this answer: it is handed over before
-    # anything else can fail (_hand_over), and every later step that fails says how to finish it with that token.
-    try:
-        r = c.enroll(j['participant_id'], j['enrollment_code'])
-    except vc.ValunError as e:
-        print(f"Your participant {j['participant_id']} was created, but this agent's key could not be registered "
-              f'({e.code}): {_terminal_text(e)}')
-        _hand_over(args, owner, server)
-        # The profile is not saved (it holds no key yet), so the command names the server as well as the profile.
-        print(f'To finish: issue an enrollment code in the owner console ({server}/pilot#owner) with your owner token, '
-              f"then run `valun --profile {_profile(args)} enroll --server {server} --participant {j['participant_id']}`.")
+    owner = j.get('owner_token') if isinstance(j, dict) else None
+    if not (isinstance(owner, str) and owner):
+        print('Joining failed (bad_response): the server did not answer an owner token.')
         return 1
+    # Decision D-3 c: from here on the participant exists, and its owner token is in this answer only. It is handed over
+    # first (_hand_over: written to --owner-token-file, or shown), before any local write that can fail (the agent's
+    # key, the profile, the pins); whatever fails after this, join says what is not done and exits 1.
+    handed = _hand_over(args, owner, server)
+    step = ['enroll']
+    try:
+        finished = _join_steps(args, store, c, j, server, handle, owner, step)
+    except Exception as e:  # noqa: BLE001 - the owner token is handed over already: say what stopped, never a traceback
+        name, pid = _profile(args), _terminal_text(j.get('participant_id') or 'PARTICIPANT_ID', 40)
+        print(f'Joining stopped ({_failure(e)}): {_terminal_text(e)}')
+        print(f'  Your participant {pid} exists, and your owner token was handed over above. Not done: '
+              + JOIN_NOT_DONE[step[0]].format(name=name, server=server, pid=pid) + '.')
+        print(f'Then run `valun --profile {name} doctor`.')
+        finished = False
+    if not handed:
+        print(f'Exit code 1: {args.owner_token_file} was not written (your owner token is shown above instead).')
+    return 0 if finished and handed else 1
+
+
+# What a join that stopped on an unexpected error (a disk that is full, say) had not done yet, by the step it was in
+# (cmd_join; decision D-3 c). Each leaves the profile on the safe side, and says how to finish.
+JOIN_NOT_DONE = {
+    'enroll': ("registering and storing this agent's key: issue an enrollment code in the owner console "
+               '({server}/pilot#owner) with your owner token, then run `valun --profile {name} enroll --server {server} '
+               '--participant {pid}`'),
+    'settings': ("this profile's settings (until they are set it asks before each commitment, and its client signs no "
+                 'consent by itself) and your owner mandate (approvals, auto_clear): set them with `valun --profile {name} '
+                 'config ...` and in the owner console ({server}/pilot#owner)'),
+    'mandate': ("your owner mandate's approve_above and auto_clear: set them in the owner console ({server}/pilot#owner) "
+                '(with --approvals console this profile asks before each commitment until then)'),
+    'approvals': ('console approvals in this profile: it asks before each commitment until you run '
+                  '`valun --profile {name} config approvals console --owner-token-file FILE` (FILE: the file holding your '
+                  'owner token)'),
+    'clearing': ('consents.setoff off in this profile, so its client may still sign set-offs by itself: run '
+                 '`valun --profile {name} config consents.setoff off`'),
+    'report': 'nothing that join sets (only the rest of its report)',
+}
+
+
+def _failure(e):
+    """What failed, as one word for this terminal: a ValunError's code, else the exception's class (OSError, say)."""
+    return e.code if isinstance(e, vc.ValunError) else type(e).__name__
+
+
+def _key_stored(args, participant_id):
+    """Does this profile, as saved on disk, hold this participant's agent key and token? (An enrolment whose request
+    and first save succeeded, although a later save of the same profile failed.)"""
+    try:
+        disk = _store(args)
+    except Exception:  # noqa: BLE001 - an unreadable profile holds nothing usable
+        return False
+    return bool(disk.state.get('participant_id') == participant_id and disk.secret() and disk.token())
+
+
+def _join_steps(args, store, c, j, server, handle, owner, step):
+    """`valun join` once its owner token was handed over: register this agent's key, save the profile, pin the network,
+    set the owner mandate, and say what is in force. step[0] names the step it is in, for cmd_join's message when an
+    unexpected error stops it. Returns True when every step was done; False after saying what is not done and how to
+    finish it (with commands that name this profile)."""
+    pid = j['participant_id']
+    try:
+        r = c.enroll(pid, j['enrollment_code'])
+    except Exception as e:  # noqa: BLE001 - a request refused, or a key that could not be stored (OSError)
+        if not _key_stored(args, pid):
+            print(f"Your participant {pid} was created, but this agent's key could not be registered "
+                  f'({_failure(e)}): {_terminal_text(e)}')
+            # The profile is not saved (it holds no key), so the command names the server as well as the profile.
+            print(f'To finish: issue an enrollment code in the owner console ({server}/pilot#owner) with your owner token, '
+                  f'then run `valun --profile {_profile(args)} enroll --server {server} --participant {pid}`.')
+            return False
+        # The key was registered and stored; a later save of the same profile failed. Go on with the profile as saved.
+        store = _store(args)
+        c = vc.Client(store, server)
+        r = {'pubkey': str(store.state.get('pubkey') or '')}
     # The local consent policy (design 6.6): an invited participant's client signs set-offs and transfers of its own debt
     # by itself; a sandbox participant's client also accepts payments by transfer, and its MCP server runs the consent
     # loop. The owner's mandate must allow each role too (the stricter applies); `valun policy show` shows both.
     # Console approvals are recorded only once the mandate holds every commitment for the owner (below); until then
     # this profile asks (the default), so that a mandate step that fails leaves it on the safe side.
+    step[0] = 'settings'
     store.state.update({'server': server, 'approvals': 'ask' if args.approvals == 'console' else args.approvals,
                         'check_link_hosts': True,
                         'consent_policy': dict(va.SANDBOX_CONSENT_POLICY if args.sandbox else va.INVITE_CONSENT_POLICY),
                         'consent_loop': 'on' if args.sandbox else 'off'})
     store.save()
-    print(f"Joined Valun as {handle} ({j['participant_id']}) on {server}. This agent's key was generated here; "
+    print(f"Joined Valun as {handle} ({pid}) on {server}. This agent's key was generated here; "
           f"public key {r['pubkey'][:16]}...")
     print(f'Credentials are stored privately in {profile_path(args.profile)} (not shown).')
     if j.get('sandbox_only'):
         print(j.get('note') or 'Sandbox only: you can deal with the sandbox agents for a week.')
-    handed = _hand_over(args, owner, server)
+    step[0] = 'mandate'
     try:
         c.me()          # the agent's first call: it shows as active in the directory from now on
     except vc.ValunError:
@@ -161,12 +241,16 @@ def cmd_join(args):
             body['auto_clear'] = clearing == 'auto'
         c.request('PUT', '/pilot/v1/owner/mandate', body, token=owner)
     except vc.ValunError as e:
-        return _mandate_not_set(args, store, e, server, circulating or unread is not None, clearing)
+        step[0] = 'clearing'
+        _mandate_not_set(args, store, e, server, circulating or unread is not None, clearing)
+        return False
     if args.approvals == 'console':
+        step[0] = 'approvals'
         store.update(lambda state: state.update(approvals='console'))
+    step[0] = 'report'
     print(JOIN_APPROVALS[args.approvals].format(server=server, per_deal=limits.get('max_issue_per_deal'),
                                                 total=limits.get('max_issue_outstanding')))
-    finished, name = handed, _profile(args)
+    finished, name = True, _profile(args)
     if circulating:
         print(f'Clearing: {clearing}. ' + ('Your Valun client signs set-offs that leave your net position unchanged, and '
                                            'transfers of your own debt, by itself; ' if clearing == 'auto' else
@@ -183,6 +267,7 @@ def cmd_join(args):
         print(f'Clearing: whether this server offers circulating credit could not be read ({unread.code}), so '
               f'--clearing {clearing} was not set in your owner mandate (auto_clear).')
         if clearing == 'off':
+            step[0] = 'clearing'
             store.update(_no_setoff)
             print('  Your client signs no set-off by itself (consents.setoff off); if the server offers circulating '
                   f'credit, turn auto_clear off in the owner console ({server}/pilot#owner) too.')
@@ -193,20 +278,22 @@ def cmd_join(args):
               'auto_clear is set in the owner console.')
     print(f'Next: `valun --profile {name} doctor`, then add `valun --profile {name} mcp` to your agent (see '
           '`valun mcp --help`).')
-    if not handed:
-        print(f'Exit code 1: {args.owner_token_file} was not written (your owner token is shown above instead).')
-    return 0 if finished else 1
+    return finished
 
 
 def _hand_over(args, owner, server):
-    """The owner token, to the owner, once: written to --owner-token-file (a private file), or shown. A file that cannot
-    be written does not lose it: it is shown instead, and False is returned (join then exits 1 once its other steps are
-    done, so that a script that relies on the file notices). True otherwise."""
+    """The owner token, to the owner, once: written to --owner-token-file (a new private file), or shown. A file that
+    cannot be written, or that exists already (it is never replaced: it may hold another identity's owner token), does
+    not lose it: it is shown instead, and False is returned (join then exits 1 once its other steps are done, so that a
+    script that relies on the file notices). True otherwise."""
     if args.owner_token_file:
         try:
             _write_private(args.owner_token_file, owner + '\n')
             print(f'Your OWNER token is in {args.owner_token_file}. Keep it private; never give it to your agent.')
             return True
+        except FileExistsError:
+            print(f'{args.owner_token_file} exists already, so it was not replaced (it may hold another owner token); '
+                  'your owner token is shown here instead.')
         except OSError as e:
             print(f'Cannot write {args.owner_token_file} ({e.strerror or e}), so your owner token is shown here instead.')
     print('Your OWNER token (shown once; keep it in a password manager, never give it to your agent; it opens '
@@ -227,7 +314,7 @@ def _mandate_not_set(args, store, e, server, circulating, clearing):
     commands that name this profile. The profile stays on the safe side: console approvals are not recorded (it asks
     before each commitment, the default, until the mandate holds them for the owner), and with --clearing off its client
     signs no set-off (consents.setoff off) while auto_clear is not set (circulating: the server offers circulating
-    credit, or whether it does could not be read). Returns the exit code, 1."""
+    credit, or whether it does could not be read)."""
     name = _profile(args)
     print(f'Your owner mandate could not be set ({e.code}): {_terminal_text(e)}')
     if args.approvals == 'console':
@@ -242,7 +329,6 @@ def _mandate_not_set(args, store, e, server, circulating, clearing):
         print('  Clearing: auto_clear was not turned off, so your client signs no set-off by itself (consents.setoff '
               'off); turn auto_clear off in the owner console too.')
     print(f'Then run `valun --profile {name} doctor`.')
-    return 1
 
 
 def cmd_enroll(args):
@@ -292,6 +378,7 @@ def _policy_line(policy):
 def cmd_doctor(args):
     store = _store(args)
     path = profile_path(args.profile)
+    name = _profile(args)
     ok, problems = [], []
     ok.append(f'Valun {__version__}, Python {sys.version.split()[0]} on {sys.platform}; profiles in {home_dir()}')
     perm = permission_problem(path)
@@ -307,9 +394,10 @@ def cmd_doctor(args):
             else:
                 problems.append('The server names a different tracker or unit than the ones pinned in this profile, so this '
                                 'agent signs nothing (tracker_mismatch). Only if you know the network moved: '
-                                '`valun config server URL` pins it again.')
+                                f'`valun --profile {name} config server URL` pins it again.')
     except Exception as e:  # noqa: BLE001
-        problems.append(f'Server {server} not reachable ({e}). Check `valun config server URL` and your connection.')
+        problems.append(f'Server {server} not reachable ({e}). Check `valun --profile {name} config server URL` and your '
+                        'connection.')
     if store.state.get('participant_id') and store.secret() and store.token():
         try:
             me = vc.Client(store, server).me()
@@ -317,11 +405,15 @@ def cmd_doctor(args):
             ok.append(f"Agent accepted by the server as {me['participant']['handle']}; limits: at most {m['max_issue_per_deal']} PC "
                       f"per deal, {m['max_issue_outstanding']} PC owed in total")
             if me['participant'].get('status') != 'active':
-                problems.append('The agent key is not active: ask the owner for an enrollment code, then `valun enroll`.')
+                problems.append('The agent key is not active: ask the owner for an enrollment code, then '
+                                f'`valun --profile {name} enroll`.')
         except Exception as e:  # noqa: BLE001
-            problems.append(f'The server refused this agent ({getattr(e, "code", e)}): if the owner revoked it, `valun enroll` again.')
+            problems.append(f'The server refused this agent ({getattr(e, "code", e)}): if the owner revoked it, '
+                            f'`valun --profile {name} enroll` again.')
     else:
-        problems.append('Not connected: run `valun join --sandbox` (no invite: sandbox only), `valun join` (with an invite) or `valun enroll` (with an enrollment code).')
+        problems.append(f'Not connected: run `valun --profile {name} join --sandbox` (no invite: sandbox only), '
+                        f'`valun --profile {name} join` (with an invite) or `valun --profile {name} enroll` (with an '
+                        'enrollment code).')
     mode = store.state.get('approvals', 'ask')
     ok.append(f'Approvals: {mode}. ' + APPROVAL_TEXT.get(mode, ''))
     for line in ok:
@@ -438,8 +530,8 @@ def cmd_config(args):
     else:
         print(f'{key} = {store.state[key]}')
         if key == 'consent_loop':
-            print('The consent loop runs inside `valun mcp` (restart it to start the loop); it signs only what your consent '
-                  'policy and owner mandate allow.')
+            print(f'The consent loop runs inside `valun --profile {_profile(args)} mcp` (restart it to start the loop); it '
+                  'signs only what your consent policy and owner mandate allow.')
     return 0
 
 
@@ -453,9 +545,11 @@ def cmd_tools(args):
 
 
 def _agent(args, store):
+    """The agent for `valun call`: one tool run, with no consent loop behind it, so before valun_status and valun_inbox
+    it also signs the value-safe consents (consents_on_reads; decision D-3 a)."""
     mode = store.state.get('approvals', 'ask')
     return ValunAgent(store, approvals=APPROVAL_TEXT.get(mode, ''), check_link_hosts=store.state.get('check_link_hosts', True),
-                      setup_hint='run `valun join` in a terminal', server=_server(args, store)), mode
+                      setup_hint='run `valun join` in a terminal', server=_server(args, store), consents_on_reads=True), mode
 
 
 def cmd_call(args):
@@ -491,8 +585,8 @@ def cmd_mcp(args):
     from .mcp_server import run
     store = _store(args)
     if not (store.state.get('participant_id') and store.secret()):
-        print(f"valun mcp: profile '{args.profile}' is not joined yet; run `valun join` first. Starting anyway (tools will say so).",
-              file=sys.stderr)
+        print(f"valun mcp: profile '{_profile(args)}' is not joined yet; run `valun --profile {_profile(args)} join` first. "
+              'Starting anyway (tools will say so).', file=sys.stderr)
     return run(store, approvals=store.state.get('approvals', 'ask'), server=_server(args, store),
                check_link_hosts=store.state.get('check_link_hosts', True))
 
@@ -554,7 +648,9 @@ def cmd_clearing(args):
                 if isinstance(e, dict):
                     print(f"  {e.get('at')}  {e.get('decision'):8} {e.get('kind')} {e.get('id')} as {e.get('role')}"
                           + (f" ({e.get('code')})" if e.get('code') else ''))
-        print(f"Consent loop in `valun mcp`: {store.state.get('consent_loop', 'off')}. `valun clearing run` signs now.")
+        name = _profile(args)
+        print(f"Consent loop in `valun --profile {name} mcp`: {store.state.get('consent_loop', 'off')}. "
+              f'`valun --profile {name} clearing run` signs now.')
         return 0
     if args.action == 'run':
         try:
@@ -583,9 +679,10 @@ def cmd_clearing(args):
 def cmd_policy(args):
     """valun policy show: the consent policy in force, role by role (local policy and owner mandate)."""
     store = _store(args)
-    local = store.state.get('consent_policy')
-    print(f'Local consent policy (this profile; `valun config consents.<role> on|off`): {_policy_line(local)}')
-    print(f"Consent loop in `valun mcp` (`valun config consent_loop on|off`): {store.state.get('consent_loop', 'off')}")
+    local, name = store.state.get('consent_policy'), _profile(args)
+    print(f'Local consent policy (this profile; `valun --profile {name} config consents.<role> on|off`): {_policy_line(local)}')
+    print(f"Consent loop in `valun --profile {name} mcp` (`valun --profile {name} config consent_loop on|off`): "
+          f"{store.state.get('consent_loop', 'off')}")
     mandate = None
     if store.state.get('participant_id') and store.secret() and store.token():
         try:
@@ -735,9 +832,9 @@ def cmd_attempts(args):
             for r in mine:
                 print(_attempt_line(c, r))
         if any(r['state'] == 'unknown' and not r['paid'] for r in rows):     # a paid deal has nothing to resolve
-            print('Resolve one only after asking the payee whether the payment arrived: `valun attempts resolve DEAL '
-                  "ATTEMPT --applied` (it arrived) or `--not-applied` (it did not). ATTEMPT is #n, or the server's id of "
-                  'a transfer (vt_...).')
+            print('Resolve one only after asking the payee whether the payment arrived: '
+                  f"`valun --profile {_profile(args)} attempts resolve DEAL ATTEMPT --applied` (it arrived) or "
+                  "`--not-applied` (it did not). ATTEMPT is #n, or the server's id of a transfer (vt_...).")
         return 0
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         print('valun attempts resolve asks you, the owner, to confirm at this terminal, and no person is at it. Run it in '
@@ -882,8 +979,9 @@ def main(argv=None):
                         "auto_clear in your owner mandate (when the server's features cannot be read, it is not set and "
                         'join exits 1; with off your client then signs no set-off by itself)')
     j.add_argument('--owner-token-file',
-                   help='write the owner token to this private file instead of showing it (a file that cannot be written: '
-                        'the token is shown instead, and join exits 1 once its other steps are done)')
+                   help='write the owner token to this new private file instead of showing it (it is created, never '
+                        'replaced: a file that exists already or cannot be written: the token is shown instead, and join '
+                        'exits 1 once its other steps are done)')
     e = sub.add_parser('enroll', help='register a new agent key with an enrollment code')
     e.add_argument('--participant')
     e.add_argument('--server')

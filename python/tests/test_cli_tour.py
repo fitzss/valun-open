@@ -291,6 +291,193 @@ class JoinKeepsTheOwnerToken(Cli):
                          f'Exit code 1: {self.token_file} was not written (your owner token is shown above instead).')
         self.assertFalse(os.path.exists(self.token_file))
 
+    # ---------- FX3-PY: decision D-3 c (the token first, whatever fails after the join answer) and O_EXCL ----------
+    DISK_FULL = (28, 'No space left on device')
+
+    def failing_update(self, when):
+        """FileStore.update raises a disk-full OSError for a change `when(state after it)` picks; others go through."""
+        real = vc.FileStore.update
+
+        def update(store, fn):
+            probe = json.loads(json.dumps(store.state))
+            fn(probe)
+            if when(probe):
+                raise OSError(*self.DISK_FULL)
+            return real(store, fn)
+        return mock.patch.object(vc.FileStore, 'update', update)
+
+    def failing_save(self, when):
+        """FileStore.save raises a disk-full OSError on the calls `when(n, state)` picks (n counts from 1)."""
+        real, calls = vc.FileStore.save, []
+
+        def save(store):
+            calls.append(1)
+            if when(len(calls), store.state):
+                raise OSError(*self.DISK_FULL)
+            return real(store)
+        return mock.patch.object(vc.FileStore, 'save', save)
+
+    def stopped(self, out, not_done):
+        """join stopped on the disk-full error with the token handed over, said what is not done, and no traceback."""
+        self.assertIn('Joining stopped (OSError): [Errno 28] No space left on device', out)
+        self.assertIn(f'  Your participant {S_ID} exists, and your owner token was handed over above. Not done: '
+                      + not_done, out)
+        self.assertIn('Then run `valun --profile s doctor`.', out)
+        self.assertNotIn('Traceback', out)
+        self.assertEqual(self.token_in_file(), 'vpo_test-only\n')
+        self.assertLess(out.index('Your OWNER token is in'), out.index('Joining stopped'))
+
+    def test_the_token_is_handed_over_before_the_agent_key_is_registered(self):
+        # The token file exists when POST /enroll is sent (here it gets a 429): nothing local is written before it.
+        seen, handle = [], self.world.handle
+
+        def spy(method, path, body=None, token=None):
+            seen.append((f'{method} {path}', os.path.exists(self.token_file)))
+            return handle(method, path, body, token)
+        self.world.handle = spy
+        self.rate_limit('POST /pilot/v1/enroll')
+        rc, out = self.run_join('--approvals', 'none')
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(seen, [('POST /pilot/v1/join-sandbox', False), ('POST /pilot/v1/enroll', True)])
+        self.assertEqual(self.token_in_file(), 'vpo_test-only\n')
+        self.assertLess(out.index('Your OWNER token is in'), out.index("this agent's key could not be registered (rate_limited)"))
+        self.assertFalse(os.path.exists(os.path.join(self.home.name, 'profiles', 's.json')))
+
+    def test_a_key_that_cannot_be_stored_still_hands_the_token_over(self):
+        # The enrolment's save fails (OSError, not a ValunError): no traceback; the token is in its file; the enroll
+        # command join prints finishes it (the key registered at the server was never stored: a new code replaces it).
+        with self.failing_save(lambda n, state: True):
+            rc, out = self.run_join('--approvals', 'none')
+        self.assertEqual(rc, 1, out)
+        self.assertIn(f"Your participant {S_ID} was created, but this agent's key could not be registered (OSError): "
+                      '[Errno 28] No space left on device', out)
+        self.assertEqual(self.printed(out, 'then run'), ['--profile', 's', 'enroll', '--server', SERVER, '--participant', S_ID])
+        self.assertNotIn('Traceback', out)
+        self.assertEqual(self.token_in_file(), 'vpo_test-only\n')
+        self.assertFalse(os.path.exists(os.path.join(self.home.name, 'profiles', 's.json')))
+        self.assertEqual(self.world.puts, [])
+
+    def test_a_key_stored_before_a_later_save_failed_carries_on(self):
+        # The enrolment stored the key and token (its first save), and its second save of the same profile failed: the
+        # profile on disk holds the key, so join goes on with it and finishes every step.
+        with self.failing_save(lambda n, state: n == 2):
+            rc, out = self.run_join('--approvals', 'none')
+        self.assertEqual(rc, 0, out)
+        self.assertIn('Joined Valun as stranger', out)
+        disk = self.disk()
+        self.assertEqual((disk['participant_id'], disk['approvals'], disk['agent_token']), (S_ID, 'none', AGENT_TOKEN))
+        self.assertEqual(self.world.puts, [{'approve_above': 5, 'auto_clear': True}])
+        self.assertNotIn('vpo_test-only', json.dumps(disk))
+
+    def test_settings_that_cannot_be_saved_stop_join_with_the_token_handed_over(self):
+        with self.failing_save(lambda n, state: 'consent_policy' in state):
+            rc, out = self.run_join('--approvals', 'none')
+        self.assertEqual(rc, 1, out)
+        self.stopped(out, "this profile's settings (until they are set it asks before each commitment, and its client "
+                          'signs no consent by itself)')
+        disk = self.disk()                                          # as the enrolment saved it: the safe defaults
+        self.assertEqual(disk['participant_id'], S_ID)
+        self.assertNotIn('approvals', disk)
+        self.assertNotIn('consent_policy', disk)
+        self.assertEqual(self.world.puts, [])                       # the mandate step was not reached
+        self.assertNotIn('vpo_test-only', json.dumps(disk))
+
+    def test_pins_that_cannot_be_written_stop_join_with_the_token_handed_over(self):
+        with self.failing_update(lambda state: 'pins' in state):
+            rc, out = self.run_join('--approvals', 'none')
+        self.assertEqual(rc, 1, out)
+        self.stopped(out, "your owner mandate's approve_above and auto_clear")
+        self.assertEqual(self.world.puts, [])
+        self.assertNotIn('pins', self.disk())
+
+    def test_console_approvals_that_cannot_be_recorded_stop_join_on_the_safe_side(self):
+        # The mandate holds every commitment for the owner, but the profile cannot record console: it still asks before
+        # each commitment, and the printed command, run as printed in another shell, finishes it.
+        with self.failing_update(lambda state: state.get('approvals') == 'console'):
+            rc, out = self.run_join('--approvals', 'console')
+        self.assertEqual(rc, 1, out)
+        self.stopped(out, 'console approvals in this profile: it asks before each commitment until you run '
+                          '`valun --profile s config approvals console --owner-token-file FILE`')
+        self.assertEqual(self.world.puts, [{'approve_above': 0, 'review_deliveries': True, 'auto_clear': True}])
+        self.assertEqual(self.disk()['approvals'], 'ask')
+        rc, done = self.main(self.printed(out, 'until you run'))
+        self.assertEqual(rc, 0, done)
+        self.assertEqual(self.disk()['approvals'], 'console')
+
+    def test_a_set_off_switch_that_cannot_be_written_says_how_to_turn_it_off(self):
+        # The mandate PUT gets a 429 with --clearing off, and the profile cannot record consents.setoff off: join says
+        # so, and the command it prints, run as printed in another shell, turns it off.
+        self.rate_limit('PUT /pilot/v1/owner/mandate')
+        with self.failing_update(lambda state: (state.get('consent_policy') or {}).get('setoff') is False):
+            rc, out = self.run_join('--approvals', 'none', '--clearing', 'off')
+        self.assertEqual(rc, 1, out)
+        self.assertIn('Your owner mandate could not be set (rate_limited)', out)
+        self.stopped(out, 'consents.setoff off in this profile, so its client may still sign set-offs by itself: run '
+                          '`valun --profile s config consents.setoff off`')
+        self.assertIs(self.disk()['consent_policy']['setoff'], True)
+        rc, done = self.main(self.printed(out, 'by itself: run'))
+        self.assertEqual(rc, 0, done)
+        self.assertIs(self.disk()['consent_policy']['setoff'], False)
+
+    def test_a_429_after_the_join_answer_never_loses_the_token_shown_on_screen(self):
+        # Without --owner-token-file: whichever request gets the 429, the token is shown before that step's report.
+        for route, said in (('POST /pilot/v1/enroll', "this agent's key could not be registered (rate_limited)"),
+                            ('GET /pilot/v1/owner', 'Your owner mandate could not be set (rate_limited)'),
+                            ('PUT /pilot/v1/owner/mandate', 'Your owner mandate could not be set (rate_limited)')):
+            name = 'r' + str(len(route))
+            self.world.fail[route] = [vc.ValunError(*self.RATE)]
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = cli.main(['--profile', name, 'join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann',
+                               '--approvals', 'none', '--server', SERVER])
+            out = out.getvalue()
+            self.assertEqual(rc, 1, out)
+            self.assertIn('\n  vpo_test-only\n', out, route)
+            self.assertLess(out.index('vpo_test-only'), out.index(said), route)
+            path = os.path.join(self.home.name, 'profiles', f'{name}.json')
+            if os.path.exists(path):
+                with open(path, encoding='utf-8') as f:
+                    self.assertNotIn('vpo_test-only', f.read(), route)
+
+    def test_an_existing_token_file_is_never_replaced(self):
+        # O_EXCL: a file that exists already (another identity's owner token, say) keeps its bytes. The token is shown
+        # instead, join does its other steps, and exits 1 after handing it over.
+        with open(self.token_file, 'w', encoding='utf-8') as f:
+            f.write('vpo_another-identity\n')
+        rc, out = self.run_join('--approvals', 'none')
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(self.token_in_file(), 'vpo_another-identity\n')
+        self.assertIn(f'{self.token_file} exists already, so it was not replaced (it may hold another owner token); '
+                      'your owner token is shown here instead.', out)
+        self.assertIn('\n  vpo_test-only\n', out)
+        self.assertLess(out.index('vpo_test-only'), out.index('Joined Valun as stranger'))
+        self.assertEqual(self.world.puts, [{'approve_above': 5, 'auto_clear': True}])    # the other steps were done
+        self.assertEqual(self.disk()['participant_id'], S_ID)
+        self.assertNotIn('vpo_test-only', json.dumps(self.disk()))
+        self.assertEqual(out.rstrip().splitlines()[-1],
+                         f'Exit code 1: {self.token_file} was not written (your owner token is shown above instead).')
+
+    def test_a_new_token_file_is_created_and_holds_only_the_token(self):
+        self.assertFalse(os.path.exists(self.token_file))
+        rc, out = self.run_join('--approvals', 'none')
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.token_in_file(), 'vpo_test-only\n')
+        self.assertNotIn('vpo_test-only', out)                       # written, not shown
+        if os.name != 'nt':
+            self.assertEqual(os.stat(self.token_file).st_mode & 0o777, 0o600)
+
+    def test_a_token_file_that_fails_while_written_is_removed(self):
+        path = os.path.join(self.home.name, 'partial.txt')
+        with mock.patch.object(cli.os, 'fdopen', side_effect=OSError(*self.DISK_FULL)):
+            with self.assertRaises(OSError):
+                cli._write_private(path, 'vpo_test-only\n')
+        self.assertFalse(os.path.exists(path))
+        cli._write_private(path, 'vpo_test-only\n')                  # its descriptor was closed: the name is free again
+        with self.assertRaises(FileExistsError):
+            cli._write_private(path, 'vpo_other\n')
+        with open(path, encoding='utf-8') as f:
+            self.assertEqual(f.read(), 'vpo_test-only\n')
+
     def test_an_unreadable_info_leaves_clearing_on_the_safe_side(self):
         # GET /info gets a 429 at the pin step, so whether the server offers circulating credit is not known and
         # auto_clear is not sent. With --clearing off this profile's client signs no set-off by itself, and join exits 1
@@ -382,6 +569,78 @@ class ConsoleSwitchChecksTheOwner(Cli):
         self.assertEqual(self.disk()['approvals'], 'none')
 
 
+class PrintedCommandsNameTheProfile(Cli):
+    """FX3-PY: every command the CLI prints for the owner to run names the profile it is for (`valun --profile NAME
+    ...`), so that run in another shell, whatever VALUN_PROFILE says there, it acts on this identity: doctor's FIX lines,
+    `valun mcp`'s not-joined hint, the policy, clearing and consent_loop hints (the attempts-list hint: AttemptsCommands)."""
+
+    def commands(self, out):
+        return re.findall(r'`valun ([^`]+)`', out)
+
+    def assertNamesProfile(self, out, name='s'):
+        cmds = self.commands(out)
+        self.assertTrue(cmds, out)
+        self.assertEqual([c for c in cmds if not c.startswith(f'--profile {name} ')], [], out)
+
+    def test_doctor_fix_lines(self):
+        rc, out = self.run_cli('doctor', '--server', SERVER)                  # not joined
+        self.assertEqual(rc, 1, out)
+        self.assertIn('FIX   Not connected: run `valun --profile s join --sandbox` (no invite: sandbox only), '
+                      '`valun --profile s join` (with an invite) or `valun --profile s enroll` (with an enrollment code).', out)
+        self.assertNamesProfile(out)
+        self.world.fail['GET /pilot/v1/info'] = [vc.ValunError('unreachable', 'cannot reach it')]
+        rc, out = self.run_cli('doctor', '--server', SERVER)
+        self.assertIn('Check `valun --profile s config server URL` and your connection.', out)
+        self.assertNamesProfile(out)
+        self.join()
+        disk = self.disk()
+        disk['pins'] = {'tracker_nft_id': '11' * 32, 'denomination': 'erg'}   # another network's tracker
+        with open(os.path.join(self.home.name, 'profiles', 's.json'), 'w', encoding='utf-8') as f:
+            json.dump(disk, f)
+        self.world.fail['GET /pilot/v1/me'] = [vc.ValunError('unauthorized', 'revoked', 401)]
+        rc, out = self.run_cli('doctor')
+        self.assertEqual(rc, 1, out)
+        self.assertIn('`valun --profile s config server URL` pins it again.', out)
+        self.assertIn('if the owner revoked it, `valun --profile s enroll` again.', out)
+        self.assertNamesProfile(out)
+        public = self.world.public
+        self.world.public = lambda pid: dict(public(pid), status='revoked')
+        rc, out = self.run_cli('doctor')
+        self.assertIn('The agent key is not active: ask the owner for an enrollment code, then `valun --profile s enroll`.', out)
+        self.assertNamesProfile(out)
+        # VALUN_PROFILE set but empty selects the default profile, and the commands name it
+        rc, out = self.main(['doctor', '--server', SERVER], env={'VALUN_PROFILE': ''})
+        self.assertIn('`valun --profile default join --sandbox`', out)
+        self.assertNamesProfile(out, 'default')
+
+    def test_the_mcp_not_joined_hint(self):
+        err = io.StringIO()
+        with mock.patch('valun.mcp_server.run', return_value=0) as run, contextlib.redirect_stderr(err):
+            rc, _out = self.run_cli('mcp')
+        self.assertEqual((rc, run.call_count), (0, 1))
+        self.assertIn("valun mcp: profile 's' is not joined yet; run `valun --profile s join` first.", err.getvalue())
+        self.assertNamesProfile(err.getvalue())
+
+    def test_the_policy_clearing_and_consent_loop_hints(self):
+        rc, out = self.run_cli('policy', 'show')                              # not joined: the local lines only
+        self.assertEqual(rc, 0, out)
+        self.assertIn('Local consent policy (this profile; `valun --profile s config consents.<role> on|off`)', out)
+        self.assertIn('Consent loop in `valun --profile s mcp` (`valun --profile s config consent_loop on|off`): off', out)
+        self.assertNamesProfile(out)
+        self.join()
+        rc, out = self.run_cli('policy', 'show')
+        self.assertEqual(rc, 0, out)
+        self.assertNamesProfile(out)
+        rc, out = self.run_cli('clearing', 'status')
+        self.assertEqual(rc, 0, out)
+        self.assertIn('Consent loop in `valun --profile s mcp`: on. `valun --profile s clearing run` signs now.', out)
+        self.assertNamesProfile(out)
+        rc, out = self.run_cli('config', 'consent_loop', 'off')
+        self.assertEqual(rc, 0, out)
+        self.assertIn('The consent loop runs inside `valun --profile s mcp` (restart it to start the loop)', out)
+        self.assertNamesProfile(out)
+
+
 class Settings(Cli):
     def test_consent_settings_and_policy_show(self):
         self.join(sandbox=False)
@@ -442,6 +701,36 @@ class Settings(Cli):
         rc, out = self.run_cli('clearing', 'status')
         self.assertIn('Recent decisions of your client:', out)
         self.assertIn('Cleared by set-off so far: 1 PC', out)
+
+
+class CallSignsValueSafeConsents(Cli):
+    """FX3-PY, decision D-3 a: `valun call` is one tool run with no consent loop behind it, so before valun_status and
+    valun_inbox (and no other read-only tool) it signs the value-safe consents, and its result says what it signed."""
+
+    def test_valun_call_status_signs_a_set_off_and_says_so(self):
+        from test_agent_circulation import DENOM, NFT, S, X
+        w = self.world
+        w.keys[S_ID], w.welcome = S, False
+        os.makedirs(os.path.join(self.home.name, 'profiles'), exist_ok=True)
+        with open(os.path.join(self.home.name, 'profiles', 's.json'), 'w', encoding='utf-8') as f:
+            json.dump({'server': SERVER, 'participant_id': S_ID, 'pubkey': S['pubkey'], 'secret': S['secret'].hex(),
+                       'agent_token': AGENT_TOKEN, 'approvals': 'none', 'consent_policy': dict(va.SANDBOX_CONSENT_POLICY),
+                       'consent_loop': 'off', 'pins': {'tracker_nft_id': NFT, 'denomination': DENOM}}, f)
+        w.set_edge(X_ID, S_ID, 1, now_ms() - 120_000 + 1)
+        w.set_edge(S_ID, X_ID, 2, now_ms() - 110_000 + 2, signature=sign_note(S, X['pubkey'], 2, now_ms() - 110_000 + 2))
+        w.clear()
+        (sid,) = [i for i, it in w.items.items() if it['state'] == 'collecting']
+        rc, out = self.run_cli('call', 'valun_directory')
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn('consents_signed_now', json.loads(out))
+        self.assertEqual(w.items[sid]['state'], 'collecting')
+        rc, out = self.run_cli('call', 'valun_status')
+        self.assertEqual(rc, 0, out)
+        r = json.loads(out)
+        self.assertEqual([(e['id'], e['kind'], e['role']) for e in r['consents_signed_now']], [(sid, 'setoff', 'member')])
+        self.assertEqual(w.items[sid]['state'], 'applied')
+        self.assertEqual((r['money_view']['you_hold_PC'], r['money_view']['you_owe_PC']), (0, 1))
+        self.assertNotIn('consents_last_run_ms', self.disk())        # a read's run: it never delays a full run
 
 
 class Tour(Cli):
@@ -1028,7 +1317,7 @@ class AttemptsCommands(Cli):
                                      'nothing to resolve'), one)
         self.assertTrue(two.endswith(': applied: the deal is paid by it'), two)
         self.assertNotIn('MAY HAVE APPLIED', out)
-        self.assertNotIn('valun attempts resolve', out)            # no advice to resolve anything
+        self.assertNotIn('attempts resolve', out)                  # no advice to resolve anything (in any form)
         # resolving it anyway: the owner is told that the deal is paid whatever is decided
         rc, out = self.run_cli('attempts', 'resolve', paid, '#1', '--not-applied', '--owner-token-file', self.token_file,
                                tty=True, answers=['n'])
@@ -1042,7 +1331,74 @@ class AttemptsCommands(Cli):
         rc, out = self.run_cli('attempts', 'list')
         self.assertEqual(rc, 0, out)
         self.assertIn('your claim 3 -> 2 PC', [x for x in out.splitlines() if 'MAY HAVE APPLIED' in x][0])
-        self.assertIn('valun attempts resolve DEAL ATTEMPT --applied', out)
+        self.assertIn('`valun --profile s attempts resolve DEAL ATTEMPT --applied`', out)    # FX3-PY: names the profile
+
+    def test_a_paid_deal_paid_by_a_payment_the_list_does_not_show_has_nothing_to_resolve(self):
+        # FX3-PY (FX2-PY verifier, item 8): records.paid_deals names a payment that no row of the list shows (paid_by
+        # None). The attempt that cannot be proven dead still has nothing to resolve: the deal is recorded as paid.
+        self.world.welcome = False
+        self.join()
+        disk, edge = self.disk(), self.world.edge(X_ID, S_ID)
+        t0 = now_ms() - 3 * 3_600_000
+        T1 = t0 + 600_000 - (t0 + 600_000) % 1000 + 999
+        paid = 'vd_' + 'a' * 16
+        first = {'deal_id': paid, 'route': 'transfer', 'edge': edge, 'prior': 3, 'prior_timestamp': t0,
+                 'prior_signature': None, 'total': 1, 'timestamp': T1, 'quote_digest': None, 'signed_at': None,
+                 'attempt_id': 'vt_' + 'a' * 16}
+        disk['transfer_attempts'] = {paid: [first, dict(first, timestamp=T1 + 60_000, attempt_id='vt_' + 'b' * 16)]}
+        disk.setdefault('records', {})['paid_deals'] = {paid: {'route': 'transfer', 'edge': edge, 'total': 1,
+                                                               'timestamp': T1 + 120_000}}       # matches no row
+        self.write(disk)
+        self.world.set_edge(X_ID, S_ID, 1, T1 + 60_000)
+        c = self.client()
+        read = c.sync_edges()                                      # as `valun attempts list` reads them
+        rows = c.payment_attempts(edges=read['edges'], doubtful=read['doubtful'])
+        self.assertEqual([(r['ref'], r['state'], r['paid'], r['paid_by']) for r in rows],
+                         [('#1', 'unknown', True, None), ('#2', 'applied', True, None)])
+        rc, out = self.run_cli('attempts', 'list')
+        self.assertEqual(rc, 0, out)
+        lines = out.splitlines()
+        self.assertIn(f'deal {paid}: recorded as paid', lines)
+        (one,) = [x for x in lines if x.startswith('  #1 ')]
+        self.assertTrue(one.endswith(": cannot be proven dead from your client's records, but the deal is recorded as "
+                                     'paid: nothing to resolve'), one)
+        self.assertNotIn('MAY HAVE APPLIED', out)
+        self.assertNotIn('attempts resolve', out)                  # no advice to resolve anything
+
+    def test_a_local_only_plan_resolves_only_the_attempt_shown(self):
+        # FX3-PY (FX2-PY verifier, item 3): the first plan changes only the client's records (a credit note: plan local
+        # 'note'). While 'Resolve it?' waits, another process drops the first of the deal's two bound-note attempts, so
+        # that #1 now names the other one: resolve_attempt refuses (attempt_changed) before anything is sent or recorded.
+        S = self.keyed_profile()
+        w = self.world
+        did = w.delivered_deal(payer=S_ID, payee=M_ID, service='notary', text='hello')
+        mk = w.pk(M_ID)
+        t0 = now_ms() - 3 * 3_600_000
+        ts = t0 + 600_000 - (t0 + 600_000) % 1000 + 997
+        w.set_edge(S_ID, M_ID, 2, t0, signature=sign_note(S, mk, 2, t0))
+        note = {'deal_id': did, 'route': 'note', 'edge': w.edge(S_ID, M_ID), 'prior': 2, 'prior_timestamp': t0,
+                'prior_signature': sign_note(S, mk, 2, t0), 'total': 4, 'timestamp': ts, 'quote_digest': None,
+                'signed_at': None}
+        disk = self.disk()
+        disk['transfer_attempts'] = {did: [note, dict(note, timestamp=ts + 1000)]}
+        self.write(disk)
+        w.set_edge(S_ID, M_ID, 1, ts + 2001, kind='setoff', ref='vs_0123456789abcdef', signature=sign_note(S, mk, 1, ts + 2001))
+
+        def drop_first():
+            d = self.disk()
+            d['transfer_attempts'][did].pop(0)
+            self.write(d)
+        with mock.patch('builtins.input', side_effect=self.asking(drop_first)):
+            rc, out = self.run_cli('attempts', 'resolve', did, '#1', '--not-applied', '--owner-token-file', self.token_file,
+                                   tty=True)
+        self.assertEqual(rc, 1, out)
+        self.assertIn('The server holds no payment attempt for a credit note', out)     # the local-only plan was shown
+        self.assertEqual([p for p, _n in self.asked], ['Resolve it? [y/N] '])           # one confirmation, as for a note
+        self.assertEqual(json.loads(out.strip().splitlines()[-1])['error'], 'attempt_changed')
+        self.assertNotIn('GET /pilot/v1/owner', w.requests()[self.asked[-1][1]:])      # no owner check after it
+        self.assertEqual(w.resolutions, [])
+        self.assertEqual([r.get('outcome') for r in self.disk()['transfer_attempts'][did]], [None])
+        self.assertNotIn('paid_deals', self.disk().get('records') or {})
 
 
 class EarnAndBuy(Cli):
