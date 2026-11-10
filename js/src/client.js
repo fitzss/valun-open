@@ -1411,7 +1411,9 @@ export class Client {
    *
    * Saved before anything is sent (R9): the R4 record of the three slots, the payment attempt (transfer_attempts), the
    * pending decrease of my claim on A (records) and approved_payments[deal_id] = the quote digest. A 409 transfer_stale
-   * that the server answers with a fresh template is retried once under the same quote digest; one that names the
+   * that the server answers with a fresh template is checked once more under the same quote digest: D-1 signs it only
+   * as the identical operation (the first attempt's timestamp); a template at a new T is transfer_window_open until the
+   * first attempt is dead (audit VS-1: both would acknowledge only totals, and both could apply); one that names the
    * transfer it recorded (transfer_id, regenerated_as) is not retried, and the deal view is returned. paid_by_transfer
    * records the deal as paid; a refusal, or payment_due, forgets the pending entry, and the attempt stays until it is
    * dead (with the server's id of it, attempt_id, once known). Resolves to the deal view.

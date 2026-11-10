@@ -4,10 +4,10 @@
  "python_sources_sha256": {
   "agent.py": "88e765543dadf024d245ba71fa78221a350505c21a85a0b2368b08e407f39f89",
   "basis.py": "3bd5d7f482f562d9a898d7af637838d7c10aee6d9b4628a6aea69ff25eb26f6d",
-  "client.py": "063e243c0d2c2c1d3c387008fde9f546dad0210965e3706e13db17b0226bdd4c",
+  "client.py": "0368b0b3ed99e19e24a29c2d4b5b2209a7158096959d37dd760ce61f25fa60c2",
   "mcp_server.py": "fcc7884da179930eed57cdf8a9d66c9fa957d82ca204f677f8fc5c370da5e017",
   "measure.py": "f4305cf1fe54ac137fa3aa201b0904c0e88e6ecc8325a38a41c06197963579ec",
-  "novation.py": "125baa9e8935690e7567cbc278245adf3781168cba00f00b6106967c027fb007",
+  "novation.py": "941e629fe28d030215771513b5a9471730c92b9183f469218c023c7fb4261196",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "1e3a35e1dd70527bf9f241670aea53ba39b67de0c7b59c98d8076809a46ea0da",
   "schemas.py": "953417f78cf46bcda1078e3773e6b647426c10f4454c681b1da845877475e3bc"
@@ -51677,7 +51677,7 @@
    }
   },
   {
-   "name": "pay_by_transfer: transfer_stale with a fresh template is retried once under the same quote",
+   "name": "pay_by_transfer: transfer_stale with a fresh template at a new T is refused (transfer_window_open)",
    "method": "pay_by_transfer",
    "kwargs": {
     "deal_id": "vd_4444444444444444",
@@ -52095,6 +52095,570 @@
    },
    "store": "alice",
    "result": {
+    "raises": "ValunError",
+    "code": "transfer_window_open",
+    "message": "an earlier payment attempt for this deal is not known to be dead yet; a different payment waits until its timestamp + 1 h + 2 min and a read-back"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/deals/vd_4444444444444444",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/deals/vd_4444444444444444/payment-options",
+     "body": null,
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_f0f0f0f0f0f0",
+     "body": null,
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    },
+    {
+     "key": "GET /pilot/v1/me",
+     "body": null,
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    },
+    {
+     "key": "GET /pilot/v1/deals/vd_4444444444444444/transfer-template?issuer=vp_f0f0f0f0f0f0",
+     "body": null,
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    },
+    {
+     "key": "POST /pilot/v1/deals/vd_4444444444444444/pay-by-transfer",
+     "body": {
+      "issuer_id": "vp_f0f0f0f0f0f0",
+      "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
+      "deliverable_sha256": "82a68159a5f150b368e6bc9a834741ffff86862414780ef56ab95eda1660794e",
+      "quote_digest": "2097ebb7ab264fe7db9bf427b9825e425838699ab5387f2b357127e077347adb",
+      "timestamp": 1793966397999,
+      "from_prior_total": 30,
+      "to_prior_total": 0,
+      "signatures": {
+       "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:prior": "<signature>",
+       "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:new": "<signature>",
+       "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": "<signature>"
+      }
+     },
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    }
+   ],
+   "signed": [
+    {
+     "key": "POST /pilot/v1/deals/vd_4444444444444444/pay-by-transfer",
+     "signed": [
+      {
+       "message_hex": "76616c756e2d70696c6f742f636f6d706c6574652f310a303433336137663963393435316362653866323666626465613864396262336465633464363063666632323732383931633638366335653232366235653639610a38326136383135396135663135306233363865366263396138333437343166666666383638363234313437383065663536616239356564613136363037393465",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+      },
+      {
+       "message_hex": "76616c756e2d70696c6f742f7061792f310a76645f343434343434343434343434343434340a32303937656262376162323634666537646239626634323762393832356534323538333836393961623533383766326233353731323765303737333437616462",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+      },
+      {
+       "message_hex": "3a31e6caca8006da8714d4d1da41ef57c6f969f9b400d2b1ff2f9e2758872f64000000000000001e000001a1b0bada2f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+      },
+      {
+       "message_hex": "3a31e6caca8006da8714d4d1da41ef57c6f969f9b400d2b1ff2f9e2758872f64000000000000000a000001a1b0bada2f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+      },
+      {
+       "message_hex": "6b1c4f21d78af88d7ac0d1e149831c911412a40ae918237f5446d35fc913dd090000000000000014000001a1b0bada2f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+      }
+     ]
+    }
+   ],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {},
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    },
+    "consent_roles_declared": "setoff,issuer,creditor",
+    "records": {
+     "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5": {
+      "confirmed": null,
+      "pending": []
+     }
+    },
+    "signed": {
+     "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5": {
+      "1793966397999": {
+       "op": "pay:vd_4444444444444444",
+       "slots": {
+        "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:prior": 30,
+        "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:new": 10
+       }
+      }
+     },
+     "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+      "1793966397999": {
+       "op": "pay:vd_4444444444444444",
+       "slots": {
+        "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": 20
+       }
+      }
+     }
+    },
+    "transfer_attempts": {
+     "vd_4444444444444444": [
+      {
+       "deal_id": "vd_4444444444444444",
+       "route": "transfer",
+       "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+       "prior": 30,
+       "prior_timestamp": 1793965500001,
+       "total": 10,
+       "timestamp": 1793966397999,
+       "quote_digest": "2097ebb7ab264fe7db9bf427b9825e425838699ab5387f2b357127e077347adb",
+       "signed_at": "2026-11-06T12:00:00.000Z"
+      }
+     ]
+    },
+    "approved_payments": {
+     "vd_4444444444444444": "2097ebb7ab264fe7db9bf427b9825e425838699ab5387f2b357127e077347adb"
+    }
+   }
+  },
+  {
+   "name": "pay_by_transfer: transfer_stale with the same template is signed again once (the identical operation)",
+   "method": "pay_by_transfer",
+   "kwargs": {
+    "deal_id": "vd_4444444444444444",
+    "issuer": "frank"
+   },
+   "routes": {
+    "GET /pilot/v1/deals/vd_4444444444444444": {
+     "body": {
+      "id": "vd_4444444444444444",
+      "status": "delivered",
+      "your_role": "payer",
+      "counterparty": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "next_actions": [],
+      "current": {
+       "version": 1,
+       "by": "vp_a1a1a1a1a1a1",
+       "state": "agreed",
+       "terms": {
+        "protocol": "valun-deal/1",
+        "network": "valun-pilot-1",
+        "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+        "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+        "deal_id": "vd_4444444444444444",
+        "version": 1,
+        "prior_terms_hash": null,
+        "nonce": "abababababababababababababababab",
+        "proposer": "vp_a1a1a1a1a1a1",
+        "payer": {
+         "id": "vp_a1a1a1a1a1a1",
+         "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+        },
+        "payee": {
+         "id": "vp_b0b0b0b0b0b0",
+         "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+        },
+        "service": {
+         "title": "Research brief",
+         "description": "A 300-500 word research brief with at least 3 cited sources.",
+         "deliverable": "Markdown, one file."
+        },
+        "price": {
+         "amount": 20,
+         "unit": "PC"
+        },
+        "consideration": "credit_note_on_delivery_accepted",
+        "deliver_by": "2099-01-02T00:00:00.000Z",
+        "offer_expires_at": "2099-01-01T00:00:00.000Z"
+       },
+       "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
+       "signature": "020248b292e63c2c666549b7c6ec637d16329ab99c070018fc415cc83cbd593ce3763da839f2a986cfbc9b7cbf492e0160d73fb1cfd95c7c6cf49804218b663489"
+      },
+      "pending_counter": null,
+      "versions": [
+       {
+        "version": 1,
+        "by": "vp_a1a1a1a1a1a1",
+        "state": "open",
+        "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
+        "price": {
+         "amount": 20,
+         "unit": "PC"
+        }
+       }
+      ],
+      "history": [
+       {
+        "at": "2026-11-06T10:00:00.000Z",
+        "event": "proposed",
+        "by": "alice"
+       }
+      ],
+      "labels": {
+       "unit": "PC (pilot credits, no monetary value)"
+      },
+      "agreement": {
+       "version": 1,
+       "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
+       "formed_at": "2026-11-06T10:30:00.000Z",
+       "proposer_signature": "020248b292e63c2c666549b7c6ec637d16329ab99c070018fc415cc83cbd593ce3763da839f2a986cfbc9b7cbf492e0160d73fb1cfd95c7c6cf49804218b663489",
+       "acceptor_signature": "020a1406652a86cfb42f4b90c02d86a6caad36e678132178ba1310da4e4b1f2fff2ce0ee5546777069bb6e09486e3555d1cc643b5a248fc6e71f2f326aa92decda"
+      },
+      "delivery": {
+       "by": "vp_b0b0b0b0b0b0",
+       "title": "Brief",
+       "content": "# Brief\n\nword0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19\n\nSources: https://example.org/a, https://example.com/b and (https://en.wikipedia.org/wiki/Credit_(finance)).",
+       "sha256": "82a68159a5f150b368e6bc9a834741ffff86862414780ef56ab95eda1660794e",
+       "bytes": 2967,
+       "signature": "0316aaacd3f5cec343cdadf0113d18f01db9920d13d1fd52f782cfeeeebe19b5c3206a634b9ff5284545c68c5cfddc6ea520ce7f7f3bd970d7b67d89751231fe9f",
+       "at": "2026-11-06T11:00:00.000Z",
+       "late": false
+      }
+     }
+    },
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1"
+      ]
+     }
+    },
+    "GET /pilot/v1/me": {
+     "body": {
+      "participant": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "status": "active"
+      },
+      "mandate": {
+       "objective": "Buy short research briefs for the newsletter.",
+       "may_issue_credit": true,
+       "may_accept_credit": true,
+       "max_issue_per_deal": 30,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 5,
+       "min_payer_coverage_pct": 0,
+       "counterparties": "any",
+       "approve_above": 25,
+       "review_deliveries": false,
+       "expires_at": "2026-12-01T00:00:00.000Z",
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "mandate_version": 3,
+      "agent_limits": {
+       "max_issue_per_deal": 20,
+       "min_price_as_payee": 8,
+       "notes": "Briefs under 20 PC; prefer sources.",
+       "set_at": "2026-11-05T09:00:00.000Z"
+      },
+      "effective_limits": {
+       "max_issue_per_deal": 20,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 8,
+       "min_payer_coverage_pct": 0,
+       "may_accept_credit": true,
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "position": {
+       "claims_held_PC": 0,
+       "owes_PC": 10,
+       "outstanding": true
+      },
+      "authority": {
+       "mandate_expires_at": "2026-12-01T00:00:00.000Z"
+      }
+     }
+    },
+    "GET /pilot/v1/deals/vd_4444444444444444/payment-options": {
+     "body": {
+      "deal_id": "vd_4444444444444444",
+      "price": 20,
+      "payee": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob",
+       "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+      },
+      "own_note": {
+       "available": true,
+       "why_not": null
+      },
+      "held_notes": [
+       {
+        "issuer": {
+         "id": "vp_f0f0f0f0f0f0",
+         "handle": "frank",
+         "pubkey": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297",
+         "operator_run": false
+        },
+        "held": 30,
+        "reserved": 0,
+        "spendable": 30,
+        "enough": true,
+        "payee_accepts": true,
+        "issuer_consents": "auto",
+        "payee_consents": "auto",
+        "why_not": null
+       }
+      ],
+      "pending_transfer": null,
+      "fallback_after": null
+     }
+    },
+    "GET /pilot/v1/deals/vd_4444444444444444/transfer-template?issuer=vp_f0f0f0f0f0f0": {
+     "body": {
+      "deal_id": "vd_4444444444444444",
+      "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
+      "deliverable_sha256": "82a68159a5f150b368e6bc9a834741ffff86862414780ef56ab95eda1660794e",
+      "issuer": {
+       "id": "vp_f0f0f0f0f0f0",
+       "handle": "frank",
+       "pubkey": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297"
+      },
+      "payer": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+      },
+      "payee": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob",
+       "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+      },
+      "amount": 20,
+      "timestamp": 1793966397999,
+      "from_edge": {
+       "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+       "before": {
+        "total": 30,
+        "timestamp": 1793965500001,
+        "signature": "02187f36ba5031b75092795e87dc16683966cecbf5b76a25b6d8fe0b6ced7d8f227cebc1a9559db66c6d90f4d13222fddd45463ebd034810c36a57ca0a205a8bfb"
+       },
+       "new_total": 10
+      },
+      "to_edge": {
+       "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+       "before": null,
+       "new_total": 20
+      },
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "quote_digest": "2097ebb7ab264fe7db9bf427b9825e425838699ab5387f2b357127e077347adb",
+      "collect_until": "2026-11-06T12:20:00.000Z",
+      "messages": {}
+     }
+    },
+    "POST /pilot/v1/deals/vd_4444444444444444/pay-by-transfer": {
+     "sequence": [
+      {
+       "status": 409,
+       "body": {
+        "error": "transfer_stale",
+        "message": "the edges moved",
+        "template": {
+         "deal_id": "vd_4444444444444444",
+         "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
+         "deliverable_sha256": "82a68159a5f150b368e6bc9a834741ffff86862414780ef56ab95eda1660794e",
+         "issuer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank",
+          "pubkey": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297"
+         },
+         "payer": {
+          "id": "vp_a1a1a1a1a1a1",
+          "handle": "alice",
+          "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+         },
+         "payee": {
+          "id": "vp_b0b0b0b0b0b0",
+          "handle": "bob",
+          "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+         },
+         "amount": 20,
+         "timestamp": 1793966397999,
+         "from_edge": {
+          "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+          "before": {
+           "total": 30,
+           "timestamp": 1793965500001,
+           "signature": "02187f36ba5031b75092795e87dc16683966cecbf5b76a25b6d8fe0b6ced7d8f227cebc1a9559db66c6d90f4d13222fddd45463ebd034810c36a57ca0a205a8bfb"
+          },
+          "new_total": 10
+         },
+         "to_edge": {
+          "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+          "before": null,
+          "new_total": 20
+         },
+         "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+         "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+         "quote_digest": "2097ebb7ab264fe7db9bf427b9825e425838699ab5387f2b357127e077347adb",
+         "collect_until": "2026-11-06T12:20:00.000Z",
+         "messages": {}
+        }
+       }
+      },
+      {
+       "body": {
+        "id": "vd_4444444444444444",
+        "status": "paid_by_transfer",
+        "your_role": "payer",
+        "counterparty": {
+         "id": "vp_b0b0b0b0b0b0",
+         "handle": "bob"
+        },
+        "next_actions": [],
+        "current": {
+         "version": 1,
+         "by": "vp_a1a1a1a1a1a1",
+         "state": "agreed",
+         "terms": {
+          "protocol": "valun-deal/1",
+          "network": "valun-pilot-1",
+          "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+          "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+          "deal_id": "vd_4444444444444444",
+          "version": 1,
+          "prior_terms_hash": null,
+          "nonce": "abababababababababababababababab",
+          "proposer": "vp_a1a1a1a1a1a1",
+          "payer": {
+           "id": "vp_a1a1a1a1a1a1",
+           "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+          },
+          "payee": {
+           "id": "vp_b0b0b0b0b0b0",
+           "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+          },
+          "service": {
+           "title": "Research brief",
+           "description": "A 300-500 word research brief with at least 3 cited sources.",
+           "deliverable": "Markdown, one file."
+          },
+          "price": {
+           "amount": 20,
+           "unit": "PC"
+          },
+          "consideration": "credit_note_on_delivery_accepted",
+          "deliver_by": "2099-01-02T00:00:00.000Z",
+          "offer_expires_at": "2099-01-01T00:00:00.000Z"
+         },
+         "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
+         "signature": "020248b292e63c2c666549b7c6ec637d16329ab99c070018fc415cc83cbd593ce3763da839f2a986cfbc9b7cbf492e0160d73fb1cfd95c7c6cf49804218b663489"
+        },
+        "pending_counter": null,
+        "versions": [
+         {
+          "version": 1,
+          "by": "vp_a1a1a1a1a1a1",
+          "state": "open",
+          "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
+          "price": {
+           "amount": 20,
+           "unit": "PC"
+          }
+         }
+        ],
+        "history": [
+         {
+          "at": "2026-11-06T10:00:00.000Z",
+          "event": "proposed",
+          "by": "alice"
+         }
+        ],
+        "labels": {
+         "unit": "PC (pilot credits, no monetary value)"
+        },
+        "agreement": {
+         "version": 1,
+         "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
+         "formed_at": "2026-11-06T10:30:00.000Z",
+         "proposer_signature": "020248b292e63c2c666549b7c6ec637d16329ab99c070018fc415cc83cbd593ce3763da839f2a986cfbc9b7cbf492e0160d73fb1cfd95c7c6cf49804218b663489",
+         "acceptor_signature": "020a1406652a86cfb42f4b90c02d86a6caad36e678132178ba1310da4e4b1f2fff2ce0ee5546777069bb6e09486e3555d1cc643b5a248fc6e71f2f326aa92decda"
+        },
+        "delivery": {
+         "by": "vp_b0b0b0b0b0b0",
+         "title": "Brief",
+         "content": "# Brief\n\nword0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19\n\nSources: https://example.org/a, https://example.com/b and (https://en.wikipedia.org/wiki/Credit_(finance)).",
+         "sha256": "82a68159a5f150b368e6bc9a834741ffff86862414780ef56ab95eda1660794e",
+         "bytes": 2967,
+         "signature": "0316aaacd3f5cec343cdadf0113d18f01db9920d13d1fd52f782cfeeeebe19b5c3206a634b9ff5284545c68c5cfddc6ea520ce7f7f3bd970d7b67d89751231fe9f",
+         "at": "2026-11-06T11:00:00.000Z",
+         "late": false
+        },
+        "payment": {
+         "route": "transfer",
+         "transfer_id": "vt_4d4d4d4d4d4d4d4d",
+         "state": "applied"
+        }
+       }
+      }
+     ]
+    }
+   },
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    }
+   },
+   "store": "alice",
+   "result": {
     "value": {
      "id": "vd_4444444444444444",
      "status": "paid_by_transfer",
@@ -52250,9 +52814,9 @@
       "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
       "deliverable_sha256": "82a68159a5f150b368e6bc9a834741ffff86862414780ef56ab95eda1660794e",
       "quote_digest": "2097ebb7ab264fe7db9bf427b9825e425838699ab5387f2b357127e077347adb",
-      "timestamp": 1793966398999,
+      "timestamp": 1793966397999,
       "from_prior_total": 30,
-      "to_prior_total": 5,
+      "to_prior_total": 0,
       "signatures": {
        "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:prior": "<signature>",
        "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:new": "<signature>",
@@ -52300,15 +52864,15 @@
        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
       },
       {
-       "message_hex": "3a31e6caca8006da8714d4d1da41ef57c6f969f9b400d2b1ff2f9e2758872f64000000000000001e000001a1b0bade176869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "message_hex": "3a31e6caca8006da8714d4d1da41ef57c6f969f9b400d2b1ff2f9e2758872f64000000000000001e000001a1b0bada2f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
       },
       {
-       "message_hex": "3a31e6caca8006da8714d4d1da41ef57c6f969f9b400d2b1ff2f9e2758872f64000000000000000a000001a1b0bade176869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "message_hex": "3a31e6caca8006da8714d4d1da41ef57c6f969f9b400d2b1ff2f9e2758872f64000000000000000a000001a1b0bada2f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
       },
       {
-       "message_hex": "6b1c4f21d78af88d7ac0d1e149831c911412a40ae918237f5446d35fc913dd090000000000000019000001a1b0bade176869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "message_hex": "6b1c4f21d78af88d7ac0d1e149831c911412a40ae918237f5446d35fc913dd090000000000000014000001a1b0bada2f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
       }
      ]
@@ -52338,7 +52902,7 @@
       "pending": [
        {
         "total": 10,
-        "timestamp": 1793966398999,
+        "timestamp": 1793966397999,
         "kind": "transfer",
         "ref": "vd_4444444444444444",
         "direction": "in",
@@ -52351,20 +52915,13 @@
        "route": "transfer",
        "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
        "total": 10,
-       "timestamp": 1793966398999
+       "timestamp": 1793966397999
       }
      }
     },
     "signed": {
      "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5": {
       "1793966397999": {
-       "op": "pay:vd_4444444444444444",
-       "slots": {
-        "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:prior": 30,
-        "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:new": 10
-       }
-      },
-      "1793966398999": {
        "op": "pay:vd_4444444444444444",
        "slots": {
         "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:prior": 30,
@@ -52377,12 +52934,6 @@
        "op": "pay:vd_4444444444444444",
        "slots": {
         "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": 20
-       }
-      },
-      "1793966398999": {
-       "op": "pay:vd_4444444444444444",
-       "slots": {
-        "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": 25
        }
       }
      }
@@ -52397,17 +52948,6 @@
        "prior_timestamp": 1793965500001,
        "total": 10,
        "timestamp": 1793966397999,
-       "quote_digest": "2097ebb7ab264fe7db9bf427b9825e425838699ab5387f2b357127e077347adb",
-       "signed_at": "2026-11-06T12:00:00.000Z"
-      },
-      {
-       "deal_id": "vd_4444444444444444",
-       "route": "transfer",
-       "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
-       "prior": 30,
-       "prior_timestamp": 1793965500001,
-       "total": 10,
-       "timestamp": 1793966398999,
        "quote_digest": "2097ebb7ab264fe7db9bf427b9825e425838699ab5387f2b357127e077347adb",
        "signed_at": "2026-11-06T12:00:00.000Z",
        "attempt_id": "vt_4d4d4d4d4d4d4d4d"
@@ -52695,7 +53235,7 @@
         "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
        },
        "amount": 20,
-       "timestamp": 1793966398999,
+       "timestamp": 1793966397999,
        "from_edge": {
         "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
         "before": {
@@ -52707,12 +53247,8 @@
        },
        "to_edge": {
         "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
-        "before": {
-         "total": 5,
-         "timestamp": 1793966398000,
-         "signature": "0279be404b930f1f187c9743564def48c175a4ada776a833136d350b154639a5665bae29eee29aa0a99c1aca793aaf7ceb1a67cc343081ae5921b435980cd0a212"
-        },
-        "new_total": 25
+        "before": null,
+        "new_total": 20
        },
        "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
        "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
@@ -52804,9 +53340,9 @@
       "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
       "deliverable_sha256": "82a68159a5f150b368e6bc9a834741ffff86862414780ef56ab95eda1660794e",
       "quote_digest": "2097ebb7ab264fe7db9bf427b9825e425838699ab5387f2b357127e077347adb",
-      "timestamp": 1793966398999,
+      "timestamp": 1793966397999,
       "from_prior_total": 30,
-      "to_prior_total": 5,
+      "to_prior_total": 0,
       "signatures": {
        "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:prior": "<signature>",
        "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:new": "<signature>",
@@ -52854,15 +53390,15 @@
        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
       },
       {
-       "message_hex": "3a31e6caca8006da8714d4d1da41ef57c6f969f9b400d2b1ff2f9e2758872f64000000000000001e000001a1b0bade176869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "message_hex": "3a31e6caca8006da8714d4d1da41ef57c6f969f9b400d2b1ff2f9e2758872f64000000000000001e000001a1b0bada2f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
       },
       {
-       "message_hex": "3a31e6caca8006da8714d4d1da41ef57c6f969f9b400d2b1ff2f9e2758872f64000000000000000a000001a1b0bade176869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "message_hex": "3a31e6caca8006da8714d4d1da41ef57c6f969f9b400d2b1ff2f9e2758872f64000000000000000a000001a1b0bada2f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
       },
       {
-       "message_hex": "6b1c4f21d78af88d7ac0d1e149831c911412a40ae918237f5446d35fc913dd090000000000000019000001a1b0bade176869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "message_hex": "6b1c4f21d78af88d7ac0d1e149831c911412a40ae918237f5446d35fc913dd090000000000000014000001a1b0bada2f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
       }
      ]
@@ -52900,13 +53436,6 @@
         "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:prior": 30,
         "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:new": 10
        }
-      },
-      "1793966398999": {
-       "op": "pay:vd_4444444444444444",
-       "slots": {
-        "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:prior": 30,
-        "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:new": 10
-       }
       }
      },
      "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
@@ -52914,12 +53443,6 @@
        "op": "pay:vd_4444444444444444",
        "slots": {
         "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": 20
-       }
-      },
-      "1793966398999": {
-       "op": "pay:vd_4444444444444444",
-       "slots": {
-        "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": 25
        }
       }
      }
@@ -52934,17 +53457,6 @@
        "prior_timestamp": 1793965500001,
        "total": 10,
        "timestamp": 1793966397999,
-       "quote_digest": "2097ebb7ab264fe7db9bf427b9825e425838699ab5387f2b357127e077347adb",
-       "signed_at": "2026-11-06T12:00:00.000Z"
-      },
-      {
-       "deal_id": "vd_4444444444444444",
-       "route": "transfer",
-       "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
-       "prior": 30,
-       "prior_timestamp": 1793965500001,
-       "total": 10,
-       "timestamp": 1793966398999,
        "quote_digest": "2097ebb7ab264fe7db9bf427b9825e425838699ab5387f2b357127e077347adb",
        "signed_at": "2026-11-06T12:00:00.000Z"
       }

@@ -4,16 +4,16 @@
  "python_sources_sha256": {
   "agent.py": "88e765543dadf024d245ba71fa78221a350505c21a85a0b2368b08e407f39f89",
   "basis.py": "3bd5d7f482f562d9a898d7af637838d7c10aee6d9b4628a6aea69ff25eb26f6d",
-  "client.py": "063e243c0d2c2c1d3c387008fde9f546dad0210965e3706e13db17b0226bdd4c",
+  "client.py": "0368b0b3ed99e19e24a29c2d4b5b2209a7158096959d37dd760ce61f25fa60c2",
   "mcp_server.py": "fcc7884da179930eed57cdf8a9d66c9fa957d82ca204f677f8fc5c370da5e017",
   "measure.py": "f4305cf1fe54ac137fa3aa201b0904c0e88e6ecc8325a38a41c06197963579ec",
-  "novation.py": "125baa9e8935690e7567cbc278245adf3781168cba00f00b6106967c027fb007",
+  "novation.py": "941e629fe28d030215771513b5a9471730c92b9183f469218c023c7fb4261196",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "1e3a35e1dd70527bf9f241670aea53ba39b67de0c7b59c98d8076809a46ea0da",
   "schemas.py": "953417f78cf46bcda1078e3773e6b647426c10f4454c681b1da845877475e3bc"
  },
  "python_tests_sha256": {
-  "test_novation.py": "0e958cec3d79bd9e55df2dd3cdedf4f613aec31e1afadd8516c589122b56f080"
+  "test_novation.py": "90f8bc133aaf4ddbb73a805143db66ec0a95be37e231b71d085428253c92871c"
  },
  "t0_ms": 1793966400000,
  "nft": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
@@ -21933,7 +21933,268 @@
    "floats": false
   },
   {
-   "name": "payer consent: sign (same prior as the earlier attempt)",
+   "name": "payer consent: sign (the same operation as the earlier attempt: same prior, same T)",
+   "evaluator": "evaluate_consent",
+   "item": {
+    "kind": "transfer",
+    "id": "vt_0123456789abcdef",
+    "state": "collecting",
+    "your_roles": [
+     "payer"
+    ],
+    "created_at": "2026-11-08T12:00:00.000Z",
+    "expires_at": "2026-11-08T12:20:00.000Z",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "edges": [
+     {
+      "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+      "issuer": {
+       "id": "vp_a0a0a0a0a0a0",
+       "handle": "h-a0"
+      },
+      "recipient": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "h-b0"
+      },
+      "your_role": "creditor",
+      "before": {
+       "total": 10,
+       "timestamp": 1793965560123,
+       "signature": "03acd3c5f2d5970b6ea277e92626b7e7e9c7b0765c8bb6f85a8de80cbd9d083dab3000b7f7b385bb65e369538a069922f1d037a545747e6ca525792f708613e012"
+      },
+      "change": -3,
+      "new_total": 7,
+      "timestamp": 1793966457999,
+      "revision": 1,
+      "slots": [
+       "prior",
+       "new"
+      ],
+      "signed_by_you": []
+     },
+     {
+      "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc",
+      "issuer": {
+       "id": "vp_a0a0a0a0a0a0",
+       "handle": "h-a0"
+      },
+      "recipient": {
+       "id": "vp_c0c0c0c0c0c0",
+       "handle": "h-c0"
+      },
+      "your_role": "payer",
+      "before": {
+       "total": 4,
+       "timestamp": 1793965660124,
+       "signature": "033a40d923e1bf8fd8bf53564b8334fd47eec0f9118dd1444aed0174c62f1893a5206877e744ee56526c67e93e9dbdfa463cbbd25552cf99cbc565a6005e831cf1"
+      },
+      "change": 3,
+      "new_total": 7,
+      "timestamp": 1793966457999,
+      "revision": 1,
+      "slots": [
+       "new"
+      ],
+      "signed_by_you": []
+     }
+    ],
+    "context": {
+     "issuer": {
+      "id": "vp_a0a0a0a0a0a0",
+      "handle": "issuer-a"
+     },
+     "payer": {
+      "id": "vp_b0b0b0b0b0b0",
+      "handle": "payer-b"
+     },
+     "payee": {
+      "id": "vp_c0c0c0c0c0c0",
+      "handle": "payee-c"
+     },
+     "amount": 3,
+     "deal": {
+      "deal_id": "vd_0123456789abcdef",
+      "terms_hash": "b5c6bbfc4b88b9943ab9663e9f72c1b384994a5024340a86e0f5afb707ac3d3b",
+      "price": 3,
+      "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
+     }
+    },
+    "summary": {
+     "your_net_change_PC": 0,
+     "your_total_owed_change_PC": 0
+    }
+   },
+   "ctx": {
+    "me_pk": "038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+    "me_id": "vp_b0b0b0b0b0b0",
+    "now_ms": 1793966460123,
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "records": {},
+    "signed": {},
+    "transfer_attempts": {
+     "vd_0123456789abcdef": [
+      {
+       "deal_id": "vd_0123456789abcdef",
+       "route": "transfer",
+       "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+       "prior": 10,
+       "total": 7,
+       "timestamp": 1793966457999,
+       "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
+      }
+     ]
+    },
+    "novated_edges": {},
+    "features": [
+     "bound_notes/1",
+     "circulation/1"
+    ],
+    "deal": {
+     "deal_id": "vd_0123456789abcdef",
+     "network": "valun-pilot-1",
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+     "terms_hash": "b5c6bbfc4b88b9943ab9663e9f72c1b384994a5024340a86e0f5afb707ac3d3b",
+     "deliverable_sha256": "353b9c2153fe820efd75bd0036a5bf9f5b9af738a9d373417265a6390318ec57",
+     "price": 3,
+     "payer": {
+      "id": "vp_b0b0b0b0b0b0",
+      "pubkey": "038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7"
+     },
+     "payee": {
+      "id": "vp_c0c0c0c0c0c0",
+      "pubkey": "02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc"
+     },
+     "delivered": false,
+     "transfer_id": null
+    },
+    "payee_current_pk": "02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc",
+    "mandate": {
+     "pay_with_held_notes": "when_asked"
+    }
+   },
+   "result": {
+    "ok": true,
+    "code": null,
+    "to_sign": [
+     [
+      "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7:prior",
+      "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed",
+      "038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+      10,
+      1793966457999
+     ],
+     [
+      "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7:new",
+      "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed",
+      "038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+      7,
+      1793966457999
+     ],
+     [
+      "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc:new",
+      "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed",
+      "02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc",
+      7,
+      1793966457999
+     ]
+    ],
+    "summary": {
+     "role": "payer",
+     "kind": "transfer",
+     "id": "vt_0123456789abcdef",
+     "deal_id": "vd_0123456789abcdef",
+     "timestamp": 1793966457999,
+     "amount": 3,
+     "edges": [
+      {
+       "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+       "your_role": "creditor",
+       "before_total": 10,
+       "new_total": 7,
+       "change": -3,
+       "timestamp": 1793966457999
+      },
+      {
+       "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc",
+       "your_role": "payer",
+       "before_total": 4,
+       "new_total": 7,
+       "change": 3,
+       "timestamp": 1793966457999
+      }
+     ],
+     "your_net_change_PC": -3,
+     "your_total_owed_change_PC": 0,
+     "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399",
+     "advisories": [],
+     "applied": [],
+     "paid_deals": {},
+     "retry_after_ms": null,
+     "needs_read_back": [],
+     "reason": null
+    },
+    "write_ahead": {
+     "op": "pay:vd_0123456789abcdef",
+     "signed": [
+      {
+       "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+       "timestamp": 1793966457999,
+       "op": "pay:vd_0123456789abcdef",
+       "slots": {
+        "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7:prior": 10,
+        "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7:new": 7
+       }
+      },
+      {
+       "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc",
+       "timestamp": 1793966457999,
+       "op": "pay:vd_0123456789abcdef",
+       "slots": {
+        "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc:new": 7
+       }
+      }
+     ],
+     "pending": [
+      {
+       "pair": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+       "total": 7,
+       "timestamp": 1793966457999,
+       "kind": "transfer",
+       "ref": "vd_0123456789abcdef",
+       "direction": "in"
+      }
+     ],
+     "attempt": {
+      "deal_id": "vd_0123456789abcdef",
+      "route": "transfer",
+      "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+      "prior": 10,
+      "prior_timestamp": 1793965560123,
+      "prior_signature": "03acd3c5f2d5970b6ea277e92626b7e7e9c7b0765c8bb6f85a8de80cbd9d083dab3000b7f7b385bb65e369538a069922f1d037a545747e6ca525792f708613e012",
+      "total": 7,
+      "timestamp": 1793966457999,
+      "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
+     },
+     "attempts_seen": [
+      [
+       "transfer",
+       "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+       7,
+       1793966457999
+      ]
+     ]
+    }
+   },
+   "floats": false
+  },
+  {
+   "name": "payer consent: a regenerated transfer while the earlier attempt is alive",
    "evaluator": "evaluate_consent",
    "item": {
     "kind": "transfer",
@@ -22079,31 +22340,9 @@
     }
    },
    "result": {
-    "ok": true,
-    "code": null,
-    "to_sign": [
-     [
-      "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7:prior",
-      "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed",
-      "038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
-      10,
-      1793966457999
-     ],
-     [
-      "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7:new",
-      "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed",
-      "038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
-      7,
-      1793966457999
-     ],
-     [
-      "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc:new",
-      "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed",
-      "02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc",
-      7,
-      1793966457999
-     ]
-    ],
+    "ok": false,
+    "code": "transfer_window_open",
+    "to_sign": [],
     "summary": {
      "role": "payer",
      "kind": "transfer",
@@ -22131,65 +22370,394 @@
      ],
      "your_net_change_PC": -3,
      "your_total_owed_change_PC": 0,
+     "quote_digest": null,
+     "advisories": [],
+     "applied": [],
+     "paid_deals": {},
+     "retry_after_ms": 3657877,
+     "needs_read_back": [],
+     "reason": "an earlier payment attempt for this deal is not known to be dead yet; a different payment waits until its timestamp + 1 h + 2 min and a read-back"
+    },
+    "write_ahead": null
+   },
+   "floats": false
+  },
+  {
+   "name": "payer consent: past the earlier attempt's window",
+   "evaluator": "evaluate_consent",
+   "item": {
+    "kind": "transfer",
+    "id": "vt_0123456789abcdef",
+    "state": "collecting",
+    "your_roles": [
+     "payer"
+    ],
+    "created_at": "2026-11-08T12:00:00.000Z",
+    "expires_at": "2026-11-08T12:20:00.000Z",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "edges": [
+     {
+      "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+      "issuer": {
+       "id": "vp_a0a0a0a0a0a0",
+       "handle": "h-a0"
+      },
+      "recipient": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "h-b0"
+      },
+      "your_role": "creditor",
+      "before": {
+       "total": 10,
+       "timestamp": 1793965560123,
+       "signature": "03acd3c5f2d5970b6ea277e92626b7e7e9c7b0765c8bb6f85a8de80cbd9d083dab3000b7f7b385bb65e369538a069922f1d037a545747e6ca525792f708613e012"
+      },
+      "change": -3,
+      "new_total": 7,
+      "timestamp": 1793970125999,
+      "revision": 1,
+      "slots": [
+       "prior",
+       "new"
+      ],
+      "signed_by_you": []
+     },
+     {
+      "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc",
+      "issuer": {
+       "id": "vp_a0a0a0a0a0a0",
+       "handle": "h-a0"
+      },
+      "recipient": {
+       "id": "vp_c0c0c0c0c0c0",
+       "handle": "h-c0"
+      },
+      "your_role": "payer",
+      "before": {
+       "total": 4,
+       "timestamp": 1793965660124,
+       "signature": "033a40d923e1bf8fd8bf53564b8334fd47eec0f9118dd1444aed0174c62f1893a5206877e744ee56526c67e93e9dbdfa463cbbd25552cf99cbc565a6005e831cf1"
+      },
+      "change": 3,
+      "new_total": 7,
+      "timestamp": 1793970125999,
+      "revision": 1,
+      "slots": [
+       "new"
+      ],
+      "signed_by_you": []
+     }
+    ],
+    "context": {
+     "issuer": {
+      "id": "vp_a0a0a0a0a0a0",
+      "handle": "issuer-a"
+     },
+     "payer": {
+      "id": "vp_b0b0b0b0b0b0",
+      "handle": "payer-b"
+     },
+     "payee": {
+      "id": "vp_c0c0c0c0c0c0",
+      "handle": "payee-c"
+     },
+     "amount": 3,
+     "deal": {
+      "deal_id": "vd_0123456789abcdef",
+      "terms_hash": "b5c6bbfc4b88b9943ab9663e9f72c1b384994a5024340a86e0f5afb707ac3d3b",
+      "price": 3,
+      "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
+     }
+    },
+    "summary": {
+     "your_net_change_PC": 0,
+     "your_total_owed_change_PC": 0
+    }
+   },
+   "ctx": {
+    "me_pk": "038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+    "me_id": "vp_b0b0b0b0b0b0",
+    "now_ms": 1793970127999,
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "records": {},
+    "signed": {},
+    "transfer_attempts": {
+     "vd_0123456789abcdef": [
+      {
+       "deal_id": "vd_0123456789abcdef",
+       "route": "transfer",
+       "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+       "prior": 10,
+       "total": 7,
+       "timestamp": 1793966397999,
+       "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
+      }
+     ]
+    },
+    "novated_edges": {},
+    "features": [
+     "bound_notes/1",
+     "circulation/1"
+    ],
+    "deal": {
+     "deal_id": "vd_0123456789abcdef",
+     "network": "valun-pilot-1",
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+     "terms_hash": "b5c6bbfc4b88b9943ab9663e9f72c1b384994a5024340a86e0f5afb707ac3d3b",
+     "deliverable_sha256": "353b9c2153fe820efd75bd0036a5bf9f5b9af738a9d373417265a6390318ec57",
+     "price": 3,
+     "payer": {
+      "id": "vp_b0b0b0b0b0b0",
+      "pubkey": "038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7"
+     },
+     "payee": {
+      "id": "vp_c0c0c0c0c0c0",
+      "pubkey": "02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc"
+     },
+     "delivered": false,
+     "transfer_id": null
+    },
+    "payee_current_pk": "02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc",
+    "mandate": {
+     "pay_with_held_notes": "when_asked"
+    }
+   },
+   "result": {
+    "ok": false,
+    "code": "stale_quote",
+    "to_sign": [],
+    "summary": {
+     "role": "payer",
+     "kind": "transfer",
+     "id": "vt_0123456789abcdef",
+     "deal_id": "vd_0123456789abcdef",
+     "timestamp": 1793970125999,
+     "amount": 3,
+     "edges": [
+      {
+       "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+       "your_role": "creditor",
+       "before_total": 10,
+       "new_total": 7,
+       "change": -3,
+       "timestamp": 1793970125999
+      },
+      {
+       "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc",
+       "your_role": "payer",
+       "before_total": 4,
+       "new_total": 7,
+       "change": 3,
+       "timestamp": 1793970125999
+      }
+     ],
+     "your_net_change_PC": -3,
+     "your_total_owed_change_PC": 0,
      "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399",
      "advisories": [],
      "applied": [],
      "paid_deals": {},
      "retry_after_ms": null,
      "needs_read_back": [],
-     "reason": null
+     "reason": "this payment is not one your owner approved for an attempt of yours that is still within its window (T + 1 h + 2 min); a payment made again later needs a new approval"
     },
-    "write_ahead": {
-     "op": "pay:vd_0123456789abcdef",
-     "signed": [
+    "write_ahead": null
+   },
+   "floats": false
+  },
+  {
+   "name": "payer consent: past the window, with the approved quote recorded",
+   "evaluator": "evaluate_consent",
+   "item": {
+    "kind": "transfer",
+    "id": "vt_0123456789abcdef",
+    "state": "collecting",
+    "your_roles": [
+     "payer"
+    ],
+    "created_at": "2026-11-08T12:00:00.000Z",
+    "expires_at": "2026-11-08T12:20:00.000Z",
+    "network": "valun-pilot-1",
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "edges": [
+     {
+      "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+      "issuer": {
+       "id": "vp_a0a0a0a0a0a0",
+       "handle": "h-a0"
+      },
+      "recipient": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "h-b0"
+      },
+      "your_role": "creditor",
+      "before": {
+       "total": 10,
+       "timestamp": 1793965560123,
+       "signature": "03acd3c5f2d5970b6ea277e92626b7e7e9c7b0765c8bb6f85a8de80cbd9d083dab3000b7f7b385bb65e369538a069922f1d037a545747e6ca525792f708613e012"
+      },
+      "change": -3,
+      "new_total": 7,
+      "timestamp": 1793970125999,
+      "revision": 1,
+      "slots": [
+       "prior",
+       "new"
+      ],
+      "signed_by_you": []
+     },
+     {
+      "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc",
+      "issuer": {
+       "id": "vp_a0a0a0a0a0a0",
+       "handle": "h-a0"
+      },
+      "recipient": {
+       "id": "vp_c0c0c0c0c0c0",
+       "handle": "h-c0"
+      },
+      "your_role": "payer",
+      "before": {
+       "total": 4,
+       "timestamp": 1793965660124,
+       "signature": "033a40d923e1bf8fd8bf53564b8334fd47eec0f9118dd1444aed0174c62f1893a5206877e744ee56526c67e93e9dbdfa463cbbd25552cf99cbc565a6005e831cf1"
+      },
+      "change": 3,
+      "new_total": 7,
+      "timestamp": 1793970125999,
+      "revision": 1,
+      "slots": [
+       "new"
+      ],
+      "signed_by_you": []
+     }
+    ],
+    "context": {
+     "issuer": {
+      "id": "vp_a0a0a0a0a0a0",
+      "handle": "issuer-a"
+     },
+     "payer": {
+      "id": "vp_b0b0b0b0b0b0",
+      "handle": "payer-b"
+     },
+     "payee": {
+      "id": "vp_c0c0c0c0c0c0",
+      "handle": "payee-c"
+     },
+     "amount": 3,
+     "deal": {
+      "deal_id": "vd_0123456789abcdef",
+      "terms_hash": "b5c6bbfc4b88b9943ab9663e9f72c1b384994a5024340a86e0f5afb707ac3d3b",
+      "price": 3,
+      "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
+     }
+    },
+    "summary": {
+     "your_net_change_PC": 0,
+     "your_total_owed_change_PC": 0
+    }
+   },
+   "ctx": {
+    "me_pk": "038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+    "me_id": "vp_b0b0b0b0b0b0",
+    "now_ms": 1793970127999,
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "records": {},
+    "signed": {},
+    "transfer_attempts": {
+     "vd_0123456789abcdef": [
+      {
+       "deal_id": "vd_0123456789abcdef",
+       "route": "transfer",
+       "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
+       "prior": 10,
+       "total": 7,
+       "timestamp": 1793966397999,
+       "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
+      }
+     ]
+    },
+    "novated_edges": {},
+    "features": [
+     "bound_notes/1",
+     "circulation/1"
+    ],
+    "deal": {
+     "deal_id": "vd_0123456789abcdef",
+     "network": "valun-pilot-1",
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+     "terms_hash": "b5c6bbfc4b88b9943ab9663e9f72c1b384994a5024340a86e0f5afb707ac3d3b",
+     "deliverable_sha256": "353b9c2153fe820efd75bd0036a5bf9f5b9af738a9d373417265a6390318ec57",
+     "price": 3,
+     "payer": {
+      "id": "vp_b0b0b0b0b0b0",
+      "pubkey": "038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7"
+     },
+     "payee": {
+      "id": "vp_c0c0c0c0c0c0",
+      "pubkey": "02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc"
+     },
+     "delivered": false,
+     "transfer_id": null
+    },
+    "payee_current_pk": "02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc",
+    "mandate": {
+     "pay_with_held_notes": "when_asked"
+    },
+    "approved_quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
+   },
+   "result": {
+    "ok": false,
+    "code": "stale_quote",
+    "to_sign": [],
+    "summary": {
+     "role": "payer",
+     "kind": "transfer",
+     "id": "vt_0123456789abcdef",
+     "deal_id": "vd_0123456789abcdef",
+     "timestamp": 1793970125999,
+     "amount": 3,
+     "edges": [
       {
        "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
-       "timestamp": 1793966457999,
-       "op": "pay:vd_0123456789abcdef",
-       "slots": {
-        "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7:prior": 10,
-        "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7:new": 7
-       }
+       "your_role": "creditor",
+       "before_total": 10,
+       "new_total": 7,
+       "change": -3,
+       "timestamp": 1793970125999
       },
       {
        "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc",
-       "timestamp": 1793966457999,
-       "op": "pay:vd_0123456789abcdef",
-       "slots": {
-        "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>02af4129f0b328598a57b4d9c32e2ce3ce44e418fa2b95ee995919f9673157f9dc:new": 7
-       }
+       "your_role": "payer",
+       "before_total": 4,
+       "new_total": 7,
+       "change": 3,
+       "timestamp": 1793970125999
       }
      ],
-     "pending": [
-      {
-       "pair": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
-       "total": 7,
-       "timestamp": 1793966457999,
-       "kind": "transfer",
-       "ref": "vd_0123456789abcdef",
-       "direction": "in"
-      }
-     ],
-     "attempt": {
-      "deal_id": "vd_0123456789abcdef",
-      "route": "transfer",
-      "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
-      "prior": 10,
-      "prior_timestamp": 1793965560123,
-      "prior_signature": "03acd3c5f2d5970b6ea277e92626b7e7e9c7b0765c8bb6f85a8de80cbd9d083dab3000b7f7b385bb65e369538a069922f1d037a545747e6ca525792f708613e012",
-      "total": 7,
-      "timestamp": 1793966457999,
-      "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
-     },
-     "attempts_seen": [
-      [
-       "transfer",
-       "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
-       7,
-       1793966397999
-      ]
-     ]
-    }
+     "your_net_change_PC": -3,
+     "your_total_owed_change_PC": 0,
+     "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399",
+     "advisories": [],
+     "applied": [],
+     "paid_deals": {},
+     "retry_after_ms": null,
+     "needs_read_back": [],
+     "reason": "this payment is not one your owner approved for an attempt of yours that is still within its window (T + 1 h + 2 min); a payment made again later needs a new approval"
+    },
+    "write_ahead": null
    },
    "floats": false
   },
@@ -22299,7 +22867,7 @@
        "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
        "prior": 10,
        "total": 7,
-       "timestamp": 1793966397999,
+       "timestamp": 1793966457999,
        "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
       }
      ]
@@ -22480,7 +23048,7 @@
        "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
        "prior": 10,
        "total": 7,
-       "timestamp": 1793966397999,
+       "timestamp": 1793966457999,
        "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
       }
      ]
@@ -22652,7 +23220,7 @@
        "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
        "prior": 10,
        "total": 7,
-       "timestamp": 1793966397999,
+       "timestamp": 1793966457999,
        "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
       }
      ]
@@ -22824,7 +23392,7 @@
        "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
        "prior": 10,
        "total": 7,
-       "timestamp": 1793966397999,
+       "timestamp": 1793966457999,
        "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
       }
      ]
@@ -22996,7 +23564,7 @@
        "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
        "prior": 10,
        "total": 7,
-       "timestamp": 1793966397999,
+       "timestamp": 1793966457999,
        "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
       }
      ]
@@ -23416,7 +23984,7 @@
      "paid_deals": {},
      "retry_after_ms": null,
      "needs_read_back": [],
-     "reason": "this payment is not the one your owner approved (the quote changed)"
+     "reason": "this payment is not one your owner approved for an attempt of yours that is still within its window (T + 1 h + 2 min); a payment made again later needs a new approval"
     },
     "write_ahead": null
    },
@@ -23534,7 +24102,7 @@
        "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
        "prior": 10,
        "total": 7,
-       "timestamp": 1793966397999,
+       "timestamp": 1793966457999,
        "quote_digest": "abababababababababababababababababababababababababababababababab"
       }
      ]
@@ -23605,7 +24173,7 @@
      "paid_deals": {},
      "retry_after_ms": null,
      "needs_read_back": [],
-     "reason": "this payment is not the one your owner approved (the quote changed)"
+     "reason": "this payment is not one your owner approved for an attempt of yours that is still within its window (T + 1 h + 2 min); a payment made again later needs a new approval"
     },
     "write_ahead": null
    },
@@ -23723,7 +24291,7 @@
        "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
        "prior": 10,
        "total": 7,
-       "timestamp": 1793966397999,
+       "timestamp": 1793966457999,
        "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
       }
      ]
@@ -23910,7 +24478,7 @@
        "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
        "prior": 10,
        "total": 7,
-       "timestamp": 1793966397999,
+       "timestamp": 1793966457999,
        "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
       }
      ]
@@ -24082,7 +24650,7 @@
        "edge": "036d83c998eb7edd8369b8181ef039a6dc415e87b92c484409a874313e658f34ed>038b03d9f1e88817897abb220a1a98de69b7cd5f47b96d6596cb5972c0189f34d7",
        "prior": 10,
        "total": 7,
-       "timestamp": 1793966397999,
+       "timestamp": 1793966457999,
        "quote_digest": "0bda13fa126b76dc78fc4f342156606bba5a9afdd6e35527869097a9e9e71399"
       }
      ]

@@ -70,9 +70,9 @@ The checks, in this order (the first that fails gives the code; PROTOCOL.md 15.3
                              client itself resolved for the issuer's key (ctx issuer_ids), never an id the item names
   R12  pending_unbound_note  a novation on an edge where this client holds an ordinary credit note that can still
                              apply (pending, and later than the edge's state shown)
-       payment_attempt       a novation that brings an edge of mine (as issuer) to the acknowledged prior total of a
-                             bound note of mine on it that is later than the novation and can still apply (the client
-                             side of decision D-2 c: that note could then apply after it, and pay its deal twice)
+       payment_attempt       a novation, or a bound note, that brings an edge of mine (as issuer) to the acknowledged
+                             prior total of a bound note of mine on it that is later than it and can still apply (the
+                             client side of decision D-2 c: that note could then apply after it, and pay its deal twice)
   R4   timestamp_reused      a different operation (or other totals) already signed at the same (edge, timestamp)
 
 D-1, one live payment attempt per deal (R11 extended to own notes), with decision D-2 a (full edge states). An attempt
@@ -86,10 +86,15 @@ other state at or past its timestamp, including its prior or its new total at a 
 attempt_outcome_unknown, for the owner to resolve, unless my own records prove it dead (proven_dead: a later bound note
 of mine acknowledged the same prior state and applied, and nothing else of mine changed the edge in between); 'alive'
 (it may still apply) and 'unread' (its window has passed but its edge was not read) -> transfer_window_open, unless
-the new attempt is a same-kind retry that acknowledges the same prior on the same edge and the edge is still exactly
-the acknowledged prior state (total, timestamp and signature: then the attempts exclude each other at the tracker;
-any other state gives attempt_outcome_unknown); 'dead' (a read-back shows it did not apply and now > T + MAX_AGE_MS +
-FALLBACK_MARGIN_MS) -> no constraint. A state older than the one the attempt acknowledged (its prior_timestamp) or
+the new attempt is excluded by it at the tracker and the edge is still exactly the acknowledged prior state (total,
+timestamp and signature; any other state gives attempt_outcome_unknown): a bound-note retry of mine that acknowledges
+the same prior on the same edge (only my signature lowers my edge, and I never sign a novation or bound note that
+brings it back to the prior of a bound note of mine that can still apply), or a transfer signed again at the same
+timestamp (the identical operation). A transfer retry at another timestamp is NOT excluded (audit VS-1): the
+creditors' prior acknowledgments M(A,B,X,T) and M(A,C,Y,T) carry no prior timestamp, so two transfers signed for the
+same priors both stay valid whenever A->B and A->C come back to X and Y with older timestamps, which the issuer and the
+payee can arrange without me; it waits for the window like any other payment. 'dead' (a read-back shows it did not
+apply and now > T + MAX_AGE_MS + FALLBACK_MARGIN_MS) -> no constraint. A state older than the one the attempt acknowledged (its prior_timestamp) or
 than this client's own confirmed state of the edge is no read-back (an edge's timestamps only increase); a confirmed
 state at or past T counts as one. An ordinary (unbound) note never expires, so while it may still apply any other
 payment is attempt_outcome_unknown. A pending payment entry that no attempt record covers (an ordinary note, say)
@@ -119,8 +124,9 @@ ctx keys (only me_pk, now_ms and verify are checked as arguments; the others giv
   features         /info features (bound templates: bound_notes/1 makes an unbound template bound_note_required)
   deal             deal_context(...): the verified agreement (payer roles, bound notes, payee)
   payee_current_pk the payee's current directory key (payer roles, bound notes)
-  approved_quote_digest  the quote the owner approved (payer roles); a regenerated transfer falls back to the quote of
-                   an earlier attempt through the same issuer
+  approved_quote_digest  the quote the owner approved (payer roles); a regenerated transfer (payer consent) must also
+                   carry the quote of an earlier attempt of mine through the same issuer whose window is still open
+                   (T + MAX_AGE_MS + FALLBACK_MARGIN_MS), else stale_quote (audit AI-1)
   consent_policy   local: {setoff, as_issuer, as_new_creditor (booleans), max_PC, accept_issuers, refuse_issuers
                    (participant ids or public keys; accept_issuers may be 'any')}; absent = every role off
   mandate          GET /me effective_limits (or mandate): auto_clear, novate_own_debt, accept_transfers,
@@ -750,10 +756,19 @@ class _Run:
             looked.append((a, o, state))
         return looked
 
-    def one_live_attempt(self, deal_id, price, route, edge, prior):
-        """D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior) for the deal unless every
-        earlier attempt is dead or is excluded by this one at the tracker: the same route on the same edge,
-        acknowledging the same prior, while the edge is still exactly the state the earlier one acknowledged."""
+    def one_live_attempt(self, deal_id, price, route, edge, prior, timestamp=None):
+        """D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior, timestamp) for the deal unless
+        every earlier attempt is dead or is excluded by this one at the tracker: the same route on the same edge,
+        acknowledging the same prior, while the edge is still exactly the state the earlier one acknowledged; for a
+        transfer also at the same timestamp (the identical operation signed again: the tracker applies an edge's
+        operations at strictly increasing timestamps, so at most one of the two can apply).
+
+        Why a transfer retry at another timestamp is not excluded (audit VS-1): the prior acknowledgments are M(A,B,X,T)
+        and M(A,C,Y,T), with no prior timestamp, so two attempts signed for the same priors X and Y both stay valid
+        whenever both edges come back to X and Y with older timestamps, and the issuer A can raise A->B again, and C
+        move an amount out of A->C, without my signature. A note retry stays excluded at another timestamp: only my own
+        signature lowers my own edge, and I sign no novation (no_bound_note_restored) and no bound note (_bound) that
+        brings it back to the prior of a bound note of mine that can still apply."""
         self.not_paid_yet(deal_id)
         if deal_id in self.summary['paid_deals']:
             self.refuse('already_paid', 'a payment of yours for this deal shows as applied; refusing to pay it again')
@@ -766,7 +781,8 @@ class _Run:
                 self.refuse('already_paid', 'an earlier payment of yours for this deal applied; refusing to pay it again')
 
         def same(a):
-            return a['route'] == route and a['edge'] == edge and a['prior'] == prior
+            return (a['route'] == route and a['edge'] == edge and a['prior'] == prior
+                    and (route == 'note' or (timestamp is not None and a['timestamp'] == timestamp)))
 
         if any(o == 'unknown' or (o == 'alive' and same(a) and not exact_prior(a, s))
                or (o == 'alive' and not _expires(a) and not same(a)) for a, o, s in looked):
@@ -782,13 +798,16 @@ class _Run:
             self.refuse('transfer_window_open', 'an earlier payment attempt for this deal is not known to be dead yet; a '
                                                 'different payment waits until its timestamp + 1 h + 2 min and a read-back')
 
-    def approved_quote(self, deal_id, held_edge):
-        """The quote digest of an earlier transfer attempt for the deal through the same held note, if any."""
-        found = None
+    def approved_quotes(self, deal_id, held_edge):
+        """The quote digests of my earlier transfer attempts for the deal through the same held note whose window is
+        still open (now <= T + MAX_AGE_MS + FALLBACK_MARGIN_MS): the only quotes a payer consent re-signs under without
+        a new approval (audit AI-1: an approval never licenses a payment long after the attempt it was given for)."""
+        found = set()
         for a in self.attempts.get(deal_id) or []:
             if isinstance(a, dict) and a.get('route') == 'transfer' and a.get('edge') == held_edge \
-                    and isinstance(a.get('quote_digest'), str):
-                found = a['quote_digest']
+                    and isinstance(a.get('quote_digest'), str) and _u64(a.get('timestamp')) \
+                    and self.now <= a['timestamp'] + MAX_AGE_MS + FALLBACK_MARGIN_MS:
+                found.add(a['quote_digest'])
         return found
 
     # ----- R8 -----
@@ -855,8 +874,10 @@ class _Run:
         """R12 extended, the client side of decision D-2 c: never sign a novation that sets an edge of mine (as issuer)
         to the acknowledged prior total of a bound note of mine on that edge that is later than the novation and can
         still apply (within its maximum age, not known applied). That note could then apply after the novation: had an
-        earlier payment of its deal applied in between (a server can hide that), the deal would be paid twice.
-        `changes`: [(edge, new_total, timestamp)] of the novation's edges where I am the issuer."""
+        earlier payment of its deal applied in between (a server can hide that), the deal would be paid twice. Also run
+        for a bound note of mine (audit VS-1): a note for another deal can bring the edge back to that prior just as a
+        novation can, after a set-off lowered it below.
+        `changes`: [(edge, new_total, timestamp)] of the novation's edges where I am the issuer (or the note's edge)."""
         for edge, new_total, ts in changes:
             for deal_id, b in self.edge_attempts(edge):
                 if b['route'] != 'note' or b['timestamp'] % 1000 != BOUND_MS or b['timestamp'] <= ts \
@@ -947,7 +968,8 @@ def _bound(run, tpl):
     run.fresh(ts, [] if prior is None else [prior['timestamp']])
     run.show(edge, prior, mine=True)
     run.add_edge(edge, 'issuer', P, total, ts)
-    run.one_live_attempt(D, deal['price'], 'note', edge, P)
+    run.one_live_attempt(D, deal['price'], 'note', edge, P, ts)
+    run.no_bound_note_restored([(edge, total, ts)])
     op = 'note:' + D
     slots = [(slot_key(edge, 'prior'), I, R, P, ts), (slot_key(edge, 'new'), I, R, total, ts)]
     signed = run.no_reuse(op, slots)
@@ -1034,7 +1056,7 @@ def _payer(run, v, consent):
     run.show(dest, tb, mine=False)
     run.add_edge(held, 'creditor', X, X - a, T)
     run.add_edge(dest, 'payer', Y, Y + a, T)
-    run.one_live_attempt(D, deal['price'], 'transfer', held, X)
+    run.one_live_attempt(D, deal['price'], 'transfer', held, X, T)
     q = quote_digest({'network': deal['network'], 'tracker_nft_id': v['nft'], 'denomination': v['denom'],
                       'deal_id': D, 'terms_hash': deal['terms_hash'], 'deliverable_sha256': deal['deliverable_sha256'],
                       'issuer_pubkey': A, 'payer_pubkey': me, 'payee_pubkey': C, 'amount': a})
@@ -1042,10 +1064,11 @@ def _payer(run, v, consent):
     if v['server_quote'] is not None and v['server_quote'] != q:
         run.bad("the server's quote digest is not the one this client computes from the checked values")
     approved = run.ctx.get('approved_quote_digest')
-    if approved is None and consent:
-        approved = run.approved_quote(D, held)
-    if (consent and approved is None) or (approved is not None and approved != q):
+    if approved is not None and approved != q:
         run.refuse('stale_quote', 'this payment is not the one your owner approved (the quote changed)')
+    if consent and q not in run.approved_quotes(D, held):
+        run.refuse('stale_quote', 'this payment is not one your owner approved for an attempt of yours that is still '
+                                  'within its window (T + 1 h + 2 min); a payment made again later needs a new approval')
     m = run.ctx.get('mandate')
     if not isinstance(m, dict):
         run.refuse('policy_off', "your owner's mandate could not be read, so nothing is paid with a held note")
@@ -1400,7 +1423,7 @@ def check_payment(deal_id, price, route, edge, prior, ctx):
                 and _nat(prior)):
             run.bad('check_payment takes a deal id, its price, a route, an edge and a prior total')
         run.have_pins()
-        run.one_live_attempt(deal_id, price, route, edge, prior)
+        run.one_live_attempt(deal_id, price, route, edge, prior)   # no timestamp: never a same-T transfer retry
         return [], None
     r = _Run(ctx, 'bad_template', INITIATE_WINDOW_MS).execute(go, None)
     return {'ok': r['ok'], 'code': r['code'], 'summary': r['summary']}

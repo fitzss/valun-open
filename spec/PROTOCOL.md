@@ -1076,8 +1076,8 @@ decision for each case, `sign` or a refusal code, and a client that declares `ci
 | R8 Policy | apply the stricter of its local consent policy (which roles it signs by itself, a cap in PC per consent, issuers it accepts or refuses) and the owner's mandate (18.13): a role that is off, an amount over a cap, an issuer not accepted | `policy_off`, `policy_cap`, `issuer_refused` |
 | R9 Write-ahead | persist what it is about to sign (the `signed` record, the attempt, pending entries for every edge it changes) before sending it; if its records cannot be read, refuse everything | `records_unreadable` |
 | R10 Destination | send signatures only to the Valun server it pinned at enrollment | — |
-| R11 One live payment attempt per deal (decision D-1) | an attempt is any payment it signed for the deal: a transfer, a bound note or an ordinary note (recorded in `transfer_attempts`, with the full EdgeState it acknowledged). Classify each earlier attempt from its edge's current state: applied (its new state, or the records say so) → `already_paid`; another state at or past its timestamp, or an ordinary note that may still apply (ordinary notes never expire) → `attempt_outcome_unknown`, which only the owner resolves (18.8); may still apply, or its window has passed but its edge was not read back → `transfer_window_open` (the evaluation names the edges to read back, `needs_read_back`; the client reads `GET /edges` once and decides again); dead (read back at its prior state after T + 3 600 000 + 120 000 ms by its own clock) → no constraint. A same-kind retry that acknowledges the same prior on the same edge, while the edge is exactly that prior state, may be signed at once: the tracker lets only one of them apply | `transfer_window_open`, `attempt_outcome_unknown`, `already_paid` |
-| R12 Bound stickiness | once the server has advertised `bound_notes/1`, use bound templates; on an edge in its `novated_edges` record never sign an unbound note; never sign a novation on an edge where it holds an unapplied unbound note (`pending_unbound_note`); never sign a novation that brings an edge of its own (as issuer) back to the acknowledged prior of a bound note of its own that is later than the novation and may still apply (`payment_attempt`: the note could then apply after it, the client side of decision D-2 c) | `bound_note_required`; `pending_unbound_note`; `payment_attempt` |
+| R11 One live payment attempt per deal (decision D-1) | an attempt is any payment it signed for the deal: a transfer, a bound note or an ordinary note (recorded in `transfer_attempts`, with the full EdgeState it acknowledged). Classify each earlier attempt from its edge's current state: applied (its new state, or the records say so) → `already_paid`; another state at or past its timestamp, or an ordinary note that may still apply (ordinary notes never expire) → `attempt_outcome_unknown`, which only the owner resolves (18.8); may still apply, or its window has passed but its edge was not read back → `transfer_window_open` (the evaluation names the edges to read back, `needs_read_back`; the client reads `GET /edges` once and decides again); dead (read back at its prior state after T + 3 600 000 + 120 000 ms by its own clock) → no constraint. Two retries are excluded by the earlier attempt at the tracker and may be signed at once, while the edge is exactly the prior state it acknowledged: a bound note of its own that acknowledges the same prior on the same edge (only its own signature lowers its own edge, and R12 keeps it from bringing the edge back to a live bound note's prior), and a transfer signed again at the same T (the identical operation: an edge's operations apply at strictly increasing timestamps). A transfer at another T, even through the same issuer on the same priors, is not excluded: the creditors' prior acknowledgments M(A,B,X,T) and M(A,C,Y,T) carry no prior timestamp, so both transfers apply when A→B and A→C come back to X and Y between them, which the issuer and the payee can arrange without the payer (audit VS-1); it waits like any other payment. A payer consent (a regenerated transfer) is signed only under the quote of an attempt of its own whose window (T + 3 600 000 + 120 000 ms) is still open, never under an approval given for an older attempt (`stale_quote`, audit AI-1) | `transfer_window_open`, `attempt_outcome_unknown`, `already_paid` |
+| R12 Bound stickiness | once the server has advertised `bound_notes/1`, use bound templates; on an edge in its `novated_edges` record never sign an unbound note; never sign a novation on an edge where it holds an unapplied unbound note (`pending_unbound_note`); never sign a novation, or a bound note, that brings an edge of its own (as issuer) back to the acknowledged prior of a bound note of its own that is later than it and may still apply (`payment_attempt`: the note could then apply after it, the client side of decision D-2 c; the bound-note case since audit VS-1) | `bound_note_required`; `pending_unbound_note`; `payment_attempt` |
 | R13 Pins | `tracker_nft_id` and `denomination` equal the values it pinned at enrollment (or on its first run as a 0.4 client) | `tracker_mismatch` |
 
 The normative refusal codes, all of them: `bad_prior_signature`, `timestamp_domain`, `timestamp_reused`,
@@ -1209,10 +1209,14 @@ What circulating credit does not protect against, stated so that no party relies
    without it: once that edge has moved past an attempt's timestamp, the holder cannot tell from the edge alone whether
    the attempt applied. A server that hides an applied transfer and offers a regenerated one could obtain a second
    payment of the same deal, each signed for exactly the price (OPEN-QUESTIONS OQ-48). Since decision D-1 a client
-   keeps one live payment attempt per deal (15.3 R11): an edge that moved past T back to the attempt's prior total
-   counts as not applied, one at its new total as applied, and any other state past T is `attempt_outcome_unknown`,
-   which only the owner resolves (18.8). Read-backs still come from the server, so a stale but validly signed state is
-   caught only through the attempt's acknowledged `prior_timestamp` and the client's own records.
+   keeps one live payment attempt per deal (15.3 R11), and since decision D-2 a it compares full edge states: past T
+   only the attempt's exact new state (its new total at its own timestamp T) counts as applied, and any other state at
+   or past T, its prior total and its new total at a later timestamp included (an edge can come back to a total), is
+   `attempt_outcome_unknown`, which only the owner resolves (18.8). An attempt counts as not applied only when it is
+   dead: read back at a state older than T, after T + 3 600 000 + 120 000 ms. A regenerated transfer is signed only as
+   the identical operation, never at a new T while the earlier attempt may apply (audit VS-1). Read-backs still come
+   from the server, so a stale but validly signed state is caught only through the attempt's acknowledged
+   `prior_timestamp` and the client's own records.
 8. **A failed credit note that is still valid.** Ordinary notes have no maximum age; bound notes do (one hour, tracker
    v3.1). Since decision D-1 a payment of another kind waits: after a failed bound note the server refuses a transfer
    until the note's timestamp + 1 h + 60 s; a failed ordinary note that can still apply makes it refuse with
@@ -1242,7 +1246,7 @@ files). The vectors were regenerated from release v16 (valun-app `cfe698b`):
 | `basis-signatures.json` | Basis's official signature vectors TV001–TV011 |
 | `terms-validation.json` | 87 terms the real validator accepts (19) or refuses (68), with the exact error |
 | `transcript.json` | a 236-request run through the real route table, with what the server verified at each step; decline/dispute steps also list every statement form the server would accept for that body (`server_accepts`, from a dry run of the real code). Steps 1-147 run with circulation off and are byte-identical to release v13's. Steps 148-236 run with circulation on (the stand-in tracker enforces the v3.1 rules of 18.2, its binary pinned for the in-memory Pilot only): two new participants (nina, a client agent; sam, an agent the server runs); owners opting in; a policy refusal (`payment_not_accepted`, payee); a payment by transfer with client parties and its consents; a bound note after the novation, with no `ledger_mismatch`; a set-off proposed by the clearing engine, superseded by a held note (`held_note`, D-2 c) and proposed again; a payment refused when posted, kept as an attempt (D-2 b), and the cross-kind window it opens (D-1); a held bound note refused by the tracker after its maximum age (`novation_expired`, D-1 item 4) and signed again; a server-run payee whose slots are signed at once, attacks the server refuses (a puppet destination, an amplified slot), an outcome the read-back cannot decide (`outcome_unknown`, D-1 item 3) and the owner's resolution (D-2 d); and the empty roles header (D-3 b). Each `server_verified` entry names the body field that held the signature (`field`, a JSON pointer) and the edge of a note message; replayed calls carry `client_state`, `signature_fields` and `client_state_after` |
-| `circulation.json` | circulating credit: 17 timestamp cases (residue classes, the ordinary clamp, the server's choice of T, limits beyond the safe integers), 14 messages (a bound note and its prior acknowledgment, all seven transfer slots, both set-off slots), 3 quote digests (with the 18.3 worked example), 2 pay statements, 13 transfer and 9 set-off tracker requests with the stand-in tracker's outcome (the valid ones, and a standalone raised edge, a missing residue, a puppet destination, the four- and five-signature bodies, amplification, a colluding payer, set-off signatures used as a transfer, too old, an unknown field, ...), and 55 decisions of the signing firewall (27 consents, 18 payer templates, 10 bound templates) that cover every refusal code of 15.3 (all 28), `needs_read_back`, `policy_off` without a mandate and `deal_mismatch` without `me_id` |
+| `circulation.json` | circulating credit: 17 timestamp cases (residue classes, the ordinary clamp, the server's choice of T, limits beyond the safe integers), 14 messages (a bound note and its prior acknowledgment, all seven transfer slots, both set-off slots), 3 quote digests (with the 18.3 worked example), 2 pay statements, 13 transfer and 9 set-off tracker requests with the stand-in tracker's outcome (the valid ones, and a standalone raised edge, a missing residue, a puppet destination, the four- and five-signature bodies, amplification, a colluding payer, set-off signatures used as a transfer, too old, an unknown field, ...), and 58 decisions of the signing firewall (27 consents, 20 payer templates, 11 bound templates, the three audit VS-1 cases included) that cover every refusal code of 15.3 (all 28), `needs_read_back`, `policy_off` without a mandate and `deal_mismatch` without `me_id` |
 
 All keys, ids, codes and tokens in them are public test fixtures (the test keys are derived from public labels; tokens
 are replaced by placeholders). Never use them for anything real. `python spec/vectors/check_python.py` checks them
@@ -1306,9 +1310,10 @@ operator holds the sandbox agents' keys (18.15).
   signed (for a bound note by exactly new − prior, both values P signed) or (b) as old creditor in a transfer P signed
   (by exactly prior − new, both signed). A set-off never changes V(P). P's claim on an issuer grows only through notes
   that issuer signed, or as new creditor in a transfer P signed, by exactly the amount P signed.
-- **I-ONCE.** At most one attempt to pay a deal applies: attempts with the same issuer exclude each other at the
-  tracker (18.6); any other kind of payment is signed only after every earlier attempt is dead (18.8). (What this
-  rests on when the server misreports an outcome: 16.2, item 7.)
+- **I-ONCE.** At most one attempt to pay a deal applies: a client signs a new attempt only after every earlier one is
+  dead (18.8), except a bound-note retry on the same prior and the identical transfer signed again at the same T, which
+  the tracker excludes (15.3 R11). Two transfers through the same issuer at different T do not exclude each other at
+  the tracker v3.1 (audit VS-1, 18.6). (What this rests on when the server misreports an outcome: 16.2, item 7.)
 - **I-ATOMIC.** A novation changes all its edges in one tracker write, or none.
 - **I-WITHHOLD.** Nobody but the signer sees a collected signature until the tracker records it; signatures of
   novations that end without applying are purged (their sha256 kept); signatures are never logged.
@@ -1607,12 +1612,16 @@ C's signature over Y + a would still match; C's acknowledgment of Y then fails. 
 five signatures cover only the new totals, so if the edges moved between signing and submission, whoever held the
 signatures could move more of B's claim than B agreed to.)
 
-**Same-issuer attempts exclude each other.** Attempts to pay D with A's note that were built on the same A→B state carry
-B's acknowledgment of the same total X. The first to apply moves A→B to X − a at its own T; every other one then fails
-at the tracker, through its prior acknowledgment, or through the timestamp rule if its T is not later. So a retry with
-the same issuer is allowed at once, while any other kind of payment (B's own note, another issuer's note) waits until
-every earlier attempt is dead (18.8). Whether an earlier attempt applied is decided by the server's read-back; what a
-client can check for itself is in 16.2, item 7.
+**Same-issuer attempts do not exclude each other (audit VS-1).** Attempts to pay D with A's note that were built on
+the same A→B state carry B's acknowledgment of the same total X, and C's of the same Y. The first to apply moves A→B to
+X − a at its own T1, and a later one fails at the tracker as long as the edges stay moved. But the acknowledgments are
+M(A,B,X,T) and M(A,C,Y,T), with no prior timestamp, and the tracker compares only the stored totals with them: if A
+raises A→B back to X (a note to B) and C moves a out of A→C (a transfer or a set-off) between T1 and T2, an attempt at
+T2 applies too, and B pays D twice. None of this needs B's signature. So a 0.4.0 client signs a retry through the same
+issuer at once only as the identical operation (the same T; 15.3 R11), and any other attempt, a same-issuer retry at a
+new T included, only once every earlier attempt is dead (18.8). The server still accepts a same-issuer retry at once
+(step 8); binding the prior acknowledgments to the prior state's timestamp is a tracker change (v3.2). Whether an
+earlier attempt applied is decided by the server's read-back; what a client can check for itself is in 16.2, item 7.
 
 **Flow.**
 1. **Payment options.** `GET /deals/{id}/payment-options` (the payer's agent; deal `delivered`, `note_failed` or
@@ -1658,9 +1667,11 @@ client can check for itself is in 16.2, item 7.
    `fallback_after` (`409 transfer_window_open` with `retry_after_ms`; R11 waits a little longer). A stale same-issuer
    transfer is regenerated (new T, new priors) only while every check of 18.13 still passes, so a deal has at most 3
    transfer attempts in 24 hours, regenerations included (`max_attempts_per_deal`); the payer's slots then come back
-   to it as a consent item with role `payer`. B's client re-signs by itself only while `quote_digest` is unchanged and
-   its held claim's acknowledged prior is the same; A and C re-sign under their own rules. In practice a stale answer
-   caused by a move of the payer's own claim needs the owner or the one-hour window.
+   to it as a consent item with role `payer`. B's client (15.3 R11) re-signs by itself only the identical operation
+   (the T of an attempt it recorded, within that attempt's window and under its quote): a regeneration at a new T is
+   `transfer_window_open` while the earlier attempt may still apply and `stale_quote` after its window (audit VS-1,
+   AI-1), so a payment made again after the window is a new `pay-by-transfer` (or another route); A and C re-sign under
+   their own rules.
 9. **Unknown outcome.** On a network error, a tracker 5xx or a timeout, the server reads both edges back at once; if
    that read fails too, the transfer stays `applying` (the deal `paying_by_transfer`) until recovery decides by
    read-back (18.8). A read-back that cannot decide ends it `outcome_unknown` (18.8).
@@ -1683,12 +1694,13 @@ payer's body sends `to_prior_total` 0 for an absent A->C. Refusals before anythi
 the payer's registered key: a puppet destination or an amplified slot is refused so) and `403 payment_not_accepted`
 (18.13).
 
-**Retries (decision D-1 item 2).** A transfer with the same issuer may be retried at once only while the held edge is
-exactly the prior state the earlier attempt acknowledged (the tracker lets only one of them apply). Otherwise, and for
-a regenerated transfer, the server answers `409 transfer_window_open` until the earlier attempt's `fallback_after`, and a
-client re-signs a regenerated transfer by itself only under the same quote and only while its held claim's acknowledged
-prior is unchanged; a move of the held edge past T to a total that is neither the prior nor the new total is
-`attempt_outcome_unknown` (18.8).
+**Retries (decision D-1 item 2).** The server accepts a transfer with the same issuer at once only while the held edge
+is exactly the prior state the earlier attempt acknowledged. The tracker does not make the two exclusive (see "Same-issuer
+attempts do not exclude each other" above), so a 0.4.0 client signs it at once only as the identical operation, at the
+earlier attempt's T; at a new T it is `transfer_window_open` until the earlier attempt is dead (15.3 R11). Otherwise, and
+for a regenerated transfer, the server answers `409 transfer_window_open` until the earlier attempt's `fallback_after`;
+a client re-signs a regenerated transfer by itself only as the identical operation (step 8); a move of the held edge
+past T to any state other than the attempt's new state is `attempt_outcome_unknown` (18.8).
 
 ### 18.7 Multilateral set-off
 

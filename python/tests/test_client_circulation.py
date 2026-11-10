@@ -708,28 +708,30 @@ class PayByTransfer(Base):
             self.net.set_edge(issuer, recipient, total, T + dt)
         return fn
 
-    def test_a_stale_transfer_is_retried_once_under_the_same_quote(self):
-        # The payee's claim on A moved between the template and the POST; my claim did not: one retry, same quote.
+    def test_a_stale_transfer_is_not_signed_again_at_a_new_timestamp(self):
+        # Audit VS-1: the payee's claim on A moved between the template and the POST; my claim did not. The fresh
+        # template is checked once, and refused: the first attempt's signatures stay valid at the tracker (they
+        # acknowledge totals only), so had A->C come back to 4 after the second applied, both would apply.
         self.net.force = [('transfer_stale', self.moved(A, C, 5, 1))]
-        c = self.client()
-        self.assertEqual(c.pay_by_transfer(DEAL, A_ID)['status'], 'paid_by_transfer')
-        first, second = self.net.pay_posts
-        self.assertEqual(first['quote_digest'], second['quote_digest'])
-        self.assertEqual((first['to_prior_total'], second['to_prior_total']), (4, 5))
-        self.assertEqual((first['from_prior_total'], second['from_prior_total']), (10, 10))
-        self.assertGreater(second['timestamp'], first['timestamp'])
-        self.assertEqual(len(att(self.store.state)), 2)
-        self.assertEqual(self.net.tracker[AC]['total'], 8)
-
-    def test_only_one_retry(self):
-        self.net.force = [('transfer_stale', self.moved(A, C, 5, 1)), ('transfer_stale', self.moved(A, C, 6, 1))]
         c = self.client()
         with self.assertRaises(vc.ValunError) as e:
             c.pay_by_transfer(DEAL, A_ID)
-        self.assertEqual(e.exception.code, 'transfer_stale')
-        self.assertEqual(len(self.net.pay_posts), 2)
+        self.assertEqual(e.exception.code, 'transfer_window_open')
+        first, = self.net.pay_posts                                                       # nothing sent again
+        self.assertGreater(e.exception.extra['retry_after_ms'], 3_600_000)
         self.assertEqual(records.get(self.store.state['records'], AB)['pending'], [])      # refused: forgotten
-        self.assertEqual(len(att(self.store.state)), 2)                                   # the attempts stay (D-1)
+        self.assertEqual(len(att(self.store.state)), 1)                                   # the attempt stays (D-1)
+
+    def test_a_stale_answer_with_the_same_template_is_signed_again(self):
+        # The identical operation (the same T and totals) is excluded by the first at the tracker: signed again once.
+        tpl = self.net.transfer_template(DEAL, A_ID)          # the template the client reads first (same clock)
+        self.net.force = [('transfer_stale', None, {'template': tpl})]
+        c = self.client()
+        self.assertEqual(c.pay_by_transfer(DEAL, A_ID)['status'], 'paid_by_transfer')
+        first, second = self.net.pay_posts
+        self.assertEqual([(p['timestamp'], p['from_prior_total'], p['to_prior_total'], p['quote_digest']) for p in (first, second)],
+                         [(tpl['timestamp'], 10, 4, tpl['quote_digest'])] * 2)
+        self.assertEqual(len(att(self.store.state)), 1)
 
     def test_no_retry_when_my_own_claim_moved(self):
         # The fresh template acknowledges another prior of my claim on A: not a same-kind retry with the same prior (D-1).
@@ -910,10 +912,18 @@ class FallbackRule(Base):
         self.assertEqual((e.exception.code, e.exception.extra['needs_read_back']), ('transfer_window_open', [BC]))
         self.assertEqual(self.net.pay_posts, [])
 
-    def test_a_same_issuer_retry_is_allowed_at_once(self):
-        c, _T = self.failed_transfer()
+    def test_a_same_issuer_retry_waits_for_the_window(self):
+        # Audit VS-1: a retry through the same issuer at a new T is not excluded by the first attempt at the tracker
+        # (both acknowledge only totals), so it waits for the first attempt's window and a read-back like any other.
+        c, T = self.failed_transfer()
         self.net.transfer_mode = 'apply'
         self.clock.now += 60_000
+        with self.assertRaises(vc.ValunError) as e:
+            c.pay_by_transfer(DEAL, A_ID)
+        self.assertEqual(e.exception.code, 'transfer_window_open')
+        self.assertEqual(e.exception.extra['retry_after_ms'], T + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 1 - self.clock.now)
+        self.assertEqual(len(self.net.pay_posts), 1)                 # nothing signed or sent again
+        self.clock.now = T + LATER                                  # GET /edges shows my claim on A untouched: dead
         self.assertEqual(c.pay_by_transfer(DEAL, A_ID)['status'], 'paid_by_transfer')
 
     def test_an_attempt_that_may_have_applied_stops_every_retry(self):
@@ -1094,7 +1104,7 @@ class Consents(Base):
             self.assertEqual(self.net.consent_posts, [])
 
     def payer_item(self):
-        """A regenerated transfer of B's own payment through A (new T, the same prior of B's claim on A)."""
+        """B's own payment through A shown to it as a consent (the same prior of B's claim on A, at self.T)."""
         q = self.net.transfer_template(DEAL, A_ID)['quote_digest']
         d = self.net.deals[DEAL]
         return q, consent_item('transfer', TID, 'payer',
@@ -1103,12 +1113,13 @@ class Consents(Base):
                                dict(who3(), amount=3, deal={'deal_id': DEAL, 'terms_hash': d['agreement']['terms_hash'],
                                                             'price': 3, 'quote_digest': q}))
 
-    def test_a_regenerated_transfer_is_signed_again_under_the_approved_quote(self):
+    def test_my_own_transfer_is_signed_again_under_the_approved_quote(self):
+        # The identical operation (same prior, same T) shown as a consent: excluded by the first at the tracker.
         self.net.me_id = B_ID
         q, it = self.payer_item()
         self.net.consent_items = [it]
         earlier = [{'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10, 'prior_timestamp': TS_AB, 'total': 7,
-                    'timestamp': self.T - 60_000, 'quote_digest': q, 'signed_at': None}]
+                    'timestamp': self.T, 'quote_digest': q, 'signed_at': None}]
         self.net.consent_state[TID] = 'applied'
         c = self.client(profile(B_ID, approved_payments={DEAL: q}, transfer_attempts={DEAL: earlier}))
         rep = c.process_consents()
@@ -1116,14 +1127,40 @@ class Consents(Base):
         (_cid, body), = self.net.consent_posts
         self.assertEqual(set(body['signatures']), {f'{AB}:prior', f'{AB}:new', f'{AC}:new'})
         self.assertEqual(self.store.state['records']['paid_deals'][DEAL]['route'], 'transfer')
-        self.assertEqual(len(att(self.store.state)), 2)
+        self.assertEqual(len(att(self.store.state)), 1)
+
+    def test_a_regenerated_transfer_is_refused_while_the_earlier_attempt_is_alive(self):
+        # Audit VS-1: a regenerated transfer (new T, the same priors) is not excluded by the earlier attempt.
+        self.net.me_id = B_ID
+        q, it = self.payer_item()
+        self.net.consent_items = [it]
+        earlier = [{'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10, 'prior_timestamp': TS_AB, 'total': 7,
+                    'timestamp': self.T - 60_000, 'quote_digest': q, 'signed_at': None}]
+        rep = self.client(profile(B_ID, approved_payments={DEAL: q}, transfer_attempts={DEAL: earlier})).process_consents()
+        self.assertEqual([(e['id'], e['code']) for e in rep['refused']], [(TID, 'transfer_window_open')])
+        self.assertEqual(self.net.consent_posts, [])
+
+    def test_an_approval_does_not_cover_a_payer_consent_hours_later(self):
+        # Audit AI-1 (the auditor's probe): the owner's approval was recorded for an attempt whose window has passed;
+        # three hours later a payer consent under the same quote is refused, not signed.
+        self.net.me_id = B_ID
+        T0 = self.T
+        self.clock.now = T0 + 3 * 3_600_000
+        self.T = res(self.clock.now - 1500, 999)
+        q, it = self.payer_item()
+        self.net.consent_items = [it]
+        earlier = [{'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10, 'prior_timestamp': TS_AB, 'total': 7,
+                    'timestamp': T0, 'quote_digest': q, 'signed_at': None}]
+        rep = self.client(profile(B_ID, approved_payments={DEAL: q}, transfer_attempts={DEAL: earlier})).process_consents()
+        self.assertEqual([(e['id'], e['code']) for e in rep['refused']], [(TID, 'stale_quote')])
+        self.assertEqual(self.net.consent_posts, [])
 
     def test_a_regenerated_transfer_under_another_quote_is_refused(self):
         self.net.me_id = B_ID
         q, it = self.payer_item()
         self.net.consent_items = [it]
         earlier = [{'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10, 'prior_timestamp': TS_AB, 'total': 7,
-                    'timestamp': self.T - 60_000, 'quote_digest': q, 'signed_at': None}]
+                    'timestamp': self.T, 'quote_digest': q, 'signed_at': None}]
         rep = self.client(profile(B_ID, approved_payments={DEAL: 'ff' * 32}, transfer_attempts={DEAL: earlier})).process_consents()
         self.assertEqual([(e['id'], e['code']) for e in rep['refused']], [(TID, 'stale_quote')])
         self.assertEqual(self.net.consent_posts, [])
@@ -1358,7 +1395,7 @@ class ValueSafeRun(Base):
         q, it = Consents.payer_item(self)
         self.net.consent_items = [it]
         earlier = [{'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10, 'prior_timestamp': TS_AB, 'total': 7,
-                    'timestamp': self.T - 60_000, 'quote_digest': q, 'signed_at': None}]
+                    'timestamp': self.T, 'quote_digest': q, 'signed_at': None}]
         self.net.consent_state[TID] = 'applied'
         c = self.client(profile(B_ID, approved_payments={DEAL: q}, transfer_attempts={DEAL: earlier},
                                 consent_policy=dict(POLICY)))

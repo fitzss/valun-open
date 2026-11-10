@@ -1327,8 +1327,10 @@ class Client:
         the pending decrease of my claim on A (records) and approved_payments[deal_id] = the quote digest. Then it signs
         the complete statement (an unconditional acceptance of the delivery), the pay statement and the slots
         '<A>><me>:prior', '<A>><me>:new' and '<A>><C>:new', and posts them. A 409 transfer_stale that the server
-        answers with a fresh template (it recorded nothing) is retried once under the same quote digest (D-1 lets it
-        sign at once only while my claim on A is exactly the state the first attempt acknowledged); one that names the
+        answers with a fresh template (it recorded nothing) is checked once more under the same quote digest: D-1 signs
+        it only as the identical operation (the first attempt's timestamp, while my claim on A is exactly the state it
+        acknowledged); a template at a new T is transfer_window_open until the first attempt is dead, because both
+        would acknowledge only totals and both could apply (audit VS-1); one that names the
         transfer it recorded (transfer_id, regenerated_as: the edges changed before it applied, and it may have been
         made again, to be signed as a consent) is not retried, and the deal view is returned. paid_by_transfer records
         the deal as paid; a refusal, or payment_due, forgets the pending entry, and the attempt stays until it is dead

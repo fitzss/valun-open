@@ -7934,6 +7934,293 @@
    "why": "a bound note's window has passed, but its edge was not read back: the client reads GET /edges and decides again"
   },
   {
+   "name": "payer/same-prior-retry-at-another-timestamp",
+   "tier": "consent",
+   "evaluator": "payer_template",
+   "rule": "D-1",
+   "input": {
+    "deal_id": "vd_579a5ae4799dcf2e",
+    "terms_hash": "b8929fd00a47902cc7f052d0fbb5d987b279a94a09010388c70a1102a5bcc779",
+    "deliverable_sha256": "b224ba0b7ab86c0fd8991818e0f5f8394fc9fa04684e3adbb26a8c434269a9e4",
+    "issuer": {
+     "id": "vp_461ce015dd98",
+     "handle": "alice",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payer": {
+     "id": "vp_9850bb41e214",
+     "handle": "bob",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "payee": {
+     "id": "vp_136ec9667207",
+     "handle": "nina",
+     "pubkey": "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6"
+    },
+    "amount": 10,
+    "timestamp": 1794754017999,
+    "from_edge": {
+     "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+     "before": {
+      "total": 69,
+      "timestamp": 1793974498500,
+      "signature": "03d2586864a8e46575f46e1b767fb18bba031746a5b3ad447c556d2b66b4dd81cb3cf6cd1b2bf220f430c9d6a85c32ef3fdc527b2e3bcf6caed0ccd2806a9c80fb"
+     },
+     "new_total": 59
+    },
+    "to_edge": {
+     "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6",
+     "before": null,
+     "new_total": 10
+    },
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "quote_digest": "bd243296bf03779f1a674738fe7d52c7eec654fa1ea7ae88a04378ab3930c93c",
+    "collect_until": "2026-11-15T15:07:00.000Z",
+    "messages": {
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000045000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000003b000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:new": "508f0d29727a7f82e6a271480a1341a8596df10734cfdd4fe765a1d0d698785c000000000000000a000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:prior": "508f0d29727a7f82e6a271480a1341a8596df10734cfdd4fe765a1d0d698785c0000000000000000000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+    }
+   },
+   "ctx": {
+    "me_pk": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    "me_id": "vp_9850bb41e214",
+    "now_ms": 1794754020000,
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    },
+    "mandate": {
+     "objective": "Sell research briefs.",
+     "may_issue_credit": true,
+     "may_accept_credit": true,
+     "max_issue_per_deal": 100,
+     "max_issue_outstanding": 300,
+     "max_accept_per_deal": 100,
+     "max_accept_per_issuer": 200,
+     "min_price_as_payee": 5,
+     "min_payer_coverage_pct": 0,
+     "counterparties": "any",
+     "approve_above": 100,
+     "review_deliveries": false,
+     "expires_at": "2026-11-20T12:03:00.000Z",
+     "auto_clear": true,
+     "novate_own_debt": true,
+     "accept_transfers": true,
+     "accept_notes_from": "any",
+     "refuse_notes_from": [],
+     "pay_with_held_notes": "when_asked"
+    },
+    "records": null,
+    "signed": null,
+    "transfer_attempts": {
+     "vd_579a5ae4799dcf2e": [
+      {
+       "deal_id": "vd_579a5ae4799dcf2e",
+       "route": "transfer",
+       "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+       "prior": 69,
+       "prior_timestamp": 1793974498500,
+       "prior_signature": "03d2586864a8e46575f46e1b767fb18bba031746a5b3ad447c556d2b66b4dd81cb3cf6cd1b2bf220f430c9d6a85c32ef3fdc527b2e3bcf6caed0ccd2806a9c80fb",
+       "total": 59,
+       "timestamp": 1794754016999,
+       "quote_digest": "bd243296bf03779f1a674738fe7d52c7eec654fa1ea7ae88a04378ab3930c93c",
+       "signed_at": "2026-11-15T14:46:59.000Z"
+      }
+     ]
+    },
+    "novated_edges": null,
+    "features": [
+     "bound_notes/1",
+     "circulation/1"
+    ],
+    "deal": {
+     "deal_id": "vd_579a5ae4799dcf2e",
+     "network": "valun-pilot-1",
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+     "terms_hash": "b8929fd00a47902cc7f052d0fbb5d987b279a94a09010388c70a1102a5bcc779",
+     "deliverable_sha256": "b224ba0b7ab86c0fd8991818e0f5f8394fc9fa04684e3adbb26a8c434269a9e4",
+     "price": 10,
+     "payer": {
+      "id": "vp_9850bb41e214",
+      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+     },
+     "payee": {
+      "id": "vp_136ec9667207",
+      "pubkey": "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6"
+     },
+     "delivered": false,
+     "transfer_id": null
+    },
+    "payee_current_pk": "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6",
+    "approved_quote_digest": null
+   },
+   "expected": {
+    "refuse": "transfer_window_open"
+   },
+   "why": "an earlier transfer of his through the same issuer acknowledged exactly this held state at an earlier T: both could apply once A->B and A->C come back to the same totals (audit VS-1), so a retry waits for the first one's window"
+  },
+  {
+   "name": "payer/same-operation-signed-again",
+   "tier": "consent",
+   "evaluator": "payer_template",
+   "rule": "D-1",
+   "input": {
+    "deal_id": "vd_579a5ae4799dcf2e",
+    "terms_hash": "b8929fd00a47902cc7f052d0fbb5d987b279a94a09010388c70a1102a5bcc779",
+    "deliverable_sha256": "b224ba0b7ab86c0fd8991818e0f5f8394fc9fa04684e3adbb26a8c434269a9e4",
+    "issuer": {
+     "id": "vp_461ce015dd98",
+     "handle": "alice",
+     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+    },
+    "payer": {
+     "id": "vp_9850bb41e214",
+     "handle": "bob",
+     "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+    },
+    "payee": {
+     "id": "vp_136ec9667207",
+     "handle": "nina",
+     "pubkey": "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6"
+    },
+    "amount": 10,
+    "timestamp": 1794754017999,
+    "from_edge": {
+     "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+     "before": {
+      "total": 69,
+      "timestamp": 1793974498500,
+      "signature": "03d2586864a8e46575f46e1b767fb18bba031746a5b3ad447c556d2b66b4dd81cb3cf6cd1b2bf220f430c9d6a85c32ef3fdc527b2e3bcf6caed0ccd2806a9c80fb"
+     },
+     "new_total": 59
+    },
+    "to_edge": {
+     "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6",
+     "before": null,
+     "new_total": 10
+    },
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "quote_digest": "bd243296bf03779f1a674738fe7d52c7eec654fa1ea7ae88a04378ab3930c93c",
+    "collect_until": "2026-11-15T15:07:00.000Z",
+    "messages": {
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000045000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000003b000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:new": "508f0d29727a7f82e6a271480a1341a8596df10734cfdd4fe765a1d0d698785c000000000000000a000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:prior": "508f0d29727a7f82e6a271480a1341a8596df10734cfdd4fe765a1d0d698785c0000000000000000000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+    }
+   },
+   "ctx": {
+    "me_pk": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    "me_id": "vp_9850bb41e214",
+    "now_ms": 1794754020000,
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    },
+    "mandate": {
+     "objective": "Sell research briefs.",
+     "may_issue_credit": true,
+     "may_accept_credit": true,
+     "max_issue_per_deal": 100,
+     "max_issue_outstanding": 300,
+     "max_accept_per_deal": 100,
+     "max_accept_per_issuer": 200,
+     "min_price_as_payee": 5,
+     "min_payer_coverage_pct": 0,
+     "counterparties": "any",
+     "approve_above": 100,
+     "review_deliveries": false,
+     "expires_at": "2026-11-20T12:03:00.000Z",
+     "auto_clear": true,
+     "novate_own_debt": true,
+     "accept_transfers": true,
+     "accept_notes_from": "any",
+     "refuse_notes_from": [],
+     "pay_with_held_notes": "when_asked"
+    },
+    "records": null,
+    "signed": null,
+    "transfer_attempts": {
+     "vd_579a5ae4799dcf2e": [
+      {
+       "deal_id": "vd_579a5ae4799dcf2e",
+       "route": "transfer",
+       "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+       "prior": 69,
+       "prior_timestamp": 1793974498500,
+       "prior_signature": "03d2586864a8e46575f46e1b767fb18bba031746a5b3ad447c556d2b66b4dd81cb3cf6cd1b2bf220f430c9d6a85c32ef3fdc527b2e3bcf6caed0ccd2806a9c80fb",
+       "total": 59,
+       "timestamp": 1794754017999,
+       "quote_digest": "bd243296bf03779f1a674738fe7d52c7eec654fa1ea7ae88a04378ab3930c93c",
+       "signed_at": "2026-11-15T14:46:59.000Z"
+      }
+     ]
+    },
+    "novated_edges": null,
+    "features": [
+     "bound_notes/1",
+     "circulation/1"
+    ],
+    "deal": {
+     "deal_id": "vd_579a5ae4799dcf2e",
+     "network": "valun-pilot-1",
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+     "terms_hash": "b8929fd00a47902cc7f052d0fbb5d987b279a94a09010388c70a1102a5bcc779",
+     "deliverable_sha256": "b224ba0b7ab86c0fd8991818e0f5f8394fc9fa04684e3adbb26a8c434269a9e4",
+     "price": 10,
+     "payer": {
+      "id": "vp_9850bb41e214",
+      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+     },
+     "payee": {
+      "id": "vp_136ec9667207",
+      "pubkey": "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6"
+     },
+     "delivered": false,
+     "transfer_id": null
+    },
+    "payee_current_pk": "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6",
+    "approved_quote_digest": null
+   },
+   "expected": "sign",
+   "slots": [
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior",
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new",
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:new"
+   ],
+   "messages": {
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000045000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000003b000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:new": "508f0d29727a7f82e6a271480a1341a8596df10734cfdd4fe765a1d0d698785c000000000000000a000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+   },
+   "summary": {
+    "quote_digest": "bd243296bf03779f1a674738fe7d52c7eec654fa1ea7ae88a04378ab3930c93c"
+   },
+   "why": "his earlier attempt is this very operation (the same prior state and the same T): the tracker applies at most one of the two"
+  },
+  {
    "name": "payer/stale-quote",
    "tier": "consent",
    "evaluator": "payer_template",
@@ -9417,6 +9704,118 @@
     "refuse": "transfer_window_open"
    },
    "why": "a payment by transfer of hers for this deal can still apply until its timestamp + 1 h"
+  },
+  {
+   "name": "bound/payment-attempt",
+   "tier": "consent",
+   "evaluator": "bound_template",
+   "rule": "D-2 c",
+   "input": {
+    "deal_id": "vd_c38186c14578954b",
+    "terms_hash": "070f3fa6e2b1f909bca41d39ff76678bfa849befcf4fe8f6ece5d09ea872a7ba",
+    "deliverable_sha256": "6a30e0a0b92953729a78547f4b29183f1c3b1848c53c1a34c6945b9c9988806c",
+    "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+    "keys_as_agreed": true,
+    "prior_total": 59,
+    "price": 5,
+    "total": 64,
+    "timestamp": 1794754617997,
+    "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+    "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1dfb6228d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+    "prior_note": {
+     "total": 59,
+     "timestamp": 1794754017999,
+     "signature": "02fbc160abca5630b21af1b83e467bec119503dae47a1811806438e67c9a3a543f64e5c99f58f451347d675e1bfa16e723e01e22e985b22ca636335264e9b03e37"
+    },
+    "prior_message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000003b000001a1dfb6228d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+   },
+   "ctx": {
+    "me_pk": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "me_id": "vp_461ce015dd98",
+    "now_ms": 1794754620000,
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    },
+    "mandate": {
+     "objective": "Buy short, sourced research briefs.",
+     "may_issue_credit": true,
+     "may_accept_credit": true,
+     "max_issue_per_deal": 80,
+     "max_issue_outstanding": 300,
+     "max_accept_per_deal": 100,
+     "max_accept_per_issuer": 150,
+     "min_price_as_payee": 0,
+     "min_payer_coverage_pct": 0,
+     "counterparties": "any",
+     "approve_above": 50,
+     "review_deliveries": false,
+     "expires_at": "2026-11-20T12:01:00.000Z",
+     "auto_clear": true,
+     "novate_own_debt": true,
+     "accept_transfers": true,
+     "accept_notes_from": "any",
+     "refuse_notes_from": [],
+     "pay_with_held_notes": "when_asked"
+    },
+    "records": null,
+    "signed": null,
+    "transfer_attempts": {
+     "vd_00000000000000ac": [
+      {
+       "deal_id": "vd_00000000000000ac",
+       "route": "note",
+       "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+       "prior": 64,
+       "prior_timestamp": 1794754557997,
+       "prior_signature": "02163e861ca8d415f910072403f12baa72b68975b7765cd2728f451430b4a0ee944103cf57e37641eaaf4a02cc990dbe71a97d77ec57ff20b46b4746a77d25f732",
+       "total": 66,
+       "timestamp": 1794754618997,
+       "quote_digest": null,
+       "signed_at": "2026-11-15T14:57:00.000Z"
+      }
+     ]
+    },
+    "novated_edges": null,
+    "features": [
+     "bound_notes/1",
+     "circulation/1"
+    ],
+    "deal": {
+     "deal_id": "vd_c38186c14578954b",
+     "network": "valun-pilot-1",
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+     "terms_hash": "070f3fa6e2b1f909bca41d39ff76678bfa849befcf4fe8f6ece5d09ea872a7ba",
+     "deliverable_sha256": "6a30e0a0b92953729a78547f4b29183f1c3b1848c53c1a34c6945b9c9988806c",
+     "price": 5,
+     "payer": {
+      "id": "vp_461ce015dd98",
+      "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+     },
+     "payee": {
+      "id": "vp_9850bb41e214",
+      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+     },
+     "delivered": false,
+     "transfer_id": null
+    },
+    "payee_current_pk": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+   },
+   "expected": {
+    "refuse": "payment_attempt"
+   },
+   "why": "a later bound note of hers for another deal acknowledged the total this note brings her edge to, and could still apply after it"
   },
   {
    "name": "bound/sign-new-edge",

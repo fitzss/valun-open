@@ -1308,12 +1308,17 @@ def client_scenarios():
     pbt = f"POST /pilot/v1/deals/{dg['id']}/pay-by-transfer"
     base_pay = {f"GET /pilot/v1/deals/{dg['id']}": {'body': dg}, **circ, **me_r, po: {'body': payment_options(dg)}, tt: {'body': tpl1}}
     paid = dict(dg, status='paid_by_transfer', payment={'route': 'transfer', 'transfer_id': 'vt_4d4d4d4d4d4d4d4d', 'state': 'applied'})
-    add('pay_by_transfer: transfer_stale with a fresh template is retried once under the same quote', 'pay_by_transfer',
+    # audit VS-1: a fresh template at a new T is not signed while the first attempt can still apply
+    add('pay_by_transfer: transfer_stale with a fresh template at a new T is refused (transfer_window_open)', 'pay_by_transfer',
         {'deal_id': dg['id'], 'issuer': 'frank'},
         {**base_pay, pbt: {'sequence': [{'status': 409, 'body': {'error': 'transfer_stale', 'message': 'the edges moved', 'template': tpl2}},
                                         {'body': paid}]}}, dict(pinned, consent_policy=dict(POLICY)))
+    add('pay_by_transfer: transfer_stale with the same template is signed again once (the identical operation)', 'pay_by_transfer',
+        {'deal_id': dg['id'], 'issuer': 'frank'},
+        {**base_pay, pbt: {'sequence': [{'status': 409, 'body': {'error': 'transfer_stale', 'message': 'the edges moved', 'template': tpl1}},
+                                        {'body': paid}]}}, dict(pinned, consent_policy=dict(POLICY)))
     add('pay_by_transfer: transfer_stale twice is raised', 'pay_by_transfer', {'deal_id': dg['id'], 'issuer': 'frank'},
-        {**base_pay, pbt: {'status': 409, 'body': {'error': 'transfer_stale', 'message': 'the edges moved', 'template': tpl2}}},
+        {**base_pay, pbt: {'status': 409, 'body': {'error': 'transfer_stale', 'message': 'the edges moved', 'template': tpl1}}},
         dict(pinned, consent_policy=dict(POLICY)))
     add('pay_by_transfer: transfer_stale naming the transfer it recorded is not retried', 'pay_by_transfer',
         {'deal_id': dg['id'], 'issuer': 'frank'},

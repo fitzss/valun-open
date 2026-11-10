@@ -668,10 +668,15 @@ class Run {
   }
 
   /**
-   * D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior) for the deal unless every earlier
-   * attempt is dead or is excluded by this one at the tracker.
+   * D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior, timestamp) for the deal unless every
+   * earlier attempt is dead or is excluded by this one at the tracker: the same route on the same edge, acknowledging
+   * the same prior, while the edge is still exactly the state the earlier one acknowledged; for a transfer also at the
+   * same timestamp (the identical operation signed again). A transfer retry at another timestamp is not excluded (audit
+   * VS-1): the prior acknowledgments M(A,B,X,T) and M(A,C,Y,T) carry no prior timestamp, so both attempts stay valid
+   * whenever A->B and A->C come back to X and Y, which A and C can arrange without me. A note retry stays excluded: only
+   * my signature lowers my own edge, and no novation or bound note of mine brings it back to a live bound note's prior.
    */
-  oneLiveAttempt(dealId, price, route, edge, prior) {
+  oneLiveAttempt(dealId, price, route, edge, prior, timestamp = null) {
     const s = this.summary;
     this.notPaidYet(dealId);
     if (Object.hasOwn(s.paid_deals, dealId)) {
@@ -685,7 +690,8 @@ class Run {
         this.refuse('already_paid', 'an earlier payment of yours for this deal applied; refusing to pay it again');
       }
     }
-    const same = a => a.route === route && a.edge === edge && pyEq(a.prior, prior);
+    const same = a => a.route === route && a.edge === edge && pyEq(a.prior, prior)
+      && (route === 'note' || (timestamp !== null && a.timestamp === timestamp));
     if (looked.some(([a, o, st]) => o === 'unknown' || (o === 'alive' && same(a) && !exactPrior(a, st))
         || (o === 'alive' && !expires(a) && !same(a)))) {
       this.refuse('attempt_outcome_unknown', 'an earlier payment attempt for this deal may have applied (or may '
@@ -701,12 +707,17 @@ class Run {
     }
   }
 
-  /** The quote digest of an earlier transfer attempt for the deal through the same held note, if any. */
-  approvedQuote(dealId, heldEdge) {
-    let found = null;
+  /**
+   * The quote digests of my earlier transfer attempts for the deal through the same held note whose window is still
+   * open (now <= T + MAX_AGE_MS + FALLBACK_MARGIN_MS): the only quotes a payer consent re-signs under without a new
+   * approval (audit AI-1).
+   */
+  approvedQuotes(dealId, heldEdge) {
+    const found = new Set();
     for (const a of iterate(or(get(this.attempts, dealId), []))) {
-      if (isDict(a) && get(a, 'route') === 'transfer' && get(a, 'edge') === heldEdge && typeof get(a, 'quote_digest') === 'string') {
-        found = a.quote_digest;
+      if (isDict(a) && get(a, 'route') === 'transfer' && get(a, 'edge') === heldEdge && typeof get(a, 'quote_digest') === 'string'
+          && u64(get(a, 'timestamp')) && this.now <= a.timestamp + MAX_AGE_MS + FALLBACK_MARGIN_MS) {
+        found.add(a.quote_digest);
       }
     }
     return found;
@@ -788,7 +799,9 @@ class Run {
   /**
    * R12 extended, the client side of decision D-2 c: never sign a novation that sets an edge of mine (as issuer) to
    * the acknowledged prior total of a bound note of mine on that edge that is later than the novation and can still
-   * apply. `changes`: [[edge, new_total, timestamp]] of the novation's edges where I am the issuer.
+   * apply. Also run for a bound note of mine (audit VS-1): a note for another deal can bring the edge back to that
+   * prior just as a novation can. `changes`: [[edge, new_total, timestamp]] of the novation's edges where I am the
+   * issuer (or the note's edge).
    */
   noBoundNoteRestored(changes) {
     for (const [edge, newTotal, ts] of changes) {
@@ -892,7 +905,8 @@ function bound(run, tpl) {
   run.fresh(ts, prior === null ? [] : [prior.timestamp]);
   run.show(edge, prior, true);
   run.addEdge(edge, 'issuer', P, total, ts);
-  run.oneLiveAttempt(D, deal.price, 'note', edge, P);
+  run.oneLiveAttempt(D, deal.price, 'note', edge, P, ts);
+  run.noBoundNoteRestored([[edge, total, ts]]);
   const op = 'note:' + D;
   const slots = [[slotKey(edge, 'prior'), I, R, P, ts], [slotKey(edge, 'new'), I, R, total, ts]];
   const signed = run.noReuse(op, slots);
@@ -982,7 +996,7 @@ function payer(run, v, consent) {
   run.show(dest, tb, false);
   run.addEdge(held, 'creditor', X, X - a, T);
   run.addEdge(dest, 'payer', Y, Y + a, T);
-  run.oneLiveAttempt(D, deal.price, 'transfer', held, X);
+  run.oneLiveAttempt(D, deal.price, 'transfer', held, X, T);
   const q = quoteDigest({network: deal.network, tracker_nft_id: v.nft, denomination: v.denom, deal_id: D,
     terms_hash: deal.terms_hash, deliverable_sha256: deal.deliverable_sha256, issuer_pubkey: A, payer_pubkey: me,
     payee_pubkey: C, amount: a});
@@ -990,10 +1004,13 @@ function payer(run, v, consent) {
   if (v.server_quote !== null && v.server_quote !== q) {
     run.bad("the server's quote digest is not the one this client computes from the checked values");
   }
-  let approved = get(run.ctx, 'approved_quote_digest');
-  if (approved === null && consent) approved = run.approvedQuote(D, held);
-  if ((consent && approved === null) || (approved !== null && approved !== q)) {
+  const approved = get(run.ctx, 'approved_quote_digest');
+  if (approved !== null && approved !== q) {
     run.refuse('stale_quote', 'this payment is not the one your owner approved (the quote changed)');
+  }
+  if (consent && !run.approvedQuotes(D, held).has(q)) {
+    run.refuse('stale_quote', 'this payment is not one your owner approved for an attempt of yours that is still '
+      + 'within its window (T + 1 h + 2 min); a payment made again later needs a new approval');
   }
   const m = get(run.ctx, 'mandate');
   if (!isDict(m)) run.refuse('policy_off', "your owner's mandate could not be read, so nothing is paid with a held note");

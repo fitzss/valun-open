@@ -2287,6 +2287,18 @@ async function transcriptVectors() {
             x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'note', edge: bn, prior: 0, prior_timestamp: 0, prior_signature: null, total: 10, timestamp: T0b,
               quote_digest: null, signed_at: iso(T0b)}]};
           }, 'transfer_window_open', "a bound note's window has passed, but its edge was not read back: the client reads GET /edges and decides again", {needs_read_back: [bn]});
+          // audit VS-1: the creditors' prior acknowledgments carry no prior timestamp, so a retry through the same issuer at
+          // another T is not excluded by the first at the tracker; the identical operation (same T) is
+          const sameIssuer = (i, x, T) => {
+            const fb = i.from_edge.before;
+            assert.ok(T > fb.timestamp && T <= i.timestamp && T % 1000 === 999, 'an earlier transfer attempt later than the held state');
+            x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'transfer', edge: held, prior: fb.total, prior_timestamp: fb.timestamp, prior_signature: fb.signature,
+              total: fb.total - i.amount, timestamp: T, quote_digest: tpl.quote_digest, signed_at: iso(x.now_ms - 1000)}]};
+          };
+          c('same-prior-retry-at-another-timestamp', 'D-1', (i, x) => sameIssuer(i, x, i.timestamp - 1000), 'transfer_window_open',
+            "an earlier transfer of his through the same issuer acknowledged exactly this held state at an earlier T: both could apply once A->B and A->C come back to the same totals (audit VS-1), so a retry waits for the first one's window");
+          c('same-operation-signed-again', 'D-1', (i, x) => sameIssuer(i, x, i.timestamp), 'sign',
+            'his earlier attempt is this very operation (the same prior state and the same T): the tracker applies at most one of the two', {quote_digest: tpl.quote_digest});
           c('stale-quote', '-', (i, x) => { x.approved_quote_digest = '00'.repeat(32); }, 'stale_quote', 'not the quote his owner approved');
           c('bad-template', '-', i => { i.amount = String(i.amount); }, 'bad_template', 'a template field of the wrong type');
           c('deal-mismatch-without-me-id', 'R7', (i, x) => { delete x.me_id; }, 'deal_mismatch', 'without its own participant id the client cannot check that it is the payer: refuse');
@@ -2312,6 +2324,13 @@ async function transcriptVectors() {
             x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'transfer', edge: held, prior: 9, prior_timestamp: T - 60e3, prior_signature: signHex(K.carol, M(K.carol.pub, K.alice.pub, 9, T - 60e3)),
               total: 4, timestamp: T, quote_digest: '22'.repeat(32), signed_at: iso(x.now_ms - 60e3)}]};
           }, 'transfer_window_open', 'a payment by transfer of hers for this deal can still apply until its timestamp + 1 h');
+          // audit VS-1, the note route's twin of D-2 c: no bound note of hers brings her edge back to the prior a later bound
+          // note of hers (another deal) acknowledged while that one can still apply
+          c('payment-attempt', 'D-2 c', (i, x) => {
+            const Tb = i.timestamp + 1000, other = 'vd_00000000000000ac';
+            x.transfer_attempts = {[other]: [{deal_id: other, route: 'note', edge: ab, prior: i.total, prior_timestamp: i.timestamp - 60e3, prior_signature: signHex(K.alice, M(K.alice.pub, K.bob.pub, i.total, i.timestamp - 60e3)),
+              total: i.total + 2, timestamp: Tb, quote_digest: null, signed_at: iso(x.now_ms)}]};
+          }, 'payment_attempt', 'a later bound note of hers for another deal acknowledged the total this note brings her edge to, and could still apply after it');
           const nb = TP.bound_N2, dealN = await dealCtx('nina', nb.tpl.deal_id);
           push('bound_templates', 'bound/sign-new-edge', 'bound_template', 'R12', clone(nb.tpl), ctxFor('nina', nb.now_ms, {deal: dealN, payee_current_pk: K.alice.pub}), 'sign',
             'the first note on an edge: prior total 0 and prior_note null; the prior acknowledgment is M(I,R,0,T)');
