@@ -1,36 +1,76 @@
 name: release
 # Publishes a tagged release (vX.Y.Z) with trusted publishing, so no package-registry token exists anywhere:
-#   pypi  builds the `valun` Python package, checks it installs and runs, and uploads it through PyPI's trusted
-#         publisher for this repository and workflow (environment "pypi").
+#   verify  (no id-token) the gate every publishing job needs: the tag matches every version; the Python unit tests;
+#         the protocol vectors against the package and against the Hermes plugin 0.4.0 at PLUGIN_SHA, with the
+#         circulation and consent tiers required; the plugin's vendored core equals the package's (check_plugin_core);
+#         the JavaScript tests; then it builds the Python distributions and uploads them as an artifact. Build tooling
+#         runs here, where no OIDC token can be minted (audit SC-1).
+#   pypi  downloads that artifact and uploads it through PyPI's trusted publisher for this repository and workflow
+#         (environment "pypi"); nothing is built or installed in the job that holds id-token: write.
 #   npm   publishes the `@fitzdoud/valun` JavaScript package with provenance through npm's trusted publisher (environment "npm"),
 #         and skips a version that is already on npm (the first npm release is published by hand).
 #   mcp-registry  lists the PyPI package in the official MCP Registry as io.github.fitzss/valun (server.json), once PyPI
 #         serves the release. Ownership: the PyPI description (python/README.md) carries "mcp-name: io.github.fitzss/valun";
 #         login is this workflow's GitHub OIDC identity, so no registry token exists anywhere either.
+# Tag only a commit whose ci workflow is green, and only after PLUGIN_SHA below (and the plugin pin in ci.yml, which
+# verify compares with it) is the plugin commit actually pushed to fitzss/hermes-plugin-valun: PyPI and npm versions
+# are immutable. Requiring green CI on tags (a ruleset) and reviewers on the pypi and npm environments are owner steps.
 on:
   push:
     tags: ["v*"]
 permissions:
   contents: read
+env:
+  # Hermes plugin 0.4.0: the commit the conformance checks run against. Must equal the 0.4.0 pin in ci.yml.
+  PLUGIN_SHA: 2b78a0624f6f28ff31f0f32c1b11312ab726f33d
 jobs:
-  pypi:
+  verify:
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/valun
     permissions:
-      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          repository: fitzss/hermes-plugin-valun
+          ref: ${{ env.PLUGIN_SHA }}
+          path: hermes-plugin-valun
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: The tag matches the package version
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: The tag matches every version, and the plugin pin is the one ci.yml checks
         run: |
           v=$(python -c "import tomllib; print(tomllib.load(open('python/pyproject.toml','rb'))['project']['version'])")
-          test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match python/pyproject.toml version $v"; exit 1; }
+          j=$(node -p "require('./js/package.json').version")
+          s=$(jq -r .version server.json); p=$(jq -r '.packages[0].version' server.json)
+          for x in "$v" "$j" "$s" "$p"; do
+            test "v$x" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match a version ($v, $j, $s, $p)"; exit 1; }
+          done
+          grep -q "ref: $PLUGIN_SHA" .github/workflows/ci.yml || { echo "PLUGIN_SHA is not the plugin pin of ci.yml"; exit 1; }
+      - name: The shipped docs no longer call this version unreleased (npm and PyPI keep them for good)
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          if grep -nEi "unreleased|not published|not released" js/README.md python/README.md; then
+            echo "js/README.md or python/README.md still says a version is unreleased: make the release-docs commit first"; exit 1; fi
+          if grep -F "## $v " CHANGELOG.md | grep -qi unreleased; then echo "CHANGELOG.md still marks $v unreleased"; exit 1; fi
+      - name: Unit and MCP protocol tests (standard library only)
+        run: |
+          python -m pip install ./python
+          python -m unittest discover -s python/tests
+      - name: Vectors vs the valun package, circulation and consent tiers required
+        run: python spec/vectors/check_python.py --client package --require circulation/1
+      - name: Vectors vs the Hermes plugin 0.4.0, circulation and consent tiers required
+        run: python spec/vectors/check_python.py --client plugin --plugin-dir hermes-plugin-valun --require circulation/1
+      - name: The plugin 0.4.0 carries the valun package's core unchanged
+        run: python scripts/check_plugin_core.py hermes-plugin-valun
+      - name: JavaScript tests (every vector, transcript replay)
+        run: node --test js/test/
       - name: Build
         run: |
           python -m pip install "build==1.6.1"
@@ -41,11 +81,32 @@ jobs:
           /tmp/try/bin/pip install dist/*.whl
           /tmp/try/bin/valun --version
           /tmp/try/bin/valun tools > /dev/null
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: python-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  pypi:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/valun
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: python-dist
+          path: dist/
       - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: dist/
 
   npm:
+    needs: verify
     runs-on: ubuntu-latest
     environment: npm
     permissions:
@@ -58,12 +119,11 @@ jobs:
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
-      - name: Test, then publish unless this version is already on npm
+      - name: Publish unless this version is already on npm (verify ran the tests)
         working-directory: js
         run: |
           v=$(node -p "require('./package.json').version")
           test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match js/package.json version $v"; exit 1; }
-          node --test test/
           name=$(node -p "require('./package.json').name")
           if ! npm view "$name" version > /dev/null 2>&1; then
             echo "$name is not on npm yet: the first npm release is published by hand (npm cannot trust-publish a new name)"; exit 0; fi
@@ -71,7 +131,7 @@ jobs:
           npm publish --provenance --access public
 
   mcp-registry:
-    needs: pypi
+    needs: [verify, pypi]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
