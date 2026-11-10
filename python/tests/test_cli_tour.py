@@ -1104,6 +1104,114 @@ class TourStops(unittest.TestCase):
         self.assertIn('step 2 done. Your edges on the tracker: none', lines)
 
 
+class LyingTourClient(StepTourClient):
+    """A client of a server that lies in its inbox: the deal's verified terms are what `terms` says."""
+    participant_id = 'vp_0000000000me'
+
+    def __init__(self, terms):
+        super().__init__()
+        self.terms, self.h = terms, vc.terms_hash(terms)
+
+    def directory(self):
+        return [{'handle': 'sandbox-exact', 'id': 'vp_00000000exact'}, {'handle': 'sandbox-mallory', 'id': 'vp_0000000mallory'},
+                {'handle': 'stranger', 'id': 'vp_000000stranger'}]
+
+    def deal(self, did):
+        return {'id': did}
+
+    def verify_offer(self, d):
+        return {'terms_hash': self.h, 'terms': self.terms}
+
+    def verified_agreement(self, d):
+        return self.terms
+
+
+class LyingTourAgent:
+    """sandbox_next_steps (from the lying inbox) ask to accept an offer 'from sandbox-exact at 2 PC'; prepare() binds
+    the terms the server really serves (expected_terms_hash), and its text shows them."""
+
+    def __init__(self, terms, call=None):
+        self.c, self.calls = LyingTourClient(terms), []
+        self.next = call or {'tool': 'valun_respond', 'why': 'buy notary from sandbox-exact for 2 PC',
+                             'arguments': {'deal_id': 'vd_0123456789abcdef', 'action': 'accept'}}
+
+    def client(self):
+        return self.c
+
+    def status(self, a):
+        if self.calls:
+            return {'sandbox_next_steps': {'tour_step': 'done', 'then': 'The tour is complete.'}}
+        return {'sandbox_next_steps': {'tour_step': 2, 'of': 5, 'goal': 'go on', 'then': 'wait', 'next_calls': [self.next]}}
+
+    def is_commitment(self, name, args):
+        return True
+
+    def prepare_or_refusal(self, name, args):
+        bound = dict(args, expected_terms_hash=self.c.h)
+        if name == 'valun_review_delivery':
+            bound['expected_deliverable_sha256'] = 'bb' * 32
+        return {'args': bound, 'text': f'Valun - {name} (what the server serves)'}, None
+
+    def call(self, name, args):
+        self.calls.append((name, args))
+        return {'status': 'accepted'}
+
+
+def tour_terms(payee='vp_00000000exact', payer=LyingTourClient.participant_id, price=2, service='notary'):
+    return {'payer': {'id': payer}, 'payee': {'id': payee}, 'price': {'amount': price},
+            'service': {'title': f'{service} job', 'description': f'{service} for this text', 'deliverable': 'JSON'}}
+
+
+class TourYesChecksWhatIsSigned(unittest.TestCase):
+    """Audit AI-3: `valun sandbox tour --yes` approves a commitment only when what prepare() bound is what the tour
+    would do: a sandbox agent as the other party (directory ids), at most the published price to pay, and the other
+    sandbox agent's note to pay with. Otherwise the tour stops (tour_unverified), and nothing is signed."""
+
+    setUp = TourStops.setUp
+
+    def run_tour(self, ag):
+        lines = []
+        sb.tour(None, yes=True, log=lines.append, agent=ag, poll_s=3)
+        return lines
+
+    def test_an_offer_whose_signed_terms_name_another_party_or_price_is_not_signed(self):
+        for terms in (tour_terms(payee='vp_000000stranger'), tour_terms(price=30), tour_terms(price=3)):
+            ag = LyingTourAgent(terms)
+            with self.assertRaises(vc.ValunError) as e:
+                self.run_tour(ag)
+            self.assertEqual((e.exception.code, ag.calls), ('tour_unverified', []), terms)
+        ag = LyingTourAgent(tour_terms())                       # what the tour would do itself: approved
+        self.assertIn('The tour is complete.', self.run_tour(ag))
+        self.assertEqual([n for n, _a in ag.calls], ['valun_respond'])
+        # an asking owner decides instead of stopping
+        ag = LyingTourAgent(tour_terms(price=30))
+        sb.tour(None, yes=True, ask=lambda text: True, log=lambda line: None, agent=ag, poll_s=3)
+        self.assertEqual(len(ag.calls), 1)
+
+    def test_a_payment_with_a_held_note_must_use_the_other_sandbox_agents_note(self):
+        call = {'tool': 'valun_review_delivery', 'why': 'pay it', 'arguments': {'deal_id': 'vd_0123456789abcdef',
+                                                                                 'decision': 'accept', 'pay_with': None}}
+        for pay_with, ok in (('vp_0000000mallory', True), ('own_note', True), ('vp_000000stranger', False),
+                             ('vp_00000000exact', False)):
+            ag = LyingTourAgent(tour_terms(), dict(call, arguments=dict(call['arguments'], pay_with=pay_with)))
+            if ok:
+                self.run_tour(ag)
+                self.assertEqual(len(ag.calls), 1, pay_with)
+            else:
+                with self.assertRaises(vc.ValunError) as e:
+                    self.run_tour(ag)
+                self.assertEqual((e.exception.code, ag.calls), ('tour_unverified', []), pay_with)
+
+    def test_a_terms_hash_other_than_the_prepared_one_is_refused(self):
+        ag = LyingTourAgent(tour_terms())
+        self.assertIn('not the ones prepared', sb.tour_rules_problem(ag, 'valun_respond', {
+            'deal_id': 'vd_0123456789abcdef', 'action': 'accept', 'expected_terms_hash': 'cc' * 32}, {}))
+        self.assertIn('sandbox agents', sb.tour_rules_problem(ag, 'valun_propose', {
+            'counterparty': 'vp_000000stranger', 'role': 'payer', 'price': 2}, {}))
+        self.assertIsNone(sb.tour_rules_problem(ag, 'valun_propose', {'counterparty': 'vp_0000000mallory', 'role': 'payer',
+                                                                      'price': 2}, {}))
+
+
 class EarnChecks(Cli):
     def lying_inbox(self, did):
         """The inbox says: the sandbox agent sandbox-exact offers you a job as payee."""

@@ -293,7 +293,7 @@ TOUR_CALLS_PER_STEP = 12
 TOUR_DISPUTES_PER_STEP = 20
 # Refusals the tour stops on (any other error of one call is shown, and the next status decides again).
 TOUR_STOPS = ('owner_declined', 'not_sandbox_only', 'feature_unavailable', 'attempt_outcome_unknown', 'records_unreadable',
-              'tracker_mismatch', 'not_connected', 'not_configured')
+              'tracker_mismatch', 'not_connected', 'not_configured', 'tour_unverified')
 
 
 def _deliver_and_wait(c, did, service, text, price, wait_s, log, poll_s):
@@ -402,11 +402,79 @@ def _consents_due(c, log):
     return r
 
 
-def _tour_call(ag, call, yes, ask, log):
+def _whole_pc(v):
+    return isinstance(v, int) and not isinstance(v, bool) and v > 0
+
+
+def _sandbox_ids(ag, ids):
+    """{handle: participant id} of the active sandbox agents in the directory, read once per tour (`ids` caches it)."""
+    if not ids:
+        from . import agent as va           # here: agent.py imports this module
+        for p in ag.client().directory():
+            if isinstance(p, dict) and p.get('handle') in va.SANDBOX_AGENTS and isinstance(p.get('id'), str) \
+                    and p.get('status', 'active') == 'active':
+                ids[p['handle']] = p['id']
+    return ids
+
+
+def tour_rules_problem(ag, name, args, ids):
+    """Audit AI-3: does a prepared commitment (`args` as prepare() bound them) do only what the tour itself would do?
+    None if so, else what is wrong. The counterparty is one of the sandbox agents (their directory ids, resolved once per
+    tour), a price this participant pays is at most the published price of the service, and a held note paid with is
+    the other sandbox agent's. The terms are read again here and must hash to the terms hash prepare() pinned (the
+    client signs nothing else), so nothing rests on the inbox's word."""
+    agents = set(_sandbox_ids(ag, ids).values())
+    if not agents:
+        return 'the directory lists no sandbox agent'
+    top = max(svc['price'] for svc in SERVICES.values())
+    if name == 'valun_propose':
+        cp, role, price = args.get('counterparty'), args.get('role'), args.get('price')
+        if cp not in agents:
+            return 'the offer is not for one of the sandbox agents'
+        if role not in ('payer', 'payee') or not _whole_pc(price) or (role == 'payer' and price > top):
+            return f'the offer is not at a published price (at most {top} PC to pay)'
+        return None
+    if not ((name == 'valun_respond' and args.get('action') == 'accept')
+            or (name == 'valun_review_delivery' and args.get('decision') == 'accept')):
+        return 'the tour makes no such commitment'
+    c = ag.client()
+    d = c.deal(args.get('deal_id'))
+    if name == 'valun_respond':
+        chk = c.verify_offer(d)
+        t, h = chk['terms'], chk['terms_hash']
+    else:
+        t = c.verified_agreement(d)
+        h = vc.terms_hash(t)
+    if h != args.get('expected_terms_hash'):
+        return 'the terms read now are not the ones prepared'
+    me = c.participant_id
+    role = 'payer' if t['payer']['id'] == me else 'payee' if t['payee']['id'] == me else None
+    other = (t['payee'] if role == 'payer' else t['payer'])['id'] if role else None
+    price = (t.get('price') or {}).get('amount')
+    if role is None or other not in agents:
+        return 'the other party of the signed terms is not a sandbox agent'
+    if not _whole_pc(price):
+        return 'the signed terms carry no price in whole PC'
+    if role == 'payer':
+        service = which_service(t)
+        if service is None or price > SERVICES[service]['price']:
+            return 'the signed price is above the published price of the service'
+    if name == 'valun_review_delivery':
+        if role != 'payer':
+            return 'only the payer accepts a delivery'
+        pw = args.get('pay_with')
+        if pw not in (None, 'own_note') and (pw not in agents or pw == other):
+            return "the note to pay with is not the other sandbox agent's"
+    return None
+
+
+def _tour_call(ag, call, yes, ask, log, ids=None):
     """One call of sandbox_next_steps through the agent tools: a commitment is prepared (bound to what is shown), then
-    approved at the terminal (ask) unless `yes`, then called with exactly the prepared arguments. A refusal of the
-    preparation carries its cause (attempt_outcome_unknown, records_unreadable, ...): that cause is the error raised,
-    so the tour stops on it."""
+    approved at the terminal (ask) unless `yes`, then called with exactly the prepared arguments. With `yes` a
+    commitment is approved only when tour_rules_problem() finds nothing wrong with what was prepared (audit AI-3); else
+    the owner is asked (ask), or the tour stops (tour_unverified). A refusal of the preparation carries its cause
+    (attempt_outcome_unknown, records_unreadable, ...): that cause is the error raised, so the tour stops on it."""
+    ids = {} if ids is None else ids
     name, args = call.get('tool'), call.get('arguments') or {}
     log(f"  -> {name}: {call.get('why') or ''}")
     if ag.is_commitment(name, args):
@@ -418,8 +486,12 @@ def _tour_call(ag, call, yes, ask, log):
                                 extra={k: v for k, v in refusal.items() if k not in ('error', 'message')})
         args = prepared['args']
         if prepared['text'] is not None:
-            if yes:
+            problem = tour_rules_problem(ag, name, args, ids) if yes else None
+            if yes and problem is None:
                 log('\n'.join('     ' + line for line in prepared['text'].split('\n')))
+            elif yes and not ask:
+                raise vc.ValunError('tour_unverified', f'not approved by --yes: {problem}; nothing was signed; the tour '
+                                                       'stops here (run it without --yes to decide yourself)')
             elif not (ask and ask(prepared['text'])):
                 raise vc.ValunError('owner_declined', 'not approved; nothing was signed; the tour stops here')
     r = ag.call(name, args)
@@ -453,6 +525,7 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
     if va.CIRCULATION not in va.features_of(c.info()):
         raise vc.ValunError('feature_unavailable', 'this Valun server does not offer circulating credit (circulation/1) yet')
     steps, current, said, calls_in_step, deadline = [], None, None, 0, time.time() + timeout_s
+    ids = {}                                # the sandbox agents' directory ids, read once (tour_rules_problem)
     disputes_in_step = 0
     while True:
         try:
@@ -494,7 +567,7 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
                 raise vc.ValunError('tour_stuck', f'step {current}: {TOUR_DISPUTES_PER_STEP} wrong deliveries were disputed '
                                                   'and none was right; stopped')
             try:
-                _tour_call(ag, call, yes, ask, log)
+                _tour_call(ag, call, yes, ask, log, ids)
             except vc.ValunError as e:
                 if e.code in TOUR_STOPS:
                     raise
