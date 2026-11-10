@@ -7,6 +7,9 @@
 //   verified as z*G == a + e*X.
 // Note message (80 bytes): debt_key(32) || total(8 BE) || timestamp(8 BE) || tracker_nft_id(32),
 // debt_key = blake2b256(issuer_pk || recipient_pk [|| token_id]).
+// Prior acknowledgment (105 bytes, tracker v3.2): PA(I,R,X,p,T) = "basis/prior-ack/1" (17 ASCII bytes) || debt_key(32)
+// || X(8 BE) || p(8 BE) || T(8 BE) || tracker_nft_id(32): the edge's stored total X and its note's timestamp p (0 and 0
+// for an edge with no note yet) at the operation's timestamp T.
 //
 // A client-side signer, so a participant's key never leaves its machine. Not constant-time (BigInt arithmetic): fine
 // for a local signer in an experiment, not for an exposed signing service.
@@ -240,4 +243,21 @@ export function noteMessage(issuerPk, recipientPk, total, timestamp, trackerNftI
   const nft = toBytes(trackerNftId, 'tracker_nft_id');
   if (nft.length !== 32) throw new SignatureError('bad note fields: tracker_nft_id must be 32 bytes');
   return concatBytes(debtKey(issuerPk, recipientPk, denomination), u64(total, 'total'), u64(timestamp, 'timestamp'), nft);
+}
+
+/** The tag that starts every prior acknowledgment (tracker v3.2): its 17 ASCII bytes, no terminator. */
+export const PRIOR_ACK_TAG = 'basis/prior-ack/1';
+const PRIOR_ACK_TAG_BYTES = Uint8Array.from(PRIOR_ACK_TAG, c => c.charCodeAt(0));   // private: never handed out
+
+/**
+ * PA(I,R,X,p,T), the 105-byte prior acknowledgment of tracker v3.2: PRIOR_ACK_TAG || debt_key || X || p || T ||
+ * tracker_nft_id (u64 big-endian). X is the edge's stored total the signer acknowledges, p the stored note's timestamp
+ * (0 and 0 for an edge with no note yet), T the operation's timestamp (the transfer's T, or the bound note's own). The
+ * numbers are integers (number, bigint or decimal string) in [0, 2^64); `trackerNftId` is 32 bytes (or 64 hex).
+ */
+export function priorAckMessage(issuerPk, recipientPk, priorTotal, priorTimestamp, timestamp, trackerNftId, denomination = 'erg') {
+  const nft = toBytes(trackerNftId, 'tracker_nft_id');
+  if (nft.length !== 32) throw new SignatureError('bad prior acknowledgment fields: tracker_nft_id must be 32 bytes');
+  return concatBytes(PRIOR_ACK_TAG_BYTES, debtKey(issuerPk, recipientPk, denomination), u64(priorTotal, 'prior_total'),
+    u64(priorTimestamp, 'prior_timestamp'), u64(timestamp, 'timestamp'), nft);
 }

@@ -57,6 +57,38 @@ class SignVerify(unittest.TestCase):
         with self.assertRaises(vb.SignatureError):
             vb.sign(b'x', sk, ALICE)
 
+    def test_prior_ack_message_fixed_vector(self):
+        """design v3.2 section 7: the vector shared with the tracker's basis_core test (same keys, numbers, NFT id)."""
+        a, b, nft = vb.public_key(b'\x01' * 32), vb.public_key(b'\x02' * 32), b'\xab' * 32
+        self.assertEqual(a.hex(), '031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f')
+        self.assertEqual(b.hex(), '024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766')
+        self.assertEqual(vb.debt_key(a, b, 'erg').hex(), '8655e13a7d5c621d55abe7b76cd86399fee984d67ecc48a72f2f8aea80fd94e1')
+        pa = vb.prior_ack_message(a, b, 1000, 1762650000123, 1762650060999, nft, 'erg')
+        self.assertEqual(pa.hex(), '62617369732f7072696f722d61636b2f318655e13a7d5c621d55abe7b76cd86399fee984d67ecc48a72f2f8aea80fd94e1'
+                                   '00000000000003e80000019a66208afb0000019a662178c7'
+                                   'abababababababababababababababababababababababababababababababab')
+        self.assertEqual(len(pa), 105)
+        self.assertEqual(pa[:17], b'basis/prior-ack/1')
+        self.assertEqual(vb.PRIOR_ACK_TAG, b'basis/prior-ack/1')
+        # the v3.1 acknowledgment of the same state, for comparison: M(A,B,X,T), 80 bytes, a different message
+        m = vb.note_message(a, b, 1000, 1762650060999, nft, 'erg')
+        self.assertEqual(m.hex(), '8655e13a7d5c621d55abe7b76cd86399fee984d67ecc48a72f2f8aea80fd94e1'
+                                  '00000000000003e80000019a662178c7abababababababababababababababababababababababababababababababab')
+        self.assertNotEqual(pa, m)
+        self.assertEqual(pa[17:], m[:40] + (1762650000123).to_bytes(8, 'big') + m[40:])
+
+    def test_prior_ack_message_absent_edge_and_fields(self):
+        a, b, nft = vb.public_key(b'\x01' * 32), vb.public_key(b'\x02' * 32), b'\xab' * 32
+        pa = vb.prior_ack_message(a, b, 0, 0, 1762650060999, nft)          # no note yet: (0, 0)
+        self.assertEqual(len(pa), 105)
+        self.assertEqual(pa[49:65], bytes(16))
+        self.assertEqual(pa[65:73], (1762650060999).to_bytes(8, 'big'))
+        token = 'token:' + 'cd' * 32
+        self.assertEqual(vb.prior_ack_message(a, b, 5, 6, 7, nft, token)[17:49], vb.debt_key(a, b, token))
+        for bad in ((-1, 0, 1, nft), (0, -1, 1, nft), (0, 0, 2**64, nft), (2**64, 0, 1, nft), (0, 0, 1, nft[:31])):
+            with self.subTest(bad=bad[:3]), self.assertRaises(vb.SignatureError):
+                vb.prior_ack_message(a, b, *bad)
+
     def test_token_denomination_key(self):
         token = 'token:' + 'ab' * 32
         self.assertEqual(vb.debt_key(ALICE, BOB, token), vb.blake2b256(ALICE, BOB, bytes.fromhex('ab' * 32)))

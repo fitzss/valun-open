@@ -776,6 +776,11 @@ export namespace basis {
   function debtKey(issuerPk: BytesOrHex, recipientPk: BytesOrHex, denomination?: string): Bytes;
   /** The 80-byte Basis note message. */
   function noteMessage(issuerPk: BytesOrHex, recipientPk: BytesOrHex, total: U64, timestamp: U64, trackerNftId: BytesOrHex, denomination?: string): Bytes;
+  /** "basis/prior-ack/1": the 17 ASCII bytes every prior acknowledgment starts with. */
+  const PRIOR_ACK_TAG: 'basis/prior-ack/1';
+  /** PA(I,R,X,p,T): the 105-byte prior acknowledgment of tracker v3.2 (p = the prior note's timestamp; 0, 0 for no edge). */
+  function priorAckMessage(issuerPk: BytesOrHex, recipientPk: BytesOrHex, priorTotal: U64, priorTimestamp: U64, timestamp: U64,
+    trackerNftId: BytesOrHex, denomination?: string): Bytes;
   class SignatureError extends Error {}
 }
 

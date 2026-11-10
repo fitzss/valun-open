@@ -56,6 +56,44 @@ test('note-message field checks: u64 range, integer forms, 32-byte tracker id, 3
     bytesToHex(basis.blake2b256(hexToBytes(a), hexToBytes(b), hexToBytes('ab'.repeat(32)))));
 });
 
+test('prior acknowledgment PA(I,R,X,p,T): the fixed vector shared with the tracker (design v3.2 section 7), 105 bytes', () => {
+  const a = basis.publicKey(new Uint8Array(32).fill(1)), b = basis.publicKey(new Uint8Array(32).fill(2));
+  const nft = new Uint8Array(32).fill(0xab);
+  assert.equal(bytesToHex(a), '031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f');
+  assert.equal(bytesToHex(b), '024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766');
+  assert.equal(bytesToHex(basis.debtKey(a, b, 'erg')), '8655e13a7d5c621d55abe7b76cd86399fee984d67ecc48a72f2f8aea80fd94e1');
+  const pa = basis.priorAckMessage(a, b, 1000, 1762650000123, 1762650060999, nft, 'erg');
+  assert.equal(bytesToHex(pa), '62617369732f7072696f722d61636b2f318655e13a7d5c621d55abe7b76cd86399fee984d67ecc48a72f2f8aea80fd94e1'
+    + '00000000000003e80000019a66208afb0000019a662178c7abababababababababababababababababababababababababababababababab');
+  assert.equal(pa.length, 105);
+  assert.equal(new TextDecoder().decode(pa.subarray(0, 17)), 'basis/prior-ack/1');
+  assert.equal(basis.PRIOR_ACK_TAG, 'basis/prior-ack/1');
+  assert.equal(bytesToHex(pa.subarray(0, 17)), bytesToHex(utf8('basis/prior-ack/1')));
+  // number, bigint and decimal-string forms give the same bytes; hex keys and tracker id too
+  assert.equal(bytesToHex(basis.priorAckMessage(bytesToHex(a), bytesToHex(b), 1000n, '1762650000123', 1762650060999n, 'ab'.repeat(32))), bytesToHex(pa));
+  // the v3.1 acknowledgment of the same state, for comparison: M(A,B,X,T), 80 bytes, another message
+  const m = basis.noteMessage(a, b, 1000, 1762650060999, nft, 'erg');
+  assert.equal(bytesToHex(m), '8655e13a7d5c621d55abe7b76cd86399fee984d67ecc48a72f2f8aea80fd94e100000000000003e80000019a662178c7'
+    + 'abababababababababababababababababababababababababababababababab');
+  assert.notEqual(bytesToHex(pa), bytesToHex(m));
+});
+
+test('prior acknowledgment: (0, 0) for an edge with no note; token debt key; field checks', () => {
+  const a = basis.publicKey(new Uint8Array(32).fill(1)), b = basis.publicKey(new Uint8Array(32).fill(2));
+  const nft = 'ab'.repeat(32);
+  const pa = basis.priorAckMessage(a, b, 0, 0, 1762650060999, nft);
+  assert.equal(pa.length, 105);
+  assert.equal(bytesToHex(pa.subarray(49, 65)), '00'.repeat(16));
+  assert.equal(bytesToHex(pa.subarray(65, 73)), '0000019a662178c7');
+  const token = 'token:' + 'cd'.repeat(32);
+  assert.equal(bytesToHex(basis.priorAckMessage(a, b, 5, 6, 7, nft, token).subarray(17, 49)), bytesToHex(basis.debtKey(a, b, token)));
+  assert.throws(() => basis.priorAckMessage(a, b, -1, 0, 1, nft), basis.SignatureError);
+  assert.throws(() => basis.priorAckMessage(a, b, 0, -1, 1, nft), basis.SignatureError);
+  assert.throws(() => basis.priorAckMessage(a, b, 0, 0, 1n << 64n, nft), basis.SignatureError);
+  assert.throws(() => basis.priorAckMessage(a, b, 0, 0, 1, 'ab'.repeat(31)), basis.SignatureError);
+  assert.throws(() => basis.priorAckMessage(a, b, 0, 0.5, 1, nft), basis.SignatureError);
+});
+
 test('public test keys: secrets derived from the public labels give the published public keys', () => {
   for (const [name, k] of Object.entries(KEYS)) assert.equal(bytesToHex(basis.publicKey(k.secret)), k.pubkey, name);
 });

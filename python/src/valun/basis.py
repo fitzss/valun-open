@@ -7,6 +7,10 @@ Mirrors basis_core::schnorr_sign / SchnorrVerifier at Basis 3df7ed93 (crates/bas
   both with a signed conversion), verified as z*G == a + e*X.
 Note message (80 bytes): debt_key(32) || total(8 BE) || timestamp(8 BE) || tracker_nft_id(32),
 debt_key = blake2b256(issuer_pk || recipient_pk [|| token_id]).
+Prior acknowledgment (105 bytes, tracker v3.2): PA(I,R,X,p,T) = "basis/prior-ack/1" (17 ASCII bytes) || debt_key(32) ||
+X(8 BE) || p(8 BE) || T(8 BE) || tracker_nft_id(32): the edge's stored total X and its note's timestamp p (0 and 0 for
+an edge with no note yet) at the operation's timestamp T. Never 80 bytes and never a Valun statement ("valun-"), so it
+can be taken neither for a note message nor for a statement.
 
 This is a client-side signer so a participant's key never leaves their machine. It is cross-checked against
 Basis's official test vectors and against basis_core itself; the real tracker verifies every note it signs.
@@ -186,3 +190,19 @@ def note_message(issuer_pk: bytes, recipient_pk: bytes, total: int, timestamp: i
         raise SignatureError('bad note fields')
     return (debt_key(issuer_pk, recipient_pk, denomination) + total.to_bytes(8, 'big')
             + timestamp.to_bytes(8, 'big') + tracker_nft_id)
+
+
+PRIOR_ACK_TAG = b'basis/prior-ack/1'   # 17 ASCII bytes, no terminator (tracker v3.2 basis_core prior_ack_message)
+
+
+def prior_ack_message(issuer_pk: bytes, recipient_pk: bytes, prior_total: int, prior_timestamp: int, timestamp: int,
+                      tracker_nft_id: bytes, denomination: str = 'erg') -> bytes:
+    """PA(I,R,X,p,T), the 105-byte prior acknowledgment of tracker v3.2: PRIOR_ACK_TAG || debt_key || X || p || T ||
+    tracker_nft_id (u64 big-endian numbers). X is the edge's stored total the signer acknowledges, p the stored note's
+    timestamp (X = 0 and p = 0 for an edge with no note yet), T the operation's timestamp (the transfer's T, or the
+    bound note's own timestamp). It binds the exact prior state and the operation, so it cannot be reused for another."""
+    if not (0 <= prior_total < 2**64 and 0 <= prior_timestamp < 2**64 and 0 <= timestamp < 2**64) \
+            or len(tracker_nft_id) != 32:
+        raise SignatureError('bad prior acknowledgment fields')
+    return (PRIOR_ACK_TAG + debt_key(issuer_pk, recipient_pk, denomination) + prior_total.to_bytes(8, 'big')
+            + prior_timestamp.to_bytes(8, 'big') + timestamp.to_bytes(8, 'big') + tracker_nft_id)
