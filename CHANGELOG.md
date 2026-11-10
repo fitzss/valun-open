@@ -179,7 +179,7 @@ Both packages implement the same protocol changes (`spec/PROTOCOL.md` revision v
 - `spec/vectors/check_python.py --client package --require circulation/1`: 1461 checks, 1260 agree, 0 disagreements
   in failing tiers, 17 informative differences, 184 not applicable; without `--require`: 1459 checks, 1104 agree, 0
   disagreements, 17 informative differences, 338 not applicable (Python 3.14.7 and 3.11.18). The Hermes plugin 0.4.0
-  at `a8714ec` gives the same lines; the plugin 0.3.0 at `5d01fbd` the second. `generate.mjs` run twice gives the same
+  at `17e9be4` gives the same lines; the plugin 0.3.0 at `5d01fbd` the second. `generate.mjs` run twice gives the same
   bytes, and the JavaScript fixtures regenerate unchanged.
 
 ## 0.3.1 and earlier

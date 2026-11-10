@@ -93,9 +93,9 @@ regenerated):
 
 The first line is `--client package --require circulation/1` (package 0.4.0 from `python/src`). The second is the
 plugin without `--require`: hermes-plugin-valun 0.3.0 at `5d01fbd` (the commit the Hermes catalog pins; CI checks it
-too, here from a `git archive` export), and equally the plugin 0.4.0 at `a8714ec` (local: its `valun_core/` copied
-again from this repository at `64ba97a`, tracker v3.2 after its review, in `7125baa`). With `--require circulation/1`
-the plugin 0.4.0 at `a8714ec` gives the package's line, `[plugin] 1461 checks: 1260 agree, ...`. Without `--require`,
+too, here from a `git archive` export), and equally the plugin 0.4.0 at `17e9be4` (local: its `valun_core/` copied
+again from this repository at `64ba97a`, tracker v3.2 after its review, in `e5fb106`). With `--require circulation/1`
+the plugin 0.4.0 at `17e9be4` gives the package's line, `[plugin] 1461 checks: 1260 agree, ...`. Without `--require`,
 the package gives
 the plugin's line. These were obtained locally with Python 3.14.7 and 3.11.18 on Windows against the vectors
 regenerated from `b7ecca0`. The plugin at `2b78a06` (the commit the job below still pins) predates tracker v3.2 (it signs no prior
