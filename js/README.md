@@ -237,7 +237,7 @@ node --test js/test/        (from the repository root; or `npm test` in js/)
 ```
 
 The suite runs offline and needs no packages. It checks the code against every file in `spec/vectors/` (generated
-from the real server code, release v16, valun-app `fa38334`; spec revision v14):
+from the real server code, release v16, valun-app `b7ecca0`, on tracker v3.2; spec revision v14):
 
 - `basis-signatures.json`: Basis's official vectors TV001-TV011.
 - `basis-notes.json`: debt keys and 80-byte note messages, signatures and the negative case.
@@ -249,9 +249,9 @@ from the real server code, release v16, valun-app `fa38334`; spec revision v14):
   - each refused reason is refused with the server's code and message, and nothing is sent.
 - `terms-validation.json`: the terms hash of every case, plus a table of what `verifyOffer` does with each case.
   Validation itself is server-only.
-- `circulation.json` (release v16): timestamps, messages, quote digests, pay statements, tracker requests, and the 58
-  decisions of the signing firewall (consents, payer templates, bound templates), each with its exact slots or refusal
-  code.
+- `circulation.json` (release v16): timestamps, messages (80-byte note messages and, `kind: "prior_ack"`, the 105-byte
+  prior acknowledgments of tracker v3.2), quote digests, pay statements, tracker requests, and the 74 decisions of the
+  signing firewall (consents, payer templates, bound templates), each with its exact slots or refusal code.
 - `transcript.json`:
   - every server-verified signature and every terms hash in every response;
   - all 65 client-call steps (of 236), replayed through the JS `Client` against a fake `fetch` that serves the
