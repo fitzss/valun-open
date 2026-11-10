@@ -11,20 +11,22 @@ server release it targets (valun-app release v16) is not deployed. Version numbe
 
 Both packages implement the same protocol changes (`spec/PROTOCOL.md` revision v14: section 18, the signing firewall of
 15.3 and Appendix H) and are held to the same vectors, regenerated from the release v16 server code (valun-app
-`fa38334`, the branch's final commit).
+`b7ecca0`, the branch's final commit, on tracker v3.2).
 
 ### Circulating credit (only against a server whose `GET /info` lists `circulation/1`)
 
 - **Bound credit notes** (`bound_notes/1`, 18.5): when the server offers them, a credit note is signed together with an
-  acknowledgment of the pair's current total (timestamps ending in 997 ms), so the tracker applies it only on that
-  total. Once offered, bound templates are used for good (R12).
+  acknowledgment of the pair's current state (timestamps ending in 997 ms; since tracker v3.2 its total and its
+  timestamp, below), so the tracker applies it only on that state. Once offered, bound templates are used for good
+  (R12).
 - **Paying with a note you hold** (debt transfer, 18.6): `valun_review_delivery` takes `pay_with` (an issuer handle or
   id, or `own_note`). The client checks the transfer template, signs its three slots, the `complete` statement and the
   new pay statement `valun-pilot/pay/1` over the quote digest, and records the attempt before posting. New client
   methods: payment options, transfer template, pay by transfer, cancel transfer.
 - **Consents** (18.9): the client can sign set-offs (net-neutral), transfers of its own debt (as issuer) and payments
   to it by transfer (as new creditor) by itself, inside the owner's mandate and its local consent policy, through a
-  deterministic signing firewall (15.3, rules R1-R13, 28 refusal codes; every decision is a vector). It declares the
+  deterministic signing firewall (15.3, rules R1-R13 and the tracker contract, 29 refusal codes; every decision is a
+  vector). It declares the
   roles it signs in an `X-Valun-Features: consents/1;roles=...` header, and sends the empty list once when every role
   is off (the server then forgets its roles at once; decision D-3 b).
 - **One live payment attempt per deal** (decision D-1): after an attempt ends without effect, another kind of payment
@@ -113,6 +115,38 @@ Both packages implement the same protocol changes (`spec/PROTOCOL.md` revision v
   (steps 203-205), and the ids of the steps that follow (211-230). Spec 17, 18.6, 18.8, 18.9, 18.11, 18.16 and
   Appendix H describe that server.
 
+### Tracker v3.2 (2026-11-10, before release)
+
+- **Prior acknowledgments bind the prior state** (tracker v3.2; audit VS-1 closed at the root, and its bound-note
+  twin, readiness R-17): `basis.prior_ack_message` and `priorAckMessage` build `PA(I,R,X,p,T)`, the 105-byte prior
+  acknowledgment `"basis/prior-ack/1"` || debt key || X || p || T || tracker id (X and p the edge's stored total and
+  its note's timestamp, 0 and 0 for an edge with no note; T the operation's timestamp). A bound note's prior
+  acknowledgment and a transfer's two creditor prior slots are signed over PA of the state the item shows; every other
+  slot is the 80-byte note message, as before. A prior timestamp the server names beside a state must be that state's
+  (`bad_template`, `bad_consent`). A payment by transfer sends `from_prior_timestamp` and `to_prior_timestamp`, a bound
+  note `prior_timestamp`.
+- **The tracker contract** (fail closed): the clients sign prior acknowledgments only when `GET /info` `novation`
+  reports exactly `tracker_build` `valun-circulating-credit/4`, `transfer_version` 4, `bound_note_version` 3 and
+  `prior_ack` `basis/prior-ack/1`; otherwise a bound note, a payment by transfer and a payer's or payee's consent are
+  `feature_unavailable` (issuer and set-off consents are not gated). The v16 server runs circulation as off on a
+  tracker v3 or v3.1.
+- **R11's same-prior exemption** (decision D-1): a transfer at a new T through the same held note on the same prior
+  state, total and timestamp, as an earlier attempt is signed at once, since at most one of the two can apply; this
+  supersedes the same-issuer retry rule of the audit fixes for that case. Another issuer, another prior state (the
+  same total at another timestamp included), another kind of payment, an attempt that recorded no prior state and
+  ordinary notes keep their windows; `payment_attempt` (R12) stays as a second line.
+- **Vectors regenerated from valun-app `b7ecca0`** (the server change `538075b` on tracker v3.2, pinned at Basis fork
+  commit `4370418`): the generator's replica builds PA and checks it against the shared vector of design v3.2, and its
+  stand-in tracker checks PA as tracker v3.2 does. Transcript steps 148-236 carry PA and its signatures, the prior
+  timestamps and the contract in `GET /info`; step 203's `409 transfer_stale` now carries a fresh template through the
+  same issuer on the same prior state, and steps 204-205 the new message and `next_actions` (the exemption); the ids
+  of steps 211-230 move by one. `circulation.json` marks PA entries `kind: "prior_ack"`, gives every decision's `ctx`
+  the contract, and gains 22 records (3 messages, 3 tracker requests and 16 decisions: the exemption, the contract and
+  the prior timestamps); `payer/same-prior-retry-at-another-timestamp` is now `sign`. `check_python.py` and the
+  JavaScript vector tests rebuild PA (in the `circulation` tier, so the plugin 0.3.0 still passes). The other vector
+  files differ in meta only. Spec 15.3, 16.2, 17, 18.1-18.3, 18.5, 18.6, 18.8, 18.9, 18.11, 18.16 and Appendix H
+  describe tracker v3.2.
+
 ### Known limits
 
 - Neither package declares `PROTOCOL_FEATURES` yet, so the conformance checker holds them to the circulation vectors
@@ -121,15 +155,16 @@ Both packages implement the same protocol changes (`spec/PROTOCOL.md` revision v
   all three) and the payment timing constants are owner decisions still open (OQ-40, OQ-42).
 - The other open items for release v16 are in `spec/OPEN-QUESTIONS.md` (revision 9).
 
-### Checked locally (2026-11-10, valun-open `circulating-credit`, after the audit fixes)
+### Checked locally (2026-11-10, valun-open `circulating-credit`, after tracker v3.2)
 
-- `python -m unittest discover -s python/tests`: 399 tests OK with Python 3.14.7 (with the official MCP SDK 2.3.0
-  installed), after the vectors were regenerated from `fa38334`. Not rerun with 3.11 after the audit fixes.
-- `node --test js/test/` (Node 24): 492 tests, 491 pass, 1 skipped (a POSIX file-mode test, on Windows). The type
-  definitions were not compiled after the audit fixes (TypeScript is fetched from the network).
-- `spec/vectors/check_python.py --client package --require circulation/1`: 1389 checks, 1191 agree, 0 disagreements
-  in failing tiers, 17 informative differences, 181 not applicable (Python 3.14.7 and 3.11.18, vectors from
-  `fa38334`).
+- `python -m unittest discover -s python/tests`: 413 tests OK with Python 3.14.7 (with the official MCP SDK 2.3.0
+  installed), after the vectors were regenerated from `b7ecca0`. Not rerun with 3.11 after tracker v3.2.
+- `node --test js/test/` (Node 24): 507 tests, 506 pass, 1 skipped (a POSIX file-mode test, on Windows), against the
+  vectors from `b7ecca0`.
+- `spec/vectors/check_python.py --client package --require circulation/1`: 1456 checks, 1255 agree, 0 disagreements
+  in failing tiers, 17 informative differences, 184 not applicable; without `--require`: 1454 checks, 1104 agree, 0
+  disagreements, 17 informative differences, 333 not applicable (Python 3.14.7 and 3.11.18, vectors from `b7ecca0`).
+  The JavaScript fixtures regenerate unchanged.
 
 ## 0.3.1 and earlier
 
