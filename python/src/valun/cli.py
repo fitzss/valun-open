@@ -21,6 +21,7 @@ import argparse
 import getpass
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -815,18 +816,36 @@ def _terminal_text(s, limit=300):
     return ''.join(ch if ch.isprintable() else ' ' for ch in str(s))[:limit]
 
 
-def _payee_edge_text(args, e):
+def _shell_word(s, limit=40):
+    """A command argument as it can be pasted into bash, zsh or PowerShell: quoted when it is more than letters, digits
+    and _.:/=+- (an attempt's '#n' unquoted starts a comment there, and the pasted command would fail)."""
+    s = _terminal_text(s, limit).replace("'", '')
+    return s if re.fullmatch(r'[A-Za-z0-9_.:/=+-]+', s) else f"'{s}'"
+
+
+# For an attempt the server reads as inconsistent (one of its edges shows it applied, the other does not).
+INCONSISTENT_WHY = ("  The server reads this transfer as INCONSISTENT: one of its edges shows it applied and the other "
+                    "does not. That is the operator's case: ask the operator before you resolve it either way. Do not "
+                    "resolve it as not applied only because the payee says the payment did not arrive: your own claim on "
+                    "the issuer may already be lower, and paying the deal again would pay it twice.")
+
+
+def _payee_edge_text(args, e, state=None):
     """What `valun attempts resolve --applied` prints when the server answers 409 payee_edge_not_applied (resolve_attempt
-    raises it with the reason in its message): what happened, and the two ways on, with the exact command."""
+    raises it with the reason in its message): what happened, and the ways on, with the exact command (none for an
+    attempt the server reads as inconsistent: that one is the operator's)."""
     edge = (e.extra or {}).get('payee_edge')
-    return '\n'.join([
+    lines = [
         'The server did not record this payment as applied (payee_edge_not_applied'
         + (f', payee edge: {_terminal_text(edge, 40)}' if edge else '') + '). Nothing was changed, at the server or in '
         "your client's records.",
-        '  ' + _terminal_text(e, 600) + '.',
+        '  ' + _terminal_text(e, 600) + '.']
+    if state == 'inconsistent':
+        return '\n'.join(lines + [INCONSISTENT_WHY, '  Do not resolve it until the operator has looked into it.'])
+    return '\n'.join(lines + [
         '  If the payee confirms the payment did not arrive, resolve it as not applied: '
-        f'`valun --profile {_profile(args)} attempts resolve {_terminal_text(args.deal, 40)} '
-        f'{_terminal_text(args.attempt, 40)} --not-applied`.',
+        f'`valun --profile {_shell_word(_profile(args))} attempts resolve {_shell_word(args.deal)} '
+        f'{_shell_word(args.attempt)} --not-applied`.',
         '  If the payee says it arrived, ask the operator to look into it with the payee, and do not resolve it until '
         'then.'])
 
@@ -882,7 +901,8 @@ def cmd_attempts(args):
         if any(r['state'] == 'unknown' and not r['paid'] for r in rows):     # a paid deal has nothing to resolve
             print('Resolve one only after asking the payee whether the payment arrived: '
                   f"`valun --profile {_profile(args)} attempts resolve DEAL ATTEMPT --applied` (it arrived) or "
-                  "`--not-applied` (it did not). ATTEMPT is #n, or the server's id of a transfer (vt_...).")
+                  "`--not-applied` (it did not). ATTEMPT is '#n' in quotes (unquoted, a # starts a comment in the "
+                  "shell), or the server's id of a transfer (vt_...).")
         return 0
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         print('valun attempts resolve asks you, the owner, to confirm at this terminal, and no person is at it. Run it in '
@@ -905,6 +925,9 @@ def cmd_attempts(args):
              'NOT APPLIED: once its window has passed (its time + 1 h + 2 min), your client may pay this deal again, '
              'so a wrong answer can pay it twice.'))
     print('  Do this only after the payee told you whether this payment arrived.')
+    server_state = (plan.get('transfer') or {}).get('state') if plan['server'] else None
+    if server_state == 'inconsistent':
+        print(INCONSISTENT_WHY)
     if plan['server']:
         print('  The server is told first (with your owner token, used once and not stored); then your client\'s records.')
         if outcome == 'applied':
@@ -939,7 +962,7 @@ def cmd_attempts(args):
                               expected_attempt=confirmed, **read)
     except vc.ValunError as e:
         if e.code == 'payee_edge_not_applied':
-            print(_payee_edge_text(args, e))
+            print(_payee_edge_text(args, e, server_state))
             return 1
         if not (e.extra or {}).get('local_possible') or local_only:
             print(json.dumps(error_payload(e), ensure_ascii=False))

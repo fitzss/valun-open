@@ -1412,13 +1412,43 @@ class AttemptsCommands(Cli):
         self.assertIn('The server did not record this payment as applied (payee_edge_not_applied, payee edge: '
                       'moved_past). Nothing was changed', out)
         self.assertIn("moved past the transfer's timestamp at its earlier total", out)
-        self.assertIn(f'`valun --profile s attempts resolve {self.deal} #1 --not-applied`', out)
+        # The attempt is quoted: pasted into bash, zsh or PowerShell, an unquoted '#1 --not-applied' is a comment.
+        self.assertIn(f"`valun --profile s attempts resolve {self.deal} '#1' --not-applied`", out)
+        self.assertNotIn(' #1 --not-applied', out)
         self.assertIn('ask the operator to look into it with the payee', out)
+        self.assertNotIn('INCONSISTENT', out)
         self.assertNotIn("client's records only?", out)
         self.assertNotIn('\x1b', out)
         disk = self.disk()                                            # nothing resolved, nothing recorded as paid
         self.assertEqual((self.world.resolutions, disk['transfer_attempts']), ([], before))
         self.assertNotIn('paid_deals', disk.get('records') or {})
+
+    def test_an_inconsistent_attempt_is_the_operators_case(self):
+        # Post-audit (PA-OPEN verifier): for a transfer the server reads as inconsistent (one edge applied, the other
+        # not), resolving it as not applied on the payee's word could pay the deal twice. The plan says so before the
+        # question, and the payee_edge_not_applied refusal names no --not-applied command for it.
+        self.with_attempt(server_state='inconsistent')
+        route = f'POST /pilot/v1/owner/deals/{self.deal}/attempts/vt_0123456789abcdef/resolve'
+        self.world.fail[route] = [vc.ValunError('payee_edge_not_applied', "the payee's edge does not show it", 409,
+                                                {'payee_edge': 'moved_past'})]
+        before = self.disk()['transfer_attempts']
+        rc, out = self.run_cli('attempts', 'resolve', self.deal, '#1', '--applied', '--owner-token-file', self.token_file,
+                               tty=True, answers=['y'])
+        self.assertEqual(rc, 1, out)
+        self.assertIn('The server reads this transfer as INCONSISTENT', out)
+        self.assertLess(out.index('INCONSISTENT'), out.index('<- this one'))      # in the plan, before the question
+        self.assertIn('Do not resolve it until the operator has looked into it.', out)
+        self.assertNotIn('--not-applied`', out)                                   # no command to pay it again
+        disk = self.disk()
+        self.assertEqual((self.world.resolutions, disk['transfer_attempts']), ([], before))
+
+    def test_the_plan_warns_about_an_inconsistent_attempt_and_says_nothing_for_others(self):
+        self.with_attempt(server_state='inconsistent')
+        rc, out = self.run_cli('attempts', 'resolve', self.deal, '#1', '--not-applied', '--owner-token-file',
+                               self.token_file, tty=True, answers=['n'])
+        self.assertEqual(rc, 3, out)
+        self.assertIn("That is the operator's case", out)
+        self.assertIn('Nothing was changed.', out)
 
     def test_a_transfer_whose_id_was_never_recorded_is_resolved_by_the_id_the_owner_gives(self):
         # The POST of my payment got no answer: the server recorded the transfer (its outcome unknown), my client never
@@ -1608,6 +1638,7 @@ class AttemptsCommands(Cli):
         self.assertEqual(rc, 0, out)
         self.assertIn('your claim 3 -> 2 PC', [x for x in out.splitlines() if 'MAY HAVE APPLIED' in x][0])
         self.assertIn('`valun --profile s attempts resolve DEAL ATTEMPT --applied`', out)    # FX3-PY: names the profile
+        self.assertIn("ATTEMPT is '#n' in quotes (unquoted, a # starts a comment in the shell)", out)
 
     def test_a_paid_deal_paid_by_a_payment_the_list_does_not_show_has_nothing_to_resolve(self):
         # FX3-PY (FX2-PY verifier, item 8): records.paid_deals names a payment that no row of the list shows (paid_by
