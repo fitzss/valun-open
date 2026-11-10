@@ -79,25 +79,27 @@ What the release v16 checks add:
   tracker checks for its field; and the firewall's decisions (`consents[]`, `payer_templates[]`, `bound_templates[]`:
   the client's own `novation.evaluate_*` must sign exactly the slots given, or refuse with the code given; each `ctx`
   carries `novation`, the `GET /info` object with the tracker v3.2 contract). Every refusal code of PROTOCOL.md 15.3
-  and decision D-1/D-2 has a case, `feature_unavailable` (no tracker v3.2 contract) and R11's same-prior exemption
+  and decision D-1/D-2 has a case, `feature_unavailable` (no tracker v3.2 contract), R4's prior states and R11's
+  same-prior exemption (with an earlier attempt recorded without `ack`, which waits)
   included.
 
 Expected last line of each run against the committed vectors (the counts change only when the vectors are
 regenerated):
 
 ```
-[package] 1456 checks: 1255 agree, 0 disagreements in failing tiers, 17 informative differences, 184 not applicable.
-[plugin] 1454 checks: 1104 agree, 0 disagreements in failing tiers, 17 informative differences, 333 not applicable.
+[package] 1461 checks: 1260 agree, 0 disagreements in failing tiers, 17 informative differences, 184 not applicable.
+[plugin] 1459 checks: 1104 agree, 0 disagreements in failing tiers, 17 informative differences, 338 not applicable.
 ```
 
 The first line is `--client package --require circulation/1` (package 0.4.0 from `python/src`). The second is the
 plugin without `--require`: hermes-plugin-valun 0.3.0 at `5d01fbd` (the commit the Hermes catalog pins; CI checks it
-too, here from a `git archive` export), and equally the plugin 0.4.0 at `89a92ed` (local: its `valun_core/` copied
-again from this repository at `836750a`, tracker v3.2, in `84f8b43`). With `--require circulation/1` the plugin 0.4.0
-at `89a92ed` gives the package's line, `[plugin] 1456 checks: 1255 agree, ...`. Without `--require`, the package gives
+too, here from a `git archive` export), and equally the plugin 0.4.0 at `a8714ec` (local: its `valun_core/` copied
+again from this repository at `64ba97a`, tracker v3.2 after its review, in `7125baa`). With `--require circulation/1`
+the plugin 0.4.0 at `a8714ec` gives the package's line, `[plugin] 1461 checks: 1260 agree, ...`. Without `--require`,
+the package gives
 the plugin's line. These were obtained locally with Python 3.14.7 and 3.11.18 on Windows against the vectors
 regenerated from `b7ecca0`. The plugin at `2b78a06` (the commit the job below still pins) predates tracker v3.2 (it signs no prior
-acknowledgment PA and has no contract gate) and, with `--require circulation/1`, disagrees on 75 checks; the pin must
+acknowledgment PA and has no contract gate) and, with `--require circulation/1`, disagrees on 80 checks; the pin must
 move to the plugin's pushed commit anyway. CI runs the commands on Linux, macOS and Windows with Python 3.10, 3.13 and
 3.14.
 

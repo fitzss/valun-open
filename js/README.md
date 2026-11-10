@@ -250,7 +250,7 @@ from the real server code, release v16, valun-app `b7ecca0`, on tracker v3.2; sp
 - `terms-validation.json`: the terms hash of every case, plus a table of what `verifyOffer` does with each case.
   Validation itself is server-only.
 - `circulation.json` (release v16): timestamps, messages (80-byte note messages and, `kind: "prior_ack"`, the 105-byte
-  prior acknowledgments of tracker v3.2), quote digests, pay statements, tracker requests, and the 74 decisions of the
+  prior acknowledgments of tracker v3.2), quote digests, pay statements, tracker requests, and the 79 decisions of the
   signing firewall (consents, payer templates, bound templates), each with its exact slots or refusal code.
 - `transcript.json`:
   - every server-verified signature and every terms hash in every response;

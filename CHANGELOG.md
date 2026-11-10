@@ -146,6 +146,21 @@ Both packages implement the same protocol changes (`spec/PROTOCOL.md` revision v
   JavaScript vector tests rebuild PA (in the `circulation` tier, so the plugin 0.3.0 still passes). The other vector
   files differ in meta only. Spec 15.3, 16.2, 17, 18.1-18.3, 18.5, 18.6, 18.8, 18.9, 18.11, 18.16 and Appendix H
   describe tracker v3.2.
+- **After the independent review of tracker v3.2** (two LOW items, both clients alike, `64ba97a`):
+  - Every transfer and bound-note attempt a client records carries `ack: "basis/prior-ack/1"` (its prior slot was
+    signed as PA), and R11's same-prior exemption applies only when the earlier attempt carries it too. An earlier
+    attempt without it is treated as before tracker v3.2 (it waits for its window): a pre-v3.2 0.4.0 build recorded
+    `prior_timestamp` too but signed the 80-byte M(A,B,X,T), which does not exclude a PA attempt. Attempts recorded by
+    `2aa318a`/`836750a` have no `ack` either: one wait for each.
+  - R4's record of a group with a prior slot holds the prior state its PA acknowledged (`prior_state {total,
+    timestamp}`), and a second PA at the same (edge, timestamp, operation) over another prior state is refused
+    (`timestamp_reused`), in the evaluators and in `apply_write_ahead`, as the server's sandbox signer refuses it. A
+    record without `prior_state` is compared on operation and totals only.
+  - Vectors regenerated from the same server commit `b7ecca0` (`95d23c4`): the client records in the transcript and
+    the decisions' `ctx` carry `ack` and `prior_state` where a client writes them, and `circulation.json` gains five
+    decisions (79): `payer/same-prior-state-earlier-attempt-without-ack` (`transfer_window_open`),
+    `payer/`, `bound/` and `payee/prior-acknowledged-in-another-state-at-this-timestamp` (`timestamp_reused`) and
+    `payer/same-operation-recorded-with-its-prior-state` (`sign`). The JS fixtures change accordingly.
 
 ### Known limits
 
@@ -155,16 +170,17 @@ Both packages implement the same protocol changes (`spec/PROTOCOL.md` revision v
   all three) and the payment timing constants are owner decisions still open (OQ-40, OQ-42).
 - The other open items for release v16 are in `spec/OPEN-QUESTIONS.md` (revision 9).
 
-### Checked locally (2026-11-10, valun-open `circulating-credit`, after tracker v3.2)
+### Checked locally (2026-11-10, valun-open `circulating-credit`, after tracker v3.2 and its review)
 
-- `python -m unittest discover -s python/tests`: 413 tests OK with Python 3.14.7 (with the official MCP SDK 2.3.0
-  installed), after the vectors were regenerated from `b7ecca0`. Not rerun with 3.11 after tracker v3.2.
-- `node --test js/test/` (Node 24): 507 tests, 506 pass, 1 skipped (a POSIX file-mode test, on Windows), against the
-  vectors from `b7ecca0`.
-- `spec/vectors/check_python.py --client package --require circulation/1`: 1456 checks, 1255 agree, 0 disagreements
-  in failing tiers, 17 informative differences, 184 not applicable; without `--require`: 1454 checks, 1104 agree, 0
-  disagreements, 17 informative differences, 333 not applicable (Python 3.14.7 and 3.11.18, vectors from `b7ecca0`).
-  The JavaScript fixtures regenerate unchanged.
+- `python -m unittest discover -s python/tests`: 415 tests OK with Python 3.14.7 (with the official MCP SDK 2.3.0
+  installed); `python/tests/test_sdk_interop.py`: 5 OK. Not rerun with 3.11 after tracker v3.2.
+- `node --test js/test/` (Node 24): 509 tests, 508 pass, 1 skipped (a POSIX file-mode test, on Windows), against the
+  vectors of `95d23c4` (from `b7ecca0`).
+- `spec/vectors/check_python.py --client package --require circulation/1`: 1461 checks, 1260 agree, 0 disagreements
+  in failing tiers, 17 informative differences, 184 not applicable; without `--require`: 1459 checks, 1104 agree, 0
+  disagreements, 17 informative differences, 338 not applicable (Python 3.14.7 and 3.11.18). The Hermes plugin 0.4.0
+  at `a8714ec` gives the same lines; the plugin 0.3.0 at `5d01fbd` the second. `generate.mjs` run twice gives the same
+  bytes, and the JavaScript fixtures regenerate unchanged.
 
 ## 0.3.1 and earlier
 
