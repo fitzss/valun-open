@@ -426,7 +426,7 @@ export class Client {
   #signerRetries;
   #retryDelayMs;
   #server;
-  #chain = Promise.resolve();
+  #queue = {tail: Promise.resolve()};           // this client's state changes, one after another (shared by fresh())
   #advertised = [];                             // the features the last GET /info listed (for the capability header)
 
   /**
@@ -488,11 +488,19 @@ export class Client {
   get advertised() { return [...this.#advertised]; }
 
   /**
-   * Forget the features the last GET /info listed: until the next GET /info, requests carry no X-Valun-Features header,
-   * exactly as a new Client. ValunAgent does this whenever a tool call takes its client (the Python agent makes a new
-   * Client for each), so that both send the same headers.
+   * A new Client on this client's store, server, clock, fetch, pins and other options, as a new Client starts: it has
+   * read no GET /info yet (advertised is [], so its requests carry no X-Valun-Features header until it reads one).
+   * Nothing it does changes this client's features, nor this client's its own; their state changes still run one after
+   * another (one queue). ValunAgent takes one for every use of its client, as the Python agent makes a new Client for
+   * each (so both send the same headers, and two uses at once never change each other's features).
    */
-  forgetFeatures() { this.#advertised = []; }
+  fresh() {
+    const c = new Client({store: this.#store, server: this.#server ?? undefined, timeoutMs: this.#timeoutMs, fetch: this.#fetch,
+      pin: {...this.#pin}, signerRetries: this.#signerRetries, retryDelayMs: this.#retryDelayMs, now: this.#now,
+      randomBytes: this.#randomBytes, generateSecret: this.#generateSecret, declareRoles: this.declareRoles});
+    c.#queue = this.#queue;
+    return c;
+  }
 
   /** This client's clock (ms since the epoch). */
   nowMs() { return this.#now(); }
@@ -526,8 +534,9 @@ export class Client {
   // ---------- state changes: one after another, through store.update() where the store has it ----------
   /** Run `task` after every change this client started before it (whatever their outcome). */
   #serial(task) {
-    const run = this.#chain.then(() => task());
-    this.#chain = run.then(() => undefined, () => undefined);    // the chain itself never rejects
+    const q = this.#queue;
+    const run = q.tail.then(() => task());
+    q.tail = run.then(() => undefined, () => undefined);         // the queue itself never rejects
     return run;
   }
 

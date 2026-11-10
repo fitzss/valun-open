@@ -115,6 +115,16 @@ export interface EdgeState {
   signature: string;
 }
 
+/**
+ * An edge state as the records keep it (EdgeRecord.confirmed): an EdgeState whose signature is dropped once it is past
+ * use (SIGNATURES_KEEP_MS after it was confirmed; syncEdges() counts these in pruned.signatures).
+ */
+export interface RecordedEdgeState {
+  total: number;
+  timestamp: number;
+  signature?: string;
+}
+
 /** Something this client signed for an edge whose outcome is not known yet (records.js). */
 export interface PendingEntry {
   total: number;
@@ -130,7 +140,7 @@ export interface PendingEntry {
 
 /** One edge's record: the state last confirmed applied on the tracker, and what is signed but not known yet. */
 export interface EdgeRecord {
-  confirmed: EdgeState | null;
+  confirmed: RecordedEdgeState | null;
   pending: PendingEntry[];
 }
 
@@ -473,8 +483,11 @@ export class Client {
   declareRoles: boolean;
   /** This client's clock (ms since the epoch). */
   nowMs(): number;
-  /** Forget the features of the last GET /info (requests carry no capability header until the next one), as a new Client. */
-  forgetFeatures(): void;
+  /**
+   * A new Client on this client's store and options, as a new Client starts (no GET /info read: advertised is []); its
+   * features are its own, its state changes run in one queue with this client's. ValunAgent takes one for every use.
+   */
+  fresh(): Client;
   /** Read the records again where the store can (FileStore). */
   reload(): Promise<void>;
   /** Record a consent run at nowMs (state[key]); never rejects. */
@@ -625,7 +638,7 @@ export namespace novation {
     attempts: Array<{attempt: PaymentAttemptRecord; outcome: string}>};
   function checkPayment(dealId: string, price: number, route: 'note' | 'transfer', edge: string, prior: number, ctx: Context):
     {ok: boolean; code: string | null; summary: Record<string, unknown>};
-  function attemptOutcome(attempt: unknown, nowMs: number, state?: EdgeState | null): 'applied' | 'unknown' | 'alive' | 'dead' | 'unread';
+  function attemptOutcome(attempt: unknown, nowMs: number, state?: RecordedEdgeState | null): 'applied' | 'unknown' | 'alive' | 'dead' | 'unread';
   function exactPrior(attempt: unknown, state: unknown): boolean;
   function unboundNoteProblem(edge: string, novatedEdges: unknown, features?: string[]): string | null;
   function applyWriteAhead(state: ClientState, writeAhead: unknown, signedAt?: string | null): void;
@@ -671,7 +684,7 @@ export namespace records {
   function confirm(recs: Records, pair: string, state: EdgeState): EdgeRecord;
   /** One row of the edge's current state ({edge} or {issuer_pubkey, recipient_pubkey}, plus an EdgeState). */
   function syncEdge(recs: Records, edge: Record<string, unknown>): {pair: string; changed: boolean; promoted: PendingEntry | null;
-    dropped: unknown[]; confirmed: EdgeState | null};
+    dropped: unknown[]; confirmed: RecordedEdgeState | null};
   type Verify = (issuerPubkey: string, recipientPubkey: string, total: number, timestamp: number, signature: string) => boolean;
   function priorProblem(recs: Records, pair: string, priorNote: unknown, myPubkey: string, verify: Verify): 'bad_prior_signature' | 'stale_prior' | null;
   function acceptPrior(recs: Records, pair: string, priorNote: unknown, myPubkey: string, verify: Verify): boolean;
@@ -1061,11 +1074,23 @@ export class ValunAgent {
   /** The feature tags the last GET /info this agent read listed (null: none read yet). */
   features: string[] | null;
   readonly handlers: Readonly<Record<ToolName, (args: ToolArgs) => Promise<ToolResult>>>;
+  /**
+   * Run fn holding this agent's lock (the Python MCP server's STORE_LOCK), after every earlier holder; settles as fn does.
+   * call(), callSafe(), isCommitment(), prepare(), prepareOrRefusal(), describeCommitment(), bind(), consentsIfDue(),
+   * consentsOnRead() and consentRound() hold it themselves (not while an adapter asks the owner). Not reentrant: fn must
+   * not call those methods of this agent.
+   */
+  exclusive<T>(fn: () => T | Promise<T>): Promise<T>;
   /** Process consents when due (never from a read-only tool; never rejects): the report, or null when it did not run. */
   consentsIfDue(nowMs?: number | null): Promise<ConsentReport | null>;
   /** Decision D-3 a: the value-safe consents before valun_status and valun_inbox (with consentsOnReads). Never rejects. */
   consentsOnRead(nowMs?: number | null): Promise<ConsentReport | null>;
-  /** The Client, after checking it is enrolled (ValunError not_connected otherwise). */
+  /**
+   * One consent loop round holding the agent's lock: enabled() and, when it resolves to true, the consent run that is
+   * due. ran: what enabled() said; report: the run's report (null: none ran). Never rejects.
+   */
+  consentRound(enabled: () => boolean | Promise<boolean>): Promise<{ran: boolean; report: ConsentReport | null}>;
+  /** A Client for one use (Client.fresh() of the agent's client), after checking it is enrolled (ValunError not_connected otherwise). */
   client(requireConnection?: boolean): Client;
   /** Runs one tool; rejects with a ValunError (or another error) on failure. */
   call(name: ToolName | string, args?: ToolArgs | null): Promise<ToolResult>;
@@ -1135,7 +1160,8 @@ export const CONSENT_LOOP_JITTER_MS: number;
 
 /**
  * The optional consent loop for long-running hosts (off until called): every intervalMs plus up to jitterMs, while the
- * profile's consent_loop is 'on', agent.consentsIfDue(). Runs never overlap and never throw.
+ * profile's consent_loop is 'on', agent.consentsIfDue(). Runs never overlap and never throw; each round holds the agent's
+ * lock (agent.consentRound()), so it never interleaves with a tool call of that agent.
  */
 export function startConsentLoop(agent: ValunAgent, options?: {intervalMs?: number; jitterMs?: number; random?: () => number}):
   {stop(): void; runOnce(): Promise<void>; readonly runs: number};

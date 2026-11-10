@@ -201,3 +201,37 @@ test('the clock of the agent decides who is idle; the Client clock decides offer
   assert.equal((await early.call(sc.tool, sc.args)).warning, undefined);
   assert.equal(T0, Date.parse('2026-11-06T12:00:00Z'));
 });
+
+test('a use of the agent client during a consent run never changes that run: its features stay, and a run a minute later still asks', async () => {
+  // Each agent.client() is a client of its own (Client.fresh(), as the Python agent makes one per use): another call
+  // taking one in the middle of a run, as a concurrent tool call or host code does, leaves the run's GET /info features.
+  const sc = scenario('propose: a due consent run signs a set-off first');
+  let agent = null, taken = 0;
+  const w = world({...sc, routes: key => {
+    if (key.startsWith('POST /pilot/v1/consents/') && agent) {
+      taken++;
+      agent.client(false);
+    }
+    return sc.routes[key];
+  }});
+  agent = w.agent;
+  const r = await agent.consentsIfDue();
+  assert.equal(taken, 1);
+  assert.equal(r.signed.length, 1);
+  assert.ok(agent.features.includes('circulation/1'), `features after the run: ${JSON.stringify(agent.features)}`);
+  const before = w.fetch.calls.length;
+  const later = await agent.consentsIfDue(T0 + 61_000);
+  assert.notEqual(later, null, 'a run due a minute later still runs');
+  assert.deepEqual(w.fetch.calls.slice(before).map(c => c.key).slice(0, 2), ['GET /pilot/v1/info', 'GET /pilot/v1/consents']);
+  // one use's features are its own: a later use starts with none (no header before its own GET /info)
+  const c1 = agent.client();
+  await c1.info();
+  const c2 = agent.client();
+  assert.notEqual(c1, c2);
+  assert.ok(c1.advertised.includes('circulation/1'));
+  assert.deepEqual(c2.advertised, []);
+  assert.equal(c2.featuresHeader(), null);
+  assert.notEqual(c1.featuresHeader(), null);
+  assert.deepEqual(w.client.advertised, [], "the agent's own client is never changed by its uses");
+  assert.equal(c2.state, w.client.state, 'every use works on the one store');
+});

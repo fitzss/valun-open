@@ -284,3 +284,114 @@ test('startConsentLoop(): a round signs the set-off a due consent run signs (the
   await w.agent.callSafe('valun_propose', sc.args);
   assert.equal(w.fetch.calls.filter(c => c.key === 'GET /pilot/v1/consents').length, 1);
 });
+
+// ---------- one consent run at a time: the agent's lock (Python's STORE_LOCK) ----------
+// The recorded set-off answers the first POST; a second POST of the same signatures gets what the server answers then
+// (409 already_signed): a client that sent it would forget the pending entries the first one wrote ahead.
+const DUE = scenario('propose: a due consent run signs a set-off first');
+const CONSENT_POST = Object.keys(DUE.routes).find(k => k.startsWith('POST /pilot/v1/consents/'));
+const ALREADY = {status: 409, body: {error: 'already_signed', message: 'these signatures were taken already'}};
+const dueWorld = (state = {}) => world({...DUE, routes: {...DUE.routes, [CONSENT_POST]: {sequence: [DUE.routes[CONSENT_POST], ALREADY]}},
+  state: {...DUE.state, ...state}});
+const count = (w, pred) => w.fetch.calls.filter(c => pred(c.key)).length;
+const pendingOf = st => Object.fromEntries(Object.entries(st.records || {}).filter(([k]) => k !== 'paid_deals')
+  .map(([k, e]) => [k, e.pending || []]));
+
+test('a consent loop round next to a tool call, two tool calls or two runs at once: one consent run, one POST, the pending entries kept', async () => {
+  const one = dueWorld();
+  await one.agent.consentsIfDue();
+  const expected = pendingOf(one.store.state);
+  assert.ok(Object.values(expected).some(p => p.length), 'the run wrote its signatures ahead');
+  const check = (w, what) => {
+    assert.equal(count(w, k => k === 'GET /pilot/v1/consents'), 1, `${what}: one consent run`);
+    assert.equal(count(w, k => k === CONSENT_POST), 1, `${what}: the consent is sent once`);
+    assert.deepEqual(w.store.state.consent_log.map(e => e.decision), ['signed'], what);
+    assert.deepEqual(pendingOf(w.store.state), expected, `${what}: the pending entries are kept`);
+  };
+  // a loop round alongside a tool call (the round first, then the call: neither interleaves with the other)
+  const w1 = dueWorld({consent_loop: 'on'});
+  const loop = startConsentLoop(w1.agent, {intervalMs: 1_000_000});
+  const [, proposed] = await Promise.all([loop.runOnce(), w1.agent.callSafe('valun_propose', DUE.args)]);
+  loop.stop();
+  assert.equal(loop.runs, 1);
+  assert.equal(proposed.error, undefined);
+  check(w1, 'loop round and tool call');
+  const keys = w1.fetch.calls.map(c => c.key);
+  assert.ok(keys.indexOf(CONSENT_POST) < keys.indexOf('POST /pilot/v1/deals'), 'the round ran first, whole');
+  // the tool call first, then the round
+  const w2 = dueWorld({consent_loop: 'on'});
+  const loop2 = startConsentLoop(w2.agent, {intervalMs: 1_000_000});
+  await Promise.all([w2.agent.callSafe('valun_propose', DUE.args), loop2.runOnce()]);
+  loop2.stop();
+  check(w2, 'tool call and loop round');
+  // two tool calls at once
+  const w3 = dueWorld();
+  await Promise.all([w3.agent.callSafe('valun_propose', DUE.args), w3.agent.callSafe('valun_propose', DUE.args)]);
+  check(w3, 'two tool calls');
+  assert.equal(count(w3, k => k === 'POST /pilot/v1/deals'), 2);
+  // two runs at once: the second finds the first's run less than a minute ago
+  const w4 = dueWorld();
+  const [a, b] = await Promise.all([w4.agent.consentsIfDue(), w4.agent.consentsIfDue()]);
+  assert.equal(a.signed.length, 1);
+  assert.equal(b, null);
+  check(w4, 'two runs');
+});
+
+test('the agent lock: exclusive() runs one holder at a time, in order, whatever each one does; valunTools() never holds it while the owner is asked', async () => {
+  const {agent} = world();
+  const order = [];
+  let inside = 0, most = 0;
+  const holder = (name, ms, fail = false) => agent.exclusive(async () => {
+    most = Math.max(most, ++inside);
+    order.push(`${name} in`);
+    await sleep(ms);
+    order.push(`${name} out`);
+    inside--;
+    if (fail) throw new Error(name);
+    return name;
+  });
+  const results = await Promise.allSettled([holder('a', 15, true), holder('b', 1), holder('c', 5)]);
+  assert.deepEqual(results.map(r => r.status), ['rejected', 'fulfilled', 'fulfilled']);
+  assert.deepEqual(order, ['a in', 'a out', 'b in', 'b out', 'c in', 'c out']);
+  assert.equal(most, 1);
+  assert.throws(() => agent.exclusive(null), TypeError);
+  // while the approve hook waits for the owner, the agent's other calls go on
+  const w = world(ACCEPT);
+  let release;
+  const waiting = new Promise(r => { release = r; });
+  const approve = async () => { await waiting; return false; };
+  const pending = tool(valunTools(w.agent, {approve}), 'valun_respond').execute(ACCEPT.args);
+  await sleep(5);
+  const st = await Promise.race([w.agent.callSafe('valun_status'), sleep(2000).then(() => 'blocked')]);
+  assert.notEqual(st, 'blocked', 'a call while the owner is asked is not held up');
+  release();
+  assert.equal((await pending).error, 'owner_declined');
+});
+
+test('startConsentLoop(): a round reads the profile again only once it holds the agent lock (never in the middle of a tool call)', async () => {
+  const w = dueWorld({consent_loop: 'on'});
+  let holding = false;
+  const seen = [];
+  w.store.reload = async () => { seen.push(holding); };      // a store that can read the profile again (as FileStore)
+  const loop = startConsentLoop(w.agent, {intervalMs: 1_000_000});
+  const held = w.agent.exclusive(async () => {               // a tool call in progress
+    holding = true;
+    await sleep(20);
+    holding = false;
+  });
+  await Promise.all([held, loop.runOnce()]);
+  loop.stop();
+  assert.equal(loop.runs, 1);
+  assert.ok(seen.length >= 1, 'the round read the profile');
+  assert.deepEqual(seen, seen.map(() => false), 'never while another holder had the lock');
+  assert.equal(count(w, k => k === 'GET /pilot/v1/consents'), 1);
+  // a ValunAgent's round: {ran, report}; an enabled() that throws or says no runs nothing
+  const w2 = dueWorld();
+  assert.deepEqual(await w2.agent.consentRound(async () => false), {ran: false, report: null});
+  assert.deepEqual(await w2.agent.consentRound(async () => { throw new Error('unreadable'); }), {ran: false, report: null});
+  assert.equal(w2.fetch.calls.length, 0);
+  const r = await w2.agent.consentRound(() => true);
+  assert.equal(r.ran, true);
+  assert.equal(r.report.signed.length, 1);
+  await assert.rejects(async () => w2.agent.consentRound(null), TypeError);
+});

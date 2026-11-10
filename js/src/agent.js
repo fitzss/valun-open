@@ -19,7 +19,9 @@
 // what is being paid and what the client clears, and the client signs the consents its owner's policy allows by itself
 // (processConsents(), at most once per CONSENTS_EVERY_MS, before every tool call that is not read-only; with
 // consentsOnReads, an adapter without a consent loop also signs the value-safe ones, set-offs and payments to it by
-// transfer, before valun_status and valun_inbox: decision D-3 a).
+// transfer, before valun_status and valun_inbox: decision D-3 a). Tool calls and consent runs of one agent hold its lock
+// (exclusive(), as the Python MCP server's STORE_LOCK) so that no two of them interleave, and every use of the client is
+// a client of its own (Client.fresh(), as the Python agent makes a new Client for each).
 
 import {verifyHex} from './basis.js';
 import {VALUE_SAFE_HEADER_ROLES, consentRoles} from './client.js';
@@ -519,6 +521,7 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
 export class ValunAgent {
   #client;
   #now;
+  #held = Promise.resolve();                         // the agent's lock (Python's STORE_LOCK): see exclusive()
 
   constructor(client, options = {}) {
     if (!client || typeof client.deal !== 'function' || typeof client.complete !== 'function') {
@@ -549,13 +552,30 @@ export class ValunAgent {
 
   // ---------- plumbing ----------
   /**
-   * The Client, after checking that it is enrolled (not_connected otherwise). It starts as a new client would (the Python
-   * agent makes one per use): it forgets the features of the last GET /info, so its requests carry the capability header
-   * only after this use read GET /info again.
+   * Run `fn` holding this agent's lock, after every earlier holder is done (whatever its outcome); resolves or rejects
+   * as fn does. It is what STORE_LOCK is to the Python MCP server: call() (so callSafe()), isCommitment(), prepare() (so
+   * prepareOrRefusal() and describeCommitment()), bind(), consentsIfDue(), consentsOnRead() and consentRound() each
+   * hold it, so a consent loop round never interleaves with a tool call, nor two tool calls with each other (two
+   * consent runs could otherwise sign and send the same consent). valunTools() never holds it while the owner is asked.
+   * The lock is not reentrant: fn must not call those methods of this agent (they would wait for fn). A host that calls
+   * the tool methods themselves (status(), propose(), ...) next to a consent loop can run them through exclusive().
+   */
+  exclusive(fn) {
+    if (typeof fn !== 'function') throw new TypeError('exclusive needs a function');
+    const run = this.#held.then(() => fn());
+    this.#held = run.then(() => undefined, () => undefined);   // the lock itself never rejects
+    return run;
+  }
+
+  /**
+   * A Client for one use, after checking that it is enrolled (not_connected otherwise). It starts as a new client would
+   * (the Python agent makes one per use): Client.fresh() of the agent's client, which has read no GET /info yet, so its
+   * requests carry the capability header only after this use reads GET /info, and no other use changes its features.
+   * (A client without fresh() is used as it is.)
    */
   client(requireConnection = true) {
-    const c = this.#client;
-    if (typeof c.forgetFeatures === 'function') c.forgetFeatures();
+    const base = this.#client;
+    const c = typeof base.fresh === 'function' ? base.fresh() : base;
     if (requireConnection && (!c.connected || !c.participantId)) {
       throw new ValunError('not_connected', `not enrolled: the owner must ${this.setupHint}`);
     }
@@ -572,11 +592,15 @@ export class ValunAgent {
     if (typeof name !== 'string' || !Object.hasOwn(this.handlers, name)) {
       throw new ValunError('unknown_tool', `no Valun tool called ${repr(name)}`);
     }
+    return this.exclusive(() => this.#call(name, args));
+  }
+
+  async #call(name, args) {
     if (!READ_ONLY_TOOLS.includes(name)) {
-      await this.consentsIfDue();
+      await this.#consentsIfDue();
       return this.handlers[name](truthy(args) ? args : {});
     }
-    const report = CONSENTS_ON_READ_TOOLS.includes(name) ? await this.consentsOnRead() : null;
+    const report = CONSENTS_ON_READ_TOOLS.includes(name) ? await this.#consentsOnRead() : null;
     const out = await this.handlers[name](truthy(args) ? args : {});
     if (report !== null && isDict(out)) {
       out.consents_signed_now = iterate(or(get(report, 'signed'), [])).filter(isDict)
@@ -590,9 +614,32 @@ export class ValunAgent {
    * of my payments) when they are due: at most once per CONSENTS_EVERY_MS, and only for a profile that takes part in
    * consents (wantsConsents), with this agent's processConsents on, on a server not already known to lack circulating
    * credit (decision D-2 h). Never from a read-only tool. Never rejects: resolves to the report, or null when it did not
-   * run or failed (a failed run counts as a run).
+   * run or failed (a failed run counts as a run). Holds the agent's lock (exclusive()).
    */
   async consentsIfDue(nowMs = null) {
+    return this.exclusive(() => this.#consentsIfDue(nowMs));
+  }
+
+  /**
+   * One round of a consent loop (tools.js startConsentLoop; the Python MCP server's ConsentLoop.run_once), all of it
+   * holding the agent's lock: `enabled()` (the loop reads the profile's consent_loop again) and, when it resolves to
+   * true, the consent run that is due (consentsIfDue). Resolves to {ran, report}: ran says whether enabled() said yes,
+   * report is the run's report (null: none was due, or it failed). Never rejects (an enabled() that throws: ran false).
+   */
+  async consentRound(enabled) {
+    if (typeof enabled !== 'function') throw new TypeError('consentRound needs an enabled() function');
+    return this.exclusive(async () => {
+      let on;
+      try {
+        on = (await enabled()) === true;
+      } catch {
+        on = false;
+      }
+      return on ? {ran: true, report: await this.#consentsIfDue()} : {ran: false, report: null};
+    });
+  }
+
+  async #consentsIfDue(nowMs = null) {
     if (!this.processConsents) return null;
     if (this.features !== null && !this.features.includes(CIRCULATION)) return null;
     let c;
@@ -619,9 +666,13 @@ export class ValunAgent {
    * CONSENTS_EVERY_MS (a full run before a tool that is not read-only counts too, and this run never delays one), for a
    * profile whose local policy has a value-safe role on, on a server not already known to lack circulating credit. Never
    * rejects: resolves to the report, or null when it did not run, failed (a failed run counts as a run, in
-   * consents_last_safe_run_ms) or found that the server does not offer circulating credit.
+   * consents_last_safe_run_ms) or found that the server does not offer circulating credit. Holds the agent's lock.
    */
   async consentsOnRead(nowMs = null) {
+    return this.exclusive(() => this.#consentsOnRead(nowMs));
+  }
+
+  async #consentsOnRead(nowMs = null) {
     if (!(this.consentsOnReads && this.processConsents)) return null;
     if (this.features !== null && !this.features.includes(CIRCULATION)) return null;
     let c;
@@ -719,12 +770,14 @@ export class ValunAgent {
   async isCommitment(name, args = null) {
     const a = isDict(args) ? args : {};
     if (LIMIT_TOOLS.includes(name)) {
-      try {
-        const me = await this.client().me();
-        return loosens(or(get(me, 'agent_limits'), {}), limitsBody(args));
-      } catch {
-        return true;    // when in doubt, ask the owner
-      }
+      return this.exclusive(async () => {
+        try {
+          const me = await this.client().me();
+          return loosens(or(get(me, 'agent_limits'), {}), limitsBody(args));
+        } catch {
+          return true;    // when in doubt, ask the owner
+        }
+      });
     }
     return ValunAgent.#mayCommit(name, a);
   }
@@ -753,9 +806,13 @@ export class ValunAgent {
    *
    * Rejects with ValunError('approval_unbound') when what would be signed cannot be read or checked (any error, a missing
    * or wrong hash, or a pin the agent passed that is not the snapshot's): the adapter must then refuse the call. A tool
-   * this client does not know gets a generic text; a known commitment never does.
+   * this client does not know gets a generic text; a known commitment never does. Holds the agent's lock (exclusive()).
    */
   async prepare(name, args = null) {
+    return this.exclusive(() => this.#prepare(name, args));
+  }
+
+  async #prepare(name, args) {
     const a = isDict(args) ? dictCopy(args) : {};
     if (Array.isArray(name) || isDict(name)) throw new PyError('TypeError', `unhashable type: '${typeName(name)}'`);
     if (typeof name !== 'string' || !Object.hasOwn(this.handlers, name)) {
@@ -808,16 +865,18 @@ export class ValunAgent {
    * counter-offer is pinned to the recomputed hash of the terms shown, a delivery acceptance also to the recomputed hash
    * of the delivered text, each checked as prepare() checks it. Pins the agent passed are kept (the client refuses to
    * sign anything else). For a commitment it never resolves to the arguments unpinned: when the deal cannot be read or
-   * checked it rejects with ValunError('approval_unbound').
+   * checked it rejects with ValunError('approval_unbound'). Holds the agent's lock while it reads.
    */
   async bind(name, args = null) {
     const a = isDict(args) ? dictCopy(args) : {};
     if (!ValunAgent.#needsPins(name, a)) return a;
-    try {
-      return ValunAgent.#bindFrom(name, a, await this.#snapshot(name, a), false);
-    } catch (e) {
-      throw ValunAgent.#unbound(e);
-    }
+    return this.exclusive(async () => {
+      try {
+        return ValunAgent.#bindFrom(name, a, await this.#snapshot(name, a), false);
+      } catch (e) {
+        throw ValunAgent.#unbound(e);
+      }
+    });
   }
 
   /**

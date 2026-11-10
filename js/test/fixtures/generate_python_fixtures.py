@@ -973,6 +973,12 @@ def scenarios():
         state=dict(circ_state, consent_policy=dict(POLICY, setoff=False, as_new_creditor=False)), agent={'consents_on_reads': True})
     add('inbox: consents on reads, ran less than a minute ago', 'valun_inbox', {}, {**circ, **cons(so)},
         state=dict(circ_state, consents_last_safe_run_ms=T0_MS - 5_000), agent={'consents_on_reads': True})
+    # D-3 a names valun_status and valun_inbox only: before the other read-only tools no consent run, even when one is due
+    add('deal: consents on reads never run before valun_deal (a run due)', 'valun_deal', {'deal_id': dg['id']},
+        {f"GET /pilot/v1/deals/{dg['id']}": {'body': paid_view}, **circ, **circ_me, **cons(so), **took(so['id'])},
+        state=circ_state, agent={'consents_on_reads': True})
+    add('directory: consents on reads never run before valun_directory (a run due)', 'valun_directory', {},
+        {**circ, **circ_me, **cons(so), **took(so['id'])}, state=circ_state, agent={'consents_on_reads': True})
     add('status: every consent role off withdraws the roles declared before (decision D-3 b)', 'valun_status', {},
         status_routes, state=dict(circ_state, consent_policy=POLICY_OFF, consent_roles_declared='setoff,issuer,creditor'))
     add('status: an agent that signs no consents declares none (process_consents off)', 'valun_status', {},

@@ -420,3 +420,37 @@ test('a stub fetch helper sanity check: unknown routes answer 599 (never a real 
   assert.equal(r.status, 599);
   assert.equal((await jsonResponse(200, {a: 1}).json()).a, 1);
 });
+
+test('Client.fresh(): the same store and settings, features of its own, state changes in one queue with its parent', async () => {
+  const state = {server: 'https://h', participant_id: 'vp_a', pubkey: null, issued: {}};
+  const answers = {'GET /pilot/v1/info': {body: {network: 'n', features: ['circulation/1']}}};
+  const fetch = async (url, init) => {
+    const key = `${init?.method || 'GET'} ${new URL(url).pathname}`;
+    const a = answers[key] || {status: 404, body: {error: 'not_found', message: key}};
+    return new Response(JSON.stringify(a.body), {status: a.status || 200, headers: {'content-type': 'application/json'}});
+  };
+  let saves = 0, inSave = 0, most = 0;
+  const store = new MemoryStore({state, secret: '11'.repeat(32), token: 't'});
+  store.save = async () => {
+    most = Math.max(most, ++inSave);
+    saves++;
+    await new Promise(r => setTimeout(r, 5));
+    inSave--;
+  };
+  const parent = new Client({store, server: 'https://h', fetch, declareRoles: false});
+  const child = parent.fresh();
+  assert.ok(child instanceof Client);
+  assert.notEqual(child, parent);
+  assert.equal(child.state, parent.state);
+  assert.equal(child.connected, true);
+  assert.equal(child.declareRoles, false);
+  await child.info();
+  assert.deepEqual(child.advertised, ['circulation/1']);
+  assert.deepEqual(parent.advertised, [], "the child's GET /info is its own");
+  assert.deepEqual(parent.fresh().advertised, [], 'a new one starts with none');
+  await Promise.all([parent.markConsentsRun(1), child.markConsentsRun(2, 'consents_last_safe_run_ms'), parent.fresh().markConsentsRun(3)]);
+  assert.equal(saves, 3);
+  assert.equal(most, 1, 'one change at a time across parent and children');
+  assert.equal(state.consents_last_run_ms, 3);
+  assert.equal(state.consents_last_safe_run_ms, 2);
+});

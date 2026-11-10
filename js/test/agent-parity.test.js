@@ -16,6 +16,13 @@ const same = (got, want, what) => {
   assert.equal(JSON.stringify(got), JSON.stringify(want), `${what}: same keys in the same order`);
 };
 
+/**
+ * The answers of the routes that show edge states (with their issuers' signatures), and only those: GET /edges, a bound
+ * credit-note template (the prior state of my edge) and a transfer template (the state of the note I pay with).
+ */
+const EDGE_STATE_ROUTE = /^GET \/pilot\/v1\/(edges(\?|$)|deals\/[^/?]+\/(credit-note-template|transfer-template)(\?|$))/;
+const edgeRoutes = routes => Object.entries(routes ?? {}).filter(([k]) => EDGE_STATE_ROUTE.test(k)).map(([, v]) => v);
+
 test(`agent tools: ${FIX.scenarios.length} scenarios give the Python reference's results, requests, signatures and approval texts`, async t => {
   for (const sc of FIX.scenarios) {
     await t.test(sc.name, async () => {
@@ -34,9 +41,9 @@ test(`agent tools: ${FIX.scenarios.length} scenarios give the Python reference's
       });
       const state = json(w.store.state);
       assert.deepEqual(unsigned(state), sc.state_after, 'state afterwards (signatures aside)');
-      // a signature in the records is one the client sent, had, or read from the server (an edge state GET /edges showed)
-      const known = new Set([...signed.flatMap(s => s.signatures), ...signaturesIn(sc.state ?? {}), ...signaturesIn(sc.routes ?? {}),
-        ...signaturesIn(FIX.base_routes)]);
+      // a signature in the records is one the client sent, had, or read in an edge state the server showed (edgeRoutes)
+      const known = new Set([...signed.flatMap(s => s.signatures), ...signaturesIn(sc.state ?? {}), ...signaturesIn(edgeRoutes(sc.routes)),
+        ...signaturesIn(edgeRoutes(FIX.base_routes))]);
       for (const sig of signaturesIn(state)) assert.ok(known.has(sig), 'a signature in the records is one the client sent, had or read');
       for (const s of SECRETS) assert.ok(!JSON.stringify(result).includes(s) && !JSON.stringify(state).includes(s), 'no secret in the result or state');
 

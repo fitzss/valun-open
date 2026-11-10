@@ -132,6 +132,8 @@ export const CONSENT_LOOP_JITTER_MS = 10_000;
  * from the store each time: the owner may change it while the host runs), it lets the agent sign the consents its owner's
  * policy allows (agent.consentsIfDue(): GET /info first, nothing more unless the server lists circulation/1, at most once
  * a minute whoever triggers it). Runs never overlap and never throw; the timer does not keep a Node process alive.
+ * Each round of a ValunAgent holds the agent's lock (agent.consentRound(): the profile read and the run together), as
+ * each Python round holds STORE_LOCK, so it never interleaves with a tool call of this agent.
  * Returns {stop(), runOnce(), runs}: stop() ends it, runOnce() runs one round now (resolves when it is done), runs counts
  * the rounds that found the loop on.
  */
@@ -155,7 +157,13 @@ export function startConsentLoop(agent, {intervalMs = CONSENT_LOOP_MS, jitterMs 
   const runOnce = () => {
     running ??= (async () => {
       try {
-        if (await enabled()) {
+        if (typeof agent.consentRound === 'function') {       // a ValunAgent: the whole round holds its lock
+          await agent.consentRound(async () => {
+            const on = await enabled();
+            if (on) runs++;
+            return on;
+          });
+        } else if (await enabled()) {
           runs++;
           await agent.consentsIfDue();
         }

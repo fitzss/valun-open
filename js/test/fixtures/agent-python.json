@@ -39991,6 +39991,781 @@
    ]
   },
   {
+   "name": "deal: consents on reads never run before valun_deal (a run due)",
+   "tool": "valun_deal",
+   "args": {
+    "deal_id": "vd_4444444444444444"
+   },
+   "routes": {
+    "GET /pilot/v1/deals/vd_4444444444444444": {
+     "body": {
+      "id": "vd_4444444444444444",
+      "status": "paid_by_transfer",
+      "your_role": "payer",
+      "counterparty": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "next_actions": [],
+      "current": {
+       "version": 1,
+       "by": "vp_a1a1a1a1a1a1",
+       "state": "agreed",
+       "terms": {
+        "protocol": "valun-deal/1",
+        "network": "valun-pilot-1",
+        "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+        "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+        "deal_id": "vd_4444444444444444",
+        "version": 1,
+        "prior_terms_hash": null,
+        "nonce": "abababababababababababababababab",
+        "proposer": "vp_a1a1a1a1a1a1",
+        "payer": {
+         "id": "vp_a1a1a1a1a1a1",
+         "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+        },
+        "payee": {
+         "id": "vp_b0b0b0b0b0b0",
+         "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+        },
+        "service": {
+         "title": "Research brief",
+         "description": "A 300-500 word research brief with at least 3 cited sources.",
+         "deliverable": "Markdown, one file."
+        },
+        "price": {
+         "amount": 20,
+         "unit": "PC"
+        },
+        "consideration": "credit_note_on_delivery_accepted",
+        "deliver_by": "2099-01-02T00:00:00.000Z",
+        "offer_expires_at": "2099-01-01T00:00:00.000Z"
+       },
+       "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
+       "signature": "02597e733c5c231ae4a830664bdfc414b2bf3367e28e51e8cce1da82a46c5fcfd3108c66650200d3a85d91f27d36696268f2473269175552893fd5fc2a3cca68d0"
+      },
+      "pending_counter": null,
+      "versions": [
+       {
+        "version": 1,
+        "by": "vp_a1a1a1a1a1a1",
+        "state": "open",
+        "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
+        "price": {
+         "amount": 20,
+         "unit": "PC"
+        }
+       }
+      ],
+      "history": [
+       {
+        "at": "2026-11-06T10:00:00.000Z",
+        "event": "proposed",
+        "by": "alice"
+       }
+      ],
+      "labels": {
+       "unit": "PC (pilot credits, no monetary value)"
+      },
+      "agreement": {
+       "version": 1,
+       "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
+       "formed_at": "2026-11-06T10:30:00.000Z",
+       "proposer_signature": "02597e733c5c231ae4a830664bdfc414b2bf3367e28e51e8cce1da82a46c5fcfd3108c66650200d3a85d91f27d36696268f2473269175552893fd5fc2a3cca68d0",
+       "acceptor_signature": "0311f32858521e47db432d7f6a0f9bbf6b0591b5d9ea1d0147f43a6177ea2b79413291b248ad840b88c3715c1258d37916bf01aef8038a0c13ee3bef3ddef8f4f3"
+      },
+      "delivery": {
+       "by": "vp_b0b0b0b0b0b0",
+       "title": "Brief",
+       "content": "# Brief\n\nword0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19\n\nSources: https://example.org/a, https://example.com/b and (https://en.wikipedia.org/wiki/Credit_(finance)).",
+       "sha256": "82a68159a5f150b368e6bc9a834741ffff86862414780ef56ab95eda1660794e",
+       "bytes": 2967,
+       "signature": "03eddb7c65fa7334b5239f750657326ff425f14e030e93f435917c8eb8136f2cff2bf43e6778eec502f7f2f13f0d508e9187e049033a32f809a660f18b6bf33e3b",
+       "at": "2026-11-06T11:00:00.000Z",
+       "late": false
+      },
+      "payment": {
+       "route": "transfer",
+       "transfer_id": "vt_1212121212121212",
+       "state": "applied",
+       "issuer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "amount": 20
+      }
+     }
+    },
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1"
+      ]
+     }
+    },
+    "GET /pilot/v1/me": {
+     "body": {
+      "participant": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "status": "active"
+      },
+      "mandate": {
+       "objective": "Buy short research briefs for the newsletter.",
+       "may_issue_credit": true,
+       "may_accept_credit": true,
+       "max_issue_per_deal": 30,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 5,
+       "min_payer_coverage_pct": 0,
+       "counterparties": "any",
+       "approve_above": 25,
+       "review_deliveries": false,
+       "expires_at": "2026-12-01T00:00:00.000Z",
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "mandate_version": 3,
+      "agent_limits": {
+       "max_issue_per_deal": 20,
+       "min_price_as_payee": 8,
+       "notes": "Briefs under 20 PC; prefer sources.",
+       "set_at": "2026-11-05T09:00:00.000Z"
+      },
+      "effective_limits": {
+       "max_issue_per_deal": 20,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 8,
+       "min_payer_coverage_pct": 0,
+       "may_accept_credit": true,
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "position": {
+       "claims_held_PC": 0,
+       "owes_PC": 10,
+       "outstanding": true
+      },
+      "authority": {
+       "mandate_expires_at": "2026-12-01T00:00:00.000Z"
+      }
+     }
+    },
+    "GET /pilot/v1/consents": {
+     "body": {
+      "consents": [
+       {
+        "kind": "setoff",
+        "id": "vs_5e70ff5e70ff5e70",
+        "state": "collecting",
+        "your_roles": [
+         "member"
+        ],
+        "created_at": "2026-11-06T11:58:00.000Z",
+        "expires_at": "2026-11-06T12:28:00.000Z",
+        "network": "valun-pilot-1",
+        "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+        "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+        "edges": [
+         {
+          "edge": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+          "issuer": {
+           "id": "vp_b0b0b0b0b0b0",
+           "handle": "bob"
+          },
+          "recipient": {
+           "id": "vp_a1a1a1a1a1a1",
+           "handle": "alice"
+          },
+          "your_role": "creditor",
+          "before": {
+           "total": 6,
+           "timestamp": 1793965600002,
+           "signature": "025191f5e9ef865e773d1018deeddd62f26df8073e32471fe9b3283a305dbfb2ac43642b9da0bf893bf1f2641d3a01d4c439681c37d5a1d5de27e59181a9a370ab"
+          },
+          "change": -6,
+          "new_total": 0,
+          "timestamp": 1793966397998,
+          "revision": 1,
+          "slots": [
+           "new"
+          ],
+          "signed_by_you": []
+         },
+         {
+          "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+          "issuer": {
+           "id": "vp_a1a1a1a1a1a1",
+           "handle": "alice"
+          },
+          "recipient": {
+           "id": "vp_b0b0b0b0b0b0",
+           "handle": "bob"
+          },
+          "your_role": "issuer",
+          "before": {
+           "total": 10,
+           "timestamp": 1793965500001,
+           "signature": "030e978eb4912715a0eb3e7e1f67b1eedd1174f394df6ea61b2bad89c868e7eec81e07996dfd4c45be9f3d88a9c07c145b87ce754ea1cc7b2159514a4063c7259d"
+          },
+          "change": -6,
+          "new_total": 4,
+          "timestamp": 1793966397998,
+          "revision": 1,
+          "slots": [
+           "new"
+          ],
+          "signed_by_you": []
+         }
+        ],
+        "context": {
+         "amount": 6
+        },
+        "summary": {
+         "your_net_change_PC": 0,
+         "your_total_owed_change_PC": -6
+        }
+       }
+      ],
+      "recently_resolved": []
+     }
+    },
+    "POST /pilot/v1/consents/vs_5e70ff5e70ff5e70": {
+     "body": {
+      "id": "vs_5e70ff5e70ff5e70",
+      "state": "collecting",
+      "rejected": []
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {
+    "consents_on_reads": true
+   },
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    }
+   },
+   "result": {
+    "id": "vd_4444444444444444",
+    "status": "paid_by_transfer",
+    "your_role": "payer",
+    "counterparty": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "next_actions": [],
+    "versions": [
+     {
+      "version": 1,
+      "by": "vp_a1a1a1a1a1a1",
+      "state": "open",
+      "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
+      "price": {
+       "amount": 20,
+       "unit": "PC"
+      }
+     }
+    ],
+    "acceptance": null,
+    "agreement": {
+     "version": 1,
+     "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a",
+     "formed_at": "2026-11-06T10:30:00.000Z",
+     "proposer_signature": "02597e733c5c231ae4a830664bdfc414b2bf3367e28e51e8cce1da82a46c5fcfd3108c66650200d3a85d91f27d36696268f2473269175552893fd5fc2a3cca68d0",
+     "acceptor_signature": "0311f32858521e47db432d7f6a0f9bbf6b0591b5d9ea1d0147f43a6177ea2b79413291b248ad840b88c3715c1258d37916bf01aef8038a0c13ee3bef3ddef8f4f3"
+    },
+    "decline": null,
+    "completion": null,
+    "dispute": null,
+    "cancellation": null,
+    "approvals": null,
+    "labels": {
+     "unit": "PC (pilot credits, no monetary value)"
+    },
+    "whose_turn": "nobody: the deal is paid by debt transfer",
+    "current_terms": {
+     "version": 1,
+     "by": "vp_a1a1a1a1a1a1",
+     "state": "agreed",
+     "terms": {
+      "protocol": "valun-deal/1",
+      "network": "valun-pilot-1",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "deal_id": "vd_4444444444444444",
+      "version": 1,
+      "prior_terms_hash": null,
+      "nonce": "abababababababababababababababab",
+      "proposer": "vp_a1a1a1a1a1a1",
+      "payer": {
+       "id": "vp_a1a1a1a1a1a1",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+      },
+      "payee": {
+       "id": "vp_b0b0b0b0b0b0",
+       "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+      },
+      "service": {
+       "title": "Research brief",
+       "description": "A 300-500 word research brief with at least 3 cited sources.",
+       "deliverable": "Markdown, one file."
+      },
+      "price": {
+       "amount": 20,
+       "unit": "PC"
+      },
+      "consideration": "credit_note_on_delivery_accepted",
+      "deliver_by": "2099-01-02T00:00:00.000Z",
+      "offer_expires_at": "2099-01-01T00:00:00.000Z"
+     },
+     "terms_hash": "0433a7f9c9451cbe8f26fbdea8d9bb3dec4d60cff2272891c686c5e226b5e69a"
+    },
+    "delivery": {
+     "title": "Brief",
+     "sha256": "82a68159a5f150b368e6bc9a834741ffff86862414780ef56ab95eda1660794e",
+     "bytes": 2967,
+     "late": false,
+     "content": "# Brief\n\nword0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19\n\nSources: https://example.org/a, https://example.com/b and (https://en.wikipedia.org/wiki/Credit_(finance)).",
+     "measured_by_your_client": {
+      "word_count": 438,
+      "links": [
+       "https://example.org/a",
+       "https://example.com/b",
+       "https://en.wikipedia.org/wiki/Credit_(finance)"
+      ],
+      "checks_against_agreed_terms": [
+       {
+        "requirement": "300-500 words",
+        "measured": "438 words",
+        "met": true
+       },
+       {
+        "requirement": "at least 3 sources with links",
+        "measured": "3 distinct links",
+        "met": true
+       }
+      ],
+      "how_measured": "by your plugin, deterministically: words = runs of letters/digits; links = distinct http(s) URLs. These are facts to use in your review, not a verdict on quality, accuracy or relevance."
+     }
+    },
+    "payment": {
+     "route": "transfer",
+     "transfer_id": "vt_1212121212121212",
+     "state": "applied",
+     "issuer": {
+      "id": "vp_f0f0f0f0f0f0",
+      "handle": "frank"
+     },
+     "amount": 20
+    },
+    "history": [
+     {
+      "at": "2026-11-06T10:00:00.000Z",
+      "event": "proposed",
+      "by": "alice"
+     }
+    ],
+    "negotiation": {
+     "prices_by_version": [
+      "v1 you: 20 PC"
+     ]
+    }
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/deals/vd_4444444444444444",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {},
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    }
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "deal_id": "vd_4444444444444444"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "deal_id": "vd_4444444444444444"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: consents on reads never run before valun_directory (a run due)",
+   "tool": "valun_directory",
+   "args": {},
+   "routes": {
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1"
+      ]
+     }
+    },
+    "GET /pilot/v1/me": {
+     "body": {
+      "participant": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "status": "active"
+      },
+      "mandate": {
+       "objective": "Buy short research briefs for the newsletter.",
+       "may_issue_credit": true,
+       "may_accept_credit": true,
+       "max_issue_per_deal": 30,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 5,
+       "min_payer_coverage_pct": 0,
+       "counterparties": "any",
+       "approve_above": 25,
+       "review_deliveries": false,
+       "expires_at": "2026-12-01T00:00:00.000Z",
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "mandate_version": 3,
+      "agent_limits": {
+       "max_issue_per_deal": 20,
+       "min_price_as_payee": 8,
+       "notes": "Briefs under 20 PC; prefer sources.",
+       "set_at": "2026-11-05T09:00:00.000Z"
+      },
+      "effective_limits": {
+       "max_issue_per_deal": 20,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 8,
+       "min_payer_coverage_pct": 0,
+       "may_accept_credit": true,
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "position": {
+       "claims_held_PC": 0,
+       "owes_PC": 10,
+       "outstanding": true
+      },
+      "authority": {
+       "mandate_expires_at": "2026-12-01T00:00:00.000Z"
+      }
+     }
+    },
+    "GET /pilot/v1/consents": {
+     "body": {
+      "consents": [
+       {
+        "kind": "setoff",
+        "id": "vs_5e70ff5e70ff5e70",
+        "state": "collecting",
+        "your_roles": [
+         "member"
+        ],
+        "created_at": "2026-11-06T11:58:00.000Z",
+        "expires_at": "2026-11-06T12:28:00.000Z",
+        "network": "valun-pilot-1",
+        "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+        "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+        "edges": [
+         {
+          "edge": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+          "issuer": {
+           "id": "vp_b0b0b0b0b0b0",
+           "handle": "bob"
+          },
+          "recipient": {
+           "id": "vp_a1a1a1a1a1a1",
+           "handle": "alice"
+          },
+          "your_role": "creditor",
+          "before": {
+           "total": 6,
+           "timestamp": 1793965600002,
+           "signature": "025191f5e9ef865e773d1018deeddd62f26df8073e32471fe9b3283a305dbfb2ac43642b9da0bf893bf1f2641d3a01d4c439681c37d5a1d5de27e59181a9a370ab"
+          },
+          "change": -6,
+          "new_total": 0,
+          "timestamp": 1793966397998,
+          "revision": 1,
+          "slots": [
+           "new"
+          ],
+          "signed_by_you": []
+         },
+         {
+          "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+          "issuer": {
+           "id": "vp_a1a1a1a1a1a1",
+           "handle": "alice"
+          },
+          "recipient": {
+           "id": "vp_b0b0b0b0b0b0",
+           "handle": "bob"
+          },
+          "your_role": "issuer",
+          "before": {
+           "total": 10,
+           "timestamp": 1793965500001,
+           "signature": "030e978eb4912715a0eb3e7e1f67b1eedd1174f394df6ea61b2bad89c868e7eec81e07996dfd4c45be9f3d88a9c07c145b87ce754ea1cc7b2159514a4063c7259d"
+          },
+          "change": -6,
+          "new_total": 4,
+          "timestamp": 1793966397998,
+          "revision": 1,
+          "slots": [
+           "new"
+          ],
+          "signed_by_you": []
+         }
+        ],
+        "context": {
+         "amount": 6
+        },
+        "summary": {
+         "your_net_change_PC": 0,
+         "your_total_owed_change_PC": -6
+        }
+       }
+      ],
+      "recently_resolved": []
+     }
+    },
+    "POST /pilot/v1/consents/vs_5e70ff5e70ff5e70": {
+     "body": {
+      "id": "vs_5e70ff5e70ff5e70",
+      "state": "collecting",
+      "rejected": []
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {
+    "consents_on_reads": true
+   },
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    }
+   },
+   "result": {
+    "participants": [
+     {
+      "handle": "bob",
+      "id": "vp_b0b0b0b0b0b0",
+      "name": "Bob Briefs",
+      "operator": "Bob Example",
+      "about": "Writes research briefs.",
+      "services": "Research briefs, 300-500 words, with sources.",
+      "credit_notes_they_hold_PC": 40,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "completed": 3,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T11:00:00.000Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "erin",
+      "id": "vp_e0e0e0e0e0e0",
+      "name": "Erin",
+      "operator": "Erin Example",
+      "about": "New: summaries.",
+      "services": "Summaries",
+      "credit_notes_they_hold_PC": 0,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "completed": 0,
+       "disputed": 0
+      },
+      "agent_last_seen": null,
+      "agent_recently_active": true
+     },
+     {
+      "handle": "sandbox-exact",
+      "id": "vp_c0c0c0c0c0c0",
+      "name": "Sandbox: exact results",
+      "operator": "Valun operator (sandbox)",
+      "about": "Deterministic test agent.",
+      "services": "text-stats (3 PC): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. notary (2 PC): SHA-256 and byte length of your text. Put the text in a ``` block, after TEXT: at the end, or as the only quoted string in the description. Deterministic: you can ch",
+      "credit_notes_they_hold_PC": 12,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "completed": 6,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-11-01T00:00:00.000Z",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "frank",
+      "id": "vp_f0f0f0f0f0f0",
+      "name": "Frank",
+      "operator": "Frank Example",
+      "about": "Research and briefs.",
+      "services": "Market research",
+      "credit_notes_they_hold_PC": 5,
+      "credit_notes_they_owe_PC": 2,
+      "deals": {
+       "completed": 1,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-11-03T12:00:00.000Z",
+      "agent_recently_active": false
+     }
+    ],
+    "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer."
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_c0c0c0c0c0c0",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_e0e0e0e0e0e0",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_f0f0f0f0f0f0",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {},
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    }
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {},
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {},
+     "text": null
+    },
+    null
+   ]
+  },
+  {
    "name": "status: every consent role off withdraws the roles declared before (decision D-3 b)",
    "tool": "valun_status",
    "args": {},
