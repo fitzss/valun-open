@@ -1,19 +1,20 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "86db8612741526668df9019b326d13af6f98a5d61f6994a80d8d543c38cf5063",
+  "agent.py": "88e765543dadf024d245ba71fa78221a350505c21a85a0b2368b08e407f39f89",
   "basis.py": "3bd5d7f482f562d9a898d7af637838d7c10aee6d9b4628a6aea69ff25eb26f6d",
-  "client.py": "d9291ed7ef8a6275961b243db79398e5d9977a8b3d9a2b9b1e574b71e9ae7f7e",
-  "mcp_server.py": "e74148966e9ccfcc347f1eefce7211d95d78a5e23dffd0e0de5e460ae83c6462",
+  "client.py": "063e243c0d2c2c1d3c387008fde9f546dad0210965e3706e13db17b0226bdd4c",
+  "mcp_server.py": "fcc7884da179930eed57cdf8a9d66c9fa957d82ca204f677f8fc5c370da5e017",
   "measure.py": "f4305cf1fe54ac137fa3aa201b0904c0e88e6ecc8325a38a41c06197963579ec",
-  "records.py": "3852c33f2b16e6eae59c205d8482b93035d70fe6a7eb925e9076400fb577f46c",
-  "sandbox.py": "6f04017d086dd1f72911004040edbc90250ee8d718f94115350d2a79498757cc",
-  "schemas.py": "8e61493802b60dbea05ef64f31fb9b390da9f93e336d939b42c3f993b417efd3"
+  "novation.py": "125baa9e8935690e7567cbc278245adf3781168cba00f00b6106967c027fb007",
+  "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
+  "sandbox.py": "1e3a35e1dd70527bf9f241670aea53ba39b67de0c7b59c98d8076809a46ea0da",
+  "schemas.py": "953417f78cf46bcda1078e3773e6b647426c10f4454c681b1da845877475e3bc"
  },
  "tools": [
   {
    "name": "valun_status",
-   "description": "Check your Valun connection and read your standing instructions. Returns your participant id and handle, the goals your owner told you (as you recorded them with valun_set_limits), the limits in force (your owner's MANDATE, tightened by any limits you recorded; you cannot raise the mandate), where approvals happen, your current position (credit notes you hold from others and owe to others, all outstanding), and honest labels for what Basis records, what an outstanding promise is, and what third-party exchange is supported. Call this first in every session; if no goals are recorded, ask your owner what they want and record it. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other independently controlled agents.",
+   "description": "Check your Valun connection and read your standing instructions. Returns your participant id and handle, the goals your owner told you (as you recorded them with valun_set_limits), the limits in force (your owner's MANDATE, tightened by any limits you recorded; you cannot raise the mandate), where approvals happen, your current position (credit notes you hold from others and owe to others, all outstanding), and honest labels for what Basis records, what an outstanding promise is, and what third-party exchange is supported. Call this first in every session; if no goals are recorded, ask your owner what they want and record it. When the server offers circulating credit it also lists notes_you_can_spend: credit notes others issued to you that you can pass on to pay for a delivery (valun_review_delivery pay_with), each checked by your Valun client against the issuer's signature. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other independently controlled agents.",
    "parameters": {
     "type": "object",
     "properties": {},
@@ -36,7 +37,7 @@
   },
   {
    "name": "valun_inbox",
-   "description": "What needs your action: offers to answer (accept, decline or counter), agreed work to deliver, deliveries to review, items waiting for your owner's approval, and deals waiting on the other side.",
+   "description": "What needs your action: offers to answer (accept, decline or counter), agreed work to deliver, deliveries to review, items waiting for your owner's approval, and deals waiting on the other side. With circulating credit it also counts the consents (set-offs and debt transfers) waiting for your Valun client, which signs by itself those your owner's policy allows, and lists payments in progress.",
    "parameters": {
     "type": "object",
     "properties": {},
@@ -194,11 +195,14 @@
      "title": {
       "type": "string",
       "description": "Optional title"
+     },
+     "exact_result": {
+      "type": "boolean",
+      "description": "text-stats and notary jobs only: your Valun client computes the exact result from the agreed text and delivers it; omit content"
      }
     },
     "required": [
-     "deal_id",
-     "content"
+     "deal_id"
     ]
    }
   },
@@ -224,6 +228,10 @@
      },
      "expected_deliverable_sha256": {
       "type": "string"
+     },
+     "pay_with": {
+      "type": "string",
+      "description": "accept only: 'own_note' (the default: issue your own credit note), or the handle or id of a participant whose notes you hold, to pay by moving that much of their debt to you onto the payee (see valun_status notes_you_can_spend)"
      }
     },
     "required": [

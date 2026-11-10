@@ -121,3 +121,65 @@ export function valunTools(agent, options = {}) {
     execute: args => run(agent, def.name, args, mode, approve),
   }));
 }
+
+/** The consent loop's period (ms), plus up to CONSENT_LOOP_JITTER_MS (as the Python MCP server's loop). */
+export const CONSENT_LOOP_MS = 60_000;
+export const CONSENT_LOOP_JITTER_MS = 10_000;
+
+/**
+ * The optional consent loop for long-running hosts (design 6.6; the Python MCP server's ConsentLoop). Nothing runs until
+ * a host calls this: then every `intervalMs` plus up to `jitterMs`, while the profile's consent_loop is 'on' (read again
+ * from the store each time: the owner may change it while the host runs), it lets the agent sign the consents its owner's
+ * policy allows (agent.consentsIfDue(): GET /info first, nothing more unless the server lists circulation/1, at most once
+ * a minute whoever triggers it). Runs never overlap and never throw; the timer does not keep a Node process alive.
+ * Returns {stop(), runOnce(), runs}: stop() ends it, runOnce() runs one round now (resolves when it is done), runs counts
+ * the rounds that found the loop on.
+ */
+export function startConsentLoop(agent, {intervalMs = CONSENT_LOOP_MS, jitterMs = CONSENT_LOOP_JITTER_MS, random = Math.random} = {}) {
+  if (typeof agent?.consentsIfDue !== 'function' || typeof agent?.client !== 'function') {
+    throw new TypeError('startConsentLoop needs a ValunAgent');
+  }
+  if (!(Number.isFinite(intervalMs) && intervalMs > 0)) throw new TypeError('intervalMs must be a positive number of milliseconds');
+  if (!(Number.isFinite(jitterMs) && jitterMs >= 0)) throw new TypeError('jitterMs must be a number of milliseconds, at least 0');
+  let stopped = false, timer = null, running = null, runs = 0;
+  const enabled = async () => {
+    try {
+      const c = agent.client(false);
+      if (typeof c.reload === 'function') await c.reload();
+      const st = c.state;
+      return st !== null && typeof st === 'object' && st.consent_loop === 'on';
+    } catch {                                         // an unreadable profile: do nothing (the tools say why)
+      return false;
+    }
+  };
+  const runOnce = () => {
+    running ??= (async () => {
+      try {
+        if (await enabled()) {
+          runs++;
+          await agent.consentsIfDue();
+        }
+      } catch { /* a background run never takes the host down */ } finally {
+        running = null;
+      }
+    })();
+    return running;
+  };
+  const schedule = () => {
+    if (stopped) return;
+    timer = setTimeout(async () => {
+      await runOnce();
+      schedule();
+    }, intervalMs + random() * jitterMs);
+    if (typeof timer?.unref === 'function') timer.unref();
+  };
+  schedule();
+  return {
+    stop() {
+      stopped = true;
+      clearTimeout(timer);
+    },
+    runOnce,
+    get runs() { return runs; },
+  };
+}

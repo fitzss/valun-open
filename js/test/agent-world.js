@@ -31,9 +31,16 @@ export function scenario(name) {
  */
 export function world({routes = {}, store = 'alice', agent = {}, state = {}} = {}) {
   // routes: {"METHOD /path": {status, body}}, or a function (key, init) => route | undefined (for the base routes)
+  // a route {sequence: [answer, ...]} answers its n-th request with the n-th answer (then the last), as the generator's
+  const counts = {};
+  const pick = (key, r) => {
+    if (!r || !Array.isArray(r.sequence)) return r;
+    const n = counts[key] = (counts[key] ?? -1) + 1;
+    return r.sequence[Math.min(n, r.sequence.length - 1)];
+  };
   const fetch = typeof routes === 'function'
-    ? fakeFetch((key, init) => routes(key, init) ?? FIX.base_routes[key], FIX.base)
-    : fakeFetch({...FIX.base_routes, ...routes}, FIX.base);
+    ? fakeFetch((key, init) => pick(key, routes(key, init) ?? FIX.base_routes[key]), FIX.base)
+    : fakeFetch((key) => pick(key, {...FIX.base_routes, ...routes}[key]), FIX.base);
   let n = 0;
   const randomBytes = len => new Uint8Array(len).fill(++n % 256);
   const extra = JSON.parse(JSON.stringify(state ?? {}));
@@ -43,34 +50,44 @@ export function world({routes = {}, store = 'alice', agent = {}, state = {}} = {
       secret: bytesToHex(KEYS[store].secret), token: FIX.token});
   const client = new Client({store: st, server: FIX.base, fetch, now: () => T0, randomBytes});
   const a = new ValunAgent(client, {approvals: agent.approvals ?? '', checkLinkHosts: agent.check_link_hosts ?? true,
-    setupHint: agent.setup_hint ?? null, resolveHost: 'resolveHost' in agent ? agent.resolveHost : fakeResolveHost, now: () => T0});
+    setupHint: agent.setup_hint ?? null, resolveHost: 'resolveHost' in agent ? agent.resolveHost : fakeResolveHost, now: () => T0,
+    processConsents: agent.process_consents ?? true, consentsOnReads: agent.consents_on_reads ?? false, declareRoles: agent.declare_roles ?? null});
   return {agent: a, fetch, client, store: st};
 }
 
 const isSigKey = k => k === 'signature' || k.endsWith('_signature');
 
+const isMap = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+
 /**
  * A body without its signatures (fresh random nonces), as the generator records it: every key named signature or
- * ending in _signature is dropped, in objects at any depth, lists included.
+ * ending in _signature is dropped, in objects at any depth, lists included; a 'signatures' map (slot -> signature)
+ * keeps its slots, each with the value '<signature>'.
  */
 export function unsigned(body) {
   if (Array.isArray(body)) return body.map(unsigned);
   if (body && typeof body === 'object') {
-    return Object.fromEntries(Object.entries(body).filter(([k]) => !isSigKey(k)).map(([k, v]) => [k, unsigned(v)]));
+    return Object.fromEntries(Object.entries(body).filter(([k]) => !isSigKey(k)).map(([k, v]) => [k,
+      k === 'signatures' && isMap(v) ? Object.fromEntries(Object.keys(v).map(slot => [slot, '<signature>'])) : unsigned(v)]));
   }
   return body ?? null;
 }
 
-/** The signatures in a body, in document order (the walk unsigned() makes). */
+/** The signatures in a body, in document order (the walk unsigned() makes; a 'signatures' map's values in order). */
 export function signaturesIn(body) {
   if (Array.isArray(body)) return body.flatMap(signaturesIn);
   if (body && typeof body === 'object') {
-    return Object.entries(body).flatMap(([k, v]) => (isSigKey(k) && typeof v === 'string' ? [v] : signaturesIn(v)));
+    return Object.entries(body).flatMap(([k, v]) => {
+      if (isSigKey(k) && typeof v === 'string') return [v];
+      if (k === 'signatures' && isMap(v)) return Object.values(v).filter(x => typeof x === 'string');
+      return signaturesIn(v);
+    });
   }
   return [];
 }
 
-export const requests = fetch => fetch.calls.map(c => ({key: c.key, body: unsigned(c.body)}));
+/** Every request: its key, its body without signatures and its X-Valun-Features header (null: none). */
+export const requests = fetch => fetch.calls.map(c => ({key: c.key, body: unsigned(c.body), features: c.headers['X-Valun-Features'] ?? null}));
 /** The requests that carried signatures: {key, signatures} in order (the generator records what each was made over). */
 export const signedRequests = fetch => fetch.calls.map(c => ({key: c.key, signatures: signaturesIn(c.body)})).filter(c => c.signatures.length);
 export const posts = fetch => fetch.calls.filter(c => !c.key.startsWith('GET '));

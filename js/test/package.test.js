@@ -12,7 +12,7 @@ const pkg = JSON.parse(read('package.json'));
 
 test('package.json: name, version, ESM, MIT, node >= 18, no dependencies of any kind', () => {
   assert.equal(pkg.name, '@fitzdoud/valun');
-  assert.equal(pkg.version, '0.3.1');
+  assert.equal(pkg.version, '0.4.0');
   assert.equal(pkg.type, 'module');
   assert.equal(pkg.license, 'MIT');
   assert.equal(pkg.engines.node, '>=18');
@@ -48,6 +48,11 @@ test('every runtime export is declared in the TypeScript types', () => {
   }
   for (const name of Object.keys(api.basis)) {
     assert.match(dts, new RegExp(`(?:function|const|class) ${name}\\b`), `index.d.ts declares basis.${name}`);
+  }
+  const nv = dts.slice(dts.indexOf('export namespace novation {'));
+  assert.ok(dts.includes('export namespace novation {'), 'index.d.ts declares the novation namespace');
+  for (const name of Object.keys(api.novation)) {
+    assert.match(nv, new RegExp(`(?:function|const|class) ${name}\\b`), `index.d.ts declares novation.${name}`);
   }
   const fsDts = read('src/file-store.d.ts');
   for (const name of Object.keys(fileStore)) assert.match(fsDts, new RegExp(`export class ${name}\\b`));

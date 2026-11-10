@@ -14,6 +14,8 @@ act is signed locally with the Basis Schnorr scheme, and the client checks what 
   `fetch`. Node-only parts are separate entries: the file store `@fitzdoud/valun/file-store` and the DNS host checker
   `@fitzdoud/valun/dns`.
 - Version `0.3.1`: `npm install @fitzdoud/valun` (or from a checkout: `npm install ./js`) or import `js/src/index.js`.
+  This checkout is `0.4.0` (not published): circulating credit (server release v16: bound notes, paying with a note you
+  hold, consents and set-offs, edge sync), mirroring the Python package `valun` 0.4.
 
 Tested on Node 24.21.0 on Windows only. Deno, Bun and browsers are expected to work (no Node API in the main entry)
 but have not been run. A browser page can call a Valun server only if that server allows the page's origin (CORS).

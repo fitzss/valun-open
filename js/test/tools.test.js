@@ -4,7 +4,8 @@
 // commitment whose read fails is refused (approval_unbound) without asking. Offline.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {APPROVAL_TEXT, NO_APPROVAL_STEP, basis, bytesToHex, schemas, statements, termsHash, utf8, valunTools} from '../src/index.js';
+import {APPROVAL_TEXT, CONSENT_LOOP_MS, NO_APPROVAL_STEP, basis, bytesToHex, schemas, startConsentLoop, statements, termsHash, utf8,
+  valunTools} from '../src/index.js';
 import {KEYS, posts, scenario, world} from './agent-world.js';
 
 const ACCEPT = scenario('respond: accept');
@@ -222,4 +223,64 @@ test('valunTools() refuses contradictory or unknown options and keeps an approva
   const other = world().agent;
   valunTools(other, {approve: async () => true});
   assert.equal(other.approvals, APPROVAL_TEXT.ask);
+});
+
+// ---------- the optional consent loop for long-running hosts ----------
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+test('startConsentLoop(): nothing runs until a host starts it; then rounds while consent_loop is on, never overlapping, until stop()', async () => {
+  assert.equal(CONSENT_LOOP_MS, 60_000);
+  let calls = 0, inFlight = 0, most = 0, reloads = 0;
+  const state = {consent_loop: 'on'};
+  const fake = {client: () => ({state, reload: async () => { reloads++; }}),
+    consentsIfDue: async () => {
+      calls++;
+      most = Math.max(most, ++inFlight);
+      await sleep(15);
+      inFlight--;
+    }};
+  const loop = startConsentLoop(fake, {intervalMs: 5, jitterMs: 2});
+  await sleep(90);
+  loop.stop();
+  const n = calls;
+  assert.ok(n >= 2, `${n} rounds`);
+  assert.equal(most, 1, 'rounds never overlap');
+  assert.ok(reloads >= n, 'the profile is read again before each round');
+  assert.equal(loop.runs, n);
+  await sleep(40);
+  assert.equal(calls, n, 'no round after stop()');
+  // off in the profile: nothing is run; runOnce() during a round is that round
+  state.consent_loop = 'off';
+  const off = startConsentLoop(fake, {intervalMs: 1_000_000});
+  await off.runOnce();
+  assert.equal(off.runs, 0);
+  state.consent_loop = 'on';
+  const [a, b] = [off.runOnce(), off.runOnce()];
+  assert.equal(a, b, 'one round at a time');
+  await a;
+  assert.equal(off.runs, 1);
+  off.stop();
+  // a round that throws, or a profile that cannot be read, never reaches the host
+  const bad = startConsentLoop({client: () => { throw new Error('unreadable'); }, consentsIfDue: async () => { throw new Error('x'); }},
+    {intervalMs: 1_000_000});
+  await bad.runOnce();
+  assert.equal(bad.runs, 0);
+  bad.stop();
+  assert.throws(() => startConsentLoop({}), TypeError);
+  assert.throws(() => startConsentLoop(fake, {intervalMs: 0}), TypeError);
+});
+
+test('startConsentLoop(): a round signs the set-off a due consent run signs (the profile turned the loop on)', async () => {
+  const sc = scenario('propose: a due consent run signs a set-off first');
+  const w = world({...sc, state: {...sc.state, consent_loop: 'on'}});
+  const loop = startConsentLoop(w.agent, {intervalMs: 1_000_000});
+  await loop.runOnce();
+  loop.stop();
+  assert.equal(loop.runs, 1);
+  const keys = w.fetch.calls.map(c => c.key);
+  assert.deepEqual(keys.slice(0, 4), ['GET /pilot/v1/info', 'GET /pilot/v1/consents', 'GET /pilot/v1/me', 'POST /pilot/v1/consents/vs_5e70ff5e70ff5e70']);
+  assert.equal(w.store.state.consent_log.at(-1).decision, 'signed');
+  // within a minute of that round, a tool call does not run consents again
+  await w.agent.callSafe('valun_propose', sc.args);
+  assert.equal(w.fetch.calls.filter(c => c.key === 'GET /pilot/v1/consents').length, 1);
 });

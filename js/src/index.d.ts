@@ -198,7 +198,153 @@ export interface ClientState {
   records?: Records;
   /** The tracker and unit this profile is pinned to (set on its first /info read or completion; R13). */
   pins?: {tracker_nft_id: string; denomination: string};
+  /** Circulating credit (0.4): the R4 record of what was signed per edge and timestamp ({op?, slots: {slot: total}}). */
+  signed?: Record<string, Record<string, {op?: string; slots: Record<string, number>}>>;
+  /** R12: the edges a transfer or set-off changed (they take bound notes only). */
+  novated_edges?: Record<string, true> | string[];
+  /** D-1: this client's payment attempts per deal. */
+  transfer_attempts?: Record<string, PaymentAttemptRecord[]>;
+  /** The quote digest the owner approved per deal (a regenerated transfer is re-signed only under it). */
+  approved_payments?: Record<string, string>;
+  /** The local consent policy: what this client signs by itself (the stricter of it and the owner's mandate applies). */
+  consent_policy?: ConsentPolicy;
+  consents_last_run_ms?: number;
+  /** Decision D-3 a: the last value-safe consent run before a read-only tool. */
+  consents_last_safe_run_ms?: number;
+  /** The last CONSENT_LOG_MAX consent decisions. */
+  consent_log?: ConsentLogEntry[];
+  /** GET /edges?since= cursor (syncEdges()). */
+  journal_seq?: number;
+  /** The roles the server last took from this client's X-Valun-Features header ('' once it took the empty list: D-3 b). */
+  consent_roles_declared?: string;
   [field: string]: unknown;
+}
+
+/** The local consent policy (design 6.6): each flag must be exactly true to sign by itself; max_PC caps one consent. */
+export interface ConsentPolicy {
+  setoff?: boolean;
+  as_issuer?: boolean;
+  as_new_creditor?: boolean;
+  max_PC?: number;
+  /** 'any', or participant ids / public keys */
+  accept_issuers?: 'any' | string[];
+  refuse_issuers?: string[];
+  [field: string]: unknown;
+}
+
+/** One payment attempt of a deal as novation.js records it (decision D-1). */
+export interface PaymentAttemptRecord {
+  deal_id: string;
+  route: 'note' | 'transfer';
+  edge: string;
+  prior: number;
+  prior_timestamp: number | null;
+  prior_signature: string | null;
+  total: number;
+  timestamp: number;
+  quote_digest?: string | null;
+  signed_at?: string;
+  /** The server's id of the attempt (a transfer id), once known. */
+  attempt_id?: string;
+  /** The OWNER's resolution (resolveAttempt()). */
+  outcome?: 'not_applied' | 'applied';
+  resolved_at?: string;
+  [field: string]: unknown;
+}
+
+export interface ConsentLogEntry {
+  at: string;
+  id: string | null;
+  kind: 'transfer' | 'setoff' | null;
+  role: 'payer' | 'issuer' | 'payee' | 'member' | null;
+  decision: 'signed' | 'refused' | 'waiting';
+  code: string | null;
+  deal_id: string | null;
+  amount: unknown;
+  your_net_change_PC: unknown;
+}
+
+/** One entry of processConsents()'s report. */
+export interface ConsentEntry {
+  id: string | null;
+  kind: 'transfer' | 'setoff' | null;
+  role: 'payer' | 'issuer' | 'payee' | 'member' | null;
+  deal_id: string | null;
+  amount: unknown;
+  your_net_change_PC: unknown;
+  your_total_owed_change_PC: unknown;
+  code: string | null;
+  reason: string | null;
+  /** signed (and stale_revision) entries: the item's state as the server answered it */
+  state?: string | null;
+  rejected?: Array<{slot: string | null; code: string | null; revision: number | null}>;
+  /** an entry whose request failed */
+  error?: string | null;
+}
+
+export interface ConsentReport {
+  signed: ConsentEntry[];
+  refused: ConsentEntry[];
+  waiting: ConsentEntry[];
+}
+
+export interface SyncEdgesResult {
+  applied: Array<{pair: string; total: unknown; timestamp: unknown; kind: unknown; ref: unknown; direction: unknown}>;
+  paid_deals: string[];
+  novated: string[];
+  pruned: {signed: number; pending: number; attempts: number; signatures: number};
+  /** Each verified edge's current state (the D-1 read-back). */
+  edges: Record<string, EdgeState>;
+  rejected: Array<{edge: unknown; seq: unknown; reason: 'not_an_object' | 'bad_edge' | 'bad_state' | 'bad_signature'}>;
+  /** Edges listed only with a state that did not verify: not read. */
+  doubtful: string[];
+  journal_seq: number;
+}
+
+export interface PaymentAttemptRow {
+  deal_id: string;
+  /** '#n': the deal's n-th attempt, for resolveAttempt() */
+  ref: string;
+  attempt_id: string | null;
+  route: 'note' | 'transfer';
+  edge: string;
+  prior: number | null;
+  total: number;
+  timestamp: number;
+  outcome: 'not_applied' | 'applied' | null;
+  state: 'applied' | 'unknown' | 'alive' | 'dead' | 'unread';
+  paid: boolean;
+  paid_by: string | null;
+}
+
+export interface ResolutionPlan {
+  deal_id: string;
+  attempt: PaymentAttemptRow | null;
+  attempts: PaymentAttemptRow[];
+  attempt_id: string | null;
+  route: 'note' | 'transfer';
+  transfer: {timestamp: number | null; edge: string | null; total: number | null; id: string; state: string | null} | null;
+  /** true: the server resolves it first, then my records follow */
+  server: boolean;
+  /** why only my records change: 'note' | 'no_circulation' | 'no_server_id' | 'server_unknown' | 'server_ended' */
+  local: string | null;
+}
+
+export interface ReadBackOptions {
+  /** A read-back of my edges (syncEdges().edges); null: nothing was read. */
+  edges?: Record<string, EdgeState> | null;
+  nowMs?: number | null;
+  /** syncEdges().doubtful: listed with a state that did not verify (not read). */
+  doubtful?: string[] | null;
+}
+
+export interface PayByTransferOptions {
+  /** The sha256 of the delivery that was reviewed (stale_delivery otherwise). */
+  expectedDeliverableSha256?: string;
+  /** The quote the owner approved (stale_quote otherwise). */
+  expectedQuoteDigest?: string;
+  /** My claim on the issuer that the owner saw, in PC (stale_claim otherwise). */
+  expectedClaimTotal?: number;
 }
 
 /**
@@ -245,6 +391,11 @@ export interface ClientOptions {
   signerRetries?: number;
   /** First back-off delay for signerRetries in ms (default 1000; doubles each time). */
   retryDelayMs?: number;
+  /**
+   * false for a client whose adapter signs no consent by itself: it declares no consent role in X-Valun-Features and
+   * withdraws the roles it declared before (decision D-3 b). Default true; a ValunAgent sets it from its own options.
+   */
+  declareRoles?: boolean;
   /** Test hook: the clock in ms since the epoch. */
   now?: () => number;
   /** Test hook: the source of deal ids and nonces (never of signing nonces or keys). */
@@ -316,6 +467,23 @@ export class Client {
   /** This agent's public key (66 hex), or null before enrollment. */
   readonly pubkey: string | null;
   readonly participantId: string | null;
+  /** The feature tags the last GET /info this client read listed ([] before any; ['?'] for a malformed list). */
+  readonly advertised: string[];
+  /** See ClientOptions.declareRoles. */
+  declareRoles: boolean;
+  /** This client's clock (ms since the epoch). */
+  nowMs(): number;
+  /** Forget the features of the last GET /info (requests carry no capability header until the next one), as a new Client. */
+  forgetFeatures(): void;
+  /** Read the records again where the store can (FileStore). */
+  reload(): Promise<void>;
+  /** Record a consent run at nowMs (state[key]); never rejects. */
+  markConsentsRun(nowMs: number, key?: 'consents_last_run_ms' | 'consents_last_safe_run_ms'): Promise<void>;
+  /**
+   * The X-Valun-Features value this client sends ('consents/1;roles=<roles>'), once GET /info listed circulation/1; the
+   * empty list 'consents/1;roles=' while roles it declared before must be withdrawn (decision D-3 b); null otherwise.
+   */
+  featuresHeader(): string | null;
 
   /** One API call; parsed JSON body, or a ValunError for any HTTP error. */
   request<T = unknown>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, options?: {auth?: boolean; token?: string}): Promise<T>;
@@ -360,6 +528,123 @@ export class Client {
   dispute(dealId: string, reason: string): Promise<DealView>;
   /** The payee signed the delivery under one of these keys (bad_delivery_signature otherwise). */
   static checkDeliverySignature(delivery: unknown, termsHash: string, ...payeeKeys: Array<string | null | undefined>): void;
+
+  // ---- circulating credit (server release v16; GET /info lists circulation/1) ----
+  /** GET /deals/{id}/payment-options: the own note and the notes this agent holds that could pay the deal (the server's view). */
+  paymentOptions(dealId: string): Promise<Record<string, unknown>>;
+  /** GET /deals/{id}/transfer-template?issuer=: what paying with that issuer's note would sign (unchecked). */
+  transferTemplate(dealId: string, issuerId: string): Promise<Record<string, unknown>>;
+  /**
+   * Accept the delivery and pay the payee with part of a note this agent holds (PROTOCOL.md 18.6): the issuer's debt to
+   * me falls by the price and its debt to the payee rises by it. `issuer` is a participant id, or a handle only one
+   * listed issuer has. Everything is checked by novation.js before anything is signed (15.3, D-1). Check `status`.
+   */
+  payByTransfer(dealId: string, issuer: string, options?: PayByTransferOptions): Promise<DealView>;
+  /** POST /deals/{id}/cancel-transfer (not signed); the deal becomes payment_due. */
+  cancelTransfer(dealId: string): Promise<DealView>;
+  /** This client's payment attempts, deal by deal, as the evaluators classify them now. Makes no request. */
+  paymentAttempts(options?: ReadBackOptions): PaymentAttemptRow[];
+  /** How resolveAttempt() would resolve attempt '#n' (or a transfer id vt_...) of a deal. Changes nothing. */
+  resolutionPlan(dealId: string, attempt: string, options?: ReadBackOptions): Promise<ResolutionPlan>;
+  /** The OWNER's resolution of a payment attempt whose outcome is unknown (decision D-2 d). Never called by an agent. */
+  resolveAttempt(dealId: string, attempt: string, outcome: 'not_applied' | 'applied', ownerToken: string, options?: ReadBackOptions & {
+    note?: string | null; localOnly?: boolean; expectedAttempt?: [string, string, number, number] | null;
+  }): Promise<{deal_id: string; attempt_id: string | null; outcome: string; server: unknown; local: string | null;
+    matched: PaymentAttemptRecord[]; paid: boolean}>;
+  /** GET /consents: the transfers and set-offs that wait for this agent's signatures. */
+  consents(): Promise<{consents: Array<Record<string, unknown>>; recently_resolved?: unknown[]}>;
+  /** POST /consents/{id}: signatures this client made (processConsents makes them after its firewall and write-ahead). */
+  submitConsent(consentId: string, signatures: Record<string, string>, revisions: Record<string, number>): Promise<Record<string, unknown>>;
+  /** POST /consents/{id}/refuse (not signed). */
+  refuseConsent(consentId: string, reason?: string | null): Promise<Record<string, unknown>>;
+  /**
+   * Sign by itself the consents its owner's policy allows, and refuse the others (PROTOCOL.md 15.3, 18.9). valueSafeOnly
+   * (decision D-3 a): only set-offs and payments to me by transfer, and nothing is refused.
+   */
+  processConsents(options?: {policy?: ConsentPolicy | null; nowMs?: number | null; valueSafeOnly?: boolean}): Promise<ConsentReport>;
+  /** Bring the records up to date from GET /edges (every state verified), and prune what is past use (design 11). */
+  syncEdges(options?: {nowMs?: number | null}): Promise<SyncEdgesResult>;
+}
+
+/** The consent roles a local consent policy signs by itself, as the capability header names them. */
+export function consentRoles(policy: unknown): Array<'setoff' | 'issuer' | 'creditor'>;
+/** [route, edge, total, timestamp] of a payment attempt (resolveAttempt expectedAttempt), or null. */
+export function attemptKey(attempt: unknown): [unknown, unknown, unknown, unknown] | null;
+export const FEATURES_HEADER: 'X-Valun-Features';
+export const CONSENT_ROLES: ReadonlyArray<readonly [string, string]>;
+export const VALUE_SAFE_ROLES: readonly ['member', 'payee'];
+export const VALUE_SAFE_HEADER_ROLES: readonly ['setoff', 'creditor'];
+export const CONSENT_LOG_MAX: number;
+export const RECORDS_KEEP_MS: number;
+export const SIGNATURES_KEEP_MS: number;
+export const ATTEMPT_OUTCOMES: readonly ['not_applied', 'applied'];
+export const UNRESOLVED_TRANSFER: readonly string[];
+export const LIVE_TRANSFER: readonly string[];
+export const LOCAL_CHOICES: readonly string[];
+export const RESOLVE_NOTE_MAX: number;
+export const EDGES_PAGE: number;
+export const EDGES_MAX_PAGES: number;
+
+/** An evaluator's answer (novation.js): sign exactly to_sign, after saving write_ahead, or refuse with code. */
+export interface Evaluation {
+  ok: boolean;
+  code: string | null;
+  /** [slot_key, issuer_pk, recipient_pk, total, timestamp] */
+  to_sign: Array<[string, string, string, number, number]>;
+  summary: Record<string, unknown> & {reason?: string | null};
+  write_ahead: Record<string, unknown> | null;
+}
+
+/** Circulating credit, client side: the signing firewall (port of python/src/valun/novation.py; PROTOCOL.md 15.3). Pure. */
+export namespace novation {
+  const TRANSFER_MS: 999;
+  const SETOFF_MS: 998;
+  const BOUND_MS: 997;
+  const RESIDUE: Readonly<{transfer: 999; setoff: 998; bound: 997}>;
+  const RESERVED_MS: readonly number[];
+  const MAX_AGE_MS: number;
+  const FALLBACK_MARGIN_MS: number;
+  const INITIATE_WINDOW_MS: number;
+  const CONSENT_WINDOW_MS: number;
+  const FUTURE_SKEW_MS: number;
+  const MAX_SAFE_INTEGER: number;
+  const QUOTE_KIND: 'valun-transfer-quote/1';
+  const QUOTE_FIELDS: readonly string[];
+  const ROLES: readonly ['payer', 'issuer', 'payee', 'member'];
+  const ROUTES: readonly ['note', 'transfer'];
+  const PAID_DEALS_KEY: 'paid_deals';
+  const REFUSAL_CODES: readonly string[];
+  const ID_RE: RegExp;
+  const RECORDS_KEEP_MS: number;
+  /** The evaluators' context (snake_case keys, as the Python client's): see novation.js. */
+  type Context = Record<string, unknown> & {verify: (pubkeyHex: string, msg: Uint8Array, sigHex: string) => boolean};
+  function evaluateBoundTemplate(template: unknown, ctx: Context): Evaluation;
+  function evaluatePayerTemplate(template: unknown, ctx: Context): Evaluation;
+  function evaluateConsent(item: unknown, ctx: Context): Evaluation;
+  function classifyAttempts(dealId: string, ctx: Context, price?: number | null): {ok: boolean; code: string | null;
+    attempts: Array<{attempt: PaymentAttemptRecord; outcome: string}>};
+  function checkPayment(dealId: string, price: number, route: 'note' | 'transfer', edge: string, prior: number, ctx: Context):
+    {ok: boolean; code: string | null; summary: Record<string, unknown>};
+  function attemptOutcome(attempt: unknown, nowMs: number, state?: EdgeState | null): 'applied' | 'unknown' | 'alive' | 'dead' | 'unread';
+  function exactPrior(attempt: unknown, state: unknown): boolean;
+  function unboundNoteProblem(edge: string, novatedEdges: unknown, features?: string[]): string | null;
+  function applyWriteAhead(state: ClientState, writeAhead: unknown, signedAt?: string | null): void;
+  function applyFindings(state: ClientState, summary: unknown, mePk?: string | null): void;
+  function markPaid(state: ClientState, dealId: string, route: 'note' | 'transfer', edge: unknown, total: unknown, timestamp: unknown): boolean;
+  function dealContext(terms: unknown, termsHash: string, deliverableSha256?: string | null, delivered?: boolean,
+    transferId?: string | null): Record<string, unknown>;
+  function quoteDigest(fields: Record<string, unknown>): string;
+  function payStatement(dealId: string, quoteDigestHex: string): string;
+  function message(issuerPk: string, recipientPk: string, total: number, timestamp: number, trackerNftId: string, denomination: string): Uint8Array;
+  function slotMessages(toSign: Evaluation['to_sign'], trackerNftId: string, denomination: string): Record<string, Uint8Array>;
+  function slotKey(edge: string, slot: 'prior' | 'new'): string;
+  function edgeKey(issuerPk: string, recipientPk: string): string;
+  function parseEdge(key: unknown): [string, string] | null;
+  function shownId(value: unknown): string | null;
+  /** apply_write_ahead found the records changed since the evaluation (its code is the refusal to give). */
+  class WriteAheadConflict extends Error {
+    code: string;
+  }
 }
 
 /** The optional state keys every store must keep for the client (Python CORE_STATE_KEYS). */
@@ -668,6 +953,51 @@ export const DEFAULT_SETUP_HINT: string;
 /** The Python adapters' sentences for where approvals happen (valun_status shows the one in use). */
 export const APPROVAL_TEXT: Readonly<{ask: string; 'client-prompt': string; console: string; none: string}>;
 
+// ---- circulating credit (0.4; only where the server's GET /info lists circulation/1) ----
+export const CIRCULATION: 'circulation/1';
+/** The server's deal label with circulating credit (PROTOCOL.md 16.1): what a note is, and what it can become. */
+export const CIRCULATION_SETTLEMENT: string;
+export const SETTLEMENT_NOTE_CIRCULATION: string;
+export const NOT_SETTLED_CIRCULATION: string;
+export const HONEST_LABELS_CIRCULATION: Readonly<{what_basis_records: string; outstanding_promise: string; third_party: string}>;
+export const REAL_VS_SIMULATED_CIRCULATION: Readonly<{real: string; simulated: string; not_proven: string}>;
+/** processConsents() runs at most this often (60 000 ms). */
+export const CONSENTS_EVERY_MS: number;
+/** The local consent policy an invited (sandbox) join writes. */
+export const INVITE_CONSENT_POLICY: Readonly<ConsentPolicy>;
+export const SANDBOX_CONSENT_POLICY: Readonly<ConsentPolicy>;
+export const CONSENT_POLICY_KEYS: readonly string[];
+/** Deal statuses a payer can pay from (payment options). */
+export const PAYABLE: readonly ['delivered', 'note_failed', 'payment_due'];
+export const CONSENT_SPEED_WORDS: Readonly<Record<string, string>>;
+/** prepare() failures that keep their own code (not approval_unbound). */
+export const UNBOUND_PASS_THROUGH: readonly string[];
+export const SANDBOX_EXACT: 'sandbox-exact';
+export const SANDBOX_MALLORY: 'sandbox-mallory';
+export const SANDBOX_AGENTS: readonly string[];
+/** The five-step sandbox tour (design 9.2): goals, the texts it sends, and what you hold / owe after each step. */
+export const TOUR_GOALS: Readonly<Record<1 | 2 | 3 | 4 | 5, string>>;
+export const TOUR_TEXTS: Readonly<Record<1 | 2 | 3 | 4 | 5, string>>;
+export const TOUR_AFTER: Readonly<Record<1 | 2 | 3 | 4 | 5, readonly [number, number]>>;
+/** The read-only tools before which consentsOnReads signs the value-safe consents (decision D-3 a). */
+export const CONSENTS_ON_READ_TOOLS: readonly ToolName[];
+/** The keys of each consents_signed_now entry. */
+export const SIGNED_NOW_KEYS: readonly string[];
+/** The honest labels for a server with (true) or without circulating credit. */
+export function labels(circulating: boolean): {settlement: string; not_settled: string; honest_labels: typeof HONEST_LABELS;
+  real_vs_simulated: typeof REAL_VS_SIMULATED};
+/** The feature tags a GET /info answer lists ([] for none; ['?'] when malformed). */
+export function featuresOf(info: unknown): string[];
+/** What the client signs by itself per consent role: the stricter of the local policy and the owner's mandate (R8). */
+export function consentPolicyInForce(local: unknown, mandate: unknown): {setoff: boolean; as_issuer: boolean; as_new_creditor: boolean;
+  max_PC: unknown; local_policy: Record<string, unknown>; owner_mandate: Record<string, unknown>; how_to_change: string};
+/** consentPolicyInForce() as sentences. */
+export function clientSigns(policy: unknown): string[];
+/** Does this profile take part in consents (a consent policy, or payments by transfer)? A 0.3 profile does not. */
+export function wantsConsents(state: unknown): boolean;
+/** Client.processConsents() when due (at most once per everyMs); null when it did not run. */
+export function consentsDue(client: Client, options?: {nowMs?: number | null; everyMs?: number; valueSafeOnly?: boolean}): Promise<ConsentReport | null>;
+
 /** A ValunError (or anything thrown) as a tool result. */
 export function errorPayload(error: unknown, setupHint?: string): ToolError;
 /** valun_set_limits arguments as the server's /limits body. */
@@ -701,6 +1031,18 @@ export interface ValunAgentOptions {
   hostTimeoutMs?: number;
   /** What the owner must do to connect the agent, in error explanations. */
   setupHint?: string | null;
+  /**
+   * Sign the consents the owner's policy allows before tools that are not read-only (consentsIfDue; default true). A host
+   * with a consent loop of its own (startConsentLoop) may turn it off.
+   */
+  processConsents?: boolean;
+  /**
+   * Decision D-3 a (default false), for a host without a background consent loop: before valun_status and valun_inbox,
+   * sign the value-safe consents only (set-offs, payments to me by transfer); results then carry consents_signed_now.
+   */
+  consentsOnReads?: boolean;
+  /** Does the client declare its consent roles (X-Valun-Features; D-3 b)? null: as processConsents. */
+  declareRoles?: boolean | null;
   /** Test hook: the clock in ms (who counts as recently active). */
   now?: () => number;
 }
@@ -713,7 +1055,16 @@ export class ValunAgent {
   resolveHost: ResolveHost | null;
   hostTimeoutMs: number;
   setupHint: string;
+  processConsents: boolean;
+  consentsOnReads: boolean;
+  declareRoles: boolean;
+  /** The feature tags the last GET /info this agent read listed (null: none read yet). */
+  features: string[] | null;
   readonly handlers: Readonly<Record<ToolName, (args: ToolArgs) => Promise<ToolResult>>>;
+  /** Process consents when due (never from a read-only tool; never rejects): the report, or null when it did not run. */
+  consentsIfDue(nowMs?: number | null): Promise<ConsentReport | null>;
+  /** Decision D-3 a: the value-safe consents before valun_status and valun_inbox (with consentsOnReads). Never rejects. */
+  consentsOnRead(nowMs?: number | null): Promise<ConsentReport | null>;
   /** The Client, after checking it is enrolled (ValunError not_connected otherwise). */
   client(requireConnection?: boolean): Client;
   /** Runs one tool; rejects with a ValunError (or another error) on failure. */
@@ -779,6 +1130,15 @@ export interface ValunToolsOptions {
 
 /** What the model is told about approvals when no approve hook is given. */
 export const NO_APPROVAL_STEP: string;
+export const CONSENT_LOOP_MS: number;
+export const CONSENT_LOOP_JITTER_MS: number;
+
+/**
+ * The optional consent loop for long-running hosts (off until called): every intervalMs plus up to jitterMs, while the
+ * profile's consent_loop is 'on', agent.consentsIfDue(). Runs never overlap and never throw.
+ */
+export function startConsentLoop(agent: ValunAgent, options?: {intervalMs?: number; jitterMs?: number; random?: () => number}):
+  {stop(): void; runOnce(): Promise<void>; readonly runs: number};
 
 /**
  * The nine tools of `agent` as FrameworkTool objects. Commitments ask `approve` first with the prepared text and

@@ -1,6 +1,6 @@
 {
   "name": "@fitzdoud/valun",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Zero-dependency JavaScript/TypeScript client for the Valun agent credit network (valun-deal/1): local secp256k1 key, Basis Schnorr signatures, independent checks before every signature. Experimental pilot: synthetic units, nothing settled.",
   "license": "MIT",
   "author": "Fitz Doud",

@@ -4,11 +4,17 @@
 //
 // Pure: no I/O, and nothing but JSON values in and out. It imports nothing but the Python semantics it mirrors.
 //
-//     records = {pair: {confirmed: EdgeState | null, pending: [entry, ...]}}
+//     records = {pair: {confirmed: EdgeState | null, pending: [entry, ...]}, paid_deals: {...}}
 //     pair    = '<issuer_pubkey>><recipient_pubkey>' (hex keys)
 //
+// records.paid_deals (the one key that is not a pair; novation.PAID_DEALS_KEY) = {deal_id: {route ('note' or
+//            'transfer'), edge, total, timestamp}}: the deals a payment of this client is known to have paid, never paid
+//            again (decision D-1 item 5; written by novation.markPaid and applyFindings). The functions here never read
+//            or write it: no pair key can equal 'paid_deals'.
 // EdgeState  {total, timestamp, signature}: the edge's note as last confirmed applied on the Basis tracker. The
 //            signature is the issuer's: the tracker stores the issuer's new signature for notes, transfers and set-offs.
+//            A confirmed state drops its signature 30 days after its timestamp (the client's pruning, design 11): it is
+//            then {total, timestamp}, which is all that is compared later.
 // entry      {total, timestamp, kind, ref, direction, signed_at}: something this client signed for the edge whose
 //            outcome is not known yet. kind: 'note' (a credit note) or a novation kind such as 'transfer' or 'setoff';
 //            ref: the deal, transfer or set-off id; direction: 'out' when this client is the edge's issuer, 'in' when it

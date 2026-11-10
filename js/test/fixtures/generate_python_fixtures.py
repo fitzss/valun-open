@@ -5,9 +5,14 @@
 Writes next to this file:
   schemas-python.json  python/src/valun/schemas.py ALL, exactly as Python holds it
   python-parity.json   outputs of measure.py, sandbox.py, records.py and agent.py helpers (and int()/repr()) for many
-                       inputs, and the constants both clients must share (approval texts, labels, tool classes, ...)
+                       inputs, and the constants both clients must share (approval texts, labels, tool classes, ...);
+                       since 0.4 also novation.py: every case of python/tests/test_novation.py CASES with its whole
+                       result, a few helpers, and the capability header and consent-policy helpers of client.py/agent.py
   agent-python.json    the Python ValunAgent (call_safe, is_commitment, prepare, describe_commitment, bind) run against
-                       recorded server responses, with the requests it made and the exact messages it signed
+                       recorded server responses, with the requests it made (and the X-Valun-Features header of each)
+                       and the exact messages it signed; since 0.4 also client_scenarios: Client methods of circulating
+                       credit the tools do not reach (sync_edges, payment attempts and their resolution, cancel_transfer,
+                       process_consents, pay_by_transfer retries), recorded the same way
 Each file records the SHA-256 (with LF line endings) of every valun.* module the generator imported (so mcp_server.py,
 records.py and any module the agent comes to depend on are covered); the JS tests compare them with python/src when it
 is present, so a change to the Python reference shows up until the fixtures are generated again.
@@ -27,6 +32,7 @@ SRC = os.path.abspath(os.path.join(HERE, '..', '..', '..', 'python', 'src'))
 sys.dont_write_bytecode = True          # read python/src only: no __pycache__ written there
 sys.path.insert(0, SRC)
 from valun import agent as va, basis as vb, client as vc, measure as vm, records as vr, sandbox as vs, schemas  # noqa: E402
+from valun import novation as nv  # noqa: E402
 from valun import mcp_server  # noqa: E402
 from valun.mcp_server import APPROVAL_TEXT  # noqa: E402
 
@@ -120,7 +126,7 @@ def fake_getaddrinfo(host, port, *args, **kwargs):
 
 vm.socket = types.SimpleNamespace(getaddrinfo=fake_getaddrinfo, IPPROTO_TCP=socket.IPPROTO_TCP, gaierror=socket.gaierror)
 
-ROUTES, LOG, SENT = {}, [], []
+ROUTES, LOG, SENT, COUNTS = {}, [], [], {}
 
 
 def is_sig_key(k):
@@ -129,21 +135,25 @@ def is_sig_key(k):
 
 def unsigned(body):
     """A body without its signatures (they use a fresh random nonce each time): every key named signature or ending in
-    _signature is dropped, in objects at any depth, lists included."""
+    _signature is dropped, in objects at any depth, lists included; a 'signatures' map (slot -> signature, release v16)
+    keeps its slots, each with the value '<signature>', so the slots signed are still compared."""
     if isinstance(body, dict):
-        return {k: unsigned(v) for k, v in body.items() if not is_sig_key(k)}
+        return {k: ({slot: '<signature>' for slot in v} if k == 'signatures' and isinstance(v, dict) else unsigned(v))
+                for k, v in body.items() if not is_sig_key(k)}
     if isinstance(body, list):
         return [unsigned(v) for v in body]
     return body
 
 
 def signatures_in(body):
-    """The signatures in a body, in document order (the same walk as unsigned())."""
+    """The signatures in a body, in document order (the same walk as unsigned(); a 'signatures' map's values in order)."""
     out = []
     if isinstance(body, dict):
         for k, v in body.items():
             if is_sig_key(k) and isinstance(v, str):
                 out.append(v)
+            elif k == 'signatures' and isinstance(v, dict):
+                out.extend(x for x in v.values() if isinstance(x, str))
             else:
                 out.extend(signatures_in(v))
     elif isinstance(body, list):
@@ -156,15 +166,23 @@ def fake_request(self, method, path, body=None, auth=True, token=None):
     if not self.state.get('server'):
         raise vc.ValunError('not_configured', 'no Valun server configured')
     key = f'{method} {path}'
-    LOG.append({'key': key, 'body': unsigned(body)})
+    caps = self.features_header()           # the X-Valun-Features header Client.request() would send (release v16)
+    LOG.append({'key': key, 'body': unsigned(body), 'features': caps})
     sigs = signatures_in(body)
     if sigs:                             # what each signature it sends was made over (the client made all of them, here)
         made = {s['signature']: s for s in SIGNED}
         assert all(s in made for s in sigs), f'{key} sends a signature this run did not make'
         SENT.append({'key': key, 'signed': [{'message_hex': made[s]['message_hex'], 'pubkey': made[s]['pubkey']} for s in sigs]})
     r = ROUTES.get(key)
+    if isinstance(r, dict) and 'sequence' in r:  # a route that answers its n-th request with sequence[n] (then the last)
+        n = COUNTS.get(key, 0)
+        COUNTS[key] = n + 1
+        r = r['sequence'][min(n, len(r['sequence']) - 1)]
     status, payload = (599, {'error': 'unexpected_request', 'message': key}) if r is None else (r.get('status', 200), r.get('body'))
     if 200 <= status < 300:
+        tok = token or (self.store.token() if auth else None)
+        if caps and token is None and auth and tok and vc._authenticated_route(path):
+            self._roles_declared(caps)      # as Client.request(): the server took the roles of an authenticated 2xx
         return json.loads(json.dumps(payload))
     j = payload if isinstance(payload, dict) else {}
     raise vc.ValunError(j.get('error', 'http_error'), j.get('message') or j.get('error') or f'HTTP {status}', status,
@@ -269,9 +287,16 @@ def sign(name, text):
     return vb.sign(text.encode('utf-8'), bytes.fromhex(K[name]['secret'])).hex()
 
 
+NOTE_SIGS = {}
+
+
 def note_sig(name, recipient, total, ts):
-    msg = vb.note_message(bytes.fromhex(K[name]['pubkey']), bytes.fromhex(K[recipient]['pubkey']), total, ts, bytes.fromhex(NFT), DENOM)
-    return vb.sign(msg, bytes.fromhex(K[name]['secret'])).hex()
+    """The issuer's signature of one note state: one signature per state (as the tracker holds it), made once."""
+    k = (name, recipient, total, ts)
+    if k not in NOTE_SIGS:
+        msg = vb.note_message(bytes.fromhex(K[name]['pubkey']), bytes.fromhex(K[recipient]['pubkey']), total, ts, bytes.fromhex(NFT), DENOM)
+        NOTE_SIGS[k] = vb.sign(msg, bytes.fromhex(K[name]['secret'])).hex()
+    return NOTE_SIGS[k]
 
 
 def make_terms(deal_id, proposer, payer, payee, title, description, deliverable, price, version=1, prior=None,
@@ -402,6 +427,117 @@ def template(d, prior=10, price=20, ts=T0_MS - 1500, prior_note=False):
     if prior_note is not False:
         out['prior_note'] = prior_note
     return out
+
+
+# ---------- circulating credit (server release v16): templates, items and views the circulation scenarios use ----------
+def res(t, r):
+    """The largest timestamp <= t that ends in r ms."""
+    return t - ((t - r) % 1000)
+
+
+T999, T998, T997 = (res(T0_MS - 1500, r) for r in (999, 998, 997))
+CIRC_INFO = dict(INFO, features=['bound_notes/1', 'circulation/1'])
+CIRC_FLAGS = {'auto_clear': True, 'novate_own_debt': True, 'accept_transfers': True, 'accept_notes_from': 'any',
+              'refuse_notes_from': [], 'pay_with_held_notes': 'when_asked'}
+POLICY = {'setoff': True, 'as_issuer': True, 'as_new_creditor': True, 'max_PC': 50, 'accept_issuers': 'any', 'refuse_issuers': []}
+POLICY_OFF = dict(POLICY, setoff=False, as_issuer=False, as_new_creditor=False)
+
+
+def edge(i, r):
+    return f"{K[i]['pubkey']}>{K[r]['pubkey']}"
+
+
+def state_of(i, r, total, ts):
+    """An EdgeState of edge i>r, signed by its issuer."""
+    return {'total': total, 'timestamp': ts, 'signature': note_sig(i, r, total, ts)}
+
+
+def me_circ(position=None, participant=None, flags=None):
+    """GET /me of a circulation server: the mandate and the effective limits carry the consent flags."""
+    out = dict(ME, mandate=dict(MANDATE, **(CIRC_FLAGS if flags is None else flags)),
+               effective_limits=dict(ME['effective_limits'], may_accept_credit=True, **(CIRC_FLAGS if flags is None else flags)))
+    if position is not None:
+        out['position'] = position
+    if participant is not None:
+        out['participant'] = dict(ME['participant'], **participant)
+    return out
+
+
+def edges_view(incoming=(), outgoing=(), journal=(), next_seq=0):
+    row = lambda i, r, st: {'edge': edge(i, r), 'issuer_pubkey': K[i]['pubkey'], 'recipient_pubkey': K[r]['pubkey'], **st,   # noqa: E731
+                            'bound_only': False}
+    return {'incoming': [row(*x) for x in incoming], 'outgoing': [row(*x) for x in outgoing], 'journal': list(journal),
+            'next_seq': next_seq}
+
+
+def bound_template(d, prior=10, price=20, ts=None, prior_note=None):
+    """A v16 bound credit-note template (?prior=1&bound=1): a timestamp ending in 997 and the prior acknowledgment."""
+    out = template(d, prior=prior, price=price, ts=T997 if ts is None else ts, prior_note=prior_note)
+    out['prior_message_hex'] = '00'
+    return out
+
+
+def payment_options(d, issuer='frank', spendable=30, why_not=None, own=True):
+    payee = NAME[d['current']['terms']['payee']['id']]
+    held = [] if issuer is None else [{'issuer': {'id': ID[issuer], 'handle': PEOPLE_BY_ID[ID[issuer]]['handle'], 'pubkey': K[issuer]['pubkey'],
+                                                  'operator_run': False},
+                                       'held': spendable, 'reserved': 0, 'spendable': spendable, 'enough': why_not is None,
+                                       'payee_accepts': True, 'issuer_consents': 'auto', 'payee_consents': 'auto', 'why_not': why_not}]
+    return {'deal_id': d['id'], 'price': d['current']['terms']['price']['amount'],
+            'payee': {'id': ID[payee], 'handle': payee, 'pubkey': K[payee]['pubkey']},
+            'own_note': {'available': own, 'why_not': None if own else 'over_limit'}, 'held_notes': held,
+            'pending_transfer': None, 'fallback_after': None}
+
+
+def transfer_template(d, issuer='frank', claim=(30, T0_MS - 900_000 + 1), to_before=None, ts=None, amount=None):
+    """GET transfer-template: pay deal d (alice pays) by moving `amount` of issuer's debt to alice onto the payee."""
+    t = d['current']['terms']
+    payee = NAME[t['payee']['id']]
+    amount = t['price']['amount'] if amount is None else amount
+    ts = T999 if ts is None else ts
+    quote = {'kind': nv.QUOTE_KIND, 'network': vc.NETWORK, 'tracker_nft_id': NFT, 'denomination': DENOM, 'deal_id': d['id'],
+             'terms_hash': d['current']['terms_hash'], 'deliverable_sha256': d['delivery']['sha256'],
+             'issuer_pubkey': K[issuer]['pubkey'], 'payer_pubkey': K['alice']['pubkey'], 'payee_pubkey': K[payee]['pubkey'], 'amount': amount}
+    before_to = None if to_before is None else state_of(issuer, payee, *to_before)
+    return {'deal_id': d['id'], 'terms_hash': d['current']['terms_hash'], 'deliverable_sha256': d['delivery']['sha256'],
+            'issuer': {'id': ID[issuer], 'handle': PEOPLE_BY_ID[ID[issuer]]['handle'], 'pubkey': K[issuer]['pubkey']},
+            'payer': {'id': ID['alice'], 'handle': 'alice', 'pubkey': K['alice']['pubkey']},
+            'payee': {'id': ID[payee], 'handle': payee, 'pubkey': K[payee]['pubkey']},
+            'amount': amount, 'timestamp': ts,
+            'from_edge': {'edge': edge(issuer, 'alice'), 'before': state_of(issuer, 'alice', *claim), 'new_total': claim[0] - amount},
+            'to_edge': {'edge': edge(issuer, payee), 'before': before_to, 'new_total': (0 if to_before is None else to_before[0]) + amount},
+            'tracker_nft_id': NFT, 'denomination': DENOM, 'quote_digest': nv.quote_digest(quote),
+            'collect_until': '2026-11-06T12:20:00.000Z', 'messages': {}}
+
+
+def setoff_item(iid='vs_5e70ff5e70ff5e70', amount=6, ab=(10, T0_MS - 900_000 + 1), ba=(6, T0_MS - 800_000 + 2), ts=None,
+                roles=('member',), state='collecting'):
+    """A set-off of the 2-cycle alice -> bob -> alice (GET /consents item): alice is issuer of alice>bob and creditor of bob>alice."""
+    ts = T998 if ts is None else ts
+    rows = []
+    for i, r, (total, t0), role in (('bob', 'alice', ba, 'creditor'), ('alice', 'bob', ab, 'issuer')):
+        rows.append({'edge': edge(i, r), 'issuer': {'id': ID[i], 'handle': i}, 'recipient': {'id': ID[r], 'handle': r},
+                     'your_role': role, 'before': state_of(i, r, total, t0), 'change': -amount, 'new_total': total - amount,
+                     'timestamp': ts, 'revision': 1, 'slots': ['new'], 'signed_by_you': []})
+    return {'kind': 'setoff', 'id': iid, 'state': state, 'your_roles': list(roles), 'created_at': '2026-11-06T11:58:00.000Z',
+            'expires_at': '2026-11-06T12:28:00.000Z', 'network': vc.NETWORK, 'tracker_nft_id': NFT, 'denomination': DENOM,
+            'edges': rows, 'context': {'amount': amount}, 'summary': {'your_net_change_PC': 0, 'your_total_owed_change_PC': -amount}}
+
+
+def issuer_item(iid='vt_7a7a7a7a7a7a7a7a', amount=4, ts=None):
+    """A transfer of alice's debt to bob onto frank (alice issuer: alice>bob falls, alice>frank rises): a consent alice
+    signs as issuer (not value-safe)."""
+    ts = T999 if ts is None else ts
+    rows = [{'edge': edge('alice', 'bob'), 'issuer': {'id': ID['alice'], 'handle': 'alice'}, 'recipient': {'id': ID['bob'], 'handle': 'bob'},
+             'your_role': 'issuer', 'before': state_of('alice', 'bob', 10, T0_MS - 900_000 + 1), 'change': -amount,
+             'new_total': 10 - amount, 'timestamp': ts, 'revision': 1, 'slots': ['new'], 'signed_by_you': []},
+            {'edge': edge('alice', 'frank'), 'issuer': {'id': ID['alice'], 'handle': 'alice'}, 'recipient': {'id': ID['frank'], 'handle': 'frank'},
+             'your_role': 'issuer', 'before': None, 'change': amount, 'new_total': amount, 'timestamp': ts, 'revision': 1,
+             'slots': ['new'], 'signed_by_you': []}]
+    return {'kind': 'transfer', 'id': iid, 'state': 'collecting', 'your_roles': ['issuer'], 'created_at': '2026-11-06T11:58:00.000Z',
+            'expires_at': '2026-11-06T12:18:00.000Z', 'network': vc.NETWORK, 'tracker_nft_id': NFT, 'denomination': DENOM,
+            'edges': rows, 'context': {'amount': amount, 'deal': {'deal_id': 'vd_abababababababab'}},
+            'summary': {'your_net_change_PC': 0, 'your_total_owed_change_PC': 0}}
 
 
 def scenarios():
@@ -592,18 +728,30 @@ def scenarios():
         state={'issued': {PAIR_AB: 0}, 'records': {PAIR_AB: {'confirmed': None, 'pending': [held]}}})
     pinned = {'pins': dict(PINS)}
     bound_info = {'GET /pilot/v1/info': {'body': dict(INFO, features=['bound_notes/1'])}}
+    dgb = dgt + '?prior=1&bound=1'          # release v16: a server listing bound_notes/1 serves bound templates (PROTOCOL.md 18.5)
     my_prior = {'total': 10, 'timestamp': T0_MS - 600_000, 'signature': note_sig('alice', 'bob', 10, T0_MS - 600_000)}
     add('review: pinned profile, the server shows my prior note', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
-        {**g('delivered_good'), **bound_info, dgt + '?prior=1': {'body': template(dg, prior_note=my_prior)}, **issued}, state=pinned)
+        {**g('delivered_good'), **bound_info, dgb: {'body': bound_template(dg, prior_note=my_prior)}, **issued}, state=pinned)
     add('review: pinned profile, a prior note not signed by me', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
         {**g('delivered_good'), **bound_info,
-         dgt + '?prior=1': {'body': template(dg, prior_note=dict(my_prior, signature=note_sig('carol', 'bob', 10, T0_MS - 600_000)))}},
+         dgb: {'body': bound_template(dg, prior_note=dict(my_prior, signature=note_sig('carol', 'bob', 10, T0_MS - 600_000)))}},
         state=pinned)
     add('review: pinned profile, a prior note older than my records', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
-        {**g('delivered_good'), **bound_info, dgt + '?prior=1': {'body': template(dg, prior_note=my_prior)}},
+        {**g('delivered_good'), **bound_info, dgb: {'body': bound_template(dg, prior_note=my_prior)}},
         state=dict(pinned, records={PAIR_AB: {'confirmed': {'total': 5, 'timestamp': T0_MS - 300_000, 'signature': 'aa'}, 'pending': []}}))
     add('review: pinned profile, no edge yet (no prior note)', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
-        {**g('delivered_good'), **bound_info, dgt + '?prior=1': {'body': template(dg, prior=0, prior_note=None)}, **issued}, state=pinned)
+        {**g('delivered_good'), **bound_info, dgb: {'body': bound_template(dg, prior=0, prior_note=None)}, **issued}, state=pinned)
+    add('review: bound template on an ordinary timestamp', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
+        {**g('delivered_good'), **bound_info, dgb: {'body': bound_template(dg, prior_note=my_prior, ts=T0_MS - 1500)}}, state=pinned)
+    add('review: bound features, but the template carries no prior note', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
+        {**g('delivered_good'), **bound_info, dgb: {'body': template(dg, ts=T997)}}, state=pinned)
+    add('review: bound note, the server refuses it (stale_note)', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
+        {**g('delivered_good'), **bound_info, dgb: {'body': bound_template(dg, prior_note=my_prior)},
+         **post(dg['id'], 'complete', {'error': 'stale_note', 'message': "a bound credit note's prior_total must be the pair's current total"}, 409)},
+        state=pinned)
+    add('review: an edge a novation changed takes bound notes only (R12)', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
+        {**g('delivered_good'), 'GET /pilot/v1/info': {'body': dict(INFO, features=['circulation/1'])}, dgt: {'body': template(dg)}},
+        state=dict(pinned, novated_edges={PAIR_AB: True}))
     add('review: pinned profile, a template timestamp in the reserved residues', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
         {**g('delivered_good'), 'GET /pilot/v1/info': {'body': dict(INFO, features=['circulation/1'])}, dgt: {'body': template(dg, ts=T0_MS - 1003)}},
         state=pinned)
@@ -632,6 +780,209 @@ def scenarios():
         g('sandbox_wrong_as_payee'))
     add('review: accept as the payee (only the payer accepts)', 'valun_review_delivery', {'deal_id': D['delivered_to_me']['id'], 'decision': 'accept'},
         g('delivered_to_me'))
+    # ---------- circulating credit (server release v16): pay_with, exact_result, consents, the new status and deal fields ----------
+    circ = {'GET /pilot/v1/info': {'body': CIRC_INFO}}
+    circ_me = {'GET /pilot/v1/me': {'body': me_circ()}}
+    claim_fa = (30, T0_MS - 900_000 + 1)
+    fa_edges = {'GET /pilot/v1/edges?since=0': {'body': edges_view(incoming=[('frank', 'alice', state_of('frank', 'alice', *claim_fa))],
+                                                                    outgoing=[('alice', 'bob', state_of('alice', 'bob', 10, T0_MS - 600_000))],
+                                                                    next_seq=2)}}
+    po = f"GET /pilot/v1/deals/{dg['id']}/payment-options"
+    tt = f"GET /pilot/v1/deals/{dg['id']}/transfer-template?issuer={ID['frank']}"
+    pay_routes = {**g('delivered_good'), **circ, **circ_me, po: {'body': payment_options(dg)}, tt: {'body': transfer_template(dg, claim=claim_fa)}}
+    paid_view = dict(dg, status='paid_by_transfer', counterparty={'id': ID['bob'], 'handle': 'bob'},
+                     payment={'route': 'transfer', 'transfer_id': 'vt_1212121212121212', 'state': 'applied',
+                              'issuer': {'id': ID['frank'], 'handle': 'frank'}, 'amount': 20})
+    pbt = lambda body, status=200: post(dg['id'], 'pay-by-transfer', body, status)   # noqa: E731
+    circ_state = {'pins': dict(PINS), 'consent_policy': dict(POLICY)}
+    pw = {'deal_id': dg['id'], 'decision': 'accept', 'pay_with': 'frank'}
+    add('review: pay with a held note (frank), applied', 'valun_review_delivery', pw, {**pay_routes, **pbt(paid_view)}, state=circ_state)
+    add('review: pay with a held note by participant id, the transfer collects signatures', 'valun_review_delivery',
+        dict(pw, pay_with=' ' + ID['frank'].upper() + ' '),
+        {**pay_routes, **pbt(dict(paid_view, status='paying_by_transfer', payment=dict(paid_view['payment'], state='collecting')))},
+        state=circ_state)
+    add('review: pay with a held note, the transfer did not apply (payment_due)', 'valun_review_delivery', pw,
+        {**pay_routes, **pbt(dict(paid_view, status='payment_due', payment=dict(paid_view['payment'], state='failed')))}, state=circ_state)
+    add('review: pay with a held note, the server refuses it', 'valun_review_delivery', pw,
+        {**pay_routes, **pbt({'error': 'issuer_refused', 'message': 'the issuer does not take part'}, 409)}, state=circ_state)
+    add('review: pay with a held note, the server is unreachable after signing', 'valun_review_delivery', pw,
+        {**pay_routes, **pbt({'error': 'tracker_unavailable', 'message': 'try again'}, 503)}, state=circ_state)
+    add('review: pay with a held note the options do not list', 'valun_review_delivery', dict(pw, pay_with='erin'), pay_routes, state=circ_state)
+    add('review: pay with a held note on a server without circulating credit', 'valun_review_delivery', pw,
+        {**g('delivered_good'), po: {'body': payment_options(dg)}}, state=circ_state)
+    add('review: pay with a held note, my claim changed after the owner saw it', 'valun_review_delivery',
+        dict(pw, expected_claim_total=25, expected_quote_digest=transfer_template(dg, claim=claim_fa)['quote_digest'],
+             expected_deliverable_sha256=dg['delivery']['sha256']), {**pay_routes, **pbt(paid_view)}, state=circ_state)
+    add('review: pay with a held note, another quote than the one approved', 'valun_review_delivery',
+        dict(pw, expected_quote_digest='ab' * 32), {**pay_routes, **pbt(paid_view)}, state=circ_state)
+    add('review: pay_with that is not text', 'valun_review_delivery', dict(pw, pay_with=7), pay_routes, state=circ_state)
+    add('review: pay_with own_note issues my own credit note', 'valun_review_delivery', dict(pw, pay_with='OWN_NOTE'),
+        {**g('delivered_good'), dgt: {'body': template(dg)}, **issued})
+    add('review: pay with a held note, the template names another issuer key', 'valun_review_delivery', pw,
+        {**pay_routes, tt: {'body': dict(transfer_template(dg, claim=claim_fa),
+                                         issuer={'id': ID['frank'], 'handle': 'frank', 'pubkey': K['erin']['pubkey']})}},
+        state=circ_state)
+    att = {'deal_id': dg['id'], 'route': 'note', 'edge': PAIR_AB, 'prior': 10, 'prior_timestamp': T0_MS - 600_000,
+           'prior_signature': note_sig('alice', 'bob', 10, T0_MS - 600_000), 'total': 30, 'timestamp': T0_MS - 120_000 - 3,
+           'quote_digest': None, 'signed_at': '2026-11-06T11:58:00.000Z'}
+    add('review: pay with a held note while my own bound note of the deal can still apply (D-1)', 'valun_review_delivery', pw,
+        {**pay_routes, **fa_edges}, state=dict(circ_state, transfer_attempts={dg['id']: [att]}))
+    # bound notes on a circulation server, with the D-1 read-back
+    add('review: bound note while a transfer of the deal can still apply (D-1, one read-back)', 'valun_review_delivery',
+        {'deal_id': dg['id'], 'decision': 'accept'},
+        {**g('delivered_good'), **circ, dgb: {'body': bound_template(dg, prior_note=my_prior)}, **fa_edges},
+        state=dict(circ_state, transfer_attempts={dg['id']: [{'deal_id': dg['id'], 'route': 'transfer', 'edge': edge('frank', 'alice'),
+                                                              'prior': 30, 'prior_timestamp': claim_fa[1],
+                                                              'prior_signature': state_of('frank', 'alice', *claim_fa)['signature'],
+                                                              'total': 10, 'timestamp': T0_MS - 300_000 - 1,
+                                                              'quote_digest': 'cd' * 32, 'signed_at': '2026-11-06T11:55:00.000Z'}]}))
+    old_ts = T0_MS - nv.MAX_AGE_MS - nv.FALLBACK_MARGIN_MS - 10_000 - 1          # ends in 999: a transfer attempt, past its window
+    old_claim = (30, T0_MS - 5_000_000 + 1)                                       # older than the attempt
+    add('review: bound note after an old transfer attempt: one read-back shows it did not apply (D-1)', 'valun_review_delivery',
+        {'deal_id': dg['id'], 'decision': 'accept'},
+        {**g('delivered_good'), **circ, dgb: {'body': bound_template(dg, prior_note=my_prior)}, **issued,
+         'GET /pilot/v1/edges?since=0': {'body': edges_view(incoming=[('frank', 'alice', state_of('frank', 'alice', *old_claim))], next_seq=1)}},
+        state=dict(circ_state, transfer_attempts={dg['id']: [{'deal_id': dg['id'], 'route': 'transfer', 'edge': edge('frank', 'alice'),
+                                                              'prior': 30, 'prior_timestamp': old_claim[1],
+                                                              'prior_signature': state_of('frank', 'alice', *old_claim)['signature'],
+                                                              'total': 10, 'timestamp': old_ts,
+                                                              'quote_digest': 'cd' * 32, 'signed_at': '2026-11-06T10:55:00.000Z'}]}))
+    add('review: bound note on a circulation server, issued', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
+        {**g('delivered_good'), **circ, dgb: {'body': bound_template(dg, prior_note=my_prior)}, **issued}, state=circ_state)
+    add('review: a deal my records show paid is never paid again', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
+        {**g('delivered_good'), **circ, dgb: {'body': bound_template(dg, prior_note=my_prior)}},
+        state=dict(circ_state, records={'paid_deals': {dg['id']: {'route': 'transfer', 'edge': edge('frank', 'alice'), 'total': 10,
+                                                                   'timestamp': T0_MS - 300_000 - 1}}}))
+    # exact_result (I am the payee of a text-stats job sandbox-exact asked for)
+    t10 = make_terms('vd_aaaaaaaaaaaaaaaa', 'carol', 'carol', 'alice', 'text-stats job', STATS_DESC, 'The exact text-stats result as JSON.', 3)
+    a10 = agreed(deal_view(t10, 'carol', your_role='payee', other='carol'), 'alice')
+    exact_content = vs.render('text-stats', vs.text_stats(STATS_TEXT), STATS_TEXT)
+    g10 = {f"GET /pilot/v1/deals/{a10['id']}": {'body': a10}}
+    add('deliver: exact_result of a text-stats job', 'valun_deliver', {'deal_id': a10['id'], 'exact_result': True},
+        {**g10, **post(a10['id'], 'deliver', {'id': a10['id'], 'status': 'delivered', 'delivery': {'sha256': vc.sha256_hex(exact_content)}})})
+    add('deliver: exact_result of a job that is not text-stats or notary', 'valun_deliver', {'deal_id': ap, 'exact_result': True}, g('agreed_payee'))
+    add('deliver: exact_result with content', 'valun_deliver', {'deal_id': a10['id'], 'exact_result': True, 'content': 'x' * 300}, g10)
+    add('deliver: exact_result that is not a boolean', 'valun_deliver', {'deal_id': a10['id'], 'exact_result': 'yes'}, g10)
+    add('deliver: exact_result false needs content', 'valun_deliver', {'deal_id': a10['id'], 'exact_result': False}, g10)
+    # status and deal with circulating credit
+    pos = {'claims_held': 30, 'owes': 10, 'net': 20, 'cleared_by_setoff': 2,
+           'claims': [{'from': 'frank', 'issuer_id': ID['frank'], 'issuer_pubkey': K['frank']['pubkey'], 'amount': 30}],
+           'debts': [{'to': 'bob', 'amount': 10}],
+           'spendable_notes': [{'issuer_id': ID['frank'], 'issuer_handle': 'frank', 'issuer_pubkey': K['frank']['pubkey'], 'spendable': 30,
+                                'issuer_consents': 'auto'},
+                               {'issuer_id': ID['erin'], 'issuer_handle': 'erin', 'issuer_pubkey': K['erin']['pubkey'], 'spendable': 4,
+                                'issuer_consents': 'when_online'}],
+           'pending': {'consents_waiting_for_you': 1}}
+    box = dict(INBOX, consents_waiting_for_your_client=2, payments_in_progress=[{'deal_id': 'vd_1212121212121212', 'state': 'collecting'}])
+    status_routes = {**circ, 'GET /pilot/v1/me': {'body': me_circ(position=pos)}, 'GET /pilot/v1/inbox': {'body': box}, **fa_edges}
+    log = [{'at': '2026-11-06T11:5%d:00.000Z' % n, 'id': 'vs_5e70ff5e70ff5e70', 'kind': 'setoff', 'role': 'member', 'decision': 'signed',
+            'code': None, 'deal_id': None, 'amount': n, 'your_net_change_PC': 0} for n in range(7)]
+    add('status: circulating credit, notes you can spend', 'valun_status', {}, status_routes,
+        state=dict(circ_state, consent_log=log, consents_last_run_ms=T0_MS - 10_000), agent=ask)
+    add('status: circulating credit, the edges cannot be read', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/edges?since=0': {'status': 500, 'body': {'error': 'internal', 'message': 'down'}},
+         'GET /pilot/v1/inbox': {'status': 503, 'body': {'error': 'busy', 'message': 'later'}},
+         'GET /pilot/v1/me': {'body': me_circ(position={k: v for k, v in pos.items() if k != 'spendable_notes'})}},
+        state=dict(circ_state, consent_policy=POLICY_OFF))
+    add('status: circulating credit, a profile not pinned yet', 'valun_status', {}, status_routes)
+    sb = {'sandbox_only': True, 'joined_at': '2026-11-06T11:58:00.000Z'}
+    add('status: sandbox tour, the welcome job is on its way', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position={'claims_held': 0, 'owes': 0, 'net': 0}, participant=sb)},
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[])}}, state=circ_state)
+    add('status: sandbox tour, the welcome job to deliver', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position={'claims_held': 0, 'owes': 0, 'net': 0}, participant=sb)},
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[], deliver=[{'deal_id': a10['id'], 'counterparty': 'sandbox-exact'}])}},
+        state=circ_state)
+    sx = {'claims_held': 3, 'owes': 0, 'net': 3, 'claims': [{'from': 'sandbox-exact', 'amount': 3}], 'debts': [],
+          'spendable_notes': [{'issuer_id': ID['carol'], 'issuer_handle': 'sandbox-exact', 'issuer_pubkey': K['carol']['pubkey'], 'spendable': 3}]}
+    add('status: sandbox tour, step 2 buys with a note I hold', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position=sx, participant=sb)}, 'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[])}},
+        state=circ_state)
+    sw_ = D['sandbox_right']
+    add('status: sandbox tour, a delivery to review that matches exactly', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position=sx, participant=sb)}, **g('sandbox_right'),
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[], review_delivery=[{'deal_id': sw_['id'], 'counterparty': 'sandbox-exact'}])}},
+        state=circ_state)
+    add('status: sandbox tour, a delivery to review that is wrong', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position=sx, participant=sb)}, **g('sandbox_wrong'),
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[], review_delivery=[{'deal_id': D['sandbox_wrong']['id'], 'counterparty': 'sandbox-exact'}])}},
+        state=circ_state)
+    add('status: sandbox tour, a set-off is due', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position=dict(sx, owes=1, debts=[{'to': 'sandbox-exact', 'amount': 1}]), participant=sb)},
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[])}}, state=circ_state)
+    add('status: sandbox tour, my owner must approve first', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position=sx, participant=sb)},
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[], awaiting_your_owner=[{'deal_id': 'vd_1313131313131313', 'counterparty': 'bob'}])}},
+        state=circ_state)
+    add('status: sandbox tour, an offer above the published price', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position={'claims_held': 0, 'owes': 0}, participant=sb)},
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[{'deal_id': 'vd_1414141414141414', 'counterparty': 'sandbox-mallory',
+                                                               'your_role': 'payer', 'price': {'amount': 9, 'unit': 'PC'}}])}},
+        state=circ_state)
+    add('status: sandbox tour, complete', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position={'claims_held': 0, 'owes': 0, 'deals': {'paid_by_transfer': 2}},
+                                                              participant={'sandbox_only': True, 'joined_at': '2026-11-01T00:00:00.000Z'})},
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[])}}, state=circ_state)
+    pay_deal = dict(dg, payment=None)
+    add('deal: delivered on a circulation server, how you can pay', 'valun_deal', {'deal_id': dg['id']},
+        {f"GET /pilot/v1/deals/{dg['id']}": {'body': pay_deal}, **circ, po: {'body': payment_options(dg, why_not=None)}}, state=circ_state)
+    add('deal: payment options cannot be read', 'valun_deal', {'deal_id': dg['id']},
+        {f"GET /pilot/v1/deals/{dg['id']}": {'body': pay_deal}, **circ, po: {'status': 409, 'body': {'error': 'wrong_state', 'message': 'not payable'}}},
+        state=circ_state)
+    add('deal: paying by transfer (payer)', 'valun_deal', {'deal_id': dg['id']},
+        {f"GET /pilot/v1/deals/{dg['id']}": {'body': dict(paid_view, status='paying_by_transfer')}, **circ}, state=circ_state)
+    add('deal: payment due (payer)', 'valun_deal', {'deal_id': dg['id']},
+        {f"GET /pilot/v1/deals/{dg['id']}": {'body': dict(paid_view, status='payment_due', payment=None)}, **circ,
+         po: {'body': payment_options(dg, issuer=None, own=False)}}, state=circ_state)
+    add('deal: payment due (payee)', 'valun_deal', {'deal_id': dg['id']},
+        {f"GET /pilot/v1/deals/{dg['id']}": {'body': dict(paid_view, status='payment_due', your_role='payee', payment=None)}, **circ},
+        state=circ_state)
+    add('deal: paid by transfer', 'valun_deal', {'deal_id': dg['id']}, {f"GET /pilot/v1/deals/{dg['id']}": {'body': paid_view}, **circ})
+    add('deal: delivered, a server without circulation shows no payment key (no /info read)', 'valun_deal', {'deal_id': dg['id']},
+        g('delivered_good'), state=circ_state)
+    # consents: before a tool that is not read-only, and (consents_on_reads) the value-safe ones before status and inbox
+    so = setoff_item()
+    cons = lambda *items: {'GET /pilot/v1/consents': {'body': {'consents': list(items), 'recently_resolved': []}}}   # noqa: E731
+    took = lambda iid, state='collecting', rejected=(): {f'POST /pilot/v1/consents/{iid}': {'body': {'id': iid, 'state': state,   # noqa: E731
+                                                                                                    'rejected': list(rejected)}}}
+    refuse = lambda iid: {f'POST /pilot/v1/consents/{iid}/refuse': {'body': {'id': iid, 'state': 'refused'}}}   # noqa: E731
+    created_ = {'POST /pilot/v1/deals': {'body': {'id': 'vd_0101010101010101', 'status': 'open', 'current': {'terms_hash': 'ef' * 32}}}}
+    add('propose: a due consent run signs a set-off first', 'valun_propose', brief,
+        {**created_, **circ, **circ_me, **cons(so), **took(so['id'])}, state=circ_state)
+    add('propose: a due consent run refuses a set-off over the cap and signs an issuer consent', 'valun_propose', brief,
+        {**created_, **circ, **circ_me, **cons(setoff_item(iid='vs_5e70ff5e70ff5e71', amount=6), issuer_item()), **refuse('vs_5e70ff5e70ff5e71'),
+         **took('vt_7a7a7a7a7a7a7a7a')}, state=dict(circ_state, consent_policy=dict(POLICY, max_PC=5)))
+    add('propose: consents not due (a run less than a minute ago)', 'valun_propose', brief, {**created_, **circ, **cons(so)},
+        state=dict(circ_state, consents_last_run_ms=T0_MS - 30_000))
+    add('propose: a consent run on a server without circulating credit (one /info, nothing else)', 'valun_propose', brief, created_,
+        state=circ_state)
+    add('propose: a consent run that fails does not stop the tool', 'valun_propose', brief,
+        {**created_, **circ, 'GET /pilot/v1/consents': {'status': 503, 'body': {'error': 'busy', 'message': 'later'}}}, state=circ_state)
+    add('propose: a stale revision waits for a later run', 'valun_propose', brief,
+        {**created_, **circ, **circ_me, **cons(so), **took(so['id'], rejected=[{'slot': f"{edge('bob', 'alice')}:new", 'code': 'stale_revision',
+                                                                                  'revision': 2}])}, state=circ_state)
+    add('propose: consents off for this agent (process_consents off)', 'valun_propose', brief, {**created_, **circ, **cons(so)},
+        state=circ_state, agent={'process_consents': False})
+    add('status: consents on reads sign a set-off (decision D-3 a)', 'valun_status', {},
+        {**status_routes, **cons(so), **took(so['id'])}, state=circ_state, agent={'consents_on_reads': True})
+    add('inbox: consents on reads leave an issuer consent for a full run', 'valun_inbox', {},
+        {**circ, **circ_me, **cons(issuer_item(), so), **took(so['id'])}, state=circ_state, agent={'consents_on_reads': True})
+    add('inbox: consents on reads, a set-off the cap refuses waits (nothing refused)', 'valun_inbox', {},
+        {**circ, **circ_me, **cons(so)}, state=dict(circ_state, consent_policy=dict(POLICY, max_PC=5)), agent={'consents_on_reads': True})
+    add('inbox: consents on reads, no value-safe role on: no consent request', 'valun_inbox', {}, {**circ, **cons(so)},
+        state=dict(circ_state, consent_policy=dict(POLICY, setoff=False, as_new_creditor=False)), agent={'consents_on_reads': True})
+    add('inbox: consents on reads, ran less than a minute ago', 'valun_inbox', {}, {**circ, **cons(so)},
+        state=dict(circ_state, consents_last_safe_run_ms=T0_MS - 5_000), agent={'consents_on_reads': True})
+    add('status: every consent role off withdraws the roles declared before (decision D-3 b)', 'valun_status', {},
+        status_routes, state=dict(circ_state, consent_policy=POLICY_OFF, consent_roles_declared='setoff,issuer,creditor'))
+    add('status: an agent that signs no consents declares none (process_consents off)', 'valun_status', {},
+        status_routes, state=dict(circ_state, consent_roles_declared='setoff'), agent={'process_consents': False})
+    add('status: process_consents off but a consent loop of its own declares its roles', 'valun_status', {},
+        status_routes, state=circ_state, agent={'process_consents': False, 'declare_roles': True})
+    impostor = {'id': 'vp_9a9a9a9a9a9a', 'handle': ID['bob'], 'display_name': 'Not Bob', 'operator': 'X', 'about': '', 'services': '',
+                'status': 'active', 'agent_last_seen': '2026-11-06T11:59:00.000Z', 'joined_at': '2026-10-01T00:00:00.000Z'}
+    add('propose: an exact participant id wins over a handle that looks like it', 'valun_propose',
+        dict(brief, counterparty=ID['bob']), {**created('open'), 'GET /pilot/v1/participants': {'body': [impostor] + PEOPLE}})
     # set_limits
     limits_ok = {'agent_limits': {'max_issue_per_deal': 15, 'notes': 'x'}, 'effective_limits': {'max_issue_per_deal': 15, 'max_issue_outstanding': 100}}
     add('set_limits: nothing to record', 'valun_set_limits', {'clear': ['not_a_limit']})
@@ -674,10 +1025,13 @@ def run_scenarios():
             LOG.clear()
             SENT.clear()
             SIGNED.clear()
+            COUNTS.clear()
             RANDOM[0] = 0
             store = store_for(sc['store'], sc['state'])
             ag = va.ValunAgent(store, approvals=sc['agent'].get('approvals', ''), check_link_hosts=sc['agent'].get('check_link_hosts', True),
-                               setup_hint=sc['agent'].get('setup_hint'))
+                               setup_hint=sc['agent'].get('setup_hint'), process_consents=sc['agent'].get('process_consents', True),
+                               consents_on_reads=sc['agent'].get('consents_on_reads', False),
+                               declare_roles=sc['agent'].get('declare_roles'))
             if what == 'call':
                 record['result'] = ag.call_safe(sc['tool'], sc['args'])
                 record['requests'] = list(LOG)
@@ -703,6 +1057,291 @@ def run_scenarios():
                 record['describe_bound'] = outcome(lambda: ag.describe_commitment(sc['tool'], record['bound']['value']))
             if what != 'call':
                 assert not SIGNED, f"{sc['name']}: {what} signed something"
+        out.append(json.loads(json.dumps(record, default=str)))
+    return out
+
+
+# ---------- novation.py: the decision table of python/tests/test_novation.py, every case with its whole result ----------
+TESTS = os.path.abspath(os.path.join(SRC, '..', 'tests'))
+
+
+def has_float(v):
+    if isinstance(v, float):
+        return True
+    if isinstance(v, dict):
+        return any(has_float(x) for x in v.values())
+    if isinstance(v, (list, tuple)):
+        return any(has_float(x) for x in v)
+    return False
+
+
+def novation_cases():
+    """Every case of test_novation.CASES (the evaluators' decision table: 141 cases, every refusal code): the item, the
+    context (verify aside: the Basis verifier) and the whole result, {ok, code, to_sign, summary, write_ahead}."""
+    sys.path.insert(0, TESTS)
+    try:
+        import test_novation as tn  # noqa: E402
+    finally:
+        sys.path.remove(TESTS)
+    out = []
+    for name, fn, make_item, make_ctx, expected in tn.CASES:
+        it, ctx = make_item(), make_ctx()
+        r = fn(json.loads(json.dumps(it)), dict(ctx))
+        assert r['code'] == expected, name
+        out.append({'name': name, 'evaluator': fn.__name__, 'item': it, 'ctx': {k: v for k, v in ctx.items() if k != 'verify'},
+                    'result': r, 'floats': has_float([it, ctx])})
+    return out
+
+
+def novation_helpers():
+    """attempt_outcome, unbound_note_problem, exact_prior and shown_id for a few inputs."""
+    edge_ab = PAIR_AB
+    att = {'deal_id': 'vd_4444444444444444', 'route': 'transfer', 'edge': edge_ab, 'prior': 10, 'prior_timestamp': T0_MS - 600_000,
+           'prior_signature': note_sig('alice', 'bob', 10, T0_MS - 600_000), 'total': 30, 'timestamp': T0_MS - 120_000 - 1}
+    note = dict(att, route='note', timestamp=T0_MS - 120_000 - 3)
+    states = [None, {'total': 10, 'timestamp': T0_MS - 600_000}, {'total': 30, 'timestamp': att['timestamp']},
+              {'total': 12, 'timestamp': T0_MS - 1000}, {'total': 0, 'timestamp': 0}]
+    out = {'attempt_outcome': [[a, now, st, outcome(lambda a=a, now=now, st=st: nv.attempt_outcome(a, now, st))]
+                               for a in (att, note, dict(att, outcome='applied'), dict(att, outcome='not_applied'))
+                               for now in (T0_MS, T0_MS + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS) for st in states],
+           'unbound_note_problem': [[e, nov, f, nv.unbound_note_problem(e, nov, f)]
+                                    for e in (edge_ab,) for nov in (None, {}, {edge_ab: True}, [edge_ab], ['x'], 'bad', [3])
+                                    for f in ([], ['circulation/1'], ['bound_notes/1', 'circulation/1'])],
+           'shown_id': [[v, nv.shown_id(v)] for v in ('vd_0123456789abcdef', 'vt_0123456789abcdef', 'vs_0123456789abcdef', 'vp_0123456789ab',
+                                                     'vd_0123456789ABCDEF', 'vd_0123456789abcdef\n', None, 5, '')],
+           'exact_prior': [[a, st, outcome(lambda a=a, st=st: nv.exact_prior(a, st))] for a in (att, dict(att, prior=0, prior_timestamp=None,
+                                                                                                         prior_signature=None))
+                           for st in states + [dict(states[1], signature=att['prior_signature'])]]}
+    return out
+
+
+def client_helpers():
+    """consent_roles(), the capability header (features_header) and the agent's consent helpers."""
+    policies = [None, [], {}, {'setoff': True}, {'setoff': 1}, {'setoff': True, 'as_issuer': True, 'as_new_creditor': True},
+                {'as_new_creditor': True, 'as_issuer': 'yes'}, dict(POLICY_OFF)]
+    headers = []
+    for adv in ([], ['bound_notes/1'], ['circulation/1'], ['?']):
+        for pol in (None, dict(POLICY), dict(POLICY_OFF), {'setoff': True}):
+            for declared in (None, '', 'setoff', 5):
+                for declare in (True, False):
+                    st = {} if pol is None else {'consent_policy': pol}
+                    if declared is not None:
+                        st['consent_roles_declared'] = declared
+                    c = vc.Client(Store(dict(st)), server=BASE, declare_roles=declare)
+                    c._advertised = list(adv)
+                    headers.append([adv, pol, declared, declare, c.features_header()])
+    mandates = [None, {}, CIRC_FLAGS, dict(CIRC_FLAGS, may_accept_credit=False), dict(CIRC_FLAGS, auto_clear=False, accept_transfers=1),
+                me_circ()['effective_limits']]
+    local = [None, dict(POLICY), dict(POLICY_OFF), {'setoff': True, 'max_PC': 5, 'extra': 1}, {'as_new_creditor': True, 'max_PC': True}]
+    in_force = [[lp, m, va.consent_policy_in_force(lp, m)] for lp in local for m in mandates]
+    return {'consent_roles': [[p_, vc.consent_roles(p_)] for p_ in policies], 'features_header': headers,
+            'consent_policy_in_force': in_force, 'client_signs': [[x[2], va.client_signs(x[2])] for x in in_force],
+            'wants_consents': [[st, va.wants_consents(st)] for st in (None, [], {}, {'consent_policy': {}}, {'consent_policy': None},
+                                                                     {'approved_payments': {}}, {'approved_payments': {'vd_1': 'x'}},
+                                                                     {'transfer_attempts': {'vd_1': []}}, {'transfer_attempts': []})],
+            'labels': [[c_, va.labels(c_)] for c_ in (True, False)],
+            'features_of': [[i, va.features_of(i)] for i in (None, [], {}, {'features': None}, {'features': []}, {'features': ['circulation/1']},
+                                                           {'features': 'circulation/1'}, {'features': [1]}, {'features': ['a', 'b']})]}
+
+
+# ---------- Client methods of circulating credit that the agent tools do not reach, as Python runs them ----------
+def client_scenarios():
+    D = deals()
+    dg = D['delivered_good']
+    S = []
+
+    def add(name, method, kwargs, routes=None, state=None, store='alice'):
+        S.append({'name': name, 'method': method, 'kwargs': kwargs, 'routes': routes or {}, 'state': state or {}, 'store': store})
+
+    circ = {'GET /pilot/v1/info': {'body': CIRC_INFO}}
+    pinned = {'pins': dict(PINS)}
+    # ---- sync_edges ----
+    fa = state_of('frank', 'alice', 30, T0_MS - 900_000 + 1)
+    ab = state_of('alice', 'bob', 30, T0_MS - 60_000)
+    bad = {'total': 7, 'timestamp': T0_MS - 500_000, 'signature': note_sig('carol', 'alice', 7, T0_MS - 500_000)}   # not erin's
+    jrow = lambda seq, kind, i, r, st: {'seq': seq, 'at': '2026-11-06T11:00:00.000Z', 'kind': kind, 'ref': dg['id'], 'edge': edge(i, r),   # noqa: E731
+                                        'issuer_pubkey': K[i]['pubkey'], 'recipient_pubkey': K[r]['pubkey'], 'delta': 1,
+                                        'total_after': st['total'], 'timestamp': st['timestamp'], 'signature': st['signature']}
+    view = edges_view(incoming=[('frank', 'alice', fa), ('erin', 'alice', bad)], outgoing=[('alice', 'bob', ab)],
+                      journal=[jrow(1, 'issue', 'alice', 'bob', ab), jrow(2, 'setoff', 'frank', 'alice', fa),
+                               dict(jrow(3, 'issue', 'erin', 'alice', bad))], next_seq=3)
+    view['incoming'].append('not a row')
+    pend = {'total': 30, 'timestamp': T0_MS - 60_000, 'kind': 'note', 'ref': dg['id'], 'direction': 'out', 'signed_at': '2026-11-06T11:59:00.000Z'}
+    add('sync_edges: verified rows and journal; a pending note promoted and its deal paid; bad rows rejected', 'sync_edges', {},
+        {'GET /pilot/v1/edges?since=0': {'body': view}}, dict(pinned, records={PAIR_AB: {'confirmed': None, 'pending': [pend]}}))
+    page = [jrow(n, 'issue', 'alice', 'bob', ab) for n in range(1, vc.EDGES_PAGE + 1)]
+    add('sync_edges: reads pages of the journal until a short one, from journal_seq', 'sync_edges', {},
+        {'GET /pilot/v1/edges?since=5': {'body': edges_view(outgoing=[('alice', 'bob', ab)], journal=page, next_seq=205)},
+         'GET /pilot/v1/edges?since=205': {'body': edges_view(outgoing=[('alice', 'bob', ab)], journal=[jrow(206, 'transfer_out', 'alice', 'bob', ab)],
+                                                              next_seq=206)}}, dict(pinned, journal_seq=5))
+    add('sync_edges: a profile not pinned yet is pinned first', 'sync_edges', {},
+        {'GET /pilot/v1/edges?since=0': {'body': edges_view(outgoing=[('alice', 'bob', ab)], next_seq=1)}})
+    add('sync_edges: GET /edges not an object', 'sync_edges', {}, {'GET /pilot/v1/edges?since=0': {'body': ['x']}}, pinned)
+    later = T0_MS + 40 * 24 * 3600 * 1000
+    old = T0_MS - 1_000_000
+    old_att = {'deal_id': 'vd_5555555555555555', 'route': 'transfer', 'edge': edge('frank', 'alice'), 'prior': 30,
+               'prior_timestamp': fa['timestamp'], 'prior_signature': fa['signature'], 'total': 25, 'timestamp': res(old, 999),
+               'quote_digest': 'ab' * 32, 'signed_at': '2026-11-06T11:40:00.000Z'}
+    add('sync_edges: prunes R4 records, expired pending entries, dead attempts and old signatures', 'sync_edges', {'now_ms': later},
+        {'GET /pilot/v1/edges?since=0': {'body': edges_view(incoming=[('frank', 'alice', state_of('frank', 'alice', 30, T0_MS - 2_000_000 + 1))],
+                                                            outgoing=[('alice', 'bob', ab)], next_seq=0)}},
+        dict(pinned, signed={edge('frank', 'alice'): {str(res(old, 999)): {'slots': {f"{edge('frank', 'alice')}:new": 25}}},
+                             edge('alice', 'bob'): {str(later - 1000): {'slots': {f'{PAIR_AB}:new': 31}}}},
+             records={edge('frank', 'alice'): {'confirmed': None, 'pending': [
+                 {'total': 25, 'timestamp': res(old, 999), 'kind': 'transfer', 'ref': 'vd_5555555555555555', 'direction': 'in',
+                  'signed_at': '2026-11-06T11:40:00.000Z'}]},
+                      PAIR_AB: {'confirmed': {'total': 10, 'timestamp': T0_MS - 600_000, 'signature': note_sig('alice', 'bob', 10, T0_MS - 600_000)},
+                                'pending': []}},
+             transfer_attempts={'vd_5555555555555555': [old_att], 'vd_6666666666666666': ['malformed']}))
+    # ---- payment attempts and their resolution by the owner (decision D-2 d) ----
+    vt = 'vt_3c3c3c3c3c3c3c3c'
+    t_att = dict(old_att, deal_id=dg['id'], timestamp=res(T0_MS - 300_000, 999), total=10, attempt_id=vt)
+    t_att_noid = {k: v for k, v in t_att.items() if k != 'attempt_id'}
+    n_pend = {'total': 30, 'timestamp': T0_MS - 200_000 + 3, 'kind': 'note', 'ref': dg['id'], 'direction': 'out', 'signed_at': '2026-11-06T11:57:00.000Z'}
+    att_state = dict(pinned, transfer_attempts={dg['id']: [t_att]}, records={PAIR_AB: {'confirmed': None, 'pending': [n_pend]}})
+    tview = lambda state, deal=dg['id'], roles=('payer',), ts=t_att['timestamp'], total=10: {   # noqa: E731
+        'id': vt, 'kind': 'transfer', 'state': state, 'your_roles': list(roles), 'timestamp': ts, 'amount': 20,
+        'deal': {'deal_id': deal}, 'edges': [{'edge': edge('frank', 'alice'), 'new_total': total}, {'edge': edge('frank', 'bob'), 'new_total': 20}]}
+    tr_route = lambda state, **kw: {f'GET /pilot/v1/transfers/{vt}': {'body': tview(state, **kw)}}   # noqa: E731
+    add('payment_attempts: a transfer attempt and a pending note of one deal, classified (no request)', 'payment_attempts', {}, {}, att_state)
+    add('payment_attempts: with a read-back of my edges', 'payment_attempts',
+        {'edges': {edge('frank', 'alice'): fa}, 'doubtful': [], 'now_ms': T0_MS + 4_000_000}, {}, att_state)
+    add('resolution_plan: a transfer the server holds as outcome_unknown', 'resolution_plan', {'deal_id': dg['id'], 'attempt': '#1'},
+        {**circ, **tr_route('outcome_unknown')}, att_state)
+    add('resolution_plan: by the server id of a transfer my records do not hold', 'resolution_plan', {'deal_id': dg['id'], 'attempt': vt},
+        {**circ, **tr_route('outcome_unknown')}, dict(att_state, transfer_attempts={dg['id']: [t_att_noid]}))
+    add('resolution_plan: a transfer still collecting', 'resolution_plan', {'deal_id': dg['id'], 'attempt': '#1'},
+        {**circ, **tr_route('collecting')}, att_state)
+    add('resolution_plan: another deal\'s transfer', 'resolution_plan', {'deal_id': dg['id'], 'attempt': '#1'},
+        {**circ, **tr_route('outcome_unknown', deal='vd_0000000000000000')}, att_state)
+    add('resolution_plan: a credit note (local only)', 'resolution_plan', {'deal_id': dg['id'], 'attempt': '#2'}, circ, att_state)
+    add('resolution_plan: no such attempt', 'resolution_plan', {'deal_id': dg['id'], 'attempt': '#9'}, circ, att_state)
+    add('resolution_plan: a malformed deal id', 'resolution_plan', {'deal_id': 'vd_x', 'attempt': '#1'}, circ, att_state)
+    resolved = {f"POST /pilot/v1/owner/deals/{dg['id']}/attempts/{vt}/resolve": {'body': {
+        'resolution': {'attempt_id': vt, 'outcome': 'applied', 'previous_state': 'outcome_unknown', 'at': '2026-11-06T12:00:00.000Z',
+                       'note': 'bob confirmed'},
+        'attempt': {'id': vt, 'kind': 'transfer', 'timestamp': t_att['timestamp']}, 'deal': {'id': dg['id'], 'status': 'paid_by_transfer'},
+        'transfer': tview('applied')}}}
+    owner_ok = {'GET /pilot/v1/owner': {'body': {'participant': {'id': ID['alice'], 'handle': 'alice'}}}}
+    add('resolve_attempt: the server resolves a transfer as applied; my records follow', 'resolve_attempt',
+        {'deal_id': dg['id'], 'attempt': '#1', 'outcome': 'applied', 'owner_token': ' vpo_TEST-owner ', 'note': '  bob confirmed '},
+        {**circ, **tr_route('outcome_unknown'), **resolved}, att_state)
+    add('resolve_attempt: the server answers 404 to a token that is not the owner\'s', 'resolve_attempt',
+        {'deal_id': dg['id'], 'attempt': '#1', 'outcome': 'not_applied', 'owner_token': 'vpa_agent'},
+        {**circ, **tr_route('outcome_unknown'),
+         f"POST /pilot/v1/owner/deals/{dg['id']}/attempts/{vt}/resolve": {'status': 404, 'body': {'error': 'not_found', 'message': 'no such route'}},
+         'GET /pilot/v1/owner': {'status': 404, 'body': {'error': 'not_found', 'message': 'no such route'}}}, att_state)
+    add('resolve_attempt: the server holds it as ended (wrong_state), local resolution possible', 'resolve_attempt',
+        {'deal_id': dg['id'], 'attempt': '#1', 'outcome': 'not_applied', 'owner_token': 'vpo_TEST-owner'},
+        {**circ, **tr_route('outcome_unknown'), **owner_ok,
+         f"POST /pilot/v1/owner/deals/{dg['id']}/attempts/{vt}/resolve": {'status': 409, 'body': {'error': 'wrong_state', 'message': 'it ended'}}},
+        att_state)
+    add('resolve_attempt: a credit note resolved in my records only (not applied)', 'resolve_attempt',
+        {'deal_id': dg['id'], 'attempt': '#2', 'outcome': 'not_applied', 'owner_token': 'vpo_TEST-owner'},
+        {**circ, **owner_ok, **{f"GET /pilot/v1/deals/{dg['id']}": {'body': dg}}}, att_state)
+    add('resolve_attempt: a transfer whose server id I never recorded needs local_only', 'resolve_attempt',
+        {'deal_id': dg['id'], 'attempt': '#1', 'outcome': 'not_applied', 'owner_token': 'vpo_TEST-owner'},
+        {**circ, **owner_ok}, dict(att_state, transfer_attempts={dg['id']: [t_att_noid]}))
+    add('resolve_attempt: local_only for a transfer without a server id', 'resolve_attempt',
+        {'deal_id': dg['id'], 'attempt': '#1', 'outcome': 'not_applied', 'owner_token': 'vpo_TEST-owner', 'local_only': True},
+        {**circ, **owner_ok}, dict(att_state, transfer_attempts={dg['id']: [t_att_noid]}))
+    add('resolve_attempt: the attempts changed since the owner confirmed', 'resolve_attempt',
+        {'deal_id': dg['id'], 'attempt': '#1', 'outcome': 'applied', 'owner_token': 'vpo_TEST-owner',
+         'expected_attempt': ['note', PAIR_AB, 30, n_pend['timestamp']]}, {**circ, **tr_route('outcome_unknown')}, att_state)
+    add('resolve_attempt: the owner token of another participant', 'resolve_attempt',
+        {'deal_id': dg['id'], 'attempt': '#2', 'outcome': 'applied', 'owner_token': 'vpo_TEST-other'},
+        {**circ, 'GET /pilot/v1/owner': {'body': {'participant': {'id': ID['bob'], 'handle': 'bob'}}},
+         f"GET /pilot/v1/deals/{dg['id']}": {'body': dg}}, att_state)
+    add('resolve_attempt: a note with a bidi character', 'resolve_attempt',
+        {'deal_id': dg['id'], 'attempt': '#1', 'outcome': 'applied', 'owner_token': 'vpo_TEST-owner', 'note': 'ok \u202e'}, circ, att_state)
+    add('resolve_attempt: an outcome that is not one', 'resolve_attempt',
+        {'deal_id': dg['id'], 'attempt': '#1', 'outcome': 'maybe', 'owner_token': 'vpo_TEST-owner'}, circ, att_state)
+    # ---- cancel a transfer ----
+    t_pend = {'total': 10, 'timestamp': t_att['timestamp'], 'kind': 'transfer', 'ref': dg['id'], 'direction': 'in',
+              'signed_at': '2026-11-06T11:55:00.000Z'}
+    add('cancel_transfer: payment_due forgets the pending entry and keeps the attempt', 'cancel_transfer', {'deal_id': dg['id']},
+        {f"POST /pilot/v1/deals/{dg['id']}/cancel-transfer": {'body': {'id': dg['id'], 'status': 'payment_due'}}},
+        dict(pinned, transfer_attempts={dg['id']: [t_att]}, records={edge('frank', 'alice'): {'confirmed': None, 'pending': [t_pend]}}))
+    add('cancel_transfer: the server refuses', 'cancel_transfer', {'deal_id': dg['id']},
+        {f"POST /pilot/v1/deals/{dg['id']}/cancel-transfer": {'status': 409, 'body': {'error': 'wrong_state', 'message': 'not collecting'}}},
+        dict(pinned, transfer_attempts={dg['id']: [t_att]}, records={edge('frank', 'alice'): {'confirmed': None, 'pending': [t_pend]}}))
+    # ---- consents ----
+    so = setoff_item()
+    me_r = {'GET /pilot/v1/me': {'body': me_circ()}}
+    cons = lambda *items: {'GET /pilot/v1/consents': {'body': {'consents': list(items), 'recently_resolved': []}}}   # noqa: E731
+    add('process_consents: an explicit policy argument signs a set-off', 'process_consents', {'policy': dict(POLICY)},
+        {**circ, **me_r, **cons(so), f"POST /pilot/v1/consents/{so['id']}": {'body': {'id': so['id'], 'state': 'applied', 'rejected': []}}}, pinned)
+    add('process_consents: value_safe_only leaves an issuer consent alone', 'process_consents', {'value_safe_only': True},
+        {**circ, **me_r, **cons(issuer_item(), so), f"POST /pilot/v1/consents/{so['id']}": {'body': {'id': so['id'], 'state': 'collecting',
+                                                                                                     'rejected': []}}},
+        dict(pinned, consent_policy=dict(POLICY)))
+    add('process_consents: the server refuses the signatures (4xx): the pending entries are forgotten', 'process_consents', {},
+        {**circ, **me_r, **cons(so), f"POST /pilot/v1/consents/{so['id']}": {'status': 409, 'body': {'error': 'stale_item', 'message': 'gone'}}},
+        dict(pinned, consent_policy=dict(POLICY)))
+    add('process_consents: items not collecting, without an id, or already signed wait', 'process_consents', {},
+        {**circ, **me_r, **cons(setoff_item(iid='vs_0000000000000001', state='applying'), {'kind': 'setoff'},
+                                  dict(setoff_item(iid='vs_0000000000000002'), edges=[dict(e, signed_by_you=['new']) for e in so['edges']]))},
+        dict(pinned, consent_policy=dict(POLICY)))
+    add('process_consents: GET /consents is not an object', 'process_consents', {}, {**circ, 'GET /pilot/v1/consents': {'body': [1, 2]}},
+        dict(pinned, consent_policy=dict(POLICY)))
+    add('process_consents: a server without circulating credit (only GET /info)', 'process_consents', {}, {},
+        dict(pinned, consent_policy=dict(POLICY)))
+    add('process_consents: the refusal cannot be sent', 'process_consents', {},
+        {**circ, **me_r, **cons(setoff_item(iid='vs_0000000000000003', amount=60)),
+         'POST /pilot/v1/consents/vs_0000000000000003/refuse': {'status': 503, 'body': {'error': 'busy', 'message': 'later'}}},
+        dict(pinned, consent_policy=dict(POLICY)))
+    add('refuse_consent: with and without a reason', 'refuse_consent', {'consent_id': so['id'], 'reason': 'policy_cap'},
+        {f"POST /pilot/v1/consents/{so['id']}/refuse": {'body': {'id': so['id'], 'state': 'refused'}}}, pinned)
+    # ---- pay by transfer: the retry rules ----
+    claim_fa = (30, T0_MS - 900_000 + 1)
+    tpl1 = transfer_template(dg, claim=claim_fa)
+    # the payee's claim on frank moved while the payment was posted: a fresh template, a second later (my claim unchanged)
+    tpl2 = transfer_template(dg, claim=claim_fa, to_before=(5, res(T0_MS - 1500, 999) + 1), ts=res(T0_MS - 1500, 999) + 1000)
+    po = f"GET /pilot/v1/deals/{dg['id']}/payment-options"
+    tt = f"GET /pilot/v1/deals/{dg['id']}/transfer-template?issuer={ID['frank']}"
+    pbt = f"POST /pilot/v1/deals/{dg['id']}/pay-by-transfer"
+    base_pay = {f"GET /pilot/v1/deals/{dg['id']}": {'body': dg}, **circ, **me_r, po: {'body': payment_options(dg)}, tt: {'body': tpl1}}
+    paid = dict(dg, status='paid_by_transfer', payment={'route': 'transfer', 'transfer_id': 'vt_4d4d4d4d4d4d4d4d', 'state': 'applied'})
+    add('pay_by_transfer: transfer_stale with a fresh template is retried once under the same quote', 'pay_by_transfer',
+        {'deal_id': dg['id'], 'issuer': 'frank'},
+        {**base_pay, pbt: {'sequence': [{'status': 409, 'body': {'error': 'transfer_stale', 'message': 'the edges moved', 'template': tpl2}},
+                                        {'body': paid}]}}, dict(pinned, consent_policy=dict(POLICY)))
+    add('pay_by_transfer: transfer_stale twice is raised', 'pay_by_transfer', {'deal_id': dg['id'], 'issuer': 'frank'},
+        {**base_pay, pbt: {'status': 409, 'body': {'error': 'transfer_stale', 'message': 'the edges moved', 'template': tpl2}}},
+        dict(pinned, consent_policy=dict(POLICY)))
+    add('pay_by_transfer: transfer_stale naming the transfer it recorded is not retried', 'pay_by_transfer',
+        {'deal_id': dg['id'], 'issuer': 'frank'},
+        {**base_pay, pbt: {'status': 409, 'body': {'error': 'transfer_stale', 'message': 'regenerated', 'transfer_id': 'vt_5e5e5e5e5e5e5e5e',
+                                                   'regenerated_as': 'vt_6f6f6f6f6f6f6f6f', 'deal': dict(dg, status='paying_by_transfer')}}},
+        dict(pinned, consent_policy=dict(POLICY)))
+    add('pay_by_transfer: expected_claim_total that is not a whole number', 'pay_by_transfer',
+        {'deal_id': dg['id'], 'issuer': 'frank', 'expected_claim_total': -1}, base_pay, pinned)
+    add('pay_by_transfer: an issuer named by a handle two listed issuers have', 'pay_by_transfer', {'deal_id': dg['id'], 'issuer': 'twin'},
+        {**base_pay, po: {'body': dict(payment_options(dg), held_notes=[
+            dict(payment_options(dg)['held_notes'][0], issuer={'id': ID['frank'], 'handle': 'twin', 'pubkey': K['frank']['pubkey']}),
+            dict(payment_options(dg)['held_notes'][0], issuer={'id': ID['erin'], 'handle': 'twin', 'pubkey': K['erin']['pubkey']})])}},
+        pinned)
+    return S
+
+
+def run_client_scenarios():
+    out = []
+    for sc in client_scenarios():
+        ROUTES.clear()
+        ROUTES.update(base_routes())
+        ROUTES.update(sc['routes'])
+        LOG.clear()
+        SENT.clear()
+        SIGNED.clear()
+        COUNTS.clear()
+        RANDOM[0] = 0
+        store = store_for(sc['store'], sc['state'])
+        c = vc.Client(store)
+        record = dict(sc)
+        record['result'] = outcome(lambda: getattr(c, sc['method'])(**json.loads(json.dumps(sc['kwargs']))))
+        record['requests'] = list(LOG)
+        record['signed'] = list(SENT)
+        record['state_after'] = unsigned(store.state)
         out.append(json.loads(json.dumps(record, default=str)))
     return out
 
@@ -896,7 +1535,11 @@ def parity():
             ('note_timestamp_ahead', 'later', {'retry_after_ms': 1200, 'template': {'total': 3}, 'fallback_after': '2026-11-08T01:00:00.000Z',
                                                'what_this_means': 'wait', 'internal': 'x'}),
             ('transfer_window_open', 'wait', {'fallback_after': '2026-11-08T01:00:00.000Z', 'retry_after_ms': 5}),
-            ('approval_unbound', 'what the server says', {'what_this_means': 'from the server'})]
+            ('approval_unbound', 'what the server says', {'what_this_means': 'from the server'}),
+            ('approval_unbound', va.UNBOUND_MESSAGE, {'cause': 'transfer_window_open', 'retry_after_ms': 1500}),
+            ('attempt_outcome_unknown', 'maybe applied', {'summary': {'reason': 'x'}}), ('transfer_window_open', 'wait', {'retry_after_ms': 9}),
+            ('stale_quote', 'another quote', {}), ('stale_claim', 'claim moved', {}), ('feature_unavailable', 'no circulation', {}),
+            ('unknown_issuer', 'no such note', {}), ('not_exact_service', 'not exact', {}), ('not_owner', 'no', {'cause': 'x'})]
     P['error_payload'] = [[c, m, x, va.error_payload(vc.ValunError(c, m, 400, x)), va.error_payload(vc.ValunError(c, m, 400, x), 'do X')]
                           for c, m, x in errs]
     quoted_values = ['plain', 'line\nbreak', 'tab\tcr\r', 'quote " and \\ backslash', 'bidi ‮ and   sep', 'café 日本',
@@ -912,6 +1555,9 @@ def parity():
         ('Empty', {})]]
     P['owes'] = [[r, w, p, va.owes(r, w, p)] for r, w, p in [('payer', 'bob', 20), ('payee', 'bob', 7), ('anything', '"x\\ny"', 0)]]
     P['records'] = records_table()
+    P['novation_cases'] = novation_cases()
+    P['novation_helpers'] = novation_helpers()
+    P['circulation'] = client_helpers()
     P['verify_note'] = [[args, vc.verify_note(*args)] for args in [
         [K['alice']['pubkey'], K['bob']['pubkey'], 10, 1000, note_sig('alice', 'bob', 10, 1000), NFT, DENOM],
         [K['alice']['pubkey'], K['bob']['pubkey'], 11, 1000, note_sig('alice', 'bob', 10, 1000), NFT, DENOM],
@@ -941,23 +1587,46 @@ def constants():
             'ROLE_WORDS': va.ROLE_WORDS, 'DEFAULT_SETUP_HINT': va.ValunAgent(None).setup_hint,
             'CORE_STATE_KEYS': vc.CORE_STATE_KEYS, 'RESERVED_MS_FROM': vc.RESERVED_MS_FROM, 'NETWORK': vc.NETWORK,
             'PROTOCOL': vc.PROTOCOL, 'UNIT': vc.UNIT, 'PILOT_TOKEN_ID': vc.PILOT_TOKEN_ID,
-            'FILESTORE': {'LOCK_WAIT_S': vc.FileStore.LOCK_WAIT_S, 'LOCK_STALE_S': vc.FileStore.LOCK_STALE_S}}
+            'FILESTORE': {'LOCK_WAIT_S': vc.FileStore.LOCK_WAIT_S, 'LOCK_STALE_S': vc.FileStore.LOCK_STALE_S},
+            # 0.4 circulating credit (agent.py, client.py, novation.py)
+            'CIRCULATION_SETTLEMENT': va.CIRCULATION_SETTLEMENT, 'SETTLEMENT_NOTE_CIRCULATION': va.SETTLEMENT_NOTE_CIRCULATION,
+            'NOT_SETTLED_CIRCULATION': va.NOT_SETTLED_CIRCULATION, 'HONEST_LABELS_CIRCULATION': va.HONEST_LABELS_CIRCULATION,
+            'REAL_VS_SIMULATED_CIRCULATION': va.REAL_VS_SIMULATED_CIRCULATION, 'CIRCULATION': va.CIRCULATION,
+            'CONSENTS_EVERY_MS': va.CONSENTS_EVERY_MS, 'INVITE_CONSENT_POLICY': va.INVITE_CONSENT_POLICY,
+            'SANDBOX_CONSENT_POLICY': va.SANDBOX_CONSENT_POLICY, 'CONSENT_POLICY_KEYS': va.CONSENT_POLICY_KEYS, 'PAYABLE': va.PAYABLE,
+            'CONSENT_SPEED_WORDS': va.CONSENT_SPEED_WORDS, 'UNBOUND_PASS_THROUGH': va.UNBOUND_PASS_THROUGH,
+            'SANDBOX_EXACT': va.SANDBOX_EXACT, 'SANDBOX_MALLORY': va.SANDBOX_MALLORY, 'SANDBOX_AGENTS': va.SANDBOX_AGENTS,
+            'TOUR_GOALS': va.TOUR_GOALS, 'TOUR_TEXTS': va.TOUR_TEXTS, 'TOUR_AFTER': va.TOUR_AFTER,
+            'CONSENTS_ON_READ_TOOLS': va.CONSENTS_ON_READ_TOOLS, 'SIGNED_NOW_KEYS': va.SIGNED_NOW_KEYS,
+            'FEATURES_HEADER': vc.FEATURES_HEADER, 'CONSENT_ROLES': vc.CONSENT_ROLES, 'VALUE_SAFE_ROLES': vc.VALUE_SAFE_ROLES,
+            'VALUE_SAFE_HEADER_ROLES': vc.VALUE_SAFE_HEADER_ROLES, 'CONSENT_LOG_MAX': vc.CONSENT_LOG_MAX,
+            'RECORDS_KEEP_MS': vc.RECORDS_KEEP_MS, 'SIGNATURES_KEEP_MS': vc.SIGNATURES_KEEP_MS, 'ATTEMPT_OUTCOMES': vc.ATTEMPT_OUTCOMES,
+            'UNRESOLVED_TRANSFER': vc.UNRESOLVED_TRANSFER, 'LIVE_TRANSFER': vc.LIVE_TRANSFER, 'LOCAL_CHOICES': vc.LOCAL_CHOICES,
+            'RESOLVE_NOTE_MAX': vc.RESOLVE_NOTE_MAX, 'EDGES_PAGE': vc.EDGES_PAGE, 'EDGES_MAX_PAGES': vc.EDGES_MAX_PAGES,
+            'NOVATION': {k: getattr(nv, k) for k in ('TRANSFER_MS', 'SETOFF_MS', 'BOUND_MS', 'RESIDUE', 'RESERVED_MS', 'MAX_AGE_MS',
+                                                    'FALLBACK_MARGIN_MS', 'INITIATE_WINDOW_MS', 'CONSENT_WINDOW_MS', 'FUTURE_SKEW_MS',
+                                                    'MAX_SAFE_INTEGER', 'QUOTE_KIND', 'QUOTE_FIELDS', 'ROLES', 'ROUTES',
+                                                    'PAID_DEALS_KEY', 'REFUSAL_CODES', 'RECORDS_KEEP_MS')}}
 
 
 def main():
     P = parity()
     scen = run_scenarios()
+    client_scen = run_client_scenarios()
     hashes = source_hashes()                 # after everything ran: every module the reference imported is listed
+    with open(os.path.join(TESTS, 'test_novation.py'), 'rb') as fh:     # the decision table novation_cases records
+        tests_sha = {'test_novation.py': hashlib.sha256(fh.read().replace(b'\r\n', b'\n')).hexdigest()}
     write('schemas-python.json', {'generated_by': 'js/test/fixtures/generate_python_fixtures.py', 'python_sources_sha256': hashes,
                                   'tools': schemas.ALL})
     write('python-parity.json', {'generated_by': 'js/test/fixtures/generate_python_fixtures.py', 'python': sys.version.split()[0],
-                                 'python_sources_sha256': hashes, 't0_ms': T0_MS, 'nft': NFT, 'denomination': DENOM,
+                                 'python_sources_sha256': hashes, 'python_tests_sha256': tests_sha, 't0_ms': T0_MS, 'nft': NFT,
+                                 'denomination': DENOM,
                                  'keys': {n: {'label': k['label'], 'pubkey': k['pubkey']} for n, k in K.items()},
                                  'constants': constants(), **P})
     write('agent-python.json', {'generated_by': 'js/test/fixtures/generate_python_fixtures.py', 'python': sys.version.split()[0],
                                 'python_sources_sha256': hashes, 'base': BASE, 't0_ms': T0_MS, 'token': TOKEN, 'ids': ID,
                                 'keys': {n: {'label': k['label'], 'pubkey': k['pubkey']} for n, k in K.items()},
-                                'base_routes': base_routes(), 'dns': DNS, 'scenarios': scen})
+                                'base_routes': base_routes(), 'dns': DNS, 'scenarios': scen, 'client_scenarios': client_scen})
 
 
 if __name__ == '__main__':

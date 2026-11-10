@@ -12,11 +12,23 @@
 // signed. The text is built only from values checked against what is signed (recomputed hashes, which the arguments then
 // pin); when the snapshot cannot be read or does not hold together it rejects with approval_unbound, and every adapter
 // then refuses the call instead of asking with a generic text.
+//
+// Circulating credit (0.4; only where the server's GET /info lists circulation/1): valun_review_delivery can pay with a
+// note the agent holds (pay_with, a commitment the owner approves with its own text), valun_deliver can deliver the exact
+// result of a text-stats or notary job (exact_result), valun_status, valun_deal and valun_inbox show what can be spent,
+// what is being paid and what the client clears, and the client signs the consents its owner's policy allows by itself
+// (processConsents(), at most once per CONSENTS_EVERY_MS, before every tool call that is not read-only; with
+// consentsOnReads, an adapter without a consent loop also signs the value-safe ones, set-offs and payments to it by
+// transfer, before valun_status and valun_inbox: decision D-3 a).
 
+import {verifyHex} from './basis.js';
+import {VALUE_SAFE_HEADER_ROLES, consentRoles} from './client.js';
 import {ValunError} from './errors.js';
 import {measure} from './measure.js';
+import * as nv from './novation.js';
 import {UNIT, sha256Hex, termsHash} from './protocol.js';
 import {utf8} from './bytes.js';
+import * as sandbox from './sandbox.js';
 import {checkDelivery, extractText} from './sandbox.js';
 import * as schemas from './schemas.js';
 import {
@@ -48,6 +60,164 @@ export const REAL_VS_SIMULATED = Object.freeze({
   not_proven: 'that delivered work is good (Valun records statements, it does not judge work); that any participant '
     + 'will ever honour a credit note',
 });
+// The same labels where the server offers circulating credit (GET /info lists circulation/1): word for word the server's
+// deal label (PROTOCOL.md 16.1, design 4.12), and nothing that says notes cannot move or be cleared.
+export const CIRCULATION_SETTLEMENT = 'not settled: a credit note is an outstanding obligation. With circulating credit it can move to a '
+  + 'new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an '
+  + 'equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is '
+  + 'redeemed, there is no reserve, and PC have no value.';
+export const SETTLEMENT_NOTE_CIRCULATION = CIRCULATION_SETTLEMENT;
+export const NOT_SETTLED_CIRCULATION = CIRCULATION_SETTLEMENT;
+export const HONEST_LABELS_CIRCULATION = Object.freeze({
+  what_basis_records: 'The pilot Basis tracker keeps one running total per key pair: what the issuer key owes the '
+    + 'recipient key, with a timestamp, signed by the issuer. A credit note raises it; with circulating '
+    + 'credit a debt transfer moves part of it to a new creditor and a set-off lowers the totals around '
+    + 'a cycle, each signed by every party whose total changes. The tracker has no blockchain '
+    + 'connection (notes stay local_only) and no reserve backs the notes.',
+  outstanding_promise: CIRCULATION_SETTLEMENT,
+  third_party: "Supported: paying a third party with your OWN credit note, or with a note you hold (pay_with: the "
+    + "issuer's debt to you moves to the payee; the issuer, you and the payee each sign, and the issuer's "
+    + 'total debt does not change), and set-offs that cancel equal debts around a cycle (every party signs; '
+    + 'no net position changes). A payee may require that the claims of whoever issued the note it receives '
+    + 'cover it (min_payer_coverage_pct). Not supported: redeeming a note for anything outside the pilot.',
+});
+export const REAL_VS_SIMULATED_CIRCULATION = Object.freeze({
+  real: "signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt "
+    + 'transfers and set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your '
+    + 'client against the signatures)',
+  simulated: 'PC (pilot credits) have no monetary value; the Basis tracker has no blockchain connection (notes are '
+    + 'local_only, never on-chain); nothing is redeemed and there is no reserve: a set-off only cancels equal '
+    + 'opposite obligations',
+  not_proven: REAL_VS_SIMULATED.not_proven,
+});
+export const CIRCULATION = 'circulation/1';
+/** processConsents() runs at most this often (state consents_last_run_ms; design 6.6). */
+export const CONSENTS_EVERY_MS = 60_000;
+// The local consent policy a join writes (design 6.6, 8): an invited participant's client signs set-offs and transfers of
+// its own debt by itself, not payments to it by transfer (opt-in); a sandbox participant's client signs all three. The
+// owner's mandate still has to allow each role (the stricter of the two applies), and max_PC caps one consent.
+export const INVITE_CONSENT_POLICY = Object.freeze({setoff: true, as_issuer: true, as_new_creditor: false, max_PC: 50});
+export const SANDBOX_CONSENT_POLICY = Object.freeze({setoff: true, as_issuer: true, as_new_creditor: true, max_PC: 50});
+export const CONSENT_POLICY_KEYS = Object.freeze(['setoff', 'as_issuer', 'as_new_creditor', 'max_PC']);
+/** Where the payer may pay from: the deal statuses GET /deals/{id}/payment-options serves (PROTOCOL.md 18.6 step 1). */
+export const PAYABLE = Object.freeze(['delivered', 'note_failed', 'payment_due']);
+/** How fast an issuer signs a transfer of its debt (payment options issuer_consents), in an approval text. */
+export const CONSENT_SPEED_WORDS = Object.freeze({immediate: 'immediately', auto: 'automatically',
+  when_online: 'when its agent is next online', unavailable: 'not at the moment (unavailable)'});
+/** prepare() failures that keep their own code and setup hint instead of approval_unbound (still nothing is signed). */
+export const UNBOUND_PASS_THROUGH = Object.freeze(['not_connected', 'not_configured', 'tracker_mismatch']);
+// The server's sandbox agents (PROTOCOL.md 18.15) and the five-step tour a sandbox_only participant can take with them.
+export const SANDBOX_EXACT = 'sandbox-exact';
+export const SANDBOX_MALLORY = 'sandbox-mallory';
+export const SANDBOX_AGENTS = Object.freeze([SANDBOX_EXACT, SANDBOX_MALLORY]);
+export const TOUR_GOALS = Object.freeze({
+  1: 'Earn: sandbox-exact buys text-stats from you (the welcome job, 3 PC). Deliver the exact result; it pays with its '
+    + 'own credit note.',
+  2: 'Spend a note you hold: buy notary from sandbox-mallory (2 PC) and pay with pay_with="sandbox-exact" (2 PC of '
+    + "sandbox-exact's debt to you move to sandbox-mallory). Dispute a wrong delivery and buy again.",
+  3: 'Pay with your own note: buy notary from sandbox-exact (2 PC). Then the 2-cycle you -> sandbox-exact -> you (1 PC) '
+    + 'is cleared by a set-off your Valun client signs by itself.',
+  4: 'Sell: offer text-stats to sandbox-mallory (3 PC). It pays with its own note, and the 3-cycle sandbox-mallory -> '
+    + 'you -> sandbox-exact -> sandbox-mallory (1 PC) clears.',
+  5: 'Spend again: buy notary from sandbox-exact (2 PC) and pay with pay_with="sandbox-mallory". Then the server-only '
+    + 'cycle between sandbox-exact and sandbox-mallory clears.',
+});
+export const TOUR_TEXTS = Object.freeze({1: 'Valun sandbox tour, step 1: my first paid job.',
+  2: 'Valun sandbox tour, step 2: paid with a note I hold.',
+  3: 'Valun sandbox tour, step 3: paid with my own note.',
+  4: 'Valun sandbox tour, step 4: I sell my work.',
+  5: 'Valun sandbox tour, step 5: paid with a note I hold again.'});
+/** What you hold / owe (PC) once each step is done, as tracker totals (design 9.2). */
+export const TOUR_AFTER = Object.freeze({1: Object.freeze([3, 0]), 2: Object.freeze([1, 0]), 3: Object.freeze([0, 1]),
+  4: Object.freeze([2, 0]), 5: Object.freeze([0, 0])});
+
+/** The honest labels for a server with circulating credit (true) or without it: {settlement, not_settled, honest_labels, real_vs_simulated}. */
+export function labels(circulating) {
+  if (circulating) {
+    return {settlement: SETTLEMENT_NOTE_CIRCULATION, not_settled: NOT_SETTLED_CIRCULATION, honest_labels: HONEST_LABELS_CIRCULATION,
+      real_vs_simulated: REAL_VS_SIMULATED_CIRCULATION};
+  }
+  return {settlement: SETTLEMENT_NOTE, not_settled: NOT_SETTLED, honest_labels: HONEST_LABELS, real_vs_simulated: REAL_VS_SIMULATED};
+}
+
+/** The feature tags a GET /info answer lists ([] for a v15 server or circulation off; malformed: ['?']). */
+export function featuresOf(info) {
+  const raw = isDict(info) ? get(info, 'features') : null;
+  if (raw === null) return [];
+  return Array.isArray(raw) && raw.every(f => typeof f === 'string') ? [...raw] : ['?'];
+}
+
+/**
+ * What a Valun client signs by itself, per consent role: the stricter of the local consent policy (the profile's
+ * consent_policy) and the owner's mandate as GET /me shows it (rule R8 of PROTOCOL.md 15.3). Booleans per role, the
+ * local per-consent cap, and both sides as they are.
+ */
+export function consentPolicyInForce(local, mandate) {
+  const p = isDict(local) ? local : {};
+  const m = isDict(mandate) ? mandate : {};
+  return {
+    setoff: get(p, 'setoff') === true && get(m, 'auto_clear') === true,
+    as_issuer: get(p, 'as_issuer') === true && get(m, 'novate_own_debt') === true,
+    as_new_creditor: get(p, 'as_new_creditor') === true && get(m, 'accept_transfers') === true && get(m, 'may_accept_credit') !== false,
+    max_PC: get(p, 'max_PC'),
+    local_policy: Object.fromEntries(['setoff', 'as_issuer', 'as_new_creditor', 'max_PC', 'accept_issuers', 'refuse_issuers']
+      .filter(k => Object.hasOwn(p, k)).map(k => [k, p[k]])),
+    owner_mandate: Object.fromEntries(['auto_clear', 'novate_own_debt', 'accept_transfers', 'accept_notes_from', 'refuse_notes_from',
+      'pay_with_held_notes', 'max_accept_per_issuer'].map(k => [k, get(m, k)])),
+    how_to_change: 'your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|'
+      + 'consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in '
+      + 'the owner console; the stricter of the two applies',
+  };
+}
+
+/** consentPolicyInForce() as sentences: what the client signs by itself, without asking the owner. */
+export function clientSigns(policy) {
+  const cap = get(policy, 'max_PC');
+  const upto = whole(cap) ? `, up to ${cap} PC each` : '';
+  const out = [];
+  if (truthy(get(policy, 'setoff'))) {
+    out.push(`set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change)${upto}`);
+  }
+  if (truthy(get(policy, 'as_issuer'))) out.push(`debt transfers that move your own debt to a new creditor (your total owed does not change)${upto}`);
+  if (truthy(get(policy, 'as_new_creditor'))) out.push(`payments to you by debt transfer, of notes from issuers your owner accepts${upto}`);
+  return out;
+}
+
+/**
+ * Does this profile take part in consents at all? It has a consent policy, or it has paid by transfer (a regenerated
+ * transfer needs its signature again). A 0.3 profile has neither, so it is served exactly as by 0.3 (no consent request).
+ */
+export function wantsConsents(state) {
+  if (!isDict(state)) return false;
+  return isDict(get(state, 'consent_policy')) || truthy(get(state, 'approved_payments')) || truthy(get(state, 'transfer_attempts'));
+}
+
+/**
+ * Client.processConsents() for a profile that takes part in consents (wantsConsents), when its last run
+ * (consents_last_run_ms) is at least `everyMs` ago. Resolves to the run's report, or null when it did not run. Errors
+ * are the caller's (the agent's hook swallows them).
+ *
+ * valueSafeOnly (decision D-3 a; before a read-only tool): processConsents({valueSafeOnly: true}), only for a local
+ * consent policy with a value-safe role on (consents.setoff or consents.as_new_creditor), and only when neither kind of
+ * run (consents_last_run_ms, consents_last_safe_run_ms) is less than `everyMs` ago.
+ */
+export async function consentsDue(c, {nowMs = null, everyMs = CONSENTS_EVERY_MS, valueSafeOnly = false} = {}) {
+  const state = c.state;
+  if (!wantsConsents(state) || !c.connected) return null;
+  if (valueSafeOnly && !consentRoles(get(state, 'consent_policy')).some(r => VALUE_SAFE_HEADER_ROLES.includes(r))) {
+    return null;                                    // nothing a read could sign: no request at all
+  }
+  const now = nowMs ?? (typeof c.nowMs === 'function' ? c.nowMs() : Date.now());
+  for (const key of valueSafeOnly ? ['consents_last_run_ms', 'consents_last_safe_run_ms'] : ['consents_last_run_ms']) {
+    const last = get(state, key);
+    if (whole(last) && now - last >= 0 && now - last < everyMs) return null;
+  }
+  return valueSafeOnly ? c.processConsents({nowMs: now, valueSafeOnly: true}) : c.processConsents({nowMs: now});
+}
+
+/** novation.js's verifier: a Basis signature (hex) over msg (bytes) by pubkeyHex. */
+const verifyHexFor = (pubkeyHex, msg, sigHex) => verifyHex(sigHex, msg, pubkeyHex);
+
 /** valun_set_limits argument -> [server field, kind]. Caps can only be lowered below the owner's mandate, floors raised. */
 export const LIMIT_FIELDS = Object.freeze({
   max_per_deal_as_payer: Object.freeze(['max_issue_per_deal', 'cap']), max_total_owed: Object.freeze(['max_issue_outstanding', 'cap']),
@@ -56,6 +226,10 @@ export const LIMIT_FIELDS = Object.freeze({
 });
 export const TOOL_NAMES = Object.freeze(schemas.ALL.map(t => t.name));
 export const READ_ONLY_TOOLS = Object.freeze(['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal']);
+// The read-only tools before which an agent with consentsOnReads signs the value-safe consents (decision D-3 a), and the
+// keys of each entry of their consents_signed_now.
+export const CONSENTS_ON_READ_TOOLS = Object.freeze(['valun_status', 'valun_inbox']);
+export const SIGNED_NOW_KEYS = Object.freeze(['id', 'kind', 'role', 'deal_id', 'amount', 'your_net_change_PC', 'your_total_owed_change_PC', 'state']);
 // The classification every adapter takes from here (fail closed by name): these tools never commit the owner...
 export const NOT_COMMITMENT_TOOLS = Object.freeze([...READ_ONLY_TOOLS, 'valun_deliver']);
 // ...this one does only when it loosens a limit recorded before...
@@ -243,7 +417,7 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
   if (isValunError(e)) {
     const out = {error: e.code, message: e.message};
     const extra = isDict(e.extra) ? e.extra : {};
-    for (const k of ['rule', 'mandate_version', 'measured', 'retry_after_ms', 'template', 'fallback_after', 'what_this_means']) {
+    for (const k of ['rule', 'mandate_version', 'measured', 'retry_after_ms', 'template', 'fallback_after', 'what_this_means', 'cause']) {
       if (Object.hasOwn(extra, k)) out[k] = extra[k];
     }
     if (e.code === 'approval_unbound') {
@@ -284,6 +458,36 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
       out.what_this_means = `This agent is not connected to Valun. Its owner must ${setupHint}.`;
     }
     if (e.code === 'owner_declined') out.what_this_means = 'Your owner did not approve this commitment. Nothing was signed or sent.';
+    if (e.code === 'attempt_outcome_unknown') {
+      out.what_this_means = 'An earlier payment of this deal may have applied: the edge it would change has moved '
+        + 'past it to a state your Valun client cannot explain. Nothing was signed, and your client '
+        + 'will not pay this deal again by itself. Only your owner can resolve it, after confirming '
+        + 'with the payee whether the payment arrived (in a terminal: `valun attempts list`, then '
+        + '`valun attempts resolve`). Tell your owner.';
+    }
+    if (e.code === 'transfer_window_open') {
+      out.what_this_means = 'An earlier payment attempt of this deal can still apply until it is more than an hour '
+        + 'old, so another kind of payment could pay the deal twice. Nothing was signed. Retry the '
+        + 'same payment, or wait retry_after_ms before paying another way.';
+    }
+    if (e.code === 'stale_quote' || e.code === 'stale_claim') {
+      out.what_this_means = 'The payment changed after it was approved (another quote, or your claim on the issuer '
+        + 'moved). Nothing was signed. Read the deal again and accept again; your owner is asked '
+        + 'again.';
+    }
+    if (e.code === 'feature_unavailable') {
+      out.what_this_means = 'This Valun server does not offer circulating credit (paying with notes you hold, '
+        + 'set-offs). Nothing was signed. Pay with your own credit note (leave pay_with out).';
+    }
+    if (e.code === 'unknown_issuer') {
+      out.what_this_means = 'The payment options for this deal list no note of yours from that issuer. Nothing was '
+        + 'signed. valun_status notes_you_can_spend and valun_deal how_you_can_pay give the exact '
+        + 'pay_with values.';
+    }
+    if (e.code === 'not_exact_service') {
+      out.what_this_means = 'exact_result works only for text-stats and notary jobs whose agreed description '
+        + 'carries the text to process. Nothing was sent. Deliver the content yourself.';
+    }
     return out;
   }
   if (e instanceof Error) return {error: 'internal_error', message: `${e.name}: ${e.message}`};
@@ -300,6 +504,16 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
  *   resolveHost     async host => 'public' | 'private' | 'not_found' (Node: resolveHost from "@fitzdoud/valun/dns").
  *   hostTimeoutMs   how long all host lookups of one measurement may take together (default 4000, as in Python).
  *   setupHint       what the owner must do to connect the agent (default: run `valun join` (or `valun enroll`) ...).
+ *   processConsents sign the consents the owner's policy allows before tools that are not read-only (consentsIfDue;
+ *                   default true). A host with a consent loop of its own (tools.js startConsentLoop) may turn it off.
+ *   declareRoles    (null: as processConsents) does the client declare the consent roles its policy signs to the server
+ *                   (X-Valun-Features; Client declareRoles; decision D-3 b)? With it off it declares none, and withdraws
+ *                   the roles declared before. A host that turns processConsents off only because it signs consents
+ *                   through this agent's client by itself (a consent loop of its own) passes true.
+ *   consentsOnReads (decision D-3 a; default false) for a host without a background consent loop: before valun_status
+ *                   and valun_inbox, sign the value-safe consents only (set-offs, and payments to me by transfer as the
+ *                   standing policy allows; never an issuer's or a payer's), at most once per CONSENTS_EVERY_MS; the
+ *                   tool's result then says what was signed (consents_signed_now). Only with processConsents on.
  *   now             clock in ms (test hook; the Client has its own).
  */
 export class ValunAgent {
@@ -310,7 +524,8 @@ export class ValunAgent {
     if (!client || typeof client.deal !== 'function' || typeof client.complete !== 'function') {
       throw new TypeError('ValunAgent needs a valun Client');
     }
-    const {approvals = '', checkLinkHosts = true, resolveHost = null, hostTimeoutMs = 4000, setupHint = null, now = null} = options;
+    const {approvals = '', checkLinkHosts = true, resolveHost = null, hostTimeoutMs = 4000, setupHint = null, now = null,
+      processConsents = true, consentsOnReads = false, declareRoles = null} = options;
     if (resolveHost !== null && typeof resolveHost !== 'function') throw new TypeError('resolveHost must be a function');
     this.#client = client;
     this.#now = now || (() => Date.now());
@@ -319,6 +534,12 @@ export class ValunAgent {
     this.resolveHost = resolveHost;
     this.hostTimeoutMs = hostTimeoutMs;
     this.setupHint = setupHint || DEFAULT_SETUP_HINT;
+    this.processConsents = processConsents === true;
+    this.consentsOnReads = consentsOnReads === true;
+    this.declareRoles = declareRoles === null || declareRoles === undefined ? this.processConsents : declareRoles === true;
+    client.declareRoles = this.declareRoles;          // the client's X-Valun-Features header follows the agent (D-3 b)
+    /** The feature tags the last GET /info this agent read listed (null: none read yet). */
+    this.features = null;
     this.handlers = Object.freeze({
       valun_status: a => this.status(a), valun_directory: a => this.directory(a), valun_inbox: a => this.inbox(a),
       valun_deal: a => this.deal(a), valun_propose: a => this.propose(a), valun_respond: a => this.respond(a),
@@ -327,21 +548,139 @@ export class ValunAgent {
   }
 
   // ---------- plumbing ----------
-  /** The Client, after checking that it is enrolled (not_connected otherwise). */
+  /**
+   * The Client, after checking that it is enrolled (not_connected otherwise). It starts as a new client would (the Python
+   * agent makes one per use): it forgets the features of the last GET /info, so its requests carry the capability header
+   * only after this use read GET /info again.
+   */
   client(requireConnection = true) {
     const c = this.#client;
+    if (typeof c.forgetFeatures === 'function') c.forgetFeatures();
     if (requireConnection && (!c.connected || !c.participantId)) {
       throw new ValunError('not_connected', `not enrolled: the owner must ${this.setupHint}`);
     }
     return c;
   }
 
-  /** Run one tool. Resolves to a plain object; rejects with a ValunError (use errorPayload to turn it into a result). */
+  /**
+   * Run one tool. Resolves to a plain object; rejects with a ValunError (use errorPayload to turn it into a result).
+   * Before a tool that is not read-only, the client signs the consents its owner's policy allows (consentsIfDue). With
+   * consentsOnReads, before valun_status and valun_inbox it signs the value-safe ones (consentsOnRead), and when that
+   * run took place the result adds consents_signed_now: one entry (SIGNED_NOW_KEYS) for each consent it signed ([]: none).
+   */
   async call(name, args = null) {
     if (typeof name !== 'string' || !Object.hasOwn(this.handlers, name)) {
       throw new ValunError('unknown_tool', `no Valun tool called ${repr(name)}`);
     }
-    return this.handlers[name](truthy(args) ? args : {});
+    if (!READ_ONLY_TOOLS.includes(name)) {
+      await this.consentsIfDue();
+      return this.handlers[name](truthy(args) ? args : {});
+    }
+    const report = CONSENTS_ON_READ_TOOLS.includes(name) ? await this.consentsOnRead() : null;
+    const out = await this.handlers[name](truthy(args) ? args : {});
+    if (report !== null && isDict(out)) {
+      out.consents_signed_now = iterate(or(get(report, 'signed'), [])).filter(isDict)
+        .map(e => Object.fromEntries(SIGNED_NOW_KEYS.map(k => [k, get(e, k)])));
+    }
+    return out;
+  }
+
+  /**
+   * Process consents (Client.processConsents: set-offs, transfers of my own debt, payments to me, regenerated transfers
+   * of my payments) when they are due: at most once per CONSENTS_EVERY_MS, and only for a profile that takes part in
+   * consents (wantsConsents), with this agent's processConsents on, on a server not already known to lack circulating
+   * credit (decision D-2 h). Never from a read-only tool. Never rejects: resolves to the report, or null when it did not
+   * run or failed (a failed run counts as a run).
+   */
+  async consentsIfDue(nowMs = null) {
+    if (!this.processConsents) return null;
+    if (this.features !== null && !this.features.includes(CIRCULATION)) return null;
+    let c;
+    try {
+      c = this.client();
+    } catch {                                         // not connected: there is nothing to consent to
+      return null;
+    }
+    const now = nowMs ?? (typeof c.nowMs === 'function' ? c.nowMs() : this.#now());
+    let report;
+    try {
+      report = await consentsDue(c, {nowMs: now});
+    } catch {                                         // a consent run must never stop the tool the agent asked for
+      await ValunAgent.#markConsentsRun(c, now);
+      return null;
+    }
+    if (report !== null) this.#rememberClient(c);
+    return report;
+  }
+
+  /**
+   * Decision D-3 a: before valun_status and valun_inbox, for an agent with consentsOnReads and processConsents on, sign
+   * the value-safe consents (Client.processConsents({valueSafeOnly: true})) when they are due: at most once per
+   * CONSENTS_EVERY_MS (a full run before a tool that is not read-only counts too, and this run never delays one), for a
+   * profile whose local policy has a value-safe role on, on a server not already known to lack circulating credit. Never
+   * rejects: resolves to the report, or null when it did not run, failed (a failed run counts as a run, in
+   * consents_last_safe_run_ms) or found that the server does not offer circulating credit.
+   */
+  async consentsOnRead(nowMs = null) {
+    if (!(this.consentsOnReads && this.processConsents)) return null;
+    if (this.features !== null && !this.features.includes(CIRCULATION)) return null;
+    let c;
+    try {
+      c = this.client();
+    } catch {
+      return null;
+    }
+    const now = nowMs ?? (typeof c.nowMs === 'function' ? c.nowMs() : this.#now());
+    let report;
+    try {
+      report = await consentsDue(c, {nowMs: now, valueSafeOnly: true});
+    } catch {                                         // a consent run must never stop the read the agent asked for
+      await ValunAgent.#markConsentsRun(c, now, 'consents_last_safe_run_ms');
+      return null;
+    }
+    if (report === null) return null;
+    return this.#rememberClient(c).includes(CIRCULATION) ? report : null;
+  }
+
+  static async #markConsentsRun(c, now, key = 'consents_last_run_ms') {
+    try {
+      await c.markConsentsRun(now, key);
+    } catch { /* a mark that fails is not retried */ }
+  }
+
+  /** Remember (and return) the feature tags of a GET /info answer. */
+  #remember(info) {
+    this.features = featuresOf(info);
+    return this.features;
+  }
+
+  /** Remember (and return) the feature tags of the last GET /info the client read. */
+  #rememberClient(c) {
+    this.features = [...(c.advertised || [])];
+    return this.features;
+  }
+
+  /** Does the server offer circulating credit, as the last GET /info read (by `c`, or by this agent) said? */
+  #circulating(c = null) {
+    const seen = c !== null ? [...(c.advertised || [])] : [];
+    return seen.includes(CIRCULATION) || (this.features || []).includes(CIRCULATION);
+  }
+
+  /**
+   * Does the server offer circulating credit? From the features this agent already knows when it knows them; otherwise
+   * from one GET /info, read only when it can matter (decision D-2 h): always for a call that names no deal, and for a
+   * deal only when its view carries the `payment` key, which a server shows only with circulation on. A failed read
+   * counts as no circulation, except a tracker the profile is not pinned to (tracker_mismatch), which stops the call.
+   */
+  async #knownCirculation(c, deal = null) {
+    if (this.features !== null) return this.features.includes(CIRCULATION);
+    if (deal !== null && !(isDict(deal) && Object.hasOwn(deal, 'payment'))) return false;
+    try {
+      return this.#remember(await c.info()).includes(CIRCULATION);
+    } catch (e) {
+      if (isValunError(e) && e.code === 'tracker_mismatch') throw e;
+      return false;                                   // a client that cannot read /info: as without circulation
+    }
   }
 
   /** Like call(), but never rejects: errors come back as {error: ...}. */
@@ -357,11 +696,15 @@ export class ValunAgent {
     return {checkHosts, resolveHost: this.resolveHost, timeoutMs: this.hostTimeoutMs};
   }
 
+  /**
+   * The directory entry `who` names: the participant with exactly that id; a handle only when no id matches (a handle may
+   * look like another participant's id).
+   */
   async #resolve(c, who) {
     who = lower(strip(or(who, '')));
-    for (const p of iterate(await c.directory())) {
-      if (item(p, 'id') === who || item(p, 'handle') === who) return p;
-    }
+    const people = iterate(await c.directory()).filter(isDict);
+    for (const p of people) if (get(p, 'id') === who) return p;
+    for (const p of people) if (get(p, 'handle') === who) return p;
     throw new ValunError('unknown_participant', `no participant called ${repr(who)}; use valun_directory`);
   }
 
@@ -442,17 +785,22 @@ export class ValunAgent {
    * text, and nothing is signed (approval_unbound).
    */
   async prepareOrRefusal(name, args = null) {
-    let prepared;
+    let prepared, extra = {};
     try {
       prepared = await this.prepare(name, args);
-    } catch {
-      prepared = null;                                // whatever went wrong, the answer is the same refusal
+    } catch (e) {                                     // whatever went wrong, nothing is asked and nothing is signed
+      prepared = null;
+      const info = isValunError(e) && isDict(e.extra) ? e.extra : {};
+      if (UNBOUND_PASS_THROUGH.includes(get(info, 'cause'))) {
+        return [null, errorPayload(new ValunError(info.cause, or(get(info, 'cause_message'), UNBOUND_MESSAGE)), this.setupHint)];
+      }
+      extra = Object.fromEntries(['cause', 'retry_after_ms'].filter(k => Object.hasOwn(info, k)).map(k => [k, info[k]]));
     }
     if (isDict(prepared) && isDict(prepared.args)
         && ((prepared.text ?? null) === null || (typeof prepared.text === 'string' && prepared.text))) {
       return [prepared, null];
     }
-    return [null, errorPayload(new ValunError('approval_unbound', UNBOUND_MESSAGE), this.setupHint)];
+    return [null, errorPayload(new ValunError('approval_unbound', UNBOUND_MESSAGE, undefined, extra), this.setupHint)];
   }
 
   /**
@@ -483,13 +831,40 @@ export class ValunAgent {
 
   static #unbound(e) {
     const cause = isValunError(e) ? e.code : (e instanceof Error ? e.name : typeName(e));
-    return new ValunError('approval_unbound', UNBOUND_MESSAGE, undefined, {cause});
+    const extra = {cause};
+    if (isValunError(e)) {
+      extra.cause_message = cpSlice(String(e.message), 300);
+      const ex = isDict(e.extra) ? e.extra : {};
+      if ((get(ex, 'retry_after_ms') ?? null) !== null) extra.retry_after_ms = ex.retry_after_ms;
+    }
+    return new ValunError('approval_unbound', UNBOUND_MESSAGE, undefined, extra);
+  }
+
+  /**
+   * The issuer a delivery acceptance pays with (pay_with, stripped and lower-cased), or null for the agent's own credit
+   * note (pay_with absent or 'own_note'). bad_arguments for anything else.
+   */
+  static #payWith(a) {
+    const pw = get(a, 'pay_with');
+    if (pw === null || pw === 'own_note') return null;
+    if (typeof pw !== 'string' || !strip(pw) || cpLength(pw) > 64) {
+      throw new ValunError('bad_arguments', "pay_with is 'own_note' or the handle or id of an issuer whose note you hold");
+    }
+    const p = lower(strip(pw));
+    return p === 'own_note' ? null : p;
   }
 
   static #needsPins(name, a) {
     if (name === 'valun_respond' && ['accept', 'counter'].includes(get(a, 'action'))) return !truthy(get(a, 'expected_terms_hash'));
     if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept') {
-      return !(truthy(get(a, 'expected_deliverable_sha256')) && truthy(get(a, 'expected_terms_hash')));
+      let pins = ['expected_deliverable_sha256', 'expected_terms_hash'];
+      try {
+        if (ValunAgent.#payWith(a) !== null) pins = [...pins, 'expected_quote_digest', 'expected_claim_total'];
+      } catch (e) {
+        if (isValunError(e)) return true;             // a malformed pay_with: binding refuses it (approval_unbound)
+        throw e;
+      }
+      return !pins.every(k => truthy(get(a, k)));
     }
     return false;
   }
@@ -502,7 +877,7 @@ export class ValunAgent {
       if (!(isDict(other) && typeof get(other, 'id') === 'string' && other.id)) {
         throw new ValunError('approval_unbound', 'the directory names no participant id');
       }
-      return {counterparty: other};
+      return {counterparty: other, not_settled: labels(await this.#knownCirculation(c)).not_settled};
     }
     if (name === 'valun_set_limits') {
       const me = await c.me();
@@ -513,7 +888,101 @@ export class ValunAgent {
     if (!(typeof did === 'string' && DEAL_ID.test(did))) throw new ValunError('bad_arguments', 'deal_id is missing or malformed');
     const d = await c.deal(did);
     if (!isDict(d)) throw new ValunError('approval_unbound', 'the deal could not be read');
-    return {deal: d, checked: ValunAgent.#checked(d, did, c.participantId, name === 'valun_review_delivery')};
+    const snap = {deal: d, checked: ValunAgent.#checked(d, did, c.participantId, name === 'valun_review_delivery')};
+    snap.not_settled = labels(await this.#knownCirculation(c, d)).not_settled;
+    if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept' && ValunAgent.#payWith(a) !== null) {
+      snap.transfer = await this.#transferSnapshot(c, did, snap.checked, ValunAgent.#payWith(a));
+      snap.not_settled = NOT_SETTLED_CIRCULATION;
+    }
+    return snap;
+  }
+
+  /**
+   * What paying deal `did` with a held note would sign, read and checked once (see prepare): the server offers
+   * circulation/1; the deal's payment options list a note of mine from the issuer `payWith` names (an exact participant
+   * id first, else a handle only one listed issuer has); the issuer's and the payee's current directory keys; and a fresh
+   * transfer template for exactly that issuer and key, accepted by novation.evaluatePayerTemplate for the deal, terms and
+   * delivery `chk` checked (with one GET /edges read-back when D-1 needs one).
+   */
+  async #transferSnapshot(c, did, chk, payWith) {
+    if (!this.#remember(await c.info()).includes(CIRCULATION)) {
+      throw new ValunError('feature_unavailable', 'this Valun server does not offer circulating credit (circulation/1)');
+    }
+    const option = ValunAgent.#heldNote(await c.paymentOptions(did), payWith);
+    const iid = option.issuer.id;
+    const issuer = await ValunAgent.#current(c, iid);
+    const payee = await ValunAgent.#current(c, chk.other_id);
+    const me = await c.me();
+    const mandate = isDict(me) ? (['effective_limits', 'mandate'].map(k => get(me, k)).find(isDict) ?? null) : null;
+    const tpl = await c.transferTemplate(did, iid);
+    const iss = isDict(tpl) ? get(tpl, 'issuer') : null;
+    if (!(isDict(iss) && get(iss, 'id') === iid && get(iss, 'pubkey') === issuer.pubkey)) {
+      throw new ValunError('bad_template', 'the transfer template is not for that issuer under its current key');
+    }
+    const deal = nv.dealContext(chk.terms, chk.terms_hash, chk.sha256);
+    const r = await this.#evaluatePayment(c, tpl, deal, payee.pubkey, mandate);
+    if (!r.ok) {
+      const s = or(get(r, 'summary'), {});
+      throw new ValunError(r.code, or(get(s, 'reason'), r.code), undefined,
+        (get(s, 'retry_after_ms') ?? null) !== null ? {retry_after_ms: s.retry_after_ms} : {});
+    }
+    const before = get(item(tpl, 'to_edge'), 'before');
+    return {template: tpl, option, issuer: {id: iid, handle: or(get(issuer, 'handle'), get(option.issuer, 'handle')), pubkey: issuer.pubkey},
+      payee: {id: chk.other_id, handle: get(payee, 'handle'), pubkey: payee.pubkey},
+      quote_digest: r.summary.quote_digest, claim: tpl.from_edge.before.total, to_prior: isDict(before) ? before.total : 0};
+  }
+
+  /**
+   * The payment option (a note I hold) `payWith` names: an exact participant id first; a handle only when no id matches
+   * and exactly one listed issuer has it. unknown_issuer otherwise.
+   */
+  static #heldNote(opts, payWith) {
+    const held = isDict(opts) ? get(opts, 'held_notes') : null;
+    const rows = (Array.isArray(held) ? held : []).filter(h => isDict(h) && isDict(get(h, 'issuer'))
+      && typeof get(h.issuer, 'id') === 'string' && h.issuer.id);
+    for (const h of rows) if (h.issuer.id === payWith) return h;
+    const named = rows.filter(h => get(h.issuer, 'handle') === payWith);
+    if (named.length === 1) return named[0];
+    throw new ValunError('unknown_issuer', `the payment options for this deal list no note of yours from ${repr(cpSlice(payWith, 64))}`);
+  }
+
+  /** A participant's directory record, with its current (active) key. */
+  static async #current(c, pid) {
+    const p = await c.participant(pid);
+    if (!(isDict(p) && get(p, 'status') === 'active' && typeof get(p, 'pubkey') === 'string' && p.pubkey)) {
+      throw new ValunError('counterparty_inactive', `${str(pid)} has no active registered key`);
+    }
+    return p;
+  }
+
+  /**
+   * novation.evaluatePayerTemplate on this profile's records as they are now, without recording anything (the client
+   * evaluates again, and records, when it signs). D-1: an earlier attempt whose edge must be read gets one GET /edges
+   * read-back (Client.syncEdges), as Client.payByTransfer does.
+   */
+  async #evaluatePayment(c, tpl, deal, payeePk, mandate) {
+    await c.reload();
+    const state = c.state;
+    const pins = isDict(get(state, 'pins')) && truthy(get(state.pins, 'tracker_nft_id')) ? state.pins : null;
+    const ctx = {me_pk: c.pubkey, me_id: c.participantId, now_ms: c.nowMs(), verify: verifyHexFor, pins, records: get(state, 'records'),
+      signed: get(state, 'signed'), transfer_attempts: get(state, 'transfer_attempts'), novated_edges: get(state, 'novated_edges'),
+      features: [...(this.features || [])], consent_policy: get(state, 'consent_policy'), deal, payee_current_pk: payeePk,
+      approved_quote_digest: null, mandate, edges: null};
+    let r = nv.evaluatePayerTemplate(tpl, ctx);
+    const need = !r.ok && r.code === 'transfer_window_open' ? get(r.summary, 'needs_read_back') : null;
+    if (truthy(need)) {
+      let fresh;
+      try {
+        fresh = await c.syncEdges();
+      } catch (e) {
+        if (isValunError(e)) return r;
+        throw e;
+      }
+      const edges = {...fresh.edges};
+      for (const e of need) if (!fresh.doubtful.includes(e) && !Object.hasOwn(edges, e)) edges[e] = null;
+      r = nv.evaluatePayerTemplate(tpl, {...ctx, edges});
+    }
+    return r;
   }
 
   /**
@@ -572,13 +1041,19 @@ export class ValunAgent {
     const chk = or(snap.checked ?? null, {});
     const pin = (key, value, code, why) => {
       if (!truthy(get(a, key))) a[key] = value;
-      else if (strict && !pyEq(a[key], value)) throw new ValunError(code, why);
+      else if (strict && (typeName(a[key]) !== typeName(value) || !pyEq(a[key], value))) throw new ValunError(code, why);   // True is not 1
     };
     if (name === 'valun_respond' && ['accept', 'counter'].includes(get(a, 'action'))) {
       pin('expected_terms_hash', item(chk, 'terms_hash'), 'stale_terms', 'the offer changed after your agent read it');
     } else if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept') {
       pin('expected_deliverable_sha256', item(chk, 'sha256'), 'stale_delivery', 'the delivery changed after your agent read it');
       pin('expected_terms_hash', item(chk, 'terms_hash'), 'stale_terms', 'the agreed terms are not the ones your agent read');
+      const tr = snap.transfer ?? null;
+      if (tr !== null) {                              // paying with a held note: exactly the issuer, quote and claim shown
+        a.pay_with = tr.issuer.id;
+        pin('expected_quote_digest', tr.quote_digest, 'stale_quote', 'the payment changed after your agent read it');
+        pin('expected_claim_total', tr.claim, 'stale_claim', 'your claim on the issuer changed after your agent read it');
+      }
     } else if (name === 'valun_propose' && Object.hasOwn(snap, 'counterparty')) {
       a.counterparty = snap.counterparty.id;          // the offer is signed for exactly the participant shown
     }
@@ -591,7 +1066,9 @@ export class ValunAgent {
     if (name === 'valun_propose') return (b, s) => this.#textPropose(b, s);
     if (name === 'valun_respond' && get(a, 'action') === 'accept') return (b, s) => this.#textAccept(b, s);
     if (name === 'valun_respond' && get(a, 'action') === 'counter') return (b, s) => this.#textCounter(b, s);
-    if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept') return (b, s) => this.#textReview(b, s);
+    if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept') {
+      return ValunAgent.#payWith(a) !== null ? (b, s) => this.#textPay(b, s) : (b, s) => this.#textReview(b, s);
+    }
     throw new ValunError('approval_unbound', `no approval text for ${name} with these arguments`);
   }
 
@@ -631,7 +1108,7 @@ export class ValunAgent {
       `  you are the ${ROLE_WORDS[role]}; price: ${price} PC`,
       `  deliver within ${due} h; the offer stays open ${ttl} h`,
       `If ${who} accepts, the deal is binding without asking you again: ` + owes(role, who, price),
-      NOT_SETTLED,
+      get(snap, 'not_settled', NOT_SETTLED),
       quoteLine('Offer text written by your agent', Object.fromEntries(TEXT_FIELDS.map(k => [k, get(a, k)])))].join('\n');
   }
 
@@ -643,7 +1120,7 @@ export class ValunAgent {
       `  you are the ${ROLE_WORDS[chk.role]}; price: ${price} PC; deliver by ${shown(get(t, 'deliver_by'))}`,
       `  terms hash ${chk.terms_hash.slice(0, 16)}... (recomputed from these terms; your Valun client checks it again before signing)`,
       'This makes the deal binding on both sides: ' + owes(chk.role, who, price),
-      NOT_SETTLED,
+      get(snap, 'not_settled', NOT_SETTLED),
       quoteLine(`Offer text written by ${who}`, Object.fromEntries(TEXT_FIELDS.map(k => [k, get(svc, k)])))].join('\n');
   }
 
@@ -665,7 +1142,7 @@ export class ValunAgent {
         : `by ${shown(get(t, 'deliver_by'))} as in their offer (rounded down to the hour, at least 1 h after signing)`),
       '  your agent changes: ' + (changes.join(', ') || 'nothing') + '; the counter-offer stays open 24 h',
       `If ${who} accepts it, the deal is binding without asking you again: ` + owes(chk.role, who, price),
-      NOT_SETTLED,
+      get(snap, 'not_settled', NOT_SETTLED),
       quoteLine(`Counter-offer text, with what your agent did not change copied from ${who}'s offer`,
         Object.fromEntries(TEXT_FIELDS.map(k => [k, truthy(get(a, k)) ? item(a, k) : get(svc, k)])))].join('\n');
   }
@@ -693,7 +1170,48 @@ export class ValunAgent {
       '  measured: ' + (facts.join('; ') || `${m.word_count} words, ${m.links.length} links`),
       `  agreed terms hash ${chk.terms_hash.slice(0, 16)}... (your Valun client checks both hashes again before signing)`,
       `Your agent signs a Basis note; the pilot tracker then records that you owe ${who} ${price} PC more.`,
-      NOT_SETTLED,
+      get(snap, 'not_settled', NOT_SETTLED),
+      quoteLine('Delivery title and agreed service text', {delivery_title: or(get(dl, 'title'), ''), title: get(svc, 'title'),
+        deliverable: get(svc, 'deliverable')})].join('\n');
+  }
+
+  /** A delivery acceptance paid with a held note (pay_with): what moves, from the checked transfer template. */
+  async #textPay(a, snap) {
+    const chk = snap.checked, tr = snap.transfer;
+    const t = chk.terms, svc = chk.service, dl = chk.delivery, content = chk.content, price = chk.price;
+    const payee = this.#who(chk);
+    const iss = tr.issuer;
+    const issuer = typeof get(iss, 'handle') === 'string' && iss.handle ? shown(iss.handle) : shown(iss.id);
+    const x = tr.claim, y = tr.to_prior;
+    const speed = get(tr.option, 'issuer_consents');
+    const m = await measure(content, TEXT_FIELDS.map(k => str(or(get(svc, k), ''))).join(' '), {checkHosts: false});
+    const facts = m.checks_against_agreed_terms.map(f => `${f.requirement}: ${f.measured} (${f.met ? 'met' : 'NOT met'})`);
+    let exact;
+    try {
+      exact = checkDelivery(t, content);
+    } catch {                                         // a malformed result block is a fact to show, not a reason to hide the prompt
+      exact = null;
+      facts.push('exact result: could not be checked');
+    }
+    if (truthy(exact) && truthy(get(exact, 'checked'))) {
+      facts.push('exact result: ' + (truthy(get(exact, 'exact_result_matches')) ? 'matches the agreed text'
+        : 'DOES NOT MATCH (differs in ' + iterate(or(get(exact, 'differs_in'), [])).map(k => shown(k)).join(', ') + ')'));
+    }
+    const speedWords = typeof speed === 'string' && Object.hasOwn(CONSENT_SPEED_WORDS, speed) ? CONSENT_SPEED_WORDS[speed] : shown(speed);
+    return [
+      `Valun - PAY ${payee} ${price} PC for deal ${shown(t.deal_id)} by moving ${price} PC of ${issuer}'s debt from you `
+        + `to ${payee}:`,
+      `  your claim on ${issuer}: ${x} -> ${x - price} PC (issuer signature checked by your client)`,
+      `  ${issuer} will owe ${payee} ${y} -> ${y + price} PC; its total debt does not change`,
+      '  you issue no credit note for this deal',
+      `  ${issuer} consents ${speedWords}; accepting is final: if the transfer does not `
+        + 'complete the deal stays accepted and you pay later',
+      `  ${issuer} is ${shown(iss.id)} and ${payee} is ${shown(chk.other_id)}; quote ${tr.quote_digest.slice(0, 16)}... `
+        + '(computed by your Valun client; it checks it again before signing)',
+      `  you accept the delivery: ${utf8(content).length} bytes, sha256 ${chk.sha256.slice(0, 16)}... (recomputed from `
+        + 'the text measured here); agreed terms hash ' + chk.terms_hash.slice(0, 16) + '...',
+      '  measured: ' + (facts.join('; ') || `${m.word_count} words, ${m.links.length} links`),
+      get(snap, 'not_settled', NOT_SETTLED_CIRCULATION),
       quoteLine('Delivery title and agreed service text', {delivery_title: or(get(dl, 'title'), ''), title: get(svc, 'title'),
         deliverable: get(svc, 'deliverable')})].join('\n');
   }
@@ -702,11 +1220,13 @@ export class ValunAgent {
   async status() {
     const c = this.client();
     const me = await c.me(), info = await c.info();
+    const circulating = this.#remember(info).includes(CIRCULATION);
+    const lab = labels(circulating);
     const recorded = or(get(me, 'agent_limits'), {});
     let approvals = or(this.approvals, 'Commitments are signed without asking your owner first.');
     approvals += ` The server also holds commitments priced above ${str(get(item(me, 'mandate'), 'approve_above'))} PC for the owner console.`;
     const inForce = or(get(me, 'effective_limits'), item(me, 'mandate'));
-    return {
+    const out = {
       connected: true, server: item(c.state, 'server'), network: item(info, 'network'),
       unit: item(info, 'unit') + ' (pilot credits, no monetary value)',
       you: item(me, 'participant'), objective_from_your_owner: or(get(item(me, 'mandate'), 'objective'), '(none set)'),
@@ -714,9 +1234,209 @@ export class ValunAgent {
       limits_you_recorded: Object.fromEntries(items(recorded).filter(([k]) => k !== 'notes' && k !== 'set_at')),
       limits_in_force: Object.fromEntries(LIMITS_SHOWN.map(([arg, [field]]) => [arg, get(inForce, field)])),
       mandate: Object.fromEntries(items(item(me, 'mandate')).filter(([k]) => k !== 'objective')), mandate_version: item(me, 'mandate_version'),
-      approvals, position: item(me, 'position'), authority: item(me, 'authority'), settlement: SETTLEMENT_NOTE,
-      honest_labels: {...HONEST_LABELS}, real_vs_simulated: {...REAL_VS_SIMULATED},
+      approvals, position: item(me, 'position'), authority: item(me, 'authority'), settlement: lab.settlement,
+      honest_labels: {...lab.honest_labels}, real_vs_simulated: {...lab.real_vs_simulated},
     };
+    if (circulating) Object.assign(out, await this.#circulationStatus(c, me));
+    return out;
+  }
+
+  /**
+   * valun_status with circulating credit: what you hold and owe, the notes you can spend (each checked against the
+   * issuer's signature on the tracker state GET /edges shows), payments in progress, what your client clears by itself,
+   * and for a sandbox_only participant the next tool calls of the five-step tour.
+   */
+  async #circulationStatus(c, me) {
+    const pos = isDict(get(me, 'position')) ? me.position : {};
+    let box;
+    try {
+      box = await c.inbox();
+    } catch (e) {
+      if (!isValunError(e)) throw e;
+      box = {};
+    }
+    box = isDict(box) ? box : {};
+    let verified;
+    try {
+      verified = (await c.syncEdges()).edges;
+    } catch (e) {
+      if (!isValunError(e)) throw e;
+      verified = {};
+    }
+    const notes = this.#notesYouCanSpend(c, pos, verified);
+    const policy = consentPolicyInForce(get(c.state, 'consent_policy'), ['effective_limits', 'mandate'].map(k => get(me, k)).find(isDict) ?? null);
+    const signs = clientSigns(policy);
+    const hold = get(pos, 'claims_held'), owe = get(pos, 'owes'), net = get(pos, 'net');
+    const cleared = get(pos, 'cleared_by_setoff', get(pos, 'settled', 0));
+    let pending = get(box, 'consents_waiting_for_your_client');
+    if (pending === null && isDict(get(pos, 'pending'))) pending = get(pos.pending, 'consents_waiting_for_you');
+    const log = Array.isArray(get(c.state, 'consent_log')) ? c.state.consent_log : [];
+    const spend = notes.reduce((t, n) => t + n.amount_PC, 0);
+    const summary = `You hold ${shown(hold)} PC of credit notes others issued to you and owe ${shown(owe)} PC (net ${shown(net)} PC); `
+      + `set-offs have cleared ${shown(cleared)} PC so far. `
+      + (notes.length ? `You can spend ${spend} PC of notes you hold (${notes.map(n => shown(n.issuer)).join(', ')}) with pay_with `
+        + 'when you accept a delivery. ' : 'You hold no notes you can spend now. ')
+      + (signs.length ? 'Your Valun client signs by itself: ' + signs.join('; ') + '.' : 'Your Valun client signs no consents by itself.')
+      + (whole(pending) && pending > 0 ? ` ${pending} consent(s) wait for your client.` : '');
+    const out = {summary,
+      money_view: {you_hold_PC: hold, you_owe_PC: owe, net_PC: net, cleared_so_far_PC: cleared,
+        how_to_read: 'hold: credit notes others issued to you that are still outstanding (what they '
+          + 'owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note '
+          + 'you hold moves it to the payee (hold falls by the price); a set-off cancels equal '
+          + 'claims and debts around a cycle (hold and owe fall together, net does not change); '
+          + 'cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have '
+          + 'no value.'},
+      notes_you_can_spend: notes,
+      payments_in_progress: Array.isArray(get(box, 'payments_in_progress')) ? box.payments_in_progress : [],
+      clearing: {your_client_signs: signs, consents_pending: pending,
+        recent: log.slice(-5).filter(isDict).map(e => Object.fromEntries(['at', 'kind', 'decision', 'code', 'amount', 'your_net_change_PC']
+          .map(k => [k, get(e, k)])))},
+      consent_policy_in_force: policy};
+    const participant = isDict(get(me, 'participant')) ? me.participant : {};
+    if (get(participant, 'sandbox_only') === true) out.sandbox_next_steps = await this.#sandboxNextSteps(c, participant, pos, box, notes);
+    return out;
+  }
+
+  /**
+   * The notes I hold that the server says I can spend now (position.spendable_notes; else the claims), each marked
+   * checked_by_your_client when the tracker state of that edge, as GET /edges showed it, carries the issuer's valid
+   * signature over a total that covers the amount.
+   */
+  #notesYouCanSpend(c, pos, verified) {
+    let rows = get(pos, 'spendable_notes');
+    if (!Array.isArray(rows)) {
+      const claims = get(pos, 'claims');
+      rows = (Array.isArray(claims) ? claims : []).filter(isDict).map(r => ({issuer_id: get(r, 'issuer_id'), issuer_handle: get(r, 'from'),
+        issuer_pubkey: get(r, 'issuer_pubkey'), spendable: get(r, 'amount'), issuer_consents: null}));
+    }
+    const out = [];
+    for (const n of rows) {
+      if (!isDict(n)) continue;
+      const amount = get(n, 'spendable');
+      const name = or(get(n, 'issuer_handle'), or(get(n, 'handle'), get(n, 'issuer_id')));
+      if (!(whole(amount) && amount > 0 && typeof name === 'string' && name)) continue;
+      const st = isDict(verified) ? get(verified, `${str(get(n, 'issuer_pubkey'))}>${c.pubkey}`) : null;
+      out.push({issuer: name, amount_PC: amount,
+        checked_by_your_client: isDict(st) && whole(get(st, 'total')) && st.total >= amount,
+        issuer_consents: get(n, 'issuer_consents'),
+        how: `valun_review_delivery decision='accept' pay_with=${quoted(name)}: pays a delivery by moving that `
+          + 'much of their debt to you onto the payee'});
+    }
+    return out;
+  }
+
+  /**
+   * The exact next tool calls of the five-step sandbox tour (design 9.2), from the inbox and the position: answer what
+   * waits for you first (an offer, a delivery to make, a delivery to review), then the next deal of the tour from what
+   * you hold and owe. Wait (no calls) while the sandbox agents or a set-off are working.
+   */
+  async #sandboxNextSteps(c, participant, pos, box, notes) {
+    const amount = (rows, key, who) => (Array.isArray(rows) ? rows : [])
+      .filter(r => isDict(r) && get(r, key) === who && whole(get(r, 'amount'))).reduce((t, r) => t + r.amount, 0);
+    const hx = amount(get(pos, 'claims'), 'from', SANDBOX_EXACT), hm = amount(get(pos, 'claims'), 'from', SANDBOX_MALLORY);
+    const ox = amount(get(pos, 'debts'), 'to', SANDBOX_EXACT);
+    const spendable = new Map(notes.map(n => [n.issuer, n.amount_PC]));
+    const listed = Object.fromEntries(['respond', 'deliver', 'review_delivery', 'waiting_on_others', 'awaiting_your_owner', 'recent_closed']
+      .map(k => [k, (Array.isArray(get(box, k)) ? box[k] : [])
+        .filter(x => isDict(x) && (SANDBOX_AGENTS.includes(get(x, 'counterparty')) || k === 'awaiting_your_owner'))]));
+    const held = {[SANDBOX_EXACT]: {you_hold_PC: hx, you_owe_PC: ox}, [SANDBOX_MALLORY]: {you_hold_PC: hm, you_owe_PC: 0}};
+    const notary = sandbox.SERVICES.notary.price;
+    const stepOf = (cp, role) => (cp === SANDBOX_EXACT ? (role === 'payee' ? 1 : (hm >= notary ? 5 : 3)) : (role === 'payer' ? 2 : 4));
+    const plan = (step, calls, then) => {
+      const done = whole(step) && Object.hasOwn(TOUR_AFTER, step) ? TOUR_AFTER[step] : null;
+      return {tour_step: step, of: 5, goal: whole(step) && Object.hasOwn(TOUR_GOALS, step) ? TOUR_GOALS[step] : 'The tour is complete.',
+        next_calls: calls, then, with_the_sandbox_agents: held,
+        ...(done ? {when_done: {you_hold_PC: done[0], you_owe_PC: done[1]}} : {})};
+    };
+    const call = (tool, args, why) => ({tool, arguments: args, why});
+    const offer = (step, cp, role, service) => {
+      const price = sandbox.SERVICES[service].price;
+      const args = {counterparty: cp, role, title: `${service} job`,
+        description: `${service} for this text:\n\`\`\`\n${TOUR_TEXTS[step]}\n\`\`\``,
+        deliverable: `The exact ${service} result as JSON.`, price, deliver_within_hours: 24, offer_valid_hours: 1};
+      const why = role === 'payer' ? `buy ${service} from ${cp} for ${price} PC` : `offer to sell ${service} to ${cp} for ${price} PC`;
+      return plan(step, [call('valun_propose', args, why)], `${cp} answers within a few seconds; call valun_status again for the next step.`);
+    };
+    const wait = 'The sandbox agents act within a few seconds: call valun_status again.';
+    if (listed.awaiting_your_owner.length) {
+      const x = listed.awaiting_your_owner[0];
+      return plan(null, [], `Your owner must first approve deal ${shown(get(x, 'deal_id'))} in the owner console; then call `
+        + 'valun_status again.');
+    }
+    for (const x of listed.review_delivery) {
+      const did = get(x, 'deal_id'), cp = get(x, 'counterparty');
+      const step = stepOf(cp, 'payer');
+      let d;
+      try {
+        d = await c.deal(did);
+      } catch (e) {                                   // one deal that cannot be read now never fails the whole status
+        if (!isValunError(e)) throw e;
+        return plan(step, [], `Deal ${shown(did)} could not be read just now (${shown(e.code)}); call valun_status again in a few seconds.`);
+      }
+      const terms = isDict(d) ? or(get(or(get(d, 'current'), {}), 'terms'), {}) : {};
+      const dl = isDict(d) ? or(get(d, 'delivery'), {}) : {};
+      const price = get(or(get(terms, 'price'), {}), 'amount');
+      let exact;
+      try {
+        exact = checkDelivery(terms, get(dl, 'content'));
+      } catch {                                       // an unreadable result block is a wrong one
+        exact = {checked: true, exact_result_matches: false, differs_in: ['the result block'], service: sandbox.whichService(terms)};
+      }
+      if ((isDict(d) && get(d, 'status') === 'payment_due') || (truthy(exact) && truthy(get(exact, 'exact_result_matches')))) {
+        const other = cp === SANDBOX_EXACT ? SANDBOX_MALLORY : SANDBOX_EXACT;
+        const pay = whole(price) && (spendable.get(other) ?? 0) >= price ? other : 'own_note';
+        const args = {deal_id: did, decision: 'accept', expected_deliverable_sha256: get(dl, 'sha256'), pay_with: pay};
+        const why = 'the delivery matches the exact result of the agreed text: accept it and pay '
+          + (pay === 'own_note' ? 'with your own credit note' : `with the note ${pay} issued to you`);
+        return plan(step, [call('valun_review_delivery', args, why)],
+          'Payment by transfer applies at once with the sandbox agents; call valun_status again.');
+      }
+      const fields = iterate(or(get(or(exact, {}), 'differs_in'), ['the result'])).map(k => str(k)).join(', ');
+      const reason = `The delivered result does not match the exact ${str(or(get(or(exact, {}), 'service'), 'result'))} of the agreed `
+        + `text (differs in: ${fields}).`;
+      return plan(step, [call('valun_review_delivery', {deal_id: did, decision: 'dispute', reason},
+        'the delivery is wrong: dispute it (nothing is paid), then buy again')],
+      'After the dispute, call valun_status again: the next call buys again.');
+    }
+    for (const x of listed.deliver) {
+      return plan(stepOf(get(x, 'counterparty'), 'payee'),
+        [call('valun_deliver', {deal_id: get(x, 'deal_id'), exact_result: true}, 'deliver the exact result your Valun client computes from the agreed text')],
+        `${str(get(x, 'counterparty'))} checks it exactly and pays within a few seconds; call valun_status again.`);
+    }
+    for (const x of listed.respond) {
+      const role = get(x, 'your_role'), price = isDict(get(x, 'price')) ? get(x.price, 'amount') : null;
+      const ok = role === 'payee' || (whole(price) && price <= Math.max(...Object.values(sandbox.SERVICES).map(s => s.price)));
+      const args = ok ? {deal_id: get(x, 'deal_id'), action: 'accept'}
+        : {deal_id: get(x, 'deal_id'), action: 'decline', reason: 'above the published price'};
+      return plan(stepOf(get(x, 'counterparty'), role),
+        [call('valun_respond', args, ok ? 'accept the offer (your Valun client checks its signature and terms)'
+          : 'decline: the price is above the published one')],
+        'Then deliver (or wait for the delivery); call valun_status again.');
+    }
+    if (listed.waiting_on_others.length) {
+      const x = listed.waiting_on_others[0];
+      return plan(stepOf(get(x, 'counterparty'), get(x, 'your_role')), [], wait);
+    }
+    if ((hx > 0 || hm > 0) && ox > 0) {
+      return plan(hx > 0 ? 3 : 4, [], 'A set-off of the cycle is due: your Valun client signs it by itself at its '
+        + 'next consent run (within about a minute). Call valun_status again.');
+    }
+    if (hm >= notary) return offer(5, SANDBOX_EXACT, 'payer', 'notary');
+    if (hx >= notary) return offer(2, SANDBOX_MALLORY, 'payer', 'notary');
+    if (hx > 0) return offer(3, SANDBOX_EXACT, 'payer', 'notary');
+    if (ox > 0) return offer(4, SANDBOX_MALLORY, 'payee', 'text-stats');
+    const deals = isDict(get(pos, 'deals')) ? pos.deals : {};
+    if (hm === 0 && whole(get(deals, 'paid_by_transfer')) && deals.paid_by_transfer >= 2) {
+      return plan('done', [], 'The tour is complete: you earned 6 PC and spent 6 PC (4 by transfer, 2 with your own note), '
+        + 'and set-offs cancelled 2 PC of your claims and 2 PC of your debts without changing your '
+        + 'net position. You can keep trading with the sandbox agents.');
+    }
+    const anyExact = Object.values(listed).some(xs => xs.some(x => get(x, 'counterparty') === SANDBOX_EXACT));
+    if (!anyExact && recentlyActive(null, 10 / 60, get(participant, 'joined_at'), this.#now())) {
+      return plan(1, [], 'The welcome job from sandbox-exact usually arrives within a minute of joining; call '
+        + 'valun_status again.');
+    }
+    return offer(1, SANDBOX_EXACT, 'payee', 'text-stats');
   }
 
   async setLimits(a) {
@@ -770,6 +1490,16 @@ export class ValunAgent {
       out.whose_turn = get(d, 'your_role') === 'payee' ? 'yours: deliver the work' : 'theirs: they deliver';
     } else if (st === 'delivered' || st === 'note_failed') {
       out.whose_turn = get(d, 'your_role') === 'payer' ? 'yours: accept the delivery or dispute it' : 'theirs: they review your delivery';
+    } else if (st === 'paying_by_transfer') {
+      out.whose_turn = get(d, 'your_role') === 'payer'
+        ? 'theirs: the issuer and the payee sign the debt transfer that pays this deal (your Valun client signed your part)'
+        : 'theirs: the debt transfer that pays you collects its signatures (your Valun client signs yours by itself if your owner allows it)';
+    } else if (st === 'payment_due') {
+      out.whose_turn = get(d, 'your_role') === 'payer'
+        ? "yours: you accepted the delivery but it is not paid yet; pay it with valun_review_delivery decision='accept' (see how_you_can_pay)"
+        : 'theirs: the payer accepted your delivery and must still pay it';
+    } else if (st === 'paid_by_transfer') {
+      out.whose_turn = 'nobody: the deal is paid by debt transfer';
     } else {
       out.whose_turn = `nobody: the deal is ${str(st)}`;
     }
@@ -812,6 +1542,15 @@ export class ValunAgent {
         issuer_pubkey: get(n, 'issuer_pubkey'), recipient_pubkey: get(n, 'recipient_pubkey')};
       if (truthy(get(n, 'signature_withheld'))) out.credit_note.signature = 'withheld until the Basis tracker records the note';
     }
+    if ((get(d, 'payment') ?? null) !== null) out.payment = d.payment;   // circulating credit: the payment by transfer, as shown
+    if (get(d, 'your_role') === 'payer' && PAYABLE.includes(st) && await this.#offersCirculation(c, d)) {
+      try {
+        out.how_you_can_pay = await ValunAgent.#howYouCanPay(c, item(a, 'deal_id'));
+      } catch (e) {
+        if (!isValunError(e)) throw e;
+        out.how_you_can_pay = {problem: e.code, message: e.message};
+      }
+    }
     out.history = get(d, 'history', []).slice(-12);
     const them = get(or(get(d, 'counterparty'), {}), 'handle');
     const prices = iterate(or(get(d, 'versions'), [])).map(v => {
@@ -828,6 +1567,46 @@ export class ValunAgent {
       }
     }
     return out;
+  }
+
+  /**
+   * Does the server offer circulation/1, for valun_deal? The features this agent already knows when it knows them; else
+   * one GET /info, only for a deal view that carries the `payment` key (with circulation off, valun_deal makes no request
+   * more than 0.3; decision D-2 h). false when /info cannot be read: the view is then as without circulation.
+   */
+  async #offersCirculation(c, d = null) {
+    if (this.features !== null) return this.features.includes(CIRCULATION);
+    if (!(isDict(d) && Object.hasOwn(d, 'payment'))) return false;
+    try {
+      return this.#remember(await c.info()).includes(CIRCULATION);
+    } catch (e) {
+      if (isValunError(e)) return false;
+      throw e;
+    }
+  }
+
+  /**
+   * The payer's ways to pay a delivered (or note_failed, payment_due) deal, from GET payment-options: the own note and
+   * each note held, with the exact pay_with value. The server's view, for choosing: what is finally signed is checked
+   * again by the client (and asked of the owner with its own text).
+   */
+  static async #howYouCanPay(c, dealId) {
+    let opts = await c.paymentOptions(dealId);
+    opts = isDict(opts) ? opts : {};
+    const own = isDict(get(opts, 'own_note')) ? opts.own_note : {};
+    const options = [{pay_with: 'own_note', available: get(own, 'available') === true, why_not: get(own, 'why_not')}];
+    for (const h of Array.isArray(get(opts, 'held_notes')) ? opts.held_notes : []) {
+      if (!isDict(h) || !isDict(get(h, 'issuer'))) continue;
+      const iss = h.issuer;
+      options.push({pay_with: or(get(iss, 'handle'), get(iss, 'id')), issuer_id: get(iss, 'id'), operator_run: get(iss, 'operator_run'),
+        spendable_PC: get(h, 'spendable'), enough: get(h, 'enough'), payee_accepts: get(h, 'payee_accepts'),
+        issuer_consents: get(h, 'issuer_consents'), payee_consents: get(h, 'payee_consents'),
+        available: get(h, 'why_not') === null && get(h, 'enough') === true, why_not: get(h, 'why_not')});
+    }
+    return {options, pending_transfer: get(opts, 'pending_transfer'), fallback_after: get(opts, 'fallback_after'),
+      how: "valun_review_delivery decision='accept' with pay_with set to an available option (own_note issues your "
+        + 'own credit note; a handle passes on a note you hold). Accepting is final: if a transfer does not '
+        + 'complete, the deal stays accepted and you pay later.'};
   }
 
   async propose(a) {
@@ -892,6 +1671,18 @@ export class ValunAgent {
 
   async deliver(a) {
     const c = this.client();
+    const exact = get(a, 'exact_result');
+    if (exact !== null && typeof exact !== 'boolean') throw new ValunError('bad_arguments', 'exact_result is true or false');
+    if (exact) {
+      if (get(a, 'content') !== null) {
+        throw new ValunError('bad_arguments', 'with exact_result your Valun client computes the content: omit content');
+      }
+      return ValunAgent.#deliverExact(c, a);
+    }
+    if (typeof get(a, 'content') !== 'string' || !a.content) {
+      throw new ValunError('bad_arguments', 'give content (the complete deliverable), or exact_result=true for a text-stats '
+        + 'or notary job');
+    }
     const d = await c.deal(item(a, 'deal_id'));
     const m = await measure(item(a, 'content'), termsText(d), this.#measureOptions(this.checkLinkHosts));
     const problems = m.checks_against_agreed_terms.filter(x => !x.met).map(x => `${x.requirement}: measured ${x.measured}`);
@@ -906,6 +1697,28 @@ export class ValunAgent {
       what_happened: 'Delivered and signed. The payer will accept it (issuing you a credit note) or dispute it.'};
   }
 
+  /**
+   * valun_deliver exact_result: the exact text-stats or notary result of the agreed text (the agreement's terms, checked
+   * by hash and both signatures), rendered as sandbox.render() does and delivered. not_exact_service for any other job,
+   * or when the agreed description carries no text to process.
+   */
+  static async #deliverExact(c, a) {
+    const d = await c.deal(item(a, 'deal_id'));
+    const terms = c.verifiedAgreement(d);
+    const service = sandbox.whichService(terms);
+    const text = service ? sandbox.extractText(get(or(get(terms, 'service'), {}), 'description')) : null;
+    if (service === null || text === null) {
+      throw new ValunError('not_exact_service', 'exact_result is for text-stats and notary jobs whose agreed description '
+        + 'carries the text; nothing was sent');
+    }
+    const result = sandbox.COMPUTE[service](text);
+    const r = await c.deliver(item(a, 'deal_id'), sandbox.render(service, result, text), {title: or(get(a, 'title'), `${service} result`)});
+    return {deal_id: item(r, 'id'), status: item(r, 'status'), sha256: item(item(r, 'delivery'), 'sha256'),
+      exact_result: {service, result},
+      what_happened: `Delivered and signed: the exact ${service} result your Valun client computed from the agreed `
+        + 'text. The payer can recompute it, then accepts it (paying you) or disputes it.'};
+  }
+
   async review(a) {
     if (!['accept', 'dispute'].includes(get(a, 'decision'))) {
       throw new ValunError('bad_decision', "decision must be exactly 'accept' or 'dispute'; nothing was signed");
@@ -916,6 +1729,8 @@ export class ValunAgent {
       const r = await c.dispute(item(a, 'deal_id'), item(a, 'reason'));
       return {deal_id: item(r, 'id'), status: item(r, 'status'), what_happened: 'Disputed. No credit note was issued; the dispute is recorded.'};
     }
+    const issuer = ValunAgent.#payWith(a);
+    if (issuer !== null) return this.#reviewPayWith(c, a, issuer);
     const r = await c.complete(item(a, 'deal_id'), {expectedDeliverableSha256: get(a, 'expected_deliverable_sha256'),
       expectedTermsHash: get(a, 'expected_terms_hash')});
     const n = or(get(r, 'credit_note'), {});
@@ -925,12 +1740,46 @@ export class ValunAgent {
       msg = 'You accepted the delivery and signed the credit note; your owner must approve before it is issued to the tracker.';
     } else if (status === 'note_issued') {
       msg = `Credit note issued: the Basis tracker now records that you owe ${str(item(item(r, 'counterparty'), 'handle'))} `
-        + `${str(get(or(get(n, 'tracker_note'), {}), 'amount_collected'))} PC in total (this deal added ${str(get(n, 'amount'))}). ` + SETTLEMENT_NOTE;
+        + `${str(get(or(get(n, 'tracker_note'), {}), 'amount_collected'))} PC in total (this deal added ${str(get(n, 'amount'))}). `
+        + labels(this.#circulating(c)).settlement;
     } else {
       msg = status;
     }
     return {deal_id: item(r, 'id'), status, what_happened: msg,
       credit_note: {state: get(n, 'state'), amount_PC: get(n, 'amount'), tracker_status: get(n, 'tracker_status'),
         confirmation: get(or(get(n, 'tracker_note'), {}), 'confirmation'), settled: false}};
+  }
+
+  /**
+   * valun_review_delivery accept with pay_with: Client.payByTransfer under the pins prepare() took (the delivery, the
+   * quote and my claim on the issuer).
+   */
+  async #reviewPayWith(c, a, issuer) {
+    const claim = get(a, 'expected_claim_total');
+    if (claim !== null && !(whole(claim) && claim >= 0)) {
+      throw new ValunError('bad_arguments', 'expected_claim_total is the whole number of PC of your claim that your '
+        + 'owner saw; nothing was signed');
+    }
+    const r = await c.payByTransfer(item(a, 'deal_id'), issuer, {expectedDeliverableSha256: get(a, 'expected_deliverable_sha256'),
+      expectedQuoteDigest: get(a, 'expected_quote_digest'), expectedClaimTotal: claim});
+    this.#rememberClient(c);
+    const st = isDict(r) ? get(r, 'status') : null;
+    const cp = isDict(r) && isDict(get(r, 'counterparty')) ? get(r.counterparty, 'handle') : null;
+    const pay = isDict(r) && isDict(get(r, 'payment')) ? r.payment : {};
+    const iss = isDict(get(pay, 'issuer')) ? get(pay.issuer, 'handle') : null;
+    const price = isDict(r) ? get(or(get(or(get(or(get(r, 'current'), {}), 'terms'), {}), 'price'), {}), 'amount') : null;
+    const who = or(cp, 'the payee'), by = or(iss, issuer), amount = whole(price) ? price : 'the price in';
+    const msgs = {
+      paid_by_transfer: `Paid by debt transfer: ${str(by)} now owes ${str(who)} ${amount} PC more and you ${amount} PC `
+        + 'less; you issued no credit note for this deal. ' + CIRCULATION_SETTLEMENT,
+      paying_by_transfer: 'You accepted the delivery and signed the debt transfer; it applies once the issuer and '
+        + 'the payee sign. Accepting is final: if it does not complete, the deal stays accepted and '
+        + 'you pay later.',
+      completion_awaiting_owner: 'You accepted the delivery and signed the debt transfer; your owner must approve it '
+        + 'in the owner console before it is submitted.',
+      payment_due: 'The transfer did not apply: the delivery stays accepted and the deal is payment_due. Pay it '
+        + 'again (valun_deal how_you_can_pay).'};
+    return {deal_id: isDict(r) ? get(r, 'id') : item(a, 'deal_id'), status: st,
+      what_happened: typeof st === 'string' && Object.hasOwn(msgs, st) ? msgs[st] : st, payment: truthy(pay) ? pay : null};
   }
 }

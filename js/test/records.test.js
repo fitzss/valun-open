@@ -96,6 +96,7 @@ class World {
   }
 
   #apply(dealId, note) {
+    note = {total: note.total, timestamp: note.timestamp, signature: note.signature};   // the EdgeState
     this.tracker[this.pair] = {...note};
     Object.assign(this.deals[dealId], {status: 'note_issued', credit_note: {state: 'recorded', note: {...note}, tracker_note: {
       amount_collected: note.total, amount_redeemed: 0, timestamp: note.timestamp, signature: note.signature, confirmation: 'local_only'}}});
@@ -120,22 +121,35 @@ class World {
     const did = parts[4];
     if (parts[3] === 'deals' && Object.hasOwn(this.deals, did)) {
       if (method === 'GET' && parts.length === 5) return clone(this.deals[did]);
-      if (method === 'GET' && parts[5] === 'credit-note-template') return this.template(did, p.includes('?prior=1'));
+      if (method === 'GET' && parts[5] === 'credit-note-template') {
+        const query = (p.split('?')[1] || '').split('&');
+        return this.template(did, query.includes('prior=1'), query.includes('bound=1'));
+      }
       if (method === 'POST' && parts[5] === 'complete') return this.complete(did, body);
     }
     throw new ValunError('not_found', `no route ${method} ${p}`, 404);
   }
 
-  template(did, prior) {
+  template(did, prior, bound = false) {
     const d = this.deals[did], cur = this.tracker[this.pair];
     const price = d.current.terms.price.amount, last = cur ? cur.timestamp : 0;
-    let ts = this.templateTs ?? Math.max(this.now - 1500, last + 1);
-    if (this.features?.length && this.templateTs === null && ts % 1000 >= 995) ts += 1000 - ts % 1000;   // the v16 server's clamp
+    const mod = (a, n) => ((a % n) + n) % n;
+    let ts;
+    if (this.templateTs !== null) {
+      ts = this.templateTs;
+    } else if (bound) {                         // v16 ?bound=1: the largest ts ending in 997 ms, <= now - 1500, > last
+      ts = (this.now - 1500) - mod(this.now - 1500 - 997, 1000);
+      if (ts <= last) ts = last + 1 + mod(997 - (last + 1), 1000);   // the next one (the server waits up to 3 s for it)
+    } else {
+      ts = Math.max(this.now - 1500, last + 1);
+      if (this.features?.length && ts % 1000 >= 995) ts += 1000 - ts % 1000;   // what the v16 server does for ordinary notes
+    }
     const priorTotal = cur ? cur.total : 0;
     const tpl = {deal_id: did, terms_hash: d.agreement.terms_hash, deliverable_sha256: d.delivery.sha256, issuer_pubkey: ALICE.pubkey,
       recipient_pubkey: this.payeeKey.pubkey, keys_as_agreed: true, prior_total: priorTotal, price, total: priorTotal + price, timestamp: ts,
       tracker_nft_id: this.nft, denomination: DENOM, message_hex: '00'};
-    if (prior) tpl.prior_note = cur ? {...cur} : null;
+    if (prior || bound) tpl.prior_note = cur ? {...cur} : null;
+    if (bound) tpl.prior_message_hex = '00';
     return this.lyingTemplate ? this.lyingTemplate(tpl) : tpl;
   }
 
@@ -147,6 +161,14 @@ class World {
     const note = body.credit_note;
     if (!verifyNote(ALICE.pubkey, this.payeeKey.pubkey, note.total, note.timestamp, note.signature, this.nft, DENOM)) {
       throw new ValunError('bad_signature', 'the Basis note signature does not verify', 403);
+    }
+    if (this.features?.length && note.timestamp % 1000 === 997) {     // a bound note (v16, PROTOCOL.md 18.5)
+      const cur = this.tracker[this.pair];
+      const prior = cur ? cur.total : 0;
+      if (note.prior_total !== prior) throw new ValunError('stale_note', "a bound credit note's prior_total must be the pair's current total", 409);
+      if (!verifyNote(ALICE.pubkey, this.payeeKey.pubkey, prior, note.timestamp, note.prior_signature, this.nft, DENOM)) {
+        throw new ValunError('bad_signature', 'the prior acknowledgment does not verify', 403);
+      }
     }
     if (this.completeAnswer) {
       this.deals[did].status = this.completeAnswer[1];
@@ -378,7 +400,7 @@ test('complete(): a pinned profile asks for the prior note and accepts a lower p
   w.setEdge(30, NOW - 60_000);                                  // a set-off since lowered the edge to 30, signed by me as issuer
   assert.equal((await complete(w, s, 'vd_1')).status, 'note_issued');
   assert.ok(w.log.includes('GET /pilot/v1/info'));
-  assert.ok(w.log.includes('GET /pilot/v1/deals/vd_1/credit-note-template?prior=1'));
+  assert.ok(w.log.includes('GET /pilot/v1/deals/vd_1/credit-note-template?prior=1&bound=1'));   // a bound template (0.4)
   assert.equal(w.tracker[w.pair].total, 50);                    // 30 + 20
   assert.deepEqual(s.state.issued, {[w.pair]: 50});
   assert.equal(rec(s).confirmed.total, 50);
@@ -428,11 +450,18 @@ test('complete(): a pending note shown as the prior applied: it is confirmed, an
 
 // ---------- the reserved residues ----------
 test('complete(): with features advertised, a template timestamp ending in 995-999 is refused; without, the 0.3 rules apply', async () => {
-  for (const residue of [995, 997, 999]) {
-    const w = new World({features: ['bound_notes/1']});
+  for (const residue of [995, 997, 999]) {      // an ordinary template (features advertised, but not bound_notes/1)
+    const w = new World({features: ['example/1']});
     w.addDeal('vd_1');
     w.templateTs = Math.floor(NOW / 1000) * 1000 - 2000 + residue;
     await assert.rejects(complete(w, pinnedStore(), 'vd_1'), e => isCode('bad_template')(e) && new RegExp(`ends in ${residue}`).test(e.message), String(residue));
+    assert.equal(posted(w, 'vd_1'), 0);
+  }
+  for (const residue of [0, 994, 995, 996, 998, 999]) {   // with bound_notes/1 only a bound template is signed (R3, R12)
+    const w = new World({features: ['bound_notes/1']});
+    w.addDeal('vd_1');
+    w.templateTs = Math.floor(NOW / 1000) * 1000 - 2000 + residue;
+    await assert.rejects(complete(w, pinnedStore(), 'vd_1'), isCode('bound_note_required'), String(residue));
     assert.equal(posted(w, 'vd_1'), 0);
   }
   for (const features of [['circulation/1'], 'bound_notes/1']) {   // any feature; a malformed list counts as advertised
@@ -445,7 +474,7 @@ test('complete(): with features advertised, a template timestamp ending in 995-9
   w.addDeal('vd_1');
   w.templateTs = Math.floor(NOW / 1000) * 1000 - 1001;
   assert.equal((await complete(w, pinnedStore(), 'vd_1')).status, 'note_issued');
-  const clamped = new World({features: ['bound_notes/1']});     // a v16 server moves an ordinary timestamp out of 995-999 itself
+  const clamped = new World({features: ['example/1']});         // a v16 server moves an ordinary timestamp out of 995-999 itself
   clamped.addDeal('vd_1');
   clamped.now = Math.floor(NOW / 1000) * 1000 + 1497;           // now - 1500 would end in 997
   assert.equal((await complete(clamped, pinnedStore(), 'vd_1')).status, 'note_issued');

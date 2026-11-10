@@ -34,8 +34,10 @@ test(`agent tools: ${FIX.scenarios.length} scenarios give the Python reference's
       });
       const state = json(w.store.state);
       assert.deepEqual(unsigned(state), sc.state_after, 'state afterwards (signatures aside)');
-      const known = new Set([...signed.flatMap(s => s.signatures), ...signaturesIn(sc.state ?? {})]);
-      for (const sig of signaturesIn(state)) assert.ok(known.has(sig), 'a signature in the records is one the client sent (or had)');
+      // a signature in the records is one the client sent, had, or read from the server (an edge state GET /edges showed)
+      const known = new Set([...signed.flatMap(s => s.signatures), ...signaturesIn(sc.state ?? {}), ...signaturesIn(sc.routes ?? {}),
+        ...signaturesIn(FIX.base_routes)]);
+      for (const sig of signaturesIn(state)) assert.ok(known.has(sig), 'a signature in the records is one the client sent, had or read');
       for (const s of SECRETS) assert.ok(!JSON.stringify(result).includes(s) && !JSON.stringify(state).includes(s), 'no secret in the result or state');
 
       let commits;
@@ -93,5 +95,74 @@ test('the recorded scenarios cover every tool, every commitment kind and the mai
   // 0.3.1 asked with a "WARNING: the offer changed" text when the agent's pin was stale; since 0.4 prepare() refuses.
   assert.ok(FIX.scenarios.some(s => s.args?.expected_terms_hash && s.prepare.cause === 'stale_terms'), 'a stale pin is refused, not asked about');
   assert.ok(FIX.scenarios.some(s => s.signed.some(r => r.signed.length === 2)), 'a request with two signatures (statement and note)');
-  assert.ok(FIX.scenarios.some(s => s.requests.some(r => r.key.endsWith('?prior=1'))), 'a bound-notes template request');
+  assert.ok(FIX.scenarios.some(s => s.requests.some(r => r.key.endsWith('?prior=1&bound=1'))), 'a bound-notes template request');
+});
+
+test('the recorded scenarios cover circulating credit: pay_with, bound notes, exact_result, consents and the D-1/D-2/D-3 decisions', () => {
+  const S = FIX.scenarios;
+  const errors = new Set(S.map(s => s.result.error).filter(Boolean));
+  for (const code of ['feature_unavailable', 'unknown_issuer', 'stale_claim', 'stale_quote', 'not_exact_service', 'transfer_window_open',
+    'bound_note_required', 'issuer_refused', 'bad_arguments', 'already_paid', 'bad_prior_signature', 'ledger_mismatch']) {
+    assert.ok(errors.has(code), code);
+  }
+  const statuses = new Set(S.map(s => s.result.status).filter(Boolean));
+  for (const st of ['paid_by_transfer', 'paying_by_transfer', 'payment_due', 'note_issued', 'delivered']) assert.ok(statuses.has(st), st);
+  // pay_with: the owner is asked with the PAY text, and the arguments pin the issuer, the quote and my claim on it
+  const pay = S.filter(s => s.prepare.value?.text?.startsWith('Valun - PAY '));
+  assert.ok(pay.length > 0, 'a PAY approval text');
+  assert.ok(pay.every(s => s.prepare.value.args.expected_quote_digest && Number.isInteger(s.prepare.value.args.expected_claim_total)));
+  assert.ok(S.some(s => s.signed.some(r => r.key.endsWith('/pay-by-transfer') && r.signed.length === 5)), 'a payment by transfer: 5 signatures');
+  assert.ok(S.some(s => s.signed.some(r => r.key.endsWith('/complete') && r.signed.length === 3)), 'a bound note: statement, note, prior');
+  // D-1: one GET /edges read-back before refusing transfer_window_open; D-2 h: no consent request without circulation
+  assert.ok(S.some(s => s.tool === 'valun_review_delivery' && s.result.status === 'note_issued'
+    && s.requests.some(r => r.key.startsWith('GET /pilot/v1/edges'))), 'a payment after one GET /edges read-back');
+  assert.ok(S.some(s => s.state.consent_policy && !s.requests.some(r => r.key === 'GET /pilot/v1/consents')
+    && s.requests.some(r => r.key === 'GET /pilot/v1/info')), 'a consent run that stops at /info');
+  // D-3 a: consents signed before a read-only tool are reported; D-3 b: the empty roles header once, then the record of it
+  assert.ok(S.some(s => s.result.consents_signed_now?.length > 0), 'consents_signed_now');
+  assert.ok(S.some(s => s.requests.some(r => r.features === 'consents/1;roles=') && s.state_after.consent_roles_declared === ''));
+  assert.ok(S.some(s => s.requests.some(r => r.features === 'consents/1;roles=setoff,issuer,creditor')));
+  assert.ok(S.some(s => s.state_after.consent_log?.some(e => e.decision === 'refused')), 'a refused consent');
+  assert.ok(S.some(s => s.result.exact_result?.service === 'text-stats'), 'exact_result delivered');
+  assert.ok(S.some(s => s.result.sandbox_next_steps?.next_calls?.length > 0), 'sandbox tour next calls');
+  assert.ok(S.some(s => s.result.notes_you_can_spend?.some(n => n.checked_by_your_client === true)), 'a note checked against GET /edges');
+  assert.ok(S.some(s => s.result.how_you_can_pay?.options?.length > 1), 'how_you_can_pay');
+});
+
+// ---- Client methods of circulating credit the tools do not reach (edge sync, payment attempts, consents, retries) ----
+const CALL = {
+  sync_edges: (c, k) => c.syncEdges({nowMs: k.now_ms ?? null}),
+  payment_attempts: (c, k) => c.paymentAttempts({edges: k.edges ?? null, nowMs: k.now_ms ?? null, doubtful: k.doubtful ?? null}),
+  resolution_plan: (c, k) => c.resolutionPlan(k.deal_id, k.attempt, {edges: k.edges ?? null, nowMs: k.now_ms ?? null, doubtful: k.doubtful ?? null}),
+  resolve_attempt: (c, k) => c.resolveAttempt(k.deal_id, k.attempt, k.outcome, k.owner_token, {note: k.note ?? null,
+    localOnly: k.local_only ?? false, edges: k.edges ?? null, nowMs: k.now_ms ?? null, doubtful: k.doubtful ?? null,
+    ...('expected_attempt' in k ? {expectedAttempt: k.expected_attempt} : {})}),
+  cancel_transfer: (c, k) => c.cancelTransfer(k.deal_id),
+  process_consents: (c, k) => c.processConsents({policy: k.policy ?? null, nowMs: k.now_ms ?? null, valueSafeOnly: k.value_safe_only ?? false}),
+  refuse_consent: (c, k) => c.refuseConsent(k.consent_id, k.reason ?? null),
+  pay_by_transfer: (c, k) => c.payByTransfer(k.deal_id, k.issuer, {expectedDeliverableSha256: k.expected_deliverable_sha256,
+    expectedQuoteDigest: k.expected_quote_digest, expectedClaimTotal: k.expected_claim_total}),
+};
+
+test(`client methods: ${FIX.client_scenarios.length} scenarios give the Python reference's results, requests, signatures and records`, async t => {
+  assert.ok(FIX.client_scenarios.length >= 30);
+  for (const sc of FIX.client_scenarios) {
+    await t.test(sc.name, async () => {
+      assert.ok(Object.hasOwn(CALL, sc.method), `a mapping for Client.${sc.method}`);
+      const w = world(sc);
+      same(json(await outcome(() => CALL[sc.method](w.client, sc.kwargs))), sc.result, 'result');
+      assert.deepEqual(requests(w.fetch), sc.requests, 'requests (signatures aside) and their X-Valun-Features headers');
+      const signed = signedRequests(w.fetch);
+      assert.deepEqual(signed.map(s => s.key), sc.signed.map(s => s.key), 'the requests that carry signatures');
+      signed.forEach((s, i) => {
+        const want = sc.signed[i].signed;
+        assert.equal(s.signatures.length, want.length, `${s.key}: as many signatures as Python sent`);
+        s.signatures.forEach((sig, j) => assert.ok(basis.verifyHex(sig, hexToBytes(want[j].message_hex), want[j].pubkey),
+          `${s.key}: signature ${j} is over exactly the bytes Python signed`));
+      });
+      assert.deepEqual(unsigned(json(w.store.state)), sc.state_after, 'records afterwards (signatures aside)');
+    });
+  }
+  const methods = new Set(FIX.client_scenarios.map(s => s.method));
+  for (const m of Object.keys(CALL)) assert.ok(methods.has(m), `a scenario for ${m}`);
 });

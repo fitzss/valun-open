@@ -10,7 +10,7 @@ import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import * as api from '../src/index.js';
 import {FileStore} from '../src/file-store.js';
-import {int, repr} from '../src/py.js';
+import {PyError, int, repr, typeName} from '../src/py.js';
 import {FIX, PARITY as P} from './agent-world.js';
 
 const {ValunError, errorPayload, limitsBody, loosens, measure, owes, quoteLine, quoted, recentlyActive, records, sandbox, shown, termsText,
@@ -45,6 +45,13 @@ test('fixtures were generated from the Python sources as they are now (python/sr
       const now = crypto.createHash('sha256').update(fs.readFileSync(dir + file, 'utf8').replace(/\r\n/g, '\n'), 'utf8').digest('hex');
       assert.equal(now, sha, `python/src/valun/${file} changed since the fixtures were generated: run python js/test/fixtures/generate_python_fixtures.py`);
     }
+  }
+  // the decision table novation_cases records comes from python/tests/test_novation.py
+  const tests = fileURLToPath(new URL('../../python/tests/', import.meta.url));
+  assert.ok(Object.keys(P.python_tests_sha256 ?? {}).length > 0, 'the generator records the test files it read');
+  for (const [file, sha] of Object.entries(P.python_tests_sha256)) {
+    const now = crypto.createHash('sha256').update(fs.readFileSync(tests + file, 'utf8').replace(/\r\n/g, '\n'), 'utf8').digest('hex');
+    assert.equal(now, sha, `python/tests/${file} changed since the fixtures were generated: run python js/test/fixtures/generate_python_fixtures.py`);
   }
 });
 
@@ -161,4 +168,95 @@ test('constants: approval texts, labels, tool classes, state keys and lock timin
   }
   assert.deepEqual([...api.SIGNING_TOOLS], C.COMMITS, 'what the MCP server gates is what the core classifies as signing');
   assert.deepEqual([FileStore.LOCK_WAIT_MS, FileStore.LOCK_STALE_MS], [C.FILESTORE.LOCK_WAIT_S * 1000, C.FILESTORE.LOCK_STALE_S * 1000]);
+});
+
+// ---------- circulating credit (0.4) ----------
+test('constants: circulating-credit labels, consent policies, tour texts, client and novation constants are the Python reference\'s', () => {
+  const C = P.constants;
+  for (const name of ['CIRCULATION_SETTLEMENT', 'SETTLEMENT_NOTE_CIRCULATION', 'NOT_SETTLED_CIRCULATION', 'HONEST_LABELS_CIRCULATION',
+    'REAL_VS_SIMULATED_CIRCULATION', 'CIRCULATION', 'CONSENTS_EVERY_MS', 'INVITE_CONSENT_POLICY', 'SANDBOX_CONSENT_POLICY',
+    'CONSENT_POLICY_KEYS', 'PAYABLE', 'CONSENT_SPEED_WORDS', 'UNBOUND_PASS_THROUGH', 'SANDBOX_EXACT', 'SANDBOX_MALLORY', 'SANDBOX_AGENTS',
+    'TOUR_GOALS', 'TOUR_TEXTS', 'TOUR_AFTER', 'CONSENTS_ON_READ_TOOLS', 'SIGNED_NOW_KEYS', 'FEATURES_HEADER', 'CONSENT_ROLES',
+    'VALUE_SAFE_ROLES', 'VALUE_SAFE_HEADER_ROLES', 'CONSENT_LOG_MAX', 'RECORDS_KEEP_MS', 'SIGNATURES_KEEP_MS', 'ATTEMPT_OUTCOMES',
+    'UNRESOLVED_TRANSFER', 'LIVE_TRANSFER', 'LOCAL_CHOICES', 'RESOLVE_NOTE_MAX', 'EDGES_PAGE', 'EDGES_MAX_PAGES']) {
+    assert.ok(Object.hasOwn(C, name), `the generator records ${name}`);
+    assert.ok(Object.hasOwn(api, name), `the package exports ${name}`);
+    assert.deepEqual(JSON.parse(JSON.stringify(api[name])), C[name], name);
+    assert.equal(JSON.stringify(api[name]), JSON.stringify(C[name]), `${name}: same key order`);
+  }
+  for (const [name, value] of Object.entries(C.NOVATION)) {
+    assert.deepEqual(JSON.parse(JSON.stringify(api.novation[name])), value, `novation.${name}`);
+    assert.equal(JSON.stringify(api.novation[name]), JSON.stringify(value), `novation.${name}: same order`);
+  }
+  assert.deepEqual(Object.keys(C.NOVATION).sort(), ['BOUND_MS', 'CONSENT_WINDOW_MS', 'FALLBACK_MARGIN_MS', 'FUTURE_SKEW_MS', 'INITIATE_WINDOW_MS',
+    'MAX_AGE_MS', 'MAX_SAFE_INTEGER', 'PAID_DEALS_KEY', 'QUOTE_FIELDS', 'QUOTE_KIND', 'RECORDS_KEEP_MS', 'RESERVED_MS', 'RESIDUE', 'ROLES', 'ROUTES',
+    'REFUSAL_CODES', 'SETOFF_MS', 'TRANSFER_MS'].sort());
+});
+
+/** bytes.fromhex(): what Python's verifier raises for a signature or key that is not hex (the evaluators then refuse). */
+function pyVerify(pubkeyHex, msg, sigHex) {
+  for (const h of [sigHex, pubkeyHex]) {
+    if (typeof h !== 'string') throw new PyError('TypeError', 'fromhex() argument must be str, not ' + typeName(h));
+    if (!/^(?:\s*[0-9a-fA-F]{2})*\s*$/.test(h)) throw new PyError('ValueError', 'non-hexadecimal number found in fromhex() arg');
+  }
+  try {
+    return api.basis.verifyHex(sigHex.replace(/\s/g, '').toLowerCase(), msg, pubkeyHex.replace(/\s/g, '').toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+const EVALUATORS = {evaluate_consent: api.novation.evaluateConsent, evaluate_payer_template: api.novation.evaluatePayerTemplate,
+  evaluate_bound_template: api.novation.evaluateBoundTemplate};
+
+test('novation.js: every case of the Python decision table (test_novation.py CASES) gives the same whole result', () => {
+  const cases = P.novation_cases;
+  assert.ok(cases.length >= 140, `${cases.length} cases`);
+  const codes = new Set();
+  let compared = 0;
+  for (const c of cases) {
+    const r = EVALUATORS[c.evaluator](structuredClone(c.item), {...structuredClone(c.ctx), verify: pyVerify});
+    codes.add(r.code);
+    if (c.floats) {                               // JavaScript cannot tell 3.0 from 3: only the decision is compared
+      assert.equal(r.ok, c.result.ok, `${c.name}: ok`);
+      continue;
+    }
+    assert.deepEqual(JSON.parse(JSON.stringify(r)), c.result, c.name);
+    assert.equal(JSON.stringify(r), JSON.stringify(c.result), `${c.name}: same keys in the same order`);
+    compared++;
+  }
+  assert.ok(compared >= cases.length - 10, `${compared} compared in full`);
+  for (const code of api.novation.REFUSAL_CODES) assert.ok(codes.has(code), `a case refuses with ${code}`);
+});
+
+test('novation.js: attemptOutcome, unboundNoteProblem, exactPrior and shownId identical to Python', () => {
+  const H = P.novation_helpers;
+  for (const [a, now, st, out] of H.attempt_outcome) {
+    assert.deepEqual(outcome(() => api.novation.attemptOutcome(a, now, st)), out, show([a.route, a.outcome, now, st]));
+  }
+  for (const [e, nov, f, out] of H.unbound_note_problem) assert.equal(api.novation.unboundNoteProblem(e, nov, f), out, show([nov, f]));
+  for (const [v, out] of H.shown_id) assert.equal(api.novation.shownId(v), out, show(v));
+  for (const [a, st, out] of H.exact_prior) assert.deepEqual(outcome(() => api.novation.exactPrior(a, st)), out, show([a.prior, st]));
+});
+
+test('circulation helpers: consentRoles, the capability header, the consent policy in force and its sentences identical to Python', async () => {
+  const H = P.circulation;
+  for (const [policy, out] of H.consent_roles) assert.deepEqual(api.consentRoles(policy), out, show(policy));
+  for (const [adv, policy, declared, declare, out] of H.features_header) {
+    const st = policy === null ? {} : {consent_policy: policy};
+    if (declared !== null) st.consent_roles_declared = declared;
+    const fetch = async () => new Response(JSON.stringify({...FIX.base_routes['GET /pilot/v1/info'].body, features: adv}), {status: 200});
+    const c = new api.Client({store: new api.MemoryStore({state: st}), server: FIX.base, fetch, declareRoles: declare});
+    await c.info();
+    assert.equal(c.featuresHeader(), out, show([adv, policy, declared, declare]));
+  }
+  for (const [local, mandate, out] of H.consent_policy_in_force) {
+    const got = api.consentPolicyInForce(local, mandate);
+    assert.deepEqual(got, out, show([local, mandate]));
+    assert.equal(JSON.stringify(got), JSON.stringify(out), 'key order');
+  }
+  for (const [policy, out] of H.client_signs) assert.deepEqual(api.clientSigns(policy), out, show(policy));
+  for (const [st, out] of H.wants_consents) assert.equal(api.wantsConsents(st), out, show(st));
+  for (const [c, out] of H.labels) assert.equal(JSON.stringify(api.labels(c)), JSON.stringify(out), String(c));
+  for (const [info, out] of H.features_of) assert.deepEqual(api.featuresOf(info), out, show(info));
 });
