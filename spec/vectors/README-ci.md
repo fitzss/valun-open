@@ -98,9 +98,8 @@ again from this repository at `64ba97a`, tracker v3.2 after its review, in `e5fb
 the plugin 0.4.0 at `17e9be4` gives the package's line, `[plugin] 1461 checks: 1260 agree, ...`. Without `--require`,
 the package gives
 the plugin's line. These were obtained locally with Python 3.14.7 and 3.11.18 on Windows against the vectors
-regenerated from `b7ecca0`. The plugin at `2b78a06` (the commit the job below still pins) predates tracker v3.2 (it signs no prior
-acknowledgment PA and has no contract gate) and, with `--require circulation/1`, disagrees on 80 checks; the pin must
-move to the plugin's pushed commit anyway. CI runs the commands on Linux, macOS and Windows with Python 3.10, 3.13 and
+regenerated from `b7ecca0`. An earlier local plugin commit, `2b78a06`, predates tracker v3.2 (it signs no prior acknowledgment PA and has no
+contract gate) and, with `--require circulation/1`, disagrees on 80 checks; the job pins the pushed commit `296b9e5`. CI runs the commands on Linux, macOS and Windows with Python 3.10, 3.13 and
 3.14.
 
 `scripts/check_plugin_core.py PLUGIN_DIR` compares every module in the plugin's `valun_core/` (each `*.py` but
@@ -113,9 +112,8 @@ its bytes are equal, or equal with the import name read as one on both sides (so
 
 The `conformance` job of `.github/workflows/ci.yml`, as it is in the repository (Linux, macOS and Windows; Python 3.10,
 3.13 and 3.14). `ref` pins the plugin commit each client is held to; a branch name would make the job follow the
-plugin's changes. The plugin 0.4.0 pin, `2b78a06`, is a local commit that is not on GitHub yet: before the workflow is
-pushed it must be replaced with the commit actually pushed to `fitzss/hermes-plugin-valun` (the one the catalog update
-pins), or the checkout fails. The plugin 0.3.0 stays checked while the Hermes catalog pins it.
+plugin's changes. The plugin 0.4.0 pin, `296b9e5`, is the commit pushed to `fitzss/hermes-plugin-valun` `main` (the one the catalog
+update pins). The plugin 0.3.0 stays checked while the Hermes catalog pins it.
 
 ```yaml
   conformance:
@@ -129,14 +127,12 @@ pins), or the checkout fails. The plugin 0.3.0 stays checked while the Hermes ca
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
         with:
           persist-credentials: false
-      # Hermes plugin 0.4.0. NEEDS THE PUSHED SHA: 2b78a06 is the last LOCAL code commit of the plugin's v0.4.0 branch
-      # (only changelog commits follow it there) and is not on GitHub yet. Before this workflow is pushed, replace
-      # it with the commit actually pushed to fitzss/hermes-plugin-valun (the one the catalog update pins), or this
-      # checkout fails.
+      # Hermes plugin 0.4.0: the commit pushed to fitzss/hermes-plugin-valun main (the one the catalog update pins).
+      # PLUGIN_SHA in release.yml is the same commit (its verify job compares the two).
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
         with:
           repository: fitzss/hermes-plugin-valun
-          ref: 2b78a0624f6f28ff31f0f32c1b11312ab726f33d     # plugin 0.4.0 (local commit: replace with the pushed SHA)
+          ref: 296b9e5bd082898316dd6f10efcbd579acc3bebb     # plugin 0.4.0
           path: hermes-plugin-valun
           persist-credentials: false
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1

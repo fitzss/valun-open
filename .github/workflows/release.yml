@@ -22,7 +22,7 @@ permissions:
   contents: read
 env:
   # Hermes plugin 0.4.0: the commit the conformance checks run against. Must equal the 0.4.0 pin in ci.yml.
-  PLUGIN_SHA: 2b78a0624f6f28ff31f0f32c1b11312ab726f33d
+  PLUGIN_SHA: 296b9e5bd082898316dd6f10efcbd579acc3bebb
 jobs:
   verify:
     runs-on: ubuntu-latest
