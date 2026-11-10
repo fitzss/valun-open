@@ -237,7 +237,7 @@ node --test js/test/        (from the repository root; or `npm test` in js/)
 ```
 
 The suite runs offline and needs no packages. It checks the code against every file in `spec/vectors/` (generated
-from the real server code, release v16, valun-app `cfe698b`; spec revision v14):
+from the real server code, release v16, valun-app `fa38334`; spec revision v14):
 
 - `basis-signatures.json`: Basis's official vectors TV001-TV011.
 - `basis-notes.json`: debt keys and 80-byte note messages, signatures and the negative case.

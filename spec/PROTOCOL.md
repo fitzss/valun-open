@@ -1747,8 +1747,8 @@ attempt's `fallback_after` (step 8); a 0.4.0 client signs again at once only the
 refuses with `transfer_window_open` until the earlier attempt is dead (15.3 R11). A move of the held edge past T to
 any state other than the attempt's new state is `attempt_outcome_unknown` (18.8).
 
-**The same-issuer retry rule of the 0.4.0 clients** (Python and JavaScript; the Hermes plugin 0.4.0 once it re-vendors
-this core; audit VS-1, AI-1). Inside an earlier attempt's window (until it is dead: T + 3 600 000 + 120 000 ms by the
+**The same-issuer retry rule of the 0.4.0 clients** (Python and JavaScript, and the Hermes plugin 0.4.0, which vendors this
+core; audit VS-1, AI-1). Inside an earlier attempt's window (until it is dead: T + 3 600 000 + 120 000 ms by the
 client's clock, then read back at its prior state) a client makes no automatic same-issuer retry and signs no
 regeneration at a new T: `pay_by_transfer` refuses a template at a new T (also the fresh one a `409 transfer_stale`
 carries), and a payer consent for a regenerated transfer at a new T, with `transfer_window_open`. The only thing it
@@ -2149,8 +2149,8 @@ debts are cancelled by set-off, and no set-off changes its net position.
 
 Sections 18.1-18.15 state the contract; this section records what the release v16 implementation (valun-app
 `cfe698b`, with the audit's server fixes up to the final commit `fa38334` where it names them; the `valun` package
-0.4.0 at valun-open `4310103`, `@fitzdoud/valun` 0.4.0 at `fc58e8d` and the Hermes
-plugin 0.4.0 at `2b78a06`) does where they are silent or less precise. Where it says MUST, it is
+0.4.0 and `@fitzdoud/valun` 0.4.0 at valun-open `40cd04c`, and the Hermes plugin 0.4.0 at
+`11e7be5`, all local) does where they are silent or less precise. Where it says MUST, it is
 part of the contract; the rest describes the server so clients know what to expect.
 
 **Set-offs and payment attempts (18.7, decision D-2 c).**
