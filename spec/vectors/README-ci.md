@@ -3,10 +3,12 @@
 `check_python.py` proves that a Python client agrees with the Valun server on every byte it hashes or signs:
 canonical JSON and terms hashes, statement texts, Basis note messages and signatures, and a replay of a whole pilot run
 (`transcript.json`) through the client's real `Client` methods. Since spec revision v14 it also checks circulating
-credit (`circulation.json`, and transcript steps 148 and later): the 80-byte messages of bound notes, transfers and
-set-offs, transfer quote digests, the pay statement, and the decisions of the client signing firewall (PROTOCOL.md
-15.3). The vectors were generated from server release v16 (valun-app commit `fa38334`, the branch's final commit, whose
-server sources are those of `94797c6`; the earlier vectors came from `cfe698b`). Transcript steps 1-147 run with
+credit (`circulation.json`, and transcript steps 148 and later): the messages of bound notes, transfers and set-offs
+(80-byte note messages, and since tracker v3.2 the 105-byte prior acknowledgments PA), transfer quote digests, the pay
+statement, and the decisions of the client signing firewall (PROTOCOL.md 15.3). The vectors were generated from server
+release v16 at valun-app commit `b7ecca0` (the server change `538075b`: tracker v3.2's prior acknowledgments, its
+contract in `GET /info`, the same-prior exemption; `b7ecca0` pins tracker v3.2 at Basis fork commit `4370418`). The
+vectors before them came from `fa38334` (tracker v3.1) and, before that, `cfe698b`. Transcript steps 1-147 run with
 circulation off and are byte-identical to the
 release v13 transcript (valun-app `6a6a34b`); steps 148-236 run with circulation on. Run the check once per client:
 
@@ -62,38 +64,42 @@ What the release v16 checks add:
   body carries (every `signature` / `*_signature` key at any depth and every slot of a `signatures` map): none missing
   and none extra, so a signature over anything else is caught.
 - `transcript.json`, steps 148+: each `server_verified` entry names the body field that held the signature (`field`, a
-  JSON pointer) and, for a Basis note message, its edge; the client's message builder must rebuild every such message
-  for its edge. A replayed `client_call` with a `feature` starts from `client_state` (the profile's records before the
+  JSON pointer) and, for a Basis note message or (kind `basis_prior_ack`, tracker v3.2) a prior acknowledgment, its
+  edge; the client's message builder must rebuild every such message for its edge (a prior acknowledgment with its
+  `prior_ack_message`, in the `circulation` tier, so a client released before circulating credit is not failed by it). A replayed `client_call` with a `feature` starts from `client_state` (the profile's records before the
   call), sends a body equal to the recorded one signatures aside (every `signature` / `*_signature` key dropped at any
   depth; a `signatures` map keeps its slots), signs exactly the `signature_fields` pointers, each over the message the
   server verified for that field, and holds at least `client_state_after` afterwards (a subset: only the keys given are
   compared).
-- `circulation.json`: timestamp residue classes; the 80-byte messages of a bound note and its prior acknowledgment,
-  all seven transfer slots and both set-off slots; quote digests (`canonical(Q)` and its sha256, and
-  `novation.quote_digest`); the pay statement; the signatures of POST /notes/transfer and /notes/setoff requests, valid
-  and refused ones, each over the message the tracker checks for its field; and the firewall's decisions
-  (`consents[]`, `payer_templates[]`, `bound_templates[]`: the client's own `novation.evaluate_*` must sign exactly
-  the slots given, or refuse with the code given). Every refusal code of PROTOCOL.md 15.3 and decision D-1/D-2 has a
-  case.
+- `circulation.json`: timestamp residue classes; the messages of a bound note and its prior acknowledgment, all seven
+  transfer slots and both set-off slots (an entry with `kind: "prior_ack"` is the 105-byte PA of tracker v3.2, rebuilt
+  with the client's `prior_ack_message` in the `circulation` tier; every other one is the 80-byte note message, in the
+  `core` tier); quote digests (`canonical(Q)` and its sha256, and `novation.quote_digest`); the pay statement; the
+  signatures of POST /notes/transfer and /notes/setoff requests, valid and refused ones, each over the message the
+  tracker checks for its field; and the firewall's decisions (`consents[]`, `payer_templates[]`, `bound_templates[]`:
+  the client's own `novation.evaluate_*` must sign exactly the slots given, or refuse with the code given; each `ctx`
+  carries `novation`, the `GET /info` object with the tracker v3.2 contract). Every refusal code of PROTOCOL.md 15.3
+  and decision D-1/D-2 has a case, `feature_unavailable` (no tracker v3.2 contract) and R11's same-prior exemption
+  included.
 
 Expected last line of each run against the committed vectors (the counts change only when the vectors are
 regenerated):
 
 ```
-[package] 1389 checks: 1191 agree, 0 disagreements in failing tiers, 17 informative differences, 181 not applicable.
-[plugin] 1387 checks: 1104 agree, 0 disagreements in failing tiers, 17 informative differences, 266 not applicable.
+[package] 1456 checks: 1255 agree, 0 disagreements in failing tiers, 17 informative differences, 184 not applicable.
+[plugin] 1454 checks: 1104 agree, 0 disagreements in failing tiers, 17 informative differences, 333 not applicable.
 ```
 
 The first line is `--client package --require circulation/1` (package 0.4.0 from `python/src`). The second is the
 plugin without `--require`: hermes-plugin-valun 0.3.0 at `5d01fbd` (the commit the Hermes catalog pins; CI checks it
-too, here from a `git archive` export), and equally the plugin 0.4.0 at `11e7be5` (local, after its `valun_core/` was
-copied again from this repository). With `--require circulation/1` the plugin 0.4.0 at `11e7be5` gives the package's
-line, `[plugin] 1389 checks: 1191 agree, ...`. Without `--require`, the package gives the plugin's line. These were
-obtained locally with Python 3.14.7 and 3.11.18 on Windows against the vectors regenerated from `fa38334`. The plugin
-at `2b78a06` (the commit the job below still pins) predates the audit's core and disagrees, with `--require
-circulation/1`, on the two audit VS-1 firewall cases `payer/same-prior-retry-at-another-timestamp` and
-`bound/payment-attempt`; the pin must move to the plugin's pushed commit anyway. CI runs the commands on Linux, macOS
-and Windows with Python 3.10, 3.13 and 3.14.
+too, here from a `git archive` export), and equally the plugin 0.4.0 at `89a92ed` (local: its `valun_core/` copied
+again from this repository at `836750a`, tracker v3.2, in `84f8b43`). With `--require circulation/1` the plugin 0.4.0
+at `89a92ed` gives the package's line, `[plugin] 1456 checks: 1255 agree, ...`. Without `--require`, the package gives
+the plugin's line. These were obtained locally with Python 3.14.7 and 3.11.18 on Windows against the vectors
+regenerated from `b7ecca0`. The plugin at `2b78a06` (the commit the job below still pins) predates tracker v3.2 (it signs no prior
+acknowledgment PA and has no contract gate) and, with `--require circulation/1`, disagrees on 75 checks; the pin must
+move to the plugin's pushed commit anyway. CI runs the commands on Linux, macOS and Windows with Python 3.10, 3.13 and
+3.14.
 
 `scripts/check_plugin_core.py PLUGIN_DIR` compares every module in the plugin's `valun_core/` (each `*.py` but
 `__init__.py`: six files in plugin 0.3.0, eight since 0.4.0) with the `valun` package at the version `valun_core`
@@ -164,7 +170,7 @@ versions record different error texts and results, which is why the fixtures nam
 
 CI does not regenerate the vectors: `generate.mjs` runs the server's own code, which is not public. The generator
 exports the exact server release itself (never a working tree): with a valun-app clone next to valun-open (or
-`VALUN_APP_REPO=<clone>`), it runs `git archive fa38334` into a temporary folder, runs that export, and removes it.
+`VALUN_APP_REPO=<clone>`), it runs `git archive b7ecca0` into a temporary folder, runs that export, and removes it.
 Tested with Node 24.21.0:
 
 ```sh
@@ -176,7 +182,7 @@ git diff --exit-code -- spec/vectors        # deterministic: no diff unless the 
 To run an export made by hand instead: `VALUN_APP_DIR=<export> node spec/vectors/generate.mjs`, for example
 
 ```sh
-v16="$(mktemp -d)" && git -C ../valun-app archive fa38334 --prefix=valun-app-v16/ | tar -x -C "$v16"
+v16="$(mktemp -d)" && git -C ../valun-app archive b7ecca0 --prefix=valun-app-v16/ | tar -x -C "$v16"
 VALUN_APP_DIR="$v16/valun-app-v16" node spec/vectors/generate.mjs
 ```
 

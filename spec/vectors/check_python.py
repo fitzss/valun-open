@@ -41,13 +41,18 @@ What is checked
                         signatures the recorded body carries (keys `signature` / `*_signature` at any depth, slots of a
                         `signatures` map): none missing and none extra.
                         Since release v16 (steps 148+, circulation on): each server-verified Basis message is rebuilt by
-                        the client for its edge; a replayed call starts from its client_state, must sign exactly the
-                        signature_fields pointers, each over the message the server verified for that field
-                        (server_verified[].field), and must hold client_state_after afterwards.
-- circulation.json      (release v16) timestamp residue classes; the 80-byte messages of bound notes, transfer slots
-                        and set-off slots; quote digests; the pay statement; the signatures of tracker requests; and the
-                        decisions of the client signing firewall (novation.evaluate_consent / evaluate_payer_template /
-                        evaluate_bound_template: sign exactly these slots, or refuse with this code; PROTOCOL.md 15.3).
+                        the client for its edge (a note message with note_message; since tracker v3.2 a prior
+                        acknowledgment, kind basis_prior_ack, with prior_ack_message, in the circulation tier); a
+                        replayed call starts from its client_state, must sign exactly the signature_fields pointers,
+                        each over the message the server verified for that field (server_verified[].field), and must
+                        hold client_state_after afterwards.
+- circulation.json      (release v16) timestamp residue classes; the messages of bound notes, transfer slots and set-off
+                        slots (80-byte note messages, and since tracker v3.2 the 105-byte prior acknowledgments PA of a
+                        bound note and of a transfer's two creditor prior slots, kind prior_ack, rebuilt with the
+                        client's prior_ack_message in the circulation tier); quote digests; the pay statement; the
+                        signatures of tracker requests; and the decisions of the client signing firewall
+                        (novation.evaluate_consent / evaluate_payer_template / evaluate_bound_template: sign exactly
+                        these slots, or refuse with this code; PROTOCOL.md 15.3).
 
 Protocol features: the circulation checks (tiers `circulation` and `consent`) count for a client that declares
 'circulation/1' in PROTOCOL_FEATURES (its client or novation module), or for a run given --require circulation/1;
@@ -669,6 +674,29 @@ def rebuilt_message(edge, message_hex, meta):
                            meta['pilot_denomination']).hex()
 
 
+PRIOR_ACK_TAG_LEN = len(b'basis/prior-ack/1')
+
+
+def rebuilt_prior_ack(edge, message_hex, meta):
+    """Tracker v3.2: prior_ack_message(issuer, recipient, X, p, T, tracker, unit) for the edge, with X, p and T read from
+    the 105-byte message itself (after the 17-byte tag and the 32-byte debt key, big-endian): equal to message_hex when
+    the client's builder agrees on the tag, the debt key and the layout."""
+    issuer, recipient = edge.split('>')
+    raw, o = bytes.fromhex(message_hex), PRIOR_ACK_TAG_LEN + 32
+    x, p, ts = (int.from_bytes(raw[o + 8 * i:o + 8 * i + 8], 'big') for i in range(3))
+    return vb.prior_ack_message(bytes.fromhex(issuer), bytes.fromhex(recipient), x, p, ts, bytes.fromhex(meta['fixture_tracker_nft_id']),
+                                meta['pilot_denomination']).hex()
+
+
+def message_of(v, nft_hex, denom):
+    """The message a circulation.json entry names, rebuilt by the client: PA(I,R,total,prior_timestamp,timestamp) for
+    kind prior_ack (tracker v3.2), else the note message M(I,R,total,timestamp)."""
+    i, r, nft = bytes.fromhex(v['issuer_pubkey']), bytes.fromhex(v['recipient_pubkey']), bytes.fromhex(nft_hex)
+    if v.get('kind') == 'prior_ack':
+        return vb.prior_ack_message(i, r, v['total'], v['prior_timestamp'], v['timestamp'], nft, denom).hex()
+    return vb.note_message(i, r, v['total'], v['timestamp'], nft, denom).hex()
+
+
 def check_transcript():
     data = vec('transcript.json')
     meta, participants = data['meta'], data['participants']
@@ -678,7 +706,14 @@ def check_transcript():
             ok, err = attempt(lambda: verify_hex(e['signature'], bytes.fromhex(e['message_hex']), e['pubkey']))
             record('transcript.json', sname, f'server-verified signature {i + 1} ({e["kind"]}) == {e["valid"]}', 'core',
                    'python_error' if err else ('agree' if ok == e['valid'] else 'differ'), err or '')
-            if e.get('edge'):           # release v16: the 80-byte message rebuilt from its edge, total and timestamp
+            if e.get('edge') and e['kind'] == 'basis_prior_ack':     # tracker v3.2: the 105-byte PA, a circulation rule
+                what = f'server-verified prior acknowledgment {i + 1} rebuilt for edge {e["edge"][:8]}..>{e["edge"].split(">")[1][:8]}..'
+                if not supports('circulation/1'):
+                    record('transcript.json', sname, what, 'circulation', 'n/a', 'the client does not declare circulation/1 and the run does not --require it')
+                else:
+                    m, err = attempt(lambda: rebuilt_prior_ack(e['edge'], e['message_hex'], meta))
+                    record('transcript.json', sname, what, 'circulation', 'python_error' if err else ('agree' if m == e['message_hex'] else 'differ'), err or '')
+            elif e.get('edge'):         # release v16: the 80-byte message rebuilt from its edge, total and timestamp
                 m, err = attempt(lambda: rebuilt_message(e['edge'], e['message_hex'], meta))
                 record('transcript.json', sname, f'server-verified message {i + 1} rebuilt for edge {e["edge"][:8]}..>{e["edge"].split(">")[1][:8]}..', 'core',
                        'python_error' if err else ('agree' if m == e['message_hex'] else 'differ'), err or '')
@@ -870,11 +905,16 @@ def check_circulation():
         got, err = attempt(lambda: classes(v['ts']))
         record(file, v['name'], 'residue classes', 'circulation', 'python_error' if err else ('agree' if got == v['accepted_as'] else 'differ'),
                err or ('' if got == v['accepted_as'] else f'python {got} vs {v["accepted_as"]}'))
-    # Every message a circulation operation signs is the 80-byte Basis note message M(I,R,t,ts).
+    # Every message a circulation operation signs is the 80-byte Basis note message M(I,R,t,ts), but the prior
+    # acknowledgments of tracker v3.2 (kind prior_ack): the 105-byte PA(I,R,X,p,T), a circulation rule.
     for v in data['messages']:
-        m, err = attempt(lambda: vb.note_message(bytes.fromhex(v['issuer_pubkey']), bytes.fromhex(v['recipient_pubkey']), v['total'], v['timestamp'],
-                                                 bytes.fromhex(v['tracker_nft_id']), v['denomination']).hex())
-        record(file, v['name'], 'note message', 'core', 'python_error' if err else ('agree' if m == v['message_hex'] else 'differ'), err or '')
+        if v.get('kind') == 'prior_ack' and not circ:
+            record(file, v['name'], 'prior acknowledgment', 'circulation', 'n/a', 'the client does not declare circulation/1 and the run does not --require it')
+        else:
+            m, err = attempt(lambda: message_of(v, v['tracker_nft_id'], v['denomination']))
+            pa = v.get('kind') == 'prior_ack'
+            record(file, v['name'], 'prior acknowledgment' if pa else 'note message', 'circulation' if pa else 'core',
+                   'python_error' if err else ('agree' if m == v['message_hex'] else 'differ'), err or '')
         ok, err = attempt(lambda: verify_hex(v['signature'], bytes.fromhex(v['message_hex']), v['signer_pubkey']))
         record(file, v['name'], f'signature verifies == {v.get("valid", True)}', 'core', 'python_error' if err else ('agree' if ok == v.get('valid', True) else 'differ'), err or '')
     # The transfer quote and its digest (PROTOCOL.md 18.3 item 4).
@@ -903,9 +943,13 @@ def check_circulation():
     for group in ('transfers', 'setoffs'):
         for v in data[group]:
             for sg in v['signatures']:
-                m, err = attempt(lambda: vb.note_message(bytes.fromhex(sg['issuer_pubkey']), bytes.fromhex(sg['recipient_pubkey']), sg['total'], sg['timestamp'],
-                                                         bytes.fromhex(nft), denom).hex())
-                record(file, v['name'], f'{sg["field"]}: message', 'core', 'python_error' if err else ('agree' if m == sg['message_hex'] else 'differ'), err or '')
+                pa = sg.get('kind') == 'prior_ack'
+                if pa and not circ:
+                    record(file, v['name'], f'{sg["field"]}: message', 'circulation', 'n/a', 'the client does not declare circulation/1 and the run does not --require it')
+                else:
+                    m, err = attempt(lambda: message_of(sg, nft, denom))
+                    record(file, v['name'], f'{sg["field"]}: message', 'circulation' if pa else 'core',
+                           'python_error' if err else ('agree' if m == sg['message_hex'] else 'differ'), err or '')
                 ok, err = attempt(lambda: guarded_verify(sg['signer_pubkey'], bytes.fromhex(sg['message_hex']), sg['signature']))
                 record(file, v['name'], f'{sg["field"]}: verifies == {sg["valid"]}', 'core', 'python_error' if err else ('agree' if ok == sg['valid'] else 'differ'), err or '')
             o = v['tracker_outcome']

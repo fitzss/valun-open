@@ -3,10 +3,11 @@
 //
 //   node spec/vectors/generate.mjs
 //
-// Written against server release v16 (valun-app commit fa38334, branch circulation-v16; circulating credit, spec
-// revision v14). Its server sources are byte-identical to 94797c6's, the commit that makes a same-issuer transfer retry
-// wait for the earlier attempt's window and makes no transfer again (audit VS-1); the vectors before it came from
-// cfe698b. The script never runs a working tree: by default it exports exactly that commit with `git archive` from the
+// Written against server release v16 (valun-app commit b7ecca0, branch circulation-v16; circulating credit on tracker
+// v3.2, spec revision v14): the server change 538075b (the prior acknowledgments PA(I,R,X,p,T) of tracker v3.2, its
+// contract in GET /info, the same-prior exemption of decision D-1), with b7ecca0 pinning tracker v3.2 at Basis fork
+// commit 4370418. The vectors before it came from fa38334 (same-issuer transfer retries waited, audit VS-1) and, before
+// that, cfe698b. The script never runs a working tree: by default it exports exactly that commit with `git archive` from the
 // valun-app repository next to this one (VALUN_APP_REPO=<path> names another clone) into a temporary folder, runs it,
 // and removes the folder at the end. VALUN_APP_DIR=<path> runs an export made by hand instead (README-ci.md). The
 // script records the sha256 of every server source it ran (RELEASES below) and labels the output "UNRECOGNISED server
@@ -28,18 +29,22 @@
 //   HTTP route table (createPilotRoutes) are imported from valun-app/lib and run unchanged, in memory, with a fixed
 //   clock. Nothing listens on a port; nothing touches the network or the disk except the output files here (and the
 //   temporary export).
-// - The server checks Basis signatures and builds Basis note messages in a Rust helper (basis/valun_signer.rs ->
-//   basis_core, Basis pinned at 3df7ed93). That helper is NOT run here. This script carries a minimal replica
-//   (BLAKE2b-256 per RFC 7693, secp256k1, the Basis Schnorr scheme, the 80-byte note message) and refuses to write
-//   anything unless the replica reproduces Basis's official cross-validation vectors TV001-TV011 (copied from
+// - The server checks Basis signatures and builds Basis messages in a Rust helper (basis/valun_signer.rs ->
+//   basis_core; note-message, and since tracker v3.2 prior-ack-message). That helper is NOT run here. This script
+//   carries a minimal replica (BLAKE2b-256 per RFC 7693, secp256k1, the Basis Schnorr scheme, the 80-byte note message
+//   M and the 105-byte prior acknowledgment PA of tracker v3.2) and refuses to write anything unless the replica
+//   reproduces Basis's official cross-validation vectors TV001-TV011 (copied from
 //   hermes-plugin-valun/tests/test_valun_basis.py, which cites basis-tracker specs/SCHNORR_SIGNATURE_SPEC.md; Basis is
-//   CC0-1.0). The token-denomination debt key has no official vector; see OPEN-QUESTIONS.md.
+//   CC0-1.0) and the shared PA vector of design v3.2 section 7 (the one the tracker's, the server's and both clients'
+//   tests pin). The token-denomination debt key has no official vector; see OPEN-QUESTIONS.md.
 // - The Basis tracker is an in-memory stand-in: tracker-side fields in the transcript (tracker_note, proof, ledger rows,
 //   positions) have the shapes Valun reads, not necessarily the real tracker's values. From step 148 on it enforces
-//   the tracker v3.1 contract Valun relies on (GET /capabilities; POST /notes residues and bound notes with their
-//   one-hour maximum age; POST /notes/transfer with seven signatures and both prior acknowledgments; POST /notes/setoff
-//   with per-key balance and per-edge timestamps; bound-only edges; unknown fields refused), every signature checked with
-//   the replica, and answers with the real tracker's status codes and `code` values (basis_server api.rs). Its binary
+//   the tracker v3.2 contract Valun relies on (GET /capabilities; POST /notes residues and bound notes with their
+//   one-hour maximum age and the issuer's prior acknowledgment PA of the edge's stored total and timestamp;
+//   POST /notes/transfer with seven signatures, the two creditor prior slots PA, and the optional prior totals and
+//   timestamps (409 stale_prior); POST /notes/setoff with per-key balance and per-edge timestamps; bound-only edges;
+//   unknown fields refused), every signature checked with the replica, and answers with the real tracker's status codes
+//   and `code` values (basis_server api.rs). Its binary
 //   "sha256" is a fixed fixture value, pinned only for this in-memory Pilot (trackerPins), so the circulation modes can
 //   take effect; no real tracker has it.
 // - Server-run parties (the sandbox's operator-held agent keys, pilot.serverSigner) are a stand-in signer over public test
@@ -82,18 +87,18 @@ const RELEASES = {
     'lib/pilot/http.mjs': '01a505623d64c0a2c00a221240d57b5631c91dec61f5caaeb37113e8497c0f0e',
     'lib/basis.mjs': '991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617',
     'lib/http.mjs': '2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf'}},
-  v16: {commit: 'fa3833479e91126b07a0ab81d574ca98fbfd0755', label: 'v16 (valun-app commit fa38334)', sources: {
-    'lib/pilot/core.mjs': '4d8b5cbd81559c2f0a908108b447b41e9843850868b2edc3903dcccdfe0dfcb2',
+  v16: {commit: 'b7ecca030f5cff15dbe411df7587ba35fc891a2d', label: 'v16 (valun-app commit b7ecca0)', sources: {
+    'lib/pilot/core.mjs': '23d7412ab0ad221bf2bbeec01517e1a7805b18eff9cd1f7372c6928030e4a47a',
     'lib/pilot/http.mjs': '76e9e3603b0f5a3a7e693855c4b8fbc1474ac7be29d3c812a9ea77ebf2cf7dba',
-    'lib/basis.mjs': '733953129eb86708e6c3424887cef3c0d32bcdc0cc282d5434286c2cab9d3a96',
+    'lib/basis.mjs': '4ce8dc7cce25bd99533fa91c2fe3fba5db0b92be9a72e766dac8fc98009dcd6b',
     'lib/http.mjs': '2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf',
-    'lib/pilot/caps.mjs': 'b64bc079b84d8180aa0025259539eb18a1dc9676b74f6a25b772cc1851ad9596',
+    'lib/pilot/caps.mjs': 'df69b8ca4401924a357f23279fd6065b160c9c53da705d4d76bb415dec6a42e1',
     'lib/pilot/clearing.mjs': '457dcf1f21dda3ad9ebeaea18a1b713fd75dcef515cb64222aff5993386fec18',
     'lib/pilot/journal.mjs': '7078357fc4e7b02093ada55f5148122e2c92198329da5ca9a7737d31bf9809a3',
-    'lib/pilot/novation.mjs': '02a4f40faf6de079d30a152b861e18fbbc3b1618d17bcc7ea6023383f0530874',
-    'lib/pilot/pins.mjs': 'af6525ef61361a49b0644a83dbee516bba687fddf51db821a0d91ede64e4324a',
+    'lib/pilot/novation.mjs': '57808ef18ba9fe8847fd5f797549f3a0d1ded8c41a916dc49e341ab92d7098bd',
+    'lib/pilot/pins.mjs': 'b7adfa82ae19b7b2eff61dcf3ee5a3bb473bf98bb56e4645eaa5f53f91aa3fab',
     'lib/pilot/policy.mjs': 'da7e9fff13fb29408182db4d08a2816fb48463c2685b47b733fdb15c5c169e8f',
-    'lib/pilot/sandbox.mjs': '56be7acf50bfeac2cdf81cb76ccb1f8c9827d304a689f23add697bdebdf93f3c',
+    'lib/pilot/sandbox.mjs': 'd42ff21bc5f28f0abb7a7cc987b15baa87a5d0fd3d9b3cc584a5cc2151f51e70',
     'lib/pilot/status.mjs': '9a2d9ae94fe90cca700977c5024e64ead164bc6f167e86b8c83f3495be56286c'}},
 };
 const CURRENT_RELEASE = 'v16';
@@ -291,6 +296,15 @@ function debtKey(issuer, recipient, denomination) {
 const u64 = n => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(n)); return b; };
 const noteMessage = (issuer, recipient, total, timestamp, nft, denomination) =>
   Buffer.concat([debtKey(issuer, recipient, denomination), u64(total), u64(timestamp), nft]);
+// Tracker v3.2's prior acknowledgment PA(I,R,X,p,T) (design v3.2 section 2; basis_core prior_ack_message, as
+// valun_signer prior-ack-message): the 17 ASCII bytes "basis/prior-ack/1" || debt key || X, the edge's stored total ||
+// p, its note's timestamp (0 and 0 for an edge with no note) || T, the operation's timestamp || tracker NFT id: 105
+// bytes. It is never 80 bytes and starts with "basis/" (every Valun statement starts with "valun-"), so it can be taken
+// neither for a note message nor for a statement.
+const PRIOR_ACK_TAG = Buffer.from('basis/prior-ack/1', 'ascii'), PRIOR_ACK_TAG_HEX = PRIOR_ACK_TAG.toString('hex');
+const priorAckMessage = (issuer, recipient, priorTotal, priorTimestamp, timestamp, nft, denomination) =>
+  Buffer.concat([PRIOR_ACK_TAG, debtKey(issuer, recipient, denomination), u64(priorTotal), u64(priorTimestamp), u64(timestamp), nft]);
+const isPriorAckHex = h => typeof h === 'string' && h.length === 210 && h.startsWith(PRIOR_ACK_TAG_HEX);
 
 // ---- replica self-tests: refuse to write vectors from a replica that does not match the references -------------------
 assert.equal(blake2b(Buffer.alloc(0), 32).toString('hex'), '0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8', 'BLAKE2b-256("") (RFC 7693 / reference)');
@@ -321,6 +335,19 @@ for (const [name, issuer, total, ts, msg, sig, ok] of OFFICIAL) {
   assert.equal(noteMessage(hx(issuer), hx(TV_BOB), total, ts, hx(TV_NFT), 'erg').toString('hex'), msg, `${name}: note message replica`);
   assert.equal(schnorrVerify(hx(sig), hx(msg), hx(issuer)), ok, `${name}: verifier replica`);
 }
+// The shared fixed PA vector of design v3.2 section 7: the keys of the secrets 0x01 x 32 and 0x02 x 32, denomination
+// erg, tracker NFT 0xab x 32, X 1000, p 1762650000123, T 1762650060999 (tracker v3.2's, the server's and both clients'
+// tests pin the same bytes), with the 80-byte v3.1 acknowledgment M(A,B,X,T) beside it.
+{
+  const A = pubOf(int(Buffer.alloc(32, 1))), B = pubOf(int(Buffer.alloc(32, 2))), NFT = Buffer.alloc(32, 0xab);
+  assert.equal(A.toString('hex'), '031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f', 'PA vector: key of secret 0x01 x 32');
+  assert.equal(B.toString('hex'), '024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766', 'PA vector: key of secret 0x02 x 32');
+  assert.equal(debtKey(A, B, 'erg').toString('hex'), '8655e13a7d5c621d55abe7b76cd86399fee984d67ecc48a72f2f8aea80fd94e1', 'PA vector: debt key');
+  const pa = priorAckMessage(A, B, 1000, 1762650000123, 1762650060999, NFT, 'erg');
+  assert.equal(pa.toString('hex'), '62617369732f7072696f722d61636b2f318655e13a7d5c621d55abe7b76cd86399fee984d67ecc48a72f2f8aea80fd94e100000000000003e80000019a66208afb0000019a662178c7abababababababababababababababababababababababababababababababab', 'PA vector: the 105 bytes of design v3.2 section 7');
+  assert.equal(pa.length, 105); assert.ok(isPriorAckHex(pa.toString('hex')));
+  assert.equal(noteMessage(A, B, 1000, 1762650060999, NFT, 'erg').toString('hex'), '8655e13a7d5c621d55abe7b76cd86399fee984d67ecc48a72f2f8aea80fd94e100000000000003e80000019a662178c7abababababababababababababababababababababababababababababababab', 'PA vector: the v3.1 M(A,B,X,T) beside it');
+}
 
 // ---- fixed PUBLIC test keys --------------------------------------------------------------------------------------
 // secret = (int(sha256(utf8(label))) mod (n - 1)) + 1. check_python.py derives the same keys from the same labels.
@@ -343,13 +370,15 @@ const cleanText = s => String(s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001
 
 const T0 = Date.parse('2026-11-06T12:00:00.000Z');
 const FIXTURE_NFT = sha256('valun-open/spec/fixture-tracker-nft-id');   // a fixed public 32-byte id; no tracker has it
-// The stand-in tracker v3.1 (transcript steps 148+): its GET /capabilities data, exactly what basis_server v3.1 reports
-// (design 3.6 with decision D-1 item 1: bound notes version 2, with the maximum age) except the informative `commit`, and
-// the fixed "sha256 of its binary", pinned only for the generator's in-memory Pilot (trackerPins).
-const STAND_IN_CAPS = Object.freeze({tracker: 'basis', build: 'valun-circulating-credit/3', commit: 'stand-in (valun-open spec/vectors/generate.mjs)',
-  pure_credit: true, reserved_ms: [995, 996, 997, 998, 999], bound_notes: {ms: 997, version: 2, max_age_ms: 3600000}, bound_only_edges: true,
+// The stand-in tracker v3.2 (transcript steps 148+): its GET /capabilities data, exactly what basis_server v3.2 reports
+// (design v3.2 section 3: build valun-circulating-credit/4, bound notes version 3 and transfers version 4 with their
+// prior acknowledgment basis/prior-ack/1; the rest as v3.1) except the informative `commit`, and the fixed "sha256 of
+// its binary", pinned only for the generator's in-memory Pilot (trackerPins).
+const STAND_IN_CAPS = Object.freeze({tracker: 'basis', build: 'valun-circulating-credit/4', commit: 'stand-in (valun-open spec/vectors/generate.mjs)',
+  pure_credit: true, reserved_ms: [995, 996, 997, 998, 999], bound_notes: {ms: 997, version: 3, max_age_ms: 3600000, prior_ack: 'basis/prior-ack/1'}, bound_only_edges: true,
   novation: {max_age_ms: 3600000,
-    transfer: {ms: 999, version: 3, signatures: ['issuer_from', 'issuer_to', 'from_recipient_prior', 'from_recipient', 'from_recipient_to', 'to_recipient_prior', 'to_recipient']},
+    transfer: {ms: 999, version: 4, signatures: ['issuer_from', 'issuer_to', 'from_recipient_prior', 'from_recipient', 'from_recipient_to', 'to_recipient_prior', 'to_recipient'],
+      prior_ack: 'basis/prior-ack/1'},
     setoff: {ms: 998, version: 3, max_edges: 64, per_edge_timestamps: true, signatures_per_edge: ['issuer', 'recipient']}},
   onchain_edges: 0, novations_disabled_reason: null});
 const STAND_IN_SHA = sha256('valun-open/spec/stand-in-tracker-binary');
@@ -369,7 +398,7 @@ const META = (what, extra = {}) => ({
 // A probe Pilot: the real class, in memory, fixed clock; the stand-in Basis records what the server asked it to verify.
 // =====================================================================================================================
 const ALICE_ID = 'vp_a1a1a1a1a1a1', BOB_ID = 'vp_b0b0b0b0b0b0';
-// Since v16 it is built as the transcript's Pilot is: with the stand-in tracker v3.1's capabilities and pinned fixture sha,
+// Since v16 it is built as the transcript's Pilot is: with the stand-in tracker v3.2's capabilities and pinned fixture sha,
 // circulation off unless `circulation` says otherwise (the statement and validation probes run with it off).
 function probePilot({verify = 'replica', circulation = 'off'} = {}) {
   const participant = (id, handle, key) => ({id, handle, display_name: handle, operator: `test operator of ${handle}`, about: '', services: '',
@@ -386,6 +415,9 @@ function probePilot({verify = 'replica', circulation = 'off'} = {}) {
     async allNotes() { return []; }, async note() { return null; }, async proof() { return null; },
     async noteMessage({issuer, recipient, total, timestamp, denomination = PILOT_DENOMINATION}) {
       return {message_hex: noteMessage(hx(issuer), hx(recipient), total, timestamp, hx(FIXTURE_NFT), denomination).toString('hex'), debt_key_hex: debtKey(hx(issuer), hx(recipient), denomination).toString('hex')};
+    },
+    async priorAckMessage({issuer, recipient, priorTotal, priorTimestamp, timestamp, denomination = PILOT_DENOMINATION}) {
+      return {message_hex: priorAckMessage(hx(issuer), hx(recipient), priorTotal, priorTimestamp, timestamp, hx(FIXTURE_NFT), denomination).toString('hex'), debt_key_hex: debtKey(hx(issuer), hx(recipient), denomination).toString('hex')};
     }};
   const pilot = new Pilot({store: {state, save() {}, audit() {}, appendEdgeLog() {}}, basis, now: () => T0,
     ...(CIRCULATION ? {circulation, trackerCaps: STAND_IN_CAPS, trackerSha256: STAND_IN_SHA, trackerPins: [STAND_IN_SHA], log: () => {}} : {})});
@@ -829,9 +861,14 @@ async function transcriptVectors() {
     if (signer.mode === 'refuses') throw new BasisError('signer: invalid signature encoding', {code: 'signer_error'});
   };
   const trackerFault = () => { if (tracker.mode === 'down') throw new BasisError('tracker unreachable: ECONNREFUSED', {code: 'tracker_unavailable'}); };
-  // ---- tracker v3.1 rules (from step 148; before it the stand-in is exactly the v13 one above) -----------------------
+  // ---- tracker v3.2 rules (from step 148; before it the stand-in is exactly the v13 one above) -----------------------
   // The checks and their order are basis_store's (lib.rs: create_note, transfer_note, set_off) and the answers are
   // basis_server's (api.rs: HTTP status, `code`); the error texts are the stand-in's own (Valun never reads them).
+  // Tracker v3.2 (design v3.2 sections 2-3): a bound note's prior_signature and a transfer's two creditor prior slots
+  // are checked over PA(I,R,X,p,T), the edge's stored total X and its note's timestamp p (0 and 0 for an edge with no
+  // note) at the operation's timestamp T; the optional prior_timestamp (bound note) and from_prior_timestamp /
+  // to_prior_timestamp (transfer) must be the stored timestamps, as the prior totals must be the stored totals (else
+  // 409 stale_prior). Every other signature is over the 80-byte note message M.
   // tracker.v3 switches the rules on; tracker.novation 'timeout' makes the next novation write throw the tracker
   // client's BasisError (no answer: the write may or may not have happened), with tracker.applyOnTimeout deciding which.
   const MAX_AGE = 3600000, I64_MAX = 2n ** 63n - 1n;
@@ -839,6 +876,7 @@ async function transcriptVectors() {
   const refuse = (status, code, error) => ({status, json: {success: false, error, ...(code ? {code} : {})}, text: ''});
   const noteKey = (i, r) => `${i}>${r}`;
   const msgOf = (i, r, total, ts) => noteMessage(hx(i), hx(r), total, ts, hx(FIXTURE_NFT), PILOT_DENOMINATION);
+  const paOf = (i, r, total, p, ts) => priorAckMessage(hx(i), hx(r), total, p, ts, hx(FIXTURE_NFT), PILOT_DENOMINATION);
   const sigOk = (sig, m, pk) => typeof sig === 'string' && /^0[23][0-9a-f]{128}$/.test(sig) && schnorrVerify(hx(sig), m, hx(pk));
   const u64ok = v => Number.isSafeInteger(v) && v >= 0;
   const store3 = (i, r, total, ts, sig, prev) => notes.set(noteKey(i, r), {issuer_pubkey: i, recipient_pubkey: r, amount_collected: total,
@@ -853,25 +891,29 @@ async function transcriptVectors() {
     if (prev && ts <= prev.timestamp) return refuse(400, 'past_timestamp', "timestamp must be newer than the edge's current timestamp");
     if (prev && total < prev.amount_collected) return refuse(400, null, 'a note never lowers the debt');
     if (!sigOk(body.signature, msgOf(I, R, total, ts), I)) return refuse(400, 'invalid_signature', 'Invalid signature');
-    const residue = ts % 1000, P = prev?.amount_collected ?? 0;
+    const residue = ts % 1000, P = prev?.amount_collected ?? 0, p = prev?.timestamp ?? 0;
     if ([995, 996, 998, 999].includes(residue)) return refuse(400, 'reserved_timestamp', `timestamps ending in ${residue} ms are reserved; ordinary notes use 000-994 ms`);
     if (residue === 997) {
       if (body.prior_signature === undefined) return refuse(400, 'reserved_timestamp', 'a bound note needs prior_signature');
       if (ts < now - MAX_AGE) return refuse(400, 'novation_expired', 'the bound note is older than the maximum novation age');
-      if (body.prior_total !== undefined && body.prior_total !== P) return refuse(409, 'stale_prior', "prior_total is not the edge's current total");
-      if (!sigOk(body.prior_signature, msgOf(I, R, P, ts), I)) return refuse(400, 'invalid_prior_signature', "the issuer's prior acknowledgment does not verify");
+      if ((body.prior_total !== undefined && body.prior_total !== P) || (body.prior_timestamp !== undefined && body.prior_timestamp !== p))
+        return refuse(409, 'stale_prior', "prior_total or prior_timestamp is not the edge's current total or timestamp");
+      if (!sigOk(body.prior_signature, paOf(I, R, P, p, ts), I))
+        return refuse(400, 'invalid_prior_signature', "the issuer's prior acknowledgment does not verify: the acknowledgment basis/prior-ack/1 of the edge's current total and timestamp at this operation's timestamp");
       if (!(total > P)) return refuse(400, 'not_an_increase', 'a bound note must raise the total');
     } else {
-      if (body.prior_signature !== undefined || body.prior_total !== undefined) return refuse(400, 'invalid_request', 'prior_signature and prior_total belong to bound notes (timestamps ending in 997 ms)');
+      if (body.prior_signature !== undefined || body.prior_total !== undefined || body.prior_timestamp !== undefined)
+        return refuse(400, 'invalid_request', 'prior_signature, prior_total and prior_timestamp belong to bound notes (timestamps ending in 997 ms)');
       if (boundOnly.has(key)) return refuse(400, 'bound_note_required', 'a novation changed this edge: it takes bound notes only');
     }
     store3(I, R, total, ts, body.signature, prev);
     return {status: 201, json: {success: true, data: null}, text: ''};
   }
   const TRANSFER_FIELDS = ['issuer_pubkey', 'from_recipient_pubkey', 'to_recipient_pubkey', 'denomination', 'amount', 'timestamp', 'issuer_from_signature', 'issuer_to_signature',
-    'from_recipient_prior_signature', 'from_recipient_signature', 'from_recipient_to_signature', 'to_recipient_prior_signature', 'to_recipient_signature', 'from_prior_total', 'to_prior_total'];
-  const TRANSFER_REQUIRED = TRANSFER_FIELDS.filter(k => !k.endsWith('_prior_total'));
-  // POST /notes/transfer (version 3): A = issuer, B = old creditor, C = new creditor, a = amount, T = timestamp.
+    'from_recipient_prior_signature', 'from_recipient_signature', 'from_recipient_to_signature', 'to_recipient_prior_signature', 'to_recipient_signature', 'from_prior_total', 'to_prior_total',
+    'from_prior_timestamp', 'to_prior_timestamp'];
+  const TRANSFER_REQUIRED = TRANSFER_FIELDS.filter(k => !k.endsWith('_prior_total') && !k.endsWith('_prior_timestamp'));
+  // POST /notes/transfer (version 4): A = issuer, B = old creditor, C = new creditor, a = amount, T = timestamp.
   function v3Transfer(body) {
     const extra = unknownField(body, TRANSFER_FIELDS);
     if (extra) return unprocessable(`Failed to deserialize the JSON body into the target type: unknown field \`${extra}\``);
@@ -886,16 +928,17 @@ async function transcriptVectors() {
     if (T < now - MAX_AGE) return refuse(400, 'novation_expired', "the novation's timestamp is older than the maximum novation age");
     const from = notes.get(noteKey(A, B)) ?? null, to = notes.get(noteKey(A, C)) ?? null;
     if (!from) return refuse(404, 'not_found', 'Note not found');
-    const X = from.amount_collected, Y = to?.amount_collected ?? 0;
-    if ((body.from_prior_total !== undefined && body.from_prior_total !== X) || (body.to_prior_total !== undefined && body.to_prior_total !== Y))
-      return refuse(409, 'stale_prior', "from_prior_total or to_prior_total is not the edge's current total");
+    const X = from.amount_collected, Y = to?.amount_collected ?? 0, pX = from.timestamp, pY = to?.timestamp ?? 0;
+    if ((body.from_prior_total !== undefined && body.from_prior_total !== X) || (body.to_prior_total !== undefined && body.to_prior_total !== Y)
+      || (body.from_prior_timestamp !== undefined && body.from_prior_timestamp !== pX) || (body.to_prior_timestamp !== undefined && body.to_prior_timestamp !== pY))
+      return refuse(409, 'stale_prior', "from_prior_total, to_prior_total, from_prior_timestamp or to_prior_timestamp is not the edge's current total or timestamp");
     if (X < a) return refuse(400, 'invalid_transfer', 'Invalid transfer: the amount exceeds the from-edge total');
     if (X - a < from.amount_redeemed) return refuse(400, 'invalid_transfer', 'Invalid transfer: below the redeemed amount');
     if (BigInt(Y) + BigInt(a) > I64_MAX) return refuse(400, 'invalid_transfer', 'Invalid transfer: the new to-edge total overflows');
     if (T <= from.timestamp || (to && T <= to.timestamp)) return refuse(400, 'past_timestamp', "timestamp must be newer than both edges' current timestamps");
     const slots = [['issuer_from_signature', A, msgOf(A, B, X - a, T)], ['issuer_to_signature', A, msgOf(A, C, Y + a, T)],
-      ['from_recipient_prior_signature', B, msgOf(A, B, X, T)], ['from_recipient_signature', B, msgOf(A, B, X - a, T)], ['from_recipient_to_signature', B, msgOf(A, C, Y + a, T)],
-      ['to_recipient_prior_signature', C, msgOf(A, C, Y, T)], ['to_recipient_signature', C, msgOf(A, C, Y + a, T)]];
+      ['from_recipient_prior_signature', B, paOf(A, B, X, pX, T)], ['from_recipient_signature', B, msgOf(A, B, X - a, T)], ['from_recipient_to_signature', B, msgOf(A, C, Y + a, T)],
+      ['to_recipient_prior_signature', C, paOf(A, C, Y, pY, T)], ['to_recipient_signature', C, msgOf(A, C, Y + a, T)]];
     for (const [field, signer, m] of slots) if (!sigOk(body[field], m, signer))
       return refuse(400, field.endsWith('prior_signature') ? 'invalid_prior_signature' : 'invalid_signature', `Invalid signature (${field})`);
     store3(A, B, X - a, T, body.issuer_from_signature, from); store3(A, C, Y + a, T, body.issuer_to_signature, to);
@@ -977,6 +1020,11 @@ async function transcriptVectors() {
       signerFault();
       return {message_hex: noteMessage(hx(issuer), hx(recipient), total, timestamp, hx(FIXTURE_NFT), denomination).toString('hex'), debt_key_hex: debtKey(hx(issuer), hx(recipient), denomination).toString('hex')};
     },
+    // Since tracker v3.2 (lib/basis.mjs priorAckMessage, valun_signer prior-ack-message): PA(I,R,X,p,T), 105 bytes.
+    async priorAckMessage({issuer, recipient, priorTotal, priorTimestamp, timestamp, denomination = PILOT_DENOMINATION}) {
+      signerFault();
+      return {message_hex: priorAckMessage(hx(issuer), hx(recipient), priorTotal, priorTimestamp, timestamp, hx(FIXTURE_NFT), denomination).toString('hex'), debt_key_hex: debtKey(hx(issuer), hx(recipient), denomination).toString('hex')};
+    },
     async note(issuer, recipient) { trackerFault(); return notes.get(`${issuer}>${recipient}`) ?? null; },
     async allNotes() { trackerFault(); return [...notes.values()]; },
     async proof() { return null; },
@@ -1042,7 +1090,8 @@ async function transcriptVectors() {
   }
   // From step 148 on (circ.on) a server_verified entry also names the field of the request body that holds the signature
   // the server verified (field, a JSON pointer, RFC 6901; absent when the signature was not in the body: a stored or
-  // server-made one) and, for a Basis note message, the edge it is for (edge '<issuer key>><recipient key>').
+  // server-made one) and, for a Basis note message or a prior acknowledgment (kind basis_prior_ack, tracker v3.2), the
+  // edge it is for (edge '<issuer key>><recipient key>').
   const circ = {on: false, edges: new Map()};
   const pointerTo = (v, sig, ptr = '') => {
     if (v === sig) return ptr;
@@ -1053,8 +1102,8 @@ async function transcriptVectors() {
     return null;
   };
   const edgeOfMessage = mh => {
-    if (mh.length !== 160) return null;
-    const dk = mh.slice(0, 64);
+    if (mh.length !== 160 && !isPriorAckHex(mh)) return null;
+    const dk = mh.length === 160 ? mh.slice(0, 64) : mh.slice(34, 98);     // PA: the debt key follows the 17-byte tag
     if (!circ.edges.has(dk)) for (const a of Object.values(K)) for (const b of Object.values(K)) if (a !== b) circ.edges.set(debtKey(hx(a.pub), hx(b.pub), PILOT_DENOMINATION).toString('hex'), `${a.pub}>${b.pub}`);
     return circ.edges.get(dk) ?? null;
   };
@@ -1072,7 +1121,8 @@ async function transcriptVectors() {
       response,
       server_verified: verifyLog.slice(mark).map(e => {
         const where = circ.on ? pointerTo(body, e.signature) : null, edge = circ.on ? edgeOfMessage(e.message_hex) : null;
-        return {pubkey: e.pubkey, message_hex: e.message_hex, ...(e.message_hex.length === 160 ? {kind: 'basis_note_message'} : {kind: 'statement', message_text: Buffer.from(e.message_hex, 'hex').toString('utf8')}), signature: e.signature, valid: e.valid,
+        return {pubkey: e.pubkey, message_hex: e.message_hex, ...(e.message_hex.length === 160 ? {kind: 'basis_note_message'} : isPriorAckHex(e.message_hex) ? {kind: 'basis_prior_ack'}
+          : {kind: 'statement', message_text: Buffer.from(e.message_hex, 'hex').toString('utf8')}), signature: e.signature, valid: e.valid,
           ...(e.signer_refused ? {signer_refused: 'the signer reported an error for this input ("signer: ..."); the server counts it as does not verify'} : {}),
           ...(where !== null ? {field: where} : {}), ...(edge ? {edge} : {})};
       }),
@@ -1571,9 +1621,9 @@ async function transcriptVectors() {
   }
 
   // ==== CIRCULATION BEGIN ============================================================================================
-  // Release v16 (valun-app fa38334): circulating credit, appended after every earlier release's steps and after the
-  // probes (steps 148+). The operator restarts with PILOT_CIRCULATION=on on the pinned tracker v3.1 (here: the
-  // stand-in switches its v3.1 rules on and the Pilot's mode becomes on); every request below that an agent's client
+  // Release v16 (valun-app b7ecca0): circulating credit, appended after every earlier release's steps and after the
+  // probes (steps 148+). The operator restarts with PILOT_CIRCULATION=on on the pinned tracker v3.2 (here: the
+  // stand-in switches its v3.2 rules on and the Pilot's mode becomes on); every request below that an agent's client
   // makes carries the capability header its consent policy gives (X-Valun-Features, PROTOCOL.md 18.1).
   const circulation = {first_step: null, consent_items: {}, templates: {}, notes: {}, transfers: {}, setoffs: {}, tracker: trackerRequests, pilot_log: pilotLog};
   if (CIRCULATION) {
@@ -1586,12 +1636,18 @@ async function transcriptVectors() {
     const MANDATE_ON = {auto_clear: true, novate_own_debt: true, accept_transfers: true, accept_notes_from: 'any', pay_with_held_notes: 'when_asked'};
     const edgeK = (a, b) => `${P[a].key.pub}>${P[b].key.pub}`;
     const msgHex = (i, r, total, ts) => noteMessage(hx(P[i].key.pub), hx(P[r].key.pub), total, ts, hx(FIXTURE_NFT), PILOT_DENOMINATION).toString('hex');
+    // PA(I,R,X,p,T) of tracker v3.2 (by participant name, as msgHex) and by key
+    const paHex = (i, r, total, p, ts) => priorAckMessage(hx(P[i].key.pub), hx(P[r].key.pub), total, p, ts, hx(FIXTURE_NFT), PILOT_DENOMINATION).toString('hex');
+    const PAk = (i, r, total, p, ts) => priorAckMessage(hx(i), hx(r), total, p, ts, hx(FIXTURE_NFT), PILOT_DENOMINATION).toString('hex');
     // VALUN_VECTORS_DEBUG=1: when a step of this part fails, its steps so far and the server's log lines go to debug-steps.json.
     const sdump = () => { if (process.env.VALUN_VECTORS_DEBUG) fs.writeFileSync(path.join(OUT, 'debug-steps.json'), JSON.stringify({steps: steps.slice(circulation.first_step - 1), pilot_log: pilotLog}, null, 1)); };
     try {
-      const info16 = await step('public: network info with circulating credit on (since v16: features bound_notes/1 and circulation/1, the novation constants and the pay statement)', 'anyone', 'GET', '/info',
-        {expect: 200, extra: {server_config: {PILOT_CIRCULATION: 'on', tracker: 'stand-in tracker v3.1 (GET /capabilities validates; its binary sha256 is pinned for this Pilot)', capabilities: STAND_IN_CAPS}}});
+      const info16 = await step('public: network info with circulating credit on (since v16: features bound_notes/1 and circulation/1, the novation constants and the pay statement; since tracker v3.2 also the tracker contract the clients sign prior acknowledgments for)', 'anyone', 'GET', '/info',
+        {expect: 200, extra: {server_config: {PILOT_CIRCULATION: 'on', tracker: 'stand-in tracker v3.2 (GET /capabilities validates; its binary sha256 is pinned for this Pilot)', capabilities: STAND_IN_CAPS}}});
       assert.deepEqual(info16.features, ['bound_notes/1', 'circulation/1']);
+      // the contract the 0.4 clients require (valun-open novation CONTRACT), exactly
+      assert.deepEqual([info16.novation?.tracker_build, info16.novation?.transfer_version, info16.novation?.bound_note_version, info16.novation?.prior_ack],
+        ['valun-circulating-credit/4', 4, 3, 'basis/prior-ack/1'], JSON.stringify(info16.novation));
 
       // ---- two new participants: nina (a client agent) and sam (an agent the server runs; its consents are signed at once) ----
       for (const [name, op] of [['nina', 'Spec test operator N'], ['sam', 'Spec test operator S (runs the agent on the server)']]) {
@@ -1655,19 +1711,26 @@ async function transcriptVectors() {
       const digestOf = Q => sha256(canonical(Q));
       const payStatement = (dealId, q) => `valun-pilot/pay/1\n${dealId}\n${q}`;
       // The payer's request body for a payment by transfer (the valun package's order of fields), from a template it
-      // checked: the five signatures of B over the complete statement, the pay statement and its three slots.
+      // checked: the five signatures of B over the complete statement, the pay statement and its three slots (tracker
+      // v3.2: A>B:prior is PA(A,B,X,p_AB,T) of the held edge's state; A>B:new and A>C:new are M), and the prior states
+      // both edges were in (from_prior_total, from_prior_timestamp, to_prior_total, to_prior_timestamp: 0 and 0 for a
+      // new destination edge).
       function payBody(name, d, tpl, {sign = (slot, m) => signHex(P[name].key, m), quote} = {}) {
         const A = tpl.issuer.pubkey, B = tpl.payer.pubkey, C = tpl.payee.pubkey, a = tpl.amount, T = tpl.timestamp;
         const X = tpl.from_edge.before.total, Y = tpl.to_edge.before ? tpl.to_edge.before.total : 0;
+        const pX = tpl.from_edge.before.timestamp, pY = tpl.to_edge.before ? tpl.to_edge.before.timestamp : 0;
         assert.equal(B, P[name].key.pub); assert.equal(T % 1000, 999); assert.equal(tpl.from_edge.new_total, X - a); assert.equal(tpl.to_edge.new_total, Y + a);
+        assert.equal(tpl.from_edge.prior_timestamp, pX); assert.equal(tpl.to_edge.prior_timestamp, pY);
         const q = quote ?? digestOf(quoteOf(d, A, B, C, a));
         if (!quote) assert.equal(q, tpl.quote_digest, 'quote digest: the reference recomputation vs the template');
         const h = d.agreement.terms_hash, dh = d.delivery.sha256;
-        const slots = [[`${A}>${B}:prior`, noteMessage(hx(A), hx(B), X, T, hx(FIXTURE_NFT), PILOT_DENOMINATION)], [`${A}>${B}:new`, noteMessage(hx(A), hx(B), X - a, T, hx(FIXTURE_NFT), PILOT_DENOMINATION)],
-          [`${A}>${C}:new`, noteMessage(hx(A), hx(C), Y + a, T, hx(FIXTURE_NFT), PILOT_DENOMINATION)]];
-        return {issuer_id: tpl.issuer.id, terms_hash: h, deliverable_sha256: dh, quote_digest: q, timestamp: T, from_prior_total: X, to_prior_total: Y,
+        const slots = [[`${A}>${B}:prior`, PAk(A, B, X, pX, T)], [`${A}>${B}:new`, noteMessage(hx(A), hx(B), X - a, T, hx(FIXTURE_NFT), PILOT_DENOMINATION).toString('hex')],
+          [`${A}>${C}:new`, noteMessage(hx(A), hx(C), Y + a, T, hx(FIXTURE_NFT), PILOT_DENOMINATION).toString('hex')]];
+        for (const [slot, m] of slots) assert.equal(tpl.messages[slot], m, `the template's message for ${slot} vs the reference rebuild`);
+        return {issuer_id: tpl.issuer.id, terms_hash: h, deliverable_sha256: dh, quote_digest: q, timestamp: T, from_prior_total: X, from_prior_timestamp: pX,
+          to_prior_total: Y, to_prior_timestamp: pY,
           completion_signature: signText(P[name].key, statements.complete(h, dh)), pay_signature: signText(P[name].key, payStatement(d.id, q)),
-          signatures: Object.fromEntries(slots.map(([slot, m]) => [slot, sign(slot, m.toString('hex'))]))};
+          signatures: Object.fromEntries(slots.map(([slot, m]) => [slot, sign(slot, m)]))};
       }
       // The JSON pointers of every signature in a request body (client_call.signature_fields).
       const sigFields = (v, ptr = '') => v && typeof v === 'object' ? Object.entries(v).flatMap(([k, x]) => {
@@ -1676,16 +1739,18 @@ async function transcriptVectors() {
       }) : [];
       const transferTemplate = async (name, id, issuer) => (await http('GET', `/deals/${id}/transfer-template?issuer=${P[issuer].id}`, {auth: agentOf(name), features: FEAT})).body;
       // The consent item `name` sees for id (GET /consents), and the body that signs its unsigned slots (R1: each
-      // message from the item's own edges: prior = before.total, new = new_total).
+      // message from the item's own edges: a prior slot PA(I,R,before.total,before.timestamp,timestamp), (0, 0) for a
+      // new edge; a new slot M(I,R,new_total,timestamp)).
       const consentItem = async (name, id) => (await http('GET', '/consents', {auth: agentOf(name), features: FEAT})).body.consents.find(c => c.id === id);
       function consentBody(name, item) {
         const signatures = {}, revisions = {};
         for (const e of item.edges) {
           const [I, R] = e.edge.split('>');
+          if (item.kind === 'transfer') assert.equal(e.prior_timestamp, e.before ? e.before.timestamp : 0, `consent ${item.id}: the edge's prior_timestamp is its before's`);
           for (const slot of e.slots) {
             if (e.signed_by_you.includes(slot)) continue;
-            const total = slot === 'prior' ? (e.before?.total ?? 0) : e.new_total;
-            signatures[`${e.edge}:${slot}`] = signHex(P[name].key, noteMessage(hx(I), hx(R), total, e.timestamp, hx(FIXTURE_NFT), PILOT_DENOMINATION).toString('hex'));
+            signatures[`${e.edge}:${slot}`] = signHex(P[name].key, slot === 'prior' ? PAk(I, R, e.before?.total ?? 0, e.before?.timestamp ?? 0, e.timestamp)
+              : noteMessage(hx(I), hx(R), e.new_total, e.timestamp, hx(FIXTURE_NFT), PILOT_DENOMINATION).toString('hex'));
           }
           revisions[e.edge] = e.revision;
         }
@@ -1742,16 +1807,20 @@ async function transcriptVectors() {
       const xPending = rows => { const out = {}; for (const [edge, total, ts, kind, ref, direction] of rows) (out[edge] ??= {pending: []}).pending.push({total, timestamp: ts, kind, ref, direction}); return out; };
       const merge = (...xs) => { const out = {}; for (const x of xs) for (const [k, v] of Object.entries(x)) out[k] = out[k] && typeof v === 'object' && !Array.isArray(v) ? merge(out[k], v) : v; return out; };
       const edgeState = (a, b) => { const n = notes.get(edgeK(a, b)); return n ? {total: n.amount_collected, timestamp: n.timestamp, signature: n.signature} : null; };
-      // Bound credit note (PROTOCOL.md 18.5): the payer signs M(B,C,P+a,T) and its prior acknowledgment M(B,C,P,T), T
-      // ending in 997, from the template asked for with ?prior=1&bound=1 (values checked here, messages rebuilt).
+      // Bound credit note (PROTOCOL.md 18.5): the payer signs M(B,C,P+a,T) and its prior acknowledgment PA(B,C,P,p,T)
+      // (tracker v3.2: p the timestamp of the pair's note, 0 for none), T ending in 997, from the template asked for with
+      // ?prior=1&bound=1 (values checked here, messages rebuilt); the note carries prior_total and prior_timestamp.
       async function completeBound(name, payeeName, id, label, {expect = 200, client_state, client_state_after, extraReads = [], features = FEAT, mutate} = {}) {
         const d = await dealView(name, id);
         const tpl = (await http('GET', `/deals/${id}/credit-note-template?prior=1&bound=1`, {auth: agentOf(name), features})).body;
         const I = P[name].key.pub, R = P[payeeName].key.pub, h = d.agreement.terms_hash, dh = d.delivery.sha256;
         assert.equal(tpl.timestamp % 1000, 997, JSON.stringify(tpl).slice(0, 200)); assert.equal(tpl.issuer_pubkey, I); assert.equal(tpl.recipient_pubkey, R);
-        assert.equal(tpl.prior_message_hex, msgHex(name, payeeName, tpl.prior_total, tpl.timestamp)); assert.equal(tpl.message_hex, msgHex(name, payeeName, tpl.total, tpl.timestamp));
+        const p = tpl.prior_note ? tpl.prior_note.timestamp : 0;
+        assert.equal(tpl.prior_timestamp, p, "the bound template's prior_timestamp is its prior note's (0 for none)");
+        assert.equal(tpl.prior_message_hex, paHex(name, payeeName, tpl.prior_total, p, tpl.timestamp)); assert.equal(tpl.message_hex, msgHex(name, payeeName, tpl.total, tpl.timestamp));
         const body = {terms_hash: h, deliverable_sha256: dh, signature: signText(P[name].key, statements.complete(h, dh)),
-          credit_note: {total: tpl.total, timestamp: tpl.timestamp, signature: signHex(P[name].key, tpl.message_hex), prior_total: tpl.prior_total, prior_signature: signHex(P[name].key, tpl.prior_message_hex)}};
+          credit_note: {total: tpl.total, timestamp: tpl.timestamp, signature: signHex(P[name].key, tpl.message_hex), prior_total: tpl.prior_total, prior_timestamp: p,
+            prior_signature: signHex(P[name].key, tpl.prior_message_hex)}};
         if (mutate) mutate(body, tpl);
         const out = await step(label, agentOf(name), 'POST', `/deals/${id}/complete`, {auth: agentOf(name), features, expect, body,
           reads: [[`/deals/${id}`, agentOf(name)], ['/info'], [`/deals/${id}/credit-note-template?prior=1&bound=1`, agentOf(name)], [`/participants/${P[payeeName].id}`], ...extraReads],
@@ -1848,10 +1917,11 @@ async function transcriptVectors() {
         const d = await dealView('bob', X1), tpl = await transferTemplate('bob', X1, 'alice');
         const body = payBody('bob', d, tpl);
         tick(11 * 60);   // a slow client: the template's timestamp is now more than 10 minutes old
-        const st = await step("flow W: bob's client posts a payment by transfer signed over a template 11 minutes old: 409 transfer_stale; the server keeps the refused attempt (decision D-2 b), so the answer's template is null: a new transfer, through the same issuer too, waits for that attempt's window (audit VS-1)",
+        const st = await step("flow W: bob's client posts a payment by transfer signed over a template 11 minutes old: 409 transfer_stale; the server keeps the refused attempt (decision D-2 b) with the prior state it acknowledged, and the answer's template is a fresh one through the same issuer: a transfer on the same prior state of alice's note, total and timestamp, need not wait (the same-prior exemption of tracker v3.2: at most one of the two applies)",
           'bob.agent', 'POST', `/deals/${X1}/pay-by-transfer`, {auth: 'bob.agent', features: FEAT, expect: 409, body});
         assert.equal(st.error, 'transfer_stale');
-        assert.equal(st.template, null, JSON.stringify(st).slice(0, 300));
+        assert.ok(st.template && st.template.timestamp > tpl.timestamp, JSON.stringify(st).slice(0, 300));
+        assert.deepEqual([st.template.from_edge.before.total, st.template.from_edge.before.timestamp], [tpl.from_edge.before.total, tpl.from_edge.before.timestamp], 'the same prior state');
         const T = tpl.timestamp, X = tpl.from_edge.before.total, attemptRec = {deal_id: X1, route: 'transfer', edge: ab, prior: X, prior_timestamp: tpl.from_edge.before.timestamp,
           prior_signature: tpl.from_edge.before.signature, total: X - 2, timestamp: T, quote_digest: tpl.quote_digest, signed_at: iso(now - 12 * 60e3)};
         const bobBefore = {pins: PINS, consent_policy: POLICY_ALL, transfer_attempts: {[X1]: [attemptRec]}, signed: xSigned(T, [[ab, 'prior', X], [ab, 'new', X - 2], [edgeK('alice', 'nina'), 'new', (edgeState('alice', 'nina')?.total ?? 0) + 2]])};
@@ -1861,7 +1931,9 @@ async function transcriptVectors() {
             client_call: {method: 'complete', key: 'bob', feature: 'circulation/1', args: {deal_id: X1, expected_deliverable_sha256: d.delivery.sha256}, client_state: bobBefore,
               signature_fields: [], expect_error: 'transfer_window_open'}});
         assert.equal(w.error, 'transfer_window_open', JSON.stringify(w).slice(0, 300));
-        await step('flow W: the deal says what is possible now: wait for the transfer window (next_actions)', 'bob.agent', 'GET', `/deals/${X1}`, {auth: 'bob.agent', features: FEAT, expect: 200});
+        const nw = await step("flow W: the deal says what is possible now (next_actions): wait for the transfer window before an own note, or pay by transfer through alice's note while it is in the state the refused attempt acknowledged (the same-prior exemption)",
+          'bob.agent', 'GET', `/deals/${X1}`, {auth: 'bob.agent', features: FEAT, expect: 200});
+        assert.ok(nw.next_actions?.includes('wait_for_transfer_window') && nw.next_actions?.includes('pay_by_transfer'), JSON.stringify(nw.next_actions));
         now = T + 3600e3 + 125e3;   // past T + 1 h + 2 min, the client's own margin
         const ok = await completeBound('bob', 'nina', X1, 'flow W: after the window bob pays with his own bound note: note_issued (the refused attempt can never apply now)',
           {extraReads: [['/edges?since=0', 'bob.agent']], client_state: bobBefore,
@@ -1933,7 +2005,8 @@ async function transcriptVectors() {
         tracker.onTimeout = () => {
           const cur = notes.get(ab), x = now - 1000, T2 = x - (x % 1000) + 997 - ((x % 1000) < 997 ? 1000 : 0);
           outside = {issuer_pubkey: A, recipient_pubkey: B, amount: cur.amount_collected + 2, timestamp: T2, signature: signHex(K.alice, msgHex('alice', 'bob', cur.amount_collected + 2, T2)),
-            tracker_nft_id: FIXTURE_NFT, denomination: PILOT_DENOMINATION, prior_signature: signHex(K.alice, msgHex('alice', 'bob', cur.amount_collected, T2)), prior_total: cur.amount_collected};
+            tracker_nft_id: FIXTURE_NFT, denomination: PILOT_DENOMINATION, prior_signature: signHex(K.alice, paHex('alice', 'bob', cur.amount_collected, cur.timestamp, T2)), prior_total: cur.amount_collected,
+            prior_timestamp: cur.timestamp};
           const ans = v3Note(outside);
           assert.equal(ans.status, 201, JSON.stringify(ans));
         };
@@ -2017,20 +2090,27 @@ async function transcriptVectors() {
             why: 'novationTimestamp (lib/pilot/novation.mjs): T ending in the residue, at least 1.5 s before the clock and after the edge state (or every live set-off on it); otherwise the server waits ahead_ms (at most 3 s) or answers 409 note_timestamp_ahead'});
         }
 
-        // ---- messages: a bound note and its prior, the seven transfer slots, the set-off slots (deterministic signatures) ----
+        // ---- messages: a bound note and its prior acknowledgment, the seven transfer slots, the set-off slots
+        //      (deterministic signatures). Tracker v3.2: a prior acknowledgment (kind prior_ack) is the 105-byte
+        //      PA(I,R,total,prior_timestamp,timestamp); every other message the 80-byte M(I,R,total,timestamp) ----
         const bC2 = circulation.templates.bound_C2.tpl;
-        const pushMsg = (name, slot, i, r, total, ts, signer) => {
-          const message_hex = M(i, r, total, ts);
-          V.messages.push({name, slot, issuer_pubkey: i, recipient_pubkey: r, total, timestamp: ts, tracker_nft_id: FIXTURE_NFT, denomination: PILOT_DENOMINATION,
-            message_hex, signer: keyName(signer), signer_pubkey: signer, signature: signHex(Object.values(K).find(k => k.pub === signer), message_hex), valid: true});
+        const keyOfName = pub => Object.values(K).find(k => k.pub === pub);
+        const pushMsg = (name, slot, i, r, total, ts, signer, priorTs) => {
+          const pa = priorTs !== undefined, message_hex = pa ? PAk(i, r, total, priorTs, ts) : M(i, r, total, ts);
+          V.messages.push({name, slot, ...(pa ? {kind: 'prior_ack'} : {}), issuer_pubkey: i, recipient_pubkey: r, total, ...(pa ? {prior_timestamp: priorTs} : {}), timestamp: ts,
+            tracker_nft_id: FIXTURE_NFT, denomination: PILOT_DENOMINATION, message_hex, signer: keyName(signer), signer_pubkey: signer, signature: signHex(keyOfName(signer), message_hex), valid: true});
         };
-        pushMsg('bound-note/prior-acknowledgment', `${bC2.issuer_pubkey}>${bC2.recipient_pubkey}:prior`, bC2.issuer_pubkey, bC2.recipient_pubkey, bC2.prior_total, bC2.timestamp, bC2.issuer_pubkey);
+        const bC2p = bC2.prior_note ? bC2.prior_note.timestamp : 0;
+        assert.equal(bC2.prior_timestamp, bC2p);
+        pushMsg('bound-note/prior-acknowledgment', `${bC2.issuer_pubkey}>${bC2.recipient_pubkey}:prior`, bC2.issuer_pubkey, bC2.recipient_pubkey, bC2.prior_total, bC2.timestamp, bC2.issuer_pubkey, bC2p);
+        assert.equal(V.messages[0].message_hex, bC2.prior_message_hex, "the bound template's prior_message_hex is PA");
         pushMsg('bound-note/note', `${bC2.issuer_pubkey}>${bC2.recipient_pubkey}:new`, bC2.issuer_pubkey, bC2.recipient_pubkey, bC2.total, bC2.timestamp, bC2.issuer_pubkey);
         const tN1 = circulation.templates.transfer_N1.tpl;
         {
           const A = tN1.issuer.pubkey, B = tN1.payer.pubkey, C = tN1.payee.pubkey, a = tN1.amount, T = tN1.timestamp, X = tN1.from_edge.before.total, Y = tN1.to_edge.before?.total ?? 0;
-          for (const [slot, signer, i, r, total] of [['issuer_from', A, A, B, X - a], ['issuer_to', A, A, C, Y + a], ['from_recipient_prior', B, A, B, X], ['from_recipient', B, A, B, X - a],
-            ['from_recipient_to', B, A, C, Y + a], ['to_recipient_prior', C, A, C, Y], ['to_recipient', C, A, C, Y + a]]) pushMsg(`transfer/${slot}`, slot, i, r, total, T, signer);
+          const pX = tN1.from_edge.before.timestamp, pY = tN1.to_edge.before?.timestamp ?? 0;
+          for (const [slot, signer, i, r, total, pts] of [['issuer_from', A, A, B, X - a], ['issuer_to', A, A, C, Y + a], ['from_recipient_prior', B, A, B, X, pX], ['from_recipient', B, A, B, X - a],
+            ['from_recipient_to', B, A, C, Y + a], ['to_recipient_prior', C, A, C, Y, pY], ['to_recipient', C, A, C, Y + a]]) pushMsg(`transfer/${slot}`, slot, i, r, total, T, signer, pts);
         }
         const S2item = circulation.consent_items.member_S2_alice.item;
         for (const e of S2item.edges) {
@@ -2040,6 +2120,17 @@ async function transcriptVectors() {
         }
         V.messages.push({...V.messages[0], name: 'bound-note/prior-acknowledgment-signed-by-the-creditor', signer: keyName(bC2.recipient_pubkey), signer_pubkey: bC2.recipient_pubkey,
           signature: V.messages[0].signature, valid: false, why: "the issuer's signature does not verify under the creditor's key"});
+        // Tracker v3.2 negatives: an acknowledgment that binds anything but this prior state at this T does not verify
+        // over PA (PROTOCOL.md 18.3, 18.6).
+        V.messages.push({...V.messages[0], name: 'bound-note/prior-acknowledgment-v3.1', signature: signHex(keyOfName(bC2.issuer_pubkey), M(bC2.issuer_pubkey, bC2.recipient_pubkey, bC2.prior_total, bC2.timestamp)),
+          valid: false, why: "the tracker v3.1 acknowledgment M(I,R,P,T) (80 bytes: the prior total at the note's timestamp, no prior timestamp) does not verify over PA"});
+        {
+          const fp = V.messages.find(v => v.name === 'transfer/from_recipient_prior'), B = keyOfName(fp.signer_pubkey);
+          V.messages.push({...fp, name: 'transfer/from_recipient_prior-of-another-state', signature: signHex(B, PAk(fp.issuer_pubkey, fp.recipient_pubkey, fp.total, fp.prior_timestamp - 1000, fp.timestamp)),
+            valid: false, why: 'the same total and T, but another prior timestamp: an acknowledgment of another state of the edge (the ABA of audit VS-1) does not verify over PA of this one'});
+          V.messages.push({...fp, name: 'transfer/from_recipient_prior-lifted-from-another-role', signature: signHex(B, M(fp.issuer_pubkey, fp.recipient_pubkey, fp.total, fp.prior_timestamp)),
+            valid: false, why: "the old creditor's signature over M(A,B,X,p), the prior state's own note message (B signs exactly it as the new creditor of a transfer, or as the creditor of a set-off, that made that state), does not verify over PA"});
+        }
 
         // ---- quote digests (PROTOCOL.md 18.3 item 4) ----
         const quoteCase = (name, Q, why) => { const text = canonical(Q); V.quote_digests.push({name, quote: Q, canonical: text, quote_digest: sha256(text), why}); };
@@ -2062,11 +2153,11 @@ async function transcriptVectors() {
           V.statements.push({name: 'pay/T1', kind: 'pay', tier: 'core', inputs: {deal_id: tN1.deal_id, quote_digest: q}, statement: text, statement_utf8_hex: utf8hex(text),
             signer: 'bob', pubkey: K.bob.pub, signature: signText(K.bob, text), valid: true});
           V.statements.push({...V.statements[0], name: 'pay/T1-signed-as-a-note-message', signature: signHex(K.bob, M(tN1.issuer.pubkey, tN1.payer.pubkey, tN1.from_edge.new_total, tN1.timestamp)),
-            valid: false, why: 'a slot signature is over an 80-byte note message, never over the 102-byte pay statement'});
+            valid: false, why: 'a slot signature is over an 80-byte note message (or a 105-byte prior acknowledgment), never over the 102-byte pay statement'});
         }
         circulation.vectors = V; CIRCULATION_VECTORS = V; CIRCULATION_REDACT = redact;
       }
-      // ---- tracker requests (POST /notes/transfer, /notes/setoff), each run on the stand-in tracker v3.1 in the state the
+      // ---- tracker requests (POST /notes/transfer, /notes/setoff), each run on the stand-in tracker v3.2 in the state the
       //      transcript's request found, at its time; negatives are the attacks and mistakes the tracker refuses ----
       {
         const V = circulation.vectors, pk = n => K[n].pub;
@@ -2086,14 +2177,19 @@ async function transcriptVectors() {
             return {status: r.status, ...(r.json?.code ? {code: r.json.code} : {}), ...(r.status >= 300 ? {error: r.json ? r.json.error : r.text} : {})};
           } finally { notes.clear(); for (const [k, v] of savedNotes) notes.set(k, v); boundOnly.clear(); for (const k of savedBound) boundOnly.add(k); now = savedNow; }
         }
-        // what the tracker checks for each signature of a transfer body, given the state before
+        // what the tracker checks for each signature of a transfer body, given the state before (tracker v3.2: the two
+        // creditor prior slots over PA of the edges' stored states, kind prior_ack; the other five over M)
         const transferSigs = (b, before) => {
           const A = b.issuer_pubkey, B = b.from_recipient_pubkey, C = b.to_recipient_pubkey, a = b.amount, T = b.timestamp;
-          const X = before[`${A}>${B}`]?.total ?? 0, Y = before[`${A}>${C}`]?.total ?? 0;
-          return [['issuer_from_signature', A, A, B, X - a], ['issuer_to_signature', A, A, C, Y + a], ['from_recipient_prior_signature', B, A, B, X], ['from_recipient_signature', B, A, B, X - a],
-            ['from_recipient_to_signature', B, A, C, Y + a], ['to_recipient_prior_signature', C, A, C, Y], ['to_recipient_signature', C, A, C, Y + a]]
+          const X = before[`${A}>${B}`]?.total ?? 0, Y = before[`${A}>${C}`]?.total ?? 0, pX = before[`${A}>${B}`]?.timestamp ?? 0, pY = before[`${A}>${C}`]?.timestamp ?? 0;
+          return [['issuer_from_signature', A, A, B, X - a], ['issuer_to_signature', A, A, C, Y + a], ['from_recipient_prior_signature', B, A, B, X, pX], ['from_recipient_signature', B, A, B, X - a],
+            ['from_recipient_to_signature', B, A, C, Y + a], ['to_recipient_prior_signature', C, A, C, Y, pY], ['to_recipient_signature', C, A, C, Y + a]]
             .filter(([f]) => typeof b[f] === 'string' && Number.isSafeInteger(a) && Number.isSafeInteger(T) && X - a >= 0)
-            .map(([field, signer, i, r, total]) => { const message_hex = M(i, r, total, T); return {field, signer_pubkey: signer, issuer_pubkey: i, recipient_pubkey: r, total, timestamp: T, message_hex, signature: b[field], valid: schnorrVerify(hx(b[field]), hx(message_hex), hx(signer))}; });
+            .map(([field, signer, i, r, total, p]) => {
+              const pa = p !== undefined, message_hex = pa ? PAk(i, r, total, p, T) : M(i, r, total, T);
+              return {field, ...(pa ? {kind: 'prior_ack'} : {}), signer_pubkey: signer, issuer_pubkey: i, recipient_pubkey: r, total, ...(pa ? {prior_timestamp: p} : {}), timestamp: T, message_hex,
+                signature: b[field], valid: schnorrVerify(hx(b[field]), hx(message_hex), hx(signer))};
+            });
         };
         const setoffSigs = (b, before) => (b.edges || []).flatMap((e, n) => {
           const P0 = before[`${e.issuer_pubkey}>${e.recipient_pubkey}`]?.total ?? 0, ts = e.timestamp ?? b.timestamp, total = P0 - e.decrease;
@@ -2113,38 +2209,59 @@ async function transcriptVectors() {
         {
           const b0 = T1req.request, before = T1req.before, at = T1req.at;
           const A = b0.issuer_pubkey, B = b0.from_recipient_pubkey, C = b0.to_recipient_pubkey, a = b0.amount, T = b0.timestamp;
-          const X = before[`${A}>${B}`].total, Y = before[`${A}>${C}`]?.total ?? 0;
+          const X = before[`${A}>${B}`].total, Y = before[`${A}>${C}`]?.total ?? 0, pX = before[`${A}>${B}`].timestamp, pY = before[`${A}>${C}`]?.timestamp ?? 0;
+          assert.deepEqual([b0.from_prior_total, b0.from_prior_timestamp, b0.to_prior_total, b0.to_prior_timestamp], [X, pX, Y, pY], "the server's tracker request names both prior states");
+          const PA = (i, r, t, p, ts) => PAk(i, r, t, p, ts);
           // a transfer body for other values, every slot signed by its true signer (an honest body for those values)
-          const signedBody = ({A: A2 = A, B: B2 = B, C: C2 = C, a: a2 = a, T: T2 = T, X: X2 = X, Y: Y2 = Y} = {}) => ({issuer_pubkey: A2, from_recipient_pubkey: B2, to_recipient_pubkey: C2, denomination: PILOT_DENOMINATION,
+          const signedBody = ({A: A2 = A, B: B2 = B, C: C2 = C, a: a2 = a, T: T2 = T, X: X2 = X, Y: Y2 = Y, pX: pX2 = pX, pY: pY2 = pY} = {}) => ({issuer_pubkey: A2, from_recipient_pubkey: B2, to_recipient_pubkey: C2, denomination: PILOT_DENOMINATION,
             amount: a2, timestamp: T2, issuer_from_signature: sg(A2, M(A2, B2, X2 - a2, T2)), issuer_to_signature: sg(A2, M(A2, C2, Y2 + a2, T2)),
-            from_recipient_prior_signature: sg(B2, M(A2, B2, X2, T2)), from_recipient_signature: sg(B2, M(A2, B2, X2 - a2, T2)), from_recipient_to_signature: sg(B2, M(A2, C2, Y2 + a2, T2)),
-            to_recipient_prior_signature: sg(C2, M(A2, C2, Y2, T2)), to_recipient_signature: sg(C2, M(A2, C2, Y2 + a2, T2)), from_prior_total: X2, to_prior_total: Y2});
-          add('transfers', 'transfer/T1-as-applied', 'POST /notes/transfer', before, at, b0, 'the seven signatures of transfer T1 (transcript), each over M(I,R,t,T) for its slot: applied', 200);
+            from_recipient_prior_signature: sg(B2, PA(A2, B2, X2, pX2, T2)), from_recipient_signature: sg(B2, M(A2, B2, X2 - a2, T2)), from_recipient_to_signature: sg(B2, M(A2, C2, Y2 + a2, T2)),
+            to_recipient_prior_signature: sg(C2, PA(A2, C2, Y2, pY2, T2)), to_recipient_signature: sg(C2, M(A2, C2, Y2 + a2, T2)), from_prior_total: X2, to_prior_total: Y2,
+            from_prior_timestamp: pX2, to_prior_timestamp: pY2});
+          add('transfers', 'transfer/T1-as-applied', 'POST /notes/transfer', before, at, b0,
+            "the seven signatures of transfer T1 (transcript), each over its slot's message (the two creditor prior slots over PA(A,R,prior,p,T) of their edges' states, the other five over M(I,R,t,T)): applied", 200);
           add('transfers', 'transfer/standalone-raised-edge', 'POST /notes', before, at,
             {issuer_pubkey: A, recipient_pubkey: C, amount: Y + a, timestamp: T, signature: b0.issuer_to_signature, tracker_nft_id: FIXTURE_NFT, denomination: PILOT_DENOMINATION},
             "the issuer's raise of the new creditor's edge, sent alone as a note: a timestamp ending in 999 belongs to transfers", 'reserved_timestamp');
           add('transfers', 'transfer/missing-residue', 'POST /notes/transfer', before, at, signedBody({T: T - 999}), 'every slot signed, but the timestamp does not end in 999 ms', 'invalid_transfer');
           const puppet = K['carol-2'].pub;
           add('transfers', 'transfer/puppet-destination', 'POST /notes/transfer', {...before, [`${A}>${puppet}`]: null}, at,
-            {...b0, to_recipient_pubkey: puppet, from_recipient_to_signature: sg(B, M(A, puppet, a, T)), to_recipient_prior_signature: sg(puppet, M(A, puppet, 0, T)), to_recipient_signature: sg(puppet, M(A, puppet, a, T)), to_prior_total: 0},
+            {...b0, to_recipient_pubkey: puppet, from_recipient_to_signature: sg(B, M(A, puppet, a, T)), to_recipient_prior_signature: sg(puppet, PA(A, puppet, 0, 0, T)), to_recipient_signature: sg(puppet, M(A, puppet, a, T)),
+              to_prior_total: 0, to_prior_timestamp: 0},
             "the payer and a key it controls sign a destination the issuer never signed: the issuer's to-slot does not verify for it", 'invalid_signature');
           const four = {issuer_pubkey: A, from_recipient_pubkey: B, to_recipient_pubkey: C, denomination: PILOT_DENOMINATION, amount: a, timestamp: T,
             issuer_from_signature: b0.issuer_from_signature, issuer_to_signature: b0.issuer_to_signature, from_recipient_signature: b0.from_recipient_signature, to_recipient_signature: b0.to_recipient_signature};
           add('transfers', 'transfer/four-signature-body', 'POST /notes/transfer', before, at, four, 'the four-signature body of tracker versions before v3: refused (422, missing fields)', 422);
           add('transfers', 'transfer/five-signature-body', 'POST /notes/transfer', before, at, {...four, from_recipient_to_signature: b0.from_recipient_to_signature},
-            "five signatures (no prior acknowledgments): refused (422), so neither creditor's current total can be skipped", 422);
+            "five signatures (no prior acknowledgments): refused (422), so neither creditor's current state can be skipped", 422);
           add('transfers', 'transfer/amplification', 'POST /notes/transfer', before, at, {...b0, amount: 2 * a},
             'twice the amount with the signatures of the true transfer: the decrease and the increase must each be exactly what was signed', 'invalid_signature');
           add('transfers', 'transfer/colluding-payer', 'POST /notes/transfer', {...before, [`${A}>${C}`]: {total: 5, timestamp: T - 5000, signature: sg(A, M(A, C, 5, T - 5000))}}, at,
-            (({to_prior_total, ...rest}) => ({...rest, issuer_to_signature: sg(A, M(A, C, 5 + a, T)), from_recipient_to_signature: sg(B, M(A, C, 5 + a, T))}))(b0),
-            "the issuer and a colluding payer sign the destination over a note they hid from the new creditor (its edge at 5): the creditor's own prior acknowledgment (over 0) does not verify for the tracker's prior (5)", 'invalid_prior_signature');
+            (({to_prior_total, to_prior_timestamp, ...rest}) => ({...rest, issuer_to_signature: sg(A, M(A, C, 5 + a, T)), from_recipient_to_signature: sg(B, M(A, C, 5 + a, T))}))(b0),
+            "the issuer and a colluding payer sign the destination over a note they hid from the new creditor (its edge at 5): the creditor's own prior acknowledgment (of (0, 0), a new edge) does not verify for the tracker's prior state (5 at its timestamp)", 'invalid_prior_signature');
           const T998 = T - 1;
           add('transfers', 'transfer/setoff-signatures-used-as-a-transfer', 'POST /notes/transfer', before, at, signedBody({T: T998}),
             'signatures over a timestamp ending in 998 ms (a set-off) presented as a transfer: refused before any signature is checked', 'invalid_transfer');
           add('transfers', 'transfer/too-old', 'POST /notes/transfer', before, T + 3600001, b0, 'the same body one hour and 1 ms after T: novation_expired, the maximum age (also for bound notes)', 'novation_expired');
-          add('transfers', 'transfer/unknown-field', 'POST /notes/transfer', before, at, {...b0, memo: 'thanks'}, 'a field the version-3 request does not have: refused (422, deny_unknown_fields)', 422);
+          add('transfers', 'transfer/unknown-field', 'POST /notes/transfer', before, at, {...b0, memo: 'thanks'}, 'a field the version-4 request does not have: refused (422, deny_unknown_fields)', 422);
           add('transfers', 'transfer/stale-prior-total', 'POST /notes/transfer', before, at, {...b0, from_prior_total: X + 1}, "from_prior_total is not the edge's current total", 'stale_prior');
           add('transfers', 'transfer/self-transfer', 'POST /notes/transfer', before, at, {...b0, to_recipient_pubkey: B}, 'the old and the new creditor are the same key', 'invalid_transfer');
+          // tracker v3.2 (design v3.2 sections 2-3)
+          add('transfers', 'transfer/stale-prior-timestamp', 'POST /notes/transfer', before, at, {...b0, from_prior_timestamp: pX - 1000},
+            "from_prior_timestamp is not the timestamp of the edge's current note (diagnostic, as the totals: the signatures are what bind)", 'stale_prior');
+          add('transfers', 'transfer/v3.1-prior-acknowledgments', 'POST /notes/transfer', before, at,
+            {...b0, from_recipient_prior_signature: sg(B, M(A, B, X, T)), to_recipient_prior_signature: sg(C, M(A, C, Y, T))},
+            'the creditors signed the tracker v3.1 acknowledgments M(A,B,X,T) and M(A,C,Y,T) (80 bytes, no prior timestamp): they do not verify over PA', 'invalid_prior_signature');
+          {
+            // audit VS-1 (the ABA): A->B left X and came back to X in another state (here at a later timestamp pX2) before
+            // the attempt reached the tracker; its body asserts no prior timestamps
+            const pX2 = T - 1499;
+            assert.ok(pX < pX2 && pX2 < T && pX2 % 1000 === 500);
+            add('transfers', 'transfer/same-total-another-state', 'POST /notes/transfer', {...before, [`${A}>${B}`]: {total: X, timestamp: pX2, signature: sg(A, M(A, B, X, pX2))}}, at,
+              (({from_prior_timestamp, to_prior_timestamp, ...rest}) => rest)(b0),
+              "audit VS-1's ABA: the held edge is back at the acknowledged total X, but in another state (a later note): PA(A,B,X,p,T) names the state it was signed on, so the old creditor's prior slot does not verify (tracker v3.1's M(A,B,X,T) did, and both attempts of a deal could apply)",
+              'invalid_prior_signature');
+          }
         }
         {
           const Sreq = trackerRequests.filter(x => x.route === 'POST /notes/setoff' && x.answer?.status === 200).at(-1);
@@ -2181,24 +2298,31 @@ async function transcriptVectors() {
         // an edge state at another timestamp, signed by its issuer (so it verifies: only the timestamp rule is broken)
         const keyOfPub = pub => Object.values(K).find(k => k.pub === pub);
         const restamp = (st, I, R, ts) => ({total: st.total, timestamp: ts, signature: signHex(keyOfPub(I), M(I, R, st.total, ts))});
+        // ctx.novation: GET /info novation as the server published it in this run (step 'public: network info with
+        // circulating credit on'), with the tracker v3.2 contract the 0.4 clients sign prior acknowledgments for
+        const NOVATION = clone(info16.novation);
         const ctxFor = (name, now_ms, extra = {}) => ({me_pk: K[name].pub, me_id: P[name].id, now_ms, pins: {...PINS}, consent_policy: {...POLICY_ALL}, mandate: clone(MD[name]),
-          records: null, signed: null, transfer_attempts: null, novated_edges: null, features: [...FEATS], ...extra});
+          records: null, signed: null, transfer_attempts: null, novated_edges: null, features: [...FEATS], novation: clone(NOVATION), ...extra});
+        // the contract as a v16 server on tracker v3.1 (fa38334) published it: the novation constants only
+        const NOVATION_V31 = (({tracker_build, transfer_version, bound_note_version, prior_ack, ...rest}) => rest)(NOVATION);
         const dealCtx = async (name, id, extra = {}) => {
           const d = await dealView(name, id), t = d.current.terms;
           return {deal_id: t.deal_id, network: t.network, tracker_nft_id: t.tracker_nft_id, denomination: t.denomination, terms_hash: d.agreement.terms_hash,
             deliverable_sha256: d.delivery.sha256, price: t.price.amount, payer: {id: t.payer.id, pubkey: t.payer.pubkey}, payee: {id: t.payee.id, pubkey: t.payee.pubkey},
             delivered: false, transfer_id: null, ...extra};
         };
-        // the slots and messages a 'sign' decision names, from the input as given
+        // the slots and messages a 'sign' decision names, from the input as given (tracker v3.2: a prior slot is PA of the
+        // verified state the input shows, (0, 0) for an absent edge; a new slot is M)
         const consentSlots = item => item.edges.flatMap(e => {
           const [I, R] = e.edge.split('>');
-          return e.slots.filter(sl => !e.signed_by_you.includes(sl)).map(sl => [`${e.edge}:${sl}`, M(I, R, sl === 'prior' ? (e.before?.total ?? 0) : e.new_total, e.timestamp)]);
+          return e.slots.filter(sl => !e.signed_by_you.includes(sl)).map(sl => [`${e.edge}:${sl}`,
+            sl === 'prior' ? PAk(I, R, e.before?.total ?? 0, e.before?.timestamp ?? 0, e.timestamp) : M(I, R, e.new_total, e.timestamp)]);
         });
         const payerSlots = t => {
           const A = t.issuer.pubkey, B = t.payer.pubkey, C = t.payee.pubkey, X = t.from_edge.before.total, Y = t.to_edge.before?.total ?? 0, a = t.amount, T = t.timestamp;
-          return [[`${A}>${B}:prior`, M(A, B, X, T)], [`${A}>${B}:new`, M(A, B, X - a, T)], [`${A}>${C}:new`, M(A, C, Y + a, T)]];
+          return [[`${A}>${B}:prior`, PAk(A, B, X, t.from_edge.before.timestamp, T)], [`${A}>${B}:new`, M(A, B, X - a, T)], [`${A}>${C}:new`, M(A, C, Y + a, T)]];
         };
-        const boundSlots = t => [[`${t.issuer_pubkey}>${t.recipient_pubkey}:prior`, M(t.issuer_pubkey, t.recipient_pubkey, t.prior_total, t.timestamp)],
+        const boundSlots = t => [[`${t.issuer_pubkey}>${t.recipient_pubkey}:prior`, PAk(t.issuer_pubkey, t.recipient_pubkey, t.prior_total, t.prior_note ? t.prior_note.timestamp : 0, t.timestamp)],
           [`${t.issuer_pubkey}>${t.recipient_pubkey}:new`, M(t.issuer_pubkey, t.recipient_pubkey, t.total, t.timestamp)]];
         const push = (group, name, evaluator, rule, input, ctx, expected, why, summary) => {
           const slotsOf = {consent: consentSlots, payer_template: payerSlots, bound_template: boundSlots}[evaluator];
@@ -2239,7 +2363,9 @@ async function transcriptVectors() {
             x.now_ms = Math.max(x.now_ms, ts + 1000);
             x.transfer_attempts = {vd_00000000000000ab: [{deal_id: 'vd_00000000000000ab', route: 'note', edge: e.edge, prior: e.new_total, prior_timestamp: e.before.timestamp, prior_signature: e.before.signature,
               total: e.new_total + 3, timestamp: ts, quote_digest: null, signed_at: iso(x.now_ms)}]};
-          }, 'payment_attempt', 'a bound note of hers acknowledged the total this set-off brings her edge back to, and it could still apply after it');
+          }, 'payment_attempt', 'a bound note of hers acknowledged the total this set-off brings her edge back to: refused as a second line (on tracker v3.1 that note could then apply after it; tracker v3.2 binds its prior timestamp too)');
+          c('sign-without-a-tracker-contract', 'v3.2', (i, x) => { delete x.novation; }, 'sign',
+            'a set-off signs 80-byte note messages only (no prior slot): it is signed whatever GET /info novation reports');
         }
         // ---- transfer issuer (alice's view of transfer T1) ----
         {
@@ -2248,17 +2374,25 @@ async function transcriptVectors() {
           c('sign', 'R6', () => {}, 'sign', 'her debt moves from bob to nina, unchanged in total: sign both new slots, the decreased edge first');
           c('total-owed-changes', 'R6', i => { const t = i.edges.find(e => e.change > 0); t.new_total += 1; t.change += 1; }, 'total_owed_changes', 'the raised edge rises by more than the lowered one falls');
           c('not-my-edge', 'R6', i => { i.edges[0].edge = `${K.bob.pub}>${i.edges[0].edge.split('>')[1]}`; }, 'not_my_edge', 'an edge whose issuer is not her key');
+          c('sign-without-a-tracker-contract', 'v3.2', (i, x) => { delete x.novation; }, 'sign',
+            "the issuer signs the two new slots only (80-byte note messages, no prior slot): it is signed whatever GET /info novation reports");
         }
         // ---- transfer payee (nina's view of transfer T1) ----
         {
           const {item, now_ms} = CI.payee_T1, deal = await dealCtx('nina', item.context.deal.deal_id, {delivered: true, transfer_id: item.id});
           const base = () => [clone(item), ctxFor('nina', now_ms, {deal: clone(deal), issuer_ids: {[K.alice.pub]: P.alice.id}})];
           const c = (name, rule, f, expected, why, summary) => { const [i, x] = base(); f(i, x); push('consents', `payee/${name}`, 'consent', rule, i, x, expected, why, summary); };
-          c('sign', 'R7', () => {}, 'sign', 'paid for her own delivered deal by exactly its price: sign the prior and the new slot of her edge');
+          c('sign', 'R7', () => {}, 'sign', "paid for her own delivered deal by exactly its price: sign her edge's prior slot (PA of its state, (0, 0) for a new edge) and its new slot");
           c('not-delivered', 'R7', (i, x) => { x.deal.delivered = false; }, 'deal_mismatch', 'not a deal she delivered on');
           c('another-transfer', 'R7', (i, x) => { x.deal.transfer_id = 'vt_0000000000000000'; }, 'deal_mismatch', 'the deal view names another transfer as its payment');
           c('issuer-refused', 'R8', (i, x) => { x.consent_policy.refuse_issuers = [P.alice.id]; }, 'issuer_refused', 'her local policy refuses notes from this issuer (resolved through the directory)');
           c('policy-off-mandate', 'R8', (i, x) => { x.mandate.accept_transfers = false; }, 'policy_off', "her owner's mandate does not accept payments by transfer");
+          c('prior-timestamp-not-the-state', '-', i => { i.edges[0].prior_timestamp += 1000; }, 'bad_consent',
+            "the item names a prior timestamp other than its edge's state (before.timestamp, 0 for a new edge): not well formed for signing");
+          c('no-tracker-contract', 'v3.2', (i, x) => { delete x.novation; }, 'feature_unavailable',
+            'GET /info novation does not report the tracker v3.2 contract (here: no novation in the context): nothing that signs a prior slot is signed');
+          c('tracker-v3.1-contract', 'v3.2', (i, x) => { x.novation = clone(NOVATION_V31); }, 'feature_unavailable',
+            'GET /info novation as a v16 server on tracker v3.1 published it (the constants only: no tracker_build, transfer_version, bound_note_version, prior_ack)');
         }
         // ---- payer template (bob paying nina with alice's note: transfer T1's template) ----
         {
@@ -2266,7 +2400,7 @@ async function transcriptVectors() {
           const base = () => [clone(tpl), ctxFor('bob', now_ms, {deal: clone(deal), payee_current_pk: K.nina.pub, approved_quote_digest: null})];
           const c = (name, rule, f, expected, why, summary) => { const [i, x] = base(); f(i, x); push('payer_templates', `payer/${name}`, 'payer_template', rule, i, x, expected, why, summary); };
           const held = `${tpl.issuer.pubkey}>${tpl.payer.pubkey}`, bn = `${K.bob.pub}>${K.nina.pub}`;
-          c('sign', 'R7', () => {}, 'sign', 'the three slots of the payer: prior and new on the held edge, new on the destination', {quote_digest: tpl.quote_digest});
+          c('sign', 'R7', () => {}, 'sign', "the three slots of the payer: the held edge's prior slot (PA of its state) and new slot, then the destination's new slot", {quote_digest: tpl.quote_digest});
           c('pay-with-is-payee', 'R7', i => { i.issuer = {...i.issuer, id: P.nina.id, pubkey: K.nina.pub}; }, 'pay_with_is_payee', 'the note to pay with is the payee\'s own');
           c('wrong-destination', 'R7', (i, x) => { x.payee_current_pk = other; }, 'wrong_destination', "the destination is not the payee's current directory key");
           c('amount-mismatch', 'R7', i => { i.amount += 1; i.from_edge.new_total -= 1; i.to_edge.new_total += 1; }, 'amount_mismatch', 'the amount is not the agreed price');
@@ -2274,7 +2408,7 @@ async function transcriptVectors() {
           c('timestamp-domain', 'R3', i => { i.timestamp -= 1; }, 'timestamp_domain', 'a transfer timestamp ends in 999 ms');
           c('bad-prior-signature', 'R2', i => { i.from_edge.before.signature = otherSig(i.from_edge.before, i.issuer.pubkey, i.payer.pubkey); }, 'bad_prior_signature', "the held edge's state is not the issuer's signature");
           c('timestamp-stale', 'R5', (i, x) => { x.now_ms = i.timestamp + 11 * 60e3; }, 'timestamp_stale', 'what the client starts is signed only within 10 minutes of its timestamp');
-          c('timestamp-equal-to-the-held-state', 'R5', i => { i.from_edge.before = restamp(i.from_edge.before, i.issuer.pubkey, i.payer.pubkey, i.timestamp); }, 'timestamp_stale',
+          c('timestamp-equal-to-the-held-state', 'R5', i => { i.from_edge.before = restamp(i.from_edge.before, i.issuer.pubkey, i.payer.pubkey, i.timestamp); i.from_edge.prior_timestamp = i.timestamp; }, 'timestamp_stale',
             'T equal to the held edge state (it must be later than every prior shown)');
           c('already-paid', 'D-1', (i, x) => { x.records = {paid_deals: {[tpl.deal_id]: {route: 'note', edge: bn, total: 10, timestamp: i.timestamp - 60e3}}}; }, 'already_paid', 'his records show the deal paid');
           c('attempt-outcome-unknown', 'D-1', (i, x) => {
@@ -2290,18 +2424,41 @@ async function transcriptVectors() {
             x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'note', edge: bn, prior: 0, prior_timestamp: 0, prior_signature: null, total: 10, timestamp: T0b,
               quote_digest: null, signed_at: iso(T0b)}]};
           }, 'transfer_window_open', "a bound note's window has passed, but its edge was not read back: the client reads GET /edges and decides again", {needs_read_back: [bn]});
-          // audit VS-1: the creditors' prior acknowledgments carry no prior timestamp, so a retry through the same issuer at
-          // another T is not excluded by the first at the tracker; the identical operation (same T) is
-          const sameIssuer = (i, x, T) => {
-            const fb = i.from_edge.before;
-            assert.ok(T > fb.timestamp && T <= i.timestamp && T % 1000 === 999, 'an earlier transfer attempt later than the held state');
-            x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'transfer', edge: held, prior: fb.total, prior_timestamp: fb.timestamp, prior_signature: fb.signature,
-              total: fb.total - i.amount, timestamp: T, quote_digest: tpl.quote_digest, signed_at: iso(x.now_ms - 1000)}]};
+          // R11 (decision D-1, design v3.2 section 4): an earlier transfer attempt of his for the deal that can still apply.
+          // Tracker v3.2's PA(A,B,X,p,T) binds the held edge's state (X, p), which the edge has once, so a retry through the
+          // same held edge on the same state, total AND timestamp, is excluded by the earlier attempt at the tracker (at
+          // most one of the two applies) and is signed at once, at any T (the same-prior exemption; audit VS-1 closed).
+          // Everything else keeps the window: another prior state, an attempt that recorded none, another issuer.
+          const earlierTransfer = (i, x, T, {edge = held, prior = i.from_edge.before.total, prior_timestamp = i.from_edge.before.timestamp, prior_signature = i.from_edge.before.signature} = {}) => {
+            assert.ok(T > i.from_edge.before.timestamp && T <= i.timestamp && T % 1000 === 999, 'an earlier transfer attempt later than the held state');
+            x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'transfer', edge, prior, ...(prior_timestamp === null ? {} : {prior_timestamp, prior_signature}),
+              total: prior - i.amount, timestamp: T, quote_digest: tpl.quote_digest, signed_at: iso(x.now_ms - 1000)}]};
           };
-          c('same-prior-retry-at-another-timestamp', 'D-1', (i, x) => sameIssuer(i, x, i.timestamp - 1000), 'transfer_window_open',
-            "an earlier transfer of his through the same issuer acknowledged exactly this held state at an earlier T: both could apply once A->B and A->C come back to the same totals (audit VS-1), so a retry waits for the first one's window");
-          c('same-operation-signed-again', 'D-1', (i, x) => sameIssuer(i, x, i.timestamp), 'sign',
+          c('same-prior-retry-at-another-timestamp', 'R11', (i, x) => earlierTransfer(i, x, i.timestamp - 1000), 'sign',
+            "an earlier transfer of his through the same issuer acknowledged exactly this held state (total and timestamp) at an earlier T: both prior acknowledgments are PA of the state (X, p), which the edge has once, so at most one of the two applies; the retry is signed at once (the same-prior exemption; audit VS-1 closed by tracker v3.2)",
+            {quote_digest: tpl.quote_digest});
+          c('same-operation-signed-again', 'D-1', (i, x) => earlierTransfer(i, x, i.timestamp), 'sign',
             'his earlier attempt is this very operation (the same prior state and the same T): the tracker applies at most one of the two', {quote_digest: tpl.quote_digest});
+          c('same-total-another-prior-state', 'R11', (i, x) => {
+            const fb = i.from_edge.before, p0 = fb.timestamp - 1000;
+            earlierTransfer(i, x, i.timestamp - 1000, {prior_timestamp: p0, prior_signature: signHex(keyOfPub(i.issuer.pubkey), M(i.issuer.pubkey, i.payer.pubkey, fb.total, p0))});
+          }, 'transfer_window_open',
+            'an earlier transfer of his through the same issuer acknowledged the same total in another state of the held edge (an earlier note): not the same prior state, so the retry waits for its window');
+          c('earlier-attempt-without-a-prior-state', 'R11', (i, x) => earlierTransfer(i, x, i.timestamp - 1000, {prior_timestamp: null}), 'transfer_window_open',
+            'an earlier transfer of his through the same issuer recorded no prior state (no prior_timestamp): never exempt, the retry waits for its window');
+          c('same-prior-state-another-issuer', 'R11', (i, x) => {
+            const fb = i.from_edge.before, cb = `${K.carol.pub}>${K.bob.pub}`;
+            earlierTransfer(i, x, i.timestamp - 1000, {edge: cb, prior_signature: signHex(K.carol, M(K.carol.pub, K.bob.pub, fb.total, fb.timestamp))});
+          }, 'transfer_window_open',
+            "an earlier transfer of his through another issuer's note (carol's) with the same total and timestamp: another edge, so the two do not exclude each other at the tracker, and the retry waits");
+          c('prior-timestamp-not-the-state', '-', i => { i.from_edge.prior_timestamp += 1; }, 'bad_template',
+            "the template names a prior timestamp for the held edge other than its state's (from_edge.before.timestamp)");
+          c('no-tracker-contract', 'v3.2', (i, x) => { delete x.novation; }, 'feature_unavailable',
+            'GET /info novation does not report the tracker v3.2 contract (here: no novation in the context): nothing that signs a prior slot is signed');
+          c('tracker-v3.1-contract', 'v3.2', (i, x) => { x.novation = clone(NOVATION_V31); }, 'feature_unavailable',
+            'GET /info novation as a v16 server on tracker v3.1 published it (the constants only: no tracker_build, transfer_version, bound_note_version, prior_ack)');
+          c('contract-version-as-a-string', 'v3.2', (i, x) => { x.novation.transfer_version = String(x.novation.transfer_version); }, 'feature_unavailable',
+            "the contract's values must have the JSON types given (transfer_version 4, never '4')");
           c('stale-quote', '-', (i, x) => { x.approved_quote_digest = '00'.repeat(32); }, 'stale_quote', 'not the quote his owner approved');
           c('bad-template', '-', i => { i.amount = String(i.amount); }, 'bad_template', 'a template field of the wrong type');
           c('deal-mismatch-without-me-id', 'R7', (i, x) => { delete x.me_id; }, 'deal_mismatch', 'without its own participant id the client cannot check that it is the payer: refuse');
@@ -2314,7 +2471,7 @@ async function transcriptVectors() {
           const base = () => [clone(tpl), ctxFor('alice', now_ms, {deal: clone(deal), payee_current_pk: K.bob.pub})];
           const c = (name, rule, f, expected, why, summary) => { const [i, x] = base(); f(i, x); push('bound_templates', `bound/${name}`, 'bound_template', rule, i, x, expected, why, summary); };
           const ab = `${tpl.issuer_pubkey}>${tpl.recipient_pubkey}`;
-          c('sign', 'R12', () => {}, 'sign', 'a bound note on the edge the transfer lowered: prior acknowledgment then note, both at the timestamp ending in 997');
+          c('sign', 'R12', () => {}, 'sign', "a bound note on the edge the transfer lowered: the prior acknowledgment (PA of the pair's note, its total and timestamp) then the note, both at the timestamp ending in 997");
           c('bound-note-required', 'R12', i => { i.timestamp = i.timestamp - (i.timestamp % 1000) + 500; }, 'bound_note_required', 'bound_notes/1 is advertised (and the edge was novated): an ordinary timestamp is refused');
           c('timestamp-domain', 'R3', (i, x) => { i.timestamp = i.timestamp - (i.timestamp % 1000) + 998; x.features = []; }, 'timestamp_domain', 'without bound_notes/1 and on an edge not novated: a bound note ends in 997 ms');
           c('amount-mismatch', 'R7', i => { i.total += 1; }, 'amount_mismatch', 'the note adds more than the agreed price');
@@ -2327,16 +2484,28 @@ async function transcriptVectors() {
             x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'transfer', edge: held, prior: 9, prior_timestamp: T - 60e3, prior_signature: signHex(K.carol, M(K.carol.pub, K.alice.pub, 9, T - 60e3)),
               total: 4, timestamp: T, quote_digest: '22'.repeat(32), signed_at: iso(x.now_ms - 60e3)}]};
           }, 'transfer_window_open', 'a payment by transfer of hers for this deal can still apply until its timestamp + 1 h');
-          // audit VS-1, the note route's twin of D-2 c: no bound note of hers brings her edge back to the prior a later bound
-          // note of hers (another deal) acknowledged while that one can still apply
+          // the note route's twin of D-2 c (audit VS-1 on tracker v3.1; a second line since v3.2): no bound note of hers
+          // brings her edge back to the prior a later bound note of hers (another deal) acknowledged while that one can
+          // still apply
           c('payment-attempt', 'D-2 c', (i, x) => {
             const Tb = i.timestamp + 1000, other = 'vd_00000000000000ac';
             x.transfer_attempts = {[other]: [{deal_id: other, route: 'note', edge: ab, prior: i.total, prior_timestamp: i.timestamp - 60e3, prior_signature: signHex(K.alice, M(K.alice.pub, K.bob.pub, i.total, i.timestamp - 60e3)),
               total: i.total + 2, timestamp: Tb, quote_digest: null, signed_at: iso(x.now_ms)}]};
-          }, 'payment_attempt', 'a later bound note of hers for another deal acknowledged the total this note brings her edge to, and could still apply after it');
+          }, 'payment_attempt', 'a later bound note of hers for another deal acknowledged the total this note brings her edge to: refused as a second line (on tracker v3.1 that note could then apply after it; tracker v3.2 binds its prior timestamp too)');
+          c('same-prior-retry-at-another-timestamp', 'R11', (i, x) => {
+            const T = i.timestamp - 1000;
+            x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'note', edge: ab, prior: i.prior_total, prior_timestamp: i.prior_note.timestamp, prior_signature: i.prior_note.signature,
+              total: i.total, timestamp: T, quote_digest: null, signed_at: iso(x.now_ms - 1000)}]};
+          }, 'sign', "an earlier bound note of hers for this deal acknowledged the same prior state of the pair at an earlier timestamp: at most one of the two applies (only her signature moves her edge, and PA binds the state), so the retry is signed at once, as before tracker v3.2 (R-17 closed)");
+          c('prior-timestamp-not-the-state', '-', i => { i.prior_timestamp += 1; }, 'bad_template',
+            "the template names a prior timestamp other than its prior note's (prior_note.timestamp, 0 for none)");
+          c('no-tracker-contract', 'v3.2', (i, x) => { delete x.novation; }, 'feature_unavailable',
+            'GET /info novation does not report the tracker v3.2 contract (here: no novation in the context): no bound note is signed (its prior acknowledgment is PA)');
+          c('bound-note-version-2', 'v3.2', (i, x) => { x.novation.bound_note_version = 2; }, 'feature_unavailable',
+            'the contract of tracker v3.1 (bound notes version 2, acknowledged as M(I,R,P,T)): no bound note is signed');
           const nb = TP.bound_N2, dealN = await dealCtx('nina', nb.tpl.deal_id);
           push('bound_templates', 'bound/sign-new-edge', 'bound_template', 'R12', clone(nb.tpl), ctxFor('nina', nb.now_ms, {deal: dealN, payee_current_pk: K.alice.pub}), 'sign',
-            'the first note on an edge: prior total 0 and prior_note null; the prior acknowledgment is M(I,R,0,T)');
+            'the first note on an edge: prior total 0 and prior_note null; the prior acknowledgment is PA(I,R,0,0,T)');
         }
       }
     } catch (e) { sdump(); throw e; }
@@ -2382,12 +2551,13 @@ write('basis-signatures.json', {meta: META('Basis Schnorr signature verification
 write('terms-validation.json', {meta: META('What the real validateTerms()/propose() accept and refuse at the fixture clock (server-only rules; no Python equivalent)'), vectors: valid});
 write('transcript.json', transcript);
 if (CIRCULATION_VECTORS) {
-  let text = JSON.stringify({meta: META('Circulating credit (release v16, PROTOCOL.md 15.3 and 18): timestamp residues, the 80-byte messages every operation signs, quote digests, the pay statement, tracker requests with the stand-in tracker v3.1 outcome, and the decisions of the client signing firewall', {
+  let text = JSON.stringify({meta: META('Circulating credit (release v16 on tracker v3.2, PROTOCOL.md 15.3 and 18): timestamp residues, the messages every operation signs (80-byte note messages M, and the 105-byte prior acknowledgments PA of tracker v3.2), quote digests, the pay statement, tracker requests with the stand-in tracker v3.2 outcome, and the decisions of the client signing firewall', {
     tiers: {core: 'bytes every implementation MUST agree on (messages, signatures, canonical quote, pay statement)',
       circulation: 'client-side rules of circulating credit (residue classes, novation.quote_digest, novation.pay_statement): checked for a client that declares circulation/1 (or is required to)',
       consent: 'the client signing firewall: given the item or template and the context, sign exactly these slots or refuse with this code (normative, PROTOCOL.md 15.3); checked for a client that declares circulation/1 (or is required to)',
-      edge: 'tracker-side outcomes (the stand-in tracker v3.1): informative for clients'},
-    decisions: 'consents[], payer_templates[], bound_templates[]: input (a GET /consents item, a transfer template or a bound credit-note template, as the server produced it in transcript.json, or changed to break one rule), ctx (the evaluator context: me_pk, me_id, now_ms, pins, records, signed, transfer_attempts, novated_edges, features, deal, payee_current_pk, approved_quote_digest, consent_policy, mandate, issuer_ids, edges; verify is the Basis verifier), expected "sign" with slots (in order) and their messages, or {refuse: code}; summary: fields the evaluation summary must also show'}),
+      edge: 'tracker-side outcomes (the stand-in tracker v3.2): informative for clients'},
+    messages: 'messages[] and the signatures[] of transfers[]: an entry with kind prior_ack is the 105-byte prior acknowledgment PA(issuer_pubkey, recipient_pubkey, total, prior_timestamp, timestamp) of tracker v3.2; every other one is the 80-byte note message M(issuer_pubkey, recipient_pubkey, total, timestamp)',
+    decisions: 'consents[], payer_templates[], bound_templates[]: input (a GET /consents item, a transfer template or a bound credit-note template, as the server produced it in transcript.json, or changed to break one rule), ctx (the evaluator context: me_pk, me_id, now_ms, pins, records, signed, transfer_attempts, novated_edges, features, novation (GET /info novation: the tracker contract), deal, payee_current_pk, approved_quote_digest, consent_policy, mandate, issuer_ids, edges; verify is the Basis verifier), expected "sign" with slots (in order) and their messages (PA for a prior slot, M for a new one), or {refuse: code}; summary: fields the evaluation summary must also show'}),
     ...CIRCULATION_VECTORS}, null, 1);
   for (const [value, placeholder] of CIRCULATION_REDACT) text = text.split(value).join(placeholder);
   for (const value of CIRCULATION_REDACT.keys()) assert.ok(!text.includes(value));

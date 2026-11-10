@@ -1,9 +1,10 @@
 // circulation.json (server release v16, circulating credit; PROTOCOL.md 15.3 and 18): every record is consumed here, the
 // way spec/vectors/check_python.py consumes it for a Python client that declares circulation/1. Timestamp residue
-// classes; every 80-byte message and signature (reproduced byte for byte with the generator's nonces where a test key
-// made it); the transfer quote, its canonical form and digest; the pay statement; the signatures of the tracker
-// requests; and the client signing firewall's decisions (novation.js must sign exactly the slots given, with these
-// messages, or refuse with the code given). A guard test fails when a record (or a kind of record) is not consumed.
+// classes; every message and signature (the 80-byte note messages, and since tracker v3.2 the 105-byte prior
+// acknowledgments PA, kind prior_ack; reproduced byte for byte with the generator's nonces where a test key made it);
+// the transfer quote, its canonical form and digest; the pay statement; the signatures of the tracker requests; and the
+// client signing firewall's decisions (novation.js must sign exactly the slots given, with these messages, or refuse
+// with the code given). A guard test fails when a record (or a kind of record) is not consumed.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {basis, bytesToHex, hexToBytes, novation as nv, utf8} from '../src/index.js';
@@ -26,6 +27,9 @@ const ROUTES = {transfers: ['POST /notes/transfer', 'POST /notes'], setoffs: ['P
 const SIGNATURE_FIELDS = ['issuer_from_signature', 'issuer_to_signature', 'from_recipient_prior_signature', 'from_recipient_signature',
   'from_recipient_to_signature', 'to_recipient_prior_signature', 'to_recipient_signature', 'edges/0/issuer_signature',
   'edges/0/recipient_signature', 'edges/1/issuer_signature', 'edges/1/recipient_signature'];
+// Tracker v3.2: the fields whose message is the prior acknowledgment PA (kind prior_ack); every other one is M.
+const PRIOR_ACK_FIELDS = ['from_recipient_prior_signature', 'to_recipient_prior_signature'];
+const MESSAGE_KINDS = [undefined, 'prior_ack'];
 
 const consumed = new Map(GROUPS.map(g => [g, new Set()]));
 const consume = (group, v) => {
@@ -39,6 +43,11 @@ const guardedVerify = (pubkeyHex, msg, sigHex) => {
     return false;
   }
 };
+
+/** The message an entry names, rebuilt: PA(I,R,total,prior_timestamp,timestamp) for kind prior_ack, else M(I,R,total,timestamp). */
+const messageOf = (v, nft, denom) => v.kind === 'prior_ack'
+  ? nv.priorMessage(v.issuer_pubkey, v.recipient_pubkey, v.total, v.prior_timestamp, v.timestamp, nft, denom)
+  : nv.message(v.issuer_pubkey, v.recipient_pubkey, v.total, v.timestamp, nft, denom);
 
 /** A valid signature by a test key is reproduced byte for byte by sign() with the generator's nonces. */
 function reproduce(pubkey, msg, signature, where) {
@@ -70,9 +79,13 @@ test('circulation.json: the groups, tiers and kinds are exactly the ones this te
   for (const g of ['transfers', 'setoffs']) {
     for (const v of data[g]) {
       assert.ok(ROUTES[g].includes(v.route), `${g}/${v.name}: route ${v.route}`);
-      for (const s of v.signatures) assert.ok(SIGNATURE_FIELDS.includes(s.field), `${g}/${v.name}: field ${s.field}`);
+      for (const s of v.signatures) {
+        assert.ok(SIGNATURE_FIELDS.includes(s.field), `${g}/${v.name}: field ${s.field}`);
+        assert.equal(s.kind === 'prior_ack', PRIOR_ACK_FIELDS.includes(s.field), `${g}/${v.name}: ${s.field} is a prior acknowledgment exactly when it is a creditor prior slot`);
+      }
     }
   }
+  for (const v of data.messages) assert.ok(MESSAGE_KINDS.includes(v.kind), `messages/${v.name}: kind ${v.kind}`);
   for (const v of data.timestamps) assert.ok(('accepted_as' in v) !== ('server_choice' in v), `${v.name}: a residue class or a server choice`);
   // every refusal code the vectors use is one novation.js knows
   for (const g of Object.keys(EVALUATORS)) {
@@ -110,14 +123,16 @@ test('circulation.json: timestamp residue classes (PROTOCOL.md 18.4) and the ser
   }
 });
 
-test('circulation.json: every message is the 80-byte note message M(I,R,t,ts), and every signature verifies as recorded', () => {
+test('circulation.json: every message is the 80-byte note message M(I,R,t,ts) or (kind prior_ack) the 105-byte PA(I,R,X,p,T), and every signature verifies as recorded', () => {
   for (const v of data.messages) {
     consume('messages', v);
-    const m = nv.message(v.issuer_pubkey, v.recipient_pubkey, v.total, v.timestamp, v.tracker_nft_id, v.denomination);
+    const pa = v.kind === 'prior_ack', m = messageOf(v, v.tracker_nft_id, v.denomination);
     assert.equal(bytesToHex(m), v.message_hex, v.name);
-    assert.equal(m.length, 80, v.name);
-    assert.equal(bytesToHex(basis.noteMessage(v.issuer_pubkey, v.recipient_pubkey, v.total, v.timestamp, v.tracker_nft_id, v.denomination)),
-      v.message_hex, v.name);
+    assert.equal(m.length, pa ? 105 : 80, v.name);
+    assert.equal(bytesToHex(pa
+      ? basis.priorAckMessage(v.issuer_pubkey, v.recipient_pubkey, v.total, v.prior_timestamp, v.timestamp, v.tracker_nft_id, v.denomination)
+      : basis.noteMessage(v.issuer_pubkey, v.recipient_pubkey, v.total, v.timestamp, v.tracker_nft_id, v.denomination)), v.message_hex, v.name);
+    if (pa) assert.ok(/(:|_)prior$/.test(v.slot) && v.message_hex.startsWith(bytesToHex(utf8(basis.PRIOR_ACK_TAG))), `${v.name}: a prior slot, tagged`);
     if (v.slot.includes('>')) assert.ok(v.slot.startsWith(`${nv.edgeKey(v.issuer_pubkey, v.recipient_pubkey)}:`), `${v.name}: the slot names its edge`);
     assert.equal(guardedVerify(v.signer_pubkey, m, v.signature), v.valid ?? true, `${v.name}: verifies == ${v.valid}`);
     assert.equal(BY_PUB[v.signer_pubkey]?.label, meta.test_keys[v.signer]?.label, `${v.name}: signer`);
@@ -156,7 +171,7 @@ test('circulation.json: tracker requests: each signature over the message the tr
     for (const v of data[g]) {
       consume(g, v);
       for (const s of v.signatures) {
-        const m = nv.message(s.issuer_pubkey, s.recipient_pubkey, s.total, s.timestamp, NFT, DENOM);
+        const m = messageOf(s, NFT, DENOM);
         assert.equal(bytesToHex(m), s.message_hex, `${v.name} ${s.field}: message`);
         assert.equal(guardedVerify(s.signer_pubkey, m, s.signature), s.valid, `${v.name} ${s.field}: verifies == ${s.valid}`);
         if (s.valid) reproduce(s.signer_pubkey, m, s.signature, `${v.name} ${s.field}`);

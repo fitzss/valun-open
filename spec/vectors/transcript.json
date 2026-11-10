@@ -1,22 +1,22 @@
 {
  "meta": {
   "what": "HTTP transcript of a pilot run through the real route table and Pilot class (in memory, fixed clock, stand-in tracker)",
-  "server_release": "v16 (valun-app commit fa38334)",
+  "server_release": "v16 (valun-app commit b7ecca0)",
   "protocol": "valun-deal/1",
   "network": "valun-pilot-1",
   "generated_by": "spec/vectors/generate.mjs",
   "server_source_sha256": {
-   "lib/pilot/core.mjs": "4d8b5cbd81559c2f0a908108b447b41e9843850868b2edc3903dcccdfe0dfcb2",
+   "lib/pilot/core.mjs": "23d7412ab0ad221bf2bbeec01517e1a7805b18eff9cd1f7372c6928030e4a47a",
    "lib/pilot/http.mjs": "76e9e3603b0f5a3a7e693855c4b8fbc1474ac7be29d3c812a9ea77ebf2cf7dba",
-   "lib/basis.mjs": "733953129eb86708e6c3424887cef3c0d32bcdc0cc282d5434286c2cab9d3a96",
+   "lib/basis.mjs": "4ce8dc7cce25bd99533fa91c2fe3fba5db0b92be9a72e766dac8fc98009dcd6b",
    "lib/http.mjs": "2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf",
-   "lib/pilot/caps.mjs": "b64bc079b84d8180aa0025259539eb18a1dc9676b74f6a25b772cc1851ad9596",
+   "lib/pilot/caps.mjs": "df69b8ca4401924a357f23279fd6065b160c9c53da705d4d76bb415dec6a42e1",
    "lib/pilot/clearing.mjs": "457dcf1f21dda3ad9ebeaea18a1b713fd75dcef515cb64222aff5993386fec18",
    "lib/pilot/journal.mjs": "7078357fc4e7b02093ada55f5148122e2c92198329da5ca9a7737d31bf9809a3",
-   "lib/pilot/novation.mjs": "02a4f40faf6de079d30a152b861e18fbbc3b1618d17bcc7ea6023383f0530874",
-   "lib/pilot/pins.mjs": "af6525ef61361a49b0644a83dbee516bba687fddf51db821a0d91ede64e4324a",
+   "lib/pilot/novation.mjs": "57808ef18ba9fe8847fd5f797549f3a0d1ded8c41a916dc49e341ab92d7098bd",
+   "lib/pilot/pins.mjs": "b7adfa82ae19b7b2eff61dcf3ee5a3bb473bf98bb56e4645eaa5f53f91aa3fab",
    "lib/pilot/policy.mjs": "da7e9fff13fb29408182db4d08a2816fb48463c2685b47b733fdb15c5c169e8f",
-   "lib/pilot/sandbox.mjs": "56be7acf50bfeac2cdf81cb76ccb1f8c9827d304a689f23add697bdebdf93f3c",
+   "lib/pilot/sandbox.mjs": "d42ff21bc5f28f0abb7a7cc987b15baa87a5d0fd3d9b3cc584a5cc2151f51e70",
    "lib/pilot/status.mjs": "9a2d9ae94fe90cca700977c5024e64ead164bc6f167e86b8c83f3495be56286c"
   },
   "pilot_token_id": "01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
@@ -23298,7 +23298,7 @@
   },
   {
    "n": 148,
-   "label": "public: network info with circulating credit on (since v16: features bound_notes/1 and circulation/1, the novation constants and the pay statement)",
+   "label": "public: network info with circulating credit on (since v16: features bound_notes/1 and circulation/1, the novation constants and the pay statement; since tracker v3.2 also the tracker contract the clients sign prior acknowledgments for)",
    "actor": "anyone",
    "at": "2026-11-15T14:27:00.000Z",
    "request": {
@@ -23308,10 +23308,10 @@
    },
    "server_config": {
     "PILOT_CIRCULATION": "on",
-    "tracker": "stand-in tracker v3.1 (GET /capabilities validates; its binary sha256 is pinned for this Pilot)",
+    "tracker": "stand-in tracker v3.2 (GET /capabilities validates; its binary sha256 is pinned for this Pilot)",
     "capabilities": {
      "tracker": "basis",
-     "build": "valun-circulating-credit/3",
+     "build": "valun-circulating-credit/4",
      "commit": "stand-in (valun-open spec/vectors/generate.mjs)",
      "pure_credit": true,
      "reserved_ms": [
@@ -23323,15 +23323,16 @@
      ],
      "bound_notes": {
       "ms": 997,
-      "version": 2,
-      "max_age_ms": 3600000
+      "version": 3,
+      "max_age_ms": 3600000,
+      "prior_ack": "basis/prior-ack/1"
      },
      "bound_only_edges": true,
      "novation": {
       "max_age_ms": 3600000,
       "transfer": {
        "ms": 999,
-       "version": 3,
+       "version": 4,
        "signatures": [
         "issuer_from",
         "issuer_to",
@@ -23340,7 +23341,8 @@
         "from_recipient_to",
         "to_recipient_prior",
         "to_recipient"
-       ]
+       ],
+       "prior_ack": "basis/prior-ack/1"
       },
       "setoff": {
        "ms": 998,
@@ -23397,7 +23399,11 @@
       "max_age_ms": 3600000,
       "transfer_ttl_ms": 1200000,
       "setoff_ttl_ms": 1800000,
-      "fallback_margin_ms": 60000
+      "fallback_margin_ms": 60000,
+      "tracker_build": "valun-circulating-credit/4",
+      "transfer_version": 4,
+      "bound_note_version": 3,
+      "prior_ack": "basis/prior-ack/1"
      },
      "circulation_statements": {
       "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
@@ -24922,11 +24928,13 @@
      "quote_digest": "bd243296bf03779f1a674738fe7d52c7eec654fa1ea7ae88a04378ab3930c93c",
      "timestamp": 1794754017999,
      "from_prior_total": 69,
+     "from_prior_timestamp": 1793974498500,
      "to_prior_total": 0,
+     "to_prior_timestamp": 0,
      "completion_signature": "0368d8f38b8c578bc07950bd1c78b5bbe443dedc9dd551b25a1b808ea7b5e5dc953a174dbc24718cf585ca17f228a262551cdf392b8e4f39515b0a3cd49c1e1a6d",
      "pay_signature": "03b38ce8fd03f55de7c6f2cc2d33ba7a63595c82017a3bc507c53f7466ebfd06cf2cc63945884d2887f6bfae0229d9821bd9959b746a12042274f834533badf6b7",
      "signatures": {
-      "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "03e6f1d520aa3272588f407c7d6e852df3aa04ab39f53c2ebf2f03b2edb2ceb4a16eae11a4ec28cfa1430d168882f6a5562f48c080471e52f8f280f2d0bafa1742",
+      "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "02f7f2c465ec02ea8137f7f9652b7275f3763a538c44fe2006f5a9a2f032eebfc162534d26927eedbfd9b5118d7838b88aa98d72fefcd1a57e917fea3a428f5587",
       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": "033d674bfd224b3ecb52a42982aceb8534ddd8fef64cdfd7db0a88b9ab8e189adb792a4be46e77635666c671584a882ed2d7bed31c493e90be4efcbf07231eae5b",
       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:new": "03314d27843bb799080347d7fd28d9df8ae87b7d8066df1fca11f0eb6196e353ac369959d0d75a926c6d49fcd95abdbb641df235fe91c6352acbc25403153d6995"
      }
@@ -25210,9 +25218,9 @@
     },
     {
      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
-     "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000045000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "03e6f1d520aa3272588f407c7d6e852df3aa04ab39f53c2ebf2f03b2edb2ceb4a16eae11a4ec28cfa1430d168882f6a5562f48c080471e52f8f280f2d0bafa1742",
+     "message_hex": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000045000001a1b13674c4000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "02f7f2c465ec02ea8137f7f9652b7275f3763a538c44fe2006f5a9a2f032eebfc162534d26927eedbfd9b5118d7838b88aa98d72fefcd1a57e917fea3a428f5587",
      "valid": true,
      "field": "/signatures/035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior",
      "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
@@ -25462,7 +25470,11 @@
        "max_age_ms": 3600000,
        "transfer_ttl_ms": 1200000,
        "setoff_ttl_ms": 1800000,
-       "fallback_margin_ms": 60000
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
       },
       "circulation_statements": {
        "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
@@ -25841,11 +25853,13 @@
         "timestamp": 1793974498500,
         "signature": "03d2586864a8e46575f46e1b767fb18bba031746a5b3ad447c556d2b66b4dd81cb3cf6cd1b2bf220f430c9d6a85c32ef3fdc527b2e3bcf6caed0ccd2806a9c80fb"
        },
+       "prior_timestamp": 1793974498500,
        "new_total": 59
       },
       "to_edge": {
        "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6",
        "before": null,
+       "prior_timestamp": 0,
        "new_total": 10
       },
       "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
@@ -25853,10 +25867,10 @@
       "quote_digest": "bd243296bf03779f1a674738fe7d52c7eec654fa1ea7ae88a04378ab3930c93c",
       "collect_until": "2026-11-15T15:07:00.000Z",
       "messages": {
-       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000045000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000045000001a1b13674c4000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
        "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000003b000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
        "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:new": "508f0d29727a7f82e6a271480a1341a8596df10734cfdd4fe765a1d0d698785c000000000000000a000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:prior": "508f0d29727a7f82e6a271480a1341a8596df10734cfdd4fe765a1d0d698785c0000000000000000000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:prior": "62617369732f7072696f722d61636b2f31508f0d29727a7f82e6a271480a1341a8596df10734cfdd4fe765a1d0d698785c00000000000000000000000000000000000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
       }
      }
     }
@@ -25908,6 +25922,7 @@
           "timestamp": 1793974498500,
           "signature": "03d2586864a8e46575f46e1b767fb18bba031746a5b3ad447c556d2b66b4dd81cb3cf6cd1b2bf220f430c9d6a85c32ef3fdc527b2e3bcf6caed0ccd2806a9c80fb"
          },
+         "prior_timestamp": 1793974498500,
          "change": -10,
          "new_total": 59,
          "timestamp": 1794754017999,
@@ -25929,6 +25944,7 @@
          },
          "your_role": "issuer",
          "before": null,
+         "prior_timestamp": 0,
          "change": 10,
          "new_total": 10,
          "timestamp": 1794754017999,
@@ -26019,6 +26035,7 @@
         "timestamp": 1793974498500,
         "signature": "03d2586864a8e46575f46e1b767fb18bba031746a5b3ad447c556d2b66b4dd81cb3cf6cd1b2bf220f430c9d6a85c32ef3fdc527b2e3bcf6caed0ccd2806a9c80fb"
        },
+       "prior_timestamp": 1793974498500,
        "change": -10,
        "new_total": 59,
        "timestamp": 1794754017999,
@@ -26042,6 +26059,7 @@
        },
        "your_role": "issuer",
        "before": null,
+       "prior_timestamp": 0,
        "change": 10,
        "new_total": 10,
        "timestamp": 1794754017999,
@@ -26163,7 +26181,11 @@
        "max_age_ms": 3600000,
        "transfer_ttl_ms": 1200000,
        "setoff_ttl_ms": 1800000,
-       "fallback_margin_ms": 60000
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
       },
       "circulation_statements": {
        "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
@@ -26203,6 +26225,7 @@
            "timestamp": 1793974498500,
            "signature": "03d2586864a8e46575f46e1b767fb18bba031746a5b3ad447c556d2b66b4dd81cb3cf6cd1b2bf220f430c9d6a85c32ef3fdc527b2e3bcf6caed0ccd2806a9c80fb"
           },
+          "prior_timestamp": 1793974498500,
           "change": -10,
           "new_total": 59,
           "timestamp": 1794754017999,
@@ -26224,6 +26247,7 @@
           },
           "your_role": "issuer",
           "before": null,
+          "prior_timestamp": 0,
           "change": 10,
           "new_total": 10,
           "timestamp": 1794754017999,
@@ -26441,6 +26465,7 @@
          },
          "your_role": "creditor",
          "before": null,
+         "prior_timestamp": 0,
          "change": 10,
          "new_total": 10,
          "timestamp": 1794754017999,
@@ -26498,7 +26523,7 @@
     },
     "body": {
      "signatures": {
-      "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:prior": "02dec1ba63b5de5cdda089d79cb64f76cb0154867041210b2ba3202b7c9b53bd622eb8d0ecdb4bebe2cac57ec7dd9cfd8264121fb394aedffbeba620ec6cb479ac",
+      "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:prior": "02ce58058511b6452251be599f03ff1479b64573b3f6c067288eb808c713197c400739f04cea09fa8c7b8c1e8de0b9ae6dcc171cf5456c9f131a0bff58444e7f12",
       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:new": "0202cd454dd8b46e2338846a01daba81e494afe90291b0a2252fda59a80deb11bd1fc37965c8f91022fc3b90a21ebf597a1ca314939473ca4e65cd6fb049ca3adf"
      },
      "revisions": {
@@ -26533,6 +26558,7 @@
        },
        "your_role": "creditor",
        "before": null,
+       "prior_timestamp": 0,
        "change": 10,
        "new_total": 10,
        "timestamp": 1794754017999,
@@ -26583,9 +26609,9 @@
    "server_verified": [
     {
      "pubkey": "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6",
-     "message_hex": "508f0d29727a7f82e6a271480a1341a8596df10734cfdd4fe765a1d0d698785c0000000000000000000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "02dec1ba63b5de5cdda089d79cb64f76cb0154867041210b2ba3202b7c9b53bd622eb8d0ecdb4bebe2cac57ec7dd9cfd8264121fb394aedffbeba620ec6cb479ac",
+     "message_hex": "62617369732f7072696f722d61636b2f31508f0d29727a7f82e6a271480a1341a8596df10734cfdd4fe765a1d0d698785c00000000000000000000000000000000000001a1dfacfacf6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "02ce58058511b6452251be599f03ff1479b64573b3f6c067288eb808c713197c400739f04cea09fa8c7b8c1e8de0b9ae6dcc171cf5456c9f131a0bff58444e7f12",
      "valid": true,
      "field": "/signatures/035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:prior",
      "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6"
@@ -26666,7 +26692,11 @@
        "max_age_ms": 3600000,
        "transfer_ttl_ms": 1200000,
        "setoff_ttl_ms": 1800000,
-       "fallback_margin_ms": 60000
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
       },
       "circulation_statements": {
        "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
@@ -26702,6 +26732,7 @@
           },
           "your_role": "creditor",
           "before": null,
+          "prior_timestamp": 0,
           "change": 10,
           "new_total": 10,
           "timestamp": 1794754017999,
@@ -27494,7 +27525,7 @@
      },
      "fallback_after": null,
      "signatures": {
-      "from_recipient_prior": "03e6f1d520aa3272588f407c7d6e852df3aa04ab39f53c2ebf2f03b2edb2ceb4a16eae11a4ec28cfa1430d168882f6a5562f48c080471e52f8f280f2d0bafa1742",
+      "from_recipient_prior": "02f7f2c465ec02ea8137f7f9652b7275f3763a538c44fe2006f5a9a2f032eebfc162534d26927eedbfd9b5118d7838b88aa98d72fefcd1a57e917fea3a428f5587",
       "from_recipient": "033d674bfd224b3ecb52a42982aceb8534ddd8fef64cdfd7db0a88b9ab8e189adb792a4be46e77635666c671584a882ed2d7bed31c493e90be4efcbf07231eae5b",
       "from_recipient_to": "03314d27843bb799080347d7fd28d9df8ae87b7d8066df1fca11f0eb6196e353ac369959d0d75a926c6d49fcd95abdbb641df235fe91c6352acbc25403153d6995",
       "issuer_from": "02fbc160abca5630b21af1b83e467bec119503dae47a1811806438e67c9a3a543f64e5c99f58f451347d675e1bfa16e723e01e22e985b22ca636335264e9b03e37"
@@ -28041,7 +28072,8 @@
       "timestamp": 1794754617997,
       "signature": "03382b55f7495d0e16d602be5902d00afddee8b9298596d6faa1f1c1affed0cbee61f6d83a4c95a0b8880979e7b170c1987a27d1014167fa7bd61c97733aaa866a",
       "prior_total": 59,
-      "prior_signature": "03180cd4d861571d2a9fda982349f7572f07e0b7ca0c80e3408093c4d79246b3031d8f463a99c4bfe7cf2e7c88a6d51ed37b4a463509a49be6ecd3e9e419c9ce9c"
+      "prior_timestamp": 1794754017999,
+      "prior_signature": "0296b0b78a06c1fe339a450fb606424f4c7a97d6c4a1b3d15497c98c842c9b96116c31c3d1794b490e2d1307cf1c471a1ffa2b39e8d95f13c66f3be62208d4ee94"
      }
     }
    },
@@ -28164,7 +28196,7 @@
        "timestamp": 1794754617997,
        "signature": "03382b55f7495d0e16d602be5902d00afddee8b9298596d6faa1f1c1affed0cbee61f6d83a4c95a0b8880979e7b170c1987a27d1014167fa7bd61c97733aaa866a",
        "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1dfb6228d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-       "prior_signature": "03180cd4d861571d2a9fda982349f7572f07e0b7ca0c80e3408093c4d79246b3031d8f463a99c4bfe7cf2e7c88a6d51ed37b4a463509a49be6ecd3e9e419c9ce9c"
+       "prior_signature": "0296b0b78a06c1fe339a450fb606424f4c7a97d6c4a1b3d15497c98c842c9b96116c31c3d1794b490e2d1307cf1c471a1ffa2b39e8d95f13c66f3be62208d4ee94"
       },
       "prior_total": 59,
       "amount": 5,
@@ -28268,9 +28300,9 @@
     },
     {
      "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
-     "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000003b000001a1dfb6228d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "03180cd4d861571d2a9fda982349f7572f07e0b7ca0c80e3408093c4d79246b3031d8f463a99c4bfe7cf2e7c88a6d51ed37b4a463509a49be6ecd3e9e419c9ce9c",
+     "message_hex": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000003b000001a1dfacfacf000001a1dfb6228d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "0296b0b78a06c1fe339a450fb606424f4c7a97d6c4a1b3d15497c98c842c9b96116c31c3d1794b490e2d1307cf1c471a1ffa2b39e8d95f13c66f3be62208d4ee94",
      "valid": true,
      "field": "/credit_note/prior_signature",
      "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
@@ -28595,7 +28627,11 @@
        "max_age_ms": 3600000,
        "transfer_ttl_ms": 1200000,
        "setoff_ttl_ms": 1800000,
-       "fallback_margin_ms": 60000
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
       },
       "circulation_statements": {
        "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
@@ -28623,7 +28659,8 @@
        "timestamp": 1794754017999,
        "signature": "02fbc160abca5630b21af1b83e467bec119503dae47a1811806438e67c9a3a543f64e5c99f58f451347d675e1bfa16e723e01e22e985b22ca636335264e9b03e37"
       },
-      "prior_message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000003b000001a1dfb6228d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+      "prior_timestamp": 1794754017999,
+      "prior_message_hex": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000003b000001a1dfacfacf000001a1dfb6228d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
      }
     },
     "GET /pilot/v1/participants/vp_9850bb41e214": {
@@ -29244,7 +29281,8 @@
       "timestamp": 1794754857997,
       "signature": "0202337bfaa884070ad282fd17d2d492043d8b4be1c4fbac6bba996ef8811b83c0181267c5e07870f7bd19000c642a67602dae526ca252c9b3285df630adfbee36",
       "prior_total": 0,
-      "prior_signature": "02b5f78a79d23232df0fdd7b3eb063c4170e14ec5a3412913115714301f982d981502d79f2e856802fa61e988b911f933fe3f3022f8d409913085b35917f7c7f21"
+      "prior_timestamp": 0,
+      "prior_signature": "0300cfaeaa0ee481daf5b1dff51ada941ec07d6b6525acdaa09e7e2443f8de2db265ce05191b19850667dfb30adbf18a3b6a5b09a82f49cb4aae8aed263ca00131"
      }
     }
    },
@@ -29367,7 +29405,7 @@
        "timestamp": 1794754857997,
        "signature": "0202337bfaa884070ad282fd17d2d492043d8b4be1c4fbac6bba996ef8811b83c0181267c5e07870f7bd19000c642a67602dae526ca252c9b3285df630adfbee36",
        "message_hex": "554436d046096d97a2dd3ff7c3d25712c00d010a695dc2486ee55ba936d9630c0000000000000004000001a1dfb9cc0d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-       "prior_signature": "02b5f78a79d23232df0fdd7b3eb063c4170e14ec5a3412913115714301f982d981502d79f2e856802fa61e988b911f933fe3f3022f8d409913085b35917f7c7f21"
+       "prior_signature": "0300cfaeaa0ee481daf5b1dff51ada941ec07d6b6525acdaa09e7e2443f8de2db265ce05191b19850667dfb30adbf18a3b6a5b09a82f49cb4aae8aed263ca00131"
       },
       "prior_total": 0,
       "amount": 4,
@@ -29471,9 +29509,9 @@
     },
     {
      "pubkey": "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6",
-     "message_hex": "554436d046096d97a2dd3ff7c3d25712c00d010a695dc2486ee55ba936d9630c0000000000000000000001a1dfb9cc0d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "02b5f78a79d23232df0fdd7b3eb063c4170e14ec5a3412913115714301f982d981502d79f2e856802fa61e988b911f933fe3f3022f8d409913085b35917f7c7f21",
+     "message_hex": "62617369732f7072696f722d61636b2f31554436d046096d97a2dd3ff7c3d25712c00d010a695dc2486ee55ba936d9630c00000000000000000000000000000000000001a1dfb9cc0d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "0300cfaeaa0ee481daf5b1dff51ada941ec07d6b6525acdaa09e7e2443f8de2db265ce05191b19850667dfb30adbf18a3b6a5b09a82f49cb4aae8aed263ca00131",
      "valid": true,
      "field": "/credit_note/prior_signature",
      "edge": "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
@@ -29750,7 +29788,11 @@
        "max_age_ms": 3600000,
        "transfer_ttl_ms": 1200000,
        "setoff_ttl_ms": 1800000,
-       "fallback_margin_ms": 60000
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
       },
       "circulation_statements": {
        "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
@@ -29774,7 +29816,8 @@
       "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
       "message_hex": "554436d046096d97a2dd3ff7c3d25712c00d010a695dc2486ee55ba936d9630c0000000000000004000001a1dfb9cc0d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
       "prior_note": null,
-      "prior_message_hex": "554436d046096d97a2dd3ff7c3d25712c00d010a695dc2486ee55ba936d9630c0000000000000000000001a1dfb9cc0d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+      "prior_timestamp": 0,
+      "prior_message_hex": "62617369732f7072696f722d61636b2f31554436d046096d97a2dd3ff7c3d25712c00d010a695dc2486ee55ba936d9630c00000000000000000000000000000000000001a1dfb9cc0d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
      }
     },
     "GET /pilot/v1/participants/vp_461ce015dd98": {
@@ -30337,7 +30380,11 @@
        "max_age_ms": 3600000,
        "transfer_ttl_ms": 1200000,
        "setoff_ttl_ms": 1800000,
-       "fallback_margin_ms": 60000
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
       },
       "circulation_statements": {
        "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
@@ -31128,7 +31175,8 @@
       "timestamp": 1794755337997,
       "signature": "03408e6a386f04687a475e897cb4227e74ec55ef2fa63a6cf2945472b4063fe4d0256c9145e5394188db167c26869904872a94e0b9a980cc39bbbe9731d0734838",
       "prior_total": 4,
-      "prior_signature": "021a4da96d93fd7434677edd686c0c31cabcf490e56150bc18bcd076e78391c87426b154a244a0029d6f943d905294e7d66a53658db47815199c8a64860de514e8"
+      "prior_timestamp": 1794754857997,
+      "prior_signature": "02e0dd3f361fb553e869cfc3e8e7e71e3397049b8e7ffc4fe5584169e50934aab37b5f96b9cff8d84746ffb826ea56f5d9e8294bda5a29021dffc0b6e0123d985b"
      }
     }
    },
@@ -31253,7 +31301,7 @@
        "timestamp": 1794755337997,
        "signature": "03408e6a386f04687a475e897cb4227e74ec55ef2fa63a6cf2945472b4063fe4d0256c9145e5394188db167c26869904872a94e0b9a980cc39bbbe9731d0734838",
        "message_hex": "554436d046096d97a2dd3ff7c3d25712c00d010a695dc2486ee55ba936d9630c0000000000000006000001a1dfc11f0d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-       "prior_signature": "021a4da96d93fd7434677edd686c0c31cabcf490e56150bc18bcd076e78391c87426b154a244a0029d6f943d905294e7d66a53658db47815199c8a64860de514e8"
+       "prior_signature": "02e0dd3f361fb553e869cfc3e8e7e71e3397049b8e7ffc4fe5584169e50934aab37b5f96b9cff8d84746ffb826ea56f5d9e8294bda5a29021dffc0b6e0123d985b"
       },
       "prior_total": 4,
       "amount": 2,
@@ -31353,9 +31401,9 @@
     },
     {
      "pubkey": "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6",
-     "message_hex": "554436d046096d97a2dd3ff7c3d25712c00d010a695dc2486ee55ba936d9630c0000000000000004000001a1dfc11f0d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "021a4da96d93fd7434677edd686c0c31cabcf490e56150bc18bcd076e78391c87426b154a244a0029d6f943d905294e7d66a53658db47815199c8a64860de514e8",
+     "message_hex": "62617369732f7072696f722d61636b2f31554436d046096d97a2dd3ff7c3d25712c00d010a695dc2486ee55ba936d9630c0000000000000004000001a1dfb9cc0d000001a1dfc11f0d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "02e0dd3f361fb553e869cfc3e8e7e71e3397049b8e7ffc4fe5584169e50934aab37b5f96b9cff8d84746ffb826ea56f5d9e8294bda5a29021dffc0b6e0123d985b",
      "valid": true,
      "field": "/credit_note/prior_signature",
      "edge": "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
@@ -31555,7 +31603,11 @@
        "max_age_ms": 3600000,
        "transfer_ttl_ms": 1200000,
        "setoff_ttl_ms": 1800000,
-       "fallback_margin_ms": 60000
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
       },
       "circulation_statements": {
        "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
@@ -31583,7 +31635,8 @@
        "timestamp": 1794754857997,
        "signature": "0202337bfaa884070ad282fd17d2d492043d8b4be1c4fbac6bba996ef8811b83c0181267c5e07870f7bd19000c642a67602dae526ca252c9b3285df630adfbee36"
       },
-      "prior_message_hex": "554436d046096d97a2dd3ff7c3d25712c00d010a695dc2486ee55ba936d9630c0000000000000004000001a1dfc11f0d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+      "prior_timestamp": 1794754857997,
+      "prior_message_hex": "62617369732f7072696f722d61636b2f31554436d046096d97a2dd3ff7c3d25712c00d010a695dc2486ee55ba936d9630c0000000000000004000001a1dfb9cc0d000001a1dfc11f0d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
      }
     },
     "GET /pilot/v1/participants/vp_461ce015dd98": {
@@ -31962,7 +32015,7 @@
         "timestamp": 1794755337997,
         "signature": "03408e6a386f04687a475e897cb4227e74ec55ef2fa63a6cf2945472b4063fe4d0256c9145e5394188db167c26869904872a94e0b9a980cc39bbbe9731d0734838",
         "message_hex": "554436d046096d97a2dd3ff7c3d25712c00d010a695dc2486ee55ba936d9630c0000000000000006000001a1dfc11f0d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-        "prior_signature": "021a4da96d93fd7434677edd686c0c31cabcf490e56150bc18bcd076e78391c87426b154a244a0029d6f943d905294e7d66a53658db47815199c8a64860de514e8"
+        "prior_signature": "02e0dd3f361fb553e869cfc3e8e7e71e3397049b8e7ffc4fe5584169e50934aab37b5f96b9cff8d84746ffb826ea56f5d9e8294bda5a29021dffc0b6e0123d985b"
        },
        "prior_total": 4,
        "amount": 2,
@@ -32456,7 +32509,11 @@
        "max_age_ms": 3600000,
        "transfer_ttl_ms": 1200000,
        "setoff_ttl_ms": 1800000,
-       "fallback_margin_ms": 60000
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
       },
       "circulation_statements": {
        "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
@@ -33549,7 +33606,7 @@
   },
   {
    "n": 203,
-   "label": "flow W: bob's client posts a payment by transfer signed over a template 11 minutes old: 409 transfer_stale; the server keeps the refused attempt (decision D-2 b), so the answer's template is null: a new transfer, through the same issuer too, waits for that attempt's window (audit VS-1)",
+   "label": "flow W: bob's client posts a payment by transfer signed over a template 11 minutes old: 409 transfer_stale; the server keeps the refused attempt (decision D-2 b) with the prior state it acknowledged, and the answer's template is a fresh one through the same issuer: a transfer on the same prior state of alice's note, total and timestamp, need not wait (the same-prior exemption of tracker v3.2: at most one of the two applies)",
    "actor": "bob.agent",
    "at": "2026-11-15T15:34:00.000Z",
    "request": {
@@ -33566,11 +33623,13 @@
      "quote_digest": "55e4385772c25ba6d8848a48d85655a2553b98f5414dab7dae21c73201f85e3b",
      "timestamp": 1794756177999,
      "from_prior_total": 64,
+     "from_prior_timestamp": 1794754617997,
      "to_prior_total": 4,
+     "to_prior_timestamp": 1794755517998,
      "completion_signature": "037905474678d68bcc8bfcd106f46c3ff23625334ed33d1e18636f2341e2f658b073d8b9344391a57e0e6e376543c14a85f0d49f182f32ecf1bb31cee3e2dfb0e1",
      "pay_signature": "0255685b25bbeb3a2495878c3ac5427472c945b828c05307796e320817b9c9d86f304ca2b868e67ce87760e2561f0a6990786ecbe87f52edc8d25fa31db62f54bb",
      "signatures": {
-      "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "02b4c4f5d4ed0ed6415dcf2776c98b49ff8ccfe1baa0c7c730924b7587a097d1655e4d407ba80132b55eaf8b9c991a53d415087814ceeccd84c99469a74c04e882",
+      "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "03f40d984464e35ea7d9936686b6daf76b85876ab693be1ee3e61879214cf5a6d62a3e3c1589a9fc0e34104f745a0f3782ab5ce352c5575243b59931ca50f2f4ca",
       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": "035ecf0a4a6cc06ba2cb5a8c2b6b4b2b36e0a187cb1ebe1e9432221a4f490a67b53b7f7eab02613b420bd8066bc9e8e91af473cff9fff24174af7288a40612661e",
       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:new": "0207afb0a3afe68572bb2dfc22ab74be8d2da8c89f4983d4d554703ae83100f28d6da71ab1800e365edeaeb481fa0b7a810fc606b7514c20a45c75d30fd6e42a8d"
      }
@@ -33581,15 +33640,66 @@
     "body": {
      "error": "transfer_stale",
      "message": "the timestamp must end in 999 ms, be later than both edges' last notes, not in the future and at most 10 minutes old; fetch a new transfer template",
-     "template": null
+     "template": {
+      "deal_id": "vd_b18b521ba166e5ec",
+      "terms_hash": "81803a106555f91633e79bf02d9f4a4c1194ed26aeee2d9f48cfd14d0666b442",
+      "deliverable_sha256": "76b0d73e68ca73af6ec09ef08167ed6e2f9cbbcf017a1ccb0cc69b8a21b3ecce",
+      "issuer": {
+       "id": "vp_461ce015dd98",
+       "handle": "alice",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+      },
+      "payer": {
+       "id": "vp_9850bb41e214",
+       "handle": "bob",
+       "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+      },
+      "payee": {
+       "id": "vp_136ec9667207",
+       "handle": "nina",
+       "pubkey": "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6"
+      },
+      "amount": 2,
+      "timestamp": 1794756837999,
+      "from_edge": {
+       "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+       "before": {
+        "total": 64,
+        "timestamp": 1794754617997,
+        "signature": "03382b55f7495d0e16d602be5902d00afddee8b9298596d6faa1f1c1affed0cbee61f6d83a4c95a0b8880979e7b170c1987a27d1014167fa7bd61c97733aaa866a"
+       },
+       "prior_timestamp": 1794754617997,
+       "new_total": 62
+      },
+      "to_edge": {
+       "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6",
+       "before": {
+        "total": 4,
+        "timestamp": 1794755517998,
+        "signature": "038e19781753ad363141c015435961f9365bbed558cedd6e7aabb1ab04580153e851819bf6405698b134398107148593ceeca594e827935722f32bc694cfbe08ef"
+       },
+       "prior_timestamp": 1794755517998,
+       "new_total": 6
+      },
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "quote_digest": "55e4385772c25ba6d8848a48d85655a2553b98f5414dab7dae21c73201f85e3b",
+      "collect_until": "2026-11-15T15:54:00.000Z",
+      "messages": {
+       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1dfb6228d000001a1dfd8026f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000003e000001a1dfd8026f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:new": "508f0d29727a7f82e6a271480a1341a8596df10734cfdd4fe765a1d0d698785c0000000000000006000001a1dfd8026f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:prior": "62617369732f7072696f722d61636b2f31508f0d29727a7f82e6a271480a1341a8596df10734cfdd4fe765a1d0d698785c0000000000000004000001a1dfc3de2e000001a1dfd8026f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+      }
+     }
     }
    },
    "server_verified": [
     {
      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
-     "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1dfcdf04f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "02b4c4f5d4ed0ed6415dcf2776c98b49ff8ccfe1baa0c7c730924b7587a097d1655e4d407ba80132b55eaf8b9c991a53d415087814ceeccd84c99469a74c04e882",
+     "message_hex": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1dfb6228d000001a1dfcdf04f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "03f40d984464e35ea7d9936686b6daf76b85876ab693be1ee3e61879214cf5a6d62a3e3c1589a9fc0e34104f745a0f3782ab5ce352c5575243b59931ca50f2f4ca",
      "valid": true,
      "field": "/signatures/035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior",
      "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
@@ -33631,7 +33741,7 @@
     "status": 409,
     "body": {
      "error": "transfer_window_open",
-     "message": "an earlier attempt to pay this deal can still apply at the tracker (until its timestamp + 1 hour); another payment (with any note, the same issuer's included) can start in 2938 s",
+     "message": "an earlier attempt to pay this deal can still apply at the tracker (until its timestamp + 1 hour); another payment (with any note, the same issuer's included, unless it is a transfer through the same note acknowledging the same prior state, total and timestamp, as that attempt did) can start in 2938 s",
      "retry_after_ms": 2938000
     }
    },
@@ -33717,6 +33827,7 @@
       },
       "next_actions": [
        "wait_for_transfer_window",
+       "pay_by_transfer",
        "dispute"
       ],
       "current": {
@@ -33887,7 +33998,11 @@
        "max_age_ms": 3600000,
        "transfer_ttl_ms": 1200000,
        "setoff_ttl_ms": 1800000,
-       "fallback_margin_ms": 60000
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
       },
       "circulation_statements": {
        "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
@@ -33898,7 +34013,7 @@
   },
   {
    "n": 205,
-   "label": "flow W: the deal says what is possible now: wait for the transfer window (next_actions)",
+   "label": "flow W: the deal says what is possible now (next_actions): wait for the transfer window before an own note, or pay by transfer through alice's note while it is in the state the refused attempt acknowledged (the same-prior exemption)",
    "actor": "bob.agent",
    "at": "2026-11-15T15:36:00.000Z",
    "request": {
@@ -33931,6 +34046,7 @@
      },
      "next_actions": [
       "wait_for_transfer_window",
+      "pay_by_transfer",
       "dispute"
      ],
      "current": {
@@ -34084,7 +34200,8 @@
       "timestamp": 1794759900997,
       "signature": "02e64df64f9045bda8b1e90035626570a33752cb704d34aeee94a2c366fd0f8ce27ba7502e67a95a6b688210a666d8f1c503d7566a719d6f47b4e1b49a06b62c76",
       "prior_total": 0,
-      "prior_signature": "03550c47cf35bfb46c812d7e1d896b5390e96f42b2c9d7c86b9d12615c43b15b9d21aeb9c722faa622794ec78ca9d8f8dcd267202117a9ec3503ad3aafa6299d0d"
+      "prior_timestamp": 0,
+      "prior_signature": "03ba21bbc2151c632ce7463b30a822914176e212b55431dded862bcb57db843acf504356561ecadd924d394c7dddb1b6e5692286e85ddbd048adfe543a41c3658e"
      }
     }
    },
@@ -34207,7 +34324,7 @@
        "timestamp": 1794759900997,
        "signature": "02e64df64f9045bda8b1e90035626570a33752cb704d34aeee94a2c366fd0f8ce27ba7502e67a95a6b688210a666d8f1c503d7566a719d6f47b4e1b49a06b62c76",
        "message_hex": "0c81d6f60fed135695ae4318d845ff2353333466dc48a6abc5157b3c852454790000000000000002000001a1e006bf456869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-       "prior_signature": "03550c47cf35bfb46c812d7e1d896b5390e96f42b2c9d7c86b9d12615c43b15b9d21aeb9c722faa622794ec78ca9d8f8dcd267202117a9ec3503ad3aafa6299d0d"
+       "prior_signature": "03ba21bbc2151c632ce7463b30a822914176e212b55431dded862bcb57db843acf504356561ecadd924d394c7dddb1b6e5692286e85ddbd048adfe543a41c3658e"
       },
       "prior_total": 0,
       "amount": 2,
@@ -34311,9 +34428,9 @@
     },
     {
      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
-     "message_hex": "0c81d6f60fed135695ae4318d845ff2353333466dc48a6abc5157b3c852454790000000000000000000001a1e006bf456869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "03550c47cf35bfb46c812d7e1d896b5390e96f42b2c9d7c86b9d12615c43b15b9d21aeb9c722faa622794ec78ca9d8f8dcd267202117a9ec3503ad3aafa6299d0d",
+     "message_hex": "62617369732f7072696f722d61636b2f310c81d6f60fed135695ae4318d845ff2353333466dc48a6abc5157b3c8524547900000000000000000000000000000000000001a1e006bf456869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "03ba21bbc2151c632ce7463b30a822914176e212b55431dded862bcb57db843acf504356561ecadd924d394c7dddb1b6e5692286e85ddbd048adfe543a41c3658e",
      "valid": true,
      "field": "/credit_note/prior_signature",
      "edge": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6"
@@ -34611,7 +34728,11 @@
        "max_age_ms": 3600000,
        "transfer_ttl_ms": 1200000,
        "setoff_ttl_ms": 1800000,
-       "fallback_margin_ms": 60000
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
       },
       "circulation_statements": {
        "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
@@ -34635,7 +34756,8 @@
       "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
       "message_hex": "0c81d6f60fed135695ae4318d845ff2353333466dc48a6abc5157b3c852454790000000000000002000001a1e006bf456869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
       "prior_note": null,
-      "prior_message_hex": "0c81d6f60fed135695ae4318d845ff2353333466dc48a6abc5157b3c852454790000000000000000000001a1e006bf456869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+      "prior_timestamp": 0,
+      "prior_message_hex": "62617369732f7072696f722d61636b2f310c81d6f60fed135695ae4318d845ff2353333466dc48a6abc5157b3c8524547900000000000000000000000000000000000001a1e006bf456869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
      }
     },
     "GET /pilot/v1/participants/vp_136ec9667207": {
@@ -35406,7 +35528,8 @@
       "timestamp": 1794760200997,
       "signature": "03b7a9b3f38c8cd9a5c95204be8a81bf34ddfeff4b1467e4e7b18b7c2af31e6f931108022c146e91986c6cc07eb73d79becfb9d3d89d90dc51514635578d44af91",
       "prior_total": 64,
-      "prior_signature": "0201c111e7c69ea7bda5eb1f75a982eb96cd16c031ab2bbc157573735e0d10ab7430de52fbcc372d7c0abc06b8ad8f0c54aeb81283f6de58b1f8cb48391aa8fc40"
+      "prior_timestamp": 1794754617997,
+      "prior_signature": "0295a567ac56cc86fc5249d11dc5ecbfd50da060498a538e0db0e459b08c7fd0ff6b29062b4d61f17b53356aa9e57f96c0c2e446c5fedbc593586386dc43ef8c15"
      }
     }
    },
@@ -35531,7 +35654,7 @@
        "timestamp": 1794760200997,
        "signature": "03b7a9b3f38c8cd9a5c95204be8a81bf34ddfeff4b1467e4e7b18b7c2af31e6f931108022c146e91986c6cc07eb73d79becfb9d3d89d90dc51514635578d44af91",
        "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e00b53256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-       "prior_signature": "0201c111e7c69ea7bda5eb1f75a982eb96cd16c031ab2bbc157573735e0d10ab7430de52fbcc372d7c0abc06b8ad8f0c54aeb81283f6de58b1f8cb48391aa8fc40"
+       "prior_signature": "0295a567ac56cc86fc5249d11dc5ecbfd50da060498a538e0db0e459b08c7fd0ff6b29062b4d61f17b53356aa9e57f96c0c2e446c5fedbc593586386dc43ef8c15"
       },
       "prior_total": 64,
       "amount": 6,
@@ -35540,14 +35663,14 @@
        "signature": "026f8d77befd72971a03d6dd248755d7d298010165b674a6fb273dfd70b02191dd3fff5c58416526ce2d8a5692b029f7aff13cfce6c0195a913c21a5fef874a8e0",
        "deliverable_sha256": "f9b7b857f64931a59bd7490102a2c267ce8f51893fe8964303cdb49ee53ac51f"
       },
-      "approval_id": "va_04a0c5865cd4",
+      "approval_id": "va_4415563fa2a4",
       "pair_changes_since": []
      },
      "payment": null,
      "cancellation": null,
      "approvals": [
       {
-       "id": "va_04a0c5865cd4",
+       "id": "va_4415563fa2a4",
        "participant": "vp_461ce015dd98",
        "deal_id": "vd_0aebe0b4e284b883",
        "kind": "issue_note",
@@ -35631,9 +35754,9 @@
     },
     {
      "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
-     "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1e00b53256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "0201c111e7c69ea7bda5eb1f75a982eb96cd16c031ab2bbc157573735e0d10ab7430de52fbcc372d7c0abc06b8ad8f0c54aeb81283f6de58b1f8cb48391aa8fc40",
+     "message_hex": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1dfb6228d000001a1e00b53256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "0295a567ac56cc86fc5249d11dc5ecbfd50da060498a538e0db0e459b08c7fd0ff6b29062b4d61f17b53356aa9e57f96c0c2e446c5fedbc593586386dc43ef8c15",
      "valid": true,
      "field": "/credit_note/prior_signature",
      "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
@@ -35833,7 +35956,11 @@
        "max_age_ms": 3600000,
        "transfer_ttl_ms": 1200000,
        "setoff_ttl_ms": 1800000,
-       "fallback_margin_ms": 60000
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
       },
       "circulation_statements": {
        "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
@@ -35861,7 +35988,8 @@
        "timestamp": 1794754617997,
        "signature": "03382b55f7495d0e16d602be5902d00afddee8b9298596d6faa1f1c1affed0cbee61f6d83a4c95a0b8880979e7b170c1987a27d1014167fa7bd61c97733aaa866a"
       },
-      "prior_message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1e00b53256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+      "prior_timestamp": 1794754617997,
+      "prior_message_hex": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1dfb6228d000001a1e00b53256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
      }
     },
     "GET /pilot/v1/participants/vp_9850bb41e214": {
@@ -35966,7 +36094,7 @@
    "at": "2026-11-15T17:32:02.999Z",
    "request": {
     "method": "POST",
-    "path": "/pilot/v1/owner/approvals/va_04a0c5865cd4",
+    "path": "/pilot/v1/owner/approvals/va_4415563fa2a4",
     "headers": {
      "authorization": "Bearer <alice.owner>"
     },
@@ -35978,7 +36106,7 @@
     "status": 200,
     "body": {
      "approval": {
-      "id": "va_04a0c5865cd4",
+      "id": "va_4415563fa2a4",
       "participant": "vp_461ce015dd98",
       "deal_id": "vd_0aebe0b4e284b883",
       "kind": "issue_note",
@@ -36109,7 +36237,7 @@
         "timestamp": 1794760200997,
         "signature": "03b7a9b3f38c8cd9a5c95204be8a81bf34ddfeff4b1467e4e7b18b7c2af31e6f931108022c146e91986c6cc07eb73d79becfb9d3d89d90dc51514635578d44af91",
         "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e00b53256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-        "prior_signature": "0201c111e7c69ea7bda5eb1f75a982eb96cd16c031ab2bbc157573735e0d10ab7430de52fbcc372d7c0abc06b8ad8f0c54aeb81283f6de58b1f8cb48391aa8fc40"
+        "prior_signature": "0295a567ac56cc86fc5249d11dc5ecbfd50da060498a538e0db0e459b08c7fd0ff6b29062b4d61f17b53356aa9e57f96c0c2e446c5fedbc593586386dc43ef8c15"
        },
        "prior_total": 64,
        "amount": 6,
@@ -36118,9 +36246,9 @@
         "signature": "026f8d77befd72971a03d6dd248755d7d298010165b674a6fb273dfd70b02191dd3fff5c58416526ce2d8a5692b029f7aff13cfce6c0195a913c21a5fef874a8e0",
         "deliverable_sha256": "f9b7b857f64931a59bd7490102a2c267ce8f51893fe8964303cdb49ee53ac51f"
        },
-       "approval_id": "va_04a0c5865cd4",
+       "approval_id": "va_4415563fa2a4",
        "owner_approval": {
-        "approval_id": "va_04a0c5865cd4",
+        "approval_id": "va_4415563fa2a4",
         "at": "2026-11-15T17:32:02.999Z"
        },
        "error": "the tracker did not record the note (HTTP 400, novation_expired)",
@@ -36132,7 +36260,7 @@
       "cancellation": null,
       "approvals": [
        {
-        "id": "va_04a0c5865cd4",
+        "id": "va_4415563fa2a4",
         "participant": "vp_461ce015dd98",
         "deal_id": "vd_0aebe0b4e284b883",
         "kind": "issue_note",
@@ -36347,7 +36475,7 @@
        "timestamp": 1794760200997,
        "signature": "03b7a9b3f38c8cd9a5c95204be8a81bf34ddfeff4b1467e4e7b18b7c2af31e6f931108022c146e91986c6cc07eb73d79becfb9d3d89d90dc51514635578d44af91",
        "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e00b53256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-       "prior_signature": "0201c111e7c69ea7bda5eb1f75a982eb96cd16c031ab2bbc157573735e0d10ab7430de52fbcc372d7c0abc06b8ad8f0c54aeb81283f6de58b1f8cb48391aa8fc40"
+       "prior_signature": "0295a567ac56cc86fc5249d11dc5ecbfd50da060498a538e0db0e459b08c7fd0ff6b29062b4d61f17b53356aa9e57f96c0c2e446c5fedbc593586386dc43ef8c15"
       },
       "prior_total": 64,
       "amount": 6,
@@ -36356,9 +36484,9 @@
        "signature": "026f8d77befd72971a03d6dd248755d7d298010165b674a6fb273dfd70b02191dd3fff5c58416526ce2d8a5692b029f7aff13cfce6c0195a913c21a5fef874a8e0",
        "deliverable_sha256": "f9b7b857f64931a59bd7490102a2c267ce8f51893fe8964303cdb49ee53ac51f"
       },
-      "approval_id": "va_04a0c5865cd4",
+      "approval_id": "va_4415563fa2a4",
       "owner_approval": {
-       "approval_id": "va_04a0c5865cd4",
+       "approval_id": "va_4415563fa2a4",
        "at": "2026-11-15T17:32:02.999Z"
       },
       "error": "the tracker did not record the note (HTTP 400, novation_expired)",
@@ -36370,7 +36498,7 @@
      "cancellation": null,
      "approvals": [
       {
-       "id": "va_04a0c5865cd4",
+       "id": "va_4415563fa2a4",
        "participant": "vp_461ce015dd98",
        "deal_id": "vd_0aebe0b4e284b883",
        "kind": "issue_note",
@@ -36470,7 +36598,8 @@
       "timestamp": 1794764040997,
       "signature": "02579b2d66891456bf1615e468e6b56fcdc80974782713e329c2abbb538dacd39039bdfc9583b60aa8485fe13800fe02b1da54f8041342990ca01ed08bf91cf63b",
       "prior_total": 64,
-      "prior_signature": "030c38e6f55f293bc87e46d137bf33468ee920bee04244fac7649da6fdde66dbf4637ff23860fd2b62aeb71fdb0165b666a63444351f02d2c22317f3f1b4144a8c"
+      "prior_timestamp": 1794754617997,
+      "prior_signature": "022d128e12003e68583fdf192958034530fe7afb4194d3c7d725a7232c8b2bec434bd4a72a0168e4f9ed6fc41271759b9ee33c22007b4174c474316b244372674d"
      }
     }
    },
@@ -36595,7 +36724,7 @@
        "timestamp": 1794764040997,
        "signature": "02579b2d66891456bf1615e468e6b56fcdc80974782713e329c2abbb538dacd39039bdfc9583b60aa8485fe13800fe02b1da54f8041342990ca01ed08bf91cf63b",
        "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e045eb256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-       "prior_signature": "030c38e6f55f293bc87e46d137bf33468ee920bee04244fac7649da6fdde66dbf4637ff23860fd2b62aeb71fdb0165b666a63444351f02d2c22317f3f1b4144a8c"
+       "prior_signature": "022d128e12003e68583fdf192958034530fe7afb4194d3c7d725a7232c8b2bec434bd4a72a0168e4f9ed6fc41271759b9ee33c22007b4174c474316b244372674d"
       },
       "prior_total": 64,
       "amount": 6,
@@ -36604,14 +36733,14 @@
        "signature": "026f8d77befd72971a03d6dd248755d7d298010165b674a6fb273dfd70b02191dd3fff5c58416526ce2d8a5692b029f7aff13cfce6c0195a913c21a5fef874a8e0",
        "deliverable_sha256": "f9b7b857f64931a59bd7490102a2c267ce8f51893fe8964303cdb49ee53ac51f"
       },
-      "approval_id": "va_4415563fa2a4",
+      "approval_id": "va_7a237f6308d1",
       "pair_changes_since": []
      },
      "payment": null,
      "cancellation": null,
      "approvals": [
       {
-       "id": "va_04a0c5865cd4",
+       "id": "va_4415563fa2a4",
        "participant": "vp_461ce015dd98",
        "deal_id": "vd_0aebe0b4e284b883",
        "kind": "issue_note",
@@ -36623,7 +36752,7 @@
        "note": ""
       },
       {
-       "id": "va_4415563fa2a4",
+       "id": "va_7a237f6308d1",
        "participant": "vp_461ce015dd98",
        "deal_id": "vd_0aebe0b4e284b883",
        "kind": "issue_note",
@@ -36731,9 +36860,9 @@
     },
     {
      "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
-     "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1e045eb256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "030c38e6f55f293bc87e46d137bf33468ee920bee04244fac7649da6fdde66dbf4637ff23860fd2b62aeb71fdb0165b666a63444351f02d2c22317f3f1b4144a8c",
+     "message_hex": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1dfb6228d000001a1e045eb256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "022d128e12003e68583fdf192958034530fe7afb4194d3c7d725a7232c8b2bec434bd4a72a0168e4f9ed6fc41271759b9ee33c22007b4174c474316b244372674d",
      "valid": true,
      "field": "/credit_note/prior_signature",
      "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
@@ -36953,7 +37082,7 @@
         "timestamp": 1794760200997,
         "signature": "03b7a9b3f38c8cd9a5c95204be8a81bf34ddfeff4b1467e4e7b18b7c2af31e6f931108022c146e91986c6cc07eb73d79becfb9d3d89d90dc51514635578d44af91",
         "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e00b53256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-        "prior_signature": "0201c111e7c69ea7bda5eb1f75a982eb96cd16c031ab2bbc157573735e0d10ab7430de52fbcc372d7c0abc06b8ad8f0c54aeb81283f6de58b1f8cb48391aa8fc40"
+        "prior_signature": "0295a567ac56cc86fc5249d11dc5ecbfd50da060498a538e0db0e459b08c7fd0ff6b29062b4d61f17b53356aa9e57f96c0c2e446c5fedbc593586386dc43ef8c15"
        },
        "prior_total": 64,
        "amount": 6,
@@ -36962,9 +37091,9 @@
         "signature": "026f8d77befd72971a03d6dd248755d7d298010165b674a6fb273dfd70b02191dd3fff5c58416526ce2d8a5692b029f7aff13cfce6c0195a913c21a5fef874a8e0",
         "deliverable_sha256": "f9b7b857f64931a59bd7490102a2c267ce8f51893fe8964303cdb49ee53ac51f"
        },
-       "approval_id": "va_04a0c5865cd4",
+       "approval_id": "va_4415563fa2a4",
        "owner_approval": {
-        "approval_id": "va_04a0c5865cd4",
+        "approval_id": "va_4415563fa2a4",
         "at": "2026-11-15T17:32:02.999Z"
        },
        "error": "the tracker did not record the note (HTTP 400, novation_expired)",
@@ -36976,7 +37105,7 @@
       "cancellation": null,
       "approvals": [
        {
-        "id": "va_04a0c5865cd4",
+        "id": "va_4415563fa2a4",
         "participant": "vp_461ce015dd98",
         "deal_id": "vd_0aebe0b4e284b883",
         "kind": "issue_note",
@@ -37093,7 +37222,11 @@
        "max_age_ms": 3600000,
        "transfer_ttl_ms": 1200000,
        "setoff_ttl_ms": 1800000,
-       "fallback_margin_ms": 60000
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
       },
       "circulation_statements": {
        "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
@@ -37121,7 +37254,8 @@
        "timestamp": 1794754617997,
        "signature": "03382b55f7495d0e16d602be5902d00afddee8b9298596d6faa1f1c1affed0cbee61f6d83a4c95a0b8880979e7b170c1987a27d1014167fa7bd61c97733aaa866a"
       },
-      "prior_message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1e045eb256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+      "prior_timestamp": 1794754617997,
+      "prior_message_hex": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1dfb6228d000001a1e045eb256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
      }
     },
     "GET /pilot/v1/participants/vp_9850bb41e214": {
@@ -37226,7 +37360,7 @@
    "at": "2026-11-15T17:35:02.999Z",
    "request": {
     "method": "POST",
-    "path": "/pilot/v1/owner/approvals/va_4415563fa2a4",
+    "path": "/pilot/v1/owner/approvals/va_7a237f6308d1",
     "headers": {
      "authorization": "Bearer <alice.owner>"
     },
@@ -37238,7 +37372,7 @@
     "status": 200,
     "body": {
      "approval": {
-      "id": "va_4415563fa2a4",
+      "id": "va_7a237f6308d1",
       "participant": "vp_461ce015dd98",
       "deal_id": "vd_0aebe0b4e284b883",
       "kind": "issue_note",
@@ -37366,7 +37500,7 @@
         "timestamp": 1794764040997,
         "signature": "02579b2d66891456bf1615e468e6b56fcdc80974782713e329c2abbb538dacd39039bdfc9583b60aa8485fe13800fe02b1da54f8041342990ca01ed08bf91cf63b",
         "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e045eb256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-        "prior_signature": "030c38e6f55f293bc87e46d137bf33468ee920bee04244fac7649da6fdde66dbf4637ff23860fd2b62aeb71fdb0165b666a63444351f02d2c22317f3f1b4144a8c"
+        "prior_signature": "022d128e12003e68583fdf192958034530fe7afb4194d3c7d725a7232c8b2bec434bd4a72a0168e4f9ed6fc41271759b9ee33c22007b4174c474316b244372674d"
        },
        "prior_total": 64,
        "amount": 6,
@@ -37375,9 +37509,9 @@
         "signature": "026f8d77befd72971a03d6dd248755d7d298010165b674a6fb273dfd70b02191dd3fff5c58416526ce2d8a5692b029f7aff13cfce6c0195a913c21a5fef874a8e0",
         "deliverable_sha256": "f9b7b857f64931a59bd7490102a2c267ce8f51893fe8964303cdb49ee53ac51f"
        },
-       "approval_id": "va_4415563fa2a4",
+       "approval_id": "va_7a237f6308d1",
        "owner_approval": {
-        "approval_id": "va_4415563fa2a4",
+        "approval_id": "va_7a237f6308d1",
         "at": "2026-11-15T17:35:02.999Z"
        },
        "outstanding": true,
@@ -37399,7 +37533,7 @@
       "cancellation": null,
       "approvals": [
        {
-        "id": "va_04a0c5865cd4",
+        "id": "va_4415563fa2a4",
         "participant": "vp_461ce015dd98",
         "deal_id": "vd_0aebe0b4e284b883",
         "kind": "issue_note",
@@ -37411,7 +37545,7 @@
         "note": ""
        },
        {
-        "id": "va_4415563fa2a4",
+        "id": "va_7a237f6308d1",
         "participant": "vp_461ce015dd98",
         "deal_id": "vd_0aebe0b4e284b883",
         "kind": "issue_note",
@@ -38103,11 +38237,13 @@
      "quote_digest": "05c8a65e83008fddccd52222480cdfa43b437e209ab8fec5c69d79ff112d50c8",
      "timestamp": 1794764400999,
      "from_prior_total": 70,
+     "from_prior_timestamp": 1794764040997,
      "to_prior_total": 0,
+     "to_prior_timestamp": 0,
      "completion_signature": "02e0f9938a5b73d8fc326137c870e2308b85a1becd9076ac6c1673d7a67f5216c22709c7a400fa64221637e86875467722b434769c51b7aea9785d767d14128c58",
      "pay_signature": "03745bd768ad5bd73d2e0bd92215b1bad2bf67ef11431709e5b0b6e135a2265af81371e4943e0098513aa99ec163122832fc1a9fcb7dd643016b9c5797eb0b309e",
      "signatures": {
-      "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "027808448906bde82437826ad7a8f65e6566e61640dfbb870d14b9228f36b86dcd788698f41e547d54df93d8b388d163a9cdddd0e311ee8e7015a043a91cea7361",
+      "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "03fe4de36267f679a1b25975a984b01d677afa2b8e11f34b9364f3ad55866e73370110ccd6136be84a99c7c57b9d12d3f7a6327c6eb81f7335586635de4700b8eb",
       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": "02a0c90368a8308227075cd2a6c21d2dbf479cd04e61f4ebe6644dab9941b2bcc06327f52025bee65c16eadefcb1042adaec5450bce1a966aa373e6f6385543bd4",
       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>023d2b6b0032159369b372c9a68d7c2ad47a10f73fc469179d5eb464d4c9d76744:new": "0359533437b80b3ac8bcea9d5293dd5ebc7a36a5217f7fe90b42c94d60633a49ef0178292913b5b1ce8ecf3d5a5ad54fc0bed8f59b111b4bef81b9bcd46a73755b"
      }
@@ -38141,9 +38277,9 @@
     },
     {
      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
-     "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e04b69676869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "027808448906bde82437826ad7a8f65e6566e61640dfbb870d14b9228f36b86dcd788698f41e547d54df93d8b388d163a9cdddd0e311ee8e7015a043a91cea7361",
+     "message_hex": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e045eb25000001a1e04b69676869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "03fe4de36267f679a1b25975a984b01d677afa2b8e11f34b9364f3ad55866e73370110ccd6136be84a99c7c57b9d12d3f7a6327c6eb81f7335586635de4700b8eb",
      "valid": true,
      "field": "/signatures/035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior",
      "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
@@ -38168,9 +38304,9 @@
     },
     {
      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
-     "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e04b69676869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "027808448906bde82437826ad7a8f65e6566e61640dfbb870d14b9228f36b86dcd788698f41e547d54df93d8b388d163a9cdddd0e311ee8e7015a043a91cea7361",
+     "message_hex": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e045eb25000001a1e04b69676869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "03fe4de36267f679a1b25975a984b01d677afa2b8e11f34b9364f3ad55866e73370110ccd6136be84a99c7c57b9d12d3f7a6327c6eb81f7335586635de4700b8eb",
      "valid": true,
      "field": "/signatures/035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior",
      "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
@@ -38214,11 +38350,13 @@
      "quote_digest": "05c8a65e83008fddccd52222480cdfa43b437e209ab8fec5c69d79ff112d50c8",
      "timestamp": 1794764400999,
      "from_prior_total": 70,
+     "from_prior_timestamp": 1794764040997,
      "to_prior_total": 0,
+     "to_prior_timestamp": 0,
      "completion_signature": "02e0f9938a5b73d8fc326137c870e2308b85a1becd9076ac6c1673d7a67f5216c22709c7a400fa64221637e86875467722b434769c51b7aea9785d767d14128c58",
      "pay_signature": "03745bd768ad5bd73d2e0bd92215b1bad2bf67ef11431709e5b0b6e135a2265af81371e4943e0098513aa99ec163122832fc1a9fcb7dd643016b9c5797eb0b309e",
      "signatures": {
-      "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "027808448906bde82437826ad7a8f65e6566e61640dfbb870d14b9228f36b86dcd788698f41e547d54df93d8b388d163a9cdddd0e311ee8e7015a043a91cea7361",
+      "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "03fe4de36267f679a1b25975a984b01d677afa2b8e11f34b9364f3ad55866e73370110ccd6136be84a99c7c57b9d12d3f7a6327c6eb81f7335586635de4700b8eb",
       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": "02fd94e6030803106c7347fe9bda6a7328064c2c2e6822ad0f6432fe4dc69e179e4d70efa46e419be2e450e56edb6addb5b6911b2d515f0e3020932b314dceecf1",
       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>023d2b6b0032159369b372c9a68d7c2ad47a10f73fc469179d5eb464d4c9d76744:new": "0226e2cea57871058917abafc48b1ca9a26e89a6c138b70142d7265039d77f56b85da25ba8c58abeda3d407797b020dcebe6658f092c27e8230a3742163c57842d"
      }
@@ -38252,9 +38390,9 @@
     },
     {
      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
-     "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e04b69676869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "027808448906bde82437826ad7a8f65e6566e61640dfbb870d14b9228f36b86dcd788698f41e547d54df93d8b388d163a9cdddd0e311ee8e7015a043a91cea7361",
+     "message_hex": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e045eb25000001a1e04b69676869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "03fe4de36267f679a1b25975a984b01d677afa2b8e11f34b9364f3ad55866e73370110ccd6136be84a99c7c57b9d12d3f7a6327c6eb81f7335586635de4700b8eb",
      "valid": true,
      "field": "/signatures/035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior",
      "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
@@ -38270,9 +38408,9 @@
     },
     {
      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
-     "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e04b69676869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "027808448906bde82437826ad7a8f65e6566e61640dfbb870d14b9228f36b86dcd788698f41e547d54df93d8b388d163a9cdddd0e311ee8e7015a043a91cea7361",
+     "message_hex": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e045eb25000001a1e04b69676869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "03fe4de36267f679a1b25975a984b01d677afa2b8e11f34b9364f3ad55866e73370110ccd6136be84a99c7c57b9d12d3f7a6327c6eb81f7335586635de4700b8eb",
      "valid": true,
      "field": "/signatures/035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior",
      "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
@@ -38307,11 +38445,13 @@
      "quote_digest": "05c8a65e83008fddccd52222480cdfa43b437e209ab8fec5c69d79ff112d50c8",
      "timestamp": 1794764520999,
      "from_prior_total": 70,
+     "from_prior_timestamp": 1794764040997,
      "to_prior_total": 0,
+     "to_prior_timestamp": 0,
      "completion_signature": "02e0f9938a5b73d8fc326137c870e2308b85a1becd9076ac6c1673d7a67f5216c22709c7a400fa64221637e86875467722b434769c51b7aea9785d767d14128c58",
      "pay_signature": "03745bd768ad5bd73d2e0bd92215b1bad2bf67ef11431709e5b0b6e135a2265af81371e4943e0098513aa99ec163122832fc1a9fcb7dd643016b9c5797eb0b309e",
      "signatures": {
-      "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "0224a52f5589716d22b4333441fcb495cc061e44615374068146da90b2f31bea8a1174e919041207fe012b98b2bf1df0df6572c35adac9589f4fe525541f656a3d",
+      "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "0235e756e67d7a6e040fd503260221f08ed7f9397757cacd9b7df8e97e0449b69169a9fe1a12eb373b7f2262763d64e512807706890d8ef986f2e5d6c0cc177a2a",
       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": "0396f566c1c071fe0108f5d84f41a8a9e2dc869845c699602970caf1d077e8d8a70e8704283fc98ab43150fb7dcb27113580c6fb1c2f18f3d7685279b9e17323e1",
       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>023d2b6b0032159369b372c9a68d7c2ad47a10f73fc469179d5eb464d4c9d76744:new": "02a1e03ffc0dedc5fa4fad11f5e7fb07c92b3e163fb247f8268f2aa24ab8e387f00871ff5673eb955689d8a4551fbb03b61710cfbe67cb656d3cf692f692175425"
      }
@@ -38434,7 +38574,7 @@
      "payment": {
       "method": "transfer",
       "state": "collecting",
-      "transfer_id": "vt_a25adb7a5358ece7",
+      "transfer_id": "vt_0ee5d74a26677e50",
       "issuer": {
        "id": "vp_461ce015dd98",
        "handle": "alice"
@@ -38487,7 +38627,7 @@
        "at": "2026-11-15T17:42:02.999Z",
        "by": "vp_9850bb41e214",
        "event": "payment_by_transfer",
-       "transfer_id": "vt_a25adb7a5358ece7",
+       "transfer_id": "vt_0ee5d74a26677e50",
        "issuer": "vp_461ce015dd98",
        "amount": 3
       }
@@ -38500,7 +38640,7 @@
       "work": "delivery and acceptance are the parties' statements; Valun does not judge the work"
      },
      "transfer": {
-      "id": "vt_a25adb7a5358ece7",
+      "id": "vt_0ee5d74a26677e50",
       "kind": "transfer",
       "state": "collecting",
       "your_roles": [
@@ -38596,9 +38736,9 @@
     },
     {
      "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
-     "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e04d3e276869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "0224a52f5589716d22b4333441fcb495cc061e44615374068146da90b2f31bea8a1174e919041207fe012b98b2bf1df0df6572c35adac9589f4fe525541f656a3d",
+     "message_hex": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e045eb25000001a1e04d3e276869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "0235e756e67d7a6e040fd503260221f08ed7f9397757cacd9b7df8e97e0449b69169a9fe1a12eb373b7f2262763d64e512807706890d8ef986f2e5d6c0cc177a2a",
      "valid": true,
      "field": "/signatures/035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior",
      "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
@@ -38623,9 +38763,9 @@
     },
     {
      "pubkey": "023d2b6b0032159369b372c9a68d7c2ad47a10f73fc469179d5eb464d4c9d76744",
-     "message_hex": "d7aa8cc9fe54b6854171a8af7d60c957aaf822961159c33920b86f8a79dad34e0000000000000000000001a1e04d3e276869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-     "kind": "basis_note_message",
-     "signature": "03344d460192f192bb02999b7f37cf79f040ad010c9a3f397500d36cd83d8df6365165492fa8cf50f817ca8abf0892fc0b90ccfc05814dd1c852eb53c790f6c0df",
+     "message_hex": "62617369732f7072696f722d61636b2f31d7aa8cc9fe54b6854171a8af7d60c957aaf822961159c33920b86f8a79dad34e00000000000000000000000000000000000001a1e04d3e276869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "kind": "basis_prior_ack",
+     "signature": "035bbd590da9734f975e03992e6cfb7e117b7d6b4d9eb31de5af76082b7cd53c714b92b625d7937e7a865ba16d2d1c3a8cf2b1c4d941c84dfc071aa38c269ce36b",
      "valid": true,
      "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>023d2b6b0032159369b372c9a68d7c2ad47a10f73fc469179d5eb464d4c9d76744"
     },
@@ -38912,7 +39052,11 @@
        "max_age_ms": 3600000,
        "transfer_ttl_ms": 1200000,
        "setoff_ttl_ms": 1800000,
-       "fallback_margin_ms": 60000
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
       },
       "circulation_statements": {
        "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
@@ -39315,11 +39459,13 @@
         "timestamp": 1794764040997,
         "signature": "02579b2d66891456bf1615e468e6b56fcdc80974782713e329c2abbb538dacd39039bdfc9583b60aa8485fe13800fe02b1da54f8041342990ca01ed08bf91cf63b"
        },
+       "prior_timestamp": 1794764040997,
        "new_total": 67
       },
       "to_edge": {
        "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>023d2b6b0032159369b372c9a68d7c2ad47a10f73fc469179d5eb464d4c9d76744",
        "before": null,
+       "prior_timestamp": 0,
        "new_total": 3
       },
       "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
@@ -39327,10 +39473,10 @@
       "quote_digest": "05c8a65e83008fddccd52222480cdfa43b437e209ab8fec5c69d79ff112d50c8",
       "collect_until": "2026-11-15T18:02:02.999Z",
       "messages": {
-       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e04d3e276869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "62617369732f7072696f722d61636b2f313c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e045eb25000001a1e04d3e276869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
        "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000043000001a1e04d3e276869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
        "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>023d2b6b0032159369b372c9a68d7c2ad47a10f73fc469179d5eb464d4c9d76744:new": "d7aa8cc9fe54b6854171a8af7d60c957aaf822961159c33920b86f8a79dad34e0000000000000003000001a1e04d3e276869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>023d2b6b0032159369b372c9a68d7c2ad47a10f73fc469179d5eb464d4c9d76744:prior": "d7aa8cc9fe54b6854171a8af7d60c957aaf822961159c33920b86f8a79dad34e0000000000000000000001a1e04d3e276869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
+       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>023d2b6b0032159369b372c9a68d7c2ad47a10f73fc469179d5eb464d4c9d76744:prior": "62617369732f7072696f722d61636b2f31d7aa8cc9fe54b6854171a8af7d60c957aaf822961159c33920b86f8a79dad34e00000000000000000000000000000000000001a1e04d3e276869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
       }
      }
     }
@@ -39343,7 +39489,7 @@
    "at": "2026-11-15T17:43:02.999Z",
    "request": {
     "method": "POST",
-    "path": "/pilot/v1/consents/vt_a25adb7a5358ece7",
+    "path": "/pilot/v1/consents/vt_0ee5d74a26677e50",
     "headers": {
      "authorization": "Bearer <alice.agent>",
      "x-valun-features": "consents/1;roles=setoff,issuer,creditor"
@@ -39367,7 +39513,7 @@
     "status": 200,
     "body": {
      "kind": "transfer",
-     "id": "vt_a25adb7a5358ece7",
+     "id": "vt_0ee5d74a26677e50",
      "state": "outcome_unknown",
      "your_roles": [
       "issuer"
@@ -39394,6 +39540,7 @@
         "timestamp": 1794764040997,
         "signature": "02579b2d66891456bf1615e468e6b56fcdc80974782713e329c2abbb538dacd39039bdfc9583b60aa8485fe13800fe02b1da54f8041342990ca01ed08bf91cf63b"
        },
+       "prior_timestamp": 1794764040997,
        "change": -3,
        "new_total": 67,
        "timestamp": 1794764520999,
@@ -39417,6 +39564,7 @@
        },
        "your_role": "issuer",
        "before": null,
+       "prior_timestamp": 0,
        "change": 3,
        "new_total": 3,
        "timestamp": 1794764520999,
@@ -39607,7 +39755,7 @@
      "payment": {
       "method": "transfer",
       "state": "outcome_unknown",
-      "transfer_id": "vt_a25adb7a5358ece7",
+      "transfer_id": "vt_0ee5d74a26677e50",
       "issuer": {
        "id": "vp_461ce015dd98",
        "handle": "alice"
@@ -39660,7 +39808,7 @@
        "at": "2026-11-15T17:42:02.999Z",
        "by": "vp_9850bb41e214",
        "event": "payment_by_transfer",
-       "transfer_id": "vt_a25adb7a5358ece7",
+       "transfer_id": "vt_0ee5d74a26677e50",
        "issuer": "vp_461ce015dd98",
        "amount": 3
       },
@@ -39668,7 +39816,7 @@
        "at": "2026-11-15T17:43:02.999Z",
        "by": "valun",
        "event": "payment_outcome_unknown",
-       "transfer_id": "vt_a25adb7a5358ece7",
+       "transfer_id": "vt_0ee5d74a26677e50",
        "reason": "attempt_outcome_unknown"
       }
      ],
@@ -39980,7 +40128,7 @@
        "payment": {
         "method": "transfer",
         "state": "outcome_unknown",
-        "transfer_id": "vt_a25adb7a5358ece7",
+        "transfer_id": "vt_0ee5d74a26677e50",
         "issuer": {
          "id": "vp_461ce015dd98",
          "handle": "alice"
@@ -40033,7 +40181,7 @@
          "at": "2026-11-15T17:42:02.999Z",
          "by": "vp_9850bb41e214",
          "event": "payment_by_transfer",
-         "transfer_id": "vt_a25adb7a5358ece7",
+         "transfer_id": "vt_0ee5d74a26677e50",
          "issuer": "vp_461ce015dd98",
          "amount": 3
         },
@@ -40041,7 +40189,7 @@
          "at": "2026-11-15T17:43:02.999Z",
          "by": "valun",
          "event": "payment_outcome_unknown",
-         "transfer_id": "vt_a25adb7a5358ece7",
+         "transfer_id": "vt_0ee5d74a26677e50",
          "reason": "attempt_outcome_unknown"
         }
        ],
@@ -40170,7 +40318,7 @@
          "timestamp": 1794764040997,
          "signature": "02579b2d66891456bf1615e468e6b56fcdc80974782713e329c2abbb538dacd39039bdfc9583b60aa8485fe13800fe02b1da54f8041342990ca01ed08bf91cf63b",
          "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000046000001a1e045eb256869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-         "prior_signature": "030c38e6f55f293bc87e46d137bf33468ee920bee04244fac7649da6fdde66dbf4637ff23860fd2b62aeb71fdb0165b666a63444351f02d2c22317f3f1b4144a8c"
+         "prior_signature": "022d128e12003e68583fdf192958034530fe7afb4194d3c7d725a7232c8b2bec434bd4a72a0168e4f9ed6fc41271759b9ee33c22007b4174c474316b244372674d"
         },
         "prior_total": 64,
         "amount": 6,
@@ -40179,9 +40327,9 @@
          "signature": "026f8d77befd72971a03d6dd248755d7d298010165b674a6fb273dfd70b02191dd3fff5c58416526ce2d8a5692b029f7aff13cfce6c0195a913c21a5fef874a8e0",
          "deliverable_sha256": "f9b7b857f64931a59bd7490102a2c267ce8f51893fe8964303cdb49ee53ac51f"
         },
-        "approval_id": "va_4415563fa2a4",
+        "approval_id": "va_7a237f6308d1",
         "owner_approval": {
-         "approval_id": "va_4415563fa2a4",
+         "approval_id": "va_7a237f6308d1",
          "at": "2026-11-15T17:35:02.999Z"
         },
         "outstanding": true,
@@ -40410,7 +40558,7 @@
          "timestamp": 1794759900997,
          "signature": "02e64df64f9045bda8b1e90035626570a33752cb704d34aeee94a2c366fd0f8ce27ba7502e67a95a6b688210a666d8f1c503d7566a719d6f47b4e1b49a06b62c76",
          "message_hex": "0c81d6f60fed135695ae4318d845ff2353333466dc48a6abc5157b3c852454790000000000000002000001a1e006bf456869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-         "prior_signature": "03550c47cf35bfb46c812d7e1d896b5390e96f42b2c9d7c86b9d12615c43b15b9d21aeb9c722faa622794ec78ca9d8f8dcd267202117a9ec3503ad3aafa6299d0d"
+         "prior_signature": "03ba21bbc2151c632ce7463b30a822914176e212b55431dded862bcb57db843acf504356561ecadd924d394c7dddb1b6e5692286e85ddbd048adfe543a41c3658e"
         },
         "prior_total": 0,
         "amount": 2,
@@ -40609,7 +40757,7 @@
          "timestamp": 1794754617997,
          "signature": "03382b55f7495d0e16d602be5902d00afddee8b9298596d6faa1f1c1affed0cbee61f6d83a4c95a0b8880979e7b170c1987a27d1014167fa7bd61c97733aaa866a",
          "message_hex": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1dfb6228d6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-         "prior_signature": "03180cd4d861571d2a9fda982349f7572f07e0b7ca0c80e3408093c4d79246b3031d8f463a99c4bfe7cf2e7c88a6d51ed37b4a463509a49be6ecd3e9e419c9ce9c"
+         "prior_signature": "0296b0b78a06c1fe339a450fb606424f4c7a97d6c4a1b3d15497c98c842c9b96116c31c3d1794b490e2d1307cf1c471a1ffa2b39e8d95f13c66f3be62208d4ee94"
         },
         "prior_total": 59,
         "amount": 5,
@@ -43322,7 +43470,7 @@
         "payment": {
          "method": "transfer",
          "state": "outcome_unknown",
-         "transfer_id": "vt_a25adb7a5358ece7",
+         "transfer_id": "vt_0ee5d74a26677e50",
          "issuer": {
           "id": "vp_461ce015dd98",
           "handle": "alice"
@@ -43429,7 +43577,7 @@
    "at": "2026-11-15T17:49:02.999Z",
    "request": {
     "method": "POST",
-    "path": "/pilot/v1/owner/deals/vd_d8730986ba6c26f5/attempts/vt_a25adb7a5358ece7/resolve",
+    "path": "/pilot/v1/owner/deals/vd_d8730986ba6c26f5/attempts/vt_0ee5d74a26677e50/resolve",
     "headers": {
      "authorization": "Bearer <bob.owner>"
     },
@@ -43442,14 +43590,14 @@
     "status": 200,
     "body": {
      "resolution": {
-      "attempt_id": "vt_a25adb7a5358ece7",
+      "attempt_id": "vt_0ee5d74a26677e50",
       "outcome": "applied",
       "previous_state": "outcome_unknown",
       "at": "2026-11-15T17:49:02.999Z",
       "note": "sam confirmed that 3 PC arrived"
      },
      "attempt": {
-      "id": "vt_a25adb7a5358ece7",
+      "id": "vt_0ee5d74a26677e50",
       "kind": "transfer",
       "timestamp": 1794764520999
      },
@@ -43565,7 +43713,7 @@
       "payment": {
        "method": "transfer",
        "state": "applied",
-       "transfer_id": "vt_a25adb7a5358ece7",
+       "transfer_id": "vt_0ee5d74a26677e50",
        "issuer": {
         "id": "vp_461ce015dd98",
         "handle": "alice"
@@ -43618,7 +43766,7 @@
         "at": "2026-11-15T17:42:02.999Z",
         "by": "vp_9850bb41e214",
         "event": "payment_by_transfer",
-        "transfer_id": "vt_a25adb7a5358ece7",
+        "transfer_id": "vt_0ee5d74a26677e50",
         "issuer": "vp_461ce015dd98",
         "amount": 3
        },
@@ -43626,21 +43774,21 @@
         "at": "2026-11-15T17:43:02.999Z",
         "by": "valun",
         "event": "payment_outcome_unknown",
-        "transfer_id": "vt_a25adb7a5358ece7",
+        "transfer_id": "vt_0ee5d74a26677e50",
         "reason": "attempt_outcome_unknown"
        },
        {
         "at": "2026-11-15T17:49:02.999Z",
         "by": "owner:vp_9850bb41e214",
         "event": "payment_attempt_resolved",
-        "transfer_id": "vt_a25adb7a5358ece7",
+        "transfer_id": "vt_0ee5d74a26677e50",
         "outcome": "applied"
        },
        {
         "at": "2026-11-15T17:49:02.999Z",
         "by": "valun",
         "event": "paid_by_transfer",
-        "transfer_id": "vt_a25adb7a5358ece7",
+        "transfer_id": "vt_0ee5d74a26677e50",
         "amount": 3,
         "resolved_by_owner": true
        }
@@ -43654,7 +43802,7 @@
       }
      },
      "transfer": {
-      "id": "vt_a25adb7a5358ece7",
+      "id": "vt_0ee5d74a26677e50",
       "kind": "transfer",
       "state": "applied",
       "your_roles": [
@@ -43730,7 +43878,7 @@
       },
       "fallback_after": null,
       "signatures": {
-       "from_recipient_prior": "0224a52f5589716d22b4333441fcb495cc061e44615374068146da90b2f31bea8a1174e919041207fe012b98b2bf1df0df6572c35adac9589f4fe525541f656a3d",
+       "from_recipient_prior": "0235e756e67d7a6e040fd503260221f08ed7f9397757cacd9b7df8e97e0449b69169a9fe1a12eb373b7f2262763d64e512807706890d8ef986f2e5d6c0cc177a2a",
        "from_recipient": "0396f566c1c071fe0108f5d84f41a8a9e2dc869845c699602970caf1d077e8d8a70e8704283fc98ab43150fb7dcb27113580c6fb1c2f18f3d7685279b9e17323e1",
        "from_recipient_to": "02a1e03ffc0dedc5fa4fad11f5e7fb07c92b3e163fb247f8268f2aa24ab8e387f00871ff5673eb955689d8a4551fbb03b61710cfbe67cb656d3cf692f692175425",
        "issuer_from": "03ac704de1c2a46e49fb8f710e86c30f10a3291ee323d57979c68d94f804e2c0822f51adf90b629a839222850796dd669ea0ee85a4f43273e8b85bc6c3df81b476"
@@ -43752,7 +43900,7 @@
    "at": "2026-11-15T17:50:02.999Z",
    "request": {
     "method": "POST",
-    "path": "/pilot/v1/owner/deals/vd_d8730986ba6c26f5/attempts/vt_a25adb7a5358ece7/resolve",
+    "path": "/pilot/v1/owner/deals/vd_d8730986ba6c26f5/attempts/vt_0ee5d74a26677e50/resolve",
     "headers": {
      "authorization": "Bearer <bob.owner>"
     },
@@ -43875,7 +44023,11 @@
        "max_age_ms": 3600000,
        "transfer_ttl_ms": 1200000,
        "setoff_ttl_ms": 1800000,
-       "fallback_margin_ms": 60000
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
       },
       "circulation_statements": {
        "pay": "(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`"
