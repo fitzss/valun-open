@@ -3,10 +3,12 @@
 //
 //   node spec/vectors/generate.mjs
 //
-// Written against server release v16 (valun-app commit cfe698b, branch circulation-v16; circulating credit, spec
-// revision v14). The script never runs a working tree: by default it exports exactly that commit with `git archive` from
-// the valun-app repository next to this one (VALUN_APP_REPO=<path> names another clone) into a temporary folder, runs
-// it, and removes the folder at the end. VALUN_APP_DIR=<path> runs an export made by hand instead (README-ci.md). The
+// Written against server release v16 (valun-app commit fa38334, branch circulation-v16; circulating credit, spec
+// revision v14). Its server sources are byte-identical to 94797c6's, the commit that makes a same-issuer transfer retry
+// wait for the earlier attempt's window and makes no transfer again (audit VS-1); the vectors before it came from
+// cfe698b. The script never runs a working tree: by default it exports exactly that commit with `git archive` from the
+// valun-app repository next to this one (VALUN_APP_REPO=<path> names another clone) into a temporary folder, runs it,
+// and removes the folder at the end. VALUN_APP_DIR=<path> runs an export made by hand instead (README-ci.md). The
 // script records the sha256 of every server source it ran (RELEASES below) and labels the output "UNRECOGNISED server
 // source" (with a warning) when they are not a known release's. Every assertion below pins that release's behaviour; a
 // server change that breaks one stops the script before anything is written.
@@ -80,18 +82,18 @@ const RELEASES = {
     'lib/pilot/http.mjs': '01a505623d64c0a2c00a221240d57b5631c91dec61f5caaeb37113e8497c0f0e',
     'lib/basis.mjs': '991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617',
     'lib/http.mjs': '2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf'}},
-  v16: {commit: 'cfe698b2c2ddb0ba57559404e3b69bcd863c188b', label: 'v16 (valun-app commit cfe698b)', sources: {
-    'lib/pilot/core.mjs': '95d280fdbd1dbce120dd92e124e83a9745b458f425890ab18f984ea6f4ebf2b1',
-    'lib/pilot/http.mjs': '09b8c7ac8eabe0465db794f7152ca38623996ea7ff520a1cb5e00dfe071affa5',
+  v16: {commit: 'fa3833479e91126b07a0ab81d574ca98fbfd0755', label: 'v16 (valun-app commit fa38334)', sources: {
+    'lib/pilot/core.mjs': '4d8b5cbd81559c2f0a908108b447b41e9843850868b2edc3903dcccdfe0dfcb2',
+    'lib/pilot/http.mjs': '76e9e3603b0f5a3a7e693855c4b8fbc1474ac7be29d3c812a9ea77ebf2cf7dba',
     'lib/basis.mjs': '733953129eb86708e6c3424887cef3c0d32bcdc0cc282d5434286c2cab9d3a96',
     'lib/http.mjs': '2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf',
     'lib/pilot/caps.mjs': 'b64bc079b84d8180aa0025259539eb18a1dc9676b74f6a25b772cc1851ad9596',
-    'lib/pilot/clearing.mjs': '681a1248fc10c399d45d8015fba678359848917f960f9f0c55a5c97d314b4b9f',
-    'lib/pilot/journal.mjs': '68138d43ee9fd36882abba7a5df483d212dcc09c574a84642c1bc5ab7ed3ac2a',
-    'lib/pilot/novation.mjs': 'd028a288071eddf728c25417fc07fdc910862d0830b5c5adbf6b3851b298bc53',
+    'lib/pilot/clearing.mjs': '457dcf1f21dda3ad9ebeaea18a1b713fd75dcef515cb64222aff5993386fec18',
+    'lib/pilot/journal.mjs': '7078357fc4e7b02093ada55f5148122e2c92198329da5ca9a7737d31bf9809a3',
+    'lib/pilot/novation.mjs': '02a4f40faf6de079d30a152b861e18fbbc3b1618d17bcc7ea6023383f0530874',
     'lib/pilot/pins.mjs': 'af6525ef61361a49b0644a83dbee516bba687fddf51db821a0d91ede64e4324a',
     'lib/pilot/policy.mjs': 'da7e9fff13fb29408182db4d08a2816fb48463c2685b47b733fdb15c5c169e8f',
-    'lib/pilot/sandbox.mjs': '152704f4ab60395febda391008038b99fa4517f8f063b61133da2b754c8acb00',
+    'lib/pilot/sandbox.mjs': '56be7acf50bfeac2cdf81cb76ccb1f8c9827d304a689f23add697bdebdf93f3c',
     'lib/pilot/status.mjs': '9a2d9ae94fe90cca700977c5024e64ead164bc6f167e86b8c83f3495be56286c'}},
 };
 const CURRENT_RELEASE = 'v16';
@@ -1569,7 +1571,7 @@ async function transcriptVectors() {
   }
 
   // ==== CIRCULATION BEGIN ============================================================================================
-  // Release v16 (valun-app cfe698b): circulating credit, appended after every earlier release's steps and after the
+  // Release v16 (valun-app fa38334): circulating credit, appended after every earlier release's steps and after the
   // probes (steps 148+). The operator restarts with PILOT_CIRCULATION=on on the pinned tracker v3.1 (here: the
   // stand-in switches its v3.1 rules on and the Pilot's mode becomes on); every request below that an agent's client
   // makes carries the capability header its consent policy gives (X-Valun-Features, PROTOCOL.md 18.1).
@@ -1839,16 +1841,17 @@ async function transcriptVectors() {
         await step('public: GET /clearing: aggregates only (PC cleared by set-off; no participant ids, handles or keys; since v16)', 'anyone', 'GET', '/clearing', {expect: 200});
         assert.equal(edgeState('nina', 'alice').total, 0); assert.equal(edgeState('alice', 'nina').total, 4);
       }
-      // ---- decision D-2 b and D-1 item 2: a payment refused when posted is still an attempt; another kind waits for its window ----
+      // ---- decision D-2 b and D-1 item 2: a payment refused when posted is still an attempt; every other payment waits for its window ----
       {
         const ab = edgeK('alice', 'bob'), an = edgeK('alice', 'nina'), bn = edgeK('bob', 'nina');
         const X1 = await dealToDelivery('bob', 'nina', svc16('Term check', 'Check one term against two glossaries.'), 2, 'The term matches both glossaries.', 'flow W (v16)');
         const d = await dealView('bob', X1), tpl = await transferTemplate('bob', X1, 'alice');
         const body = payBody('bob', d, tpl);
         tick(11 * 60);   // a slow client: the template's timestamp is now more than 10 minutes old
-        const st = await step("flow W: bob's client posts a payment by transfer signed over a template 11 minutes old: 409 transfer_stale with a fresh template; the server keeps the refused attempt (decision D-2 b)",
+        const st = await step("flow W: bob's client posts a payment by transfer signed over a template 11 minutes old: 409 transfer_stale; the server keeps the refused attempt (decision D-2 b), so the answer's template is null: a new transfer, through the same issuer too, waits for that attempt's window (audit VS-1)",
           'bob.agent', 'POST', `/deals/${X1}/pay-by-transfer`, {auth: 'bob.agent', features: FEAT, expect: 409, body});
         assert.equal(st.error, 'transfer_stale');
+        assert.equal(st.template, null, JSON.stringify(st).slice(0, 300));
         const T = tpl.timestamp, X = tpl.from_edge.before.total, attemptRec = {deal_id: X1, route: 'transfer', edge: ab, prior: X, prior_timestamp: tpl.from_edge.before.timestamp,
           prior_signature: tpl.from_edge.before.signature, total: X - 2, timestamp: T, quote_digest: tpl.quote_digest, signed_at: iso(now - 12 * 60e3)};
         const bobBefore = {pins: PINS, consent_policy: POLICY_ALL, transfer_attempts: {[X1]: [attemptRec]}, signed: xSigned(T, [[ab, 'prior', X], [ab, 'new', X - 2], [edgeK('alice', 'nina'), 'new', (edgeState('alice', 'nina')?.total ?? 0) + 2]])};

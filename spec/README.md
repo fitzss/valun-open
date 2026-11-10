@@ -4,7 +4,7 @@
   and the contract of release v16, circulating credit (section 18; built locally, not released, off by default).
 - `OPEN-QUESTIONS.md`: ambiguities, inconsistencies and weaknesses found while writing it, each with a status, and the
   owner decisions release v16 still needs.
-- `vectors/*.json`: conformance vectors, generated from release v16 (valun-app commit `cfe698b`; transcript steps 1-147
+- `vectors/*.json`: conformance vectors, generated from release v16 (valun-app commit `fa38334`; transcript steps 1-147
   are release v13's run with circulation off, steps 148-236 and `circulation.json` run with it on). Every key in them is
   a public test key derived
   from a label in `generate.mjs`, or one of Basis's official test vectors. The `vpe_...` enrollment codes come from an

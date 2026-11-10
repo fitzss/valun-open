@@ -1,22 +1,22 @@
 {
  "meta": {
   "what": "HTTP transcript of a pilot run through the real route table and Pilot class (in memory, fixed clock, stand-in tracker)",
-  "server_release": "v16 (valun-app commit cfe698b)",
+  "server_release": "v16 (valun-app commit fa38334)",
   "protocol": "valun-deal/1",
   "network": "valun-pilot-1",
   "generated_by": "spec/vectors/generate.mjs",
   "server_source_sha256": {
-   "lib/pilot/core.mjs": "95d280fdbd1dbce120dd92e124e83a9745b458f425890ab18f984ea6f4ebf2b1",
-   "lib/pilot/http.mjs": "09b8c7ac8eabe0465db794f7152ca38623996ea7ff520a1cb5e00dfe071affa5",
+   "lib/pilot/core.mjs": "4d8b5cbd81559c2f0a908108b447b41e9843850868b2edc3903dcccdfe0dfcb2",
+   "lib/pilot/http.mjs": "76e9e3603b0f5a3a7e693855c4b8fbc1474ac7be29d3c812a9ea77ebf2cf7dba",
    "lib/basis.mjs": "733953129eb86708e6c3424887cef3c0d32bcdc0cc282d5434286c2cab9d3a96",
    "lib/http.mjs": "2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf",
    "lib/pilot/caps.mjs": "b64bc079b84d8180aa0025259539eb18a1dc9676b74f6a25b772cc1851ad9596",
-   "lib/pilot/clearing.mjs": "681a1248fc10c399d45d8015fba678359848917f960f9f0c55a5c97d314b4b9f",
-   "lib/pilot/journal.mjs": "68138d43ee9fd36882abba7a5df483d212dcc09c574a84642c1bc5ab7ed3ac2a",
-   "lib/pilot/novation.mjs": "d028a288071eddf728c25417fc07fdc910862d0830b5c5adbf6b3851b298bc53",
+   "lib/pilot/clearing.mjs": "457dcf1f21dda3ad9ebeaea18a1b713fd75dcef515cb64222aff5993386fec18",
+   "lib/pilot/journal.mjs": "7078357fc4e7b02093ada55f5148122e2c92198329da5ca9a7737d31bf9809a3",
+   "lib/pilot/novation.mjs": "02a4f40faf6de079d30a152b861e18fbbc3b1618d17bcc7ea6023383f0530874",
    "lib/pilot/pins.mjs": "af6525ef61361a49b0644a83dbee516bba687fddf51db821a0d91ede64e4324a",
    "lib/pilot/policy.mjs": "da7e9fff13fb29408182db4d08a2816fb48463c2685b47b733fdb15c5c169e8f",
-   "lib/pilot/sandbox.mjs": "152704f4ab60395febda391008038b99fa4517f8f063b61133da2b754c8acb00",
+   "lib/pilot/sandbox.mjs": "56be7acf50bfeac2cdf81cb76ccb1f8c9827d304a689f23add697bdebdf93f3c",
    "lib/pilot/status.mjs": "9a2d9ae94fe90cca700977c5024e64ead164bc6f167e86b8c83f3495be56286c"
   },
   "pilot_token_id": "01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
@@ -32969,6 +32969,8 @@
        "max_package_parties": 8,
        "max_collecting_per_participant": 3,
        "max_collecting_total": 50,
+       "max_collecting_per_unproven": 1,
+       "max_collecting_unproven": 40,
        "incremental_max_proposals": 2,
        "presence_poll_ms": 30000,
        "setoff_ttl_ms": 1800000,
@@ -33547,7 +33549,7 @@
   },
   {
    "n": 203,
-   "label": "flow W: bob's client posts a payment by transfer signed over a template 11 minutes old: 409 transfer_stale with a fresh template; the server keeps the refused attempt (decision D-2 b)",
+   "label": "flow W: bob's client posts a payment by transfer signed over a template 11 minutes old: 409 transfer_stale; the server keeps the refused attempt (decision D-2 b), so the answer's template is null: a new transfer, through the same issuer too, waits for that attempt's window (audit VS-1)",
    "actor": "bob.agent",
    "at": "2026-11-15T15:34:00.000Z",
    "request": {
@@ -33579,56 +33581,7 @@
     "body": {
      "error": "transfer_stale",
      "message": "the timestamp must end in 999 ms, be later than both edges' last notes, not in the future and at most 10 minutes old; fetch a new transfer template",
-     "template": {
-      "deal_id": "vd_b18b521ba166e5ec",
-      "terms_hash": "81803a106555f91633e79bf02d9f4a4c1194ed26aeee2d9f48cfd14d0666b442",
-      "deliverable_sha256": "76b0d73e68ca73af6ec09ef08167ed6e2f9cbbcf017a1ccb0cc69b8a21b3ecce",
-      "issuer": {
-       "id": "vp_461ce015dd98",
-       "handle": "alice",
-       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
-      },
-      "payer": {
-       "id": "vp_9850bb41e214",
-       "handle": "bob",
-       "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
-      },
-      "payee": {
-       "id": "vp_136ec9667207",
-       "handle": "nina",
-       "pubkey": "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6"
-      },
-      "amount": 2,
-      "timestamp": 1794756837999,
-      "from_edge": {
-       "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
-       "before": {
-        "total": 64,
-        "timestamp": 1794754617997,
-        "signature": "03382b55f7495d0e16d602be5902d00afddee8b9298596d6faa1f1c1affed0cbee61f6d83a4c95a0b8880979e7b170c1987a27d1014167fa7bd61c97733aaa866a"
-       },
-       "new_total": 62
-      },
-      "to_edge": {
-       "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6",
-       "before": {
-        "total": 4,
-        "timestamp": 1794755517998,
-        "signature": "038e19781753ad363141c015435961f9365bbed558cedd6e7aabb1ab04580153e851819bf6405698b134398107148593ceeca594e827935722f32bc694cfbe08ef"
-       },
-       "new_total": 6
-      },
-      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
-      "quote_digest": "55e4385772c25ba6d8848a48d85655a2553b98f5414dab7dae21c73201f85e3b",
-      "collect_until": "2026-11-15T15:54:00.000Z",
-      "messages": {
-       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee0000000000000040000001a1dfd8026f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": "3c0dbb0a96639b177eca9b104e0558d7efba235a214c4d8a48f7324fd7b417ee000000000000003e000001a1dfd8026f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:new": "508f0d29727a7f82e6a271480a1341a8596df10734cfdd4fe765a1d0d698785c0000000000000006000001a1dfd8026f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
-       "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:prior": "508f0d29727a7f82e6a271480a1341a8596df10734cfdd4fe765a1d0d698785c0000000000000004000001a1dfd8026f6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa"
-      }
-     }
+     "template": null
     }
    },
    "server_verified": [
@@ -33678,7 +33631,7 @@
     "status": 409,
     "body": {
      "error": "transfer_window_open",
-     "message": "an earlier attempt to pay this deal can still apply at the tracker (until its timestamp + 1 hour); another kind of payment can start in 2938 s",
+     "message": "an earlier attempt to pay this deal can still apply at the tracker (until its timestamp + 1 hour); another payment (with any note, the same issuer's included) can start in 2938 s",
      "retry_after_ms": 2938000
     }
    },
@@ -33764,7 +33717,6 @@
       },
       "next_actions": [
        "wait_for_transfer_window",
-       "pay_by_transfer",
        "dispute"
       ],
       "current": {
@@ -33979,7 +33931,6 @@
      },
      "next_actions": [
       "wait_for_transfer_window",
-      "pay_by_transfer",
       "dispute"
      ],
      "current": {
@@ -35589,14 +35540,14 @@
        "signature": "026f8d77befd72971a03d6dd248755d7d298010165b674a6fb273dfd70b02191dd3fff5c58416526ce2d8a5692b029f7aff13cfce6c0195a913c21a5fef874a8e0",
        "deliverable_sha256": "f9b7b857f64931a59bd7490102a2c267ce8f51893fe8964303cdb49ee53ac51f"
       },
-      "approval_id": "va_4415563fa2a4",
+      "approval_id": "va_04a0c5865cd4",
       "pair_changes_since": []
      },
      "payment": null,
      "cancellation": null,
      "approvals": [
       {
-       "id": "va_4415563fa2a4",
+       "id": "va_04a0c5865cd4",
        "participant": "vp_461ce015dd98",
        "deal_id": "vd_0aebe0b4e284b883",
        "kind": "issue_note",
@@ -36015,7 +35966,7 @@
    "at": "2026-11-15T17:32:02.999Z",
    "request": {
     "method": "POST",
-    "path": "/pilot/v1/owner/approvals/va_4415563fa2a4",
+    "path": "/pilot/v1/owner/approvals/va_04a0c5865cd4",
     "headers": {
      "authorization": "Bearer <alice.owner>"
     },
@@ -36027,7 +35978,7 @@
     "status": 200,
     "body": {
      "approval": {
-      "id": "va_4415563fa2a4",
+      "id": "va_04a0c5865cd4",
       "participant": "vp_461ce015dd98",
       "deal_id": "vd_0aebe0b4e284b883",
       "kind": "issue_note",
@@ -36167,9 +36118,9 @@
         "signature": "026f8d77befd72971a03d6dd248755d7d298010165b674a6fb273dfd70b02191dd3fff5c58416526ce2d8a5692b029f7aff13cfce6c0195a913c21a5fef874a8e0",
         "deliverable_sha256": "f9b7b857f64931a59bd7490102a2c267ce8f51893fe8964303cdb49ee53ac51f"
        },
-       "approval_id": "va_4415563fa2a4",
+       "approval_id": "va_04a0c5865cd4",
        "owner_approval": {
-        "approval_id": "va_4415563fa2a4",
+        "approval_id": "va_04a0c5865cd4",
         "at": "2026-11-15T17:32:02.999Z"
        },
        "error": "the tracker did not record the note (HTTP 400, novation_expired)",
@@ -36181,7 +36132,7 @@
       "cancellation": null,
       "approvals": [
        {
-        "id": "va_4415563fa2a4",
+        "id": "va_04a0c5865cd4",
         "participant": "vp_461ce015dd98",
         "deal_id": "vd_0aebe0b4e284b883",
         "kind": "issue_note",
@@ -36405,9 +36356,9 @@
        "signature": "026f8d77befd72971a03d6dd248755d7d298010165b674a6fb273dfd70b02191dd3fff5c58416526ce2d8a5692b029f7aff13cfce6c0195a913c21a5fef874a8e0",
        "deliverable_sha256": "f9b7b857f64931a59bd7490102a2c267ce8f51893fe8964303cdb49ee53ac51f"
       },
-      "approval_id": "va_4415563fa2a4",
+      "approval_id": "va_04a0c5865cd4",
       "owner_approval": {
-       "approval_id": "va_4415563fa2a4",
+       "approval_id": "va_04a0c5865cd4",
        "at": "2026-11-15T17:32:02.999Z"
       },
       "error": "the tracker did not record the note (HTTP 400, novation_expired)",
@@ -36419,7 +36370,7 @@
      "cancellation": null,
      "approvals": [
       {
-       "id": "va_4415563fa2a4",
+       "id": "va_04a0c5865cd4",
        "participant": "vp_461ce015dd98",
        "deal_id": "vd_0aebe0b4e284b883",
        "kind": "issue_note",
@@ -36653,14 +36604,14 @@
        "signature": "026f8d77befd72971a03d6dd248755d7d298010165b674a6fb273dfd70b02191dd3fff5c58416526ce2d8a5692b029f7aff13cfce6c0195a913c21a5fef874a8e0",
        "deliverable_sha256": "f9b7b857f64931a59bd7490102a2c267ce8f51893fe8964303cdb49ee53ac51f"
       },
-      "approval_id": "va_7a237f6308d1",
+      "approval_id": "va_4415563fa2a4",
       "pair_changes_since": []
      },
      "payment": null,
      "cancellation": null,
      "approvals": [
       {
-       "id": "va_4415563fa2a4",
+       "id": "va_04a0c5865cd4",
        "participant": "vp_461ce015dd98",
        "deal_id": "vd_0aebe0b4e284b883",
        "kind": "issue_note",
@@ -36672,7 +36623,7 @@
        "note": ""
       },
       {
-       "id": "va_7a237f6308d1",
+       "id": "va_4415563fa2a4",
        "participant": "vp_461ce015dd98",
        "deal_id": "vd_0aebe0b4e284b883",
        "kind": "issue_note",
@@ -37011,9 +36962,9 @@
         "signature": "026f8d77befd72971a03d6dd248755d7d298010165b674a6fb273dfd70b02191dd3fff5c58416526ce2d8a5692b029f7aff13cfce6c0195a913c21a5fef874a8e0",
         "deliverable_sha256": "f9b7b857f64931a59bd7490102a2c267ce8f51893fe8964303cdb49ee53ac51f"
        },
-       "approval_id": "va_4415563fa2a4",
+       "approval_id": "va_04a0c5865cd4",
        "owner_approval": {
-        "approval_id": "va_4415563fa2a4",
+        "approval_id": "va_04a0c5865cd4",
         "at": "2026-11-15T17:32:02.999Z"
        },
        "error": "the tracker did not record the note (HTTP 400, novation_expired)",
@@ -37025,7 +36976,7 @@
       "cancellation": null,
       "approvals": [
        {
-        "id": "va_4415563fa2a4",
+        "id": "va_04a0c5865cd4",
         "participant": "vp_461ce015dd98",
         "deal_id": "vd_0aebe0b4e284b883",
         "kind": "issue_note",
@@ -37275,7 +37226,7 @@
    "at": "2026-11-15T17:35:02.999Z",
    "request": {
     "method": "POST",
-    "path": "/pilot/v1/owner/approvals/va_7a237f6308d1",
+    "path": "/pilot/v1/owner/approvals/va_4415563fa2a4",
     "headers": {
      "authorization": "Bearer <alice.owner>"
     },
@@ -37287,7 +37238,7 @@
     "status": 200,
     "body": {
      "approval": {
-      "id": "va_7a237f6308d1",
+      "id": "va_4415563fa2a4",
       "participant": "vp_461ce015dd98",
       "deal_id": "vd_0aebe0b4e284b883",
       "kind": "issue_note",
@@ -37424,9 +37375,9 @@
         "signature": "026f8d77befd72971a03d6dd248755d7d298010165b674a6fb273dfd70b02191dd3fff5c58416526ce2d8a5692b029f7aff13cfce6c0195a913c21a5fef874a8e0",
         "deliverable_sha256": "f9b7b857f64931a59bd7490102a2c267ce8f51893fe8964303cdb49ee53ac51f"
        },
-       "approval_id": "va_7a237f6308d1",
+       "approval_id": "va_4415563fa2a4",
        "owner_approval": {
-        "approval_id": "va_7a237f6308d1",
+        "approval_id": "va_4415563fa2a4",
         "at": "2026-11-15T17:35:02.999Z"
        },
        "outstanding": true,
@@ -37448,7 +37399,7 @@
       "cancellation": null,
       "approvals": [
        {
-        "id": "va_4415563fa2a4",
+        "id": "va_04a0c5865cd4",
         "participant": "vp_461ce015dd98",
         "deal_id": "vd_0aebe0b4e284b883",
         "kind": "issue_note",
@@ -37460,7 +37411,7 @@
         "note": ""
        },
        {
-        "id": "va_7a237f6308d1",
+        "id": "va_4415563fa2a4",
         "participant": "vp_461ce015dd98",
         "deal_id": "vd_0aebe0b4e284b883",
         "kind": "issue_note",
@@ -38483,7 +38434,7 @@
      "payment": {
       "method": "transfer",
       "state": "collecting",
-      "transfer_id": "vt_0ee5d74a26677e50",
+      "transfer_id": "vt_a25adb7a5358ece7",
       "issuer": {
        "id": "vp_461ce015dd98",
        "handle": "alice"
@@ -38536,7 +38487,7 @@
        "at": "2026-11-15T17:42:02.999Z",
        "by": "vp_9850bb41e214",
        "event": "payment_by_transfer",
-       "transfer_id": "vt_0ee5d74a26677e50",
+       "transfer_id": "vt_a25adb7a5358ece7",
        "issuer": "vp_461ce015dd98",
        "amount": 3
       }
@@ -38549,7 +38500,7 @@
       "work": "delivery and acceptance are the parties' statements; Valun does not judge the work"
      },
      "transfer": {
-      "id": "vt_0ee5d74a26677e50",
+      "id": "vt_a25adb7a5358ece7",
       "kind": "transfer",
       "state": "collecting",
       "your_roles": [
@@ -39392,7 +39343,7 @@
    "at": "2026-11-15T17:43:02.999Z",
    "request": {
     "method": "POST",
-    "path": "/pilot/v1/consents/vt_0ee5d74a26677e50",
+    "path": "/pilot/v1/consents/vt_a25adb7a5358ece7",
     "headers": {
      "authorization": "Bearer <alice.agent>",
      "x-valun-features": "consents/1;roles=setoff,issuer,creditor"
@@ -39416,7 +39367,7 @@
     "status": 200,
     "body": {
      "kind": "transfer",
-     "id": "vt_0ee5d74a26677e50",
+     "id": "vt_a25adb7a5358ece7",
      "state": "outcome_unknown",
      "your_roles": [
       "issuer"
@@ -39656,7 +39607,7 @@
      "payment": {
       "method": "transfer",
       "state": "outcome_unknown",
-      "transfer_id": "vt_0ee5d74a26677e50",
+      "transfer_id": "vt_a25adb7a5358ece7",
       "issuer": {
        "id": "vp_461ce015dd98",
        "handle": "alice"
@@ -39709,7 +39660,7 @@
        "at": "2026-11-15T17:42:02.999Z",
        "by": "vp_9850bb41e214",
        "event": "payment_by_transfer",
-       "transfer_id": "vt_0ee5d74a26677e50",
+       "transfer_id": "vt_a25adb7a5358ece7",
        "issuer": "vp_461ce015dd98",
        "amount": 3
       },
@@ -39717,7 +39668,7 @@
        "at": "2026-11-15T17:43:02.999Z",
        "by": "valun",
        "event": "payment_outcome_unknown",
-       "transfer_id": "vt_0ee5d74a26677e50",
+       "transfer_id": "vt_a25adb7a5358ece7",
        "reason": "attempt_outcome_unknown"
       }
      ],
@@ -40029,7 +39980,7 @@
        "payment": {
         "method": "transfer",
         "state": "outcome_unknown",
-        "transfer_id": "vt_0ee5d74a26677e50",
+        "transfer_id": "vt_a25adb7a5358ece7",
         "issuer": {
          "id": "vp_461ce015dd98",
          "handle": "alice"
@@ -40082,7 +40033,7 @@
          "at": "2026-11-15T17:42:02.999Z",
          "by": "vp_9850bb41e214",
          "event": "payment_by_transfer",
-         "transfer_id": "vt_0ee5d74a26677e50",
+         "transfer_id": "vt_a25adb7a5358ece7",
          "issuer": "vp_461ce015dd98",
          "amount": 3
         },
@@ -40090,7 +40041,7 @@
          "at": "2026-11-15T17:43:02.999Z",
          "by": "valun",
          "event": "payment_outcome_unknown",
-         "transfer_id": "vt_0ee5d74a26677e50",
+         "transfer_id": "vt_a25adb7a5358ece7",
          "reason": "attempt_outcome_unknown"
         }
        ],
@@ -40228,9 +40179,9 @@
          "signature": "026f8d77befd72971a03d6dd248755d7d298010165b674a6fb273dfd70b02191dd3fff5c58416526ce2d8a5692b029f7aff13cfce6c0195a913c21a5fef874a8e0",
          "deliverable_sha256": "f9b7b857f64931a59bd7490102a2c267ce8f51893fe8964303cdb49ee53ac51f"
         },
-        "approval_id": "va_7a237f6308d1",
+        "approval_id": "va_4415563fa2a4",
         "owner_approval": {
-         "approval_id": "va_7a237f6308d1",
+         "approval_id": "va_4415563fa2a4",
          "at": "2026-11-15T17:35:02.999Z"
         },
         "outstanding": true,
@@ -43371,7 +43322,7 @@
         "payment": {
          "method": "transfer",
          "state": "outcome_unknown",
-         "transfer_id": "vt_0ee5d74a26677e50",
+         "transfer_id": "vt_a25adb7a5358ece7",
          "issuer": {
           "id": "vp_461ce015dd98",
           "handle": "alice"
@@ -43478,7 +43429,7 @@
    "at": "2026-11-15T17:49:02.999Z",
    "request": {
     "method": "POST",
-    "path": "/pilot/v1/owner/deals/vd_d8730986ba6c26f5/attempts/vt_0ee5d74a26677e50/resolve",
+    "path": "/pilot/v1/owner/deals/vd_d8730986ba6c26f5/attempts/vt_a25adb7a5358ece7/resolve",
     "headers": {
      "authorization": "Bearer <bob.owner>"
     },
@@ -43491,14 +43442,14 @@
     "status": 200,
     "body": {
      "resolution": {
-      "attempt_id": "vt_0ee5d74a26677e50",
+      "attempt_id": "vt_a25adb7a5358ece7",
       "outcome": "applied",
       "previous_state": "outcome_unknown",
       "at": "2026-11-15T17:49:02.999Z",
       "note": "sam confirmed that 3 PC arrived"
      },
      "attempt": {
-      "id": "vt_0ee5d74a26677e50",
+      "id": "vt_a25adb7a5358ece7",
       "kind": "transfer",
       "timestamp": 1794764520999
      },
@@ -43614,7 +43565,7 @@
       "payment": {
        "method": "transfer",
        "state": "applied",
-       "transfer_id": "vt_0ee5d74a26677e50",
+       "transfer_id": "vt_a25adb7a5358ece7",
        "issuer": {
         "id": "vp_461ce015dd98",
         "handle": "alice"
@@ -43667,7 +43618,7 @@
         "at": "2026-11-15T17:42:02.999Z",
         "by": "vp_9850bb41e214",
         "event": "payment_by_transfer",
-        "transfer_id": "vt_0ee5d74a26677e50",
+        "transfer_id": "vt_a25adb7a5358ece7",
         "issuer": "vp_461ce015dd98",
         "amount": 3
        },
@@ -43675,21 +43626,21 @@
         "at": "2026-11-15T17:43:02.999Z",
         "by": "valun",
         "event": "payment_outcome_unknown",
-        "transfer_id": "vt_0ee5d74a26677e50",
+        "transfer_id": "vt_a25adb7a5358ece7",
         "reason": "attempt_outcome_unknown"
        },
        {
         "at": "2026-11-15T17:49:02.999Z",
         "by": "owner:vp_9850bb41e214",
         "event": "payment_attempt_resolved",
-        "transfer_id": "vt_0ee5d74a26677e50",
+        "transfer_id": "vt_a25adb7a5358ece7",
         "outcome": "applied"
        },
        {
         "at": "2026-11-15T17:49:02.999Z",
         "by": "valun",
         "event": "paid_by_transfer",
-        "transfer_id": "vt_0ee5d74a26677e50",
+        "transfer_id": "vt_a25adb7a5358ece7",
         "amount": 3,
         "resolved_by_owner": true
        }
@@ -43703,7 +43654,7 @@
       }
      },
      "transfer": {
-      "id": "vt_0ee5d74a26677e50",
+      "id": "vt_a25adb7a5358ece7",
       "kind": "transfer",
       "state": "applied",
       "your_roles": [
@@ -43801,7 +43752,7 @@
    "at": "2026-11-15T17:50:02.999Z",
    "request": {
     "method": "POST",
-    "path": "/pilot/v1/owner/deals/vd_d8730986ba6c26f5/attempts/vt_0ee5d74a26677e50/resolve",
+    "path": "/pilot/v1/owner/deals/vd_d8730986ba6c26f5/attempts/vt_a25adb7a5358ece7/resolve",
     "headers": {
      "authorization": "Bearer <bob.owner>"
     },

@@ -5,8 +5,9 @@ canonical JSON and terms hashes, statement texts, Basis note messages and signat
 (`transcript.json`) through the client's real `Client` methods. Since spec revision v14 it also checks circulating
 credit (`circulation.json`, and transcript steps 148 and later): the 80-byte messages of bound notes, transfers and
 set-offs, transfer quote digests, the pay statement, and the decisions of the client signing firewall (PROTOCOL.md
-15.3). The vectors were generated from server release v16 (valun-app commit `cfe698b`; the branch's later commits add tests
-only). Transcript steps 1-147 run with circulation off and are byte-identical to the
+15.3). The vectors were generated from server release v16 (valun-app commit `fa38334`, the branch's final commit, whose
+server sources are those of `94797c6`; the earlier vectors came from `cfe698b`). Transcript steps 1-147 run with
+circulation off and are byte-identical to the
 release v13 transcript (valun-app `6a6a34b`); steps 148-236 run with circulation on. Run the check once per client:
 
 | client | what is checked | where it comes from |
@@ -79,17 +80,20 @@ Expected last line of each run against the committed vectors (the counts change 
 regenerated):
 
 ```
-[package] 1386 checks: 1188 agree, 0 disagreements in failing tiers, 17 informative differences, 181 not applicable.
-[plugin] 1384 checks: 1104 agree, 0 disagreements in failing tiers, 17 informative differences, 263 not applicable.
+[package] 1389 checks: 1191 agree, 0 disagreements in failing tiers, 17 informative differences, 181 not applicable.
+[plugin] 1387 checks: 1104 agree, 0 disagreements in failing tiers, 17 informative differences, 266 not applicable.
 ```
 
 The first line is `--client package --require circulation/1` (package 0.4.0 from `python/src`). The second is the
-plugin without `--require`: hermes-plugin-valun 0.3.0 at `5d01fbd` (the commit the Hermes catalog pins; CI checks it too), and
-equally the plugin 0.4.0 (`2b78a06`, local; `e2c7640` gave the same). With `--require circulation/1` the plugin 0.4.0 gives the package's line,
-`[plugin] 1386 checks: 1188 agree, ...`. Without `--require`, the package gives the plugin's line. These were obtained
-locally with Python 3.14.7 and 3.11.18 on Windows and 3.12.3 on Linux (WSL), from fresh clones of the plugin (at
-`2b78a06`: Python 3.14.7 and 3.11.18 on Windows, from a `git archive` export). CI runs
-the commands on Linux, macOS and Windows with Python 3.10, 3.13 and 3.14.
+plugin without `--require`: hermes-plugin-valun 0.3.0 at `5d01fbd` (the commit the Hermes catalog pins; CI checks it
+too, here from a `git archive` export), and equally the plugin 0.4.0 at `11e7be5` (local, after its `valun_core/` was
+copied again from this repository). With `--require circulation/1` the plugin 0.4.0 at `11e7be5` gives the package's
+line, `[plugin] 1389 checks: 1191 agree, ...`. Without `--require`, the package gives the plugin's line. These were
+obtained locally with Python 3.14.7 and 3.11.18 on Windows against the vectors regenerated from `fa38334`. The plugin
+at `2b78a06` (the commit the job below still pins) predates the audit's core and disagrees, with `--require
+circulation/1`, on the two audit VS-1 firewall cases `payer/same-prior-retry-at-another-timestamp` and
+`bound/payment-attempt`; the pin must move to the plugin's pushed commit anyway. CI runs the commands on Linux, macOS
+and Windows with Python 3.10, 3.13 and 3.14.
 
 `scripts/check_plugin_core.py PLUGIN_DIR` compares every module in the plugin's `valun_core/` (each `*.py` but
 `__init__.py`: six files in plugin 0.3.0, eight since 0.4.0) with the `valun` package at the version `valun_core`
@@ -160,7 +164,7 @@ versions record different error texts and results, which is why the fixtures nam
 
 CI does not regenerate the vectors: `generate.mjs` runs the server's own code, which is not public. The generator
 exports the exact server release itself (never a working tree): with a valun-app clone next to valun-open (or
-`VALUN_APP_REPO=<clone>`), it runs `git archive cfe698b` into a temporary folder, runs that export, and removes it.
+`VALUN_APP_REPO=<clone>`), it runs `git archive fa38334` into a temporary folder, runs that export, and removes it.
 Tested with Node 24.21.0:
 
 ```sh
@@ -172,7 +176,7 @@ git diff --exit-code -- spec/vectors        # deterministic: no diff unless the 
 To run an export made by hand instead: `VALUN_APP_DIR=<export> node spec/vectors/generate.mjs`, for example
 
 ```sh
-v16="$(mktemp -d)" && git -C ../valun-app archive cfe698b --prefix=valun-app-v16/ | tar -x -C "$v16"
+v16="$(mktemp -d)" && git -C ../valun-app archive fa38334 --prefix=valun-app-v16/ | tar -x -C "$v16"
 VALUN_APP_DIR="$v16/valun-app-v16" node spec/vectors/generate.mjs
 ```
 
