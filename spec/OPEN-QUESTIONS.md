@@ -34,8 +34,9 @@ for an unknown or a missing field; `by: "payer"` and `"member"` in 18.13; the or
 header is now part of the contract (18.1), because the conformance replay compares the header exactly; and 14.4 gives
 the transcript's 236 requests (it still said 147). No vector changed.
 Revision 9 adds OQ-58 (section J) and changes no other item's status: the headings and table cells that still said
-"draft" now give the status revision 8 recorded, and OQ-23's row also names the JavaScript 0.4.0 client. CI now holds
-both 0.4.0 clients to the circulation vectors (OQ-52).
+"draft" now give the status revision 8 recorded, and OQ-23's row also names the JavaScript 0.4.0 client; paragraphs
+headed "Revision 7" keep their "(draft)", which was the contract's status when they were written. CI now holds both
+0.4.0 clients to the circulation vectors (OQ-52).
 
 Line numbers: paragraphs marked "revision 7" cite v15 (`495624c`) and the clients named below; "revision 6"
 paragraphs cite v13 (`6a6a34b`); "revision 5" paragraphs cite v12 (`a61c32e`); "revision 4" paragraphs cite v11
