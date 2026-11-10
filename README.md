@@ -5,9 +5,9 @@ framework or operating system, and testable by anyone.
 
 | Part | What it is | Status (2026-11-10) |
 |---|---|---|
-| `python/` | the `valun` package: framework-neutral core (client, Basis signer, delivery measurements, the nine agent tools), CLI, local MCP server (MCP 2024-11-05 through 2026-07-28), deterministic sandbox agents | on PyPI (`pip install valun`, 0.3.1, with provenance) and in the [MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.fitzss/valun) as `io.github.fitzss/valun`; live deals on the pilot (below). This checkout is 0.4.0 (unreleased): circulating credit for server release v16; 395 tests (official MCP SDK, both protocol generations) |
-| `js/` | the `@fitzdoud/valun` JavaScript/TypeScript client (npm refused the plain name as too close to `vaul`): zero dependencies, Node 18+ and browsers (the file store is Node-only); Basis signer with its own BLAKE2b and secp256k1, client with stricter checks than required | on npm (`npm install @fitzdoud/valun`, 0.3.1, with provenance). This checkout is 0.4.0 (unreleased), the same circulation client as the Python package; 489 tests: every vector file, the HTTP transcript replayed, signatures cross-checked with the Python signer, the nine tools and the signing firewall matched to the Python core; types compile (TypeScript strict) |
-| `spec/` | the `valun-deal/1` protocol, precise enough for a TypeScript/Go/Rust client, plus conformance vectors generated from the real server code | revision v14 for server release v16 (unreleased; valun-app `b7ecca0`, on tracker v3.2, not deployed); 1461 checks against the package with the circulation and consent tiers required, 0 disagreements; open questions with status |
+| `python/` | the `valun` package: framework-neutral core (client, Basis signer, delivery measurements, the nine agent tools), CLI, local MCP server (MCP 2024-11-05 through 2026-07-28), deterministic sandbox agents | on PyPI (`pip install valun`, with provenance) and in the [MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.fitzss/valun) as `io.github.fitzss/valun`; live deals on the pilot (below). 0.4.0 (2026-11-10): circulating credit for server release v16 on tracker v3.2; 415 tests (official MCP SDK, both protocol generations) |
+| `js/` | the `@fitzdoud/valun` JavaScript/TypeScript client (npm refused the plain name as too close to `vaul`): zero dependencies, Node 18+ and browsers (the file store is Node-only); Basis signer with its own BLAKE2b and secp256k1, client with stricter checks than required | on npm (`npm install @fitzdoud/valun`, with provenance). 0.4.0 (2026-11-10) is the same circulation client as the Python package; 509 tests: every vector file, the HTTP transcript replayed, signatures cross-checked with the Python signer, the nine tools and the signing firewall matched to the Python core; types compile (TypeScript strict) |
+| `spec/` | the `valun-deal/1` protocol, precise enough for a TypeScript/Go/Rust client, plus conformance vectors generated from the real server code | revision v14 for server release v16 (valun-app `b7ecca0`, on tracker v3.2); 1461 checks against the package with the circulation and consent tiers required, 0 disagreements; open questions with status |
 | `docs/STANDARDS.md` | how Valun relates to MCP, A2A, AP2, x402, DIDs, Basis (sourced, dated) | done |
 | `live-tests/` | scripts that run real deals on the live pilot | used for the evidence below |
 | `evidence/` | outputs of those runs (no secrets) | |
@@ -51,7 +51,7 @@ with `sandbox-exact` and `sandbox-mallory`. Sandbox-only participants deal only 
   accepted by the other party with a valid signature.
 
 ## Not yet done
-- The Hermes plugin carries this package's core unchanged (CI checks it). Its catalog entry pins 0.3.0, in the open
-  catalog PR awaiting the Hermes maintainers; plugin 0.4.0 (unreleased) re-vendors this checkout's 0.4.0 core.
+- The Hermes plugin carries this package's core unchanged (CI checks it). Plugin 0.4.0 (`296b9e5`) carries the 0.4.0
+  core; its catalog entry is in the open catalog PR awaiting the Hermes maintainers.
 - Not yet a Claude Desktop bundle (`.mcpb`).
 - The Valun pilot server itself is not open source yet (the protocol spec and vectors are).

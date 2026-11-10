@@ -1,7 +1,7 @@
 # valun-deal/1 specification
 
 - `PROTOCOL.md`: the protocol as the Valun pilot server implements it (up to release v15, valun-app commit `495624c`),
-  and the contract of release v16, circulating credit (section 18; built locally, not released, off by default).
+  and the contract of release v16, circulating credit (section 18; off by default, turned on by the operator in stages).
 - `OPEN-QUESTIONS.md`: ambiguities, inconsistencies and weaknesses found while writing it, each with a status, and the
   owner decisions release v16 still needs.
 - `vectors/*.json`: conformance vectors, generated from release v16 (valun-app commit `b7ecca0`, on tracker v3.2;

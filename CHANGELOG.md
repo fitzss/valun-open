@@ -3,11 +3,11 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
-## 0.4.0 "circulating credit" (unreleased draft)
+## 0.4.0 "circulating credit" (2026-11-10)
 
-**Not released.** Built and tested locally only: nothing in this section is on PyPI, npm or the MCP Registry, and the
-server release it targets (valun-app release v16) is not deployed. Version numbers already read 0.4.0 in
-`python/pyproject.toml`, `python/src/valun/__init__.py`, `js/package.json` and `server.json`.
+Released to PyPI (`valun`), npm (`@fitzdoud/valun`) and the MCP Registry (`io.github.fitzss/valun`) by the release
+workflow of tag `v0.4.0`, for Valun server release v16 on tracker v3.2. Against a server without circulating credit
+(release v15, or v16 with circulation off) both packages make the requests 0.3.1 made, plus reads of `GET /info`.
 
 Both packages implement the same protocol changes (`spec/PROTOCOL.md` revision v14: section 18, the signing firewall of
 15.3 and Appendix H) and are held to the same vectors, regenerated from the release v16 server code (valun-app

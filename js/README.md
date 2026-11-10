@@ -13,7 +13,7 @@ act is signed locally with the Basis Schnorr scheme, and the client checks what 
 - The main entry imports no Node built-in. Keys come from `globalThis.crypto.getRandomValues`, HTTP goes through
   `fetch`. Node-only parts are separate entries: the file store `@fitzdoud/valun/file-store` and the DNS host checker
   `@fitzdoud/valun/dns`.
-- Version `0.4.0` (unreleased; npm serves `0.3.1`): `npm install @fitzdoud/valun` (or from a checkout:
+- Version `0.4.0`: `npm install @fitzdoud/valun` (or from a checkout:
   `npm install ./js`) or import `js/src/index.js`. 0.4.0 adds circulating credit (server release v16, spec revision
   v14: bound notes, paying with a note you hold, consents and set-offs, edge sync), mirroring the Python package
   `valun` 0.4.0.
