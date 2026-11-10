@@ -235,3 +235,29 @@ test('a use of the agent client during a consent run never changes that run: its
   assert.deepEqual(w.client.advertised, [], "the agent's own client is never changed by its uses");
   assert.equal(c2.state, w.client.state, 'every use works on the one store');
 });
+
+test('agent.client() keeps the host client class and its instance-patched methods, and follows agent.declareRoles as it is now', async () => {
+  // JS-2 verifier: Client.fresh() made a plain Client, so a host's subclass and its patched methods were lost on every
+  // use; and agent.declareRoles changed after construction had no effect (the Python agent passes it on every Client).
+  class HostClient extends Client {
+    hostTag() { return 'host'; }
+  }
+  const base = world();
+  const host = new HostClient({store: base.store, server: base.client.state.server, fetch: base.fetch, now: () => T0});
+  let patchedCalls = 0;
+  host.directory = async function directory() { patchedCalls++; return {participants: [], self: this instanceof HostClient}; };
+  const agent = new ValunAgent(host, {resolveHost: null, now: () => T0});
+  const c = agent.client();
+  assert.notEqual(c, host);
+  assert.ok(c instanceof HostClient, 'a use of the agent client is still the host class');
+  assert.equal(c.hostTag(), 'host');
+  assert.deepEqual(await c.directory(), {participants: [], self: true});
+  assert.equal(patchedCalls, 1, 'the method the host set on its instance is kept');
+  // declareRoles: the agent's current value on every use
+  assert.equal(agent.declareRoles, true);
+  assert.equal(agent.client().declareRoles, true);
+  agent.declareRoles = false;
+  assert.equal(agent.client().declareRoles, false);
+  agent.declareRoles = true;
+  assert.equal(agent.client().declareRoles, true);
+});

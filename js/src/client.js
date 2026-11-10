@@ -493,12 +493,19 @@ export class Client {
    * Nothing it does changes this client's features, nor this client's its own; their state changes still run one after
    * another (one queue). ValunAgent takes one for every use of its client, as the Python agent makes a new Client for
    * each (so both send the same headers, and two uses at once never change each other's features).
+   *
+   * It is made with this client's own class (a host's Client subclass stays one: its constructor must take the options
+   * Client takes), and it keeps the methods a host set on this instance itself (own properties that are functions).
    */
   fresh() {
-    const c = new Client({store: this.#store, server: this.#server ?? undefined, timeoutMs: this.#timeoutMs, fetch: this.#fetch,
+    const Cls = typeof this.constructor === 'function' ? this.constructor : Client;
+    const c = new Cls({store: this.#store, server: this.#server ?? undefined, timeoutMs: this.#timeoutMs, fetch: this.#fetch,
       pin: {...this.#pin}, signerRetries: this.#signerRetries, retryDelayMs: this.#retryDelayMs, now: this.#now,
       randomBytes: this.#randomBytes, generateSecret: this.#generateSecret, declareRoles: this.declareRoles});
     c.#queue = this.#queue;
+    for (const k of Object.keys(this)) {
+      if (typeof this[k] === 'function') c[k] = this[k];              // instance-patched methods
+    }
     return c;
   }
 

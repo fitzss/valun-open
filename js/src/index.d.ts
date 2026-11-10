@@ -486,8 +486,10 @@ export class Client {
   /**
    * A new Client on this client's store and options, as a new Client starts (no GET /info read: advertised is []); its
    * features are its own, its state changes run in one queue with this client's. ValunAgent takes one for every use.
+   * It has this client's class (a subclass's constructor must take Client's options) and the methods set on this
+   * instance itself.
    */
-  fresh(): Client;
+  fresh(): this;
   /** Read the records again where the store can (FileStore). */
   reload(): Promise<void>;
   /** Record a consent run at nowMs (state[key]); never rejects. */
@@ -1090,7 +1092,10 @@ export class ValunAgent {
    * due. ran: what enabled() said; report: the run's report (null: none ran). Never rejects.
    */
   consentRound(enabled: () => boolean | Promise<boolean>): Promise<{ran: boolean; report: ConsentReport | null}>;
-  /** A Client for one use (Client.fresh() of the agent's client), after checking it is enrolled (ValunError not_connected otherwise). */
+  /**
+   * A Client for one use (Client.fresh() of the agent's client: the host's class and patched methods), with declareRoles
+   * set to the agent's current value, after checking it is enrolled (ValunError not_connected otherwise).
+   */
   client(requireConnection?: boolean): Client;
   /** Runs one tool; rejects with a ValunError (or another error) on failure. */
   call(name: ToolName | string, args?: ToolArgs | null): Promise<ToolResult>;

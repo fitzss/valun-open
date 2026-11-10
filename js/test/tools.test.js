@@ -395,3 +395,28 @@ test('startConsentLoop(): a round reads the profile again only once it holds the
   assert.equal(r.report.signed.length, 1);
   await assert.rejects(async () => w2.agent.consentRound(null), TypeError);
 });
+
+test('the agent lock covers isCommitment(), prepare(), bind() and consentsOnRead(): none of them starts while another holder has it', async () => {
+  const unpinned = {deal_id: ACCEPT.args.deal_id, action: 'accept'};      // bind() reads only when a pin is missing
+  const sites = {
+    isCommitment: a => a.isCommitment('valun_set_limits', {max_per_deal_as_payer: 5}),
+    prepare: a => a.prepare('valun_respond', unpinned),
+    bind: a => a.bind('valun_respond', unpinned),
+    consentsOnRead: a => a.consentsOnRead(),
+  };
+  for (const [name, run] of Object.entries(sites)) {
+    const w = world({...ACCEPT, agent: {consents_on_reads: true}});
+    let release;
+    const gate = new Promise(r => { release = r; });
+    const held = w.agent.exclusive(() => gate);
+    let settled = false;
+    const site = Promise.resolve().then(() => run(w.agent)).then(() => {}, () => {}).finally(() => { settled = true; });
+    await sleep(20);
+    assert.equal(settled, false, `${name} waits for the lock`);
+    assert.equal(w.fetch.calls.length, 0, `${name} reads nothing while another holder has the lock`);
+    release();
+    await held;
+    await site;
+    assert.equal(settled, true, `${name} runs once the lock is free`);
+  }
+});

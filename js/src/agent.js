@@ -571,11 +571,13 @@ export class ValunAgent {
    * A Client for one use, after checking that it is enrolled (not_connected otherwise). It starts as a new client would
    * (the Python agent makes one per use): Client.fresh() of the agent's client, which has read no GET /info yet, so its
    * requests carry the capability header only after this use reads GET /info, and no other use changes its features.
-   * (A client without fresh() is used as it is.)
+   * (A client without fresh() is used as it is.) Its declareRoles is the agent's as it is now (set on every use, as
+   * the Python agent passes declare_roles to each Client), so a change of agent.declareRoles takes effect.
    */
   client(requireConnection = true) {
     const base = this.#client;
     const c = typeof base.fresh === 'function' ? base.fresh() : base;
+    c.declareRoles = this.declareRoles === true;
     if (requireConnection && (!c.connected || !c.participantId)) {
       throw new ValunError('not_connected', `not enrolled: the owner must ${this.setupHint}`);
     }
