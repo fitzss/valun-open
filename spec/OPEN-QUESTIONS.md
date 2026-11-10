@@ -19,6 +19,23 @@ regenerated* for the release commit). It folds what the implementation found int
 17, 18.1-18.8, the new 18.16 and Appendix H), records the decisions D-1, D-2 and D-3 taken while building it, updates
 OQ-22, OQ-23, OQ-40, OQ-48 and OQ-49, and adds OQ-50 to OQ-57 (section J).
 
+**Revision 9 (2026-11-09), the final sync of the release v16 text.** Every statement of `PROTOCOL.md` on release v16
+(section 18, 15.3, 16.1-16.2, Appendix H and the release v16 paragraphs of sections 1-17) was checked against the
+regenerated vectors and against the final code: valun-app `cfe698b` (its successor `b88c1b3` adds a test only), the
+`valun` package 0.4.0 (python/src last changed in valun-open `4310103`), `@fitzdoud/valun` 0.4.0 (`fc58e8d`) and the
+Hermes plugin 0.4.0 (`2b78a06`, local, not pushed). The *draft until vectors are regenerated* marks are removed. The
+corrections: the GET /consents example is now transcript step 171 (it was illustrative); the 18.3 worked example is a
+vector (`circulation.json` `worked-example-18.3`); the transfer template's `from_edge` and `to_edge` carry `edge`, and
+its `messages` map slot keys to message hexes; a stale transfer is regenerated only while the deal has had fewer than 3
+transfer attempts in 24 hours, regenerations included (it said "regenerated at most 3 times"); a held `pay_by_transfer`
+approval that is rejected, stale or voided by a revocation returns a deal that came from `payment_due` there (18.10,
+18.11, as 18.16 already said), and `if_rejected` is quoted as the server words it; the tracker's `422` without a `code`
+for an unknown or a missing field; `by: "payer"` and `"member"` in 18.13; and the order of the roles in the capability
+header is now part of the contract (18.1), because the conformance replay compares the header exactly. No vector
+changed. Revision 9 adds OQ-58 (section J) and changes no other item's status: the headings and table cells that still said
+"draft" now give the status revision 8 recorded, and OQ-23's row also names the JavaScript 0.4.0 client. CI now holds
+both 0.4.0 clients to the circulation vectors (OQ-52).
+
 Line numbers: paragraphs marked "revision 7" cite v15 (`495624c`) and the clients named below; "revision 6"
 paragraphs cite v13 (`6a6a34b`); "revision 5" paragraphs cite v12 (`a61c32e`); "revision 4" paragraphs cite v11
 (`7880dcf`); "revision 3" text and OQ-30 to OQ-35 cite v9 (`ed1da4a`); the remaining text of OQ-1 to OQ-29 cites v8
@@ -73,14 +90,14 @@ has to make for release v16, not a defect.
 | OQ-18 | `/info` statements are JS source | low | OPEN |
 | OQ-19 | Defaults that block silently | low | OPEN |
 | OQ-20 | Owner-recorded "agent limits" | low | RESOLVED (7880dcf) |
-| OQ-21 | Keys are trusted from the server | medium | OPEN; with v16 (draft) it covers transfer destinations too |
+| OQ-21 | Keys are trusted from the server | medium | OPEN; with v16 it covers transfer destinations too |
 | OQ-22 | Signed notes that were never issued stay on the server | medium | CHANGED (decision D-1: another kind of payment waits; bound notes expire after 1 h); residual: a failed ordinary note never expires |
-| OQ-23 | Python clients' issued-notes record gets ahead of the tracker | medium | OPEN in 0.3.1 (Python and JS clients); RESOLVED in the Python 0.4.0 clients (records, checked by the v16 vectors) |
+| OQ-23 | Python clients' issued-notes record gets ahead of the tracker | medium | OPEN in 0.3.1 (Python and JS clients); RESOLVED in the 0.4.0 clients (Python records checked by the v16 vectors; the JS `records.js` mirror by its own tests) |
 | OQ-24 | Owner tokens cannot be rotated | low | RESOLVED (7880dcf; operator recovery a61c32e); left: recovery rests on the operator's out-of-band check |
 | OQ-25 | Deal-id existence oracle | low | RESOLVED (7880dcf) |
-| OQ-26 | Coverage can be manufactured | low | OPEN (adversarial F3, open by design); CHANGED with circulation on (v16, draft): set-off removes circular coverage among clearing members |
+| OQ-26 | Coverage can be manufactured | low | OPEN (adversarial F3, open by design); CHANGED with circulation on (v16): set-off removes circular coverage among clearing members |
 | OQ-27 | Public metadata | low | CHANGED: profile text filtered; metadata unchanged |
-| OQ-28 | Python clients' checks they do not make | low | OPEN (both clients, 0.3.1); partly addressed for 0.4.0 (v16, draft) |
+| OQ-28 | Python clients' checks they do not make | low | OPEN (both clients, 0.3.1); partly addressed in 0.4.0 (v16) |
 | OQ-29 | Lowering `approve_above` does not hold open offers | low | RESOLVED (7880dcf; adversarial F4) |
 | OQ-30 | Any bearer header skips the unauthenticated read budget | medium | RESOLVED (ed1da4a); residual: agents behind one address share the read budget (OQ-11) |
 | OQ-31 | Signer failures look like bad signatures | medium | RESOLVED (ed1da4a; residual resolved 7880dcf); left: `verified_by_valun: true` when the re-check was skipped; split by message text |
@@ -101,7 +118,7 @@ has to make for release v16, not a defect.
 | OQ-46 | Edges under revoked keys stay frozen | decision | OPEN (owner decision) |
 | OQ-47 | Phase-2 credit policies in 0.4 or 0.4.1 | decision | OPEN (owner decision) |
 | OQ-48 | Outcome reports: a server that hides an applied payment can obtain a second one | medium | CHANGED (decisions D-1, D-2: one live attempt per deal, the owner's resolution); residual: read-backs come from the server |
-| OQ-49 | `/info` `description` still says "no clearing" with circulation on | low | RESOLVED (v16 `cfe698b`, draft) |
+| OQ-49 | `/info` `description` still says "no clearing" with circulation on | low | RESOLVED (v16 `cfe698b`) |
 | OQ-50 | Bounding `deliver_by` on sandbox purchases | decision | OPEN (owner decision, new in revision 8) |
 | OQ-51 | A v15 rollback turns a payment by transfer into a credit-note record | decision | OPEN (owner decision, new in revision 8) |
 | OQ-52 | The 0.4.0 clients declare no `PROTOCOL_FEATURES` | low | OPEN (new in revision 8) |
@@ -110,13 +127,14 @@ has to make for release v16, not a defect.
 | OQ-55 | `GET /clearing` `cleared_PC` is gross | low | OPEN (new in revision 8) |
 | OQ-56 | Two things a client cannot read: `retry_after_ms` on 429, clearing holds of an unpaid deal | low | OPEN (new in revision 8) |
 | OQ-57 | The vectors show no request after the empty roles header was taken | low | OPEN (new in revision 8) |
+| OQ-58 | The replay checks the capability header of the step's own request only | low | OPEN (new in revision 9) |
 
 Resolved: OQ-1, 5, 9, 10, 14 (v8), OQ-30 to 34 (v9, with residuals), OQ-6, 7, 12, 13, 20, 24, 25, 29, 35 (v11), the
 OQ-24 and OQ-33 residuals named in revision 4 (v12), OQ-33's list approach (v13: a rule by property), and OQ-36 in the
 plugin 0.3.0. Partly fixed: OQ-8, 11, 16, 27. Still open: OQ-2, 3, 4, 15, 17, 18, 19, 21, 22, 23, 26, 28 (for the v16
-draft, OQ-23 has a specified fix and OQ-26, OQ-28 are partly addressed), the owner decisions OQ-37 to 47 and the new
+contract, OQ-23 had a specified fix and OQ-26, OQ-28 are partly addressed), the owner decisions OQ-37 to 47 and the new
 OQ-48 and OQ-49. Revision 8: OQ-22 and OQ-48 CHANGED by decisions D-1 and D-2, OQ-23 resolved in the 0.4.0 clients,
-OQ-49 resolved in v16; new: the owner decisions OQ-50 and OQ-51, and OQ-52 to OQ-57.
+OQ-49 resolved in v16; new: the owner decisions OQ-50 and OQ-51, and OQ-52 to OQ-57. Revision 9: new OQ-58.
 
 ## A. Server and Python clients
 
@@ -304,7 +322,7 @@ tracker (v3.1). What remains open: the server still holds a failed ordinary note
 server that submits it later, while the pair's state is older than it, can make it apply; the client never pays such a
 deal again while that note may apply. Transcript flow W shows the cross-kind window; flow X the expiry.
 
-### OQ-23 (medium, client bug) Python clients' issued-notes record gets ahead of the tracker — OPEN in 0.3.1; fix specified for 0.4.0 (draft) [code, design]
+### OQ-23 (medium, client bug) Python clients' issued-notes record gets ahead of the tracker — OPEN in 0.3.1; RESOLVED in the 0.4.0 clients [code, design]
 valun_client.py:337-338 (package: client.py:334-335) records the total on `completion_awaiting_owner`; if the owner
 rejects or the note goes stale, later completions to that payee key fail with `ledger_mismatch` (valun_client.py:324-326;
 package client.py:321-323). A 502 during submission has the opposite effect. Same code in both clients.
@@ -350,7 +368,7 @@ Revision 4 (v11): `propose` verifies the signature before looking up the deal id
 a reused deal id with a bad signature is `403 bad_signature` with the same message as for an unused id (step
 "signature by another key"); correctly signed, it is still `409 duplicate`.
 
-### OQ-26 (low, honest label) Coverage can be manufactured — OPEN (adversarial F3); CHANGED with circulation on (v16, draft) [code, design]
+### OQ-26 (low, honest label) Coverage can be manufactured — OPEN (adversarial F3); CHANGED with circulation on (v16) [code, design]
 core.mjs:399-405 counts every note a payer holds, including circular or colluding credit.
 Revision 7: unchanged in v15. With circulation on (`PROTOCOL.md` 18, draft) the clearing engine cancels cycles of debts
 by set-off among members that have `auto_clear` on and can sign: circular credit between such members, which raised
@@ -366,7 +384,7 @@ Public profile text is now filtered (OQ-16). Unchanged: the directory lists ever
 `agent_last_seen` is public, position counts include deals waiting for the participant's own owner (core.mjs:344), and
 `last_seen_agent` is persisted only at the next save (core.mjs:207).
 
-### OQ-28 (low, client hardening) Python clients' checks they do not make — OPEN (0.3.1); partly addressed for 0.4.0 (draft) [code, design]
+### OQ-28 (low, client hardening) Python clients' checks they do not make — OPEN (0.3.1); partly addressed in 0.4.0 [code, design]
 `deliver` does not verify the agreement (valun_client.py:296-302; package client.py:293-299); `verify_offer` does not
 check `deal_id`, `proposer`, the version chain, `price.unit` or `consideration` (valun_client.py:213-240; package
 client.py:210-237); text from terms, reasons and deliveries is passed to the model unsanitised. New with v9 (both
@@ -749,7 +767,7 @@ does ("An issued note is not settled: ... Nothing is redeemed, there is no reser
 sandbox adds that it is on for sandbox participants only; modes off and bound keep v15's text (`PROTOCOL.md` 16.1).
 Transcript step 148 pins the mode-on text.
 
-## J. New in revision 8: found while implementing release v16
+## J. New in revisions 8 and 9: found while implementing release v16
 
 ### OQ-50 (decision) Bounding `deliver_by` on sandbox purchases — OPEN [impl]
 
@@ -773,6 +791,11 @@ backup keeps the original records; whether the check should set `d.payment` asid
 0.4.0 nor the plugin 0.4.0 declares it, so their circulation checks run only with `--require` (the package's CI step
 passes it). Declaring `PROTOCOL_FEATURES = ('bound_notes/1', 'circulation/1')` in `valun/client.py` (and re-vendoring
 it into the plugin) would make the plugin's CI step hold it too once the pin moves to 0.4.0.
+
+Revision 9: `.github/workflows/ci.yml` now pins the plugin 0.4.0 (`2b78a06`, to be replaced by the pushed commit) and
+runs it, and the package, with `--require circulation/1` (the package also without it, and the plugin 0.3.0 without
+it while the catalog pins it), so CI holds both 0.4.0 clients to the circulation vectors. A run made without the flag
+still marks those checks not applicable.
 
 ### OQ-53 (low, client API) An adapter's own how-to-change hint — OPEN [impl]
 
@@ -806,7 +829,42 @@ that keeps sending the empty list on every request (harmless: the server has not
 from one that sends it once, as `PROTOCOL.md` 18.1 says. A step after 231 (a second request from that profile, recorded
 without the header) would show it; it changes the transcript, so the JavaScript replay (JS-2) has to map that step too.
 
+### OQ-58 (low, conformance) The replay checks the capability header of the step's own request only — OPEN [vectors]
+
+`check_python.py` compares a replayed request's `X-Valun-Features` header with the recorded one (none where none is
+recorded, as in steps 1-147), but the reads it serves from a step's recorded `client_reads` are answered without
+looking at their headers. A client that sent the header on its GET reads to a server without `circulation/1` would
+therefore pass, although `PROTOCOL.md` Appendix H (item 6 of the D-2 h list) says it must not. The Python client's
+own tests show that it sends none there (`test_client_circulation.py`, `test_never_without_circulation`), and the
+JavaScript client is compared with it request by request, headers included (`js/test/agent-parity.test.js`). Fix: record the read headers in `client_reads` at
+the next regeneration and compare them, or refuse a header on a read in steps whose request carries none. The
+JavaScript replay mirrors the Python checks and has the same gap.
+
 ## K. What was and was not verified
+
+### Revision 9
+
+- Checked, statement by statement: the release v16 text of `PROTOCOL.md` against `spec/vectors` (unchanged since
+  revision 8: generated from valun-app `cfe698b`) and the final code (valun-app `cfe698b`/`b88c1b3` `lib/`, valun-open
+  `fc58e8d`, plugin `2b78a06`), by reading the sections and by scripts: every JSON example that names a vector record
+  equals it (the terms of `canonical.json` `terms/base`, the GET /consents answer of transcript step 171, the
+  `recently_resolved` entry of step 184, the GET /info `novation` of step 148, the 18.3 worked example), the
+  GET /capabilities example has exactly the values `lib/pilot/caps.mjs` requires, the 28 firewall codes of 15.3 are
+  exactly those of `circulation.json`, every route named in section 18 is in the route table, and the counts of the
+  section 17 table match the files. The corrections are listed under revision 9 above.
+- Run (Windows, Python 3.14.7 unless stated): `check_python.py` from the working tree: the package with
+  `--require circulation/1` **1386 checks: 1188 agree, 0 disagreements, 17 informative differences, 181 not
+  applicable**, also with Python 3.11.18; without it **1384 checks: 1104 agree, 0 disagreements, 17 informative, 263
+  not applicable**; the plugin 0.4.0 (`git archive` of `2b78a06`) the same two lines (with `--require` also on 3.11.18);
+  the plugin 0.3.0 (`5d01fbd`) the second line; exit status 0 each time. `scripts/check_plugin_core.py` on `2b78a06`:
+  unchanged (8 files). `python -m unittest discover -s python/tests`: 385 tests OK (5 skipped without the MCP SDK, none
+  with it; also on 3.11.18). `node --test js/test/` (Node 24): 486 tests, 485 pass, 1 skipped (POSIX file modes);
+  `tsc --strict` (TypeScript 6.0.3) on the three `.d.ts` files: no error. The JS fixture generator, run in a clone,
+  reproduces the committed fixtures exactly (3.14.7); run with 3.12.3 in WSL it changes 10 lines of
+  `python-parity.json` besides the version (error texts and results), which is why CI regenerates them with 3.14.
+  The plugin's unit tests: 140 OK (1 skipped without Hermes; none skipped in the Hermes venv).
+- Not run: `generate.mjs` (no vector changed), the valun-app test suites, the real tracker, CI itself (the workflow
+  was parsed with ruamel.yaml, not run), any network service.
 
 ### Revision 8
 

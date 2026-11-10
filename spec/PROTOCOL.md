@@ -6,12 +6,12 @@ document.
 
 | | |
 |---|---|
-| Status | Sections 1–17 and Appendices A–G: descriptive specification of running code up to server **release v15** (valun-app commit `495624c`, deployed). Section 18, section 15.3, sections 16.1–16.2, Appendix H and every paragraph marked *(draft until vectors are regenerated)*: the contract for server **release v16** ("circulating credit", valun-app branch `circulation-v16`; built locally, not released, not deployed), written before its code so that the server, the clients and the tracker are built against it, then corrected from the implementation (decisions D-1, D-2 and D-3; section 18.16) and from vectors regenerated from it (valun-app `cfe698b`, section 17). Circulating credit is **off by default**, and with it off v16 answers like v15 (18.1). Experimental network; PC are synthetic units with no value. Changes: Appendix B (release v8, from the first version of this document), Appendix C (release v9), Appendix D (releases v10 and v11), Appendix E (release v12), Appendix F (release v13), Appendix G (releases v14 and v15) and Appendix H (release v16, draft). |
-| Authority | Up to release v15: the code. Where this document and the code disagree, the code wins and this document has a bug. For release v16 this document is the contract: until the vectors are regenerated from the v16 code (section 17) and the draft marks are removed, a disagreement between the two is a bug in one of them, settled by the regenerated vectors. |
+| Status | Sections 1–17 and Appendices A–G: descriptive specification of running code up to server **release v15** (valun-app commit `495624c`, deployed). Section 18, section 15.3, sections 16.1–16.2, Appendix H and the paragraphs on release v16 in sections 1–17: the contract for server **release v16** ("circulating credit", valun-app branch `circulation-v16`; built locally, not released, not deployed), written before its code so that the server, the clients and the tracker are built against it, then corrected from the implementation (decisions D-1, D-2 and D-3; section 18.16) and from the vectors regenerated from it (valun-app `cfe698b`, section 17), and finally checked statement by statement against those vectors and the final code of the server and the 0.4.0 clients (it is no longer a draft). Circulating credit is **off by default**, and with it off v16 answers like v15 (18.1). Experimental network; PC are synthetic units with no value. Changes: Appendix B (release v8, from the first version of this document), Appendix C (release v9), Appendix D (releases v10 and v11), Appendix E (release v12), Appendix F (release v13), Appendix G (releases v14 and v15) and Appendix H (release v16). |
+| Authority | Up to release v15: the code. Where this document and the code disagree, the code wins and this document has a bug. For release v16 this document is the contract, checked against the vectors regenerated from the v16 code (section 17): a disagreement between the two is a bug in one of them, settled by the regenerated vectors. |
 | Server source described | Release v15 (`495624c`): `valun-app/lib/pilot/core.mjs` sha256 `ad47e6aee53be872e2d41c734b219243fff2d4502a86b72fe94c24a0a6d45043` (changed in v14 and v15), `lib/pilot/http.mjs` sha256 `3065809458c2538dc4b586247438ffec8a6db9102b9252cc8fc98939353fc213` (changed in v14), `lib/basis.mjs` sha256 `991e37a2319de3731c0ef84ea5847ba428e3575a3c8facd51be1c7cd52891617` and `lib/http.mjs` sha256 `2ef7d0f77a418da7633d5abd5591f2cec39e455e42b953efc401b8f6061c3baf` (both unchanged since v11), `basis/valun_signer.rs` sha256 `acf25be8a1e095faa4aac3aaa04568755896de85dbcc073e88f91f0b9a0c38a5` (unchanged since v8); Basis pinned at `3df7ed93ee83ddf0d4e8ce567f54cefbbd7255b3`. Line references (core.mjs:N, http.mjs:N) in sections 1–17 are to the release v13 files (core.mjs sha256 `7dc469e0547ae0a518c022b93cff6181fd116f4fcc3f8f3b7a3deb0e0f240b2e`, http.mjs sha256 `01a505623d64c0a2c00a221240d57b5631c91dec61f5caaeb37113e8497c0f0e`), to which v14 and v15 only added the sandbox-join code (so later v15 line numbers are shifted); Appendix G cites the v15 files. Release v16 is described by its contract (section 18), not by source hashes, and needs the tracker v3 (18.2). |
-| Reference clients compared | the Hermes plugin `hermes-plugin-valun` 0.3.0 at commit `5d01fbd` (the commit the Hermes plugin catalog entry pins; its core `valun_core/` is the `valun` package 0.3.1, byte-identical) and the framework-neutral package `valun` 0.3.1 in this repository (`python/src/valun/client.py`, `basis.py`, `agent.py`; commit `c75cfb0`). The JavaScript package `@fitzdoud/valun` 0.3.1 (`js/src`) is held to the same vectors by its own tests (`node --test js/test/`). None of them implements release v16. *(draft until vectors are regenerated)* For release v16: the package `valun` 0.4.0 (this repository, `python/src`, commit `1509cbe`) and the Hermes plugin 0.4.0 (`e2c7640`, local; its `valun_core/` is the package 0.4.0, byte-identical) pass every v16 vector (section 17); the JavaScript package 0.4.0 is built to the same vectors. |
-| Conformance vectors | `spec/vectors/*.json`, generated from the real server code by `spec/vectors/generate.mjs` *(draft until vectors are regenerated)* from release v16 (valun-app `cfe698b`): transcript steps 1-147 as release v13's, with circulation off, steps 148-236 and `circulation.json` with circulation on (releases v14 and v15 have no vectors of their own); checked against either Python client by `spec/vectors/check_python.py` (section 17; CI commands in `spec/vectors/README-ci.md`). |
-| Known problems | `spec/OPEN-QUESTIONS.md` (revision 8). |
+| Reference clients compared | the Hermes plugin `hermes-plugin-valun` 0.3.0 at commit `5d01fbd` (the commit the Hermes plugin catalog entry pins; its core `valun_core/` is the `valun` package 0.3.1, byte-identical) and the framework-neutral package `valun` 0.3.1 in this repository (`python/src/valun/client.py`, `basis.py`, `agent.py`; commit `c75cfb0`). The JavaScript package `@fitzdoud/valun` 0.3.1 (`js/src`) is held to the same vectors by its own tests (`node --test js/test/`). None of them implements release v16. For release v16: the package `valun` 0.4.0 (this repository, `python/src`, last changed in commit `4310103`) and the Hermes plugin 0.4.0 (`2b78a06`, local, not pushed; its `valun_core/` is the package 0.4.0, byte-identical) pass every v16 vector (section 17), and the JavaScript package `@fitzdoud/valun` 0.4.0 (`js/src`, commit `fc58e8d`) passes them in its own tests, including the replay of every transcript step that has a client call. None of the 0.4.0 clients is published yet. |
+| Conformance vectors | `spec/vectors/*.json`, generated from the real server code by `spec/vectors/generate.mjs` from release v16 (valun-app `cfe698b`): transcript steps 1-147 as release v13's, with circulation off, steps 148-236 and `circulation.json` with circulation on (releases v14 and v15 have no vectors of their own); checked against either Python client by `spec/vectors/check_python.py` (section 17; CI commands in `spec/vectors/README-ci.md`). |
+| Known problems | `spec/OPEN-QUESTIONS.md` (revision 9). |
 
 Key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are used as in RFC 2119. In this document **"the server
 enforces"** means the code refuses the request (nothing is recorded); **"a client MUST"** means the server cannot or
@@ -42,7 +42,7 @@ v15, and in release v16 while circulating credit is off (the default), nothing i
 no redemption, reserve, clearing or netting. The tracker is local (notes stay `local_only`, never on a chain). PC have
 no monetary value. Owner approvals are recorded by the server, not signed by a key.
 
-**Circulating credit** (section 18; release v16, off by default) *(draft until vectors are regenerated)*: with it on,
+**Circulating credit** (section 18; release v16, off by default): with it on,
 a payer may pay with a note it holds (a **debt transfer**: the issuer's debt to the payer falls by the price and its
 debt to the payee rises by the same amount, signed by the issuer and by both creditors), and the server proposes the
 cancellation of cycles of debts (a **multilateral set-off**, signed by every party; no participant's net position
@@ -76,7 +76,7 @@ changes). Nothing is redeemed even then, and there is no reserve.
 | approval id | `va_` + 12 lowercase hex | server |
 | invite id | `inv_` + 8 lowercase hex | server |
 
-*(draft until vectors are regenerated)* Release v16 with circulation on adds, chosen by the server: transfer ids
+Release v16 with circulation on adds, chosen by the server: transfer ids
 `vt_` + 16 lowercase hex and set-off proposal ids `vs_` + 16 lowercase hex. An **edge key** names a tracker edge as
 `<issuer_pubkey>><recipient_pubkey>` (66 hex, `>`, 66 hex; section 18).
 
@@ -181,7 +181,7 @@ A **participant** (public record):
 | `agent_last_seen` | ISO time of the agent token's last authenticated request (reset when the key changes), or `null` |
 | `sandbox_only`, `sandbox_expires_at` | since v14, only on a self-serve sandbox participant (Appendix G): `true`, and the ISO time at which its sandbox mandate ends; absent on every other participant |
 
-*(draft until vectors are regenerated)* Release v16 with circulation `sandbox` or `on`: the server's sandbox agents
+Release v16 with circulation `sandbox` or `on`: the server's sandbox agents
 (section 18.15) also carry `operator_run: true` (the operator holds their keys).
 
 **Names** (core.mjs:196-209, since v9). Names are compared in a normalized form, `norm(s)` = `s` in lower case with
@@ -429,7 +429,7 @@ are 64 lowercase hex. The server's own templates (`statements` in core.mjs:34-43
 `{network}` is `valun-pilot-1`. The signing key for every act except enroll is the caller's **currently registered**
 key (`403 bad_signature` otherwise).
 
-*(draft until vectors are regenerated)* Release v16 with circulation on adds one statement,
+Release v16 with circulation on adds one statement,
 `valun-pilot/pay/1\n{deal_id}\n{quote_digest}`, signed by a payer that pays by debt transfer, and uses the 80-byte note
 message for more operations, told apart by the last three digits of its timestamp (18.3, 18.4). The `statements`
 object and `GET /info` `statements` stay as above; the pay statement is published separately
@@ -527,7 +527,7 @@ tracker_status, recorded_at, tracker_note: {amount_collected, amount_redeemed, t
 verified_by_valun, reverify_skipped?, proof}`. Credit-note `state` values: `signed` (held for the owner), `submitting`, `recorded`,
 `failed`, `stale`.
 
-**Release v16** *(draft until vectors are regenerated)*. In every mode (Appendix H):
+**Release v16**. In every mode (Appendix H):
 - the template and `complete` answer `409 pair_busy` (`retry_after_ms: 60000`) while **another** deal on the same
   issuer→recipient key pair is `issuing_note`, so that no second note is signed on a prior that a pending submission is
   about to change;
@@ -569,7 +569,7 @@ deal's `fallback_after` (`409 transfer_window_open` with `retry_after_ms`, 18.8)
 | `cancelled` | a party's agent key was revoked before agreement | yes |
 | `expired_undelivered` | since v11: an `agreed` deal the payee did not deliver within 7 days after `deliver_by`; nothing is owed under it | yes |
 
-*(draft until vectors are regenerated)* Release v16 with circulation on adds three statuses (18.10):
+Release v16 with circulation on adds three statuses (18.10):
 `paying_by_transfer` (the payer accepted the delivery and pays by debt transfer; the transfer collects signatures or is
 being applied), `paid_by_transfer` (terminal: the tracker applied the transfer; outstanding, not settled) and
 `payment_due` (the payer accepted the delivery, signed, but no payment applied; it must still pay; no dispute is
@@ -584,7 +584,7 @@ Sub-states: version `state` ∈ `awaiting_owner`, `open`, `countered`, `accepted
 `awaiting_owner`, `final`, `rejected_by_owner`, `cancelled`, `expired`, and since v11 `void_withdrawn` (with `voided_at`).
 Approval `state` ∈ `pending`, `approved`, `rejected`, `void_superseded`, `void_declined`, `void_withdrawn`,
 `void_expired`, `void_key_revoked`, `void_stale`, and since v11 `void_acceptance_rejected`. Approval `kind` ∈ `propose`,
-`accept`, `issue_note`, and since v11 `confirm_offer` (section 12); *(draft until vectors are regenerated)* since v16
+`accept`, `issue_note`, and since v11 `confirm_offer` (section 12); since v16
 also `pay_by_transfer` (18.11). Transfer and set-off states: 18.6, 18.7.
 
 ### 10.2 Transitions
@@ -626,7 +626,7 @@ Errors for acting in the wrong state: `409 not_open` (offer acts), `409 wrong_st
 accepting, while your own counter waits for your owner), `409 conflicting_pending`, `403 not_payee`, `403 not_payer`,
 `404 not_found` (not a party, or the deal is not visible to you).
 
-*(draft until vectors are regenerated)* Release v16 with circulation on adds the transitions of 18.10 (paying by
+Release v16 with circulation on adds the transitions of 18.10 (paying by
 transfer, `payment_due`); with circulation off the table above is complete. In every mode, `issuing_note` deals are also
 finished by the periodic recovery (every 60 s), not only at a restart.
 
@@ -660,7 +660,7 @@ not author the open offer it is `["accept", "decline", "counter"]`, or, while it
 `accepted_awaiting_owner` it is `["wait_for_owner_approval", "withdraw"]` (since v11; v9 left out `withdraw`, although
 the server allowed it). It is advisory; the transition table above is what the server enforces.
 
-*(draft until vectors are regenerated)* With circulation on (release v16, 18.10): the payer of a `delivered` deal gets
+With circulation on (release v16, 18.10): the payer of a `delivered` deal gets
 `["complete", "pay_by_transfer", "dispute"]`; of a `note_failed` or `payment_due` deal
 `["complete", "pay_by_transfer"]`, or `["wait_for_transfer_window", "pay_by_transfer"]` while a fallback window is open
 (18.8); of a `paying_by_transfer` deal `["wait_for_consents", "cancel_transfer"]`; the payee of a `paying_by_transfer`
@@ -693,7 +693,7 @@ Defaults at join:
 | `expires_at` | join time + 14 days | ISO time or `null` (no expiry) |
 
 Since v14 a self-serve sandbox participant gets, at join, a mandate set by the operator that its own owner can only
-narrow (`403 sandbox_only`; Appendix G). *(draft until vectors are regenerated)* Release v16 with circulation `sandbox`
+narrow (`403 sandbox_only`; Appendix G). Release v16 with circulation `sandbox`
 or `on` adds the credit-policy fields of 18.13; in other modes they are ignored like any unknown field, and the defaults
 above (`DEFAULT_MANDATE`) never change.
 
@@ -741,7 +741,7 @@ Exposure terms (over all of the participant's keys, current and past; the deal b
 - Coverage: `claims_Q` = outstanding on the tracker where `Q` is the recipient (notes `Q` holds from anyone); `owed_Q`
   and `committed_Q` are `Q`'s payer-role figures. It is `Q`'s own promise either way: no note is transferred.
 
-*(draft until vectors are regenerated)* Release v16 with circulation on: `committed` also counts `paying_by_transfer`
+Release v16 with circulation on: `committed` also counts `paying_by_transfer`
 and `payment_due`; for a payee, transfers from issuer `Q` that are still collecting count against
 `max_accept_per_issuer` for `Q`; a payment by transfer is checked as in 18.13 (coverage is then judged on the issuer
 whose note is received).
@@ -776,7 +776,7 @@ pending and the deal unchanged (except `void_stale`, 9.2). A decided approval is
 **server-attested** (recorded under the owner token), not key-signed. The owner's note is visible only to that
 participant's own agent and owner.
 
-*(draft until vectors are regenerated)* Release v16: approval kind `pay_by_transfer` (a payment by transfer held under
+Release v16: approval kind `pay_by_transfer` (a payment by transfer held under
 `review_deliveries`; circulation on; 18.11). In every mode the decision route dispatches on exactly the known kinds
 (`issue_note`, `pay_by_transfer`, `propose`, `accept`, `confirm_offer`); any other kind is `409 unknown_approval_kind`
 before anything changes (in v15 any other kind ran the `confirm_offer` code, and rejecting it withdrew the deal; the API
@@ -803,7 +803,7 @@ creates no such approval). No approval exists without a deal.
 - **Owner only**: approvals with subject and effect, `past_keys`, enrollment state.
 - **Never on the server**: agent signing keys.
 - **Third parties** get `404` for any deal.
-- *(draft until vectors are regenerated)* Release v16 with circulation on: transfers, set-off proposals, consents,
+- Release v16 with circulation on: transfers, set-off proposals, consents,
   receipts and edges have the visibility rules of 18.12; `GET /clearing` is public and shows aggregates only.
 
 ## 14. HTTP API
@@ -821,10 +821,10 @@ creates no such approval). No approval exists without a deal.
   (`mandate_exceeded`); `field`, `owner_value` (`above_/below_owner_mandate`); `canonical` (`hash_mismatch` on
   propose/counter); `template` (`stale_note` on a wrong total); `party` (`key_changed`); `recorded_by`
   (`mandate_exceeded` on a recorded limit, since v11); `retry_after_ms`, `last_note_timestamp` (`note_timestamp_ahead`,
-  since v11). *(draft until vectors are regenerated)* Since v16: `retry_after_ms` (`pair_busy`,
+  since v11). Since v16: `retry_after_ms` (`pair_busy`,
   `transfer_window_open`), `consent_ids` (`novation_pending`), `template` (`transfer_stale`; `stale_note` on a bound
   note), `rule` and `by` (`payment_not_accepted`), `code` (`transfer_failed`: the tracker's code).
-- *(draft until vectors are regenerated)* Request header (since v16): a client that can sign consents sends
+- Request header (since v16): a client that can sign consents sends
   `X-Valun-Features` (18.1); the server reads no other new header.
 - Basis failures (since v11, lib/http.mjs:102-106, lib/basis.mjs:11-21): `503 signer_unavailable` (the signature helper
   timed out, did not start or gave no answer; nothing was recorded; retry later), `502 tracker_unavailable` (the
@@ -927,7 +927,7 @@ since v12 `POST /admin/participants/{id}/owner-token` (a new owner token for tha
 owner then sees `owner_token_rotated_by: "operator"`; audit `owner_token.reset_by_operator`).
 Clients never use these.
 
-**Release v16 additions to the routes above** *(draft until vectors are regenerated)*:
+**Release v16 additions to the routes above**:
 - `GET /info`, when the effective mode is not `off`: `features`, `novation` and `circulation_statements` (18.1).
 - `GET /deals/{id}/credit-note-template`: `?prior=1` in every mode; `?bound=1` from mode `bound` up (else
   `409 feature_unavailable`); `409 pair_busy` in every mode; `409 novation_pending` with circulation on (9.2, 18.5).
@@ -962,7 +962,7 @@ History `by` is a participant id, `owner:<participant id>`, `valun` or `basis-tr
 `acceptance_voided: true` when it voided a waiting acceptance, and `by_owner: true` when the proposer's owner rejected a
 `confirm_offer`. The agreed terms are `current.terms` once `agreement` is set.
 
-*(draft until vectors are regenerated)* Release v16 with circulation `sandbox` or `on` (modes `off` and `bound` leave
+Release v16 with circulation `sandbox` or `on` (modes `off` and `bound` leave
 the view byte-identical to v15): `payment: {method, state, transfer_id, issuer: {id, handle}, amount, expires_at,
 fallback_after, signatures_withheld}` once a payment by transfer was attempted; `credit_note.pair_changes_since`; the
 `next_actions` of 10.4; the labels of 16.1; history events `transfer_created`, `transfer_applied`, `transfer_failed`,
@@ -982,7 +982,7 @@ A complete example run through the real route table (147 requests, every respons
 - credit notes: total = tracker prior + price, timestamp window, payer signature over the message it builds, tracker
   read-back of exactly that note, re-verification;
 - visibility (section 13).
-- *(draft until vectors are regenerated)* release v16, circulation on: every novation signature against the signer's
+- release v16, circulation on: every novation signature against the signer's
   current key over the message the server rebuilds; the edges re-read before every tracker call; every outcome decided
   by reading the edges back (18.6, 18.8); the credit-policy checks (18.13). None of this is what keeps a client's value
   safe: that rests on the client's own checks (15.3) and on the tracker v3 rules over the client's own signatures
@@ -1041,7 +1041,7 @@ delivery after the grace period, `mandate_exceeded` for an owner-recorded limit;
 `accepted_awaiting_owner` which owner holds it; the plugin 0.2.x said "becomes binding when your owner approves it",
 which is wrong when only the proposer's owner holds it (`confirm_offer`; OPEN-QUESTIONS OQ-36, resolved in 0.3.0).
 
-*(draft until vectors are regenerated)* For a release v16 server, a 0.4 client changes three of the checks above:
+For a release v16 server, a 0.4 client changes three of the checks above:
 1. complete item 3: when the template carries `prior_note` (`?prior=1`, 9.2), the client verifies it as **its own**
    signature over the note message `M(I,R,prior_total,prior_note.timestamp)` (9.1; notation of section 18) and
    accepts it if it is not older than its own confirmed record, instead of requiring `prior_total` to equal that
@@ -1053,7 +1053,7 @@ which is wrong when only the proposer's owner holds it (`confirm_offer`; OPEN-QU
    `valun-pilot/deliver/1\n{terms_hash}\n{sha256}` against the agreed payee key or the payee's current key
    (`bad_delivery_signature`).
 
-### 15.3 A client MUST pass every circulation signature through a signing firewall *(draft until vectors are regenerated)*
+### 15.3 A client MUST pass every circulation signature through a signing firewall
 
 With circulating credit (release v16, section 18) a client signs 80-byte messages that move value on its own edges and
 other parties', some of them without asking anyone (consents, 18.9). Before it signs anything for a bound note, a
@@ -1141,7 +1141,7 @@ These are part of the protocol's meaning and a client SHOULD present them to its
   the parties' statements.
 - Each deal view carries these as `labels`.
 
-### 16.1 Labels with circulating credit on *(draft until vectors are regenerated)*
+### 16.1 Labels with circulating credit on
 
 With the effective mode `off` or `bound` every label stays word for word as in v15; in particular the deal's
 `labels.settlement` is "not settled: issuing a credit note creates an outstanding obligation; the pilot has no
@@ -1178,7 +1178,7 @@ server and in the 0.4 Python and JavaScript clients:
 - **Coverage is not solvency** still holds; for a payment by transfer coverage is judged on the issuer whose note is
   received, and cycles cleared by set-off no longer add to anyone's coverage (OPEN-QUESTIONS OQ-26).
 
-### 16.2 Residual risks *(draft until vectors are regenerated)*
+### 16.2 Residual risks
 
 What circulating credit does not protect against, stated so that no party relies on more:
 
@@ -1231,7 +1231,7 @@ What circulating credit does not protect against, stated so that no party relies
 `spec/vectors/` (regenerate with `node spec/vectors/generate.mjs`, which exports valun-app commit `cfe698b` with
 `git archive` itself, or with `VALUN_APP_DIR=<export>`; output is deterministic, and labelled "UNRECOGNISED server
 source" if the sources are not a known release's; an export of release v13 `6a6a34b` still gives exactly the v13
-files). *(draft until vectors are regenerated)* The vectors were regenerated from release v16 (valun-app `cfe698b`):
+files). The vectors were regenerated from release v16 (valun-app `cfe698b`):
 
 | file | content |
 |---|---|
@@ -1257,23 +1257,28 @@ The circulation checks (tiers `circulation` and `consent`) count for a client th
 `--require circulation/1` with vectors that have no `circulation.json` or no transcript steps 148+ stops with exit
 status 2 instead of passing vacuously. Against release v16: the package 0.4.0 with `--require circulation/1` gives
 **1386 checks, 1188 agree, 0 disagreements in failing tiers, 17 informative differences (OQ-2, OQ-3, OQ-4 inputs), 181
-not applicable**, and so does the Hermes plugin 0.4.0 (`e2c7640`) with `--require circulation/1`; without it, the
-plugin 0.3.0 (`5d01fbd`, the CI pin), the plugin 0.4.0 and the package give **1384 checks, 1104 agree, 0
+not applicable**, and so does the Hermes plugin 0.4.0 (`2b78a06`, the commit CI pins; `e2c7640` gave the same) with
+`--require circulation/1`; without it, the plugin 0.3.0 (`5d01fbd`, the commit the Hermes catalog still pins, also
+checked in CI), the plugin 0.4.0 and the package give **1384 checks, 1104 agree, 0
 disagreements, 17 informative differences, 263 not applicable** (exit status 0 for each, with Python 3.14.7 and
-3.11.18 on Windows and 3.12.3 on Linux). Against release v13's vectors both 0.3 clients gave 829 checks, 658 agree, 0
+3.11.18 on Windows; also with 3.12.3 on Linux for the plugin at `e2c7640` and the package at `1509cbe`, whose
+vector-relevant code is unchanged since). Against release v13's vectors both 0.3 clients gave 829 checks, 658 agree, 0
 disagreements, 17 informative differences, 154 not applicable, and the same files are still what an export of v13
 produces. `scripts/check_plugin_core.py PLUGIN_DIR` checks that the plugin's `valun_core/` modules (six in 0.3.0,
-eight since 0.4.0) are the package's, unchanged.
+eight since 0.4.0) are the package's, unchanged. The JavaScript package replays the same transcript, every step
+that has a client call (`node --test js/test/`); CI also regenerates its Python fixtures with CPython 3.14
+(`js/test/fixtures/generate_python_fixtures.py`) and requires them to equal the committed ones (job `fixtures` of
+`.github/workflows/ci.yml`).
 
-## 18. Circulating credit (server release v16) *(draft until vectors are regenerated)*
+## 18. Circulating credit (server release v16)
 
 Release v16 lets credit circulate. A payer may pay with a note it holds (**debt transfer**); the server proposes
 **multilateral set-offs** of cycles of debts; a credit note can be **bound** to the current total of its edge; and
 clients sign some of these **consents** by themselves, inside their owner's policy and a deterministic signing firewall
 (15.3). The terms (`valun-deal/1`, 16 fields, `consideration` unchanged), the eight statements of 8.1 and every v15
 behaviour with circulation off stay as they are (18.1). This section is the contract that the v16 server, the 0.4.0
-clients and the tracker v3 are built against; it is a draft until the vectors are regenerated from that code, and where
-the two then disagree the vectors decide and this text is corrected.
+clients and the tracker v3 are built against; it was checked against the vectors regenerated from that code (section
+17) and against the final code, and where the two disagree the vectors decide and this text has a bug.
 
 **Notation.**
 - A = issuer; B = old creditor (in a payment, the deal's payer); C = new creditor (the deal's payee); a = amount;
@@ -1316,7 +1321,7 @@ operator holds the sandbox agents' keys (18.15).
 - **I-03SAFE.** A 0.3 client never signs a novation; its edges never fall and never become bound-only.
 - **I-KEYS.** Participant keys never reach the server.
 
-### 18.1 Modes, features and dark deploy *(draft until vectors are regenerated)*
+### 18.1 Modes, features and dark deploy
 
 **Modes.** The operator sets `PILOT_CIRCULATION` to `off` (the default), `bound`, `sandbox` or `on`:
 
@@ -1347,7 +1352,9 @@ A client MUST treat a feature as present only when `features` lists it; a server
 **Capability header.** A client that can sign consents sends `X-Valun-Features: consents/1;roles=<roles>` on its
 requests, `<roles>` being a comma-separated subset of `setoff`, `issuer` and `creditor` that lists only the roles its
 local policy will sign (the local policy's `setoff`, `as_issuer` and `as_new_creditor`, not intersected with the
-mandate). It sends the header on every request once the last `GET /info` it read listed `circulation/1`. The server
+mandate), in that order: the server reads the roles in any order and ignores names it does not know, but the
+conformance replay compares the header exactly as recorded (section 17), so a conforming client keeps the order.
+It sends the header on every request once the last `GET /info` it read listed `circulation/1`. The server
 takes the header from an agent request it authenticates; each header replaces the roles the one before declared, and
 each role counts for 7 days from that header (server-run sandbox agents always can sign), and the server never
 proposes to it a novation that needs another role. A request without the header, or with one the server cannot read,
@@ -1371,7 +1378,7 @@ races, a tracker that holds notes in another denomination).
 off first, which cancels collecting novations and purges their signatures (an operator procedure, outside the
 protocol).
 
-### 18.2 The tracker v3 contract *(draft until vectors are regenerated)*
+### 18.2 The tracker v3 contract
 
 Circulating credit needs a pure-credit Basis tracker with the Valun rules, "tracker v3": Basis master `6a6ebfe` plus
 `caa2e86`, `a00233d` and the Valun v3 commits (branch `circulating-credit-v3`), with `basis_core` unchanged from
@@ -1390,7 +1397,9 @@ on the server:
 - **maximum age** `NOVATION_MAX_AGE_MS = 3600000`, compiled in, not configurable (18.8): for transfers, every set-off
   edge and, since tracker v3.1 (D-1 item 1), bound notes; ordinary notes still have none;
 - **strict requests**: transfer and set-off bodies refuse unknown fields (so an older binary that silently dropped a
-  signature cannot pass for this one); both routes need the tracker's Write role; signatures never appear in its logs
+  signature cannot pass for this one), and a body with an unknown or a missing field is answered `422` without a
+  `code` (the JSON decoder's refusal: `circulation.json` `transfer/unknown-field`, `transfer/four-signature-body`); both
+  routes need the tracker's Write role; signatures never appear in its logs
   (8-hex fingerprints only);
 - **error codes**, in the `code` field of the tracker's JSON answers, for diagnostics only (Valun decides every outcome
   by reading the edges back): `reserved_timestamp`, `bound_note_required`, `invalid_prior_signature`,
@@ -1436,7 +1445,7 @@ from_recipient_signature, from_recipient_to_signature, to_recipient_prior_signat
 from_prior_total?, to_prior_total?}`; a set-off is `{denomination, timestamp, edges: [{issuer_pubkey, recipient_pubkey,
 decrease, timestamp?, issuer_signature, recipient_signature}]}`.
 
-### 18.3 Everything that is signed *(draft until vectors are regenerated)*
+### 18.3 Everything that is signed
 
 Every signature is a Basis Schnorr signature (section 6) by the signer's currently registered key.
 
@@ -1473,8 +1482,8 @@ Q = {"kind": "valun-transfer-quote/1", "network": …, "tracker_nft_id": …, "d
    timestamp and no total, so a regenerated transfer (new T, new priors) keeps the digest the owner approved; its keys
    are ASCII and its values strings and safe integers, so every implementation of `canonical()` agrees.
 
-   Worked example (computed for this document with the `valun` package's `canonical()` and checked with a
-   `JSON.stringify` one; not a vector): the terms of `vectors/canonical.json` `terms/base` (payer alice, payee bob,
+   Worked example (`circulation.json` `quote_digests` `worked-example-18.3`; first computed for this document with
+   the `valun` package's `canonical()` and checked with a `JSON.stringify` one): the terms of `vectors/canonical.json` `terms/base` (payer alice, payee bob,
    price 20, `terms_hash` `5f7bccd0e836183a82fbab738a617faa25673c4ead77eeb3da94c7ef4c9e6003`), issuer carol (the test
    key `0265ad72…a2e124`) and `deliverable_sha256` = `sha256hex("example delivery")` =
    `d6823e3f1b084c3135394414d58c8da1bec863f96cdec489f123426d4085c9fc`. `canonical(Q)` (696 bytes) lists the keys in the
@@ -1486,7 +1495,7 @@ Q = {"kind": "valun-transfer-quote/1", "network": …, "tracker_nft_id": …, "d
 Refusing (declining a consent, cancelling a transfer) is authenticated by the agent token and never signed: a refusal
 cannot move value.
 
-### 18.4 Timestamps: residues and the ordinary clamp *(draft until vectors are regenerated)*
+### 18.4 Timestamps: residues and the ordinary clamp
 
 Residues are allocated once for the whole roadmap, one per operation, so a signature made for one route is useless on
 another:
@@ -1514,7 +1523,7 @@ With `last` = the edge's last timestamp:
 When no such value exists yet, the server waits up to 3 s, else answers `409 note_timestamp_ahead` with
 `retry_after_ms` (as in 9.2).
 
-### 18.5 Bound notes *(draft until vectors are regenerated)*
+### 18.5 Bound notes
 
 A 0.4 client signs every credit note together with an **issuer prior acknowledgment** of its edge's current total, and
 the tracker applies the note only if that total is still the current one. Every edge a transfer or set-off changed is
@@ -1558,7 +1567,7 @@ even with a lying server or a downgraded client an issuer cannot be made to pay 
 serve as a note, because a note must strictly increase the total and the acknowledgment's total is the stored one.
 Bound notes also make a client's own record of what it issued non-critical for value (OPEN-QUESTIONS OQ-23).
 
-### 18.6 Payment by debt transfer *(draft until vectors are regenerated)*
+### 18.6 Payment by debt transfer
 
 B pays C for deal D with part of A's debt to B: A→B falls by the price and A→C rises by it. The payer chooses this
 when it accepts the delivery; the terms do not change. It is not what the terms promise (a credit note from the
@@ -1613,10 +1622,11 @@ client can check for itself is in 16.2, item 7.
    `when_online`, `unavailable`. `spendable` is what B holds on A's current key → B's current key, minus reservations;
    it is 0 unless that edge reconciles exactly (18.14) and A can sign as issuer.
 2. **Template.** `GET /deals/{id}/transfer-template?issuer=<vp id>` → `{deal_id, terms_hash, deliverable_sha256,
-   issuer, payer, payee (each {id, handle, pubkey}), amount, timestamp, from_edge: {before, new_total}, to_edge:
-   {before, new_total}, tracker_nft_id, denomination, quote_digest, collect_until, messages}`: `amount` is the price;
+   issuer, payer, payee (each {id, handle, pubkey}), amount, timestamp, from_edge: {edge, before, new_total},
+   to_edge: {edge, before, new_total}, tracker_nft_id, denomination, quote_digest, collect_until, messages}`: `amount` is the price;
    `timestamp` is T (18.4); `from_edge.before` is the EdgeState of A→B, `to_edge.before` that of A→C or `null`;
-   `messages` are the slot message hexes, for information only.
+   `messages` maps each of the four distinct slot keys (`<A>><B>:prior`, `<A>><B>:new`, `<A>><C>:new`,
+   `<A>><C>:prior`) to the hex of the message signed in it, for information only.
 3. **The payer posts.** B's client checks the template (15.3), records the attempt before posting (R9) and calls
    `POST /deals/{id}/pay-by-transfer` with `{issuer_id, terms_hash, deliverable_sha256, quote_digest, timestamp,
    from_prior_total, to_prior_total, completion_signature, pay_signature, signatures: {"<A>><B>:prior": …,
@@ -1645,7 +1655,8 @@ client can check for itself is in 16.2, item 7.
 8. **From `payment_due`.** A transfer with the same issuer may be retried at once only on the same acknowledged prior
    (the Retries paragraph below; decision D-1 item 2). Paying with another issuer, or with an own note, is refused until
    `fallback_after` (`409 transfer_window_open` with `retry_after_ms`; R11 waits a little longer). A stale same-issuer
-   transfer is regenerated (new T, new priors) at most 3 times per deal per 24 hours; the payer's slots then come back
+   transfer is regenerated (new T, new priors) only while every check of 18.13 still passes, so a deal has at most 3
+   transfer attempts in 24 hours, regenerations included (`max_attempts_per_deal`); the payer's slots then come back
    to it as a consent item with role `payer`. B's client re-signs by itself only while `quote_digest` is unchanged and
    its held claim's acknowledged prior is the same; A and C re-sign under their own rules. In practice a stale answer
    caused by a move of the payer's own claim needs the owner or the one-hour window.
@@ -1678,7 +1689,7 @@ client re-signs a regenerated transfer by itself only under the same quote and o
 prior is unchanged; a move of the held edge past T to a total that is neither the prior nor the new total is
 `attempt_outcome_unknown` (18.8).
 
-### 18.7 Multilateral set-off *(draft until vectors are regenerated)*
+### 18.7 Multilateral set-off
 
 - Only the server's clearing engine proposes set-offs (`vs_…`), from cycles of debts (18.14). A proposal lowers each of
   its edges I→R by an integer d ≥ 1 such that, for every participant, the decreases where it is creditor add up to the
@@ -1708,7 +1719,7 @@ prior is unchanged; a move of the held edge past T to a total that is neither th
   `void_key_revoked`.
 - A set-off never blocks a payment: a credit note on one of its edges makes that edge stale, and it is regenerated.
 
-### 18.8 Maximum age, collection windows and the fallback rule *(draft until vectors are regenerated)*
+### 18.8 Maximum age, collection windows and the fallback rule
 
 - The tracker refuses any transfer, any set-off edge and (tracker v3.1, decision D-1 item 1) any bound note whose
   timestamp is more than `NOVATION_MAX_AGE_MS` = 3 600 000 ms (1 hour) old. The value is compiled in. It bounds how
@@ -1759,32 +1770,38 @@ prior is unchanged; a move of the held edge past T to a total that is neither th
   state, with T within the maximum age → resubmitted; prior state with T expired, or an edge moved past T back at its
   prior total → failed; an edge moved past T at another total, or another state at T → `outcome_unknown`; a mix →
   `inconsistent`, with an audit alarm (one-write tracker batches make this impossible). A set-off held by a payment
-  attempt (D-2 c, 18.7) is never resubmitted: it fails with `held_note` or `payment_attempt`. Reservations are
+  attempt (D-2 c, 18.16) is never resubmitted: it fails with `held_note` or `payment_attempt`. Reservations are
   released, and fallback payments allowed, only after a read-back shows that nothing applied. The same read-back runs
   in the request that applied when the tracker's answer is lost.
 
-### 18.9 Consents *(draft until vectors are regenerated)*
+### 18.9 Consents
 
 Clients sign their part of a transfer or a set-off through three agent routes; owners may read `GET /consents` but
 never sign.
 
 **`GET /consents`** records the poll (presence, 18.1) and may let the engine propose set-offs through the caller (at
-most once per 30 s). Response (values illustrative):
+most once per 30 s). Response (transcript step 171: nina, the payee of transfer T1, reads her consents; keys and
+hashes shortened):
 
 ```json
-{"consents": [{"kind": "transfer", "id": "vt_…", "state": "collecting",
-   "your_roles": ["payee"], "created_at": "…", "expires_at": "…",
-   "network": "valun-pilot-1", "tracker_nft_id": "…", "denomination": "token:…",
-   "edges": [{"edge": "<issuer_pubkey>><recipient_pubkey>", "issuer": {"id": "vp_…", "handle": "…"},
-     "recipient": {"id": "vp_…", "handle": "…"}, "your_role": "creditor",
-     "before": {"total": 3, "timestamp": 1793966400000, "signature": "…"}, "change": 2, "new_total": 5,
-     "timestamp": 1793966458999, "revision": 1, "slots": ["prior", "new"], "signed_by_you": []}],
-   "context": {"amount": 2, "issuer": {"id": "vp_…", "handle": "…"}, "payer": {"id": "vp_…", "handle": "…"},
-     "payee": {"id": "vp_…", "handle": "…"},
-     "deal": {"deal_id": "vd_…", "terms_hash": "…", "price": 2, "quote_digest": "…"}},
-   "summary": {"your_net_change_PC": 2, "your_total_owed_change_PC": 0}}],
- "recently_resolved": [{"kind": "transfer", "id": "vt_…", "state": "applied", "at": "…"}]}
+{"consents": [{"kind": "transfer", "id": "vt_283b3ca1c2582819", "state": "collecting",
+   "your_roles": ["payee"], "created_at": "2026-11-15T14:47:00.000Z", "expires_at": "2026-11-15T15:07:00.000Z",
+   "network": "valun-pilot-1", "tracker_nft_id": "6869a94d…a0fa", "denomination": "token:01cb4b85…3274",
+   "edges": [{"edge": "035e2b6f…e7b5>024f5a7b…15d6", "issuer": {"id": "vp_461ce015dd98", "handle": "alice"},
+     "recipient": {"id": "vp_136ec9667207", "handle": "nina"}, "your_role": "creditor",
+     "before": null, "change": 10, "new_total": 10,
+     "timestamp": 1794754017999, "revision": 1, "slots": ["prior", "new"], "signed_by_you": []}],
+   "context": {"amount": 10, "issuer": {"id": "vp_461ce015dd98", "handle": "alice"},
+     "payer": {"id": "vp_9850bb41e214", "handle": "bob"}, "payee": {"id": "vp_136ec9667207", "handle": "nina"},
+     "deal": {"deal_id": "vd_579a5ae4799dcf2e", "terms_hash": "b8929fd0…c779", "price": 10,
+              "quote_digest": "bd243296…c93c"}},
+   "summary": {"your_net_change_PC": 10, "your_total_owed_change_PC": 0}}],
+ "recently_resolved": []}
 ```
+
+In step 169 (alice, the issuer of the same transfer) `before` is an EdgeState `{total, timestamp, signature}` and
+`context` has no `deal`; step 184 shows a `recently_resolved` entry, `{"kind": "transfer", "id":
+"vt_283b3ca1c2582819", "state": "applied", "at": "2026-11-15T14:51:00.000Z"}`.
 
 - `kind` is `transfer` or `setoff`; `your_roles` ⊆ {`payer`, `issuer`, `payee`, `member`} (`payer` only for a
   regenerated transfer, 18.6 step 8).
@@ -1816,7 +1833,7 @@ collecting.
 and be at most 300 UTF-16 code units. Not signed. A refused transfer ends (`refused`) and its deal becomes
 `payment_due`; a refused set-off ends and starts a 24-hour cooldown for that member and edge set.
 
-### 18.10 Deal statuses and transitions *(draft until vectors are regenerated)*
+### 18.10 Deal statuses and transitions
 
 | status | meaning | committed | terminal |
 |---|---|---|---|
@@ -1832,9 +1849,9 @@ Transitions, in addition to 10.2 (circulation on):
 | from | act | who | server checks | to |
 |---|---|---|---|---|
 | `delivered`, `note_failed`, `payment_due` | pay by transfer | payer | 18.6 step 4; from `payment_due` with another issuer only after `fallback_after` | `paying_by_transfer` (`paid_by_transfer` in the same request when every other slot is server-signed); or `completion_awaiting_owner` with a `pay_by_transfer` approval if the payer's `review_deliveries` |
-| `completion_awaiting_owner` (`pay_by_transfer`) | approve | payer's owner | 18.11 | `paying_by_transfer` or `paid_by_transfer`; if stale, `delivered` (`409 stale_payment`) |
-| `completion_awaiting_owner` (`pay_by_transfer`) | reject | payer's owner | — | `delivered` (the completion is cleared) |
-| `completion_awaiting_owner` (`pay_by_transfer`) | any party's key revoked | owner | — | `delivered` (transfer `void_key_revoked`) |
+| `completion_awaiting_owner` (`pay_by_transfer`) | approve | payer's owner | 18.11 | `paying_by_transfer` or `paid_by_transfer`; if stale, `delivered`, or `payment_due` when it came from there (`409 stale_payment`) |
+| `completion_awaiting_owner` (`pay_by_transfer`) | reject | payer's owner | — | `delivered` (the completion is cleared), or `payment_due` when it came from there (the acceptance stands) |
+| `completion_awaiting_owner` (`pay_by_transfer`) | any party's key revoked | owner | — | `delivered`, or `payment_due` when it came from there (transfer `void_key_revoked`) |
 | `paying_by_transfer` | the last signature, and the read-back shows the transfer | server | 18.6 step 6 | `paid_by_transfer` |
 | `paying_by_transfer` | expiry, refusal, `cancel-transfer`, a changed edge, a tracker refusal, any party's key revoked | server, A, C, B, an owner | — | `payment_due` |
 | `payment_due` | complete (own note) | payer | 9.2, and now ≥ `fallback_after` (`409 transfer_window_open`) | `issuing_note` → `note_issued` / `note_failed`; or `completion_awaiting_owner` (`issue_note`) if the payer's `review_deliveries` |
@@ -1843,7 +1860,7 @@ Transitions, in addition to 10.2 (circulation on):
 A dispute stays possible only from `delivered`. Expiry is lazy (on every read), so it survives the server being
 stopped.
 
-### 18.11 The `pay_by_transfer` approval *(draft until vectors are regenerated)*
+### 18.11 The `pay_by_transfer` approval
 
 - Created when the payer posts a payment by transfer while its owner has `review_deliveries` on: the deal is
   `completion_awaiting_owner`, the transfer `awaiting_owner`, and the approval is bound to the deal like `issue_note`.
@@ -1852,15 +1869,21 @@ stopped.
   from_edge, to_edge, timestamp, quote_digest}, statement, signature}`.
 - `effect.if_approved`: "The transfer is submitted once `<issuer>` and `<payee>` sign: `<issuer>` then owes `<payee>`
   `<a>` PC more and you `<a>` PC less; you issue no credit note."; `effect.if_rejected`: "Nothing moves. The deal
-  returns to delivered: your agent may accept again (paying another way) or dispute."; `effect.checks_on_approve`
+  returns to delivered: your agent may accept again (paying another way: with its own credit note or another issuer's
+  note only after <fallback_after>, since the tracker could still apply this payment until one hour after its
+  timestamp; with the same note at once) or dispute." (for a deal that came from `payment_due`: "Nothing moves. The
+  deal returns to payment_due: the delivery stays accepted, and your agent must still pay it (with its own credit note
+  or another issuer's note only after <fallback_after>, …; by transfer with the same note at once).", 18.16);
+  `effect.checks_on_approve`
   names the re-validations below.
 - **Approve** re-validates both edges (total, timestamp and signature equal `before`), the current keys and every check
   of 18.13. If anything is stale, the approval becomes `void_stale`, the transfer `void_stale` (purged), the deal
-  returns to `delivered`, and the request fails with `409 stale_payment`. Otherwise the transfer starts collecting
+  returns to `delivered` (or to `payment_due` if it came from there), and the request fails with `409 stale_payment`. Otherwise the transfer starts collecting
   (server-run roles sign) or is applied at once.
-- **Reject** voids the transfer (`void_rejected`, purged), clears the completion and returns the deal to `delivered`.
+- **Reject** voids the transfer (`void_rejected`, purged) and returns the deal to `delivered` with the completion
+  cleared, or to `payment_due`, the completion kept, if it came from there.
 
-### 18.12 Visibility, withholding and receipts *(draft until vectors are regenerated)*
+### 18.12 Visibility, withholding and receipts
 
 - A transfer is visible to A, B and C and their owners: `GET /transfers/{vt}`, the consents (18.9) and, for B and C,
   the deal view. A sees the amount and both creditors, never the service or the delivery; C sees its own edge and the
@@ -1876,7 +1899,7 @@ stopped.
 - **Public**: `GET /clearing` shows aggregates only (18.14). The public ledger (14.3) is unchanged; it already shows
   every edge total (16.2).
 
-### 18.13 Credit policy and the server's checks *(draft until vectors are regenerated)*
+### 18.13 Credit policy and the server's checks
 
 Owner mandate fields, validated and stored only in mode `sandbox` or `on` (in other modes they are ignored like any
 unknown field, and `DEFAULT_MANDATE` never changes). Defaults:
@@ -1911,7 +1934,8 @@ changed in between fails it with `mandate_changed`); a refusal records nothing:
 - **clearing member** (P): active with `auto_clear`; the mandate has not expired; can sign `setoff` or is server-run;
   not in a cooldown.
 
-Refusals: `403 payment_not_accepted` with `rule` and `by` (`payee` or `issuer`; rule names only, the policy itself stays
+Refusals: `403 payment_not_accepted` with `rule` and `by` (`payer`, `payee` or `issuer`, and in a consent also `member`;
+rule names only, the policy itself stays
 private), `409 insufficient_claim`, `409 edge_busy`. Edges under past keys are frozen: they still count in positions
 but cannot be spent or cleared (OPEN-QUESTIONS OQ-46).
 
@@ -1920,7 +1944,7 @@ An issuer consent: never, the issuer's total does not change and `novate_own_deb
 never, `accept_transfers` and `accept_notes_from` are the owner's standing rule and the client's creditor role is
 opt-in. Refusing: never. Changing the policy: the owner only. Sandbox agents never wait for an owner.
 
-### 18.14 Routes, edges, reconciliation, positions and clearing *(draft until vectors are regenerated)*
+### 18.14 Routes, edges, reconciliation, positions and clearing
 
 All under `/pilot/v1`. The existing per-IP and per-token budgets apply (14.2), and each route answers `404 not_found`
 when the effective mode does not allow it.
@@ -1979,7 +2003,7 @@ median_ms_to_apply}, cycles_by_length, sandbox: {dormant_PC}}`. `net_floor_PC` =
 participants; `clearable_mtcs_PC` = the maximum circulation of the graph (a min-cost flow; `null` above 5000 edges);
 `liquidity_saving_pct` = cleared / issued; `capacity_restored_PC` = the sum of the reductions in what participants owe.
 
-### 18.15 Sandbox circulation *(draft until vectors are regenerated)*
+### 18.15 Sandbox circulation
 
 In mode `sandbox` or `on` the server's sandbox agents (sandbox-exact X and sandbox-mallory M; the operator holds their
 keys) also buy, pay with notes, accept transfers and sign set-offs. The server signs for them at apply time, keeping
@@ -2013,10 +2037,11 @@ v15, apart from the always-on fixes of Appendix H.
 Over the tour S earns 6 PC and spends 6 PC: 4 by transfer and 2 with its own note; 2 PC of its claims and 2 PC of its
 debts are cancelled by set-off, and no set-off changes its net position.
 
-### 18.16 Details of the release v16 implementation *(draft until vectors are regenerated)*
+### 18.16 Details of the release v16 implementation
 
 Sections 18.1-18.15 state the contract; this section records what the release v16 implementation (valun-app
-`cfe698b`, valun 0.4.0, the Hermes plugin 0.4.0) does where they are silent or less precise. Where it says MUST, it is
+`cfe698b`; the `valun` package 0.4.0 at valun-open `4310103`, `@fitzdoud/valun` 0.4.0 at `fc58e8d` and the Hermes
+plugin 0.4.0 at `2b78a06`) does where they are silent or less precise. Where it says MUST, it is
 part of the contract; the rest describes the server so clients know what to expect.
 
 **Set-offs and payment attempts (18.7, decision D-2 c).**
@@ -2245,6 +2270,11 @@ part of the contract; the rest describes the server so clients know what to expe
 - The Python core exposes these as options of its agent layer: `ValunAgent(process_consents=...)` (decision D-2 g:
   whether the agent runs the consent firewall before its own non-read-only tools) and `consents_on_reads` (D-3 a), with
   `declare_roles` following `process_consents` unless set.
+- The JavaScript package has the same options (`ValunAgent` `processConsents`, `consentsOnReads`, `declareRoles`) and
+  runs one consent run at a time with a lock of its own, since it has no MCP server to hold one:
+  `ValunAgent.exclusive(fn)` (not reentrant: a function passed to it must not call the agent's locked methods),
+  `consentRound(enabled)` for a consent loop's round, and `Client.fresh()`, a client of its own for every use, as the
+  Python agent makes a new `Client` for each. These are client API, not protocol.
 - The owner console (not protocol): its clearing panel is read-only; the resolve action is offered only to the payer's
   owner and needs the payee's confirmation ticked; only changed credit-policy fields are sent; the card of a payment by
   transfer that ended without effect says, for a deal back at `payment_due`, that the delivery stays accepted so the
@@ -2418,11 +2448,13 @@ participants only; every other participant's record is unchanged.
 **Clients.** `valun join --sandbox` calls the route since package 0.3.0, `Client.join_sandbox()` exists since 0.3.1;
 the JavaScript `Client.joinSandbox()` since 0.3.0; the Hermes plugin's `hermes valun join --sandbox` since 0.3.0.
 
-## Appendix H. Changes in release v16 (valun-app branch `circulation-v16`, not released) *(draft until vectors are regenerated)*
+## Appendix H. Changes in release v16 (valun-app branch `circulation-v16`, not released)
 
-Release v16 is built locally and is neither released nor deployed. Its rows are the contract it is built against. The
-vectors were regenerated from valun-app commit `cfe698b` (branch `circulation-v16`; `generate.mjs` `RELEASES` pins the
-sha256 of every server source it imports); if the release commit differs, they are regenerated from it.
+Release v16 is built locally and is neither released nor deployed. Its rows are the contract it is built against,
+checked against the vectors regenerated from valun-app commit `cfe698b` (branch `circulation-v16`; `generate.mjs`
+`RELEASES` pins the sha256 of every server source it imports) and against the final code (the branch's last commit,
+`b88c1b3`, adds a test only). If the release commit's server sources differ from `cfe698b`'s, the vectors are
+regenerated from it and these rows are checked again.
 
 **In every mode** (no visible change in normal operation):
 
@@ -2455,6 +2487,7 @@ sha256 of every server source it imports); if the release commit differs, they a
 | `GET /edges`, `GET /transfers/{vt}`, `GET /setoffs/{vs}`, loopback clearing admin routes; reconciliation, positions and inbox additions | 14.3, 18.14 | — |
 | Labels with circulation on | 16.1 | 16 |
 | Client rules R1–R13 and their refusal codes | 15.3 | — |
+| The 0.4.0 clients: value-safe consents before `valun_status` and `valun_inbox` in an adapter without a consent loop (D-3 a), the empty roles header once every role is off (D-3 b), the owner token handed over at join before any local write (D-3 c) | 18.1, 18.16, H | — |
 | Tracker v3.1: bound notes expire after one hour (`novation_expired`); `bound_notes` version 2 with `max_age_ms` (decision D-1 item 1) | 18.2, 18.8 | — |
 | One live payment attempt per deal, across kinds (D-1): `409 transfer_window_open`, `409 attempt_outcome_unknown`, `409 already_paid`, `409 pending_unbound_note`; transfer states `outcome_unknown`, `inconsistent`, `resolved_not_applied`, `void_expired` | 15.3, 18.6, 18.8 | — |
 | Refused payments recorded as attempts (D-2 b); held notes and attempts keep their edges out of set-offs (D-2 c, `held_note`, `payment_attempt`); the journal proves attempts dead (D-2 e); a failed bound note's error is the server's own sentence (D-2 f) | 18.7, 18.8, 18.16 | — |

@@ -5,8 +5,8 @@ canonical JSON and terms hashes, statement texts, Basis note messages and signat
 (`transcript.json`) through the client's real `Client` methods. Since spec revision v14 it also checks circulating
 credit (`circulation.json`, and transcript steps 148 and later): the 80-byte messages of bound notes, transfers and
 set-offs, transfer quote digests, the pay statement, and the decisions of the client signing firewall (PROTOCOL.md
-15.3). The vectors were generated from server release v16 (valun-app commit `cfe698b`, draft until vectors are
-regenerated for the final release). Transcript steps 1-147 run with circulation off and are byte-identical to the
+15.3). The vectors were generated from server release v16 (valun-app commit `cfe698b`; the branch's later commits add tests
+only). Transcript steps 1-147 run with circulation off and are byte-identical to the
 release v13 transcript (valun-app `6a6a34b`); steps 148-236 run with circulation on. Run the check once per client:
 
 | client | what is checked | where it comes from |
@@ -23,9 +23,11 @@ From the root of a valun-open checkout, with hermes-plugin-valun checked out int
 
 ```sh
 python spec/vectors/check_python.py --client package --require circulation/1
-python spec/vectors/check_python.py --client plugin --plugin-dir hermes-plugin-valun
+python spec/vectors/check_python.py --client plugin --plugin-dir hermes-plugin-valun --require circulation/1
 python scripts/check_plugin_core.py hermes-plugin-valun
 ```
+
+(`--require circulation/1` on the plugin line for a 0.4.0 checkout; leave it out for the plugin 0.3.0.)
 
 The same commands work in bash, PowerShell and cmd (no environment variables needed). Equivalent environment forms:
 `VALUN_CLIENT=package|plugin`, `VALUN_PLUGIN_DIR=<plugin checkout>`, `VALUN_PACKAGE_SRC=<folder containing valun/>`.
@@ -36,9 +38,10 @@ committed).
 **Protocol features.** The circulation checks (tiers `circulation` and `consent`) count for a client that declares
 `circulation/1` in `PROTOCOL_FEATURES` (its client or novation module), or when the run is given
 `--require circulation/1`; otherwise each of them is `n/a`, so a client released before circulating credit (the plugin
-0.3.0 that CI pins) is not failed by them. The package run always passes `--require circulation/1`, so a package that
-loses the feature fails the run instead of skipping it. Neither the package 0.4.0 nor the plugin 0.4.0 declares
-`PROTOCOL_FEATURES` yet; a plugin 0.4.0 run is held to the circulation checks with `--require circulation/1` as well.
+0.3.0, which the Hermes catalog still pins and CI still checks) is not failed by them. CI runs the package with and
+without `--require circulation/1` and the plugin 0.4.0 with it, so a 0.4 client that loses the feature fails the run
+instead of skipping it. Neither the package 0.4.0 nor the plugin 0.4.0 declares `PROTOCOL_FEATURES` yet
+(OPEN-QUESTIONS OQ-52).
 The first output line after the client's name says which features were declared, required and checked.
 
 Exit status: `0` every check in a failing tier agrees (or does not apply); `1` at least one disagreement (listed under
@@ -81,11 +84,12 @@ regenerated):
 ```
 
 The first line is `--client package --require circulation/1` (package 0.4.0 from `python/src`). The second is the
-plugin without `--require`: hermes-plugin-valun 0.3.0 at `5d01fbd` (the commit `.github/workflows/ci.yml` pins), and
-equally the plugin 0.4.0 (`e2c7640`, local). With `--require circulation/1` the plugin 0.4.0 gives the package's line,
+plugin without `--require`: hermes-plugin-valun 0.3.0 at `5d01fbd` (the commit the Hermes catalog pins; CI checks it too), and
+equally the plugin 0.4.0 (`2b78a06`, local; `e2c7640` gave the same). With `--require circulation/1` the plugin 0.4.0 gives the package's line,
 `[plugin] 1386 checks: 1188 agree, ...`. Without `--require`, the package gives the plugin's line. These were obtained
-locally with Python 3.14.7 and 3.11.18 on Windows and 3.12.3 on Linux (WSL), from fresh clones of the plugin. CI runs
-the commands on Linux, macOS and Windows with Python 3.10 and 3.13.
+locally with Python 3.14.7 and 3.11.18 on Windows and 3.12.3 on Linux (WSL), from fresh clones of the plugin (at
+`2b78a06`: Python 3.14.7 and 3.11.18 on Windows, from a `git archive` export). CI runs
+the commands on Linux, macOS and Windows with Python 3.10, 3.13 and 3.14.
 
 `scripts/check_plugin_core.py PLUGIN_DIR` compares every module in the plugin's `valun_core/` (each `*.py` but
 `__init__.py`: six files in plugin 0.3.0, eight since 0.4.0) with the `valun` package at the version `valun_core`
@@ -95,42 +99,62 @@ its bytes are equal, or equal with the import name read as one on both sides (so
 
 ## The GitHub Actions job
 
-The `conformance` job in `.github/workflows/ci.yml`, as release v16 needs it (its matrix also includes macOS; the file
-in the repository still runs the package step without `--require circulation/1` until it is updated for v16, which
-passes too, with the circulation checks not applicable). `ref` pins the plugin commit the package is held to; a branch
-name would make the job follow the plugin's changes. The job also runs `python scripts/check_plugin_core.py
-hermes-plugin-valun`.
+The `conformance` job of `.github/workflows/ci.yml`, as it is in the repository (Linux, macOS and Windows; Python 3.10,
+3.13 and 3.14). `ref` pins the plugin commit each client is held to; a branch name would make the job follow the
+plugin's changes. The plugin 0.4.0 pin, `2b78a06`, is a local commit that is not on GitHub yet: before the workflow is
+pushed it must be replaced with the commit actually pushed to `fitzss/hermes-plugin-valun` (the one the catalog update
+pins), or the checkout fails. The plugin 0.3.0 stays checked while the Hermes catalog pins it.
 
 ```yaml
   conformance:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        python: ["3.10", "3.13"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.10", "3.13", "3.14"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
         with:
           persist-credentials: false
+      # Hermes plugin 0.4.0. NEEDS THE PUSHED SHA: 2b78a06 is the last LOCAL code commit of the plugin's v0.4.0 branch
+      # (only a changelog commit, d643c69, follows it) and is not on GitHub yet. Before this workflow is pushed, replace
+      # it with the commit actually pushed to fitzss/hermes-plugin-valun (the one the catalog update pins), or this
+      # checkout fails.
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
         with:
           repository: fitzss/hermes-plugin-valun
-          ref: 5d01fbdde03ab5ad80f51b6547026fb06cd5e20e   # the commit the Hermes plugin catalog pins (0.3.0)
+          ref: 2b78a0624f6f28ff31f0f32c1b11312ab726f33d     # plugin 0.4.0 (local commit: replace with the pushed SHA)
           path: hermes-plugin-valun
+          persist-credentials: false
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          repository: fitzss/hermes-plugin-valun
+          ref: 5d01fbdde03ab5ad80f51b6547026fb06cd5e20e     # plugin 0.3.0, the commit the Hermes plugin catalog pins today
+          path: hermes-plugin-valun-0.3.0
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
       - name: Vectors vs the valun package
+        run: python spec/vectors/check_python.py --client package
+      - name: Vectors vs the valun package, circulation and consent tiers required
         run: python spec/vectors/check_python.py --client package --require circulation/1
-      - name: Vectors vs the Hermes plugin
-        run: python spec/vectors/check_python.py --client plugin --plugin-dir hermes-plugin-valun
+      - name: Vectors vs the Hermes plugin 0.4.0, circulation and consent tiers required
+        run: python spec/vectors/check_python.py --client plugin --plugin-dir hermes-plugin-valun --require circulation/1
+      - name: Vectors vs the Hermes plugin 0.3.0 (the catalog pin, until the catalog entry moves to 0.4.0)
+        run: python spec/vectors/check_python.py --client plugin --plugin-dir hermes-plugin-valun-0.3.0
+      - name: The plugin 0.4.0 carries the valun package's core unchanged
+        run: python scripts/check_plugin_core.py hermes-plugin-valun
 ```
 
-Both steps run even if you install the package first (`pip install ./python`): `--client package` always imports
-from `python/src` and exits with status 2 if the import resolves anywhere else. When the plugin pin moves to a 0.4.0
-commit, its step can take `--require circulation/1` too.
+Every step runs even if you install the package first (`pip install ./python`): `--client package` always imports
+from `python/src` and exits with status 2 if the import resolves anywhere else.
+
+The `fixtures` job of the same workflow regenerates the JavaScript client's Python fixtures with CPython 3.14
+(`python js/test/fixtures/generate_python_fixtures.py`, offline and deterministic) and requires them to equal the
+committed ones (`git diff --exit-code`, ignoring only the recorded patch version, `"python": "3.14.x"`). Other Python
+versions record different error texts and results, which is why the fixtures name 3.14.
 
 ## Regenerating the vectors (maintainers with the server source only)
 
