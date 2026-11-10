@@ -1,8 +1,10 @@
 // Tracker v3.2 in the JavaScript client (design v3.2; audit VS-1): a prior slot is signed as the 105-byte prior
 // acknowledgment PA(I,R,X,p,T) over the state the item shows; what signs a prior slot is signed only for the contract
 // GET /info novation reports; and R11's same-prior exemption lets a transfer retry on the same prior state be signed at
-// once, which the tracker v3.2 check makes safe. Each test fails without the behaviour it names (the Python decision
-// table, replayed through the fixtures by python-parity.test.js, covers the same rules case by case).
+// once, which the tracker v3.2 check makes safe, when both attempts are recorded with ack (their prior slots were
+// PA); and R4 refuses a second PA over another prior state at the same (edge, T, op). Each test fails without the
+// behaviour it names (the Python decision table, replayed through the fixtures by python-parity.test.js, covers the
+// same rules case by case).
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import {test} from 'node:test';
@@ -82,8 +84,10 @@ const payerCtx = (over = {}) => base(B, B_ID, {deal: nv.dealContext(TERMS, TH, D
 const payeeCtx = (over = {}) => base(C, C_ID, {consent_policy: {...POLICY}, mandate: {...MANDATE},
   deal: nv.dealContext(TERMS, TH, DH, true, TID), issuer_ids: {[A.pk]: A_ID}, ...over});
 const issuerCtx = (over = {}) => base(A, A_ID, {consent_policy: {...POLICY}, mandate: {...MANDATE}, ...over});
+// an attempt record as this client writes it (ack: its prior slot was signed as PA)
 const attempt = (over = {}) => ({deal_id: DEAL, route: 'transfer', edge: AB, prior: 10, prior_timestamp: TS_AB,
-  prior_signature: fromState.signature, total: 7, timestamp: T_OLD, quote_digest: quote(), ...over});
+  prior_signature: fromState.signature, total: 7, timestamp: T_OLD, quote_digest: quote(), ack: 'basis/prior-ack/1', ...over});
+const unmarked = (over = {}) => Object.fromEntries(Object.entries(attempt(over)).filter(([k]) => k !== 'ack'));
 
 test('PA: every prior slot is the 105-byte acknowledgment of the state the item shows; new slots stay the 80-byte M', () => {
   const cases = [
@@ -109,8 +113,14 @@ test('PA: every prior slot is the 105-byte acknowledgment of the state the item 
     }
     for (const x of r.to_sign) assert.equal(x.length, x[0].endsWith(':prior') ? 6 : 5);
   }
-  // the attempt records the acknowledged state (the R11 exemption compares it)
+  // the attempt records the acknowledged state (the R11 exemption compares it) and that it was signed as PA (ack)
   assert.deepEqual(cases[0][0].write_ahead.attempt.prior_timestamp, TS_AB);
+  assert.equal(cases[0][0].write_ahead.attempt.ack, 'basis/prior-ack/1');
+  assert.equal(cases[1][0].write_ahead.attempt.ack, 'basis/prior-ack/1');
+  // R4: each group with a prior slot records the prior state its PA acknowledges; the others record none
+  assert.deepEqual(cases[0][0].write_ahead.signed.map(g => g.prior_state ?? null), [{total: 10, timestamp: TS_AB}, null]);
+  assert.deepEqual(cases[2][0].write_ahead.signed.map(g => g.prior_state), [{total: 0, timestamp: 0}]);
+  assert.deepEqual(cases[3][0].write_ahead.signed.map(g => g.prior_state), [{total: 4, timestamp: TS_AC}]);
 });
 
 test('slotMessages never signs a prior slot as an 80-byte note message', () => {
@@ -182,6 +192,58 @@ test('R11 same-prior exemption: a transfer at a new T on the same prior state is
   // checkPayment (an ordinary note) acknowledges no prior state: never exempt
   assert.equal(nv.checkPayment(DEAL, PRICE, 'transfer', AB, 10, payerCtx({transfer_attempts: {[DEAL]: [attempt()]}})).code,
     'transfer_window_open');
+});
+
+test('R11: an earlier attempt recorded without ack (or with another) is not exempt: it waits for its window, once', () => {
+  // A 0.4.0 build on tracker v3.1 recorded prior_timestamp too but signed M(A,B,X,T), which does not exclude a PA
+  // attempt; the first v3.2 build signed PA but wrote no ack: both are treated as before tracker v3.2.
+  const retryAfter = T_OLD + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 1 - NOW;
+  for (const earlier of [unmarked(), attempt({ack: 'basis/prior-ack/2'}), attempt({ack: null})]) {
+    let r = nv.evaluatePayerTemplate(payerTpl(), payerCtx({transfer_attempts: {[DEAL]: [earlier]}}));
+    assert.deepEqual([r.code, r.summary.retry_after_ms], ['transfer_window_open', retryAfter], JSON.stringify(earlier));
+    r = nv.evaluateConsent(payerItem(), payerCtx({transfer_attempts: {[DEAL]: [earlier]}}));
+    assert.equal(r.code, 'transfer_window_open', JSON.stringify(earlier));
+  }
+  // the identical operation (same T) needs no ack: the tracker applies an edge's operations at increasing timestamps
+  assert.equal(nv.evaluatePayerTemplate(payerTpl(), payerCtx({transfer_attempts: {[DEAL]: [unmarked({timestamp: T999})]}})).ok, true);
+  // past its window, read back at its prior state, the retry is signed: the cost is one wait
+  const late = T_OLD + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 10_000, Tl = res(late - 1500, 999);
+  const r = nv.evaluatePayerTemplate(payerTpl({T: Tl}), payerCtx({now_ms: late, transfer_attempts: {[DEAL]: [unmarked()]},
+    edges: {[AB]: fromState}}));
+  assert.equal(r.ok, true, r.summary.reason);
+});
+
+test('R4: a second PA at the same (edge, T, op) over another prior state is refused; the same one is signed again', () => {
+  const other = payeeItem();
+  other.edges[0].before = st(A, C, 4, TS_AC + 5);                   // the same total in another state of A->C
+  const one = nv.evaluateConsent(payeeItem(), payeeCtx()), two = nv.evaluateConsent(other, payeeCtx());
+  assert.equal(one.ok && two.ok, true);                              // both evaluated on the same (stale) snapshot
+  const state = {};
+  nv.applyWriteAhead(state, one.write_ahead, 'x');
+  assert.deepEqual(state.signed[AC][String(T999)], {op: `transfer:${TID}`, slots: {[`${AC}:prior`]: 4, [`${AC}:new`]: 7},
+    prior_state: {total: 4, timestamp: TS_AC}});
+  const before = structuredClone(state);
+  assert.throws(() => nv.applyWriteAhead(state, two.write_ahead, 'x'), e => e.code === 'timestamp_reused');
+  assert.deepEqual(state, before);                                   // nothing written
+  let r = nv.evaluateConsent(other, payeeCtx({signed: state.signed}));
+  assert.deepEqual([r.code, r.to_sign], ['timestamp_reused', []]);
+  assert.equal(nv.evaluateConsent(payeeItem(), payeeCtx({signed: state.signed})).ok, true);    // the same PA again
+  // the payer's held edge and a bound note the same
+  const s2 = {};
+  nv.applyWriteAhead(s2, nv.evaluatePayerTemplate(payerTpl(), payerCtx()).write_ahead, 'x');
+  r = nv.evaluatePayerTemplate(payerTpl({from: st(A, B, 10, TS_AB + 5)}), payerCtx({signed: s2.signed}));
+  assert.equal(r.code, 'timestamp_reused');
+  const s3 = {};
+  nv.applyWriteAhead(s3, nv.evaluateBoundTemplate(boundTpl(), payerCtx()).write_ahead, 'x');
+  assert.equal(nv.evaluateBoundTemplate(boundTpl({prior: st(B, C, 6, TS_BC + 5)}), payerCtx({signed: s3.signed})).code, 'timestamp_reused');
+  // a record written before prior states were recorded is compared on op and totals, and gets the prior state
+  const legacy = {signed: {[AC]: {[String(T999)]: {op: `transfer:${TID}`, slots: {[`${AC}:prior`]: 4, [`${AC}:new`]: 7}}}}};
+  assert.equal(nv.evaluateConsent(other, payeeCtx({signed: legacy.signed})).ok, true);
+  nv.applyWriteAhead(legacy, two.write_ahead, 'x');
+  assert.deepEqual(legacy.signed[AC][String(T999)].prior_state, {total: 4, timestamp: TS_AC + 5});
+  // a prior_state that is not {total, timestamp} makes the records unreadable
+  r = nv.evaluateConsent(payeeItem(), payeeCtx({signed: {[AC]: {[String(T999)]: {...before.signed[AC][String(T999)], prior_state: {total: 4}}}}}));
+  assert.equal(r.code, 'records_unreadable');
 });
 
 test('VS-1 closed: of two same-prior transfers the tracker v3.2 check applies at most one (the audit sequence)', () => {

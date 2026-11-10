@@ -208,8 +208,11 @@ export interface ClientState {
   records?: Records;
   /** The tracker and unit this profile is pinned to (set on its first /info read or completion; R13). */
   pins?: {tracker_nft_id: string; denomination: string};
-  /** Circulating credit (0.4): the R4 record of what was signed per edge and timestamp ({op?, slots: {slot: total}}). */
-  signed?: Record<string, Record<string, {op?: string; slots: Record<string, number>}>>;
+  /**
+   * Circulating credit (0.4): the R4 record of what was signed per edge and timestamp ({op?, slots: {slot: total}}, and
+   * prior_state, the state a prior slot there acknowledged as PA; absent in records written before it was recorded).
+   */
+  signed?: Record<string, Record<string, {op?: string; slots: Record<string, number>; prior_state?: {total: number; timestamp: number}}>>;
   /** R12: the edges a transfer or set-off changed (they take bound notes only). */
   novated_edges?: Record<string, true> | string[];
   /** D-1: this client's payment attempts per deal. */
@@ -253,6 +256,11 @@ export interface PaymentAttemptRecord {
   total: number;
   timestamp: number;
   quote_digest?: string | null;
+  /**
+   * 'basis/prior-ack/1' (novation.PRIOR_ACK): its prior slot was signed as PA (tracker v3.2). Absent in records written
+   * before it was recorded: R11's same-prior exemption needs it on both attempts.
+   */
+  ack?: string;
   signed_at?: string;
   /** The server's id of the attempt (a transfer id), once known. */
   attempt_id?: string;

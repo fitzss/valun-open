@@ -23,7 +23,9 @@
 //   summary      role, kind, id, deal_id, timestamp, amount, edges, your_net_change_PC, your_total_owed_change_PC,
 //                quote_digest, advisories, applied, paid_deals, retry_after_ms, needs_read_back, reason
 //   write_ahead  (only when ok) {op, signed, pending, attempt, attempts_seen}: persisted with applyWriteAhead BEFORE
-//                anything is sent (R9)
+//                anything is sent (R9); a signed group with a prior slot carries prior_state {total, timestamp} (the
+//                state its PA acknowledges, R4), and the attempt carries ack 'basis/prior-ack/1' (PRIOR_ACK: its
+//                prior slot is PA; R11's same-prior exemption needs it on both attempts)
 // Known JavaScript differences (malformed input only, as in the rest of this package): numbers are safe integers (a
 // u64 above 2^53 - 1 is not read), an integer-valued float counts as whole, and the reason of an item that could not
 // be read names the JavaScript error type (TypeError where Python may say KeyError or AttributeError).
@@ -172,15 +174,21 @@ function pendingEntry(pair, total, timestamp, kind, ref, direction) {
   return {pair, total, timestamp, kind, ref, direction};
 }
 
-function attemptRecord(dealId, route, edge, prior, priorTimestamp, priorSignature, total, timestamp, quote) {
+/** An attempt record; `ack` (PRIOR_ACK for what the evaluators sign: the prior slot is PA) only when given. */
+function attemptRecord(dealId, route, edge, prior, priorTimestamp, priorSignature, total, timestamp, quote, ack = null) {
   return {deal_id: dealId, route, edge, prior, prior_timestamp: priorTimestamp, prior_signature: priorSignature, total,
-    timestamp, quote_digest: quote};
+    timestamp, quote_digest: quote, ...(ack !== null ? {ack} : {})};
 }
 
 /** An attempt record of the shape the evaluators write (transfer_attempts[deal_id][i]); else R9 refuses. */
 function attemptOk(a) {
   return isDict(a) && ROUTES.includes(get(a, 'route')) && parseEdge(get(a, 'edge')) !== null && u64(get(a, 'prior'))
     && u64(get(a, 'total')) && u64(get(a, 'timestamp'));
+}
+
+/** An R4 record's prior_state: {total, timestamp}, the prior state a PA at its (edge, timestamp) acknowledged. */
+function priorStateOk(ps) {
+  return isDict(ps) && u64(get(ps, 'total')) && u64(get(ps, 'timestamp'));
 }
 
 /** Did attempts a and b acknowledge exactly the same edge state? False when either recorded no prior state. */
@@ -495,7 +503,8 @@ class Run {
   signedEntry(edge, ts) {
     const per = get(this.signed, edge);
     const e = per !== null ? get(per, String(ts)) : null;
-    if (e !== null && !(isDict(e) && typeof get(e, 'op') === 'string' && isDict(get(e, 'slots')))) this.unreadable();
+    if (e !== null && !(isDict(e) && typeof get(e, 'op') === 'string' && isDict(get(e, 'slots'))
+        && (get(e, 'prior_state') === null || priorStateOk(e.prior_state)))) this.unreadable();
     return e;
   }
 
@@ -726,18 +735,21 @@ class Run {
   }
 
   /**
-   * D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior, timestamp, and the timestamp of the
-   * acknowledged prior state) for the deal unless every earlier attempt is dead or is excluded by this one at the
-   * tracker: the same route on the same edge, acknowledging the same prior, while the edge is still exactly the state
-   * the earlier one acknowledged; for a transfer also at the same timestamp (the identical operation signed again) or,
-   * the same-prior exemption of tracker v3.2 (design v3.2 section 4), acknowledging the same prior state of the held
-   * edge, its total AND its timestamp, as the earlier transfer recorded. Audit VS-1 is closed by tracker v3.2: the prior
-   * acknowledgment PA(A,B,X,p_AB,T) binds the state (X, p_AB), which A->B has at most once, so the first of two such
-   * transfers to apply leaves the other dead for good. A transfer on another prior state, or after an attempt that
-   * recorded none, still waits for the window. A note retry stays excluded: only my signature lowers my own edge, and
-   * no novation or bound note of mine brings it back to a live bound note's prior (and on v3.2 its PA binds p too).
+   * D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior, timestamp, the timestamp of the
+   * acknowledged prior state, and ack: PRIOR_ACK when its prior slot is signed as PA) for the deal unless every earlier
+   * attempt is dead or is excluded by this one at the tracker: the same route on the same edge, acknowledging the same
+   * prior, while the edge is still exactly the state the earlier one acknowledged; for a transfer also at the same
+   * timestamp (the identical operation signed again) or, the same-prior exemption of tracker v3.2 (design v3.2 section
+   * 4), acknowledging the same prior state of the held edge, its total AND its timestamp, as the earlier transfer
+   * recorded, when both carry ack PRIOR_ACK. Audit VS-1 is closed by tracker v3.2: the prior acknowledgment
+   * PA(A,B,X,p_AB,T) binds the state (X, p_AB), which A->B has at most once, so the first of two such transfers to apply
+   * leaves the other dead for good. An earlier attempt without ack (a 0.4.0 build on tracker v3.1 recorded
+   * prior_timestamp too but signed M(A,B,X,T); the first v3.2 builds wrote no ack) is treated as before tracker v3.2. A
+   * transfer on another prior state, or after an attempt that recorded none or no ack, still waits for the window. A
+   * note retry stays excluded: only my signature lowers my own edge, and no novation or bound note of mine brings it
+   * back to a live bound note's prior (and on v3.2 its PA binds p too).
    */
-  oneLiveAttempt(dealId, price, route, edge, prior, timestamp = null, priorTimestamp = null) {
+  oneLiveAttempt(dealId, price, route, edge, prior, timestamp = null, priorTimestamp = null, ack = null) {
     const s = this.summary;
     this.notPaidYet(dealId);
     if (Object.hasOwn(s.paid_deals, dealId)) {
@@ -754,8 +766,10 @@ class Run {
     const same = a => {
       if (!(a.route === route && a.edge === edge && pyEq(a.prior, prior))) return false;
       if (route === 'note' || (timestamp !== null && a.timestamp === timestamp)) return true;
-      // tracker v3.2: the same prior state of the same held edge (total and timestamp) at another T
-      return nat(priorTimestamp) && u64(get(a, 'prior_timestamp')) && a.prior_timestamp === priorTimestamp;
+      // tracker v3.2: the same prior state of the same held edge (total and timestamp) at another T, when both
+      // attempts signed PA (ack): an attempt recorded without ack may have signed v3.1's M(A,B,X,T)
+      return ack === PRIOR_ACK && get(a, 'ack') === PRIOR_ACK && nat(priorTimestamp) && u64(get(a, 'prior_timestamp'))
+        && a.prior_timestamp === priorTimestamp;
     };
     if (looked.some(([a, o, st]) => o === 'unknown' || (o === 'alive' && same(a) && !exactPrior(a, st))
         || (o === 'alive' && !expires(a) && !same(a)))) {
@@ -886,15 +900,24 @@ class Run {
     }
   }
 
+  /**
+   * R4: refuse when my record holds, at one of the (edge, timestamp) of `slots`, another operation or other totals, or
+   * (tracker v3.2) a prior acknowledgment of another prior state: a group with a prior slot records the state its PA
+   * acknowledges (prior_state {total, timestamp}), and a second PA at the same (edge, timestamp, op) over another state
+   * is refused, as the server's sandbox signer refuses it. A record without prior_state (written before it was
+   * recorded) is compared on op and totals only. Returns write_ahead.signed.
+   */
   noReuse(op, slots) {
-    const groups = new Map(), order = [];
-    for (const [s, i, r, total, ts] of slots) {      // a prior slot's sixth item (its prior timestamp) is not recorded
+    const groups = new Map(), order = [], priors = new Map();
+    for (const x of slots) {
+      const [s, i, r, total, ts] = x;
       const e = edgeKey(i, r), k = key([e, ts]);
       if (!groups.has(k)) {
         groups.set(k, {edge: e, ts, slots: {}});
         order.push(k);
       }
       put(groups.get(k).slots, s, total);
+      if (x.length === 6) priors.set(k, {total, timestamp: x[5]});   // a prior slot [slot, I, R, X, T, p]: PA(I,R,X,p,T)
     }
     for (const k of order) {
       const g = groups.get(k);
@@ -902,10 +925,14 @@ class Run {
       if (have !== null && (have.op !== op || !pyEq(have.slots, g.slots))) {
         this.refuse('timestamp_reused', 'you already signed another operation at this edge and timestamp');
       }
+      const hp = have !== null ? get(have, 'prior_state') : null, mine = priors.get(k);
+      if (hp !== null && mine !== undefined && !(hp.total === mine.total && hp.timestamp === mine.timestamp)) {
+        this.refuse('timestamp_reused', 'you already acknowledged another prior state at this edge and timestamp');
+      }
     }
     return order.map(k => {
       const g = groups.get(k);
-      return {edge: g.edge, timestamp: g.ts, op, slots: {...g.slots}};
+      return {edge: g.edge, timestamp: g.ts, op, slots: {...g.slots}, ...(priors.has(k) ? {prior_state: {...priors.get(k)}} : {})};
     });
   }
 
@@ -993,7 +1020,7 @@ function bound(run, tpl) {
   run.fresh(ts, prior === null ? [] : [prior.timestamp]);
   run.show(edge, prior, true);
   run.addEdge(edge, 'issuer', P, total, ts);
-  run.oneLiveAttempt(D, deal.price, 'note', edge, P, ts, p);
+  run.oneLiveAttempt(D, deal.price, 'note', edge, P, ts, p, PRIOR_ACK);
   run.noBoundNoteRestored([[edge, total, ts]]);
   run.contract();
   const op = 'note:' + D;
@@ -1001,7 +1028,7 @@ function bound(run, tpl) {
   const signed = run.noReuse(op, slots);
   return [slots, {
     op, signed, pending: [pendingEntry(edge, total, ts, 'note', D, 'out')],
-    attempt: attemptRecord(D, 'note', edge, P, p, prior === null ? null : prior.signature, total, ts, null),
+    attempt: attemptRecord(D, 'note', edge, P, p, prior === null ? null : prior.signature, total, ts, null, PRIOR_ACK),
     attempts_seen: run.seen,
   }];
 }
@@ -1088,7 +1115,7 @@ function payer(run, v, consent) {
   run.show(dest, tb, false);
   run.addEdge(held, 'creditor', X, X - a, T);
   run.addEdge(dest, 'payer', Y, Y + a, T);
-  run.oneLiveAttempt(D, deal.price, 'transfer', held, X, T, pAB);
+  run.oneLiveAttempt(D, deal.price, 'transfer', held, X, T, pAB, PRIOR_ACK);
   const q = quoteDigest({network: deal.network, tracker_nft_id: v.nft, denomination: v.denom, deal_id: D,
     terms_hash: deal.terms_hash, deliverable_sha256: deal.deliverable_sha256, issuer_pubkey: A, payer_pubkey: me,
     payee_pubkey: C, amount: a});
@@ -1113,7 +1140,7 @@ function payer(run, v, consent) {
   const signed = run.noReuse(op, slots);
   return [slots.filter(x => !v.signed_by_you.has(x[0])), {
     op, signed, pending: [pendingEntry(held, X - a, T, 'transfer', D, 'in')],
-    attempt: attemptRecord(D, 'transfer', held, X, pAB, fb.signature, X - a, T, q),
+    attempt: attemptRecord(D, 'transfer', held, X, pAB, fb.signature, X - a, T, q, PRIOR_ACK),
     attempts_seen: run.seen,
   }];
 }
@@ -1350,7 +1377,8 @@ function sub(state, k) {
  * R9: record in the client's state (in place) what an evaluation is about to sign, before anything is sent:
  * state.signed (R4), the pending entries in state.records and the payment attempt in state.transfer_attempts[deal_id]
  * (D-1). Run it inside the store's update(), on the state the evaluation read. Idempotent. It writes nothing when the
- * state changed since the evaluation (WriteAheadConflict timestamp_reused, already_paid or transfer_window_open).
+ * state changed since the evaluation (WriteAheadConflict timestamp_reused: another operation, or a prior acknowledgment
+ * of another prior state, at one of its (edge, timestamp); already_paid or transfer_window_open).
  * ValueError (records_unreadable) for a record that is not of its shape.
  */
 export function applyWriteAhead(state, writeAhead, signedAt = null) {
@@ -1361,6 +1389,10 @@ export function applyWriteAhead(state, writeAhead, signedAt = null) {
     const have = truthy(per) ? get(per, String(g.timestamp)) : null;
     if (have !== null && (!isDict(have) || get(have, 'op') !== g.op || !pyEq(get(have, 'slots'), g.slots))) {
       throw new WriteAheadConflict('timestamp_reused', 'another operation is already recorded at this edge and timestamp; nothing was signed');
+    }
+    const hp = have !== null ? get(have, 'prior_state') : null, gp = get(g, 'prior_state');
+    if (hp !== null && gp !== null && !(priorStateOk(hp) && hp.total === gp.total && hp.timestamp === gp.timestamp)) {
+      throw new WriteAheadConflict('timestamp_reused', 'another prior state is already acknowledged at this edge and timestamp; nothing was signed');
     }
   }
   const a = get(writeAhead, 'attempt');
@@ -1380,7 +1412,8 @@ export function applyWriteAhead(state, writeAhead, signedAt = null) {
   }
   for (const g of writeAhead.signed) {
     const per = isDict(get(signed, g.edge)) ? signed[g.edge] : put(signed, g.edge, {});
-    put(per, String(g.timestamp), {op: g.op, slots: {...g.slots}});
+    const ps = get(g, 'prior_state');
+    put(per, String(g.timestamp), {op: g.op, slots: {...g.slots}, ...(truthy(ps) ? {prior_state: {...ps}} : {})});
   }
   for (const p of item(writeAhead, 'pending')) {
     records.addPending(recs, p.pair, p.total, p.timestamp, p.kind, p.ref, p.direction, signedAt);

@@ -35,9 +35,10 @@ UNIT = 'PC'
 #   records   per-edge confirmed state and pending entries (records.py), and records['paid_deals'] {deal_id: {route,
 #             edge, total, timestamp}}: deals a confirmed payment paid, never paid again (decision D-1 item 5)
 #   pins      {tracker_nft_id, denomination} (R13)
-#   circulation (novation.py): signed (R4) {edge: {str(ts): {op, slots}}}; novated_edges {edge: true} (R12);
-#             transfer_attempts {deal_id: [attempt]} (D-1); approved_payments {deal_id: quote_digest} (the quote a
-#             payment by transfer was signed with); consent_policy {setoff, as_issuer, as_new_creditor, max_PC,
+#   circulation (novation.py): signed (R4) {edge: {str(ts): {op, slots, prior_state}}}; novated_edges {edge: true}
+#             (R12); transfer_attempts {deal_id: [attempt]} (D-1, attempts with ack: signed as PA); approved_payments
+#             {deal_id: quote_digest} (the quote a payment by transfer was signed with); consent_policy {setoff,
+#             as_issuer, as_new_creditor, max_PC,
 #             accept_issuers, refuse_issuers} (absent: every role off); consent_loop (for the agent layer);
 #             consents_last_run_ms and consent_log (the last CONSENT_LOG_MAX decisions of process_consents());
 #             journal_seq (the GET /edges journal position sync_edges() has read up to);

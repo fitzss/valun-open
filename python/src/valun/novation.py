@@ -52,7 +52,8 @@ Each evaluator returns {'ok', 'code', 'to_sign', 'summary', 'write_ahead'}:
                timestamp}} (deals those entries or earlier attempts paid): the caller records both (apply_findings)
                whether or not the item is signed; retry_after_ms and needs_read_back (transfer_window_open); reason
                (one sentence, for people).
-  write_ahead  only when ok: {op, signed [{edge, timestamp, op, slots {slot_key: total}}], pending [{pair, total,
+  write_ahead  only when ok: {op, signed [{edge, timestamp, op, slots {slot_key: total}, and for a group with a prior
+               slot prior_state {total, timestamp}, the state its PA acknowledges}], pending [{pair, total,
                timestamp, kind, ref, direction}], attempt (a payment attempt) or None, attempts_seen [[route, edge,
                total, timestamp]] (the key of each earlier attempt of the deal this evaluation weighed: its attempt
                records and pending payment entries, in classify_attempts order; [] for an evaluation that makes no
@@ -93,11 +94,13 @@ The checks, in this order (the first that fails gives the code; PROTOCOL.md 15.3
                              the rule stays as a second line)
   v3.2 feature_unavailable   a bound note, the payer's transfer or the payee's consent while ctx['novation'] does not
                              report the tracker v3.2 contract (contract_problem): nothing that signs a prior slot
-  R4   timestamp_reused      a different operation (or other totals) already signed at the same (edge, timestamp)
+  R4   timestamp_reused      a different operation (or other totals) already signed at the same (edge, timestamp), or
+                             a prior acknowledgment there of another prior state (the record's prior_state)
 
 D-1, one live payment attempt per deal (R11 extended to own notes), with decision D-2 a (full edge states). An attempt
 is a signed bound note or a signed transfer, recorded in transfer_attempts[deal_id] (write_ahead.attempt) with the full
-edge state it acknowledged (prior, prior_timestamp, prior_signature); pending payment entries in the records count too.
+edge state it acknowledged (prior, prior_timestamp, prior_signature) and ack 'basis/prior-ack/1' (PRIOR_ACK: its prior
+slot was signed as PA); pending payment entries in the records count too.
 attempt_outcome() classifies each earlier attempt from the current state of the edge it would change (the template's,
 the item's or ctx['edges']; an absent edge is total 0 at timestamp 0, but only for an attempt that acknowledged an
 absent edge: one that acknowledged a prior above 0 reads an absent edge as no read-back): 'applied' (the edge shows its
@@ -112,9 +115,12 @@ the same prior on the same edge (only my signature lowers my edge, and I never s
 brings it back to the prior of a bound note of mine that can still apply), a transfer signed again at the same
 timestamp (the identical operation), or (the same-prior exemption, design v3.2 section 4) a transfer at another
 timestamp that acknowledges the same prior state of the same held edge A->B, total AND timestamp, as the earlier
-transfer recorded (prior, prior_timestamp). Audit VS-1 is closed by tracker v3.2: both attempts' prior
-acknowledgments are PA(A,B,X,p_AB,T), the edge is at the state (X, p_AB) at most once (its timestamps strictly
-increase), so the first of them to apply leaves the other dead for good, whatever totals A->B and A->C come back to.
+transfer recorded (prior, prior_timestamp), when both carry ack 'basis/prior-ack/1'. Audit VS-1 is closed by tracker
+v3.2: both attempts' prior acknowledgments are PA(A,B,X,p_AB,T), the edge is at the state (X, p_AB) at most once (its
+timestamps strictly increase), so the first of them to apply leaves the other dead for good, whatever totals A->B and
+A->C come back to. An earlier attempt without ack is treated as before tracker v3.2: a 0.4.0 build on tracker v3.1
+recorded prior_timestamp too but signed the 80-byte M(A,B,X,T), which does not exclude a PA attempt (records of the
+first v3.2 builds, which signed PA but wrote no ack, are treated the same: one wait for their window).
 Everything else stays windowed as before: a payment through another issuer or of another kind, one on another prior
 state of the edge (it moved: a new prior), one after an earlier attempt that recorded no prior state, and every payment
 while an ordinary note may apply. 'dead' (a read-back shows it did not
@@ -136,14 +142,18 @@ ctx keys (only me_pk, now_ms and verify are checked as arguments; the others giv
   pins             {tracker_nft_id, denomination} pinned at enroll or on the first 0.4 run (R13)
   records          records.py records ({pair: {confirmed, pending}}), with records['paid_deals'] {deal_id: {route,
                    edge, total, timestamp}} (D-1 item 5); None = empty
-  signed           R4 record {edge: {str(timestamp): {op, slots {slot_key: total}}}}; None = empty
+  signed           R4 record {edge: {str(timestamp): {op, slots {slot_key: total}, prior_state}}}; prior_state {total,
+                   timestamp}: the prior state a prior slot there acknowledged (PA), only where there is one (records
+                   written before it was recorded have none); None = empty
   transfer_attempts  {deal_id: [attempt]}, attempt {deal_id, route 'note'|'transfer', edge (the edge whose prior it
                    acknowledges: A>B for a transfer, B>C for a note), prior, prior_timestamp and prior_signature (the
                    acknowledged state: timestamp 0 and signature None for an absent edge), total (that edge's total
-                   once it applies), timestamp, quote_digest, signed_at; outcome 'applied' once the client learnt it
-                   applied, or 'not_applied' only by the owner's decision (attempt_outcome); attempt_id, the server's
-                   id of it, once known; resolved_at, the time (ISO 8601, UTC) of the owner's decision, written with
-                   outcome by Client.resolve_attempt (for people: no rule here reads it)}; None = empty
+                   once it applies), timestamp, quote_digest, ack ('basis/prior-ack/1': its prior slot was signed as
+                   PA; absent in records written before it was recorded), signed_at; outcome 'applied' once the
+                   client learnt it applied, or 'not_applied' only by the owner's decision (attempt_outcome);
+                   attempt_id, the server's id of it, once known; resolved_at, the time (ISO 8601, UTC) of the owner's
+                   decision, written with outcome by Client.resolve_attempt (for people: no rule here reads it)}; None
+                   = empty
   novated_edges    edges a novation changed (a dict keyed by edge, or a list of edges); None = none (R12)
   features         /info features (bound templates: bound_notes/1 makes an unbound template bound_note_required)
   novation         GET /info novation, the server's report of its tracker's contract: a bound note, the payer's
@@ -297,15 +307,24 @@ def _pending(pair, total, timestamp, kind, ref, direction):
     return {'pair': pair, 'total': total, 'timestamp': timestamp, 'kind': kind, 'ref': ref, 'direction': direction}
 
 
-def _attempt(deal_id, route, edge, prior, prior_timestamp, prior_signature, total, timestamp, quote):
-    return {'deal_id': deal_id, 'route': route, 'edge': edge, 'prior': prior, 'prior_timestamp': prior_timestamp,
-            'prior_signature': prior_signature, 'total': total, 'timestamp': timestamp, 'quote_digest': quote}
+def _attempt(deal_id, route, edge, prior, prior_timestamp, prior_signature, total, timestamp, quote, ack=None):
+    """An attempt record; `ack` (PRIOR_ACK for what the evaluators sign: the prior slot is PA) only when given."""
+    a = {'deal_id': deal_id, 'route': route, 'edge': edge, 'prior': prior, 'prior_timestamp': prior_timestamp,
+         'prior_signature': prior_signature, 'total': total, 'timestamp': timestamp, 'quote_digest': quote}
+    if ack is not None:
+        a['ack'] = ack
+    return a
 
 
 def _attempt_ok(a):
     """An attempt record of the shape the evaluators write (transfer_attempts[deal_id][i]); else R9 refuses."""
     return (isinstance(a, dict) and a.get('route') in ROUTES and parse_edge(a.get('edge')) is not None
             and _u64(a.get('prior')) and _u64(a.get('total')) and _u64(a.get('timestamp')))
+
+
+def _prior_state_ok(ps):
+    """An R4 record's prior_state: {total, timestamp}, the prior state a PA at its (edge, timestamp) acknowledged."""
+    return isinstance(ps, dict) and _u64(ps.get('total')) and _u64(ps.get('timestamp'))
 
 
 def _same_prior_state(a, b):
@@ -611,7 +630,8 @@ class _Run:
     def signed_entry(self, edge, ts):
         per = self.signed.get(edge)
         e = per.get(str(ts)) if per is not None else None
-        if e is not None and not (isinstance(e, dict) and isinstance(e.get('op'), str) and isinstance(e.get('slots'), dict)):
+        if e is not None and not (isinstance(e, dict) and isinstance(e.get('op'), str) and isinstance(e.get('slots'), dict)
+                                  and (e.get('prior_state') is None or _prior_state_ok(e['prior_state']))):
             self.unreadable()
         return e
 
@@ -824,20 +844,24 @@ class _Run:
             looked.append((a, o, state))
         return looked
 
-    def one_live_attempt(self, deal_id, price, route, edge, prior, timestamp=None, prior_timestamp=None):
-        """D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior, timestamp, and the timestamp
-        of the acknowledged prior state) for the deal unless every earlier attempt is dead or is excluded by this one
-        at the tracker: the same route on the same edge, acknowledging the same prior, while the edge is still exactly
-        the state the earlier one acknowledged; for a transfer also at the same timestamp (the identical operation
-        signed again: the tracker applies an edge's operations at strictly increasing timestamps, so at most one of the
-        two can apply) or, the same-prior exemption of tracker v3.2 (design v3.2 section 4), acknowledging the same
-        prior state of the held edge, its total AND its timestamp, as the earlier transfer recorded.
+    def one_live_attempt(self, deal_id, price, route, edge, prior, timestamp=None, prior_timestamp=None, ack=None):
+        """D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior, timestamp, the timestamp of
+        the acknowledged prior state, and ack: PRIOR_ACK when its prior slot is signed as PA) for the deal unless every
+        earlier attempt is dead or is excluded by this one at the tracker: the same route on the same edge,
+        acknowledging the same prior, while the edge is still exactly the state the earlier one acknowledged; for a
+        transfer also at the same timestamp (the identical operation signed again: the tracker applies an edge's
+        operations at strictly increasing timestamps, so at most one of the two can apply) or, the same-prior exemption
+        of tracker v3.2 (design v3.2 section 4), acknowledging the same prior state of the held edge, its total AND its
+        timestamp, as the earlier transfer recorded, when both carry ack PRIOR_ACK.
 
         Why the exemption holds (audit VS-1, closed by tracker v3.2): the prior acknowledgment of A->B is
         PA(A,B,X,p_AB,T), and the edge is at (X, p_AB) at most once, so of two transfers acknowledging that state the
         first to apply leaves the other dead for good, at any T and whatever totals both edges come back to (on tracker
-        v3.1, M(A,B,X,T) bound no prior timestamp and both could apply). A transfer on another prior state, or after an
-        attempt that recorded none (prior_timestamp), still waits for the window. A note retry stays excluded at
+        v3.1, M(A,B,X,T) bound no prior timestamp and both could apply). Only an earlier attempt recorded with ack is
+        known to have signed PA: one without it (written by a 0.4.0 build on tracker v3.1, which recorded
+        prior_timestamp too but signed M(A,B,X,T), or by the first v3.2 builds, which wrote no ack) is treated as before
+        tracker v3.2. A transfer on another prior state, or after an attempt that recorded none (prior_timestamp) or no
+        ack, still waits for the window. A note retry stays excluded at
         another timestamp, as before: only my own signature lowers my own edge, and I sign no novation
         (no_bound_note_restored) and no bound note (_bound) that brings it back to the prior of a bound note of mine
         that can still apply (and on tracker v3.2 its acknowledgment binds the prior timestamp as well)."""
@@ -857,8 +881,10 @@ class _Run:
                 return False
             if route == 'note' or (timestamp is not None and a['timestamp'] == timestamp):
                 return True
-            # tracker v3.2: the same prior state of the same held edge (total and timestamp) at another T
-            return _nat(prior_timestamp) and _u64(a.get('prior_timestamp')) and a['prior_timestamp'] == prior_timestamp
+            # tracker v3.2: the same prior state of the same held edge (total and timestamp) at another T, when both
+            # attempts signed PA (ack): an attempt recorded without ack may have signed v3.1's M(A,B,X,T)
+            return (ack == PRIOR_ACK and a.get('ack') == PRIOR_ACK and _nat(prior_timestamp)
+                    and _u64(a.get('prior_timestamp')) and a['prior_timestamp'] == prior_timestamp)
 
         if any(o == 'unknown' or (o == 'alive' and same(a) and not exact_prior(a, s))
                or (o == 'alive' and not _expires(a) and not same(a)) for a, o, s in looked):
@@ -971,18 +997,31 @@ class _Run:
                                                    'once that note is past its maximum age')
 
     def no_reuse(self, op, slots):
-        groups, order = {}, []
-        for s, i, r, total, ts in (x[:5] for x in slots):
+        """R4: refuse when my record holds, at one of the (edge, timestamp) of `slots`, another operation or other
+        totals, or (tracker v3.2) a prior acknowledgment of another prior state: a group with a prior slot records the
+        state its PA acknowledges (prior_state {total, timestamp}), and a second PA at the same (edge, timestamp, op)
+        over another state is refused, as the server's sandbox signer refuses it. A record without prior_state (written
+        before it was recorded) is compared on op and totals only. Returns write_ahead['signed']."""
+        groups, priors, order = {}, {}, []
+        for x in slots:
+            s, i, r, total, ts = x[:5]
             key = (edge_key(i, r), ts)
             if key not in groups:
                 groups[key] = {}
                 order.append(key)
             groups[key][s] = total
+            if len(x) == 6:                   # a prior slot (slot, I, R, X, T, p): PA(I,R,X,p,T)
+                priors[key] = {'total': total, 'timestamp': x[5]}
         for key in order:
             have = self.signed_entry(*key)
             if have is not None and (have['op'] != op or have['slots'] != groups[key]):
                 self.refuse('timestamp_reused', 'you already signed another operation at this edge and timestamp')
-        return [{'edge': e, 'timestamp': ts, 'op': op, 'slots': dict(groups[(e, ts)])} for e, ts in order]
+            hp = have.get('prior_state') if have is not None else None
+            if hp is not None and key in priors \
+                    and (hp['total'], hp['timestamp']) != (priors[key]['total'], priors[key]['timestamp']):
+                self.refuse('timestamp_reused', 'you already acknowledged another prior state at this edge and timestamp')
+        return [dict({'edge': e, 'timestamp': ts, 'op': op, 'slots': dict(groups[(e, ts)])},
+                     **({'prior_state': dict(priors[(e, ts)])} if (e, ts) in priors else {})) for e, ts in order]
 
     def bound_advertised(self):
         f = self.ctx.get('features')
@@ -1064,7 +1103,7 @@ def _bound(run, tpl):
     run.fresh(ts, [] if prior is None else [prior['timestamp']])
     run.show(edge, prior, mine=True)
     run.add_edge(edge, 'issuer', P, total, ts)
-    run.one_live_attempt(D, deal['price'], 'note', edge, P, ts, p)
+    run.one_live_attempt(D, deal['price'], 'note', edge, P, ts, p, PRIOR_ACK)
     run.no_bound_note_restored([(edge, total, ts)])
     run.contract()
     op = 'note:' + D
@@ -1072,7 +1111,7 @@ def _bound(run, tpl):
     signed = run.no_reuse(op, slots)
     return slots, {'op': op, 'signed': signed, 'pending': [_pending(edge, total, ts, 'note', D, 'out')],
                    'attempt': _attempt(D, 'note', edge, P, p, None if prior is None else prior['signature'], total, ts,
-                                       None),
+                                       None, PRIOR_ACK),
                    'attempts_seen': run.seen}
 
 
@@ -1156,7 +1195,7 @@ def _payer(run, v, consent):
     run.show(dest, tb, mine=False)
     run.add_edge(held, 'creditor', X, X - a, T)
     run.add_edge(dest, 'payer', Y, Y + a, T)
-    run.one_live_attempt(D, deal['price'], 'transfer', held, X, T, p_ab)
+    run.one_live_attempt(D, deal['price'], 'transfer', held, X, T, p_ab, PRIOR_ACK)
     q = quote_digest({'network': deal['network'], 'tracker_nft_id': v['nft'], 'denomination': v['denom'],
                       'deal_id': D, 'terms_hash': deal['terms_hash'], 'deliverable_sha256': deal['deliverable_sha256'],
                       'issuer_pubkey': A, 'payer_pubkey': me, 'payee_pubkey': C, 'amount': a})
@@ -1181,7 +1220,7 @@ def _payer(run, v, consent):
     signed = run.no_reuse(op, slots)
     return ([x for x in slots if x[0] not in v['signed_by_you']],
             {'op': op, 'signed': signed, 'pending': [_pending(held, X - a, T, 'transfer', D, 'in')],
-             'attempt': _attempt(D, 'transfer', held, X, p_ab, fb['signature'], X - a, T, q),
+             'attempt': _attempt(D, 'transfer', held, X, p_ab, fb['signature'], X - a, T, q, PRIOR_ACK),
              'attempts_seen': run.seen})
 
 
@@ -1432,7 +1471,8 @@ def apply_write_ahead(state, write_ahead, signed_at=None):
     state['transfer_attempts'][deal_id] (D-1). Run it inside the store's update(), on the state the evaluation read
     (evaluate and write ahead in one locked step). Idempotent.
     It checks first, and writes nothing when the state changed since the evaluation (a concurrent process): another
-    operation already recorded at one of its (edge, timestamp) (WriteAheadConflict timestamp_reused, R4), the deal
+    operation, or a prior acknowledgment of another prior state (prior_state), already recorded at one of its (edge,
+    timestamp) (WriteAheadConflict timestamp_reused, R4), the deal
     recorded as paid (already_paid), or a payment attempt of the deal that the evaluation did not weigh
     (write_ahead['attempts_seen']; transfer_window_open, D-1: so a second attempt is never added on a stale snapshot).
     ValueError (records_unreadable) for a record that is not of its shape."""
@@ -1444,6 +1484,11 @@ def apply_write_ahead(state, write_ahead, signed_at=None):
         have = per.get(str(g['timestamp'])) if per else None
         if have is not None and (not isinstance(have, dict) or have.get('op') != g['op'] or have.get('slots') != g['slots']):
             raise WriteAheadConflict('timestamp_reused', 'another operation is already recorded at this edge and '
+                                                         'timestamp; nothing was signed')
+        hp, gp = (have.get('prior_state') if have is not None else None), g.get('prior_state')
+        if hp is not None and gp is not None and not (_prior_state_ok(hp) and (hp['total'], hp['timestamp'])
+                                                      == (gp['total'], gp['timestamp'])):
+            raise WriteAheadConflict('timestamp_reused', 'another prior state is already acknowledged at this edge and '
                                                          'timestamp; nothing was signed')
     a = write_ahead.get('attempt')
     if a:
@@ -1459,7 +1504,9 @@ def apply_write_ahead(state, write_ahead, signed_at=None):
             raise WriteAheadConflict('transfer_window_open', 'another payment attempt of this deal was recorded '
                                                              'meanwhile; evaluate it again; nothing was signed')
     for g in write_ahead['signed']:
-        signed.setdefault(g['edge'], {})[str(g['timestamp'])] = {'op': g['op'], 'slots': dict(g['slots'])}
+        ps = g.get('prior_state')
+        signed.setdefault(g['edge'], {})[str(g['timestamp'])] = dict({'op': g['op'], 'slots': dict(g['slots'])},
+                                                                     **({'prior_state': dict(ps)} if ps else {}))
     for p in write_ahead['pending']:
         _records.add_pending(recs, p['pair'], p['total'], p['timestamp'], p['kind'], p['ref'], p['direction'], signed_at)
     if a:

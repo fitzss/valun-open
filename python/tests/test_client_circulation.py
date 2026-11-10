@@ -553,9 +553,10 @@ class BoundComplete(Base):
         self.assertEqual(records.get(s['records'], BC)['confirmed']['total'], 9)
         self.assertEqual(s['issued'], {BC: 9})
         self.assertEqual(s['records']['paid_deals'][DEAL], {'route': 'note', 'edge': BC, 'total': 9, 'timestamp': n['timestamp']})
-        self.assertEqual([(a['route'], a['edge'], a['prior'], a['total'], a['timestamp']) for a in att(s)],
-                         [('note', BC, 6, 9, n['timestamp'])])
-        self.assertEqual(s['signed'][BC][str(n['timestamp'])], {'op': f'note:{DEAL}', 'slots': {f'{BC}:prior': 6, f'{BC}:new': 9}})
+        self.assertEqual([(a['route'], a['edge'], a['prior'], a['total'], a['timestamp'], a['ack']) for a in att(s)],
+                         [('note', BC, 6, 9, n['timestamp'], 'basis/prior-ack/1')])
+        self.assertEqual(s['signed'][BC][str(n['timestamp'])], {'op': f'note:{DEAL}', 'slots': {f'{BC}:prior': 6, f'{BC}:new': 9},
+                                                                 'prior_state': {'total': 6, 'timestamp': TS_BC}})
 
     def test_a_first_note_acknowledges_an_absent_edge(self):
         del self.net.tracker[BC]
@@ -655,10 +656,11 @@ class WriteAhead(Base):
         body = self.net.pay_posts[0]
         T = body['timestamp']
         self.assertEqual(path, f'/pilot/v1/deals/{DEAL}/pay-by-transfer')
-        self.assertEqual(disk['signed'][AB][str(T)], {'op': f'pay:{DEAL}', 'slots': {f'{AB}:prior': 10, f'{AB}:new': 7}})
+        self.assertEqual(disk['signed'][AB][str(T)], {'op': f'pay:{DEAL}', 'slots': {f'{AB}:prior': 10, f'{AB}:new': 7},
+                                                      'prior_state': {'total': 10, 'timestamp': TS_AB}})
         self.assertEqual(disk['signed'][AC][str(T)], {'op': f'pay:{DEAL}', 'slots': {f'{AC}:new': 7}})
-        self.assertEqual([(a['route'], a['edge'], a['prior'], a['total']) for a in disk['transfer_attempts'][DEAL]],
-                         [('transfer', AB, 10, 7)])
+        self.assertEqual([(a['route'], a['edge'], a['prior'], a['total'], a['ack']) for a in disk['transfer_attempts'][DEAL]],
+                         [('transfer', AB, 10, 7, 'basis/prior-ack/1')])
         self.assertEqual([(p['total'], p['timestamp'], p['kind'], p['ref'], p['direction']) for p in disk['records'][AB]['pending']],
                          [(7, T, 'transfer', DEAL, 'in')])
         self.assertEqual(disk['approved_payments'], {DEAL: body['quote_digest']})
@@ -1196,11 +1198,23 @@ class Consents(Base):
         q, it = self.payer_item()
         self.net.consent_items = [it]
         earlier = [{'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10, 'prior_timestamp': TS_AB, 'total': 7,
-                    'timestamp': self.T - 60_000, 'quote_digest': q, 'signed_at': None}]
+                    'timestamp': self.T - 60_000, 'quote_digest': q, 'ack': 'basis/prior-ack/1', 'signed_at': None}]
         rep = self.client(profile(B_ID, approved_payments={DEAL: q}, transfer_attempts={DEAL: earlier})).process_consents()
         self.assertEqual([(e['id'], e['role']) for e in rep['signed']], [(TID, 'payer')])
         (_cid, body), = self.net.consent_posts
         self.assertTrue(signed_by(B, pa(A['pubkey'], B['pubkey'], 10, TS_AB, self.T), body['signatures'][f'{AB}:prior']))
+
+    def test_a_regenerated_transfer_is_refused_while_an_earlier_attempt_recorded_without_ack_is_alive(self):
+        # The same earlier attempt recorded without ack (by a build that may have signed tracker v3.1's M(A,B,X,T) as
+        # its prior acknowledgment, or by the first v3.2 build): treated as before tracker v3.2, it waits.
+        self.net.me_id = B_ID
+        q, it = self.payer_item()
+        self.net.consent_items = [it]
+        earlier = [{'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10, 'prior_timestamp': TS_AB, 'total': 7,
+                    'timestamp': self.T - 60_000, 'quote_digest': q, 'signed_at': None}]
+        rep = self.client(profile(B_ID, approved_payments={DEAL: q}, transfer_attempts={DEAL: earlier})).process_consents()
+        self.assertEqual([(e['id'], e['code']) for e in rep['refused']], [(TID, 'transfer_window_open')])
+        self.assertEqual(self.net.consent_posts, [])
 
     def test_a_regenerated_transfer_is_refused_while_an_earlier_attempt_on_another_state_is_alive(self):
         # The earlier attempt acknowledged another state of my claim (the same total, an earlier timestamp): not
