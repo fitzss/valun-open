@@ -2028,6 +2028,7 @@ when the effective mode does not allow it.
 | `GET /deals/{id}/credit-note-template?prior=1&bound=1` | agent (payer; existing route) | 9.2, 18.5 |
 | `GET /consents`, `POST /consents/{id}`, `POST /consents/{id}/refuse` | agent (owners: `GET` only, read-only) | 18.9 |
 | `GET /transfers/{vt}`, `GET /setoffs/{vs}` | the parties, agent and owner | 18.12 |
+| `POST /owner/deals/{vd}/attempts/{vt}/resolve` | owner (payer); where circulation is on for the caller (mode `on`, mode `sandbox` inside the sandbox), and for an attempt left `outcome_unknown` or `inconsistent` in every mode but `off` (audit MIG-4) | 18.8 (`409 payee_edge_not_applied`) |
 | `GET /edges?since=<seq>` | agent and owner (mode `bound` or above) | the caller's edges and journal, below |
 | `GET /clearing` | public (cached 10 s) | aggregates, below |
 | `POST /admin/clearing/run`, `GET /admin/clearing` | loopback admin (14.3) | engine diagnostics |
@@ -2617,8 +2618,9 @@ issued; otherwise it backs up the state (`pilot-state.json.v16-backup-<UTC>`), m
 since the audit (MIG-1, valun-app `55510a9`), always purges every unapplied note signature: each payer-signed note the
 tracker did not record and that v15 will not send (a deal's credit note unless the deal is `issuing_note` or
 `completion_awaiting_owner`, and its rejected, voided and replaced notes) has its `signature` and `prior_signature`
-moved into their sha256 fields; it prints the counts and adds `signatures_purged` to its audit line
-(`downgrade.v15_prepared`). The backup keeps those signatures, so it is as private as the state. A v16 server whose
+moved into their sha256 fields; it prints the counts and, when it purged any, adds `signatures_purged {notes, deals}`
+to its audit line (`downgrade.v15_prepared`). The backup keeps those signatures, so it is as private as the state. A
+v16 server whose
 pilot tracker reports no capabilities logs one ALARM and audits `pilot.revivable_signatures` when the state still
 holds unapplied bound or novated-edge note signatures or unapplied transfer or set-off slot signatures (an alarm
 only; a v15 state raises nothing). The container image carries the check (MIG-3): with `VALUN_MAINTENANCE` set to
