@@ -30,9 +30,10 @@ its `messages` map slot keys to message hexes; a stale transfer is regenerated o
 transfer attempts in 24 hours, regenerations included (it said "regenerated at most 3 times"); a held `pay_by_transfer`
 approval that is rejected, stale or voided by a revocation returns a deal that came from `payment_due` there (18.10,
 18.11, as 18.16 already said), and `if_rejected` is quoted as the server words it; the tracker's `422` without a `code`
-for an unknown or a missing field; `by: "payer"` and `"member"` in 18.13; and the order of the roles in the capability
-header is now part of the contract (18.1), because the conformance replay compares the header exactly. No vector
-changed. Revision 9 adds OQ-58 (section J) and changes no other item's status: the headings and table cells that still said
+for an unknown or a missing field; `by: "payer"` and `"member"` in 18.13; the order of the roles in the capability
+header is now part of the contract (18.1), because the conformance replay compares the header exactly; and 14.4 gives
+the transcript's 236 requests (it still said 147). No vector changed.
+Revision 9 adds OQ-58 (section J) and changes no other item's status: the headings and table cells that still said
 "draft" now give the status revision 8 recorded, and OQ-23's row also names the JavaScript 0.4.0 client. CI now holds
 both 0.4.0 clients to the circulation vectors (OQ-52).
 
@@ -862,9 +863,10 @@ JavaScript replay mirrors the Python checks and has the same gap.
   `tsc --strict` (TypeScript 6.0.3) on the three `.d.ts` files: no error. The JS fixture generator, run in a clone,
   reproduces the committed fixtures exactly (3.14.7); run with 3.12.3 in WSL it changes 10 lines of
   `python-parity.json` besides the version (error texts and results), which is why CI regenerates them with 3.14.
-  The plugin's unit tests: 140 OK (1 skipped without Hermes; none skipped in the Hermes venv).
-- Not run: `generate.mjs` (no vector changed), the valun-app test suites, the real tracker, CI itself (the workflow
-  was parsed with ruamel.yaml, not run), any network service.
+  The plugin's unit tests: 140 OK (1 skipped without Hermes; none skipped in the Hermes venv). `generate.mjs`, run in
+  a clone (it exports valun-app `cfe698b` with `git archive` itself), writes exactly the committed vectors.
+- Not run: the valun-app test suites, the real tracker, CI itself (the workflow was parsed with ruamel.yaml and
+  PyYAML, and each of its steps except the registry validator was run locally, not on GitHub), any network service.
 
 ### Revision 8
 

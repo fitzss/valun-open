@@ -968,7 +968,8 @@ fallback_after, signatures_withheld}` once a payment by transfer was attempted; 
 `next_actions` of 10.4; the labels of 16.1; history events `transfer_created`, `transfer_applied`, `transfer_failed`,
 `transfer_expired` and `setoff_applied`.
 
-A complete example run through the real route table (147 requests, every response) is `vectors/transcript.json`.
+A complete example run through the real route table (236 requests, every response; steps 1–147 with circulation off,
+as release v13 answered them, and steps 148–236 with circulation on) is `vectors/transcript.json`.
 
 ## 15. What the server verifies and what a client MUST verify
 

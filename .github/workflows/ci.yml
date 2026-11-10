@@ -57,7 +57,7 @@ jobs:
         with:
           persist-credentials: false
       # Hermes plugin 0.4.0. NEEDS THE PUSHED SHA: 2b78a06 is the last LOCAL code commit of the plugin's v0.4.0 branch
-      # (only a changelog commit, d643c69, follows it) and is not on GitHub yet. Before this workflow is pushed, replace
+      # (only changelog commits follow it there) and is not on GitHub yet. Before this workflow is pushed, replace
       # it with the commit actually pushed to fitzss/hermes-plugin-valun (the one the catalog update pins), or this
       # checkout fails.
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
