@@ -4,7 +4,7 @@
  "python_sources_sha256": {
   "agent.py": "88e765543dadf024d245ba71fa78221a350505c21a85a0b2368b08e407f39f89",
   "basis.py": "3bd5d7f482f562d9a898d7af637838d7c10aee6d9b4628a6aea69ff25eb26f6d",
-  "client.py": "0368b0b3ed99e19e24a29c2d4b5b2209a7158096959d37dd760ce61f25fa60c2",
+  "client.py": "eb2f0f04d88972e8c06112794cd555cef86bfff1790a1d4295a456b0685bd9e9",
   "mcp_server.py": "dbcb5fddc0936bef4162cb3913f1cc40af6c676147ea2bbd06811f75a87500c1",
   "measure.py": "f4305cf1fe54ac137fa3aa201b0904c0e88e6ecc8325a38a41c06197963579ec",
   "novation.py": "941e629fe28d030215771513b5a9471730c92b9183f469218c023c7fb4261196",
@@ -48407,6 +48407,349 @@
      "key": "POST /pilot/v1/owner/deals/vd_4444444444444444/attempts/vt_3c3c3c3c3c3c3c3c/resolve",
      "body": {
       "outcome": "not_applied"
+     },
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {},
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "transfer_attempts": {
+     "vd_4444444444444444": [
+      {
+       "deal_id": "vd_4444444444444444",
+       "route": "transfer",
+       "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+       "prior": 30,
+       "prior_timestamp": 1793965500001,
+       "total": 10,
+       "timestamp": 1793966099999,
+       "quote_digest": "abababababababababababababababababababababababababababababababab",
+       "signed_at": "2026-11-06T11:40:00.000Z",
+       "attempt_id": "vt_3c3c3c3c3c3c3c3c"
+      }
+     ]
+    },
+    "records": {
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+      "confirmed": null,
+      "pending": [
+       {
+        "total": 30,
+        "timestamp": 1793966200003,
+        "kind": "note",
+        "ref": "vd_4444444444444444",
+        "direction": "out",
+        "signed_at": "2026-11-06T11:57:00.000Z"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "resolve_attempt: applied, refused while the payee's edge does not show it (payee_edge moved_past)",
+   "method": "resolve_attempt",
+   "kwargs": {
+    "deal_id": "vd_4444444444444444",
+    "attempt": "#1",
+    "outcome": "applied",
+    "owner_token": "vpo_TEST-owner"
+   },
+   "routes": {
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1"
+      ]
+     }
+    },
+    "GET /pilot/v1/transfers/vt_3c3c3c3c3c3c3c3c": {
+     "body": {
+      "id": "vt_3c3c3c3c3c3c3c3c",
+      "kind": "transfer",
+      "state": "outcome_unknown",
+      "your_roles": [
+       "payer"
+      ],
+      "timestamp": 1793966099999,
+      "amount": 20,
+      "deal": {
+       "deal_id": "vd_4444444444444444"
+      },
+      "edges": [
+       {
+        "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "new_total": 10
+       },
+       {
+        "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+        "new_total": 20
+       }
+      ]
+     }
+    },
+    "GET /pilot/v1/owner": {
+     "body": {
+      "participant": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      }
+     }
+    },
+    "POST /pilot/v1/owner/deals/vd_4444444444444444/attempts/vt_3c3c3c3c3c3c3c3c/resolve": {
+     "status": 409,
+     "body": {
+      "error": "payee_edge_not_applied",
+      "message": "the payee's edge does not show this transfer",
+      "payee_edge": "moved_past"
+     }
+    }
+   },
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "transfer_attempts": {
+     "vd_4444444444444444": [
+      {
+       "deal_id": "vd_4444444444444444",
+       "route": "transfer",
+       "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+       "prior": 30,
+       "prior_timestamp": 1793965500001,
+       "prior_signature": "02187f36ba5031b75092795e87dc16683966cecbf5b76a25b6d8fe0b6ced7d8f227cebc1a9559db66c6d90f4d13222fddd45463ebd034810c36a57ca0a205a8bfb",
+       "total": 10,
+       "timestamp": 1793966099999,
+       "quote_digest": "abababababababababababababababababababababababababababababababab",
+       "signed_at": "2026-11-06T11:40:00.000Z",
+       "attempt_id": "vt_3c3c3c3c3c3c3c3c"
+      }
+     ]
+    },
+    "records": {
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+      "confirmed": null,
+      "pending": [
+       {
+        "total": 30,
+        "timestamp": 1793966200003,
+        "kind": "note",
+        "ref": "vd_4444444444444444",
+        "direction": "out",
+        "signed_at": "2026-11-06T11:57:00.000Z"
+       }
+      ]
+     }
+    }
+   },
+   "store": "alice",
+   "result": {
+    "raises": "ValunError",
+    "code": "payee_edge_not_applied",
+    "message": "the server did not record this payment as applied: the payee's edge on the tracker does not show this transfer (the payee's edge moved past the transfer's timestamp at its earlier total); nothing was changed, at the server or in your records. If the payee confirms that the payment did not arrive, resolve it as not applied; if the payee says it arrived, ask the operator to look into it with the payee before you resolve it"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/transfers/vt_3c3c3c3c3c3c3c3c",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "POST /pilot/v1/owner/deals/vd_4444444444444444/attempts/vt_3c3c3c3c3c3c3c3c/resolve",
+     "body": {
+      "outcome": "applied"
+     },
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {},
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "transfer_attempts": {
+     "vd_4444444444444444": [
+      {
+       "deal_id": "vd_4444444444444444",
+       "route": "transfer",
+       "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+       "prior": 30,
+       "prior_timestamp": 1793965500001,
+       "total": 10,
+       "timestamp": 1793966099999,
+       "quote_digest": "abababababababababababababababababababababababababababababababab",
+       "signed_at": "2026-11-06T11:40:00.000Z",
+       "attempt_id": "vt_3c3c3c3c3c3c3c3c"
+      }
+     ]
+    },
+    "records": {
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+      "confirmed": null,
+      "pending": [
+       {
+        "total": 30,
+        "timestamp": 1793966200003,
+        "kind": "note",
+        "ref": "vd_4444444444444444",
+        "direction": "out",
+        "signed_at": "2026-11-06T11:57:00.000Z"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "resolve_attempt: applied, refused while the payee's edge does not show it (payee_edge None)",
+   "method": "resolve_attempt",
+   "kwargs": {
+    "deal_id": "vd_4444444444444444",
+    "attempt": "#1",
+    "outcome": "applied",
+    "owner_token": "vpo_TEST-owner"
+   },
+   "routes": {
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1"
+      ]
+     }
+    },
+    "GET /pilot/v1/transfers/vt_3c3c3c3c3c3c3c3c": {
+     "body": {
+      "id": "vt_3c3c3c3c3c3c3c3c",
+      "kind": "transfer",
+      "state": "outcome_unknown",
+      "your_roles": [
+       "payer"
+      ],
+      "timestamp": 1793966099999,
+      "amount": 20,
+      "deal": {
+       "deal_id": "vd_4444444444444444"
+      },
+      "edges": [
+       {
+        "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "new_total": 10
+       },
+       {
+        "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+        "new_total": 20
+       }
+      ]
+     }
+    },
+    "GET /pilot/v1/owner": {
+     "body": {
+      "participant": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      }
+     }
+    },
+    "POST /pilot/v1/owner/deals/vd_4444444444444444/attempts/vt_3c3c3c3c3c3c3c3c/resolve": {
+     "status": 409,
+     "body": {
+      "error": "payee_edge_not_applied",
+      "message": "the payee's edge does not show this transfer"
+     }
+    }
+   },
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "transfer_attempts": {
+     "vd_4444444444444444": [
+      {
+       "deal_id": "vd_4444444444444444",
+       "route": "transfer",
+       "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+       "prior": 30,
+       "prior_timestamp": 1793965500001,
+       "prior_signature": "02187f36ba5031b75092795e87dc16683966cecbf5b76a25b6d8fe0b6ced7d8f227cebc1a9559db66c6d90f4d13222fddd45463ebd034810c36a57ca0a205a8bfb",
+       "total": 10,
+       "timestamp": 1793966099999,
+       "quote_digest": "abababababababababababababababababababababababababababababababab",
+       "signed_at": "2026-11-06T11:40:00.000Z",
+       "attempt_id": "vt_3c3c3c3c3c3c3c3c"
+      }
+     ]
+    },
+    "records": {
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+      "confirmed": null,
+      "pending": [
+       {
+        "total": 30,
+        "timestamp": 1793966200003,
+        "kind": "note",
+        "ref": "vd_4444444444444444",
+        "direction": "out",
+        "signed_at": "2026-11-06T11:57:00.000Z"
+       }
+      ]
+     }
+    }
+   },
+   "store": "alice",
+   "result": {
+    "raises": "ValunError",
+    "code": "payee_edge_not_applied",
+    "message": "the server did not record this payment as applied: the payee's edge on the tracker does not show this transfer (the server did not say how it reads the payee's edge); nothing was changed, at the server or in your records. If the payee confirms that the payment did not arrive, resolve it as not applied; if the payee says it arrived, ask the operator to look into it with the payee before you resolve it"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/transfers/vt_3c3c3c3c3c3c3c3c",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "POST /pilot/v1/owner/deals/vd_4444444444444444/attempts/vt_3c3c3c3c3c3c3c3c/resolve",
+     "body": {
+      "outcome": "applied"
      },
      "features": null
     }

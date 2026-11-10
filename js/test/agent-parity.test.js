@@ -173,3 +173,25 @@ test(`client methods: ${FIX.client_scenarios.length} scenarios give the Python r
   const methods = new Set(FIX.client_scenarios.map(s => s.method));
   for (const m of Object.keys(CALL)) assert.ok(methods.has(m), `a scenario for ${m}`);
 });
+
+// valun-app SV-AUTH-1: the server answers 'applied' with 409 payee_edge_not_applied {payee_edge} while the payee's edge on
+// the tracker does not show the transfer. resolveAttempt says why and what to do instead (the scenarios above compare the
+// message with Python's), with the same extra, offers no resolution in the records only and records nothing.
+test('resolveAttempt: a 409 payee_edge_not_applied says why and what to do instead, and records nothing', async () => {
+  const scs = FIX.client_scenarios.filter(s => s.name.startsWith("resolve_attempt: applied, refused while the payee's edge"));
+  assert.equal(scs.length, 2);
+  for (const sc of scs) {
+    const w = world(sc);
+    const e = await CALL.resolve_attempt(w.client, sc.kwargs).then(() => null, x => x);
+    assert.equal(e?.name, 'ValunError', sc.name);
+    const edge = sc.routes[Object.keys(sc.routes).find(k => k.endsWith('/resolve'))].body.payee_edge ?? null;
+    assert.deepEqual([e.code, e.status], ['payee_edge_not_applied', 409]);
+    same(json(e.extra), {payee_edge: edge, next_steps: ['not_applied', 'ask_operator'], local_possible: false,
+      server: {error: 'payee_edge_not_applied', message: "the payee's edge does not show this transfer"}}, 'extra');
+    assert.match(e.message, edge === 'moved_past' ? /moved past the transfer's timestamp at its earlier total/
+      : /the server did not say how it reads the payee's edge/);
+    assert.match(e.message, /resolve it as not applied; if the payee says it arrived, ask the operator/);
+    assert.deepEqual(unsigned(json(w.store.state)), sc.state_after, 'records unchanged, as in Python');
+    assert.ok(!JSON.stringify(w.store.state).includes('paid_deals') && !JSON.stringify(w.store.state).includes('"outcome"'));
+  }
+});

@@ -815,6 +815,22 @@ def _terminal_text(s, limit=300):
     return ''.join(ch if ch.isprintable() else ' ' for ch in str(s))[:limit]
 
 
+def _payee_edge_text(args, e):
+    """What `valun attempts resolve --applied` prints when the server answers 409 payee_edge_not_applied (resolve_attempt
+    raises it with the reason in its message): what happened, and the two ways on, with the exact command."""
+    edge = (e.extra or {}).get('payee_edge')
+    return '\n'.join([
+        'The server did not record this payment as applied (payee_edge_not_applied'
+        + (f', payee edge: {_terminal_text(edge, 40)}' if edge else '') + '). Nothing was changed, at the server or in '
+        "your client's records.",
+        '  ' + _terminal_text(e, 600) + '.',
+        '  If the payee confirms the payment did not arrive, resolve it as not applied: '
+        f'`valun --profile {_profile(args)} attempts resolve {_terminal_text(args.deal, 40)} '
+        f'{_terminal_text(args.attempt, 40)} --not-applied`.',
+        '  If the payee says it arrived, ask the operator to look into it with the payee, and do not resolve it until '
+        'then.'])
+
+
 def _ask_local():
     print("  Recording it in your client's records only changes what your client does: if the server does hold this "
           'payment as unresolved, it keeps blocking the deal there.')
@@ -891,6 +907,9 @@ def cmd_attempts(args):
     print('  Do this only after the payee told you whether this payment arrived.')
     if plan['server']:
         print('  The server is told first (with your owner token, used once and not stored); then your client\'s records.')
+        if outcome == 'applied':
+            print("  The server records it as applied only if the payee's edge on the tracker shows this transfer; "
+                  'otherwise it refuses, and nothing changes.')
     else:
         print('  ' + LOCAL_WHY[plan['local']].format(state=(plan.get('transfer') or {}).get('state') or 'ended'))
     for r in plan['attempts']:
@@ -919,6 +938,9 @@ def cmd_attempts(args):
         r = c.resolve_attempt(args.deal, args.attempt, outcome, owner, note=args.note, local_only=local_only,
                               expected_attempt=confirmed, **read)
     except vc.ValunError as e:
+        if e.code == 'payee_edge_not_applied':
+            print(_payee_edge_text(args, e))
+            return 1
         if not (e.extra or {}).get('local_possible') or local_only:
             print(json.dumps(error_payload(e), ensure_ascii=False))
             return 1

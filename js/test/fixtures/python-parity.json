@@ -4,7 +4,7 @@
  "python_sources_sha256": {
   "agent.py": "88e765543dadf024d245ba71fa78221a350505c21a85a0b2368b08e407f39f89",
   "basis.py": "3bd5d7f482f562d9a898d7af637838d7c10aee6d9b4628a6aea69ff25eb26f6d",
-  "client.py": "0368b0b3ed99e19e24a29c2d4b5b2209a7158096959d37dd760ce61f25fa60c2",
+  "client.py": "eb2f0f04d88972e8c06112794cd555cef86bfff1790a1d4295a456b0685bd9e9",
   "mcp_server.py": "dbcb5fddc0936bef4162cb3913f1cc40af6c676147ea2bbd06811f75a87500c1",
   "measure.py": "f4305cf1fe54ac137fa3aa201b0904c0e88e6ecc8325a38a41c06197963579ec",
   "novation.py": "941e629fe28d030215771513b5a9471730c92b9183f469218c023c7fb4261196",
@@ -305,6 +305,16 @@
    "server_ended"
   ],
   "RESOLVE_NOTE_MAX": 300,
+  "PAYEE_EDGE_WHY": {
+   "prior": "the payee's edge is still at the state the transfer started from",
+   "changed": "the payee's edge changed before the transfer's timestamp, so the transfer cannot have applied there",
+   "moved_past": "the payee's edge moved past the transfer's timestamp at its earlier total",
+   "unknown": "the payee's edge is at a state that does not show the transfer"
+  },
+  "PAYEE_EDGE_NEXT": [
+   "not_applied",
+   "ask_operator"
+  ],
   "EDGES_PAGE": 200,
   "EDGES_MAX_PAGES": 50,
   "NOVATION": {

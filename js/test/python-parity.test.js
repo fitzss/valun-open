@@ -178,7 +178,8 @@ test('constants: circulating-credit labels, consent policies, tour texts, client
     'CONSENT_POLICY_KEYS', 'PAYABLE', 'CONSENT_SPEED_WORDS', 'UNBOUND_PASS_THROUGH', 'SANDBOX_EXACT', 'SANDBOX_MALLORY', 'SANDBOX_AGENTS',
     'TOUR_GOALS', 'TOUR_TEXTS', 'TOUR_AFTER', 'CONSENTS_ON_READ_TOOLS', 'SIGNED_NOW_KEYS', 'FEATURES_HEADER', 'CONSENT_ROLES',
     'VALUE_SAFE_ROLES', 'VALUE_SAFE_HEADER_ROLES', 'CONSENT_LOG_MAX', 'RECORDS_KEEP_MS', 'SIGNATURES_KEEP_MS', 'ATTEMPT_OUTCOMES',
-    'UNRESOLVED_TRANSFER', 'LIVE_TRANSFER', 'LOCAL_CHOICES', 'RESOLVE_NOTE_MAX', 'EDGES_PAGE', 'EDGES_MAX_PAGES']) {
+    'UNRESOLVED_TRANSFER', 'LIVE_TRANSFER', 'LOCAL_CHOICES', 'RESOLVE_NOTE_MAX', 'PAYEE_EDGE_WHY', 'PAYEE_EDGE_NEXT', 'EDGES_PAGE',
+    'EDGES_MAX_PAGES']) {
     assert.ok(Object.hasOwn(C, name), `the generator records ${name}`);
     assert.ok(Object.hasOwn(api, name), `the package exports ${name}`);
     assert.deepEqual(JSON.parse(JSON.stringify(api[name])), C[name], name);

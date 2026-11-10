@@ -61,6 +61,18 @@ export const UNRESOLVED_TRANSFER = Object.freeze(['outcome_unknown', 'inconsiste
 export const LIVE_TRANSFER = Object.freeze(['awaiting_owner', 'collecting', 'applying']);
 export const LOCAL_CHOICES = Object.freeze(['no_server_id', 'server_unknown', 'server_ended']);
 export const RESOLVE_NOTE_MAX = 300;
+/**
+ * The server records an attempt as applied only while the payee's edge on the tracker shows the transfer (valun-app
+ * SV-AUTH-1): otherwise 409 payee_edge_not_applied {payee_edge}, the class of that edge as it read it, and nothing changes.
+ * resolveAttempt() explains it in these words and offers no resolution in this client's records only (PAYEE_EDGE_NEXT).
+ */
+export const PAYEE_EDGE_WHY = Object.freeze({
+  prior: "the payee's edge is still at the state the transfer started from",
+  changed: "the payee's edge changed before the transfer's timestamp, so the transfer cannot have applied there",
+  moved_past: "the payee's edge moved past the transfer's timestamp at its earlier total",
+  unknown: "the payee's edge is at a state that does not show the transfer",
+});
+export const PAYEE_EDGE_NEXT = Object.freeze(['not_applied', 'ask_operator']);
 /** GET /edges answers at most this many journal entries at a time; syncEdges() reads at most EDGES_MAX_PAGES pages. */
 export const EDGES_PAGE = 200;
 export const EDGES_MAX_PAGES = 50;
@@ -198,6 +210,22 @@ function attemptShape(a) {
 /** A code or state the server chose, copied only in the form ^[a-z_]{1,40}$; else null. */
 function serverWord(v) {
   return typeof v === 'string' && SERVER_WORD_RE.test(v) ? v : null;
+}
+
+/**
+ * The server's 409 payee_edge_not_applied to a resolution as applied, as the ValunError resolveAttempt() throws: why, and
+ * what to do instead (extra {payee_edge, next_steps, local_possible: false, server}); see the Python reference.
+ */
+function payeeEdgeRefusal(e) {
+  const edge = serverWord(pyGet(e.extra ?? {}, 'payee_edge'));
+  const why = edge !== null && Object.hasOwn(PAYEE_EDGE_WHY, edge) ? PAYEE_EDGE_WHY[edge]
+    : "the server did not say how it reads the payee's edge";
+  return new ValunError('payee_edge_not_applied', "the server did not record this payment as applied: the payee's edge on the "
+    + `tracker does not show this transfer (${why}); nothing was changed, at the server or in your records. If the payee `
+    + 'confirms that the payment did not arrive, resolve it as not applied; if the payee says it arrived, ask the operator '
+    + 'to look into it with the payee before you resolve it', 409,
+  {payee_edge: edge, next_steps: [...PAYEE_EDGE_NEXT], local_possible: false,
+    server: {error: 'payee_edge_not_applied', message: cpSlice(e.message, 300)}});
 }
 
 const said = code => (code ? ` (${code})` : '');
@@ -1764,6 +1792,7 @@ export class Client {
         answer = await this.request('POST', `/pilot/v1/owner/deals/${seg(dealId)}/attempts/${seg(plan.attempt_id)}/resolve`, body,
           {token: ownerToken});
       } catch (e) {
+        if (isValunError(e) && e.status === 409 && e.code === 'payee_edge_not_applied') throw payeeEdgeRefusal(e);
         if (isValunError(e) && ((e.status === 404 && e.code === 'not_found') || (e.status === 409 && e.code === 'wrong_state'))) {
           // The owner routes answer 404 to an agent token and to another participant's owner token too: a resolution in
           // my records only is offered for a 404 only with this participant's owner token (not_owner otherwise).

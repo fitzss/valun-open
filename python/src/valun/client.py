@@ -74,6 +74,17 @@ UNRESOLVED_TRANSFER = ('outcome_unknown', 'inconsistent')
 LIVE_TRANSFER = ('awaiting_owner', 'collecting', 'applying')
 LOCAL_CHOICES = ('no_server_id', 'server_unknown', 'server_ended')
 RESOLVE_NOTE_MAX = 300
+# The server records an attempt as applied only while the payee's edge on the tracker shows the transfer (valun-app
+# SV-AUTH-1): otherwise it answers 409 payee_edge_not_applied {payee_edge}, the class of the payee's edge as it read it
+# (lib/pilot/novation.mjs classifyEdge), and nothing changes. resolve_attempt explains it in these words and offers no
+# resolution in this client's records only: the owner resolves it as not applied, or asks the operator to look into it.
+PAYEE_EDGE_WHY = {
+    'prior': "the payee's edge is still at the state the transfer started from",
+    'changed': "the payee's edge changed before the transfer's timestamp, so the transfer cannot have applied there",
+    'moved_past': "the payee's edge moved past the transfer's timestamp at its earlier total",
+    'unknown': "the payee's edge is at a state that does not show the transfer",
+}
+PAYEE_EDGE_NEXT = ('not_applied', 'ask_operator')
 EDGES_PAGE = 200                              # GET /edges answers at most this many journal entries at a time
 EDGES_MAX_PAGES = 50                          # sync_edges() reads at most this many pages per call
 _JOURNAL_NOVATIONS = ('transfer_out', 'transfer_in', 'setoff')     # journal kinds that make an edge bound-only
@@ -314,6 +325,21 @@ def _server_word(v):
     """A code or state the server chose (an HTTP error code, a consent or transfer state), copied into what this client
     reports or records only in the form ^[a-z_]{1,40}$; else None."""
     return v if isinstance(v, str) and _SERVER_WORD_RE.match(v) is not None else None
+
+
+def _payee_edge_refusal(e):
+    """The server's 409 payee_edge_not_applied to a resolution as applied (PAYEE_EDGE_WHY), as the ValunError
+    resolve_attempt raises: why, in words the owner can act on, and what to do instead (extra: payee_edge, the class
+    the server named or None; next_steps PAYEE_EDGE_NEXT; local_possible False; server {error, message})."""
+    edge = _server_word(e.extra.get('payee_edge'))
+    why = PAYEE_EDGE_WHY.get(edge, "the server did not say how it reads the payee's edge")
+    return ValunError('payee_edge_not_applied',
+                      "the server did not record this payment as applied: the payee's edge on the tracker does not show "
+                      f'this transfer ({why}); nothing was changed, at the server or in your records. If the payee '
+                      'confirms that the payment did not arrive, resolve it as not applied; if the payee says it '
+                      'arrived, ask the operator to look into it with the payee before you resolve it', 409,
+                      extra={'payee_edge': edge, 'next_steps': list(PAYEE_EDGE_NEXT), 'local_possible': False,
+                             'server': {'error': 'payee_edge_not_applied', 'message': str(e)[:300]}})
 
 
 def _said(code):
@@ -1663,7 +1689,13 @@ class Client:
         message}}: nothing changed; the owner may then resolve it locally. So is a 404 not_found answer (it holds no such
         attempt), but only once the owner token is checked (GET /pilot/v1/owner): the server also answers 404 to a token
         that is not an owner's (an agent token) and to another participant's owner token, and those are raised as
-        not_owner, with nothing changed and no local resolution offered. A credit note's attempt ('note': the server
+        not_owner, with nothing changed and no local resolution offered. A 409 payee_edge_not_applied answer to
+        'applied' (the payee's edge on the tracker does not show the transfer, valun-app SV-AUTH-1) is raised as
+        payee_edge_not_applied with a message that says why (PAYEE_EDGE_WHY) and what to do instead (resolve it as not
+        applied once the payee confirms it did not arrive, or ask the operator), extra {payee_edge, next_steps:
+        PAYEE_EDGE_NEXT, local_possible: False, server}: nothing changed, and no local resolution is offered, since
+        recording it as applied in my records alone would make my client never pay a deal the payee may not have
+        been paid for. A credit note's attempt ('note': the server
         holds none), or a transfer on a server without circulation/1, is resolved in this client's records only, as is,
         with local_only, a transfer of the LOCAL_CHOICES (without it, those are refused with local_possible:
         attempt_id_unknown, not_found, wrong_state); the owner token is then checked first (GET /pilot/v1/owner:
@@ -1715,6 +1747,8 @@ class Client:
                 answer = self.request('POST', f"/pilot/v1/owner/deals/{_seg(deal_id)}/attempts/{_seg(plan['attempt_id'])}"
                                               '/resolve', body, token=owner_token)
             except ValunError as e:
+                if (e.status, e.code) == (409, 'payee_edge_not_applied'):
+                    raise _payee_edge_refusal(e) from None
                 if (e.status, e.code) in ((404, 'not_found'), (409, 'wrong_state')):
                     if e.status == 404:
                         # The owner routes do not exist for an agent token, and another participant's owner token is

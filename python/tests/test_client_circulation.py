@@ -1897,6 +1897,50 @@ class Attempts(Base):
         r = c.resolve_attempt(DEAL, TID, 'not_applied', OWNER_TOKEN, local_only=True)
         self.assertEqual((r['server'], r['local'], att(self.store.state)[0]['outcome']), (None, 'server_ended', 'not_applied'))
 
+    def test_applied_while_the_payees_edge_does_not_show_it_is_explained_and_not_recorded(self):
+        # valun-app SV-AUTH-1: the server records 'applied' only while the payee's edge on the tracker shows the
+        # transfer; otherwise 409 payee_edge_not_applied {payee_edge} and nothing changes. My client says why and what
+        # to do instead (not_applied once the payee confirms, or ask the operator), and records nothing, not even
+        # locally: recording it as applied in my records alone would stop my client paying a deal the payee may lack.
+        c, T = self.unknown_transfer()
+        server_says = []
+
+        def refuse(method, path, body):
+            if method == 'POST' and path.endswith('/resolve') and body.get('outcome') == 'applied':
+                server_says.append(path)
+                raise vc.ValunError('payee_edge_not_applied', "the payee's edge on the tracker does not show this "
+                                    'transfer\x1b[2J', 409, {'payee_edge': 'prior'})
+        self.net.hooks.append(refuse)
+        before = copy.deepcopy(self.store.state)
+        with self.assertRaises(vc.ValunError) as e:
+            c.resolve_attempt(DEAL, TID, 'applied', OWNER_TOKEN)
+        err = e.exception
+        self.assertEqual((err.code, err.status, len(server_says)), ('payee_edge_not_applied', 409, 1))
+        self.assertEqual((err.extra['payee_edge'], err.extra['next_steps'], err.extra['local_possible']),
+                         ('prior', ['not_applied', 'ask_operator'], False))
+        self.assertEqual(err.extra['server']['error'], 'payee_edge_not_applied')
+        self.assertIn('still at the state the transfer started from', str(err))
+        self.assertIn('resolve it as not applied', str(err))
+        self.assertIn('ask the operator', str(err))
+        self.assertNotIn('\x1b', str(err))                      # the server's own text is not in the message
+        self.assertEqual(self.store.state, before)              # nothing recorded: not the outcome, not paid_deals
+        self.assertEqual((self.net.resolutions, self.net.transfers[TID]['state']), ([], 'outcome_unknown'))
+        # a class the server did not name, or one in another form, is reported as unnamed
+        for odd in (None, 'Prior!', 7):
+            def odd_refusal(method, path, body, odd=odd):
+                if method == 'POST' and path.endswith('/resolve'):
+                    raise vc.ValunError('payee_edge_not_applied', 'no', 409, {} if odd is None else {'payee_edge': odd})
+            self.net.hooks[:] = [odd_refusal]
+            with self.assertRaises(vc.ValunError) as e:
+                c.resolve_attempt(DEAL, TID, 'applied', OWNER_TOKEN)
+            self.assertIsNone(e.exception.extra['payee_edge'])
+            self.assertIn("the server did not say how it reads the payee's edge", str(e.exception))
+        # the way it suggests: the owner resolves it as not applied, which the server records
+        self.net.hooks[:] = []
+        r = c.resolve_attempt(DEAL, TID, 'not_applied', OWNER_TOKEN)
+        self.assertEqual((r['outcome'], r['paid'], self.net.transfers[TID]['state']),
+                         ('not_applied', False, 'resolved_not_applied'))
+
     def test_a_bound_note_is_resolved_in_the_records_only(self):
         # The server holds no payment attempt for a credit note (its route takes transfers only): the owner's decision
         # is recorded in my records, after the owner token is checked, and the deal can be paid once the window passed.

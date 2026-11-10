@@ -1242,6 +1242,15 @@ def client_scenarios():
         {**circ, **tr_route('outcome_unknown'), **owner_ok,
          f"POST /pilot/v1/owner/deals/{dg['id']}/attempts/{vt}/resolve": {'status': 409, 'body': {'error': 'wrong_state', 'message': 'it ended'}}},
         att_state)
+    # valun-app SV-AUTH-1: 'applied' while the payee's edge does not show the transfer is 409 payee_edge_not_applied {payee_edge}
+    for p_edge in ('moved_past', None):
+        refusal = {'error': 'payee_edge_not_applied', 'message': "the payee's edge does not show this transfer"}
+        add(f"resolve_attempt: applied, refused while the payee's edge does not show it (payee_edge {p_edge})", 'resolve_attempt',
+            {'deal_id': dg['id'], 'attempt': '#1', 'outcome': 'applied', 'owner_token': 'vpo_TEST-owner'},
+            {**circ, **tr_route('outcome_unknown'), **owner_ok,
+             f"POST /pilot/v1/owner/deals/{dg['id']}/attempts/{vt}/resolve": {'status': 409, 'body': (
+                 refusal if p_edge is None else dict(refusal, payee_edge=p_edge))}},
+            att_state)
     add('resolve_attempt: a credit note resolved in my records only (not applied)', 'resolve_attempt',
         {'deal_id': dg['id'], 'attempt': '#2', 'outcome': 'not_applied', 'owner_token': 'vpo_TEST-owner'},
         {**circ, **owner_ok, **{f"GET /pilot/v1/deals/{dg['id']}": {'body': dg}}}, att_state)
@@ -1613,7 +1622,8 @@ def constants():
             'VALUE_SAFE_HEADER_ROLES': vc.VALUE_SAFE_HEADER_ROLES, 'CONSENT_LOG_MAX': vc.CONSENT_LOG_MAX,
             'RECORDS_KEEP_MS': vc.RECORDS_KEEP_MS, 'SIGNATURES_KEEP_MS': vc.SIGNATURES_KEEP_MS, 'ATTEMPT_OUTCOMES': vc.ATTEMPT_OUTCOMES,
             'UNRESOLVED_TRANSFER': vc.UNRESOLVED_TRANSFER, 'LIVE_TRANSFER': vc.LIVE_TRANSFER, 'LOCAL_CHOICES': vc.LOCAL_CHOICES,
-            'RESOLVE_NOTE_MAX': vc.RESOLVE_NOTE_MAX, 'EDGES_PAGE': vc.EDGES_PAGE, 'EDGES_MAX_PAGES': vc.EDGES_MAX_PAGES,
+            'RESOLVE_NOTE_MAX': vc.RESOLVE_NOTE_MAX, 'PAYEE_EDGE_WHY': vc.PAYEE_EDGE_WHY, 'PAYEE_EDGE_NEXT': vc.PAYEE_EDGE_NEXT,
+            'EDGES_PAGE': vc.EDGES_PAGE, 'EDGES_MAX_PAGES': vc.EDGES_MAX_PAGES,
             'NOVATION': {k: getattr(nv, k) for k in ('TRANSFER_MS', 'SETOFF_MS', 'BOUND_MS', 'RESIDUE', 'RESERVED_MS', 'MAX_AGE_MS',
                                                     'FALLBACK_MARGIN_MS', 'INITIATE_WINDOW_MS', 'CONSENT_WINDOW_MS', 'FUTURE_SKEW_MS',
                                                     'MAX_SAFE_INTEGER', 'QUOTE_KIND', 'QUOTE_FIELDS', 'ROLES', 'ROUTES',

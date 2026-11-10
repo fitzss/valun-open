@@ -561,7 +561,11 @@ export class Client {
   paymentAttempts(options?: ReadBackOptions): PaymentAttemptRow[];
   /** How resolveAttempt() would resolve attempt '#n' (or a transfer id vt_...) of a deal. Changes nothing. */
   resolutionPlan(dealId: string, attempt: string, options?: ReadBackOptions): Promise<ResolutionPlan>;
-  /** The OWNER's resolution of a payment attempt whose outcome is unknown (decision D-2 d). Never called by an agent. */
+  /**
+   * The OWNER's resolution of a payment attempt whose outcome is unknown (decision D-2 d). Never called by an agent.
+   * 'applied' while the payee's edge on the tracker does not show the transfer is refused by the server; it rejects with
+   * ValunError payee_edge_not_applied (extra {payee_edge, next_steps: PAYEE_EDGE_NEXT, local_possible: false, server}).
+   */
   resolveAttempt(dealId: string, attempt: string, outcome: 'not_applied' | 'applied', ownerToken: string, options?: ReadBackOptions & {
     note?: string | null; localOnly?: boolean; expectedAttempt?: [string, string, number, number] | null;
   }): Promise<{deal_id: string; attempt_id: string | null; outcome: string; server: unknown; local: string | null;
@@ -597,6 +601,9 @@ export const UNRESOLVED_TRANSFER: readonly string[];
 export const LIVE_TRANSFER: readonly string[];
 export const LOCAL_CHOICES: readonly string[];
 export const RESOLVE_NOTE_MAX: number;
+/** Why the server refused to record an attempt as applied (409 payee_edge_not_applied), by the payee edge's class. */
+export const PAYEE_EDGE_WHY: Readonly<Record<'prior' | 'changed' | 'moved_past' | 'unknown', string>>;
+export const PAYEE_EDGE_NEXT: readonly ['not_applied', 'ask_operator'];
 export const EDGES_PAGE: number;
 export const EDGES_MAX_PAGES: number;
 

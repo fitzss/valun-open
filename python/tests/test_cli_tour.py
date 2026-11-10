@@ -1397,6 +1397,29 @@ class AttemptsCommands(Cli):
         self.assertEqual(self.world.resolutions, [])
         self.assertEqual(self.disk()['transfer_attempts'][self.deal][0]['outcome'], 'not_applied')
 
+    def test_applied_refused_because_the_payees_edge_does_not_show_it_says_what_to_do(self):
+        # valun-app SV-AUTH-1: 409 payee_edge_not_applied {payee_edge} to --applied. The CLI says why and names the two
+        # ways on (the exact --not-applied command, or the operator); it offers no resolution in the records only.
+        self.with_attempt()
+        route = f'POST /pilot/v1/owner/deals/{self.deal}/attempts/vt_0123456789abcdef/resolve'
+        self.world.fail[route] = [vc.ValunError('payee_edge_not_applied', "the payee's edge does not show it\x1b[2J", 409,
+                                                {'payee_edge': 'moved_past'})]
+        before = self.disk()['transfer_attempts']
+        rc, out = self.run_cli('attempts', 'resolve', self.deal, '#1', '--applied', '--owner-token-file', self.token_file,
+                               tty=True, answers=['y'])               # one confirmation; no second question follows
+        self.assertEqual(rc, 1, out)
+        self.assertIn("The server records it as applied only if the payee's edge on the tracker shows this transfer", out)
+        self.assertIn('The server did not record this payment as applied (payee_edge_not_applied, payee edge: '
+                      'moved_past). Nothing was changed', out)
+        self.assertIn("moved past the transfer's timestamp at its earlier total", out)
+        self.assertIn(f'`valun --profile s attempts resolve {self.deal} #1 --not-applied`', out)
+        self.assertIn('ask the operator to look into it with the payee', out)
+        self.assertNotIn("client's records only?", out)
+        self.assertNotIn('\x1b', out)
+        disk = self.disk()                                            # nothing resolved, nothing recorded as paid
+        self.assertEqual((self.world.resolutions, disk['transfer_attempts']), ([], before))
+        self.assertNotIn('paid_deals', disk.get('records') or {})
+
     def test_a_transfer_whose_id_was_never_recorded_is_resolved_by_the_id_the_owner_gives(self):
         # The POST of my payment got no answer: the server recorded the transfer (its outcome unknown), my client never
         # learnt its id. The owner gives the id; GET /transfers identifies my attempt; FX-SV's answer is taken.
