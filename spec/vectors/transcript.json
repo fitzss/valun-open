@@ -28415,6 +28415,10 @@
         "slots": {
          "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": 59,
          "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": 64
+        },
+        "prior_state": {
+         "total": 59,
+         "timestamp": 1794754017999
         }
        }
       }
@@ -28427,7 +28431,8 @@
         "prior": 59,
         "prior_timestamp": 1794754017999,
         "total": 64,
-        "timestamp": 1794754617997
+        "timestamp": 1794754617997,
+        "ack": "basis/prior-ack/1"
        }
       ]
      }
@@ -29576,6 +29581,10 @@
         "slots": {
          "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:prior": 0,
          "024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5:new": 4
+        },
+        "prior_state": {
+         "total": 0,
+         "timestamp": 0
         }
        }
       }
@@ -29588,7 +29597,8 @@
         "prior": 0,
         "prior_timestamp": 0,
         "total": 4,
-        "timestamp": 1794754857997
+        "timestamp": 1794754857997,
+        "ack": "basis/prior-ack/1"
        }
       ]
      }
@@ -33779,6 +33789,7 @@
         "total": 62,
         "timestamp": 1794756177999,
         "quote_digest": "55e4385772c25ba6d8848a48d85655a2553b98f5414dab7dae21c73201f85e3b",
+        "ack": "basis/prior-ack/1",
         "signed_at": "2026-11-15T15:23:00.000Z"
        }
       ]
@@ -33789,6 +33800,10 @@
         "slots": {
          "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": 64,
          "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": 62
+        },
+        "prior_state": {
+         "total": 64,
+         "timestamp": 1794754617997
         }
        }
       },
@@ -34478,6 +34493,7 @@
         "total": 62,
         "timestamp": 1794756177999,
         "quote_digest": "55e4385772c25ba6d8848a48d85655a2553b98f5414dab7dae21c73201f85e3b",
+        "ack": "basis/prior-ack/1",
         "signed_at": "2026-11-15T15:23:00.000Z"
        }
       ]
@@ -34488,6 +34504,10 @@
         "slots": {
          "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": 64,
          "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": 62
+        },
+        "prior_state": {
+         "total": 64,
+         "timestamp": 1794754617997
         }
        }
       },
@@ -34528,6 +34548,10 @@
         "slots": {
          "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:prior": 0,
          "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05>024f5a7b7d7b8dfdce86ab7bc7f3e3a350b385922e692301544463efd18cbe15d6:new": 2
+        },
+        "prior_state": {
+         "total": 0,
+         "timestamp": 0
         }
        }
       }
@@ -36911,6 +36935,7 @@
         "total": 70,
         "timestamp": 1794760200997,
         "quote_digest": null,
+        "ack": "basis/prior-ack/1",
         "signed_at": "2026-11-15T16:32:02.999Z"
        }
       ]
@@ -36921,6 +36946,10 @@
         "slots": {
          "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": 64,
          "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": 70
+        },
+        "prior_state": {
+         "total": 64,
+         "timestamp": 1794754617997
         }
        }
       }
@@ -36936,14 +36965,16 @@
       "vd_0aebe0b4e284b883": [
        {
         "route": "note",
-        "timestamp": 1794760200997
+        "timestamp": 1794760200997,
+        "ack": "basis/prior-ack/1"
        },
        {
         "route": "note",
         "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
         "prior": 64,
         "total": 70,
-        "timestamp": 1794764040997
+        "timestamp": 1794764040997,
+        "ack": "basis/prior-ack/1"
        }
       ]
      },
@@ -36953,6 +36984,10 @@
         "slots": {
          "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": 64,
          "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": 70
+        },
+        "prior_state": {
+         "total": 64,
+         "timestamp": 1794754617997
         }
        }
       }
@@ -38818,7 +38853,8 @@
         "prior_timestamp": 1794764040997,
         "total": 67,
         "timestamp": 1794764520999,
-        "quote_digest": "05c8a65e83008fddccd52222480cdfa43b437e209ab8fec5c69d79ff112d50c8"
+        "quote_digest": "05c8a65e83008fddccd52222480cdfa43b437e209ab8fec5c69d79ff112d50c8",
+        "ack": "basis/prior-ack/1"
        }
       ]
      },
@@ -38828,6 +38864,10 @@
         "slots": {
          "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:prior": 70,
          "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05:new": 67
+        },
+        "prior_state": {
+         "total": 70,
+         "timestamp": 1794764040997
         }
        }
       },

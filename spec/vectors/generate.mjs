@@ -305,6 +305,9 @@ const PRIOR_ACK_TAG = Buffer.from('basis/prior-ack/1', 'ascii'), PRIOR_ACK_TAG_H
 const priorAckMessage = (issuer, recipient, priorTotal, priorTimestamp, timestamp, nft, denomination) =>
   Buffer.concat([PRIOR_ACK_TAG, debtKey(issuer, recipient, denomination), u64(priorTotal), u64(priorTimestamp), u64(timestamp), nft]);
 const isPriorAckHex = h => typeof h === 'string' && h.length === 210 && h.startsWith(PRIOR_ACK_TAG_HEX);
+// The 0.4.0 clients mark every transfer and bound-note attempt they record with ack: PRIOR_ACK (its prior slot was
+// signed as PA); R11's same-prior exemption applies only when both attempts carry it (PROTOCOL.md 15.3).
+const PRIOR_ACK = PRIOR_ACK_TAG.toString('ascii');
 
 // ---- replica self-tests: refuse to write vectors from a replica that does not match the references -------------------
 assert.equal(blake2b(Buffer.alloc(0), 32).toString('hex'), '0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8', 'BLAKE2b-256("") (RFC 7693 / reference)');
@@ -1803,7 +1806,17 @@ async function transcriptVectors() {
         await step("flow T: bob's receipt: GET /transfers/{vt} with the signatures on his edge", 'bob.agent', 'GET', `/transfers/${vt}`, {auth: 'bob.agent', features: FEAT, expect: 200});
       }
       // ---- expected client records (client_state_after, PROTOCOL.md 15.3 R4 and R9; design 6.1): helpers ----
-      const xSigned = (T, slots) => { const out = {}; for (const [edge, slot, total] of slots) ((out[edge] ??= {})[String(T)] ??= {slots: {}}).slots[`${edge}:${slot}`] = total; return out; };
+      // R4 records: [edge, slot, total] for a new slot, [edge, 'prior', X, p] for a prior slot, whose group also records
+      // prior_state {total X, timestamp p}, the state its PA acknowledges (PROTOCOL.md 15.3 R4)
+      const xSigned = (T, slots) => {
+        const out = {};
+        for (const [edge, slot, total, p] of slots) {
+          const g = ((out[edge] ??= {})[String(T)] ??= {slots: {}});
+          g.slots[`${edge}:${slot}`] = total;
+          if (slot === 'prior') g.prior_state = {total, timestamp: p};
+        }
+        return out;
+      };
       const xPending = rows => { const out = {}; for (const [edge, total, ts, kind, ref, direction] of rows) (out[edge] ??= {pending: []}).pending.push({total, timestamp: ts, kind, ref, direction}); return out; };
       const merge = (...xs) => { const out = {}; for (const x of xs) for (const [k, v] of Object.entries(x)) out[k] = out[k] && typeof v === 'object' && !Array.isArray(v) ? merge(out[k], v) : v; return out; };
       const edgeState = (a, b) => { const n = notes.get(edgeK(a, b)); return n ? {total: n.amount_collected, timestamp: n.timestamp, signature: n.signature} : null; };
@@ -1842,8 +1855,8 @@ async function transcriptVectors() {
         const {out, tpl} = await completeBound('alice', 'bob', C2,
           "flow U: alice accepts bob's delivery and pays with a BOUND note (timestamp ending in 997, with her prior acknowledgment of the edge the transfer lowered to 59): note_issued, no ledger_mismatch",
           {client_state: before, client_state_after: t => ({records: {[ab]: {confirmed: {total: t.total, timestamp: t.timestamp}}, paid_deals: {[C2]: {route: 'note', edge: ab, total: t.total, timestamp: t.timestamp}}},
-            signed: xSigned(t.timestamp, [[ab, 'prior', t.prior_total], [ab, 'new', t.total]]),
-            transfer_attempts: {[C2]: [{route: 'note', edge: ab, prior: t.prior_total, prior_timestamp: t.prior_note.timestamp, total: t.total, timestamp: t.timestamp}]}})});
+            signed: xSigned(t.timestamp, [[ab, 'prior', t.prior_total, t.prior_note.timestamp], [ab, 'new', t.total]]),
+            transfer_attempts: {[C2]: [{route: 'note', edge: ab, prior: t.prior_total, prior_timestamp: t.prior_note.timestamp, total: t.total, timestamp: t.timestamp, ack: PRIOR_ACK}]}})});
         assert.equal(out.status, 'note_issued', JSON.stringify(out).slice(0, 300));
         assert.equal(tpl.prior_total, 59); assert.equal(tpl.prior_note.timestamp, T1);
         circulation.templates.bound_C2 = {tpl, now_ms: now - 60e3};
@@ -1854,7 +1867,7 @@ async function transcriptVectors() {
         const N2 = await dealToDelivery('nina', 'alice', svc16('Source list', 'Five sources on credit clearing.'), 4, 'Sources: five, with links.', 'flow V (v16)');
         const {out: o2, tpl: t2} = await completeBound('nina', 'alice', N2, "flow V: nina pays alice with a bound note on a new edge (prior total 0, no prior note): note_issued",
           {client_state: {pins: PINS, consent_policy: POLICY_ALL}, client_state_after: t => ({records: {[na]: {confirmed: {total: t.total, timestamp: t.timestamp}}, paid_deals: {[N2]: {route: 'note', edge: na, total: t.total, timestamp: t.timestamp}}},
-            signed: xSigned(t.timestamp, [[na, 'prior', 0], [na, 'new', t.total]]), transfer_attempts: {[N2]: [{route: 'note', edge: na, prior: 0, prior_timestamp: 0, total: t.total, timestamp: t.timestamp}]}})});
+            signed: xSigned(t.timestamp, [[na, 'prior', 0, 0], [na, 'new', t.total]]), transfer_attempts: {[N2]: [{route: 'note', edge: na, prior: 0, prior_timestamp: 0, total: t.total, timestamp: t.timestamp, ack: PRIOR_ACK}]}})});
         assert.equal(o2.status, 'note_issued'); assert.equal(t2.prior_note, null);
         circulation.templates.bound_N2 = {tpl: t2, now_ms: now - 60e3};
         // The clearing engine (lib/pilot/clearing.mjs), as server.mjs starts it, except that it never runs on a timer here:
@@ -1923,8 +1936,9 @@ async function transcriptVectors() {
         assert.ok(st.template && st.template.timestamp > tpl.timestamp, JSON.stringify(st).slice(0, 300));
         assert.deepEqual([st.template.from_edge.before.total, st.template.from_edge.before.timestamp], [tpl.from_edge.before.total, tpl.from_edge.before.timestamp], 'the same prior state');
         const T = tpl.timestamp, X = tpl.from_edge.before.total, attemptRec = {deal_id: X1, route: 'transfer', edge: ab, prior: X, prior_timestamp: tpl.from_edge.before.timestamp,
-          prior_signature: tpl.from_edge.before.signature, total: X - 2, timestamp: T, quote_digest: tpl.quote_digest, signed_at: iso(now - 12 * 60e3)};
-        const bobBefore = {pins: PINS, consent_policy: POLICY_ALL, transfer_attempts: {[X1]: [attemptRec]}, signed: xSigned(T, [[ab, 'prior', X], [ab, 'new', X - 2], [edgeK('alice', 'nina'), 'new', (edgeState('alice', 'nina')?.total ?? 0) + 2]])};
+          prior_signature: tpl.from_edge.before.signature, total: X - 2, timestamp: T, quote_digest: tpl.quote_digest, ack: PRIOR_ACK, signed_at: iso(now - 12 * 60e3)};
+        const bobBefore = {pins: PINS, consent_policy: POLICY_ALL, transfer_attempts: {[X1]: [attemptRec]},
+          signed: xSigned(T, [[ab, 'prior', X, tpl.from_edge.before.timestamp], [ab, 'new', X - 2], [edgeK('alice', 'nina'), 'new', (edgeState('alice', 'nina')?.total ?? 0) + 2]])};
         // the server (D-1 across kinds) and bob's own client (R11) refuse his own note until the window has passed
         const w = await step("flow W: bob tries to pay with his own bound note instead: the template is 409 transfer_window_open (retry_after_ms) until T + 1 h + 60 s (decision D-1 across kinds); nothing is signed",
           'bob.agent', 'GET', `/deals/${X1}/credit-note-template?prior=1&bound=1`, {auth: 'bob.agent', features: FEAT, expect: 409, reads: [[`/deals/${X1}`, 'bob.agent'], ['/info']],
@@ -1938,7 +1952,7 @@ async function transcriptVectors() {
         const ok = await completeBound('bob', 'nina', X1, 'flow W: after the window bob pays with his own bound note: note_issued (the refused attempt can never apply now)',
           {extraReads: [['/edges?since=0', 'bob.agent']], client_state: bobBefore,
             client_state_after: t => ({records: {[bn]: {confirmed: {total: t.total, timestamp: t.timestamp}}, paid_deals: {[X1]: {route: 'note', edge: bn, total: t.total, timestamp: t.timestamp}}},
-              signed: xSigned(t.timestamp, [[bn, 'prior', t.prior_total], [bn, 'new', t.total]])})});
+              signed: xSigned(t.timestamp, [[bn, 'prior', t.prior_total, t.prior_note ? t.prior_note.timestamp : 0], [bn, 'new', t.total]])})});
         assert.equal(ok.out.status, 'note_issued', JSON.stringify(ok.out).slice(0, 300));
       }
       // ---- decision D-1 item 4: a held bound note older than one hour is refused by the tracker (novation_expired) ----
@@ -1958,11 +1972,11 @@ async function transcriptVectors() {
         const t0 = first.tpl, prior = edgeState('alice', 'bob');
         const aliceBefore = {pins: PINS, consent_policy: POLICY_ALL, records: {[ab]: {confirmed: {total: prior.total, timestamp: prior.timestamp, signature: prior.signature}, pending: []}},
           transfer_attempts: {[E1]: [{deal_id: E1, route: 'note', edge: ab, prior: t0.prior_total, prior_timestamp: t0.prior_note.timestamp, prior_signature: t0.prior_note.signature,
-            total: t0.total, timestamp: t0.timestamp, quote_digest: null, signed_at: iso(now - 62 * 60e3)}]},
-          signed: xSigned(t0.timestamp, [[ab, 'prior', t0.prior_total], [ab, 'new', t0.total]])};
+            total: t0.total, timestamp: t0.timestamp, quote_digest: null, ack: PRIOR_ACK, signed_at: iso(now - 62 * 60e3)}]},
+          signed: xSigned(t0.timestamp, [[ab, 'prior', t0.prior_total, t0.prior_note.timestamp], [ab, 'new', t0.total]])};
         const again = await completeBound('alice', 'bob', E1, 'flow X: alice signs a fresh bound note (new timestamp, the same acknowledged prior): held for her owner again',
-          {client_state: aliceBefore, client_state_after: t => ({transfer_attempts: {[E1]: [{route: 'note', timestamp: t0.timestamp}, {route: 'note', edge: ab, prior: t.prior_total, total: t.total, timestamp: t.timestamp}]},
-            signed: xSigned(t.timestamp, [[ab, 'prior', t.prior_total], [ab, 'new', t.total]])})});
+          {client_state: aliceBefore, client_state_after: t => ({transfer_attempts: {[E1]: [{route: 'note', timestamp: t0.timestamp, ack: PRIOR_ACK}, {route: 'note', edge: ab, prior: t.prior_total, total: t.total, timestamp: t.timestamp, ack: PRIOR_ACK}]},
+            signed: xSigned(t.timestamp, [[ab, 'prior', t.prior_total, t.prior_note.timestamp], [ab, 'new', t.total]])})});
         assert.equal(again.out.status, 'completion_awaiting_owner');
         const ap2 = Object.values(state.approvals).find(a => a.deal_id === E1 && a.state === 'pending');
         await step("flow X: alice's owner approves at once: the bound note is recorded (note_issued)", 'alice.owner', 'POST', `/owner/approvals/${ap2.id}`, {auth: 'alice.owner', expect: 200, body: {decision: 'approve'}});
@@ -1993,8 +2007,8 @@ async function transcriptVectors() {
               [`/deals/${S3}/transfer-template?issuer=${P.alice.id}`, 'bob.agent']],
             client_call: {method: 'pay_by_transfer', key: 'bob', feature: 'circulation/1', args: {deal_id: S3, issuer: P.alice.id, expected_deliverable_sha256: d.delivery.sha256},
               client_state: {pins: PINS, consent_policy: POLICY_ALL}, signature_fields: sigFields(body),
-              client_state_after: {transfer_attempts: {[S3]: [{route: 'transfer', edge: ab, prior: X, prior_timestamp: tplNow.from_edge.before.timestamp, total: X - a, timestamp: tplNow.timestamp, quote_digest: tplNow.quote_digest}]},
-                signed: xSigned(tplNow.timestamp, [[ab, 'prior', X], [ab, 'new', X - a], [as, 'new', Y + a]]), records: xPending([[ab, X - a, tplNow.timestamp, 'transfer', S3, 'in']]), approved_payments: {[S3]: tplNow.quote_digest}}}});
+              client_state_after: {transfer_attempts: {[S3]: [{route: 'transfer', edge: ab, prior: X, prior_timestamp: tplNow.from_edge.before.timestamp, total: X - a, timestamp: tplNow.timestamp, quote_digest: tplNow.quote_digest, ack: PRIOR_ACK}]},
+                signed: xSigned(tplNow.timestamp, [[ab, 'prior', X, tplNow.from_edge.before.timestamp], [ab, 'new', X - a], [as, 'new', Y + a]]), records: xPending([[ab, X - a, tplNow.timestamp, 'transfer', S3, 'in']]), approved_payments: {[S3]: tplNow.quote_digest}}}});
         const vt = r.transfer?.id ?? r.payment?.transfer_id;
         circulation.transfers.T3 = vt; circulation.templates.transfer_S3 = {tpl: tplNow, now_ms: now - 60e3};
         // The tracker applies the transfer but its answer is lost (a timeout); before Valun reads the edges back, alice's key
@@ -2362,7 +2376,7 @@ async function transcriptVectors() {
             const e = i.edges.find(z => z.your_role === 'issuer'), ts = e.timestamp - (e.timestamp % 1000) + 1997;
             x.now_ms = Math.max(x.now_ms, ts + 1000);
             x.transfer_attempts = {vd_00000000000000ab: [{deal_id: 'vd_00000000000000ab', route: 'note', edge: e.edge, prior: e.new_total, prior_timestamp: e.before.timestamp, prior_signature: e.before.signature,
-              total: e.new_total + 3, timestamp: ts, quote_digest: null, signed_at: iso(x.now_ms)}]};
+              total: e.new_total + 3, timestamp: ts, quote_digest: null, ack: PRIOR_ACK, signed_at: iso(x.now_ms)}]};
           }, 'payment_attempt', 'a bound note of hers acknowledged the total this set-off brings her edge back to: refused as a second line (on tracker v3.1 that note could then apply after it; tracker v3.2 binds its prior timestamp too)');
           c('sign-without-a-tracker-contract', 'v3.2', (i, x) => { delete x.novation; }, 'sign',
             'a set-off signs 80-byte note messages only (no prior slot): it is signed whatever GET /info novation reports');
@@ -2389,6 +2403,11 @@ async function transcriptVectors() {
           c('policy-off-mandate', 'R8', (i, x) => { x.mandate.accept_transfers = false; }, 'policy_off', "her owner's mandate does not accept payments by transfer");
           c('prior-timestamp-not-the-state', '-', i => { i.edges[0].prior_timestamp += 1000; }, 'bad_consent',
             "the item names a prior timestamp other than its edge's state (before.timestamp, 0 for a new edge): not well formed for signing");
+          c('prior-acknowledged-in-another-state-at-this-timestamp', 'R4', (i, x) => {
+            const e = i.edges[0], Y = e.before?.total ?? 0, p = e.before ? e.before.timestamp - 1000 : e.timestamp - 60e3 - 999;
+            x.signed = {[e.edge]: {[String(e.timestamp)]: {op: `transfer:${i.id}`, slots: {[`${e.edge}:prior`]: Y, [`${e.edge}:new`]: e.new_total},
+              prior_state: {total: Y, timestamp: p}}}};
+          }, 'timestamp_reused', `her record of this very transfer at (A>C, T) holds a prior acknowledgment of another state of her edge with the same total (${item.edges[0].before ? 'at an earlier timestamp' : 'an existing edge at 0, not the absent edge (0, 0) the item shows'}): a second PA at the same (edge, T, op) over another prior state is never signed`);
           c('no-tracker-contract', 'v3.2', (i, x) => { delete x.novation; }, 'feature_unavailable',
             'GET /info novation does not report the tracker v3.2 contract (here: no novation in the context): nothing that signs a prior slot is signed');
           c('tracker-v3.1-contract', 'v3.2', (i, x) => { x.novation = clone(NOVATION_V31); }, 'feature_unavailable',
@@ -2417,22 +2436,25 @@ async function transcriptVectors() {
           }, 'attempt_outcome_unknown', 'an ordinary note of his for the deal may still apply at any time: only his owner can resolve it');
           c('transfer-window-open', 'D-1', (i, x) => {
             x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'note', edge: bn, prior: 0, prior_timestamp: 0, prior_signature: null, total: 10, timestamp: i.timestamp - (i.timestamp % 1000) - 2003,
-              quote_digest: null, signed_at: iso(x.now_ms - 60e3)}]};
+              quote_digest: null, ack: PRIOR_ACK, signed_at: iso(x.now_ms - 60e3)}]};
           }, 'transfer_window_open', 'a bound note of his for the deal can still apply until its timestamp + 1 h: another kind of payment waits');
           c('needs-read-back', 'D-1', (i, x) => {
             const T0b = i.timestamp - (i.timestamp % 1000) - 3600e3 - 180e3 - 3;
             x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'note', edge: bn, prior: 0, prior_timestamp: 0, prior_signature: null, total: 10, timestamp: T0b,
-              quote_digest: null, signed_at: iso(T0b)}]};
+              quote_digest: null, ack: PRIOR_ACK, signed_at: iso(T0b)}]};
           }, 'transfer_window_open', "a bound note's window has passed, but its edge was not read back: the client reads GET /edges and decides again", {needs_read_back: [bn]});
           // R11 (decision D-1, design v3.2 section 4): an earlier transfer attempt of his for the deal that can still apply.
           // Tracker v3.2's PA(A,B,X,p,T) binds the held edge's state (X, p), which the edge has once, so a retry through the
           // same held edge on the same state, total AND timestamp, is excluded by the earlier attempt at the tracker (at
           // most one of the two applies) and is signed at once, at any T (the same-prior exemption; audit VS-1 closed).
-          // Everything else keeps the window: another prior state, an attempt that recorded none, another issuer.
-          const earlierTransfer = (i, x, T, {edge = held, prior = i.from_edge.before.total, prior_timestamp = i.from_edge.before.timestamp, prior_signature = i.from_edge.before.signature} = {}) => {
+          // Both attempts must carry ack (the clients' mark of a PA-signed attempt): an earlier one recorded without it is
+          // treated as before tracker v3.2. Everything else keeps the window: another prior state, an attempt that
+          // recorded none or no ack, another issuer.
+          const earlierTransfer = (i, x, T, {edge = held, prior = i.from_edge.before.total, prior_timestamp = i.from_edge.before.timestamp, prior_signature = i.from_edge.before.signature,
+            ack = PRIOR_ACK} = {}) => {
             assert.ok(T > i.from_edge.before.timestamp && T <= i.timestamp && T % 1000 === 999, 'an earlier transfer attempt later than the held state');
             x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'transfer', edge, prior, ...(prior_timestamp === null ? {} : {prior_timestamp, prior_signature}),
-              total: prior - i.amount, timestamp: T, quote_digest: tpl.quote_digest, signed_at: iso(x.now_ms - 1000)}]};
+              total: prior - i.amount, timestamp: T, quote_digest: tpl.quote_digest, ...(ack === null ? {} : {ack}), signed_at: iso(x.now_ms - 1000)}]};
           };
           c('same-prior-retry-at-another-timestamp', 'R11', (i, x) => earlierTransfer(i, x, i.timestamp - 1000), 'sign',
             "an earlier transfer of his through the same issuer acknowledged exactly this held state (total and timestamp) at an earlier T: both prior acknowledgments are PA of the state (X, p), which the edge has once, so at most one of the two applies; the retry is signed at once (the same-prior exemption; audit VS-1 closed by tracker v3.2)",
@@ -2444,8 +2466,10 @@ async function transcriptVectors() {
             earlierTransfer(i, x, i.timestamp - 1000, {prior_timestamp: p0, prior_signature: signHex(keyOfPub(i.issuer.pubkey), M(i.issuer.pubkey, i.payer.pubkey, fb.total, p0))});
           }, 'transfer_window_open',
             'an earlier transfer of his through the same issuer acknowledged the same total in another state of the held edge (an earlier note): not the same prior state, so the retry waits for its window');
-          c('earlier-attempt-without-a-prior-state', 'R11', (i, x) => earlierTransfer(i, x, i.timestamp - 1000, {prior_timestamp: null}), 'transfer_window_open',
+          c('earlier-attempt-without-a-prior-state', 'R11', (i, x) => earlierTransfer(i, x, i.timestamp - 1000, {prior_timestamp: null, ack: null}), 'transfer_window_open',
             'an earlier transfer of his through the same issuer recorded no prior state (no prior_timestamp): never exempt, the retry waits for its window');
+          c('same-prior-state-earlier-attempt-without-ack', 'R11', (i, x) => earlierTransfer(i, x, i.timestamp - 1000, {ack: null}), 'transfer_window_open',
+            'an earlier transfer of his through the same issuer acknowledged exactly this held state, total and timestamp, but its record carries no ack: a 0.4.0 build on tracker v3.1 recorded prior_timestamp too and signed the 80-byte M(A,B,X,T), which does not exclude a PA attempt (the first v3.2 build wrote no ack either), so it is treated as before tracker v3.2 and the retry waits for its window');
           c('same-prior-state-another-issuer', 'R11', (i, x) => {
             const fb = i.from_edge.before, cb = `${K.carol.pub}>${K.bob.pub}`;
             earlierTransfer(i, x, i.timestamp - 1000, {edge: cb, prior_signature: signHex(K.carol, M(K.carol.pub, K.bob.pub, fb.total, fb.timestamp))});
@@ -2453,6 +2477,16 @@ async function transcriptVectors() {
             "an earlier transfer of his through another issuer's note (carol's) with the same total and timestamp: another edge, so the two do not exclude each other at the tracker, and the retry waits");
           c('prior-timestamp-not-the-state', '-', i => { i.from_edge.prior_timestamp += 1; }, 'bad_template',
             "the template names a prior timestamp for the held edge other than its state's (from_edge.before.timestamp)");
+          // R4 (tracker v3.2): his record of this operation at (A>B, T) holds the prior state its PA acknowledged
+          const heldRecord = (i, x, p) => {
+            const fb = i.from_edge.before;
+            x.signed = {[held]: {[String(i.timestamp)]: {op: `pay:${tpl.deal_id}`, slots: {[`${held}:prior`]: fb.total, [`${held}:new`]: fb.total - i.amount},
+              prior_state: {total: fb.total, timestamp: p}}}};
+          };
+          c('prior-acknowledged-in-another-state-at-this-timestamp', 'R4', (i, x) => heldRecord(i, x, i.from_edge.before.timestamp - 1000), 'timestamp_reused',
+            'his record of this very operation at (A>B, T) holds a prior acknowledgment of another state of the held edge (the same total at an earlier timestamp): a second PA at the same (edge, T, op) over another prior state is never signed (the server\'s sandbox signer refuses it too)');
+          c('same-operation-recorded-with-its-prior-state', 'R4', (i, x) => heldRecord(i, x, i.from_edge.before.timestamp), 'sign',
+            'his record of this very operation at (A>B, T) holds the same prior state: the identical PA again, signed', {quote_digest: tpl.quote_digest});
           c('no-tracker-contract', 'v3.2', (i, x) => { delete x.novation; }, 'feature_unavailable',
             'GET /info novation does not report the tracker v3.2 contract (here: no novation in the context): nothing that signs a prior slot is signed');
           c('tracker-v3.1-contract', 'v3.2', (i, x) => { x.novation = clone(NOVATION_V31); }, 'feature_unavailable',
@@ -2482,7 +2516,7 @@ async function transcriptVectors() {
           c('transfer-window-open', 'D-1', (i, x) => {
             const T = i.timestamp - (i.timestamp % 1000) - 1001, held = `${K.carol.pub}>${K.alice.pub}`;
             x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'transfer', edge: held, prior: 9, prior_timestamp: T - 60e3, prior_signature: signHex(K.carol, M(K.carol.pub, K.alice.pub, 9, T - 60e3)),
-              total: 4, timestamp: T, quote_digest: '22'.repeat(32), signed_at: iso(x.now_ms - 60e3)}]};
+              total: 4, timestamp: T, quote_digest: '22'.repeat(32), ack: PRIOR_ACK, signed_at: iso(x.now_ms - 60e3)}]};
           }, 'transfer_window_open', 'a payment by transfer of hers for this deal can still apply until its timestamp + 1 h');
           // the note route's twin of D-2 c (audit VS-1 on tracker v3.1; a second line since v3.2): no bound note of hers
           // brings her edge back to the prior a later bound note of hers (another deal) acknowledged while that one can
@@ -2490,15 +2524,19 @@ async function transcriptVectors() {
           c('payment-attempt', 'D-2 c', (i, x) => {
             const Tb = i.timestamp + 1000, other = 'vd_00000000000000ac';
             x.transfer_attempts = {[other]: [{deal_id: other, route: 'note', edge: ab, prior: i.total, prior_timestamp: i.timestamp - 60e3, prior_signature: signHex(K.alice, M(K.alice.pub, K.bob.pub, i.total, i.timestamp - 60e3)),
-              total: i.total + 2, timestamp: Tb, quote_digest: null, signed_at: iso(x.now_ms)}]};
+              total: i.total + 2, timestamp: Tb, quote_digest: null, ack: PRIOR_ACK, signed_at: iso(x.now_ms)}]};
           }, 'payment_attempt', 'a later bound note of hers for another deal acknowledged the total this note brings her edge to: refused as a second line (on tracker v3.1 that note could then apply after it; tracker v3.2 binds its prior timestamp too)');
           c('same-prior-retry-at-another-timestamp', 'R11', (i, x) => {
             const T = i.timestamp - 1000;
             x.transfer_attempts = {[tpl.deal_id]: [{deal_id: tpl.deal_id, route: 'note', edge: ab, prior: i.prior_total, prior_timestamp: i.prior_note.timestamp, prior_signature: i.prior_note.signature,
-              total: i.total, timestamp: T, quote_digest: null, signed_at: iso(x.now_ms - 1000)}]};
+              total: i.total, timestamp: T, quote_digest: null, ack: PRIOR_ACK, signed_at: iso(x.now_ms - 1000)}]};
           }, 'sign', "an earlier bound note of hers for this deal acknowledged the same prior state of the pair at an earlier timestamp: at most one of the two applies (only her signature moves her edge, and PA binds the state), so the retry is signed at once, as before tracker v3.2 (R-17 closed)");
           c('prior-timestamp-not-the-state', '-', i => { i.prior_timestamp += 1; }, 'bad_template',
             "the template names a prior timestamp other than its prior note's (prior_note.timestamp, 0 for none)");
+          c('prior-acknowledged-in-another-state-at-this-timestamp', 'R4', (i, x) => {
+            x.signed = {[ab]: {[String(i.timestamp)]: {op: `note:${tpl.deal_id}`, slots: {[`${ab}:prior`]: i.prior_total, [`${ab}:new`]: i.total},
+              prior_state: {total: i.prior_total, timestamp: i.prior_note.timestamp - 1000}}}};
+          }, 'timestamp_reused', 'her record of this very note at (A>B, T) holds a prior acknowledgment of another state of the pair (the same total at an earlier timestamp): a second PA at the same (edge, T, op) over another prior state is never signed');
           c('no-tracker-contract', 'v3.2', (i, x) => { delete x.novation; }, 'feature_unavailable',
             'GET /info novation does not report the tracker v3.2 contract (here: no novation in the context): no bound note is signed (its prior acknowledgment is PA)');
           c('bound-note-version-2', 'v3.2', (i, x) => { x.novation.bound_note_version = 2; }, 'feature_unavailable',
