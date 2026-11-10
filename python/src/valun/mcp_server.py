@@ -26,11 +26,12 @@ import random
 import secrets
 import sys
 import threading
+import time
 
 from . import __version__
 from . import client as vc
 from . import schemas
-from .agent import ValunAgent, error_payload, READ_ONLY_TOOLS, SIGNING_TOOLS
+from .agent import ValunAgent, error_payload, LIMIT_TOOLS, READ_ONLY_TOOLS, SIGNING_TOOLS
 
 PROTOCOL_VERSIONS = ('2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05')   # initialize handshake
 MODERN_VERSIONS = ('2026-07-28',)                                                 # per-request _meta, server/discover
@@ -51,6 +52,10 @@ TITLES = {'valun_status': 'Valun: status and instructions', 'valun_directory': '
           'valun_deliver': 'Valun: deliver agreed work', 'valun_review_delivery': 'Valun: accept (issue a credit note) or dispute',
           'valun_set_limits': "Valun: record the owner's goals and limits"}
 COMMITS = SIGNING_TOOLS     # from the core's classification: every tool that can sign a commitment (fail closed)
+# client-prompt mode: the tools this app is asked to confirm. valun_set_limits too: a call that loosens a recorded cap is a
+# commitment for the core (agent.is_commitment), and `valun call` asks for it (audit AI-4).
+CLIENT_PROMPTED = COMMITS + LIMIT_TOOLS
+APPROVAL_STATE_TTL_S = 600  # 2026-07-28: an approval's requestState is accepted once, within 10 minutes (audit AI-2)
 INSTRUCTIONS = ('Valun is an experimental network where agents make service-for-credit deals with other, independently '
                 'controlled agents. Call valun_status first in every session and follow your owner\'s recorded goals and '
                 'limits; record new instructions with valun_set_limits. Use valun_directory to find counterparties, '
@@ -76,14 +81,16 @@ APPROVAL_TEXT = {
 
 def tool_list(approvals='ask'):
     """Tool definitions. destructiveHint is always explicit (its default is true). In client-prompt mode the signing
-    tools also carry Claude Code's requiresUserInteraction flag, which makes it ask before every such call."""
+    tools and valun_set_limits (which can loosen the owner's recorded limits) carry Claude Code's
+    requiresUserInteraction flag, which makes it ask before every such call, and destructiveHint."""
     out = []
     for t in schemas.ALL:
         ro = t['name'] in READ_ONLY_TOOLS
+        prompted = approvals == 'client-prompt' and t['name'] in CLIENT_PROMPTED
         tool = {'name': t['name'], 'title': TITLES[t['name']], 'description': t['description'], 'inputSchema': t['parameters'],
-                'annotations': {'title': TITLES[t['name']], 'readOnlyHint': ro, 'destructiveHint': t['name'] in COMMITS,
-                                'idempotentHint': ro, 'openWorldHint': True}}
-        if approvals == 'client-prompt' and t['name'] in COMMITS:
+                'annotations': {'title': TITLES[t['name']], 'readOnlyHint': ro,
+                                'destructiveHint': t['name'] in COMMITS or prompted, 'idempotentHint': ro, 'openWorldHint': True}}
+        if prompted:
             tool['_meta'] = {'anthropic/requiresUserInteraction': True}
         out.append(tool)
     return out
@@ -142,6 +149,8 @@ class McpServer:
         self.pending = []          # messages that arrived while we waited for an elicitation answer
         self._next_id = 0
         self._key = secrets.token_bytes(32)   # binds 2026-07-28 approvals to exact arguments (this process only)
+        self._spent = {}                      # nonce -> issue time of each 2026-07-28 approval state already used
+        self._spent_lock = threading.Lock()
 
     # ---------- transport ----------
     def send(self, msg):
@@ -212,10 +221,34 @@ class McpServer:
             return {'jsonrpc': '2.0', 'id': mid, 'error': {'code': -32603, 'message': f'{type(e).__name__}: {e}'}}
 
     # ---------- 2026-07-28: approvals as a multi-round-trip result ----------
-    def _state(self, name, args):
-        """Binds an approval to the exact tool and arguments: a retry with anything else is asked again."""
-        body = json.dumps([name, args], sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    def _mac(self, name, args, nonce, issued):
+        body = json.dumps([name, args, nonce, issued], sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
         return hmac.new(self._key, body, hashlib.sha256).hexdigest()
+
+    def _state(self, name, args, now=None):
+        """A fresh requestState for one approval: '<nonce>.<issued s>.<HMAC over the tool, its exact arguments, the nonce
+        and the issue time>'. It binds the approval to exactly this call: a retry with anything else is asked again."""
+        nonce, issued = secrets.token_hex(16), int(time.time() if now is None else now)
+        return f'{nonce}.{issued}.{self._mac(name, args, nonce, issued)}'
+
+    def _spend_state(self, given, name, args, now=None):
+        """Accept a requestState once (audit AI-2): it must be one this process issued for exactly this tool and these
+        arguments, at most APPROVAL_STATE_TTL_S old, and not used before. A resent approved call (a host retry or replay)
+        is asked again instead of signing another commitment."""
+        parts = given.split('.') if isinstance(given, str) else []
+        if len(parts) != 3 or not parts[1].isdigit() or len(parts[0]) != 32:
+            return False
+        nonce, issued, mac = parts[0], int(parts[1]), parts[2]
+        now = int(time.time() if now is None else now)
+        if not hmac.compare_digest(mac, self._mac(name, args, nonce, issued)) or not (now - APPROVAL_STATE_TTL_S <= issued <= now + 5):
+            return False
+        with self._spent_lock:
+            for k in [k for k, t in self._spent.items() if t < now - APPROVAL_STATE_TTL_S]:
+                del self._spent[k]
+            if nonce in self._spent:
+                return False
+            self._spent[nonce] = issued
+        return True
 
     def call_modern(self, p, meta):
         name, args = p.get('name'), p.get('arguments') or {}
@@ -231,10 +264,9 @@ class McpServer:
                 return self.result(refusal, error=True, modern=True)
             args, text = prepared['args'], prepared['text']
             if text is not None:                # None: the read prepare() made shows this call commits nothing
-                state = self._state(name, args)
                 answer = (p.get('inputResponses') or {}).get('approval')
-                if answer is None or not hmac.compare_digest(str(p.get('requestState') or ''), state):
-                    return {'resultType': 'input_required', 'requestState': state, 'inputRequests': {'approval': {
+                if not isinstance(answer, dict) or not self._spend_state(p.get('requestState'), name, args):
+                    return {'resultType': 'input_required', 'requestState': self._state(name, args), 'inputRequests': {'approval': {
                         'method': 'elicitation/create', 'params': {'mode': 'form', 'message': text + '\n\nApprove this commitment?',
                                                                    'requestedSchema': APPROVAL_SCHEMA}}}}
                 if not (answer.get('action') == 'accept' and (answer.get('content') or {}).get('approve') is True):

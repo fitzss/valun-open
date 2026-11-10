@@ -170,6 +170,12 @@ class Protocol(unittest.TestCase):
         for name in ('valun_propose', 'valun_respond', 'valun_review_delivery'):
             self.assertTrue(tools[name]['_meta']['anthropic/requiresUserInteraction'], name)
         self.assertNotIn('_meta', tools['valun_status'])
+        # audit AI-4: a loosening valun_set_limits is a commitment for the core (and `valun call` asks for it): the app
+        # is asked to confirm every call of it, and it is marked destructive, in this mode only
+        self.assertTrue(tools['valun_set_limits']['_meta']['anthropic/requiresUserInteraction'])
+        self.assertTrue(tools['valun_set_limits']['annotations']['destructiveHint'])
+        from valun import mcp_server
+        self.assertFalse({t['name']: t for t in mcp_server.tool_list('ask')}['valun_set_limits']['annotations']['destructiveHint'])
         s.close()
         s = Session('none')
         s.init()

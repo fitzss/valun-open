@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -580,6 +581,41 @@ class Adapters(unittest.TestCase):
             self.assertEqual((r['isError'], r['structuredContent']), (False, {'ok': True}))
             self.assertEqual(out.getvalue(), b'')
         self.assertEqual(called, [('valun_set_limits', {'max_per_deal_as_payer': 5})] * 2)
+
+    def test_a_2026_07_28_approval_is_used_once_and_only_while_fresh(self):
+        # Audit AI-2: a host that resends a completed, approved tools/call (a retry, a replay) is asked again; it does
+        # not sign another commitment. The state also expires after APPROVAL_STATE_TTL_S.
+        called = []
+
+        class Ok(Agent):
+            def call(self, name, args=None):
+                called.append((name, args))
+                return {'ok': True}
+        s, _out = self.mcp(Ok(DEAL))
+        meta = {'io.modelcontextprotocol/clientCapabilities': {'elicitation': {}}}
+        p = {'name': 'valun_respond', 'arguments': {'deal_id': 'vd_1', 'action': 'accept'}}
+        first = s.call_modern(dict(p), meta)
+        self.assertEqual(first['resultType'], 'input_required')
+        yes = {'approval': {'action': 'accept', 'content': {'approve': True}}}
+        done = s.call_modern(dict(p, requestState=first['requestState'], inputResponses=yes), meta)
+        self.assertEqual((done['resultType'], done['isError']), ('complete', False))
+        self.assertEqual(called, [('valun_respond', {'deal_id': 'vd_1', 'action': 'accept', 'expected_terms_hash': T})])
+        again = s.call_modern(dict(p, requestState=first['requestState'], inputResponses=yes), meta)   # the same resent
+        self.assertEqual(again['resultType'], 'input_required')
+        self.assertNotEqual(again['requestState'], first['requestState'])
+        self.assertEqual(len(called), 1)
+        # a state older than the limit is asked again too; one that is not this process's is never accepted
+        old = s._state('valun_respond', {'deal_id': 'vd_1', 'action': 'accept', 'expected_terms_hash': T},
+                       now=time.time() - mcp_server.APPROVAL_STATE_TTL_S - 5)
+        late = s.call_modern(dict(p, requestState=old, inputResponses=yes), meta)
+        self.assertEqual(late['resultType'], 'input_required')
+        forged = 'ab' * 16 + f'.{int(time.time())}.' + '00' * 32
+        self.assertEqual(s.call_modern(dict(p, requestState=forged, inputResponses=yes), meta)['resultType'], 'input_required')
+        self.assertEqual(len(called), 1)
+        # a fresh state, answered once, signs once more
+        fresh = s.call_modern(dict(p), meta)['requestState']
+        self.assertFalse(s.call_modern(dict(p, requestState=fresh, inputResponses=yes), meta)['isError'])
+        self.assertEqual(len(called), 2)
 
     def test_console_approval_text_says_credit_notes_wait(self):
         self.assertIn('accepting a delivery', mcp_server.APPROVAL_TEXT['console'])
