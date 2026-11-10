@@ -11,7 +11,7 @@ server release it targets (valun-app release v16) is not deployed. Version numbe
 
 Both packages implement the same protocol changes (`spec/PROTOCOL.md` revision v14: section 18, the signing firewall of
 15.3 and Appendix H) and are held to the same vectors, regenerated from the release v16 server code (valun-app
-`cfe698b`).
+`fa38334`, the branch's final commit).
 
 ### Circulating credit (only against a server whose `GET /info` lists `circulation/1`)
 
@@ -100,6 +100,18 @@ Both packages implement the same protocol changes (`spec/PROTOCOL.md` revision v
   `ValunAgent.client()` follows `agent.declareRoles` as it is now.
 - **Release workflow** (audit SC-1, SC-3): a verify job without `id-token` runs the tests, the vectors, the plugin-core
   check and the build, and refuses docs that still say unreleased; the publishing jobs need it.
+- **`valun attempts resolve` explains `409 payee_edge_not_applied`** (the server refuses outcome `applied` while the
+  payee's edge does not show the transfer): `Client.resolve_attempt` and `resolveAttempt` raise it with the reason in
+  words and what to do instead (resolve it as not applied once the payee confirms, or ask the operator); no local-only
+  resolution is offered for it and nothing is recorded.
+- **`valun attempts resolve` prints a command that pastes**: the attempt is quoted (`'#1'`), which bash, zsh and
+  PowerShell otherwise read as a comment; for an attempt the server reads as inconsistent (one edge applied, the other
+  not) it says that it is the operator's case and offers no `--not-applied` command.
+- **Vectors regenerated from valun-app `fa38334`** (the server follows the same-issuer retry rule since `94797c6`):
+  only `transcript.json` changed, in 15 steps: two non-normative `engine.limits` keys (step 199), a `409
+  transfer_stale` with `template: null` and the `transfer_window_open` message and `next_actions` of the retry rule
+  (steps 203-205), and the ids of the steps that follow (211-230). Spec 17, 18.6, 18.8, 18.9, 18.11, 18.16 and
+  Appendix H describe that server.
 
 ### Known limits
 
@@ -111,12 +123,13 @@ Both packages implement the same protocol changes (`spec/PROTOCOL.md` revision v
 
 ### Checked locally (2026-11-10, valun-open `circulating-credit`, after the audit fixes)
 
-- `python -m unittest discover -s python/tests`: 395 tests OK with Python 3.14.7 (with the official MCP SDK 2.3.0
-  installed). Not rerun with 3.11 after the audit fixes.
-- `node --test js/test/` (Node 24): 489 tests, 488 pass, 1 skipped (a POSIX file-mode test, on Windows). The type
+- `python -m unittest discover -s python/tests`: 399 tests OK with Python 3.14.7 (with the official MCP SDK 2.3.0
+  installed), after the vectors were regenerated from `fa38334`. Not rerun with 3.11 after the audit fixes.
+- `node --test js/test/` (Node 24): 492 tests, 491 pass, 1 skipped (a POSIX file-mode test, on Windows). The type
   definitions were not compiled after the audit fixes (TypeScript is fetched from the network).
 - `spec/vectors/check_python.py --client package --require circulation/1`: 1389 checks, 1191 agree, 0 disagreements
-  in failing tiers, 17 informative differences, 181 not applicable (Python 3.14.7).
+  in failing tiers, 17 informative differences, 181 not applicable (Python 3.14.7 and 3.11.18, vectors from
+  `fa38334`).
 
 ## 0.3.1 and earlier
 
