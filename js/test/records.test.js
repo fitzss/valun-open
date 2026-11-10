@@ -80,7 +80,13 @@ class World {
 
   info() {
     const out = {network: NETWORK, protocol: PROTOCOL, unit: 'PC', tracker_nft_id: this.nft, denomination: DENOM};
-    if (this.features !== null) out.features = this.features;
+    if (this.features !== null) {
+      out.features = this.features;
+      // GET /info novation of a v16 server on tracker v3.2 (design v3.2): what the client signs a bound note for
+      out.novation = {transfer_ms: 999, setoff_ms: 998, bound_note_ms: 997, reserved_ms: [995, 996, 997, 998, 999], max_age_ms: 3600000,
+        transfer_ttl_ms: 1200000, setoff_ttl_ms: 1800000, fallback_margin_ms: 60000, tracker_build: 'valun-circulating-credit/4',
+        transfer_version: 4, bound_note_version: 3, prior_ack: 'basis/prior-ack/1'};
+    }
     return out;
   }
 
@@ -164,9 +170,13 @@ class World {
     }
     if (this.features?.length && note.timestamp % 1000 === 997) {     // a bound note (v16, PROTOCOL.md 18.5)
       const cur = this.tracker[this.pair];
-      const prior = cur ? cur.total : 0;
-      if (note.prior_total !== prior) throw new ValunError('stale_note', "a bound credit note's prior_total must be the pair's current total", 409);
-      if (!verifyNote(ALICE.pubkey, this.payeeKey.pubkey, prior, note.timestamp, note.prior_signature, this.nft, DENOM)) {
+      const [prior, priorTs] = cur ? [cur.total, cur.timestamp] : [0, 0];
+      if (note.prior_total !== prior || (note.prior_timestamp ?? priorTs) !== priorTs) {
+        throw new ValunError('stale_note', "a bound credit note's prior_total and prior_timestamp must be the pair's current state", 409);
+      }
+      // tracker v3.2: the prior acknowledgment is PA(I,R,prior,priorTs,ts) over the stored state
+      const pa = basis.priorAckMessage(ALICE.pubkey, this.payeeKey.pubkey, prior, priorTs, note.timestamp, this.nft, DENOM);
+      if (!basis.verifyHex(note.prior_signature ?? '', pa, ALICE.pubkey)) {
         throw new ValunError('bad_signature', 'the prior acknowledgment does not verify', 403);
       }
     }

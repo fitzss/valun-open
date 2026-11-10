@@ -85,6 +85,18 @@ def msg(i, r, total, ts):
     return vb.note_message(bytes.fromhex(i), bytes.fromhex(r), total, ts, bytes.fromhex(NFT), DENOM)
 
 
+def pa(i, r, prior_total, prior_ts, ts):
+    """PA(I,R,X,p,T), the prior acknowledgment of tracker v3.2 (p = 0 for an absent edge)."""
+    return vb.prior_ack_message(bytes.fromhex(i), bytes.fromhex(r), prior_total, prior_ts, ts, bytes.fromhex(NFT), DENOM)
+
+
+# GET /info novation of a v16 server on tracker v3.2: the novation constants and the tracker contract (design v3.2)
+INFO_NOVATION = {'transfer_ms': 999, 'setoff_ms': 998, 'bound_note_ms': 997, 'reserved_ms': [995, 996, 997, 998, 999],
+                 'max_age_ms': 3600000, 'transfer_ttl_ms': 1200000, 'setoff_ttl_ms': 1800000, 'fallback_margin_ms': 60000,
+                 'tracker_build': 'valun-circulating-credit/4', 'transfer_version': 4, 'bound_note_version': 3,
+                 'prior_ack': 'basis/prior-ack/1'}
+
+
 def sign_note(k, recipient_pk, total, ts):
     return vb.sign(msg(k['pubkey'], recipient_pk, total, ts), k['secret'], bytes.fromhex(k['pubkey'])).hex()
 
@@ -414,6 +426,9 @@ class World:
             out = {'network': vc.NETWORK, 'protocol': vc.PROTOCOL, 'unit': 'PC', 'tracker_nft_id': NFT, 'denomination': DENOM}
             if self.features is not None:
                 out['features'] = list(self.features)
+                nov = getattr(self, 'novation', INFO_NOVATION)     # a test may set another (None: none)
+                if nov is not None:
+                    out['novation'] = copy.deepcopy(nov)
             return out
         if method == 'POST' and parts == ['join-sandbox']:
             return {'participant_id': S_ID, 'owner_token': 'vpo_test-only', 'enrollment_code': 'code', 'sandbox_only': True,
@@ -538,7 +553,10 @@ class World:
         n, P = body['credit_note'], self.total(S_ID, payee)
         if n['total'] != P + d['current']['terms']['price']['amount'] or not signed_by(me, msg(me, self.pk(payee), n['total'], n['timestamp']), n['signature']):
             raise vc.ValunError('stale_note', 'the note is not the prior plus the price', 409)
-        if n['timestamp'] % 1000 == 997 and not signed_by(me, msg(me, self.pk(payee), P, n['timestamp']), n.get('prior_signature')):
+        cur = self.tracker.get(self.edge(S_ID, payee))
+        p = cur['timestamp'] if cur else 0
+        if n['timestamp'] % 1000 == 997 and (n.get('prior_timestamp', p) != p
+                                             or not signed_by(me, pa(me, self.pk(payee), P, p, n['timestamp']), n.get('prior_signature'))):
             raise vc.ValunError('bad_signature', 'the prior acknowledgment does not verify', 403)
         self.set_edge(S_ID, payee, n['total'], n['timestamp'], 'issue', did, signature=n['signature'])
         d['status'] = 'note_issued'
@@ -599,7 +617,8 @@ class World:
         s = body['signatures']
         ok = (body['quote_digest'] == q and signed_by(B, vc.statement('complete', h, dh).encode(), body['completion_signature'])
               and signed_by(B, nv.pay_statement(did, q).encode(), body['pay_signature'])
-              and signed_by(B, msg(A, B, X_, T), s.get(f'{A}>{B}:prior')) and signed_by(B, msg(A, B, X_ - a, T), s.get(f'{A}>{B}:new'))
+              and signed_by(B, pa(A, B, X_, self.tracker[self.edge(iid, S_ID)]['timestamp'], T), s.get(f'{A}>{B}:prior'))
+              and signed_by(B, msg(A, B, X_ - a, T), s.get(f'{A}>{B}:new'))
               and signed_by(B, msg(A, C, Y_ + a, T), s.get(f'{A}>{C}:new')))
         if not ok:
             raise vc.ValunError('bad_signature', 'a signature of the payment does not verify', 403)
@@ -862,6 +881,18 @@ class PayWith(Base):
         self.assertTrue(lines[-1].startswith('Delivery title and agreed service text (quoted exactly): '))
         self.assertTrue(all(ord(ch) < 128 for ch in p['text']))
         self.assertNotIn('POST', [m for m, *_ in self.world.log])          # preparing signs and sends nothing
+
+    def test_prepare_refuses_without_the_tracker_v32_contract(self):
+        # tracker v3.2: the approval snapshot of a payment by transfer is made only for the contract the client signs
+        # prior acknowledgments for (as Client.pay_by_transfer checks); nothing is read past GET /info, nothing signed
+        for nov in (None, dict(INFO_NOVATION, transfer_version=3)):
+            with self.subTest(novation=nov):
+                self.world.novation = nov
+                del self.world.log[:]
+                with self.assertRaises(vc.ValunError) as e:
+                    self.agent.prepare('valun_review_delivery', self.args)
+                self.assertEqual((e.exception.code, e.exception.extra.get('cause')), ('approval_unbound', 'feature_unavailable'))
+                self.assertFalse([r for m, r, _b in self.world.log if 'payment-options' in r or 'transfer-template' in r or m == 'POST'])
 
     def test_the_bound_call_pays_exactly_what_was_approved(self):
         p = self.agent.prepare('valun_review_delivery', self.args)

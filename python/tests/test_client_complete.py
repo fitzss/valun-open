@@ -107,6 +107,11 @@ class World:
         out = {'network': vc.NETWORK, 'protocol': vc.PROTOCOL, 'unit': 'PC', 'tracker_nft_id': self.nft, 'denomination': DENOM}
         if self.features is not None:
             out['features'] = self.features
+            # GET /info novation of a v16 server on tracker v3.2 (design v3.2): what the client signs a bound note for
+            out['novation'] = {'transfer_ms': 999, 'setoff_ms': 998, 'bound_note_ms': 997, 'reserved_ms': [995, 996, 997, 998, 999],
+                               'max_age_ms': 3600000, 'transfer_ttl_ms': 1200000, 'setoff_ttl_ms': 1800000,
+                               'fallback_margin_ms': 60000, 'tracker_build': 'valun-circulating-credit/4',
+                               'transfer_version': 4, 'bound_note_version': 3, 'prior_ack': 'basis/prior-ack/1'}
         return out
 
     # ---------- owner decisions on held notes ----------
@@ -182,11 +187,15 @@ class World:
             raise vc.ValunError('bad_signature', 'the Basis note signature does not verify', 403)
         if self.features and note['timestamp'] % 1000 == 997:     # a bound note (v16, PROTOCOL.md 18.5)
             cur = self.tracker.get(self.pair)
-            prior = cur['total'] if cur else 0
-            if note.get('prior_total') != prior:
-                raise vc.ValunError('stale_note', "a bound credit note's prior_total must be the pair's current total", 409)
-            if not vc.verify_note(ALICE['pubkey'], self.payee_key['pubkey'], prior, note['timestamp'], note.get('prior_signature'),
-                                  self.nft, DENOM):
+            prior, prior_ts = (cur['total'], cur['timestamp']) if cur else (0, 0)
+            if note.get('prior_total') != prior or note.get('prior_timestamp', prior_ts) != prior_ts:
+                raise vc.ValunError('stale_note', "a bound credit note's prior_total and prior_timestamp must be the pair's "
+                                                  'current state', 409)
+            # tracker v3.2: the prior acknowledgment is PA(I,R,prior,prior_ts,ts) over the stored state
+            pa = vb.prior_ack_message(bytes.fromhex(ALICE['pubkey']), bytes.fromhex(self.payee_key['pubkey']), prior, prior_ts,
+                                      note['timestamp'], bytes.fromhex(self.nft), DENOM)
+            sig = note.get('prior_signature')
+            if not (isinstance(sig, str) and vb.verify(bytes.fromhex(sig), pa, bytes.fromhex(ALICE['pubkey']))):
                 raise vc.ValunError('bad_signature', 'the prior acknowledgment does not verify', 403)
         if self.complete_answer:
             self.deals[did]['status'] = self.complete_answer[1]

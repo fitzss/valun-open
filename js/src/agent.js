@@ -479,7 +479,9 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
     }
     if (e.code === 'feature_unavailable') {
       out.what_this_means = 'This Valun server does not offer circulating credit (paying with notes you hold, '
-        + 'set-offs). Nothing was signed. Pay with your own credit note (leave pay_with out).';
+        + 'set-offs), or not on the tracker contract your client signs for (tracker v3.2). '
+        + 'Nothing was signed. Pay with your own credit note (leave pay_with out); if that fails '
+        + 'too, tell your owner: the server must run tracker v3.2.';
     }
     if (e.code === 'unknown_issuer') {
       out.what_this_means = 'The payment options for this deal list no note of yours from that issuer. Nothing was '
@@ -960,7 +962,8 @@ export class ValunAgent {
 
   /**
    * What paying deal `did` with a held note would sign, read and checked once (see prepare): the server offers
-   * circulation/1; the deal's payment options list a note of mine from the issuer `payWith` names (an exact participant
+   * circulation/1 and reports the tracker v3.2 contract (GET /info novation); the deal's payment options list a note of
+   * mine from the issuer `payWith` names (an exact participant
    * id first, else a handle only one listed issuer has); the issuer's and the payee's current directory keys; and a fresh
    * transfer template for exactly that issuer and key, accepted by novation.evaluatePayerTemplate for the deal, terms and
    * delivery `chk` checked (with one GET /edges read-back when D-1 needs one).
@@ -969,6 +972,8 @@ export class ValunAgent {
     if (!this.#remember(await c.info()).includes(CIRCULATION)) {
       throw new ValunError('feature_unavailable', 'this Valun server does not offer circulating credit (circulation/1)');
     }
+    const problem = nv.contractProblem(c.novationInfo ?? null);    // tracker v3.2, as Client.payByTransfer checks
+    if (problem) throw new ValunError('feature_unavailable', problem);
     const option = ValunAgent.#heldNote(await c.paymentOptions(did), payWith);
     const iid = option.issuer.id;
     const issuer = await ValunAgent.#current(c, iid);
@@ -1028,7 +1033,7 @@ export class ValunAgent {
     const ctx = {me_pk: c.pubkey, me_id: c.participantId, now_ms: c.nowMs(), verify: verifyHexFor, pins, records: get(state, 'records'),
       signed: get(state, 'signed'), transfer_attempts: get(state, 'transfer_attempts'), novated_edges: get(state, 'novated_edges'),
       features: [...(this.features || [])], consent_policy: get(state, 'consent_policy'), deal, payee_current_pk: payeePk,
-      approved_quote_digest: null, mandate, edges: null};
+      approved_quote_digest: null, mandate, edges: null, novation: c.novationInfo ?? null};
     let r = nv.evaluatePayerTemplate(tpl, ctx);
     const need = !r.ok && r.code === 'transfer_window_open' ? get(r.summary, 'needs_read_back') : null;
     if (truthy(need)) {

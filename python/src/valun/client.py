@@ -636,6 +636,7 @@ class Client:
         if self._server:
             self.state['server'] = self._server
         self._advertised = []                   # the features the last GET /info listed (for the capability header)
+        self._novation = None                   # the last GET /info novation: the tracker contract (novation.CONTRACT)
         self.declare_roles = bool(declare_roles)
 
     def _save(self):
@@ -751,10 +752,13 @@ class Client:
     def info(self):
         """The network's public description. Its tracker and unit are pinned in an enrolled profile the first time they
         are read (at enroll, or on the first call after an upgrade); a later answer naming others is refused. The
-        features it lists decide whether later requests carry the capability header (features_header)."""
+        features it lists decide whether later requests carry the capability header (features_header); its `novation`
+        object, the server's report of its tracker's contract, decides whether prior acknowledgments are signed
+        (novation.contract_problem: tracker v3.2 only)."""
         r = self.request('GET', '/pilot/v1/info', auth=False)
         self._pin(r)
         self._advertised = _features_of(r) if isinstance(r, dict) else []
+        self._novation = r.get('novation') if isinstance(r, dict) else None
         return r
 
     def features_header(self):
@@ -835,6 +839,15 @@ class Client:
             raise ValunError('feature_unavailable', 'this Valun server does not offer circulating credit (circulation/1); '
                                                     'nothing was signed')
         return features
+
+    def _contract(self):
+        """Tracker v3.2 (design v3.2 section 5): what signs a prior acknowledgment PA(...) (a bound note, a payment by
+        transfer, a payee's or payer's consent) is signed only when the last GET /info's novation object reports exactly
+        the contract novation.CONTRACT; otherwise feature_unavailable before anything is asked for or signed, as for a
+        server without circulation/1."""
+        problem = nv.contract_problem(getattr(self, '_novation', None))
+        if problem:
+            raise ValunError('feature_unavailable', problem + '; nothing was signed')
 
     def me(self):
         return self.request('GET', '/pilot/v1/me')
@@ -976,9 +989,11 @@ class Client:
         18.5, design 6.3): the template is asked for with ?prior=1&bound=1 and checked by
         novation.evaluate_bound_template (15.3 R1-R13, and decision D-1: one live payment attempt per deal, with one
         GET /edges read-back when an earlier attempt's edge must be read); a prior older than this client's own
-        confirmed state of the edge is refused as well (ledger_mismatch). The note M(I,R,P+price,ts) and its prior
-        acknowledgment M(I,R,P,ts) are built and signed here and sent as credit_note {total, timestamp, signature,
-        prior_total, prior_signature}, after the R4 record, the payment attempt and the pending entry are saved.
+        confirmed state of the edge is refused as well (ledger_mismatch). Only for the tracker v3.2 contract (GET /info
+        novation, novation.CONTRACT; feature_unavailable otherwise, before the template is asked for). The note
+        M(I,R,P+price,ts) and its prior acknowledgment PA(I,R,P,p,ts) (p the prior note's timestamp, 0 for a new edge)
+        are built and signed here and sent as credit_note {total, timestamp, signature, prior_total, prior_timestamp,
+        prior_signature}, after the R4 record, the payment attempt and the pending entry are saved.
 
         Otherwise (no features, or a profile not pinned yet: exactly as 0.3 on the wire) an ORDINARY note: the template
         names this agent's key and the payee's current key, adds exactly the agreed price, names the agreed (and pinned)
@@ -1060,6 +1075,7 @@ class Client:
 
     def _complete_bound(self, deal_id, d, terms, h, dh, features):
         """complete() with a server that lists bound_notes/1: a bound note (see complete())."""
+        self._contract()                        # never an ordinary note instead: fail closed
         tpl = self.request('GET', f'/pilot/v1/deals/{deal_id}/credit-note-template?prior=1&bound=1')
         payee = self._registered_key(terms['payee']['id'])
         self.check_delivery_signature(d['delivery'], h, terms['payee']['pubkey'], payee)
@@ -1090,6 +1106,7 @@ class Client:
         note = {'total': tpl['total'], 'timestamp': tpl['timestamp'], 'signature': self._sign_message(msgs[nv.slot_key(pair, 'new')])}
         body = {'terms_hash': h, 'deliverable_sha256': dh, 'signature': self._sign(statement('complete', h, dh)),
                 'credit_note': dict(note, prior_total=tpl['prior_total'],
+                                    prior_timestamp=r['write_ahead']['attempt']['prior_timestamp'],
                                     prior_signature=self._sign_message(msgs[nv.slot_key(pair, 'prior')]))}
         return self._send_note(deal_id, pair, body, note)
 
@@ -1150,7 +1167,8 @@ class Client:
         ctx = {'me_pk': self.pubkey, 'me_id': self.participant_id, 'now_ms': now_ms, 'verify': _verify_hex,
                'pins': _pins_of(state), 'records': state.get('records'), 'signed': state.get('signed'),
                'transfer_attempts': state.get('transfer_attempts'), 'novated_edges': state.get('novated_edges'),
-               'features': list(features), 'consent_policy': state.get('consent_policy')}
+               'features': list(features), 'consent_policy': state.get('consent_policy'),
+               'novation': getattr(self, '_novation', None)}
         ctx.update(extra)
         return ctx
 
@@ -1342,7 +1360,8 @@ class Client:
         payment options list: by participant id, or by handle when no id matches (unknown_issuer otherwise).
 
         Checked before anything is signed: the delivery and the agreement as for complete() (_accepted_delivery), and
-        the payee's signature on the delivery; the server lists circulation/1 (feature_unavailable); the template is for
+        the payee's signature on the delivery; the server lists circulation/1 and reports the tracker v3.2 contract (GET
+        /info novation, novation.CONTRACT; feature_unavailable); the template is for
         the issuer chosen, under that participant's current key (bad_template); novation.evaluate_payer_template
         (15.3 R1-R13, and decision D-1: one live payment attempt per deal across notes and transfers, with one GET
         /edges read-back when an earlier attempt's edge must be read). With expected_quote_digest (the quote the owner
@@ -1352,12 +1371,15 @@ class Client:
         Saved before anything is sent (R9): the R4 record of the three slots, the payment attempt (transfer_attempts),
         the pending decrease of my claim on A (records) and approved_payments[deal_id] = the quote digest. Then it signs
         the complete statement (an unconditional acceptance of the delivery), the pay statement and the slots
-        '<A>><me>:prior', '<A>><me>:new' and '<A>><C>:new', and posts them. A 409 transfer_stale that the server
-        answers with a fresh template (it recorded nothing) is checked once more under the same quote digest: D-1 signs
-        it only as the identical operation (the first attempt's timestamp, while my claim on A is exactly the state it
-        acknowledged); a template at a new T is transfer_window_open until the first attempt is dead, because both
-        would acknowledge only totals and both could apply (audit VS-1); one that names the
-        transfer it recorded (transfer_id, regenerated_as: the edges changed before it applied, and it may have been
+        '<A>><me>:prior' (PA(A,me,X,p_AB,T): my claim's total and its state's timestamp, tracker v3.2), '<A>><me>:new'
+        and '<A>><C>:new', and posts them with from_prior_total, from_prior_timestamp, to_prior_total and
+        to_prior_timestamp (the edge states the template showed; 0 and 0 for a new destination edge). A 409
+        transfer_stale that the server answers with a fresh template (it recorded nothing) is checked once more under
+        the same quote digest: D-1 signs it as the identical operation (the first attempt's timestamp) or, at a new T,
+        when it acknowledges the same state of my claim on A as the first attempt (total and timestamp: on tracker v3.2
+        at most one of the two can apply, audit VS-1 closed), in both cases while my claim on A is exactly that state;
+        a template on another state of my claim is transfer_window_open until the first attempt is dead; one that names
+        the transfer it recorded (transfer_id, regenerated_as: the edges changed before it applied, and it may have been
         made again, to be signed as a consent) is not retried, and the deal view is returned. paid_by_transfer records
         the deal as paid; a refusal, or payment_due, forgets the pending entry, and the attempt stays until it is dead
         (with the server's id of it, attempt_id, once known). Returns the deal view."""
@@ -1370,6 +1392,7 @@ class Client:
         payee = self._registered_key(terms['payee']['id'])
         self.check_delivery_signature(d['delivery'], h, terms['payee']['pubkey'], payee)
         features = self._circulation()
+        self._contract()
         issuer_id = self._resolve_issuer(deal_id, issuer)
         issuer_pk = self._registered_key(issuer_id)
         mandate = _mandate_of(self.me())
@@ -1451,11 +1474,13 @@ class Client:
         if not r['ok']:
             raise _refusal_error(r)
         q = r['summary']['quote_digest']
-        to_before = tpl['to_edge'].get('before')
+        from_before, to_before = tpl['from_edge']['before'], tpl['to_edge'].get('before')
         msgs = nv.slot_messages(r['to_sign'], tpl['tracker_nft_id'], tpl['denomination'])
         body = {'issuer_id': issuer_id, 'terms_hash': deal['terms_hash'], 'deliverable_sha256': deal['deliverable_sha256'],
-                'quote_digest': q, 'timestamp': tpl['timestamp'], 'from_prior_total': tpl['from_edge']['before']['total'],
+                'quote_digest': q, 'timestamp': tpl['timestamp'], 'from_prior_total': from_before['total'],
+                'from_prior_timestamp': from_before['timestamp'],
                 'to_prior_total': to_before['total'] if to_before is not None else 0,
+                'to_prior_timestamp': to_before['timestamp'] if to_before is not None else 0,
                 'completion_signature': self._sign(statement('complete', deal['terms_hash'], deal['deliverable_sha256'])),
                 'pay_signature': self._sign(nv.pay_statement(deal['deal_id'], q)),
                 'signatures': {slot: self._sign_message(m) for slot, m in msgs.items()}}
@@ -1863,12 +1888,14 @@ class Client:
 
         Each item of GET /consents is checked by novation.evaluate_consent for the one role it gives this client (payer:
         a regenerated transfer of my own payment, re-signed only under the quote my payment was signed with; issuer;
-        payee: the deal is read and verified here, delivered by me and paid by this transfer; member: a set-off). An
-        item it allows is written ahead (R9), signed (the 80-byte messages rebuilt here, R1) and posted with each
-        edge's revision; an item it refuses is refused at the server with the refusal code as its reason; a
-        transfer_window_open that needs a read-back is decided again after one GET /edges per run. Items that are not
-        collecting, that have nothing left for me to sign, whose deal could not be read now, whose posting failed, or
-        whose signatures came back as stale revisions wait for a later run.
+        payee: the deal is read and verified here, delivered by me and paid by this transfer; member: a set-off). A
+        payer or payee item, which signs a prior acknowledgment, waits with code feature_unavailable (neither signed nor
+        refused) unless GET /info novation reports the tracker v3.2 contract (novation.CONTRACT). An item it allows is
+        written ahead (R9), signed (the messages rebuilt here, R1: PA(...) for a prior slot, the 80-byte M(...) for a new
+        one) and posted with each edge's revision; an item it refuses is refused at the server with the refusal code as
+        its reason; a transfer_window_open that needs a read-back is decided again after one GET /edges per run. Items
+        that are not collecting, that have nothing left for me to sign, whose deal could not be read now, whose posting
+        failed, or whose signatures came back as stale revisions wait for a later run.
 
         Returns {signed: [entry], refused: [entry], waiting: [entry]}, entry = {id, kind, role, deal_id, amount,
         your_net_change_PC, your_total_owed_change_PC, code, reason} (signed entries add state and rejected; an entry
@@ -1940,6 +1967,10 @@ class Client:
         roles = item.get('your_roles')
         role = roles[0] if isinstance(roles, list) and len(roles) == 1 else None
         deal, payee_pk, issuer_ids = None, None, None
+        problem = nv.contract_problem(getattr(self, '_novation', None)) if role in ('payer', 'payee') else None
+        if problem:                             # tracker v3.2: a prior slot is signed for that contract only (fail closed)
+            return 'waiting', self._consent_entry(item, None, code='feature_unavailable',
+                                                  reason=problem + '; nothing was signed or refused')
         if role in ('payer', 'payee'):
             try:
                 deal, payee_pk = self._consent_deal(item, role, run)

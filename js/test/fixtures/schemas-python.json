@@ -1,12 +1,12 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "88e765543dadf024d245ba71fa78221a350505c21a85a0b2368b08e407f39f89",
+  "agent.py": "21f6c35a46b37dadbd55c2f359f9fdaf457e12c682ca542f9caf0c620ad49cb0",
   "basis.py": "82baabb5b9177b3ff67ebcbf70aa1471e00b9a94861e3c0de13987a4ed225634",
-  "client.py": "eb2f0f04d88972e8c06112794cd555cef86bfff1790a1d4295a456b0685bd9e9",
+  "client.py": "260c142aa7f2e6b4684dee4047eb712b297bd61dbcd070ad6591171c822e3b02",
   "mcp_server.py": "dbcb5fddc0936bef4162cb3913f1cc40af6c676147ea2bbd06811f75a87500c1",
   "measure.py": "f4305cf1fe54ac137fa3aa201b0904c0e88e6ecc8325a38a41c06197963579ec",
-  "novation.py": "941e629fe28d030215771513b5a9471730c92b9183f469218c023c7fb4261196",
+  "novation.py": "dd5b6abd1235aa7b71a4533cd72d23c4126854b9fe82f3dcfe5ce97ab25a52af",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "0a834be67c6a1333f954b36ba0e4c920ea91dca4b00b24498baa572b03dc33f8",
   "schemas.py": "953417f78cf46bcda1078e3773e6b647426c10f4454c681b1da845877475e3bc"

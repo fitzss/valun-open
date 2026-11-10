@@ -456,6 +456,7 @@ export class Client {
   #server;
   #queue = {tail: Promise.resolve()};           // this client's state changes, one after another (shared by fresh())
   #advertised = [];                             // the features the last GET /info listed (for the capability header)
+  #novation = null;                             // the last GET /info novation: the tracker contract (novation.CONTRACT)
 
   /**
    * @param {object} options
@@ -514,6 +515,8 @@ export class Client {
 
   /** The feature tags the last GET /info this client read listed ([] before any; ['?'] for a malformed list). */
   get advertised() { return [...this.#advertised]; }
+  /** The `novation` object of the last GET /info (the server's report of its tracker's contract), a copy; or null. */
+  get novationInfo() { return this.#novation === null ? null : structuredClone(this.#novation); }
 
   /**
    * A new Client on this client's store, server, clock, fetch, pins and other options, as a new Client starts: it has
@@ -744,12 +747,14 @@ export class Client {
   /**
    * The network's public description. Its tracker and unit are pinned in an enrolled profile the first time they are
    * read (on the first call after enrolling or after an upgrade); a later answer naming others is refused
-   * (tracker_mismatch, R13).
+   * (tracker_mismatch, R13). Its `novation` object, the server's report of its tracker's contract, decides whether prior
+   * acknowledgments are signed (novation.contractProblem: tracker v3.2 only).
    */
   async info() {
     const r = await this.request('GET', '/pilot/v1/info', undefined, {auth: false});
     await this.#pinFrom(r);
     this.#advertised = isObject(r) ? featuresOf(r) : [];
+    this.#novation = isObject(r) ? (pyGet(r, 'novation') ?? null) : null;
     return r;
   }
 
@@ -835,6 +840,16 @@ export class Client {
       throw new ValunError('feature_unavailable', 'this Valun server does not offer circulating credit (circulation/1); nothing was signed');
     }
     return features;
+  }
+
+  /**
+   * Tracker v3.2 (design v3.2 section 5): what signs a prior acknowledgment PA(...) (a bound note, a payment by transfer,
+   * a payee's or payer's consent) is signed only when the last GET /info's novation object reports exactly the contract
+   * novation.CONTRACT; otherwise feature_unavailable before anything is asked for or signed.
+   */
+  #contract() {
+    const problem = nv.contractProblem(this.#novation);
+    if (problem) throw new ValunError('feature_unavailable', problem + '; nothing was signed');
   }
 
   // ---------- independent checks ----------
@@ -1063,9 +1078,11 @@ export class Client {
    * design 6.3): the template is asked for with ?prior=1&bound=1 and checked by novation.evaluateBoundTemplate (15.3
    * R1-R13, and decision D-1: one live payment attempt per deal, with one GET /edges read-back when an earlier attempt's
    * edge must be read); a prior older than this client's own confirmed state of the edge is refused as well
-   * (ledger_mismatch). The note and its prior acknowledgment are built and signed here and sent as credit_note {total,
-   * timestamp, signature, prior_total, prior_signature}, after the R4 record, the payment attempt and the pending entry
-   * are saved.
+   * (ledger_mismatch). Only for the tracker v3.2 contract (GET /info novation, novation.CONTRACT; feature_unavailable
+   * otherwise, before the template is asked for). The note M(I,R,P+price,ts) and its prior acknowledgment PA(I,R,P,p,ts)
+   * (p the prior note's timestamp, 0 for a new edge) are built and signed here and sent as credit_note {total,
+   * timestamp, signature, prior_total, prior_timestamp, prior_signature}, after the R4 record, the payment attempt and
+   * the pending entry are saved.
    *
    * Otherwise (no features, or a profile not pinned yet: exactly as 0.3 on the wire) an ORDINARY note: the template names
    * this agent's key and the payee's current key, adds exactly the agreed price, names the agreed (and pinned) tracker and
@@ -1153,6 +1170,7 @@ export class Client {
 
   /** complete() with a server that lists bound_notes/1: a bound note (see complete()). */
   async #completeBound(dealId, d, terms, h, dh, features) {
+    this.#contract();                            // never an ordinary note instead: fail closed
     const tpl = await this.request('GET', `/pilot/v1/deals/${seg(dealId)}/credit-note-template?prior=1&bound=1`);
     const payee = await this.#registeredKey(terms.payee.id);
     Client.checkDeliverySignature(d.delivery, h, terms.payee.pubkey, payee);
@@ -1183,7 +1201,8 @@ export class Client {
     const msgs = nv.slotMessages(r.to_sign, tpl.tracker_nft_id, tpl.denomination);
     const note = {total: tpl.total, timestamp: tpl.timestamp, signature: this.#signBytes(msgs[nv.slotKey(pair, 'new')])};
     const body = {terms_hash: h, deliverable_sha256: dh, signature: this.#sign(statements.complete(h, dh)),
-      credit_note: {...note, prior_total: tpl.prior_total, prior_signature: this.#signBytes(msgs[nv.slotKey(pair, 'prior')])}};
+      credit_note: {...note, prior_total: tpl.prior_total, prior_timestamp: r.write_ahead.attempt.prior_timestamp,
+        prior_signature: this.#signBytes(msgs[nv.slotKey(pair, 'prior')])}};
     return this.#sendNote(dealId, pair, body, note);
   }
 
@@ -1248,7 +1267,8 @@ export class Client {
   #ctx(state, nowMs, features, extra = {}) {
     return {me_pk: this.pubkey, me_id: this.participantId, now_ms: nowMs, verify: verifyHexFor, pins: pinsOf(state),
       records: state.records ?? null, signed: state.signed ?? null, transfer_attempts: state.transfer_attempts ?? null,
-      novated_edges: state.novated_edges ?? null, features: [...features], consent_policy: state.consent_policy ?? null, ...extra};
+      novated_edges: state.novated_edges ?? null, features: [...features], consent_policy: state.consent_policy ?? null,
+      novation: this.#novation, ...extra};
   }
 
   /**
@@ -1438,18 +1458,22 @@ export class Client {
    * list: by participant id, or by handle when no id matches (unknown_issuer otherwise).
    *
    * Checked before anything is signed: the delivery and the agreement as for complete(), and the payee's signature on
-   * the delivery; the server lists circulation/1 (feature_unavailable); the template is for the issuer chosen, under that
+   * the delivery; the server lists circulation/1 and reports the tracker v3.2 contract (GET /info novation,
+   * novation.CONTRACT; feature_unavailable); the template is for the issuer chosen, under that
    * participant's current key (bad_template); novation.evaluatePayerTemplate (15.3 R1-R13, and decision D-1, with one
    * GET /edges read-back when an earlier attempt's edge must be read). With expectedQuoteDigest (the quote the owner
    * approved) another quote is stale_quote; with expectedClaimTotal (my claim on A that the owner saw) another prior
    * total of A->me is stale_claim.
    *
    * Saved before anything is sent (R9): the R4 record of the three slots, the payment attempt (transfer_attempts), the
-   * pending decrease of my claim on A (records) and approved_payments[deal_id] = the quote digest. A 409 transfer_stale
-   * that the server answers with a fresh template is checked once more under the same quote digest: D-1 signs it only
-   * as the identical operation (the first attempt's timestamp); a template at a new T is transfer_window_open until the
-   * first attempt is dead (audit VS-1: both would acknowledge only totals, and both could apply); one that names the
-   * transfer it recorded (transfer_id, regenerated_as) is not retried, and the deal view is returned. paid_by_transfer
+   * pending decrease of my claim on A (records) and approved_payments[deal_id] = the quote digest. The prior slot is
+   * PA(A,me,X,p_AB,T) (tracker v3.2), and the body carries from_prior_total, from_prior_timestamp, to_prior_total and
+   * to_prior_timestamp (the states the template showed; 0 and 0 for a new destination edge). A 409 transfer_stale
+   * that the server answers with a fresh template is checked once more under the same quote digest: D-1 signs it as
+   * the identical operation (the first attempt's timestamp) or, at a new T, when it acknowledges the same state of my
+   * claim on A as the first attempt (total and timestamp: on tracker v3.2 at most one of the two can apply, audit VS-1
+   * closed); a template on another state of my claim is transfer_window_open until the first attempt is dead; one that
+   * names the transfer it recorded (transfer_id, regenerated_as) is not retried, and the deal view is returned. paid_by_transfer
    * records the deal as paid; a refusal, or payment_due, forgets the pending entry, and the attempt stays until it is
    * dead (with the server's id of it, attempt_id, once known). Resolves to the deal view.
    */
@@ -1465,6 +1489,7 @@ export class Client {
     const payee = await this.#registeredKey(terms.payee.id);
     Client.checkDeliverySignature(d.delivery, h, terms.payee.pubkey, payee);
     const features = await this.#circulation();
+    this.#contract();
     const issuerId = await this.#resolveIssuer(dealId, issuer);
     const issuerPk = await this.#registeredKey(issuerId);
     const mandate = mandateOf(await this.me());
@@ -1545,10 +1570,11 @@ export class Client {
       {deal, payee_current_pk: payee, approved_quote_digest: approved, mandate, edges})), signedAt, {refuse: claimShown, also: approve});
     if (!r.ok) throw refusalError(r);
     const q = r.summary.quote_digest;
-    const toBefore = pyGet(tpl.to_edge, 'before');
+    const fromBefore = tpl.from_edge.before, toBefore = pyGet(tpl.to_edge, 'before');
     const msgs = nv.slotMessages(r.to_sign, tpl.tracker_nft_id, tpl.denomination);
     const body = {issuer_id: issuerId, terms_hash: deal.terms_hash, deliverable_sha256: deal.deliverable_sha256, quote_digest: q,
-      timestamp: tpl.timestamp, from_prior_total: tpl.from_edge.before.total, to_prior_total: toBefore !== null ? toBefore.total : 0,
+      timestamp: tpl.timestamp, from_prior_total: fromBefore.total, from_prior_timestamp: fromBefore.timestamp,
+      to_prior_total: toBefore !== null ? toBefore.total : 0, to_prior_timestamp: toBefore !== null ? toBefore.timestamp : 0,
       completion_signature: this.#sign(statements.complete(deal.terms_hash, deal.deliverable_sha256)),
       pay_signature: this.#sign(nv.payStatement(deal.deal_id, q)), signatures: {}};
     for (const [slot, m] of Object.entries(msgs)) body.signatures[slot] = this.#signBytes(m);
@@ -1896,7 +1922,9 @@ export class Client {
    *
    * `policy` is the local consent policy; null takes the profile's consent_policy, and an absent policy signs nothing.
    * The owner's side is the mandate GET /me shows; the stricter of the two applies (R8). Nothing more is read or sent
-   * unless GET /info lists circulation/1. Resolves to {signed: [entry], refused: [entry], waiting: [entry]}, entry =
+   * unless GET /info lists circulation/1. A payer or payee item, which signs a prior acknowledgment PA(...), waits with
+   * code feature_unavailable (neither signed nor refused) unless GET /info novation reports the tracker v3.2 contract
+   * (novation.CONTRACT). Resolves to {signed: [entry], refused: [entry], waiting: [entry]}, entry =
    * {id, kind, role, deal_id, amount, your_net_change_PC, your_total_owed_change_PC, code, reason} (signed entries add
    * state and rejected; an entry whose request failed adds error). Each decision is appended to consent_log (the last
    * CONSENT_LOG_MAX), and consents_last_run_ms (or consents_last_safe_run_ms) is set to nowMs.
@@ -1967,6 +1995,10 @@ export class Client {
     const roles = pyGet(it, 'your_roles');
     const role = Array.isArray(roles) && roles.length === 1 ? roles[0] : null;
     let deal = null, payeePk = null, issuerIds = null;
+    const problem = role === 'payer' || role === 'payee' ? nv.contractProblem(this.#novation) : null;
+    if (problem) {                                // tracker v3.2: a prior slot is signed for that contract only (fail closed)
+      return ['waiting', Client.#consentEntry(it, null, {code: 'feature_unavailable', reason: problem + '; nothing was signed or refused'})];
+    }
     if (role === 'payer' || role === 'payee') {
       try {
         [deal, payeePk] = await this.#consentDeal(it, role, run);

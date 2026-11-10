@@ -436,7 +436,14 @@ def res(t, r):
 
 
 T999, T998, T997 = (res(T0_MS - 1500, r) for r in (999, 998, 997))
-CIRC_INFO = dict(INFO, features=['bound_notes/1', 'circulation/1'])
+# GET /info novation of a v16 server on tracker v3.2: the novation constants and the tracker contract the clients sign
+# prior acknowledgments PA(...) for (design v3.2); V31 is what a server on tracker v3.1 would report (no contract).
+NOVATION_INFO = {'transfer_ms': 999, 'setoff_ms': 998, 'bound_note_ms': 997, 'reserved_ms': [995, 996, 997, 998, 999],
+                 'max_age_ms': 3600000, 'transfer_ttl_ms': 1200000, 'setoff_ttl_ms': 1800000, 'fallback_margin_ms': 60000,
+                 'tracker_build': 'valun-circulating-credit/4', 'transfer_version': 4, 'bound_note_version': 3,
+                 'prior_ack': 'basis/prior-ack/1'}
+NOVATION_INFO_V31 = {k: v for k, v in NOVATION_INFO.items() if k not in nv.CONTRACT}
+CIRC_INFO = dict(INFO, features=['bound_notes/1', 'circulation/1'], novation=NOVATION_INFO)
 CIRC_FLAGS = {'auto_clear': True, 'novate_own_debt': True, 'accept_transfers': True, 'accept_notes_from': 'any',
               'refuse_notes_from': [], 'pay_with_held_notes': 'when_asked'}
 POLICY = {'setoff': True, 'as_issuer': True, 'as_new_creditor': True, 'max_PC': 50, 'accept_issuers': 'any', 'refuse_issuers': []}
@@ -538,6 +545,20 @@ def issuer_item(iid='vt_7a7a7a7a7a7a7a7a', amount=4, ts=None):
             'expires_at': '2026-11-06T12:18:00.000Z', 'network': vc.NETWORK, 'tracker_nft_id': NFT, 'denomination': DENOM,
             'edges': rows, 'context': {'amount': amount, 'deal': {'deal_id': 'vd_abababababababab'}},
             'summary': {'your_net_change_PC': 0, 'your_total_owed_change_PC': 0}}
+
+
+def payee_item(iid='vt_8b8b8b8b8b8b8b8b', amount=20, ts=None):
+    """A payment to alice by transfer (frank's debt moved onto frank>alice): a consent alice signs as payee, its prior slot
+    PA(frank, alice, 30, p, T) (tracker v3.2)."""
+    ts = T999 if ts is None else ts
+    rows = [{'edge': edge('frank', 'alice'), 'issuer': {'id': ID['frank'], 'handle': 'frank'}, 'recipient': {'id': ID['alice'], 'handle': 'alice'},
+             'your_role': 'creditor', 'before': state_of('frank', 'alice', 30, T0_MS - 900_000 + 1), 'change': amount,
+             'new_total': 30 + amount, 'timestamp': ts, 'revision': 1, 'slots': ['prior', 'new'], 'signed_by_you': []}]
+    return {'kind': 'transfer', 'id': iid, 'state': 'collecting', 'your_roles': ['payee'], 'created_at': '2026-11-06T11:58:00.000Z',
+            'expires_at': '2026-11-06T12:18:00.000Z', 'network': vc.NETWORK, 'tracker_nft_id': NFT, 'denomination': DENOM,
+            'edges': rows, 'context': {'amount': amount, 'issuer': {'id': ID['frank'], 'handle': 'frank'},
+                                       'deal': {'deal_id': 'vd_8b8b8b8b8b8b8b8b', 'terms_hash': '8b' * 32, 'price': amount}},
+            'summary': {'your_net_change_PC': amount, 'your_total_owed_change_PC': 0}}
 
 
 def scenarios():
@@ -727,7 +748,7 @@ def scenarios():
         {**g('delivered_good'), **g('held_then_issued'), dgt: {'body': template(dg)}, **issued},
         state={'issued': {PAIR_AB: 0}, 'records': {PAIR_AB: {'confirmed': None, 'pending': [held]}}})
     pinned = {'pins': dict(PINS)}
-    bound_info = {'GET /pilot/v1/info': {'body': dict(INFO, features=['bound_notes/1'])}}
+    bound_info = {'GET /pilot/v1/info': {'body': dict(INFO, features=['bound_notes/1'], novation=NOVATION_INFO)}}
     dgb = dgt + '?prior=1&bound=1'          # release v16: a server listing bound_notes/1 serves bound templates (PROTOCOL.md 18.5)
     my_prior = {'total': 10, 'timestamp': T0_MS - 600_000, 'signature': note_sig('alice', 'bob', 10, T0_MS - 600_000)}
     add('review: pinned profile, the server shows my prior note', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
@@ -743,6 +764,15 @@ def scenarios():
         {**g('delivered_good'), **bound_info, dgb: {'body': bound_template(dg, prior=0, prior_note=None)}, **issued}, state=pinned)
     add('review: bound template on an ordinary timestamp', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
         {**g('delivered_good'), **bound_info, dgb: {'body': bound_template(dg, prior_note=my_prior, ts=T0_MS - 1500)}}, state=pinned)
+    # tracker v3.2: a bound note signs PA(...) only for the contract GET /info novation reports; no ordinary note instead
+    add('review: bound notes on a server that does not report the tracker v3.2 contract', 'valun_review_delivery',
+        {'deal_id': dg['id'], 'decision': 'accept'},
+        {**g('delivered_good'), 'GET /pilot/v1/info': {'body': dict(INFO, features=['bound_notes/1'], novation=NOVATION_INFO_V31)},
+         dgb: {'body': bound_template(dg, prior_note=my_prior)}, **issued}, state=pinned)
+    add('review: bound template naming another prior timestamp than its prior note', 'valun_review_delivery',
+        {'deal_id': dg['id'], 'decision': 'accept'},
+        {**g('delivered_good'), **bound_info, dgb: {'body': dict(bound_template(dg, prior_note=my_prior), prior_timestamp=T0_MS - 600_001)}},
+        state=pinned)
     add('review: bound features, but the template carries no prior note', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
         {**g('delivered_good'), **bound_info, dgb: {'body': template(dg, ts=T997)}}, state=pinned)
     add('review: bound note, the server refuses it (stale_note)', 'valun_review_delivery', {'deal_id': dg['id'], 'decision': 'accept'},
@@ -797,6 +827,8 @@ def scenarios():
     circ_state = {'pins': dict(PINS), 'consent_policy': dict(POLICY)}
     pw = {'deal_id': dg['id'], 'decision': 'accept', 'pay_with': 'frank'}
     add('review: pay with a held note (frank), applied', 'valun_review_delivery', pw, {**pay_routes, **pbt(paid_view)}, state=circ_state)
+    add('review: pay with a held note on a server that does not report the tracker v3.2 contract', 'valun_review_delivery', pw,
+        {**pay_routes, 'GET /pilot/v1/info': {'body': dict(CIRC_INFO, novation=NOVATION_INFO_V31)}, **pbt(paid_view)}, state=circ_state)
     add('review: pay with a held note by participant id, the transfer collects signatures', 'valun_review_delivery',
         dict(pw, pay_with=' ' + ID['frank'].upper() + ' '),
         {**pay_routes, **pbt(dict(paid_view, status='paying_by_transfer', payment=dict(paid_view['payment'], state='collecting')))},
@@ -1297,6 +1329,12 @@ def client_scenarios():
         {**circ, **me_r, **cons(setoff_item(iid='vs_0000000000000001', state='applying'), {'kind': 'setoff'},
                                   dict(setoff_item(iid='vs_0000000000000002'), edges=[dict(e, signed_by_you=['new']) for e in so['edges']]))},
         dict(pinned, consent_policy=dict(POLICY)))
+    # tracker v3.2: a consent that signs a prior slot (payee, payer) waits on a server that does not report the contract,
+    # neither signed nor refused, and its deal is not read; a set-off (80-byte note messages only) is signed
+    add('process_consents: without the tracker v3.2 contract a payee consent waits and a set-off is signed', 'process_consents', {},
+        {**circ, 'GET /pilot/v1/info': {'body': dict(CIRC_INFO, novation=NOVATION_INFO_V31)}, **me_r, **cons(payee_item(), so),
+         f"POST /pilot/v1/consents/{so['id']}": {'body': {'id': so['id'], 'state': 'applied', 'rejected': []}}},
+        dict(pinned, consent_policy=dict(POLICY)))
     add('process_consents: GET /consents is not an object', 'process_consents', {}, {**circ, 'GET /pilot/v1/consents': {'body': [1, 2]}},
         dict(pinned, consent_policy=dict(POLICY)))
     add('process_consents: a server without circulating credit (only GET /info)', 'process_consents', {}, {},
@@ -1312,16 +1350,28 @@ def client_scenarios():
     tpl1 = transfer_template(dg, claim=claim_fa)
     # the payee's claim on frank moved while the payment was posted: a fresh template, a second later (my claim unchanged)
     tpl2 = transfer_template(dg, claim=claim_fa, to_before=(5, res(T0_MS - 1500, 999) + 1), ts=res(T0_MS - 1500, 999) + 1000)
+    # my claim on frank is at its total again, at another timestamp (another prior state), a second later
+    tpl3 = transfer_template(dg, claim=(claim_fa[0], claim_fa[1] + 4), ts=res(T0_MS - 1500, 999) + 1000)
     po = f"GET /pilot/v1/deals/{dg['id']}/payment-options"
     tt = f"GET /pilot/v1/deals/{dg['id']}/transfer-template?issuer={ID['frank']}"
     pbt = f"POST /pilot/v1/deals/{dg['id']}/pay-by-transfer"
     base_pay = {f"GET /pilot/v1/deals/{dg['id']}": {'body': dg}, **circ, **me_r, po: {'body': payment_options(dg)}, tt: {'body': tpl1}}
     paid = dict(dg, status='paid_by_transfer', payment={'route': 'transfer', 'transfer_id': 'vt_4d4d4d4d4d4d4d4d', 'state': 'applied'})
-    # audit VS-1: a fresh template at a new T is not signed while the first attempt can still apply
-    add('pay_by_transfer: transfer_stale with a fresh template at a new T is refused (transfer_window_open)', 'pay_by_transfer',
-        {'deal_id': dg['id'], 'issuer': 'frank'},
+    # tracker v3.2 (audit VS-1 closed): a fresh template at a new T on the same state of my claim is signed again at once
+    # (the same-prior exemption: the two attempts exclude each other at the tracker) ...
+    add('pay_by_transfer: transfer_stale with a fresh template at a new T on the same claim is signed again (tracker v3.2)',
+        'pay_by_transfer', {'deal_id': dg['id'], 'issuer': 'frank'},
         {**base_pay, pbt: {'sequence': [{'status': 409, 'body': {'error': 'transfer_stale', 'message': 'the edges moved', 'template': tpl2}},
                                         {'body': paid}]}}, dict(pinned, consent_policy=dict(POLICY)))
+    # ... and one on another state of my claim is refused while the first attempt can still apply
+    add('pay_by_transfer: transfer_stale with a fresh template on another state of my claim is refused (transfer_window_open)',
+        'pay_by_transfer', {'deal_id': dg['id'], 'issuer': 'frank'},
+        {**base_pay, pbt: {'sequence': [{'status': 409, 'body': {'error': 'transfer_stale', 'message': 'the edges moved', 'template': tpl3}},
+                                        {'body': paid}]}}, dict(pinned, consent_policy=dict(POLICY)))
+    add('pay_by_transfer: a server that does not report the tracker v3.2 contract', 'pay_by_transfer',
+        {'deal_id': dg['id'], 'issuer': 'frank'},
+        {**base_pay, 'GET /pilot/v1/info': {'body': dict(CIRC_INFO, novation=NOVATION_INFO_V31)}, pbt: {'body': paid}},
+        dict(pinned, consent_policy=dict(POLICY)))
     add('pay_by_transfer: transfer_stale with the same template is signed again once (the identical operation)', 'pay_by_transfer',
         {'deal_id': dg['id'], 'issuer': 'frank'},
         {**base_pay, pbt: {'sequence': [{'status': 409, 'body': {'error': 'transfer_stale', 'message': 'the edges moved', 'template': tpl1}},

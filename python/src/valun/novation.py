@@ -8,21 +8,36 @@ refusal codes, check order and summary fields.
 
 Notation (PROTOCOL.md 18). An edge I->R (issuer key I, recipient key R, both hex) is keyed '<I>><R>' (edge_key).
 M(I,R,t,ts) = message(I, R, t, ts, tracker_nft_id, denomination) is the 80-byte Basis note message
-(basis.note_message). An EdgeState {total, timestamp, signature} is the tracker's current note on an edge: the issuer's
-signature over M(I,R,total,timestamp). A slot key is '<edge>:prior' or '<edge>:new'. Below, A is the issuer of a held
-note, B the payer, C the payee, a the amount, X and Y the totals of A->B and A->C (Y = 0 for an absent edge), P the
-payer's total to the payee, T the operation's timestamp, d a set-off decrease.
+(basis.note_message). PA(I,R,X,p,T) = prior_message(I, R, X, p, T, tracker_nft_id, denomination) is the 105-byte prior
+acknowledgment of tracker v3.2 (basis.prior_ack_message): the edge's stored total X and its note's timestamp p (0 and
+0 for an absent edge) at the operation's timestamp T. An EdgeState {total, timestamp, signature} is the tracker's
+current note on an edge: the issuer's signature over M(I,R,total,timestamp). A slot key is '<edge>:prior' or
+'<edge>:new'. Below, A is the issuer of a held note, B the payer, C the payee, a the amount, X and Y the totals of A->B
+and A->C (Y = 0 for an absent edge) and p_AB, p_AC their states' timestamps (p_AC = 0 for an absent edge), P the
+payer's total to the payee and p its state's timestamp, T the operation's timestamp, d a set-off decrease.
 
-What each evaluator signs (to_sign: [(slot_key, issuer_pk, recipient_pk, total, ts), ...], in this order):
-  evaluate_bound_template   a bound credit note (residue 997): 'B>C:prior' M(B,C,P,T), 'B>C:new' M(B,C,P+a,T)
-  evaluate_payer_template   pay with a held note (999): 'A>B:prior' M(A,B,X,T), 'A>B:new' M(A,B,X-a,T),
+What each evaluator signs (to_sign, in this order: [(slot_key, issuer_pk, recipient_pk, total, ts), ...] for a 'new'
+slot and [(slot_key, issuer_pk, recipient_pk, prior_total, ts, prior_timestamp), ...] for a 'prior' slot):
+  evaluate_bound_template   a bound credit note (residue 997): 'B>C:prior' PA(B,C,P,p,T), 'B>C:new' M(B,C,P+a,T)
+  evaluate_payer_template   pay with a held note (999): 'A>B:prior' PA(A,B,X,p_AB,T), 'A>B:new' M(A,B,X-a,T),
                             'A>C:new' M(A,C,Y+a,T)
   evaluate_consent          payer (a regenerated transfer): the same three slots
                             issuer: 'A>B:new', 'A>C:new' (the decreased edge first)
-                            payee: 'A>C:prior' M(A,C,Y,T), 'A>C:new' M(A,C,Y+a,T)
+                            payee: 'A>C:prior' PA(A,C,Y,p_AC,T), 'A>C:new' M(A,C,Y+a,T)
                             member (a set-off, 998): '<I>><R>:new' M(I,R,P-d,ts_e) on each of its edges, item order
 A consent's to_sign leaves out the slots the item lists in signed_by_you. slot_messages(to_sign, nft, denomination)
-rebuilds the bytes to sign (R1: nothing the server sent as hex is ever signed).
+rebuilds the bytes to sign (R1: nothing the server sent as hex is ever signed): PA for a prior slot, M for a new one.
+The prior state a prior slot acknowledges is the verified EdgeState the item shows (bound: prior_note; transfer:
+from_edge.before, to_edge.before; consent: edges[].before), or (0, 0) for an absent edge. A template or item that also
+names a prior timestamp (bound: prior_timestamp; transfer: from_edge.prior_timestamp, to_edge.prior_timestamp;
+consent: edges[].prior_timestamp) must name exactly that state's timestamp, as prior_total must be its total
+(bad_template, bad_consent).
+
+The tracker contract (tracker v3.2, design v3.2 section 5): bound notes, transfers (the payer's template and consent)
+and the payee's consent sign prior slots, and are signed only when ctx['novation'] (GET /info novation) reports exactly
+CONTRACT: tracker_build 'valun-circulating-credit/4', transfer_version 4, bound_note_version 3, prior_ack
+'basis/prior-ack/1' (contract_problem); otherwise feature_unavailable, as the client refuses a server without
+circulation/1. Issuer and set-off consents sign 80-byte note messages only and are not gated.
 
 Each evaluator returns {'ok', 'code', 'to_sign', 'summary', 'write_ahead'}:
   ok, code     True and None when every rule holds; else False and one refusal code (REFUSAL_CODES), to_sign [].
@@ -48,7 +63,8 @@ Each evaluator returns {'ok', 'code', 'to_sign', 'summary', 'write_ahead'}:
 The checks, in this order (the first that fails gives the code; PROTOCOL.md 15.3 rule numbers):
   R9   records_unreadable    ctx records, records['paid_deals'], signed, transfer_attempts or novated_edges (or an
                              entry this evaluation reads) is not of its shape: refuse everything
-  -    bad_template / bad_consent   the item is not well formed (fields, types, one role, state 'collecting', slots)
+  -    bad_template / bad_consent   the item is not well formed (fields, types, one role, state 'collecting', slots,
+                             a prior total or prior timestamp other than its prior state's)
   D-1  already_paid          payer roles: records['paid_deals'] holds the deal (D-1 item 5)
   R13  tracker_mismatch      the item's (and the deal's) tracker_nft_id and denomination are not the pinned ones, or
                              nothing is pinned yet
@@ -72,7 +88,11 @@ The checks, in this order (the first that fails gives the code; PROTOCOL.md 15.3
                              apply (pending, and later than the edge's state shown)
        payment_attempt       a novation, or a bound note, that brings an edge of mine (as issuer) to the acknowledged
                              prior total of a bound note of mine on it that is later than it and can still apply (the
-                             client side of decision D-2 c: that note could then apply after it, and pay its deal twice)
+                             client side of decision D-2 c: on tracker v3.1 that note could then apply after it, and pay
+                             its deal twice; on v3.2 its acknowledgment also binds the prior timestamp, so it cannot, and
+                             the rule stays as a second line)
+  v3.2 feature_unavailable   a bound note, the payer's transfer or the payee's consent while ctx['novation'] does not
+                             report the tracker v3.2 contract (contract_problem): nothing that signs a prior slot
   R4   timestamp_reused      a different operation (or other totals) already signed at the same (edge, timestamp)
 
 D-1, one live payment attempt per deal (R11 extended to own notes), with decision D-2 a (full edge states). An attempt
@@ -89,11 +109,15 @@ of mine acknowledged the same prior state and applied, and nothing else of mine 
 the new attempt is excluded by it at the tracker and the edge is still exactly the acknowledged prior state (total,
 timestamp and signature; any other state gives attempt_outcome_unknown): a bound-note retry of mine that acknowledges
 the same prior on the same edge (only my signature lowers my edge, and I never sign a novation or bound note that
-brings it back to the prior of a bound note of mine that can still apply), or a transfer signed again at the same
-timestamp (the identical operation). A transfer retry at another timestamp is NOT excluded (audit VS-1): the
-creditors' prior acknowledgments M(A,B,X,T) and M(A,C,Y,T) carry no prior timestamp, so two transfers signed for the
-same priors both stay valid whenever A->B and A->C come back to X and Y with older timestamps, which the issuer and the
-payee can arrange without me; it waits for the window like any other payment. 'dead' (a read-back shows it did not
+brings it back to the prior of a bound note of mine that can still apply), a transfer signed again at the same
+timestamp (the identical operation), or (the same-prior exemption, design v3.2 section 4) a transfer at another
+timestamp that acknowledges the same prior state of the same held edge A->B, total AND timestamp, as the earlier
+transfer recorded (prior, prior_timestamp). Audit VS-1 is closed by tracker v3.2: both attempts' prior
+acknowledgments are PA(A,B,X,p_AB,T), the edge is at the state (X, p_AB) at most once (its timestamps strictly
+increase), so the first of them to apply leaves the other dead for good, whatever totals A->B and A->C come back to.
+Everything else stays windowed as before: a payment through another issuer or of another kind, one on another prior
+state of the edge (it moved: a new prior), one after an earlier attempt that recorded no prior state, and every payment
+while an ordinary note may apply. 'dead' (a read-back shows it did not
 apply and now > T + MAX_AGE_MS + FALLBACK_MARGIN_MS) -> no constraint. A state older than the one the attempt acknowledged (its prior_timestamp) or
 than this client's own confirmed state of the edge is no read-back (an edge's timestamps only increase); a confirmed
 state at or past T counts as one. An ordinary (unbound) note never expires, so while it may still apply any other
@@ -122,6 +146,9 @@ ctx keys (only me_pk, now_ms and verify are checked as arguments; the others giv
                    outcome by Client.resolve_attempt (for people: no rule here reads it)}; None = empty
   novated_edges    edges a novation changed (a dict keyed by edge, or a list of edges); None = none (R12)
   features         /info features (bound templates: bound_notes/1 makes an unbound template bound_note_required)
+  novation         GET /info novation, the server's report of its tracker's contract: a bound note, the payer's
+                   transfer and the payee's consent are signed only when it holds exactly CONTRACT (contract_problem;
+                   feature_unavailable otherwise)
   deal             deal_context(...): the verified agreement (payer roles, bound notes, payee)
   payee_current_pk the payee's current directory key (payer roles, bound notes)
   approved_quote_digest  the quote the owner approved (payer roles); a regenerated transfer (payer consent) must also
@@ -166,6 +193,12 @@ QUOTE_FIELDS = ('network', 'tracker_nft_id', 'denomination', 'deal_id', 'terms_h
 ROLES = ('payer', 'issuer', 'payee', 'member')
 ROUTES = ('note', 'transfer')
 PAID_DEALS_KEY = 'paid_deals'                 # records[PAID_DEALS_KEY]: the per-deal paid record (D-1 item 5)
+PRIOR_ACK = 'basis/prior-ack/1'               # the prior acknowledgment of tracker v3.2 (basis.PRIOR_ACK_TAG)
+# The tracker contract this client signs prior slots for, as GET /info novation reports it (design v3.2 sections 3-5):
+# exactly these values (the tracker's GET /capabilities build, novation.transfer.version, bound_notes.version and
+# their prior_ack), else feature_unavailable.
+CONTRACT = {'tracker_build': 'valun-circulating-credit/4', 'transfer_version': 4, 'bound_note_version': 3,
+            'prior_ack': PRIOR_ACK}
 REFUSAL_CODES = (
     # PROTOCOL.md 15.3 (normative)
     'bad_prior_signature', 'timestamp_domain', 'timestamp_reused', 'timestamp_stale', 'not_net_neutral',
@@ -178,6 +211,8 @@ REFUSAL_CODES = (
     'payment_attempt',
     # this module: a quote other than the approved one; an item that is not well formed
     'stale_quote', 'bad_template', 'bad_consent',
+    # tracker v3.2: the server does not report the contract this client signs prior acknowledgments for
+    'feature_unavailable',
 )
 ID_RE = re.compile(r'v[dts]_[0-9a-f]{16}\Z')  # a deal, transfer or set-off id, the only ids a summary carries
 RECORDS_KEEP_MS = 604_800_000                 # = client.RECORDS_KEEP_MS: R4 records are kept this long (proven_dead)
@@ -355,9 +390,42 @@ def message(issuer_pk, recipient_pk, total, timestamp, tracker_nft_id, denominat
                                bytes.fromhex(tracker_nft_id), denomination)
 
 
+def prior_message(issuer_pk, recipient_pk, prior_total, prior_timestamp, timestamp, tracker_nft_id, denomination):
+    """PA(I,R,X,p,T): the 105-byte prior acknowledgment of tracker v3.2, basis.prior_ack_message() over hex keys and
+    tracker id (X the acknowledged total, p its state's timestamp, 0 and 0 for an absent edge; T the operation's)."""
+    return _basis.prior_ack_message(bytes.fromhex(issuer_pk), bytes.fromhex(recipient_pk), prior_total, prior_timestamp,
+                                    timestamp, bytes.fromhex(tracker_nft_id), denomination)
+
+
 def slot_messages(to_sign, tracker_nft_id, denomination):
-    """{slot_key: M(I,R,t,ts)} for an evaluator's to_sign list, in its order: the only bytes a client signs for it (R1)."""
-    return {s: message(i, r, t, ts, tracker_nft_id, denomination) for s, i, r, t, ts in to_sign}
+    """{slot_key: bytes} for an evaluator's to_sign list, in its order: the only bytes a client signs for it (R1). A
+    prior slot (slot_key, I, R, X, T, p) is PA(I,R,X,p,T); a new slot (slot_key, I, R, t, T) is M(I,R,t,T). ValueError
+    for an entry of neither form: a prior slot is never signed as an 80-byte note message."""
+    out = {}
+    for x in to_sign:
+        prior = isinstance(x[0], str) and x[0].endswith(':prior')
+        if len(x) != (6 if prior else 5):
+            raise ValueError('a to_sign entry is (slot, issuer, recipient, total, ts) for a new slot and '
+                             '(slot, issuer, recipient, prior_total, ts, prior_timestamp) for a prior slot')
+        s, i, r, t, ts = x[:5]
+        out[s] = (prior_message(i, r, t, x[5], ts, tracker_nft_id, denomination) if prior
+                  else message(i, r, t, ts, tracker_nft_id, denomination))
+    return out
+
+
+def contract_problem(novation_info):
+    """None when `novation_info` (GET /info novation, the server's report of its tracker's contract) holds exactly the
+    tracker v3.2 contract CONTRACT (the same values of the same JSON types: 4, never '4', 4.0 or true); else one
+    sentence naming the first field that differs. Only then are prior acknowledgments PA(...) signed."""
+    if not isinstance(novation_info, dict):
+        return ('this Valun server does not report the tracker contract this client signs for (GET /info has no '
+                'novation object): tracker v3.2, prior acknowledgments basis/prior-ack/1')
+    for k, want in CONTRACT.items():
+        got = novation_info.get(k)
+        if type(got) is not type(want) or got != want:
+            return (f"this Valun server's tracker contract is not tracker v3.2 (GET /info novation.{k} is not "
+                    f'{want!r}); this client signs prior acknowledgments basis/prior-ack/1 only')
+    return None
 
 
 def quote_digest(fields):
@@ -756,19 +824,23 @@ class _Run:
             looked.append((a, o, state))
         return looked
 
-    def one_live_attempt(self, deal_id, price, route, edge, prior, timestamp=None):
-        """D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior, timestamp) for the deal unless
-        every earlier attempt is dead or is excluded by this one at the tracker: the same route on the same edge,
-        acknowledging the same prior, while the edge is still exactly the state the earlier one acknowledged; for a
-        transfer also at the same timestamp (the identical operation signed again: the tracker applies an edge's
-        operations at strictly increasing timestamps, so at most one of the two can apply).
+    def one_live_attempt(self, deal_id, price, route, edge, prior, timestamp=None, prior_timestamp=None):
+        """D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior, timestamp, and the timestamp
+        of the acknowledged prior state) for the deal unless every earlier attempt is dead or is excluded by this one
+        at the tracker: the same route on the same edge, acknowledging the same prior, while the edge is still exactly
+        the state the earlier one acknowledged; for a transfer also at the same timestamp (the identical operation
+        signed again: the tracker applies an edge's operations at strictly increasing timestamps, so at most one of the
+        two can apply) or, the same-prior exemption of tracker v3.2 (design v3.2 section 4), acknowledging the same
+        prior state of the held edge, its total AND its timestamp, as the earlier transfer recorded.
 
-        Why a transfer retry at another timestamp is not excluded (audit VS-1): the prior acknowledgments are M(A,B,X,T)
-        and M(A,C,Y,T), with no prior timestamp, so two attempts signed for the same priors X and Y both stay valid
-        whenever both edges come back to X and Y with older timestamps, and the issuer A can raise A->B again, and C
-        move an amount out of A->C, without my signature. A note retry stays excluded at another timestamp: only my own
-        signature lowers my own edge, and I sign no novation (no_bound_note_restored) and no bound note (_bound) that
-        brings it back to the prior of a bound note of mine that can still apply."""
+        Why the exemption holds (audit VS-1, closed by tracker v3.2): the prior acknowledgment of A->B is
+        PA(A,B,X,p_AB,T), and the edge is at (X, p_AB) at most once, so of two transfers acknowledging that state the
+        first to apply leaves the other dead for good, at any T and whatever totals both edges come back to (on tracker
+        v3.1, M(A,B,X,T) bound no prior timestamp and both could apply). A transfer on another prior state, or after an
+        attempt that recorded none (prior_timestamp), still waits for the window. A note retry stays excluded at
+        another timestamp, as before: only my own signature lowers my own edge, and I sign no novation
+        (no_bound_note_restored) and no bound note (_bound) that brings it back to the prior of a bound note of mine
+        that can still apply (and on tracker v3.2 its acknowledgment binds the prior timestamp as well)."""
         self.not_paid_yet(deal_id)
         if deal_id in self.summary['paid_deals']:
             self.refuse('already_paid', 'a payment of yours for this deal shows as applied; refusing to pay it again')
@@ -781,8 +853,12 @@ class _Run:
                 self.refuse('already_paid', 'an earlier payment of yours for this deal applied; refusing to pay it again')
 
         def same(a):
-            return (a['route'] == route and a['edge'] == edge and a['prior'] == prior
-                    and (route == 'note' or (timestamp is not None and a['timestamp'] == timestamp)))
+            if not (a['route'] == route and a['edge'] == edge and a['prior'] == prior):
+                return False
+            if route == 'note' or (timestamp is not None and a['timestamp'] == timestamp):
+                return True
+            # tracker v3.2: the same prior state of the same held edge (total and timestamp) at another T
+            return _nat(prior_timestamp) and _u64(a.get('prior_timestamp')) and a['prior_timestamp'] == prior_timestamp
 
         if any(o == 'unknown' or (o == 'alive' and same(a) and not exact_prior(a, s))
                or (o == 'alive' and not _expires(a) and not same(a)) for a, o, s in looked):
@@ -873,10 +949,12 @@ class _Run:
     def no_bound_note_restored(self, changes):
         """R12 extended, the client side of decision D-2 c: never sign a novation that sets an edge of mine (as issuer)
         to the acknowledged prior total of a bound note of mine on that edge that is later than the novation and can
-        still apply (within its maximum age, not known applied). That note could then apply after the novation: had an
-        earlier payment of its deal applied in between (a server can hide that), the deal would be paid twice. Also run
-        for a bound note of mine (audit VS-1): a note for another deal can bring the edge back to that prior just as a
-        novation can, after a set-off lowered it below.
+        still apply (within its maximum age, not known applied). On tracker v3.1 that note could then apply after the
+        novation: had an earlier payment of its deal applied in between (a server can hide that), the deal would be
+        paid twice. Also run for a bound note of mine (audit VS-1): a note for another deal can bring the edge back to
+        that prior just as a novation can, after a set-off lowered it below. On tracker v3.2 the note's acknowledgment
+        PA(I,R,P,p,ts) also binds the prior timestamp p, which the edge never has again once it moved, so the tracker
+        refuses it there; this rule stays as a second line (relaxing it is a later step).
         `changes`: [(edge, new_total, timestamp)] of the novation's edges where I am the issuer (or the note's edge)."""
         for edge, new_total, ts in changes:
             for deal_id, b in self.edge_attempts(edge):
@@ -894,7 +972,7 @@ class _Run:
 
     def no_reuse(self, op, slots):
         groups, order = {}, []
-        for s, i, r, total, ts in slots:
+        for s, i, r, total, ts in (x[:5] for x in slots):
             key = (edge_key(i, r), ts)
             if key not in groups:
                 groups[key] = {}
@@ -909,6 +987,22 @@ class _Run:
     def bound_advertised(self):
         f = self.ctx.get('features')
         return isinstance(f, list) and 'bound_notes/1' in f
+
+    def contract(self):
+        """Tracker v3.2: what signs a prior slot (PA) is signed only for the contract CONTRACT, as ctx['novation']
+        (GET /info novation) reports it; otherwise feature_unavailable (fail closed, as for a server without
+        circulation/1)."""
+        problem = contract_problem(self.ctx.get('novation'))
+        if problem:
+            self.refuse('feature_unavailable', problem + '; nothing was signed')
+
+    def prior_timestamp_named(self, named, state):
+        """A prior timestamp the item names beside a prior state (absent or None: names none) must be that state's
+        (0 for an absent edge): the template's prior timestamp is checked as its prior total is."""
+        if named is None:
+            return
+        if not _nat(named) or named != (0 if state is None else state['timestamp']):
+            self.bad("the item's prior timestamp is not the timestamp of the prior state it shows")
 
 
 # ---------- bound credit notes ----------
@@ -941,6 +1035,8 @@ def _bound(run, tpl):
         run.bad('the template shows no prior note but a prior total above 0')
     if prior is not None and prior['total'] != P:
         run.bad("the template's prior note does not match its prior total")
+    run.prior_timestamp_named(tpl.get('prior_timestamp'), prior)
+    p = 0 if prior is None else prior['timestamp']              # the acknowledged state: (P, p), (0, 0) for a new edge
     s['deal_id'], s['timestamp'], s['amount'] = shown_id(D), ts, price
     run.not_paid_yet(D)
     run.pins(nft, denom)
@@ -968,14 +1064,15 @@ def _bound(run, tpl):
     run.fresh(ts, [] if prior is None else [prior['timestamp']])
     run.show(edge, prior, mine=True)
     run.add_edge(edge, 'issuer', P, total, ts)
-    run.one_live_attempt(D, deal['price'], 'note', edge, P, ts)
+    run.one_live_attempt(D, deal['price'], 'note', edge, P, ts, p)
     run.no_bound_note_restored([(edge, total, ts)])
+    run.contract()
     op = 'note:' + D
-    slots = [(slot_key(edge, 'prior'), I, R, P, ts), (slot_key(edge, 'new'), I, R, total, ts)]
+    slots = [(slot_key(edge, 'prior'), I, R, P, ts, p), (slot_key(edge, 'new'), I, R, total, ts)]
     signed = run.no_reuse(op, slots)
     return slots, {'op': op, 'signed': signed, 'pending': [_pending(edge, total, ts, 'note', D, 'out')],
-                   'attempt': _attempt(D, 'note', edge, P, 0 if prior is None else prior['timestamp'],
-                                       None if prior is None else prior['signature'], total, ts, None),
+                   'attempt': _attempt(D, 'note', edge, P, p, None if prior is None else prior['signature'], total, ts,
+                                       None),
                    'attempts_seen': run.seen}
 
 
@@ -1005,6 +1102,8 @@ def _payer_template(run, tpl):
           and (tpl.get('quote_digest') is None or _text(tpl['quote_digest'])))
     if not ok:
         run.bad('the transfer template is missing a field or has one of the wrong type')
+    run.prior_timestamp_named(fe.get('prior_timestamp'), fe.get('before'))
+    run.prior_timestamp_named(te.get('prior_timestamp'), te.get('before'))
     v = {'deal_id': tpl['deal_id'], 'terms_hash': tpl['terms_hash'], 'deliverable': tpl['deliverable_sha256'],
          'A': iss['pubkey'], 'A_id': _id_of(iss), 'B': pay['pubkey'], 'B_id': _id_of(pay), 'C': pee['pubkey'],
          'C_id': _id_of(pee), 'amount': tpl['amount'], 'T': tpl['timestamp'], 'from_before': fe.get('before'),
@@ -1046,6 +1145,7 @@ def _payer(run, v, consent):
     if fb is None or fb['total'] < a or v['from_new'] != fb['total'] - a:
         run.refuse('amount_mismatch', f'your held claim must fall by exactly {a} PC (and cover it)')
     X, Y = fb['total'], tb['total'] if tb is not None else 0
+    p_ab = fb['timestamp']                    # the held edge's state (X, p_AB): what my prior slot acknowledges
     if v['to_new'] != Y + a:
         run.refuse('amount_mismatch', f"the payee's claim must rise by exactly {a} PC")
     if not run.verified(A, me, fb) or (tb is not None and not run.verified(A, C, tb)):
@@ -1056,7 +1156,7 @@ def _payer(run, v, consent):
     run.show(dest, tb, mine=False)
     run.add_edge(held, 'creditor', X, X - a, T)
     run.add_edge(dest, 'payer', Y, Y + a, T)
-    run.one_live_attempt(D, deal['price'], 'transfer', held, X, T)
+    run.one_live_attempt(D, deal['price'], 'transfer', held, X, T, p_ab)
     q = quote_digest({'network': deal['network'], 'tracker_nft_id': v['nft'], 'denomination': v['denom'],
                       'deal_id': D, 'terms_hash': deal['terms_hash'], 'deliverable_sha256': deal['deliverable_sha256'],
                       'issuer_pubkey': A, 'payer_pubkey': me, 'payee_pubkey': C, 'amount': a})
@@ -1074,13 +1174,14 @@ def _payer(run, v, consent):
         run.refuse('policy_off', "your owner's mandate could not be read, so nothing is paid with a held note")
     if m.get('pay_with_held_notes') == 'never':
         run.refuse('policy_off', "your owner's mandate does not allow paying with held notes")
+    run.contract()
     op = 'pay:' + D
-    slots = [(slot_key(held, 'prior'), A, me, X, T), (slot_key(held, 'new'), A, me, X - a, T),
+    slots = [(slot_key(held, 'prior'), A, me, X, T, p_ab), (slot_key(held, 'new'), A, me, X - a, T),
              (slot_key(dest, 'new'), A, C, Y + a, T)]
     signed = run.no_reuse(op, slots)
     return ([x for x in slots if x[0] not in v['signed_by_you']],
             {'op': op, 'signed': signed, 'pending': [_pending(held, X - a, T, 'transfer', D, 'in')],
-             'attempt': _attempt(D, 'transfer', held, X, fb['timestamp'], fb['signature'], X - a, T, q),
+             'attempt': _attempt(D, 'transfer', held, X, p_ab, fb['signature'], X - a, T, q),
              'attempts_seen': run.seen})
 
 
@@ -1137,6 +1238,7 @@ def _consent_edges(run, item):
             run.bad('an edge of the item is missing a field or has one of the wrong type')
         if change != new - (before['total'] if before is not None else 0):
             run.bad("an edge's change is not its new total minus its prior total")
+        run.prior_timestamp_named(e.get('prior_timestamp'), before)
         out.append({'edge': e['edge'], 'I': keys[0], 'R': keys[1], 'before': before, 'new': new, 'ts': ts,
                     'slots': list(slots), 'done': set(done), 'your_role': e['your_role'],
                     'issuer_id': _id_of(e.get('issuer')), 'recipient_id': _id_of(e.get('recipient'))})
@@ -1279,8 +1381,10 @@ def _payee(run, item, edges, context):
     cap = m.get('max_accept_per_issuer')
     if cap is not None and (not _nat(cap) or Y + a > cap):
         run.refuse('policy_cap', f'your claim on this issuer would be {Y + a} PC, above max_accept_per_issuer')
+    run.contract()
     op = 'transfer:' + item['id']
-    slots = [(slot_key(e['edge'], 'prior'), e['I'], me, Y, T), (slot_key(e['edge'], 'new'), e['I'], me, e['new'], T)]
+    p_ac = e['before']['timestamp'] if e['before'] is not None else 0    # the state (Y, p_AC) I acknowledge, (0, 0): none
+    slots = [(slot_key(e['edge'], 'prior'), e['I'], me, Y, T, p_ac), (slot_key(e['edge'], 'new'), e['I'], me, e['new'], T)]
     signed = run.no_reuse(op, slots)
     done = {slot_key(e['edge'], x) for x in e['done']}
     return ([x for x in slots if x[0] not in done],
@@ -1423,7 +1527,9 @@ def check_payment(deal_id, price, route, edge, prior, ctx):
                 and _nat(prior)):
             run.bad('check_payment takes a deal id, its price, a route, an edge and a prior total')
         run.have_pins()
-        run.one_live_attempt(deal_id, price, route, edge, prior)   # no timestamp: never a same-T transfer retry
+        # no timestamps: never the same transfer signed again, never the same-prior exemption (an ordinary note
+        # acknowledges no prior state)
+        run.one_live_attempt(deal_id, price, route, edge, prior)
         return [], None
     r = _Run(ctx, 'bad_template', INITIATE_WINDOW_MS).execute(go, None)
     return {'ok': r['ok'], 'code': r['code'], 'summary': r['summary']}

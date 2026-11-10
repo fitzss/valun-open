@@ -70,6 +70,19 @@ def msg(issuer, recipient, total, ts):
     return vb.note_message(bytes.fromhex(issuer), bytes.fromhex(recipient), total, ts, bytes.fromhex(NFT), DENOM)
 
 
+def pa(issuer, recipient, prior_total, prior_ts, ts):
+    """PA(I,R,X,p,T): the 105-byte prior acknowledgment of tracker v3.2 (p = 0 for an absent edge)."""
+    return vb.prior_ack_message(bytes.fromhex(issuer), bytes.fromhex(recipient), prior_total, prior_ts, ts, bytes.fromhex(NFT),
+                                DENOM)
+
+
+# GET /info novation of a v16 server on tracker v3.2: the novation constants and the tracker contract (design v3.2)
+INFO_NOVATION = {'transfer_ms': 999, 'setoff_ms': 998, 'bound_note_ms': 997, 'reserved_ms': [995, 996, 997, 998, 999],
+                 'max_age_ms': 3600000, 'transfer_ttl_ms': 1200000, 'setoff_ttl_ms': 1800000, 'fallback_margin_ms': 60000,
+                 'tracker_build': 'valun-circulating-credit/4', 'transfer_version': 4, 'bound_note_version': 3,
+                 'prior_ack': 'basis/prior-ack/1'}
+
+
 def signed_by(k, data, sig):
     return isinstance(sig, str) and vb.verify(bytes.fromhex(sig), data, bytes.fromhex(k['pubkey']))
 
@@ -109,12 +122,14 @@ class Clock:
 
 
 class Net:
-    """A fake Valun v16 server (circulation on) with its tracker: just enough of /pilot/v1 for the circulation methods.
-    A and C are server-run here: in transfer_mode 'apply' they sign at once and the transfer applies in the request."""
+    """A fake Valun v16 server (circulation on) with its tracker v3.2: just enough of /pilot/v1 for the circulation
+    methods. A and C are server-run here: in transfer_mode 'apply' they sign at once and the transfer applies in the
+    request. Prior slots are checked as tracker v3.2 does: PA over the edge's stored total and timestamp."""
 
     def __init__(self, clock, features=('bound_notes/1', 'circulation/1'), me_id=B_ID):
         self.clock, self.me_id = clock, me_id
         self.features = None if features is None else list(features)
+        self.novation = dict(INFO_NOVATION)     # GET /info novation, with the features (None: a server that sends none)
         self.tracker, self.journal, self.seq, self.bound_only = {}, [], 0, set()
         self.deals, self.log, self.hooks = {}, [], []
         self.mandate = {'pay_with_held_notes': 'when_asked', 'auto_clear': True, 'novate_own_debt': True,
@@ -164,6 +179,8 @@ class Net:
             out = {'network': vc.NETWORK, 'protocol': vc.PROTOCOL, 'unit': 'PC', 'tracker_nft_id': NFT, 'denomination': DENOM}
             if self.features is not None:
                 out['features'] = list(self.features)
+                if self.novation is not None:
+                    out['novation'] = copy.deepcopy(self.novation)
             return out
         if method == 'GET' and len(parts) == 2 and parts[0] == 'participants' and parts[1] in KEYS:
             return {'id': parts[1], 'handle': HANDLES[parts[1]], 'status': 'active', 'pubkey': self.pk(parts[1])}
@@ -309,9 +326,11 @@ class Net:
         if not signed_by(payer, msg(I, R, n['total'], n['timestamp']), n['signature']):
             raise vc.ValunError('bad_signature', 'the Basis note signature does not verify', 403)
         if n['timestamp'] % 1000 == 997:
-            if n.get('prior_total') != P:
-                raise vc.ValunError('stale_note', "a bound note's prior_total must be the pair's current total", 409)
-            if not signed_by(payer, msg(I, R, P, n['timestamp']), n.get('prior_signature')):
+            p = cur['timestamp'] if cur else 0
+            if n.get('prior_total') != P or n.get('prior_timestamp', p) != p:
+                raise vc.ValunError('stale_note', "a bound note's prior_total and prior_timestamp must be the pair's current "
+                                                  'state', 409)
+            if not signed_by(payer, pa(I, R, P, p, n['timestamp']), n.get('prior_signature')):
                 raise vc.ValunError('bad_signature', 'the prior acknowledgment does not verify', 403)
         if self.review:
             d['status'] = 'completion_awaiting_owner'
@@ -381,14 +400,16 @@ class Net:
             self.record_transfer(did, 'failed', T, (f'{Ak}>{Bk}', fb, X - a), (f'{Ak}>{Ck}', tb, Y + a), a, body)
             self.deals[did].update(status='payment_due', payment={'method': 'transfer', 'transfer_id': TID, 'state': 'failed'})
             return copy.deepcopy(self.deals[did])
-        if (body['from_prior_total'], body['to_prior_total']) != (X, Y):
+        if (body['from_prior_total'], body['to_prior_total']) != (X, Y) \
+                or (body.get('from_prior_timestamp', fb['timestamp']), body.get('to_prior_timestamp', tb['timestamp'] if tb else 0)) \
+                != (fb['timestamp'], tb['timestamp'] if tb else 0):
             raise vc.ValunError('transfer_stale', 'an edge moved', 409, {'template': self.transfer_template(did, body['issuer_id'])})
         h, dh, payer = d['agreement']['terms_hash'], d['delivery']['sha256'], KEYS[t['payer']['id']]
         q = self.transfer_template(did, body['issuer_id'])['quote_digest']
         ok = (body['quote_digest'] == q and signed_by(payer, vc.statement('complete', h, dh).encode(), body['completion_signature'])
               and signed_by(payer, nv.pay_statement(did, q).encode(), body['pay_signature'])
               and set(body['signatures']) == {f'{Ak}>{Bk}:prior', f'{Ak}>{Bk}:new', f'{Ak}>{Ck}:new'}
-              and signed_by(payer, msg(Ak, Bk, X, T), body['signatures'][f'{Ak}>{Bk}:prior'])
+              and signed_by(payer, pa(Ak, Bk, X, fb['timestamp'], T), body['signatures'][f'{Ak}>{Bk}:prior'])
               and signed_by(payer, msg(Ak, Bk, X - a, T), body['signatures'][f'{Ak}>{Bk}:new'])
               and signed_by(payer, msg(Ak, Ck, Y + a, T), body['signatures'][f'{Ak}>{Ck}:new']))
         if not ok:
@@ -421,9 +442,13 @@ class Net:
         for slot, sig in body['signatures'].items():
             edge, _, which = slot.rpartition(':')
             e = edges[edge]
-            total = (e['before']['total'] if e['before'] else 0) if which == 'prior' else e['new_total']
             i, r = edge.split('>')
-            if not signed_by(me, msg(i, r, total, e['timestamp']), sig):
+            if which == 'prior':              # tracker v3.2: PA over the state the item shows, (0, 0) for none
+                data = pa(i, r, e['before']['total'] if e['before'] else 0, e['before']['timestamp'] if e['before'] else 0,
+                          e['timestamp'])
+            else:
+                data = msg(i, r, e['new_total'], e['timestamp'])
+            if not signed_by(me, data, sig):
                 raise vc.ValunError('bad_signature', f'{slot} does not verify', 403)
         self.consent_posts.append((cid, copy.deepcopy(body)))
         return dict(copy.deepcopy(item), state=self.consent_state.get(cid, 'collecting'),
@@ -518,10 +543,12 @@ class BoundComplete(Base):
         self.assertIn(f'GET /pilot/v1/deals/{DEAL}/credit-note-template?prior=1&bound=1', self.net.requests())
         (_m, _p, body), = [x for x in self.net.log if x[0] == 'POST']
         n = body['credit_note']
-        self.assertEqual(set(n), {'total', 'timestamp', 'signature', 'prior_total', 'prior_signature'})
-        self.assertEqual((n['prior_total'], n['total'], n['timestamp'] % 1000), (6, 9, 997))
+        self.assertEqual(set(n), {'total', 'timestamp', 'signature', 'prior_total', 'prior_timestamp', 'prior_signature'})
+        self.assertEqual((n['prior_total'], n['prior_timestamp'], n['total'], n['timestamp'] % 1000), (6, TS_BC, 9, 997))
         self.assertTrue(signed_by(B, msg(B['pubkey'], C['pubkey'], 9, n['timestamp']), n['signature']))
-        self.assertTrue(signed_by(B, msg(B['pubkey'], C['pubkey'], 6, n['timestamp']), n['prior_signature']))
+        # tracker v3.2: the prior acknowledgment is PA(B,C,6,TS_BC,ts), never the 80-byte M(B,C,6,ts)
+        self.assertTrue(signed_by(B, pa(B['pubkey'], C['pubkey'], 6, TS_BC, n['timestamp']), n['prior_signature']))
+        self.assertFalse(signed_by(B, msg(B['pubkey'], C['pubkey'], 6, n['timestamp']), n['prior_signature']))
         s = self.store.state
         self.assertEqual(records.get(s['records'], BC)['confirmed']['total'], 9)
         self.assertEqual(s['issued'], {BC: 9})
@@ -535,8 +562,8 @@ class BoundComplete(Base):
         c = self.client()
         self.assertEqual(c.complete(DEAL)['status'], 'note_issued')
         n = [b for m, _p, b in self.net.log if m == 'POST'][0]['credit_note']
-        self.assertEqual((n['prior_total'], n['total']), (0, 3))
-        self.assertTrue(signed_by(B, msg(B['pubkey'], C['pubkey'], 0, n['timestamp']), n['prior_signature']))
+        self.assertEqual((n['prior_total'], n['prior_timestamp'], n['total']), (0, 0, 3))
+        self.assertTrue(signed_by(B, pa(B['pubkey'], C['pubkey'], 0, 0, n['timestamp']), n['prior_signature']))   # (0, 0): no edge
 
     def test_a_deal_recorded_as_paid_is_never_paid_again(self):
         c = self.client()
@@ -658,20 +685,24 @@ class PayByTransfer(Base):
                         reqs.index(f'GET /pilot/v1/deals/{DEAL}/transfer-template?issuer={A_ID}'))
         body, = self.net.pay_posts
         self.assertEqual(set(body), {'issuer_id', 'terms_hash', 'deliverable_sha256', 'quote_digest', 'timestamp', 'from_prior_total',
-                                     'to_prior_total', 'completion_signature', 'pay_signature', 'signatures'})
+                                     'from_prior_timestamp', 'to_prior_total', 'to_prior_timestamp', 'completion_signature',
+                                     'pay_signature', 'signatures'})
         d = self.net.deals[DEAL]
         h, dh, T = d['agreement']['terms_hash'], d['delivery']['sha256'], body['timestamp']
         q = nv.quote_digest({'network': vc.NETWORK, 'tracker_nft_id': NFT, 'denomination': DENOM, 'deal_id': DEAL, 'terms_hash': h,
                              'deliverable_sha256': dh, 'issuer_pubkey': A['pubkey'], 'payer_pubkey': B['pubkey'],
                              'payee_pubkey': C['pubkey'], 'amount': 3})
         self.assertEqual((body['issuer_id'], body['terms_hash'], body['deliverable_sha256'], body['quote_digest']), (A_ID, h, dh, q))
-        self.assertEqual((body['from_prior_total'], body['to_prior_total'], T % 1000), (10, 4, 999))
+        self.assertEqual((body['from_prior_total'], body['from_prior_timestamp'], body['to_prior_total'],
+                          body['to_prior_timestamp'], T % 1000), (10, TS_AB, 4, TS_AC, 999))
         self.assertTrue(signed_by(B, vc.statement('complete', h, dh).encode(), body['completion_signature']))
         pay = nv.pay_statement(DEAL, q).encode()
         self.assertEqual(len(pay), 102)
         self.assertTrue(signed_by(B, pay, body['pay_signature']))
         self.assertEqual(set(body['signatures']), {f'{AB}:prior', f'{AB}:new', f'{AC}:new'})
-        for slot, (i, rcp, total) in {f'{AB}:prior': (A, B, 10), f'{AB}:new': (A, B, 7), f'{AC}:new': (A, C, 7)}.items():
+        self.assertTrue(signed_by(B, pa(A['pubkey'], B['pubkey'], 10, TS_AB, T), body['signatures'][f'{AB}:prior']))
+        self.assertFalse(signed_by(B, msg(A['pubkey'], B['pubkey'], 10, T), body['signatures'][f'{AB}:prior']))   # not v3.1's
+        for slot, (i, rcp, total) in {f'{AB}:new': (A, B, 7), f'{AC}:new': (A, C, 7)}.items():
             self.assertTrue(signed_by(B, msg(i['pubkey'], rcp['pubkey'], total, T), body['signatures'][slot]), slot)
         s = self.store.state
         self.assertEqual(s['records']['paid_deals'][DEAL], {'route': 'transfer', 'edge': AB, 'total': 7, 'timestamp': T})
@@ -708,17 +739,33 @@ class PayByTransfer(Base):
             self.net.set_edge(issuer, recipient, total, T + dt)
         return fn
 
-    def test_a_stale_transfer_is_not_signed_again_at_a_new_timestamp(self):
-        # Audit VS-1: the payee's claim on A moved between the template and the POST; my claim did not. The fresh
-        # template is checked once, and refused: the first attempt's signatures stay valid at the tracker (they
-        # acknowledge totals only), so had A->C come back to 4 after the second applied, both would apply.
+    def test_a_stale_transfer_on_the_same_claim_is_signed_again_at_a_new_timestamp(self):
+        # Tracker v3.2 (audit VS-1 closed): the payee's claim on A moved between the template and the POST; my claim did
+        # not. The fresh template, at a new T, acknowledges the same state of my claim, (10, TS_AB), as the first
+        # attempt: both prior acknowledgments are PA(A,B,10,TS_AB,T), and A->B is at that state at most once, so at most
+        # one of the two can apply. It is signed at once (v3.1 clients waited an hour for the first attempt's window).
         self.net.force = [('transfer_stale', self.moved(A, C, 5, 1))]
+        c = self.client()
+        self.assertEqual(c.pay_by_transfer(DEAL, A_ID)['status'], 'paid_by_transfer')
+        first, second = self.net.pay_posts
+        self.assertGreater(second['timestamp'], first['timestamp'])
+        self.assertEqual([(p['from_prior_total'], p['from_prior_timestamp'], p['to_prior_total']) for p in (first, second)],
+                         [(10, TS_AB, 4), (10, TS_AB, 5)])
+        self.assertEqual(second['to_prior_timestamp'], first['timestamp'] + 1)
+        self.assertEqual([(a['prior'], a['prior_timestamp'], a['timestamp']) for a in att(self.store.state)],
+                         [(10, TS_AB, first['timestamp']), (10, TS_AB, second['timestamp'])])
+        self.assertEqual(self.store.state['records']['paid_deals'][DEAL]['timestamp'], second['timestamp'])
+
+    def test_a_stale_transfer_is_not_signed_again_when_my_claim_came_back_to_its_total(self):
+        # Another state of my claim at the same total (it moved and came back before the first attempt's T): not the
+        # same prior state, so the fresh template waits for the first attempt's window (unchanged since v3.1).
+        self.net.force = [('transfer_stale', self.moved(A, B, 10, -1))]
         c = self.client()
         with self.assertRaises(vc.ValunError) as e:
             c.pay_by_transfer(DEAL, A_ID)
         self.assertEqual(e.exception.code, 'transfer_window_open')
-        first, = self.net.pay_posts                                                       # nothing sent again
         self.assertGreater(e.exception.extra['retry_after_ms'], 3_600_000)
+        first, = self.net.pay_posts                                                       # nothing sent again
         self.assertEqual(records.get(self.store.state['records'], AB)['pending'], [])      # refused: forgotten
         self.assertEqual(len(att(self.store.state)), 1)                                   # the attempt stays (D-1)
 
@@ -912,18 +959,31 @@ class FallbackRule(Base):
         self.assertEqual((e.exception.code, e.exception.extra['needs_read_back']), ('transfer_window_open', [BC]))
         self.assertEqual(self.net.pay_posts, [])
 
-    def test_a_same_issuer_retry_waits_for_the_window(self):
-        # Audit VS-1: a retry through the same issuer at a new T is not excluded by the first attempt at the tracker
-        # (both acknowledge only totals), so it waits for the first attempt's window and a read-back like any other.
+    def test_a_same_issuer_retry_on_the_same_claim_is_signed_at_once(self):
+        # Tracker v3.2 (audit VS-1 closed, the same-prior exemption): a retry through the same issuer at a new T that
+        # acknowledges the same state of my claim on A as the cancelled first attempt is signed at once: the two
+        # exclude each other at the tracker.
         c, T = self.failed_transfer()
         self.net.transfer_mode = 'apply'
+        self.clock.now += 60_000
+        self.assertEqual(c.pay_by_transfer(DEAL, A_ID)['status'], 'paid_by_transfer')
+        first, second = self.net.pay_posts
+        self.assertEqual((first['timestamp'], first['from_prior_timestamp'], second['from_prior_timestamp']), (T, TS_AB, TS_AB))
+        self.assertGreater(second['timestamp'], T)
+
+    def test_a_same_issuer_retry_after_my_claim_moved_waits_for_the_window(self):
+        # Another state of my claim (here the same total at a later timestamp, before T): not the same prior, so the
+        # retry waits for the first attempt's window and a read-back like any other payment.
+        c, T = self.failed_transfer()
+        self.net.transfer_mode = 'apply'
+        self.net.set_edge(A, B, 10, TS_AB + 5)
         self.clock.now += 60_000
         with self.assertRaises(vc.ValunError) as e:
             c.pay_by_transfer(DEAL, A_ID)
         self.assertEqual(e.exception.code, 'transfer_window_open')
         self.assertEqual(e.exception.extra['retry_after_ms'], T + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 1 - self.clock.now)
         self.assertEqual(len(self.net.pay_posts), 1)                 # nothing signed or sent again
-        self.clock.now = T + LATER                                  # GET /edges shows my claim on A untouched: dead
+        self.clock.now = T + LATER                                  # GET /edges shows my claim on A before T: dead
         self.assertEqual(c.pay_by_transfer(DEAL, A_ID)['status'], 'paid_by_transfer')
 
     def test_an_attempt_that_may_have_applied_stops_every_retry(self):
@@ -1129,12 +1189,26 @@ class Consents(Base):
         self.assertEqual(self.store.state['records']['paid_deals'][DEAL]['route'], 'transfer')
         self.assertEqual(len(att(self.store.state)), 1)
 
-    def test_a_regenerated_transfer_is_refused_while_the_earlier_attempt_is_alive(self):
-        # Audit VS-1: a regenerated transfer (new T, the same priors) is not excluded by the earlier attempt.
+    def test_a_regenerated_transfer_on_the_same_claim_is_signed_while_the_earlier_attempt_is_alive(self):
+        # Tracker v3.2 (audit VS-1 closed): a regenerated transfer at a new T on the same state of my claim on A,
+        # (10, TS_AB), as the earlier attempt is excluded by it at the tracker: signed under the approved quote.
         self.net.me_id = B_ID
         q, it = self.payer_item()
         self.net.consent_items = [it]
         earlier = [{'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10, 'prior_timestamp': TS_AB, 'total': 7,
+                    'timestamp': self.T - 60_000, 'quote_digest': q, 'signed_at': None}]
+        rep = self.client(profile(B_ID, approved_payments={DEAL: q}, transfer_attempts={DEAL: earlier})).process_consents()
+        self.assertEqual([(e['id'], e['role']) for e in rep['signed']], [(TID, 'payer')])
+        (_cid, body), = self.net.consent_posts
+        self.assertTrue(signed_by(B, pa(A['pubkey'], B['pubkey'], 10, TS_AB, self.T), body['signatures'][f'{AB}:prior']))
+
+    def test_a_regenerated_transfer_is_refused_while_an_earlier_attempt_on_another_state_is_alive(self):
+        # The earlier attempt acknowledged another state of my claim (the same total, an earlier timestamp): not
+        # excluded by this one, so refused while it can still apply.
+        self.net.me_id = B_ID
+        q, it = self.payer_item()
+        self.net.consent_items = [it]
+        earlier = [{'deal_id': DEAL, 'route': 'transfer', 'edge': AB, 'prior': 10, 'prior_timestamp': TS_AB - 1000, 'total': 7,
                     'timestamp': self.T - 60_000, 'quote_digest': q, 'signed_at': None}]
         rep = self.client(profile(B_ID, approved_payments={DEAL: q}, transfer_attempts={DEAL: earlier})).process_consents()
         self.assertEqual([(e['id'], e['code']) for e in rep['refused']], [(TID, 'transfer_window_open')])
@@ -2150,6 +2224,95 @@ class Counter(Base):
         self.assertEqual((body['terms']['version'], body['terms']['price']['amount']), (2, 5))
         self.assertEqual(body['terms']['prior_terms_hash'], d['current']['terms_hash'])
 
+
+# ---------------------------------------------------------------------------------------------------------------------
+class TrackerContract(Base):
+    """Tracker v3.2 (design v3.2 section 5): bound notes, payments by transfer and the payer's and payee's consents sign
+    prior acknowledgments PA(...), and are signed only when GET /info novation reports exactly the v3.2 contract
+    (tracker_build valun-circulating-credit/4, transfer_version 4, bound_note_version 3, prior_ack basis/prior-ack/1).
+    Otherwise they fail closed with feature_unavailable, before anything is asked for or signed, as on a server without
+    circulation/1; issuer and set-off consents (80-byte note messages only) are not gated."""
+
+    V31 = dict(INFO_NOVATION, tracker_build='valun-circulating-credit/3', transfer_version=3, bound_note_version=2)
+    V31.pop('prior_ack')
+
+    def contracts(self):
+        return {'v3.1': self.V31, 'none': None, 'version as a string': dict(INFO_NOVATION, transfer_version='4'),
+                'another prior_ack': dict(INFO_NOVATION, prior_ack='basis/prior-ack/2')}
+
+    def test_a_bound_note_is_not_signed_without_the_contract(self):
+        for name, novation in self.contracts().items():
+            with self.subTest(name):
+                self.setUp()
+                self.net.novation = novation
+                c = self.client()
+                with self.assertRaises(vc.ValunError) as e:
+                    c.complete(DEAL)
+                self.assertEqual(e.exception.code, 'feature_unavailable')
+                self.assertIn('nothing was signed', str(e.exception))
+                # no template asked for, no ordinary note instead, nothing written ahead
+                self.assertEqual([r for r in self.net.requests() if 'credit-note-template' in r or r.startswith('POST')], [])
+                self.assertEqual(att(self.store.state), [])
+                self.assertFalse(self.store.state.get('signed'))
+
+    def test_a_payment_by_transfer_is_not_signed_without_the_contract(self):
+        for name, novation in self.contracts().items():
+            with self.subTest(name):
+                self.setUp()
+                self.net.novation = novation
+                c = self.client()
+                with self.assertRaises(vc.ValunError) as e:
+                    c.pay_by_transfer(DEAL, A_ID)
+                self.assertEqual(e.exception.code, 'feature_unavailable')
+                self.assertEqual([r for r in self.net.requests() if 'transfer-template' in r or r.startswith('POST')], [])
+                self.assertEqual(self.net.pay_posts, [])
+                self.assertEqual(att(self.store.state), [])
+
+    def test_with_the_contract_both_are_signed(self):
+        self.assertEqual(self.client().complete(DEAL)['status'], 'note_issued')
+        self.setUp()
+        self.assertEqual(self.client().pay_by_transfer(DEAL, A_ID)['status'], 'paid_by_transfer')
+
+    def test_payee_and_payer_consents_wait_and_set_offs_are_signed(self):
+        T = res(NOW - 1500, 999)
+        self.net.novation = self.V31
+        self.net.me_id = C_ID
+        d = self.net.deals[DEAL]
+        d.update(status='paying_by_transfer', your_role='payee', payment={'method': 'transfer', 'transfer_id': TID})
+        q = self.net.transfer_template(DEAL, A_ID)['quote_digest']
+        self.net.consent_items = [consent_item(
+            'transfer', TID, 'payee', [edge_row(A, C, 4, TS_AC, 7, T, 'creditor', ['prior', 'new'], (A_ID, C_ID))],
+            dict(who3(), amount=3, deal={'deal_id': DEAL, 'terms_hash': d['agreement']['terms_hash'], 'price': 3, 'quote_digest': q}))]
+        rep = self.client(profile(C_ID, consent_policy=dict(POLICY))).process_consents()
+        self.assertEqual([(e['id'], e['role'], e['code']) for e in rep['waiting']], [(TID, 'payee', 'feature_unavailable')])
+        self.assertEqual((rep['signed'], rep['refused'], self.net.consent_posts, self.net.refusals), ([], [], [], []))
+        self.assertNotIn(f'GET /pilot/v1/deals/{DEAL}', self.net.requests())      # not even read
+        # the issuer's and a set-off member's consents sign 80-byte note messages only: signed on any contract
+        self.setUp()
+        self.net.novation, self.net.me_id = None, A_ID
+        self.net.consent_items = [issuer_item(T), member_item(res(NOW - 1500, 998))]
+        rep = self.client(profile(A_ID, consent_policy=dict(POLICY))).process_consents()
+        self.assertEqual([(e['id'], e['role']) for e in rep['signed']], [(TID, 'issuer'), (SID, 'member')])
+
+    def test_a_template_naming_another_prior_timestamp_is_refused(self):
+        # The server may name the prior timestamp beside the prior total (bound template: prior_timestamp; transfer:
+        # from_edge/to_edge.prior_timestamp): it must be the prior state's, as the total must be.
+        real = self.net.handle
+
+        def lying(method, path, body=None):
+            out = real(method, path, body)
+            if method == 'GET' and 'credit-note-template' in path:
+                out = dict(out, prior_timestamp=out['prior_note']['timestamp'] - 1)
+            if method == 'GET' and 'transfer-template' in path:
+                out = copy.deepcopy(out)
+                out['from_edge']['prior_timestamp'] = out['from_edge']['before']['timestamp'] + 1
+            return out
+        self.net.handle = lying
+        for pay in (lambda c: c.complete(DEAL), lambda c: c.pay_by_transfer(DEAL, A_ID)):
+            with self.assertRaises(vc.ValunError) as e:
+                pay(self.client())
+            self.assertEqual(e.exception.code, 'bad_template')
+        self.assertEqual([r for r in self.net.requests() if r.startswith('POST')], [])
 
 if __name__ == '__main__':
     unittest.main()

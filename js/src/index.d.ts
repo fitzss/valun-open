@@ -479,6 +479,11 @@ export class Client {
   readonly participantId: string | null;
   /** The feature tags the last GET /info this client read listed ([] before any; ['?'] for a malformed list). */
   readonly advertised: string[];
+  /**
+   * The `novation` object of the last GET /info (a copy; null before any or when absent): the server's report of its
+   * tracker's contract. Prior acknowledgments are signed only when it holds novation.CONTRACT (tracker v3.2).
+   */
+  readonly novationInfo: Record<string, unknown> | null;
   /** See ClientOptions.declareRoles. */
   declareRoles: boolean;
   /** This client's clock (ms since the epoch). */
@@ -611,8 +616,8 @@ export const EDGES_MAX_PAGES: number;
 export interface Evaluation {
   ok: boolean;
   code: string | null;
-  /** [slot_key, issuer_pk, recipient_pk, total, timestamp] */
-  to_sign: Array<[string, string, string, number, number]>;
+  /** [slot_key, issuer_pk, recipient_pk, total, timestamp] for a new slot; a prior slot adds its prior timestamp */
+  to_sign: Array<[string, string, string, number, number] | [string, string, string, number, number, number]>;
   summary: Record<string, unknown> & {reason?: string | null};
   write_ahead: Record<string, unknown> | null;
 }
@@ -635,6 +640,10 @@ export namespace novation {
   const ROLES: readonly ['payer', 'issuer', 'payee', 'member'];
   const ROUTES: readonly ['note', 'transfer'];
   const PAID_DEALS_KEY: 'paid_deals';
+  const PRIOR_ACK: 'basis/prior-ack/1';
+  /** The tracker v3.2 contract GET /info novation must report for prior acknowledgments to be signed. */
+  const CONTRACT: Readonly<{tracker_build: 'valun-circulating-credit/4'; transfer_version: 4; bound_note_version: 3;
+    prior_ack: 'basis/prior-ack/1'}>;
   const REFUSAL_CODES: readonly string[];
   const ID_RE: RegExp;
   const RECORDS_KEEP_MS: number;
@@ -658,6 +667,11 @@ export namespace novation {
   function quoteDigest(fields: Record<string, unknown>): string;
   function payStatement(dealId: string, quoteDigestHex: string): string;
   function message(issuerPk: string, recipientPk: string, total: number, timestamp: number, trackerNftId: string, denomination: string): Uint8Array;
+  /** PA(I,R,X,p,T), the 105-byte prior acknowledgment of tracker v3.2, over hex keys and tracker id. */
+  function priorMessage(issuerPk: string, recipientPk: string, priorTotal: number, priorTimestamp: number, timestamp: number,
+    trackerNftId: string, denomination: string): Uint8Array;
+  /** null when GET /info novation reports exactly CONTRACT; else the sentence that says which field differs. */
+  function contractProblem(novationInfo: unknown): string | null;
   function slotMessages(toSign: Evaluation['to_sign'], trackerNftId: string, denomination: string): Record<string, Uint8Array>;
   function slotKey(edge: string, slot: 'prior' | 'new'): string;
   function edgeKey(issuerPk: string, recipientPk: string): string;

@@ -8,11 +8,18 @@
 // Pure: no clock, no network, no files. The caller passes the time, its own records and pins, its local consent
 // policy, the owner's mandate as GET /me shows it, the edge states it read, and verify(pubkeyHex, msgBytes, sigHex).
 // Context and records keys are the JSON keys of the Python client (snake_case): ctx = {me_pk, now_ms, verify, me_id,
-// pins, records, signed, transfer_attempts, novated_edges, features, deal, payee_current_pk, approved_quote_digest,
-// consent_policy, mandate, issuer_ids, edges}.
+// pins, records, signed, transfer_attempts, novated_edges, features, novation, deal, payee_current_pk,
+// approved_quote_digest, consent_policy, mandate, issuer_ids, edges}.
+//
+// Tracker v3.2 (design v3.2): a prior slot is signed as the 105-byte prior acknowledgment PA(I,R,X,p,T)
+// (basis.priorAckMessage: the acknowledged state's total X and timestamp p, 0 and 0 for an absent edge, at the
+// operation's T), a new slot as the 80-byte M(I,R,t,T); and what signs a prior slot (a bound note, the payer's transfer,
+// the payee's consent) is signed only when ctx.novation (GET /info novation) reports exactly CONTRACT (contractProblem;
+// feature_unavailable otherwise).
 //
 // Each evaluator returns {ok, code, to_sign, summary, write_ahead}:
-//   to_sign      [[slot_key, issuer_pk, recipient_pk, total, ts], ...] (slotMessages rebuilds the bytes: R1)
+//   to_sign      [[slot_key, issuer_pk, recipient_pk, total, ts], ...] for a new slot and [[slot_key, issuer_pk,
+//                recipient_pk, prior_total, ts, prior_timestamp], ...] for a prior slot (slotMessages rebuilds the bytes: R1)
 //   summary      role, kind, id, deal_id, timestamp, amount, edges, your_net_change_PC, your_total_owed_change_PC,
 //                quote_digest, advisories, applied, paid_deals, retry_after_ms, needs_read_back, reason
 //   write_ahead  (only when ok) {op, signed, pending, attempt, attempts_seen}: persisted with applyWriteAhead BEFORE
@@ -53,6 +60,14 @@ export const ROLES = Object.freeze(['payer', 'issuer', 'payee', 'member']);
 export const ROUTES = Object.freeze(['note', 'transfer']);
 /** records[PAID_DEALS_KEY]: the per-deal paid record (D-1 item 5). */
 export const PAID_DEALS_KEY = 'paid_deals';
+/** The prior acknowledgment of tracker v3.2 (basis.PRIOR_ACK_TAG). */
+export const PRIOR_ACK = 'basis/prior-ack/1';
+/**
+ * The tracker contract this client signs prior slots for, as GET /info novation reports it (design v3.2 sections 3-5):
+ * exactly these values, else feature_unavailable.
+ */
+export const CONTRACT = Object.freeze({tracker_build: 'valun-circulating-credit/4', transfer_version: 4, bound_note_version: 3,
+  prior_ack: PRIOR_ACK});
 export const REFUSAL_CODES = Object.freeze([
   // PROTOCOL.md 15.3 (normative)
   'bad_prior_signature', 'timestamp_domain', 'timestamp_reused', 'timestamp_stale', 'not_net_neutral',
@@ -65,6 +80,8 @@ export const REFUSAL_CODES = Object.freeze([
   'payment_attempt',
   // this module: a quote other than the approved one; an item that is not well formed
   'stale_quote', 'bad_template', 'bad_consent',
+  // tracker v3.2: the server does not report the contract this client signs prior acknowledgments for
+  'feature_unavailable',
 ]);
 /** A deal, transfer or set-off id, the only ids a summary carries. */
 export const ID_RE = /^v[dts]_[0-9a-f]{16}$/;
@@ -241,11 +258,52 @@ export function message(issuerPk, recipientPk, total, timestamp, trackerNftId, d
   return basis.noteMessage(hexToBytes(issuerPk), hexToBytes(recipientPk), total, timestamp, hexToBytes(trackerNftId), denomination);
 }
 
-/** {slot_key: M(I,R,t,ts)} for an evaluator's to_sign list, in its order: the only bytes a client signs for it (R1). */
+/**
+ * PA(I,R,X,p,T): the 105-byte prior acknowledgment of tracker v3.2, basis.priorAckMessage() over hex keys and tracker
+ * id (X the acknowledged total, p its state's timestamp, 0 and 0 for an absent edge; T the operation's).
+ */
+export function priorMessage(issuerPk, recipientPk, priorTotal, priorTimestamp, timestamp, trackerNftId, denomination) {
+  return basis.priorAckMessage(hexToBytes(issuerPk), hexToBytes(recipientPk), priorTotal, priorTimestamp, timestamp,
+    hexToBytes(trackerNftId), denomination);
+}
+
+/**
+ * {slot_key: bytes} for an evaluator's to_sign list, in its order: the only bytes a client signs for it (R1). A prior
+ * slot [slot_key, I, R, X, T, p] is PA(I,R,X,p,T); a new slot [slot_key, I, R, t, T] is M(I,R,t,T). ValueError for an
+ * entry of neither form: a prior slot is never signed as an 80-byte note message.
+ */
 export function slotMessages(toSign, trackerNftId, denomination) {
   const out = {};
-  for (const [s, i, r, t, ts] of toSign) put(out, s, message(i, r, t, ts, trackerNftId, denomination));
+  for (const x of toSign) {
+    const prior = typeof x[0] === 'string' && x[0].endsWith(':prior');
+    if (x.length !== (prior ? 6 : 5)) {
+      throw valueError('a to_sign entry is (slot, issuer, recipient, total, ts) for a new slot and '
+        + '(slot, issuer, recipient, prior_total, ts, prior_timestamp) for a prior slot');
+    }
+    const [s, i, r, t, ts] = x;
+    put(out, s, prior ? priorMessage(i, r, t, x[5], ts, trackerNftId, denomination) : message(i, r, t, ts, trackerNftId, denomination));
+  }
   return out;
+}
+
+/**
+ * null when `novationInfo` (GET /info novation, the server's report of its tracker's contract) holds exactly the tracker
+ * v3.2 contract CONTRACT (the same values of the same JSON types: 4, never '4' or true); else one sentence naming the
+ * first field that differs. Only then are prior acknowledgments PA(...) signed.
+ */
+export function contractProblem(novationInfo) {
+  if (!isDict(novationInfo)) {
+    return 'this Valun server does not report the tracker contract this client signs for (GET /info has no '
+      + 'novation object): tracker v3.2, prior acknowledgments basis/prior-ack/1';
+  }
+  for (const [k, want] of Object.entries(CONTRACT)) {
+    const got = get(novationInfo, k);
+    if (typeof got !== typeof want || got !== want) {
+      return `this Valun server's tracker contract is not tracker v3.2 (GET /info novation.${k} is not `
+        + `${repr(want)}); this client signs prior acknowledgments basis/prior-ack/1 only`;
+    }
+  }
+  return null;
 }
 
 /**
@@ -668,15 +726,18 @@ class Run {
   }
 
   /**
-   * D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior, timestamp) for the deal unless every
-   * earlier attempt is dead or is excluded by this one at the tracker: the same route on the same edge, acknowledging
-   * the same prior, while the edge is still exactly the state the earlier one acknowledged; for a transfer also at the
-   * same timestamp (the identical operation signed again). A transfer retry at another timestamp is not excluded (audit
-   * VS-1): the prior acknowledgments M(A,B,X,T) and M(A,C,Y,T) carry no prior timestamp, so both attempts stay valid
-   * whenever A->B and A->C come back to X and Y, which A and C can arrange without me. A note retry stays excluded: only
-   * my signature lowers my own edge, and no novation or bound note of mine brings it back to a live bound note's prior.
+   * D-1 and D-2 a: refuse a new payment attempt (route, edge, acknowledged prior, timestamp, and the timestamp of the
+   * acknowledged prior state) for the deal unless every earlier attempt is dead or is excluded by this one at the
+   * tracker: the same route on the same edge, acknowledging the same prior, while the edge is still exactly the state
+   * the earlier one acknowledged; for a transfer also at the same timestamp (the identical operation signed again) or,
+   * the same-prior exemption of tracker v3.2 (design v3.2 section 4), acknowledging the same prior state of the held
+   * edge, its total AND its timestamp, as the earlier transfer recorded. Audit VS-1 is closed by tracker v3.2: the prior
+   * acknowledgment PA(A,B,X,p_AB,T) binds the state (X, p_AB), which A->B has at most once, so the first of two such
+   * transfers to apply leaves the other dead for good. A transfer on another prior state, or after an attempt that
+   * recorded none, still waits for the window. A note retry stays excluded: only my signature lowers my own edge, and
+   * no novation or bound note of mine brings it back to a live bound note's prior (and on v3.2 its PA binds p too).
    */
-  oneLiveAttempt(dealId, price, route, edge, prior, timestamp = null) {
+  oneLiveAttempt(dealId, price, route, edge, prior, timestamp = null, priorTimestamp = null) {
     const s = this.summary;
     this.notPaidYet(dealId);
     if (Object.hasOwn(s.paid_deals, dealId)) {
@@ -690,8 +751,12 @@ class Run {
         this.refuse('already_paid', 'an earlier payment of yours for this deal applied; refusing to pay it again');
       }
     }
-    const same = a => a.route === route && a.edge === edge && pyEq(a.prior, prior)
-      && (route === 'note' || (timestamp !== null && a.timestamp === timestamp));
+    const same = a => {
+      if (!(a.route === route && a.edge === edge && pyEq(a.prior, prior))) return false;
+      if (route === 'note' || (timestamp !== null && a.timestamp === timestamp)) return true;
+      // tracker v3.2: the same prior state of the same held edge (total and timestamp) at another T
+      return nat(priorTimestamp) && u64(get(a, 'prior_timestamp')) && a.prior_timestamp === priorTimestamp;
+    };
     if (looked.some(([a, o, st]) => o === 'unknown' || (o === 'alive' && same(a) && !exactPrior(a, st))
         || (o === 'alive' && !expires(a) && !same(a)))) {
       this.refuse('attempt_outcome_unknown', 'an earlier payment attempt for this deal may have applied (or may '
@@ -799,9 +864,10 @@ class Run {
   /**
    * R12 extended, the client side of decision D-2 c: never sign a novation that sets an edge of mine (as issuer) to
    * the acknowledged prior total of a bound note of mine on that edge that is later than the novation and can still
-   * apply. Also run for a bound note of mine (audit VS-1): a note for another deal can bring the edge back to that
-   * prior just as a novation can. `changes`: [[edge, new_total, timestamp]] of the novation's edges where I am the
-   * issuer (or the note's edge).
+   * apply (on tracker v3.1 it could then apply after it). Also run for a bound note of mine (audit VS-1): a note for
+   * another deal can bring the edge back to that prior just as a novation can. On tracker v3.2 the note's PA also binds
+   * the prior timestamp, which the edge never has again, so the tracker refuses it there; the rule stays as a second
+   * line. `changes`: [[edge, new_total, timestamp]] of the novation's edges where I am the issuer (or the note's edge).
    */
   noBoundNoteRestored(changes) {
     for (const [edge, newTotal, ts] of changes) {
@@ -822,7 +888,7 @@ class Run {
 
   noReuse(op, slots) {
     const groups = new Map(), order = [];
-    for (const [s, i, r, total, ts] of slots) {
+    for (const [s, i, r, total, ts] of slots) {      // a prior slot's sixth item (its prior timestamp) is not recorded
       const e = edgeKey(i, r), k = key([e, ts]);
       if (!groups.has(k)) {
         groups.set(k, {edge: e, ts, slots: {}});
@@ -846,6 +912,26 @@ class Run {
   boundAdvertised() {
     const f = get(this.ctx, 'features');
     return Array.isArray(f) && f.includes('bound_notes/1');
+  }
+
+  /**
+   * Tracker v3.2: what signs a prior slot (PA) is signed only for the contract CONTRACT, as ctx.novation (GET /info
+   * novation) reports it; otherwise feature_unavailable (fail closed, as for a server without circulation/1).
+   */
+  contract() {
+    const problem = contractProblem(get(this.ctx, 'novation'));
+    if (problem) this.refuse('feature_unavailable', problem + '; nothing was signed');
+  }
+
+  /**
+   * A prior timestamp the item names beside a prior state (absent or null: names none) must be that state's (0 for an
+   * absent edge): the template's prior timestamp is checked as its prior total is.
+   */
+  priorTimestampNamed(named, state) {
+    if (named === null || named === undefined) return;
+    if (!nat(named) || named !== (state === null ? 0 : state.timestamp)) {
+      this.bad("the item's prior timestamp is not the timestamp of the prior state it shows");
+    }
   }
 }
 
@@ -879,6 +965,8 @@ function bound(run, tpl) {
   const prior = tpl.prior_note;
   if (prior === null && P !== 0) run.bad('the template shows no prior note but a prior total above 0');
   if (prior !== null && prior.total !== P) run.bad("the template's prior note does not match its prior total");
+  run.priorTimestampNamed(get(tpl, 'prior_timestamp'), prior);
+  const p = prior === null ? 0 : prior.timestamp;             // the acknowledged state: (P, p), (0, 0) for a new edge
   s.deal_id = shownId(D);
   s.timestamp = ts;
   s.amount = price;
@@ -905,14 +993,15 @@ function bound(run, tpl) {
   run.fresh(ts, prior === null ? [] : [prior.timestamp]);
   run.show(edge, prior, true);
   run.addEdge(edge, 'issuer', P, total, ts);
-  run.oneLiveAttempt(D, deal.price, 'note', edge, P, ts);
+  run.oneLiveAttempt(D, deal.price, 'note', edge, P, ts, p);
   run.noBoundNoteRestored([[edge, total, ts]]);
+  run.contract();
   const op = 'note:' + D;
-  const slots = [[slotKey(edge, 'prior'), I, R, P, ts], [slotKey(edge, 'new'), I, R, total, ts]];
+  const slots = [[slotKey(edge, 'prior'), I, R, P, ts, p], [slotKey(edge, 'new'), I, R, total, ts]];
   const signed = run.noReuse(op, slots);
   return [slots, {
     op, signed, pending: [pendingEntry(edge, total, ts, 'note', D, 'out')],
-    attempt: attemptRecord(D, 'note', edge, P, prior === null ? 0 : prior.timestamp, prior === null ? null : prior.signature, total, ts, null),
+    attempt: attemptRecord(D, 'note', edge, P, p, prior === null ? null : prior.signature, total, ts, null),
     attempts_seen: run.seen,
   }];
 }
@@ -942,6 +1031,8 @@ function payerTemplate(run, tpl) {
     && text(get(tpl, 'tracker_nft_id')) && text(get(tpl, 'denomination'))
     && (get(tpl, 'quote_digest') === null || text(tpl.quote_digest));
   if (!ok) run.bad('the transfer template is missing a field or has one of the wrong type');
+  run.priorTimestampNamed(get(fe, 'prior_timestamp'), get(fe, 'before'));
+  run.priorTimestampNamed(get(te, 'prior_timestamp'), get(te, 'before'));
   const v = {
     deal_id: tpl.deal_id, terms_hash: tpl.terms_hash, deliverable: tpl.deliverable_sha256,
     A: iss.pubkey, A_id: idOf(iss), B: pay.pubkey, B_id: idOf(pay), C: pee.pubkey, C_id: idOf(pee), amount: tpl.amount,
@@ -986,6 +1077,7 @@ function payer(run, v, consent) {
     run.refuse('amount_mismatch', `your held claim must fall by exactly ${a} PC (and cover it)`);
   }
   const X = fb.total, Y = tb !== null ? tb.total : 0;
+  const pAB = fb.timestamp;                  // the held edge's state (X, p_AB): what my prior slot acknowledges
   if (v.to_new !== Y + a) run.refuse('amount_mismatch', `the payee's claim must rise by exactly ${a} PC`);
   if (!run.verified(A, me, fb) || (tb !== null && !run.verified(A, C, tb))) {
     run.refuse('bad_prior_signature', "an edge state shown is not the issuer's signature");
@@ -996,7 +1088,7 @@ function payer(run, v, consent) {
   run.show(dest, tb, false);
   run.addEdge(held, 'creditor', X, X - a, T);
   run.addEdge(dest, 'payer', Y, Y + a, T);
-  run.oneLiveAttempt(D, deal.price, 'transfer', held, X, T);
+  run.oneLiveAttempt(D, deal.price, 'transfer', held, X, T, pAB);
   const q = quoteDigest({network: deal.network, tracker_nft_id: v.nft, denomination: v.denom, deal_id: D,
     terms_hash: deal.terms_hash, deliverable_sha256: deal.deliverable_sha256, issuer_pubkey: A, payer_pubkey: me,
     payee_pubkey: C, amount: a});
@@ -1015,12 +1107,13 @@ function payer(run, v, consent) {
   const m = get(run.ctx, 'mandate');
   if (!isDict(m)) run.refuse('policy_off', "your owner's mandate could not be read, so nothing is paid with a held note");
   if (get(m, 'pay_with_held_notes') === 'never') run.refuse('policy_off', "your owner's mandate does not allow paying with held notes");
+  run.contract();
   const op = 'pay:' + D;
-  const slots = [[slotKey(held, 'prior'), A, me, X, T], [slotKey(held, 'new'), A, me, X - a, T], [slotKey(dest, 'new'), A, C, Y + a, T]];
+  const slots = [[slotKey(held, 'prior'), A, me, X, T, pAB], [slotKey(held, 'new'), A, me, X - a, T], [slotKey(dest, 'new'), A, C, Y + a, T]];
   const signed = run.noReuse(op, slots);
   return [slots.filter(x => !v.signed_by_you.has(x[0])), {
     op, signed, pending: [pendingEntry(held, X - a, T, 'transfer', D, 'in')],
-    attempt: attemptRecord(D, 'transfer', held, X, fb.timestamp, fb.signature, X - a, T, q),
+    attempt: attemptRecord(D, 'transfer', held, X, pAB, fb.signature, X - a, T, q),
     attempts_seen: run.seen,
   }];
 }
@@ -1071,6 +1164,7 @@ function consentEdges(run, it) {
       run.bad('an edge of the item is missing a field or has one of the wrong type');
     }
     if (change !== nw - (before !== null ? before.total : 0)) run.bad("an edge's change is not its new total minus its prior total");
+    run.priorTimestampNamed(get(e, 'prior_timestamp'), before);
     out.push({edge: e.edge, I: keys[0], R: keys[1], before, new: nw, ts, slots: [...slots], done: new Set(done),
       your_role: e.your_role, issuer_id: idOf(get(e, 'issuer')), recipient_id: idOf(get(e, 'recipient'))});
   }
@@ -1206,8 +1300,10 @@ function payee(run, it, edges, context) {
   if (cap !== null && (!nat(cap) || Y + a > cap)) {
     run.refuse('policy_cap', `your claim on this issuer would be ${Y + a} PC, above max_accept_per_issuer`);
   }
+  run.contract();
   const op = 'transfer:' + it.id;
-  const slots = [[slotKey(e.edge, 'prior'), e.I, me, Y, T], [slotKey(e.edge, 'new'), e.I, me, e.new, T]];
+  const pAC = e.before !== null ? e.before.timestamp : 0;     // the state (Y, p_AC) I acknowledge, (0, 0): none
+  const slots = [[slotKey(e.edge, 'prior'), e.I, me, Y, T, pAC], [slotKey(e.edge, 'new'), e.I, me, e.new, T]];
   const signed = run.noReuse(op, slots);
   const done = doneSlots([e]);
   return [slots.filter(x => !done.has(x[0])), {
@@ -1357,6 +1453,8 @@ export function checkPayment(dealId, price, route, edge, prior, ctx) {
       run.bad('check_payment takes a deal id, its price, a route, an edge and a prior total');
     }
     run.havePins();
+    // no timestamps: never the same transfer signed again, never the same-prior exemption (an ordinary note
+    // acknowledges no prior state)
     run.oneLiveAttempt(dealId, price, route, edge, prior);
     return [[], null];
   };

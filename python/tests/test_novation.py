@@ -1,6 +1,7 @@
 """novation.py, the client signing firewall (PROTOCOL.md 15.3, design 4.11 and 6.2, decision D-1): a decision table
 with at least one case per refusal code and accepted cases for every role; the bytes to sign (equal to
-basis.note_message, signed and checked with basis.verify); the quote digest (the worked example of PROTOCOL.md 18.3);
+basis.note_message for a new slot and basis.prior_ack_message for a prior slot, tracker v3.2; signed and checked with
+basis.verify); the tracker v3.2 contract gate and the same-prior exemption; the quote digest (the worked example of PROTOCOL.md 18.3);
 the D-1 payment-attempt rules; and the helpers that record what was signed and found. Offline, real signatures,
 throwaway keys derived from public labels."""
 import ast
@@ -176,9 +177,18 @@ def member_item(ts=T998):
 
 
 # ---------- contexts ----------
+# GET /info novation of a server on tracker v3.2: the v16 constants and the contract the clients sign prior slots for
+# (spelled out here, so a change of novation.CONTRACT fails these tests).
+INFO_NOVATION = {'transfer_ms': 999, 'setoff_ms': 998, 'bound_note_ms': 997, 'reserved_ms': [995, 996, 997, 998, 999],
+                 'max_age_ms': 3600000, 'transfer_ttl_ms': 1200000, 'setoff_ttl_ms': 1800000, 'fallback_margin_ms': 60000,
+                 'tracker_build': 'valun-circulating-credit/4', 'transfer_version': 4, 'bound_note_version': 3,
+                 'prior_ack': 'basis/prior-ack/1'}
+
+
 def base_ctx(me, me_id, now=NOW, **over):
     c = {'me_pk': me.pk, 'me_id': me_id, 'now_ms': now, 'verify': verify, 'pins': dict(PINS), 'records': {},
-         'signed': {}, 'transfer_attempts': {}, 'novated_edges': {}, 'features': ['bound_notes/1', 'circulation/1']}
+         'signed': {}, 'transfer_attempts': {}, 'novated_edges': {}, 'features': ['bound_notes/1', 'circulation/1'],
+         'novation': copy.deepcopy(INFO_NOVATION)}
     c.update(over)
     return c
 
@@ -193,7 +203,9 @@ def payer_ctx(now=NOW, **over):
 def regen_ctx(now=NOW, **over):
     """The payer shown its own transfer again as a consent: its earlier attempt through A acknowledged the same prior,
     10, at the same timestamp T999 (the identical operation, which the tracker can apply at most once). A transfer
-    regenerated at a new T while that attempt is alive is refused (audit VS-1: see OneLivePaymentAttempt)."""
+    regenerated at a new T while that attempt is alive is signed only when it acknowledges the same prior state, total
+    and timestamp, as the attempt recorded (tracker v3.2, audit VS-1 closed: see VS1SamePriorTransferRetries); this
+    record carries no prior_timestamp, so there it waits."""
     c = payer_ctx(now, transfer_attempts={DEAL: [attempt('transfer', AB, 10, 7, T999, qd())]})
     c.update(over)
     return c
@@ -331,6 +343,41 @@ CASES = [
      lambda: payer_ctx(transfer_attempts={DEAL: [attempt('transfer', EB, 9, 6, T_OLD, prior_timestamp=TS_AB)]},
                        records={EB: {'confirmed': {'total': 6, 'timestamp': T_OLD, 'signature': 'aa'}, 'pending': []}},
                        edges={EB: st(E, B, 9, T_OLD + 1000)}), 'already_paid'),
+    # tracker v3.2 (design v3.2 section 4): the same-prior exemption; the same issuer at a new T is signed at once when
+    # it acknowledges the same state of the held edge (total AND timestamp) as the earlier transfer recorded
+    ('payer: sign a retry at a new T on the same prior state as an earlier transfer (tracker v3.2)', PT, payer_tpl,
+     lambda: payer_ctx(transfer_attempts={DEAL: [attempt('transfer', AB, 10, 7, T_OLD, qd(), prior_timestamp=TS_AB)]}),
+     None),
+    ('payer: a retry on the same total but another prior timestamp waits for the earlier window', PT, payer_tpl,
+     lambda: payer_ctx(transfer_attempts={DEAL: [attempt('transfer', AB, 10, 7, T_OLD, qd(), prior_timestamp=TS_AB - 1000)]}),
+     'transfer_window_open'),
+    ('payer: a retry after an earlier transfer that recorded no prior state waits', PT, payer_tpl,
+     lambda: payer_ctx(transfer_attempts={DEAL: [attempt('transfer', AB, 10, 7, T_OLD, qd())]}), 'transfer_window_open'),
+    ('payer: the same prior state through another issuer waits', PT, payer_tpl,
+     lambda: payer_ctx(transfer_attempts={DEAL: [attempt('transfer', EB, 10, 7, T_OLD, qd(), prior_timestamp=TS_AB)]}),
+     'transfer_window_open'),
+    # tracker v3.2: the template's prior timestamps, where it names them, are its prior states' (as the totals are)
+    ('payer: sign, the template names the prior timestamps of both edges', PT,
+     lambda: edit(payer_tpl(), lambda o: (o['from_edge'].update(prior_timestamp=TS_AB), o['to_edge'].update(prior_timestamp=TS_AC))),
+     payer_ctx, None),
+    ('payer: sign, the template names prior timestamp 0 for a new destination edge', PT,
+     lambda: edit(payer_tpl(Y=None), set_(['to_edge', 'prior_timestamp'], 0)), payer_ctx, None),
+    ("payer: the held edge's prior timestamp is not its state's", PT,
+     lambda: edit(payer_tpl(), set_(['from_edge', 'prior_timestamp'], TS_AB + 1)), payer_ctx, 'bad_template'),
+    ("payer: a prior timestamp for a new destination edge", PT,
+     lambda: edit(payer_tpl(Y=None), set_(['to_edge', 'prior_timestamp'], TS_AC)), payer_ctx, 'bad_template'),
+    ('payer: a prior timestamp that is not a whole number', PT,
+     lambda: edit(payer_tpl(), set_(['to_edge', 'prior_timestamp'], str(TS_AC))), payer_ctx, 'bad_template'),
+    # tracker v3.2: the contract (GET /info novation) or nothing that signs a prior slot
+    ('payer: GET /info shows no novation contract', PT, payer_tpl, lambda: payer_ctx(novation=None), 'feature_unavailable'),
+    ('payer: the tracker v3.1 contract (transfer version 3)', PT, payer_tpl,
+     lambda: payer_ctx(novation=dict(INFO_NOVATION, transfer_version=3)), 'feature_unavailable'),
+    ('payer: a contract version written as a string', PT, payer_tpl,
+     lambda: payer_ctx(novation=dict(INFO_NOVATION, transfer_version='4')), 'feature_unavailable'),
+    ('payer: another prior acknowledgment', PT, payer_tpl,
+     lambda: payer_ctx(novation=dict(INFO_NOVATION, prior_ack='basis/prior-ack/2')), 'feature_unavailable'),
+    ('payer: another tracker build', PT, payer_tpl,
+     lambda: payer_ctx(novation=dict(INFO_NOVATION, tracker_build='valun-circulating-credit/3')), 'feature_unavailable'),
 
     # --- evaluate_bound_template (pay with my own bound note) ---
     ('bound: sign', BT, bound_tpl, payer_ctx, None),
@@ -376,9 +423,23 @@ CASES = [
                                      'pending': [pending(6, TS_BC)]}}), 'already_paid'),
     ('bound: a template for another deal', BT, lambda: edit(bound_tpl(), set_(['deal_id'], 'vd_ffffffffffffffff')),
      payer_ctx, 'deal_mismatch'),
+    # tracker v3.2: prior_timestamp beside prior_total is the prior note's timestamp (0 for a new edge)
+    ('bound: sign, the template names the prior timestamp', BT, lambda: edit(bound_tpl(), set_(['prior_timestamp'], TS_BC)),
+     payer_ctx, None),
+    ('bound: sign, a new edge with prior timestamp 0', BT, lambda: edit(bound_tpl(prior=False), set_(['prior_timestamp'], 0)),
+     payer_ctx, None),
+    ('bound: prior_timestamp is not the prior note\'s', BT, lambda: edit(bound_tpl(), set_(['prior_timestamp'], TS_BC - 1)),
+     payer_ctx, 'bad_template'),
+    ('bound: a prior timestamp for a new edge', BT, lambda: edit(bound_tpl(prior=False), set_(['prior_timestamp'], TS_BC)),
+     payer_ctx, 'bad_template'),
+    ('bound: the tracker v3.1 contract (bound notes version 2)', BT, bound_tpl,
+     lambda: payer_ctx(novation=dict(INFO_NOVATION, bound_note_version=2)), 'feature_unavailable'),
+    ('bound: GET /info shows no novation contract', BT, bound_tpl, lambda: payer_ctx(novation=None), 'feature_unavailable'),
 
     # --- evaluate_consent, issuer ---
     ('issuer: sign', CO, issuer_item, issuer_ctx, None),
+    # the issuer signs 80-byte note messages only: not gated on the tracker v3.2 contract
+    ('issuer: sign without a novation contract in GET /info', CO, issuer_item, lambda: issuer_ctx(novation=None), None),
     ('issuer: sign, a new edge to the payee', CO, lambda: issuer_item(Y=None), issuer_ctx, None),
     ('issuer: two roles', CO, lambda: edit(issuer_item(), set_(['your_roles'], ['issuer', 'payee'])), issuer_ctx,
      'bad_consent'),
@@ -428,6 +489,17 @@ CASES = [
     # --- evaluate_consent, payee (being paid by transfer) ---
     ('payee: sign', CO, payee_item, payee_ctx, None),
     ('payee: sign, a first claim on the issuer', CO, lambda: payee_item(Y=None), payee_ctx, None),
+    # tracker v3.2: the payee's prior slot is PA(A,C,Y,p_AC,T): only for the contract, and a named prior timestamp is
+    # the state's
+    ('payee: the tracker v3.1 contract', CO, payee_item,
+     lambda: payee_ctx(novation=dict(INFO_NOVATION, tracker_build='valun-circulating-credit/3', transfer_version=3,
+                                     bound_note_version=2, prior_ack=None)), 'feature_unavailable'),
+    ('payee: GET /info novation is not an object', CO, payee_item, lambda: payee_ctx(novation=['v3.2']),
+     'feature_unavailable'),
+    ('payee: sign, the item names the prior timestamp of my edge', CO,
+     lambda: edit(payee_item(), set_(['edges', 0, 'prior_timestamp'], TS_AC)), payee_ctx, None),
+    ("payee: the item's prior timestamp is not my edge's state's", CO,
+     lambda: edit(payee_item(), set_(['edges', 0, 'prior_timestamp'], TS_AC + 1)), payee_ctx, 'bad_consent'),
     ('payee: only the new slot', CO, lambda: edit(payee_item(), set_(['edges', 0, 'slots'], ['new'])), payee_ctx,
      'bad_consent'),
     ('payee: an unknown slot', CO, lambda: edit(payee_item(), set_(['edges', 0, 'slots'], ['prior', 'old'])), payee_ctx,
@@ -495,9 +567,20 @@ CASES = [
 
     # --- evaluate_consent, payer (a regenerated transfer) ---
     ('payer consent: sign (the same operation as the earlier attempt: same prior, same T)', CO, payer_item, regen_ctx, None),
-    # audit VS-1: regenerated at a new T while the earlier attempt (same prior) can still apply
-    ('payer consent: a regenerated transfer while the earlier attempt is alive', CO, payer_item,
-     lambda: regen_ctx(transfer_attempts={DEAL: [attempt('transfer', AB, 10, 7, T_OLD, qd())]}), 'transfer_window_open'),
+    # tracker v3.2 closes audit VS-1: regenerated at a new T on the same prior state (total and timestamp) of the held
+    # edge as the earlier attempt recorded is signed at once (they exclude each other at the tracker)
+    ('payer consent: sign a regenerated transfer at a new T on the same prior state (tracker v3.2)', CO, payer_item,
+     lambda: regen_ctx(transfer_attempts={DEAL: [attempt('transfer', AB, 10, 7, T_OLD, qd(), prior_timestamp=TS_AB)]}),
+     None),
+    # ... but not when the earlier attempt recorded no prior state, or another one (the same total, another timestamp)
+    ('payer consent: a regenerated transfer while an earlier attempt without a recorded prior state is alive', CO,
+     payer_item, lambda: regen_ctx(transfer_attempts={DEAL: [attempt('transfer', AB, 10, 7, T_OLD, qd())]}),
+     'transfer_window_open'),
+    ('payer consent: a regenerated transfer on another prior state of the held edge', CO, payer_item,
+     lambda: regen_ctx(transfer_attempts={DEAL: [attempt('transfer', AB, 10, 7, T_OLD, qd(), prior_timestamp=TS_AB - 1000)]}),
+     'transfer_window_open'),
+    ('payer consent: the tracker v3.1 contract', CO, payer_item,
+     lambda: regen_ctx(novation=dict(INFO_NOVATION, transfer_version=3)), 'feature_unavailable'),
     # audit AI-1: past the earlier attempt's window its approval covers no new attempt, even one the client recorded
     ('payer consent: past the earlier attempt\'s window', CO, lambda: payer_item(T=res(LATE - 1500, 999)),
      lambda: regen_ctx(now=LATE, transfer_attempts={DEAL: [attempt('transfer', AB, 10, 7, T_OLD, qd())]}), 'stale_quote'),
@@ -525,6 +608,8 @@ CASES = [
 
     # --- evaluate_consent, member (a set-off) ---
     ('member: sign', CO, member_item, member_ctx, None),
+    # a set-off signs 80-byte note messages only (set-off version 3 is unchanged): not gated on the contract
+    ('member: sign without a novation contract in GET /info', CO, member_item, lambda: member_ctx(novation=None), None),
     ('member: records not an object', CO, member_item, lambda: member_ctx(records=[]), 'records_unreadable'),
     ('member: a signed entry unreadable', CO, member_item, lambda: member_ctx(signed={AB: {str(T998): 'x'}}),
      'records_unreadable'),
@@ -634,18 +719,30 @@ class DecisionTable(unittest.TestCase):
 
 class SignedBytes(unittest.TestCase):
     """Accepted cases for every role: the slots, totals and timestamps of the spec's tables, and messages that are
-    basis.note_message() and that the signer's signature over them verifies with basis.verify."""
+    basis.note_message() (a new slot) or basis.prior_ack_message() (a prior slot, tracker v3.2) and that the signer's
+    signature over them verifies with basis.verify."""
 
     def assertSigns(self, r, signer, expected):
         self.assertTrue(r['ok'], r['summary']['reason'])
         self.assertEqual(r['to_sign'], expected)
         msgs = nv.slot_messages(r['to_sign'], NFT, DENOM)
         self.assertEqual(list(msgs), [s[0] for s in expected])
-        for slot, issuer, recipient, total, ts in r['to_sign']:
-            m = vb.note_message(bytes.fromhex(issuer), bytes.fromhex(recipient), total, ts, bytes.fromhex(NFT), DENOM)
+        for entry in r['to_sign']:
+            slot, issuer, recipient, total, ts = entry[:5]
+            if slot.endswith(':prior'):
+                self.assertEqual(len(entry), 6)
+                m = vb.prior_ack_message(bytes.fromhex(issuer), bytes.fromhex(recipient), total, entry[5], ts,
+                                         bytes.fromhex(NFT), DENOM)
+                self.assertEqual(len(m), 105)
+                self.assertEqual(m[:17], b'basis/prior-ack/1')
+                self.assertEqual(nv.prior_message(issuer, recipient, total, entry[5], ts, NFT, DENOM), m)
+                self.assertNotEqual(m[17:], nv.message(issuer, recipient, total, ts, NFT, DENOM))
+            else:
+                self.assertEqual(len(entry), 5)
+                m = vb.note_message(bytes.fromhex(issuer), bytes.fromhex(recipient), total, ts, bytes.fromhex(NFT), DENOM)
+                self.assertEqual(len(m), 80)
+                self.assertEqual(nv.message(issuer, recipient, total, ts, NFT, DENOM), m)
             self.assertEqual(msgs[slot], m)
-            self.assertEqual(len(m), 80)
-            self.assertEqual(nv.message(issuer, recipient, total, ts, NFT, DENOM), m)
             signature = vb.sign(m, signer.secret, bytes.fromhex(signer.pk))
             self.assertTrue(vb.verify(signature, m, bytes.fromhex(signer.pk)))
             self.assertFalse(vb.verify(signature, m, bytes.fromhex(E.pk if signer is not E else A.pk)))
@@ -653,7 +750,7 @@ class SignedBytes(unittest.TestCase):
 
     def test_payer_template(self):
         r = PT(payer_tpl(), payer_ctx())
-        self.assertSigns(r, B, [(AB + ':prior', A.pk, B.pk, 10, T999), (AB + ':new', A.pk, B.pk, 7, T999),
+        self.assertSigns(r, B, [(AB + ':prior', A.pk, B.pk, 10, T999, TS_AB), (AB + ':new', A.pk, B.pk, 7, T999),
                                 (AC + ':new', A.pk, C.pk, 7, T999)])
         s = r['summary']
         self.assertEqual((s['role'], s['kind'], s['deal_id'], s['amount'], s['timestamp']), ('payer', 'transfer', DEAL, 3, T999))
@@ -679,7 +776,7 @@ class SignedBytes(unittest.TestCase):
 
     def test_bound_note(self):
         r = BT(bound_tpl(), payer_ctx())
-        self.assertSigns(r, B, [(BC + ':prior', B.pk, C.pk, 6, T997), (BC + ':new', B.pk, C.pk, 9, T997)])
+        self.assertSigns(r, B, [(BC + ':prior', B.pk, C.pk, 6, T997, TS_BC), (BC + ':new', B.pk, C.pk, 9, T997)])
         s = r['summary']
         self.assertEqual((s['kind'], s['your_net_change_PC'], s['your_total_owed_change_PC']), ('bound_note', -3, 3))
         self.assertEqual(r['write_ahead']['attempt'], {'deal_id': DEAL, 'route': 'note', 'edge': BC, 'prior': 6,
@@ -688,7 +785,7 @@ class SignedBytes(unittest.TestCase):
         self.assertEqual(r['write_ahead']['pending'], [{'pair': BC, 'total': 9, 'timestamp': T997, 'kind': 'note',
                                                         'ref': DEAL, 'direction': 'out'}])
         r = BT(bound_tpl(prior=False), payer_ctx())
-        self.assertSigns(r, B, [(BC + ':prior', B.pk, C.pk, 0, T997), (BC + ':new', B.pk, C.pk, 3, T997)])
+        self.assertSigns(r, B, [(BC + ':prior', B.pk, C.pk, 0, T997, 0), (BC + ':new', B.pk, C.pk, 3, T997)])
 
     def test_issuer(self):
         r = CO(issuer_item(), issuer_ctx())
@@ -701,14 +798,14 @@ class SignedBytes(unittest.TestCase):
 
     def test_payee(self):
         r = CO(payee_item(), payee_ctx())
-        self.assertSigns(r, C, [(AC + ':prior', A.pk, C.pk, 4, T999), (AC + ':new', A.pk, C.pk, 7, T999)])
+        self.assertSigns(r, C, [(AC + ':prior', A.pk, C.pk, 4, T999, TS_AC), (AC + ':new', A.pk, C.pk, 7, T999)])
         self.assertEqual((r['summary']['your_net_change_PC'], r['summary']['deal_id']), (3, DEAL))
         r = CO(payee_item(Y=None), payee_ctx())
-        self.assertSigns(r, C, [(AC + ':prior', A.pk, C.pk, 0, T999), (AC + ':new', A.pk, C.pk, 3, T999)])
+        self.assertSigns(r, C, [(AC + ':prior', A.pk, C.pk, 0, T999, 0), (AC + ':new', A.pk, C.pk, 3, T999)])
 
     def test_payer_consent(self):
         r = CO(payer_item(), regen_ctx())
-        self.assertSigns(r, B, [(AB + ':prior', A.pk, B.pk, 10, T999), (AB + ':new', A.pk, B.pk, 7, T999),
+        self.assertSigns(r, B, [(AB + ':prior', A.pk, B.pk, 10, T999, TS_AB), (AB + ':new', A.pk, B.pk, 7, T999),
                                 (AC + ':new', A.pk, C.pk, 7, T999)])
         self.assertEqual(r['summary']['quote_digest'], qd())
 
@@ -749,9 +846,20 @@ class SignedBytes(unittest.TestCase):
         self.assertEqual(payer[AB + ':new'], issuer[AB + ':new'])              # from_recipient = issuer_from
         self.assertEqual(payer[AC + ':new'], issuer[AC + ':new'])              # from_recipient_to = issuer_to
         self.assertEqual(payee[AC + ':new'], issuer[AC + ':new'])              # to_recipient = issuer_to
-        self.assertEqual(payer[AB + ':prior'], nv.message(A.pk, B.pk, 10, T999, NFT, DENOM))
-        self.assertEqual(payee[AC + ':prior'], nv.message(A.pk, C.pk, 4, T999, NFT, DENOM))
+        # tracker v3.2: the two prior slots are PA over each edge's total and timestamp at T, never M(A,B,X,T)
+        self.assertEqual(payer[AB + ':prior'], nv.prior_message(A.pk, B.pk, 10, TS_AB, T999, NFT, DENOM))
+        self.assertEqual(payee[AC + ':prior'], nv.prior_message(A.pk, C.pk, 4, TS_AC, T999, NFT, DENOM))
+        self.assertNotIn(nv.message(A.pk, B.pk, 10, T999, NFT, DENOM), {*payer.values(), *issuer.values(), *payee.values()})
         self.assertEqual(len({*payer.values(), *issuer.values(), *payee.values()}), 4)   # 7 slots over 4 messages
+
+    def test_slot_messages_never_sign_a_prior_slot_as_a_note_message(self):
+        to_sign = PT(payer_tpl(), payer_ctx())['to_sign']
+        with self.assertRaises(ValueError):                              # a prior slot without its prior timestamp
+            nv.slot_messages([to_sign[0][:5]] + to_sign[1:], NFT, DENOM)
+        with self.assertRaises(ValueError):                              # a new slot with one
+            nv.slot_messages([to_sign[0], to_sign[1] + (TS_AB,)], NFT, DENOM)
+        msgs = nv.slot_messages(to_sign, NFT, DENOM)
+        self.assertEqual([len(m) for m in msgs.values()], [105, 80, 80])
 
 
 class Freshness(unittest.TestCase):
@@ -901,11 +1009,22 @@ class OneLivePaymentAttempt(unittest.TestCase):
             self.assertEqual(r['code'], code, total)
 
     def test_same_issuer_retries(self):
-        # audit VS-1: the same prior at another T is not excluded at the tracker: it waits for the earlier window
-        same = {DEAL: [attempt('transfer', AB, 10, 7, T_OLD, qd())]}
+        # tracker v3.2 (audit VS-1 closed): the same prior state of the held edge (total and timestamp) at another T is
+        # excluded at the tracker: signed at once
+        same = {DEAL: [full('transfer', AB, 10, 7, T_OLD, st(A, B, 10, TS_AB), qd())]}
         r = PT(payer_tpl(), payer_ctx(transfer_attempts=same))
+        self.assertTrue(r['ok'], r['summary']['reason'])
+        # the same total recorded without its state's timestamp: not shown to be the same state, it waits
+        totals_only = {DEAL: [attempt('transfer', AB, 10, 7, T_OLD, qd())]}
+        r = PT(payer_tpl(), payer_ctx(transfer_attempts=totals_only))
         self.assertEqual(r['code'], 'transfer_window_open')
         self.assertEqual(r['summary']['retry_after_ms'], T_OLD + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 1 - NOW)
+        # the same total at another timestamp of the edge (it moved and came back before T_OLD): it waits
+        other_state = {DEAL: [full('transfer', AB, 10, 7, T_OLD, st(A, B, 10, TS_AB - 1000), qd())]}
+        self.assertEqual(PT(payer_tpl(), payer_ctx(transfer_attempts=other_state))['code'], 'transfer_window_open')
+        # another kind (an own bound note) on the same deal still waits for that note's window
+        note = {DEAL: [full('note', BC, 6, 9, res(NOW - 30_000, 997), st(B, C, 6, TS_BC))]}
+        self.assertEqual(PT(payer_tpl(), payer_ctx(transfer_attempts=note))['code'], 'transfer_window_open')
         # the identical operation signed again (same prior, same T): at once
         again = {DEAL: [attempt('transfer', AB, 10, 7, T999, qd())]}
         self.assertTrue(PT(payer_tpl(), payer_ctx(transfer_attempts=again))['ok'])
@@ -1039,18 +1158,53 @@ class D2aFullEdgeStates(unittest.TestCase):
 
 
 class VS1SamePriorTransferRetries(unittest.TestCase):
-    """Audit VS-1: the creditors' prior acknowledgments of a transfer are M(A,B,X,T) and M(A,C,Y,T), with no prior
-    timestamp, and the tracker (basis_store check_transfer) compares only the stored totals with them and requires T to
-    be newer than both edges. So two transfers B signed for the same priors both apply when A->B and A->C come back to
-    X and Y between T1 and T2, which A (a note to B) and C (a transfer or set-off out of A->C) can arrange without B."""
+    """Audit VS-1, closed by tracker v3.2. On tracker v3.1 the creditors' prior acknowledgments of a transfer were
+    M(A,B,X,T) and M(A,C,Y,T), with no prior timestamp, and the tracker compared only the stored totals with them, so two
+    transfers B signed for the same priors both applied when A->B and A->C came back to X and Y between T1 and T2 (A a
+    note to B, C a transfer or set-off out of A->C), and the client held a same-issuer retry at a new T back for the
+    earlier window. On v3.2 they are PA(A,B,X,p_AB,T) and PA(A,C,Y,p_AC,T) over the STORED total and timestamp: A->B is
+    at (X, p_AB) at most once, so the first of the two to apply leaves the other dead for good, and the client signs a
+    retry on the same prior state at once (the same-prior exemption, design v3.2 section 4). A retry on another prior
+    state still waits."""
 
     @staticmethod
-    def tracker_transfer(edges, held, dest, X, Y, a, T):
-        """A model of the tracker v3.1 check: stored totals equal the acknowledged priors, T newer than both edges."""
-        if edges[held][0] != X or edges[dest][0] != Y or T <= edges[held][1] or T <= edges[dest][1]:
+    def tracker_v32(edges, a, T, b_prior_sig, c_prior_sig):
+        """A model of tracker v3.2 check_transfer's prior slots: B's and C's prior signatures verify over PA of each
+        edge's stored total and timestamp (0, 0 for an absent edge) at T, and T is newer than both edges."""
+        (X, p), (Y, q) = edges[AB], edges.get(AC, (0, 0))
+        if T <= p or T <= q or not verify(B.pk, nv.prior_message(A.pk, B.pk, X, p, T, NFT, DENOM), b_prior_sig) \
+                or not verify(C.pk, nv.prior_message(A.pk, C.pk, Y, q, T, NFT, DENOM), c_prior_sig):
             return False
-        edges[held], edges[dest] = (X - a, T), (Y + a, T)
+        edges[AB], edges[AC] = (X - a, T), (Y + a, T)
         return True
+
+    @staticmethod
+    def tracker_v31(edges, a, T, b_prior_sig, c_prior_sig):
+        """The tracker v3.1 check, for comparison: the prior signatures over M(A,B,X,T) and M(A,C,Y,T), stored totals."""
+        (X, p), (Y, q) = edges[AB], edges.get(AC, (0, 0))
+        if T <= p or T <= q or not verify(B.pk, nv.message(A.pk, B.pk, X, T, NFT, DENOM), b_prior_sig) \
+                or not verify(C.pk, nv.message(A.pk, C.pk, Y, T, NFT, DENOM), c_prior_sig):
+            return False
+        edges[AB], edges[AC] = (X - a, T), (Y + a, T)
+        return True
+
+    @staticmethod
+    def signed(k, msg):
+        return vb.sign(msg, k.secret, bytes.fromhex(k.pk)).hex()
+
+    def b_prior(self, r):
+        """B's signature of the prior slot an evaluation of mine allowed, over the bytes slot_messages builds (R1)."""
+        return self.signed(B, nv.slot_messages(r['to_sign'], NFT, DENOM)[AB + ':prior'])
+
+    def c_prior(self, T):
+        """C's signature of its prior slot of the transfer at T, as the payee's own client allows and builds it."""
+        r = CO(payee_item(T=T), payee_ctx())
+        self.assertTrue(r['ok'], r['summary']['reason'])
+        return self.signed(C, nv.slot_messages(r['to_sign'], NFT, DENOM)[AC + ':prior'])
+
+    @staticmethod
+    def mine(state):
+        return {k: copy.deepcopy(state.get(k)) for k in ('records', 'signed', 'transfer_attempts')}
 
     def test_both_edges_back_at_their_priors_between_T1_and_T2(self):
         T1, T2 = T_OLD, T999
@@ -1058,24 +1212,54 @@ class VS1SamePriorTransferRetries(unittest.TestCase):
         self.assertTrue(first['ok'], first['summary']['reason'])
         state = {}
         nv.apply_write_ahead(state, first['write_ahead'], 'x')
-        # The tracker side: attempt 1 applies; A raises A->B back to 10 and C moves 3 out of A->C, both between T1 and T2.
+        # The client: attempt 2 at T2 acknowledges the same state of my claim on A, (10, TS_AB), as attempt 1 recorded:
+        # it is signed at once (v3.1 clients refused it with transfer_window_open until T1 + 1 h + 2 min)
+        second = PT(payer_tpl(T=T2), payer_ctx(**self.mine(state)))
+        self.assertTrue(second['ok'], second['summary']['reason'])
+        self.assertEqual(second['write_ahead']['attempts_seen'], [['transfer', AB, 7, T1]])
+        self.assertEqual(second['write_ahead']['attempt']['prior_timestamp'], TS_AB)
+        # the same as a regenerated transfer the server presents as a consent (under attempt 1's quote, still in window)
+        c = CO(payer_item(T=T2), regen_ctx(**self.mine(state)))
+        self.assertTrue(c['ok'], c['summary']['reason'])
+        # The tracker v3.2 side, with the signatures these evaluations allow: attempt 1 applies; A raises A->B back to
+        # 10 and C moves 3 out of A->C, both between T1 and T2; attempt 2 never applies (its PA names (10, TS_AB), and
+        # A->B is now at (10, T1 + 10 000))
         edges = {AB: (10, TS_AB), AC: (4, TS_AC)}
-        self.assertTrue(self.tracker_transfer(edges, AB, AC, 10, 4, PRICE, T1))
+        self.assertTrue(self.tracker_v32(edges, PRICE, T1, self.b_prior(first), self.c_prior(T1)))
         edges[AB], edges[AC] = (10, T1 + 10_000), (4, T1 + 20_000)
-        self.assertTrue(self.tracker_transfer(edges, AB, AC, 10, 4, PRICE, T2))     # attempt 2 would apply too
-        # The client: the edges are shown exactly as attempt 1 acknowledged them (nothing stale to read), yet a second
-        # attempt at T2 is refused until attempt 1's window has passed (the tracker refuses it after T1 + 1 h).
-        ctx = payer_ctx(**{k: copy.deepcopy(state.get(k)) for k in ('records', 'signed', 'transfer_attempts')})
-        r = PT(payer_tpl(T=T2), ctx)
+        self.assertFalse(self.tracker_v32(dict(edges), PRICE, T2, self.b_prior(second), self.c_prior(T2)))
+        self.assertFalse(self.tracker_v32(dict(edges), PRICE, T2, self.b_prior(c), self.c_prior(T2)))
+        # (tracker v3.1 applied it: its acknowledgments M(A,B,10,T2) and M(A,C,4,T2) match the stored totals again)
+        self.assertTrue(self.tracker_v31(dict(edges), PRICE, T2, self.signed(B, nv.message(A.pk, B.pk, 10, T2, NFT, DENOM)),
+                                         self.signed(C, nv.message(A.pk, C.pk, 4, T2, NFT, DENOM))))
+        # and in the other order: attempt 2 first, then attempt 1 is older than the edge
+        edges = {AB: (10, TS_AB), AC: (4, TS_AC)}
+        self.assertTrue(self.tracker_v32(edges, PRICE, T2, self.b_prior(second), self.c_prior(T2)))
+        self.assertFalse(self.tracker_v32(edges, PRICE, T1, self.b_prior(first), self.c_prior(T1)))
+
+    def test_a_retry_on_another_prior_state_still_waits(self):
+        T1, T2 = T_OLD, T999
+        first = PT(payer_tpl(T=T1, now=T1 + 1500), payer_ctx(now=T1 + 1500))
+        state = {}
+        nv.apply_write_ahead(state, first['write_ahead'], 'x')
+        # my claim on A is at the same total at another timestamp, before T1: another state (attempt 1 is dead on v3.2,
+        # but nothing here proves that it did not apply): the retry waits for attempt 1's window, as before
+        moved = edit(payer_tpl(T=T2), set_(['from_edge', 'before'], st(A, B, 10, TS_AB + 5)))
+        r = PT(moved, payer_ctx(**self.mine(state)))
         self.assertEqual(r['code'], 'transfer_window_open')
         self.assertEqual(r['summary']['retry_after_ms'], T1 + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 1 - NOW)
-        # the same as a regenerated transfer the server presents as a consent
-        c = CO(payer_item(T=T2), regen_ctx(**{k: copy.deepcopy(state.get(k)) for k in ('records', 'signed', 'transfer_attempts')}))
-        self.assertEqual(c['code'], 'transfer_window_open')
+        # another total: the same
+        self.assertEqual(PT(payer_tpl(T=T2, X=12), payer_ctx(**self.mine(state)))['code'], 'transfer_window_open')
+        # past T1 (attempt 1 may have applied in between): only the owner can resolve it
+        past = edit(payer_tpl(T=T2), set_(['from_edge', 'before'], st(A, B, 10, T1 + 10_000)))
+        self.assertEqual(PT(past, payer_ctx(**self.mine(state)))['code'], 'attempt_outcome_unknown')
+        # the same state but another signature than attempt 1 recorded (D-2 a): only the owner can resolve it
+        other_sig = edit(payer_tpl(T=T2), set_(['from_edge', 'before'], st(A, B, 10, TS_AB)))
+        att = self.mine(state)
+        att['transfer_attempts'][DEAL][0]['prior_signature'] = 'ab' * 64
+        self.assertEqual(PT(other_sig, payer_ctx(**att))['code'], 'attempt_outcome_unknown')
         # past the window, with a read-back older than T1 (attempt 1 cannot apply any more), a new template is signed
-        late_t = res(LATE - 1500, 999)
-        tpl = payer_tpl(T=late_t, now=LATE)
-        late = PT(tpl, payer_ctx(now=LATE, **{k: copy.deepcopy(state.get(k)) for k in ('records', 'signed', 'transfer_attempts')}))
+        late = PT(payer_tpl(T=res(LATE - 1500, 999), now=LATE), payer_ctx(now=LATE, **self.mine(state)))
         self.assertTrue(late['ok'], late['summary']['reason'])
 
     def test_the_same_operation_signed_again_is_excluded(self):
@@ -1083,14 +1267,40 @@ class VS1SamePriorTransferRetries(unittest.TestCase):
         first = PT(payer_tpl(T=T1), payer_ctx())
         state = {}
         nv.apply_write_ahead(state, first['write_ahead'], 'x')
-        again = PT(payer_tpl(T=T1, now=NOW + 2000), payer_ctx(now=NOW + 2000, **{k: copy.deepcopy(state.get(k)) for k in
-                                                                               ('records', 'signed', 'transfer_attempts')}))
+        again = PT(payer_tpl(T=T1, now=NOW + 2000), payer_ctx(now=NOW + 2000, **self.mine(state)))
         self.assertTrue(again['ok'], again['summary']['reason'])
         self.assertEqual(again['to_sign'], first['to_sign'])
         edges = {AB: (10, TS_AB), AC: (4, TS_AC)}
-        self.assertTrue(self.tracker_transfer(edges, AB, AC, 10, 4, PRICE, T1))
-        edges[AB], edges[AC] = (10, T1 + 10_000), (4, T1 + 20_000)  # both back at their priors, after T1
-        self.assertFalse(self.tracker_transfer(edges, AB, AC, 10, 4, PRICE, T1))    # the second copy never applies
+        self.assertTrue(self.tracker_v32(edges, PRICE, T1, self.b_prior(first), self.c_prior(T1)))
+        edges[AB], edges[AC] = (10, T1 + 10_000), (4, T1 + 20_000)  # both back at their totals, after T1
+        self.assertFalse(self.tracker_v32(edges, PRICE, T1, self.b_prior(again), self.c_prior(T1)))   # never again
+
+    def test_two_bound_notes_on_the_same_prior_state_never_both_apply(self):
+        # The bound-note analogue (the issuer-side twin of VS-1, readiness R-17): notes N1 (ts1) and N2 (ts2) of mine,
+        # both on the prior state (6, TS_BC) of B->C. N2 is signed at once (the same-prior note retry, as before). On
+        # v3.1 both applied if a set-off lowered B->C back to 6 in between; on v3.2 N2's PA(B,C,6,TS_BC,ts2) names a
+        # state the edge never has again.
+        ts1, ts2 = res(NOW - 60_000, 997), T997
+        n1 = BT(bound_tpl(ts=ts1, now=ts1 + 1500), payer_ctx(now=ts1 + 1500))
+        self.assertTrue(n1['ok'], n1['summary']['reason'])
+        state = {}
+        nv.apply_write_ahead(state, n1['write_ahead'], 'x')
+        n2 = BT(bound_tpl(ts=ts2), payer_ctx(**self.mine(state)))
+        self.assertTrue(n2['ok'], n2['summary']['reason'])
+
+        def note(edge, r, ts):          # a model of tracker v3.2 POST /notes at residue 997 (bound note)
+            P, p = edge[0]
+            msgs = nv.slot_messages(r['to_sign'], NFT, DENOM)
+            if ts <= p or not verify(B.pk, nv.prior_message(B.pk, C.pk, P, p, ts, NFT, DENOM), self.signed(B, msgs[BC + ':prior'])):
+                return False
+            edge[0] = (P + PRICE, ts)
+            return True
+        edge = [(6, TS_BC)]
+        self.assertTrue(note(edge, n1, ts1))
+        edge[0] = (6, res(ts1 + 10_000, 998))       # a set-off lowers B->C back to 6 between ts1 and ts2
+        self.assertFalse(note(edge, n2, ts2))
+        self.assertEqual(nv.slot_messages(n2['to_sign'], NFT, DENOM)[BC + ':prior'],
+                         nv.prior_message(B.pk, C.pk, 6, TS_BC, ts2, NFT, DENOM))
 
     def test_a_bound_note_never_brings_my_edge_back_to_the_prior_of_a_live_bound_note(self):
         # The note route keeps its same-prior retry because only my signature moves my edge. Its twin of D-2 c: a bound
@@ -1252,9 +1462,18 @@ class WriteAheadConflicts(unittest.TestCase):
         self.assertEqual(len(retry['write_ahead']['attempts_seen']), 1)
         nv.apply_write_ahead(state, retry['write_ahead'], 'y')
         self.assertEqual(len(state['transfer_attempts'][DEAL]), 1)          # the same attempt
-        # the same prior at a later T: refused while the first can still apply
+        # tracker v3.2: the same prior state at a later T is signed at once (the first can then never apply after it,
+        # nor it after the first) and recorded as a second attempt the evaluation weighed
         later = PT(payer_tpl(T=T999 + 1000, now=NOW + 1000), payer_ctx(now=NOW + 1000, **copy.deepcopy(saved)))
-        self.assertEqual(later['code'], 'transfer_window_open')
+        self.assertTrue(later['ok'], later['summary']['reason'])
+        self.assertEqual(later['write_ahead']['attempts_seen'], [['transfer', AB, 7, T999]])
+        nv.apply_write_ahead(state, later['write_ahead'], 'z')
+        self.assertEqual([a['timestamp'] for a in state['transfer_attempts'][DEAL]], [T999, T999 + 1000])
+        # ... but not on another state of my held claim (the same total at another timestamp): it waits for both
+        moved = edit(payer_tpl(T=T999 + 2000, now=NOW + 2000), set_(['from_edge', 'before'], st(A, B, 10, TS_AB + 5)))
+        r = PT(moved, payer_ctx(now=NOW + 2000, **copy.deepcopy(saved)))
+        self.assertEqual((r['code'], r['summary']['retry_after_ms']),
+                         ('transfer_window_open', T999 + 1000 + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 1 - NOW - 2000))
 
 
 class RecordsHelpers(unittest.TestCase):

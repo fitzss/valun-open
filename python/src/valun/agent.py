@@ -386,7 +386,9 @@ def error_payload(e, setup_hint='run `valun join` (or `valun enroll`) in a termi
                                       'again.')
         if e.code == 'feature_unavailable':
             out['what_this_means'] = ('This Valun server does not offer circulating credit (paying with notes you hold, '
-                                      'set-offs). Nothing was signed. Pay with your own credit note (leave pay_with out).')
+                                      'set-offs), or not on the tracker contract your client signs for (tracker v3.2). '
+                                      'Nothing was signed. Pay with your own credit note (leave pay_with out); if that fails '
+                                      'too, tell your owner: the server must run tracker v3.2.')
         if e.code == 'unknown_issuer':
             out['what_this_means'] = ('The payment options for this deal list no note of yours from that issuer. Nothing was '
                                       'signed. valun_status notes_you_can_spend and valun_deal how_you_can_pay give the exact '
@@ -752,12 +754,15 @@ class ValunAgent:
 
     def _transfer_snapshot(self, c, did, chk, pay_with):
         """What paying deal `did` with a held note would sign, read and checked once (see prepare): the server offers
-        circulation/1; the deal's payment options list a note of mine from the issuer `pay_with` names (an exact
+        circulation/1 and reports the tracker v3.2 contract (GET /info novation); the deal's payment options list a note of mine from the issuer `pay_with` names (an exact
         participant id first, else a handle only one listed issuer has); the issuer's and the payee's current directory
         keys; and a fresh transfer template for exactly that issuer and key, accepted by novation.evaluate_payer_template
         for the deal, terms and delivery `chk` checked (with one GET /edges read-back when D-1 needs one)."""
         if CIRCULATION not in self._remember(c.info()):
             raise vc.ValunError('feature_unavailable', 'this Valun server does not offer circulating credit (circulation/1)')
+        problem = nv.contract_problem(getattr(c, '_novation', None))     # tracker v3.2, as Client.pay_by_transfer checks
+        if problem:
+            raise vc.ValunError('feature_unavailable', problem)
         option = self._held_note(c.payment_options(did), pay_with)
         iid = option['issuer']['id']
         issuer = self._current(c, iid)
@@ -817,7 +822,8 @@ class ValunAgent:
                'pins': pins, 'records': state.get('records'), 'signed': state.get('signed'),
                'transfer_attempts': state.get('transfer_attempts'), 'novated_edges': state.get('novated_edges'),
                'features': list(self.features or []), 'consent_policy': state.get('consent_policy'), 'deal': deal,
-               'payee_current_pk': payee_pk, 'approved_quote_digest': None, 'mandate': mandate, 'edges': None}
+               'payee_current_pk': payee_pk, 'approved_quote_digest': None, 'mandate': mandate, 'edges': None,
+               'novation': getattr(c, '_novation', None)}
         r = nv.evaluate_payer_template(tpl, ctx)
         need = r['summary'].get('needs_read_back') if not r['ok'] and r['code'] == 'transfer_window_open' else None
         if need:
