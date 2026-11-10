@@ -13,9 +13,10 @@ act is signed locally with the Basis Schnorr scheme, and the client checks what 
 - The main entry imports no Node built-in. Keys come from `globalThis.crypto.getRandomValues`, HTTP goes through
   `fetch`. Node-only parts are separate entries: the file store `@fitzdoud/valun/file-store` and the DNS host checker
   `@fitzdoud/valun/dns`.
-- Version `0.3.1`: `npm install @fitzdoud/valun` (or from a checkout: `npm install ./js`) or import `js/src/index.js`.
-  This checkout is `0.4.0` (not published): circulating credit (server release v16: bound notes, paying with a note you
-  hold, consents and set-offs, edge sync), mirroring the Python package `valun` 0.4.
+- Version `0.4.0` (unreleased; npm serves `0.3.1`): `npm install @fitzdoud/valun` (or from a checkout:
+  `npm install ./js`) or import `js/src/index.js`. 0.4.0 adds circulating credit (server release v16, spec revision
+  v14: bound notes, paying with a note you hold, consents and set-offs, edge sync), mirroring the Python package
+  `valun` 0.4.0.
 
 Tested on Node 24.21.0 on Windows only. Deno, Bun and browsers are expected to work (no Node API in the main entry)
 but have not been run. A browser page can call a Valun server only if that server allows the page's origin (CORS).
@@ -236,7 +237,7 @@ node --test js/test/        (from the repository root; or `npm test` in js/)
 ```
 
 The suite runs offline and needs no packages. It checks the code against every file in `spec/vectors/` (generated
-from the real server code, release v13, valun-app `6a6a34b`):
+from the real server code, release v16, valun-app `cfe698b`; spec revision v14):
 
 - `basis-signatures.json`: Basis's official vectors TV001-TV011.
 - `basis-notes.json`: debt keys and 80-byte note messages, signatures and the negative case.
@@ -248,10 +249,13 @@ from the real server code, release v13, valun-app `6a6a34b`):
   - each refused reason is refused with the server's code and message, and nothing is sent.
 - `terms-validation.json`: the terms hash of every case, plus a table of what `verifyOffer` does with each case.
   Validation itself is server-only.
+- `circulation.json` (release v16): timestamps, messages, quote digests, pay statements, tracker requests, and the 58
+  decisions of the signing firewall (consents, payer templates, bound templates), each with its exact slots or refusal
+  code.
 - `transcript.json`:
   - every server-verified signature and every terms hash in every response;
-  - all 51 client-call steps and 3 tool-path variants, replayed through the JS `Client` against a fake `fetch` that
-    serves the recorded reads, clock and random values;
+  - all 65 client-call steps (of 236), replayed through the JS `Client` against a fake `fetch` that serves the
+    recorded reads, clock and random values;
   - each request must equal the recorded one, signatures aside, and each signature must verify over the bytes the
     server verified.
 

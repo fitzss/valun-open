@@ -79,6 +79,28 @@ Both packages implement the same protocol changes (`spec/PROTOCOL.md` revision v
 - Still no runtime dependencies; Node 18 or later. The main entry imports no Node built-in; the file store
   (`@fitzdoud/valun/file-store`) and the DNS host checker (`@fitzdoud/valun/dns`) are the Node-only entries.
 
+### Audit fixes (2026-11-10, before release)
+
+- **A same-issuer transfer retry waits** (audit VS-1): the creditors' prior acknowledgments of a transfer carry no
+  prior timestamp, so two transfers signed on the same priors both apply once A->B and A->C come back to the same
+  totals, which the issuer and the payee can arrange without the payer. A new attempt at another T, a regenerated
+  transfer or a fresh template after `transfer_stale` included, is now `transfer_window_open` until the earlier one is
+  dead; only the identical operation (the same T) is signed again at once. A bound note never brings its edge back to
+  the prior of a later bound note of the same issuer that can still apply (`payment_attempt`). Spec 15.3 R11 and R12,
+  16.2 item 7 (also audit VS-2), 18.6 and I-ONCE are corrected, with three new circulation vectors.
+- **An approval covers only its own attempt** (audit AI-1): a payer consent is signed only under the quote of a
+  recorded attempt whose window (T + 1 h + 2 min) is still open, never hours later under an old approval.
+- **MCP 2026-07-28 approvals are used once** (audit AI-2): `requestState` carries a nonce and an issue time, is
+  accepted once and for at most 10 minutes; a resent approved call is asked again.
+- **`valun sandbox tour --yes`** approves only what the tour's own rules allow (audit AI-3): the sandbox agents by
+  their directory ids, at most the published price, and the other sandbox agent's note; otherwise it stops
+  (`tour_unverified`).
+- **client-prompt mode** flags `valun_set_limits` for the app's confirmation too (audit AI-4).
+- **JavaScript**: `Client.fresh()` keeps a host's Client subclass and its instance-patched methods, and
+  `ValunAgent.client()` follows `agent.declareRoles` as it is now.
+- **Release workflow** (audit SC-1, SC-3): a verify job without `id-token` runs the tests, the vectors, the plugin-core
+  check and the build, and refuses docs that still say unreleased; the publishing jobs need it.
+
 ### Known limits
 
 - Neither package declares `PROTOCOL_FEATURES` yet, so the conformance checker holds them to the circulation vectors
@@ -87,14 +109,14 @@ Both packages implement the same protocol changes (`spec/PROTOCOL.md` revision v
   all three) and the payment timing constants are owner decisions still open (OQ-40, OQ-42).
 - The other open items for release v16 are in `spec/OPEN-QUESTIONS.md` (revision 9).
 
-### Checked locally (2026-11-09, valun-open `circulating-credit`)
+### Checked locally (2026-11-10, valun-open `circulating-credit`, after the audit fixes)
 
-- `python -m unittest discover -s python/tests`: 385 tests OK with Python 3.14.7 (with the official MCP SDK 2.3.0
-  installed; 5 skipped without it) and with 3.11.18 (5 skipped).
-- `node --test js/test/` (Node 24): 486 tests, 485 pass, 1 skipped (a POSIX file-mode test, on Windows); the type
-  definitions compile with TypeScript 6.0.3 (`--strict`).
-- `spec/vectors/check_python.py --client package --require circulation/1`: 1386 checks, 1188 agree, 0 disagreements
-  in failing tiers, 17 informative differences, 181 not applicable (Python 3.14.7 and 3.11.18).
+- `python -m unittest discover -s python/tests`: 395 tests OK with Python 3.14.7 (with the official MCP SDK 2.3.0
+  installed). Not rerun with 3.11 after the audit fixes.
+- `node --test js/test/` (Node 24): 489 tests, 488 pass, 1 skipped (a POSIX file-mode test, on Windows). The type
+  definitions were not compiled after the audit fixes (TypeScript is fetched from the network).
+- `spec/vectors/check_python.py --client package --require circulation/1`: 1389 checks, 1191 agree, 0 disagreements
+  in failing tiers, 17 informative differences, 181 not applicable (Python 3.14.7).
 
 ## 0.3.1 and earlier
 
