@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {FIX, KEYS, json, outcome, requests, signaturesIn, signedRequests, unsigned, world} from './agent-world.js';
-import {TOOL_NAMES, basis, bytesToHex, hexToBytes} from '../src/index.js';
+import {NEVER_APPLIED_TRANSFER, TOOL_NAMES, basis, bytesToHex, hexToBytes} from '../src/index.js';
 
 const SECRETS = [FIX.token, ...Object.values(KEYS).map(k => bytesToHex(k.secret))];
 const same = (got, want, what) => {
@@ -140,6 +140,7 @@ test('the recorded scenarios cover circulating credit: pay_with, bound notes, ex
 const CALL = {
   sync_edges: (c, k) => c.syncEdges({nowMs: k.now_ms ?? null}),
   payment_attempts: (c, k) => c.paymentAttempts({edges: k.edges ?? null, nowMs: k.now_ms ?? null, doubtful: k.doubtful ?? null}),
+  attempts_overview: (c, k) => c.attemptsOverview({edges: k.edges ?? null, nowMs: k.now_ms ?? null, doubtful: k.doubtful ?? null}),
   resolution_plan: (c, k) => c.resolutionPlan(k.deal_id, k.attempt, {edges: k.edges ?? null, nowMs: k.now_ms ?? null, doubtful: k.doubtful ?? null}),
   resolve_attempt: (c, k) => c.resolveAttempt(k.deal_id, k.attempt, k.outcome, k.owner_token, {note: k.note ?? null,
     localOnly: k.local_only ?? false, edges: k.edges ?? null, nowMs: k.now_ms ?? null, doubtful: k.doubtful ?? null,
@@ -194,4 +195,54 @@ test('resolveAttempt: a 409 payee_edge_not_applied says why and what to do inste
     assert.deepEqual(unsigned(json(w.store.state)), sc.state_after, 'records unchanged, as in Python');
     assert.ok(!JSON.stringify(w.store.state).includes('paid_deals') && !JSON.stringify(w.store.state).includes('"outcome"'));
   }
+});
+
+// 0.4.1 (readiness R-22): an attempt the records cannot prove dead ('unknown'), whose transfer the server ended before it
+// ever reached the tracker, is shown as ended there (ended_at_server); a state that proves nothing leaves it as it was.
+// Display only: nothing is recorded and the classification R11 uses is the same.
+test('attemptsOverview (R-22): ended_at_server only for the states that prove the transfer never reached the tracker', async () => {
+  const scs = FIX.client_scenarios.filter(s => s.name.startsWith('attempts_overview: R-22, the earlier attempt the server holds as '));
+  assert.equal(scs.length, 9);
+  const ended = {void_rejected: true, cancelled: true, expired: true, refused: true, failed: false, outcome_unknown: false,
+    resolved_not_applied: false, applied: false, collecting: false};
+  assert.deepEqual([...NEVER_APPLIED_TRANSFER].sort(), ['cancelled', 'expired', 'refused', 'void_expired', 'void_key_revoked',
+    'void_rejected', 'void_stale']);
+  for (const sc of scs) {
+    const state = sc.name.split(' ').pop();
+    const w = world(sc);
+    const read = {edges: sc.kwargs.edges, doubtful: sc.kwargs.doubtful};
+    const before = json(w.store.state);
+    const plain = w.client.paymentAttempts(read);
+    const rows = await w.client.attemptsOverview(read);
+    assert.deepEqual(rows.map(r => [r.ref, r.state, r.paid, r.ended_at_server]),
+      [['#1', 'unknown', false, ended[state] ? state : null], ['#2', 'alive', false, null], ['#1', 'applied', true, null]], state);
+    assert.equal(NEVER_APPLIED_TRANSFER.includes(state), ended[state], state);
+    assert.deepEqual(rows.map(({ended_at_server: _e, ...r}) => r), plain, `${state}: the classification R11 uses is unchanged`);
+    assert.deepEqual(json(w.store.state), before, `${state}: nothing recorded`);
+    assert.deepEqual(w.fetch.calls.map(c => c.key), ['GET /pilot/v1/info', 'GET /pilot/v1/transfers/vt_3c3c3c3c3c3c3c3c']);
+    // the plan for the attempt shows it the same way, reading the transfer once (a live one can still apply: refused)
+    const p = world(sc);
+    const plan = await outcome(() => p.client.resolutionPlan(rows[0].deal_id, '#1', read));
+    if (state === 'collecting') assert.equal(plan.code, 'attempt_in_progress');
+    else assert.equal(plan.value.attempt.ended_at_server, ended[state] ? state : null, `plan: ${state}`);
+    assert.equal(p.fetch.calls.filter(c => c.key.startsWith('GET /pilot/v1/transfers/')).length, 1, `plan: ${state}: read once`);
+  }
+});
+
+// What is signed is unchanged: an earlier attempt of mine (its window open) that the server shows as void_rejected still
+// holds back a payment on another state of my claim (transfer_window_open), and the same state of my claim is signed at once
+// (the same-prior exemption), as without that word; paying never reads GET /transfers.
+test('payByTransfer after an attempt the server says it ended: R11 waits for the window, the same-prior exemption stands', async () => {
+  const pick = part => FIX.client_scenarios.find(s => s.name.startsWith('pay_by_transfer: after an attempt the server says it '
+    + `ended (void_rejected), ${part}`));
+  const waits = world(pick('another state of my claim waits'));
+  const e = await waits.client.payByTransfer(pick('another state').kwargs.deal_id, 'frank').then(() => null, x => x);
+  assert.equal(e?.code, 'transfer_window_open');
+  assert.ok(e.extra.retry_after_ms > 3_600_000 - 180_000, 'about an hour to wait');
+  assert.ok(!waits.fetch.calls.some(c => c.key.startsWith('POST ') || c.key.startsWith('GET /pilot/v1/transfers/')));
+  const same = world(pick('the same state of my claim is signed'));
+  const r = await same.client.payByTransfer(pick('the same state').kwargs.deal_id, 'frank');
+  assert.equal(r.status, 'paid_by_transfer');
+  assert.ok(same.fetch.calls.some(c => c.key.endsWith('/pay-by-transfer')));
+  assert.ok(!same.fetch.calls.some(c => c.key.startsWith('GET /pilot/v1/transfers/')));
 });

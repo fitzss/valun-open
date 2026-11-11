@@ -464,7 +464,8 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
       out.what_this_means = 'An earlier payment of this deal may have applied: the edge it would change has moved '
         + 'past it to a state your Valun client cannot explain. Nothing was signed, and your client '
         + 'will not pay this deal again by itself. Only your owner can resolve it, after confirming '
-        + 'with the payee whether the payment arrived (in a terminal: `valun attempts list`, then '
+        + 'with the payee whether the payment arrived (in a terminal: `valun attempts list`, which '
+        + 'also says when the Valun server ended an attempt before it reached the tracker, then '
         + '`valun attempts resolve`). Tell your owner.';
     }
     if (e.code === 'transfer_window_open') {

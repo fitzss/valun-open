@@ -1255,6 +1255,38 @@ def client_scenarios():
     add('resolution_plan: a credit note (local only)', 'resolution_plan', {'deal_id': dg['id'], 'attempt': '#2'}, circ, att_state)
     add('resolution_plan: no such attempt', 'resolution_plan', {'deal_id': dg['id'], 'attempt': '#9'}, circ, att_state)
     add('resolution_plan: a malformed deal id', 'resolution_plan', {'deal_id': 'vd_x', 'attempt': '#1'}, circ, att_state)
+    # ---- 0.4.1 (readiness R-22): the server's view of an attempt that may have applied (attempts_overview) ----
+    # A second deal paid with the same note, on the same state of my claim on frank, moved it 30 -> 10 (the total the
+    # first deal's attempt would have left) later: from the edges alone that attempt may have applied ('unknown').
+    d2 = 'vd_7777777777777777'
+    t2 = dict(t_att, deal_id=d2, timestamp=t_att['timestamp'] + 5000, attempt_id='vt_7777777777777777')
+    r22_state = dict(att_state, transfer_attempts={dg['id']: [t_att], d2: [t2]},
+                     records=dict(att_state['records'], paid_deals={d2: {'route': 'transfer', 'edge': t2['edge'], 'total': 10,
+                                                                         'timestamp': t2['timestamp']}}))
+    moved = {'edges': {edge('frank', 'alice'): state_of('frank', 'alice', 10, t2['timestamp'])}, 'doubtful': []}
+    for st_ in ('void_rejected', 'cancelled', 'expired', 'refused', 'failed', 'outcome_unknown', 'resolved_not_applied',
+                'applied', 'collecting'):
+        add(f'attempts_overview: R-22, the earlier attempt the server holds as {st_}', 'attempts_overview', moved,
+            {**circ, **tr_route(st_)}, r22_state)
+    add('attempts_overview: nothing that may have applied: no request', 'attempts_overview', {}, {}, att_state)
+    add("attempts_overview: another deal's transfer is not shown as ended", 'attempts_overview', moved,
+        {**circ, **tr_route('void_rejected', deal='vd_0000000000000000')}, r22_state)
+    add('attempts_overview: a transfer at another timestamp is not this attempt', 'attempts_overview', moved,
+        {**circ, **tr_route('void_rejected', ts=t_att['timestamp'] + 1000)}, r22_state)
+    add('attempts_overview: a transfer at another total is not this attempt', 'attempts_overview', moved,
+        {**circ, **tr_route('void_rejected', total=11)}, r22_state)
+    add('attempts_overview: GET /transfers fails: shown as the records classify it', 'attempts_overview', moved,
+        {**circ, f'GET /pilot/v1/transfers/{vt}': {'status': 503, 'body': {'error': 'unavailable', 'message': 'down'}}}, r22_state)
+    add('attempts_overview: GET /transfers answers 404', 'attempts_overview', moved,
+        {**circ, f'GET /pilot/v1/transfers/{vt}': {'status': 404, 'body': {'error': 'not_found', 'message': 'no such transfer'}}},
+        r22_state)
+    add('attempts_overview: a server without circulation/1 is asked nothing more', 'attempts_overview', moved, {}, r22_state)
+    add('attempts_overview: GET /info fails', 'attempts_overview', moved,
+        {'GET /pilot/v1/info': {'status': 503, 'body': {'error': 'unavailable', 'message': 'down'}}}, r22_state)
+    add('resolution_plan: R-22, the earlier attempt the server ended (void_rejected)', 'resolution_plan',
+        dict(moved, deal_id=dg['id'], attempt='#1'), {**circ, **tr_route('void_rejected')}, r22_state)
+    add('resolution_plan: R-22, by the server id of an attempt the server holds as failed', 'resolution_plan',
+        dict(moved, deal_id=dg['id'], attempt=vt), {**circ, **tr_route('failed')}, r22_state)
     resolved = {f"POST /pilot/v1/owner/deals/{dg['id']}/attempts/{vt}/resolve": {'body': {
         'resolution': {'attempt_id': vt, 'outcome': 'applied', 'previous_state': 'outcome_unknown', 'at': '2026-11-06T12:00:00.000Z',
                        'note': 'bob confirmed'},
@@ -1384,6 +1416,21 @@ def client_scenarios():
         {**base_pay, pbt: {'status': 409, 'body': {'error': 'transfer_stale', 'message': 'regenerated', 'transfer_id': 'vt_5e5e5e5e5e5e5e5e',
                                                    'regenerated_as': 'vt_6f6f6f6f6f6f6f6f', 'deal': dict(dg, status='paying_by_transfer')}}},
         dict(pinned, consent_policy=dict(POLICY)))
+    # 0.4.1: the server's word that an earlier attempt ended (void_rejected) changes nothing that is signed. An attempt of
+    # mine two minutes old (its window open) that the server shows as void_rejected: GET /transfers is never read when
+    # paying, a template on another state of my claim waits for the window, and one on the same state (the same-prior
+    # exemption) is signed at once, as without that word.
+    early = {'deal_id': dg['id'], 'route': 'transfer', 'edge': edge('frank', 'alice'), 'prior': claim_fa[0],
+             'prior_timestamp': claim_fa[1], 'prior_signature': note_sig('frank', 'alice', *claim_fa), 'total': claim_fa[0] - 20,
+             'timestamp': res(T0_MS - 120_000, 999), 'quote_digest': tpl1['quote_digest'], 'ack': nv.PRIOR_ACK,
+             'signed_at': '2026-11-06T11:58:00.000Z', 'attempt_id': vt}
+    ended = dict(pinned, consent_policy=dict(POLICY), transfer_attempts={dg['id']: [early]})
+    add('pay_by_transfer: after an attempt the server says it ended (void_rejected), another state of my claim waits (R11)',
+        'pay_by_transfer', {'deal_id': dg['id'], 'issuer': 'frank'},
+        {**base_pay, tt: {'body': tpl3}, **tr_route('void_rejected', ts=early['timestamp']), pbt: {'body': paid}}, ended)
+    add('pay_by_transfer: after an attempt the server says it ended (void_rejected), the same state of my claim is signed '
+        '(the same-prior exemption)', 'pay_by_transfer', {'deal_id': dg['id'], 'issuer': 'frank'},
+        {**base_pay, **tr_route('void_rejected', ts=early['timestamp']), pbt: {'body': paid}}, ended)
     add('pay_by_transfer: expected_claim_total that is not a whole number', 'pay_by_transfer',
         {'deal_id': dg['id'], 'issuer': 'frank', 'expected_claim_total': -1}, base_pay, pinned)
     add('pay_by_transfer: an issuer named by a handle two listed issuers have', 'pay_by_transfer', {'deal_id': dg['id'], 'issuer': 'twin'},
@@ -1672,6 +1719,7 @@ def constants():
             'VALUE_SAFE_HEADER_ROLES': vc.VALUE_SAFE_HEADER_ROLES, 'CONSENT_LOG_MAX': vc.CONSENT_LOG_MAX,
             'RECORDS_KEEP_MS': vc.RECORDS_KEEP_MS, 'SIGNATURES_KEEP_MS': vc.SIGNATURES_KEEP_MS, 'ATTEMPT_OUTCOMES': vc.ATTEMPT_OUTCOMES,
             'UNRESOLVED_TRANSFER': vc.UNRESOLVED_TRANSFER, 'LIVE_TRANSFER': vc.LIVE_TRANSFER, 'LOCAL_CHOICES': vc.LOCAL_CHOICES,
+            'NEVER_APPLIED_TRANSFER': vc.NEVER_APPLIED_TRANSFER,
             'RESOLVE_NOTE_MAX': vc.RESOLVE_NOTE_MAX, 'PAYEE_EDGE_WHY': vc.PAYEE_EDGE_WHY, 'PAYEE_EDGE_NEXT': vc.PAYEE_EDGE_NEXT,
             'EDGES_PAGE': vc.EDGES_PAGE, 'EDGES_MAX_PAGES': vc.EDGES_MAX_PAGES,
             'NOVATION': {k: getattr(nv, k) for k in ('TRANSFER_MS', 'SETOFF_MS', 'BOUND_MS', 'RESIDUE', 'RESERVED_MS', 'MAX_AGE_MS',

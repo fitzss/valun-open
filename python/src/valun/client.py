@@ -74,6 +74,20 @@ ATTEMPT_OUTCOMES = ('not_applied', 'applied')  # what the owner can decide about
 UNRESOLVED_TRANSFER = ('outcome_unknown', 'inconsistent')
 LIVE_TRANSFER = ('awaiting_owner', 'collecting', 'applying')
 LOCAL_CHOICES = ('no_server_id', 'server_unknown', 'server_ended')
+# The transfer states the server sets only before it ever submits a transfer to the tracker (valun-app PILOT-API.md
+# "Payment by debt transfer" steps 6-10 and the pay_by_transfer approval; PROTOCOL.md 18.6): while it waits for the
+# payer's owner, before anyone else has signed (void_rejected: the owner rejected it; void_stale: it was stale when the
+# owner approved it), while it collects signatures (cancelled by the payer; refused by the issuer or the payee), in
+# either (expired, and void_expired, its approval's word: the collection window passed; void_key_revoked: a party's
+# key was revoked, or found revoked in the re-check that precedes its first submission). The server saves `applying`
+# before every tracker call and purges the signatures of a transfer that ends so, so on the server's word such a
+# transfer never applied. Not among them: failed (it can follow a tracker call: a refusal, or a read-back that found an
+# edge changed or moved past T at its prior total, which D-2 a does not take as proof), resolved_not_applied (an
+# owner's decision), outcome_unknown, inconsistent, applied and the LIVE_TRANSFER states. Only what this client shows
+# and advises uses it (attempts_overview, resolution_plan, `valun attempts`); the payer evaluators (R11) never see it,
+# so the server's word never lets this client sign a payment sooner.
+NEVER_APPLIED_TRANSFER = ('void_rejected', 'void_stale', 'void_expired', 'expired', 'cancelled', 'refused',
+                          'void_key_revoked')
 RESOLVE_NOTE_MAX = 300
 # The server records an attempt as applied only while the payee's edge on the tracker shows the transfer (valun-app
 # SV-AUTH-1): otherwise it answers 409 payee_edge_not_applied {payee_edge}, the class of the payee's edge as it read it
@@ -317,6 +331,13 @@ def attempt_key(a):
     if a is None:
         return None
     return [a.get('route'), a.get('edge'), a.get('total'), a.get('timestamp')]
+
+
+def _shows_attempt(info, r):
+    """Is the transfer GET /transfers showed (info: Client._shown_transfer) the payment attempt row `r`: a transfer at
+    the same timestamp on the same held edge of mine, at the same new total (when the view shows one)?"""
+    return (r['route'] == 'transfer' and info['timestamp'] is not None and r['timestamp'] == info['timestamp']
+            and r['edge'] == info['edge'] and (info['total'] is None or r['total'] == info['total']))
 
 
 _UNCHECKED = object()                          # resolve_attempt(expected_attempt=...) not given: no check
@@ -1568,14 +1589,71 @@ class Client:
             out.extend(rows)
         return out
 
+    def attempts_overview(self, edges=None, now_ms=None, doubtful=None):
+        """payment_attempts() as `valun attempts list` shows them: each row also has ended_at_server, the state in which
+        the server ended a transfer attempt before it ever reached the tracker (NEVER_APPLIED_TRANSFER), or None. Only
+        a transfer attempt the records classify 'unknown' (it may have applied) whose server id they hold is looked up,
+        on a server whose GET /info (read once, when one is) lists circulation/1: GET /pilot/v1/transfers/{id} must show
+        it as that attempt of mine (this deal, me as payer, its timestamp, my held edge and its new total). A read that
+        fails, a transfer shown otherwise or in any other state, leaves ended_at_server None. What is shown only: `state`
+        stays the records' classification, which the payer evaluators use (R11), and nothing is recorded, so the server's
+        word never lets this client sign a payment sooner. records_unreadable as payment_attempts()."""
+        rows = self.payment_attempts(edges=edges, now_ms=now_ms, doubtful=doubtful)
+        self._ended_at_server(rows, None, {})
+        return rows
+
+    def _ended_at_server(self, rows, circulation, views):
+        """Set ended_at_server on each of `rows` (attempts_overview). circulation: whether GET /info lists circulation/1,
+        or None to read it when a row needs it; views: the GET /transfers answers read so far ({id: view}), shared with
+        _plan_transfer so that one call reads a transfer once."""
+        ask = [r for r in rows if r['route'] == 'transfer' and r['state'] == 'unknown' and r['attempt_id']]
+        if ask and circulation is None:
+            try:
+                circulation = 'circulation/1' in _features_of(self.info())
+            except ValunError:
+                circulation = False
+        for r in rows:
+            r['ended_at_server'] = None
+        for r in ask if circulation else ():
+            try:
+                t = self._transfer_view(r['attempt_id'], views)
+            except ValunError:
+                continue                        # not read: shown as the records classify it
+            info = self._shown_transfer(t, r['attempt_id'], r['deal_id'])
+            if info is not None and _shows_attempt(info, r) and info['state'] in NEVER_APPLIED_TRANSFER:
+                r['ended_at_server'] = info['state']
+
+    def _transfer_view(self, sid, views):
+        """GET /pilot/v1/transfers/{sid} (with the agent's token), once per call that passes the same `views`; {} for a
+        404 (the server shows no such transfer to me) or an answer that is not an object. Other errors are raised."""
+        if sid not in views:
+            try:
+                t = self.request('GET', f'/pilot/v1/transfers/{_seg(sid)}')
+            except ValunError as e:
+                if e.status != 404:
+                    raise
+                t = None
+            views[sid] = t if isinstance(t, dict) else {}
+        return views[sid]
+
+    def _shown_transfer(self, t, sid, deal_id):
+        """{timestamp, edge, total, id, state} of a GET /transfers view (_held_of, and its state as _server_word) when it
+        shows a transfer of mine as payer for deal `deal_id` under the id `sid` (or no id); None otherwise."""
+        deal = t.get('deal') if isinstance(t.get('deal'), dict) else {}
+        roles = t.get('your_roles') if isinstance(t.get('your_roles'), list) else []
+        if not (t and deal.get('deal_id') == deal_id and 'payer' in roles and t.get('id') in (None, sid)):
+            return None
+        return dict(self._held_of(t), id=sid, state=_server_word(t.get('state')))
+
     def resolution_plan(self, deal_id, attempt, edges=None, now_ms=None, doubtful=None):
         """How resolve_attempt() would resolve payment attempt `attempt` of deal `deal_id` (decision D-2 d), so that the
         owner sees it before deciding. Reads GET /info, and GET /transfers/{id} (with the agent's token) for a transfer
         whose server id is known, given or recorded, on a server that lists circulation/1. Changes nothing.
           attempt  '#n' (the deal's n-th attempt as payment_attempts() lists it), or the server's id of a transfer
                    attempt (vt_ and 16 hex digits)
-        Returns {deal_id, attempt (its payment_attempts() row; None when a server id names none of my records),
-        attempts (the deal's rows), attempt_id (the server's id, or None), route ('note' | 'transfer'), transfer (what
+        Returns {deal_id, attempt (its row; None when a server id names none of my records), attempts (the deal's rows,
+        as attempts_overview() shows them: with ended_at_server), attempt_id (the server's id, or None), route ('note' |
+        'transfer'), transfer (what
         GET /transfers showed: {id, state, timestamp, edge, total}, edge and total those of my held edge; or None),
         server (True: the server resolves it first, then my records follow), local (None, or why only my records
         change: 'note' (the server holds no payment attempt for a credit note), 'no_circulation' (the server lists no
@@ -1595,6 +1673,8 @@ class Client:
                                               'of a transfer (vt_ and 16 hex digits)')
         circulation = 'circulation/1' in _features_of(self.info())
         rows = [r for r in self.payment_attempts(edges=edges, now_ms=now_ms, doubtful=doubtful) if r['deal_id'] == deal_id]
+        views = {}
+        self._ended_at_server(rows, circulation, views)         # the rows as attempts_overview() shows them
         if by_ref:
             n = int(attempt[1:])
             if n > len(rows):
@@ -1615,36 +1695,24 @@ class Client:
         elif sid is None:
             plan['local'] = 'no_server_id'
         else:
-            self._plan_transfer(plan)
+            self._plan_transfer(plan, views)
         return plan
 
-    def _plan_transfer(self, plan):
-        """resolution_plan() for a transfer with a server id, on a circulation server: GET /transfers/{id} says whether
-        the server can resolve it (UNRESOLVED_TRANSFER), and, when my records hold no attempt with that id, which of my
-        transfer attempts it is (its timestamp, and my held edge at its new total). A transfer the server does not show
-        as this attempt of mine (404; another deal's, not mine as payer, or another timestamp or edge than the record of
-        mine that holds the id) is 'server_unknown' for an attempt my records hold, and unknown_attempt for an id the
-        owner gave that none of them holds."""
+    def _plan_transfer(self, plan, views):
+        """resolution_plan() for a transfer with a server id, on a circulation server: GET /transfers/{id} (read once:
+        `views`) says whether the server can resolve it (UNRESOLVED_TRANSFER), and, when my records hold no attempt with
+        that id, which of my transfer attempts it is (its timestamp, and my held edge at its new total). A transfer the
+        server does not show as this attempt of mine (404; another deal's, not mine as payer, or another timestamp or
+        edge than the record of mine that holds the id) is 'server_unknown' for an attempt my records hold, and
+        unknown_attempt for an id the owner gave that none of them holds. An 'unknown' attempt the server shows ended in
+        a NEVER_APPLIED_TRANSFER state gets ended_at_server, as attempts_overview() would show it."""
         sid, target = plan['attempt_id'], plan['attempt']
-        try:
-            t = self.request('GET', f'/pilot/v1/transfers/{_seg(sid)}')
-        except ValunError as e:
-            if e.status != 404:
-                raise
-            t = None
-        t = t if isinstance(t, dict) else {}
-        deal = t.get('deal') if isinstance(t.get('deal'), dict) else {}
-        roles = t.get('your_roles') if isinstance(t.get('your_roles'), list) else []
-        info = dict(self._held_of(t), id=sid, state=_server_word(t.get('state')))
-
-        def same(r):
-            return (r['route'] == 'transfer' and info['timestamp'] is not None and r['timestamp'] == info['timestamp']
-                    and r['edge'] == info['edge'] and (info['total'] is None or r['total'] == info['total']))
-        mine = bool(t) and deal.get('deal_id') == plan['deal_id'] and 'payer' in roles and t.get('id') in (None, sid)
+        info = self._shown_transfer(self._transfer_view(sid, views), sid, plan['deal_id'])
+        mine = info is not None
         if mine and target is None:
-            found = [r for r in plan['attempts'] if same(r)]
+            found = [r for r in plan['attempts'] if _shows_attempt(info, r)]
             plan['attempt'] = target = found[0] if len(found) == 1 else None
-        if not mine or (target is not None and not same(target)):
+        if not mine or (target is not None and not _shows_attempt(info, target)):
             if target is None:
                 raise ValunError('unknown_attempt', f'the server shows no transfer {sid} of yours for this deal, and your '
                                                     'records hold no attempt with that id; name it as #n from `valun '
@@ -1652,6 +1720,8 @@ class Client:
             plan['local'] = 'server_unknown'
             return
         plan['transfer'] = info
+        if target is not None and target['state'] == 'unknown' and info['state'] in NEVER_APPLIED_TRANSFER:
+            target['ended_at_server'] = info['state']
         if info['state'] in UNRESOLVED_TRANSFER:
             plan['server'] = True
         elif info['state'] in LIVE_TRANSFER:

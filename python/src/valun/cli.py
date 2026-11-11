@@ -752,6 +752,20 @@ ATTEMPT_STATES = {'applied': 'applied: the deal is paid by it',
 # nothing for the owner to resolve. (D-2 a: a raise of an incoming edge needs no signature of this client, so its own
 # records cannot prove such an attempt dead; the server proves it from its journal.)
 UNKNOWN_BUT_PAID = "cannot be proven dead from your client's records, but the deal is {paid}: nothing to resolve"
+# An 'unknown' attempt the server ended before it ever reached the tracker (Client.attempts_overview ended_at_server,
+# vc.NEVER_APPLIED_TRANSFER): shown as ended there, with no resolution advised. It is the server's word: the client
+# still judges by the tracker's state and its own records (R11), so it still counts the attempt when the deal is paid.
+ENDED_AT_SERVER_WHY = {'void_rejected': 'your owner rejected it, before anyone else signed',
+                       'void_stale': 'it was out of date when your owner approved it',
+                       'void_expired': 'it expired while it waited for your owner',
+                       'expired': 'it expired before every party had signed',
+                       'cancelled': 'your client cancelled it while it collected signatures',
+                       'refused': 'the issuer or the payee refused to sign it',
+                       'void_key_revoked': "a party's key was revoked before it was submitted"}
+ENDED_AT_SERVER = ('ended by the server ({state}: {why}), which says it never reached the tracker, so it did not apply; '
+                   "your client cannot check that on the tracker, so it still pays this deal no more by itself")
+ENDED_AT_SERVER_PAID = ('ended by the server ({state}: {why}), which says it never reached the tracker; the deal is '
+                        '{paid}: nothing to resolve')
 
 
 def _who_key(c, pk):
@@ -770,8 +784,13 @@ def _attempt_line(c, r):
                 f"{r['total']} PC")
     sid = f", server id {r['attempt_id']}" if r.get('attempt_id') else ''
     decided = f"; you resolved it: {r['outcome']}" if r.get('outcome') in vc.ATTEMPT_OUTCOMES and r.get('outcome') != 'applied' else ''
-    if r['state'] == 'unknown' and r.get('paid'):
-        state = UNKNOWN_BUT_PAID.format(paid=f"paid by {r['paid_by']}" if r.get('paid_by') else 'recorded as paid')
+    paid = f"paid by {r['paid_by']}" if r.get('paid_by') else 'recorded as paid'
+    ended = r.get('ended_at_server') if r['state'] == 'unknown' else None
+    if ended in ENDED_AT_SERVER_WHY:
+        state = (ENDED_AT_SERVER_PAID if r.get('paid') else ENDED_AT_SERVER).format(
+            state=ended, why=ENDED_AT_SERVER_WHY[ended], paid=paid)
+    elif r['state'] == 'unknown' and r.get('paid'):
+        state = UNKNOWN_BUT_PAID.format(paid=paid)
     else:
         state = ATTEMPT_STATES.get(r['state'], r['state'])
     return f"  {r['ref']} {what}, signed for {when}{sid}: {state}{decided}"
@@ -809,6 +828,13 @@ LOCAL_WHY = {
     'server_ended': 'The server holds this transfer as {state}: it ended there, so the server has nothing to resolve; '
                     'your client still counts it as a payment that may have applied.',
 }
+# LOCAL_WHY['server_ended'] for a transfer the server ended before it ever reached the tracker (vc.NEVER_APPLIED_TRANSFER),
+# and what an owner who records it as applied is told.
+NEVER_APPLIED_WHY = ('The server ended this transfer as {state} before it ever reached the tracker: on its word the '
+                     "payment did not apply, and the server has nothing to resolve. Your client cannot check that on "
+                     'the tracker, so it still counts it as a payment that may have applied.')
+NEVER_APPLIED_BUT_APPLIED = ("  The server says this payment never applied: recorded as applied, your client never pays "
+                             'this deal again.')
 
 
 def _terminal_text(s, limit=300):
@@ -884,7 +910,7 @@ def cmd_attempts(args):
     if args.action == 'list':
         read = _edges_now(c)
         try:
-            rows = c.payment_attempts(**read)
+            rows = c.attempts_overview(**read)     # with the server's view of an attempt that may have applied
         except vc.ValunError as e:
             print(f'Cannot read your records ({e.code}): {e}')
             return 1
@@ -898,7 +924,8 @@ def cmd_attempts(args):
             print(f"deal {_terminal_text(deal_id, 40)}" + (': recorded as paid' if mine[0]['paid'] else ''))
             for r in mine:
                 print(_attempt_line(c, r))
-        if any(r['state'] == 'unknown' and not r['paid'] for r in rows):     # a paid deal has nothing to resolve
+        # a paid deal has nothing to resolve, and no resolution is advised for an attempt the server ended unapplied
+        if any(r['state'] == 'unknown' and not r['paid'] and not r.get('ended_at_server') for r in rows):
             print('Resolve one only after asking the payee whether the payment arrived: '
                   f"`valun --profile {_profile(args)} attempts resolve DEAL ATTEMPT --applied` (it arrived) or "
                   "`--not-applied` (it did not). ATTEMPT is '#n' in quotes (unquoted, a # starts a comment in the "
@@ -934,7 +961,11 @@ def cmd_attempts(args):
             print("  The server records it as applied only if the payee's edge on the tracker shows this transfer; "
                   'otherwise it refuses, and nothing changes.')
     else:
-        print('  ' + LOCAL_WHY[plan['local']].format(state=(plan.get('transfer') or {}).get('state') or 'ended'))
+        shown = (plan.get('transfer') or {}).get('state')
+        never = plan['local'] == 'server_ended' and shown in vc.NEVER_APPLIED_TRANSFER
+        print('  ' + (NEVER_APPLIED_WHY if never else LOCAL_WHY[plan['local']]).format(state=shown or 'ended'))
+        if never and outcome == 'applied':
+            print(NEVER_APPLIED_BUT_APPLIED)
     for r in plan['attempts']:
         print(_attempt_line(c, r) + ('   <- this one' if r is plan['attempt'] else ''))
     if plan['attempt'] is None:

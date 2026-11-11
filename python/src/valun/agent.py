@@ -374,7 +374,8 @@ def error_payload(e, setup_hint='run `valun join` (or `valun enroll`) in a termi
             out['what_this_means'] = ('An earlier payment of this deal may have applied: the edge it would change has moved '
                                       'past it to a state your Valun client cannot explain. Nothing was signed, and your client '
                                       'will not pay this deal again by itself. Only your owner can resolve it, after confirming '
-                                      'with the payee whether the payment arrived (in a terminal: `valun attempts list`, then '
+                                      'with the payee whether the payment arrived (in a terminal: `valun attempts list`, which '
+                                      'also says when the Valun server ended an attempt before it reached the tracker, then '
                                       '`valun attempts resolve`). Tell your owner.')
         if e.code == 'transfer_window_open':
             out['what_this_means'] = ('An earlier payment attempt of this deal can still apply until it is more than an hour '

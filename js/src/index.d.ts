@@ -335,10 +335,19 @@ export interface PaymentAttemptRow {
   paid_by: string | null;
 }
 
+/** A paymentAttempts() row as attemptsOverview() and resolutionPlan() show it. */
+export interface PaymentAttemptOverviewRow extends PaymentAttemptRow {
+  /**
+   * The state in which the server ended this transfer attempt before it ever reached the tracker (NEVER_APPLIED_TRANSFER),
+   * read only for an 'unknown' attempt with a server id; null otherwise. Shown only: `state` (R11) is unchanged.
+   */
+  ended_at_server: string | null;
+}
+
 export interface ResolutionPlan {
   deal_id: string;
-  attempt: PaymentAttemptRow | null;
-  attempts: PaymentAttemptRow[];
+  attempt: PaymentAttemptOverviewRow | null;
+  attempts: PaymentAttemptOverviewRow[];
   attempt_id: string | null;
   route: 'note' | 'transfer';
   transfer: {timestamp: number | null; edge: string | null; total: number | null; id: string; state: string | null} | null;
@@ -572,6 +581,11 @@ export class Client {
   cancelTransfer(dealId: string): Promise<DealView>;
   /** This client's payment attempts, deal by deal, as the evaluators classify them now. Makes no request. */
   paymentAttempts(options?: ReadBackOptions): PaymentAttemptRow[];
+  /**
+   * paymentAttempts() as `valun attempts list` shows them, with ended_at_server: GET /info and GET /transfers/{id} for an
+   * 'unknown' transfer attempt with a server id. Changes nothing, and never what is signed (R11).
+   */
+  attemptsOverview(options?: ReadBackOptions): Promise<PaymentAttemptOverviewRow[]>;
   /** How resolveAttempt() would resolve attempt '#n' (or a transfer id vt_...) of a deal. Changes nothing. */
   resolutionPlan(dealId: string, attempt: string, options?: ReadBackOptions): Promise<ResolutionPlan>;
   /**
@@ -613,6 +627,8 @@ export const ATTEMPT_OUTCOMES: readonly ['not_applied', 'applied'];
 export const UNRESOLVED_TRANSFER: readonly string[];
 export const LIVE_TRANSFER: readonly string[];
 export const LOCAL_CHOICES: readonly string[];
+/** The transfer states the server sets only before it ever submits a transfer to the tracker (shown, never used for signing). */
+export const NEVER_APPLIED_TRANSFER: readonly string[];
 export const RESOLVE_NOTE_MAX: number;
 /** Why the server refused to record an attempt as applied (409 payee_edge_not_applied), by the payee edge's class. */
 export const PAYEE_EDGE_WHY: Readonly<Record<'prior' | 'changed' | 'moved_past' | 'unknown', string>>;

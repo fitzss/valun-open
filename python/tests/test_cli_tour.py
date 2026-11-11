@@ -1378,6 +1378,66 @@ class AttemptsCommands(Cli):
         self.assertEqual(self.disk()['transfer_attempts'][self.deal][0]['outcome'], 'not_applied')
         self.assertNotIn('The server recorded your decision', out)
 
+    def r22(self, server_state):
+        """Readiness R-22: my transfer attempt (my claim 3 -> 1 PC) that the server holds as server_state; then a second
+        deal paid with the same note moved my claim 3 -> 1, the total that attempt would have left, later: my client
+        cannot prove the first attempt dead from the edges alone. Returns `valun attempts list`'s line for it, and all."""
+        self.with_attempt(server_state=server_state)
+        disk = self.disk()
+        first = disk['transfer_attempts'][self.deal][0]
+        second = 'vd_' + 'c' * 16
+        disk['transfer_attempts'][second] = [dict(first, deal_id=second, timestamp=self.T + 60_000, attempt_id='vt_' + 'c' * 16)]
+        disk.setdefault('records', {})['paid_deals'] = {second: {'route': 'transfer', 'edge': self.edge, 'total': 1,
+                                                                 'timestamp': self.T + 60_000}}
+        self.write(disk)
+        self.world.set_edge(X_ID, S_ID, 1, self.T + 60_000)
+        rc, out = self.run_cli('attempts', 'list')
+        self.assertEqual(rc, 0, out)
+        lines = out.splitlines()
+        at = lines.index(f'deal {self.deal}')
+        self.assertTrue(lines[at + 1].startswith('  #1 paying with the note of '), lines[at + 1])
+        return lines[at + 1], out
+
+    def test_r22_an_attempt_the_server_ended_is_listed_as_ended_with_no_resolution_advised(self):
+        for state, why in (('void_rejected', 'your owner rejected it, before anyone else signed'),
+                           ('cancelled', 'your client cancelled it while it collected signatures')):
+            line, out = self.r22(state)
+            self.assertIn('your claim 3 -> 1 PC', line)
+            self.assertTrue(line.endswith(f': ended by the server ({state}: {why}), which says it never reached the tracker, '
+                                          "so it did not apply; your client cannot check that on the tracker, so it still "
+                                          'pays this deal no more by itself'), line)
+            self.assertNotIn('MAY HAVE APPLIED', out)
+            self.assertNotIn('attempts resolve', out)              # no resolution advised (in any form)
+            self.assertIn('GET /pilot/v1/transfers/vt_0123456789abcdef', self.world.requests())
+            self.doCleanups()                                      # a fresh home and World for the next
+            self.setUp()
+
+    def test_r22_a_server_state_that_proves_nothing_still_says_may_have_applied(self):
+        for state in ('failed', 'outcome_unknown', 'resolved_not_applied'):
+            line, out = self.r22(state)
+            self.assertTrue(line.endswith(': MAY HAVE APPLIED: your client pays this deal no more until you resolve it'), line)
+            self.assertIn('`valun --profile s attempts resolve DEAL ATTEMPT --applied`', out)
+            self.doCleanups()                                      # a fresh home and World for the next
+            self.setUp()
+
+    def test_resolving_an_attempt_the_server_ended_says_so(self):
+        # The owner may still record a decision (in the client's records only): told that the server ended it before it
+        # reached the tracker, and, for --applied, that the client would then never pay the deal again.
+        self.r22('void_rejected')
+        rc, out = self.run_cli('attempts', 'resolve', self.deal, '#1', '--applied', '--owner-token-file', self.token_file,
+                               tty=True, answers=['n'])
+        self.assertEqual(rc, 3, out)
+        self.assertIn('  The server ended this transfer as void_rejected before it ever reached the tracker: on its word the '
+                      'payment did not apply, and the server has nothing to resolve.', out)
+        self.assertIn('  The server says this payment never applied: recorded as applied, your client never pays this deal '
+                      'again.', out)
+        self.assertIn('ended by the server (void_rejected: ', [x for x in out.splitlines() if x.endswith('<- this one')][0])
+        rc, out = self.run_cli('attempts', 'resolve', self.deal, '#1', '--not-applied', '--owner-token-file', self.token_file,
+                               tty=True, answers=['n'])
+        self.assertEqual(rc, 3, out)
+        self.assertNotIn('recorded as applied, your client never pays', out)
+        self.assertEqual(self.world.resolutions, [])
+
     def test_a_409_from_the_server_is_shown_and_asked_about(self):
         # GET /transfers showed it unresolved; the server ended it before the POST and answers 409 wrong_state.
         self.with_attempt()

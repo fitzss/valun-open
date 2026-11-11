@@ -28,6 +28,7 @@ PINS = {'tracker_nft_id': NFT, 'denomination': DENOM}
 SERVER = 'http://valun.invalid'
 NOW = 1_793_966_460_123
 DEAL, DEAL2, TID, SID = 'vd_0123456789abcdef', 'vd_1123456789abcdef', 'vt_0123456789abcdef', 'vs_0123456789abcdef'
+TID2 = 'vt_1123456789abcdef'                   # a transfer of DEAL2, where a test gives that deal its own id (Net.tids)
 OWNER_TOKEN, OTHER_OWNER = 'vpo_owner-test-only', 'vpo_another-participants-owner'
 AGENT_TOKEN = 'vpa_test-only'                  # this client's agent token (MemStore's), a throwaway test value
 DAY = 24 * 3600 * 1000
@@ -147,6 +148,7 @@ class Net:
         self.transfers = {}                     # the server's transfers by id, in valun-app FX-SV's states
         self.lose_answer = False                # POST pay-by-transfer is recorded, then no answer reaches the client
         self.transfer_view_edges = True         # GET /transfers shows the transfer's edges (False: a view without them)
+        self.tids = {}                          # {deal: the id its transfers get} (TID for a deal not listed)
 
     # ---------- setup ----------
     def pk(self, pid):
@@ -162,6 +164,9 @@ class Net:
                                  'issuer_pubkey': issuer['pubkey'], 'recipient_pubkey': recipient['pubkey'],
                                  'delta': total - before, 'total_after': total, 'timestamp': ts, 'signature': s['signature']})
         return s
+
+    def tid(self, did):
+        return self.tids.get(did, TID)
 
     def add_deal(self, deal_id=DEAL, **kw):
         self.deals[deal_id] = make_deal(deal_id, **kw)
@@ -216,8 +221,8 @@ class Net:
                 return out
             if method == 'POST' and rest == ['cancel-transfer']:
                 self.deals[did]['status'] = 'payment_due'
-                if TID in self.transfers:
-                    self.transfers[TID]['state'] = 'cancelled'
+                if self.tid(did) in self.transfers:
+                    self.transfers[self.tid(did)]['state'] = 'cancelled'
                 return copy.deepcopy(self.deals[did])
             if method == 'POST' and rest == ['counter']:
                 return {'id': did, 'status': 'open'}
@@ -398,7 +403,7 @@ class Net:
         X, Y = fb['total'], tb['total'] if tb else 0
         if self.transfer_mode == 'due':          # the server ended the transfer without applying it
             self.record_transfer(did, 'failed', T, (f'{Ak}>{Bk}', fb, X - a), (f'{Ak}>{Ck}', tb, Y + a), a, body)
-            self.deals[did].update(status='payment_due', payment={'method': 'transfer', 'transfer_id': TID, 'state': 'failed'})
+            self.deals[did].update(status='payment_due', payment={'method': 'transfer', 'transfer_id': self.tid(did), 'state': 'failed'})
             return copy.deepcopy(self.deals[did])
         if (body['from_prior_total'], body['to_prior_total']) != (X, Y) \
                 or (body.get('from_prior_timestamp', fb['timestamp']), body.get('to_prior_timestamp', tb['timestamp'] if tb else 0)) \
@@ -414,13 +419,13 @@ class Net:
               and signed_by(payer, msg(Ak, Ck, Y + a, T), body['signatures'][f'{Ak}>{Ck}:new']))
         if not ok:
             raise vc.ValunError('bad_signature', 'a signature of the payment does not verify', 403)
-        d['payment'] = {'method': 'transfer', 'transfer_id': TID}
+        d['payment'] = {'method': 'transfer', 'transfer_id': self.tid(did)}
         self.record_transfer(did, {'apply': 'applied', 'review': 'awaiting_owner'}.get(self.transfer_mode, 'collecting'), T,
                              (f'{Ak}>{Bk}', fb, X - a), (f'{Ak}>{Ck}', tb, Y + a), a, body)
         if self.transfer_mode == 'apply':
             issuer = KEYS[body['issuer_id']]
-            self.set_edge(issuer, KEYS[t['payer']['id']], X - a, T, kind='transfer_out', ref=TID)
-            self.set_edge(issuer, KEYS[t['payee']['id']], Y + a, T, kind='transfer_in', ref=TID)
+            self.set_edge(issuer, KEYS[t['payer']['id']], X - a, T, kind='transfer_out', ref=self.tid(did))
+            self.set_edge(issuer, KEYS[t['payee']['id']], Y + a, T, kind='transfer_in', ref=self.tid(did))
             self.bound_only |= {f'{Ak}>{Bk}', f'{Ak}>{Ck}'}
             d['status'] = 'paid_by_transfer'
         else:
@@ -428,8 +433,8 @@ class Net:
         return copy.deepcopy(d)
 
     def record_transfer(self, did, state, T, frm, to, amount, body):
-        """The server records the transfer (id TID: one per deal here), as GET /transfers shows it later."""
-        self.transfers[TID] = {'id': TID, 'deal_id': did, 'state': state, 'timestamp': T, 'amount': amount,
+        """The server records the transfer (id tid(did): one per deal here), as GET /transfers shows it later."""
+        self.transfers[self.tid(did)] = {'id': self.tid(did), 'deal_id': did, 'state': state, 'timestamp': T, 'amount': amount,
                                'from': (frm[0], copy.deepcopy(frm[1]), frm[2]), 'to': (to[0], copy.deepcopy(to[1]), to[2]),
                                'quote_digest': body.get('quote_digest')}
 
@@ -2224,6 +2229,199 @@ class Attempts(Base):
         self.assertEqual([(r['paid'], r['paid_by']) for r in c.payment_attempts(edges=read['edges'])], [(True, None)] * 2)
         del self.store.state['records']['paid_deals'][DEAL]
         self.assertEqual([(r['paid'], r['paid_by']) for r in c.payment_attempts(edges=read['edges'])], [(False, None)] * 2)
+
+
+class EndedAtServer(Base):
+    """0.4.1 (readiness R-22): an attempt my client cannot prove dead ('unknown') whose transfer the server ended before
+    it ever reached the tracker (vc.NEVER_APPLIED_TRANSFER) is shown as ended there (attempts_overview, resolution_plan:
+    ended_at_server), not as one that may have applied. Display only: R11 is unchanged, so the server's word never lets
+    my client sign a payment sooner."""
+
+    def rejected_then_a_second_deal(self):
+        """R-22: my payment of DEAL with A's note was held for my owner, who rejected it (the server ends it void_rejected,
+        before anyone else signed); then DEAL2, at the same price, was paid with the same note on the same state of my
+        claim on A. It moved my claim 10 -> 7, the total DEAL's attempt would have left, at a later timestamp: from the
+        edges alone my client cannot tell whether DEAL's attempt applied."""
+        self.net.transfer_mode = 'review'
+        c = self.client()
+        self.assertEqual(c.pay_by_transfer(DEAL, A_ID)['status'], 'completion_awaiting_owner')
+        T = self.net.pay_posts[0]['timestamp']
+        self.net.transfers[TID]['state'] = 'void_rejected'
+        self.net.deals[DEAL].update(status='delivered', payment=None)
+        self.net.add_deal(DEAL2)
+        self.net.tids[DEAL2] = TID2
+        self.net.transfer_mode = 'apply'
+        self.clock.now += 30_000
+        self.assertEqual(c.pay_by_transfer(DEAL2, A_ID)['status'], 'paid_by_transfer')
+        self.assertEqual(self.net.tracker[AB]['total'], 7)
+        return c, T
+
+    def test_r22_a_rejected_attempt_after_a_same_claim_payment_of_a_second_deal_is_shown_ended(self):
+        c, T = self.rejected_then_a_second_deal()
+        read = c.sync_edges()
+        rows = {r['deal_id']: r for r in c.payment_attempts(edges=read['edges'], doubtful=read['doubtful'])}
+        self.assertEqual((rows[DEAL]['state'], rows[DEAL]['attempt_id'], rows[DEAL]['timestamp'], rows[DEAL2]['state']),
+                         ('unknown', TID, T, 'applied'))
+        self.assertNotIn('ended_at_server', rows[DEAL])            # payment_attempts() makes no request
+        before = copy.deepcopy(self.store.state)
+        self.net.log.clear()
+        shown = c.attempts_overview(edges=read['edges'], doubtful=read['doubtful'])
+        over = {r['deal_id']: r for r in shown}
+        self.assertEqual((over[DEAL]['state'], over[DEAL]['ended_at_server']), ('unknown', 'void_rejected'))
+        self.assertIsNone(over[DEAL2]['ended_at_server'])           # applied: not looked up
+        self.assertEqual([{k: v for k, v in r.items() if k != 'ended_at_server'} for r in shown],
+                         c.payment_attempts(edges=read['edges'], doubtful=read['doubtful']))
+        self.assertEqual(list(shown[0])[-1], 'ended_at_server')     # appended last (the JS mirror keeps the order)
+        self.assertEqual(self.net.requests(), ['GET /pilot/v1/info', f'GET /pilot/v1/transfers/{TID}'])
+        plan = c.resolution_plan(DEAL, '#1', edges=read['edges'], doubtful=read['doubtful'])
+        self.assertEqual((plan['local'], plan['transfer']['state'], plan['attempt']['ended_at_server']),
+                         ('server_ended', 'void_rejected', 'void_rejected'))
+        self.assertEqual(self.net.requests()[-2:], ['GET /pilot/v1/info', f'GET /pilot/v1/transfers/{TID}'])   # read once
+        self.assertEqual(self.store.state, before)                  # nothing recorded
+        # what is signed is unchanged: R11 still counts the attempt as one that may have applied
+        for pay in (lambda: c.complete(DEAL), lambda: c.pay_by_transfer(DEAL, A_ID)):
+            with self.assertRaises(vc.ValunError) as e:
+                pay()
+            self.assertEqual(e.exception.code, 'attempt_outcome_unknown')
+        self.assertEqual(len(self.net.pay_posts), 2)
+
+    def test_a_cancelled_attempt_is_shown_ended(self):
+        self.net.transfer_mode = 'collect'
+        c = self.client()
+        c.pay_by_transfer(DEAL, A_ID)
+        c.cancel_transfer(DEAL)
+        T = self.net.pay_posts[0]['timestamp']
+        self.assertEqual(self.net.transfers[TID]['state'], 'cancelled')
+        self.net.set_edge(A, B, 12, T + 5000)                      # my claim moved past T to neither 10 nor 7
+        read = c.sync_edges()
+        (row,) = c.attempts_overview(edges=read['edges'], doubtful=read['doubtful'])
+        self.assertEqual((row['state'], row['ended_at_server']), ('unknown', 'cancelled'))
+        self.assertEqual(c.resolution_plan(DEAL, '#1')['attempt']['ended_at_server'], 'cancelled')
+
+    def test_a_server_state_that_proves_nothing_still_shows_may_have_applied(self):
+        # failed can follow a tracker call; resolved_not_applied is an owner's decision; outcome_unknown and inconsistent
+        # are unresolved; applied applied. None of them shows the attempt as ended at the server, nor do the live states.
+        self.net.transfer_mode = 'collect'
+        c = self.client()
+        c.pay_by_transfer(DEAL, A_ID)
+        T = self.net.pay_posts[0]['timestamp']
+        self.net.deals[DEAL]['status'] = 'payment_due'
+        self.net.set_edge(A, B, 12, T + 5000)
+        self.clock.now = T + LATER
+        read = c.sync_edges()
+        for state in ('failed', 'resolved_not_applied', 'outcome_unknown', 'inconsistent', 'applied', 'collecting',
+                      'applying', 'awaiting_owner', 'void_whatever', 'VOID_REJECTED'):
+            self.net.transfers[TID]['state'] = state
+            (row,) = c.attempts_overview(edges=read['edges'], doubtful=read['doubtful'])
+            self.assertEqual((row['state'], row['ended_at_server']), ('unknown', None), state)
+        self.assertEqual(sorted(vc.NEVER_APPLIED_TRANSFER), sorted(['void_rejected', 'void_stale', 'void_expired', 'expired',
+                                                                   'cancelled', 'refused', 'void_key_revoked']))
+        for state in vc.NEVER_APPLIED_TRANSFER:
+            self.net.transfers[TID]['state'] = state
+            (row,) = c.attempts_overview(edges=read['edges'], doubtful=read['doubtful'])
+            self.assertEqual(row['ended_at_server'], state)
+
+    def test_only_this_attempt_of_mine_as_the_server_shows_it_counts(self):
+        c, T = self.rejected_then_a_second_deal()
+        read = c.sync_edges()
+
+        def shown():
+            return {r['deal_id']: r for r in c.attempts_overview(edges=read['edges'], doubtful=read['doubtful'])}[DEAL]
+        self.assertEqual(shown()['ended_at_server'], 'void_rejected')
+        t = self.net.transfers[TID]
+        held = t['from']
+        for change, undo in ((lambda: t.update(deal_id=DEAL2), lambda: t.update(deal_id=DEAL)),       # another deal's
+                             (lambda: t.update(timestamp=T + 1000), lambda: t.update(timestamp=T)),   # another attempt
+                             (lambda: t.update({'from': (held[0], held[1], 8)}), lambda: t.update({'from': held}))):
+            change()
+            self.assertIsNone(shown()['ended_at_server'])
+            undo()
+        self.assertEqual(shown()['ended_at_server'], 'void_rejected')
+        # a read that fails, a 404 or no circulation/1: shown as the records classify it, nothing raised
+        self.setUp()
+        c, T = self.rejected_then_a_second_deal()
+        read = c.sync_edges()
+
+        def down(method, path, body):
+            if path.startswith('/pilot/v1/transfers/'):
+                raise vc.ValunError('unreachable', 'cannot reach the server')
+        self.net.hooks.append(down)
+        self.assertEqual((shown()['state'], shown()['ended_at_server']), ('unknown', None))
+        self.net.hooks.clear()
+        del self.net.transfers[TID]
+        self.assertIsNone(shown()['ended_at_server'])
+        self.net.features = ['bound_notes/1']
+        self.net.log.clear()
+        self.assertIsNone(shown()['ended_at_server'])
+        self.assertEqual(self.net.requests(), ['GET /pilot/v1/info'])
+        # nothing that may have applied: no request at all
+        self.setUp()
+        c = self.client()
+        self.net.transfer_mode = 'collect'
+        c.pay_by_transfer(DEAL, A_ID)
+        self.net.transfers[TID]['state'] = 'void_rejected'
+        self.net.log.clear()
+        (row,) = c.attempts_overview()
+        self.assertEqual((row['state'], row['ended_at_server'], self.net.log), ('alive', None, []))
+
+    def test_the_servers_word_never_lets_a_payment_be_signed_sooner(self):
+        # (a) The server says my held transfer was rejected (void_rejected) while its window is open (a hostile server,
+        # or an honest one: the same for my client). The list and the plan read that, record nothing, and R11 still waits
+        # for the window before any other payment: an own note, or a transfer on another state of my claim on A.
+        def rejected():
+            self.net.transfer_mode = 'review'
+            c = self.client()
+            c.pay_by_transfer(DEAL, A_ID)
+            self.net.transfers[TID]['state'] = 'void_rejected'
+            self.net.deals[DEAL].update(status='delivered', payment=None)
+            self.net.transfer_mode = 'apply'
+            self.clock.now += 60_000
+            read = c.sync_edges()
+            before = copy.deepcopy(self.store.state)
+            self.assertEqual(c.resolution_plan(DEAL, '#1')['transfer']['state'], 'void_rejected')
+            c.attempts_overview(edges=read['edges'], doubtful=read['doubtful'])
+            self.assertEqual(self.store.state, before)
+            return c, self.net.pay_posts[0]['timestamp']
+        c, T = rejected()
+        wait = T + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 1 - self.clock.now
+        with self.assertRaises(vc.ValunError) as e:
+            c.complete(DEAL)
+        self.assertEqual((e.exception.code, e.exception.extra['retry_after_ms']), ('transfer_window_open', wait))
+        self.net.set_edge(A, B, 10, TS_AB + 5)                    # another state of my claim (the same total, later)
+        with self.assertRaises(vc.ValunError) as e:
+            c.pay_by_transfer(DEAL, A_ID)
+        self.assertEqual((e.exception.code, e.exception.extra['retry_after_ms']), ('transfer_window_open', wait))
+        self.assertEqual(len(self.net.pay_posts), 1)
+        self.assertNotIn(f'POST /pilot/v1/deals/{DEAL}/complete', self.net.requests())
+        self.clock.now = T + LATER                                # dead by its window and a read-back: paid
+        self.assertEqual(c.pay_by_transfer(DEAL, A_ID)['status'], 'paid_by_transfer')
+        # ... unless the existing same-prior exemption applies: the same state of my claim on A, signed at once
+        self.setUp()
+        c, T = rejected()
+        self.assertEqual(c.pay_by_transfer(DEAL, A_ID)['status'], 'paid_by_transfer')
+        self.assertEqual([p['from_prior_timestamp'] for p in self.net.pay_posts], [TS_AB, TS_AB])
+        # (b) A transfer that did apply (hidden by the server, which says void_rejected) and whose edge then moved on: the
+        # list shows the server's word, and R11 still refuses every payment of the deal, also past the window.
+        self.setUp()
+        self.net.transfer_mode = 'collect'
+        c = self.client()
+        c.pay_by_transfer(DEAL, A_ID)
+        T = self.net.pay_posts[0]['timestamp']
+        self.net.set_edge(A, B, 7, T)
+        self.net.set_edge(A, C, 7, T)                             # it applied
+        self.net.set_edge(A, B, 9, T + 5000)                      # and my claim on A moved on
+        self.net.transfers[TID]['state'] = 'void_rejected'        # the server says otherwise
+        self.net.deals[DEAL]['status'] = 'payment_due'
+        self.clock.now = T + LATER
+        read = c.sync_edges()
+        (row,) = c.attempts_overview(edges=read['edges'], doubtful=read['doubtful'])
+        self.assertEqual((row['state'], row['ended_at_server']), ('unknown', 'void_rejected'))
+        for pay in (lambda: c.complete(DEAL), lambda: c.pay_by_transfer(DEAL, A_ID)):
+            with self.assertRaises(vc.ValunError) as e:
+                pay()
+            self.assertEqual(e.exception.code, 'attempt_outcome_unknown')
+        self.assertEqual(len(self.net.pay_posts), 1)
+        self.assertNotIn(f'POST /pilot/v1/deals/{DEAL}/complete', self.net.requests())
 
 
 class Counter(Base):

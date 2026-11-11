@@ -60,6 +60,18 @@ export const ATTEMPT_OUTCOMES = Object.freeze(['not_applied', 'applied']);
 export const UNRESOLVED_TRANSFER = Object.freeze(['outcome_unknown', 'inconsistent']);
 export const LIVE_TRANSFER = Object.freeze(['awaiting_owner', 'collecting', 'applying']);
 export const LOCAL_CHOICES = Object.freeze(['no_server_id', 'server_unknown', 'server_ended']);
+/**
+ * The transfer states the server sets only before it ever submits a transfer to the tracker (PROTOCOL.md 18.6; valun-app
+ * PILOT-API.md "Payment by debt transfer" steps 6-10): void_rejected and void_stale while it waits for the payer's owner
+ * (nobody else has signed), cancelled and refused while it collects signatures, expired and void_expired (its collection
+ * window passed) and void_key_revoked in either, or in the re-check before its first submission. The server saves
+ * `applying` before every tracker call and purges these transfers' signatures, so on its word they never applied. Not
+ * failed (it can follow a tracker call), resolved_not_applied (an owner's decision), outcome_unknown, inconsistent,
+ * applied or a live state. Only what this client shows and advises uses it (attemptsOverview, resolutionPlan); the payer
+ * evaluators (R11) never see it, so the server's word never lets this client sign a payment sooner.
+ */
+export const NEVER_APPLIED_TRANSFER = Object.freeze(['void_rejected', 'void_stale', 'void_expired', 'expired', 'cancelled', 'refused',
+  'void_key_revoked']);
 export const RESOLVE_NOTE_MAX = 300;
 /**
  * The server records an attempt as applied only while the payee's edge on the tracker shows the transfer (valun-app
@@ -107,6 +119,15 @@ export function consentRoles(policy) {
 export function attemptKey(a) {
   if (a === null || a === undefined) return null;
   return [pyGet(a, 'route'), pyGet(a, 'edge'), pyGet(a, 'total'), pyGet(a, 'timestamp')];
+}
+
+/**
+ * Is the transfer GET /transfers showed (info: Client.#shownTransfer) the payment attempt row `r`: a transfer at the same
+ * timestamp on the same held edge of mine, at the same new total (when the view shows one)?
+ */
+function showsAttempt(info, r) {
+  return r.route === 'transfer' && info.timestamp !== null && pyEq(r.timestamp, info.timestamp) && r.edge === info.edge
+    && (info.total === null || pyEq(r.total, info.total));
 }
 
 /** Two attemptKey() values element by element (null only equals null). */
@@ -1659,6 +1680,69 @@ export class Client {
   }
 
   /**
+   * paymentAttempts() as `valun attempts list` shows them: each row also has ended_at_server, the state in which the
+   * server ended a transfer attempt before it ever reached the tracker (NEVER_APPLIED_TRANSFER), or null. Only a transfer
+   * attempt the records classify 'unknown' whose server id they hold is looked up, on a server whose GET /info (read once,
+   * when one is) lists circulation/1: GET /transfers/{id} must show it as that attempt of mine. A read that fails, or a
+   * transfer shown otherwise or in another state, leaves null. What is shown only: `state` stays the records'
+   * classification, which R11 uses, and nothing is recorded (see the Python reference's attempts_overview()).
+   */
+  async attemptsOverview({edges = null, nowMs = null, doubtful = null} = {}) {
+    const rows = this.paymentAttempts({edges, nowMs, doubtful});
+    await this.#endedAtServer(rows, null, new Map());
+    return rows;
+  }
+
+  /** Set ended_at_server on each of `rows`; circulation null: read GET /info when a row needs it; views: reads so far. */
+  async #endedAtServer(rows, circulation, views) {
+    const ask = rows.filter(r => r.route === 'transfer' && r.state === 'unknown' && truthy(r.attempt_id));
+    if (ask.length && circulation === null) {
+      try {
+        circulation = featuresOf(await this.info()).includes('circulation/1');
+      } catch (e) {
+        if (!isValunError(e)) throw e;
+        circulation = false;
+      }
+    }
+    for (const r of rows) r.ended_at_server = null;
+    for (const r of circulation ? ask : []) {
+      let t;
+      try {
+        t = await this.#transferView(r.attempt_id, views);
+      } catch (e) {
+        if (!isValunError(e)) throw e;
+        continue;                                   // not read: shown as the records classify it
+      }
+      const info = this.#shownTransfer(t, r.attempt_id, r.deal_id);
+      if (info !== null && showsAttempt(info, r) && NEVER_APPLIED_TRANSFER.includes(info.state)) r.ended_at_server = info.state;
+    }
+  }
+
+  /** GET /transfers/{sid}, once per call that passes the same `views`; {} for a 404 or an answer that is not an object. */
+  async #transferView(sid, views) {
+    if (!views.has(sid)) {
+      let t;
+      try {
+        t = await this.request('GET', `/pilot/v1/transfers/${seg(sid)}`);
+      } catch (e) {
+        if (!isValunError(e) || e.status !== 404) throw e;
+        t = null;
+      }
+      views.set(sid, isDict(t) ? t : {});
+    }
+    return views.get(sid);
+  }
+
+  /** {timestamp, edge, total, id, state} of a transfer view that shows a transfer of mine as payer for the deal; else null. */
+  #shownTransfer(t, sid, dealId) {
+    const deal = isDict(pyGet(t, 'deal')) ? t.deal : {};
+    const roles = Array.isArray(pyGet(t, 'your_roles')) ? t.your_roles : [];
+    const tid = pyGet(t, 'id');
+    if (!(truthy(t) && pyGet(deal, 'deal_id') === dealId && roles.includes('payer') && (tid === null || tid === sid))) return null;
+    return {...this.#heldOf(t), id: sid, state: serverWord(pyGet(t, 'state'))};
+  }
+
+  /**
    * How resolveAttempt() would resolve payment attempt `attempt` ('#n', or the server's id of a transfer) of deal `dealId`
    * (decision D-2 d), so that the owner sees it before deciding. Reads GET /info, and GET /transfers/{id} for a transfer
    * whose server id is known, on a server that lists circulation/1. Changes nothing. Resolves to {deal_id, attempt,
@@ -1675,6 +1759,8 @@ export class Client {
     }
     const circulation = featuresOf(await this.info()).includes('circulation/1');
     const rows = this.paymentAttempts({edges, nowMs, doubtful}).filter(r => r.deal_id === dealId);
+    const views = new Map();
+    await this.#endedAtServer(rows, circulation, views);    // the rows as attemptsOverview() shows them
     let target, sid;
     if (byRef) {
       const n = Number(attempt.slice(1));
@@ -1693,34 +1779,24 @@ export class Client {
     if (plan.route === 'note') plan.local = 'note';
     else if (!circulation) plan.local = 'no_circulation';
     else if (sid === null) plan.local = 'no_server_id';
-    else await this.#planTransfer(plan);
+    else await this.#planTransfer(plan, views);
     return plan;
   }
 
-  /** resolutionPlan() for a transfer with a server id, on a circulation server (GET /transfers/{id}). */
-  async #planTransfer(plan) {
+  /**
+   * resolutionPlan() for a transfer with a server id, on a circulation server (GET /transfers/{id}, read once: `views`).
+   * An 'unknown' attempt the server shows ended in a NEVER_APPLIED_TRANSFER state gets ended_at_server.
+   */
+  async #planTransfer(plan, views) {
     const sid = plan.attempt_id;
     let target = plan.attempt;
-    let t;
-    try {
-      t = await this.request('GET', `/pilot/v1/transfers/${seg(sid)}`);
-    } catch (e) {
-      if (!isValunError(e) || e.status !== 404) throw e;
-      t = null;
-    }
-    t = isDict(t) ? t : {};
-    const deal = isDict(pyGet(t, 'deal')) ? t.deal : {};
-    const roles = Array.isArray(pyGet(t, 'your_roles')) ? t.your_roles : [];
-    const info = {...this.#heldOf(t), id: sid, state: serverWord(pyGet(t, 'state'))};
-    const same = r => r.route === 'transfer' && info.timestamp !== null && pyEq(r.timestamp, info.timestamp)
-      && r.edge === info.edge && (info.total === null || pyEq(r.total, info.total));
-    const tid = pyGet(t, 'id');
-    const mine = truthy(t) && pyGet(deal, 'deal_id') === plan.deal_id && roles.includes('payer') && (tid === null || tid === sid);
+    const info = this.#shownTransfer(await this.#transferView(sid, views), sid, plan.deal_id);
+    const mine = info !== null;
     if (mine && target === null) {
-      const found = plan.attempts.filter(same);
+      const found = plan.attempts.filter(r => showsAttempt(info, r));
       plan.attempt = target = found.length === 1 ? found[0] : null;
     }
-    if (!mine || (target !== null && !same(target))) {
+    if (!mine || (target !== null && !showsAttempt(info, target))) {
       if (target === null) {
         throw new ValunError('unknown_attempt', `the server shows no transfer ${sid} of yours for this deal, and your `
           + 'records hold no attempt with that id; name it as #n from `valun attempts list` (nothing was changed)');
@@ -1729,6 +1805,7 @@ export class Client {
       return;
     }
     plan.transfer = info;
+    if (target !== null && target.state === 'unknown' && NEVER_APPLIED_TRANSFER.includes(info.state)) target.ended_at_server = info.state;
     if (UNRESOLVED_TRANSFER.includes(info.state)) {
       plan.server = true;
     } else if (LIVE_TRANSFER.includes(info.state)) {
