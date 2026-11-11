@@ -3,6 +3,25 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
+## 0.4.1 (unreleased)
+
+### Fixed
+
+- **`valun attempts list` no longer says "MAY HAVE APPLIED" for an attempt the server ended before it reached the
+  tracker** (valun-app readiness R-22). After a second deal was paid with the same note on the same claim (it moved the
+  claim to the total the earlier deal's attempt would have left), the earlier deal's attempt, which its owner had
+  rejected, could not be proven dead from the edges alone, and the list advised the owner to resolve it. The client now
+  reads `GET /transfers/{id}` for a transfer attempt it classifies as one that may have applied and whose server id it
+  recorded, and shows it as ended by the server when the server holds it in a state it sets only before it ever submits
+  a transfer to the tracker (`void_rejected`, `void_stale`, `void_expired`, `expired`, `cancelled`, `refused`,
+  `void_key_revoked`), with no resolution advised. `failed` (which can follow a tracker call), `resolved_not_applied`,
+  `outcome_unknown`, `inconsistent`, `applied` and the live states change nothing. `valun attempts resolve` says the
+  same, and warns an owner who records such an attempt as applied that the client would never pay the deal again. New:
+  `Client.attempts_overview()` / `attemptsOverview()` (the rows of `payment_attempts()` with `ended_at_server`; the rows
+  of `resolution_plan()` carry it too) and `NEVER_APPLIED_TRANSFER` in both packages; the agent text for
+  `attempt_outcome_unknown` says that `valun attempts list` shows such attempts. Display only: what is signed, and when,
+  is unchanged (15.3 R11 and the same-prior exemption; spec/PROTOCOL.md 15.3, notes).
+
 ## 0.4.0 "circulating credit" (2026-11-10)
 
 Released to PyPI (`valun`), npm (`@fitzdoud/valun`) and the MCP Registry (`io.github.fitzss/valun`) by the release

@@ -1144,6 +1144,16 @@ Notes:
   counterparty-written text as one JSON line after them.
 - These rules are written for the roles of 18.6 and 18.7. The tracker rules (18.2) protect a client that applies them
   even against a server that lies about totals; what they cannot protect against is in 16.2.
+- What `valun attempts list` shows (since 0.4.1; `Client.attempts_overview`, `attemptsOverview`, and the rows of
+  `resolution_plan`): a transfer attempt that R11 classifies as one that may have applied (`attempt_outcome_unknown`)
+  and whose server id the client recorded is read back with `GET /transfers/{id}`, and when the server shows it, as
+  that attempt of the client's, in a state the server sets only before it ever submits a transfer to the tracker
+  (`void_rejected`, `void_stale`, `void_expired`, `expired`, `cancelled`, `refused`, `void_key_revoked`; 18.6), it is
+  shown as ended by the server (`ended_at_server`) and no owner resolution is advised for it, while every other state
+  (`failed`, which can follow a tracker call, `resolved_not_applied`, `outcome_unknown`, `inconsistent`, `applied`, the
+  live states) leaves it shown as one that may have applied. This changes only what is shown and advised, never what is
+  signed or when: R11 still classifies every attempt from edge states and the client's own records alone, so a server
+  that reports `void_rejected` cannot let a client sign another payment of the deal sooner.
 
 ## 16. Honest labels
 
