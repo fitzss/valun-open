@@ -951,10 +951,37 @@ def scenarios():
          'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[{'deal_id': 'vd_1414141414141414', 'counterparty': 'sandbox-mallory',
                                                                'your_role': 'payer', 'price': {'amount': 9, 'unit': 'PC'}}])}},
         state=circ_state)
+    long_ago = {'sandbox_only': True, 'joined_at': '2026-11-01T00:00:00.000Z'}
     add('status: sandbox tour, complete', 'valun_status', {},
-        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position={'claims_held': 0, 'owes': 0, 'deals': {'paid_by_transfer': 2}},
-                                                              participant={'sandbox_only': True, 'joined_at': '2026-11-01T00:00:00.000Z'})},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position={'claims_held': 0, 'owes': 0, 'cleared_by_setoff': 2, 'transferred_out': 4,
+                                                                         'deals': {'paid_by_transfer': 2}}, participant=long_ago)},
          'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[])}}, state=circ_state)
+    # 0.4.1: the tour is done only once a set-off cleared something, and its text says what the position shows.
+    add('status: sandbox tour, paid by transfer but nothing cleared: not complete', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position={'claims_held': 0, 'owes': 0, 'deals': {'paid_by_transfer': 2}},
+                                                              participant=long_ago)},
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[])}}, state=circ_state)
+    add('status: sandbox tour, complete with a note left and no transfer totals shown', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position={'claims_held': 1, 'owes': 0, 'cleared_by_setoff': 3,
+                                                                         'claims': [{'from': 'sandbox-mallory', 'amount': 1}],
+                                                                         'deals': {'paid_by_transfer': 2}}, participant=long_ago)},
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[])}}, state=circ_state)
+    closed_x = [{'deal_id': 'vd_1515151515151515', 'status': 'note_issued', 'counterparty': 'sandbox-exact', 'your_role': 'payee'}]
+    add('status: sandbox tour, a deal being paid that no inbox list shows', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position={'claims_held': 0, 'owes': 0, 'net': 0,
+                                                                         'deals': {'agreed_note_not_issued': 1, 'paid_by_transfer': 0}},
+                                                              participant=sb)},
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[], recent_closed=closed_x)}}, state=circ_state)
+    add('status: sandbox tour, step 2 paid by transfer with 4 PC of the note left: step 3', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position=dict(sx, claims_held=4, net=4, claims=[{'from': 'sandbox-exact', 'amount': 4}],
+                                                                             spendable_notes=[dict(sx['spendable_notes'][0], spendable=4)],
+                                                                             deals={'paid_by_transfer': 1}), participant=sb)},
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[], recent_closed=closed_x)}}, state=circ_state)
+    add('status: sandbox tour, all spent by transfer and nothing cleared: earn again', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position={'claims_held': 0, 'owes': 0, 'net': 0, 'cleared_by_setoff': 0,
+                                                                         'transferred_out': 6, 'deals': {'paid_by_transfer': 3}},
+                                                              participant=sb)},
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[], recent_closed=closed_x)}}, state=circ_state)
     pay_deal = dict(dg, payment=None)
     add('deal: delivered on a circulation server, how you can pay', 'valun_deal', {'deal_id': dg['id']},
         {f"GET /pilot/v1/deals/{dg['id']}": {'body': pay_deal}, **circ, po: {'body': payment_options(dg, why_not=None)}}, state=circ_state)

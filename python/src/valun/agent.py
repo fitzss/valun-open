@@ -1257,27 +1257,61 @@ class ValunAgent:
         if listed['waiting_on_others']:
             x = listed['waiting_on_others'][0]
             return plan(step_of(x.get('counterparty'), x.get('your_role')), [], wait)
+        deals = pos.get('deals') if isinstance(pos.get('deals'), dict) else {}
+
+        def count(bucket):
+            return deals[bucket] if _whole(deals.get(bucket)) and deals[bucket] > 0 else 0
+        # A deal agreed and not yet paid (position bucket agreed_note_not_issued) that no inbox list above shows: its
+        # credit note is being recorded (the inbox lists issuing_note in no section, nor note_failed for the payee), or
+        # it was paid between the GET /me these holdings come from and the GET /inbox read after it. Either way its note
+        # is not in the holdings yet: wait, never start another deal on them (that sold a second job to sandbox-exact).
+        if count('agreed_note_not_issued'):
+            return plan(4 if ox > 0 else 1, [], 'A deal of yours with a sandbox agent is being paid (its credit note is being '
+                                                 'recorded on the tracker); wait for it: call valun_status again in a few seconds.')
         if (hx > 0 or hm > 0) and ox > 0:
             return plan(3 if hx > 0 else 4, [], ('A set-off of the cycle is due: your Valun client signs it by itself at its '
                                                  'next consent run (within about a minute). Call valun_status again.'))
-        if hm >= sandbox.SERVICES['notary']['price']:
+        notary = sandbox.SERVICES['notary']['price']
+        paid_by_transfer = count('paid_by_transfer')
+        cleared = pos.get('cleared_by_setoff', pos.get('settled', 0))
+        cleared = cleared if _whole(cleared) and cleared > 0 else 0
+        if hm >= notary:
             return offer(5, SANDBOX_EXACT, 'payer', 'notary')
-        if hx >= sandbox.SERVICES['notary']['price']:
+        if hx >= notary and paid_by_transfer == 0:
             return offer(2, SANDBOX_MALLORY, 'payer', 'notary')
-        if hx > 0:
+        if hx > 0:                              # once step 2 paid by transfer: pay sandbox-exact with your own note
             return offer(3, SANDBOX_EXACT, 'payer', 'notary')
         if ox > 0:
             return offer(4, SANDBOX_MALLORY, 'payee', 'text-stats')
-        deals = pos.get('deals') if isinstance(pos.get('deals'), dict) else {}
-        if hm == 0 and _whole(deals.get('paid_by_transfer')) and deals['paid_by_transfer'] >= 2:
-            return plan('done', [], ('The tour is complete: you earned 6 PC and spent 6 PC (4 by transfer, 2 with your own note), '
-                                     'and set-offs cancelled 2 PC of your claims and 2 PC of your debts without changing your '
-                                     'net position. You can keep trading with the sandbox agents.'))
+        if paid_by_transfer > 0 and cleared > 0:
+            return plan('done', [], self._tour_done_text(pos, cleared))
         any_exact = any(x.get('counterparty') == SANDBOX_EXACT for k in listed for x in listed[k])
         if not any_exact and recently_active(None, hours=10 / 60, joined_at=participant.get('joined_at')):
             return plan(1, [], 'The welcome job from sandbox-exact usually arrives within a minute of joining; call '
                                'valun_status again.')
-        return offer(1, SANDBOX_EXACT, 'payee', 'text-stats')
+        p = offer(1, SANDBOX_EXACT, 'payee', 'text-stats')
+        if paid_by_transfer > 0:                # spent by transfer, but no set-off has cleared anything: not done yet
+            p['then'] = ('The tour is not complete: no set-off has cleared any of your claims or debts yet, and you hold no '
+                         "note to spend now. Earn sandbox-exact's note again; then pay sandbox-exact with your own note, and "
+                         'the 2-cycle that forms is cleared by a set-off. sandbox-exact answers within a few seconds; call '
+                         'valun_status again for the next step.')
+        return p
+
+    @staticmethod
+    def _tour_done_text(pos, cleared):
+        """What the tour did, from the participant's own position: earned (hold + spent by transfer + cleared), spent by
+        transfer (transferred_out) and with its own notes (owes + cleared), and what set-offs cleared. Only a set-off
+        that cleared something (cleared > 0) ends the tour, so this never claims one that did not happen."""
+        hold, owe, out = pos.get('claims_held'), pos.get('owes'), pos.get('transferred_out')
+        text = 'The tour is complete: '
+        if _whole(hold) and _whole(owe) and _whole(out):
+            text += (f'you earned {hold + out + cleared} PC and spent {out + owe + cleared} PC ({out} by transfer, '
+                     f'{owe + cleared} with your own note), and ')
+        text += (f'set-offs cancelled {cleared} PC of your claims and {cleared} PC of your debts without changing your net '
+                 'position.')
+        if (_whole(hold) and hold > 0) or (_whole(owe) and owe > 0):
+            text += f' You still hold {shown(hold)} PC and owe {shown(owe)} PC.'
+        return text + ' You can keep trading with the sandbox agents.'
 
     def set_limits(self, a):
         c = self.client()

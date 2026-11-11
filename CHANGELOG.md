@@ -21,6 +21,10 @@ The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://githu
   of `resolution_plan()` carry it too) and `NEVER_APPLIED_TRANSFER` in both packages; the agent text for
   `attempt_outcome_unknown` says that `valun attempts list` shows such attempts. Display only: what is signed, and when,
   is unchanged (15.3 R11 and the same-prior exemption; spec/PROTOCOL.md 15.3, notes).
+- **The sandbox tour no longer sells a second job while a sandbox agent is still paying, and says done only after a
+  set-off cleared something**: `sandbox_next_steps` waits on a deal the position counts as agreed and not yet paid
+  (`issuing_note` is in no inbox section), goes on to step 3 once step 2 paid by transfer, and its done text states what
+  the position shows (earned, spent by transfer and by own note, cleared).
 
 ## 0.4.0 "circulating credit" (2026-11-10)
 

@@ -2,7 +2,7 @@
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python": "3.14.7",
  "python_sources_sha256": {
-  "agent.py": "05d5c1a1734d47d332d156861db95910a5f5da2a40075d671da06361279e1a3e",
+  "agent.py": "e7c733881a5fa14c36be4f09cc84c6584386c40d6f1cc8351bea703bf6b97216",
   "basis.py": "82baabb5b9177b3ff67ebcbf70aa1471e00b9a94861e3c0de13987a4ed225634",
   "client.py": "3b322ee7a69302824b16a70b600ca577a6df38c2571b941aa787604a88e7bbe6",
   "mcp_server.py": "dbcb5fddc0936bef4162cb3913f1cc40af6c676147ea2bbd06811f75a87500c1",
@@ -35188,6 +35188,376 @@
       "position": {
        "claims_held": 0,
        "owes": 0,
+       "cleared_by_setoff": 2,
+       "transferred_out": 4,
+       "deals": {
+        "paid_by_transfer": 2
+       }
+      },
+      "authority": {
+       "mandate_expires_at": "2026-12-01T00:00:00.000Z"
+      }
+     }
+    },
+    "GET /pilot/v1/inbox": {
+     "body": {
+      "respond": [],
+      "deliver": [],
+      "review": [],
+      "awaiting_owner": [],
+      "waiting": []
+     }
+    },
+    "GET /pilot/v1/edges?since=0": {
+     "body": {
+      "incoming": [
+       {
+        "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "issuer_pubkey": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297",
+        "recipient_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "total": 30,
+        "timestamp": 1793965500001,
+        "signature": "02187f36ba5031b75092795e87dc16683966cecbf5b76a25b6d8fe0b6ced7d8f227cebc1a9559db66c6d90f4d13222fddd45463ebd034810c36a57ca0a205a8bfb",
+        "bound_only": false
+       }
+      ],
+      "outgoing": [
+       {
+        "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+        "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+        "total": 10,
+        "timestamp": 1793965800000,
+        "signature": "03f302ceea765d54ac13219a9591969fcbbdab02dacff2750c88502e715336f43e3a184416e02b3231441292a62f394bd582c3d285d6c6a30a5ff51c9aedb4c3be",
+        "bound_only": false
+       }
+      ],
+      "journal": [],
+      "next_seq": 2
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    }
+   },
+   "result": {
+    "connected": true,
+    "server": "http://valun.invalid",
+    "network": "valun-pilot-1",
+    "unit": "PC (pilot credits, no monetary value)",
+    "you": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice",
+     "display_name": "Alice",
+     "status": "active",
+     "sandbox_only": true,
+     "joined_at": "2026-11-01T00:00:00.000Z"
+    },
+    "objective_from_your_owner": "Buy short research briefs for the newsletter.",
+    "goals_your_owner_told_you": "Briefs under 20 PC; prefer sources.",
+    "limits_you_recorded": {
+     "max_issue_per_deal": 20,
+     "min_price_as_payee": 8
+    },
+    "limits_in_force": {
+     "max_per_deal_as_payer": 20,
+     "max_total_owed": 100,
+     "max_per_deal_as_payee": 50,
+     "max_claim_per_payer": 200,
+     "min_price_as_payee": 8,
+     "min_payer_coverage_pct": 0
+    },
+    "mandate": {
+     "may_issue_credit": true,
+     "may_accept_credit": true,
+     "max_issue_per_deal": 30,
+     "max_issue_outstanding": 100,
+     "max_accept_per_deal": 50,
+     "max_accept_per_issuer": 200,
+     "min_price_as_payee": 5,
+     "min_payer_coverage_pct": 0,
+     "counterparties": "any",
+     "approve_above": 25,
+     "review_deliveries": false,
+     "expires_at": "2026-12-01T00:00:00.000Z",
+     "auto_clear": true,
+     "novate_own_debt": true,
+     "accept_transfers": true,
+     "accept_notes_from": "any",
+     "refuse_notes_from": [],
+     "pay_with_held_notes": "when_asked"
+    },
+    "mandate_version": 3,
+    "approvals": "Commitments are signed without asking your owner first. The server also holds commitments priced above 25 PC for the owner console.",
+    "position": {
+     "claims_held": 0,
+     "owes": 0,
+     "cleared_by_setoff": 2,
+     "transferred_out": 4,
+     "deals": {
+      "paid_by_transfer": 2
+     }
+    },
+    "authority": {
+     "mandate_expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "settlement": "not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.",
+    "honest_labels": {
+     "what_basis_records": "The pilot Basis tracker keeps one running total per key pair: what the issuer key owes the recipient key, with a timestamp, signed by the issuer. A credit note raises it; with circulating credit a debt transfer moves part of it to a new creditor and a set-off lowers the totals around a cycle, each signed by every party whose total changes. The tracker has no blockchain connection (notes stay local_only) and no reserve backs the notes.",
+     "outstanding_promise": "not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.",
+     "third_party": "Supported: paying a third party with your OWN credit note, or with a note you hold (pay_with: the issuer's debt to you moves to the payee; the issuer, you and the payee each sign, and the issuer's total debt does not change), and set-offs that cancel equal debts around a cycle (every party signs; no net position changes). A payee may require that the claims of whoever issued the note it receives cover it (min_payer_coverage_pct). Not supported: redeeming a note for anything outside the pilot."
+    },
+    "real_vs_simulated": {
+     "real": "signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt transfers and set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your client against the signatures)",
+     "simulated": "PC (pilot credits) have no monetary value; the Basis tracker has no blockchain connection (notes are local_only, never on-chain); nothing is redeemed and there is no reserve: a set-off only cancels equal opposite obligations",
+     "not_proven": "that delivered work is good (Valun records statements, it does not judge work); that any participant will ever honour a credit note"
+    },
+    "summary": "You hold 0 PC of credit notes others issued to you and owe 0 PC (net none PC); set-offs have cleared 2 PC so far. You hold no notes you can spend now. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
+    "money_view": {
+     "you_hold_PC": 0,
+     "you_owe_PC": 0,
+     "net_PC": null,
+     "cleared_so_far_PC": 2,
+     "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
+    },
+    "notes_you_can_spend": [],
+    "payments_in_progress": [],
+    "clearing": {
+     "your_client_signs": [
+      "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each",
+      "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each",
+      "payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each"
+     ],
+     "consents_pending": null,
+     "recent": []
+    },
+    "consent_policy_in_force": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": true,
+      "as_issuer": true,
+      "as_new_creditor": true,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": 200
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    "sandbox_next_steps": {
+     "tour_step": "done",
+     "of": 5,
+     "goal": "The tour is complete.",
+     "next_calls": [],
+     "then": "The tour is complete: you earned 6 PC and spent 6 PC (4 by transfer, 2 with your own note), and set-offs cancelled 2 PC of your claims and 2 PC of your debts without changing your net position. You can keep trading with the sandbox agents.",
+     "with_the_sandbox_agents": {
+      "sandbox-exact": {
+       "you_hold_PC": 0,
+       "you_owe_PC": 0
+      },
+      "sandbox-mallory": {
+       "you_hold_PC": 0,
+       "you_owe_PC": 0
+      }
+     }
+    }
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/me",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/inbox",
+     "body": null,
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    },
+    {
+     "key": "GET /pilot/v1/edges?since=0",
+     "body": null,
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": 10
+    },
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    },
+    "consent_roles_declared": "setoff,issuer,creditor",
+    "records": {
+     "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5": {
+      "confirmed": {
+       "total": 30,
+       "timestamp": 1793965500001
+      },
+      "pending": []
+     },
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+      "confirmed": {
+       "total": 10,
+       "timestamp": 1793965800000
+      },
+      "pending": []
+     }
+    },
+    "journal_seq": 2
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {},
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {},
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "status: sandbox tour, paid by transfer but nothing cleared: not complete",
+   "tool": "valun_status",
+   "args": {},
+   "routes": {
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1"
+      ],
+      "novation": {
+       "transfer_ms": 999,
+       "setoff_ms": 998,
+       "bound_note_ms": 997,
+       "reserved_ms": [
+        995,
+        996,
+        997,
+        998,
+        999
+       ],
+       "max_age_ms": 3600000,
+       "transfer_ttl_ms": 1200000,
+       "setoff_ttl_ms": 1800000,
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
+      }
+     }
+    },
+    "GET /pilot/v1/me": {
+     "body": {
+      "participant": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "status": "active",
+       "sandbox_only": true,
+       "joined_at": "2026-11-01T00:00:00.000Z"
+      },
+      "mandate": {
+       "objective": "Buy short research briefs for the newsletter.",
+       "may_issue_credit": true,
+       "may_accept_credit": true,
+       "max_issue_per_deal": 30,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 5,
+       "min_payer_coverage_pct": 0,
+       "counterparties": "any",
+       "approve_above": 25,
+       "review_deliveries": false,
+       "expires_at": "2026-12-01T00:00:00.000Z",
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "mandate_version": 3,
+      "agent_limits": {
+       "max_issue_per_deal": 20,
+       "min_price_as_payee": 8,
+       "notes": "Briefs under 20 PC; prefer sources.",
+       "set_at": "2026-11-05T09:00:00.000Z"
+      },
+      "effective_limits": {
+       "max_issue_per_deal": 20,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 8,
+       "min_payer_coverage_pct": 0,
+       "may_accept_credit": true,
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "position": {
+       "claims_held": 0,
+       "owes": 0,
        "deals": {
         "paid_by_transfer": 2
        }
@@ -35365,11 +35735,26 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     "sandbox_next_steps": {
-     "tour_step": "done",
+     "tour_step": 1,
      "of": 5,
-     "goal": "The tour is complete.",
-     "next_calls": [],
-     "then": "The tour is complete: you earned 6 PC and spent 6 PC (4 by transfer, 2 with your own note), and set-offs cancelled 2 PC of your claims and 2 PC of your debts without changing your net position. You can keep trading with the sandbox agents.",
+     "goal": "Earn: sandbox-exact buys text-stats from you (the welcome job, 3 PC). Deliver the exact result; it pays with its own credit note.",
+     "next_calls": [
+      {
+       "tool": "valun_propose",
+       "arguments": {
+        "counterparty": "sandbox-exact",
+        "role": "payee",
+        "title": "text-stats job",
+        "description": "text-stats for this text:\n```\nValun sandbox tour, step 1: my first paid job.\n```",
+        "deliverable": "The exact text-stats result as JSON.",
+        "price": 3,
+        "deliver_within_hours": 24,
+        "offer_valid_hours": 1
+       },
+       "why": "offer to sell text-stats to sandbox-exact for 3 PC"
+      }
+     ],
+     "then": "The tour is not complete: no set-off has cleared any of your claims or debts yet, and you hold no note to spend now. Earn sandbox-exact's note again; then pay sandbox-exact with your own note, and the 2-cycle that forms is cleared by a set-off. sandbox-exact answers within a few seconds; call valun_status again for the next step.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
        "you_hold_PC": 0,
@@ -35379,6 +35764,1612 @@
        "you_hold_PC": 0,
        "you_owe_PC": 0
       }
+     },
+     "when_done": {
+      "you_hold_PC": 3,
+      "you_owe_PC": 0
+     }
+    }
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/me",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/inbox",
+     "body": null,
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    },
+    {
+     "key": "GET /pilot/v1/edges?since=0",
+     "body": null,
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": 10
+    },
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    },
+    "consent_roles_declared": "setoff,issuer,creditor",
+    "records": {
+     "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5": {
+      "confirmed": {
+       "total": 30,
+       "timestamp": 1793965500001
+      },
+      "pending": []
+     },
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+      "confirmed": {
+       "total": 10,
+       "timestamp": 1793965800000
+      },
+      "pending": []
+     }
+    },
+    "journal_seq": 2
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {},
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {},
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "status: sandbox tour, complete with a note left and no transfer totals shown",
+   "tool": "valun_status",
+   "args": {},
+   "routes": {
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1"
+      ],
+      "novation": {
+       "transfer_ms": 999,
+       "setoff_ms": 998,
+       "bound_note_ms": 997,
+       "reserved_ms": [
+        995,
+        996,
+        997,
+        998,
+        999
+       ],
+       "max_age_ms": 3600000,
+       "transfer_ttl_ms": 1200000,
+       "setoff_ttl_ms": 1800000,
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
+      }
+     }
+    },
+    "GET /pilot/v1/me": {
+     "body": {
+      "participant": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "status": "active",
+       "sandbox_only": true,
+       "joined_at": "2026-11-01T00:00:00.000Z"
+      },
+      "mandate": {
+       "objective": "Buy short research briefs for the newsletter.",
+       "may_issue_credit": true,
+       "may_accept_credit": true,
+       "max_issue_per_deal": 30,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 5,
+       "min_payer_coverage_pct": 0,
+       "counterparties": "any",
+       "approve_above": 25,
+       "review_deliveries": false,
+       "expires_at": "2026-12-01T00:00:00.000Z",
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "mandate_version": 3,
+      "agent_limits": {
+       "max_issue_per_deal": 20,
+       "min_price_as_payee": 8,
+       "notes": "Briefs under 20 PC; prefer sources.",
+       "set_at": "2026-11-05T09:00:00.000Z"
+      },
+      "effective_limits": {
+       "max_issue_per_deal": 20,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 8,
+       "min_payer_coverage_pct": 0,
+       "may_accept_credit": true,
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "position": {
+       "claims_held": 1,
+       "owes": 0,
+       "cleared_by_setoff": 3,
+       "claims": [
+        {
+         "from": "sandbox-mallory",
+         "amount": 1
+        }
+       ],
+       "deals": {
+        "paid_by_transfer": 2
+       }
+      },
+      "authority": {
+       "mandate_expires_at": "2026-12-01T00:00:00.000Z"
+      }
+     }
+    },
+    "GET /pilot/v1/inbox": {
+     "body": {
+      "respond": [],
+      "deliver": [],
+      "review": [],
+      "awaiting_owner": [],
+      "waiting": []
+     }
+    },
+    "GET /pilot/v1/edges?since=0": {
+     "body": {
+      "incoming": [
+       {
+        "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "issuer_pubkey": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297",
+        "recipient_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "total": 30,
+        "timestamp": 1793965500001,
+        "signature": "02187f36ba5031b75092795e87dc16683966cecbf5b76a25b6d8fe0b6ced7d8f227cebc1a9559db66c6d90f4d13222fddd45463ebd034810c36a57ca0a205a8bfb",
+        "bound_only": false
+       }
+      ],
+      "outgoing": [
+       {
+        "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+        "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+        "total": 10,
+        "timestamp": 1793965800000,
+        "signature": "03f302ceea765d54ac13219a9591969fcbbdab02dacff2750c88502e715336f43e3a184416e02b3231441292a62f394bd582c3d285d6c6a30a5ff51c9aedb4c3be",
+        "bound_only": false
+       }
+      ],
+      "journal": [],
+      "next_seq": 2
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    }
+   },
+   "result": {
+    "connected": true,
+    "server": "http://valun.invalid",
+    "network": "valun-pilot-1",
+    "unit": "PC (pilot credits, no monetary value)",
+    "you": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice",
+     "display_name": "Alice",
+     "status": "active",
+     "sandbox_only": true,
+     "joined_at": "2026-11-01T00:00:00.000Z"
+    },
+    "objective_from_your_owner": "Buy short research briefs for the newsletter.",
+    "goals_your_owner_told_you": "Briefs under 20 PC; prefer sources.",
+    "limits_you_recorded": {
+     "max_issue_per_deal": 20,
+     "min_price_as_payee": 8
+    },
+    "limits_in_force": {
+     "max_per_deal_as_payer": 20,
+     "max_total_owed": 100,
+     "max_per_deal_as_payee": 50,
+     "max_claim_per_payer": 200,
+     "min_price_as_payee": 8,
+     "min_payer_coverage_pct": 0
+    },
+    "mandate": {
+     "may_issue_credit": true,
+     "may_accept_credit": true,
+     "max_issue_per_deal": 30,
+     "max_issue_outstanding": 100,
+     "max_accept_per_deal": 50,
+     "max_accept_per_issuer": 200,
+     "min_price_as_payee": 5,
+     "min_payer_coverage_pct": 0,
+     "counterparties": "any",
+     "approve_above": 25,
+     "review_deliveries": false,
+     "expires_at": "2026-12-01T00:00:00.000Z",
+     "auto_clear": true,
+     "novate_own_debt": true,
+     "accept_transfers": true,
+     "accept_notes_from": "any",
+     "refuse_notes_from": [],
+     "pay_with_held_notes": "when_asked"
+    },
+    "mandate_version": 3,
+    "approvals": "Commitments are signed without asking your owner first. The server also holds commitments priced above 25 PC for the owner console.",
+    "position": {
+     "claims_held": 1,
+     "owes": 0,
+     "cleared_by_setoff": 3,
+     "claims": [
+      {
+       "from": "sandbox-mallory",
+       "amount": 1
+      }
+     ],
+     "deals": {
+      "paid_by_transfer": 2
+     }
+    },
+    "authority": {
+     "mandate_expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "settlement": "not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.",
+    "honest_labels": {
+     "what_basis_records": "The pilot Basis tracker keeps one running total per key pair: what the issuer key owes the recipient key, with a timestamp, signed by the issuer. A credit note raises it; with circulating credit a debt transfer moves part of it to a new creditor and a set-off lowers the totals around a cycle, each signed by every party whose total changes. The tracker has no blockchain connection (notes stay local_only) and no reserve backs the notes.",
+     "outstanding_promise": "not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.",
+     "third_party": "Supported: paying a third party with your OWN credit note, or with a note you hold (pay_with: the issuer's debt to you moves to the payee; the issuer, you and the payee each sign, and the issuer's total debt does not change), and set-offs that cancel equal debts around a cycle (every party signs; no net position changes). A payee may require that the claims of whoever issued the note it receives cover it (min_payer_coverage_pct). Not supported: redeeming a note for anything outside the pilot."
+    },
+    "real_vs_simulated": {
+     "real": "signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt transfers and set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your client against the signatures)",
+     "simulated": "PC (pilot credits) have no monetary value; the Basis tracker has no blockchain connection (notes are local_only, never on-chain); nothing is redeemed and there is no reserve: a set-off only cancels equal opposite obligations",
+     "not_proven": "that delivered work is good (Valun records statements, it does not judge work); that any participant will ever honour a credit note"
+    },
+    "summary": "You hold 1 PC of credit notes others issued to you and owe 0 PC (net none PC); set-offs have cleared 3 PC so far. You can spend 1 PC of notes you hold (sandbox-mallory) with pay_with when you accept a delivery. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
+    "money_view": {
+     "you_hold_PC": 1,
+     "you_owe_PC": 0,
+     "net_PC": null,
+     "cleared_so_far_PC": 3,
+     "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
+    },
+    "notes_you_can_spend": [
+     {
+      "issuer": "sandbox-mallory",
+      "amount_PC": 1,
+      "checked_by_your_client": false,
+      "issuer_consents": null,
+      "how": "valun_review_delivery decision='accept' pay_with=\"sandbox-mallory\": pays a delivery by moving that much of their debt to you onto the payee"
+     }
+    ],
+    "payments_in_progress": [],
+    "clearing": {
+     "your_client_signs": [
+      "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each",
+      "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each",
+      "payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each"
+     ],
+     "consents_pending": null,
+     "recent": []
+    },
+    "consent_policy_in_force": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": true,
+      "as_issuer": true,
+      "as_new_creditor": true,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": 200
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    "sandbox_next_steps": {
+     "tour_step": "done",
+     "of": 5,
+     "goal": "The tour is complete.",
+     "next_calls": [],
+     "then": "The tour is complete: set-offs cancelled 3 PC of your claims and 3 PC of your debts without changing your net position. You still hold 1 PC and owe 0 PC. You can keep trading with the sandbox agents.",
+     "with_the_sandbox_agents": {
+      "sandbox-exact": {
+       "you_hold_PC": 0,
+       "you_owe_PC": 0
+      },
+      "sandbox-mallory": {
+       "you_hold_PC": 1,
+       "you_owe_PC": 0
+      }
+     }
+    }
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/me",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/inbox",
+     "body": null,
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    },
+    {
+     "key": "GET /pilot/v1/edges?since=0",
+     "body": null,
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": 10
+    },
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    },
+    "consent_roles_declared": "setoff,issuer,creditor",
+    "records": {
+     "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5": {
+      "confirmed": {
+       "total": 30,
+       "timestamp": 1793965500001
+      },
+      "pending": []
+     },
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+      "confirmed": {
+       "total": 10,
+       "timestamp": 1793965800000
+      },
+      "pending": []
+     }
+    },
+    "journal_seq": 2
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {},
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {},
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "status: sandbox tour, a deal being paid that no inbox list shows",
+   "tool": "valun_status",
+   "args": {},
+   "routes": {
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1"
+      ],
+      "novation": {
+       "transfer_ms": 999,
+       "setoff_ms": 998,
+       "bound_note_ms": 997,
+       "reserved_ms": [
+        995,
+        996,
+        997,
+        998,
+        999
+       ],
+       "max_age_ms": 3600000,
+       "transfer_ttl_ms": 1200000,
+       "setoff_ttl_ms": 1800000,
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
+      }
+     }
+    },
+    "GET /pilot/v1/me": {
+     "body": {
+      "participant": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "status": "active",
+       "sandbox_only": true,
+       "joined_at": "2026-11-06T11:58:00.000Z"
+      },
+      "mandate": {
+       "objective": "Buy short research briefs for the newsletter.",
+       "may_issue_credit": true,
+       "may_accept_credit": true,
+       "max_issue_per_deal": 30,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 5,
+       "min_payer_coverage_pct": 0,
+       "counterparties": "any",
+       "approve_above": 25,
+       "review_deliveries": false,
+       "expires_at": "2026-12-01T00:00:00.000Z",
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "mandate_version": 3,
+      "agent_limits": {
+       "max_issue_per_deal": 20,
+       "min_price_as_payee": 8,
+       "notes": "Briefs under 20 PC; prefer sources.",
+       "set_at": "2026-11-05T09:00:00.000Z"
+      },
+      "effective_limits": {
+       "max_issue_per_deal": 20,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 8,
+       "min_payer_coverage_pct": 0,
+       "may_accept_credit": true,
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "position": {
+       "claims_held": 0,
+       "owes": 0,
+       "net": 0,
+       "deals": {
+        "agreed_note_not_issued": 1,
+        "paid_by_transfer": 0
+       }
+      },
+      "authority": {
+       "mandate_expires_at": "2026-12-01T00:00:00.000Z"
+      }
+     }
+    },
+    "GET /pilot/v1/inbox": {
+     "body": {
+      "respond": [],
+      "deliver": [],
+      "review": [],
+      "awaiting_owner": [],
+      "waiting": [],
+      "recent_closed": [
+       {
+        "deal_id": "vd_1515151515151515",
+        "status": "note_issued",
+        "counterparty": "sandbox-exact",
+        "your_role": "payee"
+       }
+      ]
+     }
+    },
+    "GET /pilot/v1/edges?since=0": {
+     "body": {
+      "incoming": [
+       {
+        "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "issuer_pubkey": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297",
+        "recipient_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "total": 30,
+        "timestamp": 1793965500001,
+        "signature": "02187f36ba5031b75092795e87dc16683966cecbf5b76a25b6d8fe0b6ced7d8f227cebc1a9559db66c6d90f4d13222fddd45463ebd034810c36a57ca0a205a8bfb",
+        "bound_only": false
+       }
+      ],
+      "outgoing": [
+       {
+        "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+        "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+        "total": 10,
+        "timestamp": 1793965800000,
+        "signature": "03f302ceea765d54ac13219a9591969fcbbdab02dacff2750c88502e715336f43e3a184416e02b3231441292a62f394bd582c3d285d6c6a30a5ff51c9aedb4c3be",
+        "bound_only": false
+       }
+      ],
+      "journal": [],
+      "next_seq": 2
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    }
+   },
+   "result": {
+    "connected": true,
+    "server": "http://valun.invalid",
+    "network": "valun-pilot-1",
+    "unit": "PC (pilot credits, no monetary value)",
+    "you": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice",
+     "display_name": "Alice",
+     "status": "active",
+     "sandbox_only": true,
+     "joined_at": "2026-11-06T11:58:00.000Z"
+    },
+    "objective_from_your_owner": "Buy short research briefs for the newsletter.",
+    "goals_your_owner_told_you": "Briefs under 20 PC; prefer sources.",
+    "limits_you_recorded": {
+     "max_issue_per_deal": 20,
+     "min_price_as_payee": 8
+    },
+    "limits_in_force": {
+     "max_per_deal_as_payer": 20,
+     "max_total_owed": 100,
+     "max_per_deal_as_payee": 50,
+     "max_claim_per_payer": 200,
+     "min_price_as_payee": 8,
+     "min_payer_coverage_pct": 0
+    },
+    "mandate": {
+     "may_issue_credit": true,
+     "may_accept_credit": true,
+     "max_issue_per_deal": 30,
+     "max_issue_outstanding": 100,
+     "max_accept_per_deal": 50,
+     "max_accept_per_issuer": 200,
+     "min_price_as_payee": 5,
+     "min_payer_coverage_pct": 0,
+     "counterparties": "any",
+     "approve_above": 25,
+     "review_deliveries": false,
+     "expires_at": "2026-12-01T00:00:00.000Z",
+     "auto_clear": true,
+     "novate_own_debt": true,
+     "accept_transfers": true,
+     "accept_notes_from": "any",
+     "refuse_notes_from": [],
+     "pay_with_held_notes": "when_asked"
+    },
+    "mandate_version": 3,
+    "approvals": "Commitments are signed without asking your owner first. The server also holds commitments priced above 25 PC for the owner console.",
+    "position": {
+     "claims_held": 0,
+     "owes": 0,
+     "net": 0,
+     "deals": {
+      "agreed_note_not_issued": 1,
+      "paid_by_transfer": 0
+     }
+    },
+    "authority": {
+     "mandate_expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "settlement": "not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.",
+    "honest_labels": {
+     "what_basis_records": "The pilot Basis tracker keeps one running total per key pair: what the issuer key owes the recipient key, with a timestamp, signed by the issuer. A credit note raises it; with circulating credit a debt transfer moves part of it to a new creditor and a set-off lowers the totals around a cycle, each signed by every party whose total changes. The tracker has no blockchain connection (notes stay local_only) and no reserve backs the notes.",
+     "outstanding_promise": "not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.",
+     "third_party": "Supported: paying a third party with your OWN credit note, or with a note you hold (pay_with: the issuer's debt to you moves to the payee; the issuer, you and the payee each sign, and the issuer's total debt does not change), and set-offs that cancel equal debts around a cycle (every party signs; no net position changes). A payee may require that the claims of whoever issued the note it receives cover it (min_payer_coverage_pct). Not supported: redeeming a note for anything outside the pilot."
+    },
+    "real_vs_simulated": {
+     "real": "signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt transfers and set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your client against the signatures)",
+     "simulated": "PC (pilot credits) have no monetary value; the Basis tracker has no blockchain connection (notes are local_only, never on-chain); nothing is redeemed and there is no reserve: a set-off only cancels equal opposite obligations",
+     "not_proven": "that delivered work is good (Valun records statements, it does not judge work); that any participant will ever honour a credit note"
+    },
+    "summary": "You hold 0 PC of credit notes others issued to you and owe 0 PC (net 0 PC); set-offs have cleared 0 PC so far. You hold no notes you can spend now. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
+    "money_view": {
+     "you_hold_PC": 0,
+     "you_owe_PC": 0,
+     "net_PC": 0,
+     "cleared_so_far_PC": 0,
+     "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
+    },
+    "notes_you_can_spend": [],
+    "payments_in_progress": [],
+    "clearing": {
+     "your_client_signs": [
+      "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each",
+      "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each",
+      "payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each"
+     ],
+     "consents_pending": null,
+     "recent": []
+    },
+    "consent_policy_in_force": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": true,
+      "as_issuer": true,
+      "as_new_creditor": true,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": 200
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    "sandbox_next_steps": {
+     "tour_step": 1,
+     "of": 5,
+     "goal": "Earn: sandbox-exact buys text-stats from you (the welcome job, 3 PC). Deliver the exact result; it pays with its own credit note.",
+     "next_calls": [],
+     "then": "A deal of yours with a sandbox agent is being paid (its credit note is being recorded on the tracker); wait for it: call valun_status again in a few seconds.",
+     "with_the_sandbox_agents": {
+      "sandbox-exact": {
+       "you_hold_PC": 0,
+       "you_owe_PC": 0
+      },
+      "sandbox-mallory": {
+       "you_hold_PC": 0,
+       "you_owe_PC": 0
+      }
+     },
+     "when_done": {
+      "you_hold_PC": 3,
+      "you_owe_PC": 0
+     }
+    }
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/me",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/inbox",
+     "body": null,
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    },
+    {
+     "key": "GET /pilot/v1/edges?since=0",
+     "body": null,
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": 10
+    },
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    },
+    "consent_roles_declared": "setoff,issuer,creditor",
+    "records": {
+     "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5": {
+      "confirmed": {
+       "total": 30,
+       "timestamp": 1793965500001
+      },
+      "pending": []
+     },
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+      "confirmed": {
+       "total": 10,
+       "timestamp": 1793965800000
+      },
+      "pending": []
+     }
+    },
+    "journal_seq": 2
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {},
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {},
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "status: sandbox tour, step 2 paid by transfer with 4 PC of the note left: step 3",
+   "tool": "valun_status",
+   "args": {},
+   "routes": {
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1"
+      ],
+      "novation": {
+       "transfer_ms": 999,
+       "setoff_ms": 998,
+       "bound_note_ms": 997,
+       "reserved_ms": [
+        995,
+        996,
+        997,
+        998,
+        999
+       ],
+       "max_age_ms": 3600000,
+       "transfer_ttl_ms": 1200000,
+       "setoff_ttl_ms": 1800000,
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
+      }
+     }
+    },
+    "GET /pilot/v1/me": {
+     "body": {
+      "participant": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "status": "active",
+       "sandbox_only": true,
+       "joined_at": "2026-11-06T11:58:00.000Z"
+      },
+      "mandate": {
+       "objective": "Buy short research briefs for the newsletter.",
+       "may_issue_credit": true,
+       "may_accept_credit": true,
+       "max_issue_per_deal": 30,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 5,
+       "min_payer_coverage_pct": 0,
+       "counterparties": "any",
+       "approve_above": 25,
+       "review_deliveries": false,
+       "expires_at": "2026-12-01T00:00:00.000Z",
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "mandate_version": 3,
+      "agent_limits": {
+       "max_issue_per_deal": 20,
+       "min_price_as_payee": 8,
+       "notes": "Briefs under 20 PC; prefer sources.",
+       "set_at": "2026-11-05T09:00:00.000Z"
+      },
+      "effective_limits": {
+       "max_issue_per_deal": 20,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 8,
+       "min_payer_coverage_pct": 0,
+       "may_accept_credit": true,
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "position": {
+       "claims_held": 4,
+       "owes": 0,
+       "net": 4,
+       "claims": [
+        {
+         "from": "sandbox-exact",
+         "amount": 4
+        }
+       ],
+       "debts": [],
+       "spendable_notes": [
+        {
+         "issuer_id": "vp_c0c0c0c0c0c0",
+         "issuer_handle": "sandbox-exact",
+         "issuer_pubkey": "0265ad727818ed16c0dc99185145ba5c0413efa30465f783b7de4b43c799a2e124",
+         "spendable": 4
+        }
+       ],
+       "deals": {
+        "paid_by_transfer": 1
+       }
+      },
+      "authority": {
+       "mandate_expires_at": "2026-12-01T00:00:00.000Z"
+      }
+     }
+    },
+    "GET /pilot/v1/inbox": {
+     "body": {
+      "respond": [],
+      "deliver": [],
+      "review": [],
+      "awaiting_owner": [],
+      "waiting": [],
+      "recent_closed": [
+       {
+        "deal_id": "vd_1515151515151515",
+        "status": "note_issued",
+        "counterparty": "sandbox-exact",
+        "your_role": "payee"
+       }
+      ]
+     }
+    },
+    "GET /pilot/v1/edges?since=0": {
+     "body": {
+      "incoming": [
+       {
+        "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "issuer_pubkey": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297",
+        "recipient_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "total": 30,
+        "timestamp": 1793965500001,
+        "signature": "02187f36ba5031b75092795e87dc16683966cecbf5b76a25b6d8fe0b6ced7d8f227cebc1a9559db66c6d90f4d13222fddd45463ebd034810c36a57ca0a205a8bfb",
+        "bound_only": false
+       }
+      ],
+      "outgoing": [
+       {
+        "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+        "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+        "total": 10,
+        "timestamp": 1793965800000,
+        "signature": "03f302ceea765d54ac13219a9591969fcbbdab02dacff2750c88502e715336f43e3a184416e02b3231441292a62f394bd582c3d285d6c6a30a5ff51c9aedb4c3be",
+        "bound_only": false
+       }
+      ],
+      "journal": [],
+      "next_seq": 2
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    }
+   },
+   "result": {
+    "connected": true,
+    "server": "http://valun.invalid",
+    "network": "valun-pilot-1",
+    "unit": "PC (pilot credits, no monetary value)",
+    "you": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice",
+     "display_name": "Alice",
+     "status": "active",
+     "sandbox_only": true,
+     "joined_at": "2026-11-06T11:58:00.000Z"
+    },
+    "objective_from_your_owner": "Buy short research briefs for the newsletter.",
+    "goals_your_owner_told_you": "Briefs under 20 PC; prefer sources.",
+    "limits_you_recorded": {
+     "max_issue_per_deal": 20,
+     "min_price_as_payee": 8
+    },
+    "limits_in_force": {
+     "max_per_deal_as_payer": 20,
+     "max_total_owed": 100,
+     "max_per_deal_as_payee": 50,
+     "max_claim_per_payer": 200,
+     "min_price_as_payee": 8,
+     "min_payer_coverage_pct": 0
+    },
+    "mandate": {
+     "may_issue_credit": true,
+     "may_accept_credit": true,
+     "max_issue_per_deal": 30,
+     "max_issue_outstanding": 100,
+     "max_accept_per_deal": 50,
+     "max_accept_per_issuer": 200,
+     "min_price_as_payee": 5,
+     "min_payer_coverage_pct": 0,
+     "counterparties": "any",
+     "approve_above": 25,
+     "review_deliveries": false,
+     "expires_at": "2026-12-01T00:00:00.000Z",
+     "auto_clear": true,
+     "novate_own_debt": true,
+     "accept_transfers": true,
+     "accept_notes_from": "any",
+     "refuse_notes_from": [],
+     "pay_with_held_notes": "when_asked"
+    },
+    "mandate_version": 3,
+    "approvals": "Commitments are signed without asking your owner first. The server also holds commitments priced above 25 PC for the owner console.",
+    "position": {
+     "claims_held": 4,
+     "owes": 0,
+     "net": 4,
+     "claims": [
+      {
+       "from": "sandbox-exact",
+       "amount": 4
+      }
+     ],
+     "debts": [],
+     "spendable_notes": [
+      {
+       "issuer_id": "vp_c0c0c0c0c0c0",
+       "issuer_handle": "sandbox-exact",
+       "issuer_pubkey": "0265ad727818ed16c0dc99185145ba5c0413efa30465f783b7de4b43c799a2e124",
+       "spendable": 4
+      }
+     ],
+     "deals": {
+      "paid_by_transfer": 1
+     }
+    },
+    "authority": {
+     "mandate_expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "settlement": "not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.",
+    "honest_labels": {
+     "what_basis_records": "The pilot Basis tracker keeps one running total per key pair: what the issuer key owes the recipient key, with a timestamp, signed by the issuer. A credit note raises it; with circulating credit a debt transfer moves part of it to a new creditor and a set-off lowers the totals around a cycle, each signed by every party whose total changes. The tracker has no blockchain connection (notes stay local_only) and no reserve backs the notes.",
+     "outstanding_promise": "not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.",
+     "third_party": "Supported: paying a third party with your OWN credit note, or with a note you hold (pay_with: the issuer's debt to you moves to the payee; the issuer, you and the payee each sign, and the issuer's total debt does not change), and set-offs that cancel equal debts around a cycle (every party signs; no net position changes). A payee may require that the claims of whoever issued the note it receives cover it (min_payer_coverage_pct). Not supported: redeeming a note for anything outside the pilot."
+    },
+    "real_vs_simulated": {
+     "real": "signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt transfers and set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your client against the signatures)",
+     "simulated": "PC (pilot credits) have no monetary value; the Basis tracker has no blockchain connection (notes are local_only, never on-chain); nothing is redeemed and there is no reserve: a set-off only cancels equal opposite obligations",
+     "not_proven": "that delivered work is good (Valun records statements, it does not judge work); that any participant will ever honour a credit note"
+    },
+    "summary": "You hold 4 PC of credit notes others issued to you and owe 0 PC (net 4 PC); set-offs have cleared 0 PC so far. You can spend 4 PC of notes you hold (sandbox-exact) with pay_with when you accept a delivery. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
+    "money_view": {
+     "you_hold_PC": 4,
+     "you_owe_PC": 0,
+     "net_PC": 4,
+     "cleared_so_far_PC": 0,
+     "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
+    },
+    "notes_you_can_spend": [
+     {
+      "issuer": "sandbox-exact",
+      "amount_PC": 4,
+      "checked_by_your_client": false,
+      "issuer_consents": null,
+      "how": "valun_review_delivery decision='accept' pay_with=\"sandbox-exact\": pays a delivery by moving that much of their debt to you onto the payee"
+     }
+    ],
+    "payments_in_progress": [],
+    "clearing": {
+     "your_client_signs": [
+      "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each",
+      "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each",
+      "payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each"
+     ],
+     "consents_pending": null,
+     "recent": []
+    },
+    "consent_policy_in_force": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": true,
+      "as_issuer": true,
+      "as_new_creditor": true,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": 200
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    "sandbox_next_steps": {
+     "tour_step": 3,
+     "of": 5,
+     "goal": "Pay with your own note: buy notary from sandbox-exact (2 PC). Then the 2-cycle you -> sandbox-exact -> you (1 PC) is cleared by a set-off your Valun client signs by itself.",
+     "next_calls": [
+      {
+       "tool": "valun_propose",
+       "arguments": {
+        "counterparty": "sandbox-exact",
+        "role": "payer",
+        "title": "notary job",
+        "description": "notary for this text:\n```\nValun sandbox tour, step 3: paid with my own note.\n```",
+        "deliverable": "The exact notary result as JSON.",
+        "price": 2,
+        "deliver_within_hours": 24,
+        "offer_valid_hours": 1
+       },
+       "why": "buy notary from sandbox-exact for 2 PC"
+      }
+     ],
+     "then": "sandbox-exact answers within a few seconds; call valun_status again for the next step.",
+     "with_the_sandbox_agents": {
+      "sandbox-exact": {
+       "you_hold_PC": 4,
+       "you_owe_PC": 0
+      },
+      "sandbox-mallory": {
+       "you_hold_PC": 0,
+       "you_owe_PC": 0
+      }
+     },
+     "when_done": {
+      "you_hold_PC": 0,
+      "you_owe_PC": 1
+     }
+    }
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/me",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/inbox",
+     "body": null,
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    },
+    {
+     "key": "GET /pilot/v1/edges?since=0",
+     "body": null,
+     "features": "consents/1;roles=setoff,issuer,creditor"
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": 10
+    },
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    },
+    "consent_roles_declared": "setoff,issuer,creditor",
+    "records": {
+     "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5": {
+      "confirmed": {
+       "total": 30,
+       "timestamp": 1793965500001
+      },
+      "pending": []
+     },
+     "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05": {
+      "confirmed": {
+       "total": 10,
+       "timestamp": 1793965800000
+      },
+      "pending": []
+     }
+    },
+    "journal_seq": 2
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {},
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {},
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "status: sandbox tour, all spent by transfer and nothing cleared: earn again",
+   "tool": "valun_status",
+   "args": {},
+   "routes": {
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1"
+      ],
+      "novation": {
+       "transfer_ms": 999,
+       "setoff_ms": 998,
+       "bound_note_ms": 997,
+       "reserved_ms": [
+        995,
+        996,
+        997,
+        998,
+        999
+       ],
+       "max_age_ms": 3600000,
+       "transfer_ttl_ms": 1200000,
+       "setoff_ttl_ms": 1800000,
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
+      }
+     }
+    },
+    "GET /pilot/v1/me": {
+     "body": {
+      "participant": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "status": "active",
+       "sandbox_only": true,
+       "joined_at": "2026-11-06T11:58:00.000Z"
+      },
+      "mandate": {
+       "objective": "Buy short research briefs for the newsletter.",
+       "may_issue_credit": true,
+       "may_accept_credit": true,
+       "max_issue_per_deal": 30,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 5,
+       "min_payer_coverage_pct": 0,
+       "counterparties": "any",
+       "approve_above": 25,
+       "review_deliveries": false,
+       "expires_at": "2026-12-01T00:00:00.000Z",
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "mandate_version": 3,
+      "agent_limits": {
+       "max_issue_per_deal": 20,
+       "min_price_as_payee": 8,
+       "notes": "Briefs under 20 PC; prefer sources.",
+       "set_at": "2026-11-05T09:00:00.000Z"
+      },
+      "effective_limits": {
+       "max_issue_per_deal": 20,
+       "max_issue_outstanding": 100,
+       "max_accept_per_deal": 50,
+       "max_accept_per_issuer": 200,
+       "min_price_as_payee": 8,
+       "min_payer_coverage_pct": 0,
+       "may_accept_credit": true,
+       "auto_clear": true,
+       "novate_own_debt": true,
+       "accept_transfers": true,
+       "accept_notes_from": "any",
+       "refuse_notes_from": [],
+       "pay_with_held_notes": "when_asked"
+      },
+      "position": {
+       "claims_held": 0,
+       "owes": 0,
+       "net": 0,
+       "cleared_by_setoff": 0,
+       "transferred_out": 6,
+       "deals": {
+        "paid_by_transfer": 3
+       }
+      },
+      "authority": {
+       "mandate_expires_at": "2026-12-01T00:00:00.000Z"
+      }
+     }
+    },
+    "GET /pilot/v1/inbox": {
+     "body": {
+      "respond": [],
+      "deliver": [],
+      "review": [],
+      "awaiting_owner": [],
+      "waiting": [],
+      "recent_closed": [
+       {
+        "deal_id": "vd_1515151515151515",
+        "status": "note_issued",
+        "counterparty": "sandbox-exact",
+        "your_role": "payee"
+       }
+      ]
+     }
+    },
+    "GET /pilot/v1/edges?since=0": {
+     "body": {
+      "incoming": [
+       {
+        "edge": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297>035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "issuer_pubkey": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297",
+        "recipient_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "total": 30,
+        "timestamp": 1793965500001,
+        "signature": "02187f36ba5031b75092795e87dc16683966cecbf5b76a25b6d8fe0b6ced7d8f227cebc1a9559db66c6d90f4d13222fddd45463ebd034810c36a57ca0a205a8bfb",
+        "bound_only": false
+       }
+      ],
+      "outgoing": [
+       {
+        "edge": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5>039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+        "issuer_pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+        "recipient_pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05",
+        "total": 10,
+        "timestamp": 1793965800000,
+        "signature": "03f302ceea765d54ac13219a9591969fcbbdab02dacff2750c88502e715336f43e3a184416e02b3231441292a62f394bd582c3d285d6c6a30a5ff51c9aedb4c3be",
+        "bound_only": false
+       }
+      ],
+      "journal": [],
+      "next_seq": 2
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    },
+    "consent_policy": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "accept_issuers": "any",
+     "refuse_issuers": []
+    }
+   },
+   "result": {
+    "connected": true,
+    "server": "http://valun.invalid",
+    "network": "valun-pilot-1",
+    "unit": "PC (pilot credits, no monetary value)",
+    "you": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice",
+     "display_name": "Alice",
+     "status": "active",
+     "sandbox_only": true,
+     "joined_at": "2026-11-06T11:58:00.000Z"
+    },
+    "objective_from_your_owner": "Buy short research briefs for the newsletter.",
+    "goals_your_owner_told_you": "Briefs under 20 PC; prefer sources.",
+    "limits_you_recorded": {
+     "max_issue_per_deal": 20,
+     "min_price_as_payee": 8
+    },
+    "limits_in_force": {
+     "max_per_deal_as_payer": 20,
+     "max_total_owed": 100,
+     "max_per_deal_as_payee": 50,
+     "max_claim_per_payer": 200,
+     "min_price_as_payee": 8,
+     "min_payer_coverage_pct": 0
+    },
+    "mandate": {
+     "may_issue_credit": true,
+     "may_accept_credit": true,
+     "max_issue_per_deal": 30,
+     "max_issue_outstanding": 100,
+     "max_accept_per_deal": 50,
+     "max_accept_per_issuer": 200,
+     "min_price_as_payee": 5,
+     "min_payer_coverage_pct": 0,
+     "counterparties": "any",
+     "approve_above": 25,
+     "review_deliveries": false,
+     "expires_at": "2026-12-01T00:00:00.000Z",
+     "auto_clear": true,
+     "novate_own_debt": true,
+     "accept_transfers": true,
+     "accept_notes_from": "any",
+     "refuse_notes_from": [],
+     "pay_with_held_notes": "when_asked"
+    },
+    "mandate_version": 3,
+    "approvals": "Commitments are signed without asking your owner first. The server also holds commitments priced above 25 PC for the owner console.",
+    "position": {
+     "claims_held": 0,
+     "owes": 0,
+     "net": 0,
+     "cleared_by_setoff": 0,
+     "transferred_out": 6,
+     "deals": {
+      "paid_by_transfer": 3
+     }
+    },
+    "authority": {
+     "mandate_expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "settlement": "not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.",
+    "honest_labels": {
+     "what_basis_records": "The pilot Basis tracker keeps one running total per key pair: what the issuer key owes the recipient key, with a timestamp, signed by the issuer. A credit note raises it; with circulating credit a debt transfer moves part of it to a new creditor and a set-off lowers the totals around a cycle, each signed by every party whose total changes. The tracker has no blockchain connection (notes stay local_only) and no reserve backs the notes.",
+     "outstanding_promise": "not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.",
+     "third_party": "Supported: paying a third party with your OWN credit note, or with a note you hold (pay_with: the issuer's debt to you moves to the payee; the issuer, you and the payee each sign, and the issuer's total debt does not change), and set-offs that cancel equal debts around a cycle (every party signs; no net position changes). A payee may require that the claims of whoever issued the note it receives cover it (min_payer_coverage_pct). Not supported: redeeming a note for anything outside the pilot."
+    },
+    "real_vs_simulated": {
+     "real": "signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt transfers and set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your client against the signatures)",
+     "simulated": "PC (pilot credits) have no monetary value; the Basis tracker has no blockchain connection (notes are local_only, never on-chain); nothing is redeemed and there is no reserve: a set-off only cancels equal opposite obligations",
+     "not_proven": "that delivered work is good (Valun records statements, it does not judge work); that any participant will ever honour a credit note"
+    },
+    "summary": "You hold 0 PC of credit notes others issued to you and owe 0 PC (net 0 PC); set-offs have cleared 0 PC so far. You hold no notes you can spend now. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
+    "money_view": {
+     "you_hold_PC": 0,
+     "you_owe_PC": 0,
+     "net_PC": 0,
+     "cleared_so_far_PC": 0,
+     "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
+    },
+    "notes_you_can_spend": [],
+    "payments_in_progress": [],
+    "clearing": {
+     "your_client_signs": [
+      "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each",
+      "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each",
+      "payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each"
+     ],
+     "consents_pending": null,
+     "recent": []
+    },
+    "consent_policy_in_force": {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": true,
+      "as_issuer": true,
+      "as_new_creditor": true,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": 200
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    "sandbox_next_steps": {
+     "tour_step": 1,
+     "of": 5,
+     "goal": "Earn: sandbox-exact buys text-stats from you (the welcome job, 3 PC). Deliver the exact result; it pays with its own credit note.",
+     "next_calls": [
+      {
+       "tool": "valun_propose",
+       "arguments": {
+        "counterparty": "sandbox-exact",
+        "role": "payee",
+        "title": "text-stats job",
+        "description": "text-stats for this text:\n```\nValun sandbox tour, step 1: my first paid job.\n```",
+        "deliverable": "The exact text-stats result as JSON.",
+        "price": 3,
+        "deliver_within_hours": 24,
+        "offer_valid_hours": 1
+       },
+       "why": "offer to sell text-stats to sandbox-exact for 3 PC"
+      }
+     ],
+     "then": "The tour is not complete: no set-off has cleared any of your claims or debts yet, and you hold no note to spend now. Earn sandbox-exact's note again; then pay sandbox-exact with your own note, and the 2-cycle that forms is cleared by a set-off. sandbox-exact answers within a few seconds; call valun_status again for the next step.",
+     "with_the_sandbox_agents": {
+      "sandbox-exact": {
+       "you_hold_PC": 0,
+       "you_owe_PC": 0
+      },
+      "sandbox-mallory": {
+       "you_hold_PC": 0,
+       "you_owe_PC": 0
+      }
+     },
+     "when_done": {
+      "you_hold_PC": 3,
+      "you_owe_PC": 0
      }
     }
    },

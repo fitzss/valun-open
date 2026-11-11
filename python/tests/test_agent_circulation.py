@@ -147,6 +147,12 @@ class World:
         # for the tests whose requests carry no header. A set: as the v16 server, a set-off through S is proposed only
         # while S declared the setoff role (its clearing participant check; decision D-3 b withdraws it at once).
         self.s_roles = None
+        # As the live server, where the sandbox agents act on a slower tick: a sandbox agent that pays a stranger's
+        # delivery leaves the deal issuing_note (in no inbox section) for one tick before its note is on the tracker. A
+        # tick follows GET /me, so the next GET /inbox already shows the deal note_issued while the position just read
+        # does not hold its note yet (the race that sold a second job to sandbox-exact).
+        self.slow_pay = False
+        self.welcome_jobs = 1                   # how many welcome jobs sandbox-exact offers (2: S earns 6 PC in step 1)
 
     # ---------- helpers ----------
     def pk(self, pid):
@@ -274,13 +280,18 @@ class World:
                 sec = 'waiting_on_others' if d['current']['by'] == S_ID else 'respond'
             elif st == 'agreed':
                 sec = 'waiting_on_others' if payer else 'deliver'
-            elif st in ('delivered', 'note_failed', 'payment_due'):
+            elif st in ('delivered', 'payment_due'):
                 sec = 'review_delivery' if payer else 'waiting_on_others'
+            elif st == 'note_failed':
+                sec = 'review_delivery' if payer else None
             elif st == 'paying_by_transfer':
                 sec = 'waiting_on_others'
+            elif st == 'issuing_note':
+                sec = None                      # as the server (STATUS_CLASS): in no section, for either party
             else:
                 sec = 'recent_closed'
-            box[sec].append(self.brief(did))
+            if sec:
+                box[sec].append(self.brief(did))
         if self.features and 'circulation/1' in self.features:
             box['consents_waiting_for_your_client'] = sum(1 for i in self.items.values() if i['state'] == 'collecting')
             box['payments_in_progress'] = [dict(self.brief(did), payment=self.deals[did]['payment']) for did in self.order
@@ -303,8 +314,10 @@ class World:
                    'expired_or_withdrawn': 0}
         for d in self.deals.values():
             st = d['status']
-            b = {'note_issued': 'credit_notes_issued', 'open': 'open', 'disputed': 'disputed', 'declined': 'declined',
-                 'paid_by_transfer': 'paid_by_transfer'}.get(st, 'agreed_note_not_issued')
+            b = {'note_issued': 'credit_notes_issued', 'open': 'open', 'proposed_awaiting_owner': 'open',
+                 'accepted_awaiting_owner': 'open', 'disputed': 'disputed', 'declined': 'declined',
+                 'paid_by_transfer': 'paid_by_transfer'}.get(st, 'expired_or_withdrawn' if st in (
+                     'withdrawn', 'expired', 'rejected_by_owner', 'cancelled', 'expired_undelivered') else 'agreed_note_not_issued')
             buckets[b] = buckets.get(b, 0) + 1
         out = {'participant_id': S_ID, 'unit': DENOM, 'claims_held': held, 'owes': owes, 'net': held - owes,
                'claims': [{'from': c['from'], 'amount': c['amount']} for c in claims],
@@ -314,8 +327,11 @@ class World:
             out['deals'] = {k: v for k, v in buckets.items() if k != 'paid_by_transfer'}
             return out
         cleared = sum(-j['delta'] for j in self.journal if j['kind'] == 'setoff' and j['issuer_pubkey'] == me)
+        moved_out = sum(-j['delta'] for j in self.journal if j['kind'] == 'transfer_out' and j['recipient_pubkey'] == me)
+        moved_in = sum(j['delta'] for j in self.journal if j['kind'] == 'transfer_in' and j['recipient_pubkey'] == me)
         buckets.setdefault('paid_by_transfer', 0)
-        out.update(gross=held + owes, cleared_by_setoff=cleared, settled=cleared, settled_how='by set-off only; nothing is redeemed',
+        out.update(gross=held + owes, cleared_by_setoff=cleared, transferred_in=moved_in, transferred_out=moved_out,
+                   settled=cleared, settled_how='by set-off only; nothing is redeemed',
                    claims=claims, debts=debts, deals=buckets,
                    spendable_notes=[{'issuer_id': c['issuer_id'], 'issuer_handle': c['from'], 'issuer_pubkey': c['issuer_pubkey'],
                                      'outstanding': c['amount'], 'reserved': 0, 'spendable': c['amount'], 'issuer_consents': 'immediate'}
@@ -328,8 +344,9 @@ class World:
     def tick(self):
         if self.features and 'circulation/1' in self.features and self.welcome and not self.welcomed and S_ID in self.keys:
             self.welcomed = True
-            self.add_deal(X_ID, S_ID, 'Welcome job: text-stats', f'Your first paid job: text-stats of this text:\n```\n{WELCOME}\n```',
-                          'the exact text-stats result as JSON (your Valun client can compute it: valun_deliver exact_result=true)', 3)
+            for _ in range(self.welcome_jobs):
+                self.add_deal(X_ID, S_ID, 'Welcome job: text-stats', f'Your first paid job: text-stats of this text:\n```\n{WELCOME}\n```',
+                              'the exact text-stats result as JSON (your Valun client can compute it: valun_deliver exact_result=true)', 3)
         for did in list(self.order):
             d = self.deals[did]
             if S_ID not in (d['payer'], d['payee']):
@@ -340,6 +357,9 @@ class World:
             terms = d['current']['terms']
             service = sb.which_service(terms)
             text = sb.extract_text(terms['service']['description'])
+            if d['status'] == 'issuing_note' and d['payer'] == agent:
+                self.agent_pays(did, agent)     # slow_pay: the note issued last tick reaches the tracker now
+                continue
             if d['status'] == 'open' and d['current']['by'] == S_ID:
                 self.agree(did, sign_text(self.keys[agent], vc.statement('accept', d['current']['terms_hash'])))
             if d['status'] == 'agreed' and d['payee'] == agent:
@@ -350,7 +370,10 @@ class World:
                 self.deliver(did, sb.render(service, result, text), f'{service} result', agent)
             if d['status'] == 'delivered' and d['payer'] == agent:
                 if sb.parse_result(d['delivery']['content']) == sb.COMPUTE[service](text):
-                    self.agent_pays(did, agent)
+                    if self.slow_pay:
+                        d['status'] = 'issuing_note'
+                    else:
+                        self.agent_pays(did, agent)
                 else:
                     d['status'] = 'disputed'
         self.clear()
@@ -1471,6 +1494,71 @@ class SandboxNextSteps(Base):
         n = self.steps()
         self.assertEqual((n['tour_step'], n['next_calls']), (4, []))
         self.assertIn('set-off', n['then'])
+
+    def commit(self, call):
+        """Make one next call as the tour does: prepare (bind), then call with exactly the prepared arguments."""
+        p = self.agent.prepare(call['tool'], call['arguments'])
+        return self.agent.call(call['tool'], p['args'])
+
+    def test_a_delivered_welcome_job_not_yet_paid_is_waited_for(self):
+        # The live server: sandbox-exact pays on a slower tick. Its note is not on the tracker when GET /me is read, and
+        # the deal is note_issued by the GET /inbox read after it; before 0.4.1 the plan then sold a second job to it.
+        self.world.slow_pay = True
+        n = self.steps()
+        self.assertEqual(n['next_calls'][0]['tool'], 'valun_respond')
+        self.commit(n['next_calls'][0])
+        n = self.steps()
+        self.assertEqual(n['next_calls'][0]['tool'], 'valun_deliver')
+        self.agent.call('valun_deliver', n['next_calls'][0]['arguments'])
+        welcome = self.world.order[0]
+        self.assertEqual(self.world.deals[welcome]['status'], 'issuing_note')
+        n = self.steps()                # GET /me: issuing_note, nothing held; the GET /inbox after it: note_issued
+        self.assertEqual(self.world.deals[welcome]['status'], 'note_issued')
+        self.assertEqual((n['tour_step'], n['next_calls']), (1, []))
+        self.assertIn('is being paid', n['then'])
+        self.assertEqual(len(self.world.deals), 1)               # no second job offered to sandbox-exact
+        n = self.steps()                                         # now the position holds its note: step 2
+        self.assertEqual((n['tour_step'], n['next_calls'][0]['arguments']['counterparty']), (2, 'sandbox-mallory'))
+        self.assertEqual(n['with_the_sandbox_agents'][va.SANDBOX_EXACT], {'you_hold_PC': 3, 'you_owe_PC': 0})
+
+    def test_six_pc_held_after_step_1_go_on_to_step_3_once_step_2_paid_by_transfer(self):
+        self.world.welcome = False
+        self.hold(X_ID, 6)                                       # what the race left on the live server
+        n = self.steps()
+        self.assertEqual((n['tour_step'], n['next_calls'][0]['arguments']['counterparty']), (2, 'sandbox-mallory'))
+        right = self.world.delivered_deal(payee=M_ID)
+        n = self.steps()
+        self.assertEqual(n['next_calls'][0]['arguments']['pay_with'], 'sandbox-exact')
+        self.assertEqual(self.commit(n['next_calls'][0])['status'], 'paid_by_transfer')
+        self.assertEqual(self.world.deals[right]['status'], 'paid_by_transfer')
+        n = self.steps()                                         # 4 PC left: step 3, not step 2 again
+        self.assertEqual((n['tour_step'], n['next_calls'][0]['tool']), (3, 'valun_propose'))
+        self.assertEqual({k: n['next_calls'][0]['arguments'][k] for k in ('counterparty', 'role', 'price')},
+                         {'counterparty': 'sandbox-exact', 'role': 'payer', 'price': 2})
+        self.commit(n['next_calls'][0])                          # sandbox-exact accepts and delivers at once
+        n = self.steps()
+        self.assertEqual((n['tour_step'], n['next_calls'][0]['arguments']['pay_with']), (3, 'own_note'))
+        self.commit(n['next_calls'][0])
+        n = self.steps()
+        self.assertEqual((n['tour_step'], n['next_calls']), (3, []))
+        self.assertIn('A set-off of the cycle is due', n['then'])
+        (item,) = [i for i in self.world.items.values() if i['state'] == 'collecting']
+        self.assertEqual((item['kind'], item['summary']['your_total_owed_change_PC']), ('setoff', -2))
+
+    def test_no_set_off_cleared_anything_so_the_tour_is_not_done(self):
+        # The end state of the live run: 6 PC earned, all spent by transfer, nothing cleared.
+        self.world.welcome = False
+        for _ in range(3):
+            self.world.deals[self.world.delivered_deal(payee=M_ID)]['status'] = 'paid_by_transfer'
+        self.world.deals[self.world.delivered_deal(payer=X_ID, payee=S_ID, service='text-stats')]['status'] = 'note_issued'
+        n = self.steps()
+        self.assertEqual(n['with_the_sandbox_agents'], {va.SANDBOX_EXACT: {'you_hold_PC': 0, 'you_owe_PC': 0},
+                                                        va.SANDBOX_MALLORY: {'you_hold_PC': 0, 'you_owe_PC': 0}})
+        self.assertNotEqual(n['tour_step'], 'done')
+        self.assertNotIn('cancelled', n['then'])
+        self.assertIn('The tour is not complete: no set-off has cleared any of your claims or debts yet', n['then'])
+        self.assertEqual((n['tour_step'], n['next_calls'][0]['tool'], n['next_calls'][0]['arguments']['counterparty'],
+                          n['next_calls'][0]['arguments']['role']), (1, 'valun_propose', 'sandbox-exact', 'payee'))
 
 
 class PhaseZeroFixes(unittest.TestCase):

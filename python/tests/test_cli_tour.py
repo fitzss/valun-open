@@ -31,6 +31,9 @@ TOUR_TOTALS = {1: {'sandbox-exact -> you': 3},
                3: {'sandbox-exact -> you': 0, 'you -> sandbox-exact': 1},
                4: {'sandbox-exact -> you': 0, 'you -> sandbox-exact': 0, 'sandbox-mallory -> you': 2},
                5: {'sandbox-exact -> you': 0, 'you -> sandbox-exact': 0, 'sandbox-mallory -> you': 0}}
+TOUR_DONE = ('The tour is complete: you earned 6 PC and spent 6 PC (4 by transfer, 2 with your own note), and set-offs '
+             'cancelled 2 PC of your claims and 2 PC of your debts without changing your net position. You can keep trading '
+             'with the sandbox agents.')
 
 
 class Tty(io.StringIO):
@@ -855,11 +858,44 @@ class Tour(Cli):
         self.assertEqual(sorted(disk['records']['paid_deals']), sorted(did for did, d in w.deals.items() if d['payer'] == S_ID
                                                                          and d['status'] in ('note_issued', 'paid_by_transfer')))
         self.assertEqual(sum(1 for e in disk['consent_log'] if e['decision'] == 'signed' and e['kind'] == 'setoff'), 2)
+        # The done text is what happened, from the position; on the tour's path it is the design's 9.2 text.
+        self.assertIn('\n' + TOUR_DONE + '\n', out)
         # The tour is done: running it again changes nothing.
         posts = len(w.posts)
         rc, out = self.run_cli('sandbox', 'tour', '--yes')
         self.assertEqual((rc, len(w.posts)), (0, posts))
         self.assertIn('The tour is complete', out)
+
+    def test_a_sandbox_agent_that_pays_on_a_slower_tick_is_waited_for(self):
+        # The live server: a sandbox agent's note reaches the tracker a tick after it paid, so a status can read the
+        # position before the note and the inbox after it. Before 0.4.1 the tour then sold sandbox-exact a second job in
+        # step 1 (and sandbox-mallory a second one in step 4), held 6 PC, never formed a cycle, and said it was done.
+        self.world.slow_pay = True
+        self.join()
+        rc, out = self.run_cli('sandbox', 'tour', '--yes')
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.tour_lines(out), TOUR_TOTALS)
+        self.assertIn('A deal of yours with a sandbox agent is being paid', out)
+        self.assertEqual([d['status'] for d in self.world.deals.values()],
+                         ['note_issued', 'disputed', 'paid_by_transfer', 'note_issued', 'note_issued', 'paid_by_transfer'])
+        self.assertIn('\n' + TOUR_DONE + '\n', out)
+
+    def test_six_pc_earned_in_step_1_still_reach_a_set_off_and_the_done_text_says_what_happened(self):
+        # Two jobs from sandbox-exact in step 1 (what the race above left on the live server): step 2 pays once by
+        # transfer, then step 3 pays sandbox-exact with S's own note (not step 2 again), until set-offs cleared the rest.
+        self.world.welcome_jobs = 2
+        self.join()
+        rc, out = self.run_cli('sandbox', 'tour', '--yes')
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.tour_lines(out), {1: {'sandbox-exact -> you': 6}, 2: {'sandbox-exact -> you': 4},
+                                                3: {'sandbox-exact -> you': 0, 'you -> sandbox-exact': 0}})
+        w = self.world
+        setoffs = {j['ref'] for j in w.journal if j['kind'] == 'setoff' and j['ref'] != 'vs_server'}
+        self.assertEqual(len(setoffs), 2)                                         # two 2-cycles, 2 PC each, signed by S
+        self.assertEqual(w.position()['cleared_by_setoff'], 4)
+        self.assertIn('\nThe tour is complete: you earned 6 PC and spent 6 PC (2 by transfer, 4 with your own note), and '
+                      'set-offs cancelled 4 PC of your claims and 4 PC of your debts without changing your net position. You '
+                      'can keep trading with the sandbox agents.\n', out)
 
     def test_the_tour_asks_at_the_terminal_and_stops_when_declined(self):
         self.join()

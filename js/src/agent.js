@@ -1484,26 +1484,59 @@ export class ValunAgent {
       const x = listed.waiting_on_others[0];
       return plan(stepOf(get(x, 'counterparty'), get(x, 'your_role')), [], wait);
     }
+    const deals = isDict(get(pos, 'deals')) ? pos.deals : {};
+    const count = bucket => (whole(get(deals, bucket)) && deals[bucket] > 0 ? deals[bucket] : 0);
+    // A deal agreed and not yet paid (position bucket agreed_note_not_issued) that no inbox list above shows: its credit
+    // note is being recorded (the inbox lists issuing_note in no section, nor note_failed for the payee), or it was paid
+    // between the GET /me these holdings come from and the GET /inbox read after it. Either way its note is not in the
+    // holdings yet: wait, never start another deal on them (that sold a second job to sandbox-exact).
+    if (count('agreed_note_not_issued')) {
+      return plan(ox > 0 ? 4 : 1, [], 'A deal of yours with a sandbox agent is being paid (its credit note is being '
+        + 'recorded on the tracker); wait for it: call valun_status again in a few seconds.');
+    }
     if ((hx > 0 || hm > 0) && ox > 0) {
       return plan(hx > 0 ? 3 : 4, [], 'A set-off of the cycle is due: your Valun client signs it by itself at its '
         + 'next consent run (within about a minute). Call valun_status again.');
     }
+    const paidByTransfer = count('paid_by_transfer');
+    let cleared = get(pos, 'cleared_by_setoff', get(pos, 'settled', 0));
+    cleared = whole(cleared) && cleared > 0 ? cleared : 0;
     if (hm >= notary) return offer(5, SANDBOX_EXACT, 'payer', 'notary');
-    if (hx >= notary) return offer(2, SANDBOX_MALLORY, 'payer', 'notary');
-    if (hx > 0) return offer(3, SANDBOX_EXACT, 'payer', 'notary');
+    if (hx >= notary && paidByTransfer === 0) return offer(2, SANDBOX_MALLORY, 'payer', 'notary');
+    if (hx > 0) return offer(3, SANDBOX_EXACT, 'payer', 'notary');   // once step 2 paid by transfer: pay sandbox-exact with your own note
     if (ox > 0) return offer(4, SANDBOX_MALLORY, 'payee', 'text-stats');
-    const deals = isDict(get(pos, 'deals')) ? pos.deals : {};
-    if (hm === 0 && whole(get(deals, 'paid_by_transfer')) && deals.paid_by_transfer >= 2) {
-      return plan('done', [], 'The tour is complete: you earned 6 PC and spent 6 PC (4 by transfer, 2 with your own note), '
-        + 'and set-offs cancelled 2 PC of your claims and 2 PC of your debts without changing your '
-        + 'net position. You can keep trading with the sandbox agents.');
-    }
+    if (paidByTransfer > 0 && cleared > 0) return plan('done', [], ValunAgent.#tourDoneText(pos, cleared));
     const anyExact = Object.values(listed).some(xs => xs.some(x => get(x, 'counterparty') === SANDBOX_EXACT));
     if (!anyExact && recentlyActive(null, 10 / 60, get(participant, 'joined_at'), this.#now())) {
       return plan(1, [], 'The welcome job from sandbox-exact usually arrives within a minute of joining; call '
         + 'valun_status again.');
     }
-    return offer(1, SANDBOX_EXACT, 'payee', 'text-stats');
+    const p = offer(1, SANDBOX_EXACT, 'payee', 'text-stats');
+    if (paidByTransfer > 0) {                         // spent by transfer, but no set-off has cleared anything: not done yet
+      p.then = 'The tour is not complete: no set-off has cleared any of your claims or debts yet, and you hold no '
+        + "note to spend now. Earn sandbox-exact's note again; then pay sandbox-exact with your own note, and "
+        + 'the 2-cycle that forms is cleared by a set-off. sandbox-exact answers within a few seconds; call '
+        + 'valun_status again for the next step.';
+    }
+    return p;
+  }
+
+  /**
+   * What the tour did, from the participant's own position: earned (hold + spent by transfer + cleared), spent by
+   * transfer (transferred_out) and with its own notes (owes + cleared), and what set-offs cleared. Only a set-off that
+   * cleared something (cleared > 0) ends the tour, so this never claims one that did not happen.
+   */
+  static #tourDoneText(pos, cleared) {
+    const hold = get(pos, 'claims_held'), owe = get(pos, 'owes'), out = get(pos, 'transferred_out');
+    let text = 'The tour is complete: ';
+    if (whole(hold) && whole(owe) && whole(out)) {
+      text += `you earned ${hold + out + cleared} PC and spent ${out + owe + cleared} PC (${out} by transfer, `
+        + `${owe + cleared} with your own note), and `;
+    }
+    text += `set-offs cancelled ${cleared} PC of your claims and ${cleared} PC of your debts without changing your net `
+      + 'position.';
+    if ((whole(hold) && hold > 0) || (whole(owe) && owe > 0)) text += ` You still hold ${shown(hold)} PC and owe ${shown(owe)} PC.`;
+    return text + ' You can keep trading with the sandbox agents.';
   }
 
   async setLimits(a) {
