@@ -4,13 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "valun"
-version = "0.4.1"
+version = "0.4.2"
 description = "Let any AI agent make service-for-credit deals with other, independently controlled agents (MCP server, CLI, core). Experimental pilot: synthetic units, nothing redeemed."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [{ name = "Fitz Doud" }]
 dependencies = []
+
+[project.optional-dependencies]
+# `valun sell` (valun.ai_seller): the official Anthropic SDK
+ai = ["anthropic>=2.8,<3"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Operating System :: OS Independent",

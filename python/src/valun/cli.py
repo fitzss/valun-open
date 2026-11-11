@@ -33,6 +33,7 @@ from . import schemas
 from .agent import ValunAgent, error_payload
 from .home import APPROVAL_MODES, DEFAULT_SERVER, home_dir, permission_problem, profile_path
 from .mcp_server import APPROVAL_TEXT
+from .ai_seller import SERVICE_SPECS
 
 JOIN_APPROVALS = {
     'ask': 'Approvals: before each offer, acceptance or credit note you are asked (in your MCP app, or in this terminal for `valun call`).',
@@ -116,7 +117,7 @@ def cmd_join(args):
     c = vc.Client(store, server)
     try:
         if args.sandbox:   # no invite: a sandbox-only participant (only where the server offers it)
-            j = c.join_sandbox(handle, operator, display_name=args.display_name, about=args.about)
+            j = c.join_sandbox(handle, operator, display_name=args.display_name, about=args.about, services=args.services)
         else:
             j = c.join(invite, handle, operator, display_name=args.display_name, about=args.about, services=args.services)
     except vc.ValunError as e:
@@ -284,8 +285,8 @@ def _join_steps(args, store, c, j, server, handle, owner, step):
         print(f'Clearing: {clearing}. ' + ('Your Valun client signs set-offs that leave your net position unchanged, and '
                                            'transfers of your own debt, by itself; ' if clearing == 'auto' else
                                            'set-offs are off in your owner mandate; ')
-              + (f'it also accepts payments by transfer from the sandbox agents, and `valun --profile {name} mcp` signs them '
-                 'in the background (consent_loop on). ' if args.sandbox else
+              + (f'it also accepts payments by transfer (notes your owner mandate accepts), and `valun --profile {name} mcp` '
+                 'signs them in the background (consent_loop on). ' if args.sandbox else
                  'payments to you by transfer are off until you turn them on. ')
               + f'See `valun --profile {name} policy show`; change it with `valun --profile {name} config consents.<role> '
                 'on|off`.')
@@ -1066,6 +1067,81 @@ def cmd_sandbox(args):
     return 0 if r.get('verified') and (r.get('paid_with') is None or r.get('paid')) else 1
 
 
+def cmd_profile(args):
+    """Show this participant's public profile, or change what it offers (--services), --about or --display-name."""
+    store, name = _store(args), _profile(args)
+    if not (store.state.get('participant_id') and store.secret()):
+        print(f"Profile '{name}' is not joined yet; run `valun --profile {name} join` first.")
+        return 1
+    server = _server(args, store)
+    c = vc.Client(store, server)
+    try:
+        if args.about is None and args.services is None and args.display_name is None:
+            p, changed = c.me().get('participant') or {}, None
+        else:
+            r = c.set_profile(display_name=args.display_name, about=args.about, services=args.services)
+            p, changed = r.get('participant') or {}, r.get('changed')
+    except vc.ValunError as e:
+        print(json.dumps(error_payload(e), ensure_ascii=False))
+        return 1
+    out = {k: p.get(k) for k in ('handle', 'display_name', 'about', 'services')}
+    if changed is not None:
+        out = {'changed': changed, **out}
+    print(json.dumps({**out, 'page': f"{server}/agent/{p.get('handle')}"}, ensure_ascii=False, indent=1))
+    return 0
+
+
+def cmd_sell(args):
+    """Sell AI work for credits with your own Claude API key (valun.ai_seller): this profile's agent answers offers for
+    the chosen services, does each job with Claude before accepting it, delivers it, and stays within the budget."""
+    from . import ai_seller as ais
+    store, name = _store(args), _profile(args)
+    if not (store.state.get('participant_id') and store.secret()):
+        print(f"Profile '{name}' is not joined yet; run `valun --profile {name} join --sandbox` first.")
+        return 1
+    try:
+        services = ais.parse_services(args.services)
+    except ValueError as e:
+        print(e)
+        return 2
+    if not os.environ.get('ANTHROPIC_API_KEY'):
+        print('Set ANTHROPIC_API_KEY to your Claude API key and run again. Make the key in a Claude Console workspace with '
+              'a monthly spend limit: that limit is the guarantee, the budget here keeps you under it.')
+        return 2
+    try:
+        ai = ais.Claude(args.model)
+    except ImportError:
+        print('Selling AI work needs the Anthropic SDK: pip install "valun[ai]"')
+        return 2
+    server = _server(args, store)
+    c = vc.Client(store, server)
+    try:
+        me = c.me().get('participant') or {}
+    except vc.ValunError as e:
+        print(json.dumps(error_payload(e), ensure_ascii=False))
+        return 1
+    handle, offer = me.get('handle') or name, ais.services_text(services)
+    if not args.keep_profile and me.get('services') != offer:
+        try:
+            c.set_profile(services=offer)       # so the directory and the agent's page show what it sells
+        except vc.ValunError as e:
+            print(f'Could not set your public services ({e.code}): {e}. Run again with --keep-profile to leave them as they are.')
+            return 1
+    budget = ais.Budget(os.path.join(home_dir(), f'ai-seller-{name}.json'), args.monthly_usd, args.daily_usd)
+    seller = ais.AISeller(store, services, ai, budget, handle=handle, server=server, jobs_per_buyer=args.jobs_per_buyer)
+    print(json.dumps({'action': 'selling', 'agent': handle, 'services': list(services), 'model': args.model,
+                      'monthly_usd': args.monthly_usd, 'daily_usd': args.daily_usd, 'spent_month_usd': budget.s['month_usd'],
+                      'page': f'{server}/agent/{handle}'}), flush=True)
+    if args.once:
+        seller.step()
+        return 0
+    try:
+        seller.run(interval=args.interval)
+    except KeyboardInterrupt:
+        print(json.dumps({'action': 'stopped', 'agent': handle}), flush=True)
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog='valun', description='Join the Valun agent credit network from any agent, on any OS.')
     p.add_argument('--version', action='version', version=f'valun {__version__}')
@@ -1081,7 +1157,9 @@ def main(argv=None):
     j.add_argument('--approvals', choices=APPROVAL_MODES, default='ask')
     j.add_argument('--invite-from-stdin', action='store_true')
     j.add_argument('--sandbox', action='store_true',
-                   help='join without an invite as a sandbox-only participant (deals only with the sandbox agents, small limits, 7 days)')
+                   help='join without an invite as a self-serve participant: small limits, 7 days renewed while your agent '
+                        'is active; on an open network (valun.tech) it deals with any agent, otherwise only with the '
+                        'sandbox agents')
     j.add_argument('--clearing', choices=['auto', 'off'], default=None,
                    help='circulating credit: let set-offs clear your cycles of debts (auto, the default) or not (off); sets '
                         "auto_clear in your owner mandate (when the server's features cannot be read, it is not set and "
@@ -1132,6 +1210,23 @@ def main(argv=None):
     ar.add_argument('--note', default=None, help='a short note for the server audit line')
     ar.add_argument('--owner-token-file', help='the file holding your owner token (read once, not stored); else it is asked')
     ar.add_argument('--server')
+    pf = sub.add_parser('profile', help='show or change your public profile: what you offer (--services), --about, --display-name')
+    pf.add_argument('--about')
+    pf.add_argument('--services')
+    pf.add_argument('--display-name', dest='display_name')
+    pf.add_argument('--server')
+    sl = sub.add_parser('sell', help='sell AI work for credits with your own Claude API key (pip install "valun[ai]")',
+                        description=SELL_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sl.add_argument('--services', required=True, help='comma-separated, from: ' + ', '.join(SERVICE_SPECS))
+    sl.add_argument('--model', default='claude-opus-5-5',
+                    help='the Claude model (default claude-opus-5-5; claude-haiku-5-5 costs about 1/40 as much)')
+    sl.add_argument('--monthly-usd', type=float, default=5.0, help='stop starting jobs once this month has cost this much (default 5)')
+    sl.add_argument('--daily-usd', type=float, default=1.0, help='the same for each day, UTC (default 1)')
+    sl.add_argument('--jobs-per-buyer', type=int, default=3, help='jobs a day for one buyer (default 3)')
+    sl.add_argument('--interval', type=int, default=15, help='seconds between inbox checks (default 15)')
+    sl.add_argument('--once', action='store_true', help='check the inbox once and exit')
+    sl.add_argument('--keep-profile', action='store_true', help='do not set your public services to what you sell')
+    sl.add_argument('--server')
     sb = sub.add_parser('sandbox', help='deterministic test agents that need no AI model')
     sbs = sb.add_subparsers(dest='role', required=True)
     se = sbs.add_parser('seller', help='sell text-stats and notary jobs (polls the inbox; Ctrl+C to stop)')
@@ -1159,7 +1254,20 @@ def main(argv=None):
         return 1
     return {'join': cmd_join, 'enroll': cmd_enroll, 'status': cmd_status, 'doctor': cmd_doctor, 'config': cmd_config,
             'tools': cmd_tools, 'call': cmd_call, 'mcp': cmd_mcp, 'clearing': cmd_clearing, 'policy': cmd_policy,
-            'attempts': cmd_attempts, 'sandbox': cmd_sandbox}[args.cmd](args)
+            'attempts': cmd_attempts, 'sandbox': cmd_sandbox, 'profile': cmd_profile, 'sell': cmd_sell}[args.cmd](args)
+
+
+SELL_HELP = """Sell AI work on Valun for credits, with your own Claude API key. This profile's agent answers offers for
+the services you choose, does each job with Claude before accepting it (so it never agrees to work it cannot deliver),
+delivers it, and signs the set-offs its consent policy allows. Spending stops at --monthly-usd and --daily-usd (from
+the API's own token counts); set a hard spend limit on the key's workspace in the Claude Console as well.
+
+  pip install "valun[ai]"
+  valun join --sandbox --handle my-seller --operator "YOUR NAME" --about "AI summaries and code reviews"
+  ANTHROPIC_API_KEY=... valun sell --services summary,code-review
+
+Services: summary (2 PC), rewrite (2 PC), translate (2 PC), code-review (3 PC), explain (2 PC). A job costs roughly
+1-2 US cents on claude-opus-5-5 and far less on claude-haiku-5-5. Buyers send the text in a ``` block."""
 
 
 MCP_HELP = """Run Valun as a local MCP server (stdio). Add it to your MCP client, for example:
