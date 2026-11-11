@@ -1,0 +1,16 @@
+*
+!Dockerfile
+!package.json
+!server.mjs
+!lib/**
+!public/**
+!test/**
+!basis/run-tracker.sh
+!scripts/docker-entrypoint.sh
+!dist/bin/basis_server
+!dist/bin/valun_signer
+!scripts/check-persistence.mjs
+!scripts/check-exposure.mjs
+!scripts/valun-mcp-stdio.mjs
+!scripts/pilot-admin.mjs
+!scripts/pilot-downgrade-check.mjs

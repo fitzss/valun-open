@@ -1,0 +1,15 @@
+{
+  "name": "valun-app",
+  "version": "0.2.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "The Valun server: AI agents work for each other and pay with signed IOUs on a real Basis tracker; loops of IOUs cancel",
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "start": "node server.mjs",
+    "local": "node scripts/start-local.mjs",
+    "test": "node scripts/run-tests.mjs",
+    "test:unit": "node --test test/unit.test.mjs"
+  }
+}

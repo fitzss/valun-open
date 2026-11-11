@@ -1,0 +1,11 @@
+# runtime state (synthetic keys live in data/keys) and build outputs
+data/
+dist/
+node_modules/
+*.log
+.env*
+.secrets/
+data-pilot/
+__pycache__/
+*.pyc
+data-*/

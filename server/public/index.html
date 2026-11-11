@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valun · credit desk</title>
+<link rel="stylesheet" href="/styles.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">Valun</span><span class="sub">agent credit desk</span><span id="deployment" class="chip"></span></div>
+  <a class="navlink" href="/pilot">Pilot network (experimental)</a>
+  <label class="actas">Acting as
+    <select id="actas"></select>
+  </label>
+</header>
+
+<div class="banner" id="banner">
+  <strong>Demo world.</strong> Synthetic identities, no real funds, no mainnet.
+  Credit here is <em>unbacked</em>: IOU notes recorded by a real Basis tracker running beside this app, with no blockchain connected.
+  <span id="custody"></span>
+  <a href="#about">What is real here?</a>
+</div>
+
+<nav class="tabs" id="tabs">
+  <a href="#desk" data-tab="desk">Desk</a>
+  <a href="#obligations" data-tab="obligations">Obligations</a>
+  <a href="#participants" data-tab="participants">Participants</a>
+  <a href="#ledger" data-tab="ledger">Basis ledger</a>
+  <a href="#testnet" data-tab="testnet">Testnet evidence</a>
+  <a href="#about" data-tab="about">About</a>
+</nav>
+
+<main>
+  <section id="tab-desk" class="tab">
+    <div class="grid2">
+      <div class="card">
+        <h2>Awaiting <span class="who"></span>'s decision</h2>
+        <div id="inbox"></div>
+      </div>
+      <div class="card">
+        <h2>Offer credit as <span class="who"></span></h2>
+        <p class="hint">You sign a Basis note raising what you owe the recipient. Nothing reaches the tracker until they accept.</p>
+        <form id="offer-form" class="form">
+          <label>To <select name="recipientId" required></select></label>
+          <label>Amount (ERG-denominated, unbacked) <input name="amountErg" inputmode="decimal" placeholder="1.5" required></label>
+          <label>Purpose <span class="tag valun">Valun term</span><input name="purpose" maxlength="200" placeholder="What this credit is for"></label>
+          <label>Due <span class="tag valun">Valun term, not enforced by Basis</span><input name="dueAt" type="date"></label>
+          <button type="submit">Sign and send offer</button>
+          <div class="msg" id="offer-msg"></div>
+        </form>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Positions <span class="tag basis">from the Basis tracker</span></h2>
+      <div id="positions" class="positions"></div>
+    </div>
+    <div class="card">
+      <h2>Recent obligations involving <span class="who"></span></h2>
+      <div id="mine"></div>
+    </div>
+  </section>
+
+  <section id="tab-obligations" class="tab">
+    <div class="split">
+      <div class="card list"><h2>All offers and obligations</h2><div id="offer-list"></div></div>
+      <div class="card detail" id="offer-detail"><p class="hint">Select an obligation to follow it from offer to its current state, with the evidence for each step.</p></div>
+    </div>
+  </section>
+
+  <section id="tab-participants" class="tab">
+    <div class="grid2">
+      <div class="card">
+        <h2>Participants</h2>
+        <div id="participant-list"></div>
+      </div>
+      <div class="card">
+        <h2>New participant</h2>
+        <p class="hint">Creates a fresh secp256k1 key pair with Basis's own key generation. The demo server holds the secret key.</p>
+        <form id="participant-form" class="form">
+          <label>Name <input name="name" maxlength="40" required></label>
+          <label>Kind <select name="kind"><option value="agent">agent</option><option value="operator">operator (human)</option></select></label>
+          <label>About <input name="about" maxlength="200"></label>
+          <button type="submit">Create identity</button>
+          <div class="msg" id="participant-msg"></div>
+        </form>
+        <h2 class="mt">Acceptance policy for <span class="who"></span> <span class="tag basis">Basis</span></h2>
+        <p class="hint">Signed by <span class="who"></span>'s key and uploaded to the tracker. The tracker evaluates it on request (<code>/acceptance/check</code>); it does <strong>not</strong> block notes on its own. Valun shows the result before you decide.</p>
+        <form id="policy-form" class="form">
+          <label>Mode <select name="mode"><option value="whitelist">Only trusted issuers</option><option value="accept-any">Accept any issuer</option></select></label>
+          <fieldset id="policy-trusted"><legend>Trusted issuers</legend></fieldset>
+          <label>Limit per trusted issuer (ERG, cumulative) <input name="maxDebtErg" inputmode="decimal" placeholder="5"></label>
+          <button type="submit">Sign and upload policy</button>
+          <div class="msg" id="policy-msg"></div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-ledger" class="tab">
+    <div class="card">
+      <h2>Notes in the tracker <span class="tag basis">local Basis</span></h2>
+      <p class="hint">Read directly from <code>basis_server</code>. One cumulative note per issuer→recipient pair; the recipient holds the claim. Status <code>local_only</code> means no on-chain commitment exists.</p>
+      <div id="ledger-notes"></div>
+      <div id="tracker-state" class="mono small"></div>
+    </div>
+    <div class="card">
+      <h2>Reconciliation: Valun records vs tracker</h2>
+      <p class="hint">The tracker records any validly signed note, with or without the recipient's consent. Valun checks that every tracker total is explained by obligations the recipient accepted here.</p>
+      <div id="reconcile"></div>
+    </div>
+    <div class="card">
+      <h2>Valun activity log</h2>
+      <div id="audit" class="mono small"></div>
+    </div>
+  </section>
+
+  <section id="tab-testnet" class="tab">
+    <div class="card">
+      <h2>The funded Basis note on Ergo testnet <span class="tag testnet">testnet · recorded</span></h2>
+      <p class="hint">This happened once, on 2026-10-31 and 2026-11-01, with testnet coins and the owner's own keys. Nothing on this page signs or sends anything.</p>
+      <div id="testnet-recorded"></div>
+      <button id="testnet-live-btn">Re-read from the public testnet explorer now</button>
+      <div id="testnet-live"></div>
+    </div>
+  </section>
+
+  <section id="tab-about" class="tab">
+    <div class="card prose" id="about"></div>
+  </section>
+</main>
+<footer><span id="status-line"></span></footer>
+</body>
+</html>

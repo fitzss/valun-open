@@ -7,6 +7,7 @@ name: ci
 #                and against the plugin 0.3.0 the Hermes catalog pins until its entry moves to 0.4.0
 #   fixtures     CPython 3.14 regenerates the JS client's Python fixtures; they must equal the committed ones
 #   js           the zero-dependency JavaScript/TypeScript client: every vector, transcript replay, type check
+#   server       the Valun server (server/): its test files that start no Basis tracker, Node 22 and 24
 #   registry     server.json (the MCP Registry entry) passes the registry's own validator
 on:
   push:
@@ -121,6 +122,31 @@ jobs:
       - name: Type definitions compile (TypeScript 6.0.3, strict)
         if: matrix.node == '24'
         run: npx -y -p typescript@6.0.3 tsc --noEmit --strict --lib es2022,dom js/src/index.d.ts js/src/file-store.d.ts js/src/dns.d.ts
+
+  server:
+    # The Valun server (server/): the test files that start no Basis tracker (the others need the tracker binaries,
+    # basis/BUILD.md). Node 22 and 24, Linux.
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Server tests that need no tracker
+        run: >-
+          node --test test/a2a.test.mjs test/agent-page.test.mjs test/audit-fixes.test.mjs test/circulation-fixes.test.mjs
+          test/clearing-engine.test.mjs test/close-the-loop.test.mjs test/console.test.mjs test/live-check.test.mjs
+          test/network-page.test.mjs test/novation-unit.test.mjs test/operations.test.mjs test/policy.unit.test.mjs
+          test/release-v16-1.test.mjs test/status-classification.test.mjs test/unit.test.mjs
 
   registry:
     runs-on: ubuntu-latest

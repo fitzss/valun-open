@@ -38,6 +38,7 @@ repository.
 |---|---|---|
 | `python/` | the `valun` package: framework-neutral core (client, Basis signer, delivery measurements, the nine agent tools), CLI, local MCP server (MCP 2024-11-05 through 2026-07-28), deterministic sandbox agents | on PyPI (`pip install valun`, with provenance) and in the [MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.fitzss/valun) as `io.github.fitzss/valun`; live deals on the pilot (below). 0.4.1 (2026-11-11): circulating credit for server release v16 on tracker v3.2 (since 0.4.0, 2026-11-10), with the sandbox tour fix; 428 tests (official MCP SDK, both protocol generations) |
 | `js/` | the `@fitzdoud/valun` JavaScript/TypeScript client (npm refused the plain name as too close to `vaul`): zero dependencies, Node 18+ and browsers (the file store is Node-only); Basis signer with its own BLAKE2b and secp256k1, client with stricter checks than required | on npm (`npm install @fitzdoud/valun`, with provenance). 0.4.1 (2026-11-11) is the same circulation client as the Python package; 537 tests: every vector file, the HTTP transcript replayed, signatures cross-checked with the Python signer, the nine tools and the signing firewall matched to the Python core; types compile (TypeScript strict) |
+| `server/` | the Valun server behind valun.tech (Node 22+, no npm dependencies): the pilot API, the sandbox agents, the clearing engine, the open network, agent pages, the A2A front door; Dockerfile and fly.toml | open source since 2026-11-11 (MIT), a snapshot of the deployed server; its tests that need no tracker run in CI (174), the rest need the Basis tracker binaries (`server/basis/BUILD.md`) |
 | `spec/` | the `valun-deal/1` protocol, precise enough for a TypeScript/Go/Rust client, plus conformance vectors generated from the real server code | revision v14 for server release v16 (valun-app `b7ecca0`, on tracker v3.2); 1461 checks against the package with the circulation and consent tiers required, 0 disagreements; open questions with status |
 | `docs/STANDARDS.md` | how Valun relates to MCP, A2A, AP2, x402, DIDs, Basis (sourced, dated) | done |
 | `live-tests/` | scripts that run real deals on the live pilot | used for the evidence below |
@@ -90,4 +91,5 @@ Hermes Agent, Claude Code and other MCP apps, and any agent with a shell. The ne
 - The Hermes plugin carries this package's core unchanged (CI checks it). Plugin 0.4.1 (`29c9b07`) carries the 0.4.1
   core; its catalog entry is in the open catalog PR awaiting the Hermes maintainers.
 - Not yet a Claude Desktop bundle (`.mcpb`).
-- The Valun pilot server itself is not open source yet (the protocol spec and vectors are).
+- The pinned tracker v3.2 is built from a Valun fork of Basis (`server/basis/BUILD.md`); without that binary the server
+  runs with circulating credit off.

@@ -1,0 +1,385 @@
+{
+ "generated_by": "valun-open python/src/valun/sandbox.py",
+ "stats": [
+  {
+   "text": "The cat saw the dog.\nThe end",
+   "text_stats": {
+    "words": 7,
+    "characters": 28,
+    "lines": 2,
+    "unique_words": 5,
+    "sha256": "8f04b4b13ea98cfe9ff998f6354d157da61e2a5c635836734e97e5ede7759009",
+    "top_words": [
+     [
+      "the",
+      3
+     ],
+     [
+      "cat",
+      1
+     ],
+     [
+      "dog.",
+      1
+     ],
+     [
+      "end",
+      1
+     ],
+     [
+      "saw",
+      1
+     ]
+    ]
+   },
+   "notary": {
+    "sha256": "8f04b4b13ea98cfe9ff998f6354d157da61e2a5c635836734e97e5ede7759009",
+    "bytes": 28
+   }
+  },
+  {
+   "text": "",
+   "text_stats": {
+    "words": 0,
+    "characters": 0,
+    "lines": 0,
+    "unique_words": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "top_words": []
+   },
+   "notary": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+   }
+  },
+  {
+   "text": "\n",
+   "text_stats": {
+    "words": 0,
+    "characters": 1,
+    "lines": 1,
+    "unique_words": 0,
+    "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "top_words": []
+   },
+   "notary": {
+    "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "bytes": 1
+   }
+  },
+  {
+   "text": "a\n\nb\n",
+   "text_stats": {
+    "words": 2,
+    "characters": 5,
+    "lines": 3,
+    "unique_words": 2,
+    "sha256": "770423513bd0765c18e500000baec91976bcd8267a245437b32572665c6ac370",
+    "top_words": [
+     [
+      "a",
+      1
+     ],
+     [
+      "b",
+      1
+     ]
+    ]
+   },
+   "notary": {
+    "sha256": "770423513bd0765c18e500000baec91976bcd8267a245437b32572665c6ac370",
+    "bytes": 5
+   }
+  },
+  {
+   "text": "naïve café ☕ Naïve",
+   "text_stats": {
+    "words": 4,
+    "characters": 18,
+    "lines": 1,
+    "unique_words": 3,
+    "sha256": "141371128120a3f1798804bc2a45e92396f3610df45a0423f006d128293a1674",
+    "top_words": [
+     [
+      "naïve",
+      2
+     ],
+     [
+      "café",
+      1
+     ],
+     [
+      "☕",
+      1
+     ]
+    ]
+   },
+   "notary": {
+    "sha256": "141371128120a3f1798804bc2a45e92396f3610df45a0423f006d128293a1674",
+    "bytes": 23
+   }
+  },
+  {
+   "text": "Straße STRASSE straße",
+   "text_stats": {
+    "words": 3,
+    "characters": 21,
+    "lines": 1,
+    "unique_words": 2,
+    "sha256": "89f7f45beae2efdc2f9e2e88f4ce7cc081cbce05b3677ec7368e85214c11006c",
+    "top_words": [
+     [
+      "straße",
+      2
+     ],
+     [
+      "strasse",
+      1
+     ]
+    ]
+   },
+   "notary": {
+    "sha256": "89f7f45beae2efdc2f9e2e88f4ce7cc081cbce05b3677ec7368e85214c11006c",
+    "bytes": 23
+   }
+  },
+  {
+   "text": "ΟΔΟΣ οδος Οδός",
+   "text_stats": {
+    "words": 3,
+    "characters": 14,
+    "lines": 1,
+    "unique_words": 2,
+    "sha256": "9e4f63557799cff44288afe843c3d13c932f22e04c37a11ee65fbbee56d9ab0f",
+    "top_words": [
+     [
+      "οδος",
+      2
+     ],
+     [
+      "οδός",
+      1
+     ]
+    ]
+   },
+   "notary": {
+    "sha256": "9e4f63557799cff44288afe843c3d13c932f22e04c37a11ee65fbbee56d9ab0f",
+    "bytes": 26
+   }
+  },
+  {
+   "text": "İstanbul ISTANBUL",
+   "text_stats": {
+    "words": 2,
+    "characters": 17,
+    "lines": 1,
+    "unique_words": 2,
+    "sha256": "352b9e49713cdbc50fd60b1b6955009841bbf420618e46070c523674c8b635cb",
+    "top_words": [
+     [
+      "istanbul",
+      1
+     ],
+     [
+      "i̇stanbul",
+      1
+     ]
+    ]
+   },
+   "notary": {
+    "sha256": "352b9e49713cdbc50fd60b1b6955009841bbf420618e46070c523674c8b635cb",
+    "bytes": 18
+   }
+  },
+  {
+   "text": "tab\tsep nbsp　ideo line para",
+   "text_stats": {
+    "words": 6,
+    "characters": 27,
+    "lines": 3,
+    "unique_words": 6,
+    "sha256": "7e877174e2a3b067e7a709c3b93edeb87061f0aa89c74c66fc5726ad22f3d630",
+    "top_words": [
+     [
+      "ideo",
+      1
+     ],
+     [
+      "line",
+      1
+     ],
+     [
+      "nbsp",
+      1
+     ],
+     [
+      "para",
+      1
+     ],
+     [
+      "sep",
+      1
+     ],
+     [
+      "tab",
+      1
+     ]
+    ]
+   },
+   "notary": {
+    "sha256": "7e877174e2a3b067e7a709c3b93edeb87061f0aa89c74c66fc5726ad22f3d630",
+    "bytes": 34
+   }
+  },
+  {
+   "text": "emoji 👩‍💻 and 😀 😀",
+   "text_stats": {
+    "words": 5,
+    "characters": 17,
+    "lines": 1,
+    "unique_words": 4,
+    "sha256": "a47f80104fd0816d8fe2f876d915feba902a385e9a85e3634ea697dd21aca2fc",
+    "top_words": [
+     [
+      "😀",
+      2
+     ],
+     [
+      "and",
+      1
+     ],
+     [
+      "emoji",
+      1
+     ],
+     [
+      "👩‍💻",
+      1
+     ]
+    ]
+   },
+   "notary": {
+    "sha256": "a47f80104fd0816d8fe2f876d915feba902a385e9a85e3634ea697dd21aca2fc",
+    "bytes": 31
+   }
+  },
+  {
+   "text": "zz aa ZZ Aa 😀 Ａ é é",
+   "text_stats": {
+    "words": 8,
+    "characters": 20,
+    "lines": 1,
+    "unique_words": 6,
+    "sha256": "652da86bccb9eeb48525c0300234dabf86314e7dc457ee8d222c3d80da6a5da9",
+    "top_words": [
+     [
+      "aa",
+      2
+     ],
+     [
+      "zz",
+      2
+     ],
+     [
+      "é",
+      1
+     ],
+     [
+      "é",
+      1
+     ],
+     [
+      "ａ",
+      1
+     ],
+     [
+      "😀",
+      1
+     ]
+    ]
+   },
+   "notary": {
+    "sha256": "652da86bccb9eeb48525c0300234dabf86314e7dc457ee8d222c3d80da6a5da9",
+    "bytes": 27
+   }
+  },
+  {
+   "text": "می‌خواهم می‌خواهم",
+   "text_stats": {
+    "words": 2,
+    "characters": 17,
+    "lines": 1,
+    "unique_words": 1,
+    "sha256": "46c4a2d6741d63923232043c485a49599b166170ff68d30a7ea3dca888fd27f5",
+    "top_words": [
+     [
+      "می‌خواهم",
+      2
+     ]
+    ]
+   },
+   "notary": {
+    "sha256": "46c4a2d6741d63923232043c485a49599b166170ff68d30a7ea3dca888fd27f5",
+    "bytes": 35
+   }
+  },
+  {
+   "text": "one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three one two three ",
+   "text_stats": {
+    "words": 90,
+    "characters": 420,
+    "lines": 1,
+    "unique_words": 3,
+    "sha256": "8b63c7177b1ade2222020695464dd7196735d7a475dadd2f526cf3d967a841ff",
+    "top_words": [
+     [
+      "one",
+      30
+     ],
+     [
+      "three",
+      30
+     ],
+     [
+      "two",
+      30
+     ]
+    ]
+   },
+   "notary": {
+    "sha256": "8b63c7177b1ade2222020695464dd7196735d7a475dadd2f526cf3d967a841ff",
+    "bytes": 420
+   }
+  }
+ ],
+ "extract": [
+  {
+   "description": "text-stats for this text:\n```\nhello  world\nsecond line\n```\nthanks",
+   "text": "hello  world\nsecond line"
+  },
+  {
+   "description": "stats please\nTEXT: line one\nline two",
+   "text": "line one\nline two"
+  },
+  {
+   "description": "text-stats analysis of: \"Agents that can make promises need limits their owners set.\" - exact counts",
+   "text": "Agents that can make promises need limits their owners set."
+  },
+  {
+   "description": "of “curly quoted”",
+   "text": "curly quoted"
+  },
+  {
+   "description": "compare \"a\" with \"b\"",
+   "text": null
+  },
+  {
+   "description": "no text here",
+   "text": null
+  },
+  {
+   "description": "```text\nx\n```",
+   "text": "x"
+  }
+ ]
+}

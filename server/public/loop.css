@@ -1,0 +1,78 @@
+/* A loop card (/loop/<id>, rendered by lib/pilot/loops.mjs): one dark theme, from 360px up. Fonts are self-hosted
+   (public/fonts, SIL OFL): the CSP allows no external font. */
+@font-face { font-family: "Jost"; font-style: normal; font-weight: 100 900; font-display: swap; src: url("/fonts/jost-latin.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/jetbrains-mono-latin-400.woff2") format("woff2"); }
+
+:root {
+  --space: #050608;
+  --line: #eef0f4;
+  --dust: #8a909c;
+  --rule: #1b1e26;
+  --rainbow: linear-gradient(90deg, #ff5a5f, #ffc145, #3ddc97, #4f7cff, #9b5cff);
+  --sans: "Jost", "Futura", "Century Gothic", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; background: var(--space); }
+body { margin: 0; background: var(--space); color: var(--line); font: 300 17px/1.6 var(--sans); overflow-x: hidden; }
+a { color: var(--line); text-decoration-color: var(--dust); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--line); }
+:focus-visible { outline: 1.5px solid var(--line); outline-offset: 3px; }
+code { font-family: var(--mono); font-weight: 400; font-size: 0.9em; overflow-wrap: anywhere; }
+
+.card { max-width: 760px; margin: 0 auto; padding: 22px 16px 40px; }
+.top { padding-bottom: 2.4rem; }
+.brand { display: inline-flex; align-items: center; gap: 0.75rem; color: var(--line); text-decoration: none; }
+.mark { width: 24px; height: 24px; display: block; flex: none; }
+.wordmark { font-weight: 300; font-size: 0.95rem; letter-spacing: 0.5em; text-transform: uppercase; margin-right: -0.5em; }
+.eyebrow { font: 400 0.72rem/1.4 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dust); margin: 0 0 1rem; }
+h1 { font-weight: 300; font-size: clamp(1.6rem, 6vw, 2.6rem); line-height: 1.25; margin: 0 0 1rem; overflow-wrap: anywhere; }
+.route .h, .route-sm .h { font-family: var(--mono); font-weight: 400; font-size: 0.82em; display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
+.route .arr { color: var(--dust); }
+.more { margin: 0 0 1rem; color: var(--dust); font-size: 0.92rem; overflow-wrap: anywhere; }
+.route-sm .arr { color: var(--dust); }
+
+.rings { display: grid; gap: 8px; justify-items: center; margin: 0.4rem 0 1rem; }
+.ring { width: 100%; max-width: 460px; height: auto; }
+.ring .halo { fill: none; stroke: var(--rule); stroke-width: 1; }
+.ring .arc { fill: none; stroke: var(--line); stroke-width: 1.2; stroke-linecap: round; }
+.ring .ah { fill: none; stroke: var(--line); stroke-width: 1.4; }
+.ring .node circle { fill: var(--space); stroke: var(--line); stroke-width: 1.6; }
+.ring .node text { fill: var(--line); font: 400 13px var(--mono); }
+.ring .mid { fill: var(--space); font: 400 22px var(--sans); }
+
+.lede { margin: 0 0 1.2rem; font-size: 1.12rem; max-width: 34em; }
+.bar { height: 2px; width: 100%; max-width: 220px; background: var(--rainbow); margin: 0 0 1.6rem; }
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 2rem; padding: 1rem 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.facts div { min-width: 0; }
+.facts dt { font: 400 0.68rem/1.4 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dust); margin-bottom: 0.3rem; }
+.facts dd { margin: 0; font: 400 0.95rem/1.4 var(--mono); overflow-wrap: anywhere; }
+
+.cta { display: flex; flex-wrap: wrap; gap: 0.8rem; margin: 0 0 2rem; }
+.btn { display: inline-block; padding: 0.7em 1.3em; border: 1px solid var(--dust); border-radius: 2px; color: var(--line); text-decoration: none;
+  font-weight: 400; font-size: 0.98rem; letter-spacing: 0.02em; }
+.btn:hover { border-color: var(--line); }
+.btn.primary { background: var(--line); border-color: var(--line); color: var(--space); }
+.btn.primary:hover { background: #ffffff; }
+
+.honest { color: var(--dust); font-size: 0.88rem; border-top: 1px solid var(--rule); padding-top: 1.2rem; }
+.honest p { margin: 0 0 0.5rem; }
+.honest a { color: var(--dust); }
+.honest code { color: var(--line); }
+
+@media (max-width: 480px) {
+  body { font-size: 16px; }
+  .facts { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .wordmark { letter-spacing: 0.4em; margin-right: -0.4em; }
+}
+
+/* agent pages (/agent/<handle>, lib/pilot/agents.mjs) */
+.offers { margin: 0 0 1.4rem; overflow-wrap: anywhere; }
+.list { list-style: none; padding: 0; margin: 0 0 2rem; }
+.list li { padding: 0.55rem 0; border-bottom: 1px solid var(--rule); font-size: 0.95rem; overflow-wrap: anywhere; }
+.list .h { font-family: var(--mono); font-weight: 400; font-size: 0.85em; }
+.list .arr { color: var(--dust); }
+pre.hire { background: #0b0d12; border: 1px solid var(--rule); border-radius: 2px; padding: 0.9rem 1rem; margin: 0 0 0.8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.small { color: var(--dust); font-size: 0.9rem; margin: 0 0 1.6rem; }
