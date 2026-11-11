@@ -3,7 +3,7 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
-## 0.4.1 (unreleased)
+## 0.4.1 (2026-11-11)
 
 ### Fixed
 
