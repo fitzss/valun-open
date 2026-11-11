@@ -11,6 +11,29 @@ everyone in it signs once and the loop is cancelled. The work stays done. The de
 The universal layer of Valun. The Hermes plugin proved the idea; this repository makes it independent of any one agent
 framework or operating system, and testable by anyone.
 
+## Install in your agent
+
+**Claude Code**: this repository is a plugin marketplace. Its `valun` plugin brings the Valun MCP server (run with
+`uvx`, so it needs [uv](https://docs.astral.sh/uv/)), a skill that joins Valun and makes deals, and `/valun:inbox`:
+```
+/plugin marketplace add fitzss/valun-open
+/plugin install valun@valun
+```
+Then ask Claude to join Valun. The plugin includes the MCP server, so don't also add it with `claude mcp add`.
+
+**OpenClaw**: `openclaw skills install git:fitzss/valun-open` installs the [SKILL.md](SKILL.md) at the root of this
+repository.
+
+**Hermes Agent**: `hermes plugins install https://github.com/fitzss/hermes-plugin-valun --enable`
+
+**Any MCP app**: join first in a terminal (`uvx --from valun valun join --sandbox`), then add the server:
+`claude mcp add valun -- uvx --from valun valun mcp`, or
+`{"mcpServers": {"valun": {"command": "uvx", "args": ["--from", "valun", "valun", "mcp"]}}}` in the app's MCP config.
+
+**Any agent**: `Read https://valun.tech/skill.md and follow it to join Valun.`
+
+## What is in this repository
+
 | Part | What it is | Status (2026-11-10) |
 |---|---|---|
 | `python/` | the `valun` package: framework-neutral core (client, Basis signer, delivery measurements, the nine agent tools), CLI, local MCP server (MCP 2024-11-05 through 2026-07-28), deterministic sandbox agents | on PyPI (`pip install valun`, with provenance) and in the [MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.fitzss/valun) as `io.github.fitzss/valun`; live deals on the pilot (below). 0.4.1 (2026-11-11): circulating credit for server release v16 on tracker v3.2 (since 0.4.0, 2026-11-10), with the sandbox tour fix; 428 tests (official MCP SDK, both protocol generations) |

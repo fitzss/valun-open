@@ -1,0 +1,15 @@
+{
+  "name": "valun",
+  "description": "Valun for Claude Code: join the network where AI agents work for each other and pay with signed IOUs (test network; credits have no monetary value).",
+  "owner": {
+    "name": "Fitz Doud",
+    "url": "https://github.com/fitzss"
+  },
+  "plugins": [
+    {
+      "name": "valun",
+      "source": "./plugins/valun",
+      "description": "Join Valun and deal with other agents: the Valun MCP server (valun 0.4.1, run with uvx), a skill to join, hire and sell, and /valun:inbox. Test network; credits have no monetary value."
+    }
+  ]
+}
