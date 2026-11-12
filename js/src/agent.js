@@ -134,6 +134,35 @@ export const TOUR_AFTER = Object.freeze({1: Object.freeze([3, 0]), 2: Object.fre
   4: Object.freeze([2, 0]), 5: Object.freeze([0, 0])});
 
 /** The honest labels for a server with circulating credit (true) or without it: {settlement, not_settled, honest_labels, real_vs_simulated}. */
+export const BRIEF_NOTE = 'PC are pilot credits with no monetary value: a credit note is an outstanding promise, and nothing is redeemed. '
+  + 'This is the brief view; call valun_status with brief=false for your mandate, consent policy and honest labels.';
+
+/**
+ * valun_status's brief view (brief=true, for small models), made from the full view, so it reads and signs exactly the
+ * same: who you are, your owner's objective and goals, the limits in force, where approvals happen, what you hold and
+ * owe, the notes you can spend, the payments and consents in progress, the next sandbox step, and one line on what PC
+ * are (the honest labels stay in the full view). The same as the Python core's brief_status.
+ */
+export function briefStatus(out) {
+  const d = v => (isDict(v) ? v : {});
+  const you = d(get(out, 'you')), pos = d(get(out, 'position'));
+  const b = {brief: true, connected: get(out, 'connected'),
+    you: Object.fromEntries(['id', 'handle', 'sandbox_expires_at'].filter(k => get(you, k) !== null).map(k => [k, you[k]])),
+    objective_from_your_owner: get(out, 'objective_from_your_owner'), goals_your_owner_told_you: get(out, 'goals_your_owner_told_you'),
+    limits_in_force: get(out, 'limits_in_force'), approvals: get(out, 'approvals'),
+    you_hold_PC: get(pos, 'claims_held'), you_owe_PC: get(pos, 'owes'), net_PC: get(pos, 'net')};
+  if ('notes_you_can_spend' in out) {
+    b.notes_you_can_spend = (get(out, 'notes_you_can_spend') || []).filter(isDict)
+      .map(n => Object.fromEntries(['issuer', 'amount_PC', 'checked_by_your_client'].map(k => [k, get(n, k)])));
+    b.payments_in_progress = (get(out, 'payments_in_progress') || []).length;
+    b.consents_pending = get(d(get(out, 'clearing')), 'consents_pending');
+  }
+  const step = get(out, 'sandbox_next_steps');
+  if (isDict(step)) b.sandbox_next_steps = Object.fromEntries(['tour_step', 'next_calls', 'then'].filter(k => k in step).map(k => [k, step[k]]));
+  b.note = BRIEF_NOTE;
+  return b;
+}
+
 export function labels(circulating) {
   if (circulating) {
     return {settlement: SETTLEMENT_NOTE_CIRCULATION, not_settled: NOT_SETTLED_CIRCULATION, honest_labels: HONEST_LABELS_CIRCULATION,
@@ -531,7 +560,7 @@ export class ValunAgent {
       throw new TypeError('ValunAgent needs a valun Client');
     }
     const {approvals = '', checkLinkHosts = true, resolveHost = null, hostTimeoutMs = 4000, setupHint = null, now = null,
-      processConsents = true, consentsOnReads = false, declareRoles = null} = options;
+      processConsents = true, consentsOnReads = false, declareRoles = null, briefStatus = false} = options;
     if (resolveHost !== null && typeof resolveHost !== 'function') throw new TypeError('resolveHost must be a function');
     this.#client = client;
     this.#now = now || (() => Date.now());
@@ -542,6 +571,7 @@ export class ValunAgent {
     this.setupHint = setupHint || DEFAULT_SETUP_HINT;
     this.processConsents = processConsents === true;
     this.consentsOnReads = consentsOnReads === true;
+    this.briefStatus = briefStatus === true;   // valun_status answers the brief view unless brief=false is passed
     this.declareRoles = declareRoles === null || declareRoles === undefined ? this.processConsents : declareRoles === true;
     client.declareRoles = this.declareRoles;          // the client's X-Valun-Features header follows the agent (D-3 b)
     /** The feature tags the last GET /info this agent read listed (null: none read yet). */
@@ -1284,7 +1314,14 @@ export class ValunAgent {
   }
 
   // ---------- tools ----------
-  async status() {
+  async status(a) {
+    const brief = isDict(a) && 'brief' in a ? a.brief : this.briefStatus;
+    if (typeof brief !== 'boolean') throw new ValunError('bad_arguments', 'brief must be true or false');
+    const out = await this.#fullStatus();
+    return brief ? briefStatus(out) : out;
+  }
+
+  async #fullStatus() {
     const c = this.client();
     const me = await c.me(), info = await c.info();
     const circulating = this.#remember(info).includes(CIRCULATION);

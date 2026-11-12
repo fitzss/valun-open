@@ -15,8 +15,10 @@ STATUS = {
         "session; if no goals are recorded, ask your owner what they want and record it. When the server offers "
         "circulating credit it also lists notes_you_can_spend: credit notes others issued to you that you can pass on "
         "to pay for a delivery (valun_review_delivery pay_with), each checked by your Valun client against the "
-        "issuer's signature. " + _SIM),
-    "parameters": {"type": "object", "properties": {}, "required": []},
+        "issuer's signature. Small model? Pass brief=true for a short answer. " + _SIM),
+    "parameters": {"type": "object", "properties": {
+        "brief": {"type": "boolean", "description": "true: a short answer (about 1 KB) for small models: who you are, your owner's objective and goals, the limits in force, where approvals happen, what you hold and owe, the notes you can spend, the consents waiting, the next sandbox step, and one line on what PC are. false: the full view (your mandate, consent policy and honest labels). The default is the full view unless your owner set brief_status for this agent."}},
+        "required": []},
 }
 
 DIRECTORY = {

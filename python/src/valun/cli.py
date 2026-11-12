@@ -520,6 +520,12 @@ def cmd_config(args):
         changes = {'server': val.rstrip('/')}
     elif key == 'check_link_hosts':
         changes = {'check_link_hosts': val.lower() in ('on', 'true', '1', 'yes')}
+    elif key == 'brief_status':
+        flag = _on(val)
+        if flag is None:
+            print('brief_status must be on or off')
+            return 1
+        changes = {'brief_status': flag}
     elif key in ('consents.setoff', 'consents.as_issuer', 'consents.as_new_creditor', 'consent_loop'):
         flag = _on(val)
         if flag is None:
@@ -535,8 +541,8 @@ def cmd_config(args):
             print('consents.max_PC must be a whole number of PC (0..100000), or none for no cap')
             return 1
     else:
-        print('keys: approvals, server, check_link_hosts, consents.setoff, consents.as_issuer, consents.as_new_creditor, '
-              'consents.max_PC, consent_loop')
+        print('keys: approvals, server, check_link_hosts, brief_status, consents.setoff, consents.as_issuer, '
+              'consents.as_new_creditor, consents.max_PC, consent_loop')
         return 1
 
     def apply(state):       # on the profile as it is now (another process, such as `valun mcp`, may have changed it)
@@ -564,6 +570,10 @@ def cmd_config(args):
         if key == 'consent_loop':
             print(f'The consent loop runs inside `valun --profile {_profile(args)} mcp` (restart it to start the loop); it '
                   'signs only what your consent policy and owner mandate allow.')
+        if key == 'brief_status':
+            print('valun_status now answers its ' + ('brief view (for small models); a call can still pass brief=false.'
+                                                    if store.state[key] else 'full view; a call can still pass brief=true.')
+                  + f' Restart `valun --profile {_profile(args)} mcp` for your MCP app to use it.')
     return 0
 
 
@@ -582,7 +592,7 @@ def _agent(args, store):
     mode = store.state.get('approvals', 'ask')
     return ValunAgent(store, approvals=APPROVAL_TEXT.get(mode, ''), check_link_hosts=store.state.get('check_link_hosts', True),
                       setup_hint=f'run `valun --profile {_profile(args)} join` in a terminal', server=_server(args, store),
-                      consents_on_reads=True), mode
+                      consents_on_reads=True, brief_status=store.state.get('brief_status') is True), mode
 
 
 def cmd_call(args):
@@ -624,7 +634,8 @@ def cmd_mcp(args):
               'Starting anyway (tools will say so).', file=sys.stderr)
     return run(store, approvals=store.state.get('approvals', 'ask'), server=_server(args, store),
                check_link_hosts=store.state.get('check_link_hosts', True),
-               setup_hint=f'run `valun --profile {_profile(args)} join` in a terminal')
+               setup_hint=f'run `valun --profile {_profile(args)} join` in a terminal',
+               brief_status=store.state.get('brief_status') is True)
 
 
 def _connected(args):
@@ -1179,7 +1190,7 @@ def main(argv=None):
     d = sub.add_parser('doctor', help='checks with a fix for each problem')
     d.add_argument('--server')
     c = sub.add_parser('config', help='change a setting')
-    c.add_argument('key', choices=['approvals', 'server', 'check_link_hosts']
+    c.add_argument('key', choices=['approvals', 'server', 'check_link_hosts', 'brief_status']
                    + [f'consents.{k}' for k in va.CONSENT_POLICY_KEYS] + ['consent_loop'])
     c.add_argument('value')
     c.add_argument('--owner-token-file', help="needed when switching approvals to or from console: the owner token of "

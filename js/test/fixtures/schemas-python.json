@@ -1,23 +1,28 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "e7c733881a5fa14c36be4f09cc84c6584386c40d6f1cc8351bea703bf6b97216",
+  "agent.py": "c9f1d8bc55540d7d7f597974f2c55e44353807e8fd84872c4369be91edfdb2c3",
   "basis.py": "82baabb5b9177b3ff67ebcbf70aa1471e00b9a94861e3c0de13987a4ed225634",
   "client.py": "61fe1f1280a9c58e1ad38bc74a75e46031a287d7ae4313bcde159e9962b5498b",
-  "mcp_server.py": "dbcb5fddc0936bef4162cb3913f1cc40af6c676147ea2bbd06811f75a87500c1",
+  "mcp_server.py": "395190caab593cdbf02842dbc60574fdd64b1d3f34b3f37c34e25988ebb07a06",
   "measure.py": "f4305cf1fe54ac137fa3aa201b0904c0e88e6ecc8325a38a41c06197963579ec",
   "novation.py": "365f0a1b7e6f5989f2f88e7fb58b86aa2596829c83e00c215885a2b505dac54a",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "0a834be67c6a1333f954b36ba0e4c920ea91dca4b00b24498baa572b03dc33f8",
-  "schemas.py": "953417f78cf46bcda1078e3773e6b647426c10f4454c681b1da845877475e3bc"
+  "schemas.py": "8263948a0d9de1fe098a1e2f9ece0cf4c77ff56e91b712b067b064f3c4a1ec2a"
  },
  "tools": [
   {
    "name": "valun_status",
-   "description": "Check your Valun connection and read your standing instructions. Returns your participant id and handle, the goals your owner told you (as you recorded them with valun_set_limits), the limits in force (your owner's MANDATE, tightened by any limits you recorded; you cannot raise the mandate), where approvals happen, your current position (credit notes you hold from others and owe to others, all outstanding), and honest labels for what Basis records, what an outstanding promise is, and what third-party exchange is supported. Call this first in every session; if no goals are recorded, ask your owner what they want and record it. When the server offers circulating credit it also lists notes_you_can_spend: credit notes others issued to you that you can pass on to pay for a delivery (valun_review_delivery pay_with), each checked by your Valun client against the issuer's signature. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other independently controlled agents.",
+   "description": "Check your Valun connection and read your standing instructions. Returns your participant id and handle, the goals your owner told you (as you recorded them with valun_set_limits), the limits in force (your owner's MANDATE, tightened by any limits you recorded; you cannot raise the mandate), where approvals happen, your current position (credit notes you hold from others and owe to others, all outstanding), and honest labels for what Basis records, what an outstanding promise is, and what third-party exchange is supported. Call this first in every session; if no goals are recorded, ask your owner what they want and record it. When the server offers circulating credit it also lists notes_you_can_spend: credit notes others issued to you that you can pass on to pay for a delivery (valun_review_delivery pay_with), each checked by your Valun client against the issuer's signature. Small model? Pass brief=true for a short answer. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other independently controlled agents.",
    "parameters": {
     "type": "object",
-    "properties": {},
+    "properties": {
+     "brief": {
+      "type": "boolean",
+      "description": "true: a short answer (about 1 KB) for small models: who you are, your owner's objective and goals, the limits in force, where approvals happen, what you hold and owe, the notes you can spend, the consents waiting, the next sandbox step, and one line on what PC are. false: the full view (your mandate, consent policy and honest labels). The default is the full view unless your owner set brief_status for this agent."
+     }
+    },
     "required": []
    }
   },

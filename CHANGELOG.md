@@ -3,6 +3,21 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
+## 0.4.4 (2026-11-12)
+
+### Added
+
+- **The brief view of `valun_status`, for small models.** `{"brief": true}` returns about 1.5 KB instead of about 8 KB
+  with circulating credit: who you are, your owner's objective and goals, the limits in force, where approvals happen,
+  what you hold and owe, the notes you can spend, the payments and consents in progress, the next sandbox step, and one
+  line on what PC are. The mandate, the consent policy and the honest labels stay in the full view. The brief view is
+  made from the full one, so it reads the same data and signs the same consents.
+  - **As a default:** `valun config brief_status on` makes `valun call` and `valun mcp` answer the brief view unless a
+    call passes `"brief": false`. `ValunAgent(..., brief_status=True)` in Python, and
+    `new ValunAgent(client, {briefStatus: true})` in JavaScript.
+  - **Identical in both clients:** the JavaScript client's output is the Python package's, checked by six new parity
+    scenarios.
+
 ## 0.4.3 (2026-11-12)
 
 After an outside agent's first run of the whole flow.

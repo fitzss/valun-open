@@ -358,11 +358,11 @@ SETUP_HINT = 'run `valun join` in a terminal'
 
 
 def run(store, approvals='ask', server=None, check_link_hosts=True, consent_loop_s=CONSENT_LOOP_S,
-        consent_loop_jitter_s=CONSENT_LOOP_JITTER_S, setup_hint=None):
+        consent_loop_jitter_s=CONSENT_LOOP_JITTER_S, setup_hint=None, brief_status=False):
     """Serve MCP over stdio for this profile's store. setup_hint (None: SETUP_HINT) is what the tools tell the agent its
     owner must do while the profile is not joined; `valun --profile NAME mcp` passes one that names the profile."""
     agent = ValunAgent(store, approvals=APPROVAL_TEXT.get(approvals, ''), check_link_hosts=check_link_hosts,
-                       setup_hint=setup_hint or SETUP_HINT, server=server)
+                       setup_hint=setup_hint or SETUP_HINT, server=server, brief_status=brief_status)
     loop = None
     if (getattr(store, 'state', None) or {}).get('consent_loop') == 'on':
         loop = ConsentLoop(agent, consent_loop_s, consent_loop_jitter_s)

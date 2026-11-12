@@ -584,6 +584,10 @@ def scenarios():
         {'GET /pilot/v1/me': {'status': 401, 'body': {'error': 'unauthorized', 'message': 'agent token not recognised'}}})
     add('status: the profile is pinned to another tracker', 'valun_status', {}, state={'pins': {'tracker_nft_id': OTHER_NFT, 'denomination': DENOM}})
     add('status: console approvals sentence', 'valun_status', {}, agent={'approvals': APPROVAL_TEXT['console']})
+    add('status: brief', 'valun_status', {'brief': True}, agent=ask)
+    add('status: brief by default (brief_status)', 'valun_status', {}, agent={'brief_status': True})
+    add('status: brief=false overrides brief_status', 'valun_status', {'brief': False}, agent={'brief_status': True})
+    add('status: brief must be true or false', 'valun_status', {'brief': 'yes'})
     add('unknown tool', 'valun_pay', {})
     add('unknown tool name with a quote', "it's", {})
     add('unknown tool name with both quotes and a tab', 'a"b\'c\td', {})
@@ -930,6 +934,11 @@ def scenarios():
     add('status: sandbox tour, step 2 buys with a note I hold', 'valun_status', {},
         {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position=sx, participant=sb)}, 'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[])}},
         state=circ_state)
+    add('status: brief, sandbox tour step 2 with a note I hold', 'valun_status', {'brief': True},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position=sx, participant=sb)}, 'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[])}},
+        state=circ_state)
+    add('status: brief, circulating credit with consents signed now', 'valun_status', {'brief': True}, status_routes,
+        state=dict(circ_state, consent_log=log, consents_last_run_ms=T0_MS - 10_000), agent=dict(ask, consents_on_reads=True))
     sw_ = D['sandbox_right']
     add('status: sandbox tour, a delivery to review that matches exactly', 'valun_status', {},
         {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position=sx, participant=sb)}, **g('sandbox_right'),
@@ -1096,7 +1105,7 @@ def run_scenarios():
             ag = va.ValunAgent(store, approvals=sc['agent'].get('approvals', ''), check_link_hosts=sc['agent'].get('check_link_hosts', True),
                                setup_hint=sc['agent'].get('setup_hint'), process_consents=sc['agent'].get('process_consents', True),
                                consents_on_reads=sc['agent'].get('consents_on_reads', False),
-                               declare_roles=sc['agent'].get('declare_roles'))
+                               declare_roles=sc['agent'].get('declare_roles'), brief_status=sc['agent'].get('brief_status', False))
             if what == 'call':
                 record['result'] = ag.call_safe(sc['tool'], sc['args'])
                 record['requests'] = list(LOG)

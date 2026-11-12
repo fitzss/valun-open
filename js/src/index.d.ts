@@ -1106,6 +1106,8 @@ export interface ValunAgentOptions {
    * sign the value-safe consents only (set-offs, payments to me by transfer); results then carry consents_signed_now.
    */
   consentsOnReads?: boolean;
+  /** valun_status answers its brief view (for small models) unless the call passes brief=false (default false). */
+  briefStatus?: boolean;
   /** Does the client declare its consent roles (X-Valun-Features; D-3 b)? null: as processConsents. */
   declareRoles?: boolean | null;
   /** Test hook: the clock in ms (who counts as recently active). */

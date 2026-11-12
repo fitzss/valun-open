@@ -126,6 +126,36 @@ TOUR_TEXTS = {1: 'Valun sandbox tour, step 1: my first paid job.',
 TOUR_AFTER = {1: (3, 0), 2: (1, 0), 3: (0, 1), 4: (2, 0), 5: (0, 0)}
 
 
+BRIEF_NOTE = ('PC are pilot credits with no monetary value: a credit note is an outstanding promise, and nothing is redeemed. '
+              'This is the brief view; call valun_status with brief=false for your mandate, consent policy and honest labels.')
+
+
+def brief_status(out):
+    """valun_status's brief view (brief=true, for small models), made from the full view, so it reads and signs exactly
+    the same: who you are, your owner's objective and goals, the limits in force, where approvals happen, what you hold
+    and owe, the notes you can spend, the payments and consents in progress, the next sandbox step, and one line on what
+    PC are (the honest labels stay in the full view)."""
+    def d(v):
+        return v if isinstance(v, dict) else {}
+    you, pos = d(out.get('you')), d(out.get('position'))
+    b = {'brief': True, 'connected': out.get('connected'),
+         'you': {k: you.get(k) for k in ('id', 'handle', 'sandbox_expires_at') if you.get(k) is not None},
+         'objective_from_your_owner': out.get('objective_from_your_owner'),
+         'goals_your_owner_told_you': out.get('goals_your_owner_told_you'),
+         'limits_in_force': out.get('limits_in_force'), 'approvals': out.get('approvals'),
+         'you_hold_PC': pos.get('claims_held'), 'you_owe_PC': pos.get('owes'), 'net_PC': pos.get('net')}
+    if 'notes_you_can_spend' in out:
+        b['notes_you_can_spend'] = [{k: n.get(k) for k in ('issuer', 'amount_PC', 'checked_by_your_client')}
+                                    for n in (out.get('notes_you_can_spend') or []) if isinstance(n, dict)]
+        b['payments_in_progress'] = len(out.get('payments_in_progress') or [])
+        b['consents_pending'] = d(out.get('clearing')).get('consents_pending')
+    step = out.get('sandbox_next_steps')
+    if isinstance(step, dict):
+        b['sandbox_next_steps'] = {k: step[k] for k in ('tour_step', 'next_calls', 'then') if k in step}
+    b['note'] = BRIEF_NOTE
+    return b
+
+
 def labels(circulating):
     """The honest labels for a server with circulating credit (True) or without it: {settlement, not_settled,
     honest_labels, real_vs_simulated}."""
@@ -422,7 +452,7 @@ class ValunAgent:
     """
 
     def __init__(self, store, approvals='', check_link_hosts=True, setup_hint=None, server=None, process_consents=True,
-                 consents_on_reads=False, declare_roles=None):
+                 consents_on_reads=False, declare_roles=None, brief_status=False):
         self.store = store
         self.approvals = approvals
         self.check_link_hosts = check_link_hosts
@@ -431,6 +461,7 @@ class ValunAgent:
         self.process_consents = process_consents is True
         self.consents_on_reads = consents_on_reads is True
         self.declare_roles = self.process_consents if declare_roles is None else declare_roles is True
+        self.brief_status = brief_status is True    # valun_status answers the brief view unless brief=false is passed
         self.features = None        # the feature tags the last GET /info this agent read listed (None: none read yet)
         self.handlers = {'valun_status': self.status, 'valun_directory': self.directory, 'valun_inbox': self.inbox,
                          'valun_deal': self.deal, 'valun_propose': self.propose, 'valun_respond': self.respond,
@@ -1070,6 +1101,13 @@ class ValunAgent:
 
     # ---------- tools ----------
     def status(self, a):
+        brief = a.get('brief', self.brief_status) if isinstance(a, dict) else self.brief_status
+        if not isinstance(brief, bool):
+            raise vc.ValunError('bad_arguments', 'brief must be true or false')
+        out = self._full_status()
+        return brief_status(out) if brief else out
+
+    def _full_status(self):
         c = self.client()
         me, info = c.me(), c.info()
         circulating = CIRCULATION in self._remember(info)
