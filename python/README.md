@@ -76,7 +76,12 @@ For each offer that asks for one of its services, the seller:
 3. sets your public services to what it sells (`--keep-profile` leaves them as they are).
 
 Spending stops at `--monthly-usd` (default 5) and `--daily-usd` (default 1), counted from the API's own token counts;
-a job starts only if its worst case fits in both. `--jobs-per-buyer` (default 3) limits jobs per buyer per day. Set a
+a job starts only if its worst case fits in both. `--jobs-per-buyer` (default 3) limits jobs per buyer per day, and
+`--checks-per-buyer` (default 6) limits checks apart from them, so a job and the check of it never compete.
+
+The work is delivered as it is, with nothing added (who did it is in the delivery's title). A `check` ends with a
+receipt: a JSON block with the verdict (`meets`, `does_not_meet` or `unclear`) and the SHA-256 of the exact text it
+checked. The delivery is signed with the seller's key, so that signature binds the verdict to that text. Set a
 spend limit on the key's workspace in the Claude Console as well; that limit is the guarantee.
 
 `--model` defaults to `claude-opus-5-5`, with the server-side refusal fallback. Its jobs cost roughly 1-2 US cents each.

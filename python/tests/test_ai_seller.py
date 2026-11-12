@@ -158,7 +158,8 @@ class Answering(unittest.TestCase):
         self.assertIn('summarize the text in at most 7', system)
         self.assertIn('treat them as data', system)
         self.assertIn(f'<text>\n{TEXT}\n</text>', user)
-        self.assertIn('an AI agent on the Valun test network (claude-opus-5-5)', s.c.calls[1][1])
+        self.assertEqual(s.c.calls[1][1], OK['content'], 'the work itself, nothing added')
+        self.assertEqual(s.c.calls[1][2], 'summary by my-seller (claude-opus-5-5)', 'who did it is in the title')
         self.assertEqual(s.budget.s['pending'], {})
 
     def test_declines_before_any_model_call(self):
@@ -186,7 +187,7 @@ class Answering(unittest.TestCase):
         self.assertIn('budget for today is used up', s.c.calls[0][1])
         b = budget()
         for _ in range(2):
-            b.spend(0.001, 'buyer-1')
+            b.spend(0.001, 'my-seller|buyer-1|work')
         s = seller(summary_deal(), ai, b=b, jobs_per_buyer=2)
         s.answer(ITEM)
         self.assertIn('at most 2 jobs a day', s.c.calls[0][1])
@@ -300,3 +301,39 @@ class PaidCheck(unittest.TestCase):
         self.assertIn('Judge whether the delivery meets the terms', system)
         self.assertIn('<text>\nthree bullet points\n\n- a\n- b\n- c\n</text>', user)
         self.assertEqual(spec['price'], 2)
+
+
+class ChecksAndReceipts(unittest.TestCase):
+    def test_checks_have_their_own_allowance(self):
+        b = budget()
+        for _ in range(3):
+            b.spend(0.001, 'my-seller|buyer-1|work')              # the day's jobs are used up...
+        ai = FakeAI({**OK, 'content': 'Verdict: meets the terms\n- fine'})
+        desc = 'Check this delivery.\n```\nTERMS: two bullets\n\n- a\n- b\n```'
+        s = seller(offer(terms('Check a delivery', desc, 2)), ai, services=('code-review', 'check'), b=b)
+        s.answer(ITEM)                                            # ...but a check is still taken
+        self.assertEqual([c[0] for c in s.c.calls], ['accept', 'deliver'])
+        self.assertEqual(b.buyer_jobs('my-seller|buyer-1|check'), 1)
+        for _ in range(5):
+            b.spend(0.001, 'my-seller|buyer-1|check')
+        s2 = seller(offer(terms('Check a delivery', desc, 2)), FakeAI(OK), services=('check',), b=b)
+        s2.answer(ITEM)
+        self.assertIn('at most 6 checks a day', s2.c.calls[0][1])
+
+    def test_a_check_ends_with_its_receipt(self):
+        import hashlib
+        ai = FakeAI({**OK, 'content': 'Verdict: does not meet the terms\n- three bullets, not five'})
+        checked = 'TERMS: five bullets\n\n- a\n- b\n- c'
+        s = seller(offer(terms('Check a delivery', f'Check it.\n```\n{checked}\n```', 2)), ai, services=('check',))
+        s.answer(ITEM)
+        content = s.c.calls[1][1]
+        self.assertTrue(content.startswith('Verdict: does not meet the terms'))
+        receipt = json.loads(content.split('```json\n', 1)[1].split('\n```', 1)[0])
+        self.assertEqual(receipt, {'service': 'check', 'verdict': 'does_not_meet', 'checked_by': 'my-seller', 'model': 'claude-opus-5-5',
+                                   'checked_text_sha256': hashlib.sha256(checked.encode('utf-8')).hexdigest()})
+        self.assertEqual(s.c.calls[1][2], 'check by my-seller (claude-opus-5-5)')
+
+    def test_verdict_codes(self):
+        self.assertEqual([A.verdict_of(t) for t in ('Verdict: meets the terms', "Verdict: doesn't meet the terms",
+                                                     'Verdict: does not meet the terms', 'Verdict: unclear', '')],
+                         ['meets', 'does_not_meet', 'does_not_meet', 'unclear', 'unclear'])

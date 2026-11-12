@@ -16,6 +16,7 @@ here keeps spending under it; the Console limit is the guarantee.
 Needs the optional dependency (the official Anthropic SDK): pipx install "valun[ai]" or uv tool install "valun[ai]";
 and ANTHROPIC_API_KEY set.
 """
+import hashlib
 import json
 import os
 import re
@@ -89,6 +90,16 @@ SERVICE_SPECS = {
 
 def now_utc():
     return datetime.now(timezone.utc)
+
+
+def verdict_of(text):
+    """The verdict code of a check's text, from its first line: meets, does_not_meet or unclear."""
+    first = (text or '').strip().splitlines()[0].lower() if (text or '').strip() else ''
+    if 'does not meet' in first or "doesn't meet" in first:
+        return 'does_not_meet'
+    if 'meets' in first:
+        return 'meets'
+    return 'unclear'
 
 
 def parse_services(text):
@@ -246,9 +257,10 @@ class Claude:
 
 
 class AISeller(vsandbox.Seller):
-    def __init__(self, store, services, ai, budget, handle=None, server=None, log=None, jobs_per_buyer=3):
+    def __init__(self, store, services, ai, budget, handle=None, server=None, log=None, jobs_per_buyer=3, checks_per_buyer=6):
         super().__init__(store, server=server, log=log)
         self.services, self.ai, self.budget, self.jobs_per_buyer = tuple(services), ai, budget, int(jobs_per_buyer)
+        self.checks_per_buyer = int(checks_per_buyer)
         self.handle = handle or 'a seller'
         self.failures = {}      # deal id -> API failures so far
 
@@ -268,9 +280,24 @@ class AISeller(vsandbox.Seller):
                 f'The text to work on:\n<text>\n{text}\n</text>')
         return system, user
 
-    def deliverable(self, service, result):
-        return (f"{result['content']}\n\n---\n*{service} by {self.handle}, an AI agent on the Valun test network "
-                f"({result['model']}). Credits have no monetary value.*\n")
+    def counted(self, buyer, service):
+        """The key a buyer's jobs are counted under today: per seller, and per kind, so checks have their own allowance
+        (checks_per_buyer) and a job and the check of it never compete for the same one."""
+        return f"{self.handle}|{buyer}|{'check' if service == 'check' else 'work'}"
+
+    def deliverable(self, service, result, checked_text=None):
+        """The work itself, with nothing added, since the terms may allow nothing else; who did it goes in the delivery's
+        title. A check ends with its receipt: a JSON block with the verdict and the SHA-256 of the exact text it checked,
+        which the delivery's signature (this agent's key) binds to that verdict."""
+        content = result['content']
+        if service == 'check':
+            receipt = {'service': 'check', 'verdict': verdict_of(content), 'checked_by': self.handle, 'model': result['model'],
+                       'checked_text_sha256': hashlib.sha256((checked_text or '').encode('utf-8')).hexdigest()}
+            content += '\n\n```json\n' + json.dumps(receipt, indent=1) + '\n```\n'
+        return content
+
+    def title(self, service, result):
+        return f"{service} by {self.handle} ({result['model']})"
 
     def answer(self, item):
         did, buyer = item['deal_id'], item.get('counterparty') or '?'
@@ -303,8 +330,10 @@ class AISeller(vsandbox.Seller):
             self.countered[did] = True
             self.c.counter(did, price=spec['price'])
             return self.note(deal=did, action='counter', service=service, price=spec['price'])
-        if self.budget.buyer_jobs(buyer) >= self.jobs_per_buyer:
-            return self._decline(did, f'I do at most {self.jobs_per_buyer} jobs a day for one buyer; please come back tomorrow.', 'buyer_limit')
+        key, limit = self.counted(buyer, service), (self.checks_per_buyer if service == 'check' else self.jobs_per_buyer)
+        if self.budget.buyer_jobs(key) >= limit:
+            what = 'checks' if service == 'check' else 'jobs'
+            return self._decline(did, f'I do at most {limit} {what} a day for one buyer; please come back tomorrow.', 'buyer_limit')
         system, user = self.prompt(service, terms, text)
         worst = worst_case_usd(self.ai.model, spec, system, user)
         if self.budget.room() < worst:
@@ -318,15 +347,15 @@ class AISeller(vsandbox.Seller):
             if n >= ATTEMPTS or not getattr(self.ai, 'retryable', lambda _: True)(e):
                 return self._decline(did, 'I could not do this job right now (my model service failed); please try again later.', 'ai_error')
             return None                 # left open: tried again on the next pass
-        self.budget.spend(r['cost'], buyer)
+        self.budget.spend(r['cost'], key)
         if r.get('refused'):
             return self._decline(did, 'My model declined this request, so I cannot take the job.', 'refused',
                                  category=r.get('category'), cost=round(r['cost'], 5))
         if r.get('incomplete'):
             return self._decline(did, 'The job came out longer than I can deliver; please send a shorter text.', 'incomplete',
                                  cost=round(r['cost'], 5))
-        content = self.deliverable(service, r)
-        self.budget.s['pending'][did] = {'service': service, 'content': content}
+        content = self.deliverable(service, r, text)
+        self.budget.s['pending'][did] = {'service': service, 'content': content, 'title': self.title(service, r)}
         self.budget.save()
         try:
             self.c.accept(did, chk['terms_hash'])
@@ -352,7 +381,7 @@ class AISeller(vsandbox.Seller):
                        'delivery so that no credit is issued, and send me a fresh offer.')
             r = self.c.deliver(did, content, 'no work kept for this deal')
             return self.note(deal=did, action='deliver_none', sha256=r['delivery']['sha256'])
-        r = self.c.deliver(did, job['content'], f"{job['service']} by {self.handle}")
+        r = self.c.deliver(did, job['content'], job.get('title') or f"{job['service']} by {self.handle}")
         self.budget.s['pending'].pop(did, None)
         self.budget.save()
         self.note(deal=did, action='deliver', service=job['service'], sha256=r['delivery']['sha256'])

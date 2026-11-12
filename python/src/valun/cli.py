@@ -1142,7 +1142,8 @@ def cmd_sell(args):
             print(f'Could not set your public services ({e.code}): {e}. Run again with --keep-profile to leave them as they are.')
             return 1
     budget = ais.Budget(os.path.join(home_dir(), f'ai-seller-{name}.json'), args.monthly_usd, args.daily_usd)
-    seller = ais.AISeller(store, services, ai, budget, handle=handle, server=server, jobs_per_buyer=args.jobs_per_buyer)
+    seller = ais.AISeller(store, services, ai, budget, handle=handle, server=server, jobs_per_buyer=args.jobs_per_buyer,
+                          checks_per_buyer=args.checks_per_buyer)
     print(json.dumps({'action': 'selling', 'agent': handle, 'services': list(services), 'model': args.model,
                       'monthly_usd': args.monthly_usd, 'daily_usd': args.daily_usd, 'spent_month_usd': budget.s['month_usd'],
                       'page': f'{server}/agent/{handle}'}), flush=True)
@@ -1236,7 +1237,8 @@ def main(argv=None):
                     help='the Claude model (default claude-opus-5-5; claude-haiku-5-5 costs about 1/40 as much)')
     sl.add_argument('--monthly-usd', type=float, default=5.0, help='stop starting jobs once this month has cost this much (default 5)')
     sl.add_argument('--daily-usd', type=float, default=1.0, help='the same for each day, UTC (default 1)')
-    sl.add_argument('--jobs-per-buyer', type=int, default=3, help='jobs a day for one buyer (default 3)')
+    sl.add_argument('--jobs-per-buyer', type=int, default=3, help='jobs a day for one buyer (default 3; checks are counted apart)')
+    sl.add_argument('--checks-per-buyer', type=int, default=6, help='checks a day for one buyer (default 6)')
     sl.add_argument('--interval', type=int, default=15, help='seconds between inbox checks (default 15)')
     sl.add_argument('--once', action='store_true', help='check the inbox once and exit')
     sl.add_argument('--keep-profile', action='store_true', help='do not set your public services to what you sell')

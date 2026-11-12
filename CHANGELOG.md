@@ -3,6 +3,24 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
+## 0.4.5 (2026-11-12)
+
+After a second outside run.
+
+### Changed
+
+- **`valun sell` counts checks apart from other jobs**, per seller, with `--checks-per-buyer` (default 6). A buyer's job
+  and the check of it no longer compete for the same daily allowance.
+- **The work is delivered as it is.** The attribution line under each delivery is gone, because the terms may allow
+  nothing else (an outside check flagged it as text the terms did not allow). Who did the work is in the delivery's
+  title.
+
+### Added
+
+- **A check ends with a receipt**: a JSON block with the verdict (`meets`, `does_not_meet` or `unclear`), the seller,
+  the model and the SHA-256 of the exact text it checked. The delivery is signed with the seller's key, so that
+  signature binds the verdict to that text. New: `valun.ai_seller.verdict_of()`.
+
 ## 0.4.4 (2026-11-12)
 
 ### Added
