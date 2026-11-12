@@ -15,6 +15,7 @@ import urllib.error
 import urllib.request
 from types import SimpleNamespace
 
+from . import basis as vb
 from .client import ValunError
 
 ERGO_LIB = 'ergo-lib-python'
@@ -61,6 +62,25 @@ def p2pk_address(pubkey_hex: str, testnet: bool = True) -> str:
     p2pk_tree(pubkey_hex)
     body = bytes([(0x10 if testnet else 0x00) + 0x01]) + bytes.fromhex(pubkey_hex)
     return _base58(body + hashlib.blake2b(body, digest_size=32).digest()[:4])
+
+
+def address_to_tree(address: str) -> str:
+    """The ErgoTree (hex) of a P2PK or P2S address of either network; the checksum is checked."""
+    if not isinstance(address, str) or not address or any(ch not in _B58 for ch in address):
+        raise ValunError('invalid_field', 'an address is a base58 string')
+    n = 0
+    for ch in address:
+        n = n * 58 + _B58.index(ch)
+    body = n.to_bytes((n.bit_length() + 7) // 8, 'big') if n else b''
+    b = b'\0' * (len(address) - len(address.lstrip('1'))) + body
+    if len(b) < 6 or hashlib.blake2b(b[:-4], digest_size=32).digest()[:4] != b[-4:]:
+        raise ValunError('invalid_field', 'the address checksum is wrong')
+    kind, content = b[0] & 0x0f, b[1:-4]
+    if kind == 1 and len(content) == 33:
+        return '0008cd' + content.hex()
+    if kind == 3:
+        return content.hex()
+    raise ValunError('invalid_field', 'only P2PK and P2S addresses name a script')
 
 
 # ---------- the order of context extensions ----------
@@ -115,6 +135,88 @@ def to_ergo_json(value) -> str:
     return json.dumps(_ordered(value), separators=(',', ':'), ensure_ascii=False)
 
 
+# ---------- the bytes a transaction's proofs sign (and its id) ----------
+_HEX32 = re.compile(r'[0-9a-f]{64}\Z')
+_HEXS = re.compile(r'(?:[0-9a-f]{2})*\Z')
+
+
+def _vlq(v) -> bytes:
+    n = int(v)
+    if n < 0:
+        raise ValunError('bad_tx', 'a negative number in a transaction')
+    out = bytearray()
+    while True:
+        b = n & 0x7f
+        n >>= 7
+        out.append(b | (0x80 if n else 0))
+        if not n:
+            return bytes(out)
+
+
+def _hex(h, what) -> bytes:
+    if not isinstance(h, str) or not _HEXS.match(h):
+        raise ValunError('bad_tx', f'{what} is not hex')
+    return bytes.fromhex(h)
+
+
+def tx_bytes_to_sign(tx) -> bytes:
+    """The bytes a transaction's input proofs sign (node-format JSON, unsigned or signed; proofs ignored): Ergo's
+    serialization with empty proofs, each context extension in Scala's order, ErgoTrees and constants as the bytes
+    they are (any ErgoTree version). The JS client's ergo.txBytesToSign."""
+    if not isinstance(tx, dict) or not isinstance(tx.get('inputs'), list) or not isinstance(tx.get('outputs'), list):
+        raise ValunError('bad_tx', 'a transaction has inputs and outputs')
+    out = bytearray(_vlq(len(tx['inputs'])))
+    for i in tx['inputs']:
+        if not _HEX32.match(str((i or {}).get('boxId', ''))):
+            raise ValunError('bad_tx', 'an input box id is not 32 bytes of hex')
+        out += bytes.fromhex(i['boxId']) + b'\x00'                 # the box id, an empty proof
+        ext = i.get('extension')
+        if ext is None:
+            ext = (i.get('spendingProof') or {}).get('extension') or {}
+        if not all(isinstance(k, str) and _BYTE_KEY.match(k) for k in ext):
+            raise ValunError('bad_tx', 'a context extension key is not a byte')
+        out.append(len(ext))
+        for k in scala_extension_order([int(k) for k in ext]):
+            out.append(k)
+            out += _hex(ext[str(k)], 'a context extension value')
+    data = tx.get('dataInputs') or []
+    out += _vlq(len(data))
+    for d in data:
+        if not _HEX32.match(str((d or {}).get('boxId', ''))):
+            raise ValunError('bad_tx', 'a data input box id is not 32 bytes of hex')
+        out += bytes.fromhex(d['boxId'])
+    token_ids = []
+    for o in tx['outputs']:
+        for a in o.get('assets') or []:
+            if a.get('tokenId') not in token_ids:
+                token_ids.append(a.get('tokenId'))
+    out += _vlq(len(token_ids))
+    for t in token_ids:
+        if not _HEX32.match(str(t or '')):
+            raise ValunError('bad_tx', 'a token id is not 32 bytes of hex')
+        out += bytes.fromhex(t)
+    out += _vlq(len(tx['outputs']))
+    for o in tx['outputs']:
+        out += _vlq(o['value']) + _hex(o.get('ergoTree'), 'an ErgoTree') + _vlq(o['creationHeight'])
+        assets = o.get('assets') or []
+        out.append(len(assets))
+        for a in assets:
+            out += _vlq(token_ids.index(a['tokenId'])) + _vlq(a['amount'])
+        regs = o.get('additionalRegisters') or {}
+        names = sorted(regs)
+        if names != [f'R{4 + i}' for i in range(len(names))]:
+            raise ValunError('bad_tx', 'registers must be R4, R5, ... in order')
+        out.append(len(names))
+        for r in names:
+            out += _hex(regs[r], f'register {r}')
+    return bytes(out)
+
+
+def tx_id(tx) -> str:
+    """The transaction id (hex): blake2b256 of the bytes to sign."""
+    return hashlib.blake2b(tx_bytes_to_sign(tx), digest_size=32).digest().hex()
+
+
 # ---------- an Ergo testnet node ----------
 class Node:
     """The node's REST API (a testnet node: assert_testnet refuses any other)."""
@@ -148,6 +250,10 @@ class Node:
 
     def unspent_by_address(self, address: str):
         return self.call('POST', '/blockchain/box/unspent/byAddress?offset=0&limit=100', json.dumps(address))
+
+    def box(self, box_id: str):
+        """An unspent box as the node reports it (node-format JSON)."""
+        return self.call('GET', '/utxo/byId/' + re.sub(r'[^0-9a-f]', '', str(box_id)))
 
     def box_binary(self, box_id: str) -> str:
         return self.call('GET', f'/utxo/byIdBinary/{box_id}')['bytes']
@@ -245,25 +351,30 @@ def build_reserve(*, secret_hex: str, pubkey_hex: str, erg_amount: int, node, pa
 
 
 # ---------- a redemption (the agent's claim on an issuer's reserve, paid to the agent's own address) ----------
-def check_redemption(E, built, *, issuer_pubkey: str, recipient_pubkey: str, amount: int, tracker_nft_id: str = None, reserve_tree: str = None):
-    """The redemption the tracker built, checked before the agent's key signs it. The agent's proof makes input 0 (the
-    reserve) spendable, and a proof over these bytes would also spend any box of the agent's own, so it signs only when:
-    input 0 is a reserve of the issuer for this network (the reserve contract, R4 the issuer's key, R6 the tracker NFT);
-    no input is a box at the agent's own address; output 0 is that reserve, `amount` lower, its owner, tracker and
-    tokens kept; one output pays exactly `amount` to the agent's own address; the reserve input's context names this
-    agent as receiver (#1) with action 0 (#0). Returns a summary."""
+def check_redemption(built, *, issuer_pubkey: str, recipient_pubkey: str, amount: int, tracker_nft_id: str = None,
+                     reserve_tree: str = None, input_boxes=None):
+    """The redemption the tracker built, checked before the agent's key signs it. `input_boxes` are the boxes it spends
+    as the Ergo node reports them (GET /utxo/byId; never the tracker's copies), in input order. The agent's proof makes
+    input 0 (the reserve) spendable, and a proof over these bytes would also spend any box of the agent's own, so it
+    signs only when: input 0 is a reserve of the issuer for this network (the reserve contract, R4 the issuer's key, R6
+    the tracker NFT); no input is a box at the agent's own address; output 0 is that reserve, `amount` lower, its owner,
+    tracker and tokens kept; one output pays exactly `amount` to the agent's own address; the reserve input's context
+    names this agent as receiver (#1) with action 0 (#0); and the transaction is the one the tracker fee-signed (same
+    id). Returns a summary."""
     def fail(why):
         raise ValunError('bad_redemption', f'refusing to sign the redemption: {why}')
     tx = (built or {}).get('unsigned_tx') if isinstance(built, dict) else None
     if not isinstance(tx, dict) or not isinstance(tx.get('inputs'), list) or not isinstance(tx.get('outputs'), list) \
-            or not isinstance(built.get('input_box_binaries'), list):
+            or not isinstance(input_boxes, list):
         fail("the tracker's answer is not a redemption")
-    if len(built['input_box_binaries']) != len(tx['inputs']):
+    if len(input_boxes) != len(tx['inputs']):
         fail('the input boxes do not match the inputs')
-    boxes = [json.loads(b.json()) for b in _boxes(E, built['input_box_binaries'])]
+    boxes = input_boxes
     for i, b in enumerate(boxes):
-        if b['boxId'] != tx['inputs'][i]['boxId']:
-            fail(f'input {i} is not the box given for it')
+        if not isinstance(b, dict) or b.get('boxId') != tx['inputs'][i]['boxId']:
+            fail(f'input {i} is not the box the node reports for it')
+    if (built.get('partial_tx') or {}).get('id') != tx_id(tx):
+        fail('the transaction the tracker fee-signed is not the one to sign')
     reserve, own = boxes[0], p2pk_tree(recipient_pubkey)
     regs = reserve.get('additionalRegisters') or {}
     if reserve_tree and reserve['ergoTree'] != reserve_tree:
@@ -295,21 +406,18 @@ def check_redemption(E, built, *, issuer_pubkey: str, recipient_pubkey: str, amo
 
 
 def sign_redemption(built, secret_hex: str):
-    """The agent's proof for the reserve input (input 0), over exactly the transaction the tracker built, spliced into
-    the tracker's fee-signed transaction. Returns the signed transaction (a dict; write it with to_ergo_json)."""
-    E = ergo_lib()
-    unsigned = E.transaction.UnsignedTransaction.from_json(to_ergo_json(built['unsigned_tx']))
-    w = E.wallet.Wallet([E.wallet.SecretKey.from_bytes(bytes.fromhex(secret_hex))])
-    inp = w.sign_tx_input(unsigned, 0, _boxes(E, built['input_box_binaries']), _boxes(E, built.get('data_box_binaries') or []),
-                          state_context(E, built['headers']))
-    box_id, proof = str(inp.box_id), inp.spending_proof.proof.hex()
-    signed = copy.deepcopy(built['partial_tx'])
-    if not isinstance(signed, dict) or not signed.get('inputs') or signed['inputs'][0].get('boxId') != box_id \
+    """The agent's proof for the reserve input (input 0) over exactly the transaction the tracker built (its bytes to
+    sign, computed here), spliced into the tracker's fee-signed transaction. The reserve script reduces to
+    proveDlog(receiver) once its other conditions hold, so the proof is the agent's Schnorr proof over those bytes
+    (basis.ergo_prove_dlog): no ergo-lib, and any ErgoTree version. Returns the signed transaction (a dict; write it
+    with to_ergo_json)."""
+    tx = built['unsigned_tx']
+    message = tx_bytes_to_sign(tx)
+    signed = copy.deepcopy(built.get('partial_tx'))
+    if not isinstance(signed, dict) or not signed.get('inputs') or signed['inputs'][0].get('boxId') != tx['inputs'][0]['boxId'] \
             or 'spendingProof' not in signed['inputs'][0]:
         raise ValunError('bad_redemption', 'the partly signed transaction does not start with the reserve input')
-    if not proof:
-        raise ValunError('bad_redemption', 'no proof for the reserve input')
-    signed['inputs'][0]['spendingProof']['proofBytes'] = proof
-    if signed.get('id') and signed['id'] != str(unsigned.id):
+    if signed.get('id') != hashlib.blake2b(message, digest_size=32).digest().hex():
         raise ValunError('bad_redemption', 'the partly signed transaction is not the one built')
+    signed['inputs'][0]['spendingProof']['proofBytes'] = vb.ergo_prove_dlog(message, bytes.fromhex(secret_hex)).hex()
     return signed

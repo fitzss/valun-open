@@ -2304,15 +2304,19 @@ class Client:
             raise ValunError('invalid_field', 'issuer: the participant id or handle of the agent whose note you hold')
         if not isinstance(amount, int) or isinstance(amount, bool) or amount < 1:
             raise ValunError('invalid_field', 'amount: whole nanoERG to redeem')
-        E = ergo.ergo_lib()
         chain = self.chain()
-        reserve_tree = bytes(E.chain.Address(chain['reserve_contract']).ergo_tree()).hex() if chain.get('reserve_contract') else None
+        node = self._ergo_node(chain)
+        node.assert_testnet()
+        reserve_tree = ergo.address_to_tree(chain['reserve_contract']) if chain.get('reserve_contract') else None
         built = self.request('POST', '/pilot/v1/redemption/build', {'issuer': issuer, 'amount': amount})
         issuer_pubkey = ((built or {}).get('issuer') or {}).get('pubkey')
         if not isinstance(issuer_pubkey, str):
             raise ValunError('bad_redemption', 'the server named no issuer key')
-        checked = ergo.check_redemption(E, built, issuer_pubkey=issuer_pubkey, recipient_pubkey=self.pubkey, amount=amount,
-                                        tracker_nft_id=chain.get('tracker_nft_id'), reserve_tree=reserve_tree)
+        # The boxes it spends, as the Ergo node reports them (not the tracker's copies).
+        input_boxes = [node.box(i.get('boxId')) for i in ((built or {}).get('unsigned_tx') or {}).get('inputs') or []]
+        checked = ergo.check_redemption(built, issuer_pubkey=issuer_pubkey, recipient_pubkey=self.pubkey, amount=amount,
+                                        tracker_nft_id=chain.get('tracker_nft_id'), reserve_tree=reserve_tree,
+                                        input_boxes=input_boxes)
         signed = ergo.sign_redemption(built, self._secret().hex())
         explorer = chain.get('explorer')
         out = {'broadcast': bool(broadcast), 'tx_id': signed.get('id'), 'issuer': built['issuer'], 'amount': amount,

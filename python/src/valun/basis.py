@@ -124,6 +124,52 @@ def validate_public_key(pk: bytes) -> None:
     decompress(pk)
 
 
+# ---- Ergo: the spending proof of proveDlog(pk) (the sigma protocol's Schnorr proof, Fiat-Shamir) ----
+def _ergo_prop(pk: bytes) -> bytes:
+    # the version-0 ErgoTree with constant segregation of SigmaProp(proveDlog(pk))
+    return bytes([0x10, 0x01, 0x08, 0xcd]) + pk + bytes([0x73, 0x00])
+
+
+def _ergo_challenge(prop: bytes, a: bytes, message: bytes) -> bytes:
+    fs = b'\x01' + len(prop).to_bytes(2, 'big') + prop + len(a).to_bytes(2, 'big') + a
+    return blake2b256(fs, message)[:24]
+
+
+def ergo_prove_dlog(message: bytes, secret: bytes) -> bytes:
+    """The 56-byte proof an Ergo node accepts for an input whose script reduces to proveDlog(pk) (pk = the secret's
+    public key) over `message` (the transaction's bytes to sign): e (24 bytes) || z (32 bytes, big-endian), a = g^r,
+    e = the first 24 bytes of blake2b256(0x01 || len(prop) || prop || len(a) || a || message), prop = the version-0
+    ErgoTree of SigmaProp(proveDlog(pk)), z = r + e*x mod n (the JS client's basis.ergoProveDlog)."""
+    x = int.from_bytes(secret, 'big')
+    if not 0 < x < N:
+        raise SignatureError('secret key out of range')
+    prop = _ergo_prop(compress(_affine(_mul(x, G))))
+    while True:
+        r = secrets.randbelow(N - 1) + 1
+        a = compress(_affine(_mul(r, G)))
+        e = _ergo_challenge(prop, a, message)
+        z = (r + int.from_bytes(e, 'big') * x) % N
+        if z:
+            return e + z.to_bytes(32, 'big')
+
+
+def ergo_verify_dlog(proof: bytes, message: bytes, pk: bytes) -> bool:
+    """True iff `proof` is a valid ergo_prove_dlog proof of `message` for public key `pk`. Never raises."""
+    try:
+        if len(proof) != 56:
+            return False
+        X = decompress(pk)
+        e, z = proof[:24], int.from_bytes(proof[24:], 'big')
+        if z >= N:
+            return False
+        a = _affine(_add(_mul(z, G), _mul((-int.from_bytes(e, 'big')) % N, X)))
+        if a is None:
+            return False
+        return _ergo_challenge(_ergo_prop(compress(X)), compress(a), message) == e
+    except (SignatureError, ValueError, TypeError):
+        return False
+
+
 # ---- Schnorr (Basis) ----
 def _challenge(a: bytes, message: bytes, pk: bytes) -> bytes:
     return blake2b256(a, message, pk)

@@ -161,81 +161,133 @@ class WithErgoLib(unittest.TestCase):
                                tracker_nft_id=NFT, reserve_contract=reserve_address)
         self.assertEqual(e.exception.code, 'unfunded')
 
-    def fixture(self, amount=20_000_000):
-        issuer, rsecret, tsecret = pub_of(secret_of(3)), secret_of(4), secret_of(5)
-        recipient, tracker = pub_of(rsecret), pub_of(tsecret)
-        reserve_tree = f'100108cd{recipient}7300'                 # a stand-in reserve script: proveDlog(receiver), segregated
-        reserve = box_at(reserve_tree, 100_000_000, tx_id='31' * 32, registers={'R4': '07' + issuer, 'R5': AVL, 'R6': '0e20' + NFT}, tokens=[('77' * 32, 1)])
-        fee_box = box_at(ergo.p2pk_tree(tracker), 50_000_000, tx_id='32' * 32)
-        tracker_box = box_at(ergo.p2pk_tree(tracker), 10_000_000, tx_id='33' * 32, tokens=[(NFT, 1)])
-        ext = {str(k): ('0200' if k == 0 else '07' + recipient if k == 1 else f'0e01{k * 17:02x}') for k in (0, 1, 2, 3, 4, 5, 6, 8)}
-        unsigned_tx = {'inputs': [{'boxId': reserve[1]['boxId'], 'extension': ext}, {'boxId': fee_box[1]['boxId'], 'extension': {}}],
-                       'dataInputs': [{'boxId': tracker_box[1]['boxId']}],
-                       'outputs': [{'value': 100_000_000 - amount, 'ergoTree': reserve_tree, 'creationHeight': 639_650, 'assets': [{'tokenId': '77' * 32, 'amount': 1}],
-                                    'additionalRegisters': {'R4': '07' + issuer, 'R5': AVL, 'R6': '0e20' + NFT}},
-                                   {'value': amount, 'ergoTree': ergo.p2pk_tree(recipient), 'creationHeight': 639_650, 'assets': [], 'additionalRegisters': {}},
-                                   {'value': ergo.FEE, 'ergoTree': ergo.MINER_FEE_TREE, 'creationHeight': 639_650, 'assets': [], 'additionalRegisters': {}},
-                                   {'value': 50_000_000 - ergo.FEE, 'ergoTree': ergo.p2pk_tree(tracker), 'creationHeight': 639_650, 'assets': [], 'additionalRegisters': {}}]}
-        hs = headers()
-        unsigned = E.transaction.UnsignedTransaction.from_json(ergo.to_ergo_json(unsigned_tx))
-        w = E.wallet.Wallet([E.wallet.SecretKey.from_bytes(bytes.fromhex(tsecret))])
-        fi = w.sign_tx_input(unsigned, 1, [reserve[0], fee_box[0]], [tracker_box[0]], ergo.state_context(E, hs))
-        outputs = [json.loads(o.json()) for o in unsigned.outputs]
-        partial_tx = {'id': str(unsigned.id), 'inputs': [{'boxId': reserve[1]['boxId'], 'spendingProof': {'proofBytes': '', 'extension': ext}},
-                                                         {'boxId': str(fi.box_id), 'spendingProof': json.loads(fi.spending_proof.json())}],
-                      'dataInputs': unsigned_tx['dataInputs'], 'outputs': outputs}
-        built = json.loads(json.dumps({'issuer': {'pubkey': issuer}, 'unsigned_tx': unsigned_tx, 'partial_tx': partial_tx,
-                                       'input_box_binaries': [reserve[2], fee_box[2]], 'data_box_binaries': [tracker_box[2]], 'headers': hs}))
-        return dict(built=built, issuer=issuer, recipient=recipient, rsecret=rsecret, reserve_tree=reserve_tree, amount=amount, unsigned_id=str(unsigned.id))
 
-    def test_check_redemption_signs_only_the_issuers_reserve_paying_exactly_the_amount(self):
-        f = self.fixture()
-        kw = dict(issuer_pubkey=f['issuer'], recipient_pubkey=f['recipient'], amount=f['amount'], tracker_nft_id=NFT, reserve_tree=f['reserve_tree'])
-        self.assertEqual(ergo.check_redemption(E, f['built'], **kw)['paid_nanoerg'], f['amount'])
+    def test_the_native_transaction_id_is_ergo_libs(self):
+        unsigned = E.transaction.UnsignedTransaction.from_json(ergo.to_ergo_json(VEC_TX))
+        self.assertEqual(str(unsigned.id), ergo.tx_id(VEC_TX))
+
+
+# ---------- redemption: the bytes to sign, the proof, the checks (plain Python, no ergo-lib) ----------
+# A transaction id computed by ergo-lib 0.28.0 for this exact transaction (tokens, registers, an 8-key context
+# extension written in Scala's order, a data input): the native serialization must give the same id.
+VEC_TX = {'inputs': [{'boxId': 'aa' * 32, 'extension': {'0': '0200', '1': '07' + G, '2': '0e0101', '3': '0580897a', '4': '05a09c01',
+                                                         '5': '0e0105', '6': '0e00', '8': '0e0108'}}, {'boxId': 'bb' * 32, 'extension': {}}],
+          'dataInputs': [{'boxId': 'cc' * 32}],
+          'outputs': [{'value': 197000000, 'ergoTree': '0008cd' + G, 'creationHeight': 639900, 'assets': [{'tokenId': 'dd' * 32, 'amount': 1}],
+                       'additionalRegisters': {'R4': '07' + G, 'R5': '64' + '00' * 33 + '032000', 'R6': '0e20' + 'ee' * 32}},
+                      {'value': 3000000, 'ergoTree': '0008cd' + G, 'creationHeight': 639900, 'assets': [], 'additionalRegisters': {}}]}
+
+
+def redemption(amount=20_000_000):
+    """A redemption as the tracker builds it (a stand-in reserve tree; the checks read the boxes as the node reports
+    them), with its partly signed transaction."""
+    issuer, rsecret, tsecret = pub_of(secret_of(3)), secret_of(4), secret_of(5)
+    recipient, tracker = pub_of(rsecret), pub_of(tsecret)
+    reserve_tree = f'100108cd{recipient}7300'
+    reserve_box = {'boxId': '31' * 32, 'value': 100_000_000, 'ergoTree': reserve_tree, 'assets': [{'tokenId': '77' * 32, 'amount': 1}],
+                   'additionalRegisters': {'R4': '07' + issuer, 'R5': AVL, 'R6': '0e20' + NFT}}
+    fee_box = {'boxId': '32' * 32, 'value': 50_000_000, 'ergoTree': ergo.p2pk_tree(tracker), 'assets': [], 'additionalRegisters': {}}
+    ext = {str(k): ('0200' if k == 0 else '07' + recipient if k == 1 else f'0e01{k * 17:02x}') for k in (0, 1, 2, 3, 4, 5, 6, 8)}
+    unsigned_tx = {'inputs': [{'boxId': reserve_box['boxId'], 'extension': ext}, {'boxId': fee_box['boxId'], 'extension': {}}],
+                   'dataInputs': [{'boxId': '33' * 32}],
+                   'outputs': [{'value': 100_000_000 - amount, 'ergoTree': reserve_tree, 'creationHeight': 639_650, 'assets': [{'tokenId': '77' * 32, 'amount': 1}],
+                                'additionalRegisters': {'R4': '07' + issuer, 'R5': AVL, 'R6': '0e20' + NFT}},
+                               {'value': amount, 'ergoTree': ergo.p2pk_tree(recipient), 'creationHeight': 639_650, 'assets': [], 'additionalRegisters': {}},
+                               {'value': ergo.FEE, 'ergoTree': ergo.MINER_FEE_TREE, 'creationHeight': 639_650, 'assets': [], 'additionalRegisters': {}},
+                               {'value': 50_000_000 - ergo.FEE, 'ergoTree': ergo.p2pk_tree(tracker), 'creationHeight': 639_650, 'assets': [], 'additionalRegisters': {}}]}
+    tid = ergo.tx_id(unsigned_tx)
+    fee_proof = vb.ergo_prove_dlog(ergo.tx_bytes_to_sign(unsigned_tx), bytes.fromhex(tsecret)).hex()
+    partial_tx = {'id': tid, 'inputs': [{'boxId': reserve_box['boxId'], 'spendingProof': {'proofBytes': '', 'extension': ext}},
+                                        {'boxId': fee_box['boxId'], 'spendingProof': {'proofBytes': fee_proof, 'extension': {}}}],
+                  'dataInputs': unsigned_tx['dataInputs'],
+                  'outputs': [{**o, 'boxId': str(i) * 64, 'transactionId': tid, 'index': i} for i, o in enumerate(unsigned_tx['outputs'])]}
+    built = json.loads(json.dumps({'issuer': {'pubkey': issuer}, 'unsigned_tx': unsigned_tx, 'partial_tx': partial_tx}))
+    return dict(built=built, issuer=issuer, recipient=recipient, rsecret=rsecret, reserve_tree=reserve_tree, amount=amount,
+                input_boxes=[reserve_box, fee_box], id=tid)
+
+
+class Redemption(unittest.TestCase):
+    def test_the_bytes_to_sign_give_the_id_ergo_lib_computes(self):
+        self.assertEqual(ergo.tx_id(VEC_TX), '2590fd5d0448dd3d266b72b52e60c054bf2ea35266c24e1799ad7ef8c63bdd0b')
+        shuffled = copy.deepcopy(VEC_TX)
+        shuffled['inputs'][0]['extension'] = dict(sorted(shuffled['inputs'][0]['extension'].items(), reverse=True))
+        self.assertEqual(ergo.tx_id(shuffled), ergo.tx_id(VEC_TX), 'written in Scala order whatever order it arrives in')
+        for change, words in [(lambda t: t['inputs'][0].update(boxId='zz'), 'input box id'),
+                              (lambda t: t['outputs'][0].update(additionalRegisters={'R5': '00'}), 'R4, R5'),
+                              (lambda t: t['inputs'][0].update(extension={'x': '00'}), 'not a byte'),
+                              (lambda t: t['outputs'][0].update(value=-1), 'negative'),
+                              (lambda t: t['outputs'][0].update(ergoTree='xyz'), 'not hex')]:
+            t = copy.deepcopy(VEC_TX)
+            change(t)
+            with self.assertRaises(ValunError) as e:
+                ergo.tx_bytes_to_sign(t)
+            self.assertEqual(e.exception.code, 'bad_tx')
+            self.assertIn(words, str(e.exception))
+
+    def test_the_proof_verifies_for_the_key_and_the_transaction_only(self):
+        secret = bytes.fromhex(secret_of(9))
+        pk, msg = vb.public_key(secret), ergo.tx_bytes_to_sign(VEC_TX)
+        proof = vb.ergo_prove_dlog(msg, secret)
+        self.assertEqual(len(proof), 56)
+        self.assertTrue(vb.ergo_verify_dlog(proof, msg, pk))
+        self.assertFalse(vb.ergo_verify_dlog(proof, msg, bytes.fromhex(G)), 'another key')
+        self.assertFalse(vb.ergo_verify_dlog(proof, ergo.tx_bytes_to_sign({**VEC_TX, 'dataInputs': []}), pk), 'another transaction')
+        bent = bytearray(proof)
+        bent[30] ^= 1
+        self.assertFalse(vb.ergo_verify_dlog(bytes(bent), msg, pk), 'a changed proof')
+        self.assertNotEqual(vb.ergo_prove_dlog(msg, secret), proof, 'a fresh nonce every time')
+
+    def test_an_address_of_either_network_gives_its_tree(self):
+        self.assertEqual(ergo.address_to_tree('3WwXpssaZwcNzaGMv3AgxBdTPJQBt5gCmqBsg3DykQ39bYdhJBsN'), '0008cd' + G)
+        self.assertEqual(ergo.address_to_tree('9fSgJ7BmUxBQJ454prQDQ7fQMBkXPLaAmDnimgTtjym6FYPHjAV'), '0008cd' + G)
+        for bad in ('3WwXpssaZwcNzaGMv3AgxBdTPJQBt5gCmqBsg3DykQ39bYdhJBsM', '0OIl', ''):
+            with self.assertRaises(ValunError):
+                ergo.address_to_tree(bad)
+
+    def test_check_redemption_the_issuers_reserve_exactly_the_amount_nothing_of_its_own(self):
+        f = redemption()
+        kw = dict(issuer_pubkey=f['issuer'], recipient_pubkey=f['recipient'], amount=f['amount'], tracker_nft_id=NFT,
+                  reserve_tree=f['reserve_tree'], input_boxes=f['input_boxes'])
+        self.assertEqual(ergo.check_redemption(f['built'], **kw),
+                         {'reserve_box_id': '31' * 32, 'reserve_value': 100_000_000, 'paid_nanoerg': f['amount'], 'fee_inputs': 1})
+
+        def resign(b):
+            b['partial_tx']['id'] = ergo.tx_id(b['unsigned_tx'])
 
         def refused(change, words, **over):
+            b, boxes = copy.deepcopy(f['built']), copy.deepcopy(f['input_boxes'])
+            change(b, boxes)
+            with self.assertRaises(ValunError) as e:
+                ergo.check_redemption(b, **{**kw, 'input_boxes': boxes, **over})
+            self.assertEqual(e.exception.code, 'bad_redemption')
+            self.assertIn(words, str(e.exception))
+        refused(lambda b, x: b['unsigned_tx']['outputs'][1].update(value=f['amount'] - 1), 'fee-signed is not the one')
+        refused(lambda b, x: (b['unsigned_tx']['outputs'][1].update(value=f['amount'] - 1), resign(b)), 'pays exactly')
+        refused(lambda b, x: (b['unsigned_tx']['outputs'][0].update(value=100_000_000 - f['amount'] - 1), resign(b)), 'output 0 is not the reserve')
+        refused(lambda b, x: (b['unsigned_tx']['outputs'][0]['additionalRegisters'].update(R4='07' + G), resign(b)), 'owner or tracker')
+        refused(lambda b, x: (b['unsigned_tx']['outputs'][0].update(assets=[]), resign(b)), 'tokens')
+        refused(lambda b, x: (b['unsigned_tx']['inputs'][0]['extension'].update({'1': '07' + G}), resign(b)), 'receiver')
+        refused(lambda b, x: (b['unsigned_tx']['inputs'][0]['extension'].update({'0': '0201'}), resign(b)), 'redeem action')
+        refused(lambda b, x: x.reverse(), 'not the box the node reports')
+        refused(lambda b, x: None, "not the issuer's reserve", issuer_pubkey=G)
+        refused(lambda b, x: None, 'tracker', tracker_nft_id='00' * 32)
+        refused(lambda b, x: None, 'reserve contract', reserve_tree='10010101d17300')
+        refused(lambda b, x: x[1].update(ergoTree=ergo.p2pk_tree(f['recipient'])), "box of this agent's own")
+
+    def test_sign_redemption_the_proof_over_the_bytes_spliced_into_the_trackers_transaction(self):
+        f = redemption()
+        signed = ergo.sign_redemption(f['built'], f['rsecret'])
+        self.assertEqual(signed['id'], f['id'])
+        proof = bytes.fromhex(signed['inputs'][0]['spendingProof']['proofBytes'])
+        self.assertTrue(vb.ergo_verify_dlog(proof, ergo.tx_bytes_to_sign(f['built']['unsigned_tx']), bytes.fromhex(f['recipient'])))
+        self.assertEqual(signed['inputs'][1], f['built']['partial_tx']['inputs'][1], "the tracker's fee proof is kept")
+        self.assertEqual(f['built']['partial_tx']['inputs'][0]['spendingProof']['proofBytes'], '', 'the given transaction is not changed')
+        for change in (lambda b: b['partial_tx'].update(id='ff' * 32), lambda b: b['partial_tx'].update(inputs=b['partial_tx']['inputs'][1:])):
             b = copy.deepcopy(f['built'])
             change(b)
             with self.assertRaises(ValunError) as e:
-                ergo.check_redemption(E, b, **{**kw, **over})
+                ergo.sign_redemption(b, f['rsecret'])
             self.assertEqual(e.exception.code, 'bad_redemption')
-            self.assertIn(words, str(e.exception))
-        refused(lambda b: b['unsigned_tx']['outputs'][1].update(value=f['amount'] - 1), 'pays exactly')
-        refused(lambda b: b['unsigned_tx']['outputs'][0].update(value=100_000_000 - f['amount'] - 1), 'output 0 is not the reserve')
-        refused(lambda b: b['unsigned_tx']['outputs'][0]['additionalRegisters'].update(R4='07' + G), 'owner or tracker')
-        refused(lambda b: b['unsigned_tx']['outputs'][0].update(assets=[]), 'tokens')
-        refused(lambda b: b['unsigned_tx']['inputs'][0]['extension'].update({'1': '07' + G}), 'receiver')
-        refused(lambda b: b['unsigned_tx']['inputs'][0]['extension'].update({'0': '0201'}), 'redeem action')
-        refused(lambda b: b['unsigned_tx']['inputs'].reverse(), 'not the box given')
-        refused(lambda b: None, "not the issuer's reserve", issuer_pubkey=G)
-        refused(lambda b: None, 'tracker', tracker_nft_id='00' * 32)
-        refused(lambda b: None, 'reserve contract', reserve_tree='10010101d17300')
-        own = box_at(ergo.p2pk_tree(f['recipient']), 5_000_000, tx_id='34' * 32)
-
-        def own_input(b):
-            b['unsigned_tx']['inputs'][1] = {'boxId': own[1]['boxId'], 'extension': {}}
-            b['input_box_binaries'][1] = own[2]
-        refused(own_input, "box of this agent's own")
-
-    def test_sign_redemption_splices_the_proof_into_the_trackers_transaction(self):
-        f = self.fixture()
-        signed = ergo.sign_redemption(f['built'], f['rsecret'])
-        self.assertEqual(signed['id'], f['unsigned_id'])
-        self.assertEqual(len(signed['inputs'][0]['spendingProof']['proofBytes']), 112)
-        self.assertEqual(signed['inputs'][1], f['built']['partial_tx']['inputs'][1], "the tracker's fee proof is kept")
-        self.assertEqual(f['built']['partial_tx']['inputs'][0]['spendingProof']['proofBytes'], '', 'the given transaction is not changed')
-        tx = E.transaction.Transaction.from_json(ergo.to_ergo_json(signed))
-        self.assertEqual(str(tx.id), f['unsigned_id'])
-        sorted_built = copy.deepcopy(f['built'])
-        sorted_built['unsigned_tx']['inputs'][0]['extension'] = dict(sorted(sorted_built['unsigned_tx']['inputs'][0]['extension'].items()))
-        self.assertEqual(str(E.transaction.UnsignedTransaction.from_json(json.dumps(sorted_built['unsigned_tx'])).id) != f['unsigned_id'], True,
-                         'with the keys in sorted order it would be another transaction')
-        self.assertEqual(ergo.sign_redemption(sorted_built, f['rsecret'])['id'], f['unsigned_id'], 'to_ergo_json restores the order before signing')
-        broken = copy.deepcopy(f['built'])
-        broken['partial_tx']['inputs'] = broken['partial_tx']['inputs'][1:]
-        with self.assertRaises(ValunError) as e:
-            ergo.sign_redemption(broken, f['rsecret'])
-        self.assertEqual(e.exception.code, 'bad_redemption')
 
 
 if __name__ == '__main__':
