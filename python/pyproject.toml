@@ -21,6 +21,8 @@ classifiers = [
 [project.optional-dependencies]
 # `valun sell` (valun.ai_seller): the official Anthropic SDK
 ai = ["anthropic>=2.8,<3"]
+# Settlement on Ergo testnet (`valun ergo reserve|redeem`, valun.ergo): sigma-rust's ergo-lib (wheels for CPython 3.8-3.13)
+ergo = ["ergo-lib-python==0.28.0"]
 
 [project.scripts]
 valun = "valun.cli:main"
