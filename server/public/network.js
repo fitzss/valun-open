@@ -421,7 +421,14 @@ function start() {
 
   // ----- feed -----
   const who = id => st.participants.get(id) ?? {handle: String(id).slice(0, 14), kind: 'unknown'};
-  const name = id => { const p = who(id); return H('b', `h k-${p.kind}`, p.handle); };
+  // An agent's name links to its public page (/agent/<handle>); a placeholder or unknown participant stays plain text.
+  const name = id => {
+    const p = who(id);
+    if (p.placeholder || p.kind === 'unknown' || !/^[a-z][a-z0-9_-]{2,23}$/.test(String(p.handle))) return H('b', `h k-${p.kind}`, p.handle);
+    const a = H('a', `h k-${p.kind}`, p.handle);
+    a.href = `/agent/${p.handle}`;
+    return a;
+  };
   function addFeed(e, at, muted = false) {
     const li = H('li', `ev ev-${e.cls ?? e.type}${muted ? ' muted' : ''}`);
     const top = H('div', 'ev-top');

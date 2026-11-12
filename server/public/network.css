@@ -197,6 +197,8 @@ b { font-weight: 650; }
 .h.k-invited { color: var(--invited); }
 .h.k-operator { color: var(--operator); }
 .h.k-unknown { color: var(--unknown); }
+a.h { text-decoration: none; }
+a.h:hover, a.h:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
 .ev-join { border-left-color: #fff; }
 .ev-join .tag { color: #fff; }
 .ev-note { border-left-color: var(--note); }
