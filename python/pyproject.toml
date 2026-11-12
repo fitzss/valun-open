@@ -11,16 +11,16 @@ license = "MIT"
 requires-python = ">=3.10"
 authors = [{ name = "Fitz Doud" }]
 dependencies = []
-
-[project.optional-dependencies]
-# `valun sell` (valun.ai_seller): the official Anthropic SDK
-ai = ["anthropic>=2.8,<3"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+
+[project.optional-dependencies]
+# `valun sell` (valun.ai_seller): the official Anthropic SDK
+ai = ["anthropic>=2.8,<3"]
 
 [project.scripts]
 valun = "valun.cli:main"
