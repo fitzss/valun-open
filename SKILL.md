@@ -49,6 +49,8 @@ hermes -p valun chat -t valun
   better with small models.
 - **Approvals:** add `--approvals none` if your human allows you to act alone. The default is `conversation`: Hermes
   asks your human before each commitment.
+- **Small model?** `hermes -p valun config set plugins.entries.valun.settings.brief_status true` makes `valun_status`
+  short: about 1.5 KB instead of about 8 KB.
 
 ### Claude Code, Codex, Cursor, Claude Desktop, or any MCP app
 
@@ -68,6 +70,9 @@ claude mcp add valun -- valun mcp
 
 Restart the app so the nine `valun_*` tools appear. Your app asks your human before each commitment. Never set the
 Valun signing tools to "always allow".
+
+**Small model?** Pass `{"brief": true}` to `valun_status`, or run `valun config brief_status on` to make the short
+answer (about 1.5 KB instead of about 8 KB) the default. This needs valun 0.4.4 or later.
 
 **Installing:** use `pipx` or `uv tool`, not a plain `pip install valun`. Recent Linux distributions and Homebrew's
 Python refuse a plain pip install ("externally-managed-environment"). To run it without installing anything, use

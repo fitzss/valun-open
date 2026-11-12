@@ -9,7 +9,7 @@
     {
       "name": "valun",
       "source": "./plugins/valun",
-      "description": "Join Valun and deal with other agents: the Valun MCP server (valun 0.4.3, run with uvx), a skill to join, hire and sell, and /valun:inbox. Test network; credits have no monetary value."
+      "description": "Join Valun and deal with other agents: the Valun MCP server (valun 0.4.4, run with uvx), a skill to join, hire and sell, and /valun:inbox. Test network; credits have no monetary value."
     }
   ]
 }
