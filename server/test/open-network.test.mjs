@@ -139,6 +139,26 @@ test('the public profile: an agent says what it offers; join\'s checks hold', as
   refused(await call('PUT', '/profile', {about: 'x'}), 401, 'unauthorized', 'no token');
 });
 
+test('wants: what an agent pays others for, public like services; join\'s checks hold', async () => {
+  const want = 'translations of short READMEs into Spanish (3 PC)';
+  const r = ok(await call('PUT', '/profile', {wants: want}, S2.agent));
+  assert.deepEqual(r.changed, ['wants']);
+  assert.equal(ok(await call('GET', `/participants/${S2.id}`)).wants, want);
+  assert.equal(ok(await call('GET', '/participants')).find(x => x.id === S2.id).wants, want, 'in the directory');
+  assert.equal(ok(await call('GET', '/me', null, S2.agent)).participant.wants, want, 'in /me');
+  assert.deepEqual(ok(await call('PUT', '/profile', {wants: want}, S2.owner)).changed, [], 'the same text changes nothing');
+  assert.equal('wants' in ok(await call('GET', `/participants/${S1.id}`)), false, 'an agent that named none: no wants key (v15 shape)');
+  assert.deepEqual(ok(await call('PUT', '/profile', {wants: ''}, S1.agent)).changed, [], 'clearing what was never set changes nothing');
+  refused(await call('PUT', '/profile', {wants: 'x'.repeat(301)}, S2.agent), 400, 'invalid_field', 'too long');
+  refused(await call('PUT', '/profile', {wants: 'pay\u202efor'}, S2.agent), 400, 'invalid_field', 'bidi override');
+  assert.deepEqual(ok(await call('PUT', '/profile', {wants: ''}, S2.agent)).changed, ['wants'], 'cleared');
+  assert.equal('wants' in ok(await call('GET', `/participants/${S2.id}`)), false, 'cleared: the key is gone again');
+  // A self-serve join keeps them, with the open network on.
+  const S5 = await stranger('open-payer', {wants: 'haiku reviews (1 PC)'});
+  assert.equal(participant(S5.id).wants, 'haiku reviews (1 PC)');
+  refused(await call('POST', '/join-sandbox', {handle: 'bad-wants', operator: 'a stranger', wants: 'x'.repeat(301)}), 400, 'invalid_field', 'join: too long');
+});
+
 test('GET /info says how to join without an invite and what the limits are', async () => {
   const i = ok(await call('GET', '/info'));
   assert.deepEqual(i.self_serve, {join: '/pilot/v1/join-sandbox', open_network: true, days: 7,
@@ -156,9 +176,10 @@ test('turning the open network off boxes self-serve participants in at once, wha
     // The sandbox agents are still there for them.
     ok(await propose(S1, terms(S1, participant(sandbox.keys['sandbox-exact'].id), 1)), 201);
     // A new joiner gets the old box, and its owner cannot widen it.
-    const S4 = await stranger('boxed-again', {services: 'ignored while boxed'});
+    const S4 = await stranger('boxed-again', {services: 'ignored while boxed', wants: 'ignored while boxed'});
     assert.deepEqual([...participant(S4.id).mandate.counterparties].sort(), [...pilot.sandboxIds].sort());
     assert.equal(participant(S4.id).services, '');
+    assert.equal(participant(S4.id).wants, '');
     refused(await call('PUT', '/owner/mandate', {counterparties: 'any'}, S4.owner), 403, 'sandbox_only', 'counterparties any while boxed');
     assert.equal(ok(await call('GET', '/info')).self_serve.open_network, false);
   } finally { pilot.openNetwork = true; }

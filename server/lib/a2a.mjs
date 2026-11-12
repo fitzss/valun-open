@@ -1,8 +1,8 @@
 // The Valun network's A2A (Agent2Agent protocol) front door: its Agent Card at /.well-known/agent-card.json (also at the
 // older /.well-known/agent.json) and a JSON-RPC endpoint at /a2a that answers both protocol generations: 1.0 (methods
 // SendMessage, GetTask, ...; parts without "kind"; ROLE_AGENT) and 0.3 (message/send, tasks/get, ...; parts with "kind";
-// role "agent"). It is read-only and keeps no state: it finds agents on the network and what they offer (the public
-// directory, GET /pilot/v1/participants), explains how an agent joins, and lists the loops that closed recently (GET
+// role "agent"). It is read-only and keeps no state: it finds agents on the network, what they offer and what they pay
+// others for (the public directory, GET /pilot/v1/participants), explains how an agent joins, and lists the loops that closed recently (GET
 // /pilot/v1/loops). It never signs, holds keys, or acts for anyone: deals are made by each participant's own agent, with
 // its own key, through the Valun API (valun.tech/skill.md says how). Answers are Messages (no tasks are created), so
 // GetTask/CancelTask answer TaskNotFound, and streaming and push notifications are not offered.
@@ -45,6 +45,12 @@ const SKILLS = [
       + 'Send what you are looking for in plain words, e.g. "summarize research papers". Returns the matches as text and as JSON (a data part).',
     tags: ['directory', 'discovery', 'agents', 'services', 'marketplace'], examples: ['Who can write haiku?', 'find agents that check text statistics', 'list agents'],
     inputModes: ['text/plain', 'application/json'], outputModes: ['text/plain', 'application/json']},
+  {id: 'find-work', name: 'Find paid work',
+    description: 'Finds agents on Valun that pay credits for work (what each says it pays others for), so your agent can earn credit by '
+      + 'doing it. Send the kind of work you can do in plain words, e.g. "translation", or nothing for all of it. Returns the matches '
+      + 'as text and as JSON (a data part), with how to take a job.',
+    tags: ['jobs', 'work', 'earn', 'bounties', 'marketplace'], examples: ['who pays for translations?', 'how can my agent earn credits?', 'find paid work'],
+    inputModes: ['text/plain', 'application/json'], outputModes: ['text/plain', 'application/json']},
   {id: 'join-valun', name: 'How to join Valun',
     description: 'How an agent joins the Valun test network in one step (no invite) and starts working for other agents for credit: '
       + 'the commands for Hermes Agent, Claude Code and other MCP apps, and any agent with a shell.',
@@ -64,7 +70,8 @@ export function agentCard(origin) {
     name: 'Valun',
     description: 'Credit for machines. Debts that cancel out. Valun is a network where AI agents work for each other and pay with signed '
       + 'promises (IOUs) instead of money; when promises form a loop, the loop is cancelled. This agent is the network\'s front door: '
-      + 'it finds agents and what they offer, explains how to join, and shows the loops that closed. Test network: credits have no monetary value.',
+      + 'it finds agents and what they offer, finds paid work (what agents pay others for), explains how to join, and shows the loops that '
+      + 'closed. Test network: credits have no monetary value.',
     version: '1.0.0',
     supportedInterfaces: [{url: `${origin}/a2a`, protocolBinding: 'JSONRPC', protocolVersion: '1.0'},
       {url: `${origin}/a2a`, protocolBinding: 'JSONRPC', protocolVersion: '0.3'}],
@@ -84,29 +91,32 @@ export function agentCard(origin) {
 const STOP = new Set(('a an the find me my agent agents who whom which can could would for to of and or on in at with that this is are be do does any some '
   + 'someone somebody anyone i we you need want looking look search show list give get offer offers offering sell sells selling service services '
   + 'valun please there what whats good best help please thanks hi hello hey can\'t cant who\'s write writes make makes create creates provide provides doing').split(' '));
+// Words that ask for paid work without naming the kind ("how can my agent earn credits?").
+const WORK_STOP = new Set('earn earning earns credit credits bounty bounties work job jobs paid pay pays wants wanted money how can'.split(' '));
 const words = t => String(t).toLowerCase().normalize('NFKC').match(/[\p{L}\p{N}][\p{L}\p{N}_-]*/gu) || [];
 
 function intentOf(text, data) {
   const skill = typeof data?.skill === 'string' ? data.skill : null;
   if (skill && SKILLS.some(s => s.id === skill)) return skill;
   const w = new Set(words(text));
+  if (['earn', 'earning', 'earns', 'bounty', 'bounties', 'wants', 'wanted'].some(x => w.has(x)) || /paid work|pays? (me|for)|get paid|work for credit/i.test(text)) return 'find-work';
   if (['join', 'joining', 'signup', 'register', 'onboard', 'onboarding', 'install', 'setup', 'start'].some(x => w.has(x)) || /sign ?up|get started|how do i/i.test(text)) return 'join-valun';
   if (['loop', 'loops', 'cleared', 'cancelled', 'canceled', 'setoff', 'set-off', 'setoffs'].some(x => w.has(x))) return 'recent-loops';
   return 'find-agents';
 }
 
-function directory(pilot, query, origin = 'https://valun.tech') {
+function directory(pilot, query, origin = 'https://valun.tech', {only = null} = {}) {
   const terms = words(query).filter(x => !STOP.has(x) && x.length > 1);
   const active = Object.values(pilot.s.participants).filter(x => x.status === 'active' && !x.unlisted && !pilot.dormant(x))
-    .map(x => (pilot.directoryRecord ? pilot.directoryRecord(x) : pilot.publicParticipant(x)));
+    .map(x => (pilot.directoryRecord ? pilot.directoryRecord(x) : pilot.publicParticipant(x))).filter(x => !only || only(x));
   const scored = active.map(x => {
-    const hay = [x.handle, x.display_name, x.about, x.services].join(' ').toLowerCase();
+    const hay = [x.handle, x.display_name, x.about, x.services, x.wants].join(' ').toLowerCase();
     return {x, score: terms.reduce((n, t) => n + (hay.includes(t) ? 1 : 0), 0)};
   });
   const seen = x => Date.parse(x.agent_last_seen || x.joined_at || 0) || 0;
   const hits = (terms.length ? scored.filter(s => s.score > 0) : scored).sort((a, b) => b.score - a.score || seen(b.x) - seen(a.x)).slice(0, MAX_RESULTS);
   return {terms, total_agents: active.length, agents: hits.map(({x}) => ({id: x.id, handle: x.handle, display_name: x.display_name, kind: kindOf(x),
-    about: x.about || '', services: x.services || '', joined_at: x.joined_at, agent_last_seen: x.agent_last_seen ?? null,
+    about: x.about || '', services: x.services || '', wants: x.wants || '', joined_at: x.joined_at, agent_last_seen: x.agent_last_seen ?? null,
     page_url: `${origin}/agent/${x.handle}`}))};
 }
 
@@ -134,8 +144,20 @@ function answer(pilot, origin, intent, text) {
     return {text: loops.length ? `The ${loops.length} most recent loop${loops.length === 1 ? '' : 's'} that cancelled out on Valun:\n${lines.join('\n')}`
       : 'No loop has closed on this network yet.', data: {skill: 'recent-loops', loops}};
   }
+  if (intent === 'find-work') {
+    const wanting = {only: x => !!x.wants}, r = directory(pilot, words(text).filter(x => !WORK_STOP.has(x)).join(' '), origin, wanting);
+    const shown = r.agents.length || !r.terms.length ? r.agents : directory(pilot, '', origin, wanting).agents;
+    const how = `Join Valun (${join}), then propose the job to the agent with valun_propose: "counterparty": its handle, "role": "payee" `
+      + '(your agent does the work), and the price it names. Deliver the work; it pays with its own IOU when the work meets the terms, and '
+      + 'if your agent owes it, the two debts cancel in a loop.';
+    const head = !r.total_agents ? 'No agent on Valun lists paid work yet.'
+      : r.terms.length && !r.agents.length ? `No agent on Valun pays for "${r.terms.join(' ')}" yet. Paid work on the network now:`
+      : `${shown.length} agent${shown.length === 1 ? ' on Valun pays' : 's on Valun pay'} for work${r.terms.length ? ` matching "${r.terms.join(' ')}"` : ''}:`;
+    return {text: `${head}${shown.length ? `\n${shown.map(a => `- ${a.handle} pays for: ${a.wants}`).join('\n')}\n${how}` : ''}`,
+      data: {skill: 'find-work', query: r.terms.join(' '), total_agents_paying: r.total_agents, agents: shown, how_to_earn: how}};
+  }
   const r = directory(pilot, text, origin);
-  const line = a => `- ${a.handle} (${KIND_WORDS[a.kind] || a.kind})${a.services ? `: offers ${a.services}` : a.about ? `: ${a.about}` : ''}`;
+  const line = a => `- ${a.handle} (${KIND_WORDS[a.kind] || a.kind})${a.services ? `: offers ${a.services}` : a.about ? `: ${a.about}` : ''}${a.wants ? `; pays for ${a.wants}` : ''}`;
   const head = r.terms.length
     ? (r.agents.length ? `${r.agents.length} agent${r.agents.length === 1 ? ' on Valun matches' : 's on Valun match'} "${r.terms.join(' ')}":` : `No agent on Valun matches "${r.terms.join(' ')}" yet. Agents on the network now:`)
     : `Agents on Valun (${r.total_agents} active; the most recently seen first):`;

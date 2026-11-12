@@ -33,7 +33,7 @@ test('the Agent Card: A2A 1.0 fields, both interfaces, 0.3 top-level fields, COR
     for (const k of ['name', 'description', 'supportedInterfaces', 'version', 'capabilities', 'defaultInputModes', 'defaultOutputModes', 'skills']) assert.ok(c[k] !== undefined, k);
     assert.deepEqual(c.supportedInterfaces.map(i => [i.protocolBinding, i.protocolVersion, i.url]), [['JSONRPC', '1.0', `${base}/a2a`], ['JSONRPC', '0.3', `${base}/a2a`]]);
     assert.deepEqual([c.protocolVersion, c.url, c.preferredTransport], ['0.3.0', `${base}/a2a`, 'JSONRPC']);
-    assert.deepEqual(c.skills.map(s => s.id), ['find-agents', 'join-valun', 'recent-loops']);
+    assert.deepEqual(c.skills.map(s => s.id), ['find-agents', 'find-work', 'join-valun', 'recent-loops']);
     for (const s of c.skills) for (const k of ['id', 'name', 'description', 'tags']) assert.ok(s[k], `${s.id}.${k}`);
   }
   assert.equal(agentCard('https://valun.tech').supportedInterfaces[0].url, 'https://valun.tech/a2a');
@@ -78,6 +78,29 @@ test('the other skills: how to join, recent loops; a data part can name the skil
   const none = (await rpc(v1('quantum chemistry simulations'))).body.result.message;
   assert.match(none.parts[0].text, /No agent on Valun matches/);
   assert.equal(none.parts[1].data.agents.length, 3);
+});
+
+test('find-work: the agents that pay for work, what they pay for, and how to take a job', async () => {
+  const e = (await rpc(v1('How can my agent earn credits?'))).body.result.message;
+  assert.equal(e.parts[1].data.skill, 'find-work');
+  assert.deepEqual(e.parts[1].data.agents.map(a => a.handle), ['brief-bot'], 'only agents that list wants');
+  assert.equal(e.parts[1].data.agents[0].wants, 'translations of research summaries into Spanish (3 PC)');
+  assert.match(e.parts[0].text, /^1 agent on Valun pays for work:\n- brief-bot pays for: translations of research summaries into Spanish \(3 PC\)/);
+  assert.match(e.parts[1].data.how_to_earn, /"role": "payee"/);
+  assert.match(e.parts[1].data.how_to_earn, /cancel in a loop/);
+  const t = (await rpc(v1('who pays for translations?'))).body.result.message;
+  assert.equal(t.parts[1].data.query, 'translations');
+  assert.deepEqual(t.parts[1].data.agents.map(a => a.handle), ['brief-bot']);
+  assert.match(t.parts[0].text, /matching "translations"/);
+  const n = (await rpc(v1('find paid work for a haiku poet'))).body.result.message;
+  assert.equal(n.parts[1].data.skill, 'find-work');
+  assert.match(n.parts[0].text, /^No agent on Valun pays for "haiku poet" yet\. Paid work on the network now:\n- brief-bot/);
+  const d = (await rpc({jsonrpc: '2.0', id: 3, method: 'SendMessage', params: {message: {messageId: 'm', role: 'ROLE_USER', parts: [{data: {skill: 'find-work'}}]}}})).body.result.message;
+  assert.deepEqual(d.parts[1].data.agents.map(a => a.handle), ['brief-bot']);
+  // find-agents shows what an agent pays for, after what it offers.
+  const f = (await rpc(v1('research papers'))).body.result.message;
+  assert.match(f.parts[0].text, /- brief-bot \([^)]*\): Summaries of research papers; pays for translations of research summaries into Spanish/);
+  assert.equal(f.parts[1].data.agents[0].wants, 'translations of research summaries into Spanish (3 PC)');
 });
 
 test('errors in both generations: no tasks, no streaming or push, unknown method, bad requests, versions', async () => {

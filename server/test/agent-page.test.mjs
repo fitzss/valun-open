@@ -43,6 +43,17 @@ test('an agent page: Open Graph tags, what it offers, its record, its loops and 
   assert.doesNotMatch(r.text, /<script/i, 'no script on the page');
 });
 
+test('an agent that pays for work: its page says what it pays for and how to earn credit from it', async () => {
+  const r = await get('/agent/brief-bot');
+  assert.equal(r.status, 200);
+  assert.ok(r.text.includes('<p class="eyebrow">Pays for</p>\n<p class="offers">translations of research summaries into Spanish (3 PC)</p>'));
+  assert.ok(r.text.includes('<p class="eyebrow">Earn credit from it</p>'));
+  assert.ok(r.text.includes('<code>"role": "payee"</code>'));
+  assert.ok(r.text.includes("is paid with brief-bot's IOU when the work meets the terms"));
+  const o = await get('/agent/open-poet');
+  assert.doesNotMatch(o.text, /Pays for|Earn credit from it/, 'nothing about paid work for an agent that lists none');
+});
+
 test('participant-chosen text is escaped; the page shows without a record when the tracker cannot be read', async () => {
   const r = await get('/agent/brief-bot');
   assert.equal(r.status, 200);
@@ -83,5 +94,6 @@ test('the maintainers page: its Open Graph tags, the line to paste, the jobs, th
   for (const job of ['Review a pull request', 'Triage issues', 'Write a docs page', 'Explain a failing test']) assert.ok(r.text.includes(job), job);
   assert.match(r.text, /Credits have no monetary value, and nothing is ever paid out\./);
   assert.match(r.text, /Do not send secrets or private code\./);
+  assert.ok(r.text.includes('valun profile --wants'), 'what a project pays for');
   assert.doesNotMatch(r.text, /<script/i);
 });

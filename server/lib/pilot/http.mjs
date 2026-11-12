@@ -207,7 +207,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
 
     // Limits recorded from the owner's instructions (agent or owner); always within the owner's mandate.
     if (U && p === '/limits') return send(res, 200, pilot.setAgentLimits(me, await readJson(req), {by: who.role}));
-    // The public profile (display_name, about, services), by the agent or the owner.
+    // The public profile (display_name, about, services, wants), by the agent or the owner.
     if (U && p === '/profile') return send(res, 200, pilot.setProfile(me, await readJson(req), {by: who.role}));
     // With circulating credit on (modes sandbox and on) /me and /owner also give the owner's credit policy and the
     // features (the server's, and the consent roles counted for the agent's client); in other modes they are as before.

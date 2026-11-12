@@ -400,7 +400,7 @@ export class Pilot {
     return {id, code, expires_at: this.s.invites[id].expires_at};
   }
 
-  join({invite, handle, display_name, operator, about, services}) {
+  join({invite, handle, display_name, operator, about, services, wants}) {
     return this.serial(async () => {
       const inv = Object.values(this.s.invites).find(i => i.code_hash === sha256(String(invite || '')));
       if (!inv || inv.uses >= inv.max_uses || Date.parse(inv.expires_at) < this.now()) throw new PilotError('invalid_invite', 'invite code is invalid, used up or expired', 403);
@@ -416,7 +416,7 @@ export class Pilot {
       if (RESERVED_HANDLES.has(handle) || reserved(handle)) throw new PilotError('handle_taken', 'that handle is reserved', 409);
       if (others.some(p => p.handle === handle || norm(p.handle) === norm(handle) || norm(p.display_name) === norm(handle)))
         throw new PilotError('handle_taken', "that handle is taken (as another participant's handle or display name)", 409);
-      for (const [f, v] of Object.entries({display_name, operator, about, services}))
+      for (const [f, v] of Object.entries({display_name, operator, about, services, wants}))
         if (typeof v === 'string' && hasUnsafeText(v)) throw new PilotError('invalid_field', `${f} contains control, bidi or invisible characters`);
       const shown = norm(clean(display_name, 40, 'display_name'));
       if (shown && shown !== norm(handle) && (reserved(shown) || others.some(p => norm(p.handle) === shown || norm(p.display_name) === shown)))
@@ -425,6 +425,7 @@ export class Pilot {
       const p = {
         id: rid('vp_', 6), handle, display_name: clean(display_name, 40, 'display_name') || handle,
         operator: clean(operator, 60, 'operator', {required: true}), about: clean(about, 300, 'about'), services: clean(services, 300, 'services'),
+        wants: clean(wants, 300, 'wants'),
         pubkey: null, status: 'awaiting_agent', created_at: iso(this.now()), invite_id: inv.id,
         owner_token_hash: sha256(ownerToken), agent_token_hash: null,
         enrollment: {code_hash: sha256(code), expires_at: iso(this.now() + ENROLL_TTL_MS)},
@@ -609,16 +610,16 @@ export class Pilot {
     });
   }
 
-  // The public profile a participant's agent or owner can change after joining: display_name, about and services (what
-  // it offers), with join's checks (lengths, invisible characters, a display name that copies another participant's
+  // The public profile a participant's agent or owner can change after joining: display_name, about, services (what
+  // it offers) and wants (what it pays others for), with join's checks (lengths, invisible characters, a display name that copies another participant's
   // name). The handle and the operator stay as joined. Only a real change is saved and audited.
   setProfile(p, body = {}, {by = 'agent'} = {}) {
     const next = {};
-    for (const [f, max] of [['display_name', 40], ['about', 300], ['services', 300]]) if (body[f] !== undefined) {
+    for (const [f, max] of [['display_name', 40], ['about', 300], ['services', 300], ['wants', 300]]) if (body[f] !== undefined) {
       if (typeof body[f] === 'string' && hasUnsafeText(body[f])) throw new PilotError('invalid_field', `${f} contains control, bidi or invisible characters`);
       next[f] = clean(body[f], max, f);
     }
-    if (!Object.keys(next).length) throw new PilotError('invalid_field', 'give at least one of display_name, about, services');
+    if (!Object.keys(next).length) throw new PilotError('invalid_field', 'give at least one of display_name, about, services, wants');
     if (next.display_name !== undefined) {
       const norm = s => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''), shown = norm(next.display_name);
       next.display_name ||= p.handle;
@@ -626,7 +627,7 @@ export class Pilot {
         || Object.values(this.s.participants).some(q => q.id !== p.id && (norm(q.handle) === shown || norm(q.display_name) === shown))))
         throw new PilotError('display_name_taken', "display_name must not be reserved or copy another participant's handle or display name", 409);
     }
-    const changed = Object.keys(next).filter(f => next[f] !== p[f]);
+    const changed = Object.keys(next).filter(f => next[f] !== (p[f] ?? ''));
     if (changed.length) {
       for (const f of changed) p[f] = next[f];
       p.profile_changed_at = iso(this.now()); p.profile_changed_by = by;
@@ -782,7 +783,7 @@ export class Pilot {
   // operator_run: the operator holds its keys (spec 3, 18.15). In other modes the record is v15's.
   publicParticipant(p) {
     return {id: p.id, handle: p.handle, display_name: p.display_name, operator: p.operator, about: p.about, services: p.services,
-      pubkey: p.pubkey, status: p.status, joined_at: p.created_at, agent_last_seen: p.last_seen_agent,
+      ...(p.wants ? {wants: p.wants} : {}), pubkey: p.pubkey, status: p.status, joined_at: p.created_at, agent_last_seen: p.last_seen_agent,
       ...(p.sandbox_only ? {sandbox_only: true, sandbox_expires_at: p.sandbox_expires_at} : {}),
       ...(this.serverRun(p) && this.circulating ? {operator_run: true} : {})};
   }
@@ -810,8 +811,9 @@ export class Pilot {
   // Self-serve sandbox join (off unless the server is started with it): no invite; the participant can deal only with
   // the always-on sandbox agents, within small limits, for SANDBOX_DAYS. Lets anyone try Valun with their own agent.
   // With the open network (openNetwork) it may deal with any participant whose mandate allows it, and accepts notes of
-  // any issuer, within the same limits and days; `services` (what it offers, public) is kept as an invited joiner's is.
-  async joinSandbox({handle, display_name, operator, about, services} = {}) {
+  // any issuer, within the same limits and days; `services` (what it offers, public) and `wants` (what it pays others
+  // for, public) are kept as an invited joiner's are.
+  async joinSandbox({handle, display_name, operator, about, services, wants} = {}) {
     if (!this.openSandbox) throw new PilotError('not_found', 'self-serve sandbox joining is not enabled on this server', 404);
     const ids = [...(this.sandboxIds || [])];
     if (!ids.length) throw new PilotError('sandbox_unavailable', 'the sandbox agents are not running on this server', 503);
@@ -822,7 +824,7 @@ export class Pilot {
     const inv = this.createInvite({note: 'self-serve sandbox join', maxUses: 1, ttlDays: 1});
     const open = this.openNetwork;
     const j = await this.join({invite: inv.code, handle, display_name, operator: operator || 'self-serve sandbox tester', about,
-      services: open ? services : ''});
+      services: open ? services : '', wants: open ? wants : ''});
     const p = this.s.participants[j.participant_id], until = iso(this.now() + SANDBOX_DAYS * 864e5);
     p.sandbox_only = true; p.sandbox_expires_at = until;
     // With circulation on, a sandbox joiner also accepts transfers of notes the sandbox agents issued (and only those);
