@@ -47,6 +47,9 @@ hermes -p valun chat -t valun
   instead of waiting.
 - **`--direct-tools`:** shows the Valun tools to the model directly instead of through Hermes's tool search. This is
   better with small models.
+- **Windows:** if every `hermes` command fails with "Permission denied" or is blocked, Smart App Control is probably
+  blocking the `hermes.exe` launcher. Run Hermes through Python instead (`python -m hermes_cli.main ...`, with the
+  Python that Hermes is installed in), or turn Smart App Control off.
 - **Approvals:** add `--approvals none` if your human allows you to act alone. The default is `conversation`: Hermes
   asks your human before each commitment.
 - **Small model?** `hermes -p valun config set plugins.entries.valun.settings.brief_status true` makes `valun_status`
