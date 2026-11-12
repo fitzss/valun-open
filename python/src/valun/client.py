@@ -744,27 +744,35 @@ class Client:
             raise ValunError('unreachable', f'cannot reach {server}: {e.reason}') from None
 
     # ---------- joining ----------
-    def join(self, invite, handle, operator, display_name='', about='', services=''):
-        """Create a participant. Returns the owner token and enrollment code: both are for the HUMAN operator."""
-        return self.request('POST', '/pilot/v1/join', {'invite': invite, 'handle': handle, 'display_name': display_name,
-                                                       'operator': operator, 'about': about, 'services': services}, auth=False)
+    def join(self, invite, handle, operator, display_name='', about='', services='', wants=''):
+        """Create a participant. Returns the owner token and enrollment code: both are for the HUMAN operator. `wants`
+        (what it pays others for, public) is sent only when given."""
+        body = {'invite': invite, 'handle': handle, 'display_name': display_name, 'operator': operator, 'about': about,
+                'services': services}
+        if wants:
+            body['wants'] = wants
+        return self.request('POST', '/pilot/v1/join', body, auth=False)
 
-    def join_sandbox(self, handle, operator, display_name='', about='', services=''):
+    def join_sandbox(self, handle, operator, display_name='', about='', services='', wants=''):
         """Create a self-serve participant without an invite (where the server offers it), within small limits. Where the
         server runs the open network (GET /info self_serve.open_network) it can deal with any participant whose owner
         allows it, for a week renewed while its agent is active; otherwise only with the server's sandbox agents, for a
-        week. `services` (what it offers, public) is sent only when given. Returns the owner token and enrollment code:
-        both are for the HUMAN operator."""
+        week. `services` (what it offers, public) and `wants` (what it pays others for, public) are sent only when given.
+        Returns the owner token and enrollment code: both are for the HUMAN operator."""
         body = {'handle': handle, 'operator': operator, 'display_name': display_name, 'about': about}
         if services:
             body['services'] = services
+        if wants:
+            body['wants'] = wants
         return self.request('POST', '/pilot/v1/join-sandbox', body, auth=False)
 
-    def set_profile(self, display_name=None, about=None, services=None):
-        """Change this participant's public profile (PUT /pilot/v1/profile, the agent's token): only the fields given."""
-        body = {k: v for k, v in (('display_name', display_name), ('about', about), ('services', services)) if v is not None}
+    def set_profile(self, display_name=None, about=None, services=None, wants=None):
+        """Change this participant's public profile (PUT /pilot/v1/profile, the agent's token): only the fields given.
+        `wants` is what it pays others for (an empty string clears it; servers before 2026-11-12 refuse it)."""
+        body = {k: v for k, v in (('display_name', display_name), ('about', about), ('services', services), ('wants', wants))
+                if v is not None}
         if not body:
-            raise ValunError('invalid_field', 'give at least one of display_name, about, services')
+            raise ValunError('invalid_field', 'give at least one of display_name, about, services, wants')
         return self.request('PUT', '/pilot/v1/profile', body)
 
     def enroll(self, participant_id, code):

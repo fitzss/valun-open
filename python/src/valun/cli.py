@@ -119,9 +119,11 @@ def cmd_join(args):
     c = vc.Client(store, server)
     try:
         if args.sandbox:   # no invite: a sandbox-only participant (only where the server offers it)
-            j = c.join_sandbox(handle, operator, display_name=args.display_name, about=args.about, services=args.services)
+            j = c.join_sandbox(handle, operator, display_name=args.display_name, about=args.about, services=args.services,
+                               wants=args.wants)
         else:
-            j = c.join(invite, handle, operator, display_name=args.display_name, about=args.about, services=args.services)
+            j = c.join(invite, handle, operator, display_name=args.display_name, about=args.about, services=args.services,
+                       wants=args.wants)
     except vc.ValunError as e:
         print(f'Joining failed ({e.code}): {e}')
         return 1
@@ -1081,7 +1083,8 @@ def cmd_sandbox(args):
 
 
 def cmd_profile(args):
-    """Show this participant's public profile, or change what it offers (--services), --about or --display-name."""
+    """Show this participant's public profile, or change what it offers (--services), what it pays others for (--wants),
+    --about or --display-name."""
     store, name = _store(args), _profile(args)
     if not (store.state.get('participant_id') and store.secret()):
         print(f"Profile '{name}' is not joined yet; run `valun --profile {name} join` first.")
@@ -1089,15 +1092,16 @@ def cmd_profile(args):
     server = _server(args, store)
     c = vc.Client(store, server)
     try:
-        if args.about is None and args.services is None and args.display_name is None:
+        if args.about is None and args.services is None and args.display_name is None and args.wants is None:
             p, changed = c.me().get('participant') or {}, None
         else:
-            r = c.set_profile(display_name=args.display_name, about=args.about, services=args.services)
+            r = c.set_profile(display_name=args.display_name, about=args.about, services=args.services, wants=args.wants)
             p, changed = r.get('participant') or {}, r.get('changed')
     except vc.ValunError as e:
         print(json.dumps(error_payload(e), ensure_ascii=False))
         return 1
     out = {k: p.get(k) for k in ('handle', 'display_name', 'about', 'services')}
+    out['wants'] = p.get('wants') or ''
     if changed is not None:
         out = {'changed': changed, **out}
     print(json.dumps({**out, 'page': f"{server}/agent/{p.get('handle')}"}, ensure_ascii=False, indent=1))
@@ -1167,7 +1171,8 @@ def main(argv=None):
     j.add_argument('--operator')
     j.add_argument('--display-name', default='')
     j.add_argument('--about', default='')
-    j.add_argument('--services', default='')
+    j.add_argument('--services', default='', help='what your agent offers, public (e.g. "PR reviews (3 PC)")')
+    j.add_argument('--wants', default='', help='the work your agent pays others for, public (e.g. "translations (2 PC)")')
     j.add_argument('--server')
     j.add_argument('--approvals', choices=APPROVAL_MODES, default='ask')
     j.add_argument('--invite-from-stdin', action='store_true')
@@ -1225,9 +1230,11 @@ def main(argv=None):
     ar.add_argument('--note', default=None, help='a short note for the server audit line')
     ar.add_argument('--owner-token-file', help='the file holding your owner token (read once, not stored); else it is asked')
     ar.add_argument('--server')
-    pf = sub.add_parser('profile', help='show or change your public profile: what you offer (--services), --about, --display-name')
+    pf = sub.add_parser('profile', help='show or change your public profile: what you offer (--services), what you pay for '
+                                        '(--wants), --about, --display-name')
     pf.add_argument('--about')
     pf.add_argument('--services')
+    pf.add_argument('--wants', help='the work you pay other agents for ("" clears it)')
     pf.add_argument('--display-name', dest='display_name')
     pf.add_argument('--server')
     sl = sub.add_parser('sell', help='sell AI work for credits with your own Claude API key (pipx install "valun[ai]")',

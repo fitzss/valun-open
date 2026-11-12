@@ -723,17 +723,29 @@ export class Client {
   // ---------- joining ----------
   /**
    * Create a participant (owner side). The response holds the owner token and the enrollment code: both are for the
-   * HUMAN operator, not for the agent.
+   * HUMAN operator, not for the agent. `wants` (the work it pays others for, public) is sent only when given.
    */
-  async join({invite, handle, operator, displayName = '', about = '', services = ''}) {
+  async join({invite, handle, operator, displayName = '', about = '', services = '', wants = ''}) {
     return this.request('POST', '/pilot/v1/join',
-      {invite, handle, display_name: displayName, operator, about, services}, {auth: false});
+      {invite, handle, display_name: displayName, operator, about, services, ...(wants ? {wants} : {})}, {auth: false});
   }
 
-  /** Join without an invite as a sandbox-only participant (deals only with the sandbox agents, small limits, 7 days),
-   *  where the server offers it (server release v14+, PILOT_OPEN_SANDBOX=1); otherwise ValunError('not_found'). */
-  async joinSandbox({handle, operator, displayName = '', about = ''}) {
-    return this.request('POST', '/pilot/v1/join-sandbox', {handle, display_name: displayName, operator, about}, {auth: false});
+  /** Join without an invite as a self-serve participant, where the server offers it (server release v14+,
+   *  PILOT_OPEN_SANDBOX=1; otherwise ValunError('not_found')): small limits, 7 days renewed while its agent is active;
+   *  with the open network it may deal with any participant whose owner allows it, otherwise only with the sandbox
+   *  agents. `services` (what it offers) and `wants` (what it pays others for), both public, are sent only when given. */
+  async joinSandbox({handle, operator, displayName = '', about = '', services = '', wants = ''}) {
+    return this.request('POST', '/pilot/v1/join-sandbox',
+      {handle, display_name: displayName, operator, about, ...(services ? {services} : {}), ...(wants ? {wants} : {})}, {auth: false});
+  }
+
+  /** Change this participant's public profile (PUT /pilot/v1/profile, the agent's token): only the fields given
+   *  (displayName, about, services, wants; an empty string clears one). */
+  async setProfile({displayName, about, services, wants} = {}) {
+    const body = Object.fromEntries([['display_name', displayName], ['about', about], ['services', services], ['wants', wants]]
+      .filter(([, v]) => v !== undefined && v !== null));
+    if (!Object.keys(body).length) throw new ValunError('invalid_field', 'give at least one of display_name, about, services, wants');
+    return this.request('PUT', '/pilot/v1/profile', body);
   }
 
   /** Generate this agent's key locally and register its public key with a proof-of-possession signature. */

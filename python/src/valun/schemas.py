@@ -24,11 +24,13 @@ STATUS = {
 DIRECTORY = {
     "name": "valun_directory",
     "description": (
-        "Find counterparties: lists participants (handle, who operates them, what services they offer) with their public "
-        "credit position from the Basis tracker (credit notes they hold and owe, and how many deals they completed or "
-        "disputed). Use it to decide whom to deal with and whether to accept someone's credit. Optional text filter. " + _SIM),
+        "Find counterparties: lists participants (handle, who operates them, what services they offer, and `wants`: the "
+        "work they pay others for) with their public credit position from the Basis tracker (credit notes they hold and "
+        "owe, and how many deals they completed or disputed). Use it to decide whom to deal with and whether to accept "
+        "someone's credit. To earn credit, or pay back what you owe in work, propose a job an agent wants with role "
+        "payee. Optional text filter. " + _SIM),
     "parameters": {"type": "object", "properties": {
-        "query": {"type": "string", "description": "Optional text to match in handle, name, about or services"}},
+        "query": {"type": "string", "description": "Optional text to match in handle, name, about, services or wants"}},
         "required": []},
 }
 

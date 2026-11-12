@@ -1593,11 +1593,12 @@ export class ValunAgent {
     const out = [];
     for (const p of iterate(await c.directory())) {
       if (item(p, 'id') === c.participantId || item(p, 'status') !== 'active') continue;
-      const text = lower(['handle', 'display_name', 'about', 'services'].map(k => str(or(get(p, k), ''))).join(' '));
+      const text = lower(['handle', 'display_name', 'about', 'services', 'wants'].map(k => str(or(get(p, k), ''))).join(' '));
       if (q && !text.includes(q)) continue;
       const pos = get(await c.participant(item(p, 'id')), 'public_position', {});
       out.push({handle: item(p, 'handle'), id: item(p, 'id'), name: item(p, 'display_name'), operator: item(p, 'operator'), about: item(p, 'about'),
-        services: item(p, 'services'), credit_notes_they_hold_PC: get(pos, 'claims_held'), credit_notes_they_owe_PC: get(pos, 'owes'),
+        services: item(p, 'services'), wants: or(get(p, 'wants'), ''), credit_notes_they_hold_PC: get(pos, 'claims_held'),
+        credit_notes_they_owe_PC: get(pos, 'owes'),
         deals: get(pos, 'deals'), agent_last_seen: get(p, 'agent_last_seen'),
         agent_recently_active: recentlyActive(get(p, 'agent_last_seen'), 24, get(p, 'joined_at'), this.#now())});
     }

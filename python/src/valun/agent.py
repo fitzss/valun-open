@@ -1369,12 +1369,12 @@ class ValunAgent:
         for p in c.directory():
             if p['id'] == c.participant_id or p['status'] != 'active':
                 continue
-            text = ' '.join(str(p.get(k) or '') for k in ('handle', 'display_name', 'about', 'services')).lower()
+            text = ' '.join(str(p.get(k) or '') for k in ('handle', 'display_name', 'about', 'services', 'wants')).lower()
             if q and q not in text:
                 continue
             pos = c.participant(p['id']).get('public_position', {})
             out.append({'handle': p['handle'], 'id': p['id'], 'name': p['display_name'], 'operator': p['operator'], 'about': p['about'],
-                        'services': p['services'], 'credit_notes_they_hold_PC': pos.get('claims_held'), 'credit_notes_they_owe_PC': pos.get('owes'),
+                        'services': p['services'], 'wants': p.get('wants') or '', 'credit_notes_they_hold_PC': pos.get('claims_held'), 'credit_notes_they_owe_PC': pos.get('owes'),
                         'deals': pos.get('deals'), 'agent_last_seen': p.get('agent_last_seen'),
                         'agent_recently_active': recently_active(p.get('agent_last_seen'), joined_at=p.get('joined_at'))})
         out.sort(key=lambda x: not x['agent_recently_active'])

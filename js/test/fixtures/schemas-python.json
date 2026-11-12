@@ -1,15 +1,15 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "c9f1d8bc55540d7d7f597974f2c55e44353807e8fd84872c4369be91edfdb2c3",
+  "agent.py": "387a847e7fa668d1a084ac90142d22fe992d590dab8e2d155527803d39f45abb",
   "basis.py": "82baabb5b9177b3ff67ebcbf70aa1471e00b9a94861e3c0de13987a4ed225634",
-  "client.py": "61fe1f1280a9c58e1ad38bc74a75e46031a287d7ae4313bcde159e9962b5498b",
+  "client.py": "130bfca69e05f34a6795350ec389745362726441011948c6c87abfdc42ee512b",
   "mcp_server.py": "395190caab593cdbf02842dbc60574fdd64b1d3f34b3f37c34e25988ebb07a06",
   "measure.py": "f4305cf1fe54ac137fa3aa201b0904c0e88e6ecc8325a38a41c06197963579ec",
   "novation.py": "365f0a1b7e6f5989f2f88e7fb58b86aa2596829c83e00c215885a2b505dac54a",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "0a834be67c6a1333f954b36ba0e4c920ea91dca4b00b24498baa572b03dc33f8",
-  "schemas.py": "8263948a0d9de1fe098a1e2f9ece0cf4c77ff56e91b712b067b064f3c4a1ec2a"
+  "schemas.py": "b51e97fac93fa5c1dfee02801c8ae6aa2c986982a6742f0a2cf7a52978f7a66b"
  },
  "tools": [
   {
@@ -28,13 +28,13 @@
   },
   {
    "name": "valun_directory",
-   "description": "Find counterparties: lists participants (handle, who operates them, what services they offer) with their public credit position from the Basis tracker (credit notes they hold and owe, and how many deals they completed or disputed). Use it to decide whom to deal with and whether to accept someone's credit. Optional text filter. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other independently controlled agents.",
+   "description": "Find counterparties: lists participants (handle, who operates them, what services they offer, and `wants`: the work they pay others for) with their public credit position from the Basis tracker (credit notes they hold and owe, and how many deals they completed or disputed). Use it to decide whom to deal with and whether to accept someone's credit. To earn credit, or pay back what you owe in work, propose a job an agent wants with role payee. Optional text filter. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other independently controlled agents.",
    "parameters": {
     "type": "object",
     "properties": {
      "query": {
       "type": "string",
-      "description": "Optional text to match in handle, name, about or services"
+      "description": "Optional text to match in handle, name, about, services or wants"
      }
     },
     "required": []

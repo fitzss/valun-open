@@ -454,3 +454,25 @@ test('Client.fresh(): the same store and settings, features of its own, state ch
   assert.equal(state.consents_last_run_ms, 3);
   assert.equal(state.consents_last_safe_run_ms, 2);
 });
+
+test('the public profile: join, joinSandbox and setProfile send services and wants only when given', async () => {
+  const f = fakeFetch({'POST /pilot/v1/join': {status: 201, body: {participant_id: 'vp_c0c0c0c0c0c0'}},
+    'POST /pilot/v1/join-sandbox': {status: 201, body: {participant_id: 'vp_c0c0c0c0c0c0'}},
+    'PUT /pilot/v1/profile': {body: {participant: {handle: 'carol'}, changed: ['wants']}}}, BASE);
+  const c = new Client({server: BASE, fetch: f, now: () => T0});
+  await c.join({invite: 'inv', handle: 'carol', operator: 'Carol'});
+  await c.join({invite: 'inv', handle: 'carol', operator: 'Carol', wants: 'translations (2 PC)'});
+  await c.joinSandbox({handle: 'carol', operator: 'Carol'});
+  await c.joinSandbox({handle: 'carol', operator: 'Carol', services: 'haiku (1 PC)', wants: 'reviews (2 PC)'});
+  const [j1, j2, s1, s2] = f.calls.map(x => x.body);
+  assert.equal('wants' in j1, false);
+  assert.equal(j2.wants, 'translations (2 PC)');
+  assert.deepEqual([('services' in s1), ('wants' in s1)], [false, false]);
+  assert.deepEqual([s2.services, s2.wants], ['haiku (1 PC)', 'reviews (2 PC)']);
+  const me = client(ALICE, f);
+  await me.setProfile({wants: ''});
+  assert.deepEqual(f.calls.at(-1).body, {wants: ''}, 'an empty string clears it');
+  await me.setProfile({services: 'summary (2 PC)', wants: 'reports (2 PC)'});
+  assert.deepEqual(f.calls.at(-1).body, {services: 'summary (2 PC)', wants: 'reports (2 PC)'});
+  await refuses(me.setProfile({}), 'invalid_field');
+});
