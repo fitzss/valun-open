@@ -961,8 +961,11 @@ test('mode on: sandbox-mallory pays a self-serve sandbox participant that owes s
   if (!onLive(t)) return;
   const p = on.pilot, sb = on.sandbox, S = await stranger('sbx-on-own'), I = await invitedOn('sbx-on-own-inv'), X = agentOn('sandbox-exact'), M = agentOn('sandbox-mallory');
   const m = p.s.participants[M.id], tried = [], held = sb.payByHeldNote, ledger = p.ledger;
-  sb.payByHeldNote = async function (handle, x, d) { tried.push(d.id); return null; };
   await stopLoop(sb);
+  // An earlier test can leave a delivery sandbox-mallory has not paid yet (the loop pays it once that test restarts
+  // it, which a fast run outpaces): one tick pays it first, so that only this test's deals reach the stub below.
+  await sb.tick();
+  sb.payByHeldNote = async function (handle, x, d) { tried.push(d.id); return null; };
   try {
     const sell = async (P, text) => {
       const id = await offerOn(P, {payer: M, payee: P, price: 2, service: job('notary', text)});

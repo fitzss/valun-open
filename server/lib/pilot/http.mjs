@@ -162,10 +162,11 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         statements: sources(statements),
         participants: Object.values(pilot.s.participants).filter(x => x.status === 'active').length,
         ...(mode !== 'off' ? {features: featuresFor(mode), novation: NOVATION_INFO, circulation_statements: sources(circulationStatements)} : {}),
-        ...(pilot.selfServe?.() ? {self_serve: pilot.selfServe()} : {}),
         // MIG-1 (release v16.1): only while pilot writes are refused (Pilot.writeRefusal), so that the operator's live
-        // check sees it; absent otherwise (a v15 state in mode off answers exactly as before).
+        // check sees it; absent otherwise (a v15 state in mode off answers exactly as before). Cached like the rest of
+        // /info, so it shows at most PUBLIC_CACHE_MS after the refusal starts or ends.
         ...writesRefused(pilot),
+        ...(pilot.selfServe?.() ? {self_serve: pilot.selfServe()} : {}),
       };
     });
     // ---------- Ergo testnet (valun-testnet-1, once on chain): the chain view and the reserves, public ----------

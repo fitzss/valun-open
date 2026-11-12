@@ -44,6 +44,18 @@ test('live-check: a healthy server in mode on is all clear, and importing the sc
   assert.match(r.find(x => x.name.includes('VmRSS')).detail, /^123\.9 MiB/);       // 100160 + 13024 + 13740 kB
 });
 
+test('live-check: the testnet network runs tracker v4 with anchored netting (its pin), the pilot tracker v3.2', async t => {
+  const L = await load(t); if (!L) return;
+  const s = healthy(); s.info.network = 'valun-testnet-1';
+  s.status.basis.pin = 'Basis tracker v4.3 (anchored netting): Valun fork commit b84b2e780894beb980d789be22ec888ffe97d65a (branch circulating-credit-v4 on Basis upstream 43e2173)';
+  assert.deepEqual(levels(L.evaluate(s, {expectMode: 'on'}), 'tracker pin'), ['ok']);
+  s.status.basis.pin = PIN;
+  assert.deepEqual(levels(L.evaluate(s, {expectMode: 'on'}), 'pin names tracker v4 (anchored netting)'), ['fail'], 'v3.2 on the testnet');
+  const p = healthy(); p.info.network = 'valun-pilot-1';
+  p.status.basis.pin = 'Basis tracker v4.3 (anchored netting): Valun fork commit b84b2e7 (branch circulating-credit-v4)';
+  assert.deepEqual(levels(L.evaluate(p, {expectMode: 'on'}), 'pin names tracker v3.2'), ['fail'], 'v4 on the pilot');
+});
+
 test('live-check: a tracker that is not pinned, or not v3.2, fails once circulation is on (a warning in mode off)', async t => {
   const L = await load(t); if (!L) return;
   const s = healthy(); s.status.basis.pin = `${PIN} (binary not pinned)`;
