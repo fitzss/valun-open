@@ -121,6 +121,10 @@ class Testnet(unittest.TestCase):
         self.assertEqual(T.WANTS['docs-fix']['reference_url'], 'https://valun-testnet.fly.dev/skill.md')
         self.assertEqual((T.WANTS['report']['price'], T.WANTS['docs-fix']['price']), (2, 2), 'PC-sized: the seller scales them')
         self.assertEqual(T.MANDATE, {'may_issue_credit': True, 'max_issue_per_deal': 2_000_000, 'max_issue_outstanding': 40_000_000})
+        m = T.selling_mandate()
+        self.assertEqual((m['max_accept_per_deal'], m['max_accept_per_issuer'], m['approve_above']), (5_000_000, 20_000_000, 10_000_000), 'within the self-serve caps')
+        self.assertNotIn('expires_at', m, 'the server keeps the self-serve expiry')
+        self.assertIsNone(H.selling_mandate()['expires_at'], 'the pilot: no expiry, as before')
         for h in T.AGENTS:
             self.assertLessEqual(len(T.services_text(h)), 300, 'the server keeps at most 300 characters')
             self.assertLessEqual(len(T.wants_text(h)), 300)

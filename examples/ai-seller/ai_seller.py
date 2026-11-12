@@ -149,16 +149,37 @@ def bootstrap(handle):
     store = vc.FileStore(profile_path(handle))
     if not store.state.get('participant_id'):
         raise SystemExit(f'{handle}: join failed (rc {p.returncode}): {p.stderr[-400:]}')
-    with open(owner_file, encoding='utf-8') as f:
-        owner = f.read().strip()
-    c = vc.Client(store, SERVER)
-    c.request('PUT', '/pilot/v1/owner/mandate', {
-        'objective': 'Sell AI work (house agent of the Valun operator).', 'counterparties': 'any', 'approve_above': 10 * SCALE,
-        'max_accept_per_deal': 10 * SCALE, 'max_accept_per_issuer': 20 * SCALE, 'may_issue_credit': False, 'expires_at': None,
-        'accept_transfers': True, 'accept_notes_from': 'any', 'auto_clear': True}, token=owner)
-    p2 = run('config', 'consents.as_new_creditor', 'on')
-    print(json.dumps({'agent': handle, 'action': 'mandate_set', 'config_rc': p2.returncode}), flush=True)
+    set_selling_mandate(handle, store)
     return store
+
+
+def selling_mandate():
+    """The owner mandate for selling: any counterparty, commitments up to 10 PC-sized without the owner, no expiry, never
+    issuing credit (sync_mandate then allows the wants), payments with notes of any issuer accepted, set-offs on. A testnet
+    agent is a self-serve participant: it accepts at most 5 PC-sized per deal, and its mandate keeps the expiry the
+    server set (renewed while the agent is active)."""
+    m = {'objective': 'Sell AI work (house agent of the Valun operator).', 'counterparties': 'any', 'approve_above': 10 * SCALE,
+         'max_accept_per_deal': 10 * SCALE, 'max_accept_per_issuer': 20 * SCALE, 'may_issue_credit': False, 'expires_at': None,
+         'accept_transfers': True, 'accept_notes_from': 'any', 'auto_clear': True}
+    if NETWORK == 'testnet':
+        m['max_accept_per_deal'] = 5 * SCALE
+        del m['expires_at']
+    return m
+
+
+def set_selling_mandate(handle, store):
+    """Set the selling mandate once per profile (state house_selling_mandate; the owner token is read once from its
+    private file and never printed), and let the client accept payments by transfer."""
+    if store.state.get('house_selling_mandate'):
+        return
+    with open(os.path.join(home_dir(), f'owner-{handle}.txt'), encoding='utf-8') as f:
+        owner = f.read().strip()
+    vc.Client(store, SERVER).request('PUT', '/pilot/v1/owner/mandate', selling_mandate(), token=owner)
+    store.state['house_selling_mandate'] = True
+    store.save()
+    p2 = subprocess.run([sys.executable, '-m', 'valun', '--profile', handle, 'config', 'consents.as_new_creditor', 'on'],
+                        text=True, capture_output=True, timeout=300)
+    print(json.dumps({'agent': handle, 'action': 'mandate_set', 'config_rc': p2.returncode}), flush=True)
 
 
 def sync_profile(handle, store):
@@ -206,7 +227,9 @@ def main():
     budget = ais.Budget(os.path.join(home_dir(), 'ai-seller-budget.json'), MONTHLY_USD, DAILY_USD)
     stores = {h: bootstrap(h) for h in AGENTS}
     for h, st in stores.items():
-        for sync in (sync_profile, sync_mandate):
+        # A testnet profile that joined before its selling mandate was set (a start that stopped there) gets it now.
+        syncs = ((set_selling_mandate,) if NETWORK == 'testnet' else ()) + (sync_profile, sync_mandate)
+        for sync in syncs:
             try:
                 sync(h, st)
             except vc.ValunError as e:
