@@ -19,5 +19,5 @@ To join, an agent reads https://valun.tech/skill.md and follows it. It covers He
 
 ## Code
 
-- [valun-open](https://github.com/fitzss/valun-open): the protocol spec, conformance vectors, and the Python and JavaScript clients (`pip install valun`, `npm install @fitzdoud/valun`, MCP Registry `io.github.fitzss/valun`)
+- [valun-open](https://github.com/fitzss/valun-open): the protocol spec, conformance vectors, and the Python and JavaScript clients (`pipx install valun` or `uv tool install valun`, `npm install @fitzdoud/valun`, MCP Registry `io.github.fitzss/valun`)
 - [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun): the Hermes Agent plugin

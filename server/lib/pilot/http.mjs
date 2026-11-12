@@ -122,6 +122,8 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         return send(res, 200, pilot.newEnrollmentCode(x, {by: 'operator'}));
       }
       if (U && (m = /^\/admin\/participants\/(vp_[0-9a-f]{12})\/mandate$/.exec(p))) return send(res, 200, pilot.setMandate(pilot.participant(m[1]), await readJson(req), {by: 'operator'}));
+      // List or unlist a participant in the directory (operator test and demo agents that are not running).
+      if (U && (m = /^\/admin\/participants\/(vp_[0-9a-f]{12})\/listing$/.exec(p))) return send(res, 200, pilot.setListed(pilot.participant(m[1]), (await readJson(req)).listed));
       // The clearing engine (circulation modes sandbox and on; otherwise these routes do not exist): a batch run now, and
       // its diagnostics (ids included: operator only).
       if (pilot.circulating && P && p === '/admin/clearing/run') {
@@ -152,10 +154,15 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         ...(pilot.selfServe?.() ? {self_serve: pilot.selfServe()} : {}),
       };
     });
-    if (G && p === '/participants') return sendCached(res, send, 'participants', () => Object.values(pilot.s.participants).map(publicOf));
+    // The directory leaves out participants the operator unlisted (test or demo agents that are not running); ?all=1 lists
+    // every participant (the network view draws every edge), each unlisted one with unlisted: true.
+    if (G && p === '/participants') {
+      const all = url.searchParams.get('all') === '1';
+      return sendCached(res, send, all ? 'participants:all' : 'participants', () => Object.values(pilot.s.participants).filter(x => all || !x.unlisted).map(x => pilot.directoryRecord(x)));
+    }
     if (G && (m = /^\/participants\/(vp_[0-9a-f]{12})$/.exec(p))) {
       const x = pilot.participant(m[1]);
-      return sendCached(res, send, `participant:${x.id}`, async () => ({...pilot.publicParticipant(x), public_position: await pilot.publicPosition(x)}));
+      return sendCached(res, send, `participant:${x.id}`, async () => ({...pilot.directoryRecord(x), public_position: await pilot.publicPosition(x)}));
     }
     // The reconciliation rows are v15's in every mode (SV-PRIV-1, owner decision 9): no per-edge journal columns here.
     if (G && p === '/ledger') return sendCached(res, send, 'ledger', async () => { const l = await pilot.ledger(); return {unit: pilot.unit, notes: l, reconciliation: await pilot.reconcile(l, {public: true})}; });
@@ -306,13 +313,13 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
   handle.agentPage = async (req, res, name, send, clientIp) => {
     if (limited(`ipr:${clientIp(req)}`, ipReadsPerMinute)) throw new PilotError('rate_limited', 'too many requests; slow down', 429);
     const h = String(name || '').toLowerCase();
-    const x = AGENT_HANDLE_RE.test(h) ? Object.values(pilot.s.participants).find(q => q.handle === h && (q.status === 'active' || q.past_pubkeys?.length)) : null;
+    const x = AGENT_HANDLE_RE.test(h) ? Object.values(pilot.s.participants).find(q => q.handle === h && !q.unlisted && (q.status === 'active' || q.past_pubkeys?.length)) : null;
     if (!x) return send(res, 404, renderAgentNotFound(), HTML);
     const r = await cachedRead(`agent-page:${x.id}`, async () => {
       let pos = null;
       try { pos = await pilot.publicPosition(x); } catch { pos = null; }   // the page still shows, without the record
       const loops = loopsOf(pilot.s.setoffs, pilot.s.participants, publicOf);
-      return {status: 200, body: renderAgentPage(agentView(publicOf(x), pos, loops, {now: Date.now(), dormant: !!pilot.dormant?.(x)}))};
+      return {status: 200, body: renderAgentPage(agentView(pilot.directoryRecord(x), pos, loops, {now: Date.now(), dormant: !!pilot.dormant?.(x)}))};
     });
     return send(res, r.status, r.body, HTML);
   };

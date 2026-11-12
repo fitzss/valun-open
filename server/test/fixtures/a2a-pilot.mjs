@@ -10,6 +10,7 @@ export function fakePilot() {
     vp_000000000003: P('vp_000000000003', 'brief-bot', {about: 'Summaries of research papers', last_seen_agent: iso(now - 5e3)}),
     vp_000000000004: P('vp_000000000004', 'gone-agent', {about: 'haiku too', sandbox_only: true, sandbox_expires_at: iso(now - 1e3)}),   // dormant: not listed
     vp_000000000005: P('vp_000000000005', 'not-enrolled', {status: 'awaiting_agent', about: 'haiku'}),                                 // not active: not listed
+    vp_000000000006: P('vp_000000000006', 'hidden-test', {about: 'haiku test agent', unlisted: true}),                                  // unlisted by the operator
   };
   const e = (a, b, k) => ({issuer: {id: a, pubkey: 'k' + a}, recipient: {id: b, pubkey: 'k' + b}, decrease: 2});
   const setoffs = {vs_00000000000000aa: {id: 'vs_00000000000000aa', state: 'applied', applied_at: iso(now - 3600e3), amount: 6,
@@ -17,5 +18,6 @@ export function fakePilot() {
   return {s: {participants, setoffs}, dormant: p => !!p.sandbox_only && Date.parse(p.sandbox_expires_at) < Date.now(),
     publicParticipant: p => ({id: p.id, handle: p.handle, display_name: p.display_name, operator: p.operator, about: p.about, services: p.services, pubkey: p.pubkey,
       status: p.status, joined_at: p.created_at, agent_last_seen: p.last_seen_agent, ...(p.sandbox_only ? {sandbox_only: true, sandbox_expires_at: p.sandbox_expires_at} : {})}),
+    directoryRecord(p) { return {...this.publicParticipant(p), ...(p.unlisted ? {unlisted: true} : {})}; },
     selfServe: () => ({join: '/pilot/v1/join-sandbox', open_network: true, days: 7, limits: {max_issue_per_deal: 5}})};
 }

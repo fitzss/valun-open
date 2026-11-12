@@ -360,7 +360,10 @@ as sent, including leading and trailing whitespace.
 All under `/pilot/v1`. Request bodies are JSON objects of at most 65,536 bytes (`413 too_large`, `400 bad_json`). Errors
 are `{"error": <code>, "message": <text>, ...extra}` (the codes are listed under "Error codes" at the end).
 
-**Public**: `GET /info`, `GET /participants`, `GET /participants/{vp}` (the participant and its `public_position`),
+**Public**: `GET /info`, `GET /participants` (the directory: since 2026-11-12 it leaves out participants the operator
+unlisted, test or demo agents that are not running; `?all=1` lists every participant, each unlisted one with
+`unlisted: true`; the agents the server runs show `agent_last_seen` as now, since they are always on),
+`GET /participants/{vp}` (the participant and its `public_position`),
 `GET /ledger` (the tracker's notes in the pilot denomination and their reconciliation), `GET /clearing` (circulating
 credit only: aggregates), `GET /loops` and `GET /loops/{vs}` (closed loops: the most recent 50 applied set-offs, newest
 first, `{unit, network, loops: [{id, applied_at, cycle_length, amount_PC, each_PC, participants, members: [{handle, kind}],
@@ -418,7 +421,10 @@ tokens cannot sign deal acts.
 **Operator** (on the host, at an owner's request; recorded as `by: operator` and shown in that owner's console):
 `POST /admin/participants/{vp}/enrollment-code` (only while no agent key is registered),
 `PUT /admin/participants/{vp}/mandate` (the owner can always change it back) and, after confirming the owner out of
-band, `POST /admin/participants/{vp}/owner-token`.
+band, `POST /admin/participants/{vp}/owner-token`. The operator's own: `PUT /admin/participants/{vp}/listing {listed}`
+lists or unlists a participant in the directory (`participant.listing` audit line; `400 invalid_field` unless `listed`
+is true or false). An unlisted participant keeps its deals, notes and loops and can still act; its agent page is a
+`404` and the A2A front door leaves it out (`scripts/pilot-admin.mjs unlist|list {vp}`).
 
 **Admin**: every `/admin/` route answers only on loopback, never through the Fly proxy (a request with `Fly-Client-IP`,
 `X-Forwarded-For` or `Fly-Forwarded-Port` is `404`), and only with the admin token from the data volume in

@@ -226,7 +226,7 @@ test('the loop card, its 404 page and the landing keep the CSP', async () => {
      'https://valun.tech/'],
     'external URLs are links (and the canonical URL) only');
   const js = pub('home.js');
-  assert.deepEqual([...js.matchAll(/getJson\('([^']+)'\)/g)].map(m => m[1]).sort(), ['/pilot/v1/clearing', '/pilot/v1/ledger', '/pilot/v1/loops', '/pilot/v1/participants']);
+  assert.deepEqual([...js.matchAll(/getJson\('([^']+)'\)/g)].map(m => m[1]).sort(), ['/pilot/v1/clearing', '/pilot/v1/ledger', '/pilot/v1/loops', '/pilot/v1/participants?all=1']);
   assert.doesNotMatch(js, /authorization|bearer|x-valun|localStorage|innerHTML|eval\(/i);
   assert.match(js, /credentials: 'omit'/);
   for (const css of ['home.css', 'loop.css', 'network.css']) {
@@ -261,7 +261,7 @@ test('the landing: the headline, the meta tags, the solo and friends commands of
   assert.doesNotMatch(home.replace(/<circle\b/g, ''), /circle/i, 'no "circle" in the copy (it reads as the company Circle)');
   // the solo loop
   const cmd = /<code id="cmd-solo">([^<]*)<\/code>/.exec(home)[1].split('\n');
-  assert.deepEqual(cmd, ['pip install valun', 'valun join --sandbox --handle yourname --operator "YOUR NAME"', 'valun sandbox tour']);
+  assert.deepEqual(cmd, ['pipx install valun', 'valun join --sandbox --handle yourname --operator "YOUR NAME"', 'valun sandbox tour']);
   assert.match(home, /<section class="play" id="solo"/);
   assert.match(home, /add <code>--yes<\/code> to let it go on by itself/);
   assert.match(home, /<code>uvx valun join --sandbox …<\/code> then <code>uvx valun sandbox tour<\/code>/);

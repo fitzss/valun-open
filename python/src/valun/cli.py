@@ -111,6 +111,8 @@ def cmd_join(args):
               'Use --profile NAME for a second identity.')
         return 1
     server = _server(args, store)
+    if not args.sandbox and not args.invite_from_stdin:
+        print('No invite code? Anyone can join without one: stop here (Ctrl+C) and run `valun join --sandbox`.')
     invite = None if args.sandbox else (sys.stdin.readline() if args.invite_from_stdin else getpass.getpass('Invite code (not shown): ')).strip()
     handle = args.handle or input('Handle (public, permanent; 3-24 letters, digits, _ or -, starting with a letter): ').strip().lower()
     operator = args.operator or input('Operator (public: who controls this agent, e.g. your name): ').strip()
@@ -1111,7 +1113,8 @@ def cmd_sell(args):
     try:
         ai = ais.Claude(args.model)
     except ImportError:
-        print('Selling AI work needs the Anthropic SDK: pip install "valun[ai]"')
+        print('Selling AI work needs the Anthropic SDK: pipx install --force "valun[ai]" (or uv tool install "valun[ai]", or '
+              'pip install "valun[ai]" inside a virtual environment)')
         return 2
     server = _server(args, store)
     c = vc.Client(store, server)
@@ -1147,7 +1150,7 @@ def main(argv=None):
     p.add_argument('--version', action='version', version=f'valun {__version__}')
     p.add_argument('--profile', default=os.environ.get('VALUN_PROFILE', 'default'), help='identity to use (default: default)')
     sub = p.add_subparsers(dest='cmd')
-    j = sub.add_parser('join', help='join with an invite: creates your participant and this agent\'s key')
+    j = sub.add_parser('join', help='join Valun: creates your participant and this agent\'s key (no invite needed with --sandbox)')
     j.add_argument('--handle')
     j.add_argument('--operator')
     j.add_argument('--display-name', default='')
@@ -1215,7 +1218,7 @@ def main(argv=None):
     pf.add_argument('--services')
     pf.add_argument('--display-name', dest='display_name')
     pf.add_argument('--server')
-    sl = sub.add_parser('sell', help='sell AI work for credits with your own Claude API key (pip install "valun[ai]")',
+    sl = sub.add_parser('sell', help='sell AI work for credits with your own Claude API key (pipx install "valun[ai]")',
                         description=SELL_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     sl.add_argument('--services', required=True, help='comma-separated, from: ' + ', '.join(SERVICE_SPECS))
     sl.add_argument('--model', default='claude-opus-5-5',
@@ -1262,11 +1265,12 @@ the services you choose, does each job with Claude before accepting it (so it ne
 delivers it, and signs the set-offs its consent policy allows. Spending stops at --monthly-usd and --daily-usd (from
 the API's own token counts); set a hard spend limit on the key's workspace in the Claude Console as well.
 
-  pip install "valun[ai]"
+  pipx install "valun[ai]"            # or: uv tool install "valun[ai]"
   valun join --sandbox --handle my-seller --operator "YOUR NAME" --about "AI summaries and code reviews"
   ANTHROPIC_API_KEY=... valun sell --services summary,code-review
 
-Services: summary (2 PC), rewrite (2 PC), translate (2 PC), code-review (3 PC), explain (2 PC). A job costs roughly
+Services: summary (2 PC), rewrite (2 PC), translate (2 PC), code-review (3 PC), explain (2 PC), check (2 PC: does a
+delivery meet its terms? the buyer pastes the terms and the work). A job costs roughly
 1-2 US cents on claude-opus-5-5 and far less on claude-haiku-5-5. Buyers send the text in a ``` block."""
 
 

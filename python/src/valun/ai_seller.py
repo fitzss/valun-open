@@ -13,7 +13,8 @@ Spending is capped in dollars, computed from the API's own token counts and the 
 Set a hard spend limit on the API key too (in the Claude Console, a workspace with a monthly spend limit). The budget
 here keeps spending under it; the Console limit is the guarantee.
 
-Needs the optional dependency: pip install "valun[ai]" (the official Anthropic SDK), and ANTHROPIC_API_KEY set.
+Needs the optional dependency (the official Anthropic SDK): pipx install "valun[ai]" or uv tool install "valun[ai]";
+and ANTHROPIC_API_KEY set.
 """
 import json
 import os
@@ -73,6 +74,16 @@ SERVICE_SPECS = {
                 'blurb': 'explain (2 PC): what code or an error message means, step by step, for a developer',
                 'task': 'The job: explain what the code or error message in the text does or means, step by step, for a '
                         'developer, in at most 250 words; end with the most likely fix if it is an error.'},
+    'check': {'price': 2, 'max_chars': 12000, 'max_tokens': 2500, 'effort': 'medium',
+              'keywords': ('check a delivery', 'check the delivery', 'check this delivery', 'check my delivery', 'verify a delivery',
+                           'verify the delivery', 'verify this delivery', 'check the work', 'verify the work', 'check delivered work',
+                           'quality check'),
+              'blurb': 'check (2 PC): does a delivery meet its terms? A verdict and the reasons, for the terms and the work you paste',
+              'task': 'The job: the text holds the terms of a deal and the work delivered for it. Judge whether the delivery meets '
+                      'the terms. Start with exactly one line: "Verdict: meets the terms", "Verdict: does not meet the terms" or '
+                      '"Verdict: unclear". Then give the reasons in at most 8 short bullets, quoting the terms they rest on. If it '
+                      'does not meet them, end with one sentence the buyer can use as the reason for a dispute. Judge only from the '
+                      'text: say so when something cannot be verified from it (for example whether a cited source exists).'},
 }
 
 
@@ -208,7 +219,7 @@ class Claude:
     """One job, one Messages API call (the official Anthropic SDK; it reads ANTHROPIC_API_KEY)."""
 
     def __init__(self, model=DEFAULT_MODEL):
-        import anthropic                     # the optional dependency: pip install "valun[ai]"
+        import anthropic                     # the optional dependency: valun[ai]
         self.anthropic, self.model = anthropic, model
         self.client = anthropic.Anthropic(timeout=120.0, max_retries=2)
 
@@ -278,7 +289,9 @@ class AISeller(vsandbox.Seller):
         if not service:
             return self._decline(did, 'I do not offer that service. ' + menu, 'unknown_service')
         spec = SERVICE_SPECS[service]
-        text = vsandbox.extract_text((terms.get('service') or {}).get('description'))
+        description = (terms.get('service') or {}).get('description')
+        blocks = re.findall(r'^```[^\n]*\n(.*?)\n```', description or '', re.S | re.M) if service == 'check' else []
+        text = '\n\n'.join(blocks) if len(blocks) > 1 else vsandbox.extract_text(description)
         if not text or not text.strip():
             return self._decline(did, 'I could not find the text to work on. ' + vsandbox.HOW_TO_SEND, 'no_text', service=service)
         if len(text) > spec['max_chars']:

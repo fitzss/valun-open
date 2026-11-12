@@ -284,3 +284,19 @@ class Cli(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PaidCheck(unittest.TestCase):
+    def test_check_is_chosen_and_reads_every_block(self):
+        services = ('code-review', 'explain', 'check')
+        self.assertEqual(A.which_service(services, terms('Check a delivery', 'x', 2)), 'check')
+        self.assertEqual(A.which_service(services, terms('Please verify the work', 'x', 2)), 'check')
+        ai = FakeAI({**OK, 'content': 'Verdict: meets the terms\n- ok'})
+        desc = 'Check this delivery against its terms.\nTERMS:\n```\nthree bullet points\n```\nDELIVERY:\n```\n- a\n- b\n- c\n```'
+        s = seller(offer(terms('Check a delivery', desc, 2)), ai, services=services)
+        s.answer(ITEM)
+        self.assertEqual([c[0] for c in s.c.calls], ['accept', 'deliver'])
+        system, user, spec = ai.runs[0]
+        self.assertIn('Judge whether the delivery meets the terms', system)
+        self.assertIn('<text>\nthree bullet points\n\n- a\n- b\n- c\n</text>', user)
+        self.assertEqual(spec['price'], 2)

@@ -198,3 +198,24 @@ test('an active self-serve agent stays: renewed when seen with under 6 days left
   pilot.openNetwork = false;
   try { ok(await call('GET', '/me', null, S5.agent)); assert.equal(p.sandbox_expires_at, soon); } finally { pilot.openNetwork = true; }
 });
+
+test('the directory leaves out what the operator unlisted (?all=1 lists it, marked); always-on agents show as seen now', async () => {
+  const T = await stranger('test-agent-x'), admin = {'x-valun-admin': 'admin-secret'};
+  const has = async (q, id) => ok(await call('GET', '/participants' + q)).some(x => x.id === id);
+  assert.equal(await has('', T.id), true);
+  const r = ok(await call('PUT', `/admin/participants/${T.id}/listing`, {listed: false}, null, admin));
+  assert.deepEqual([r.listed, r.changed, r.participant.unlisted], [false, true, true]);
+  assert.equal(await has('', T.id), false, 'not in the directory');
+  const all = ok(await call('GET', '/participants?all=1')).find(x => x.id === T.id);
+  assert.equal(all.unlisted, true, 'listed with ?all=1, marked');
+  assert.equal(ok(await call('GET', `/participants/${T.id}`)).unlisted, true, 'its own record still reads');
+  ok(await call('GET', '/me', null, T.agent));                                   // it is still a participant that can act
+  assert.equal(ok(await call('PUT', `/admin/participants/${T.id}/listing`, {listed: false}, null, admin)).changed, false);
+  refused(await call('PUT', `/admin/participants/${T.id}/listing`, {listed: 'no'}, null, admin), 400, 'invalid_field', 'not a boolean');
+  refused(await call('PUT', `/admin/participants/${T.id}/listing`, {listed: true}), 404, 'not_found', 'no admin token');
+  ok(await call('PUT', `/admin/participants/${T.id}/listing`, {listed: true}, null, admin));
+  assert.equal(await has('', T.id), true, 'listed again');
+  // The sandbox agents the server runs are always on: seen now, not "never".
+  const exact = ok(await call('GET', '/participants')).find(x => x.handle === 'sandbox-exact');
+  assert.ok(Date.now() - Date.parse(exact.agent_last_seen) < 60_000, exact.agent_last_seen);
+});

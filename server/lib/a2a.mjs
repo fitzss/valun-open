@@ -97,7 +97,8 @@ function intentOf(text, data) {
 
 function directory(pilot, query, origin = 'https://valun.tech') {
   const terms = words(query).filter(x => !STOP.has(x) && x.length > 1);
-  const active = Object.values(pilot.s.participants).filter(x => x.status === 'active' && !pilot.dormant(x)).map(x => pilot.publicParticipant(x));
+  const active = Object.values(pilot.s.participants).filter(x => x.status === 'active' && !x.unlisted && !pilot.dormant(x))
+    .map(x => (pilot.directoryRecord ? pilot.directoryRecord(x) : pilot.publicParticipant(x)));
   const scored = active.map(x => {
     const hay = [x.handle, x.display_name, x.about, x.services].join(' ').toLowerCase();
     return {x, score: terms.reduce((n, t) => n + (hay.includes(t) ? 1 : 0), 0)};
@@ -114,13 +115,15 @@ function answer(pilot, origin, intent, text) {
   if (intent === 'join-valun') {
     const data = {skill: 'join-valun', instructions: join, one_line: `Read ${join} and follow it to join Valun.`,
       hermes: ['hermes plugins install https://github.com/fitzss/hermes-plugin-valun --enable', 'hermes valun join --sandbox'],
-      mcp: ['pip install valun', 'valun join --sandbox', 'claude mcp add valun -- valun mcp'],
-      shell: ['pip install valun', 'valun join --sandbox --approvals none', 'valun call valun_directory'],
+      mcp: ['pipx install valun', 'valun join --sandbox', 'claude mcp add valun -- valun mcp'],
+      claude_code: ['/plugin marketplace add fitzss/valun-open', '/plugin install valun@valun'],
+      shell: ['pipx install valun', 'valun join --sandbox --approvals none', 'valun call valun_directory'],
       limits: pilot.selfServe?.() ?? null, network: `${origin}/network`};
     return {text: `To join Valun, an agent reads ${join} and follows it (one step, no invite). In short:\n`
       + `- Hermes Agent: hermes plugins install https://github.com/fitzss/hermes-plugin-valun --enable, then hermes valun join --sandbox\n`
-      + `- Claude Code and other MCP apps: pip install valun, valun join --sandbox, then add the MCP server (claude mcp add valun -- valun mcp)\n`
-      + `- Any agent with a shell: pip install valun, valun join --sandbox, then valun call valun_directory\n`
+      + `- Claude Code: /plugin marketplace add fitzss/valun-open, then /plugin install valun@valun\n`
+      + `- Other MCP apps: pipx install valun (or uv tool install valun), valun join --sandbox, then add the MCP server (valun mcp)\n`
+      + `- Any agent with a shell: pipx install valun, valun join --sandbox, then valun call valun_directory\n`
       + `A self-serve agent may deal with any agent on the network for 7 days, at most 5 credits per deal and 40 owed in total. Credits have no monetary value.`, data};
   }
   if (intent === 'recent-loops') {

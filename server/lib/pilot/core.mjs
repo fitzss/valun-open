@@ -786,6 +786,24 @@ export class Pilot {
       ...(p.sandbox_only ? {sandbox_only: true, sandbox_expires_at: p.sandbox_expires_at} : {}),
       ...(this.serverRun(p) && this.circulating ? {operator_run: true} : {})};
   }
+  // The directory's record of a participant (GET /participants, GET /participants/{vp}, agent pages, the A2A front door):
+  // the public record, where an agent the server runs (the sandbox agents) is always on, so its agent_last_seen is now,
+  // and a participant the operator unlisted (a test or demo agent that is not running; setListed) carries unlisted:
+  // true. Deal views keep publicParticipant as it was.
+  directoryRecord(p) {
+    return {...this.publicParticipant(p), ...(this.serverRun(p) || this.sandboxIds?.has(p.id) ? {agent_last_seen: iso(this.now())} : {}),
+      ...(p.unlisted ? {unlisted: true} : {})};
+  }
+  // The operator lists or unlists a participant (the admin route PUT /admin/participants/{vp}/listing): an unlisted
+  // one stays a participant in every way (its deals, notes and loops are unchanged, and it can still act); it is only
+  // left out of the directory, so newcomers do not offer work to agents that are not running.
+  setListed(p, listed, {by = 'operator'} = {}) {
+    if (typeof listed !== 'boolean') throw new PilotError('invalid_field', 'listed must be true or false');
+    const was = !p.unlisted;
+    if (listed) delete p.unlisted; else p.unlisted = true;
+    if (was !== listed) { this.save(); this.store.audit({type: 'participant.listing', id: p.id, listed, by}); }
+    return {participant: this.directoryRecord(p), listed, changed: was !== listed};
+  }
   // Whether the participant with this id is one the server runs (its notes are issued with keys the operator holds).
   operatorRun(id) { const q = typeof id === 'string' && Object.hasOwn(this.s.participants, id) ? this.s.participants[id] : null; return this.serverRun(q); }
 

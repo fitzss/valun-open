@@ -249,7 +249,7 @@ function start() {
 
   async function refresh() {
     clearTimeout(timer);
-    const [participants, ledger, loops, clearing] = await Promise.all([getJson('/pilot/v1/participants').catch(() => null), getJson('/pilot/v1/ledger').catch(() => null),
+    const [participants, ledger, loops, clearing] = await Promise.all([getJson('/pilot/v1/participants?all=1').catch(() => null), getJson('/pilot/v1/ledger').catch(() => null),
       getJson('/pilot/v1/loops').catch(() => null), getJson('/pilot/v1/clearing').catch(() => null)]);
     const data = {participants, ledger, loops, clearing}, ok = !!(participants || ledger || loops || clearing);
     $('stats').textContent = ok ? statsLine(stats(data)) : 'The network cannot be read right now; retrying.';

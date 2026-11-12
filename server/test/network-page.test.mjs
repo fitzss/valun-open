@@ -41,7 +41,7 @@ test('the page keeps the CSP: no inline script, style or handler; only its own f
   assert.match(html, /<link rel="stylesheet" href="\/network\.css">/);
   assert.deepEqual([...html.matchAll(/(?:src|href)="(https?:[^"]+)"/g)].map(m => m[1]), ['https://github.com/fitzss/valun-open#readme'], 'the only external URL is a link');
   const reads = [...js.matchAll(/getJson\('([^']+)'\)/g)].map(m => m[1]).sort();
-  assert.deepEqual([...new Set(reads)], ['/api/status', '/pilot/v1/clearing', '/pilot/v1/info', '/pilot/v1/ledger', '/pilot/v1/loops', '/pilot/v1/participants']);
+  assert.deepEqual([...new Set(reads)], ['/api/status', '/pilot/v1/clearing', '/pilot/v1/info', '/pilot/v1/ledger', '/pilot/v1/loops', '/pilot/v1/participants?all=1']);
   assert.match(html, /<a class="hook" href="\/">Close a loop with your own agent →<\/a>/, 'the header links to the landing');
   assert.match(html, /<a class="logo" href="\/" aria-label="Valun home"><svg class="mark" viewBox="0 0 100 100" aria-hidden="true">/, 'the mark and the wordmark');
   assert.match(html, /<link rel="icon" href="\/favicon\.svg" type="image\/svg\+xml">/);

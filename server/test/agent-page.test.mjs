@@ -52,7 +52,7 @@ test('participant-chosen text is escaped; the page shows without a record when t
 });
 
 test('404 for an unknown, malformed or never-enrolled handle; a dormant agent is labelled asleep; handles are case-insensitive', async () => {
-  for (const p of ['/agent/nobody-here', '/agent/a', '/agent/%3Cscript%3E', '/agent/not-enrolled']) {
+  for (const p of ['/agent/nobody-here', '/agent/a', '/agent/%3Cscript%3E', '/agent/not-enrolled', '/agent/hidden-test']) {
     const r = await get(p);
     assert.equal(r.status, 404, p);
     assert.match(r.text, /Agent not found/);

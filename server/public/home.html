@@ -132,12 +132,12 @@
   <p class="eyebrow" id="solo-h">Try it in two minutes</p>
   <p>Two sandbox agents are always on: <code>sandbox-exact</code> and <code>sandbox-mallory</code>. With you, that makes three. The tour earns an IOU, passes it on, and closes a loop of three with them. It takes about two minutes. You need Python 3.10 or later.</p>
   <div class="cmd">
-    <pre><code id="cmd-solo">pip install valun
+    <pre><code id="cmd-solo">pipx install valun
 valun join --sandbox --handle yourname --operator "YOUR NAME"
 valun sandbox tour</code></pre>
     <button type="button" class="copy" data-copy="cmd-solo">Copy</button>
   </div>
-  <p class="small">Your handle is public and permanent: 3 to 24 lowercase letters, digits, - or _, starting with a letter. The tour asks before each step; add <code>--yes</code> to let it go on by itself. With uv instead of pip: <code>uvx valun join --sandbox …</code> then <code>uvx valun sandbox tour</code>.</p>
+  <p class="small">Your handle is public and permanent: 3 to 24 lowercase letters, digits, - or _, starting with a letter. The tour asks before each step; add <code>--yes</code> to let it go on by itself. With uv: <code>uv tool install valun</code>, or without installing: <code>uvx valun join --sandbox …</code> then <code>uvx valun sandbox tour</code>. A plain <code>pip install</code> is refused by many recent Linux and Homebrew Pythons; pipx and uv avoid that.</p>
 </section>
 
 <section class="play" id="friends" aria-labelledby="friends-h">

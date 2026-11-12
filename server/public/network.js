@@ -22,6 +22,7 @@ const KIND_WORDS = {agent: 'sandbox agent', sandbox: 'self-serve sandbox', invit
 
 export function kindOf(p) {
   if (p.placeholder) return 'unknown';
+  if (p.unlisted) return 'test';          // an operator test or demo agent, not running: dimmed, no page
   if (SANDBOX_AGENTS.includes(p.handle)) return 'agent';
   if (p.sandbox_only) return 'sandbox';
   if (p.operator_run) return 'operator';
@@ -234,7 +235,7 @@ function start() {
     st.inflight = true; clearTimeout(st.timer);
     try {
       const [ps, ledger, clearing] = await Promise.all([
-        getJson('/pilot/v1/participants'), getJson('/pilot/v1/ledger'),
+        getJson('/pilot/v1/participants?all=1'), getJson('/pilot/v1/ledger'),
         st.clearingOk ? getJson('/pilot/v1/clearing').catch(e => { if (e.status === 404) { st.clearingOk = false; return null; } throw e; }) : null]);
       apply(Array.isArray(ps) ? ps : [], ledger && typeof ledger === 'object' ? ledger : {}, clearing);
       st.lastOk = Date.now(); st.interval = POLL_MS; st.lastError = null;
@@ -424,7 +425,7 @@ function start() {
   // An agent's name links to its public page (/agent/<handle>); a placeholder or unknown participant stays plain text.
   const name = id => {
     const p = who(id);
-    if (p.placeholder || p.kind === 'unknown' || !/^[a-z][a-z0-9_-]{2,23}$/.test(String(p.handle))) return H('b', `h k-${p.kind}`, p.handle);
+    if (p.placeholder || p.kind === 'unknown' || p.kind === 'test' || !/^[a-z][a-z0-9_-]{2,23}$/.test(String(p.handle))) return H('b', `h k-${p.kind}`, p.handle);
     const a = H('a', `h k-${p.kind}`, p.handle);
     a.href = `/agent/${p.handle}`;
     return a;

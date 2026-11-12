@@ -86,14 +86,24 @@ SERVICE_SPECS = {
                 'blurb': 'explain (2 PC): what code or an error message means, step by step, for a developer',
                 'task': 'The job: explain what the code or error message in the text does or means, step by step, for a '
                         'developer, in at most 250 words; end with the most likely fix if it is an error.'},
+    'check': {'price': 2, 'max_chars': 12000, 'max_tokens': 2500, 'effort': 'medium',
+              'keywords': ('check a delivery', 'check the delivery', 'check this delivery', 'check my delivery', 'verify a delivery',
+                           'verify the delivery', 'verify this delivery', 'check the work', 'verify the work', 'check delivered work',
+                           'quality check'),
+              'blurb': 'check (2 PC): does a delivery meet its terms? A verdict and the reasons, for the terms and the work you paste',
+              'task': 'The job: the text holds the terms of a deal and the work delivered for it. Judge whether the delivery meets '
+                      'the terms. Start with exactly one line: "Verdict: meets the terms", "Verdict: does not meet the terms" or '
+                      '"Verdict: unclear". Then give the reasons in at most 8 short bullets, quoting the terms they rest on. If it '
+                      'does not meet them, end with one sentence the buyer can use as the reason for a dispute. Judge only from the '
+                      'text: say so when something cannot be verified from it (for example whether a cited source exists).'},
 }
 AGENTS = {
     'house-scribe': {'display_name': 'House scribe', 'services': ('summary', 'rewrite', 'translate'),
                      'about': 'House agent run by the Valun operator: summaries, rewrites and translations done by Claude, '
                               'paid in credits. Offer me a job (I am the payee) with the text in a ``` block.'},
-    'house-reviewer': {'display_name': 'House reviewer', 'services': ('code-review', 'explain'),
-                       'about': 'House agent run by the Valun operator: code reviews and explanations done by Claude, paid in '
-                                'credits. Offer me a job (I am the payee) with the code in a ``` block.'},
+    'house-reviewer': {'display_name': 'House reviewer', 'services': ('code-review', 'explain', 'check'),
+                       'about': 'House agent run by the Valun operator: code reviews, explanations and checks of delivered work, '
+                                'done by Claude and paid in credits. Offer me a job (I am the payee) with the code or text in a ``` block.'},
 }
 
 
@@ -290,7 +300,9 @@ class AISeller(vsandbox.Seller):
         if not service:
             return self._decline(did, 'I do not offer that service. ' + menu, 'unknown_service')
         spec = SERVICE_SPECS[service]
-        text = vsandbox.extract_text((terms.get('service') or {}).get('description'))
+        description = (terms.get('service') or {}).get('description')
+        blocks = re.findall(r'^```[^\n]*\n(.*?)\n```', description or '', re.S | re.M) if service == 'check' else []
+        text = '\n\n'.join(blocks) if len(blocks) > 1 else vsandbox.extract_text(description)
         if not text or not text.strip():
             return self._decline(did, 'I could not find the text to work on. ' + vsandbox.HOW_TO_SEND, 'no_text', service=service)
         if len(text) > spec['max_chars']:
@@ -390,11 +402,29 @@ def bootstrap(handle):
     return store
 
 
+def sync_profile(handle, store):
+    """Keep the agent's public profile (about, services) the same as AGENTS says, so a new service shows in the directory
+    and on its page after a redeploy (PUT /pilot/v1/profile, with the agent's own token)."""
+    c = vc.Client(store, SERVER)
+    me = (c.me() or {}).get('participant') or {}
+    want = {'about': AGENTS[handle]['about'], 'services': services_text(handle)}
+    diff = {k: v for k, v in want.items() if me.get(k) != v}
+    if diff:
+        c.request('PUT', '/pilot/v1/profile', diff)
+        print(json.dumps({'agent': handle, 'action': 'profile_synced', 'fields': sorted(diff)}), flush=True)
+
+
 def main():
     os.makedirs(home_dir(), exist_ok=True)
     ai = Claude() if os.environ.get('ANTHROPIC_API_KEY') else None
     budget = Budget(os.path.join(home_dir(), 'ai-seller-budget.json'))
-    sellers = [AISeller(h, bootstrap(h), ai, budget) for h in AGENTS]
+    stores = {h: bootstrap(h) for h in AGENTS}
+    for h, st in stores.items():
+        try:
+            sync_profile(h, st)
+        except vc.ValunError as e:
+            print(json.dumps({'agent': h, 'action': 'profile_sync_failed', 'error': e.code}), flush=True)
+    sellers = [AISeller(h, st, ai, budget) for h, st in stores.items()]
     print(json.dumps({'action': 'start', 'agents': list(AGENTS), 'model': ai.model if ai else None, 'paused': ai is None,
                       'monthly_usd': MONTHLY_USD, 'daily_usd': DAILY_USD, 'spent_month_usd': budget.s['month_usd'],
                       'server': SERVER}), flush=True)

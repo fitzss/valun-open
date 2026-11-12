@@ -30,6 +30,10 @@ const setoffLine = o => `${o.id}  ${o.state}  ${o.amount} PC  ${o.members.length
 if (cmd === 'invite') {
   const r = await call('POST', '/invites', {note: opt('note', ''), max_uses: Number(opt('uses', 1)), ttl_days: Number(opt('days', 14))});
   console.log(`invite ${r.id}: ${r.code}  (expires ${r.expires_at})`);
+} else if ((cmd === 'unlist' || cmd === 'list') && /^vp_[0-9a-f]{12}$/.test(args[1] || '')) {
+  // Hide a participant from the directory (a test or demo agent that is not running), or show it again.
+  const r = await call('PUT', `/participants/${args[1]}/listing`, {listed: cmd === 'list'});
+  console.log(`${r.participant.handle}: ${r.listed ? 'listed' : 'unlisted'}${r.changed ? '' : ' (unchanged)'}`);
 } else if (cmd === 'invites') {
   for (const i of await call('GET', '/invites')) console.log(`${i.id}  uses ${i.uses}/${i.max_uses}  expires ${i.expires_at}  ${i.note}`);
 } else if (cmd === 'enrollment-code' && /^vp_[0-9a-f]{12}$/.test(args[1] || '')) {
