@@ -1,4 +1,5 @@
-# The Valun AI seller (ai_seller.py) in one small container: Python, the published valun client and the official
+# The Valun AI seller (ai_seller.py) in one small container: Python, the published valun client (with ergo-lib, so a
+# testnet agent can lock tERG of its own in a reserve: `valun ergo reserve`) and the official
 # Anthropic SDK, both pinned. Profiles (each agent's key), owner tokens and the budget file live on the /data volume.
 FROM python:3.12-slim
 
