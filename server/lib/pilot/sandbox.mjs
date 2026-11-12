@@ -32,6 +32,7 @@
 // With circulating credit off (modes off and bound) they behave exactly as before: payee only, the v15 mandate, and the
 // server signer signs nothing.
 import crypto from 'node:crypto';
+import {pc, amt} from './units.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
@@ -41,11 +42,11 @@ import {BOUND_NOTE_MS, SETOFF_MS, TRANSFER_MS, PRIOR_ACK} from './caps.mjs';
 import {classifyEdge, quoteDigest, MAX_AGE_MS} from './novation.mjs';
 
 export const SERVICES = {
-  'text-stats': {price: 3, keywords: ['text-stats', 'text stats', 'text statistics', 'word count']},
-  notary: {price: 2, keywords: ['notary', 'notar', 'sha-256', 'sha256']},
+  'text-stats': {price: pc(3), keywords: ['text-stats', 'text stats', 'text statistics', 'word count']},
+  notary: {price: pc(2), keywords: ['notary', 'notar', 'sha-256', 'sha256']},
 };
-const SERVICES_TEXT = 'text-stats (3 PC): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. '
-  + 'notary (2 PC): SHA-256 and byte length of your text. Put the text in a ``` block, after TEXT: at the end, or as the only '
+const SERVICES_TEXT = `text-stats (${amt(pc(3))}): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. `
+  + `notary (${amt(pc(2))}): SHA-256 and byte length of your text. ` + 'Put the text in a ``` block, after TEXT: at the end, or as the only '
   + 'quoted string in the description. Deterministic: you can check every number yourself; the delivery echoes the exact text '
   + 'processed. I only do the work (payee).';
 // payWithHeldNotes: the agent's pay_with_held_notes with circulating credit on.
@@ -57,14 +58,14 @@ export const AGENTS = {
 };
 const OPERATOR = 'Valun operator (sandbox agent run by the server, no AI)';
 const MANDATE = {objective: 'Sell exactly checkable text jobs to anyone testing Valun.', may_issue_credit: false, may_accept_credit: true,
-  max_issue_per_deal: 0, max_issue_outstanding: 0, max_accept_per_deal: 25, max_accept_per_issuer: 200, min_price_as_payee: 0,
-  min_payer_coverage_pct: 0, counterparties: 'any', approve_above: 1000, review_deliveries: false};
+  max_issue_per_deal: 0, max_issue_outstanding: 0, max_accept_per_deal: pc(25), max_accept_per_issuer: pc(200), min_price_as_payee: 0,
+  min_payer_coverage_pct: 0, counterparties: 'any', approve_above: pc(1000), review_deliveries: false};
 // With circulating credit on (design §5.8, §8): the agents also buy (a credit note per deal of at most 5 PC, at most 1000
 // PC outstanding each, not counting debt to dormant sandbox participants), accept transfers of anyone's notes, move
 // their own debt and clear automatically; sandbox-exact never pays with notes it holds, sandbox-mallory prefers to.
 const CIRCULATION_MANDATE = Object.freeze({...MANDATE, objective: 'Sell and buy exactly checkable text jobs with anyone testing Valun.',
-  may_issue_credit: true, max_issue_per_deal: 5, max_issue_outstanding: 1000, max_accept_per_deal: 25, max_accept_per_issuer: 1000,
-  counterparties: 'any', approve_above: 1000, review_deliveries: false,
+  may_issue_credit: true, max_issue_per_deal: pc(5), max_issue_outstanding: pc(1000), max_accept_per_deal: pc(25), max_accept_per_issuer: pc(1000),
+  counterparties: 'any', approve_above: pc(1000), review_deliveries: false,
   accept_transfers: true, accept_notes_from: 'any', refuse_notes_from: Object.freeze([]), novate_own_debt: true, auto_clear: true});
 // The mandate the drift check keeps an agent at: the v15 one with circulating credit off, the circulation one with it on.
 export const mandateFor = (handle, circulating) => (circulating ? {...CIRCULATION_MANDATE, pay_with_held_notes: AGENTS[handle].payWithHeldNotes} : {...MANDATE});
@@ -92,16 +93,16 @@ const SANDBOX_BUYING = 'Circulating credit is on for sandbox participants only, 
 // (on the tracker, plus purchases they agreed and have not paid, plus transfers of their notes to it being collected)
 // plus the price must stay at most STRANGER_EARN_CAP; and each agent buys at most PURCHASES_PER_STRANGER_PER_DAY jobs
 // from one stranger in 24 hours (the welcome job included), on at most BUY_TEXT_MAX_BYTES of text.
-export const STRANGER_EARN_CAP = 20;
+export const STRANGER_EARN_CAP = pc(20);
 const PURCHASES_PER_STRANGER_PER_DAY = 3, BUY_TEXT_MAX_BYTES = 4000;
 // The welcome job sandbox-exact sends every new sandbox_only participant once (design §5.8): text-stats of this text.
 const WELCOME_FROM = 'sandbox-exact';
 // At most this many welcome jobs are attempted in one tick (the tick's other work is never held up by a burst of joiners).
 export const WELCOME_PER_TICK = 3;
-export const WELCOME = Object.freeze({title: 'Welcome job: text-stats', price: 3, offer_hours: 24, deliver_hours: 48,
+export const WELCOME = Object.freeze({title: 'Welcome job: text-stats', price: pc(3), offer_hours: 24, deliver_hours: 48,
   deliverable: 'the exact text-stats result as JSON (your Valun client can compute it: valun_deliver exact_result=true)',
   text: handle => `Welcome to the Valun sandbox, ${handle}. This text is your first paid job.`});
-const welcomeDescription = handle => `Your first paid job in the Valun sandbox: compute the exact text-stats of the text in the block below and deliver the result as JSON. sandbox-exact checks it exactly and pays you 3 PC with a credit note.\n\`\`\`\n${WELCOME.text(handle)}\n\`\`\``;
+const welcomeDescription = handle => `Your first paid job in the Valun sandbox: compute the exact text-stats of the text in the block below and deliver the result as JSON. sandbox-exact checks it exactly and pays you ${amt(WELCOME.price)} with a credit note.\n\`\`\`\n${WELCOME.text(handle)}\n\`\`\``;
 // poke(): a tick this long after a change to an agent's deal (or an enrollment), so the agents react within about 200 ms.
 const POKE_MS = 200;
 // The server signer signs only these: bound notes and their prior acknowledgments (997), set-off slots (998) and
@@ -375,10 +376,10 @@ export class Sandbox {
     const text = extractText(t.service.description);
     if (text == null) return decline('I could not find the text to process. Put it in a ``` fenced block, after a "TEXT:" label at the end, or as the only quoted string in the description.');
     if (Buffer.byteLength(text, 'utf8') > 16000) return decline('The text is longer than 16,000 bytes; send a shorter one.');
-    if (t.price.amount < SERVICES[service].price) return decline(`My price for ${service} is ${SERVICES[service].price} PC; offer again at that price.`);
+    if (t.price.amount < SERVICES[service].price) return decline(`My price for ${service} is ${amt(SERVICES[service].price)}; offer again at that price.`);
     // The agent's own limit first: an offer above it could never be accepted, so it is declined, not retried.
     const cap = p.effectiveLimits(x).max_accept_per_deal;
-    if (t.price.amount > cap) return decline(`Above my limit: I accept at most ${cap} PC per deal. My price for ${service} is ${SERVICES[service].price} PC; offer again at that price.`);
+    if (t.price.amount > cap) return decline(`Above my limit: I accept at most ${amt(cap)} per deal. My price for ${service} is ${amt(SERVICES[service].price)}; offer again at that price.`);
     const signature = await this.sign(handle, statements.accept(cur.terms_hash));
     try { await p.accept(x, d.id, {terms_hash: cur.terms_hash, signature}); }
     catch (e) {
@@ -386,7 +387,7 @@ export class Sandbox {
       this.log(`sandbox: ${handle} declines ${d.id}: acceptance refused (${e.code})`);
       return decline(refusalReason(e));
     }
-    this.log(`sandbox: ${handle} accepted ${d.id} (${service}, ${t.price.amount} PC)`);
+    this.log(`sandbox: ${handle} accepted ${d.id} (${service}, ${amt(t.price.amount)})`);
   }
 
   // A stranger's offer to sell to agent x (circulating credit): a text-stats or notary job at no more than the list price,
@@ -396,18 +397,18 @@ export class Sandbox {
     const p = this.pilot, t = cur.terms, price = t.price.amount, other = d.payee;
     if (this.dealsToday(x, other) > PER_COUNTERPARTY_PER_DAY) return decline(`Limit reached: at most ${PER_COUNTERPARTY_PER_DAY} deals per counterparty per day. Try again tomorrow.`);
     const service = whichService(t);
-    if (!service) return decline('I buy only text-stats and notary jobs, whose results I can check exactly (text-stats at most 3 PC, notary at most 2 PC; the text in a ``` block in the description).');
+    if (!service) return decline('I buy only text-stats and notary jobs, whose results I can check exactly (text-stats at most ${amt(pc(3))}, notary at most ${amt(pc(2))}; the text in a ``` block in the description).');
     const list = SERVICES[service].price;
-    if (price > list) return decline(`I pay at most ${list} PC for ${service}; offer again at that price.`);
+    if (price > list) return decline(`I pay at most ${amt(list)} for ${service}; offer again at that price.`);
     const text = extractText(t.service.description);
     if (text == null) return decline('I could not find the text to process. Put it in a ``` fenced block, after a "TEXT:" label at the end, or as the only quoted string in the description.');
     if (Buffer.byteLength(text, 'utf8') > BUY_TEXT_MAX_BYTES) return decline(`I buy jobs on at most ${BUY_TEXT_MAX_BYTES} bytes of text; offer again with a shorter one.`);
     const cap = p.effectiveLimits(x).max_issue_per_deal;
-    if (price > cap) return decline(`Above my limit: I pay at most ${cap} PC per deal.`);
+    if (price > cap) return decline(`Above my limit: I pay at most ${amt(cap)} per deal.`);
     if (this.purchasesToday(x, other) >= PURCHASES_PER_STRANGER_PER_DAY) return decline(`Limit reached: I buy at most ${PURCHASES_PER_STRANGER_PER_DAY} jobs from you in 24 hours. Try again tomorrow.`);
     const held = await this.strangerClaims(other, d.id);
     if (held + price > STRANGER_EARN_CAP)
-      return decline(`I cannot buy this now: your claims on the sandbox agents (${held} PC, counting purchases agreed and not yet paid) plus ${price} PC would be above the sandbox limit of ${STRANGER_EARN_CAP} PC. Spend some of them first (pay with them), then offer again.`);
+      return decline(`I cannot buy this now: your claims on the sandbox agents (${amt(held)}, counting purchases agreed and not yet paid) plus ${amt(price)} would be above the sandbox limit of ${amt(STRANGER_EARN_CAP)}. Spend some of them first (pay with them), then offer again.`);
     const signature = await this.sign(handle, statements.accept(cur.terms_hash));
     try { await p.accept(x, d.id, {terms_hash: cur.terms_hash, signature}); }
     catch (e) {
@@ -415,7 +416,7 @@ export class Sandbox {
       this.log(`sandbox: ${handle} declines ${d.id}: acceptance refused (${e.code})`);
       return decline(refusalReason(e));
     }
-    this.log(`sandbox: ${handle} bought ${d.id} (${service}, ${price} PC)`);
+    this.log(`sandbox: ${handle} bought ${d.id} (${service}, ${amt(price)})`);
   }
 
   async deliver(handle, x, item) {

@@ -7,7 +7,10 @@ import {PROTOCOL_VERSIONS} from './mcp.mjs';
 import {renderLoopNotFound} from './pilot/loops.mjs';
 import {renderAgentNotFound, renderMaintainersPage} from './pilot/agents.mjs';
 import {A2A_PATHS} from './a2a.mjs';
+import {ON_TESTNET} from './pilot/units.mjs';
 
+const SKILL_FILE = ON_TESTNET ? 'skill-testnet.md' : 'skill.md';
+const LLMS_FILE = ON_TESTNET ? 'llms-testnet.txt' : 'llms.txt';
 const STATIC = new Map([['/', 'index.html'], ['/app.js', 'app.js'], ['/styles.css', 'styles.css'],
   ['/pilot', 'pilot.html'], ['/pilot/', 'pilot.html'], ['/pilot.js', 'pilot.js'],      // pilot network UI (separate page)
   ['/network', 'network.html'], ['/network.js', 'network.js'], ['/network.css', 'network.css'],   // live network view (public, read-only)
@@ -16,7 +19,9 @@ const STATIC = new Map([['/', 'index.html'], ['/app.js', 'app.js'], ['/styles.cs
   ['/favicon.svg', 'favicon.svg'],   // the mark (every public page links it)
   // For agents: the one-file onboarding any agent can follow ("Read valun.tech/skill.md and follow it"), the same file
   // at /agents.md, and the llms.txt index of what is here.
-  ['/skill.md', 'skill.md'], ['/agents.md', 'skill.md'], ['/llms.txt', 'llms.txt'],
+  // The testnet network (valun-testnet-1) serves its own (public/skill-testnet.md: nanoERG, settlement on Ergo testnet;
+  // public/llms-testnet.txt: the testnet's own links).
+  ['/skill.md', SKILL_FILE], ['/agents.md', SKILL_FILE], ['/llms.txt', LLMS_FILE],
   // Self-hosted fonts (the CSP allows no external font); their OFL license texts are in public/fonts.
   ['/fonts/jost-latin.woff2', 'fonts/jost-latin.woff2'], ['/fonts/jetbrains-mono-latin-400.woff2', 'fonts/jetbrains-mono-latin-400.woff2']]);
 // The public domain's home page is the Close the Loop landing (public/home.html, also at /home on every host); the desk

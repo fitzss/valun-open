@@ -1,0 +1,59 @@
+# The Valun TESTNET network (valun-testnet-1) on Fly.io: ONE always-on shared-cpu-1x / 512 MB machine in iad and ONE
+# 1 GB volume (about $4 a month; the owner approved it on 2026-11-12). Public HTTPS on valun-testnet.fly.dev serves ONLY
+# the Valun app (port 8080). The Basis tracker (tracker v4) and its Ergo wallet adapter listen on the container's
+# loopback and are never published. Ergo TESTNET only: test coins with no monetary value; the adapter refuses any
+# other network and keeps the owner's caps (20 tERG in all, at most 50 tracker-box signatures a day).
+# The machine stays on: the tracker anchors its state on testnet on a timer.
+app = "valun-testnet"
+primary_region = "iad"
+swap_size_mb = 256
+
+[build]
+
+[env]
+  VALUN_DEPLOYMENT = "hosted"
+  NODE_OPTIONS = "--max-old-space-size=160"
+  VALUN_TRUST_FLY_CLIENT_IP = "1"
+  PILOT_NETWORK = "valun-testnet-1"
+  PILOT_OPEN_SANDBOX = "1"
+  PILOT_OPEN_NETWORK = "1"
+  # Circulating credit (debt transfers, set-offs) with anchored netting: it takes effect only once the tracker is on
+  # chain with tracker v4 TR-15's anchored-netting capability and its binary is pinned (lib/pilot/caps.mjs, pins.mjs);
+  # otherwise the server runs as off and says why (GET /info).
+  PILOT_CIRCULATION = "on"
+  ERGO_NODE_URL = "http://213.239.193.208:9052"
+  # The tracker box updater's cycle: it anchors a changed state at most once a cycle and confirms an anchor on the next
+  # one, so a note is redeemable (and a netting final) about 2 cycles after it lands. Spending stays bounded: an update
+  # happens only when the state changed (or the keep-alive is due), and the wallet adapter signs at most 50 tracker-box
+  # updates a UTC day (0.001 tERG each).
+  BASIS_TRACKER_UPDATE_INTERVAL_SECONDS = "300"
+  # basis.es (the Basis ERG reserve contract, 764 bytes, sha256 760b84d2...), testnet-encoded.
+  BASIS_RESERVE_CONTRACT_TESTNET = "AQky9ztkNq8fWF4ASC5GFA54zpQCsTcEKBi3qJxK8AFGHDCbMKXQRfXWeTo4W2u1oJ8aXBRMSgvh2irZWGEv6VCMMZby4s5c9Z41nzeiHrMbLwkRrybf339xooYbHGHGytJvRrMTe47boCxA3CUB1Wy2qFHqZMsVuZKhegL8mt65RFqntk4vE6qFsFEvsxiRbfykkirtNuy5jenbwmaa8ihzpsJdbpWhzQ2bv2DfGpY6r8Z4KtYK2Kagb1acXEHbi6q9DcLX4Q8UWHXvaRfqJSoCdmZzaAaHgHWNbT1XvqjNt1HZYKdeyDHPTKoNaDPK6vBKj7MNtLvGMCoLFwqKKjJVaTyuTqgThTmWb1nvGPk9pKpjootNXJddaozzFNhrmy3a4ymgtx638UoBJyMFbV85kh2kyDKYDkcrBt4uwf8wZzgycDzwu73r4RLb1xXnT59nEW1AX85dvFSqwhLRcrWx9LzSNHnijC2geCc4MZ4f4KMjmYPfhYa7LhdVdDnhCZzR1CDdiUuqtnEiu5p191d1Mnngnv76LKSNWpvDZ4sby8pYnWpW9XcnnZd4LTeP3rVDoJAAvJXwfWNfnACmiKAPD1r7kZRo5Vtnuf3BabM8Bsdqd9rWD5WEjrDgbcyoTxenNNipkNaUVrzdWEk42kDXxLYXcs98KHoH4MzGofGcojrXjCEDKQfvnmdjnhg4UXYDbkhfjiwSSKAdZRfxL2FeSPYrm4h1R1nPzNvHZR5ZBZZDdTVNnTVYHJirtchXqBo4eDudX4h2bsVgmFpXDZuBgpZJriNMDuGJBDKsUNTJqAsvUWBSKEQ6qZuUnbKfaCYtogXFKEQwHg4Air3QRruaDxLfxgodAfWXw1bTRisAGuRwggxa5f8zY1yLycGrV5s9PpZFZnmAsZugWeNAhvsSVMo3a2zMT9kkpAjUxYJ3DurbCFkirUPkjRtxkN2sVG4SQm2E1Tj2WMgCahpxD5pHpJDBkCHdvgkm21n9veAS7qG2dksB7zgGeNRGTiyuampC7R8iAjtLwpcYo2yrSdJqBy"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 40
+    hard_limit = 60
+
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/api/status"
+
+[[mounts]]
+  source = "valun_testnet_data"
+  destination = "/data"
+  initial_size = "1gb"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

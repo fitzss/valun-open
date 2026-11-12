@@ -298,6 +298,10 @@ test('trackerPin names the Valun fork commit of a tracker v3 as the tracker\'s o
   assert.equal(trackerPin(caps('43704183e1ba372e1b1788c414dfe4c8b0bc3f2a'), FALLBACK, {pinned: false}), `${V32} (binary not pinned)`,
     'an unpinned binary that reports the v3.2 commit (it could report any)');
   assert.equal(trackerPin(caps('43704183e1ba372e1b1788c414dfe4c8b0bc3f2a'), FALLBACK), `${V32} (binary not pinned)`, 'not pinned unless said so');
+  // Tracker v4 and v4.1 (the Valun testnet network) report the v3.2 build from another branch and base.
+  assert.equal(trackerPin(caps('6f00d1636d5eff2122dfd2d57b3f2ad876e3a031'), FALLBACK, {pinned: true}),
+    'Basis tracker v4.1 (anchored netting): Valun fork commit 6f00d1636d5eff2122dfd2d57b3f2ad876e3a031 (branch circulating-credit-v4 on Basis upstream 43e2173), as the tracker reports itself');
+  assert.match(trackerPin(caps('602565e3179b1656d4cf35a292006a6899ac5c61'), FALLBACK), /^Basis tracker v4: .* \(branch circulating-credit-v4 on Basis upstream 43e2173\), .* \(binary not pinned\)$/);
   // Tracker v3.1 and v3 (build valun-circulating-credit/3) are still named as they report themselves; their binaries are
   // no longer pinned (circulating credit stays off on them: lib/pilot/caps.mjs).
   assert.equal(trackerPin(caps('24675ec1c0f374f29101812caf2fc87ab48468c9', 'valun-circulating-credit/3'), FALLBACK), `${V31} (binary not pinned)`);
@@ -307,7 +311,8 @@ test('trackerPin names the Valun fork commit of a tracker v3 as the tracker\'s o
   // A listed commit that reports another build than its own is an unlisted build of the build it reports.
   assert.match(trackerPin(caps('24675ec1c0f374f29101812caf2fc87ab48468c9'), FALLBACK), /^Basis tracker v3\.2 \(an unlisted build\): Valun fork commit 24675ec/);
   assert.match(trackerPin(caps('43704183e1ba372e1b1788c414dfe4c8b0bc3f2a', 'valun-circulating-credit/3'), FALLBACK), /^Basis tracker v3 \(an unlisted build\): Valun fork commit 4370418/);
-  assert.deepEqual(Object.keys(TRACKER_BUILDS), ['43704183e1ba372e1b1788c414dfe4c8b0bc3f2a', '24675ec1c0f374f29101812caf2fc87ab48468c9', '08f889931906beff6c2b69346965f400d740aa4a']);
+  assert.deepEqual(Object.keys(TRACKER_BUILDS), ['b84b2e780894beb980d789be22ec888ffe97d65a', '4d91c47f3c51b1a3fa1a44951e7e389243c3fe7e', '6f00d1636d5eff2122dfd2d57b3f2ad876e3a031', '602565e3179b1656d4cf35a292006a6899ac5c61',
+    '43704183e1ba372e1b1788c414dfe4c8b0bc3f2a', '24675ec1c0f374f29101812caf2fc87ab48468c9', '08f889931906beff6c2b69346965f400d740aa4a']);
   // server.mjs uses it for /api/status, pinned when the launcher's PILOT_TRACKER_SHA256 is in pins.mjs, and pins.mjs
   // names the same build.
   assert.match(read('server.mjs'), /cfg\.basisPin = trackerPin\(await basis\.capabilities\(\)\.catch\(\(\) => null\), cfg\.basisPin, \{pinned: TRACKER_SHA256_PINS\.includes\(env\.PILOT_TRACKER_SHA256\)\}\)/);

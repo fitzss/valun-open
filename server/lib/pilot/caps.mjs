@@ -6,6 +6,8 @@
 // server runs as off (fail closed) and says why. Probing routes is never used for this: it cannot tell which rules a
 // tracker enforces.
 
+import {ON_TESTNET} from './units.mjs';
+
 export const CIRCULATION_MODES = Object.freeze(['off', 'bound', 'sandbox', 'on']);
 
 // The v3.2 rule values (tracker GET /capabilities). Timestamp residues (ms mod 1000), allocated once for the whole
@@ -64,6 +66,18 @@ const REQUIRED = Object.freeze([
   ['novations_disabled_reason', null],
 ]);
 
+// The Valun TESTNET network (valun-testnet-1): tracker v4 with anchored netting (TR-15) on Ergo testnet. Not pure credit:
+// its edges have on-chain totals (any count), and debt transfers and set-offs may lower them under the anchored-netting
+// rules, version 1: never below a total the tracker signed a redemption authorization for, and an edge with an on-chain
+// total only while the tracker box on chain is younger than 1440 blocks (the contract waives the tracker's signature
+// for a tracker box older than 2160); the tracker refreshes an unchanged tracker box at 720 blocks.
+export const ANCHORED_NETTING = Object.freeze({version: 1, authorization_floor: true, fresh_blocks: 1440, keepalive_blocks: 720});
+const REQUIRED_TESTNET = Object.freeze([
+  ...REQUIRED.filter(([field]) => field !== 'pure_credit' && field !== 'onchain_edges'),
+  ['pure_credit', false],
+  ...Object.entries(ANCHORED_NETTING).map(([k, v]) => [`anchored_netting.${k}`, v]),
+]);
+
 const isObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 // The value at a dotted path, through own properties of plain objects only; undefined when any step is missing.
 function at(o, dotted) {
@@ -83,12 +97,15 @@ export const show = v => { const s = v === undefined ? 'missing' : JSON.stringif
 const V31_BUILD = 'valun-circulating-credit/3';
 // {ok: true, reason: null} when `caps` (the data of the tracker's GET /capabilities, or null when it gave no 200 answer)
 // has exactly the v3.2 values above; otherwise {ok: false, reason} naming the first field that differs (for a v3 or
-// v3.1 tracker, also why it no longer qualifies).
-export function validateCaps(caps) {
+// v3.1 tracker, also why it no longer qualifies). On the testnet network (`testnet`, by default this server's network)
+// the values are the anchored-netting ones (REQUIRED_TESTNET), with any whole number of on-chain edges.
+export function validateCaps(caps, {testnet = ON_TESTNET} = {}) {
   if (caps === undefined) return {ok: false, reason: 'the tracker capabilities have not been read yet'};
   if (caps === null) return {ok: false, reason: 'the tracker reports no capabilities (GET /capabilities gave no 200 answer: a tracker before v3)'};
   if (!isObject(caps)) return {ok: false, reason: `the tracker capabilities are not an object (${show(caps)})`};
-  for (const [field, want] of REQUIRED) {
+  if (testnet && !(Number.isSafeInteger(caps.onchain_edges) && caps.onchain_edges >= 0))
+    return {ok: false, reason: `tracker capabilities: onchain_edges is ${show(caps.onchain_edges)}, expected a whole number`};
+  for (const [field, want] of testnet ? REQUIRED_TESTNET : REQUIRED) {
     const got = at(caps, field);
     if (!same(got, want)) {
       const why = field === 'build' && got === V31_BUILD

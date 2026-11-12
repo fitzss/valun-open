@@ -7,7 +7,10 @@ RUN useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin valu
  && mkdir -p /opt/valun/bin /opt/valun/app /data && chown valun:valun /data
 
 COPY --chmod=0755 dist/bin/basis_server dist/bin/valun_signer /opt/valun/bin/
-COPY --chmod=0755 basis/run-tracker.sh scripts/docker-entrypoint.sh /opt/valun/
+COPY --chmod=0755 basis/run-tracker.sh basis/run-tracker-testnet.sh scripts/docker-entrypoint.sh /opt/valun/
+# Ergo testnet (the valun-testnet-1 network only): the tracker's wallet adapter and bootstrap, with ergo-lib-wasm-nodejs.
+COPY ergo/package.json ergo/package-lock.json ergo/chain.mjs ergo/wallet-shim.mjs ergo/bootstrap.mjs ergo/reserve.mjs /opt/valun/ergo/
+RUN cd /opt/valun/ergo && npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY package.json server.mjs /opt/valun/app/
 COPY lib /opt/valun/app/lib
 COPY public /opt/valun/app/public

@@ -7,7 +7,7 @@
 // its own key, through the Valun API (valun.tech/skill.md says how). Answers are Messages (no tasks are created), so
 // GetTask/CancelTask answer TaskNotFound, and streaming and push notifications are not offered.
 import crypto from 'node:crypto';
-import {kindOf, KIND_WORDS, loopsOf} from './pilot/loops.mjs';
+import {kindOf, KIND_WORDS, loopsOf, PUBLIC_ORIGIN} from './pilot/loops.mjs';
 
 export const A2A_PATHS = new Set(['/.well-known/agent-card.json', '/.well-known/agent.json', '/a2a']);
 const VERSIONS = new Set(['1.0', '0.3']);
@@ -31,12 +31,13 @@ const ERR = {parse: [-32700, 'JSONParseError', 'parse error'], request: [-32600,
 const REASON = {task: 'TASK_NOT_FOUND', push: 'PUSH_NOTIFICATION_NOT_SUPPORTED', unsupported: 'UNSUPPORTED_OPERATION', extended: 'EXTENDED_AGENT_CARD_NOT_CONFIGURED',
   version: 'VERSION_NOT_SUPPORTED'};
 
-// Where this server is reached: the public domain unless the request came to the Fly app's own host or to this machine.
+// Where this server is reached: the network's public origin (valun.tech; on the testnet its own host) unless the
+// request came to the desk app's own host or to this machine.
 export function originOf(req) {
   const host = String(req.headers.host || '').toLowerCase();
   if (/^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(host)) return `http://${host}`;
   if (host === 'valun-desk.fly.dev') return 'https://valun-desk.fly.dev';
-  return 'https://valun.tech';
+  return PUBLIC_ORIGIN;
 }
 
 const SKILLS = [
@@ -58,7 +59,7 @@ const SKILLS = [
     inputModes: ['text/plain'], outputModes: ['text/plain', 'application/json']},
   {id: 'recent-loops', name: 'Recently closed loops',
     description: 'The loops of debts between agents that cancelled out recently: who was in each, and how much credit was cancelled. '
-      + 'Each loop has a public card at valun.tech/loop/<id>.',
+      + `Each loop has a public card at ${PUBLIC_ORIGIN.replace(/^https:\/\//, '')}/loop/<id>.`,
     tags: ['loops', 'clearing', 'set-off', 'credit'], examples: ['show recent loops', 'which loops closed?'],
     inputModes: ['text/plain'], outputModes: ['text/plain', 'application/json']},
 ];
@@ -105,7 +106,7 @@ function intentOf(text, data) {
   return 'find-agents';
 }
 
-function directory(pilot, query, origin = 'https://valun.tech', {only = null} = {}) {
+function directory(pilot, query, origin = PUBLIC_ORIGIN, {only = null} = {}) {
   const terms = words(query).filter(x => !STOP.has(x) && x.length > 1);
   const active = Object.values(pilot.s.participants).filter(x => x.status === 'active' && !x.unlisted && !pilot.dormant(x))
     .map(x => (pilot.directoryRecord ? pilot.directoryRecord(x) : pilot.publicParticipant(x))).filter(x => !only || only(x));
@@ -139,7 +140,7 @@ function answer(pilot, origin, intent, text) {
   }
   if (intent === 'recent-loops') {
     const loops = loopsOf(pilot.s.setoffs, pilot.s.participants, x => pilot.publicParticipant(x), 5)
-      .map(l => ({id: l.id, applied_at: l.applied_at, members: l.members.map(m => m.handle), amount_PC: l.amount_PC, card_url: l.card_url.replace('https://valun.tech', origin)}));
+      .map(l => ({id: l.id, applied_at: l.applied_at, members: l.members.map(m => m.handle), amount_PC: l.amount_PC, card_url: l.card_url.replace(PUBLIC_ORIGIN, origin)}));
     const lines = loops.map(l => `- ${[...l.members, l.members[0]].join(' -> ')}: ${l.amount_PC} credit${l.amount_PC === 1 ? '' : 's'} cancelled (${l.card_url})`);
     return {text: loops.length ? `The ${loops.length} most recent loop${loops.length === 1 ? '' : 's'} that cancelled out on Valun:\n${lines.join('\n')}`
       : 'No loop has closed on this network yet.', data: {skill: 'recent-loops', loops}};

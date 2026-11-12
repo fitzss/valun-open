@@ -46,13 +46,33 @@ export PILOT_TRACKER_SHA256
 echo "docker-entrypoint: basis_server sha256 ${PILOT_TRACKER_SHA256:-unknown}; config layout $BASIS_CONFIG_LAYOUT" >&2
 "$ROOT/run-tracker.sh" "$DATA/tracker" "$ROOT/bin/basis_server" > "$DATA/tracker/stdout.log" 2>&1 &
 TRACKER=$!
-PILOT_TOKEN_ID=$(node -e "process.stdout.write(require('crypto').createHash('sha256').update('valun-pilot-credit/1').digest('hex'))")
-BASIS_PORT=${PILOT_BASIS_PORT:-3058} BASIS_SERVED_TOKEN_ID=$PILOT_TOKEN_ID BASIS_SERVED_TOKEN_SYMBOL=PC \
-  "$ROOT/run-tracker.sh" "$DATA/pilot/tracker" "$ROOT/bin/basis_server" > "$DATA/pilot/tracker/stdout.log" 2>&1 &
-PILOT_TRACKER=$!
-for i in $(seq 1 80); do [ -s "$DATA/tracker/tracker-nft-id" ] && [ -s "$DATA/pilot/tracker/tracker-nft-id" ] && break; sleep 0.25; done
+SHIM=""
+if [ "${PILOT_NETWORK:-valun-pilot-1}" = "valun-testnet-1" ]; then
+  # The Valun TESTNET network (Ergo testnet): the tracker's key (made once, never printed), the wallet adapter
+  # (ergo/wallet-shim.mjs: public testnet node, local signing for the tracker key only, the owner's caps), then the
+  # testnet tracker (basis/run-tracker-testnet.sh). On chain once the bootstrap has minted the tracker NFT.
+  KEYINFO=$(node "$ROOT/ergo/bootstrap.mjs" key --dir "$DATA/pilot/tracker")
+  PK=$(printf '%s' "$KEYINFO" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).pubkey))")
+  export PILOT_TRACKER_ADDRESS=$(printf '%s' "$KEYINFO" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).address))")
+  export BASIS_RESERVE_CONTRACT_TESTNET PILOT_RESERVE_CONTRACT="$BASIS_RESERVE_CONTRACT_TESTNET"
+  ONCHAIN_NFT=""; [ -s "$DATA/pilot/tracker/tracker-nft-id-onchain" ] && ONCHAIN_NFT=$(cat "$DATA/pilot/tracker/tracker-nft-id-onchain")
+  export PILOT_TRACKER_ON_CHAIN=$([ -n "$ONCHAIN_NFT" ] && echo 1 || echo 0)
+  echo "docker-entrypoint: valun-testnet-1: tracker address $PILOT_TRACKER_ADDRESS; on chain: $PILOT_TRACKER_ON_CHAIN" >&2
+  TRACKER_PUBKEY=$PK TRACKER_NFT_ID=$ONCHAIN_NFT SPEND_LEDGER="$DATA/pilot/tracker/spend-ledger.jsonl" \
+    node "$ROOT/ergo/wallet-shim.mjs" --port "${ERGO_SHIM_PORT:-9053}" > "$DATA/pilot/tracker/shim.log" 2>&1 &
+  SHIM=$!
+  BASIS_PORT=${PILOT_BASIS_PORT:-3058} "$ROOT/run-tracker-testnet.sh" "$DATA/pilot/tracker" "$ROOT/bin/basis_server" > "$DATA/pilot/tracker/stdout.log" 2>&1 &
+  PILOT_TRACKER=$!
+else
+  PILOT_TOKEN_ID=$(node -e "process.stdout.write(require('crypto').createHash('sha256').update('valun-pilot-credit/1').digest('hex'))")
+  BASIS_PORT=${PILOT_BASIS_PORT:-3058} BASIS_SERVED_TOKEN_ID=$PILOT_TOKEN_ID BASIS_SERVED_TOKEN_SYMBOL=PC \
+    "$ROOT/run-tracker.sh" "$DATA/pilot/tracker" "$ROOT/bin/basis_server" > "$DATA/pilot/tracker/stdout.log" 2>&1 &
+  PILOT_TRACKER=$!
+fi
+for i in $(seq 1 80); do [ -s "$DATA/tracker/tracker-nft-id" ] && { [ -s "$DATA/pilot/tracker/tracker-nft-id" ] || [ -s "$DATA/pilot/tracker/tracker-nft-id-onchain" ]; } && break; sleep 0.25; done
 export BASIS_TRACKER_NFT_ID="$(cat "$DATA/tracker/tracker-nft-id")"
-export PILOT_TRACKER_NFT_ID="$(cat "$DATA/pilot/tracker/tracker-nft-id")"
+if [ -s "$DATA/pilot/tracker/tracker-nft-id-onchain" ]; then export PILOT_TRACKER_NFT_ID="$(cat "$DATA/pilot/tracker/tracker-nft-id-onchain")"
+else export PILOT_TRACKER_NFT_ID="$(cat "$DATA/pilot/tracker/tracker-nft-id")"; fi
 export PILOT_TRACKER_URL="http://127.0.0.1:${PILOT_BASIS_PORT:-3058}" PILOT_DATA_DIR="$DATA/pilot"
 export VALUN_DATA_DIR="$DATA/valun" BASIS_SIGNER="$ROOT/bin/valun_signer" BASIS_RUNNER=direct
 node "$ROOT/app/server.mjs" &
@@ -60,11 +80,11 @@ APP=$!
 # On stop: let the app finish in-flight requests first (it exits within 4 s), then stop the trackers.
 stop() {
   kill -TERM $APP 2>/dev/null; wait $APP 2>/dev/null || true
-  kill -TERM $TRACKER $PILOT_TRACKER 2>/dev/null; wait $TRACKER 2>/dev/null || true; wait $PILOT_TRACKER 2>/dev/null || true
+  kill -TERM $TRACKER $PILOT_TRACKER $SHIM 2>/dev/null; wait $TRACKER 2>/dev/null || true; wait $PILOT_TRACKER 2>/dev/null || true
   exit 0
 }
 trap stop TERM INT
-wait -n $TRACKER $PILOT_TRACKER $APP
+wait -n $TRACKER $PILOT_TRACKER $APP $SHIM
 echo "a process exited; stopping" >&2
-kill $TRACKER $PILOT_TRACKER $APP 2>/dev/null || true
+kill $TRACKER $PILOT_TRACKER $APP $SHIM 2>/dev/null || true
 exit 1

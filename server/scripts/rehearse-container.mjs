@@ -23,7 +23,12 @@ export const APP_FILES = Object.freeze(['package.json', 'server.mjs', 'lib', 'pu
   'scripts/pilot-downgrade-check.mjs', 'scripts/run-tests.mjs']);
 // The files the Dockerfile copies outside the app folder, at the image's places: [source, path under /opt/valun, mode].
 export const IMAGE_FILES = Object.freeze([['dist/bin/basis_server', 'bin/basis_server', 755], ['dist/bin/valun_signer', 'bin/valun_signer', 755],
-  ['basis/run-tracker.sh', 'run-tracker.sh', 755], ['scripts/docker-entrypoint.sh', 'docker-entrypoint.sh', 755]]);
+  ['basis/run-tracker.sh', 'run-tracker.sh', 755], ['basis/run-tracker-testnet.sh', 'run-tracker-testnet.sh', 755],
+  ['scripts/docker-entrypoint.sh', 'docker-entrypoint.sh', 755],
+  // The Ergo testnet pieces (used only with PILOT_NETWORK=valun-testnet-1; the image installs their dependency).
+  ['ergo/package.json', 'ergo/package.json', 644], ['ergo/package-lock.json', 'ergo/package-lock.json', 644],
+  ['ergo/chain.mjs', 'ergo/chain.mjs', 644], ['ergo/wallet-shim.mjs', 'ergo/wallet-shim.mjs', 644], ['ergo/bootstrap.mjs', 'ergo/bootstrap.mjs', 644],
+  ['ergo/reserve.mjs', 'ergo/reserve.mjs', 644]]);
 // The image's marker (the Dockerfile's ENV): this app folder holds only the image's files, so a test that needs another
 // file of the repository is skipped there (test/operations.test.mjs needs()); anywhere else such a file is required.
 export const APP_COPY_MARKER = 'VALUN_APP_COPY=image';
@@ -60,7 +65,7 @@ function main() {
   try {
     const tar = spawnSync('tar', ['-cf', '-', ...APP_FILES], {cwd: root, maxBuffer: 1 << 28});
     if (tar.status !== 0) throw Error(`tar failed: ${String(tar.stderr || '').trim()}`);
-    let r = sh('mkdir -p "$2/app" "$2/bin" "$3" && tar -xf - -C "$2/app"', tar.stdout);
+    let r = sh('mkdir -p "$2/app" "$2/bin" "$2/ergo" "$3" && tar -xf - -C "$2/app"', tar.stdout);
     if (r.status !== 0) throw Error(`stage app: ${r.stderr}`);
     for (const [src, dst, mode] of IMAGE_FILES) {
       r = sh(`cat > "$2/${dst}" && chmod ${mode} "$2/${dst}"`, fs.readFileSync(path.join(root, src)));

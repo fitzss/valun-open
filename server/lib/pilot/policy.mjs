@@ -18,8 +18,9 @@
 // (public_position.credit_history, public_position.credit_policy). The agent limit kinds (Pilot.setAgentLimits,
 // Pilot.effectiveLimits) are here too: an agent can only tighten a field, never widen it.
 import {edgeKey} from './journal.mjs';
+import {pc, amt} from './units.mjs';
 
-export const SANDBOX_MAX_CLAIMS_TOTAL = 40;
+export const SANDBOX_MAX_CLAIMS_TOTAL = pc(40);
 export const PHASE2_FIELDS = Object.freeze(['max_claims_total', 'max_issuer_net_debt', 'accept_operator_issuers']);
 const PHASE2_DEFAULTS = Object.freeze({max_claims_total: null, max_issuer_net_debt: null, accept_operator_issuers: true});
 // The rules creditCheck runs, in their order (the first that fails refuses).
@@ -189,7 +190,7 @@ export async function creditCheck(pilot, C, X, amount, {via, ledger = null, excl
     const f = issuerNetDebt(pilot, X, ledger, {excludeDealId, delta: via === 'agreement' ? amount : 0});
     const entry = {rule: 'max_issuer_net_debt', issuer_owes_on_tracker: f.owes, issuer_committed: f.committed, this_deal: f.delta,
       issuer_adjusted_claims: cents(f.adjusted, 'down'), issuer_net_debt: cents(f.net, 'up'), limit: netLimit};
-    if (exceeds(f.net, netLimit)) return fail('max_issuer_net_debt', `${X.handle}'s net debt would be ${entry.issuer_net_debt} PC (it owes ${f.owes} on the tracker and ${f.committed} agreed${f.delta ? `, ${f.delta} more with this deal` : ''}; its claims count for ${entry.issuer_adjusted_claims} PC after the one-level haircut), above max_issuer_net_debt ${netLimit}`);
+    if (exceeds(f.net, netLimit)) return fail('max_issuer_net_debt', `${X.handle}'s net debt would be ${amt(entry.issuer_net_debt)} (it owes ${f.owes} on the tracker and ${f.committed} agreed${f.delta ? `, ${f.delta} more with this deal` : ''}; its claims count for ${amt(entry.issuer_adjusted_claims)} after the one-level haircut), above max_issuer_net_debt ${netLimit}`);
     checks.push(entry);
   }
   return {ok: true, checks};

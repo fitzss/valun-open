@@ -7,6 +7,7 @@
 // adds the 105-byte prior acknowledgment PA(I,R,X,p,T) (priorAckMessage), over which it checks a transfer's two creditor
 // prior slots and a bound note's prior_signature.
 import {spawn} from 'node:child_process';
+import {toErgoJson} from './ergo-json.mjs';
 
 // Tracker v3 reserves the timestamp residues (ms mod 1000) 995-999 for operations other than ordinary notes: 999
 // transfer, 998 set-off, 997 bound note, 996 and 995 reserved for later. Its POST /notes refuses them for an ordinary
@@ -40,7 +41,14 @@ const BUILD_LINES = Object.freeze({
   'valun-circulating-credit/4': Object.freeze({unlisted: 'tracker v3.2 (an unlisted build)', branch: 'circulating-credit-v3.2'}),
   'valun-circulating-credit/3': Object.freeze({unlisted: 'tracker v3 (an unlisted build)', branch: 'circulating-credit-v3'}),
 });
+// Tracker v4 and v4.1 report the same build as v3.2 (the same circulating-credit rules; v4.1 adds anchored netting as
+// its own capability) but sit on another branch and base, which their entries name.
+const V4_LINE = Object.freeze({branch: 'circulating-credit-v4', base: 'Basis upstream 43e2173'});
 export const TRACKER_BUILDS = Object.freeze({
+  'b84b2e780894beb980d789be22ec888ffe97d65a': Object.freeze({name: 'tracker v4.3 (anchored netting)', build: 'valun-circulating-credit/4', ...V4_LINE}),
+  '4d91c47f3c51b1a3fa1a44951e7e389243c3fe7e': Object.freeze({name: 'tracker v4.2 (anchored netting)', build: 'valun-circulating-credit/4', ...V4_LINE}),
+  '6f00d1636d5eff2122dfd2d57b3f2ad876e3a031': Object.freeze({name: 'tracker v4.1 (anchored netting)', build: 'valun-circulating-credit/4', ...V4_LINE}),
+  '602565e3179b1656d4cf35a292006a6899ac5c61': Object.freeze({name: 'tracker v4', build: 'valun-circulating-credit/4', ...V4_LINE}),
   '43704183e1ba372e1b1788c414dfe4c8b0bc3f2a': Object.freeze({name: 'tracker v3.2', build: 'valun-circulating-credit/4'}),
   '24675ec1c0f374f29101812caf2fc87ab48468c9': Object.freeze({name: 'tracker v3.1', build: 'valun-circulating-credit/3'}),
   '08f889931906beff6c2b69346965f400d740aa4a': Object.freeze({name: 'tracker v3', build: 'valun-circulating-credit/3'}),
@@ -50,7 +58,7 @@ export function trackerPin(caps, fallback, {pinned = false} = {}) {
   const line = caps && typeof caps.build === 'string' && Object.hasOwn(BUILD_LINES, caps.build) ? BUILD_LINES[caps.build] : null;
   if (!line || !commit) return fallback;
   const known = Object.hasOwn(TRACKER_BUILDS, commit) && TRACKER_BUILDS[commit].build === caps.build ? TRACKER_BUILDS[commit] : null;
-  return `Basis ${known ? known.name : line.unlisted}: Valun fork commit ${commit} (branch ${line.branch} on Basis 6a6ebfe + caa2e86 + a00233d), as the tracker reports itself${pinned ? '' : ' (binary not pinned)'}`;
+  return `Basis ${known ? known.name : line.unlisted}: Valun fork commit ${commit} (branch ${known?.branch ?? line.branch} on ${known?.base ?? 'Basis 6a6ebfe + caa2e86 + a00233d'}), as the tracker reports itself${pinned ? '' : ' (binary not pinned)'}`;
 }
 
 // One line for the server log describing what a tracker's capabilities say (null: no capabilities, or none read).
@@ -179,6 +187,26 @@ export class Basis {
     if (r.status !== 200 || !r.json?.success) throw new BasisError(`tracker state failed: ${r.json?.error || r.status}`);
     return r.json.data;
   }
+  // ---------- Ergo testnet (tracker v4 in on-chain mode): reserves and redemption, relayed for a participant ----------
+  // The tracker's answers are passed on as they are (`data`), or a BasisError naming the tracker's own error.
+  // Bodies are written with toErgoJson (lib/ergo-json.mjs): a transaction's context extensions in the order the tracker
+  // and the node serialize them, so a relayed redemption is byte for byte the tracker's.
+  async onchain(method, path, body, timeoutMs = 30000) {
+    let r;
+    try {
+      r = await this.fetch(this.url + path, {method, headers: {'content-type': 'application/json'}, body: body ? toErgoJson(body) : undefined, signal: AbortSignal.timeout(timeoutMs)});
+    } catch (e) { throw new BasisError(`tracker unreachable: ${e.cause?.code || e.name}`); }
+    const text = await r.text();
+    let j = null;
+    try { j = JSON.parse(text); } catch { /* not JSON */ }
+    if (r.status >= 200 && r.status < 300 && j && j.success !== false) return j.data ?? j;
+    throw new BasisError(`tracker ${method} ${path}: ${(j && (j.error || j.message)) || r.status}`, {status: r.status, body: j, code: 'tracker_refused'});
+  }
+  reserves() { return this.onchain('GET', '/reserves'); }
+  reservesOf(pubkey) { return this.onchain('GET', `/reserves/issuer/${pubkey}`); }
+  reserveCreate({nftId, ownerPubkey, ergAmount}) { return this.onchain('POST', '/reserves/create', {nft_id: nftId, owner_pubkey: ownerPubkey, erg_amount: ergAmount}); }
+  redemptionBuild(body) { return this.onchain('POST', '/redemption/build', body, 60000); }
+  redemptionSubmit(body) { return this.onchain('POST', '/redemption/submit', body, 60000); }
   async proof(issuer, recipient) {
     const r = await this.api('GET', `/tracker/proof?issuer_pubkey=${issuer}&recipient_pubkey=${recipient}&denomination=${encodeURIComponent(this.denomination)}`);
     if (r.status !== 200 || !r.json?.success) return null;

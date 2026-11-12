@@ -178,7 +178,8 @@ jobs:
           node --test test/a2a.test.mjs test/agent-page.test.mjs test/audit-fixes.test.mjs test/circulation-fixes.test.mjs
           test/clearing-engine.test.mjs test/close-the-loop.test.mjs test/console.test.mjs test/live-check.test.mjs
           test/network-page.test.mjs test/novation-unit.test.mjs test/operations.test.mjs test/policy.unit.test.mjs
-          test/release-v16-1.test.mjs test/status-classification.test.mjs test/unit.test.mjs
+          test/release-v16-1.test.mjs test/status-classification.test.mjs test/unit.test.mjs test/testnet-network.test.mjs
+          test/ergo-json.test.mjs
 
   registry:
     runs-on: ubuntu-latest

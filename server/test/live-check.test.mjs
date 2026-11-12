@@ -108,7 +108,7 @@ test('live-check: ALARM, fail closed and OOM lines fail; other error lines warn;
   const r = L.evaluate(w);
   assert.deepEqual([levels(r, 'ALARM'), levels(r, 'errors in the recent logs')], [['ok'], ['warn']]);
   // Fly's init noise (seen on valun-desk at every start) is no error of the app or the trackers.
-  const n = healthy(); n.fly.logs.lines.push('app[0123456789abcd] iad [info] WARN could not enable checksum offload 0x15 on eth0: an unhandled error occurred: EOPNOTSUPP: Operation not supported');
+  const n = healthy(); n.fly.logs.lines.push('app[8577912a4699d8] iad [info] WARN could not enable checksum offload 0x15 on eth0: an unhandled error occurred: EOPNOTSUPP: Operation not supported');
   assert.deepEqual(levels(L.evaluate(n), 'errors in the recent logs'), []);
   const pub = healthy(); delete pub.fly;
   const p = L.evaluate(pub);

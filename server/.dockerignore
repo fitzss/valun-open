@@ -14,3 +14,10 @@
 !scripts/valun-mcp-stdio.mjs
 !scripts/pilot-admin.mjs
 !scripts/pilot-downgrade-check.mjs
+!basis/run-tracker-testnet.sh
+!ergo/package.json
+!ergo/package-lock.json
+!ergo/chain.mjs
+!ergo/wallet-shim.mjs
+!ergo/bootstrap.mjs
+!ergo/reserve.mjs

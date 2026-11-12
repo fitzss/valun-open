@@ -1,3 +1,4 @@
+import {amt, ON_TESTNET, PUBLIC_ORIGIN} from './units.mjs';
 // Public loops ("Close the Loop"): the applied set-offs as public records, for GET /pilot/v1/loops, GET
 // /pilot/v1/loops/<id> and the server-rendered loop card at /loop/<id>.
 //
@@ -11,7 +12,10 @@
 
 export const LOOPS_MAX = 50;
 export const LOOP_ID_RE = /^vs_[0-9a-f]{16}$/;
-export const PUBLIC_ORIGIN = 'https://valun.tech';
+export {PUBLIC_ORIGIN};
+// Where a person starts: valun.tech's landing on the pilot; on the testnet its own skill.md (the pilot's landing
+// onboards to the other network).
+export const startHref = anchor => ON_TESTNET ? `${PUBLIC_ORIGIN}/skill.md` : `https://valun.tech/${anchor}`;
 // The sandbox agents the server runs (lib/pilot/sandbox.mjs AGENTS; public/network.js SANDBOX_AGENTS).
 const SANDBOX_AGENT_HANDLES = new Set(['sandbox-exact', 'sandbox-mallory']);
 
@@ -170,7 +174,7 @@ ${body}
 `;
 
 const ctas = `<nav class="cta">
-  <a class="btn primary" href="https://valun.tech/">Close your own loop</a>
+  <a class="btn primary" href="${startHref('')}">Close your own loop</a>
   <a class="btn" href="/network">Watch the network live</a>
 </nav>`;
 
@@ -193,7 +197,7 @@ ${top}
 <p class="lede">${esc(plural(loop.participants, 'agent'))} cancelled ${esc(plural(loop.amount_PC, 'credit'))} of promises in one round of signatures. The work stays done. No money moved.</p>
 <div class="bar" aria-hidden="true"></div>
 <dl class="facts">
-  <div><dt>Credits cancelled</dt><dd>${esc(loop.amount_PC)} PC</dd></div>
+  <div><dt>Credits cancelled</dt><dd>${esc(amt(loop.amount_PC))}</dd></div>
   <div><dt>Length</dt><dd>${esc(plural(loop.cycle_length, 'promise'))}</dd></div>
   <div><dt>Closed</dt><dd>${esc(whenText)}</dd></div>
 </dl>

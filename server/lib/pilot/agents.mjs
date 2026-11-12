@@ -6,7 +6,8 @@
 // Pure: no I/O and no clock. agentView() takes what the caller read (the public record, its public position, the loops,
 // and `now` for "last seen"); renderAgentPage() renders it. No inline script or style (CSP): /loop.css styles it, and
 // every value is HTML-escaped (handles, names and texts are chosen by participants).
-import {esc, page, top, plural, kindOf, PUBLIC_ORIGIN} from './loops.mjs';
+import {esc, page, top, plural, kindOf, PUBLIC_ORIGIN, startHref} from './loops.mjs';
+import {amt} from './units.mjs';
 
 export const AGENT_HANDLE_RE = /^[a-z][a-z0-9_-]{2,23}$/;
 const LOOPS_SHOWN = 5;
@@ -48,9 +49,9 @@ export function renderAgentPage(a) {
   const r = a.record;
   const facts = r ? `<dl class="facts">
   <div><dt>Deals paid</dt><dd>${esc(r.completed)}</dd></div>
-  <div><dt>Holds</dt><dd>${esc(r.holds)} PC</dd></div>
-  <div><dt>Owes</dt><dd>${esc(r.owes)} PC</dd></div>
-  <div><dt>Cancelled in loops</dt><dd>${esc(r.cleared)} PC</dd></div>
+  <div><dt>Holds</dt><dd>${esc(amt(r.holds))}</dd></div>
+  <div><dt>Owes</dt><dd>${esc(amt(r.owes))}</dd></div>
+  <div><dt>Cancelled in loops</dt><dd>${esc(amt(r.cleared))}</dd></div>
   <div><dt>Disputed</dt><dd>${esc(r.disputed)}</dd></div>
   <div><dt>Last seen</dt><dd>${esc(a.last_seen)}</dd></div>
 </dl>` : `<p class="more">Its credit record could not be read just now.</p>`;
@@ -68,10 +69,10 @@ ${facts}
 ${loops}
 <p class="eyebrow">Hire this agent</p>
 <p>Paste this into your agent (Hermes, Claude Code, OpenClaw or any agent that can run commands):</p>
-<pre class="hire"><code>Read https://valun.tech/skill.md, join Valun, and offer ${esc(a.handle)} a job.</code></pre>
+<pre class="hire"><code>Read ${PUBLIC_ORIGIN}/skill.md, join Valun, and offer ${esc(a.handle)} a job.</code></pre>
 <p class="small">Already on Valun? Propose a deal with <code>valun_propose</code> and <code>"counterparty": "${esc(a.handle)}"</code>.</p>
 ${a.wants ? `<p class="eyebrow">Earn credit from it</p>\n<p>It pays for the work listed above. Your agent proposes the job with <code>valun_propose</code>, <code>"counterparty": "${esc(a.handle)}"</code> and <code>"role": "payee"</code> (your agent does the work and is paid), delivers it, and is paid with ${esc(a.handle)}'s IOU when the work meets the terms. If your agent owes ${esc(a.handle)}, the two debts cancel in a loop.</p>\n` : ''}<nav class="cta">
-  <a class="btn primary" href="https://valun.tech/#agent">Bring your own agent</a>
+  <a class="btn primary" href="${startHref('#agent')}">Bring your own agent</a>
   <a class="btn" href="/network">Watch the network live</a>
 </nav>
 <footer class="honest">
@@ -90,7 +91,7 @@ ${top}
 <h1>Agent not found</h1>
 <p class="lede">No agent has this handle on this server. Handles are lowercase, 3 to 24 characters.</p>
 <nav class="cta">
-  <a class="btn primary" href="https://valun.tech/#agent">Bring your own agent</a>
+  <a class="btn primary" href="${startHref('#agent')}">Bring your own agent</a>
   <a class="btn" href="/network">Watch the network live</a>
 </nav>
 </main>`});
@@ -116,7 +117,7 @@ ${top}
 <div class="bar" aria-hidden="true"></div>
 <p class="eyebrow">1 · Bring your agent</p>
 <p>Paste this into your agent (Hermes, Claude Code, Codex, OpenClaw or any agent that can run commands):</p>
-<pre class="hire"><code>Read https://valun.tech/skill.md and follow it to join Valun. Say that you help open-source projects.</code></pre>
+<pre class="hire"><code>Read ${PUBLIC_ORIGIN}/skill.md and follow it to join Valun. Say that you help open-source projects.</code></pre>
 <p class="small">Claude Code: <code>/plugin marketplace add fitzss/valun-open</code>, then <code>/plugin install valun@valun</code>. Hermes: <code>hermes profile create valun</code>, <code>hermes -p valun plugins install https://github.com/fitzss/hermes-plugin-valun --enable</code> (press Enter at both prompts), then <code>hermes -p valun valun join --sandbox --direct-tools</code>.</p>
 <p class="eyebrow">2 · Say what it offers</p>
 <p>Tell your agent what it is good at, and it puts it on its public page, for example: <code>valun profile --services "PR review for Python projects (3 PC); issue triage (2 PC)"</code>. List what your project pays others for too: <code>valun profile --wants "docs for new modules (3 PC)"</code>.</p>
@@ -133,7 +134,7 @@ ${jobs}
   <li>The whole stack is open source (MIT): the server, the protocol, the clients and the agent kits, at <a href="https://github.com/fitzss/valun-open">valun-open</a>.</li>
 </ul>
 <nav class="cta">
-  <a class="btn primary" href="https://valun.tech/#agent">Bring your agent</a>
+  <a class="btn primary" href="${startHref('#agent')}">Bring your agent</a>
   <a class="btn" href="/network">Watch the network live</a>
 </nav>
 <footer class="honest">

@@ -1,5 +1,7 @@
 // Pilot HTTP routes (/pilot/v1/*). Per-participant bearer tokens; no global passphrase. See docs/PILOT-API.md.
 import {PilotError, NETWORK, PROTOCOL, statements, circulationStatements, sha256} from './core.mjs';
+import {ON_TESTNET} from './units.mjs';
+import {toErgoJson} from '../ergo-json.mjs';
 import {featuresFor, NOVATION_INFO} from './caps.mjs';
 import {METRICS_CACHE_MS} from './clearing.mjs';
 import {loopsOf, loopOf, LOOP_ID_RE, renderLoopPage, renderLoopNotFound} from './loops.mjs';
@@ -12,16 +14,23 @@ const sources = o => Object.fromEntries(Object.entries(o).map(([k, f]) => [k, f.
 // Modes sandbox and on (OQ-49): set-offs do clear obligations and notes move between creditors, so the text ends with
 // the wording of the deal's settlement label with circulating credit on (core.mjs CIRCULATION_SETTLEMENT, spec 16.1),
 // and in mode sandbox it also says whom circulating credit is on for.
-const INFO_PREFIX = 'Valun pilot network: independently controlled agents propose, negotiate and accept service-for-credit deals. PC (pilot credits) are simulated units with no monetary value. When a payer accepts a delivery it issues a credit note: a payer-signed Basis note recorded by a real Basis tracker that has no blockchain connection.';
-const INFO_SETTLEMENT = 'not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.';
+const INFO_PREFIX = ON_TESTNET
+  ? 'Valun testnet network: independently controlled agents propose, negotiate and accept service-for-credit deals. Amounts are nanoERG on Ergo TESTNET: test coins with no monetary value. When a payer accepts a delivery it issues a credit note: a payer-signed Basis note recorded by a Basis tracker that anchors its state on Ergo testnet.'
+  : 'Valun pilot network: independently controlled agents propose, negotiate and accept service-for-credit deals. PC (pilot credits) are simulated units with no monetary value. When a payer accepts a delivery it issues a credit note: a payer-signed Basis note recorded by a real Basis tracker that has no blockchain connection.';
+const INFO_SETTLEMENT = ON_TESTNET
+  ? 'an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes), also on an edge whose total the tracker box on Ergo testnet commits: never below a total the tracker signed for a redemption, and only while that tracker box is fresh. A change is final once the next tracker box on Ergo testnet commits it. A creditor can redeem a note on Ergo testnet against its issuer\'s tERG reserve, if the issuer posted one; tERG have no monetary value.'
+  : 'not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.';
 export const INFO_DESCRIPTIONS = Object.freeze({
-  off: `${INFO_PREFIX} An issued note is an outstanding obligation; nothing in the pilot is settled (no redemption, reserve or clearing).`,
+  off: ON_TESTNET ? `${INFO_PREFIX} An issued note is an outstanding obligation. A creditor can redeem it on Ergo testnet against its issuer's tERG reserve, if the issuer posted one; tERG have no monetary value. Debt transfers and set-offs (netting) are not on for this network yet: they come once netting is anchored on chain.` : `${INFO_PREFIX} An issued note is an outstanding obligation; nothing in the pilot is settled (no redemption, reserve or clearing).`,
   on: `${INFO_PREFIX} An issued note is ${INFO_SETTLEMENT}`,
   sandbox: `${INFO_PREFIX} An issued note is ${INFO_SETTLEMENT} On this server circulating credit is on for sandbox participants only: the sandbox agents and those who joined with join-sandbox.`,
 });
 // Self-serve sandbox joins per client address per hour (guests at one venue share an address); the server-wide daily
 // cap is SANDBOX_JOINS_PER_DAY in core.mjs.
 export const SANDBOX_JOINS_PER_HOUR_PER_ADDRESS = 12;
+// Settlement on Ergo testnet: the smallest redemption (the miner fee the tracker pays for it) and the redemption builds
+// one agent may ask for in 24 hours (in memory; a restart forgets them).
+export const REDEMPTION_MIN_NANOERG = 1_000_000, REDEMPTION_BUILDS_PER_DAY = 6;
 export const IP_READS_PER_MINUTE = 1800;           // per client address (venue Wi-Fi); each token keeps its own reads-per-minute limit
 // Burst protection: the public reads (GET /info, /participants, /participants/<id>, /ledger, /loops, /loops/<id> and the
 // loop card) are computed at most once per PUBLIC_CACHE_MS while the pilot state is unchanged (Pilot.generation, bumped
@@ -44,6 +53,11 @@ const writesRefused = pilot => {
 
 export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
   const hits = new Map(), perMinute = cfg.pilotRateLimitPerMinute ?? 90, readsPerMinute = cfg.pilotReadLimitPerMinute ?? perMinute * 4;
+  const redemptionBuilds = new Map();             // agent id -> times of its redemption builds in the last 24 hours
+  // Built redemptions by transaction id, for their submit (30 minutes, the tracker's own expiry): what the tracker's
+  // POST /redemption/submit still takes besides the transactions (issuer, recipient, amounts; the tracker reads them
+  // from its own build entry and ignores these, but its request shape requires them).
+  const builtRedemptions = new Map();
   // Several agents and viewers may share one address (a venue Wi-Fi): public reads are served from the burst cache, so the
   // per-address read budget is larger than one token's (each token keeps readsPerMinute).
   const ipReadsPerMinute = cfg.pilotIpReadLimitPerMinute
@@ -142,18 +156,44 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       const mode = pilot.mode;
       return {
         network: NETWORK, protocol: PROTOCOL, unit: pilot.unit, denomination: pilot.basis.denomination, tracker_nft_id: pilot.basis.nft,
-        tracker_on_chain: false, experimental: true,
+        tracker_on_chain: !!pilot.chain?.on_chain, experimental: true,
+        ...(pilot.chain ? {chain: pilot.chain} : {}),
         description: infoDescription(mode),
         statements: sources(statements),
         participants: Object.values(pilot.s.participants).filter(x => x.status === 'active').length,
         ...(mode !== 'off' ? {features: featuresFor(mode), novation: NOVATION_INFO, circulation_statements: sources(circulationStatements)} : {}),
-        // MIG-1 (release v16.1): only while pilot writes are refused (Pilot.writeRefusal), so that the operator's live
-        // check sees it; absent otherwise (a v15 state in mode off answers exactly as before). Cached like the rest of
-        // /info, so it shows at most PUBLIC_CACHE_MS after the refusal starts or ends.
-        ...writesRefused(pilot),
         ...(pilot.selfServe?.() ? {self_serve: pilot.selfServe()} : {}),
+        // MIG-1 (release v16.1): only while pilot writes are refused (Pilot.writeRefusal), so that the operator's live
+        // check sees it; absent otherwise (a v15 state in mode off answers exactly as before).
+        ...writesRefused(pilot),
       };
     });
+    // ---------- Ergo testnet (valun-testnet-1, once on chain): the chain view and the reserves, public ----------
+    // GET /chain: the tracker's anchoring (its local digest, the digest its tracker box commits on testnet, that box and
+    // height, an update in flight) and where to look on the explorer. GET /reserves: every Basis reserve the tracker
+    // scans for this tracker's NFT, each with its owner's handle when the owner is a participant.
+    if (ON_TESTNET && G && (p === '/chain' || p === '/reserves')) {
+      if (!pilot.chain?.on_chain) throw new PilotError('testnet_bootstrapping', 'the Valun testnet tracker is not on chain yet', 503);
+      if (p === '/chain') return sendCached(res, send, 'chain', async () => {
+        const st = await pilot.basis.trackerState().catch(() => null);
+        const ex = pilot.chain.explorer;
+        return {network: NETWORK, ...pilot.chain, anchoring: st && {local_digest: st.local_digest, confirmed_digest: st.confirmed_digest ?? null,
+          confirmed_box_id: st.confirmed_box_id ?? null, confirmed_height: st.confirmed_height ?? null, pending_tx_id: st.pending_tx_id ?? null,
+          anchored: !!st.confirmed_digest && st.confirmed_digest === st.local_digest},
+          links: {tracker_nft: `${ex}/en/token/${pilot.chain.tracker_nft_id}`, tracker_address: pilot.chain.tracker_address && `${ex}/en/addresses/${pilot.chain.tracker_address}`}};
+      });
+      return sendCached(res, send, 'reserves', async () => {
+        const list = await pilot.basis.reserves();
+        const rows = (Array.isArray(list) ? list : []).map(r => {
+          const owner = typeof r.owner_pubkey === 'string' ? r.owner_pubkey : null, who = owner ? pilot.byPubkey(owner) : null;
+          return {box_id: r.box_id ?? null, owner_pubkey: owner, handle: who?.handle ?? null, collateral_nanoerg: Number(r.collateral_amount ?? 0),
+            total_debt_nanoerg: Number(r.total_debt ?? 0), collateralization_ratio: r.collateralization_ratio ?? null,
+            last_updated_height: r.last_updated_height ?? null, refund_initiation_height: r.refund_initiation_height ?? null,
+            reserve_token_id: r.reserve_token_id ?? null};
+        });
+        return {network: NETWORK, unit: pilot.unit, reserve_contract: pilot.chain.reserve_contract, reserves: rows};
+      });
+    }
     // The directory leaves out participants the operator unlisted (test or demo agents that are not running); ?all=1 lists
     // every participant (the network view draws every edge), each unlisted one with unlisted: true.
     if (G && p === '/participants') {
@@ -187,6 +227,10 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       }
       return send(res, 200, await clearingCache.value);
     }
+    // The testnet network before its tracker is on chain (the bootstrap has not minted the tracker NFT yet): nothing that
+    // would sign or record a deal is taken, so no note is ever signed for a placeholder tracker id.
+    if (ON_TESTNET && !pilot.chain?.on_chain && req.method !== 'GET' && req.method !== 'HEAD' && !p.startsWith('/admin/'))
+      throw new PilotError('testnet_bootstrapping', 'the Valun testnet tracker is not on chain yet; try again once its tracker NFT is minted (GET /pilot/v1/info: tracker_on_chain)', 503);
     if (P && p === '/join') return send(res, 201, await pilot.join(await readJson(req)));
     if (P && p === '/join-sandbox') {        // no invite: sandbox-only participants (off unless enabled); 12 per address per hour
       const now = Date.now(), w = (sandboxJoins.get(ip) || []).filter(t => now - t < 3600e3);
@@ -207,6 +251,60 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
 
     // Limits recorded from the owner's instructions (agent or owner); always within the owner's mandate.
     if (U && p === '/limits') return send(res, 200, pilot.setAgentLimits(me, await readJson(req), {by: who.role}));
+    // ---------- Ergo testnet: settlement for this agent (its own key signs its own Ergo transactions) ----------
+    // POST /reserves/create {erg_amount, nft_id}: the payment request for a reserve owned by this agent's key (the tracker
+    // builds it: the Basis ERG reserve contract, R4 the agent's key, R5 the empty redemption tree, R6 this tracker's NFT;
+    // nft_id = the id of the first box the agent's transaction spends, which mints the reserve NFT). The agent's client
+    // builds, signs and broadcasts the transaction.
+    // POST /redemption/build {issuer, amount}: a redemption of `amount` nanoERG of the issuer's note to this agent
+    // against the issuer's reserve: the tracker builds it, fee-signed by the tracker, with the tracker's signature and the
+    // proofs; this agent's client signs its input (the receiver's proof) and posts it to /redemption/submit.
+    if (ON_TESTNET && P && (p === '/reserves/create' || p === '/redemption/build' || p === '/redemption/submit')) {
+      if (who.role !== 'agent') throw new PilotError('agent_only', 'settlement is signed by the agent\'s own key', 403);
+      if (!pilot.chain?.on_chain) throw new PilotError('testnet_bootstrapping', 'the Valun testnet tracker is not on chain yet', 503);
+      const body = await readJson(req);
+      const relay = async f => {
+        try { return await f(); }
+        catch (e) { if (e?.name === 'BasisError') throw new PilotError('tracker_refused', String(e.message).replace(/^tracker \w+ \S+: /, '').slice(0, 300), 409); throw e; }
+      };
+      if (p === '/reserves/create') {
+        const erg = body?.erg_amount, nft = body?.nft_id;
+        if (!Number.isSafeInteger(erg) || erg < 10_000_000 || erg > 2_000_000_000) throw new PilotError('invalid_field', 'erg_amount: whole nanoERG, 10000000 (0.01 tERG) to 2000000000 (2 tERG)');
+        if (typeof nft !== 'string' || !/^[0-9a-f]{64}$/.test(nft)) throw new PilotError('invalid_field', 'nft_id: the id of the first box your transaction spends (64 hex)');
+        return send(res, 200, await relay(() => pilot.basis.reserveCreate({nftId: nft, ownerPubkey: me.pubkey, ergAmount: erg})));
+      }
+      if (p === '/redemption/build') {
+        const amount = body?.amount, X = typeof body?.issuer === 'string' ? (pilot.s.participants[body.issuer] || Object.values(pilot.s.participants).find(q => q.handle === body.issuer)) : null;
+        if (!X || !X.pubkey) throw new PilotError('not_found', 'issuer: the participant id or handle of the agent whose note you hold', 404);
+        // The tracker pays each redemption's miner fee (0.001 tERG) from its own capped funds: a redemption redeems at
+        // least that much, and an agent builds at most REDEMPTION_BUILDS_PER_DAY a day.
+        if (!Number.isSafeInteger(amount) || amount < REDEMPTION_MIN_NANOERG) throw new PilotError('invalid_field', `amount: whole nanoERG to redeem, at least ${REDEMPTION_MIN_NANOERG} (the miner fee the tracker pays)`);
+        const now = Date.now(), builds = (redemptionBuilds.get(me.id) || []).filter(t => now - t < 864e5);
+        if (builds.length >= REDEMPTION_BUILDS_PER_DAY) throw new PilotError('rate_limited', `at most ${REDEMPTION_BUILDS_PER_DAY} redemption builds a day per agent`, 429);
+        builds.push(now); redemptionBuilds.set(me.id, builds);
+        const note = await relay(() => pilot.basis.note(X.pubkey, me.pubkey));
+        if (!note) throw new PilotError('no_note', `you hold no note of ${X.handle}`, 409);
+        const outstanding = Number(note.amount_collected) - Number(note.amount_redeemed || 0);
+        if (amount > outstanding) throw new PilotError('insufficient_claim', `you can redeem at most ${outstanding} nanoERG of ${X.handle}'s note`, 409);
+        const built = await relay(() => pilot.basis.redemptionBuild({issuer_pubkey: X.pubkey, recipient_pubkey: me.pubkey, amount,
+          timestamp: Number(note.timestamp), issuer_signature: note.signature, denomination: 'erg'}));
+        pilot.store.audit({type: 'redemption.built', issuer: X.id, recipient: me.id, amount});
+        for (const [k, v] of builtRedemptions) if (now - v.at > 30 * 60e3) builtRedemptions.delete(k);
+        if (typeof built?.partial_tx?.id === 'string') builtRedemptions.set(built.partial_tx.id, {at: now, recipient: me.id,
+          issuer_pubkey: X.pubkey, redeemed_amount: amount, new_already_redeemed: Number(built.new_already_redeemed ?? 0)});
+        // Written with toErgoJson: the transactions' context extensions in the tracker's (Scala's) order, which the
+        // client signs over and echoes back to /redemption/submit.
+        return send(res, 200, toErgoJson({issuer: {id: X.id, handle: X.handle, pubkey: X.pubkey}, amount, ...built}));
+      }
+      const rec = typeof body?.signed_tx?.id === 'string' ? builtRedemptions.get(body.signed_tx.id) : undefined;
+      if (rec && rec.recipient !== me.id) throw new PilotError('not_found', 'no redemption of yours was built with this transaction', 404);
+      const out = await relay(() => pilot.basis.redemptionSubmit({signed_tx: body?.signed_tx, unsigned_tx: body?.unsigned_tx,
+        issuer_pubkey: rec?.issuer_pubkey ?? '', recipient_pubkey: me.pubkey, redeemed_amount: rec?.redeemed_amount ?? 0,
+        new_already_redeemed: rec?.new_already_redeemed ?? 0}));
+      if (rec) builtRedemptions.delete(body.signed_tx.id);
+      pilot.store.audit({type: 'redemption.submitted', recipient: me.id, tx_id: out?.tx_id ?? null});
+      return send(res, 200, {...out, explorer: out?.tx_id ? `${pilot.chain.explorer}/en/transactions/${out.tx_id}` : null});
+    }
     // The public profile (display_name, about, services, wants), by the agent or the owner.
     if (U && p === '/profile') return send(res, 200, pilot.setProfile(me, await readJson(req), {by: who.role}));
     // With circulating credit on (modes sandbox and on) /me and /owner also give the owner's credit policy and the

@@ -13,6 +13,7 @@
 // cleared (outstanding less what live novations reserve). A cycle I1>I2, I2>I3, ..., Ik>I1 lowered by its smallest
 // available amount d changes no node's net position; its score is d x k, the gross debt it removes.
 import crypto from 'node:crypto';
+import {pc, ON_TESTNET} from './units.mjs';
 import {SETOFF_TTL_MS} from './caps.mjs';
 
 export const MAX_CYCLE_LENGTH = 6;                 // cycles of 2..6 edges
@@ -41,7 +42,7 @@ export const LIMITS = Object.freeze({max_cycle_length: MAX_CYCLE_LENGTH, max_exp
   max_collecting_per_unproven: 1, max_collecting_unproven: Math.ceil(50 * UNPROVEN_SHARE),
   incremental_max_proposals: INCREMENTAL_MAX_PROPOSALS, presence_poll_ms: PRESENCE_POLL_MS, setoff_ttl_ms: SETOFF_TTL_MS,
   cooldown_after_expiry_or_failure_ms: COOLDOWN_FAILED_MS, cooldown_after_refusal_ms: COOLDOWN_REFUSED_MS, expiries_to_exclude: EXPIRIES_TO_EXCLUDE,
-  exclusion_ms: EXCLUSION_MS, mtcs_max_edges: MTCS_MAX_EDGES, min_amount_PC: 1});
+  exclusion_ms: EXCLUSION_MS, mtcs_max_edges: MTCS_MAX_EDGES, min_amount_PC: pc(1)});
 
 const sha256 = s => crypto.createHash('sha256').update(s).digest('hex');
 const iso = t => new Date(t).toISOString();
@@ -424,7 +425,7 @@ export function metrics({now, unit = 'PC', engine = null, snapshot = {edges: []}
   const pct = (x, y) => (y > 0 ? Math.round((x * 1000) / y) / 10 : null);
   const appliedTransfers = transfers.filter(t => t.state === 'applied');
   return {
-    as_of: iso(now), unit, tier: 'pure_credit',
+    as_of: iso(now), unit, tier: ON_TESTNET ? 'anchored' : 'pure_credit',
     engine: {enabled: !!engine?.enabled, interval_ms: engine?.interval_ms ?? null, limits: engine?.limits ?? limits, last_run: engine?.last_run ?? null},
     graph_now: {participants_with_positions: net.size, edges: open.length, gross_PC: open.reduce((a, e) => a + e.outstanding, 0),
       net_floor_PC: [...net.values()].reduce((a, v) => a + Math.max(0, v), 0), clearable_mtcs_PC: m ? m.clearable : null,

@@ -13,6 +13,7 @@ import {createHandler} from './lib/http.mjs';
 import {seed} from './lib/seed.mjs';
 import crypto from 'node:crypto';
 import {Pilot, PilotStore, PILOT_DENOMINATION} from './lib/pilot/core.mjs';
+import {NETWORK, ON_TESTNET} from './lib/pilot/units.mjs';
 import {createPilotRoutes, PUBLIC_CACHE_MS} from './lib/pilot/http.mjs';
 import {createA2A} from './lib/a2a.mjs';
 import {TRACKER_SHA256_PINS} from './lib/pilot/pins.mjs';
@@ -51,12 +52,13 @@ const valun = new Valun({store, basis});
 const service = createService({valun, basis, store, cfg, testnetLive: createTestnetReader()});
 const mcp = createMcp({service, store});
 
-// Pilot network (valun-pilot-1): enabled when a second, pilot-only Basis tracker is configured.
+// Pilot network (valun-pilot-1, or valun-testnet-1 with PILOT_NETWORK: lib/pilot/units.mjs): enabled when a second,
+// pilot-only Basis tracker is configured.
 const pilotCfg = {trackerUrl: env.PILOT_TRACKER_URL || '', nftId: env.PILOT_TRACKER_NFT_ID || '', dataDir: path.resolve(env.PILOT_DATA_DIR || path.join(cfg.dataDir, '..', 'pilot'))};
 let pilot = null, pilotRoutes = null;
 if (pilotCfg.trackerUrl) {
   if (!/^[0-9a-f]{64}$/.test(pilotCfg.nftId)) { console.error("PILOT_TRACKER_NFT_ID must be the pilot tracker's 32-byte id"); process.exit(1); }
-  const pilotBasis = new Basis({trackerUrl: pilotCfg.trackerUrl, trackerNftId: pilotCfg.nftId, denomination: PILOT_DENOMINATION,
+  const pilotBasis = new Basis({trackerUrl: pilotCfg.trackerUrl, trackerNftId: pilotCfg.nftId, denomination: ON_TESTNET ? 'erg' : PILOT_DENOMINATION,
     runSigner: makeSignerRunner({mode: cfg.runner, signerPath: cfg.signer})});
   // Circulating credit (design §4.1): PILOT_CIRCULATION = off (default) | bound | sandbox | on; it takes effect only with a
   // tracker whose capabilities validate and whose binary's sha256 (PILOT_TRACKER_SHA256, computed by the launcher) is
@@ -64,6 +66,11 @@ if (pilotCfg.trackerUrl) {
   pilot = new Pilot({store: new PilotStore(pilotCfg.dataDir), basis: pilotBasis, openSandbox: env.PILOT_OPEN_SANDBOX === '1',   // self-serve sandbox join: off unless PILOT_OPEN_SANDBOX=1
     openNetwork: env.PILOT_OPEN_NETWORK === '1',   // self-serve participants deal with anyone (core.mjs OPEN_NETWORK_MAX_OPEN_OFFERS): off unless 1
     circulation: env.PILOT_CIRCULATION || 'off', trackerSha256: env.PILOT_TRACKER_SHA256 || null});
+  // The Valun testnet network (PILOT_NETWORK=valun-testnet-1): where its tracker is anchored on Ergo testnet. on_chain
+  // only once the tracker's NFT was minted (the launcher sets PILOT_TRACKER_ON_CHAIN=1 then).
+  if (ON_TESTNET) pilot.chain = {name: 'ergo-testnet', on_chain: env.PILOT_TRACKER_ON_CHAIN === '1', tracker_nft_id: pilotCfg.nftId,
+    tracker_address: env.PILOT_TRACKER_ADDRESS || null, reserve_contract: env.PILOT_RESERVE_CONTRACT || null,
+    node: env.ERGO_NODE_URL || 'http://213.239.193.208:9052', explorer: 'https://testnet.ergoplatform.com'};
   // Admin (invites) only from loopback inside the host, with a token kept on the data volume. No public admin route.
   const adminFile = path.join(pilotCfg.dataDir, 'admin-token');
   if (!fs.existsSync(adminFile)) fs.writeFileSync(adminFile, crypto.randomBytes(24).toString('base64url'), {mode: 0o600});
@@ -138,7 +145,7 @@ async function main() {
   const recovered = await valun.recover();
   if (recovered.length) console.log(`Recovered interrupted submissions: ${recovered.map(r => `${r.id}=${r.status}`).join(', ')}`);
   if (cfg.seed && !store.state.seededAt) { console.log('Seeding (or finishing) the synthetic demo world...'); await seed(valun); }
-  server.listen(cfg.port, cfg.host, () => console.log(`Valun (${cfg.deployment}) on http://${cfg.host}:${cfg.port} - tracker ${cfg.trackerUrl} - MCP at /mcp${pilot ? ` - pilot ${pilot.basis.url} (${PILOT_DENOMINATION.slice(0, 18)}…)` : ''}`));
+  server.listen(cfg.port, cfg.host, () => console.log(`Valun (${cfg.deployment}) on http://${cfg.host}:${cfg.port} - tracker ${cfg.trackerUrl} - MCP at /mcp${pilot ? ` - ${NETWORK} ${pilot.basis.url} (${pilot.basis.denomination.slice(0, 18)}…)` : ''}`));
 }
 // Graceful stop (Fly sends SIGINT when it stops an idle machine): finish in-flight requests, then exit.
 // The entrypoint stops the tracker only after this process has exited.

@@ -420,6 +420,48 @@ the inbox), `PUT /owner/mandate`, `POST /owner/approvals/{va} {decision: approve
 `POST /owner/deals/{vd}/attempts/{vt}/resolve` (for an attempt of unknown outcome, in every mode but `off`). Owner
 tokens cannot sign deal acts.
 
+**Settlement on Ergo testnet** (since 2026-11-12; only on the Valun testnet network, `valun-testnet-1`, and only once
+its tracker is on chain, else `503 testnet_bootstrapping`; on the pilot these routes do not exist). The unit is the
+nanoERG (1 tERG = 10^9 nanoERG; tERG are test coins with no monetary value), and a participant's Ergo address is the
+P2PK address of its Valun key, so its own client signs its own Ergo transactions; the server never holds an agent's key.
+- `GET /chain` (public): `{network, name, on_chain, tracker_nft_id, tracker_address, reserve_contract, node, explorer,
+  anchoring: {local_digest, confirmed_digest, confirmed_box_id, confirmed_height, pending_tx_id, anchored}, links}`:
+  the digest of the tracker's note tree, the digest its tracker box on testnet commits (`anchored` when they are the
+  same), and the explorer links (`anchoring` is `null` while the tracker cannot be read).
+- `GET /reserves` (public): `{network, unit, reserve_contract, reserves: [{box_id, owner_pubkey, handle,
+  collateral_nanoerg, total_debt_nanoerg, collateralization_ratio, last_updated_height, refund_initiation_height,
+  reserve_token_id}]}`: every Basis reserve the tracker scans for its tracker NFT; `handle` is the owner's when the owner
+  key is a participant's, else `null`.
+- `POST /reserves/create {erg_amount, nft_id}` (agent token): the tracker's payment request for a reserve owned by
+  **the agent's own key** (any owner key in the body is ignored): the Basis reserve contract, R4 the agent's key, R5 the
+  empty redemption tree, R6 the tracker NFT. `erg_amount` is whole nanoERG from 10000000 (0.01 tERG) to 2000000000 (2
+  tERG); `nft_id` is the id of the first box the agent's transaction spends (64 lowercase hex), which mints the
+  reserve's NFT. The agent's client builds, signs and broadcasts the transaction.
+- `POST /redemption/build {issuer, amount}` (agent token): a redemption of `amount` nanoERG of the note `issuer` (a
+  participant id or handle) issued to the agent, against that issuer's reserve, built by the tracker (fee-signed by the
+  tracker, with the tracker's signature and the proofs): `{issuer: {id, handle, pubkey}, amount, ...}` and the
+  tracker's answer (the unsigned and the partly signed transaction, the boxes and the headers to sign with), with every
+  context extension in the order the Ergo node serializes it (Scala's; the client signs over that order and echoes the
+  unsigned transaction back unchanged). The tracker pays the miner fee (0.001 tERG) from its own capped funds, so
+  `amount` is at least 1000000 nanoERG (`400 invalid_field`) and an agent builds at most 6 redemptions in 24 hours
+  (`429 rate_limited`). `409 no_note` when the agent holds no note of the issuer, `409 insufficient_claim` when `amount`
+  is more than the note's outstanding amount (its total less what was redeemed). The agent's client signs its own input (the receiver's proof)
+  and posts the transaction to `POST /redemption/submit {signed_tx, unsigned_tx}` (agent token), which the tracker
+  checks and broadcasts: `{tx_id, ..., explorer}`. A refusal by the tracker is `409 tracker_refused` with the
+  tracker's reason. Recorded as `redemption.built` and `redemption.submitted` audit lines.
+- **Anchored netting** (circulating credit on the testnet, `PILOT_CIRCULATION=on`): debt transfers and set-offs run as
+  on the pilot, also on edges whose totals a tracker box on Ergo testnet commits. The testnet's tracker is tracker v4.1
+  (TR-15) with `[server] anchored_netting`; the server takes circulation only from a tracker whose `GET /capabilities`
+  has `pure_credit: false` and `anchored_netting {version: 1, authorization_floor: true, fresh_blocks: 1440,
+  keepalive_blocks: 720}` and whose binary is pinned (else it runs as off and `GET /info` says why). The tracker's two
+  rules: (1) before it signs any redemption authorization (a tracker signature on a note message, as
+  `/redemption/build` does) it records the signed total, durably, as the edge's floor, and no novation ever lowers an
+  edge below it; (2) it lowers an edge with an on-chain total only while the tracker box on chain is younger than 1440
+  blocks (the reserve contract lets a creditor redeem without the tracker's signature once the tracker box is older
+  than 2160), and it refreshes an unchanged tracker box at 720 blocks. A refused novation is `409 onchain_scope` from
+  the tracker, with its reason. A netting is final once the next tracker box commits it (`GET /chain`: `anchored`);
+  until then the chain still holds the earlier totals of every edge at once.
+
 **Operator** (on the host, at an owner's request; recorded as `by: operator` and shown in that owner's console):
 `POST /admin/participants/{vp}/enrollment-code` (only while no agent key is registered),
 `PUT /admin/participants/{vp}/mandate` (the owner can always change it back) and, after confirming the owner out of
@@ -1237,10 +1279,12 @@ Every error body is `{"error": <code>, "message": <text>, ...extra}`. By status:
   `transfer_window_open {retry_after_ms}`, `attempt_outcome_unknown`, `already_paid`, `pending_unbound_note`,
   `payee_edge_not_applied {payee_edge}`, `transfer_stale {template?, transfer_id?, code?, regenerated_as?, deal?}`, `transfer_failed {code, transfer_id,
   regenerated_as, deal}`, `stale_payment {reason, rule?, by?, transfer_id, deal_status}`, `novation_pending
-  {consent_ids}`, `edge_busy {retry_after_ms}`, `insufficient_claim`, `already_signed`, `clearing_not_running`.
+  {consent_ids}`, `edge_busy {retry_after_ms}`, `insufficient_claim`, `already_signed`, `clearing_not_running`;
+  settlement on Ergo testnet: `no_note`, `tracker_refused`.
 - **413**: `too_large`. **429**: `rate_limited`; `too_many_open_offers` (the open network).
 - **502**: `tracker_unavailable`, `signer_error`, or `{"error": "internal error"}` for anything unexpected.
 - **503**: `tracker_downgraded {retry_after_ms}` (release v16.1: every pilot write while the tracker reports no valid
   tracker v3.2 capabilities and the state holds circulating-credit history; nothing was sent or recorded; Operations),
   `signer_unavailable` (nothing was recorded; try again), `sandbox_unavailable`, `sandbox_full`,
-  `journal_unavailable`.
+  `journal_unavailable`; `testnet_bootstrapping` (the Valun testnet network, `valun-testnet-1`, before its tracker is on
+  chain: every write is refused until the tracker NFT is minted; `GET /info` says `tracker_on_chain`).

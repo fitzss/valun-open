@@ -20,12 +20,14 @@ import {novationTimestamp, quoteDigest, transferSlots, transferMessages, slotMes
 // Phase-2 credit policies (circulation modes sandbox and on): the credit rules, the credit history, the agent limit kinds.
 import {creditCheck, creditHistory, publicCreditPolicy, policyValue, impliedPhase2, strictestLimit, agentLimitWidens, PHASE2_FIELDS, SANDBOX_MAX_CLAIMS_TOTAL} from './policy.mjs';
 
-export const NETWORK = 'valun-pilot-1';
+export {NETWORK} from './units.mjs';
+import {NETWORK, UNIT, pc, amt, BACKING, TRACKER_PLACE, ON_TESTNET} from './units.mjs';
 export const PROTOCOL = 'valun-deal/1';
 // The pilot unit: a synthetic token id the pilot tracker serves (it exists on no chain).
 export const PILOT_TOKEN_ID = crypto.createHash('sha256').update('valun-pilot-credit/1').digest('hex');
 export const PILOT_DENOMINATION = `token:${PILOT_TOKEN_ID}`;
-const PRICE_CAP = 1000;                   // PC per deal, network-wide sanity cap
+const PRICE_CAP = pc(1000);               // per deal, network-wide sanity cap (1000 PC on the pilot)
+const LIMIT_MAX = pc(100000);             // the largest limit an owner or agent may set (100000 PC on the pilot)
 const MAX_OFFER_TTL_MS = 7 * 864e5, MAX_DELIVERY_MS = 30 * 864e5;
 const ENROLL_TTL_MS = 30 * 60e3;
 // An agreed deal the payee has not delivered this long after deliver_by ends as expired_undelivered (OQ-8). A delivery
@@ -92,7 +94,7 @@ const CIRCULATION_LIMIT_KINDS = new Set(['ncap', 'off_only', 'allow', 'deny']);
 
 export const DEFAULT_MANDATE = Object.freeze({
   objective: '', may_issue_credit: true, may_accept_credit: true,
-  max_issue_per_deal: 25, max_issue_outstanding: 50, max_accept_per_deal: 25, max_accept_per_issuer: 50, min_price_as_payee: 0,
+  max_issue_per_deal: pc(25), max_issue_outstanding: pc(50), max_accept_per_deal: pc(25), max_accept_per_issuer: pc(50), min_price_as_payee: 0,
   min_payer_coverage_pct: 0,
   counterparties: 'any', approve_above: 0, review_deliveries: false, expires_at: null,
 });
@@ -138,6 +140,13 @@ const APPROVED_COLLECT_UNTIL_MS = 50 * 60e3;
 const PAIR_CHANGE_KINDS = new Set(['transfer_out', 'transfer_in', 'setoff']);
 // The deal's settlement label with circulating credit on (design §4.12, spec 16.1; the same text in the 0.4 clients).
 const CIRCULATION_SETTLEMENT = 'not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.';
+// The same labels on the Valun testnet network (valun-testnet-1), where a note can be redeemed on Ergo testnet and
+// netting is anchored there (tracker v4.1).
+const TESTNET_REDEMPTION = 'Its creditor can redeem it on Ergo testnet against the issuer\'s tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.';
+const CIRCULATION_SETTLEMENT_TESTNET = `not settled until redeemed: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes); a netting is final once a tracker box on Ergo testnet commits it. ${TESTNET_REDEMPTION}`;
+const SETTLEMENT_TESTNET = `not settled until redeemed: issuing a credit note creates an outstanding obligation. ${TESTNET_REDEMPTION}`;
+// The last words of the join-sandbox note: what the amounts are.
+const UNITS_NOTE = ON_TESTNET ? 'Amounts are nanoERG of Ergo testnet: test coins with no monetary value.' : 'Synthetic units.';
 // A position row of a note issued by a participant the server runs (the sandbox agents; design §4.12, spec 16.1).
 const OPERATOR_RUN_NOTE = Object.freeze({operator_run: true, label: 'issued with keys the operator holds'});
 // The tracker's EdgeState of a note it returned (null: the edge does not exist).
@@ -171,7 +180,7 @@ const isInt = (v, min, max) => Number.isSafeInteger(v) && v >= min && v <= max;
 // Self-serve sandbox participants (joinSandbox): limits they can lower but never raise, and how long they last.
 // max_claims_total (phase-2 credit policy) is stored and enforced only with circulating credit on; with it off setMandate
 // ignores it, as any unknown field.
-const SANDBOX_CAPS = {max_issue_per_deal: 5, max_issue_outstanding: 40, max_accept_per_deal: 5, max_accept_per_issuer: 40, max_claims_total: SANDBOX_MAX_CLAIMS_TOTAL}, SANDBOX_DAYS = 7;
+const SANDBOX_CAPS = {max_issue_per_deal: pc(5), max_issue_outstanding: pc(40), max_accept_per_deal: pc(5), max_accept_per_issuer: pc(40), max_claims_total: SANDBOX_MAX_CLAIMS_TOTAL}, SANDBOX_DAYS = 7;
 const SANDBOX_JOINS_PER_DAY = 200;
 // The open network (Pilot openNetwork, PILOT_OPEN_NETWORK=1): a self-serve participant may deal with any participant
 // whose own mandate allows it (other self-serve participants, invited participants, the sandbox agents), still within
@@ -257,7 +266,7 @@ export class Pilot {
   // v3; undefined: not read yet, as while server.mjs starts); `trackerSha256` the running tracker binary's sha256
   // (PILOT_TRACKER_SHA256, computed by the launcher); `trackerPins` the pinned hashes (lib/pilot/pins.mjs; tests may
   // pass their own). The effective mode is `mode` below. `log` receives one line per distinct reason the mode is off.
-  constructor({store, basis, unitLabel = 'PC', now = () => Date.now(), openSandbox = false, openNetwork = false,
+  constructor({store, basis, unitLabel = UNIT, now = () => Date.now(), openSandbox = false, openNetwork = false,
     circulation = 'off', trackerCaps = undefined, trackerSha256 = null, trackerPins = TRACKER_SHA256_PINS, log = m => console.warn(m)}) {
     this.store = store; this.basis = basis; this.unit = unitLabel; this.now = now;
     this.openSandbox = openSandbox; this.sandboxIds = new Set();   // filled by the Sandbox when it starts
@@ -437,7 +446,7 @@ export class Pilot {
       inv.uses += 1;
       this.s.participants[p.id] = p; this.save();
       this.store.audit({type: 'participant.joined', id: p.id, handle, invite: inv.id});
-      return {participant_id: p.id, handle, owner_token: ownerToken, enrollment_code: code, enrollment_expires_at: p.enrollment.expires_at};
+      return {participant_id: p.id, handle, network: NETWORK, owner_token: ownerToken, enrollment_code: code, enrollment_expires_at: p.enrollment.expires_at};
     });
   }
 
@@ -642,7 +651,7 @@ export class Pilot {
     for (const k of ['may_issue_credit', 'may_accept_credit', 'review_deliveries']) if (m[k] !== undefined) {
       if (typeof m[k] !== 'boolean') throw new PilotError('invalid_field', `${k} must be true or false`); next[k] = m[k]; }
     for (const k of ['max_issue_per_deal', 'max_issue_outstanding', 'max_accept_per_deal', 'max_accept_per_issuer', 'min_price_as_payee', 'min_payer_coverage_pct', 'approve_above']) if (m[k] !== undefined) {
-      if (!isInt(m[k], 0, 100000)) throw new PilotError('invalid_field', `${k} must be a whole number 0..100000`); next[k] = m[k]; }
+      if (!isInt(m[k], 0, LIMIT_MAX)) throw new PilotError('invalid_field', `${k} must be a whole number 0..${LIMIT_MAX}`); next[k] = m[k]; }
     if (m.counterparties !== undefined) {
       if (m.counterparties === 'any') next.counterparties = 'any';
       else if (Array.isArray(m.counterparties) && m.counterparties.every(id => typeof id === 'string' && PID_RE.test(id) && Object.hasOwn(this.s.participants, id)))
@@ -672,7 +681,7 @@ export class Pilot {
       // Phase-2 credit policy (lib/pilot/policy.mjs): a mandate that does not hold one of these has its default
       // (max_claims_total null, or 40 for a sandbox joiner; max_issuer_net_debt null; accept_operator_issuers true).
       for (const k of ['max_claims_total', 'max_issuer_net_debt']) if (m[k] !== undefined) {
-        if (m[k] !== null && !isInt(m[k], 0, 100000)) throw new PilotError('invalid_field', `${k} must be null (no limit) or a whole number 0..100000`);
+        if (m[k] !== null && !isInt(m[k], 0, LIMIT_MAX)) throw new PilotError('invalid_field', `${k} must be null (no limit) or a whole number 0..${LIMIT_MAX}`);
         next[k] = m[k];
       }
       if (m.accept_operator_issuers !== undefined) {
@@ -727,7 +736,7 @@ export class Pilot {
         next[k] = value; recordedBy[k] = by;
         continue;
       }
-      if (!isInt(body[k], 0, 100000)) throw new PilotError('invalid_field', `${k} must be a whole number 0..100000 (or null to clear it)`);
+      if (!isInt(body[k], 0, LIMIT_MAX)) throw new PilotError('invalid_field', `${k} must be a whole number 0..${LIMIT_MAX} (or null to clear it)`);
       const owner = p.mandate[k] ?? 0;
       if (kind === 'cap' && body[k] > owner) throw new PilotError('above_owner_mandate', `${k} ${body[k]} is above the owner's ceiling of ${owner}; only the owner can raise that`, 403, {field: k, owner_value: owner});
       if (kind === 'floor' && body[k] < owner) throw new PilotError('below_owner_mandate', `${k} ${body[k]} is below the owner's minimum of ${owner}; only the owner can lower that`, 403, {field: k, owner_value: owner});
@@ -744,7 +753,7 @@ export class Pilot {
   // cannot record 'any': it would be no limit).
   agentLimitValue(k, kind, v) {
     const bad = what => { throw new PilotError('invalid_field', `${k} must be ${what} (or null to clear it)`); };
-    if (kind === 'ncap') return isInt(v, 0, 100000) ? v : bad('a whole number 0..100000');
+    if (kind === 'ncap') return isInt(v, 0, LIMIT_MAX) ? v : bad(`a whole number 0..${LIMIT_MAX}`);
     if (kind === 'off_only') {
       if (k === 'pay_with_held_notes') return PAY_WITH_HELD_NOTES.includes(v) ? v : bad(PAY_WITH_HELD_NOTES.join(', '));
       return typeof v === 'boolean' ? v : bad('true or false');
@@ -829,14 +838,14 @@ export class Pilot {
     p.sandbox_only = true; p.sandbox_expires_at = until;
     // With circulation on, a sandbox joiner also accepts transfers of notes the sandbox agents issued (and only those);
     // with the open network, of any issuer's notes (within the same limits).
-    this.setMandate(p, {...SANDBOX_CAPS, counterparties: open ? 'any' : ids, approve_above: 1000, min_payer_coverage_pct: 0, expires_at: until,
+    this.setMandate(p, {...SANDBOX_CAPS, counterparties: open ? 'any' : ids, approve_above: pc(1000), min_payer_coverage_pct: 0, expires_at: until,
       objective: open ? 'Self-serve: deal with any agent on the Valun test network, within small limits.' : 'Self-serve sandbox: deal with sandbox-exact and sandbox-mallory to try Valun.',
       ...(this.circulating ? SANDBOX_CIRCULATION(open ? 'any' : ids) : {})}, {by: 'operator'});
     this.store.audit({type: 'participant.sandbox_joined', id: p.id, ...(open ? {open_network: true} : {})});
     return {...j, sandbox_only: true, sandbox_expires_at: until, counterparties: open ? 'any' : ids,
       note: open
-        ? `Open network: you can deal with any agent on the network whose owner allows it (sandbox-exact and sandbox-mallory are always on), at most ${SANDBOX_CAPS.max_issue_per_deal} PC per deal and ${SANDBOX_CAPS.max_issue_outstanding} PC owed in total, until ${until}, renewed for another ${SANDBOX_DAYS} days whenever your agent is active. Synthetic units.`
-        : `Sandbox only: you can deal with the sandbox agents (sandbox-exact, sandbox-mallory) until ${until}. Synthetic units.`};
+        ? `Open network: you can deal with any agent on the network whose owner allows it (sandbox-exact and sandbox-mallory are always on), at most ${amt(SANDBOX_CAPS.max_issue_per_deal)} per deal and ${amt(SANDBOX_CAPS.max_issue_outstanding)} owed in total, until ${until}, renewed for another ${SANDBOX_DAYS} days whenever your agent is active. ${UNITS_NOTE}`
+        : `Sandbox only: you can deal with the sandbox agents (sandbox-exact, sandbox-mallory) until ${until}. ${UNITS_NOTE}`};
   }
   // A self-serve participant boxed in (no open network) refuses every counterparty, and every issuer, but the sandbox
   // agents, whatever its mandate says (one written while the network was open included).
@@ -930,12 +939,14 @@ export class Pilot {
     const sum = xs => xs.reduce((a, l) => a + l.outstanding, 0);
     const deals = this.dealsFor(p).map(d => this.sweep(d));          // counts use current statuses, not unswept ones (OQ-7)
     const buckets = bucketCounts(deals);                             // by STATUS_CLASS[status].bucket (lib/pilot/status.mjs)
-    const backing = 'none: the pilot tracker has no chain and no reserves; PC are simulated units';
+    const backing = BACKING;
     if (!this.circulating) return {participant_id: p.id, unit: this.unit, claims_held: sum(owed), owes: sum(owes), net: sum(owed) - sum(owes),
       claims: owed.map(l => ({from: l.issuer_handle, amount: l.outstanding})), debts: owes.map(l => ({to: l.recipient_handle, amount: l.outstanding})),
       deals: Object.fromEntries(POSITION_BUCKETS.map(b => [b, buckets[b]])),
       settled: 0, backing,
-      meaning: 'claims and debts are outstanding credit notes (cumulative per pair, as the tracker records them). None has been settled: the pilot has no redemption, reserve or clearing.'};
+      meaning: ON_TESTNET
+        ? 'claims and debts are outstanding credit notes (cumulative per pair, as the tracker records them). A claim is settled only when its creditor redeems it on Ergo testnet against the issuer\'s tERG reserve (GET /reserves).'
+        : 'claims and debts are outstanding credit notes (cumulative per pair, as the tracker records them). None has been settled: the pilot has no redemption, reserve or clearing.'};
     // Circulating credit (modes sandbox and on; design §5.6): what moved, from the edge journal, over every key the
     // participant has had. Set-offs cancel as much of its claims as of its debts, so cleared_by_setoff counts one side.
     const keys = this.keysOf(p), journal = {in: 0, out: 0, setoff: 0, novated: 0};
@@ -1070,7 +1081,7 @@ export class Pilot {
       if (total + price > m.max_issue_outstanding) fail('max_issue_outstanding', `issuing ${price} would bring this agent's outstanding credit to ${total + price}, above max_issue_outstanding ${m.max_issue_outstanding}`);
     } else {
       if (!m.may_accept_credit) fail('may_accept_credit', 'the owner has not allowed this agent to accept credit');
-      if (price < (m.min_price_as_payee || 0)) fail('min_price_as_payee', `price ${price} is below this agent's minimum of ${m.min_price_as_payee} PC set by its owner`);
+      if (price < (m.min_price_as_payee || 0)) fail('min_price_as_payee', `price ${price} is below this agent's minimum of ${amt(m.min_price_as_payee)} set by its owner`);
       if (price > m.max_accept_per_deal) fail('max_accept_per_deal', `price ${price} exceeds max_accept_per_deal ${m.max_accept_per_deal}`);
       const e = this.exposure(p, ledger, {asRole: 'payee', counterpartyId, excludeDealId});
       // Payments by transfer to p from this payer's notes still being collected (circulating credit) count too, and are
@@ -1085,7 +1096,7 @@ export class Pilot {
         const claims = ledger.filter(l => l.recipient === payer.id).reduce((a, l) => a + l.outstanding, 0);
         const owes = pe.tracker + pe.committed + price, pct = Math.floor(claims * 100 / owes);
         checks.push({rule: 'min_payer_coverage_pct', payer_claims_on_tracker: claims, payer_owes_on_tracker: pe.tracker, payer_committed: pe.committed, this_deal: price, coverage_pct: pct, limit: m.min_payer_coverage_pct});
-        if (pct < m.min_payer_coverage_pct) fail('min_payer_coverage_pct', `${payer.handle}'s claims on the tracker (${claims} PC) cover ${pct}% of what it would owe with this deal (${owes} PC); this agent's owner requires at least ${m.min_payer_coverage_pct}%`);
+        if (pct < m.min_payer_coverage_pct) fail('min_payer_coverage_pct', `${payer.handle}'s claims on the tracker (${amt(claims)}) cover ${pct}% of what it would owe with this deal (${amt(owes)}); this agent's owner requires at least ${m.min_payer_coverage_pct}%`);
       }
       // Circulating credit (modes sandbox and on): the phase-2 credit rules on the payer, as the issuer of the note p would
       // hold (lib/pilot/policy.mjs: refuse_notes_from, accept_operator_issuers, max_claims_total, max_issuer_net_debt).
@@ -2585,13 +2596,13 @@ export class Pilot {
     this.spendingPayerCheck(B, d);
     const [fromNote, toNote] = await Promise.all([this.basis.note(A.pubkey, B.pubkey), this.basis.note(A.pubkey, C.pubkey)]);
     const from = edgeState(fromNote), to = edgeState(toNote);
-    if (!from || from.total - Number(fromNote.amount_redeemed ?? 0) < a) throw new PilotError('insufficient_claim', `you hold less than ${a} PC of ${A.handle}'s notes`, 409);
+    if (!from || from.total - Number(fromNote.amount_redeemed ?? 0) < a) throw new PilotError('insufficient_claim', `you hold less than ${amt(a)} of ${A.handle}'s notes`, 409);
     const block = await this.paymentBlock(d, {route: 'transfer', fromEdge, fromPrior: from.total, fromPriorTimestamp: from.timestamp});
     if (block) throw this.paymentBlockError(block);
     const ledger = await this.ledger();
     await this.receivingTransferCheck(C, A, a, {ledger, dealId: d.id});
     this.assertTransferEdgeFree(fromEdge); this.assertTransferEdgeFree(toEdge);
-    if (this.spendableNote(B, A, fromNote) < a) throw new PilotError('insufficient_claim', `${a} PC of ${A.handle}'s note to you cannot be spent now (held ${from.total}; it must reconcile exactly with Valun's journal)`, 409);
+    if (this.spendableNote(B, A, fromNote) < a) throw new PilotError('insufficient_claim', `${amt(a)} of ${A.handle}'s note to you cannot be spent now (held ${from.total}; it must reconcile exactly with Valun's journal)`, 409);
     // T is later than both edges' notes and (decision D-2 b) than every live set-off's timestamp on them, so that a
     // set-off applied between this template and the post leaves both edges at timestamps before T.
     const r = novationTimestamp({now: this.now(), residue: TRANSFER_MS, after: this.transferAfter(fromEdge, toEdge, from, to, d)});
@@ -2641,7 +2652,7 @@ export class Pilot {
       this.spendingPayerCheck(B, d);
       const [fromNote, toNote] = await Promise.all([this.basis.note(A.pubkey, B.pubkey), this.basis.note(A.pubkey, C.pubkey)]);
       const from = edgeState(fromNote), to = edgeState(toNote);
-      if (!from || from.total - Number(fromNote.amount_redeemed ?? 0) < a) throw new PilotError('insufficient_claim', `you hold less than ${a} PC of ${A.handle}'s notes`, 409);
+      if (!from || from.total - Number(fromNote.amount_redeemed ?? 0) < a) throw new PilotError('insufficient_claim', `you hold less than ${amt(a)} of ${A.handle}'s notes`, 409);
       const block = await this.paymentBlock(d, {route: 'transfer', fromEdge, fromPrior: from.total, fromPriorTimestamp: from.timestamp, timestamp: b.timestamp});
       if (block) throw this.paymentBlockError(block);
       const stale = why => Object.assign(new PilotError('transfer_stale', `${why}; fetch a new transfer template`, 409, {template: null}), {freshTransferTemplate: A.id});
@@ -2667,7 +2678,7 @@ export class Pilot {
       const ledger = await this.ledger();
       await this.receivingTransferCheck(C, A, a, {ledger, dealId: d.id});
       this.assertTransferEdgeFree(fromEdge); this.assertTransferEdgeFree(toEdge);
-      if (this.spendableNote(B, A, fromNote) < a) throw new PilotError('insufficient_claim', `${a} PC of ${A.handle}'s note to you cannot be spent now (it must reconcile exactly with Valun's journal)`, 409);
+      if (this.spendableNote(B, A, fromNote) < a) throw new PilotError('insufficient_claim', `${amt(a)} of ${A.handle}'s note to you cannot be spent now (it must reconcile exactly with Valun's journal)`, 409);
       const held = !!B.mandate.review_deliveries;
       const serverSigned = held ? {} : await this.serverSignatures(t, ['issuer', 'payee']);
       // Everything checked: record it.
@@ -2805,7 +2816,7 @@ export class Pilot {
       throw e;
     }
     if (this.spendableNote(B, A, fromNote, {exceptTransfer: t.id}) < t.amount)
-      return {code: 'insufficient_claim', why: `${t.amount} PC of ${A.handle}'s note to you can no longer be spent (it must reconcile exactly with Valun's journal)`};
+      return {code: 'insufficient_claim', why: `${amt(t.amount)} of ${A.handle}'s note to you can no longer be spent (it must reconcile exactly with Valun's journal)`};
     const block = await this.paymentBlock(d, {route: 'transfer', fromEdge: t.from_edge.edge, fromPrior: t.from_edge.before.total, fromPriorTimestamp: t.from_edge.before.timestamp,
       timestamp: t.timestamp, exceptTransfer: t.id});
     if (block) return {code: block.code, why: this.paymentBlockError(block).message};
@@ -4034,10 +4045,11 @@ export class Pilot {
       labels: {
         signed_by_parties: 'proposals, acceptances, deliveries, completions and disputes carry the acting participant\'s key signature',
         owner_approvals: 'owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner\'s note is seen only by that participant\'s side',
-        basis: d.status === 'note_issued' ? `credit note issued: the payer-signed Basis note is held by the pilot tracker (local, no chain); ${this.s.participants[d.payer].handle} owes ${this.s.participants[d.payee].handle} ${d.agreement.terms.price.amount} PC more`
-          : circulating && d.status === 'paid_by_transfer' && t ? `${handle(t.issuer.id)} now owes ${handle(d.payee)} ${price} PC that it owed ${handle(d.payer)} before; ${handle(d.payer)} issued no credit note for this deal`
+        basis: d.status === 'note_issued' ? `credit note issued: the payer-signed Basis note is held by ${TRACKER_PLACE}; ${this.s.participants[d.payer].handle} owes ${this.s.participants[d.payee].handle} ${amt(d.agreement.terms.price.amount)} more`
+          : circulating && d.status === 'paid_by_transfer' && t ? `${handle(t.issuer.id)} now owes ${handle(d.payee)} ${amt(price)} that it owed ${handle(d.payer)} before; ${handle(d.payer)} issued no credit note for this deal`
             : 'no credit note for this deal is in the Basis tracker',
-        settlement: circulating ? CIRCULATION_SETTLEMENT : 'not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here',
+        settlement: ON_TESTNET ? (circulating ? CIRCULATION_SETTLEMENT_TESTNET : SETTLEMENT_TESTNET)
+          : circulating ? CIRCULATION_SETTLEMENT : 'not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here',
         work: 'delivery and acceptance are the parties\' statements; Valun does not judge the work',
       },
     };
@@ -4223,7 +4235,7 @@ export class Pilot {
     if (a.kind === 'propose') return {
       if_approved: `This counter-offer replaces ${other}'s offer (version ${s.version - 1}). If ${other} accepts it, the deal is agreed without asking you again.`,
       if_rejected: `Nothing is offered. ${other}'s offer stays open and ${other} never sees this counter-offer; your agent may answer it again.`, checks_on_approve: recheck};
-    const binding = `binding on both sides: ${h(d.payee)} delivers by ${s.terms.deliver_by}; when ${h(d.payer)} accepts the delivery, it issues a credit note for ${price} PC (an outstanding obligation; nothing is settled).`;
+    const binding = `binding on both sides: ${h(d.payee)} delivers by ${s.terms.deliver_by}; when ${h(d.payer)} accepts the delivery, it issues a credit note for ${amt(price)} (an outstanding obligation; nothing is settled).`;
     if (a.kind === 'accept') {
       const proposerToo = d.acceptance?.approval_id === a.id && d.acceptance.proposer_approval_id && !d.versions.find(x => x.v === d.acceptance.version)?.owner_approval;
       return {
@@ -4240,13 +4252,13 @@ export class Pilot {
     // A payment by debt transfer held for the payer's owner (spec 18.11); a deal whose acceptance already stood
     // (payment_due) returns there on a rejection, and owes the payment still.
     if (a.kind === 'pay_by_transfer') {
-      const tr = s.transfer, A = tr.issuer.handle ?? tr.issuer.id, C = tr.payee.handle ?? tr.payee.id, amt = tr.amount;
+      const tr = s.transfer, A = tr.issuer.handle ?? tr.issuer.id, C = tr.payee.handle ?? tr.payee.id, amount = tr.amount;
       // Decision D-1: the payer signed this payment's slots, so the tracker could still apply it until one hour after its
       // timestamp; every other payment waits until fallback_after, one through the same note too unless it acknowledges
       // the same prior state of it (the same-prior exemption of tracker v3.2).
       const wait = `only after ${iso(fallbackAfter(tr.timestamp))}, with its own credit note or any note it holds (${A}'s included), since the tracker could still apply this payment until one hour after its timestamp; through ${A}'s note at once, but only while ${A}'s note to you is exactly as this payment found it (the tracker applies at most one of the two)`;
       return {
-        if_approved: `The transfer is submitted once ${A} and ${C} sign: ${A} then owes ${C} ${amt} PC more and you ${amt} PC less; you issue no credit note.`,
+        if_approved: `The transfer is submitted once ${A} and ${C} sign: ${A} then owes ${C} ${amt(amount)} more and you ${amt(amount)} less; you issue no credit note.`,
         if_rejected: d.payment_due_since ? `Nothing moves. The deal returns to payment_due: the delivery stays accepted, and your agent must still pay it (${wait}).`
           : `Nothing moves. The deal returns to delivered: your agent may accept again (paying ${wait}) or dispute.`,
         checks_on_approve: `When you approve, the server first checks again that ${A}'s notes to you and to ${C} on the tracker (their totals, timestamps and signatures) are unchanged since your agent signed, that all three parties still have the keys named in the transfer, and that the payment still passes every check it passed when your agent made it (your agent's limits for paying with notes it holds, that ${C} still accepts ${A}'s notes, that ${A} may still move its debt to ${C}, and that no other payment of this deal could still apply); if not, the approval becomes void and your agent must pay again.`};
@@ -4254,12 +4266,12 @@ export class Pilot {
     // With circulation on, the texts say what the server checks (the pair's whole last note, SV-1) and, for a deal whose
     // acceptance already stood (payment_due), where a rejection leaves it. A bound note also says until when the tracker
     // takes it (decision D-1 item 4).
-    const bound = s.credit_note.bound ? ` It is a bound note: the tracker records it only while the pair's note is still the one it acknowledges (total ${s.credit_note.prior_total} PC, the state it was signed on), and only until ${s.credit_note.expires_at} (one hour after its timestamp); after that it fails and your agent signs a new one.` : '';
+    const bound = s.credit_note.bound ? ` It is a bound note: the tracker records it only while the pair's note is still the one it acknowledges (total ${amt(s.credit_note.prior_total)}, the state it was signed on), and only until ${s.credit_note.expires_at} (one hour after its timestamp); after that it fails and your agent signs a new one.` : '';
     // Circulating credit (decision D-1): a rejected bound note stays usable at the tracker until one hour after its
     // timestamp, so a payment by transfer waits until then (paymentBlock).
     const waitTransfer = this.circulating && s.credit_note.bound ? ` A payment by transfer can start only after ${iso(fallbackAfter(s.credit_note.timestamp))}: the tracker could still record this note until one hour after its timestamp.` : '';
     return {
-      if_approved: `The signed credit note goes to the Basis tracker: ${h(d.payer)} then owes ${h(d.payee)} ${price} PC more (the running total for this key pair becomes ${s.credit_note.total} PC). It is an outstanding obligation; nothing is settled.${bound}`,
+      if_approved: `The signed credit note goes to the Basis tracker: ${h(d.payer)} then owes ${h(d.payee)} ${amt(price)} more (the running total for this key pair becomes ${amt(s.credit_note.total)}). It is an outstanding obligation; nothing is settled.${bound}`,
       if_rejected: (d.payment_due_since ? 'Nothing reaches the tracker. The deal returns to "payment_due": the delivery stays accepted, and your agent must still pay it (with a new credit note, or by transfer).'
         : 'Nothing reaches the tracker. The deal returns to "delivered": your agent may accept the delivery again (signing a new note) or dispute it.') + waitTransfer,
       checks_on_approve: this.circulating

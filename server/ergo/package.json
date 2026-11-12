@@ -1,0 +1,12 @@
+{
+  "name": "valun-ergo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Valun on Ergo testnet: the tracker's wallet adapter (local signing, public node), the tracker bootstrap (key, NFT, tracker box) and chain reads",
+  "engines": {"node": ">=22"},
+  "dependencies": {
+    "ergo-lib-wasm-nodejs": "0.28.0"
+  }
+}

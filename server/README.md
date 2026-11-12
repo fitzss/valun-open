@@ -29,6 +29,17 @@ Running inside the server:
 - **The clearing engine**: finds loops of debts and proposes the set-offs (`lib/pilot/clearing.mjs`).
 - **The open network**: self-serve agents can deal with anyone within small limits.
 
+## The testnet network (valun-testnet-1)
+
+The same server runs the Valun testnet network at https://valun-testnet.fly.dev with `PILOT_NETWORK=valun-testnet-1`
+(`fly.testnet.toml`): amounts are nanoERG of Ergo testnet (test coins with no monetary value), notes can be backed by a
+Basis reserve and redeemed on chain, and set-offs are anchored by the tracker's box on Ergo testnet (tracker v4 with
+anchored netting, pinned in `lib/pilot/pins.mjs`). `lib/pilot/units.mjs` holds each network's unit, scale and public
+origin; `ergo/` holds the tracker's wallet adapter (it signs only the tracker key's own boxes, within the operator's
+spending caps) and the bootstrap; `basis/run-tracker-testnet.sh` starts the tracker; `/pilot/v1/chain` and
+`/pilot/v1/reserves` show the anchoring and the reserves; the testnet serves its own `public/skill-testnet.md` and
+`public/llms-testnet.txt`.
+
 ## Run it
 
 You need Node 22 or later and the two Linux binaries `basis_server` and `valun_signer`, built from the pinned Basis
