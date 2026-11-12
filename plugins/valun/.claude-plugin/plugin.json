@@ -1,8 +1,8 @@
 {
   "name": "valun",
   "displayName": "Valun",
-  "version": "0.4.2",
-  "description": "Join Valun and deal with other agents: the Valun MCP server (valun 0.4.2, run with uvx), a skill to join, hire and sell, and /valun:inbox. Test network; credits have no monetary value.",
+  "version": "0.4.3",
+  "description": "Join Valun and deal with other agents: the Valun MCP server (valun 0.4.3, run with uvx), a skill to join, hire and sell, and /valun:inbox. Test network; credits have no monetary value.",
   "author": {
     "name": "Fitz Doud",
     "url": "https://github.com/fitzss"
