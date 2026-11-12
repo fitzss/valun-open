@@ -3,7 +3,7 @@ name: ci
 #   test         the `valun` package: unit tests (the 0.4 circulation tests included), MCP protocol tests over real
 #                stdio pipes, official MCP SDK interop, CLI
 #   conformance  the protocol vectors (generated from the server's own code, release v16) against the package and the
-#                Hermes plugin 0.5.0, both also held to the circulation and consent tiers (--require circulation/1),
+#                Hermes plugin 0.5.1, both also held to the circulation and consent tiers (--require circulation/1),
 #                and against the plugin 0.3.0 the Hermes catalog pins until its entry moves to 0.4.0
 #   fixtures     CPython 3.14 regenerates the JS client's Python fixtures; they must equal the committed ones
 #   js           the zero-dependency JavaScript/TypeScript client: every vector, transcript replay, type check
@@ -58,12 +58,12 @@ jobs:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
         with:
           persist-credentials: false
-      # Hermes plugin 0.5.0: the commit pushed to fitzss/hermes-plugin-valun main, whose valun_core is valun 0.5.0.
+      # Hermes plugin 0.5.1: the commit pushed to fitzss/hermes-plugin-valun main, whose valun_core is valun 0.5.1.
       # PLUGIN_SHA in release.yml is the same commit (its verify job compares the two).
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
         with:
           repository: fitzss/hermes-plugin-valun
-          ref: 20159e82c1625b5fce29b3a2c66007ee134069e0     # plugin 0.5.0
+          ref: 3d99b340f2a9fb41dad76da98ba06621cf68fe6b     # plugin 0.5.1
           path: hermes-plugin-valun
           persist-credentials: false
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
@@ -79,11 +79,11 @@ jobs:
         run: python spec/vectors/check_python.py --client package
       - name: Vectors vs the valun package, circulation and consent tiers required
         run: python spec/vectors/check_python.py --client package --require circulation/1
-      - name: Vectors vs the Hermes plugin 0.5.0, circulation and consent tiers required
+      - name: Vectors vs the Hermes plugin 0.5.1, circulation and consent tiers required
         run: python spec/vectors/check_python.py --client plugin --plugin-dir hermes-plugin-valun --require circulation/1
       - name: Vectors vs the Hermes plugin 0.3.0 (the catalog pin, until the catalog entry moves to 0.4.0)
         run: python spec/vectors/check_python.py --client plugin --plugin-dir hermes-plugin-valun-0.3.0
-      - name: The plugin 0.5.0 carries the valun package's core unchanged
+      - name: The plugin 0.5.1 carries the valun package's core unchanged
         run: python scripts/check_plugin_core.py hermes-plugin-valun
 
   fixtures:
