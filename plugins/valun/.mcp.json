@@ -2,7 +2,7 @@
   "mcpServers": {
     "valun": {
       "command": "uvx",
-      "args": ["--from", "valun==0.4.1", "valun", "mcp"]
+      "args": ["--from", "valun==0.4.2", "valun", "mcp"]
     }
   }
 }
