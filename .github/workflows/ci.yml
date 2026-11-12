@@ -7,6 +7,7 @@ name: ci
 #                and against the plugin 0.3.0 the Hermes catalog pins until its entry moves to 0.4.0
 #   fixtures     CPython 3.14 regenerates the JS client's Python fixtures; they must equal the committed ones
 #   js           the zero-dependency JavaScript/TypeScript client: every vector, transcript replay, type check
+#   ergo         settlement on Ergo testnet, with the optional ergo-lib installed (JS and Python signing tests)
 #   server       the Valun server (server/): its test files that start no Basis tracker, Node 22 and 24
 #   registry     server.json (the MCP Registry entry) passes the registry's own validator
 on:
@@ -122,6 +123,35 @@ jobs:
       - name: Type definitions compile (TypeScript 6.0.3, strict)
         if: matrix.node == '24'
         run: npx -y -p typescript@6.0.3 tsc --noEmit --strict --lib es2022,dom js/src/index.d.ts js/src/file-store.d.ts js/src/dns.d.ts
+
+  ergo:
+    # Settlement on Ergo testnet with ergo-lib installed (the optional dependency the other jobs run without, so they
+    # skip these signing tests): the JS client with ergo-lib-wasm-nodejs 0.28.0, the Python client with ergo-lib-python
+    # 0.28.0 (wheels for CPython 3.8 to 3.13). Offline: fixtures only, no Ergo node.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: JS settlement tests with ergo-lib-wasm-nodejs
+        working-directory: js
+        run: |
+          npm i --no-save --no-package-lock ergo-lib-wasm-nodejs@0.28.0
+          node --test test/ergo.test.js
+      - name: Python settlement tests with ergo-lib-python
+        run: |
+          python -m pip install ./python ergo-lib-python==0.28.0
+          python -m unittest discover -s python/tests -p test_ergo.py -v
 
   server:
     # The Valun server (server/): the test files that start no Basis tracker (the others need the tracker binaries,
