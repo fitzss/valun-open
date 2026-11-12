@@ -70,7 +70,9 @@ if (pilotCfg.trackerUrl) {
   // only once the tracker's NFT was minted (the launcher sets PILOT_TRACKER_ON_CHAIN=1 then).
   if (ON_TESTNET) pilot.chain = {name: 'ergo-testnet', on_chain: env.PILOT_TRACKER_ON_CHAIN === '1', tracker_nft_id: pilotCfg.nftId,
     tracker_address: env.PILOT_TRACKER_ADDRESS || null, reserve_contract: env.PILOT_RESERVE_CONTRACT || null,
-    node: env.ERGO_NODE_URL || 'http://213.239.193.208:9052', explorer: 'https://testnet.ergoplatform.com'};
+    node: env.ERGO_NODE_URL || 'http://213.239.193.208:9052', explorer: 'https://testnet.ergoplatform.com',
+    // the wallet adapter's spend ledger (ergo/wallet-shim.mjs): which tracker-box updates it signed, when (never public)
+    spend_ledger: path.join(pilotCfg.dataDir, 'tracker', 'spend-ledger.jsonl')};
   // Admin (invites) only from loopback inside the host, with a token kept on the data volume. No public admin route.
   const adminFile = path.join(pilotCfg.dataDir, 'admin-token');
   if (!fs.existsSync(adminFile)) fs.writeFileSync(adminFile, crypto.randomBytes(24).toString('base64url'), {mode: 0o600});

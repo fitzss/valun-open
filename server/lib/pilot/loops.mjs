@@ -103,8 +103,21 @@ export function loopTitle(loop) {
   const more = loop.cycles.length > 1 ? ` (+${plural(loop.cycles.length - 1, 'more loop')})` : '';
   return `Loop closed: ${[...names, names[0]].join(' → ')}${more}`;
 }
+// How much a loop cancelled, as people read it: "5 credits" on the pilot, "2000000 nanoERG (0.002 tERG)" on the testnet.
+const cancelledText = loop => (ON_TESTNET ? amt(loop.amount_PC) : plural(loop.amount_PC, 'credit'));
 export function loopDescription(loop) {
-  return `${plural(loop.participants, 'agent')} cancelled ${plural(loop.amount_PC, 'credit')} of IOUs in one set-off. No money moved. Recorded on a Basis tracker (pilot network; credits have no value).`;
+  return ON_TESTNET
+    ? `${plural(loop.participants, 'agent')} cancelled ${cancelledText(loop)} of IOUs in one set-off. No money moved. Recorded by a Basis tracker that anchors its state on Ergo testnet (test coins with no monetary value).`
+    : `${plural(loop.participants, 'agent')} cancelled ${plural(loop.amount_PC, 'credit')} of IOUs in one set-off. No money moved. Recorded on a Basis tracker (pilot network; credits have no value).`;
+}
+// The loop card's line about the chain (the testnet, once the route added on_chain): the tracker-box update that made the
+// netting final, linked to the explorer; or that it is not final on chain yet.
+function onChainFact(loop) {
+  const c = loop.on_chain;
+  if (!c) return '';
+  return c.anchored
+    ? `\n  <div><dt>Final on Ergo testnet</dt><dd><a href="${esc(c.explorer_url)}">tx ${esc(String(c.tx_id).slice(0, 12))}…</a></dd></div>`
+    : `\n  <div><dt>On Ergo testnet</dt><dd>not final yet: the next tracker box commits it</dd></div>`;
 }
 
 // The ring: the members on a ring, a thin line from each to the next (it owed the next one), a glow at the centre and
@@ -194,16 +207,17 @@ ${top}
 <p class="eyebrow">Loop cancelled</p>
 <h1 class="route">${route(loop.cycles[0])}</h1>${more}
 <section class="rings">${loop.cycles.map(ringSvg).join('\n')}</section>
-<p class="lede">${esc(plural(loop.participants, 'agent'))} cancelled ${esc(plural(loop.amount_PC, 'credit'))} of promises in one round of signatures. The work stays done. No money moved.</p>
+<p class="lede">${esc(plural(loop.participants, 'agent'))} cancelled ${esc(cancelledText(loop))} of promises in one round of signatures. The work stays done. No money moved.</p>
 <div class="bar" aria-hidden="true"></div>
 <dl class="facts">
-  <div><dt>Credits cancelled</dt><dd>${esc(amt(loop.amount_PC))}</dd></div>
+  <div><dt>${ON_TESTNET ? 'Cancelled' : 'Credits cancelled'}</dt><dd>${esc(amt(loop.amount_PC))}</dd></div>
   <div><dt>Length</dt><dd>${esc(plural(loop.cycle_length, 'promise'))}</dd></div>
-  <div><dt>Closed</dt><dd>${esc(whenText)}</dd></div>
+  <div><dt>Closed</dt><dd>${esc(whenText)}</dd></div>${onChainFact(loop)}
 </dl>
 ${ctas}
 <footer class="honest">
-  <p>Valun is a test network. Promises are recorded on a Basis tracker; credits have no monetary value.</p>
+  <p>${ON_TESTNET ? 'Valun testnet: promises are recorded by a Basis tracker that anchors its state on Ergo testnet; tERG are test coins with no monetary value.'
+    : 'Valun is a test network. Promises are recorded on a Basis tracker; credits have no monetary value.'}</p>
   <p><code>${esc(loop.id)}</code> · <a href="/pilot/v1/loops/${esc(loop.id)}">as JSON</a> · <a href="https://github.com/fitzss/valun-open">valun-open</a></p>
 </footer>
 </main>`;

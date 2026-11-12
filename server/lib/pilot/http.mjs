@@ -5,6 +5,7 @@ import {toErgoJson} from '../ergo-json.mjs';
 import {featuresFor, NOVATION_INFO} from './caps.mjs';
 import {METRICS_CACHE_MS} from './clearing.mjs';
 import {loopsOf, loopOf, LOOP_ID_RE, renderLoopPage, renderLoopNotFound} from './loops.mjs';
+import {AnchorWatch, CHECK_INTERVAL_S, confirmedUpdates, creatingTx, loopAnchor, trackerBoxUpdates} from './anchors.mjs';
 import {AGENT_HANDLE_RE, agentView, renderAgentPage, renderAgentNotFound} from './agents.mjs';
 
 // The source text of each statement template, as /info publishes it (OQ-18).
@@ -30,7 +31,7 @@ export const INFO_DESCRIPTIONS = Object.freeze({
 export const SANDBOX_JOINS_PER_HOUR_PER_ADDRESS = 12;
 // Settlement on Ergo testnet: the smallest redemption (the miner fee the tracker pays for it) and the redemption builds
 // one agent may ask for in 24 hours (in memory; a restart forgets them).
-export const REDEMPTION_MIN_NANOERG = 1_000_000, REDEMPTION_BUILDS_PER_DAY = 6;
+export const REDEMPTION_MIN_NANOERG = 1_000_000, REDEMPTION_BUILDS_PER_DAY = 6, REDEMPTION_ATTEMPTS_PER_DAY = 30;
 export const IP_READS_PER_MINUTE = 1800;           // per client address (venue Wi-Fi); each token keeps its own reads-per-minute limit
 // Burst protection: the public reads (GET /info, /participants, /participants/<id>, /ledger, /loops, /loops/<id> and the
 // loop card) are computed at most once per PUBLIC_CACHE_MS while the pilot state is unchanged (Pilot.generation, bumped
@@ -54,6 +55,30 @@ const writesRefused = pilot => {
 export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
   const hits = new Map(), perMinute = cfg.pilotRateLimitPerMinute ?? 90, readsPerMinute = cfg.pilotReadLimitPerMinute ?? perMinute * 4;
   const redemptionBuilds = new Map();             // agent id -> times of its redemption builds in the last 24 hours
+  const redemptionAttempts = new Map();           // agent id -> times of its build requests (refused ones too)
+  // The tracker's anchoring (lib/pilot/anchors.mjs): since when its state has gone unanchored with no update in flight,
+  // observed once a minute on the testnet (and on every GET /chain), so GET /chain can tell a normal wait from a fault.
+  const anchorWatch = new AnchorWatch();
+  if (ON_TESTNET && pilot.chain?.on_chain && typeof pilot.basis?.trackerState === 'function') {
+    const poll = setInterval(() => { pilot.basis.trackerState().then(st => anchorWatch.observe(st), () => {}); }, 60_000);
+    poll.unref?.();
+  }
+  // What the loop views need to say where a netting became final: the tracker's state, the tracker-box updates the wallet
+  // adapter signed, and which of them are confirmed (the node names the transaction of the confirmed box).
+  const anchoring = async () => {
+    const st = await pilot.basis.trackerState().catch(() => null);
+    const rows = trackerBoxUpdates(pilot.chain?.spend_ledger);
+    const tx = st && rows.length ? await creatingTx(pilot.chain?.node, st.confirmed_box_id) : null;
+    return {st, confirmed: confirmedUpdates(rows, st, tx)};
+  };
+  const explorerTx = id => `${pilot.chain.explorer}/en/transactions/${id}`;
+  const loopOnChain = (loop, a) => {
+    const u = loopAnchor(loop.applied_at, a.confirmed, a.st);
+    return u ? {anchored: true, tx_id: u.tx_id, explorer_url: explorerTx(u.tx_id), signed_at: new Date(u.t).toISOString(),
+      what_this_means: 'Final on Ergo testnet: this tracker-box update is the first that commits the set-off.'}
+      : {anchored: false, what_this_means: `Not final on chain yet: the next tracker box commits it (the tracker checks every ${CHECK_INTERVAL_S} seconds; GET /pilot/v1/chain shows its anchoring).`};
+  };
+  const onChain = () => ON_TESTNET && !!pilot.chain?.on_chain;
   // Built redemptions by transaction id, for their submit (30 minutes, the tracker's own expiry): what the tracker's
   // POST /redemption/submit still takes besides the transactions (issuer, recipient, amounts; the tracker reads them
   // from its own build entry and ignores these, but its request shape requires them).
@@ -177,10 +202,15 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       if (!pilot.chain?.on_chain) throw new PilotError('testnet_bootstrapping', 'the Valun testnet tracker is not on chain yet', 503);
       if (p === '/chain') return sendCached(res, send, 'chain', async () => {
         const st = await pilot.basis.trackerState().catch(() => null);
-        const ex = pilot.chain.explorer;
-        return {network: NETWORK, ...pilot.chain, anchoring: st && {local_digest: st.local_digest, confirmed_digest: st.confirmed_digest ?? null,
+        const ex = pilot.chain.explorer, {spend_ledger: _ledger, ...chain} = pilot.chain;
+        // fix inbox #14: the anchoring's state (anchored, waiting for the next update, an update in flight, overdue) and
+        // what it means for redeeming, the updater's interval, and the last tracker-box update the server knows of.
+        const last = st ? confirmedUpdates(trackerBoxUpdates(pilot.chain.spend_ledger), st).at(-1) : null;
+        return {network: NETWORK, ...chain, anchoring: st && {local_digest: st.local_digest, confirmed_digest: st.confirmed_digest ?? null,
           confirmed_box_id: st.confirmed_box_id ?? null, confirmed_height: st.confirmed_height ?? null, pending_tx_id: st.pending_tx_id ?? null,
-          anchored: !!st.confirmed_digest && st.confirmed_digest === st.local_digest},
+          anchored: !!st.confirmed_digest && st.confirmed_digest === st.local_digest, check_interval_seconds: CHECK_INTERVAL_S,
+          ...anchorWatch.state(st),
+          ...(last ? {last_update: {tx_id: last.tx_id, signed_at: new Date(last.t).toISOString(), explorer_url: explorerTx(last.tx_id)}} : {})},
           links: {tracker_nft: `${ex}/en/token/${pilot.chain.tracker_nft_id}`, tracker_address: pilot.chain.tracker_address && `${ex}/en/addresses/${pilot.chain.tracker_address}`}};
       });
       return sendCached(res, send, 'reserves', async () => {
@@ -209,11 +239,21 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     if (G && p === '/ledger') return sendCached(res, send, 'ledger', async () => { const l = await pilot.ledger(); return {unit: pilot.unit, notes: l, reconciliation: await pilot.reconcile(l, {public: true})}; });
     // Closed loops (applied set-offs; lib/pilot/loops.mjs): public handles and amounts only, newest first. In every mode
     // (with circulation off there are none).
-    if (G && p === '/loops') return sendCached(res, send, 'loops', () => ({unit: pilot.unit, network: NETWORK, loops: loopsOf(pilot.s.setoffs, pilot.s.participants, publicOf)}));
+    // On the testnet each loop also says where its netting became final on chain (on_chain: the tracker-box update and
+    // its explorer link, or that it is not final yet).
+    if (G && p === '/loops') return sendCached(res, send, 'loops', async () => {
+      const loops = loopsOf(pilot.s.setoffs, pilot.s.participants, publicOf);
+      if (!onChain()) return {unit: pilot.unit, network: NETWORK, loops};
+      const a = await anchoring();
+      return {unit: pilot.unit, network: NETWORK, loops: loops.map(l => ({...l, on_chain: loopOnChain(l, a)}))};
+    });
     if (G && (m = /^\/loops\/([^/]+)$/.exec(p))) {
       const o = LOOP_ID_RE.test(m[1]) ? pilot.setoff(m[1]) : null;
       if (!o || o.state !== 'applied') throw new PilotError('not_found', 'unknown loop', 404);
-      return sendCached(res, send, `loop:${o.id}`, () => loopOf(o, pilot.s.participants, publicOf));
+      return sendCached(res, send, `loop:${o.id}`, async () => {
+        const loop = loopOf(o, pilot.s.participants, publicOf);
+        return onChain() ? {...loop, on_chain: loopOnChain(loop, await anchoring())} : loop;
+      });
     }
     // The clearing engine's public aggregates (circulation modes sandbox and on; no participant ids, handles or keys).
     // In other modes the route does not exist (it falls through, as any unknown route does).
@@ -278,17 +318,28 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         const amount = body?.amount, X = typeof body?.issuer === 'string' ? (pilot.s.participants[body.issuer] || Object.values(pilot.s.participants).find(q => q.handle === body.issuer)) : null;
         if (!X || !X.pubkey) throw new PilotError('not_found', 'issuer: the participant id or handle of the agent whose note you hold', 404);
         // The tracker pays each redemption's miner fee (0.001 tERG) from its own capped funds: a redemption redeems at
-        // least that much, and an agent builds at most REDEMPTION_BUILDS_PER_DAY a day.
+        // least that much, and an agent builds at most REDEMPTION_BUILDS_PER_DAY a day. Only a built redemption counts
+        // (only it can cost the tracker a fee): one the tracker refuses, as for a note its box does not commit yet, counts
+        // only towards REDEMPTION_ATTEMPTS_PER_DAY.
         if (!Number.isSafeInteger(amount) || amount < REDEMPTION_MIN_NANOERG) throw new PilotError('invalid_field', `amount: whole nanoERG to redeem, at least ${REDEMPTION_MIN_NANOERG} (the miner fee the tracker pays)`);
         const now = Date.now(), builds = (redemptionBuilds.get(me.id) || []).filter(t => now - t < 864e5);
         if (builds.length >= REDEMPTION_BUILDS_PER_DAY) throw new PilotError('rate_limited', `at most ${REDEMPTION_BUILDS_PER_DAY} redemption builds a day per agent`, 429);
-        builds.push(now); redemptionBuilds.set(me.id, builds);
+        const tries = (redemptionAttempts.get(me.id) || []).filter(t => now - t < 864e5);
+        if (tries.length >= REDEMPTION_ATTEMPTS_PER_DAY) throw new PilotError('rate_limited', `at most ${REDEMPTION_ATTEMPTS_PER_DAY} redemption requests a day per agent`, 429);
+        tries.push(now); redemptionAttempts.set(me.id, tries);
         const note = await relay(() => pilot.basis.note(X.pubkey, me.pubkey));
         if (!note) throw new PilotError('no_note', `you hold no note of ${X.handle}`, 409);
         const outstanding = Number(note.amount_collected) - Number(note.amount_redeemed || 0);
         if (amount > outstanding) throw new PilotError('insufficient_claim', `you can redeem at most ${outstanding} nanoERG of ${X.handle}'s note`, 409);
         const built = await relay(() => pilot.basis.redemptionBuild({issuer_pubkey: X.pubkey, recipient_pubkey: me.pubkey, amount,
-          timestamp: Number(note.timestamp), issuer_signature: note.signature, denomination: 'erg'}));
+          timestamp: Number(note.timestamp), issuer_signature: note.signature, denomination: 'erg'})).catch(e => {
+          // A note recorded after the tracker's last box (fix inbox #14): say how long that normally lasts and where to look.
+          if (e?.code === 'tracker_refused' && /not committed on-?chain/i.test(e.message)) {
+            throw new PilotError('tracker_refused', `${e.message}. The tracker checks every ${CHECK_INTERVAL_S} seconds and posts a new tracker box when its state changed; GET /pilot/v1/chain shows its anchoring (anchoring.state). Try again once it is anchored.`, 409);
+          }
+          throw e;
+        });
+        builds.push(now); redemptionBuilds.set(me.id, builds);
         pilot.store.audit({type: 'redemption.built', issuer: X.id, recipient: me.id, amount});
         for (const [k, v] of builtRedemptions) if (now - v.at > 30 * 60e3) builtRedemptions.delete(k);
         if (typeof built?.partial_tx?.id === 'string') builtRedemptions.set(built.partial_tx.id, {at: now, recipient: me.id,
@@ -403,7 +454,10 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     if (limited(`ipr:${clientIp(req)}`, ipReadsPerMinute)) throw new PilotError('rate_limited', 'too many requests; slow down', 429);
     const o = LOOP_ID_RE.test(id) ? pilot.setoff(id) : null;
     if (!o || o.state !== 'applied') return send(res, 404, renderLoopNotFound(), HTML);
-    const r = await cachedRead(`loop-page:${o.id}`, () => ({status: 200, body: renderLoopPage(loopOf(o, pilot.s.participants, publicOf))}));
+    const r = await cachedRead(`loop-page:${o.id}`, async () => {
+      const loop = loopOf(o, pilot.s.participants, publicOf);
+      return {status: 200, body: renderLoopPage(onChain() ? {...loop, on_chain: loopOnChain(loop, await anchoring())} : loop)};
+    });
     return send(res, r.status, r.body, HTML);
   };
   // The agent page (GET /agent/<handle>, lib/http.mjs; lib/pilot/agents.mjs): server-rendered HTML of a participant's

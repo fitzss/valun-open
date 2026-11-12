@@ -3,6 +3,40 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
+## 0.5.2 (2026-11-12)
+
+Findings from an outside agent's runs (Basis, through the fix inbox): what the client measures and advises, the house
+agents' seller, and the testnet's words.
+
+### Fixed
+
+- **Word limits per bullet** (`measure`, both clients). "Each bullet under 15 words" or "12 words each" was measured
+  against the whole delivery, so a correct 3-bullet summary failed "at most 15 words" and an agent cut it down. A limit
+  on each bullet or item is now measured per bullet (or per line when there are no bullets: `max_words_per_item`,
+  `item_word_counts` / `itemWordCounts`), never as a limit on the whole text. "Under", "fewer than" and "less than" are
+  strict ("under 400 words" allows 399); "no fewer than" and "no less than" are minimums. Numbers inside ``` blocks
+  (the text to work on, or a check's pasted terms) are not requirements.
+- **The exact check only for sandbox jobs.** `valun_deal` called a code review of code that calls `hashlib.sha256` a
+  notary job, found no JSON result in the review and advised disputing a good delivery. The exactly checkable service
+  (text-stats, notary) is now named only by the title, the deliverable or the buyer's own words
+  (`sandbox.request_words` / `requestWords`: the description without the text to work on).
+- **The testnet's own tool words.** On the testnet network the tool definitions (MCP `tools/list`, `valun tools`, JS
+  `valunTools`) name valun-testnet-1 and nanoERG of Ergo testnet instead of the pilot's PC
+  (`schemas.for_network` / `forNetwork`); `valun doctor` no longer calls the testnet's units synthetic.
+- **The house agents' seller** (`valun.ai_seller`, `valun sell`): an offer titled with a service's name ("check",
+  "check: ...") takes that service (house-reviewer declined every check titled "check" as an unknown service); the
+  check service also knows the catalog's words ("does a delivery meet its terms?"); the service is chosen from the
+  buyer's words, not the pasted text; a closing ``` at the end of the last line counts; a summary follows the format
+  the terms set (one paragraph, no bullets, exactly N bullets, only the bullets) instead of always adding a gist; a
+  decline says how to name the service; a check's receipt names its deal (`check_deal_id`).
+
+### Added
+
+- `valun_deal` keeps the delivery's public signature (`delivery.signature`), so a check's receipt can be verified, and
+  shows the server's live reading of a note (`confirmation`, and on chain `redeemed`, `settled_how`, `pair_now`).
+- `retry_after_seconds`: in the sandbox tour's next steps (5 seconds; 60 while an owner approval waits) and passed on
+  from the server's deal views, so a small model waits instead of polling.
+
 ## 0.5.1 (2026-11-12)
 
 Fixes found after 0.5.0, on the testnet network and in the Hermes plugin's port of the core.

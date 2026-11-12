@@ -940,10 +940,14 @@ export class Pilot {
     const deals = this.dealsFor(p).map(d => this.sweep(d));          // counts use current statuses, not unswept ones (OQ-7)
     const buckets = bucketCounts(deals);                             // by STATUS_CLASS[status].bucket (lib/pilot/status.mjs)
     const backing = BACKING;
+    // On the testnet a claim is also settled by redemption on Ergo testnet (fix inbox #13, #15): the claims this
+    // participant redeemed, and its debts redeemed from its reserve.
+    const redeemedOf = xs => xs.reduce((a, l) => a + (Number(l.redeemed) || 0), 0);
+    const redeemed = ON_TESTNET ? {redeemed_claims: redeemedOf(owed), redeemed_debts: redeemedOf(owes)} : null;
     if (!this.circulating) return {participant_id: p.id, unit: this.unit, claims_held: sum(owed), owes: sum(owes), net: sum(owed) - sum(owes),
       claims: owed.map(l => ({from: l.issuer_handle, amount: l.outstanding})), debts: owes.map(l => ({to: l.recipient_handle, amount: l.outstanding})),
       deals: Object.fromEntries(POSITION_BUCKETS.map(b => [b, buckets[b]])),
-      settled: 0, backing,
+      settled: redeemed ? redeemed.redeemed_claims + redeemed.redeemed_debts : 0, ...(redeemed ?? {}), backing,
       meaning: ON_TESTNET
         ? 'claims and debts are outstanding credit notes (cumulative per pair, as the tracker records them). A claim is settled only when its creditor redeems it on Ergo testnet against the issuer\'s tERG reserve (GET /reserves).'
         : 'claims and debts are outstanding credit notes (cumulative per pair, as the tracker records them). None has been settled: the pilot has no redemption, reserve or clearing.'};
@@ -968,8 +972,11 @@ export class Pilot {
       debts: owes.map(l => ({to: l.recipient_handle, amount: l.outstanding, recipient_id: l.recipient, recipient_pubkey: l.recipient_pubkey, issuer_pubkey: l.issuer_pubkey,
         ...(this.serverRun(p) ? OPERATOR_RUN_NOTE : {})})),
       deals: {...Object.fromEntries(POSITION_BUCKETS.map(b => [b, buckets[b]])), paid_by_transfer: buckets.paid_by_transfer, payment_due: deals.filter(d => d.status === 'payment_due').length},
-      settled: journal.setoff, settled_how: 'by set-off only; nothing is redeemed', backing,
-      meaning: 'claims and debts are outstanding obligations recorded by the pilot Basis tracker (cumulative per pair). Some may have moved between creditors (transfer) or been cancelled in cycles (set-off); settled counts only set-off. Nothing is redeemed; there is no reserve.'};
+      ...(redeemed
+        ? {settled: journal.setoff + redeemed.redeemed_claims + redeemed.redeemed_debts, settled_how: 'by set-off and by redemption on Ergo testnet', ...redeemed, backing,
+          meaning: 'claims and debts are outstanding obligations recorded by the Valun testnet Basis tracker, which anchors its state on Ergo testnet (cumulative per pair). Some may have moved between creditors (transfer) or been cancelled in cycles (set-off); a claim is also settled when its creditor redeems it on Ergo testnet against its issuer\'s tERG reserve (GET /reserves). settled counts both: cleared_by_setoff, redeemed_claims (the claims you redeemed) and redeemed_debts (your debts redeemed from your reserve). tERG are test coins with no monetary value.'}
+        : {settled: journal.setoff, settled_how: 'by set-off only; nothing is redeemed', backing,
+          meaning: 'claims and debts are outstanding obligations recorded by the pilot Basis tracker (cumulative per pair). Some may have moved between creditors (transfer) or been cancelled in cycles (set-off); settled counts only set-off. Nothing is redeemed; there is no reserve.'})};
   }
   // GET /participants/:id public_position: position(p), and with circulating credit on (modes sandbox and on) the
   // predicate fields of p's credit policy (whose notes it accepts; never its caps) and its credit history, aggregates only
@@ -4064,7 +4071,46 @@ export class Pilot {
     const set = statusClass(d.status)?.actions[d.payer === p.id ? 'payer' : 'payee'] ?? null;
     const gate = this.circulating && (set === 'review' || set === 'pay')
       ? await this.paymentGate(d).catch(e => { if (e instanceof BasisError) return null; throw e; }) : null;
-    return this.view(d, p, {gate});
+    const v = this.view(d, p, {gate});
+    // On chain (the testnet): the note's live state (fix inbox #13). With circulating credit: how long to wait (#8).
+    if (v.credit_note && this.chain?.on_chain) v.credit_note = await this.liveNote(d, v.credit_note);
+    const wait = this.circulating ? this.waitHint(d, p, v.next_actions) : null;
+    return wait ? {...v, retry_after_seconds: wait} : v;
+  }
+  // fix inbox #13: a recorded note as the tracker holds it now. Its confirmation is read live (local_only until the
+  // tracker box on chain commits it, then confirmed; a view no longer says local_only after that), and on a pair with no
+  // later transfer or set-off, how much of this note a redemption settled: a pair's redemptions settle its cumulative
+  // total from the first unit on, so this note's part is (total after it - its amount, total after it]. Fully
+  // redeemed, it is no longer outstanding. The tracker unreadable: the view as recorded.
+  async liveNote(d, cn) {
+    const n = d.credit_note;
+    if (n?.state !== 'recorded' || !n.issuer_pubkey || !n.recipient_pubkey) return cn;
+    let cur;
+    try { cur = await this.basis.note(n.issuer_pubkey, n.recipient_pubkey); } catch (e) { if (e instanceof BasisError) return cn; throw e; }
+    if (!cur) return cn;
+    const total = Number(cur.amount_collected), redeemed = Number(cur.amount_redeemed || 0);
+    const live = cur.confirmation?.status ?? (typeof cur.confirmation === 'string' ? cur.confirmation : null);
+    const out = {...cn, ...(live ? {confirmation: live} : {}), pair_now: {total, redeemed, outstanding: total - redeemed, unit: this.unit},
+      ...(cn.tracker_note && live ? {tracker_note: {...cn.tracker_note, confirmation: live, confirmation_when_recorded: cn.tracker_note.confirmation ?? null}} : {})};
+    const after = Number(n.tracker_note?.amount_collected), amount = Number(n.amount);
+    if (Number.isSafeInteger(after) && Number.isSafeInteger(amount) && amount > 0 && !(this.circulating && this.pairChangesSince(d).length)) {
+      const mine = Math.max(0, Math.min(amount, redeemed - (after - amount)));
+      out.redeemed = mine;
+      if (mine >= amount) Object.assign(out, {outstanding: false, settled: true, settled_how: 'redeemed on Ergo testnet against the issuer\'s reserve'});
+      else if (mine > 0) out.settled_how = `partly redeemed on Ergo testnet: ${amt(mine)} of ${amt(amount)}`;
+    }
+    return out;
+  }
+  // fix inbox #8: how long an agent that waits on the other side should wait before it asks again (seconds; advisory).
+  // The sandbox agents the server runs answer within seconds; other agents take longer; an owner approval takes a person.
+  waitHint(d, p, actions = []) {
+    if (actions.includes('wait_for_owner_approval')) return 60;
+    if (actions.includes('wait_for_consents') || actions.includes('wait_for_transfer_window')) return 10;
+    const payer = d.payer === p.id, other = this.s.participants[payer ? d.payee : d.payer], quick = this.serverRun(other) ? 5 : null;
+    if (d.status === 'open' && this.current(d)?.by === p.id) return quick ?? 20;          // my offer: they accept, counter or decline
+    if (d.status === 'agreed' && payer) return quick ?? 30;                               // they deliver
+    if ((d.status === 'delivered' || d.status === 'note_failed') && !payer) return quick ?? 60;   // they review my delivery
+    return null;
   }
   // A deal view's next_actions (advisory; the routes decide): the action set STATUS_CLASS[status].actions names for the
   // viewer's role (lib/pilot/status.mjs). With circulation off they are v15's. With circulating credit on (modes sandbox

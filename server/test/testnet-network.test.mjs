@@ -161,7 +161,10 @@ test('on chain: GET /chain shows the anchoring and the explorer links; GET /rese
     const c = await call('GET', '/chain');
     assert.equal(c.status, 200);
     assert.equal(c.body.network, 'valun-testnet-1');
-    assert.deepEqual(c.body.anchoring, {local_digest: 'd1', confirmed_digest: 'd1', confirmed_box_id: 'bx', confirmed_height: 639800, pending_tx_id: null, anchored: true});
+    assert.deepEqual(c.body.anchoring, {local_digest: 'd1', confirmed_digest: 'd1', confirmed_box_id: 'bx', confirmed_height: 639800, pending_tx_id: null, anchored: true,
+      check_interval_seconds: 1800, state: 'anchored',
+      what_this_means: "The tracker box on Ergo testnet commits the tracker's current state: every note recorded so far can be redeemed, and every netting so far is final."});
+    assert.equal(c.body.spend_ledger, undefined, 'the server-side ledger path is never public');
     assert.equal(c.body.links.tracker_nft, `https://testnet.ergoplatform.com/en/token/${'ab'.repeat(32)}`);
     assert.equal(c.body.links.tracker_address, 'https://testnet.ergoplatform.com/en/addresses/3Wtest');
     const r = await call('GET', '/reserves');
@@ -232,7 +235,8 @@ test('on chain: a redemption is built only for a note the agent holds and within
     assert.equal(bad.status, 409);
     assert.deepEqual(bad.body, {error: 'tracker_refused', message: 'input 0: proof does not verify'});
     assert.deepEqual(audit.map(a => a.type), ['redemption.built', 'redemption.built', 'redemption.submitted']);
-    // At most REDEMPTION_BUILDS_PER_DAY builds a day per agent (each costs the tracker a miner fee); refused ones count.
+    // At most REDEMPTION_BUILDS_PER_DAY builds a day per agent (each can cost the tracker a miner fee); refused requests
+    // count only towards REDEMPTION_ATTEMPTS_PER_DAY (fix inbox #14: a note not anchored yet used up a build).
     let last;
     for (let i = 0; i < routes.REDEMPTION_BUILDS_PER_DAY; i++) last = await call('POST', '/redemption/build', {issuer: 'issuer-a', amount: 1_000_000}, 'vpa_b');
     assert.equal(last.status, 429);
