@@ -833,13 +833,22 @@ export namespace ergo {
   function toErgoJson(value: unknown): string;
   function nodeClient(base: string, options?: {fetchImpl?: typeof fetch; timeoutMs?: number}): {
     info(): Promise<Record<string, unknown>>; assertTestnet(): Promise<Record<string, unknown>>;
-    unspentByAddress(address: string): Promise<Array<Record<string, unknown>>>; boxBinary(id: string): Promise<string>;
-    lastHeaders(n: number): Promise<Array<Record<string, unknown>>>; broadcast(tx: unknown): Promise<unknown>};
+    unspentByAddress(address: string): Promise<Array<Record<string, unknown>>>; box(id: string): Promise<Record<string, unknown>>;
+    boxBinary(id: string): Promise<string>; lastHeaders(n: number): Promise<Array<Record<string, unknown>>>; broadcast(tx: unknown): Promise<unknown>};
+  /** The ErgoTree (hex) of a P2PK or P2S address of either network (checksum checked). */
+  function addressToTree(address: string): string;
+  /** The bytes a transaction's input proofs sign (Ergo's serialization with empty proofs; any ErgoTree version). */
+  function txBytesToSign(tx: unknown): Uint8Array;
+  /** The transaction id: blake2b256 of the bytes to sign. */
+  function txId(tx: unknown): string;
   function checkReservePayload(payload: unknown, expected: {ergAmount: number; nftId: string; pubkeyHex: string; trackerNftId?: string;
     reserveContract?: string}): Record<string, unknown>;
-  function checkRedemption(ergoLib: unknown, built: unknown, expected: {issuerPubkey: string; recipientPubkey: string; amount: number;
-    trackerNftId?: string; reserveTree?: string | null}): {reserve_box_id: string; reserve_value: number; paid_nanoerg: number; fee_inputs: number};
-  function signRedemption(built: unknown, secretHex: string): Promise<Record<string, unknown>>;
+  /** Checks a redemption against the boxes it spends as the Ergo node reports them (inputBoxes, in input order). */
+  function checkRedemption(built: unknown, expected: {issuerPubkey: string; recipientPubkey: string; amount: number;
+    trackerNftId?: string; reserveTree?: string | null; inputBoxes: Array<Record<string, unknown>>}):
+    {reserve_box_id: string; reserve_value: number; paid_nanoerg: number; fee_inputs: number};
+  /** The agent's proveDlog proof of the reserve input, spliced into the tracker's fee-signed transaction (no ergo-lib). */
+  function signRedemption(built: unknown, secretHex: string, options?: {randomBytes?: (n: number) => Uint8Array}): Record<string, unknown>;
 }
 
 export namespace basis {
@@ -851,6 +860,10 @@ export namespace basis {
   function blake2b256(...parts: Bytes[]): Bytes;
   /** 32 random bytes, uniform in [1, n-1], from globalThis.crypto.getRandomValues (or the source given). */
   function generateSecret(randomBytes?: (n: number) => Bytes): Bytes;
+  /** Ergo: the 56-byte proof of proveDlog(pk) over a transaction's bytes to sign (e (24) || z (32)). */
+  function ergoProveDlog(message: Bytes, secret: BytesOrHex, options?: {randomBytes?: (n: number) => Bytes}): Bytes;
+  /** True iff `proof` is a valid proveDlog proof of `message` for `pk`. Never throws. */
+  function ergoVerifyDlog(proof: Bytes, message: Bytes, pk: BytesOrHex): boolean;
   function publicKey(secret: BytesOrHex): Bytes;
   function validatePublicKey(pk: BytesOrHex): void;
   /** Basis Schnorr signature (65 bytes) over the exact message bytes. `options.randomBytes` is for tests only. */

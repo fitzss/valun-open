@@ -1,11 +1,14 @@
-// js/src/ergo.js: settlement on Ergo testnet for the Valun testnet network. The address, the context-extension order
-// and the checks are plain JavaScript and always tested; building and signing use ergo-lib (an optional dependency):
-// those tests run where ergo-lib-wasm-nodejs is installed and are skipped elsewhere (CI installs nothing).
+// js/src/ergo.js: settlement on Ergo testnet for the Valun testnet network. The address, the context-extension order,
+// the bytes a transaction's proofs sign, the agent's proveDlog proof and every check are plain JavaScript and always
+// tested; building a reserve uses ergo-lib (an optional dependency), and ergo-lib also cross-checks the native proof:
+// those tests run where ergo-lib-wasm-nodejs is installed and are skipped elsewhere (CI's js job installs nothing).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import * as ergo from '../src/ergo.js';
-import {publicKey} from '../src/basis.js';
+import * as basis from '../src/basis.js';
 import {bytesToHex, hexToBytes} from '../src/bytes.js';
+
+const {publicKey} = basis;
 
 const G = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
 const secretOf = n => bytesToHex(Uint8Array.from({length: 32}, (_, i) => (i === 31 ? n : 0x11)));
@@ -127,75 +130,137 @@ test('buildReserve: plain boxes at the agent\'s own address, the checked request
     payloadFor: async nftId => ({requests: [{address: reserveAddress, value: 250_000_001, assets: [{token_id: nftId, amount: 1}], registers: {R4: `07${pk}`, R6: `0e20${NFT}`}}]})}), {code: 'bad_payload'});
 });
 
-// A redemption as the tracker builds it, with a stand-in reserve script: input 0 the issuer's "reserve" (here guarded
-// by proveDlog(receiver), so ergo-lib can prove it without the Basis contract's context), input 1 the tracker's fee box,
-// output 0 the reserve `amount` lower, output 1 the payout. The partly signed transaction carries the tracker's fee proof.
-async function redemptionFixture({amount = 20_000_000} = {}) {
+
+// ---------- redemption: the bytes to sign, the proof, the checks (plain JavaScript, no ergo-lib) ----------
+// A transaction id computed by ergo-lib 0.28.0 for this exact transaction (tokens, registers, an 8-key context
+// extension written in Scala's order, a data input): the native serialization must give the same id.
+const VEC_TX = {inputs: [{boxId: 'aa'.repeat(32), extension: {0: '0200', 1: `07${G}`, 2: '0e0101', 3: '0580897a', 4: '05a09c01', 5: '0e0105', 6: '0e00', 8: '0e0108'}},
+  {boxId: 'bb'.repeat(32), extension: {}}], dataInputs: [{boxId: 'cc'.repeat(32)}],
+  outputs: [{value: 197000000, ergoTree: `0008cd${G}`, creationHeight: 639900, assets: [{tokenId: 'dd'.repeat(32), amount: 1}],
+    additionalRegisters: {R4: `07${G}`, R5: `64${'00'.repeat(33)}032000`, R6: `0e20${'ee'.repeat(32)}`}},
+  {value: 3000000, ergoTree: `0008cd${G}`, creationHeight: 639900, assets: [], additionalRegisters: {}}]};
+
+test('the bytes a transaction\'s proofs sign: the id ergo-lib computes, whatever order the extension arrives in', () => {
+  assert.equal(ergo.txId(VEC_TX), '2590fd5d0448dd3d266b72b52e60c054bf2ea35266c24e1799ad7ef8c63bdd0b');
+  assert.equal(ergo.txId(JSON.parse(JSON.stringify(VEC_TX))), ergo.txId(VEC_TX), 'written in Scala order whatever order it arrives in');
+  const other = structuredClone(VEC_TX);
+  other.outputs[1].value = 3000001;
+  assert.notEqual(ergo.txId(other), ergo.txId(VEC_TX));
+  for (const [change, re] of [[t => { t.inputs[0].boxId = 'zz'; }, /input box id/], [t => { t.outputs[0].additionalRegisters = {R5: '00'}; }, /R4, R5/],
+    [t => { t.inputs[0].extension = {x: '00'}; }, /not a byte/], [t => { t.outputs[0].value = -1; }, /negative/], [t => { t.outputs[0].ergoTree = 'xyz'; }, /not hex/]]) {
+    const t = structuredClone(VEC_TX);
+    change(t);
+    assert.throws(() => ergo.txBytesToSign(t), e => e.code === 'bad_tx' && re.test(e.message), re.source);
+  }
+});
+
+test('the proveDlog proof over those bytes verifies for the key and the transaction, and for nothing else', () => {
+  const secret = secretOf(9), pk = pubOf(secret), msg = ergo.txBytesToSign(VEC_TX);
+  const proof = basis.ergoProveDlog(msg, hexToBytes(secret));
+  assert.equal(proof.length, 56, 'challenge (24 bytes) and response (32 bytes)');
+  assert.equal(basis.ergoVerifyDlog(proof, msg, pk), true);
+  assert.equal(basis.ergoVerifyDlog(proof, msg, G), false, 'another key');
+  assert.equal(basis.ergoVerifyDlog(proof, ergo.txBytesToSign({...VEC_TX, dataInputs: []}), pk), false, 'another transaction');
+  const bent = proof.slice(); bent[30] ^= 1;
+  assert.equal(basis.ergoVerifyDlog(bent, msg, pk), false, 'a changed proof');
+  assert.notEqual(bytesToHex(basis.ergoProveDlog(msg, hexToBytes(secret))), bytesToHex(proof), 'a fresh nonce every time');
+});
+
+test('an address of either network gives its tree; a damaged one is refused', () => {
+  assert.equal(ergo.addressToTree('3WwXpssaZwcNzaGMv3AgxBdTPJQBt5gCmqBsg3DykQ39bYdhJBsN'), `0008cd${G}`);
+  assert.equal(ergo.addressToTree('9fSgJ7BmUxBQJ454prQDQ7fQMBkXPLaAmDnimgTtjym6FYPHjAV'), `0008cd${G}`);
+  assert.throws(() => ergo.addressToTree('3WwXpssaZwcNzaGMv3AgxBdTPJQBt5gCmqBsg3DykQ39bYdhJBsM'), {code: 'invalid_field'});
+  assert.throws(() => ergo.addressToTree('0OIl'), {code: 'invalid_field'});
+});
+
+// A redemption as the tracker builds it (a stand-in reserve tree; the checks read the boxes as the node reports them),
+// with its partly signed transaction.
+function redemption({amount = 20_000_000} = {}) {
+  const issuer = pubOf(secretOf(3)), recipientSecret = secretOf(4), recipient = pubOf(recipientSecret), tracker = pubOf(secretOf(5));
+  const reserveTree = `100108cd${recipient}7300`;
+  const reserveBox = {boxId: '31'.repeat(32), value: 100_000_000, ergoTree: reserveTree, assets: [{tokenId: '77'.repeat(32), amount: 1}],
+    additionalRegisters: {R4: `07${issuer}`, R5: AVL, R6: `0e20${NFT}`}};
+  const feeBox = {boxId: '32'.repeat(32), value: 50_000_000, ergoTree: ergo.p2pkTree(tracker), assets: [], additionalRegisters: {}};
+  const ext = {};
+  for (const k of [0, 1, 2, 3, 4, 5, 6, 8]) ext[String(k)] = k === 0 ? '0200' : k === 1 ? `07${recipient}` : `0e01${(k * 17).toString(16).padStart(2, '0')}`;
+  const unsigned_tx = {inputs: [{boxId: reserveBox.boxId, extension: ext}, {boxId: feeBox.boxId, extension: {}}], dataInputs: [{boxId: '33'.repeat(32)}],
+    outputs: [{value: 100_000_000 - amount, ergoTree: reserveTree, creationHeight: 639_650, assets: [{tokenId: '77'.repeat(32), amount: 1}], additionalRegisters: {R4: `07${issuer}`, R5: AVL, R6: `0e20${NFT}`}},
+      {value: amount, ergoTree: ergo.p2pkTree(recipient), creationHeight: 639_650, assets: [], additionalRegisters: {}},
+      {value: ergo.FEE, ergoTree: ergo.MINER_FEE_TREE, creationHeight: 639_650, assets: [], additionalRegisters: {}},
+      {value: 50_000_000 - ergo.FEE, ergoTree: ergo.p2pkTree(tracker), creationHeight: 639_650, assets: [], additionalRegisters: {}}]};
+  const id = ergo.txId(unsigned_tx);
+  const feeProof = bytesToHex(basis.ergoProveDlog(ergo.txBytesToSign(unsigned_tx), hexToBytes(secretOf(5))));
+  const partial_tx = {id, inputs: [{boxId: reserveBox.boxId, spendingProof: {proofBytes: '', extension: ext}}, {boxId: feeBox.boxId, spendingProof: {proofBytes: feeProof, extension: {}}}],
+    dataInputs: unsigned_tx.dataInputs, outputs: unsigned_tx.outputs.map((o, i) => ({...o, boxId: String(i).repeat(64).slice(0, 64), transactionId: id, index: i}))};
+  // As it reaches a JavaScript client: through JSON.parse (the extension keys sorted).
+  const built = JSON.parse(JSON.stringify({issuer: {pubkey: issuer}, unsigned_tx, partial_tx}));
+  return {built, issuer, recipient, recipientSecret, reserveTree, amount, inputBoxes: [reserveBox, feeBox], id};
+}
+
+test('checkRedemption: the issuer\'s reserve, exactly the amount to this agent, nothing of its own, the transaction the tracker fee-signed', () => {
+  const f = redemption();
+  const args = {issuerPubkey: f.issuer, recipientPubkey: f.recipient, amount: f.amount, trackerNftId: NFT, reserveTree: f.reserveTree, inputBoxes: f.inputBoxes};
+  assert.deepEqual(ergo.checkRedemption(f.built, args), {reserve_box_id: '31'.repeat(32), reserve_value: 100_000_000, paid_nanoerg: f.amount, fee_inputs: 1});
+  const refused = (change, re, over = {}) => {
+    const b = structuredClone(f.built), boxes = structuredClone(f.inputBoxes);
+    change(b, boxes);
+    assert.throws(() => ergo.checkRedemption(b, {...args, inputBoxes: boxes, ...over}), e => e.code === 'bad_redemption' && re.test(e.message), re.source);
+  };
+  const resign = b => { b.partial_tx.id = ergo.txId(b.unsigned_tx); };
+  refused(b => { b.unsigned_tx.outputs[1].value = f.amount - 1; }, /fee-signed is not the one/, {}, 'a changed transaction is not the fee-signed one');
+  refused(b => { b.unsigned_tx.outputs[1].value = f.amount - 1; resign(b); }, /pays exactly/);
+  refused(b => { b.unsigned_tx.outputs[0].value -= 1; resign(b); }, /output 0 is not the reserve/);
+  refused(b => { b.unsigned_tx.outputs[0].additionalRegisters.R4 = `07${G}`; resign(b); }, /owner or tracker/);
+  refused(b => { b.unsigned_tx.outputs[0].assets = []; resign(b); }, /tokens/);
+  refused(b => { b.unsigned_tx.inputs[0].extension['1'] = `07${G}`; resign(b); }, /receiver/);
+  refused(b => { b.unsigned_tx.inputs[0].extension['0'] = '0201'; resign(b); }, /redeem action/);
+  refused((b, boxes) => { boxes.reverse(); }, /not the box the node reports/);
+  refused(() => {}, /not the issuer's reserve/, {issuerPubkey: G});
+  refused(() => {}, /tracker/, {trackerNftId: '00'.repeat(32)});
+  refused(() => {}, /reserve contract/, {reserveTree: '10010101d17300'});
+  // A fee input at this agent's own address would be spent by the agent's proof: refused.
+  refused((b, boxes) => { boxes[1] = {...boxes[1], ergoTree: ergo.p2pkTree(f.recipient)}; }, /box of this agent's own/);
+});
+
+test('signRedemption: the agent\'s proof over the transaction\'s bytes, spliced into the tracker\'s fee-signed transaction (no ergo-lib)', () => {
+  const f = redemption();
+  assert.deepEqual(Object.keys(f.built.unsigned_tx.inputs[0].extension), ['0', '1', '2', '3', '4', '5', '6', '8'], 'sorted by JSON.parse');
+  const signed = ergo.signRedemption(f.built, f.recipientSecret);
+  assert.equal(signed.id, f.id);
+  const proof = hexToBytes(signed.inputs[0].spendingProof.proofBytes);
+  assert.equal(basis.ergoVerifyDlog(proof, ergo.txBytesToSign(f.built.unsigned_tx), f.recipient), true, 'the receiver\'s proof of this transaction');
+  assert.deepEqual(signed.inputs[1], f.built.partial_tx.inputs[1], 'the tracker\'s fee proof is kept');
+  assert.equal(f.built.partial_tx.inputs[0].spendingProof.proofBytes, '', 'the given transaction is not changed');
+  assert.throws(() => ergo.signRedemption({...f.built, partial_tx: {...f.built.partial_tx, id: 'ff'.repeat(32)}}, f.recipientSecret), {code: 'bad_redemption'});
+  assert.throws(() => ergo.signRedemption({...f.built, partial_tx: {...f.built.partial_tx, inputs: f.built.partial_tx.inputs.slice(1)}}, f.recipientSecret), {code: 'bad_redemption'});
+});
+
+test('ergo-lib accepts the native proof of a redemption input (a script that reduces to proveDlog(receiver))', withLib, async () => {
   const issuer = pubOf(secretOf(3)), recipientSecret = secretOf(4), recipient = pubOf(recipientSecret), trackerSecret = secretOf(5), tracker = pubOf(trackerSecret);
-  const reserveTree = `100108cd${recipient}7300`;            // the stand-in reserve script: proveDlog(receiver), segregated
+  const reserveTree = `100108cd${recipient}7300`;
   const reserve = boxAt(reserveTree, 100_000_000, {txId: '31'.repeat(32), registers: {R4: `07${issuer}`, R5: AVL, R6: `0e20${NFT}`}, tokens: [['77'.repeat(32), 1]]});
   const feeBox = boxAt(ergo.p2pkTree(tracker), 50_000_000, {txId: '32'.repeat(32)});
   const trackerBox = boxAt(ergo.p2pkTree(tracker), 10_000_000, {txId: '33'.repeat(32), tokens: [[NFT, 1]]});
   const ext = {};
   for (const k of [0, 1, 2, 3, 4, 5, 6, 8]) ext[String(k)] = k === 0 ? '0200' : k === 1 ? `07${recipient}` : `0e01${(k * 17).toString(16).padStart(2, '0')}`;
   const unsigned_tx = {inputs: [{boxId: reserve.json.boxId, extension: ext}, {boxId: feeBox.json.boxId, extension: {}}], dataInputs: [{boxId: trackerBox.json.boxId}],
-    outputs: [{value: 100_000_000 - amount, ergoTree: reserveTree, creationHeight: 639_650, assets: [{tokenId: '77'.repeat(32), amount: 1}], additionalRegisters: {R4: `07${issuer}`, R5: AVL, R6: `0e20${NFT}`}},
-      {value: amount, ergoTree: ergo.p2pkTree(recipient), creationHeight: 639_650, assets: [], additionalRegisters: {}},
+    outputs: [{value: 80_000_000, ergoTree: reserveTree, creationHeight: 639_650, assets: [{tokenId: '77'.repeat(32), amount: 1}], additionalRegisters: {R4: `07${issuer}`, R5: AVL, R6: `0e20${NFT}`}},
+      {value: 20_000_000, ergoTree: ergo.p2pkTree(recipient), creationHeight: 639_650, assets: [], additionalRegisters: {}},
       {value: ergo.FEE, ergoTree: ergo.MINER_FEE_TREE, creationHeight: 639_650, assets: [], additionalRegisters: {}},
       {value: 50_000_000 - ergo.FEE, ergoTree: ergo.p2pkTree(tracker), creationHeight: 639_650, assets: [], additionalRegisters: {}}]};
-  const headers = await fixtureHeaders();
-  // The tracker fee-signs input 1 over the Scala-ordered bytes and leaves input 0's proof empty.
   const unsigned = E.UnsignedTransaction.from_json(ergo.toErgoJson(unsigned_tx));
+  assert.equal(ergo.txId(unsigned_tx), unsigned.id().to_str(), 'the native id is ergo-lib\'s');
+  const ctx = ergo.stateContext(E, await fixtureHeaders());
   const spend = E.ErgoBoxes.empty(); spend.add(reserve.box); spend.add(feeBox.box);
   const data = E.ErgoBoxes.empty(); data.add(trackerBox.box);
   const ts = new E.SecretKeys(); ts.add(E.SecretKey.dlog_from_bytes(hexToBytes(trackerSecret)));
-  const fi = E.Wallet.from_secrets(ts).sign_tx_input(1, ergo.stateContext(E, headers), unsigned, spend, data);
-  const feeInput = {boxId: fi.box_id().to_str(), spendingProof: JSON.parse(fi.spending_proof().to_json())};
+  const fi = E.Wallet.from_secrets(ts).sign_tx_input(1, ctx, unsigned, spend, data);
   const candidates = unsigned.output_candidates(), outputs = [];
   for (let i = 0; i < candidates.len(); i++) outputs.push(JSON.parse(E.ErgoBox.from_box_candidate(candidates.get(i), unsigned.id(), i).to_json()));
-  const partial_tx = {id: unsigned.id().to_str(), inputs: [{boxId: reserve.json.boxId, spendingProof: {proofBytes: '', extension: ext}}, feeInput],
-    dataInputs: unsigned_tx.dataInputs, outputs};
-  // As it reaches a JavaScript client: through JSON.parse (the extension keys sorted).
-  const built = JSON.parse(JSON.stringify({issuer: {pubkey: issuer}, unsigned_tx, partial_tx, input_box_binaries: [reserve.hex, feeBox.hex], data_box_binaries: [trackerBox.hex], headers}));
-  return {built, issuer, recipient, recipientSecret, reserveTree, amount, spend, data, headers, unsignedId: unsigned.id().to_str()};
-}
-
-test('checkRedemption: signs only the issuer\'s reserve paying exactly the amount to this agent, spending nothing of its own', withLib, async () => {
-  const f = await redemptionFixture();
-  const args = {issuerPubkey: f.issuer, recipientPubkey: f.recipient, amount: f.amount, trackerNftId: NFT, reserveTree: f.reserveTree};
-  assert.deepEqual(ergo.checkRedemption(E, f.built, args), {reserve_box_id: f.built.unsigned_tx.inputs[0].boxId, reserve_value: 100_000_000, paid_nanoerg: f.amount, fee_inputs: 1});
-  const refused = (change, re, a = args) => {
-    const b = structuredClone(f.built);
-    change(b);
-    assert.throws(() => ergo.checkRedemption(E, b, a), e => e.code === 'bad_redemption' && re.test(e.message), re.source);
-  };
-  refused(b => { b.unsigned_tx.outputs[1].value = f.amount - 1; }, /pays exactly/);
-  refused(b => { b.unsigned_tx.outputs[0].value = 100_000_000 - f.amount - 1; }, /output 0 is not the reserve/);
-  refused(b => { b.unsigned_tx.outputs[0].additionalRegisters.R4 = `07${G}`; }, /owner or tracker/);
-  refused(b => { b.unsigned_tx.outputs[0].assets = []; }, /tokens/);
-  refused(b => { b.unsigned_tx.inputs[0].extension['1'] = `07${G}`; }, /receiver/);
-  refused(b => { b.unsigned_tx.inputs[0].extension['0'] = '0201'; }, /redeem action/);
-  refused(b => { b.unsigned_tx.inputs.reverse(); }, /not the box given/);
-  refused(() => {}, /not the issuer's reserve/, {...args, issuerPubkey: G});
-  refused(() => {}, /tracker/, {...args, trackerNftId: '00'.repeat(32)});
-  refused(() => {}, /reserve contract/, {...args, reserveTree: '10010101d17300'});
-  // A fee input at this agent's own address would be spent by the agent's proof: refused.
-  const own = boxAt(ergo.p2pkTree(f.recipient), 5_000_000, {txId: '34'.repeat(32)});
-  refused(b => { b.unsigned_tx.inputs[1] = {boxId: own.json.boxId, extension: {}}; b.input_box_binaries[1] = own.hex; }, /box of this agent's own/);
-});
-
-test('signRedemption: the proof over the Scala-ordered bytes, spliced into the tracker\'s fee-signed transaction; both inputs verify', withLib, async () => {
-  const f = await redemptionFixture();
-  assert.deepEqual(Object.keys(f.built.unsigned_tx.inputs[0].extension), ['0', '1', '2', '3', '4', '5', '6', '8'], 'sorted by JSON.parse');
-  const signed = await ergo.signRedemption(f.built, f.recipientSecret);
-  assert.equal(signed.id, f.unsignedId);
-  const sortedId = E.UnsignedTransaction.from_json(JSON.stringify(f.built.unsigned_tx)).id().to_str();
-  assert.notEqual(sortedId, f.unsignedId, 'with the keys in sorted order it would be another transaction');
+  const partial_tx = {id: unsigned.id().to_str(), inputs: [{boxId: reserve.json.boxId, spendingProof: {proofBytes: '', extension: ext}},
+    {boxId: fi.box_id().to_str(), spendingProof: JSON.parse(fi.spending_proof().to_json())}], dataInputs: unsigned_tx.dataInputs, outputs};
+  const signed = ergo.signRedemption(JSON.parse(JSON.stringify({issuer: {pubkey: issuer}, unsigned_tx, partial_tx})), recipientSecret);
   const tx = E.Transaction.from_json(ergo.toErgoJson(signed));
-  assert.equal(tx.id().to_str(), f.unsignedId);
-  const ctx = ergo.stateContext(E, f.headers);
-  assert.equal(E.verify_tx_input_proof(0, ctx, tx, f.spend, f.data), true, 'the agent\'s proof (input 0)');
-  assert.equal(E.verify_tx_input_proof(1, ctx, tx, f.spend, f.data), true, 'the tracker\'s fee proof (input 1)');
-  assert.equal(f.built.partial_tx.inputs[0].spendingProof.proofBytes, '', 'the given transaction is not changed');
-  await assert.rejects(ergo.signRedemption({...f.built, partial_tx: {...f.built.partial_tx, inputs: f.built.partial_tx.inputs.slice(1)}}, f.recipientSecret), {code: 'bad_redemption'});
+  assert.equal(E.verify_tx_input_proof(0, ctx, tx, spend, data), true, 'the agent\'s native proof (input 0)');
+  assert.equal(E.verify_tx_input_proof(1, ctx, tx, spend, data), true, 'the tracker\'s fee proof (input 1)');
 });

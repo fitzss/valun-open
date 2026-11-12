@@ -113,9 +113,12 @@ one after another.
 
 On the Valun **testnet** network (`valun-testnet-1`, amounts in nanoERG of Ergo testnet: test coins with no monetary
 value) an agent can back its notes with a Basis reserve and redeem the notes it holds. Its Ergo address is the P2PK
-address of its Valun key, so its own key signs its own Ergo transactions; the server never holds it. Signing uses
-ergo-lib, which this client loads only when you install it next to it: `npm i ergo-lib-wasm-nodejs@0.28.0` (without
-it these calls fail with `ergo_lib_missing`; nothing else needs it).
+address of its Valun key, so its own key signs its own Ergo transactions; the server never holds it. Redeeming needs
+nothing more: the client computes the transaction's bytes to sign itself (any ErgoTree version, so also the Basis
+reserve contract's version-3 tree) and signs its proveDlog proof with its own key, after checking the transaction
+against the boxes as the Ergo node reports them. Building a reserve of your own uses ergo-lib, which this client loads
+only when you install it next to it: `npm i ergo-lib-wasm-nodejs@0.28.0` (without it `createReserve` fails with
+`ergo_lib_missing`).
 
 ```js
 client.ergoAddress();                                   // send tERG here (a testnet faucet, or another agent)
@@ -126,9 +129,10 @@ await client.redeem('sandbox-exact', 3_000_000, {broadcast: true});   // a note 
 
 Before its key signs anything, the client checks it: a reserve request must lock exactly the amount, at the network's
 reserve contract, with this agent's key in R4 and the network's tracker NFT in R6, minting one token whose id is the
-first input; a redemption must spend the issuer's reserve (its contract, owner key and tracker NFT), lower it by exactly
-the amount, pay exactly the amount to this agent's own address, name this agent as the receiver, and spend no box of
-this agent's own. Context extensions are written in the order the Ergo node serializes them (`ergo.toErgoJson`).
+first input; a redemption must spend the issuer's reserve (its contract, owner key and tracker NFT, read from the node),
+lower it by exactly the amount, pay exactly the amount to this agent's own address, name this agent as the receiver,
+spend no box of this agent's own, and be the transaction the tracker fee-signed (the same id). Context extensions are
+written in the order the Ergo node serializes them (`ergo.toErgoJson`, `ergo.txBytesToSign`).
 
 ## What the client checks before it signs (spec 15.2)
 

@@ -181,6 +181,51 @@ export function sign(message, secret, pk = undefined, options = {}) {
   }
 }
 
+// ---- Ergo: the spending proof of proveDlog(pk) (the sigma protocol's Schnorr proof, Fiat-Shamir) ----
+const u16be = n => Uint8Array.of((n >> 8) & 0xff, n & 0xff);
+/**
+ * The 56-byte proof an Ergo node accepts for an input whose script reduces to proveDlog(pk), pk = the secret's public
+ * key, over `message` (the transaction's bytes to sign): e (24 bytes) || z (32 bytes, big-endian), where a = g^r,
+ * e = the first 24 bytes of blake2b256(fs || message), fs = 0x01 || len(prop) || prop || len(a) || a (lengths as
+ * 16-bit big-endian), prop = the version-0 ErgoTree with constant segregation of SigmaProp(proveDlog(pk))
+ * (10 01 08 cd pk 73 00), and z = r + e·x mod n. `options.randomBytes` replaces the nonce source (tests only).
+ */
+export function ergoProveDlog(message, secret, options = {}) {
+  if (!(message instanceof Uint8Array)) throw new TypeError('message must be a Uint8Array (the transaction bytes to sign)');
+  const x = scalarFrom(secret);
+  const pk = compress(affine(mul(x, G)));
+  const prop = concatBytes(Uint8Array.of(0x10, 0x01, 0x08, 0xcd), pk, Uint8Array.of(0x73, 0x00));
+  const rnd = options.randomBytes || defaultRandomBytes;
+  for (;;) {
+    const r = randomScalar(rnd);
+    const a = compress(affine(mul(r, G)));
+    const e = blake2b256(concatBytes(Uint8Array.of(0x01), u16be(prop.length), prop, u16be(a.length), a), message).subarray(0, 24);
+    const z = (r + bytesToBigInt(e) * x) % N;
+    if (z === 0n) continue;
+    return concatBytes(e, bigIntToBytes(z, 32));
+  }
+}
+
+/** True iff `proof` (56 bytes) is a valid ergoProveDlog proof of `message` for public key `pk`. Never throws. */
+export function ergoVerifyDlog(proof, message, pk) {
+  try {
+    if (!(proof instanceof Uint8Array) || proof.length !== 56) return false;
+    const X = decompress(toBytes(pk, 'public key'));
+    const e = proof.subarray(0, 24), z = bytesToBigInt(proof.subarray(24));
+    if (z >= N) return false;
+    // a = g^z · X^(-e)
+    const negE = mod(-bytesToBigInt(e), N);
+    const a = affine(add(mul(z, G), mul(negE, X)));
+    if (a === null) return false;
+    const ab = compress(a), pkb = compress(X);
+    const prop = concatBytes(Uint8Array.of(0x10, 0x01, 0x08, 0xcd), pkb, Uint8Array.of(0x73, 0x00));
+    const e2 = blake2b256(concatBytes(Uint8Array.of(0x01), u16be(prop.length), prop, u16be(ab.length), ab), message).subarray(0, 24);
+    return equalBytes(e, e2);
+  } catch {
+    return false;
+  }
+}
+
 /** True iff `sig` (65 bytes) is a valid Basis Schnorr signature of `message` by public key `pk`. Never throws. */
 export function verify(sig, message, pk) {
   try {

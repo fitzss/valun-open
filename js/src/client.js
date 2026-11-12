@@ -2300,24 +2300,28 @@ export class Client {
 
   /**
    * Redeem `amount` nanoERG of the note `issuer` (a participant id or handle) issued to this agent, against the issuer's
-   * reserve: the tracker builds the transaction and pays its fee (POST /redemption/build), this client checks it
-   * (ergo.checkRedemption: the issuer's reserve, nothing of this agent's own spent, exactly `amount` paid to this
-   * agent's address), adds its own proof for the reserve input, and with `broadcast` submits it
-   * (POST /redemption/submit). Without `broadcast` nothing is submitted (and the tracker's build lapses).
+   * reserve: the tracker builds the transaction and pays its fee (POST /redemption/build), this client checks it against
+   * the boxes as the Ergo node reports them (ergo.checkRedemption: the issuer's reserve, nothing of this agent's own
+   * spent, exactly `amount` paid to this agent's address), adds its own proof for the reserve input (ergo.signRedemption:
+   * no ergo-lib needed), and with `broadcast` submits it (POST /redemption/submit). Without `broadcast` nothing is
+   * submitted (and the tracker's build lapses).
    * Resolves to {broadcast, tx_id, issuer, amount, reserve_box_id, address, explorer, signed?}.
    */
   async redeem(issuer, amount, {broadcast = false} = {}) {
     this.#onTestnet();
     if (typeof issuer !== 'string' || !issuer) throw new ValunError('invalid_field', 'issuer: the participant id or handle of the agent whose note you hold');
     if (!Number.isSafeInteger(amount) || amount < 1) throw new ValunError('invalid_field', 'amount: whole nanoERG to redeem');
-    const E = await ergo.ergoLib();
     const chain = await this.chain();
-    const reserveTree = chain.reserve_contract ? E.Address.from_base58(chain.reserve_contract).to_ergo_tree().to_base16_bytes() : null;
+    const node = this.#ergoNode(chain, undefined);
+    await node.assertTestnet();
+    const reserveTree = chain.reserve_contract ? ergo.addressToTree(chain.reserve_contract) : null;
     const built = await this.request('POST', '/pilot/v1/redemption/build', {issuer, amount});
     const issuerPubkey = built?.issuer?.pubkey;
     if (typeof issuerPubkey !== 'string') throw new ValunError('bad_redemption', 'the server named no issuer key');
-    const checked = ergo.checkRedemption(E, built, {issuerPubkey, recipientPubkey: this.pubkey, amount, trackerNftId: chain.tracker_nft_id, reserveTree});
-    const signed = await ergo.signRedemption(built, bytesToHex(this.#secretBytes()));
+    // The boxes it spends, as the Ergo node reports them (not the tracker's copies).
+    const inputBoxes = await Promise.all((built?.unsigned_tx?.inputs || []).map(i => node.box(i.boxId)));
+    const checked = ergo.checkRedemption(built, {issuerPubkey, recipientPubkey: this.pubkey, amount, trackerNftId: chain.tracker_nft_id, reserveTree, inputBoxes});
+    const signed = ergo.signRedemption(built, bytesToHex(this.#secretBytes()));
     const out = {broadcast: !!broadcast, tx_id: signed.id ?? null, issuer: built.issuer, amount, reserve_box_id: checked.reserve_box_id,
       address: ergo.p2pkAddress(this.pubkey), explorer: chain.explorer && signed.id ? `${chain.explorer}/en/transactions/${signed.id}` : null};
     if (!broadcast) return {...out, signed};
