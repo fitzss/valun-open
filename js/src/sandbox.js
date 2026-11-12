@@ -11,17 +11,24 @@
 // only quoted string in the description. The delivery echoes the exact text processed.
 
 import {utf8} from './bytes.js';
-import {sha256Hex} from './protocol.js';
+import {NETWORK, networkOf, sha256Hex} from './protocol.js';
 import {PyError, WS, ci, cmpCodePoints, get, isDict, lineCount, lower, or, pyEq, repr, splitWords, str, strip, typeName} from './py.js';
 
 export const SERVICES = Object.freeze({
   'text-stats': Object.freeze({price: 3, keywords: Object.freeze(['text-stats', 'text stats', 'text statistics', 'word count'])}),
   notary: Object.freeze({price: 2, keywords: Object.freeze(['notary', 'notar', 'sha-256', 'sha256'])}),
 });
-export const SERVICES_TEXT = 'text-stats (3 PC): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent '
-  + 'words of your text. notary (2 PC): SHA-256 and byte length of your text. Put the text in a ``` block, '
+/** The published price of a sandbox service in a network's unit: the PC-sized price times the network's scale (PC on
+ * the pilot; nanoERG on the testnet, x1e6), what the server's sandbox agents ask (lib/pilot/sandbox.mjs SERVICES). */
+export const priceOf = (service, network = NETWORK) => SERVICES[service].price * networkOf(network || NETWORK).scale;
+export const unitOf = (network = NETWORK) => networkOf(network || NETWORK).unit;
+/** What the services cost and how to send the text, in the network's unit. */
+export const servicesText = (network = NETWORK) => `text-stats (${priceOf('text-stats', network)} ${unitOf(network)}): exact `
+  + 'word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. notary '
+  + `(${priceOf('notary', network)} ${unitOf(network)}): SHA-256 and byte length of your text. Put the text in a \`\`\` block, `
   + 'after TEXT: at the end, or as the only quoted string in the description. Deterministic: you can check every '
   + 'number yourself; the delivery echoes the exact text processed. I only do the work (payee).';
+export const SERVICES_TEXT = servicesText();      // the pilot's (kept for callers that read it)
 export const HOW_TO_SEND = 'Put the text in a ``` fenced block, after a "TEXT:" label at the end of the description, or as the only '
   + 'quoted string in the description. Example description: text-stats of "The quick brown fox."';
 

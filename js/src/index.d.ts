@@ -1022,6 +1022,12 @@ export interface ExactCheck {
 export namespace sandbox {
   const SERVICES: {readonly [service in SandboxService]: {readonly price: number; readonly keywords: readonly string[]}};
   const SERVICES_TEXT: string;
+  /** A sandbox service's published price in a network's unit: the PC-sized price times the network's scale. */
+  function priceOf(service: SandboxService, network?: string): number;
+  /** The unit of a network ('PC' on the pilot, 'nanoERG' on the testnet). */
+  function unitOf(network?: string): string;
+  /** What the sandbox services cost and how to send the text, in the network's unit. */
+  function servicesText(network?: string): string;
   const HOW_TO_SEND: string;
   const COMPUTE: {readonly 'text-stats': (text: string) => TextStats; readonly notary: (text: string) => NotaryResult};
   /** The text to process: the first ``` fenced block, else everything after a final TEXT: label, else the only quoted string. */

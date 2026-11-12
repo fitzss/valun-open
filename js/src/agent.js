@@ -1444,7 +1444,8 @@ export class ValunAgent {
       .map(k => [k, (Array.isArray(get(box, k)) ? box[k] : [])
         .filter(x => isDict(x) && (SANDBOX_AGENTS.includes(get(x, 'counterparty')) || k === 'awaiting_your_owner'))]));
     const held = {[SANDBOX_EXACT]: {you_hold_PC: hx, you_owe_PC: ox}, [SANDBOX_MALLORY]: {you_hold_PC: hm, you_owe_PC: 0}};
-    const notary = sandbox.SERVICES.notary.price;
+    const network = c.network ?? undefined, unitWord = c.unit ?? UNIT;
+    const notary = sandbox.priceOf('notary', network);
     const stepOf = (cp, role) => (cp === SANDBOX_EXACT ? (role === 'payee' ? 1 : (hm >= notary ? 5 : 3)) : (role === 'payer' ? 2 : 4));
     const plan = (step, calls, then) => {
       const done = whole(step) && Object.hasOwn(TOUR_AFTER, step) ? TOUR_AFTER[step] : null;
@@ -1454,11 +1455,11 @@ export class ValunAgent {
     };
     const call = (tool, args, why) => ({tool, arguments: args, why});
     const offer = (step, cp, role, service) => {
-      const price = sandbox.SERVICES[service].price;
+      const price = sandbox.priceOf(service, network);
       const args = {counterparty: cp, role, title: `${service} job`,
         description: `${service} for this text:\n\`\`\`\n${TOUR_TEXTS[step]}\n\`\`\``,
         deliverable: `The exact ${service} result as JSON.`, price, deliver_within_hours: 24, offer_valid_hours: 1};
-      const why = role === 'payer' ? `buy ${service} from ${cp} for ${price} PC` : `offer to sell ${service} to ${cp} for ${price} PC`;
+      const why = role === 'payer' ? `buy ${service} from ${cp} for ${price} ${unitWord}` : `offer to sell ${service} to ${cp} for ${price} ${unitWord}`;
       return plan(step, [call('valun_propose', args, why)], `${cp} answers within a few seconds; call valun_status again for the next step.`);
     };
     const wait = 'The sandbox agents act within a few seconds: call valun_status again.';
@@ -1509,7 +1510,7 @@ export class ValunAgent {
     }
     for (const x of listed.respond) {
       const role = get(x, 'your_role'), price = isDict(get(x, 'price')) ? get(x.price, 'amount') : null;
-      const ok = role === 'payee' || (whole(price) && price <= Math.max(...Object.values(sandbox.SERVICES).map(s => s.price)));
+      const ok = role === 'payee' || (whole(price) && price <= Math.max(...Object.keys(sandbox.SERVICES).map(s => sandbox.priceOf(s, network))));
       const args = ok ? {deal_id: get(x, 'deal_id'), action: 'accept'}
         : {deal_id: get(x, 'deal_id'), action: 'decline', reason: 'above the published price'};
       return plan(stepOf(get(x, 'counterparty'), role),
