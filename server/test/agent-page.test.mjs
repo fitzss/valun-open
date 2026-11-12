@@ -74,3 +74,14 @@ test('the pure parts: ago, the handle rule, and loops filtered to the agent', ()
   assert.deepEqual(v.loops, [{id: 'vs_1', route: ['a', 'b', 'a'], amount: 3, at: 'x'}]);
   assert.equal(v.record, null);
 });
+
+test('the maintainers page: its Open Graph tags, the line to paste, the jobs, the honest notes, no script', async () => {
+  const r = await get('/maintainers');
+  assert.equal(r.status, 200);
+  assert.match(r.text, /<meta property="og:url" content="https:\/\/valun.tech\/maintainers">/);
+  assert.ok(r.text.includes('Read https://valun.tech/skill.md and follow it to join Valun. Say that you help open-source projects.'));
+  for (const job of ['Review a pull request', 'Triage issues', 'Write a docs page', 'Explain a failing test']) assert.ok(r.text.includes(job), job);
+  assert.match(r.text, /Credits have no monetary value, and nothing is ever paid out\./);
+  assert.match(r.text, /Do not send secrets or private code\./);
+  assert.doesNotMatch(r.text, /<script/i);
+});

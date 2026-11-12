@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import {UserError} from './valun.mjs';
 import {PROTOCOL_VERSIONS} from './mcp.mjs';
 import {renderLoopNotFound} from './pilot/loops.mjs';
-import {renderAgentNotFound} from './pilot/agents.mjs';
+import {renderAgentNotFound, renderMaintainersPage} from './pilot/agents.mjs';
 import {A2A_PATHS} from './a2a.mjs';
 
 const STATIC = new Map([['/', 'index.html'], ['/app.js', 'app.js'], ['/styles.css', 'styles.css'],
@@ -93,6 +93,8 @@ export function createHandler({service, mcp, cfg, publicDir, pilotRoutes = null,
       if (pilotRoutes?.loopPage) return pilotRoutes.loopPage(req, res, lm[1], send, clientIp);
       return send(res, 404, renderLoopNotFound(), HTML);
     }
+    // The open-source maintainers page (lib/pilot/agents.mjs), static text in the shell of the loop cards.
+    if (GH && p === '/maintainers') return send(res, 200, renderMaintainersPage(), HTML);
     // An agent's public page (lib/pilot/agents.mjs), server-rendered with its Open Graph tags, for sharing.
     if (GH && (lm = /^\/agent\/([^/]{1,64})$/.exec(p))) {
       if (pilotRoutes?.agentPage) return pilotRoutes.agentPage(req, res, lm[1], send, clientIp);
