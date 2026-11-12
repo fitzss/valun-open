@@ -41,7 +41,8 @@ test('the page keeps the CSP: no inline script, style or handler; only its own f
   assert.match(html, /<link rel="stylesheet" href="\/network\.css">/);
   assert.deepEqual([...html.matchAll(/(?:src|href)="(https?:[^"]+)"/g)].map(m => m[1]), ['https://github.com/fitzss/valun-open#readme'], 'the only external URL is a link');
   const reads = [...js.matchAll(/getJson\('([^']+)'\)/g)].map(m => m[1]).sort();
-  assert.deepEqual([...new Set(reads)], ['/api/status', '/pilot/v1/clearing', '/pilot/v1/info', '/pilot/v1/ledger', '/pilot/v1/loops', '/pilot/v1/participants?all=1']);
+  assert.deepEqual([...new Set(reads)], ['/api/status', '/pilot/v1/chain', '/pilot/v1/clearing', '/pilot/v1/info', '/pilot/v1/ledger',
+    '/pilot/v1/loops', '/pilot/v1/participants?all=1', '/pilot/v1/reserves']);   // chain and reserves: the testnet's strip
   assert.match(html, /<a class="hook" href="\/">Close a loop with your own agent →<\/a>/, 'the header links to the landing');
   assert.match(html, /<a class="logo" href="\/" aria-label="Valun home"><svg class="mark" viewBox="0 0 100 100" aria-hidden="true">/, 'the mark and the wordmark');
   assert.match(html, /<link rel="icon" href="\/favicon\.svg" type="image\/svg\+xml">/);
@@ -51,7 +52,7 @@ test('the page keeps the CSP: no inline script, style or handler; only its own f
 });
 
 // ---------- change detection ----------
-const {edgesOf, diffEdges, explain, modeLine, kindOf, matchLoop, POLL_MS, MAX_POLL_MS} = await import(pathToFileURL(path.join(root, 'public', 'network.js')).href);
+const {edgesOf, diffEdges, explain, modeLine, kindOf, matchLoop, POLL_MS, MAX_POLL_MS, moneyText, tergText, chainPanel} = await import(pathToFileURL(path.join(root, 'public', 'network.js')).href);
 const KEY = {you: '02aa', exact: '02bb', mallory: '02cc', other: '02dd'};
 let clock = 1_800_000_000_000;
 // One tracker note per pair; `ts` residue says how it was last updated (999 transfer, 998 set-off, else a note).
@@ -151,3 +152,27 @@ test('on valun.tech (and www) / is the Close the Loop landing; on any other host
     assert.equal(r.headers['content-type'], 'text/html; charset=utf-8', host);
   }
 });
+
+// The testnet network (valun-testnet-1): its amounts in tERG (the pilot's in PC, as before), and the "On Ergo testnet"
+// strip from GET /chain and GET /reserves, with hex ids and only the explorer's links.
+test('the testnet: amounts in tERG, and the Ergo testnet strip from /chain and /reserves (ids and links checked)', () => {
+  assert.equal(moneyText(3, 'PC'), '3 PC');
+  assert.equal(moneyText(1234), '1,234 PC');
+  assert.equal(moneyText(3000000, 'nanoERG'), '0.003 tERG');
+  assert.equal(moneyText(1500000000, 'nanoERG'), '1.5 tERG');
+  assert.equal(moneyText(1000000000, 'nanoERG'), '1 tERG');
+  assert.equal(tergText(194000000), '0.194');
+  assert.equal(tergText(-2000000), '-0.002');
+  const nft = 'dc'.repeat(32);
+  const chain = {on_chain: true, tracker_nft_id: nft, anchoring: {anchored: true, confirmed_height: 640110, confirmed_box_id: 'e8'.repeat(32), pending_tx_id: null},
+    links: {tracker_nft: `https://testnet.ergoplatform.com/en/token/${nft}`, tracker_address: 'https://evil.example/x"onclick'}};
+  const c = chainPanel(chain, {reserves: [{box_id: '04'.repeat(32), handle: 'sandbox-exact', collateral_nanoerg: 194000000}, {box_id: 'not hex', handle: 'x', collateral_nanoerg: 5}]});
+  assert.deepEqual(c, {anchored: true, height: 640110, pending: false, links: {nft: `https://testnet.ergoplatform.com/en/token/${nft}`, address: null},
+    reserves: [{handle: 'sandbox-exact', nanoerg: 194000000}]});
+  assert.equal(chainPanel({on_chain: false}, null), null, 'nothing before the bootstrap');
+  assert.equal(chainPanel(null, null), null);
+  const js = fs.readFileSync(path.join(root, 'public', 'network.js'), 'utf8');
+  assert.match(js, /getJson\('\/pilot\/v1\/chain'\)/);
+  assert.doesNotMatch(js, /innerHTML/, 'the strip is built with text nodes');
+});
+

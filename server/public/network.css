@@ -65,6 +65,13 @@ b { font-weight: 650; }
 
 /* ---------- counters ---------- */
 .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1vw; }
+/* The testnet's "On Ergo testnet" strip (hidden on the pilot). */
+.chain { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-bottom: 1vh; padding: 0.7vh 1.1vw;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; font-size: 13px; color: var(--muted); }
+.chain[hidden] { display: none; }
+.chain .k { color: var(--text); font-weight: 600; }
+.chain .ok { color: var(--note); } .chain .wait { color: var(--warn); }
+.chain a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
 .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 1vh 1.1vw 1.1vh; min-width: 0; position: relative; overflow: hidden; }
 .stat::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--line); }
 .stat.s-setoff::before { background: var(--setoff); }

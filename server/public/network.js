@@ -1,7 +1,8 @@
 // Valun live network (public/network.html, served at /network): a public, read-only view of the pilot network for a
 // big screen. Same origin only (CSP connect-src 'self'), no tokens, no libraries. It polls three public routes every
 // 10 s (GET /pilot/v1/participants, /pilot/v1/ledger, /pilot/v1/clearing), reads /pilot/v1/info and /api/status at
-// start and every 5 minutes, reads /pilot/v1/loops at start and after a set-off (to link it to its loop card), pauses
+// start and every 5 minutes (on the testnet network also /pilot/v1/chain and /pilot/v1/reserves, for the "On Ergo
+// testnet" strip), reads /pilot/v1/loops at start and after a set-off (to link it to its loop card), pauses
 // while the tab is hidden and doubles its interval (up to 60 s) after any error or 429:
 // every viewer behind one address shares the server's per-address read budget with the agents there.
 //
@@ -144,6 +145,33 @@ export function explain(changes) {
   return ev.map((e, i) => [e, i]).sort((a, b) => order[a[0].type] - order[b[0].type] || a[1] - b[1]).map(x => x[0]);
 }
 
+// An amount as people read it, in the network's unit (GET /pilot/v1/info unit): "3 PC" on the pilot; on the testnet
+// (nanoERG of Ergo testnet) in tERG, "0.003 tERG" (exact: whole nanoERG to tERG by integer arithmetic).
+export function tergText(n) {
+  const v = BigInt(Math.trunc(Number(n) || 0)), neg = v < 0n, a = neg ? -v : v;
+  const frac = String(a % 1000000000n).padStart(9, '0').replace(/0+$/, '');
+  return `${neg ? '-' : ''}${(a / 1000000000n).toLocaleString('en-US')}${frac ? `.${frac}` : ''}`;
+}
+export function moneyText(n, unit = 'PC') {
+  return unit === 'nanoERG' ? `${tergText(n)} tERG` : `${Number(n || 0).toLocaleString('en-US')} PC`;
+}
+
+// The "On Ergo testnet" strip from GET /pilot/v1/chain and GET /pilot/v1/reserves (the testnet network, once on chain):
+// plain values for the page to draw, or null. Ids must be 64 hex; a link is kept only when it is the explorer's.
+export function chainPanel(chain, reserves) {
+  const hex = s => typeof s === 'string' && /^[0-9a-f]{64}$/.test(s);
+  const explorer = u => (typeof u === 'string' && /^https:\/\/testnet\.ergoplatform\.com\/[A-Za-z0-9/._-]+$/.test(u) ? u : null);
+  const a = chain && typeof chain.anchoring === 'object' ? chain.anchoring : null;
+  if (!chain?.on_chain || !a) return null;
+  return {
+    anchored: a.anchored === true, height: Number.isInteger(a.confirmed_height) ? a.confirmed_height : null,
+    pending: hex(a.pending_tx_id),
+    links: {nft: explorer(chain.links?.tracker_nft), address: explorer(chain.links?.tracker_address)},
+    reserves: (Array.isArray(reserves?.reserves) ? reserves.reserves : []).filter(r => hex(r?.box_id))
+      .map(r => ({handle: typeof r.handle === 'string' ? r.handle : null, nanoerg: Number.isInteger(r.collateral_nanoerg) ? r.collateral_nanoerg : 0})),
+  };
+}
+
 // The server's mode line from GET /pilot/v1/info and GET /api/status.
 export function modeLine(info, status) {
   const parts = [];
@@ -198,6 +226,8 @@ function start() {
   };
   const H = (tag, cls, text) => { const el = document.createElement(tag); if (cls) el.className = cls; if (text != null) el.textContent = text; return el; };
   const fmt = n => Number(n || 0).toLocaleString('en-US');
+  // Amounts in the network's unit (st.unit, from GET /pilot/v1/info): "3 PC" on the pilot, "0.003 tERG" on the testnet.
+  const money = n => moneyText(n, st.unit), num = n => (st.unit === 'nanoERG' ? tergText(n) : fmt(n));
   const clock = t => new Date(t).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit', second: '2-digit'});
 
   const st = {
@@ -206,7 +236,7 @@ function start() {
     clearing: null, clearingBase: null, clearingOk: true, detected: {setoffs: 0, setoffPC: 0, transfers: 0, transferPC: 0},
     pendingCatchUp: null, recon: {streak: new Map(), warned: new Set(), bad: 0, rows: 0},
     loops: {pending: [], linked: new Set(), timer: null, tries: 0},
-    interval: POLL_MS, timer: null, inflight: false, lastOk: 0, lastMeta: 0, lastError: null, nextAt: 0,
+    interval: POLL_MS, timer: null, inflight: false, lastOk: 0, lastMeta: 0, lastError: null, nextAt: 0, unit: 'PC',
   };
   const view = {W: 1250, H: 800, nodes: new Map(), edges: new Map(), hl: new Map(), ghost: new Map(), flashNode: new Map()};
   const svg = $('graph'), gRings = $('g-rings'), gEdges = $('g-edges'), gLabels = $('g-labels'), gNodes = $('g-nodes'), gFx = $('g-fx');
@@ -228,6 +258,37 @@ function start() {
     if (info && Array.isArray(info.features) && info.features.includes('circulation/1')) st.clearingOk = true;
     const line = modeLine(info, status);
     if (line) $('meta').textContent = line;
+    if (info && typeof info.unit === 'string' && info.unit !== st.unit) { st.unit = info.unit; unitLabels(); }
+    if (info?.network === 'valun-testnet-1' && info.tracker_on_chain) await refreshChain();
+  }
+
+  // The testnet network: its unit in the static labels (the page is written for the pilot's PC), and how to join it.
+  function unitLabels() {
+    if (st.unit !== 'nanoERG') return;
+    for (const u of document.querySelectorAll('.stats .u')) u.textContent = 'tERG';
+    $('graph').setAttribute('aria-label', 'Agents as points; an arrow from A to B means A owes B, in tERG (Ergo testnet coins)');
+    const li = document.querySelector('.legend .explain li');
+    if (li) li.replaceChildren(H('b', null, 'tERG'), ' are Ergo testnet coins with no money value: a note can be redeemed on '
+      + 'Ergo testnet against its issuer\'s reserve.');
+    const code = document.querySelector('.legend .join code');
+    if (code) code.textContent = 'valun --profile testnet join --sandbox --server https://valun-testnet.fly.dev';
+  }
+
+  // The "On Ergo testnet" strip: the anchoring and the reserves (GET /chain, GET /reserves), every 5 minutes with /info.
+  async function refreshChain() {
+    const [chain, res] = await Promise.all([getJson('/pilot/v1/chain').catch(() => null), getJson('/pilot/v1/reserves').catch(() => null)]);
+    const c = chainPanel(chain, res), el = $('chain');
+    if (!el || !c) return;
+    const total = c.reserves.reduce((s, r) => s + r.nanoerg, 0);
+    el.replaceChildren(H('span', 'k', 'On Ergo testnet'),
+      H('span', c.anchored ? 'v ok' : 'v wait', c.anchored ? `anchored at height ${fmt(c.height)}` : c.pending ? 'anchoring now' : 'not anchored yet'),
+      H('span', 'v', `${c.reserves.length} reserve${c.reserves.length === 1 ? '' : 's'} backing notes: ${moneyText(total, 'nanoERG')}`),
+      ...c.reserves.map(r => H('span', 'r', `${r.handle || 'an agent'} ${moneyText(r.nanoerg, 'nanoERG')}`)));
+    for (const [href, text] of [[c.links.nft, 'tracker NFT'], [c.links.address, 'tracker on the explorer']]) {
+      if (!href) continue;
+      const a = H('a', 'x', text); a.href = href; a.rel = 'noopener noreferrer'; el.append(a);
+    }
+    el.hidden = false;
   }
 
   async function poll() {
@@ -328,7 +389,7 @@ function start() {
       const recent = [...next.values()].filter(p => !p.placeholder && now - Date.parse(p.joined_at) < 12 * 3600e3).slice(-6);
       for (const p of recent) addFeed({type: 'join', id: p.id}, Date.parse(p.joined_at), true);
       const out = [...edges.values()].reduce((a, e) => a + e.amount, 0), live = [...edges.values()].filter(e => e.amount > 0).length;
-      addFeed({type: 'info', text: `Watching the network: ${next.size} agents, ${live} credit notes, ${fmt(out)} PC outstanding.`}, now, true);
+      addFeed({type: 'info', text: `Watching the network: ${next.size} agents, ${live} credit notes, ${money(out)} outstanding.`}, now, true);
       $('since').textContent = `since ${clock(now).slice(0, 5)}`;
       recentLoops();
     }
@@ -389,12 +450,12 @@ function start() {
     if (!prev) return;
     if (gap.t > 0 && prev.t > 0) {
       const n = Math.min(gap.t, prev.t), pc = Math.max(0, (totals.transferred_PC - st.clearingBase.transferred_PC) - st.detected.transferPC);
-      events.push({type: 'info', text: `${n} more debt transfer${n > 1 ? 's' : ''} applied${pc ? ` (${pc} PC)` : ''}.`, cls: 'transfer'});
+      events.push({type: 'info', text: `${n} more debt transfer${n > 1 ? 's' : ''} applied${pc ? ` (${money(pc)})` : ''}.`, cls: 'transfer'});
       st.detected.transfers += n; st.detected.transferPC += pc;
     }
     if (gap.s > 0 && prev.s > 0) {
       const n = Math.min(gap.s, prev.s), pc = Math.max(0, (totals.cleared_PC - st.clearingBase.cleared_PC) - st.detected.setoffPC);
-      events.push({type: 'info', text: `${n} more set-off${n > 1 ? 's' : ''} applied${pc ? ` (${pc} PC cleared)` : ''}.`, cls: 'setoff'});
+      events.push({type: 'info', text: `${n} more set-off${n > 1 ? 's' : ''} applied${pc ? ` (${money(pc)} cleared)` : ''}.`, cls: 'setoff'});
       st.detected.setoffs += n; st.detected.setoffPC += pc;
     }
     if (!(gap.t > 0 && prev.t > 0) && !(gap.s > 0 && prev.s > 0)) return;
@@ -435,18 +496,18 @@ function start() {
     const top = H('div', 'ev-top');
     top.append(H('span', 'tag', {join: 'joined', note: 'payment', transfer: 'debt transfer', setoff: 'set-off', cleared: 'set-off',
       reduced: 'debt reduced', warning: 'ledger check', loop: 'loop closed', info: muted ? 'watching' : 'network'}[e.type]), H('time', '', clock(at)));
-    if (e.amount) top.append(H('span', 'amt', `${e.type === 'note' ? '+' : ''}${fmt(e.amount)} PC`));
+    if (e.amount) top.append(H('span', 'amt', `${e.type === 'note' ? '+' : ''}${money(e.amount)}`));
     const txt = H('div', 'ev-txt');
     const put = (...xs) => { for (const x of xs) txt.append(typeof x === 'string' ? document.createTextNode(x) : x); };
     switch (e.type) {
       case 'join': put(name(e.id), ` joined · ${KIND_WORDS[who(e.id).kind]}`); break;
       case 'note': put(name(e.from), ' paid ', name(e.to), e.first ? ' with its first credit note' : ' with a new credit note'); break;
       case 'transfer': put(name(e.issuer), '’s debt moved from ', name(e.from), ' to ', name(e.to), ` (${who(e.from).handle} paid with a note it held)`); break;
-      case 'setoff': put('A cycle of debts cancelled: ', ...e.cycle.flatMap(id => [name(id), ' → ']), name(e.cycle[0]), ` (${fmt(e.each)} PC off each debt)`); break;
+      case 'setoff': put('A cycle of debts cancelled: ', ...e.cycle.flatMap(id => [name(id), ' → ']), name(e.cycle[0]), ` (${money(e.each)} off each debt)`); break;
       case 'cleared': put(name(e.from), '’s debt to ', name(e.to), ' cleared by a set-off'); break;
       case 'reduced': put(name(e.from), '’s debt to ', name(e.to), ' went down'); break;
       case 'warning': put('Tracker and Valun differ on ', e.row.pair ? e.row.pair.slice(0, 20) : `${e.row.issuer} → ${e.row.recipient}`,
-        `: tracker ${fmt(e.row.tracker_total)} PC, Valun ${fmt(e.row.issued_via_valun)} PC (${e.row.status}).`); break;
+        `: tracker ${money(e.row.tracker_total)}, Valun ${money(e.row.issued_via_valun)} (${e.row.status}).`); break;
       default: put(e.text || '');
     }
     li.append(top, txt);
@@ -461,13 +522,13 @@ function start() {
   function flash(id, cls, now) { view.flashNode.set(id, {cls, until: now + HL_MS}); }
   function highlight(e, now, prevEdges) {
     const ghost = (k, word) => { if (!(st.edges.get(k)?.amount > 0)) view.ghost.set(k, {until: now + GHOST_MS, word, from: (st.edges.get(k) ?? prevEdges.get(k))}); };
-    if (e.type === 'note') { hl(e.edges[0], 'note', now); delta(e.edges[0], `+${e.amount} PC`, 'note'); flash(e.from, 'note', now); flash(e.to, 'note', now); }
+    if (e.type === 'note') { hl(e.edges[0], 'note', now); delta(e.edges[0], `+${money(e.amount)}`, 'note'); flash(e.from, 'note', now); flash(e.to, 'note', now); }
     if (e.type === 'transfer') {
       for (const k of e.edges) hl(k, 'transfer', now);
       ghost(e.edges[0], 'moved');
       delta(e.edges[0], `−${e.amount}`, 'transfer'); delta(e.edges[1], `+${e.amount}`, 'transfer');
       for (const id of [e.issuer, e.from, e.to]) flash(id, 'transfer', now);
-      token(e.from, e.to, `${e.amount} PC`);
+      token(e.from, e.to, money(e.amount));
     }
     if (e.type === 'setoff' || e.type === 'cleared') {
       for (const k of e.edges) { hl(k, 'setoff', now); ghost(k, 'cleared'); delta(k, `−${e.each ?? e.amount}`, 'setoff'); }
@@ -477,9 +538,9 @@ function start() {
     if (e.type === 'join') flash(e.id, 'join', now);
     // the big-screen line at the bottom of the graph
     if (e.type === 'join') toast('join', 'joined', [name(e.id), ` · ${KIND_WORDS[who(e.id).kind]}`]);
-    if (e.type === 'note') toast('note', 'payment', [name(e.from), ' paid ', name(e.to), ` ${fmt(e.amount)} PC with a credit note`]);
-    if (e.type === 'transfer') toast('transfer', 'debt transfer', [name(e.issuer), '’s debt moved ', name(e.from), ' → ', name(e.to), ` · ${fmt(e.amount)} PC`]);
-    if (e.type === 'setoff') toast('setoff', 'set-off', ['cycle cleared ', ...e.cycle.flatMap(id => [name(id), ' → ']), name(e.cycle[0]), ` · ${fmt(e.amount)} PC`]);
+    if (e.type === 'note') toast('note', 'payment', [name(e.from), ' paid ', name(e.to), ` ${money(e.amount)} with a credit note`]);
+    if (e.type === 'transfer') toast('transfer', 'debt transfer', [name(e.issuer), '’s debt moved ', name(e.from), ' → ', name(e.to), ` · ${money(e.amount)}`]);
+    if (e.type === 'setoff') toast('setoff', 'set-off', ['cycle cleared ', ...e.cycle.flatMap(id => [name(id), ' → ']), name(e.cycle[0]), ` · ${money(e.amount)}`]);
   }
   // At most two lines, newest on top; each stays 8 s.
   function toast(cls, tag, parts) {
@@ -596,7 +657,7 @@ function start() {
       v.path.setAttribute('stroke-width', w.toFixed(1));
       v.path.setAttribute('class', `edge${cls ? ` hl-${cls}` : ''}${ghost ? ' ghost' : ''}`);
       v.path.setAttribute('marker-end', `url(#arrow${cls ? `-${cls}` : ghost ? '-ghost' : ''})`);
-      const label = ghost ? ghost : `${fmt(e.amount)} PC`, fs = 17, tw = label.length * fs * 0.6 + 16;
+      const label = ghost ? ghost : money(e.amount), fs = 17, tw = label.length * fs * 0.6 + 16;
       const m = labelSpot(g, placed, boxes);
       placed.push(m); v.mid = m;
       v.text.textContent = label;
@@ -653,15 +714,15 @@ function start() {
     const parts = [[count('sandbox'), 'self-serve'], [count('invited'), 'invited'], [count('agent') + count('operator'), 'operator-run']].filter(x => x[0]);
     set('st-agents', fmt(active.length), parts.map(([n, w]) => `${n} ${w}`).join(' · ') || ' ');
     const edges = [...st.edges.values()].filter(e => e.amount > 0), out = edges.reduce((a, e) => a + e.amount, 0);
-    set('st-out', fmt(out), `on ${edges.length} credit note${edges.length === 1 ? '' : 's'}`);
+    set('st-out', num(out), `on ${edges.length} credit note${edges.length === 1 ? '' : 's'}`);
     const t = st.clearing?.totals;
     if (t) {
-      set('st-clear', fmt(t.cleared_PC ?? 0), `in ${fmt(t.setoffs_applied ?? 0)} set-off${t.setoffs_applied === 1 ? '' : 's'}`);
-      set('st-move', fmt(t.transferred_PC ?? 0), `in ${fmt(t.transfers_applied ?? 0)} transfer${t.transfers_applied === 1 ? '' : 's'}`);
+      set('st-clear', num(t.cleared_PC ?? 0), `in ${fmt(t.setoffs_applied ?? 0)} set-off${t.setoffs_applied === 1 ? '' : 's'}`);
+      set('st-move', num(t.transferred_PC ?? 0), `in ${fmt(t.transfers_applied ?? 0)} transfer${t.transfers_applied === 1 ? '' : 's'}`);
     } else {
       const d = st.detected;
-      set('st-clear', fmt(d.setoffPC), `${d.setoffs} set-off${d.setoffs === 1 ? '' : 's'} seen since this page opened`);
-      set('st-move', fmt(d.transferPC), `${d.transfers} transfer${d.transfers === 1 ? '' : 's'} seen since this page opened`);
+      set('st-clear', num(d.setoffPC), `${d.setoffs} set-off${d.setoffs === 1 ? '' : 's'} seen since this page opened`);
+      set('st-move', num(d.transferPC), `${d.transfers} transfer${d.transfers === 1 ? '' : 's'} seen since this page opened`);
     }
     const c = $('st-check').closest('.stat');
     c.classList.toggle('bad', st.recon.bad > 0);
