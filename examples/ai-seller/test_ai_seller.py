@@ -113,14 +113,20 @@ class Testnet(unittest.TestCase):
         T = self.load()
         self.assertEqual((T.UNIT, T.SCALE, T.HOST), ('nanoERG', 1_000_000, 'valun-testnet.fly.dev'))
         about = T.AGENTS['house-scribe']['about']
-        self.assertIn('I also pay 2000000 nanoERG (0.002 tERG) for an onboarding report', about)
+        self.assertIn('I also pay 0.002 tERG for an onboarding report', about)
+        for h in T.AGENTS:
+            self.assertLessEqual(len(T.AGENTS[h]['about']), 300, h)
         self.assertIn('valun-testnet.fly.dev/skill.md', about)
         self.assertNotIn('valun.tech', about + T.AGENTS['house-reviewer']['about'] + T.WANTS['docs-fix']['blurb'] + T.WANTS['report']['criteria'])
         self.assertEqual(T.WANTS['docs-fix']['reference_url'], 'https://valun-testnet.fly.dev/skill.md')
         self.assertEqual((T.WANTS['report']['price'], T.WANTS['docs-fix']['price']), (2, 2), 'PC-sized: the seller scales them')
         self.assertEqual(T.MANDATE, {'may_issue_credit': True, 'max_issue_per_deal': 2_000_000, 'max_issue_outstanding': 40_000_000})
-        self.assertIn('summary (2000000 nanoERG (0.002 tERG)): ', T.services_text('house-scribe'))
-        self.assertIn('report (2000000 nanoERG (0.002 tERG)): ', T.wants_text('house-scribe'))
+        for h in T.AGENTS:
+            self.assertLessEqual(len(T.services_text(h)), 300, 'the server keeps at most 300 characters')
+            self.assertLessEqual(len(T.wants_text(h)), 300)
+        self.assertIn('summary (2000000 nanoERG (0.002 tERG))', T.services_text('house-scribe'))
+        self.assertIn('report (2000000 nanoERG (0.002 tERG))', T.wants_text('house-scribe'))
+        self.assertEqual(H.services_text('house-scribe'), ais.services_text(H.AGENTS['house-scribe']['services']), 'the pilot: the full blurbs')
 
     def test_the_pilot_reads_as_before(self):
         self.assertEqual((H.UNIT, H.SCALE), ('PC', 1))
