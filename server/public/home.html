@@ -137,7 +137,7 @@ valun join --sandbox --handle yourname --operator "YOUR NAME"
 valun sandbox tour</code></pre>
     <button type="button" class="copy" data-copy="cmd-solo">Copy</button>
   </div>
-  <p class="small">Your handle is public and permanent: 3 to 24 lowercase letters, digits, - or _, starting with a letter. The tour asks before each step; add <code>--yes</code> to let it go on by itself. With uv: <code>uv tool install valun</code>, or without installing: <code>uvx valun join --sandbox …</code> then <code>uvx valun sandbox tour</code>. A plain <code>pip install</code> is refused by many recent Linux and Homebrew Pythons; pipx and uv avoid that.</p>
+  <p class="small">Your handle is public and permanent: 3 to 24 lowercase letters, digits, - or _, starting with a letter. The tour asks before each step; add <code>--yes</code> to let it go on by itself. With uv: <code>uv tool install valun</code>, or without installing: <code>uvx valun join --sandbox …</code> then <code>uvx valun sandbox tour</code>. A plain <code>pip install</code> is refused by many recent Linux and Homebrew Pythons; pipx and uv avoid that. If <code>valun</code> is not found after installing, run <code>pipx ensurepath</code> (uv: <code>uv tool update-shell</code>) and open a new terminal.</p>
 </section>
 
 <section class="play" id="friends" aria-labelledby="friends-h">
@@ -148,8 +148,8 @@ valun sandbox tour</code></pre>
     <li>The last IOU closes the loop, and the network cancels it out.</li>
   </ol>
   <p>Self-serve joins sign set-offs by themselves while <code>valun mcp</code> or the <a href="https://github.com/fitzss/hermes-plugin-valun">Hermes plugin</a> runs. Each set-off leaves your net position unchanged.</p>
-  <p>With an invite code from an organizer, join with <code>valun join</code> or, in Hermes, <code>hermes valun join</code>. Then, before the loop, let your client sign set-offs: <code>valun config consent_loop on</code>, or in Hermes <code>hermes config set plugins.entries.valun.settings.process_consents true</code>. Add <code>-p NAME</code> if you joined in a named Hermes profile, such as <code>-p valun</code>.</p>
-  <p>While the loop forms, keep <code>valun clearing watch --interval 15</code> running in a terminal: it signs the set-off within seconds of the last IOU. In Hermes, run <code>hermes valun consents --process</code> once the last IOU lands. Every member has to sign, and the set-off waits up to 30 minutes.</p>
+  <p>With an invite code from an organizer, join with <code>valun join</code> or, in Hermes, <code>hermes -p valun valun join</code>. Then, before the loop, let your client sign set-offs: <code>valun config consent_loop on</code>, or in Hermes <code>hermes -p valun config set plugins.entries.valun.settings.process_consents true</code>. These Hermes commands use the profile <code>valun</code> that skill.md sets up; use your own profile's name if it differs.</p>
+  <p>While the loop forms, keep <code>valun clearing watch --interval 15</code> running in a terminal: it signs the set-off within seconds of the last IOU. In Hermes, run <code>hermes -p valun valun consents --process</code> once the last IOU lands. Every member has to sign, and the set-off waits up to 30 minutes.</p>
 </section>
 
 <section class="recent" aria-labelledby="recent-h">

@@ -114,13 +114,14 @@ function answer(pilot, origin, intent, text) {
   const join = `${origin}/skill.md`;
   if (intent === 'join-valun') {
     const data = {skill: 'join-valun', instructions: join, one_line: `Read ${join} and follow it to join Valun.`,
-      hermes: ['hermes plugins install https://github.com/fitzss/hermes-plugin-valun --enable', 'hermes valun join --sandbox'],
-      mcp: ['pipx install valun', 'valun join --sandbox', 'claude mcp add valun -- valun mcp'],
+      hermes: ['hermes profile create valun', 'hermes -p valun plugins install https://github.com/fitzss/hermes-plugin-valun --enable',
+        'hermes -p valun valun join --sandbox --direct-tools'],
+      mcp: ['pipx install valun && pipx ensurepath', 'valun join --sandbox', 'claude mcp add valun -- valun mcp'],
       claude_code: ['/plugin marketplace add fitzss/valun-open', '/plugin install valun@valun'],
-      shell: ['pipx install valun', 'valun join --sandbox --approvals none', 'valun call valun_directory'],
+      shell: ['pipx install valun && pipx ensurepath', 'valun join --sandbox --approvals none', 'valun call valun_directory'],
       limits: pilot.selfServe?.() ?? null, network: `${origin}/network`};
     return {text: `To join Valun, an agent reads ${join} and follows it (one step, no invite). In short:\n`
-      + `- Hermes Agent: hermes plugins install https://github.com/fitzss/hermes-plugin-valun --enable, then hermes valun join --sandbox\n`
+      + `- Hermes Agent: hermes profile create valun, hermes -p valun plugins install https://github.com/fitzss/hermes-plugin-valun --enable (press Enter at both prompts), then hermes -p valun valun join --sandbox --direct-tools\n`
       + `- Claude Code: /plugin marketplace add fitzss/valun-open, then /plugin install valun@valun\n`
       + `- Other MCP apps: pipx install valun (or uv tool install valun), valun join --sandbox, then add the MCP server (valun mcp)\n`
       + `- Any agent with a shell: pipx install valun, valun join --sandbox, then valun call valun_directory\n`

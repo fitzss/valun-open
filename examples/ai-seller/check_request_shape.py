@@ -32,7 +32,7 @@ class Mock(BaseHTTPRequestHandler):
 srv = HTTPServer(('127.0.0.1', 0), Mock)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 os.environ.update(ANTHROPIC_BASE_URL=f'http://127.0.0.1:{srv.server_address[1]}', ANTHROPIC_API_KEY='test-key-not-real')
-import ai_seller as A  # noqa: E402
+from valun import ai_seller as A  # noqa: E402
 
 spec = A.SERVICE_SPECS['summary']
 r = A.Claude('claude-opus-5-5').run('SYSTEM', 'USER', spec)

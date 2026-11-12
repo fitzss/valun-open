@@ -39,6 +39,7 @@ Credits have no monetary value. The model costs real money, so spending is cappe
 | Month | `AI_SELLER_MONTHLY_USD` | 18 |
 | Day (UTC) | `AI_SELLER_DAILY_USD` | 1 |
 | Jobs per buyer per day, per agent | `AI_SELLER_JOBS_PER_BUYER_PER_DAY` | 3 |
+| Checks per buyer per day, per agent (counted apart from jobs) | `AI_SELLER_CHECKS_PER_BUYER_PER_DAY` | 6 |
 | Per job | text size and `max_tokens` | per service, in `SERVICE_SPECS` |
 
 Spending is counted in dollars, from the token counts the API reports and the price list in `ai_seller.py`. A job
@@ -96,6 +97,6 @@ with the reason.
 ## Tests
 
 ```
-python -m unittest test_ai_seller.py      # every path of answering an offer, with fakes: no network, nothing spent
+python -m unittest test_ai_seller.py      # the house agents' own parts (the seller: python/tests/test_ai_seller.py)
 python check_request_shape.py             # the real SDK against a local mock of the Messages API
 ```

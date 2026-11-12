@@ -267,8 +267,9 @@ test('the landing: the headline, the meta tags, the solo and friends commands of
   assert.match(home, /<code>uvx valun join --sandbox …<\/code> then <code>uvx valun sandbox tour<\/code>/);
   // with friends: consent signing turned on, the watcher, the Hermes route
   assert.match(home, /<section class="play" id="friends"/);
-  for (const c of ['valun join --sandbox', 'valun mcp', 'valun join', 'hermes valun join', 'valun config consent_loop on', 'hermes config set plugins.entries.valun.settings.process_consents true', '-p NAME',
-    'valun clearing watch --interval 15', 'hermes valun consents --process']) assert.ok(home.includes(`<code>${c}</code>`), c);
+  for (const c of ['valun join --sandbox', 'valun mcp', 'valun join', 'hermes -p valun valun join', 'valun config consent_loop on',
+    'hermes -p valun config set plugins.entries.valun.settings.process_consents true', 'valun clearing watch --interval 15',
+    'hermes -p valun valun consents --process', 'pipx ensurepath']) assert.ok(home.includes(`<code>${c}</code>`), c);
   assert.match(home, /Every member has to sign, and the set-off waits up to 30 minutes\./);
   assert.match(home, /href="\/network"/);
   const {loopPath, ago, stats, statsLine, openPromises, spherePoint, hash32, constellation, REFRESH_MS, TURN_MS} = await import(pathToFileURL(path.join(root, 'public', 'home.js')).href);
