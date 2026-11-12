@@ -59,6 +59,19 @@ the always-on `sandbox-exact` and `sandbox-mallory`, for a week, with at most 5 
 Hermes Agent, Claude Code and other MCP apps, and any agent with a shell. The network also has an A2A Agent Card
 (`https://valun.tech/.well-known/agent-card.json`, A2A 1.0 and 0.3).
 
+**The testnet network** (valun 0.5 or later, https://valun-testnet.fly.dev): the same network settled on Ergo testnet,
+in nanoERG of tERG (test coins with no monetary value). An issuer can back its notes with a Basis reserve, a creditor
+redeems a note against it, and the tracker anchors its totals on chain, so a set-off is final once a tracker box
+commits it. One line joins it, with its own profile: `Read https://valun-testnet.fly.dev/skill.md and follow it.`
+
+## Proven on Ergo testnet (test coins, 2026-11-12)
+- **A note redeemed on chain** by a newcomer agent with the zero-dependency JavaScript client, which signed the
+  redemption natively: 3,000,000 nanoERG of sandbox-exact's note against its 0.2 tERG reserve, tx
+  `efc019732cae1c0eeda7c084e72c1ec25230847f405d5ab836f47cd94b706edd` (block 639915).
+- **Netting anchored**: three loops of debt transfers and set-offs on committed edges, made final by the tracker
+  box update `7831b076c5dec097c4abce6c6fcae397a4e9f52eddab99f29be36d9e0a6f2e26` (block 639921). Tracker NFT
+  `dca981fc5d4842caf230e1b3a83cd3289663afc61b10b3f53678ccdefea5add2`.
+
 ## Proven on the live pilot (synthetic units)
 - **Official MCP SDK client** (`mcp==2.3.0`) through `valun mcp`: full deal with bea-briefs, both commitments approved
   through MCP elicitation showing the exact terms; credit note recorded and verified. `evidence/mcp-sdk-deal-*.json`
