@@ -58,6 +58,28 @@ class Services(unittest.TestCase):
         self.assertEqual(sb.which_service({'service': {'description': 'SHA-256 of this'}}), 'notary')
         self.assertIsNone(sb.which_service({'service': {'title': 'write me a poem'}}))
 
+    def test_the_text_to_work_on_names_no_service(self):
+        # fix-inbox #12: a code review of code that calls hashlib.sha256 is not a notary job (valun 0.5.1 said it was and
+        # advised disputing a good review); the service is named by the buyer's own words, never by the text.
+        review = {'service': {'title': 'code-review', 'deliverable': 'bugs and fixes',
+                              'description': 'Find bugs, risks and fixes.\n```python\nimport hashlib\nh = hashlib.sha256(b"x")\n```'}}
+        self.assertIsNone(sb.which_service(review))
+        self.assertIsNone(sb.check_delivery(review, '## Bugs\n1. none'))         # no exact check, so no dispute advice
+        self.assertIsNone(sb.which_service({'service': {'title': 'hash', 'description': 'TEXT: notary sha256 word count'}}))
+        self.assertIsNone(sb.which_service({'service': {'title': 'quote', 'description': 'say "notary"'}}))
+        # the buyer's words still name it, with the text in a block, after TEXT: or quoted
+        self.assertEqual(sb.which_service({'service': {'title': 'notary', 'description': '```\nhello\n```'}}), 'notary')
+        self.assertEqual(sb.which_service({'service': {'description': 'notary of "The quick brown fox."'}}), 'notary')
+        self.assertEqual(sb.which_service({'service': {'description': 'word count please\nTEXT: a b c'}}), 'text-stats')
+        self.assertEqual(sb.which_service({'service': {'description': 'compare "notary" with "a"'}}), 'notary')   # two quotes: no text
+
+    def test_request_words(self):
+        self.assertEqual(sb.request_words('Review it:\n```\nsha256\n```\nthanks'), 'Review it:\n \nthanks')
+        self.assertEqual(sb.request_words('stats please\nTEXT: line one'), 'stats please')
+        self.assertEqual(sb.request_words('notary of "x y"'), 'notary of  ')
+        self.assertEqual(sb.request_words('compare "a" with "b"'), 'compare "a" with "b"')
+        self.assertEqual(sb.request_words(None), '')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -183,6 +183,9 @@ def tour_goal(step, unit=vc.UNIT, scale=1):
 
 # What you hold / owe (PC-sized, times the scale) once each step is done, as tracker totals (design 9.2).
 TOUR_AFTER = {1: (3, 0), 2: (1, 0), 3: (0, 1), 4: (2, 0), 5: (0, 0)}
+# How long a tour step asks the agent to wait before calling valun_status again (fix-inbox #8): the sandbox agents act
+# within a few seconds; an owner approval takes a person.
+SANDBOX_RETRY_S, OWNER_RETRY_S = 5, 60
 
 
 BRIEF_NOTE = ('PC are pilot credits with no monetary value: a credit note is an outstanding promise, and nothing is redeemed. '
@@ -214,7 +217,7 @@ def brief_status(out):
         b['consents_pending'] = d(out.get('clearing')).get('consents_pending')
     step = out.get('sandbox_next_steps')
     if isinstance(step, dict):
-        b['sandbox_next_steps'] = {k: step[k] for k in ('tour_step', 'next_calls', 'then') if k in step}
+        b['sandbox_next_steps'] = {k: step[k] for k in ('tour_step', 'next_calls', 'then', 'retry_after_seconds') if k in step}
     b['note'] = BRIEF_NOTE_TESTNET if out.get('network') == TESTNET else BRIEF_NOTE
     return b
 
@@ -1310,12 +1313,14 @@ class ValunAgent:
                 return 1 if role == 'payee' else (5 if hm >= sandbox.price_of('notary', getattr(c, 'network', None)) else 3)
             return 2 if role == 'payer' else 4
 
-        def plan(step, calls, then):
+        def plan(step, calls, then, retry_after_seconds=SANDBOX_RETRY_S):
             done = TOUR_AFTER.get(step) if isinstance(step, int) else None
             scale = getattr(c, 'scale', 1)
             return {'tour_step': step, 'of': 5, 'goal': tour_goal(step, getattr(c, 'unit', vc.UNIT), scale),
                     'next_calls': calls, 'then': then, 'with_the_sandbox_agents': held,
-                    **({'when_done': {'you_hold_PC': done[0] * scale, 'you_owe_PC': done[1] * scale}} if done else {})}
+                    **({'when_done': {'you_hold_PC': done[0] * scale, 'you_owe_PC': done[1] * scale}} if done else {}),
+                    # fix-inbox #8: how long to wait before calling valun_status again, so a small model does not poll
+                    **({'retry_after_seconds': retry_after_seconds} if retry_after_seconds else {})}
 
         def call(tool, args, why):
             return {'tool': tool, 'arguments': args, 'why': why}
@@ -1333,7 +1338,7 @@ class ValunAgent:
         if listed['awaiting_your_owner']:
             x = listed['awaiting_your_owner'][0]
             return plan(None, [], f"Your owner must first approve deal {shown(x.get('deal_id'))} in the owner console; then call "
-                                  'valun_status again.')
+                                  'valun_status again.', OWNER_RETRY_S)
         for x in listed['review_delivery']:
             did, cp = x.get('deal_id'), x.get('counterparty')
             step = step_of(cp, 'payer')
@@ -1478,6 +1483,8 @@ class ValunAgent:
         d = c.deal(a['deal_id'])
         out = {k: d.get(k) for k in ('id', 'status', 'your_role', 'counterparty', 'next_actions', 'versions', 'acceptance', 'agreement',
                                      'decline', 'completion', 'dispute', 'cancellation', 'approvals', 'labels')}
+        if isinstance(d.get('retry_after_seconds'), int) and not isinstance(d['retry_after_seconds'], bool):
+            out['retry_after_seconds'] = d['retry_after_seconds']   # the server's hint while it waits on the other side (#8)
         if d.get('pending_counter'):
             pc = d['pending_counter']
             out['your_counter_offer_awaiting_owner'] = {'version': pc['version'], 'state': pc['state'], 'terms': pc.get('terms'),
@@ -1514,7 +1521,9 @@ class ValunAgent:
         if d.get('delivery'):
             dl = d['delivery']
             body = dl['content'] if len(dl['content']) <= 16000 else dl['content'][:16000] + '\n[... truncated for display; full text is on the server ...]'
-            out['delivery'] = {'title': dl.get('title'), 'sha256': dl['sha256'], 'bytes': dl['bytes'], 'late': dl.get('late'), 'content': body}
+            out['delivery'] = {'title': dl.get('title'), 'sha256': dl['sha256'], 'bytes': dl['bytes'], 'late': dl.get('late'), 'content': body,
+                               # the payee's public signature over (deliver, terms_hash, content sha256): a receipt can be verified (#3)
+                               'signature': dl.get('signature')}
             reviewing = d.get('your_role') == 'payer' and d.get('status') in ('delivered', 'note_failed')
             out['delivery']['measured_by_your_client'] = measure.measure(dl['content'], terms_text(d),
                                                                          check_hosts=reviewing and self.check_link_hosts)
@@ -1529,9 +1538,14 @@ class ValunAgent:
             n = d['credit_note']
             out['credit_note'] = {'state': n.get('state'), 'amount_PC': n.get('amount'), 'tracker_status': n.get('tracker_status'),
                                   'tracker_cumulative_total_PC': (n.get('tracker_note') or {}).get('amount_collected'),
-                                  'confirmation': (n.get('tracker_note') or {}).get('confirmation'), 'verified_by_valun': n.get('verified_by_valun'),
+                                  # the server's live reading of the tracker when it sends one (#13), else the recorded one
+                                  'confirmation': n.get('confirmation') or (n.get('tracker_note') or {}).get('confirmation'),
+                                  'verified_by_valun': n.get('verified_by_valun'),
                                   'outstanding': n.get('outstanding'), 'settled': n.get('settled', False),
                                   'issuer_pubkey': n.get('issuer_pubkey'), 'recipient_pubkey': n.get('recipient_pubkey')}
+            for k in ('redeemed', 'settled_how', 'pair_now'):         # on chain: what redemption did to this note (#13)
+                if n.get(k) is not None:
+                    out['credit_note'][k] = n[k]
             if n.get('signature_withheld'):
                 out['credit_note']['signature'] = 'withheld until the Basis tracker records the note'
         if d.get('payment') is not None:           # circulating credit: the payment by transfer, as the server shows it

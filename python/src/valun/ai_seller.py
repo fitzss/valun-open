@@ -57,9 +57,12 @@ SYSTEM = ('You are {handle}, an AI agent on the Valun test network, where AI age
 SERVICE_SPECS = {
     'summary': {'price': 2, 'max_chars': 12000, 'max_tokens': 3000, 'effort': 'low',
                 'keywords': ('summary', 'summarize', 'summarise', 'tl;dr', 'tldr'),
-                'blurb': 'summary (2 PC): up to 7 bullet points and a one-sentence gist of a text up to 12,000 characters',
-                'task': 'The job: summarize the text in at most 7 short bullet points, then one line that begins "In one '
-                        'sentence:". Keep the author\'s meaning and add no facts that are not in the text.'},
+                'blurb': 'summary (2 PC): up to 7 bullets and a one-line gist, or the format you set, of a text up to 12,000 characters',
+                'task': 'The job: summarize the text. If the buyer\'s request or the agreed deliverable sets a format (for '
+                        'example one paragraph, no bullet points, exactly N bullets, a word limit, or nothing but the '
+                        'bullets), follow it exactly and add nothing it does not allow. Otherwise write at most 7 short '
+                        'bullet points, then one line that begins "In one sentence:". Keep the author\'s meaning and add no '
+                        'facts that are not in the text.'},
     'rewrite': {'price': 2, 'max_chars': 6000, 'max_tokens': 5000, 'effort': 'low',
                 'keywords': ('rewrite', 'rephrase', 'proofread', 'polish', 'edit for clarity', 'copy edit', 'copyedit'),
                 'blurb': 'rewrite (2 PC): clearer, tighter wording of a text up to 6,000 characters, same meaning and language',
@@ -86,7 +89,8 @@ SERVICE_SPECS = {
     'check': {'price': 2, 'max_chars': 12000, 'max_tokens': 2500, 'effort': 'medium',
               'keywords': ('check a delivery', 'check the delivery', 'check this delivery', 'check my delivery', 'verify a delivery',
                            'verify the delivery', 'verify this delivery', 'check the work', 'verify the work', 'check delivered work',
-                           'quality check'),
+                           'quality check', 'delivery check', 'delivery-check', 'meet its terms', 'meets its terms',
+                           'meet the terms', 'meets the terms'),
               'blurb': 'check (2 PC): does a delivery meet its terms? A verdict and the reasons, for the terms and the work you paste',
               'task': 'The job: the text holds the terms of a deal and the work delivered for it. Judge whether the delivery meets '
                       'the terms. Start with exactly one line: "Verdict: meets the terms", "Verdict: does not meet the terms" or '
@@ -201,12 +205,41 @@ def services_text(services, unit='PC', scale=1):
     return '; '.join(in_unit(SERVICE_SPECS[s]['blurb'], unit, scale) for s in services)
 
 
+# A title that names a service on its own: "check", "check: does it meet its terms?", "code-review - a parser", "summary (draft)".
+TITLE_NAME = re.compile(r'\s*([a-z][a-z-]*[a-z])\s*(?::|\(|\[|[-–—]\s|$)')
+
+
+def title_service(services, title):
+    """The service an offer's title names on its own (the title is the service's name, or begins with it followed by ':',
+    ' - ' or a bracket), if the seller offers it, else None. "Explain this code review finding" names none."""
+    m = TITLE_NAME.match(str(title or '').lower())
+    return m.group(1) if m and m.group(1) in services else None
+
+
 def which_service(services, terms):
-    """The seller's service an offer asks for (keywords in its title, description and deliverable), or None. `explain` is
+    """The seller's service an offer asks for, or None: the one its title names first; else the first whose keywords are in
+    its title, deliverable or the buyer's own words (never in the text to work on, which can say anything). `explain` is
     tried last, so "explain the review" stays a review."""
     svc = terms.get('service') or {}
-    hay = ' '.join(str(svc.get(k) or '') for k in ('title', 'description', 'deliverable')).lower()
+    named = title_service(services, svc.get('title'))
+    if named:
+        return named
+    hay = ' '.join((str(svc.get('title') or ''), vsandbox.request_words(str(svc.get('description') or '')),
+                    str(svc.get('deliverable') or ''))).lower()
     return next((s for s in sorted(services, key=lambda s: s == 'explain') if any(k in hay for k in SERVICE_SPECS[s]['keywords'])), None)
+
+
+# A ``` block of the description: its closing fence on its own line, or at the end of the text's last line.
+JOB_BLOCK = re.compile(r'^```[^\n]*\n(.*?)\n?```[ \t]*$', re.S | re.M)
+
+
+def job_text(service, description):
+    """The text a job works on: for a check, every ``` block (the terms and the work), joined; for another service, the
+    first ``` block; with no block, a final TEXT: label or the only quoted string (sandbox extract_text)."""
+    blocks = JOB_BLOCK.findall(description or '')
+    if blocks:
+        return '\n\n'.join(blocks) if service == 'check' else blocks[0]
+    return vsandbox.extract_text(description)
 
 
 def request_without_text(description, text):
@@ -389,13 +422,14 @@ class AISeller(vsandbox.Seller):
         (checks_per_buyer) and a job and the check of it never compete for the same one."""
         return f"{self.handle}|{buyer}|{'check' if service == 'check' else 'work'}"
 
-    def deliverable(self, service, result, checked_text=None):
+    def deliverable(self, service, result, checked_text=None, deal_id=None):
         """The work itself, with nothing added, since the terms may allow nothing else; who did it goes in the delivery's
-        title. A check ends with its receipt: a JSON block with the verdict and the SHA-256 of the exact text it checked,
-        which the delivery's signature (this agent's key) binds to that verdict."""
+        title. A check ends with its receipt: a JSON block with the check deal's id, the verdict and the SHA-256 of the
+        exact text it checked, which the delivery's signature (this agent's key) binds to that verdict."""
         content = result['content']
         if service == 'check':
-            receipt = {'service': 'check', 'verdict': verdict_of(content), 'checked_by': self.handle, 'model': result['model'],
+            receipt = {'service': 'check', **({'check_deal_id': deal_id} if deal_id else {}), 'verdict': verdict_of(content),
+                       'checked_by': self.handle, 'model': result['model'],
                        'checked_text_sha256': hashlib.sha256((checked_text or '').encode('utf-8')).hexdigest()}
             content += '\n\n```json\n' + json.dumps(receipt, indent=1) + '\n```\n'
         return content
@@ -412,7 +446,8 @@ class AISeller(vsandbox.Seller):
             return self._decline(did, f'your offer failed my checks ({e.code}); please send a fresh one', e.code)
         terms = d['current']['terms']
         menu = (f"I offer: {services_text(self.services, getattr(self.c, 'unit', 'PC'), getattr(self.c, 'scale', 1))}. "
-                'Put the text in a ``` block in the description.')
+                f'Name the service as the first word of the title (for example "{self.services[0]}: ...") and put the '
+                'text in a ``` block in the description.')
         if d.get('your_role') != 'payee':
             if self.wants:
                 return self.answer_want(item, d, chk, terms)
@@ -423,9 +458,7 @@ class AISeller(vsandbox.Seller):
         if not service:
             return self._decline(did, 'I do not offer that service. ' + menu, 'unknown_service')
         spec = SERVICE_SPECS[service]
-        description = (terms.get('service') or {}).get('description')
-        blocks = re.findall(r'^```[^\n]*\n(.*?)\n```', description or '', re.S | re.M) if service == 'check' else []
-        text = '\n\n'.join(blocks) if len(blocks) > 1 else vsandbox.extract_text(description)
+        text = job_text(service, (terms.get('service') or {}).get('description'))
         if not text or not text.strip():
             return self._decline(did, 'I could not find the text to work on. ' + vsandbox.HOW_TO_SEND, 'no_text', service=service)
         if len(text) > spec['max_chars']:
@@ -461,7 +494,7 @@ class AISeller(vsandbox.Seller):
         if r.get('incomplete'):
             return self._decline(did, 'The job came out longer than I can deliver; please send a shorter text.', 'incomplete',
                                  cost=round(r['cost'], 5))
-        content = self.deliverable(service, r, text)
+        content = self.deliverable(service, r, text, did)
         self.budget.s['pending'][did] = {'service': service, 'content': content, 'title': self.title(service, r)}
         self.budget.save()
         try:

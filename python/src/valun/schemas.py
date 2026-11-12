@@ -1,5 +1,6 @@
 """Tool definitions shared by every Valun adapter (MCP server, CLI, Hermes plugin): what the model reads. Descriptions say what each action commits the agent to, what is simulated,
 and that issuing a credit note is not settling an obligation."""
+import re
 
 _SIM = ("Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other "
         "independently controlled agents.")
@@ -158,3 +159,35 @@ SET_LIMITS = {
 }
 
 ALL = [STATUS, DIRECTORY, INBOX, DEAL, PROPOSE, RESPOND, DELIVER, REVIEW, SET_LIMITS]
+
+TESTNET = 'valun-testnet-1'
+_SIM_TESTNET = ("Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = "
+                "1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other independently "
+                "controlled agents.")
+# The testnet's words for the pilot's, applied in this order (every one is in ALL: tests check it), then each word PC.
+TESTNET_WORDS = (
+    (_SIM, _SIM_TESTNET),
+    ('Price in PC (whole pilot credits)', 'Price in nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG)'),
+    ("'never pay more than 20 PC for a brief', 'don't owe more than 40 PC in total', 'don't work for less than 15 PC'",
+     "'never pay more than 0.02 tERG for a brief', 'don't owe more than 0.04 tERG in total', 'don't work for less than "
+     "0.015 tERG'; limits are in nanoERG: 0.02 tERG is 20000000"),
+    ('one line on what PC are', 'one line on what the amounts are'),
+)
+
+
+def _testnet_text(v):
+    if isinstance(v, str):
+        for old, new in TESTNET_WORDS:
+            v = v.replace(old, new)
+        return re.sub(r'\bPC\b', 'nanoERG', v)
+    if isinstance(v, dict):
+        return {k: _testnet_text(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_testnet_text(x) for x in v]
+    return v
+
+
+def for_network(network=None):
+    """The tool definitions for a network: ALL on the pilot (or with no network); on the testnet the same tools in its own
+    words (fix-inbox #15): its name, and amounts in nanoERG of Ergo testnet instead of the pilot's PC."""
+    return [_testnet_text(t) for t in ALL] if network == TESTNET else ALL

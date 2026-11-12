@@ -77,6 +77,7 @@ test('sandbox: more text-stats/notary, extract_text, render, parse_result, check
     assert.equal(JSON.stringify(got), JSON.stringify(out), 'key order');
   }
   for (const [terms, out] of P.which_service) assert.equal(sandbox.whichService(terms), out, show(terms));
+  for (const [d, words] of P.request_words) assert.equal(sandbox.requestWords(d), words, show(d));
 });
 
 test('sandbox: a delivery whose ```json block is not JSON throws, as Python raises (callers turn it into internal_error)', () => {
@@ -90,6 +91,7 @@ test('measure: word counts, links, hosts and numeric requirements identical to P
   for (const [text, n] of P.word_count) assert.equal(measure.wordCount(text), n, show(text));
   for (const [text, out] of P.links) assert.deepEqual(measure.links(text), out, show(text));
   for (const [url, host] of P.hosts) assert.equal(measure.hostOf(url), host, url);
+  for (const [text, counts] of P.item_word_counts) assert.deepEqual(measure.itemWordCounts(text), counts, show(text));
   for (const [text, req] of P.requirements) {
     assert.deepEqual(measure.requirements(text), req, show(text));
     assert.equal(JSON.stringify(measure.requirements(text)), JSON.stringify(req), 'key order');

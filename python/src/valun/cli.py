@@ -435,7 +435,8 @@ def cmd_doctor(args):
     server = _server(args, store)
     try:
         info = vc.Client(_Mem(), server).request('GET', '/pilot/v1/info', auth=False)
-        ok.append(f"Server {server} reachable: {info['network']}, unit {info['unit']} (synthetic)")
+        kind = 'test coins of Ergo testnet, no monetary value' if info.get('network') == schemas.TESTNET else 'synthetic'
+        ok.append(f"Server {server} reachable: {info['network']}, unit {info['unit']} ({kind})")
         pins = store.state.get('pins')
         if isinstance(pins, dict) and pins.get('tracker_nft_id'):
             if (pins.get('tracker_nft_id'), pins.get('denomination')) == (info.get('tracker_nft_id'), info.get('denomination')):
@@ -602,7 +603,12 @@ def _shown_value(v):
 
 
 def cmd_tools(args):
-    print(json.dumps(schemas.ALL, indent=1))
+    """The tool definitions, in the words of this profile's network (the pilot's for a profile that has not joined)."""
+    try:
+        network = _store(args).state.get('network')
+    except Exception:  # noqa: BLE001 - no readable profile: the pilot's words
+        network = None
+    print(json.dumps(schemas.for_network(network), indent=1))
     return 0
 
 

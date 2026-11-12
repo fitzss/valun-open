@@ -84,12 +84,13 @@ APPROVAL_TEXT = {
 }
 
 
-def tool_list(approvals='ask'):
-    """Tool definitions. destructiveHint is always explicit (its default is true). In client-prompt mode the signing
-    tools and valun_set_limits (which can loosen the owner's recorded limits) carry Claude Code's
-    requiresUserInteraction flag, which makes it ask before every such call, and destructiveHint."""
+def tool_list(approvals='ask', network=None):
+    """Tool definitions, in the words of the profile's network (schemas.for_network). destructiveHint is always explicit
+    (its default is true). In client-prompt mode the signing tools and valun_set_limits (which can loosen the owner's
+    recorded limits) carry Claude Code's requiresUserInteraction flag, which makes it ask before every such call, and
+    destructiveHint."""
     out = []
-    for t in schemas.ALL:
+    for t in schemas.for_network(network):
         ro = t['name'] in READ_ONLY_TOOLS
         prompted = approvals == 'client-prompt' and t['name'] in CLIENT_PROMPTED
         tool = {'name': t['name'], 'title': TITLES[t['name']], 'description': t['description'], 'inputSchema': t['parameters'],
@@ -208,7 +209,8 @@ class McpServer:
             if method == 'ping':
                 return self.ok(mid, {})
             if method == 'tools/list':
-                r = {'tools': tool_list(self.approvals)}
+                store = getattr(self.agent, 'store', None)
+                r = {'tools': tool_list(self.approvals, (getattr(store, 'state', None) or {}).get('network'))}
                 if modern:
                     r.update({'resultType': 'complete', 'cacheScope': 'private', 'ttlMs': 3600000})
                 return self.ok(mid, r)

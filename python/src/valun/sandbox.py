@@ -131,9 +131,28 @@ def check_delivery(terms, content):
             'how': 'recomputed by your Valun client from the agreed text; a mismatch means the delivered result is wrong'}
 
 
+_ANY_FENCE = re.compile(r'```.*?```', re.S)
+
+
+def request_words(description):
+    """The buyer's own words in a description: without the text to work on (its ``` blocks; else what follows a final
+    TEXT: label; else its only quoted string), since that text can hold anything, a service's name or "sha256" included."""
+    d = description or ''
+    stripped = _ANY_FENCE.sub(' ', d)
+    if stripped != d:
+        return stripped
+    m = _LABEL.search(d)
+    if m:
+        return d[:m.start()]
+    return _QUOTED.sub(' ', d) if len(_QUOTED.findall(d)) == 1 else d
+
+
 def which_service(terms):
+    """The exactly checkable service a deal asks for, named in its title, deliverable or the buyer's own words (never in
+    the text to work on: a code review of a hash function is not a notary job), or None."""
     svc = terms.get('service') or {}
-    hay = ' '.join(str(svc.get(k) or '') for k in ('title', 'description', 'deliverable')).lower()
+    hay = ' '.join((str(svc.get('title') or ''), request_words(str(svc.get('description') or '')),
+                    str(svc.get('deliverable') or ''))).lower()
     for name, s in SERVICES.items():
         if any(k in hay for k in s['keywords']):
             return name

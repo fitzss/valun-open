@@ -927,6 +927,12 @@ export namespace schemas {
   const SET_LIMITS: ToolDefinition;
   /** The nine tools, in the order every adapter lists them. */
   const ALL: readonly ToolDefinition[];
+  /** 'valun-testnet-1'. */
+  const TESTNET: string;
+  /** The testnet's words for the pilot's ([pilot text, testnet text], in order), then each word PC becomes nanoERG. */
+  const TESTNET_WORDS: readonly (readonly [string, string])[];
+  /** The tool definitions for a network: ALL on the pilot (or with no network); on the testnet, in its own words. */
+  function forNetwork(network?: string | null): readonly ToolDefinition[];
 }
 
 /** Tool arguments as the model sends them (JSON). */
@@ -979,7 +985,10 @@ export interface Measurement {
 }
 
 export interface Requirements {
+  /** A limit on every bullet or line ("each bullet under 15 words": 14), never also a limit on the whole text. */
+  max_words_per_item?: number;
   min_words?: number;
+  /** "under N", "fewer than N" and "less than N" are strict: N - 1. */
   max_words?: number;
   min_links?: number;
 }
@@ -993,8 +1002,10 @@ export namespace measure {
   /** Distinct http(s) URLs, in order, without trailing punctuation or an unbalanced closing bracket. */
   function links(text: string | null | undefined): string[];
   function hostOf(url: string): string;
-  /** Numeric requirements written in the agreed service text ("300-500 words", "at least 3 cited sources"). */
+  /** Numeric requirements written in the agreed service text ("300-500 words", "at least 3 cited sources"), outside ``` blocks. */
   function requirements(termsText: string | null | undefined): Requirements;
+  /** The word count of each bullet or numbered item (its marker left out), or of each non-empty line if there are none. */
+  function itemWordCounts(text: string | null | undefined): number[];
   /** Python's ipaddress.ip_address(address).is_global. Throws TypeError for a string that is no IP address. */
   function isGlobalAddress(address: string): boolean;
   function classifyAddresses(addresses: readonly string[]): 'public' | 'private';
@@ -1053,6 +1064,9 @@ export namespace sandbox {
   function render(service: SandboxService, result: TextStats | NotaryResult, text?: string | null): string;
   /** The parsed ```json block of a delivery, or null. Throws SyntaxError if the block is not JSON. */
   function parseResult(content: string | null | undefined): unknown;
+  /** The buyer's own words in a description: without the text to work on (its ``` blocks; else a final TEXT: label's text; else its only quoted string). */
+  function requestWords(description: string | null | undefined): string;
+  /** The exactly checkable service named in the title, deliverable or the buyer's own words (never in the text to work on). */
   function whichService(terms: {[field: string]: unknown}): SandboxService | null;
   /** null when the terms name no exactly checkable service. */
   function checkDelivery(terms: {[field: string]: unknown}, content: string): ExactCheck | null;
@@ -1125,6 +1139,10 @@ export const SANDBOX_AGENTS: readonly string[];
 export const TOUR_GOALS: Readonly<Record<1 | 2 | 3 | 4 | 5, string>>;
 export const TOUR_TEXTS: Readonly<Record<1 | 2 | 3 | 4 | 5, string>>;
 export const TOUR_AFTER: Readonly<Record<1 | 2 | 3 | 4 | 5, readonly [number, number]>>;
+/** Seconds a sandbox tour step asks the agent to wait before calling valun_status again (retry_after_seconds). */
+export const SANDBOX_RETRY_S: number;
+/** Seconds to wait while an owner approval is pending. */
+export const OWNER_RETRY_S: number;
 /** The read-only tools before which consentsOnReads signs the value-safe consents (decision D-3 a). */
 export const CONSENTS_ON_READ_TOOLS: readonly ToolName[];
 /** The keys of each consents_signed_now entry. */

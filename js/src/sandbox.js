@@ -98,10 +98,30 @@ export function parseResult(content) {
   return m ? JSON.parse(m[1]) : null;
 }
 
-/** The exactly checkable service named in the terms' service text, or null. */
+const ANY_FENCE = /```[\s\S]*?```/gu;
+
+/**
+ * The buyer's own words in a description (Python request_words): without the text to work on (its ``` blocks; else what
+ * follows a final TEXT: label; else its only quoted string), since that text can hold anything, a service's name or
+ * "sha256" included.
+ */
+export function requestWords(description) {
+  const d = text0(description);
+  const stripped = d.replace(ANY_FENCE, ' ');
+  if (stripped !== d) return stripped;
+  const m = LABEL.exec(d);
+  if (m) return d.slice(0, m.index);
+  return [...d.matchAll(QUOTED)].length === 1 ? d.replace(QUOTED, ' ') : d;
+}
+
+/**
+ * The exactly checkable service a deal asks for, named in its title, deliverable or the buyer's own words (never in the
+ * text to work on: a code review of a hash function is not a notary job), or null.
+ */
 export function whichService(terms) {
   const svc = or(get(terms, 'service'), {});
-  const hay = lower(['title', 'description', 'deliverable'].map(k => str(or(get(svc, k), ''))).join(' '));
+  const words = requestWords(str(or(get(svc, 'description'), '')));
+  const hay = lower([str(or(get(svc, 'title'), '')), words, str(or(get(svc, 'deliverable'), ''))].join(' '));
   for (const [name, s] of Object.entries(SERVICES)) {
     if (s.keywords.some(k => hay.includes(k))) return name;
   }

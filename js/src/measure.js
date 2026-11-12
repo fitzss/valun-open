@@ -8,7 +8,7 @@
 // were not checked. The regular expressions follow Python's semantics (its whitespace, re.IGNORECASE letters, Unicode
 // digits), so both implementations measure the same text the same way.
 
-import {DIGIT, PyError, WS, ci, digitsInt, or, rstripChars, truthy, typeName} from './py.js';
+import {DIGIT, PyError, WS, ci, digitsInt, or, rstripChars, strip, truthy, typeName} from './py.js';
 
 const S = `[${WS}]`;
 const URL_RE = new RegExp(`${ci('http')}${ci('s')}?://[^${WS}<>\\[\\]"'\`]+`, 'gu');
@@ -16,13 +16,34 @@ const HOST_RE = new RegExp(`^${ci('http')}${ci('s')}?://([^/:?#]+)`, 'u');
 const WORD_RE = /[A-Za-z0-9][A-Za-z0-9'\u2019-]*/g;
 const WORDS = `${ci('word')}${ci('s')}?`;
 const WORD_RANGE = new RegExp(`(${DIGIT}{2,5})${S}*(?:-|\u2013|\u2014|${ci('to')})${S}*(${DIGIT}{2,5})[${WS}\\-]*${WORDS}`, 'u');
-const MIN_WORDS = new RegExp(`(?:${ci('at least')}|${ci('minimum')}(?: ${ci('of')})?|${ci('min')}\\.?|${ci('no fewer than')})${S}*(${DIGIT}{2,5})${S}*${WORDS}`, 'u');
-const MAX_WORDS = new RegExp(`(?:${ci('at most')}|${ci('up to')}|${ci('maximum')}(?: ${ci('of')})?|${ci('max')}\\.?|${ci('under')}|${ci('no more than')})${S}*(${DIGIT}{2,5})${S}*${WORDS}`, 'u');
+const MIN_WORDS = new RegExp(`(?:${ci('at least')}|${ci('minimum')}(?: ${ci('of')})?|${ci('min')}\\.?|${ci('no fewer than')}|${ci('no less than')})${S}*(${DIGIT}{2,5})${S}*${WORDS}`, 'u');
+// A limit on the whole text. "under", "fewer than" and "less than" are strict: "under 400 words" allows at most 399
+// (STRICT). "no fewer than" and "no less than" are minimums (MIN_WORDS), never a limit.
+const MAX_PHRASE = `(${ci('at most')}|${ci('up to')}|${ci('maximum')}(?: ${ci('of')})?|${ci('max')}\\.?|${ci('under')}|(?<!${ci('no')} )${ci('fewer than')}|(?<!${ci('no')} )${ci('less than')}|${ci('no more than')})`;
+const MAX_WORDS = new RegExp(`${MAX_PHRASE}${S}*(${DIGIT}{1,5})${S}*${WORDS}`, 'u');
+// Python's \b (str patterns): a boundary between a word character (letter, number or _) and anything else.
+const W = '[\\p{L}\\p{N}_]';
+const WB = `(?:(?<=${W})(?!${W})|(?<!${W})(?=${W}))`;
+const ITEM_NAMES = `(?:${ci('bullet')}(?:${S}+${ci('point')})?|${ci('point')}|${ci('line')}|${ci('item')}|${ci('sentence')})`;
+// A limit on every bullet, line or item ("each bullet under 15 words", "every line at most 20 words", "15 words each"):
+// measured per item, never as a limit on the whole text.
+const PER_ITEM_SRC = `(?:${WB}(?:${ci('each')}|${ci('every')})(?:${S}+${ITEM_NAMES}${ci('s')}?)?|${WB}${ci('per')}${S}+(?:${ci('bullet')}|${ci('point')}|${ci('line')}|${ci('item')}|${ci('sentence')}))`
+  + `${WB}[^.\\n]{0,40}?${MAX_PHRASE}${S}*(${DIGIT}{1,5})${S}*${WORDS}|(${DIGIT}{1,5})${S}*${WORDS}${S}+(?:${ci('or')} (?:${ci('fewer')}|${ci('less')})${S}+)?${ci('each')}`;
+const PER_ITEM = new RegExp(PER_ITEM_SRC, 'u');
+const PER_ITEM_ALL = new RegExp(PER_ITEM_SRC, 'gu');
+const STRICT = ['under', 'fewer than', 'less than'];
+// Text quoted in ``` blocks is the material to work on (or, for a check, the terms and work being checked), never the
+// terms of this deal: its numbers are not requirements.
+const QUOTED = /```[\s\S]*?```/gu;
+const ITEM = new RegExp(`^${S}*(?:[-*\u2022]|${DIGIT}+[.)])${S}+`, 'u');
+// str.splitlines() boundaries (a trailing empty piece is harmless: only marked or non-empty lines are counted).
+const LINE_BREAK = /\r\n|[\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]/u;
 const MIN_LINKS = new RegExp(`${ci('at least')}${S}*(${DIGIT}{1,2})${S}*(?:${ci('cited')}${S}+|${ci('linked')}${S}+)?(?:${ci('sources')}|${ci('links')}|${ci('references')}|${ci('citations')})`, 'u');
 
 export const MAX_LINKS_CHECKED = 10;
-export const HOW_MEASURED = 'by your plugin, deterministically: words = runs of letters/digits; links = distinct http(s) URLs. '
-  + 'These are facts to use in your review, not a verdict on quality, accuracy or relevance.';
+export const HOW_MEASURED = 'by your Valun client, deterministically: words = runs of letters/digits; links = distinct http(s) '
+  + 'URLs; a limit on each bullet is measured per bullet (or per line). These are facts to use in your review, not a '
+  + 'verdict on quality, accuracy or relevance.';
 /** Shown instead of link_hosts when host checks are on but this runtime has no DNS resolver (JavaScript only). */
 export const HOSTS_NOT_CHECKED = 'Link hosts were not looked up: this Valun client has no DNS resolver in this runtime (for '
   + 'example a browser), so it cannot tell whether the link hosts exist. Judge the sources yourself.';
@@ -56,20 +77,39 @@ export function hostOf(url) {
   return m ? m[1].toLowerCase() : '';
 }
 
-/** Numeric requirements found in the agreed service text (title, description, deliverable). */
+const limit = (phrase, n) => (STRICT.includes(phrase.toLowerCase()) ? n - 1 : n);
+
+/** Numeric requirements found in the agreed service text (title, description, deliverable), outside ``` blocks. */
 export function requirements(termsText) {
-  const t = text0(termsText), req = {};
-  let m = WORD_RANGE.exec(t);
+  let t = text0(termsText).replace(QUOTED, ' ');
+  const req = {};
+  let m = PER_ITEM.exec(t);
+  if (m) {
+    req.max_words_per_item = m[2] !== undefined ? limit(m[1], digitsInt(m[2])) : digitsInt(m[3]);
+    t = t.replace(PER_ITEM_ALL, ' ');            // a limit on each item is not also a limit on the whole text
+  }
+  m = WORD_RANGE.exec(t);
   if (m) {
     const [lo, hi] = [digitsInt(m[1]), digitsInt(m[2])].sort((a, b) => a - b);
     req.min_words = lo;
     req.max_words = hi;
   } else {
     if ((m = MIN_WORDS.exec(t))) req.min_words = digitsInt(m[1]);
-    if ((m = MAX_WORDS.exec(t))) req.max_words = digitsInt(m[1]);
+    if ((m = MAX_WORDS.exec(t))) req.max_words = limit(m[1], digitsInt(m[2]));
   }
   if ((m = MIN_LINKS.exec(t))) req.min_links = digitsInt(m[1]);
   return req;
+}
+
+/** The word count of each bullet or numbered item (its marker left out), or of each non-empty line if there are none. */
+export function itemWordCounts(text) {
+  const lines = text0(text).split(LINE_BREAK);
+  const marked = [];
+  for (const ln of lines) {
+    const m = ITEM.exec(ln);
+    if (m) marked.push(ln.slice(m[0].length));
+  }
+  return (marked.length ? marked : lines.filter(ln => strip(ln) !== '')).map(wordCount);
 }
 
 // ---------- DNS: what the addresses a host name resolves to say about it ----------
@@ -191,6 +231,12 @@ export async function measure(text, termsText, {checkHosts = true, resolveHost =
     const ok = (lo === null || words >= lo) && (hi === null || words <= hi);
     const want = lo !== null && hi !== null ? `${lo}-${hi} words` : (lo !== null ? `at least ${lo} words` : `at most ${hi} words`);
     checks.push({requirement: want, measured: `${words} words`, met: ok});
+  }
+  if ('max_words_per_item' in req) {
+    const cap = req.max_words_per_item, counts = itemWordCounts(text);
+    checks.push({requirement: `at most ${cap} words in each bullet or line`,
+      measured: counts.length ? `${counts.length} items of ${counts.join(', ')} words` : 'no items',
+      met: counts.length > 0 && Math.max(...counts) <= cap});
   }
   if ('min_links' in req) {
     checks.push({requirement: `at least ${req.min_links} sources with links`, measured: `${found.length} distinct links`,

@@ -166,3 +166,39 @@ export const SET_LIMITS = deepFreeze({
 
 /** The nine tools, in the order every adapter lists them. */
 export const ALL = Object.freeze([STATUS, DIRECTORY, INBOX, DEAL, PROPOSE, RESPOND, DELIVER, REVIEW, SET_LIMITS]);
+
+export const TESTNET = 'valun-testnet-1';
+const SIM_TESTNET = 'Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = '
+  + '1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other independently '
+  + 'controlled agents.';
+/** The testnet's words for the pilot's, applied in this order (every one is in ALL: tests check it), then each word PC. */
+export const TESTNET_WORDS = Object.freeze([
+  [SIM, SIM_TESTNET],
+  ['Price in PC (whole pilot credits)', 'Price in nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG)'],
+  ["'never pay more than 20 PC for a brief', 'don't owe more than 40 PC in total', 'don't work for less than 15 PC'",
+    "'never pay more than 0.02 tERG for a brief', 'don't owe more than 0.04 tERG in total', 'don't work for less than "
+    + "0.015 tERG'; limits are in nanoERG: 0.02 tERG is 20000000"],
+  ['one line on what PC are', 'one line on what the amounts are'],
+].map(Object.freeze));
+
+function testnetText(v) {
+  if (typeof v === 'string') {
+    let s = v;
+    for (const [from, to] of TESTNET_WORDS) s = s.split(from).join(to);
+    return s.replace(/\bPC\b/g, 'nanoERG');
+  }
+  if (Array.isArray(v)) return v.map(testnetText);
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, testnetText(x)]));
+  return v;
+}
+
+const ALL_TESTNET = deepFreeze(ALL.map(testnetText));
+
+/**
+ * The tool definitions for a network (Python schemas.for_network): ALL on the pilot (or with no network); on the testnet
+ * the same tools in its own words (fix-inbox #15): its name, and amounts in nanoERG of Ergo testnet instead of the
+ * pilot's PC.
+ */
+export function forNetwork(network = null) {
+  return network === TESTNET ? ALL_TESTNET : ALL;
+}

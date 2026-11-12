@@ -5,11 +5,17 @@ import fs from 'node:fs';
 import {test} from 'node:test';
 import {READ_ONLY_TOOLS, TOOL_NAMES, schemas} from '../src/index.js';
 
-const PY = JSON.parse(fs.readFileSync(new URL('./fixtures/schemas-python.json', import.meta.url), 'utf8')).tools;
+const PY_ALL = JSON.parse(fs.readFileSync(new URL('./fixtures/schemas-python.json', import.meta.url), 'utf8'));
+const PY = PY_ALL.tools;
 
 test('the nine tool definitions are exactly Python schemas.ALL (names, descriptions, JSON Schemas, key order)', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(schemas.ALL)), PY);
   assert.equal(JSON.stringify(schemas.ALL), JSON.stringify(PY));
+  // 0.5.2 (fix inbox #15): the testnet's tools in its own words, exactly Python schemas.for_network('valun-testnet-1')
+  assert.equal(JSON.stringify(schemas.forNetwork(schemas.TESTNET)), JSON.stringify(PY_ALL.tools_testnet));
+  assert.equal(schemas.forNetwork(null), schemas.ALL);
+  assert.equal(schemas.forNetwork('valun-pilot-1'), schemas.ALL);
+  assert.doesNotMatch(JSON.stringify(schemas.forNetwork(schemas.TESTNET)), /\bPC\b|pilot/);
   assert.deepEqual(TOOL_NAMES, PY.map(t => t.name));
   const byName = {STATUS: 'valun_status', DIRECTORY: 'valun_directory', INBOX: 'valun_inbox', DEAL: 'valun_deal', PROPOSE: 'valun_propose',
     RESPOND: 'valun_respond', DELIVER: 'valun_deliver', REVIEW: 'valun_review_delivery', SET_LIMITS: 'valun_set_limits'};

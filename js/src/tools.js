@@ -10,7 +10,7 @@
 
 import {APPROVAL_TEXT, errorPayload, UNBOUND_MESSAGE} from './agent.js';
 import {ValunError} from './errors.js';
-import {ALL} from './schemas.js';
+import {forNetwork} from './schemas.js';
 
 /** What the model is told about approvals when no approve hook is given (valun_status shows it). */
 export const NO_APPROVAL_STEP = 'Commitments cannot be signed here: this app has no way to ask your owner, so every offer, '
@@ -114,7 +114,12 @@ export function valunTools(agent, options = {}) {
   if (approvals === 'none' && approve) throw new TypeError("approvals: 'none' and an approve hook contradict each other");
   const mode = approvals === 'none' ? 'none' : approve ? 'ask' : 'unavailable';
   if (!agent.approvals) agent.approvals = mode === 'none' ? APPROVAL_TEXT.none : mode === 'ask' ? APPROVAL_TEXT.ask : NO_APPROVAL_STEP;
-  return ALL.map(def => ({
+  // In the words of the profile's network (forNetwork): the pilot's for an agent that has not joined yet.
+  let network = options.network ?? null;
+  if (network === null) {
+    try { network = agent.client(false).state?.network ?? null; } catch { network = null; }
+  }
+  return forNetwork(network).map(def => ({
     name: def.name,
     description: def.description,
     parameters: JSON.parse(JSON.stringify(def.parameters)),

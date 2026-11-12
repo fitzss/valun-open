@@ -1596,8 +1596,21 @@ def parity():
                  'at le' + chr(0x17f) + 't 120 word' + chr(0x17f), 'mInImum 300 words', 'm' + chr(0x131) + 'n' + chr(0x131) + 'mum 300 words',
                  'm' + chr(0x130) + 'n 50 words', 'at least 3 lin' + chr(0x212a) + 's', 'at least 2 linked  references',
                  'at least 4cited sources', 'at least 1 citations', 'at least 123 sources', '300' + chr(0x1c) + '-' + chr(0x85) + '500 words',
-                 '12345678 words', '10-20words', '10 - 20 - words', 'between 300 and 500 words']
+                 '12345678 words', '10-20words', '10 - 20 - words', 'between 300 and 500 words',
+                 # 0.5.2 (fix inbox #1): limits on each item, strict limits, and numbers inside ``` blocks
+                 'exactly 3 bullets, each under 15 words, no other text', 'Each bullet must be at most 20 words.',
+                 '3 bullets, 12 words each', '3 bullets, 12 words or fewer each', 'every line under 9 words',
+                 'per bullet at most 8 words', 'each bullet point no more than 10 words', 'EACH SENTENCE UNDER 25 WORDS',
+                 'at most 100 words in total, each bullet under 15 words', 'fewer than 50 words', 'less than 50 words',
+                 'no fewer than 300 words', 'No less than 250 words, at most 400 words', 'under 9 words', 'under 5 words each',
+                 'reach under 5 words', chr(0xe9) + 'each under 5 words', 'each' + chr(0x3000) + 'line under 6 words',
+                 'Check a delivery.\n```\nTerms: under 20 words, at least 3 links\nWork: x\n```\nverdict',
+                 '300-500 words about this:\n```\nunder 20 words\n```', 'a ```300-500 words``` b', 'odd ``` fence under 30 words',
+                 'each l' + chr(0x130) + 'ne under 6 words', 'e' + chr(0x17f) + 'ach under 6 words']
     P['requirements'] = [[t, vm.requirements(t)] for t in req_texts]
+    P['item_word_counts'] = [[t, vm.item_word_counts(t)] for t in [
+        '- one two three four\n- five six seven\n\nIn one sentence: gist', '1. alpha beta\n2) gamma', '* a\n\u2022 b c\n-d e',
+        'A paragraph of five words.\n\nTwo words.', '', '   \n\t\n', 'x\r\ny\rz\u2028w', '\u3000- spaced bullet', '12. twelve items']]
     terms = 'A 300-500 word research brief with at least 3 cited sources.'
     P['measure'] = []
     for text, tt, hosts in [
@@ -1606,7 +1619,10 @@ def parity():
             ('a b c https://intranet.example/x https://cgnat.example/ https://mapped.example/ https://mapped-public.example/ https://localhost.example/ '
              'https://docs.python.org/3/ https://nowhere.invalid/ https://another.invalid/', 'under 10 words, at least 5 links', True),
             (' '.join(f'https://h{i}.invalid/' for i in range(12)), 'at least 3 links', True),
-            ('words ' * 20, 'at most 99 words', True)]:
+            ('words ' * 20, 'at most 99 words', True),
+            ('- one two three four\n- five six seven\n\nIn one sentence: a longer gist line than both', '2 bullets, each under 5 words', False),
+            ('- one two three four\n- five six seven', '2 bullets, each under 4 words', False), ('', 'each under 4 words', False),
+            ('- a b\n- c', 'at most 100 words in total, each bullet under 15 words', False)]:
         P['measure'].append({'text': text, 'terms': tt, 'check_hosts': hosts, 'out': vm.measure(text, tt, check_hosts=hosts)})
     P['dns'] = DNS
     import ipaddress
@@ -1624,6 +1640,8 @@ def parity():
              'of “curly quoted”', 'compare "a" with "b"', 'compare "a" with “b”', 'just "one" here', '""', '"line\nbreak"',
              'emoji "\U0001F600\U0001F600"', 'long "' + ('\U0001F600' * 9000) + '"', 'long "' + ('x' * 16001) + '"', '', None]
     P['extract_text'] = [[d, vs.extract_text(d)] for d in descs]
+    P['request_words'] = [[d, vs.request_words(d)] for d in descs + [
+        'Review it:\n```python\nimport hashlib\n```\nthanks', 'one ```a``` two ```b``` three', 'notary of "x y"', '']]
     stats_texts = ['a\r\nb\rc\nd', 'x\vy\fz' + chr(0x1c) + 'w' + chr(0x1d) + 'v' + chr(0x1e) + 'u' + chr(0x1f) + 't',
                    'p' + chr(0x85) + 'q' + chr(0x2028) + 'r' + chr(0x2029) + 's', 'trailing\n\n', 'İstanbul ISTANBUL istanbul',
                    'b a c b a b ' + ' '.join(f'w{i}' for i in range(15)), 'Ａ \U0001F600 Ａ \U0001F600 z', 'A​B C' + chr(0x180e) + 'D',
@@ -1658,7 +1676,12 @@ def parity():
     P['which_service'] = [[t, vs.which_service(t)] for t in [
         {'service': {'title': 'Text statistics please'}}, {'service': {'description': 'SHA-256 of this'}},
         {'service': {'title': 'write me a poem'}}, {'service': {'deliverable': 'a WORD COUNT'}}, {'service': {'title': 'notarize this'}},
-        {'service': {'title': 'notary and text-stats'}}, {'service': {'title': 5, 'description': None}}, {}, {'service': {}}]]
+        {'service': {'title': 'notary and text-stats'}}, {'service': {'title': 5, 'description': None}}, {}, {'service': {}},
+        # 0.5.2 (fix inbox #12): the text to work on names no service
+        {'service': {'title': 'code-review', 'description': 'Find bugs.\n```python\nh = hashlib.sha256(b"x")\n```'}},
+        {'service': {'title': 'hash', 'description': 'TEXT: notary sha256'}}, {'service': {'title': 'q', 'description': 'say "notary"'}},
+        {'service': {'title': 'notary', 'description': '```\nhello\n```'}}, {'service': {'description': 'notary of "The fox."'}},
+        {'service': {'description': 'compare "notary" with "a"'}}, {'service': {'description': 'word count\nTEXT: a b'}}]]
     times = ['2026-11-06T11:00:00.000Z', '2026-11-05T12:00:00.001Z', '2026-11-05T12:00:00.000Z', '2026-11-05T11:59:59.999Z',
              '2026-11-06T13:00:00+01:00', '2026-11-05T12:30:00+00:30', '2026-11-06T12:00:00', '2026-11-06', '2099-01-01T00:00:00Z',
              '2026-11-06T11:00Z', '2026-11-06T11Z', '2026-11-06 11:00:00Z', '20261106T110000Z', '2026-11-06T11:00:00,5Z',
@@ -1780,7 +1803,7 @@ def main():
     with open(os.path.join(TESTS, 'test_novation.py'), 'rb') as fh:     # the decision table novation_cases records
         tests_sha = {'test_novation.py': hashlib.sha256(fh.read().replace(b'\r\n', b'\n')).hexdigest()}
     write('schemas-python.json', {'generated_by': 'js/test/fixtures/generate_python_fixtures.py', 'python_sources_sha256': hashes,
-                                  'tools': schemas.ALL})
+                                  'tools': schemas.ALL, 'tools_testnet': schemas.for_network(schemas.TESTNET)})
     write('python-parity.json', {'generated_by': 'js/test/fixtures/generate_python_fixtures.py', 'python': sys.version.split()[0],
                                  'python_sources_sha256': hashes, 'python_tests_sha256': tests_sha, 't0_ms': T0_MS, 'nft': NFT,
                                  'denomination': DENOM,

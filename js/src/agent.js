@@ -188,6 +188,9 @@ export function tourGoal(step, unit = UNIT, scale = 1) {
 /** What you hold / owe (PC-sized, times the scale) once each step is done, as tracker totals (design 9.2). */
 export const TOUR_AFTER = Object.freeze({1: Object.freeze([3, 0]), 2: Object.freeze([1, 0]), 3: Object.freeze([0, 1]),
   4: Object.freeze([2, 0]), 5: Object.freeze([0, 0])});
+// How long a tour step asks the agent to wait before calling valun_status again (fix-inbox #8): the sandbox agents act
+// within a few seconds; an owner approval takes a person.
+export const SANDBOX_RETRY_S = 5, OWNER_RETRY_S = 60;
 
 /** The honest labels for a server with circulating credit (true) or without it: {settlement, not_settled, honest_labels, real_vs_simulated}. */
 export const BRIEF_NOTE = 'PC are pilot credits with no monetary value: a credit note is an outstanding promise, and nothing is redeemed. '
@@ -218,7 +221,7 @@ export function briefStatus(out) {
     b.consents_pending = get(d(get(out, 'clearing')), 'consents_pending');
   }
   const step = get(out, 'sandbox_next_steps');
-  if (isDict(step)) b.sandbox_next_steps = Object.fromEntries(['tour_step', 'next_calls', 'then'].filter(k => k in step).map(k => [k, step[k]]));
+  if (isDict(step)) b.sandbox_next_steps = Object.fromEntries(['tour_step', 'next_calls', 'then', 'retry_after_seconds'].filter(k => k in step).map(k => [k, step[k]]));
   b.note = get(out, 'network') === TESTNET ? BRIEF_NOTE_TESTNET : BRIEF_NOTE;
   return b;
 }
@@ -1530,12 +1533,14 @@ export class ValunAgent {
     const network = c.network ?? undefined, unitWord = c.unit ?? UNIT;
     const notary = sandbox.priceOf('notary', network);
     const stepOf = (cp, role) => (cp === SANDBOX_EXACT ? (role === 'payee' ? 1 : (hm >= notary ? 5 : 3)) : (role === 'payer' ? 2 : 4));
-    const plan = (step, calls, then) => {
+    const plan = (step, calls, then, retryAfter = SANDBOX_RETRY_S) => {
       const done = whole(step) && Object.hasOwn(TOUR_AFTER, step) ? TOUR_AFTER[step] : null;
       const scale = c.scale ?? 1;
       return {tour_step: step, of: 5, goal: tourGoal(step, unitWord, scale),
         next_calls: calls, then, with_the_sandbox_agents: held,
-        ...(done ? {when_done: {you_hold_PC: done[0] * scale, you_owe_PC: done[1] * scale}} : {})};
+        ...(done ? {when_done: {you_hold_PC: done[0] * scale, you_owe_PC: done[1] * scale}} : {}),
+        // fix-inbox #8: how long to wait before calling valun_status again, so a small model does not poll
+        ...(retryAfter ? {retry_after_seconds: retryAfter} : {})};
     };
     const call = (tool, args, why) => ({tool, arguments: args, why});
     const offer = (step, cp, role, service) => {
@@ -1550,7 +1555,7 @@ export class ValunAgent {
     if (listed.awaiting_your_owner.length) {
       const x = listed.awaiting_your_owner[0];
       return plan(null, [], `Your owner must first approve deal ${shown(get(x, 'deal_id'))} in the owner console; then call `
-        + 'valun_status again.');
+        + 'valun_status again.', OWNER_RETRY_S);
     }
     for (const x of listed.review_delivery) {
       const did = get(x, 'deal_id'), cp = get(x, 'counterparty');
@@ -1703,6 +1708,8 @@ export class ValunAgent {
     const c = this.client();
     const d = await c.deal(item(a, 'deal_id'));
     const out = Object.fromEntries(DEAL_FIELDS.map(k => [k, get(d, k)]));
+    const retryAfter = get(d, 'retry_after_seconds');
+    if (Number.isInteger(retryAfter)) out.retry_after_seconds = retryAfter;   // the server's hint while it waits on the other side (#8)
     if (truthy(get(d, 'pending_counter'))) {
       const pc = item(d, 'pending_counter');
       out.your_counter_offer_awaiting_owner = {version: item(pc, 'version'), state: item(pc, 'state'), terms: get(pc, 'terms'),
@@ -1746,7 +1753,9 @@ export class ValunAgent {
       const content = item(dl, 'content');
       const body = cpLength(content) <= 16000 ? content
         : cpSlice(content, 16000) + '\n[... truncated for display; full text is on the server ...]';
-      out.delivery = {title: get(dl, 'title'), sha256: item(dl, 'sha256'), bytes: item(dl, 'bytes'), late: get(dl, 'late'), content: body};
+      // the payee's public signature over (deliver, terms_hash, content sha256): a receipt can be verified (#3)
+      out.delivery = {title: get(dl, 'title'), sha256: item(dl, 'sha256'), bytes: item(dl, 'bytes'), late: get(dl, 'late'), content: body,
+        signature: get(dl, 'signature')};
       const reviewing = get(d, 'your_role') === 'payer' && ['delivered', 'note_failed'].includes(get(d, 'status'));
       out.delivery.measured_by_your_client = await measure(content, termsText(d), this.#measureOptions(reviewing && this.checkLinkHosts));
       const exact = checkDelivery(or(get(or(get(d, 'current'), {}), 'terms'), {}), content);
@@ -1762,10 +1771,15 @@ export class ValunAgent {
     if (truthy(get(d, 'credit_note'))) {
       const n = item(d, 'credit_note');
       const tn = or(get(n, 'tracker_note'), {});
+      // confirmation: the server's live reading of the tracker when it sends one (#13), else the recorded one
       out.credit_note = {state: get(n, 'state'), amount_PC: get(n, 'amount'), tracker_status: get(n, 'tracker_status'),
-        tracker_cumulative_total_PC: get(tn, 'amount_collected'), confirmation: get(tn, 'confirmation'),
+        tracker_cumulative_total_PC: get(tn, 'amount_collected'), confirmation: or(get(n, 'confirmation'), get(tn, 'confirmation')),
         verified_by_valun: get(n, 'verified_by_valun'), outstanding: get(n, 'outstanding'), settled: get(n, 'settled', false),
         issuer_pubkey: get(n, 'issuer_pubkey'), recipient_pubkey: get(n, 'recipient_pubkey')};
+      for (const k of ['redeemed', 'settled_how', 'pair_now']) {    // on chain: what redemption did to this note (#13)
+        const v = get(n, k);
+        if (v !== null && v !== undefined) out.credit_note[k] = v;
+      }
       if (truthy(get(n, 'signature_withheld'))) out.credit_note.signature = 'withheld until the Basis tracker records the note';
     }
     if ((get(d, 'payment') ?? null) !== null) out.payment = d.payment;   // circulating credit: the payment by transfer, as shown
