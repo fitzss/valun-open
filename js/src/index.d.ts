@@ -610,6 +610,28 @@ export class Client {
   processConsents(options?: {policy?: ConsentPolicy | null; nowMs?: number | null; valueSafeOnly?: boolean}): Promise<ConsentReport>;
   /** Bring the records up to date from GET /edges (every state verified), and prune what is past use (design 11). */
   syncEdges(options?: {nowMs?: number | null}): Promise<SyncEdgesResult>;
+
+  // Settlement on Ergo testnet (the Valun testnet network, valun-testnet-1). Signing needs ergo-lib, which this
+  // zero-dependency client loads only when it is installed: npm i ergo-lib-wasm-nodejs@0.28.0 (else ergo_lib_missing).
+  /** This agent's Ergo testnet address: the P2PK address of its Valun key. */
+  ergoAddress(): string;
+  /** GET /chain: the tracker's anchoring on Ergo testnet and the explorer links. */
+  chain(): Promise<Record<string, unknown>>;
+  /** GET /reserves: the Basis reserves the network's tracker sees, with their owners' handles. */
+  reserves(): Promise<Record<string, unknown>>;
+  /** Lock ergAmount nanoERG of this agent's own tERG in a Basis reserve (checked, signed here; sent only with broadcast). */
+  createReserve(ergAmount: number, options?: {broadcast?: boolean; nodeUrl?: string}): Promise<ReserveResult>;
+  /** Redeem amount nanoERG of issuer's note against its reserve (checked, signed here; submitted only with broadcast). */
+  redeem(issuer: string, amount: number, options?: {broadcast?: boolean}): Promise<RedeemResult>;
+}
+
+export interface ReserveResult {
+  broadcast: boolean; tx_id: string; nft_id: string; reserve_box_id: string; locked_nanoerg: number; address: string;
+  explorer: string | null; signed?: Record<string, unknown>;
+}
+export interface RedeemResult {
+  broadcast: boolean; tx_id: string | null; issuer: {id: string; handle: string; pubkey: string}; amount: number;
+  reserve_box_id: string; address: string; explorer: string | null; signed?: Record<string, unknown>;
 }
 
 /** The consent roles a local consent policy signs by itself, as the capability header names them. */
@@ -794,6 +816,31 @@ export function reasonProblem(kind: 'decline' | 'dispute', reason: unknown): {er
 type Bytes = Uint8Array;
 type BytesOrHex = Uint8Array | string;
 type U64 = number | bigint | string;
+
+/** Settlement on Ergo testnet (js/src/ergo.js). Signing loads ergo-lib-wasm-nodejs 0.28.0 when it is installed. */
+export namespace ergo {
+  const ERGO_LIB: 'ergo-lib-wasm-nodejs';
+  const ERGO_LIB_VERSION: '0.28.0';
+  const FEE: number;
+  const MIN_CHANGE: number;
+  const MINER_FEE_TREE: string;
+  function ergoLib(): Promise<unknown>;
+  function p2pkTree(pubkeyHex: string): string;
+  function p2pkAddress(pubkeyHex: string, options?: {testnet?: boolean}): string;
+  /** Scala HashMap iteration order of byte keys: the order the node serializes a context extension in. */
+  function scalaExtensionOrder(keys: number[]): number[];
+  /** JSON text with every `extension` object in Scala order (JSON.parse would sort its keys). */
+  function toErgoJson(value: unknown): string;
+  function nodeClient(base: string, options?: {fetchImpl?: typeof fetch; timeoutMs?: number}): {
+    info(): Promise<Record<string, unknown>>; assertTestnet(): Promise<Record<string, unknown>>;
+    unspentByAddress(address: string): Promise<Array<Record<string, unknown>>>; boxBinary(id: string): Promise<string>;
+    lastHeaders(n: number): Promise<Array<Record<string, unknown>>>; broadcast(tx: unknown): Promise<unknown>};
+  function checkReservePayload(payload: unknown, expected: {ergAmount: number; nftId: string; pubkeyHex: string; trackerNftId?: string;
+    reserveContract?: string}): Record<string, unknown>;
+  function checkRedemption(ergoLib: unknown, built: unknown, expected: {issuerPubkey: string; recipientPubkey: string; amount: number;
+    trackerNftId?: string; reserveTree?: string | null}): {reserve_box_id: string; reserve_value: number; paid_nanoerg: number; fee_inputs: number};
+  function signRedemption(built: unknown, secretHex: string): Promise<Record<string, unknown>>;
+}
 
 export namespace basis {
   const P: bigint;

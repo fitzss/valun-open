@@ -26,10 +26,23 @@ from . import basis as vb
 from . import novation as nv
 from . import records
 
-NETWORK = 'valun-pilot-1'
+NETWORK = 'valun-pilot-1'          # the default network: a profile enrolled before 0.5 is on it
 PROTOCOL = 'valun-deal/1'
 PILOT_TOKEN_ID = hashlib.sha256(b'valun-pilot-credit/1').hexdigest()
 UNIT = 'PC'
+# The networks this client signs for (the server's lib/pilot/units.mjs). Amounts are whole numbers in the unit; `scale`
+# sizes the defaults written in PC (a consent cap of 50 is 50 * scale), never a signed amount.
+#   valun-pilot-1    PC: synthetic credits on a pilot tracker with no chain.
+#   valun-testnet-1  nanoERG on Ergo TESTNET (test coins, no monetary value): ERG-denominated Basis notes.
+NETWORKS = {'valun-pilot-1': {'unit': 'PC', 'scale': 1}, 'valun-testnet-1': {'unit': 'nanoERG', 'scale': 1_000_000}}
+
+
+def network_of(name):
+    """The known network `name` ({unit, scale}); ValunError('unknown_network') for any other."""
+    if not isinstance(name, str) or name not in NETWORKS:
+        raise ValunError('unknown_network', f'this client does not know the Valun network {name!r} (it knows {", ".join(NETWORKS)}); '
+                                            'nothing was signed. Update valun if this is a new network.')
+    return NETWORKS[name]
 # Optional state keys a store keeps for this client (every store must keep them; all may be absent):
 #   issued    {pair: confirmed total} of this client's outgoing edges (the 0.3 record, kept equal to records' confirmed)
 #   records   per-edge confirmed state and pending entries (records.py), and records['paid_deals'] {deal_id: {route,
@@ -751,7 +764,7 @@ class Client:
                 'services': services}
         if wants:
             body['wants'] = wants
-        return self.request('POST', '/pilot/v1/join', body, auth=False)
+        return self._joined(self.request('POST', '/pilot/v1/join', body, auth=False))
 
     def join_sandbox(self, handle, operator, display_name='', about='', services='', wants=''):
         """Create a self-serve participant without an invite (where the server offers it), within small limits. Where the
@@ -764,7 +777,14 @@ class Client:
             body['services'] = services
         if wants:
             body['wants'] = wants
-        return self.request('POST', '/pilot/v1/join-sandbox', body, auth=False)
+        return self._joined(self.request('POST', '/pilot/v1/join-sandbox', body, auth=False))
+
+    def _joined(self, r):
+        """A join's answer: servers since 0.5 name their network, which this profile then enrolls on (a known one only)."""
+        if isinstance(r, dict) and r.get('network') is not None:
+            network_of(r['network'])
+            self.state['network'] = r['network']
+        return r
 
     def set_profile(self, display_name=None, about=None, services=None, wants=None):
         """Change this participant's public profile (PUT /pilot/v1/profile, the agent's token): only the fields given.
@@ -779,10 +799,14 @@ class Client:
         """Generate this agent's key locally and register its public key with a proof-of-possession signature."""
         if self.connected:
             raise ValunError('already_connected', 'this client already holds an enrolled key')
+        net = self.state.get('network') or NETWORK          # the network the join named (join, join_sandbox)
+        network_of(net)
         secret = vb.generate_secret()
         pk = vb.public_key(secret).hex()
-        sig = vb.sign(statement('enroll', NETWORK, participant_id, pk, sha256_hex(code)).encode('utf-8'), secret, bytes.fromhex(pk)).hex()
+        sig = vb.sign(statement('enroll', net, participant_id, pk, sha256_hex(code)).encode('utf-8'), secret, bytes.fromhex(pk)).hex()
         r = self.request('POST', '/pilot/v1/enroll', {'participant_id': participant_id, 'code': code, 'pubkey': pk, 'signature': sig}, auth=False)
+        if r.get('network') != net:
+            raise ValunError('wrong_network', f"the server enrolled this key on {r.get('network')!r}, not {net!r}")
         self.state.update({'participant_id': participant_id, 'pubkey': pk, 'network': r['network'],
                            'enrolled_at': _iso(datetime.now(timezone.utc)), 'issued': self.state.get('issued', {})})
         self.store.save_credentials(secret.hex(), r['agent_token'])
@@ -834,6 +858,22 @@ class Client:
             self._update(note)
         except (ValunError, OSError):
             pass
+
+    # ---------- the network (0.5) ----------
+    @property
+    def network(self):
+        """This profile's network: the one it enrolled on (state['network']), valun-pilot-1 for a profile without one."""
+        n = self.state.get('network') or NETWORK
+        network_of(n)
+        return n
+
+    @property
+    def unit(self):
+        return NETWORKS[self.network]['unit']
+
+    @property
+    def scale(self):
+        return NETWORKS[self.network]['scale']
 
     # ---------- pins (R13) ----------
     def _pinned(self):
@@ -931,7 +971,7 @@ class Client:
         h = terms_hash(t)
         if h != cur['terms_hash']:
             raise ValunError('hash_mismatch', 'the terms do not hash to the stated terms_hash; refusing to sign')
-        if t['network'] != NETWORK or t['protocol'] != PROTOCOL:
+        if t['network'] != self.network or t['protocol'] != PROTOCOL:
             raise ValunError('wrong_network', 'terms are for a different network or protocol')
         info = self.info()
         if t['tracker_nft_id'] != info['tracker_nft_id'] or t['denomination'] != info['denomination']:
@@ -960,12 +1000,12 @@ class Client:
         other = {'id': counterparty_id, 'pubkey': self._registered_key(counterparty_id)}
         me = {'id': self.participant_id, 'pubkey': self.pubkey}
         now = datetime.now(timezone.utc)
-        return {'protocol': PROTOCOL, 'network': NETWORK, 'tracker_nft_id': info['tracker_nft_id'], 'denomination': info['denomination'],
+        return {'protocol': PROTOCOL, 'network': self.network, 'tracker_nft_id': info['tracker_nft_id'], 'denomination': info['denomination'],
                 'deal_id': deal_id or ('vd_' + secrets.token_hex(8)), 'version': version, 'prior_terms_hash': prior,
                 'nonce': secrets.token_hex(16), 'proposer': self.participant_id,
                 'payer': me if role == 'payer' else other, 'payee': other if role == 'payer' else me,
                 'service': {'title': title, 'description': description, 'deliverable': deliverable},
-                'price': {'amount': int(price), 'unit': UNIT}, 'consideration': 'credit_note_on_delivery_accepted',
+                'price': {'amount': int(price), 'unit': self.unit}, 'consideration': 'credit_note_on_delivery_accepted',
                 'deliver_by': _iso(now + timedelta(hours=deliver_by_hours)), 'offer_expires_at': _iso(now + timedelta(hours=offer_ttl_hours))}
 
     def propose(self, counterparty_id, role, title, description, deliverable, price, deliver_by_hours=48, offer_ttl_hours=24):

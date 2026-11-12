@@ -982,7 +982,7 @@ export class ValunAgent {
     if (!(typeof did === 'string' && DEAL_ID.test(did))) throw new ValunError('bad_arguments', 'deal_id is missing or malformed');
     const d = await c.deal(did);
     if (!isDict(d)) throw new ValunError('approval_unbound', 'the deal could not be read');
-    const snap = {deal: d, checked: ValunAgent.#checked(d, did, c.participantId, name === 'valun_review_delivery')};
+    const snap = {deal: d, checked: ValunAgent.#checked(d, did, c.participantId, name === 'valun_review_delivery', c.unit)};
     snap.not_settled = labels(await this.#knownCirculation(c, d)).not_settled;
     if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept' && ValunAgent.#payWith(a) !== null) {
       snap.transfer = await this.#transferSnapshot(c, did, snap.checked, ValunAgent.#payWith(a));
@@ -1086,7 +1086,7 @@ export class ValunAgent {
    * The values an approval text is built from, each checked against what the call signs (prepare). Throws ValunError
    * when the deal as shown does not hold together.
    */
-  static #checked(d, did, me, delivery = false) {
+  static #checked(d, did, me, delivery = false, unit = UNIT) {
     const cur = get(d, 'current');
     if (!isDict(cur) || !truthy(cur)) throw new ValunError('no_offer', 'this deal has no visible offer');
     const t = get(cur, 'terms');
@@ -1108,8 +1108,8 @@ export class ValunAgent {
     const cpId = get(cp, 'id') ?? null;
     if (cpId !== null && cpId !== other) throw new ValunError('counterparty_mismatch', "the server's counterparty is not the other party in the terms");
     const price = get(t, 'price');
-    if (!(isDict(price) && whole(get(price, 'amount')) && get(price, 'unit') === UNIT)) {
-      throw new ValunError('bad_terms', 'the price is not a whole number of PC');
+    if (!(isDict(price) && whole(get(price, 'amount')) && get(price, 'unit') === unit)) {
+      throw new ValunError('bad_terms', `the price is not a whole number of ${unit}`);
     }
     const out = {terms: t, terms_hash: h, role, other_id: other, handle: get(cp, 'handle'), price: price.amount,
       service: isDict(get(t, 'service')) ? t.service : {}};

@@ -777,7 +777,7 @@ class ValunAgent:
         d = c.deal(did)
         if not isinstance(d, dict):
             raise vc.ValunError('approval_unbound', 'the deal could not be read')
-        snap = {'deal': d, 'checked': self._checked(d, did, c.participant_id, delivery=name == 'valun_review_delivery'),
+        snap = {'deal': d, 'checked': self._checked(d, did, c.participant_id, delivery=name == 'valun_review_delivery', unit=getattr(c, 'unit', vc.UNIT)),
                 'not_settled': labels(self._known_circulation(c, d))['not_settled']}
         if name == 'valun_review_delivery' and a.get('decision') == 'accept' and self._pay_with(a) is not None:
             snap['transfer'] = self._transfer_snapshot(c, did, snap['checked'], self._pay_with(a))
@@ -871,7 +871,7 @@ class ValunAgent:
         return r
 
     @staticmethod
-    def _checked(d, did, me, delivery=False):
+    def _checked(d, did, me, delivery=False, unit=vc.UNIT):
         """The values an approval text is built from, each checked against what the call signs (prepare). Raises
         ValunError when the deal as shown does not hold together."""
         cur = d.get('current')
@@ -899,8 +899,8 @@ class ValunAgent:
         if cp.get('id') is not None and cp.get('id') != other:
             raise vc.ValunError('counterparty_mismatch', "the server's counterparty is not the other party in the terms")
         price = t.get('price')
-        if not (isinstance(price, dict) and _whole(price.get('amount')) and price.get('unit') == vc.UNIT):
-            raise vc.ValunError('bad_terms', 'the price is not a whole number of PC')
+        if not (isinstance(price, dict) and _whole(price.get('amount')) and price.get('unit') == unit):
+            raise vc.ValunError('bad_terms', f'the price is not a whole number of {unit}')
         out = {'terms': t, 'terms_hash': h, 'role': role, 'other_id': other, 'handle': cp.get('handle'), 'price': price['amount'],
                'service': t['service'] if isinstance(t.get('service'), dict) else {}}
         if not delivery:

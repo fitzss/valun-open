@@ -104,6 +104,14 @@ def _on(value):
     return True if v in ('on', 'true', '1', 'yes') else False if v in ('off', 'false', '0', 'no') else None
 
 
+def _scaled_policy(policy, store):
+    """A default consent policy for this profile's network: its max_PC (written in PC) times the network's scale."""
+    p = dict(policy)
+    if p.get('max_PC') is not None:
+        p['max_PC'] = int(p['max_PC']) * vc.network_of(store.state.get('network') or vc.NETWORK)['scale']
+    return p
+
+
 def cmd_join(args):
     store = _store(args)
     if store.state.get('participant_id'):
@@ -241,7 +249,7 @@ def _join_steps(args, store, c, j, server, handle, owner, step):
     step[0] = 'settings'
     store.state.update({'server': server, 'approvals': 'ask' if args.approvals == 'console' else args.approvals,
                         'check_link_hosts': True,
-                        'consent_policy': dict(va.SANDBOX_CONSENT_POLICY if args.sandbox else va.INVITE_CONSENT_POLICY),
+                        'consent_policy': _scaled_policy(va.SANDBOX_CONSENT_POLICY if args.sandbox else va.INVITE_CONSENT_POLICY, store),
                         'consent_loop': 'on' if args.sandbox else 'off'})
     store.save()
     print(f"Joined Valun as {handle} ({pid}) on {server}. This agent's key was generated here; "
@@ -537,7 +545,7 @@ def cmd_config(args):
     elif key == 'consents.max_PC':
         if val.strip().lower() == 'none':
             changes = {key: None}
-        elif val.strip().isdigit() and int(val) <= 100000:
+        elif val.strip().isdigit() and int(val) <= 100000 * vc.network_of(store.state.get('network') or vc.NETWORK)['scale']:
             changes = {key: int(val)}
         else:
             print('consents.max_PC must be a whole number of PC (0..100000), or none for no cap')

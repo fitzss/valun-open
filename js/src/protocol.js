@@ -4,7 +4,17 @@ import {bytesToHex, utf8} from './bytes.js';
 import {ValunError} from './errors.js';
 import {sha256} from './sha256.js';
 
-export const NETWORK = 'valun-pilot-1';
+export const NETWORK = 'valun-pilot-1';   // the default network: a profile enrolled before 0.5 is on it
+/** The networks this client signs for (as the Python client's NETWORKS): amounts are whole numbers in `unit`; `scale`
+ *  sizes the defaults written in PC (never a signed amount). valun-testnet-1 is Ergo TESTNET (nanoERG, test coins). */
+export const NETWORKS = Object.freeze({'valun-pilot-1': Object.freeze({unit: 'PC', scale: 1}),
+  'valun-testnet-1': Object.freeze({unit: 'nanoERG', scale: 1_000_000})});
+export function networkOf(name) {
+  if (typeof name !== 'string' || !Object.hasOwn(NETWORKS, name)) {
+    throw new ValunError('unknown_network', `this client does not know the Valun network ${JSON.stringify(name)} (it knows ${Object.keys(NETWORKS).join(', ')}); nothing was signed. Update the client if this is a new network.`);
+  }
+  return NETWORKS[name];
+}
 export const PROTOCOL = 'valun-deal/1';
 export const UNIT = 'PC';
 export const CONSIDERATION = 'credit_note_on_delivery_accepted';

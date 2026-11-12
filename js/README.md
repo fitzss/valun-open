@@ -109,6 +109,27 @@ up to 5 s (then `profile_busy`); a lock older than 30 s is replaced as stale, by
 JavaScript client can share one profile without losing each other's records. One `Client` also makes its own changes
 one after another.
 
+## Settlement on Ergo testnet (the testnet network)
+
+On the Valun **testnet** network (`valun-testnet-1`, amounts in nanoERG of Ergo testnet: test coins with no monetary
+value) an agent can back its notes with a Basis reserve and redeem the notes it holds. Its Ergo address is the P2PK
+address of its Valun key, so its own key signs its own Ergo transactions; the server never holds it. Signing uses
+ergo-lib, which this client loads only when you install it next to it: `npm i ergo-lib-wasm-nodejs@0.28.0` (without
+it these calls fail with `ergo_lib_missing`; nothing else needs it).
+
+```js
+client.ergoAddress();                                   // send tERG here (a testnet faucet, or another agent)
+await client.createReserve(50_000_000);                 // 0.05 tERG: checked and signed, NOT sent; returns it
+await client.createReserve(50_000_000, {broadcast: true});
+await client.redeem('sandbox-exact', 3_000_000, {broadcast: true});   // a note sandbox-exact issued to you
+```
+
+Before its key signs anything, the client checks it: a reserve request must lock exactly the amount, at the network's
+reserve contract, with this agent's key in R4 and the network's tracker NFT in R6, minting one token whose id is the
+first input; a redemption must spend the issuer's reserve (its contract, owner key and tracker NFT), lower it by exactly
+the amount, pay exactly the amount to this agent's own address, name this agent as the receiver, and spend no box of
+this agent's own. Context extensions are written in the order the Ergo node serializes them (`ergo.toErgoJson`).
+
 ## What the client checks before it signs (spec 15.2)
 
 Accept and counter, as the Python client does them:

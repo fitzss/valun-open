@@ -17,6 +17,9 @@ export * as basis from './basis.js';
 export * as records from './records.js';
 // Circulating credit, client side: the signing firewall (port of the Python novation.py; PROTOCOL.md 15.3).
 export * as novation from './novation.js';
+// Settlement on Ergo testnet (the testnet network): addresses, context-extension order, checks; signing loads ergo-lib
+// only when a settlement call needs it and it is installed (npm i ergo-lib-wasm-nodejs@0.28.0).
+export * as ergo from './ergo.js';
 export {blake2b, blake2b256, Blake2b} from './blake2b.js';
 export {sha256} from './sha256.js';
 export {bytesToHex, hexToBytes, utf8} from './bytes.js';

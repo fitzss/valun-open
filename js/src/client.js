@@ -16,10 +16,11 @@ import {sign, verifyHex, noteMessage, publicKey, generateSecret as defaultGenera
 import {bytesToHex, hexToBytes, utf8} from './bytes.js';
 import {SignatureError, ValunError} from './errors.js';
 import * as nv from './novation.js';
-import {CONSIDERATION, NETWORK, PROTOCOL, UNIT, reasonProblem, sha256Hex, statement, statements, termsHash} from './protocol.js';
+import {CONSIDERATION, NETWORK, NETWORKS, PROTOCOL, networkOf, reasonProblem, sha256Hex, statement, statements, termsHash} from './protocol.js';
 import {get as pyGet, isDict, or, pyEq, repr, str, strip, truthy, cpSlice} from './py.js';
 import {randomBytes as defaultRandomBytes} from './random.js';
 import * as records from './records.js';
+import * as ergo from './ergo.js';
 
 const HOUR = 3600_000;
 const NOTE_CLOCK_TOLERANCE_MS = 10 * 60_000;
@@ -533,6 +534,10 @@ export class Client {
   }
 
   get participantId() { return this.state.participant_id ?? null; }
+  /** This profile's network: the one it enrolled on, valun-pilot-1 for a profile without one; its unit and scale. */
+  get network() { const n = this.state.network || NETWORK; networkOf(n); return n; }
+  get unit() { return NETWORKS[this.network].unit; }
+  get scale() { return NETWORKS[this.network].scale; }
 
   /** The feature tags the last GET /info this client read listed ([] before any; ['?'] for a malformed list). */
   get advertised() { return [...this.#advertised]; }
@@ -726,8 +731,8 @@ export class Client {
    * HUMAN operator, not for the agent. `wants` (the work it pays others for, public) is sent only when given.
    */
   async join({invite, handle, operator, displayName = '', about = '', services = '', wants = ''}) {
-    return this.request('POST', '/pilot/v1/join',
-      {invite, handle, display_name: displayName, operator, about, services, ...(wants ? {wants} : {})}, {auth: false});
+    return this.#joined(await this.request('POST', '/pilot/v1/join',
+      {invite, handle, display_name: displayName, operator, about, services, ...(wants ? {wants} : {})}, {auth: false}));
   }
 
   /** Join without an invite as a self-serve participant, where the server offers it (server release v14+,
@@ -735,8 +740,14 @@ export class Client {
    *  with the open network it may deal with any participant whose owner allows it, otherwise only with the sandbox
    *  agents. `services` (what it offers) and `wants` (what it pays others for), both public, are sent only when given. */
   async joinSandbox({handle, operator, displayName = '', about = '', services = '', wants = ''}) {
-    return this.request('POST', '/pilot/v1/join-sandbox',
-      {handle, display_name: displayName, operator, about, ...(services ? {services} : {}), ...(wants ? {wants} : {})}, {auth: false});
+    return this.#joined(await this.request('POST', '/pilot/v1/join-sandbox',
+      {handle, display_name: displayName, operator, about, ...(services ? {services} : {}), ...(wants ? {wants} : {})}, {auth: false}));
+  }
+
+  /** A join's answer: servers since 0.5 name their network, which this profile then enrolls on (a known one only). */
+  #joined(r) {
+    if (isObject(r) && r.network !== undefined && r.network !== null) { networkOf(r.network); this.state.network = r.network; }
+    return r;
   }
 
   /** Change this participant's public profile (PUT /pilot/v1/profile, the agent's token): only the fields given
@@ -757,9 +768,12 @@ export class Client {
     const secret = this.#generateSecret();
     try {
       const pk = bytesToHex(publicKey(secret));
-      const sig = bytesToHex(sign(utf8(statements.enroll(participantId, pk, code)), secret, hexToBytes(pk)));
+      const net = this.state.network || NETWORK;   // the network the join named (join, joinSandbox)
+      networkOf(net);
+      const sig = bytesToHex(sign(utf8(statements.enroll(participantId, pk, code, net)), secret, hexToBytes(pk)));
       const r = await this.request('POST', '/pilot/v1/enroll',
         {participant_id: participantId, code, pubkey: pk, signature: sig}, {auth: false});
+      if (isObject(r) && r.network !== net) throw new ValunError('wrong_network', `the server enrolled this key on ${JSON.stringify(r.network)}, not ${net}`);
       if (!isObject(r) || typeof r.agent_token !== 'string' || !r.agent_token) {
         throw new ValunError('bad_response', 'the enroll response carries no agent token');
       }
@@ -898,7 +912,9 @@ export class Client {
   async #networkInfo() {
     const info = await this.info();
     if (!isObject(info)) throw new ValunError('bad_response', 'GET /info did not return an object');
-    if (info.network !== NETWORK) throw new ValunError('wrong_network', `the server is on network ${JSON.stringify(info.network)}, not ${NETWORK}`);
+    if (!Object.hasOwn(NETWORKS, info.network) || (this.state.network && info.network !== this.state.network)) {
+      throw new ValunError('wrong_network', `the server is on network ${JSON.stringify(info.network)}, not ${this.network}`);
+    }
     if (this.#pin.trackerNftId && info.tracker_nft_id !== this.#pin.trackerNftId) {
       throw new ValunError('wrong_tracker', 'the server names a different tracker than the one pinned for this client');
     }
@@ -921,7 +937,7 @@ export class Client {
     checkTermsShape(t);
     const h = termsHash(t);
     if (h !== cur.terms_hash) throw new ValunError('hash_mismatch', 'the terms do not hash to the stated terms_hash; refusing to sign');
-    if (t.network !== NETWORK || t.protocol !== PROTOCOL) throw new ValunError('wrong_network', 'terms are for a different network or protocol');
+    if (t.network !== this.network || t.protocol !== PROTOCOL) throw new ValunError('wrong_network', 'terms are for a different network or protocol');
     const info = await this.#networkInfo();
     if (t.tracker_nft_id !== info.tracker_nft_id || t.denomination !== info.denomination) {
       throw new ValunError('wrong_tracker', 'terms name a different tracker or unit than this network');
@@ -949,7 +965,7 @@ export class Client {
     if (!Number.isSafeInteger(t.version) || (cur.version !== undefined && t.version !== cur.version)) {
       throw new ValunError('bad_terms', 'the terms version is not the offer version');
     }
-    if (t.price.unit !== UNIT || !Number.isSafeInteger(t.price.amount)) throw new ValunError('bad_terms', 'the price is not a whole number of PC');
+    if (t.price.unit !== this.unit || !Number.isSafeInteger(t.price.amount)) throw new ValunError('bad_terms', `the price is not a whole number of ${this.unit}`);
     if (t.consideration !== CONSIDERATION) throw new ValunError('bad_terms', `the consideration is not ${CONSIDERATION}`);
     if (!exactKeys(t, TERMS_FIELDS) || !exactKeys(t.payer, ['id', 'pubkey']) || !exactKeys(t.payee, ['id', 'pubkey'])
         || !exactKeys(t.price, ['amount', 'unit']) || !exactKeys(t.service, ['title', 'description', 'deliverable'])
@@ -1007,12 +1023,12 @@ export class Client {
     const me = {id: this.participantId, pubkey: this.pubkey};
     const now = this.#now();
     return {
-      protocol: PROTOCOL, network: NETWORK, tracker_nft_id: info.tracker_nft_id, denomination: info.denomination,
+      protocol: PROTOCOL, network: this.network, tracker_nft_id: info.tracker_nft_id, denomination: info.denomination,
       deal_id: dealId || ('vd_' + bytesToHex(this.#randomBytes(8))), version, prior_terms_hash: prior,
       nonce: bytesToHex(this.#randomBytes(16)), proposer: this.participantId,
       payer: role === 'payer' ? me : other, payee: role === 'payer' ? other : me,
       service: {title, description, deliverable},
-      price: {amount, unit: UNIT}, consideration: CONSIDERATION,
+      price: {amount, unit: this.unit}, consideration: CONSIDERATION,
       deliver_by: isoSeconds(now + dueH * HOUR), offer_expires_at: isoSeconds(now + ttlH * HOUR),
     };
   }
@@ -2237,6 +2253,78 @@ export class Client {
   }
 
   // ---------- circulating credit: my edges (PROTOCOL.md 18.14; design 6.1, 11) ----------
+  // ---------- settlement on Ergo testnet (the Valun testnet network, valun-testnet-1; js/src/ergo.js) ----------
+  // The agent's Ergo address is the P2PK address of its Valun key: its own key signs its own Ergo transactions, the
+  // server never holds it. Signing needs ergo-lib (npm i ergo-lib-wasm-nodejs@0.28.0); tERG have no monetary value.
+
+  #onTestnet() {
+    if (this.network !== 'valun-testnet-1') throw new ValunError('not_testnet', `settlement on Ergo testnet is for the Valun testnet network (valun-testnet-1); this profile is on ${this.network}`);
+    if (!this.pubkey) throw new ValunError('not_connected', 'this agent has no Valun signing key; the operator must enroll it');
+  }
+
+  /** This agent's Ergo testnet address (the P2PK address of its Valun key). */
+  ergoAddress() { this.#onTestnet(); return ergo.p2pkAddress(this.pubkey); }
+
+  /** GET /chain: the tracker's anchoring on Ergo testnet (tracker NFT, tracker box, digests) and the explorer links. */
+  chain() { return this.request('GET', '/pilot/v1/chain', undefined, {auth: false}); }
+
+  /** GET /reserves: the Basis reserves the network's tracker sees, with their owners' handles. */
+  reserves() { return this.request('GET', '/pilot/v1/reserves', undefined, {auth: false}); }
+
+  #ergoNode(chain, nodeUrl) {
+    const url = nodeUrl || chain?.node;
+    if (typeof url !== 'string' || !url) throw new ValunError('not_configured', 'no Ergo testnet node: GET /chain names none; pass nodeUrl');
+    return ergo.nodeClient(url, {fetchImpl: this.#fetch || globalThis.fetch, timeoutMs: this.#timeoutMs});
+  }
+
+  /**
+   * Lock `ergAmount` nanoERG (0.01 to 2 tERG) of this agent's own tERG in a Basis reserve: the tracker builds the
+   * payment request (POST /reserves/create), this client checks it (ergo.checkReservePayload), builds and signs the
+   * transaction from plain boxes at its own address, and with `broadcast` sends it to the Ergo testnet node. Without
+   * `broadcast` nothing leaves this client: the signed transaction is returned for a look first.
+   * Resolves to {broadcast, tx_id, nft_id, reserve_box_id, locked_nanoerg, address, explorer, signed?}.
+   */
+  async createReserve(ergAmount, {broadcast = false, nodeUrl = undefined} = {}) {
+    this.#onTestnet();
+    const chain = await this.chain();
+    const node = this.#ergoNode(chain, nodeUrl);
+    const secretHex = bytesToHex(this.#secretBytes());
+    const r = await ergo.buildReserve({secretHex, pubkeyHex: this.pubkey, ergAmount, node, trackerNftId: chain.tracker_nft_id,
+      reserveContract: chain.reserve_contract, payloadFor: nftId => this.request('POST', '/pilot/v1/reserves/create', {erg_amount: ergAmount, nft_id: nftId})});
+    const out = {broadcast: !!broadcast, tx_id: r.tx_id, nft_id: r.nft_id, reserve_box_id: r.reserve_box_id, locked_nanoerg: r.locked_nanoerg,
+      address: ergo.p2pkAddress(this.pubkey), explorer: chain.explorer ? `${chain.explorer}/en/transactions/${r.tx_id}` : null};
+    if (!broadcast) return {...out, signed: r.signed};
+    await node.broadcast(r.signed);
+    return out;
+  }
+
+  /**
+   * Redeem `amount` nanoERG of the note `issuer` (a participant id or handle) issued to this agent, against the issuer's
+   * reserve: the tracker builds the transaction and pays its fee (POST /redemption/build), this client checks it
+   * (ergo.checkRedemption: the issuer's reserve, nothing of this agent's own spent, exactly `amount` paid to this
+   * agent's address), adds its own proof for the reserve input, and with `broadcast` submits it
+   * (POST /redemption/submit). Without `broadcast` nothing is submitted (and the tracker's build lapses).
+   * Resolves to {broadcast, tx_id, issuer, amount, reserve_box_id, address, explorer, signed?}.
+   */
+  async redeem(issuer, amount, {broadcast = false} = {}) {
+    this.#onTestnet();
+    if (typeof issuer !== 'string' || !issuer) throw new ValunError('invalid_field', 'issuer: the participant id or handle of the agent whose note you hold');
+    if (!Number.isSafeInteger(amount) || amount < 1) throw new ValunError('invalid_field', 'amount: whole nanoERG to redeem');
+    const E = await ergo.ergoLib();
+    const chain = await this.chain();
+    const reserveTree = chain.reserve_contract ? E.Address.from_base58(chain.reserve_contract).to_ergo_tree().to_base16_bytes() : null;
+    const built = await this.request('POST', '/pilot/v1/redemption/build', {issuer, amount});
+    const issuerPubkey = built?.issuer?.pubkey;
+    if (typeof issuerPubkey !== 'string') throw new ValunError('bad_redemption', 'the server named no issuer key');
+    const checked = ergo.checkRedemption(E, built, {issuerPubkey, recipientPubkey: this.pubkey, amount, trackerNftId: chain.tracker_nft_id, reserveTree});
+    const signed = await ergo.signRedemption(built, bytesToHex(this.#secretBytes()));
+    const out = {broadcast: !!broadcast, tx_id: signed.id ?? null, issuer: built.issuer, amount, reserve_box_id: checked.reserve_box_id,
+      address: ergo.p2pkAddress(this.pubkey), explorer: chain.explorer && signed.id ? `${chain.explorer}/en/transactions/${signed.id}` : null};
+    if (!broadcast) return {...out, signed};
+    const sub = await this.request('POST', '/pilot/v1/redemption/submit', {signed_tx: signed, unsigned_tx: built.unsigned_tx});
+    return {...out, tx_id: sub?.tx_id ?? out.tx_id, explorer: sub?.explorer ?? out.explorer};
+  }
+
   /**
    * Bring this client's records up to date from GET /edges?since=<journal_seq>. Every EdgeState shown (the current rows
    * and the journal entries) is verified as its issuer's signature on the pinned tracker and unit (R2); one that does not
