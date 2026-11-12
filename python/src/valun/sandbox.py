@@ -565,7 +565,7 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
                 totals = edge_totals(c)
                 steps.append({'step': current, 'tracker_totals': totals, 'money_view': st.get('money_view')})
                 log(f'step {current} done. Your edges on the tracker: '
-                    + ('; '.join(f'{k}: {v} PC' for k, v in totals.items()) or 'none'))
+                    + ('; '.join(f"{k}: {v} {getattr(c, 'unit', vc.UNIT)}" for k, v in totals.items()) or 'none'))
             if step == 'done':
                 log(nxt.get('then') or 'The tour is complete.')
                 return {'done': True, 'steps': steps}

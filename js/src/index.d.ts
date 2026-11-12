@@ -765,6 +765,9 @@ export namespace records {
 export const NETWORK: 'valun-pilot-1';
 export const PROTOCOL: 'valun-deal/1';
 export const UNIT: 'PC';
+/** An amount as people read it, in its network's unit: '3 PC' on the pilot, '3000000 nanoERG (0.003 tERG)' on the
+ *  testnet; anything but a whole number as Python's str() shows it. */
+export function amountText(n: unknown, unit?: string): string;
 export const CONSIDERATION: 'credit_note_on_delivery_accepted';
 /** sha256hex("valun-pilot-credit/1"). */
 export const PILOT_TOKEN_ID: string;
@@ -1092,6 +1095,18 @@ export const SETTLEMENT_NOTE_CIRCULATION: string;
 export const NOT_SETTLED_CIRCULATION: string;
 export const HONEST_LABELS_CIRCULATION: Readonly<{what_basis_records: string; outstanding_promise: string; third_party: string}>;
 export const REAL_VS_SIMULATED_CIRCULATION: Readonly<{real: string; simulated: string; not_proven: string}>;
+/** The testnet network (valun-testnet-1): its deal labels (word for word the server's) and honest labels. */
+export const TESTNET: 'valun-testnet-1';
+export const SETTLEMENT_TESTNET: string;
+export const CIRCULATION_SETTLEMENT_TESTNET: string;
+export const HONEST_LABELS_TESTNET: Readonly<{what_basis_records: string; outstanding_promise: string; third_party: string}>;
+export const HONEST_LABELS_CIRCULATION_TESTNET: Readonly<{what_basis_records: string; outstanding_promise: string; third_party: string}>;
+export const REAL_VS_SIMULATED_TESTNET: Readonly<{real: string; simulated: string; not_proven: string}>;
+export const REAL_VS_SIMULATED_CIRCULATION_TESTNET: Readonly<{real: string; simulated: string; not_proven: string}>;
+/** TOUR_GOALS[step] in a network's unit (the amounts are PC-sized: times the scale). */
+export function tourGoal(step: unknown, unit?: string, scale?: number): string;
+/** The tracker a credit note goes to, in an approval text. */
+export function trackerWords(network: unknown): string;
 /** processConsents() runs at most this often (60 000 ms). */
 export const CONSENTS_EVERY_MS: number;
 /** The local consent policy an invited (sandbox) join writes. */
@@ -1114,8 +1129,9 @@ export const TOUR_AFTER: Readonly<Record<1 | 2 | 3 | 4 | 5, readonly [number, nu
 export const CONSENTS_ON_READ_TOOLS: readonly ToolName[];
 /** The keys of each consents_signed_now entry. */
 export const SIGNED_NOW_KEYS: readonly string[];
-/** The honest labels for a server with (true) or without circulating credit. */
-export function labels(circulating: boolean): {settlement: string; not_settled: string; honest_labels: typeof HONEST_LABELS;
+/** The honest labels for a server with (true) or without circulating credit, on `network` (the pilot unless it is
+ *  valun-testnet-1). */
+export function labels(circulating: boolean, network?: string | null): {settlement: string; not_settled: string; honest_labels: typeof HONEST_LABELS;
   real_vs_simulated: typeof REAL_VS_SIMULATED};
 /** The feature tags a GET /info answer lists ([] for none; ['?'] when malformed). */
 export function featuresOf(info: unknown): string[];
@@ -1123,7 +1139,7 @@ export function featuresOf(info: unknown): string[];
 export function consentPolicyInForce(local: unknown, mandate: unknown): {setoff: boolean; as_issuer: boolean; as_new_creditor: boolean;
   max_PC: unknown; local_policy: Record<string, unknown>; owner_mandate: Record<string, unknown>; how_to_change: string};
 /** consentPolicyInForce() as sentences. */
-export function clientSigns(policy: unknown): string[];
+export function clientSigns(policy: unknown, unit?: string): string[];
 /** Does this profile take part in consents (a consent policy, or payments by transfer)? A 0.3 profile does not. */
 export function wantsConsents(state: unknown): boolean;
 /** Client.processConsents() when due (at most once per everyMs); null when it did not run. */
@@ -1145,7 +1161,7 @@ export function shown(value: unknown): string;
 /** The last line of an approval text: `label` and `fields` quoted as one JSON line (long fields cut, and the label says so). */
 export function quoteLine(label: string, fields: Record<string, unknown>): string;
 /** What a binding deal means for this participant in `role` ('payer' or 'payee'). */
-export function owes(role: string, who: string, price: number): string;
+export function owes(role: string, who: string, price: number, unit?: string): string;
 /** Seen (or joined) within the last `hours` (default 24)? Times without a UTC offset do not count. */
 export function recentlyActive(lastSeen: unknown, hours?: number, joinedAt?: unknown, nowMs?: number): boolean;
 /** The current terms' title, description and deliverable, joined by spaces. */

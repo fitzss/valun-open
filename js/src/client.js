@@ -16,7 +16,7 @@ import {sign, verifyHex, noteMessage, publicKey, generateSecret as defaultGenera
 import {bytesToHex, hexToBytes, utf8} from './bytes.js';
 import {SignatureError, ValunError} from './errors.js';
 import * as nv from './novation.js';
-import {CONSIDERATION, NETWORK, NETWORKS, PROTOCOL, networkOf, reasonProblem, sha256Hex, statement, statements, termsHash} from './protocol.js';
+import {CONSIDERATION, NETWORK, NETWORKS, PROTOCOL, UNIT, networkOf, reasonProblem, sha256Hex, statement, statements, termsHash} from './protocol.js';
 import {get as pyGet, isDict, or, pyEq, repr, str, strip, truthy, cpSlice} from './py.js';
 import {randomBytes as defaultRandomBytes} from './random.js';
 import * as records from './records.js';
@@ -1238,8 +1238,8 @@ export class Client {
       for (const a of r.summary.advisories) {
         if (a.edge === pair) {
           const shown = a.shown, mine = a.recorded;
-          return refused(r, 'ledger_mismatch', `the server shows an older prior credit note to this payee (${shown.total} PC at `
-            + `${shown.timestamp}) than your own record (${mine.total} PC at ${mine.timestamp}). Ask your operator.`);
+          return refused(r, 'ledger_mismatch', `the server shows an older prior credit note to this payee (${shown.total} ${this.unit} at `
+            + `${shown.timestamp}) than your own record (${mine.total} ${this.unit} at ${mine.timestamp}). Ask your operator.`);
         }
       }
       return null;
@@ -1388,15 +1388,15 @@ export class Client {
     }
     const now = this.#knownTotal(pair);
     if (now !== null && !pyEq(now, tpl.prior_total)) {
-      throw new ValunError('ledger_mismatch', `the server says you have issued this payee ${tpl.prior_total} PC of credit notes so far; your own record says ${str(now)}. Ask your operator.`);
+      throw new ValunError('ledger_mismatch', `the server says you have issued this payee ${tpl.prior_total} ${this.unit} of credit notes so far; your own record says ${str(now)}. Ask your operator.`);
     }
     for (const p of this.#pendingNotes(pair, dealId)) {
       // Still pending, so neither its deal nor the edge shows its outcome. If the edge has reached its total, it may have
       // applied (an owner approved it after this client signed): paying the deal again could pay it twice.
       const total = pyGet(p, 'total');
       if (typeof total === 'number' && Number.isSafeInteger(total) && tpl.prior_total >= total) {
-        throw new ValunError('already_paid', `your earlier credit note for this deal (${total} PC in total to this payee) may `
-          + `already be on the tracker: the edge's total is ${tpl.prior_total} PC now. Refusing `
+        throw new ValunError('already_paid', `your earlier credit note for this deal (${total} ${this.unit} in total to this payee) may `
+          + `already be on the tracker: the edge's total is ${tpl.prior_total} ${this.unit} now. Refusing `
           + 'to pay it again. Ask your operator.');
       }
     }
@@ -1438,15 +1438,15 @@ export class Client {
         this.#confirmIn(state, pair, latest);
         for (const [st, p] of found) guarded(nv.markPaid, state, p.ref, 'note', pair, st.total, st.timestamp);
       });
-      Client.#refusePaidAgain(dealId, found.map(([, p]) => p));
+      Client.#refusePaidAgain(dealId, found.map(([, p]) => p), this.unit);
     }
   }
 
   /** A note of mine that applied paid its own deal: never sign a second payment for it, whatever the server says. */
-  static #refusePaidAgain(dealId, applied) {
+  static #refusePaidAgain(dealId, applied, unit = UNIT) {
     for (const p of applied) {
       if (pyGet(p, 'kind') === 'note' && pyGet(p, 'ref') === dealId) {
-        throw new ValunError('already_paid', `your credit note for this deal (${str(pyGet(p, 'total'))} PC) is already on the tracker, so `
+        throw new ValunError('already_paid', `your credit note for this deal (${str(pyGet(p, 'total'))} ${unit}) is already on the tracker, so `
           + 'the deal is paid; refusing to pay it again. Ask your operator.');
       }
     }
@@ -1530,7 +1530,7 @@ export class Client {
     expectedClaimTotal = undefined} = {}) {
     const claim = expectedClaimTotal ?? null;
     if (claim !== null && !natural(claim)) {
-      throw new ValunError('bad_arguments', 'expected_claim_total is a whole number of PC (the claim your owner saw); nothing was signed');
+      throw new ValunError('bad_arguments', `expected_claim_total is a whole number of ${this.unit} (the claim your owner saw); nothing was signed`);
     }
     this.#secretBytes().fill(0);
     const d = await this.deal(dealId);
@@ -1609,7 +1609,7 @@ export class Client {
     const claimShown = r => {
       const held = tpl.from_edge.before.total;
       if (claim !== null && !pyEq(held, claim)) {
-        return refused(r, 'stale_claim', `your claim on this issuer is ${str(held)} PC now, not the ${str(claim)} PC you reviewed; `
+        return refused(r, 'stale_claim', `your claim on this issuer is ${str(held)} ${this.unit} now, not the ${str(claim)} ${this.unit} you reviewed; `
           + 'nothing was signed. Review the payment again.');
       }
       return null;

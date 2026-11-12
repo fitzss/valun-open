@@ -1214,6 +1214,14 @@ def client_helpers():
                                                                      {'approved_payments': {}}, {'approved_payments': {'vd_1': 'x'}},
                                                                      {'transfer_attempts': {'vd_1': []}}, {'transfer_attempts': []})],
             'labels': [[c_, va.labels(c_)] for c_ in (True, False)],
+            # the testnet (valun-testnet-1, nanoERG): its labels and texts, as the pilot's above
+            'labels_testnet': [[c_, va.labels(c_, 'valun-testnet-1')] for c_ in (True, False)],
+            'client_signs_testnet': [[x[2], va.client_signs(x[2], 'nanoERG')] for x in in_force],
+            'amount_text': [[n, u, vc.amount_text(n, u)] for u in ('PC', 'nanoERG')
+                            for n in (0, 1, 3, -2_000_000, 3_000_000, 999_999_999, 1_000_000_000, 1_500_000_000, 123_456_789_012, '7')],
+            'tour_goal': [[s, u, k, va.tour_goal(s, u, k)] for s in (1, 2, 3, 4, 5, None) for u, k in (('PC', 1), ('nanoERG', 1_000_000))],
+            'owes': [[r, u, n, va.owes(r, 'bob', n, u)] for r in ('payer', 'payee') for u, n in (('PC', 3), ('nanoERG', 3_000_000))],
+            'tracker_words': [[n, va.tracker_words(n)] for n in (None, 'valun-pilot-1', 'valun-testnet-1')],
             'features_of': [[i, va.features_of(i)] for i in (None, [], {}, {'features': None}, {'features': []}, {'features': ['circulation/1']},
                                                            {'features': 'circulation/1'}, {'features': [1]}, {'features': ['a', 'b']})]}
 

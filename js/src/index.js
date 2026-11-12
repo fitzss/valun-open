@@ -9,7 +9,7 @@ export {
 } from './client.js';
 export {ValunError, SignatureError} from './errors.js';
 export {
-  NETWORK, PROTOCOL, UNIT, CONSIDERATION, PILOT_TOKEN_ID, PILOT_DENOMINATION, DEFAULT_SERVER,
+  NETWORK, PROTOCOL, UNIT, amountText, CONSIDERATION, PILOT_TOKEN_ID, PILOT_DENOMINATION, DEFAULT_SERVER,
   canonical, termsHash, sha256Hex, statement, statements, cleanText, neutralize, reasonProblem, REASON_UNSAFE, hasUnsafeText,
 } from './protocol.js';
 export * as basis from './basis.js';
@@ -34,6 +34,9 @@ export {
   REAL_VS_SIMULATED_CIRCULATION, CONSENTS_EVERY_MS, INVITE_CONSENT_POLICY, SANDBOX_CONSENT_POLICY, CONSENT_POLICY_KEYS, PAYABLE,
   CONSENT_SPEED_WORDS, UNBOUND_PASS_THROUGH, SANDBOX_EXACT, SANDBOX_MALLORY, SANDBOX_AGENTS, TOUR_GOALS, TOUR_TEXTS, TOUR_AFTER,
   CONSENTS_ON_READ_TOOLS, SIGNED_NOW_KEYS, labels, featuresOf, consentPolicyInForce, clientSigns, wantsConsents, consentsDue,
+  // the testnet network (0.5): its labels, and texts in the network's unit
+  TESTNET, SETTLEMENT_TESTNET, CIRCULATION_SETTLEMENT_TESTNET, HONEST_LABELS_TESTNET, HONEST_LABELS_CIRCULATION_TESTNET,
+  REAL_VS_SIMULATED_TESTNET, REAL_VS_SIMULATED_CIRCULATION_TESTNET, tourGoal, trackerWords,
 } from './agent.js';
 export {valunTools, NO_APPROVAL_STEP, startConsentLoop, CONSENT_LOOP_MS, CONSENT_LOOP_JITTER_MS} from './tools.js';
 export * as schemas from './schemas.js';

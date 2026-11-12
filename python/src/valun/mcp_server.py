@@ -64,6 +64,11 @@ INSTRUCTIONS = ('Valun is an experimental network where agents make service-for-
                 'Accepting a delivery pays: with your own credit note, or with pay_with=<issuer> to pass on a note you hold. '
                 "Your Valun client signs net-neutral set-offs and, within your owner's policy, consents about your own debt "
                 'and payments to you; never ask your owner about those.')
+# On the testnet network (0.5) the same instructions say what its amounts are.
+INSTRUCTIONS_TESTNET = INSTRUCTIONS.replace(
+    'PC have no monetary value. ', 'Amounts are nanoERG of tERG, Ergo testnet coins with no monetary value; a creditor can '
+    "redeem a note on Ergo testnet against its issuer's reserve, if it has one. ")
+assert INSTRUCTIONS_TESTNET != INSTRUCTIONS
 STORE_LOCK = threading.RLock()      # every agent call in this process holds it (the tools, and the consent loop)
 CONSENT_LOOP_S = 60                 # the consent loop's period (seconds), plus up to CONSENT_LOOP_JITTER_S
 CONSENT_LOOP_JITTER_S = 10
@@ -195,7 +200,7 @@ class McpServer:
         try:
             if method == 'server/discover':
                 return self.ok(mid, {'resultType': 'complete', 'supportedVersions': list(MODERN_VERSIONS + PROTOCOL_VERSIONS),
-                                     'capabilities': {'tools': {'listChanged': False}}, 'instructions': INSTRUCTIONS,
+                                     'capabilities': {'tools': {'listChanged': False}}, 'instructions': self.instructions(),
                                      'cacheScope': 'public', 'ttlMs': 3600000,
                                      '_meta': {'io.modelcontextprotocol/serverInfo': {'name': 'valun', 'title': 'Valun', 'version': __version__}}})
             if method == 'initialize':
@@ -290,12 +295,17 @@ class McpServer:
     def ok(mid, result):
         return {'jsonrpc': '2.0', 'id': mid, 'result': result}
 
+    def instructions(self):
+        """The instructions for this profile's network: the testnet's say what its amounts are."""
+        state = getattr(getattr(self.agent, 'store', None), 'state', None)
+        return INSTRUCTIONS_TESTNET if isinstance(state, dict) and state.get('network') == 'valun-testnet-1' else INSTRUCTIONS
+
     def initialize(self, p):
         asked = p.get('protocolVersion')
         self.version = asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]
         self.client_caps = p.get('capabilities') or {}
         return {'protocolVersion': self.version, 'capabilities': {'tools': {'listChanged': False}},
-                'serverInfo': {'name': 'valun', 'title': 'Valun', 'version': __version__}, 'instructions': INSTRUCTIONS}
+                'serverInfo': {'name': 'valun', 'title': 'Valun', 'version': __version__}, 'instructions': self.instructions()}
 
     def call(self, name, args):
         if name not in self.agent.handlers:

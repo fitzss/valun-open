@@ -65,6 +65,12 @@ CIRCULATION_SETTLEMENT = ('not settled: a credit note is an outstanding obligati
                           'redeemed, there is no reserve, and PC have no value.')
 SETTLEMENT_NOTE_CIRCULATION = CIRCULATION_SETTLEMENT
 NOT_SETTLED_CIRCULATION = CIRCULATION_SETTLEMENT
+PAY_THIRD_PARTY_CIRCULATION = ("Supported: paying a third party with your OWN credit note, or with a note you hold "
+                               "(pay_with: the issuer's debt to you moves to the payee; the issuer, you and the payee "
+                               "each sign, and the issuer's total debt does not change), and set-offs that cancel "
+                               'equal debts around a cycle (every party signs; no net position changes). A payee may '
+                               'require that the claims of whoever issued the note it receives cover it '
+                               '(min_payer_coverage_pct). ')
 HONEST_LABELS_CIRCULATION = {
     'what_basis_records': ('The pilot Basis tracker keeps one running total per key pair: what the issuer key owes the '
                            'recipient key, with a timestamp, signed by the issuer. A credit note raises it; with circulating '
@@ -72,11 +78,7 @@ HONEST_LABELS_CIRCULATION = {
                            'a cycle, each signed by every party whose total changes. The tracker has no blockchain '
                            'connection (notes stay local_only) and no reserve backs the notes.'),
     'outstanding_promise': CIRCULATION_SETTLEMENT,
-    'third_party': ("Supported: paying a third party with your OWN credit note, or with a note you hold (pay_with: the "
-                    "issuer's debt to you moves to the payee; the issuer, you and the payee each sign, and the issuer's "
-                    'total debt does not change), and set-offs that cancel equal debts around a cycle (every party signs; '
-                    'no net position changes). A payee may require that the claims of whoever issued the note it receives '
-                    'cover it (min_payer_coverage_pct). Not supported: redeeming a note for anything outside the pilot.'),
+    'third_party': PAY_THIRD_PARTY_CIRCULATION + 'Not supported: redeeming a note for anything outside the pilot.',
 }
 REAL_VS_SIMULATED_CIRCULATION = {
     'real': "signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt "
@@ -87,6 +89,55 @@ REAL_VS_SIMULATED_CIRCULATION = {
                  'opposite obligations',
     'not_proven': REAL_VS_SIMULATED['not_proven'],
 }
+# The same labels on the Valun testnet network (valun-testnet-1): word for word the server's testnet deal labels
+# (lib/pilot/core.mjs SETTLEMENT_TESTNET, CIRCULATION_SETTLEMENT_TESTNET). There a creditor can redeem a note on Ergo
+# testnet against its issuer's reserve, the tracker anchors its totals on Ergo testnet, and tERG have no monetary value.
+TESTNET = 'valun-testnet-1'
+TESTNET_REDEMPTION = ("Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted "
+                      'one; tERG are test coins with no monetary value.')
+SETTLEMENT_TESTNET = 'not settled until redeemed: issuing a credit note creates an outstanding obligation. ' + TESTNET_REDEMPTION
+CIRCULATION_SETTLEMENT_TESTNET = ('not settled until redeemed: a credit note is an outstanding obligation. With circulating '
+                                  'credit it can move to a new creditor (debt transfer, signed by the debtor and both '
+                                  'creditors) or be cancelled against an equal opposite obligation (set-off, signed by every '
+                                  'party; no net position changes); a netting is final once a tracker box on Ergo testnet '
+                                  'commits it. ' + TESTNET_REDEMPTION)
+_TESTNET_TRACKER = ('The Valun testnet Basis tracker keeps one running total per key pair: what the issuer key owes the '
+                    'recipient key, with a timestamp, signed by the issuer, and anchors them on Ergo testnet (a tracker box '
+                    'commits the digest of every total). ')
+_TESTNET_BACKING = "A note is backed only by its issuer's reserve on Ergo testnet, if the issuer posted one."
+HONEST_LABELS_TESTNET = {
+    'what_basis_records': _TESTNET_TRACKER + 'A credit note raises a total. ' + _TESTNET_BACKING,
+    'outstanding_promise': SETTLEMENT_TESTNET,
+    'third_party': HONEST_LABELS['third_party'],
+}
+HONEST_LABELS_CIRCULATION_TESTNET = {
+    'what_basis_records': (_TESTNET_TRACKER + 'A credit note raises a total; with circulating credit a debt transfer moves '
+                           'part of it to a new creditor and a set-off lowers the totals around a cycle, each signed by every '
+                           'party whose total changes. ' + _TESTNET_BACKING),
+    'outstanding_promise': CIRCULATION_SETTLEMENT_TESTNET,
+    'third_party': PAY_THIRD_PARTY_CIRCULATION + "A creditor redeems a note only against its issuer's reserve on Ergo testnet, in tERG.",
+}
+REAL_VS_SIMULATED_TESTNET = {
+    'real': ("signatures by each participant's own key; Valun's acceptance and approval records; credit notes held by a "
+             'real Basis tracker (read back and reconciled by Valun) and anchored on Ergo testnet; reserves and '
+             'redemptions are Ergo testnet transactions'),
+    'simulated': 'the value: tERG are Ergo testnet coins with no monetary value',
+    'not_proven': ('that delivered work is good (Valun records statements, it does not judge work); that any participant '
+                   'will honour a credit note beyond its reserve'),
+}
+REAL_VS_SIMULATED_CIRCULATION_TESTNET = {
+    'real': ("signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt "
+             'transfers and set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your '
+             'client against the signatures) and anchored on Ergo testnet; reserves and redemptions are Ergo testnet '
+             'transactions'),
+    'simulated': REAL_VS_SIMULATED_TESTNET['simulated'],
+    'not_proven': REAL_VS_SIMULATED_TESTNET['not_proven'],
+}
+# What a unit is, after its name (valun_status unit), and the last words of how to read the money view.
+UNIT_WORDS = {'PC': ' (pilot credits, no monetary value)', 'nanoERG': ' (of tERG: Ergo testnet coins with no monetary value)'}
+VALUE_WORDS = {'PC': 'Nothing is redeemed and PC have no value.',
+               'nanoERG': "A creditor can redeem a note on Ergo testnet against its issuer's reserve, if it has one; tERG "
+                          'have no monetary value.'}
 CIRCULATION = 'circulation/1'
 CONSENTS_EVERY_MS = 60_000      # process_consents() runs at most this often (state consents_last_run_ms; design 6.6)
 # The local consent policy a join writes (design 6.6, 8): an invited participant's client signs set-offs and transfers of
@@ -122,12 +173,24 @@ TOUR_TEXTS = {1: 'Valun sandbox tour, step 1: my first paid job.',
               3: 'Valun sandbox tour, step 3: paid with my own note.',
               4: 'Valun sandbox tour, step 4: I sell my work.',
               5: 'Valun sandbox tour, step 5: paid with a note I hold again.'}
-# What you hold / owe (PC) once each step is done, as tracker totals (design 9.2).
+
+
+def tour_goal(step, unit=vc.UNIT, scale=1):
+    """TOUR_GOALS[step] in a network's unit: its prices and cycle amounts are PC-sized (times the scale)."""
+    goal = TOUR_GOALS.get(step, 'The tour is complete.')
+    return goal if unit == 'PC' else re.sub(r'\b(\d+) PC\b', lambda m: vc.amount_text(int(m.group(1)) * scale, unit), goal)
+
+
+# What you hold / owe (PC-sized, times the scale) once each step is done, as tracker totals (design 9.2).
 TOUR_AFTER = {1: (3, 0), 2: (1, 0), 3: (0, 1), 4: (2, 0), 5: (0, 0)}
 
 
 BRIEF_NOTE = ('PC are pilot credits with no monetary value: a credit note is an outstanding promise, and nothing is redeemed. '
               'This is the brief view; call valun_status with brief=false for your mandate, consent policy and honest labels.')
+BRIEF_NOTE_TESTNET = ('Amounts are nanoERG of tERG, Ergo testnet coins with no monetary value: a credit note is an outstanding '
+                      "promise, which its creditor can redeem on Ergo testnet against the issuer's reserve, if it has one. "
+                      'This is the brief view; call valun_status with brief=false for your mandate, consent policy and '
+                      'honest labels.')
 
 
 def brief_status(out):
@@ -152,13 +215,19 @@ def brief_status(out):
     step = out.get('sandbox_next_steps')
     if isinstance(step, dict):
         b['sandbox_next_steps'] = {k: step[k] for k in ('tour_step', 'next_calls', 'then') if k in step}
-    b['note'] = BRIEF_NOTE
+    b['note'] = BRIEF_NOTE_TESTNET if out.get('network') == TESTNET else BRIEF_NOTE
     return b
 
 
-def labels(circulating):
-    """The honest labels for a server with circulating credit (True) or without it: {settlement, not_settled,
-    honest_labels, real_vs_simulated}."""
+def labels(circulating, network=None):
+    """The honest labels for a server with circulating credit (True) or without it, on `network` (the pilot unless it
+    is valun-testnet-1): {settlement, not_settled, honest_labels, real_vs_simulated}."""
+    if network == TESTNET:
+        if circulating:
+            return {'settlement': CIRCULATION_SETTLEMENT_TESTNET, 'not_settled': CIRCULATION_SETTLEMENT_TESTNET,
+                    'honest_labels': HONEST_LABELS_CIRCULATION_TESTNET, 'real_vs_simulated': REAL_VS_SIMULATED_CIRCULATION_TESTNET}
+        return {'settlement': SETTLEMENT_TESTNET, 'not_settled': SETTLEMENT_TESTNET, 'honest_labels': HONEST_LABELS_TESTNET,
+                'real_vs_simulated': REAL_VS_SIMULATED_TESTNET}
     if circulating:
         return {'settlement': SETTLEMENT_NOTE_CIRCULATION, 'not_settled': NOT_SETTLED_CIRCULATION,
                 'honest_labels': HONEST_LABELS_CIRCULATION, 'real_vs_simulated': REAL_VS_SIMULATED_CIRCULATION}
@@ -194,10 +263,10 @@ def consent_policy_in_force(local, mandate):
                               'the owner console; the stricter of the two applies')}
 
 
-def client_signs(policy):
+def client_signs(policy, unit=vc.UNIT):
     """consent_policy_in_force() as sentences: what the client signs by itself, without asking the owner."""
     cap = policy.get('max_PC')
-    upto = f', up to {cap} PC each' if _whole(cap) else ''
+    upto = f', up to {vc.amount_text(cap, unit)} each' if _whole(cap) else ''
     out = []
     if policy.get('setoff'):
         out.append(f'set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change){upto}')
@@ -301,10 +370,16 @@ def quote_line(label, fields):
     return f'{label} (quoted exactly{note}): ' + quoted(out)
 
 
-def owes(role, who, price):
+def owes(role, who, price, unit=vc.UNIT):
     """What a binding deal means for this participant, in the role the signed terms give it."""
-    return (f'after you accept their delivery you will owe {who} {price} PC (your credit note).' if role == 'payer'
-            else f'you must deliver; {who} would then owe you {price} PC (their credit note).')
+    p = vc.amount_text(price, unit)
+    return (f'after you accept their delivery you will owe {who} {p} (your credit note).' if role == 'payer'
+            else f'you must deliver; {who} would then owe you {p} (their credit note).')
+
+
+def tracker_words(network):
+    """The tracker a credit note goes to, in an approval text."""
+    return 'the Valun testnet tracker (anchored on Ergo testnet)' if network == TESTNET else 'the pilot tracker'
 
 
 def limits_body(args):
@@ -761,11 +836,13 @@ class ValunAgent:
     def _snapshot(self, name, a):
         """The one read an approval is bound to and described from (checked: see prepare)."""
         c = self.client()
+        unit, net = getattr(c, 'unit', vc.UNIT), getattr(c, 'network', vc.NETWORK)
         if name == 'valun_propose':
             other = self._resolve(c, a.get('counterparty'))
             if not (isinstance(other, dict) and isinstance(other.get('id'), str) and other['id']):
                 raise vc.ValunError('approval_unbound', 'the directory names no participant id')
-            return {'counterparty': other, 'not_settled': labels(self._known_circulation(c))['not_settled']}
+            return {'counterparty': other, 'not_settled': labels(self._known_circulation(c), net)['not_settled'],
+                    'unit': unit, 'network': net}
         if name == 'valun_set_limits':
             me = c.me()
             if not isinstance(me, dict):
@@ -777,11 +854,11 @@ class ValunAgent:
         d = c.deal(did)
         if not isinstance(d, dict):
             raise vc.ValunError('approval_unbound', 'the deal could not be read')
-        snap = {'deal': d, 'checked': self._checked(d, did, c.participant_id, delivery=name == 'valun_review_delivery', unit=getattr(c, 'unit', vc.UNIT)),
-                'not_settled': labels(self._known_circulation(c, d))['not_settled']}
+        snap = {'deal': d, 'checked': self._checked(d, did, c.participant_id, delivery=name == 'valun_review_delivery', unit=unit),
+                'not_settled': labels(self._known_circulation(c, d), net)['not_settled'], 'unit': unit, 'network': net}
         if name == 'valun_review_delivery' and a.get('decision') == 'accept' and self._pay_with(a) is not None:
             snap['transfer'] = self._transfer_snapshot(c, did, snap['checked'], self._pay_with(a))
-            snap['not_settled'] = NOT_SETTLED_CIRCULATION
+            snap['not_settled'] = labels(True, net)['not_settled']
         return snap
 
     def _transfer_snapshot(self, c, did, chk, pay_with):
@@ -991,7 +1068,7 @@ class ValunAgent:
 
     @staticmethod
     def _text_propose(a, snap):
-        other = snap['counterparty']
+        other, u = snap['counterparty'], snap.get('unit', vc.UNIT)
         role = a.get('role')
         if role not in ('payer', 'payee'):
             raise vc.ValunError('bad_role', 'role must be payer or payee')
@@ -999,42 +1076,44 @@ class ValunAgent:
         who = shown(other.get('handle'))
         return '\n'.join([
             f"Valun - sign a NEW OFFER to {who} ({shown(other['id'])}):",
-            f'  you are the {ROLE_WORDS[role]}; price: {price} PC',
+            f'  you are the {ROLE_WORDS[role]}; price: {vc.amount_text(price, u)}',
             f'  deliver within {due} h; the offer stays open {ttl} h',
-            f'If {who} accepts, the deal is binding without asking you again: ' + owes(role, who, price),
+            f'If {who} accepts, the deal is binding without asking you again: ' + owes(role, who, price, u),
             snap.get('not_settled', NOT_SETTLED),
             quote_line('Offer text written by your agent', {k: a.get(k) for k in ('title', 'description', 'deliverable')})])
 
     def _text_accept(self, a, snap):
         chk = snap['checked']
         t, who, price, svc = chk['terms'], self._who(chk), chk['price'], chk['service']
+        u = snap.get('unit', vc.UNIT)
         return '\n'.join([
             f"Valun - ACCEPT {who}'s offer ({shown(chk['other_id'])}, deal {shown(t['deal_id'])}, version {shown(t.get('version'))}):",
-            f"  you are the {ROLE_WORDS[chk['role']]}; price: {price} PC; deliver by {shown(t.get('deliver_by'))}",
+            f"  you are the {ROLE_WORDS[chk['role']]}; price: {vc.amount_text(price, u)}; deliver by {shown(t.get('deliver_by'))}",
             f"  terms hash {chk['terms_hash'][:16]}... (recomputed from these terms; your Valun client checks it again before signing)",
-            'This makes the deal binding on both sides: ' + owes(chk['role'], who, price),
+            'This makes the deal binding on both sides: ' + owes(chk['role'], who, price, u),
             snap.get('not_settled', NOT_SETTLED),
             quote_line(f'Offer text written by {who}', {k: svc.get(k) for k in ('title', 'description', 'deliverable')})])
 
     def _text_counter(self, a, snap):
         chk = snap['checked']
         t, who, old, svc = chk['terms'], self._who(chk), chk['price'], chk['service']
+        u = snap.get('unit', vc.UNIT)
         # Exactly what Client.counter() signs: these arguments, and the rest copied from the terms pinned by hash.
         price = int(a['price']) if a.get('price') is not None else old
         hours = a.get('deliver_within_hours')
         if hours is not None and not _whole(hours):
             raise vc.ValunError('bad_arguments', 'deliver_within_hours must be a whole number of hours')
         texts = [k for k in ('title', 'description', 'deliverable') if a.get(k)]
-        changes = ([f'price {old} -> {price} PC'] if a.get('price') is not None else []) \
+        changes = ([f'price {old} -> {price} {u}'] if a.get('price') is not None else []) \
             + ([f'deliver within {hours} h'] if hours is not None else []) + [f'{k} (quoted below)' for k in texts]
         return '\n'.join([
             f"Valun - sign a COUNTER-OFFER to {who} ({shown(chk['other_id'])}, deal {shown(t['deal_id'])}), "
             f"replacing their version {shown(t.get('version'))}:",
-            f"  you are the {ROLE_WORDS[chk['role']]}; price: {price} PC",
+            f"  you are the {ROLE_WORDS[chk['role']]}; price: {vc.amount_text(price, u)}",
             '  deliver ' + (f'within {hours} h of signing' if hours is not None else
                             f"by {shown(t.get('deliver_by'))} as in their offer (rounded down to the hour, at least 1 h after signing)"),
             '  your agent changes: ' + (', '.join(changes) or 'nothing') + '; the counter-offer stays open 24 h',
-            f'If {who} accepts it, the deal is binding without asking you again: ' + owes(chk['role'], who, price),
+            f'If {who} accepts it, the deal is binding without asking you again: ' + owes(chk['role'], who, price, u),
             snap.get('not_settled', NOT_SETTLED),
             quote_line(f"Counter-offer text, with what your agent did not change copied from {who}'s offer",
                        {k: a[k] if a.get(k) else svc.get(k) for k in ('title', 'description', 'deliverable')})])
@@ -1042,6 +1121,7 @@ class ValunAgent:
     def _text_review(self, a, snap):
         chk = snap['checked']
         t, who, price, svc, dl, content = chk['terms'], self._who(chk), chk['price'], chk['service'], chk['delivery'], chk['content']
+        u = snap.get('unit', vc.UNIT)
         m = measure.measure(content, ' '.join(str(svc.get(k) or '') for k in ('title', 'description', 'deliverable')), check_hosts=False)
         facts = [f"{x['requirement']}: {x['measured']} ({'met' if x['met'] else 'NOT met'})" for x in m['checks_against_agreed_terms']]
         try:
@@ -1054,11 +1134,12 @@ class ValunAgent:
                                              'DOES NOT MATCH (differs in ' + ', '.join(shown(k) for k in (exact.get('differs_in') or [])) + ')'))
         return '\n'.join([
             f"Valun - ACCEPT {who}'s delivery ({shown(chk['other_id'])}, deal {shown(t['deal_id'])}) and ISSUE A CREDIT NOTE "
-            f'of {price} PC to {who}:',
+            f'of {vc.amount_text(price, u)} to {who}:',
             f"  delivered: {len(content.encode('utf-8'))} bytes, sha256 {chk['sha256'][:16]}... (recomputed from the text measured here)",
             '  measured: ' + ('; '.join(facts) or f"{m['word_count']} words, {len(m['links'])} links"),
             f"  agreed terms hash {chk['terms_hash'][:16]}... (your Valun client checks both hashes again before signing)",
-            f'Your agent signs a Basis note; the pilot tracker then records that you owe {who} {price} PC more.',
+            f'Your agent signs a Basis note; {tracker_words(snap.get("network"))} then records that you owe {who} '
+            f'{vc.amount_text(price, u)} more.',
             snap.get('not_settled', NOT_SETTLED),
             quote_line('Delivery title and agreed service text', {'delivery_title': dl.get('title') or '', 'title': svc.get('title'),
                                                                   'deliverable': svc.get('deliverable')})])
@@ -1067,6 +1148,7 @@ class ValunAgent:
         """A delivery acceptance paid with a held note (pay_with): what moves, from the checked transfer template."""
         chk, tr = snap['checked'], snap['transfer']
         t, svc, dl, content, price = chk['terms'], chk['service'], chk['delivery'], chk['content'], chk['price']
+        u = snap.get('unit', vc.UNIT)
         payee = self._who(chk)
         iss = tr['issuer']
         issuer = shown(iss['handle']) if isinstance(iss.get('handle'), str) and iss['handle'] else shown(iss['id'])
@@ -1083,10 +1165,11 @@ class ValunAgent:
             facts.append('exact result: ' + ('matches the agreed text' if exact.get('exact_result_matches') else
                                              'DOES NOT MATCH (differs in ' + ', '.join(shown(k) for k in (exact.get('differs_in') or [])) + ')'))
         return '\n'.join([
-            f"Valun - PAY {payee} {price} PC for deal {shown(t['deal_id'])} by moving {price} PC of {issuer}'s debt from you "
+            f"Valun - PAY {payee} {vc.amount_text(price, u)} for deal {shown(t['deal_id'])} by moving {vc.amount_text(price, u)} "
+            f"of {issuer}'s debt from you "
             f'to {payee}:',
-            f'  your claim on {issuer}: {x} -> {x - price} PC (issuer signature checked by your client)',
-            f'  {issuer} will owe {payee} {y} -> {y + price} PC; its total debt does not change',
+            f'  your claim on {issuer}: {x} -> {x - price} {u} (issuer signature checked by your client)',
+            f'  {issuer} will owe {payee} {y} -> {y + price} {u}; its total debt does not change',
             '  you issue no credit note for this deal',
             f'  {issuer} consents {CONSENT_SPEED_WORDS.get(speed, shown(speed))}; accepting is final: if the transfer does not '
             'complete the deal stays accepted and you pay later',
@@ -1111,12 +1194,13 @@ class ValunAgent:
         c = self.client()
         me, info = c.me(), c.info()
         circulating = CIRCULATION in self._remember(info)
-        lab = labels(circulating)
+        u, net = getattr(c, 'unit', vc.UNIT), getattr(c, 'network', vc.NETWORK)
+        lab = labels(circulating, net)
         recorded = me.get('agent_limits') or {}
         approvals = (self.approvals or 'Commitments are signed without asking your owner first.')
-        approvals += f" The server also holds commitments priced above {me['mandate'].get('approve_above')} PC for the owner console."
+        approvals += f" The server also holds commitments priced above {vc.amount_text(me['mandate'].get('approve_above'), u)} for the owner console."
         out = {'connected': True, 'server': c.state['server'], 'network': info['network'],
-               'unit': info['unit'] + ' (pilot credits, no monetary value)',
+               'unit': info['unit'] + UNIT_WORDS.get(info['unit'], ''),
                'you': me['participant'], 'objective_from_your_owner': me['mandate'].get('objective') or '(none set)',
                'goals_your_owner_told_you': recorded.get('notes') or '(none recorded yet: ask your owner, then use valun_set_limits)',
                'limits_you_recorded': {k: v for k, v in recorded.items() if k not in ('notes', 'set_at')},
@@ -1145,7 +1229,8 @@ class ValunAgent:
         notes = self._notes_you_can_spend(c, pos, verified)
         policy = consent_policy_in_force(c.state.get('consent_policy'),
                                          next((me[k] for k in ('effective_limits', 'mandate') if isinstance(me.get(k), dict)), None))
-        signs = client_signs(policy)
+        u = getattr(c, 'unit', vc.UNIT)
+        signs = client_signs(policy, u)
         hold, owe, net = pos.get('claims_held'), pos.get('owes'), pos.get('net')
         cleared = pos.get('cleared_by_setoff', pos.get('settled', 0))
         pending = box.get('consents_waiting_for_your_client')
@@ -1153,9 +1238,9 @@ class ValunAgent:
             pending = pos['pending'].get('consents_waiting_for_you')
         log = c.state.get('consent_log') if isinstance(c.state.get('consent_log'), list) else []
         spend = sum(n['amount_PC'] for n in notes)
-        summary = (f'You hold {shown(hold)} PC of credit notes others issued to you and owe {shown(owe)} PC (net {shown(net)} PC); '
-                   f'set-offs have cleared {shown(cleared)} PC so far. '
-                   + (f"You can spend {spend} PC of notes you hold ({', '.join(shown(n['issuer']) for n in notes)}) with pay_with "
+        summary = (f'You hold {shown(hold)} {u} of credit notes others issued to you and owe {shown(owe)} {u} (net {shown(net)} {u}); '
+                   f'set-offs have cleared {shown(cleared)} {u} so far. '
+                   + (f"You can spend {vc.amount_text(spend, u)} of notes you hold ({', '.join(shown(n['issuer']) for n in notes)}) with pay_with "
                       'when you accept a delivery. ' if notes else 'You hold no notes you can spend now. ')
                    + ('Your Valun client signs by itself: ' + '; '.join(signs) + '.' if signs
                       else 'Your Valun client signs no consents by itself.')
@@ -1166,8 +1251,7 @@ class ValunAgent:
                                               'owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note '
                                               'you hold moves it to the payee (hold falls by the price); a set-off cancels equal '
                                               'claims and debts around a cycle (hold and owe fall together, net does not change); '
-                                              'cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have '
-                                              'no value.')},
+                                              'cleared_so_far counts what set-offs cancelled. ' + VALUE_WORDS.get(u, VALUE_WORDS['PC']))},
                'notes_you_can_spend': notes,
                'payments_in_progress': box.get('payments_in_progress') if isinstance(box.get('payments_in_progress'), list) else [],
                'clearing': {'your_client_signs': signs, 'consents_pending': pending,
@@ -1227,9 +1311,10 @@ class ValunAgent:
 
         def plan(step, calls, then):
             done = TOUR_AFTER.get(step) if isinstance(step, int) else None
-            return {'tour_step': step, 'of': 5, 'goal': TOUR_GOALS.get(step, 'The tour is complete.'),
+            scale = getattr(c, 'scale', 1)
+            return {'tour_step': step, 'of': 5, 'goal': tour_goal(step, getattr(c, 'unit', vc.UNIT), scale),
                     'next_calls': calls, 'then': then, 'with_the_sandbox_agents': held,
-                    **({'when_done': {'you_hold_PC': done[0], 'you_owe_PC': done[1]}} if done else {})}
+                    **({'when_done': {'you_hold_PC': done[0] * scale, 'you_owe_PC': done[1] * scale}} if done else {})}
 
         def call(tool, args, why):
             return {'tool': tool, 'arguments': args, 'why': why}
@@ -1322,7 +1407,7 @@ class ValunAgent:
         if ox > 0:
             return offer(4, SANDBOX_MALLORY, 'payee', 'text-stats')
         if paid_by_transfer > 0 and cleared > 0:
-            return plan('done', [], self._tour_done_text(pos, cleared))
+            return plan('done', [], self._tour_done_text(pos, cleared, getattr(c, 'unit', vc.UNIT)))
         any_exact = any(x.get('counterparty') == SANDBOX_EXACT for k in listed for x in listed[k])
         if not any_exact and recently_active(None, hours=10 / 60, joined_at=participant.get('joined_at')):
             return plan(1, [], 'The welcome job from sandbox-exact usually arrives within a minute of joining; call '
@@ -1336,19 +1421,19 @@ class ValunAgent:
         return p
 
     @staticmethod
-    def _tour_done_text(pos, cleared):
+    def _tour_done_text(pos, cleared, unit=vc.UNIT):
         """What the tour did, from the participant's own position: earned (hold + spent by transfer + cleared), spent by
         transfer (transferred_out) and with its own notes (owes + cleared), and what set-offs cleared. Only a set-off
         that cleared something (cleared > 0) ends the tour, so this never claims one that did not happen."""
         hold, owe, out = pos.get('claims_held'), pos.get('owes'), pos.get('transferred_out')
         text = 'The tour is complete: '
         if _whole(hold) and _whole(owe) and _whole(out):
-            text += (f'you earned {hold + out + cleared} PC and spent {out + owe + cleared} PC ({out} by transfer, '
+            text += (f'you earned {hold + out + cleared} {unit} and spent {out + owe + cleared} {unit} ({out} by transfer, '
                      f'{owe + cleared} with your own note), and ')
-        text += (f'set-offs cancelled {cleared} PC of your claims and {cleared} PC of your debts without changing your net '
+        text += (f'set-offs cancelled {cleared} {unit} of your claims and {cleared} {unit} of your debts without changing your net '
                  'position.')
         if (_whole(hold) and hold > 0) or (_whole(owe) and owe > 0):
-            text += f' You still hold {shown(hold)} PC and owe {shown(owe)} PC.'
+            text += f' You still hold {shown(hold)} {unit} and owe {shown(owe)} {unit}.'
         return text + ' You can keep trading with the sandbox agents.'
 
     def set_limits(self, a):
@@ -1378,8 +1463,11 @@ class ValunAgent:
                         'deals': pos.get('deals'), 'agent_last_seen': p.get('agent_last_seen'),
                         'agent_recently_active': recently_active(p.get('agent_last_seen'), joined_at=p.get('joined_at'))})
         out.sort(key=lambda x: not x['agent_recently_active'])
-        return {'participants': out, 'note': ('positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; '
-                                              'PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer.')}
+        where = ("positions are outstanding credit notes recorded by the Valun testnet Basis tracker and anchored on Ergo testnet; a "
+                 "creditor can redeem one against its issuer's reserve, if it has one; tERG have no monetary value."
+                 if getattr(c, 'network', vc.NETWORK) == TESTNET else
+                 'positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value.')
+        return {'participants': out, 'note': where + ' A participant whose agent has not been seen in the last 24 hours may never answer an offer.'}
 
     def inbox(self, a):
         return self.client().inbox()
@@ -1456,11 +1544,12 @@ class ValunAgent:
         prices = [(v['version'], 'you' if v['by'] == c.participant_id else (d.get('counterparty') or {}).get('handle'), v['price']['amount'])
                   for v in d.get('versions') or []]
         if prices:
-            out['negotiation'] = {'prices_by_version': [f'v{n} {who}: {p} PC' for n, who, p in prices]}
+            u = getattr(c, 'unit', vc.UNIT)
+            out['negotiation'] = {'prices_by_version': [f'v{n} {who}: {p} {u}' for n, who, p in prices]}
             mine = [p for _, who, p in prices if who == 'you'][-2:]
             theirs = [p for _, who, p in prices if who != 'you'][-2:]
             if len(mine) == 2 and len(theirs) == 2 and mine[0] == mine[1] and theirs[0] == theirs[1] and mine[0] != theirs[0]:
-                out['negotiation']['stalemate'] = (f'Both sides have repeated the same price ({mine[0]} vs {theirs[0]} PC). If no price '
+                out['negotiation']['stalemate'] = (f'Both sides have repeated the same price ({mine[0]} vs {theirs[0]} {u}). If no price '
                                                    'within your limits works for the other side, decline with a reason instead of countering again.')
         return out
 
@@ -1519,8 +1608,8 @@ class ValunAgent:
         return {'deal_id': r['id'], 'status': r['status'], 'terms_hash': r['current']['terms_hash'] if r.get('current') else None,
                 'what_happened': (f"Your signed offer is waiting for your owner's approval before {other['handle']} can see it." if waiting
                                   else f"{other['handle']} can now accept, decline or counter your signed offer."),
-                'if_agreed': (f"After you accept their delivery you issue them a credit note of {a['price']} PC (you will owe them; not settled)."
-                              if a['role'] == 'payer' else f"After they accept your delivery they issue you a credit note of {a['price']} PC (they will owe you; not settled)."),
+                'if_agreed': (f"After you accept their delivery you issue them a credit note of {vc.amount_text(a['price'], getattr(c, 'unit', vc.UNIT))} (you will owe them; not settled)."
+                              if a['role'] == 'payer' else f"After they accept your delivery they issue you a credit note of {vc.amount_text(a['price'], getattr(c, 'unit', vc.UNIT))} (they will owe you; not settled)."),
                 **({'warning': idle} if idle else {})}
 
     def respond(self, a):
@@ -1610,8 +1699,8 @@ class ValunAgent:
             msg = 'You accepted the delivery and signed the credit note; your owner must approve before it is issued to the tracker.'
         elif r['status'] == 'note_issued':
             msg = (f"Credit note issued: the Basis tracker now records that you owe {r['counterparty']['handle']} "
-                   f"{(n.get('tracker_note') or {}).get('amount_collected')} PC in total (this deal added {n.get('amount')}). "
-                   + labels(self._circulating(c))['settlement'])
+                   f"{(n.get('tracker_note') or {}).get('amount_collected')} {getattr(c, 'unit', vc.UNIT)} in total (this deal added {n.get('amount')}). "
+                   + labels(self._circulating(c), getattr(c, 'network', vc.NETWORK))['settlement'])
         else:
             msg = r['status']
         return {'deal_id': r['id'], 'status': r['status'], 'what_happened': msg,
@@ -1623,7 +1712,7 @@ class ValunAgent:
         the quote and my claim on the issuer)."""
         claim = a.get('expected_claim_total')
         if claim is not None and not (_whole(claim) and claim >= 0):
-            raise vc.ValunError('bad_arguments', 'expected_claim_total is the whole number of PC of your claim that your '
+            raise vc.ValunError('bad_arguments', f"expected_claim_total is the whole number of {getattr(c, 'unit', vc.UNIT)} of your claim that your "
                                                  'owner saw; nothing was signed')
         r = c.pay_by_transfer(a['deal_id'], issuer, expected_deliverable_sha256=a.get('expected_deliverable_sha256'),
                               expected_quote_digest=a.get('expected_quote_digest'),
@@ -1635,8 +1724,10 @@ class ValunAgent:
         iss = (pay.get('issuer') or {}).get('handle') if isinstance(pay.get('issuer'), dict) else None
         price = ((((r.get('current') or {}).get('terms') or {}).get('price') or {}).get('amount')) if isinstance(r, dict) else None
         who, by, amount = cp or 'the payee', iss or issuer, price if _whole(price) else 'the price in'
-        msgs = {'paid_by_transfer': (f'Paid by debt transfer: {by} now owes {who} {amount} PC more and you {amount} PC '
-                                     'less; you issued no credit note for this deal. ' + CIRCULATION_SETTLEMENT),
+        u = getattr(c, 'unit', vc.UNIT)
+        msgs = {'paid_by_transfer': (f'Paid by debt transfer: {by} now owes {who} {amount} {u} more and you {amount} {u} '
+                                     'less; you issued no credit note for this deal. '
+                                     + labels(True, getattr(c, 'network', vc.NETWORK))['settlement']),
                 'paying_by_transfer': ('You accepted the delivery and signed the debt transfer; it applies once the issuer and '
                                        'the payee sign. Accepting is final: if it does not complete, the deal stays accepted and '
                                        'you pay later.'),

@@ -28,7 +28,7 @@ import {VALUE_SAFE_HEADER_ROLES, consentRoles} from './client.js';
 import {ValunError} from './errors.js';
 import {measure} from './measure.js';
 import * as nv from './novation.js';
-import {UNIT, sha256Hex, termsHash} from './protocol.js';
+import {NETWORK, UNIT, amountText, sha256Hex, termsHash} from './protocol.js';
 import {utf8} from './bytes.js';
 import * as sandbox from './sandbox.js';
 import {checkDelivery, extractText} from './sandbox.js';
@@ -70,6 +70,12 @@ export const CIRCULATION_SETTLEMENT = 'not settled: a credit note is an outstand
   + 'redeemed, there is no reserve, and PC have no value.';
 export const SETTLEMENT_NOTE_CIRCULATION = CIRCULATION_SETTLEMENT;
 export const NOT_SETTLED_CIRCULATION = CIRCULATION_SETTLEMENT;
+export const PAY_THIRD_PARTY_CIRCULATION = "Supported: paying a third party with your OWN credit note, or with a note you hold "
+  + "(pay_with: the issuer's debt to you moves to the payee; the issuer, you and the payee "
+  + "each sign, and the issuer's total debt does not change), and set-offs that cancel "
+  + 'equal debts around a cycle (every party signs; no net position changes). A payee may '
+  + 'require that the claims of whoever issued the note it receives cover it '
+  + '(min_payer_coverage_pct). ';
 export const HONEST_LABELS_CIRCULATION = Object.freeze({
   what_basis_records: 'The pilot Basis tracker keeps one running total per key pair: what the issuer key owes the '
     + 'recipient key, with a timestamp, signed by the issuer. A credit note raises it; with circulating '
@@ -77,11 +83,7 @@ export const HONEST_LABELS_CIRCULATION = Object.freeze({
     + 'a cycle, each signed by every party whose total changes. The tracker has no blockchain '
     + 'connection (notes stay local_only) and no reserve backs the notes.',
   outstanding_promise: CIRCULATION_SETTLEMENT,
-  third_party: "Supported: paying a third party with your OWN credit note, or with a note you hold (pay_with: the "
-    + "issuer's debt to you moves to the payee; the issuer, you and the payee each sign, and the issuer's "
-    + 'total debt does not change), and set-offs that cancel equal debts around a cycle (every party signs; '
-    + 'no net position changes). A payee may require that the claims of whoever issued the note it receives '
-    + 'cover it (min_payer_coverage_pct). Not supported: redeeming a note for anything outside the pilot.',
+  third_party: PAY_THIRD_PARTY_CIRCULATION + 'Not supported: redeeming a note for anything outside the pilot.',
 });
 export const REAL_VS_SIMULATED_CIRCULATION = Object.freeze({
   real: "signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt "
@@ -92,6 +94,55 @@ export const REAL_VS_SIMULATED_CIRCULATION = Object.freeze({
     + 'opposite obligations',
   not_proven: REAL_VS_SIMULATED.not_proven,
 });
+// The same labels on the Valun testnet network (valun-testnet-1): word for word the server's testnet deal labels
+// (lib/pilot/core.mjs SETTLEMENT_TESTNET, CIRCULATION_SETTLEMENT_TESTNET). There a creditor can redeem a note on Ergo
+// testnet against its issuer's reserve, the tracker anchors its totals on Ergo testnet, and tERG have no monetary value.
+export const TESTNET = 'valun-testnet-1';
+export const TESTNET_REDEMPTION = "Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted "
+  + 'one; tERG are test coins with no monetary value.';
+export const SETTLEMENT_TESTNET = 'not settled until redeemed: issuing a credit note creates an outstanding obligation. ' + TESTNET_REDEMPTION;
+export const CIRCULATION_SETTLEMENT_TESTNET = 'not settled until redeemed: a credit note is an outstanding obligation. With circulating '
+  + 'credit it can move to a new creditor (debt transfer, signed by the debtor and both '
+  + 'creditors) or be cancelled against an equal opposite obligation (set-off, signed by every '
+  + 'party; no net position changes); a netting is final once a tracker box on Ergo testnet '
+  + 'commits it. ' + TESTNET_REDEMPTION;
+const TESTNET_TRACKER = 'The Valun testnet Basis tracker keeps one running total per key pair: what the issuer key owes the '
+  + 'recipient key, with a timestamp, signed by the issuer, and anchors them on Ergo testnet (a tracker box '
+  + 'commits the digest of every total). ';
+const TESTNET_BACKING = "A note is backed only by its issuer's reserve on Ergo testnet, if the issuer posted one.";
+export const HONEST_LABELS_TESTNET = Object.freeze({
+  what_basis_records: TESTNET_TRACKER + 'A credit note raises a total. ' + TESTNET_BACKING,
+  outstanding_promise: SETTLEMENT_TESTNET,
+  third_party: HONEST_LABELS.third_party,
+});
+export const HONEST_LABELS_CIRCULATION_TESTNET = Object.freeze({
+  what_basis_records: TESTNET_TRACKER + 'A credit note raises a total; with circulating credit a debt transfer moves '
+    + 'part of it to a new creditor and a set-off lowers the totals around a cycle, each signed by every '
+    + 'party whose total changes. ' + TESTNET_BACKING,
+  outstanding_promise: CIRCULATION_SETTLEMENT_TESTNET,
+  third_party: PAY_THIRD_PARTY_CIRCULATION + "A creditor redeems a note only against its issuer's reserve on Ergo testnet, in tERG.",
+});
+export const REAL_VS_SIMULATED_TESTNET = Object.freeze({
+  real: "signatures by each participant's own key; Valun's acceptance and approval records; credit notes held by a "
+    + 'real Basis tracker (read back and reconciled by Valun) and anchored on Ergo testnet; reserves and '
+    + 'redemptions are Ergo testnet transactions',
+  simulated: 'the value: tERG are Ergo testnet coins with no monetary value',
+  not_proven: 'that delivered work is good (Valun records statements, it does not judge work); that any participant '
+    + 'will honour a credit note beyond its reserve',
+});
+export const REAL_VS_SIMULATED_CIRCULATION_TESTNET = Object.freeze({
+  real: "signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt "
+    + 'transfers and set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your '
+    + 'client against the signatures) and anchored on Ergo testnet; reserves and redemptions are Ergo testnet '
+    + 'transactions',
+  simulated: REAL_VS_SIMULATED_TESTNET.simulated,
+  not_proven: REAL_VS_SIMULATED_TESTNET.not_proven,
+});
+/** What a unit is, after its name (valun_status unit), and the last words of how to read the money view. */
+export const UNIT_WORDS = Object.freeze({PC: ' (pilot credits, no monetary value)', nanoERG: ' (of tERG: Ergo testnet coins with no monetary value)'});
+export const VALUE_WORDS = Object.freeze({PC: 'Nothing is redeemed and PC have no value.',
+  nanoERG: "A creditor can redeem a note on Ergo testnet against its issuer's reserve, if it has one; tERG "
+    + 'have no monetary value.'});
 export const CIRCULATION = 'circulation/1';
 /** processConsents() runs at most this often (state consents_last_run_ms; design 6.6). */
 export const CONSENTS_EVERY_MS = 60_000;
@@ -129,13 +180,22 @@ export const TOUR_TEXTS = Object.freeze({1: 'Valun sandbox tour, step 1: my firs
   3: 'Valun sandbox tour, step 3: paid with my own note.',
   4: 'Valun sandbox tour, step 4: I sell my work.',
   5: 'Valun sandbox tour, step 5: paid with a note I hold again.'});
-/** What you hold / owe (PC) once each step is done, as tracker totals (design 9.2). */
+/** TOUR_GOALS[step] in a network's unit: its prices and cycle amounts are PC-sized (times the scale). */
+export function tourGoal(step, unit = UNIT, scale = 1) {
+  const goal = whole(step) && Object.hasOwn(TOUR_GOALS, step) ? TOUR_GOALS[step] : 'The tour is complete.';
+  return unit === 'PC' ? goal : goal.replace(/\b(\d+) PC\b/g, (_m, n) => amountText(Number(n) * scale, unit));
+}
+/** What you hold / owe (PC-sized, times the scale) once each step is done, as tracker totals (design 9.2). */
 export const TOUR_AFTER = Object.freeze({1: Object.freeze([3, 0]), 2: Object.freeze([1, 0]), 3: Object.freeze([0, 1]),
   4: Object.freeze([2, 0]), 5: Object.freeze([0, 0])});
 
 /** The honest labels for a server with circulating credit (true) or without it: {settlement, not_settled, honest_labels, real_vs_simulated}. */
 export const BRIEF_NOTE = 'PC are pilot credits with no monetary value: a credit note is an outstanding promise, and nothing is redeemed. '
   + 'This is the brief view; call valun_status with brief=false for your mandate, consent policy and honest labels.';
+export const BRIEF_NOTE_TESTNET = 'Amounts are nanoERG of tERG, Ergo testnet coins with no monetary value: a credit note is an outstanding '
+  + "promise, which its creditor can redeem on Ergo testnet against the issuer's reserve, if it has one. "
+  + 'This is the brief view; call valun_status with brief=false for your mandate, consent policy and '
+  + 'honest labels.';
 
 /**
  * valun_status's brief view (brief=true, for small models), made from the full view, so it reads and signs exactly the
@@ -159,11 +219,19 @@ export function briefStatus(out) {
   }
   const step = get(out, 'sandbox_next_steps');
   if (isDict(step)) b.sandbox_next_steps = Object.fromEntries(['tour_step', 'next_calls', 'then'].filter(k => k in step).map(k => [k, step[k]]));
-  b.note = BRIEF_NOTE;
+  b.note = get(out, 'network') === TESTNET ? BRIEF_NOTE_TESTNET : BRIEF_NOTE;
   return b;
 }
 
-export function labels(circulating) {
+export function labels(circulating, network = null) {
+  if (network === TESTNET) {
+    if (circulating) {
+      return {settlement: CIRCULATION_SETTLEMENT_TESTNET, not_settled: CIRCULATION_SETTLEMENT_TESTNET,
+        honest_labels: HONEST_LABELS_CIRCULATION_TESTNET, real_vs_simulated: REAL_VS_SIMULATED_CIRCULATION_TESTNET};
+    }
+    return {settlement: SETTLEMENT_TESTNET, not_settled: SETTLEMENT_TESTNET, honest_labels: HONEST_LABELS_TESTNET,
+      real_vs_simulated: REAL_VS_SIMULATED_TESTNET};
+  }
   if (circulating) {
     return {settlement: SETTLEMENT_NOTE_CIRCULATION, not_settled: NOT_SETTLED_CIRCULATION, honest_labels: HONEST_LABELS_CIRCULATION,
       real_vs_simulated: REAL_VS_SIMULATED_CIRCULATION};
@@ -202,9 +270,9 @@ export function consentPolicyInForce(local, mandate) {
 }
 
 /** consentPolicyInForce() as sentences: what the client signs by itself, without asking the owner. */
-export function clientSigns(policy) {
+export function clientSigns(policy, unit = UNIT) {
   const cap = get(policy, 'max_PC');
-  const upto = whole(cap) ? `, up to ${cap} PC each` : '';
+  const upto = whole(cap) ? `, up to ${amountText(cap, unit)} each` : '';
   const out = [];
   if (truthy(get(policy, 'setoff'))) {
     out.push(`set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change)${upto}`);
@@ -363,9 +431,15 @@ export function quoteLine(label, fields) {
 }
 
 /** What a binding deal means for this participant, in the role the signed terms give it. */
-export function owes(role, who, price) {
-  return role === 'payer' ? `after you accept their delivery you will owe ${who} ${price} PC (your credit note).`
-    : `you must deliver; ${who} would then owe you ${price} PC (their credit note).`;
+export function owes(role, who, price, unit = UNIT) {
+  const p = amountText(price, unit);
+  return role === 'payer' ? `after you accept their delivery you will owe ${who} ${p} (your credit note).`
+    : `you must deliver; ${who} would then owe you ${p} (their credit note).`;
+}
+
+/** The tracker a credit note goes to, in an approval text. */
+export function trackerWords(network) {
+  return network === TESTNET ? 'the Valun testnet tracker (anchored on Ergo testnet)' : 'the pilot tracker';
 }
 
 /** Map valun_set_limits arguments to the server's /limits body. */
@@ -966,12 +1040,13 @@ export class ValunAgent {
   /** The one read an approval is bound to and described from (checked: see prepare). */
   async #snapshot(name, a) {
     const c = this.client();
+    const unit = c.unit ?? UNIT, net = c.network ?? NETWORK;
     if (name === 'valun_propose') {
       const other = await this.#resolve(c, get(a, 'counterparty'));
       if (!(isDict(other) && typeof get(other, 'id') === 'string' && other.id)) {
         throw new ValunError('approval_unbound', 'the directory names no participant id');
       }
-      return {counterparty: other, not_settled: labels(await this.#knownCirculation(c)).not_settled};
+      return {counterparty: other, not_settled: labels(await this.#knownCirculation(c), net).not_settled, unit, network: net};
     }
     if (name === 'valun_set_limits') {
       const me = await c.me();
@@ -983,10 +1058,12 @@ export class ValunAgent {
     const d = await c.deal(did);
     if (!isDict(d)) throw new ValunError('approval_unbound', 'the deal could not be read');
     const snap = {deal: d, checked: ValunAgent.#checked(d, did, c.participantId, name === 'valun_review_delivery', c.unit)};
-    snap.not_settled = labels(await this.#knownCirculation(c, d)).not_settled;
+    snap.not_settled = labels(await this.#knownCirculation(c, d), net).not_settled;
+    snap.unit = unit;
+    snap.network = net;
     if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept' && ValunAgent.#payWith(a) !== null) {
       snap.transfer = await this.#transferSnapshot(c, did, snap.checked, ValunAgent.#payWith(a));
-      snap.not_settled = NOT_SETTLED_CIRCULATION;
+      snap.not_settled = labels(true, net).not_settled;
     }
     return snap;
   }
@@ -1195,50 +1272,50 @@ export class ValunAgent {
   }
 
   #textPropose(a, snap) {
-    const other = snap.counterparty;
+    const other = snap.counterparty, u = get(snap, 'unit', UNIT);
     const role = get(a, 'role');
     if (role !== 'payer' && role !== 'payee') throw new ValunError('bad_role', 'role must be payer or payee');
     const price = int(item(a, 'price')), due = int(or(get(a, 'deliver_within_hours'), 48)), ttl = int(or(get(a, 'offer_valid_hours'), 24));
     const who = shown(get(other, 'handle'));
     return [
       `Valun - sign a NEW OFFER to ${who} (${shown(item(other, 'id'))}):`,
-      `  you are the ${ROLE_WORDS[role]}; price: ${price} PC`,
+      `  you are the ${ROLE_WORDS[role]}; price: ${amountText(price, u)}`,
       `  deliver within ${due} h; the offer stays open ${ttl} h`,
-      `If ${who} accepts, the deal is binding without asking you again: ` + owes(role, who, price),
+      `If ${who} accepts, the deal is binding without asking you again: ` + owes(role, who, price, u),
       get(snap, 'not_settled', NOT_SETTLED),
       quoteLine('Offer text written by your agent', Object.fromEntries(TEXT_FIELDS.map(k => [k, get(a, k)])))].join('\n');
   }
 
   #textAccept(a, snap) {
     const chk = snap.checked;
-    const t = chk.terms, who = this.#who(chk), price = chk.price, svc = chk.service;
+    const t = chk.terms, who = this.#who(chk), price = chk.price, svc = chk.service, u = get(snap, 'unit', UNIT);
     return [
       `Valun - ACCEPT ${who}'s offer (${shown(chk.other_id)}, deal ${shown(t.deal_id)}, version ${shown(get(t, 'version'))}):`,
-      `  you are the ${ROLE_WORDS[chk.role]}; price: ${price} PC; deliver by ${shown(get(t, 'deliver_by'))}`,
+      `  you are the ${ROLE_WORDS[chk.role]}; price: ${amountText(price, u)}; deliver by ${shown(get(t, 'deliver_by'))}`,
       `  terms hash ${chk.terms_hash.slice(0, 16)}... (recomputed from these terms; your Valun client checks it again before signing)`,
-      'This makes the deal binding on both sides: ' + owes(chk.role, who, price),
+      'This makes the deal binding on both sides: ' + owes(chk.role, who, price, u),
       get(snap, 'not_settled', NOT_SETTLED),
       quoteLine(`Offer text written by ${who}`, Object.fromEntries(TEXT_FIELDS.map(k => [k, get(svc, k)])))].join('\n');
   }
 
   #textCounter(a, snap) {
     const chk = snap.checked;
-    const t = chk.terms, who = this.#who(chk), old = chk.price, svc = chk.service;
+    const t = chk.terms, who = this.#who(chk), old = chk.price, svc = chk.service, u = get(snap, 'unit', UNIT);
     // Exactly what Client.counter() signs: these arguments, and the rest copied from the terms pinned by hash.
     const price = get(a, 'price') !== null ? int(item(a, 'price')) : old;
     const hours = get(a, 'deliver_within_hours');
     if (hours !== null && !whole(hours)) throw new ValunError('bad_arguments', 'deliver_within_hours must be a whole number of hours');
     const texts = TEXT_FIELDS.filter(k => truthy(get(a, k)));
-    const changes = [...(get(a, 'price') !== null ? [`price ${old} -> ${price} PC`] : []),
+    const changes = [...(get(a, 'price') !== null ? [`price ${old} -> ${price} ${u}`] : []),
       ...(hours !== null ? [`deliver within ${hours} h`] : []), ...texts.map(k => `${k} (quoted below)`)];
     return [
       `Valun - sign a COUNTER-OFFER to ${who} (${shown(chk.other_id)}, deal ${shown(t.deal_id)}), `
         + `replacing their version ${shown(get(t, 'version'))}:`,
-      `  you are the ${ROLE_WORDS[chk.role]}; price: ${price} PC`,
+      `  you are the ${ROLE_WORDS[chk.role]}; price: ${amountText(price, u)}`,
       '  deliver ' + (hours !== null ? `within ${hours} h of signing`
         : `by ${shown(get(t, 'deliver_by'))} as in their offer (rounded down to the hour, at least 1 h after signing)`),
       '  your agent changes: ' + (changes.join(', ') || 'nothing') + '; the counter-offer stays open 24 h',
-      `If ${who} accepts it, the deal is binding without asking you again: ` + owes(chk.role, who, price),
+      `If ${who} accepts it, the deal is binding without asking you again: ` + owes(chk.role, who, price, u),
       get(snap, 'not_settled', NOT_SETTLED),
       quoteLine(`Counter-offer text, with what your agent did not change copied from ${who}'s offer`,
         Object.fromEntries(TEXT_FIELDS.map(k => [k, truthy(get(a, k)) ? item(a, k) : get(svc, k)])))].join('\n');
@@ -1247,6 +1324,7 @@ export class ValunAgent {
   async #textReview(a, snap) {
     const chk = snap.checked;
     const t = chk.terms, who = this.#who(chk), price = chk.price, svc = chk.service, dl = chk.delivery, content = chk.content;
+    const u = get(snap, 'unit', UNIT);
     const m = await measure(content, TEXT_FIELDS.map(k => str(or(get(svc, k), ''))).join(' '), {checkHosts: false});
     const facts = m.checks_against_agreed_terms.map(x => `${x.requirement}: ${x.measured} (${x.met ? 'met' : 'NOT met'})`);
     let exact;
@@ -1262,11 +1340,12 @@ export class ValunAgent {
     }
     return [
       `Valun - ACCEPT ${who}'s delivery (${shown(chk.other_id)}, deal ${shown(t.deal_id)}) and ISSUE A CREDIT NOTE `
-        + `of ${price} PC to ${who}:`,
+        + `of ${amountText(price, u)} to ${who}:`,
       `  delivered: ${utf8(content).length} bytes, sha256 ${chk.sha256.slice(0, 16)}... (recomputed from the text measured here)`,
       '  measured: ' + (facts.join('; ') || `${m.word_count} words, ${m.links.length} links`),
       `  agreed terms hash ${chk.terms_hash.slice(0, 16)}... (your Valun client checks both hashes again before signing)`,
-      `Your agent signs a Basis note; the pilot tracker then records that you owe ${who} ${price} PC more.`,
+      `Your agent signs a Basis note; ${trackerWords(get(snap, 'network'))} then records that you owe ${who} `
+        + `${amountText(price, u)} more.`,
       get(snap, 'not_settled', NOT_SETTLED),
       quoteLine('Delivery title and agreed service text', {delivery_title: or(get(dl, 'title'), ''), title: get(svc, 'title'),
         deliverable: get(svc, 'deliverable')})].join('\n');
@@ -1276,6 +1355,7 @@ export class ValunAgent {
   async #textPay(a, snap) {
     const chk = snap.checked, tr = snap.transfer;
     const t = chk.terms, svc = chk.service, dl = chk.delivery, content = chk.content, price = chk.price;
+    const u = get(snap, 'unit', UNIT);
     const payee = this.#who(chk);
     const iss = tr.issuer;
     const issuer = typeof get(iss, 'handle') === 'string' && iss.handle ? shown(iss.handle) : shown(iss.id);
@@ -1296,10 +1376,11 @@ export class ValunAgent {
     }
     const speedWords = typeof speed === 'string' && Object.hasOwn(CONSENT_SPEED_WORDS, speed) ? CONSENT_SPEED_WORDS[speed] : shown(speed);
     return [
-      `Valun - PAY ${payee} ${price} PC for deal ${shown(t.deal_id)} by moving ${price} PC of ${issuer}'s debt from you `
+      `Valun - PAY ${payee} ${amountText(price, u)} for deal ${shown(t.deal_id)} by moving ${amountText(price, u)} `
+        + `of ${issuer}'s debt from you `
         + `to ${payee}:`,
-      `  your claim on ${issuer}: ${x} -> ${x - price} PC (issuer signature checked by your client)`,
-      `  ${issuer} will owe ${payee} ${y} -> ${y + price} PC; its total debt does not change`,
+      `  your claim on ${issuer}: ${x} -> ${x - price} ${u} (issuer signature checked by your client)`,
+      `  ${issuer} will owe ${payee} ${y} -> ${y + price} ${u}; its total debt does not change`,
       '  you issue no credit note for this deal',
       `  ${issuer} consents ${speedWords}; accepting is final: if the transfer does not `
         + 'complete the deal stays accepted and you pay later',
@@ -1325,14 +1406,15 @@ export class ValunAgent {
     const c = this.client();
     const me = await c.me(), info = await c.info();
     const circulating = this.#remember(info).includes(CIRCULATION);
-    const lab = labels(circulating);
+    const u = c.unit ?? UNIT;
+    const lab = labels(circulating, c.network ?? NETWORK);
     const recorded = or(get(me, 'agent_limits'), {});
     let approvals = or(this.approvals, 'Commitments are signed without asking your owner first.');
-    approvals += ` The server also holds commitments priced above ${str(get(item(me, 'mandate'), 'approve_above'))} PC for the owner console.`;
+    approvals += ` The server also holds commitments priced above ${amountText(get(item(me, 'mandate'), 'approve_above'), u)} for the owner console.`;
     const inForce = or(get(me, 'effective_limits'), item(me, 'mandate'));
     const out = {
       connected: true, server: item(c.state, 'server'), network: item(info, 'network'),
-      unit: item(info, 'unit') + ' (pilot credits, no monetary value)',
+      unit: item(info, 'unit') + (Object.hasOwn(UNIT_WORDS, item(info, 'unit')) ? UNIT_WORDS[item(info, 'unit')] : ''),
       you: item(me, 'participant'), objective_from_your_owner: or(get(item(me, 'mandate'), 'objective'), '(none set)'),
       goals_your_owner_told_you: or(get(recorded, 'notes'), '(none recorded yet: ask your owner, then use valun_set_limits)'),
       limits_you_recorded: Object.fromEntries(items(recorded).filter(([k]) => k !== 'notes' && k !== 'set_at')),
@@ -1369,16 +1451,17 @@ export class ValunAgent {
     }
     const notes = this.#notesYouCanSpend(c, pos, verified);
     const policy = consentPolicyInForce(get(c.state, 'consent_policy'), ['effective_limits', 'mandate'].map(k => get(me, k)).find(isDict) ?? null);
-    const signs = clientSigns(policy);
+    const u = c.unit ?? UNIT;
+    const signs = clientSigns(policy, u);
     const hold = get(pos, 'claims_held'), owe = get(pos, 'owes'), net = get(pos, 'net');
     const cleared = get(pos, 'cleared_by_setoff', get(pos, 'settled', 0));
     let pending = get(box, 'consents_waiting_for_your_client');
     if (pending === null && isDict(get(pos, 'pending'))) pending = get(pos.pending, 'consents_waiting_for_you');
     const log = Array.isArray(get(c.state, 'consent_log')) ? c.state.consent_log : [];
     const spend = notes.reduce((t, n) => t + n.amount_PC, 0);
-    const summary = `You hold ${shown(hold)} PC of credit notes others issued to you and owe ${shown(owe)} PC (net ${shown(net)} PC); `
-      + `set-offs have cleared ${shown(cleared)} PC so far. `
-      + (notes.length ? `You can spend ${spend} PC of notes you hold (${notes.map(n => shown(n.issuer)).join(', ')}) with pay_with `
+    const summary = `You hold ${shown(hold)} ${u} of credit notes others issued to you and owe ${shown(owe)} ${u} (net ${shown(net)} ${u}); `
+      + `set-offs have cleared ${shown(cleared)} ${u} so far. `
+      + (notes.length ? `You can spend ${amountText(spend, u)} of notes you hold (${notes.map(n => shown(n.issuer)).join(', ')}) with pay_with `
         + 'when you accept a delivery. ' : 'You hold no notes you can spend now. ')
       + (signs.length ? 'Your Valun client signs by itself: ' + signs.join('; ') + '.' : 'Your Valun client signs no consents by itself.')
       + (whole(pending) && pending > 0 ? ` ${pending} consent(s) wait for your client.` : '');
@@ -1388,8 +1471,7 @@ export class ValunAgent {
           + 'owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note '
           + 'you hold moves it to the payee (hold falls by the price); a set-off cancels equal '
           + 'claims and debts around a cycle (hold and owe fall together, net does not change); '
-          + 'cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have '
-          + 'no value.'},
+          + 'cleared_so_far counts what set-offs cancelled. ' + (Object.hasOwn(VALUE_WORDS, u) ? VALUE_WORDS[u] : VALUE_WORDS.PC)},
       notes_you_can_spend: notes,
       payments_in_progress: Array.isArray(get(box, 'payments_in_progress')) ? box.payments_in_progress : [],
       clearing: {your_client_signs: signs, consents_pending: pending,
@@ -1449,9 +1531,10 @@ export class ValunAgent {
     const stepOf = (cp, role) => (cp === SANDBOX_EXACT ? (role === 'payee' ? 1 : (hm >= notary ? 5 : 3)) : (role === 'payer' ? 2 : 4));
     const plan = (step, calls, then) => {
       const done = whole(step) && Object.hasOwn(TOUR_AFTER, step) ? TOUR_AFTER[step] : null;
-      return {tour_step: step, of: 5, goal: whole(step) && Object.hasOwn(TOUR_GOALS, step) ? TOUR_GOALS[step] : 'The tour is complete.',
+      const scale = c.scale ?? 1;
+      return {tour_step: step, of: 5, goal: tourGoal(step, unitWord, scale),
         next_calls: calls, then, with_the_sandbox_agents: held,
-        ...(done ? {when_done: {you_hold_PC: done[0], you_owe_PC: done[1]}} : {})};
+        ...(done ? {when_done: {you_hold_PC: done[0] * scale, you_owe_PC: done[1] * scale}} : {})};
     };
     const call = (tool, args, why) => ({tool, arguments: args, why});
     const offer = (step, cp, role, service) => {
@@ -1543,7 +1626,7 @@ export class ValunAgent {
     if (hx >= notary && paidByTransfer === 0) return offer(2, SANDBOX_MALLORY, 'payer', 'notary');
     if (hx > 0) return offer(3, SANDBOX_EXACT, 'payer', 'notary');   // once step 2 paid by transfer: pay sandbox-exact with your own note
     if (ox > 0) return offer(4, SANDBOX_MALLORY, 'payee', 'text-stats');
-    if (paidByTransfer > 0 && cleared > 0) return plan('done', [], ValunAgent.#tourDoneText(pos, cleared));
+    if (paidByTransfer > 0 && cleared > 0) return plan('done', [], ValunAgent.#tourDoneText(pos, cleared, c.unit ?? UNIT));
     const anyExact = Object.values(listed).some(xs => xs.some(x => get(x, 'counterparty') === SANDBOX_EXACT));
     if (!anyExact && recentlyActive(null, 10 / 60, get(participant, 'joined_at'), this.#now())) {
       return plan(1, [], 'The welcome job from sandbox-exact usually arrives within a minute of joining; call '
@@ -1564,16 +1647,16 @@ export class ValunAgent {
    * transfer (transferred_out) and with its own notes (owes + cleared), and what set-offs cleared. Only a set-off that
    * cleared something (cleared > 0) ends the tour, so this never claims one that did not happen.
    */
-  static #tourDoneText(pos, cleared) {
+  static #tourDoneText(pos, cleared, unit = UNIT) {
     const hold = get(pos, 'claims_held'), owe = get(pos, 'owes'), out = get(pos, 'transferred_out');
     let text = 'The tour is complete: ';
     if (whole(hold) && whole(owe) && whole(out)) {
-      text += `you earned ${hold + out + cleared} PC and spent ${out + owe + cleared} PC (${out} by transfer, `
+      text += `you earned ${hold + out + cleared} ${unit} and spent ${out + owe + cleared} ${unit} (${out} by transfer, `
         + `${owe + cleared} with your own note), and `;
     }
-    text += `set-offs cancelled ${cleared} PC of your claims and ${cleared} PC of your debts without changing your net `
+    text += `set-offs cancelled ${cleared} ${unit} of your claims and ${cleared} ${unit} of your debts without changing your net `
       + 'position.';
-    if ((whole(hold) && hold > 0) || (whole(owe) && owe > 0)) text += ` You still hold ${shown(hold)} PC and owe ${shown(owe)} PC.`;
+    if ((whole(hold) && hold > 0) || (whole(owe) && owe > 0)) text += ` You still hold ${shown(hold)} ${unit} and owe ${shown(owe)} ${unit}.`;
     return text + ' You can keep trading with the sandbox agents.';
   }
 
@@ -1604,8 +1687,11 @@ export class ValunAgent {
         agent_recently_active: recentlyActive(get(p, 'agent_last_seen'), 24, get(p, 'joined_at'), this.#now())});
     }
     out.sort((x, y) => Number(!x.agent_recently_active) - Number(!y.agent_recently_active));   // stable: active first
-    return {participants: out, note: 'positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; '
-      + 'PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer.'};
+    const where = (c.network ?? NETWORK) === TESTNET
+      ? 'positions are outstanding credit notes recorded by the Valun testnet Basis tracker and anchored on Ergo testnet; a '
+        + "creditor can redeem one against its issuer's reserve, if it has one; tERG have no monetary value."
+      : 'positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value.';
+    return {participants: out, note: where + ' A participant whose agent has not been seen in the last 24 hours may never answer an offer.'};
   }
 
   async inbox() {
@@ -1697,11 +1783,12 @@ export class ValunAgent {
       return [n, who, item(item(v, 'price'), 'amount')];
     });
     if (prices.length) {
-      out.negotiation = {prices_by_version: prices.map(([n, who, p]) => `v${str(n)} ${str(who)}: ${str(p)} PC`)};
+      const u = c.unit ?? UNIT;
+      out.negotiation = {prices_by_version: prices.map(([n, who, p]) => `v${str(n)} ${str(who)}: ${str(p)} ${u}`)};
       const mine = prices.filter(([, who]) => who === 'you').map(([, , p]) => p).slice(-2);
       const theirs = prices.filter(([, who]) => who !== 'you').map(([, , p]) => p).slice(-2);
       if (mine.length === 2 && theirs.length === 2 && pyEq(mine[0], mine[1]) && pyEq(theirs[0], theirs[1]) && !pyEq(mine[0], theirs[0])) {
-        out.negotiation.stalemate = `Both sides have repeated the same price (${str(mine[0])} vs ${str(theirs[0])} PC). If no price `
+        out.negotiation.stalemate = `Both sides have repeated the same price (${str(mine[0])} vs ${str(theirs[0])} ${u}). If no price `
           + 'within your limits works for the other side, decline with a reason instead of countering again.';
       }
     }
@@ -1766,14 +1853,14 @@ export class ValunAgent {
     const waiting = item(r, 'status') === 'proposed_awaiting_owner';
     const idle = recentlyActive(get(other, 'agent_last_seen'), 24, get(other, 'joined_at'), this.#now()) ? null
       : `${str(item(other, 'handle'))}'s agent has not been seen in the last 24 hours; it may never answer. Consider an active seller too.`;
-    const handle = str(item(other, 'handle')), shownPrice = str(item(a, 'price'));
+    const handle = str(item(other, 'handle')), shownPrice = amountText(item(a, 'price'), c.unit ?? UNIT);
     return {deal_id: item(r, 'id'), status: item(r, 'status'),
       terms_hash: truthy(get(r, 'current')) ? item(item(r, 'current'), 'terms_hash') : null,
       what_happened: waiting ? `Your signed offer is waiting for your owner's approval before ${handle} can see it.`
         : `${handle} can now accept, decline or counter your signed offer.`,
       if_agreed: item(a, 'role') === 'payer'
-        ? `After you accept their delivery you issue them a credit note of ${shownPrice} PC (you will owe them; not settled).`
-        : `After they accept your delivery they issue you a credit note of ${shownPrice} PC (they will owe you; not settled).`,
+        ? `After you accept their delivery you issue them a credit note of ${shownPrice} (you will owe them; not settled).`
+        : `After they accept your delivery they issue you a credit note of ${shownPrice} (they will owe you; not settled).`,
       ...(idle ? {warning: idle} : {})};
   }
 
@@ -1879,8 +1966,8 @@ export class ValunAgent {
       msg = 'You accepted the delivery and signed the credit note; your owner must approve before it is issued to the tracker.';
     } else if (status === 'note_issued') {
       msg = `Credit note issued: the Basis tracker now records that you owe ${str(item(item(r, 'counterparty'), 'handle'))} `
-        + `${str(get(or(get(n, 'tracker_note'), {}), 'amount_collected'))} PC in total (this deal added ${str(get(n, 'amount'))}). `
-        + labels(this.#circulating(c)).settlement;
+        + `${str(get(or(get(n, 'tracker_note'), {}), 'amount_collected'))} ${c.unit ?? UNIT} in total (this deal added ${str(get(n, 'amount'))}). `
+        + labels(this.#circulating(c), c.network ?? NETWORK).settlement;
     } else {
       msg = status;
     }
@@ -1896,7 +1983,7 @@ export class ValunAgent {
   async #reviewPayWith(c, a, issuer) {
     const claim = get(a, 'expected_claim_total');
     if (claim !== null && !(whole(claim) && claim >= 0)) {
-      throw new ValunError('bad_arguments', 'expected_claim_total is the whole number of PC of your claim that your '
+      throw new ValunError('bad_arguments', `expected_claim_total is the whole number of ${c.unit ?? UNIT} of your claim that your `
         + 'owner saw; nothing was signed');
     }
     const r = await c.payByTransfer(item(a, 'deal_id'), issuer, {expectedDeliverableSha256: get(a, 'expected_deliverable_sha256'),
@@ -1909,8 +1996,8 @@ export class ValunAgent {
     const price = isDict(r) ? get(or(get(or(get(or(get(r, 'current'), {}), 'terms'), {}), 'price'), {}), 'amount') : null;
     const who = or(cp, 'the payee'), by = or(iss, issuer), amount = whole(price) ? price : 'the price in';
     const msgs = {
-      paid_by_transfer: `Paid by debt transfer: ${str(by)} now owes ${str(who)} ${amount} PC more and you ${amount} PC `
-        + 'less; you issued no credit note for this deal. ' + CIRCULATION_SETTLEMENT,
+      paid_by_transfer: `Paid by debt transfer: ${str(by)} now owes ${str(who)} ${amount} ${c.unit ?? UNIT} more and you ${amount} ${c.unit ?? UNIT} `
+        + 'less; you issued no credit note for this deal. ' + labels(true, c.network ?? NETWORK).settlement,
       paying_by_transfer: 'You accepted the delivery and signed the debt transfer; it applies once the issuer and '
         + 'the payee sign. Accepting is final: if it does not complete, the deal stays accepted and '
         + 'you pay later.',

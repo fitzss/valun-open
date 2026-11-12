@@ -2,6 +2,7 @@
 
 import {bytesToHex, utf8} from './bytes.js';
 import {ValunError} from './errors.js';
+import {str} from './py.js';
 import {sha256} from './sha256.js';
 
 export const NETWORK = 'valun-pilot-1';   // the default network: a profile enrolled before 0.5 is on it
@@ -17,6 +18,15 @@ export function networkOf(name) {
 }
 export const PROTOCOL = 'valun-deal/1';
 export const UNIT = 'PC';
+/** An amount as people read it, in its network's unit: '3 PC' on the pilot; '3000000 nanoERG (0.003 tERG)' on the
+ *  testnet (exact: whole nanoERG to tERG by integer arithmetic). Anything but a whole number is shown as is, as
+ *  Python's str() shows it (the Python client's amount_text). */
+export function amountText(n, unit = UNIT) {
+  if (unit !== 'nanoERG' || !Number.isInteger(n)) return `${str(n)} ${unit}`;
+  const a = BigInt(Math.abs(n)), whole = a / 1_000_000_000n, frac = a % 1_000_000_000n;
+  const terg = `${whole}.${String(frac).padStart(9, '0')}`.replace(/0+$/, '').replace(/\.$/, '');
+  return `${n} nanoERG (${n < 0 ? '-' : ''}${terg} tERG)`;
+}
 export const CONSIDERATION = 'credit_note_on_delivery_accepted';
 /** sha256hex("valun-pilot-credit/1"): the pilot's PC token id (it exists on no chain). */
 export const PILOT_TOKEN_ID = bytesToHex(sha256(utf8('valun-pilot-credit/1')));

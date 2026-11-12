@@ -37,6 +37,16 @@ UNIT = 'PC'
 NETWORKS = {'valun-pilot-1': {'unit': 'PC', 'scale': 1}, 'valun-testnet-1': {'unit': 'nanoERG', 'scale': 1_000_000}}
 
 
+def amount_text(n, unit=UNIT):
+    """An amount as people read it, in its network's unit: '3 PC' on the pilot; '3000000 nanoERG (0.003 tERG)' on the
+    testnet (exact: whole nanoERG to tERG by integer arithmetic). Anything but a whole number is shown as is."""
+    if unit != 'nanoERG' or not isinstance(n, int) or isinstance(n, bool):
+        return f'{n} {unit}'
+    whole, frac = divmod(abs(n), 10 ** 9)
+    terg = f'{whole}.{frac:09d}'.rstrip('0').rstrip('.')
+    return f"{n} nanoERG ({'-' if n < 0 else ''}{terg} tERG)"
+
+
 def network_of(name):
     """The known network `name` ({unit, scale}); ValunError('unknown_network') for any other."""
     if not isinstance(name, str) or name not in NETWORKS:
@@ -1176,8 +1186,8 @@ class Client:
                 if a['edge'] == pair:
                     shown, mine = a['shown'], a['recorded']
                     return _refused(r, 'ledger_mismatch', (
-                        f"the server shows an older prior credit note to this payee ({shown['total']} PC at {shown['timestamp']}) "
-                        f"than your own record ({mine['total']} PC at {mine['timestamp']}). Ask your operator."))
+                        f"the server shows an older prior credit note to this payee ({shown['total']} {self.unit} at {shown['timestamp']}) "
+                        f"than your own record ({mine['total']} {self.unit} at {mine['timestamp']}). Ask your operator."))
             return None
         r = self._decide(lambda state, edges: nv.evaluate_bound_template(tpl, self._ctx(
             state, now_ms, features, deal=deal, payee_current_pk=payee, edges=edges)), signed_at, refuse=older_prior)
@@ -1324,13 +1334,13 @@ class Client:
             self._confirm_issued(pair, payee, verify, deal_id, d)
         known = self._known_total(pair)
         if known is not None and known != tpl['prior_total']:
-            raise ValunError('ledger_mismatch', f"the server says you have issued this payee {tpl['prior_total']} PC of credit notes so far; your own record says {known}. Ask your operator.")
+            raise ValunError('ledger_mismatch', f"the server says you have issued this payee {tpl['prior_total']} {self.unit} of credit notes so far; your own record says {known}. Ask your operator.")
         for p in self._pending_notes(pair, deal_id):
             # Still pending, so neither its deal nor the edge shows its outcome. If the edge has reached its total, it may
             # have applied (an owner approved it after this client signed): paying the deal again could pay it twice.
             if isinstance(p.get('total'), int) and not isinstance(p['total'], bool) and tpl['prior_total'] >= p['total']:
-                raise ValunError('already_paid', (f"your earlier credit note for this deal ({p['total']} PC in total to this payee) may "
-                                                  f"already be on the tracker: the edge's total is {tpl['prior_total']} PC now. Refusing "
+                raise ValunError('already_paid', (f"your earlier credit note for this deal ({p['total']} {self.unit} in total to this payee) may "
+                                                  f"already be on the tracker: the edge's total is {tpl['prior_total']} {self.unit} now. Refusing "
                                                   'to pay it again. Ask your operator.'))
 
     def _pending_notes(self, pair, deal_id):
@@ -1364,14 +1374,14 @@ class Client:
                 for st, p in found:
                     _guarded(nv.mark_paid, state, p['ref'], 'note', pair, st['total'], st['timestamp'])
             self._update(confirm)
-            self._refuse_paid_again(deal_id, [p for _st, p in found])
+            self._refuse_paid_again(deal_id, [p for _st, p in found], self.unit)
 
     @staticmethod
-    def _refuse_paid_again(deal_id, applied):
+    def _refuse_paid_again(deal_id, applied, unit=UNIT):
         """A note of mine that applied paid its own deal: never sign a second payment for it, whatever the server says."""
         for p in applied:
             if p.get('kind') == 'note' and p.get('ref') == deal_id:
-                raise ValunError('already_paid', (f"your credit note for this deal ({p.get('total')} PC) is already on the tracker, so "
+                raise ValunError('already_paid', (f"your credit note for this deal ({p.get('total')} {unit}) is already on the tracker, so "
                                                   'the deal is paid; refusing to pay it again. Ask your operator.'))
 
     @staticmethod
@@ -1465,7 +1475,7 @@ class Client:
         the deal as paid; a refusal, or payment_due, forgets the pending entry, and the attempt stays until it is dead
         (with the server's id of it, attempt_id, once known). Returns the deal view."""
         if expected_claim_total is not None and not _nat(expected_claim_total):
-            raise ValunError('bad_arguments', 'expected_claim_total is a whole number of PC (the claim your owner saw); '
+            raise ValunError('bad_arguments', f'expected_claim_total is a whole number of {self.unit} (the claim your owner saw); '
                                               'nothing was signed')
         self._secret()
         d = self.deal(deal_id)
@@ -1543,7 +1553,7 @@ class Client:
         def claim_shown(r):
             held = tpl['from_edge']['before']['total']
             if claim is not None and held != claim:
-                return _refused(r, 'stale_claim', f'your claim on this issuer is {held} PC now, not the {claim} PC you reviewed; '
+                return _refused(r, 'stale_claim', f'your claim on this issuer is {held} {self.unit} now, not the {claim} {self.unit} you reviewed; '
                                                   'nothing was signed. Review the payment again.')
             return None
 

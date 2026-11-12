@@ -84,5 +84,72 @@ class Networks(unittest.TestCase):
         self.assertEqual(cli._scaled_policy({'max_PC': 50}, p)['max_PC'], 50, 'the pilot: unchanged')
 
 
+# ---------- what the testnet texts say (0.5): amounts in nanoERG with tERG, and labels true on Ergo testnet ----------
+from valun import agent as va  # noqa: E402
+
+# The server's deal labels on the testnet (valun-app lib/pilot/core.mjs), word for word.
+SERVER_TESTNET_REDEMPTION = ("Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer "
+                             'posted one; tERG are test coins with no monetary value.')
+SERVER_CIRCULATION_SETTLEMENT_TESTNET = (
+    'not settled until redeemed: a credit note is an outstanding obligation. With circulating credit it can move to a new '
+    'creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation '
+    '(set-off, signed by every party; no net position changes); a netting is final once a tracker box on Ergo testnet commits '
+    'it. ' + SERVER_TESTNET_REDEMPTION)
+SERVER_SETTLEMENT_TESTNET = 'not settled until redeemed: issuing a credit note creates an outstanding obligation. ' + SERVER_TESTNET_REDEMPTION
+# What is true on the pilot and false on the testnet.
+PILOT_ONLY = ('PC', 'Nothing is redeemed', 'no reserve', 'local_only', 'no blockchain connection', 'pilot tracker',
+              'settlement does not exist')
+
+
+class TestnetWording(unittest.TestCase):
+    def test_amounts_read_in_nanoerg_and_terg_exactly(self):
+        for n, text in [(3_000_000, '3000000 nanoERG (0.003 tERG)'), (1_500_000_000, '1500000000 nanoERG (1.5 tERG)'),
+                        (1_000_000_000, '1000000000 nanoERG (1 tERG)'), (1, '1 nanoERG (0.000000001 tERG)'),
+                        (0, '0 nanoERG (0 tERG)'), (-2_000_000, '-2000000 nanoERG (-0.002 tERG)'),
+                        (123_456_789_012, '123456789012 nanoERG (123.456789012 tERG)')]:
+            self.assertEqual(vc.amount_text(n, 'nanoERG'), text)
+        self.assertEqual(vc.amount_text(3, 'PC'), '3 PC', 'the pilot: as before')
+        self.assertEqual(vc.amount_text(None, 'nanoERG'), 'None nanoERG', 'not a whole number: shown as is')
+
+    def test_the_testnet_labels_are_the_servers_and_say_nothing_only_the_pilot_is(self):
+        for circulating, settlement in ((True, SERVER_CIRCULATION_SETTLEMENT_TESTNET), (False, SERVER_SETTLEMENT_TESTNET)):
+            lab = va.labels(circulating, 'valun-testnet-1')
+            self.assertEqual(lab['settlement'], settlement, 'word for word the server\'s deal label')
+            self.assertEqual(lab['not_settled'], settlement)
+            texts = [lab['settlement'], *lab['honest_labels'].values(), *lab['real_vs_simulated'].values()]
+            for t in texts:
+                for words in PILOT_ONLY:
+                    self.assertNotIn(words, t, f'{circulating}: {t[:60]}')
+            self.assertIn('anchors them on Ergo testnet', lab['honest_labels']['what_basis_records'])
+            self.assertIn("issuer's reserve", lab['honest_labels']['what_basis_records'])
+        self.assertEqual(va.labels(True), va.labels(True, 'valun-pilot-1'), 'the pilot: as before')
+        self.assertIn('Nothing is redeemed', va.labels(True)['settlement'])
+
+    def test_approval_texts_and_the_tour_on_the_testnet(self):
+        self.assertEqual(va.owes('payer', 'bob', 3_000_000, 'nanoERG'),
+                         'after you accept their delivery you will owe bob 3000000 nanoERG (0.003 tERG) (your credit note).')
+        self.assertEqual(va.owes('payee', 'bob', 3, 'PC'), 'you must deliver; bob would then owe you 3 PC (their credit note).')
+        self.assertEqual(va.client_signs({'setoff': True, 'max_PC': 50_000_000}, 'nanoERG'),
+                         ['set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), '
+                          'up to 50000000 nanoERG (0.05 tERG) each'])
+        goal = va.tour_goal(3, 'nanoERG', 1_000_000)
+        self.assertEqual(goal, 'Pay with your own note: buy notary from sandbox-exact (2000000 nanoERG (0.002 tERG)). Then the '
+                               '2-cycle you -> sandbox-exact -> you (1000000 nanoERG (0.001 tERG)) is cleared by a set-off your '
+                               'Valun client signs by itself.')
+        self.assertEqual(va.tour_goal(3), va.TOUR_GOALS[3], 'the pilot: as before')
+        self.assertEqual(va.tour_goal('done', 'nanoERG', 1_000_000), 'The tour is complete.')
+        snap = {'counterparty': {'id': 'vp_' + 'f' * 12, 'handle': 'sandbox-exact'}, 'unit': 'nanoERG', 'network': 'valun-testnet-1',
+                'not_settled': va.labels(True, 'valun-testnet-1')['not_settled']}
+        text = va.ValunAgent._text_propose({'role': 'payer', 'price': 3_000_000, 'title': 't', 'description': 'd', 'deliverable': 'x'}, snap)
+        self.assertIn('price: 3000000 nanoERG (0.003 tERG)', text)
+        self.assertIn('you will owe sandbox-exact 3000000 nanoERG (0.003 tERG)', text)
+        self.assertNotIn(' PC', text)
+        self.assertIn('redeem it on Ergo testnet', text)
+        self.assertEqual(va.tracker_words('valun-testnet-1'), 'the Valun testnet tracker (anchored on Ergo testnet)')
+        self.assertEqual(va.brief_status({'network': 'valun-testnet-1'})['note'], va.BRIEF_NOTE_TESTNET)
+        self.assertNotIn('PC', va.BRIEF_NOTE_TESTNET)
+        self.assertEqual(va.brief_status({'network': 'valun-pilot-1'})['note'], va.BRIEF_NOTE)
+
+
 if __name__ == '__main__':
     unittest.main()

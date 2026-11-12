@@ -260,4 +260,12 @@ test('circulation helpers: consentRoles, the capability header, the consent poli
   for (const [st, out] of H.wants_consents) assert.equal(api.wantsConsents(st), out, show(st));
   for (const [c, out] of H.labels) assert.equal(JSON.stringify(api.labels(c)), JSON.stringify(out), String(c));
   for (const [info, out] of H.features_of) assert.deepEqual(api.featuresOf(info), out, show(info));
+  // the testnet (valun-testnet-1, nanoERG): its labels and the texts in its unit, as Python writes them
+  for (const [c, out] of H.labels_testnet) assert.equal(JSON.stringify(api.labels(c, 'valun-testnet-1')), JSON.stringify(out), String(c));
+  for (const [policy, out] of H.client_signs_testnet) assert.deepEqual(api.clientSigns(policy, 'nanoERG'), out, show(policy));
+  for (const [n, u, out] of H.amount_text) assert.equal(api.amountText(n, u), out, `${n} ${u}`);
+  for (const [s, u, k, out] of H.tour_goal) assert.equal(api.tourGoal(s, u, k), out, `${s} ${u}`);
+  for (const [r, u, n, out] of H.owes) assert.equal(api.owes(r, 'bob', n, u), out, `${r} ${u}`);
+  for (const [n, out] of H.tracker_words) assert.equal(api.trackerWords(n), out, String(n));
+  assert.ok(H.labels_testnet.length === 2 && H.amount_text.length === 20 && H.tour_goal.length === 12, 'the testnet cases are recorded');
 });

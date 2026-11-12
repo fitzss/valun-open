@@ -443,10 +443,12 @@ def cmd_doctor(args):
                         'connection.')
     if store.state.get('participant_id') and store.secret() and store.token():
         try:
-            me = vc.Client(store, server).me()
+            cl = vc.Client(store, server)
+            me = cl.me()
             m = me['mandate']
-            ok.append(f"Agent accepted by the server as {me['participant']['handle']}; limits: at most {m['max_issue_per_deal']} PC "
-                      f"per deal, {m['max_issue_outstanding']} PC owed in total")
+            ok.append(f"Agent accepted by the server as {me['participant']['handle']}; limits: at most "
+                      f"{vc.amount_text(m['max_issue_per_deal'], cl.unit)} per deal, {vc.amount_text(m['max_issue_outstanding'], cl.unit)} "
+                      'owed in total')
             if me['participant'].get('status') != 'active':
                 problems.append('The agent key is not active: ask the owner for an enrollment code, then '
                                 f'`valun --profile {name} enroll`.')
@@ -523,7 +525,7 @@ def cmd_config(args):
                 print('Owner mandate updated: every commitment now waits for you in the owner console, including accepted '
                       'deliveries (their credit notes wait for your review).')
             else:
-                print(f'Owner mandate updated: commitments up to {cap} PC no longer wait in the console.'
+                print(f'Owner mandate updated: commitments up to {vc.amount_text(cap, _unit(store))} no longer wait in the console.'
                       + (' Accepted deliveries still wait for your review (review_deliveries is on); turn that off in the '
                          f'owner console ({_server(args, store)}/pilot#owner) if you no longer want it.' if m.get('review_deliveries') else ''))
         changes = {'approvals': val}
@@ -693,12 +695,13 @@ def cmd_clearing(args):
             return 1
         policy = va.consent_policy_in_force(store.state.get('consent_policy'),
                                             next((me[k] for k in ('effective_limits', 'mandate') if isinstance(me.get(k), dict)), None))
-        signs = va.client_signs(policy)
+        signs = va.client_signs(policy, c.unit)
         pos = me.get('position') if isinstance(me.get('position'), dict) else {}
         print('Your Valun client signs by itself: ' + ('; '.join(signs) if signs else 'nothing (every consent role is off)'))
         print(f"Consents waiting for your client: {len([i for i in items if isinstance(i, dict) and i.get('state') == 'collecting'])}")
-        print(f"Cleared by set-off so far: {pos.get('cleared_by_setoff', pos.get('settled', 0))} PC; you hold "
-              f"{pos.get('claims_held')} PC and owe {pos.get('owes')} PC (net {pos.get('net')} PC).")
+        u = c.unit
+        print(f"Cleared by set-off so far: {pos.get('cleared_by_setoff', pos.get('settled', 0))} {u}; you hold "
+              f"{pos.get('claims_held')} {u} and owe {pos.get('owes')} {u} (net {pos.get('net')} {u}).")
         log = store.state.get('consent_log') if isinstance(store.state.get('consent_log'), list) else []
         if log:
             print('Recent decisions of your client:')
@@ -793,6 +796,11 @@ ENDED_AT_SERVER_PAID = ('ended by the server ({state}: {why}), which says it nev
                         '{paid}: nothing to resolve')
 
 
+def _unit(store):
+    """The unit of the network this profile enrolled on (PC for a profile from before 0.5)."""
+    return vc.NETWORKS.get(store.state.get('network') or vc.NETWORK, {}).get('unit', vc.UNIT)
+
+
 def _who_key(c, pk):
     return 'you' if pk == c.pubkey else f'{str(pk)[:16]}...'
 
@@ -803,10 +811,10 @@ def _attempt_line(c, r):
     when = datetime.fromtimestamp(r['timestamp'] / 1000, timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
     if r['route'] == 'note':
         what = (f"your credit note to {_who_key(c, rcp)}: your debt {r['prior'] if r['prior'] is not None else '?'} -> "
-                f"{r['total']} PC")
+                f"{r['total']} {c.unit}")
     else:
         what = (f"paying with the note of {_who_key(c, i)}: your claim {r['prior'] if r['prior'] is not None else '?'} -> "
-                f"{r['total']} PC")
+                f"{r['total']} {c.unit}")
     sid = f", server id {r['attempt_id']}" if r.get('attempt_id') else ''
     decided = f"; you resolved it: {r['outcome']}" if r.get('outcome') in vc.ATTEMPT_OUTCOMES and r.get('outcome') != 'applied' else ''
     paid = f"paid by {r['paid_by']}" if r.get('paid_by') else 'recorded as paid'

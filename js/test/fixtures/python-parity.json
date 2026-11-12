@@ -2,14 +2,14 @@
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python": "3.14.7",
  "python_sources_sha256": {
-  "agent.py": "ca8d8f69a85516128431618757b87efd6a6b23b07d7008301f39e0866ed45717",
+  "agent.py": "ef668265c54f67d71cbbbf0bd9330d9bf20538a02a2b3e5c0fbd87ce944a03a8",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "779079e660ccd59497d76ad0e120cb556c9e0465018586e0629aa0dbdb48617b",
-  "mcp_server.py": "395190caab593cdbf02842dbc60574fdd64b1d3f34b3f37c34e25988ebb07a06",
+  "client.py": "1c6f42681a885cef1b6ed848c60a07742b67f1ce812bb60ecde16c16baf9af6b",
+  "mcp_server.py": "5ab9369b09b1e35309e9324670fadcdbd7e79189cb372e394f8ef0c358cfc87a",
   "measure.py": "f4305cf1fe54ac137fa3aa201b0904c0e88e6ecc8325a38a41c06197963579ec",
   "novation.py": "365f0a1b7e6f5989f2f88e7fb58b86aa2596829c83e00c215885a2b505dac54a",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
-  "sandbox.py": "0d4e3ac8cb3ee8379f8b313848595692a335d7ef5c7d86a00c74bd15a6ec7097",
+  "sandbox.py": "8b3b43deebac42fd44ac7a7a82bdcee8bb5389422a61db17330570c709399155",
   "schemas.py": "b51e97fac93fa5c1dfee02801c8ae6aa2c986982a6742f0a2cf7a52978f7a66b"
  },
  "python_tests_sha256": {
@@ -44221,6 +44221,1003 @@
       "not_proven": "that delivered work is good (Valun records statements, it does not judge work); that any participant will ever honour a credit note"
      }
     }
+   ]
+  ],
+  "labels_testnet": [
+   [
+    true,
+    {
+     "settlement": "not settled until redeemed: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes); a netting is final once a tracker box on Ergo testnet commits it. Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.",
+     "not_settled": "not settled until redeemed: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes); a netting is final once a tracker box on Ergo testnet commits it. Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.",
+     "honest_labels": {
+      "what_basis_records": "The Valun testnet Basis tracker keeps one running total per key pair: what the issuer key owes the recipient key, with a timestamp, signed by the issuer, and anchors them on Ergo testnet (a tracker box commits the digest of every total). A credit note raises a total; with circulating credit a debt transfer moves part of it to a new creditor and a set-off lowers the totals around a cycle, each signed by every party whose total changes. A note is backed only by its issuer's reserve on Ergo testnet, if the issuer posted one.",
+      "outstanding_promise": "not settled until redeemed: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes); a netting is final once a tracker box on Ergo testnet commits it. Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.",
+      "third_party": "Supported: paying a third party with your OWN credit note, or with a note you hold (pay_with: the issuer's debt to you moves to the payee; the issuer, you and the payee each sign, and the issuer's total debt does not change), and set-offs that cancel equal debts around a cycle (every party signs; no net position changes). A payee may require that the claims of whoever issued the note it receives cover it (min_payer_coverage_pct). A creditor redeems a note only against its issuer's reserve on Ergo testnet, in tERG."
+     },
+     "real_vs_simulated": {
+      "real": "signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt transfers and set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your client against the signatures) and anchored on Ergo testnet; reserves and redemptions are Ergo testnet transactions",
+      "simulated": "the value: tERG are Ergo testnet coins with no monetary value",
+      "not_proven": "that delivered work is good (Valun records statements, it does not judge work); that any participant will honour a credit note beyond its reserve"
+     }
+    }
+   ],
+   [
+    false,
+    {
+     "settlement": "not settled until redeemed: issuing a credit note creates an outstanding obligation. Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.",
+     "not_settled": "not settled until redeemed: issuing a credit note creates an outstanding obligation. Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.",
+     "honest_labels": {
+      "what_basis_records": "The Valun testnet Basis tracker keeps one running total per key pair: what the issuer key owes the recipient key, with a timestamp, signed by the issuer, and anchors them on Ergo testnet (a tracker box commits the digest of every total). A credit note raises a total. A note is backed only by its issuer's reserve on Ergo testnet, if the issuer posted one.",
+      "outstanding_promise": "not settled until redeemed: issuing a credit note creates an outstanding obligation. Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.",
+      "third_party": "Supported: paying a third party with your OWN credit note; the third party may require that your claims on the tracker cover it (min_payer_coverage_pct). Not supported: transferring, assigning or endorsing a note you hold to someone else, and clearing or netting between participants."
+     },
+     "real_vs_simulated": {
+      "real": "signatures by each participant's own key; Valun's acceptance and approval records; credit notes held by a real Basis tracker (read back and reconciled by Valun) and anchored on Ergo testnet; reserves and redemptions are Ergo testnet transactions",
+      "simulated": "the value: tERG are Ergo testnet coins with no monetary value",
+      "not_proven": "that delivered work is good (Valun records statements, it does not judge work); that any participant will honour a credit note beyond its reserve"
+     }
+    }
+   ]
+  ],
+  "client_signs_testnet": [
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": null,
+     "local_policy": {},
+     "owner_mandate": {
+      "auto_clear": null,
+      "novate_own_debt": null,
+      "accept_transfers": null,
+      "accept_notes_from": null,
+      "refuse_notes_from": null,
+      "pay_with_held_notes": null,
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": null,
+     "local_policy": {},
+     "owner_mandate": {
+      "auto_clear": null,
+      "novate_own_debt": null,
+      "accept_transfers": null,
+      "accept_notes_from": null,
+      "refuse_notes_from": null,
+      "pay_with_held_notes": null,
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": null,
+     "local_policy": {},
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": null,
+     "local_policy": {},
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": null,
+     "local_policy": {},
+     "owner_mandate": {
+      "auto_clear": false,
+      "novate_own_debt": true,
+      "accept_transfers": 1,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": null,
+     "local_policy": {},
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": 200
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": true,
+      "as_issuer": true,
+      "as_new_creditor": true,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": null,
+      "novate_own_debt": null,
+      "accept_transfers": null,
+      "accept_notes_from": null,
+      "refuse_notes_from": null,
+      "pay_with_held_notes": null,
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": true,
+      "as_issuer": true,
+      "as_new_creditor": true,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": null,
+      "novate_own_debt": null,
+      "accept_transfers": null,
+      "accept_notes_from": null,
+      "refuse_notes_from": null,
+      "pay_with_held_notes": null,
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": true,
+      "as_issuer": true,
+      "as_new_creditor": true,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    [
+     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 nanoERG (0.00000005 tERG) each",
+     "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 nanoERG (0.00000005 tERG) each",
+     "payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 nanoERG (0.00000005 tERG) each"
+    ]
+   ],
+   [
+    {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": false,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": true,
+      "as_issuer": true,
+      "as_new_creditor": true,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    [
+     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 nanoERG (0.00000005 tERG) each",
+     "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 nanoERG (0.00000005 tERG) each"
+    ]
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": true,
+     "as_new_creditor": false,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": true,
+      "as_issuer": true,
+      "as_new_creditor": true,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": false,
+      "novate_own_debt": true,
+      "accept_transfers": 1,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    [
+     "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 nanoERG (0.00000005 tERG) each"
+    ]
+   ],
+   [
+    {
+     "setoff": true,
+     "as_issuer": true,
+     "as_new_creditor": true,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": true,
+      "as_issuer": true,
+      "as_new_creditor": true,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": 200
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    [
+     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 nanoERG (0.00000005 tERG) each",
+     "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 nanoERG (0.00000005 tERG) each",
+     "payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 nanoERG (0.00000005 tERG) each"
+    ]
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": false,
+      "as_issuer": false,
+      "as_new_creditor": false,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": null,
+      "novate_own_debt": null,
+      "accept_transfers": null,
+      "accept_notes_from": null,
+      "refuse_notes_from": null,
+      "pay_with_held_notes": null,
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": false,
+      "as_issuer": false,
+      "as_new_creditor": false,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": null,
+      "novate_own_debt": null,
+      "accept_transfers": null,
+      "accept_notes_from": null,
+      "refuse_notes_from": null,
+      "pay_with_held_notes": null,
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": false,
+      "as_issuer": false,
+      "as_new_creditor": false,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": false,
+      "as_issuer": false,
+      "as_new_creditor": false,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": false,
+      "as_issuer": false,
+      "as_new_creditor": false,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": false,
+      "novate_own_debt": true,
+      "accept_transfers": 1,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": 50,
+     "local_policy": {
+      "setoff": false,
+      "as_issuer": false,
+      "as_new_creditor": false,
+      "max_PC": 50,
+      "accept_issuers": "any",
+      "refuse_issuers": []
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": 200
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": 5,
+     "local_policy": {
+      "setoff": true,
+      "max_PC": 5
+     },
+     "owner_mandate": {
+      "auto_clear": null,
+      "novate_own_debt": null,
+      "accept_transfers": null,
+      "accept_notes_from": null,
+      "refuse_notes_from": null,
+      "pay_with_held_notes": null,
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": 5,
+     "local_policy": {
+      "setoff": true,
+      "max_PC": 5
+     },
+     "owner_mandate": {
+      "auto_clear": null,
+      "novate_own_debt": null,
+      "accept_transfers": null,
+      "accept_notes_from": null,
+      "refuse_notes_from": null,
+      "pay_with_held_notes": null,
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": true,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": 5,
+     "local_policy": {
+      "setoff": true,
+      "max_PC": 5
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    [
+     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 5 nanoERG (0.000000005 tERG) each"
+    ]
+   ],
+   [
+    {
+     "setoff": true,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": 5,
+     "local_policy": {
+      "setoff": true,
+      "max_PC": 5
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    [
+     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 5 nanoERG (0.000000005 tERG) each"
+    ]
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": 5,
+     "local_policy": {
+      "setoff": true,
+      "max_PC": 5
+     },
+     "owner_mandate": {
+      "auto_clear": false,
+      "novate_own_debt": true,
+      "accept_transfers": 1,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": true,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": 5,
+     "local_policy": {
+      "setoff": true,
+      "max_PC": 5
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": 200
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    [
+     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 5 nanoERG (0.000000005 tERG) each"
+    ]
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": true,
+     "local_policy": {
+      "as_new_creditor": true,
+      "max_PC": true
+     },
+     "owner_mandate": {
+      "auto_clear": null,
+      "novate_own_debt": null,
+      "accept_transfers": null,
+      "accept_notes_from": null,
+      "refuse_notes_from": null,
+      "pay_with_held_notes": null,
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": true,
+     "local_policy": {
+      "as_new_creditor": true,
+      "max_PC": true
+     },
+     "owner_mandate": {
+      "auto_clear": null,
+      "novate_own_debt": null,
+      "accept_transfers": null,
+      "accept_notes_from": null,
+      "refuse_notes_from": null,
+      "pay_with_held_notes": null,
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": true,
+     "max_PC": true,
+     "local_policy": {
+      "as_new_creditor": true,
+      "max_PC": true
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    [
+     "payments to you by debt transfer, of notes from issuers your owner accepts"
+    ]
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": true,
+     "local_policy": {
+      "as_new_creditor": true,
+      "max_PC": true
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": false,
+     "max_PC": true,
+     "local_policy": {
+      "as_new_creditor": true,
+      "max_PC": true
+     },
+     "owner_mandate": {
+      "auto_clear": false,
+      "novate_own_debt": true,
+      "accept_transfers": 1,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": null
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    []
+   ],
+   [
+    {
+     "setoff": false,
+     "as_issuer": false,
+     "as_new_creditor": true,
+     "max_PC": true,
+     "local_policy": {
+      "as_new_creditor": true,
+      "max_PC": true
+     },
+     "owner_mandate": {
+      "auto_clear": true,
+      "novate_own_debt": true,
+      "accept_transfers": true,
+      "accept_notes_from": "any",
+      "refuse_notes_from": [],
+      "pay_with_held_notes": "when_asked",
+      "max_accept_per_issuer": 200
+     },
+     "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
+    },
+    [
+     "payments to you by debt transfer, of notes from issuers your owner accepts"
+    ]
+   ]
+  ],
+  "amount_text": [
+   [
+    0,
+    "PC",
+    "0 PC"
+   ],
+   [
+    1,
+    "PC",
+    "1 PC"
+   ],
+   [
+    3,
+    "PC",
+    "3 PC"
+   ],
+   [
+    -2000000,
+    "PC",
+    "-2000000 PC"
+   ],
+   [
+    3000000,
+    "PC",
+    "3000000 PC"
+   ],
+   [
+    999999999,
+    "PC",
+    "999999999 PC"
+   ],
+   [
+    1000000000,
+    "PC",
+    "1000000000 PC"
+   ],
+   [
+    1500000000,
+    "PC",
+    "1500000000 PC"
+   ],
+   [
+    123456789012,
+    "PC",
+    "123456789012 PC"
+   ],
+   [
+    "7",
+    "PC",
+    "7 PC"
+   ],
+   [
+    0,
+    "nanoERG",
+    "0 nanoERG (0 tERG)"
+   ],
+   [
+    1,
+    "nanoERG",
+    "1 nanoERG (0.000000001 tERG)"
+   ],
+   [
+    3,
+    "nanoERG",
+    "3 nanoERG (0.000000003 tERG)"
+   ],
+   [
+    -2000000,
+    "nanoERG",
+    "-2000000 nanoERG (-0.002 tERG)"
+   ],
+   [
+    3000000,
+    "nanoERG",
+    "3000000 nanoERG (0.003 tERG)"
+   ],
+   [
+    999999999,
+    "nanoERG",
+    "999999999 nanoERG (0.999999999 tERG)"
+   ],
+   [
+    1000000000,
+    "nanoERG",
+    "1000000000 nanoERG (1 tERG)"
+   ],
+   [
+    1500000000,
+    "nanoERG",
+    "1500000000 nanoERG (1.5 tERG)"
+   ],
+   [
+    123456789012,
+    "nanoERG",
+    "123456789012 nanoERG (123.456789012 tERG)"
+   ],
+   [
+    "7",
+    "nanoERG",
+    "7 nanoERG"
+   ]
+  ],
+  "tour_goal": [
+   [
+    1,
+    "PC",
+    1,
+    "Earn: sandbox-exact buys text-stats from you (the welcome job, 3 PC). Deliver the exact result; it pays with its own credit note."
+   ],
+   [
+    1,
+    "nanoERG",
+    1000000,
+    "Earn: sandbox-exact buys text-stats from you (the welcome job, 3000000 nanoERG (0.003 tERG)). Deliver the exact result; it pays with its own credit note."
+   ],
+   [
+    2,
+    "PC",
+    1,
+    "Spend a note you hold: buy notary from sandbox-mallory (2 PC) and pay with pay_with=\"sandbox-exact\" (2 PC of sandbox-exact's debt to you move to sandbox-mallory). Dispute a wrong delivery and buy again."
+   ],
+   [
+    2,
+    "nanoERG",
+    1000000,
+    "Spend a note you hold: buy notary from sandbox-mallory (2000000 nanoERG (0.002 tERG)) and pay with pay_with=\"sandbox-exact\" (2000000 nanoERG (0.002 tERG) of sandbox-exact's debt to you move to sandbox-mallory). Dispute a wrong delivery and buy again."
+   ],
+   [
+    3,
+    "PC",
+    1,
+    "Pay with your own note: buy notary from sandbox-exact (2 PC). Then the 2-cycle you -> sandbox-exact -> you (1 PC) is cleared by a set-off your Valun client signs by itself."
+   ],
+   [
+    3,
+    "nanoERG",
+    1000000,
+    "Pay with your own note: buy notary from sandbox-exact (2000000 nanoERG (0.002 tERG)). Then the 2-cycle you -> sandbox-exact -> you (1000000 nanoERG (0.001 tERG)) is cleared by a set-off your Valun client signs by itself."
+   ],
+   [
+    4,
+    "PC",
+    1,
+    "Sell: offer text-stats to sandbox-mallory (3 PC). It pays with its own note, and the 3-cycle sandbox-mallory -> you -> sandbox-exact -> sandbox-mallory (1 PC) clears."
+   ],
+   [
+    4,
+    "nanoERG",
+    1000000,
+    "Sell: offer text-stats to sandbox-mallory (3000000 nanoERG (0.003 tERG)). It pays with its own note, and the 3-cycle sandbox-mallory -> you -> sandbox-exact -> sandbox-mallory (1000000 nanoERG (0.001 tERG)) clears."
+   ],
+   [
+    5,
+    "PC",
+    1,
+    "Spend again: buy notary from sandbox-exact (2 PC) and pay with pay_with=\"sandbox-mallory\". Then the server-only cycle between sandbox-exact and sandbox-mallory clears."
+   ],
+   [
+    5,
+    "nanoERG",
+    1000000,
+    "Spend again: buy notary from sandbox-exact (2000000 nanoERG (0.002 tERG)) and pay with pay_with=\"sandbox-mallory\". Then the server-only cycle between sandbox-exact and sandbox-mallory clears."
+   ],
+   [
+    null,
+    "PC",
+    1,
+    "The tour is complete."
+   ],
+   [
+    null,
+    "nanoERG",
+    1000000,
+    "The tour is complete."
+   ]
+  ],
+  "owes": [
+   [
+    "payer",
+    "PC",
+    3,
+    "after you accept their delivery you will owe bob 3 PC (your credit note)."
+   ],
+   [
+    "payer",
+    "nanoERG",
+    3000000,
+    "after you accept their delivery you will owe bob 3000000 nanoERG (0.003 tERG) (your credit note)."
+   ],
+   [
+    "payee",
+    "PC",
+    3,
+    "you must deliver; bob would then owe you 3 PC (their credit note)."
+   ],
+   [
+    "payee",
+    "nanoERG",
+    3000000,
+    "you must deliver; bob would then owe you 3000000 nanoERG (0.003 tERG) (their credit note)."
+   ]
+  ],
+  "tracker_words": [
+   [
+    null,
+    "the pilot tracker"
+   ],
+   [
+    "valun-pilot-1",
+    "the pilot tracker"
+   ],
+   [
+    "valun-testnet-1",
+    "the Valun testnet tracker (anchored on Ergo testnet)"
    ]
   ],
   "features_of": [
