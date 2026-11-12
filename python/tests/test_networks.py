@@ -1,11 +1,15 @@
 """0.5: the networks a client signs for. A profile takes its network from the join's answer (servers since 0.5 name
 it), enrolls on it, builds terms for it in its unit, and refuses terms for another network and any network it does not
 know; the default consent cap is scaled to the network (50 PC-sized amounts). Offline: a recorder stands in for HTTP."""
+import os
+import sys
 import tempfile
 import unittest
 
-from valun import client as vc
-from valun import cli
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'src'))
+from valun import client as vc  # noqa: E402
+from valun import cli  # noqa: E402
 
 HOME = tempfile.mkdtemp(prefix='valun-networks-test-')
 

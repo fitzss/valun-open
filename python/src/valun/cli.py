@@ -1116,6 +1116,40 @@ def cmd_profile(args):
     return 0
 
 
+def cmd_ergo(args):
+    """Settlement on Ergo testnet (the Valun testnet network only): this agent's Ergo address, the chain view, the
+    reserves, a reserve of its own tERG, and the redemption of a note it holds. Signing needs ergo-lib
+    (pip install ergo-lib-python==0.28.0); reserve and redeem send nothing without --broadcast."""
+    store, name = _store(args), _profile(args)
+    if not (store.state.get('participant_id') and store.secret()):
+        print(f"Profile '{name}' is not joined yet; run `valun --profile {name} join` first.")
+        return 1
+    c = vc.Client(store, _server(args, store))
+    try:
+        if args.action == 'address':
+            out = {'network': c.network, 'address': c.ergo_address(), 'unit': c.unit,
+                   'note': 'Ergo TESTNET: test coins (tERG) with no monetary value; send tERG here from a testnet faucet'}
+        elif args.action == 'chain':
+            out = c.chain()
+        elif args.action == 'reserves':
+            out = c.reserves()
+        elif args.action == 'reserve':
+            out = c.create_reserve(args.nano, broadcast=args.broadcast)
+            if not args.broadcast:
+                out = {k: v for k, v in out.items() if k != 'signed'}
+                out['dry_run'] = 'checked and signed here, NOT sent: add --broadcast to send it'
+        else:
+            out = c.redeem(args.issuer, args.amount, broadcast=args.broadcast)
+            if not args.broadcast:
+                out = {k: v for k, v in out.items() if k != 'signed'}
+                out['dry_run'] = 'checked and signed here, NOT submitted: add --broadcast to submit it'
+    except vc.ValunError as e:
+        print(json.dumps(error_payload(e), ensure_ascii=False))
+        return 1
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+    return 0
+
+
 def cmd_sell(args):
     """Sell AI work for credits with your own Claude API key (valun.ai_seller): this profile's agent answers offers for
     the chosen services, does each job with Claude before accepting it, delivers it, and stays within the budget."""
@@ -1258,6 +1292,20 @@ def main(argv=None):
     sl.add_argument('--once', action='store_true', help='check the inbox once and exit')
     sl.add_argument('--keep-profile', action='store_true', help='do not set your public services to what you sell')
     sl.add_argument('--server')
+    eg = sub.add_parser('ergo', help='the testnet network: Ergo testnet settlement (address, reserve, redeem; needs ergo-lib-python)')
+    egs = eg.add_subparsers(dest='action', required=True)
+    egs.add_parser('address', help="this agent's Ergo testnet address (the P2PK address of its Valun key)")
+    egs.add_parser('chain', help="the tracker's anchoring on Ergo testnet")
+    egs.add_parser('reserves', help='the Basis reserves the network sees')
+    er = egs.add_parser('reserve', help='lock NANO nanoERG of your own tERG in a Basis reserve (sent only with --broadcast)')
+    er.add_argument('nano', type=int)
+    er.add_argument('--broadcast', action='store_true')
+    ed = egs.add_parser('redeem', help='redeem AMOUNT nanoERG of the note ISSUER issued to you (submitted only with --broadcast)')
+    ed.add_argument('issuer')
+    ed.add_argument('amount', type=int)
+    ed.add_argument('--broadcast', action='store_true')
+    for x in (eg,):
+        x.add_argument('--server')
     sb = sub.add_parser('sandbox', help='deterministic test agents that need no AI model')
     sbs = sb.add_subparsers(dest='role', required=True)
     se = sbs.add_parser('seller', help='sell text-stats and notary jobs (polls the inbox; Ctrl+C to stop)')
@@ -1285,7 +1333,7 @@ def main(argv=None):
         return 1
     return {'join': cmd_join, 'enroll': cmd_enroll, 'status': cmd_status, 'doctor': cmd_doctor, 'config': cmd_config,
             'tools': cmd_tools, 'call': cmd_call, 'mcp': cmd_mcp, 'clearing': cmd_clearing, 'policy': cmd_policy,
-            'attempts': cmd_attempts, 'sandbox': cmd_sandbox, 'profile': cmd_profile, 'sell': cmd_sell}[args.cmd](args)
+            'attempts': cmd_attempts, 'sandbox': cmd_sandbox, 'profile': cmd_profile, 'sell': cmd_sell, 'ergo': cmd_ergo}[args.cmd](args)
 
 
 SELL_HELP = """Sell AI work on Valun for credits, with your own Claude API key. This profile's agent answers offers for

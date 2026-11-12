@@ -2239,6 +2239,90 @@ class Client:
         for p in pending:
             records.remove_pending(recs, p['pair'], p['total'], p['timestamp'], p['ref'])
 
+    # ---------- settlement on Ergo testnet (the Valun testnet network, valun-testnet-1; valun/ergo.py) ----------
+    # The agent's Ergo address is the P2PK address of its Valun key: its own key signs its own Ergo transactions, the
+    # server never holds it. Signing needs ergo-lib (pip install ergo-lib-python==0.28.0); tERG have no monetary value.
+    def _on_testnet(self):
+        if self.network != 'valun-testnet-1':
+            raise ValunError('not_testnet', 'settlement on Ergo testnet is for the Valun testnet network (valun-testnet-1); '
+                                            f'this profile is on {self.network}')
+        if not self.pubkey:
+            raise ValunError('not_connected', 'this agent has no Valun signing key; the operator must enroll it')
+
+    def ergo_address(self):
+        """This agent's Ergo testnet address (the P2PK address of its Valun key)."""
+        from . import ergo
+        self._on_testnet()
+        return ergo.p2pk_address(self.pubkey)
+
+    def chain(self):
+        """GET /chain: the tracker's anchoring on Ergo testnet and the explorer links."""
+        return self.request('GET', '/pilot/v1/chain', auth=False)
+
+    def reserves(self):
+        """GET /reserves: the Basis reserves the network's tracker sees, with their owners' handles."""
+        return self.request('GET', '/pilot/v1/reserves', auth=False)
+
+    @staticmethod
+    def _ergo_node(chain, node_url=None):
+        from . import ergo
+        url = node_url or (chain or {}).get('node')
+        if not isinstance(url, str) or not url:
+            raise ValunError('not_configured', 'no Ergo testnet node: GET /chain names none; pass node_url')
+        return ergo.Node(url)
+
+    def create_reserve(self, erg_amount, broadcast=False, node_url=None):
+        """Lock `erg_amount` nanoERG (0.01 to 2 tERG) of this agent's own tERG in a Basis reserve: the tracker builds the
+        payment request (POST /reserves/create), this client checks it (ergo.check_reserve_payload), builds and signs the
+        transaction from plain boxes at its own address, and with `broadcast` sends it to the Ergo testnet node. Without
+        `broadcast` nothing leaves this client (the signed transaction is returned for a look first)."""
+        from . import ergo
+        self._on_testnet()
+        chain = self.chain()
+        node = self._ergo_node(chain, node_url)
+        r = ergo.build_reserve(secret_hex=self._secret().hex(), pubkey_hex=self.pubkey, erg_amount=erg_amount, node=node,
+                               tracker_nft_id=chain.get('tracker_nft_id'), reserve_contract=chain.get('reserve_contract'),
+                               payload_for=lambda nft_id: self.request('POST', '/pilot/v1/reserves/create',
+                                                                       {'erg_amount': erg_amount, 'nft_id': nft_id}))
+        explorer = chain.get('explorer')
+        out = {'broadcast': bool(broadcast), 'tx_id': r['tx_id'], 'nft_id': r['nft_id'], 'reserve_box_id': r['reserve_box_id'],
+               'locked_nanoerg': r['locked_nanoerg'], 'address': ergo.p2pk_address(self.pubkey),
+               'explorer': f"{explorer}/en/transactions/{r['tx_id']}" if explorer else None}
+        if not broadcast:
+            return {**out, 'signed': r['signed']}
+        node.broadcast(r['signed'])
+        return out
+
+    def redeem(self, issuer, amount, broadcast=False):
+        """Redeem `amount` nanoERG of the note `issuer` (a participant id or handle) issued to this agent, against the
+        issuer's reserve: the tracker builds the transaction and pays its fee (POST /redemption/build), this client
+        checks it (ergo.check_redemption), adds its own proof for the reserve input, and with `broadcast` submits it
+        (POST /redemption/submit). Without `broadcast` nothing is submitted (the tracker's build lapses)."""
+        from . import ergo
+        self._on_testnet()
+        if not isinstance(issuer, str) or not issuer:
+            raise ValunError('invalid_field', 'issuer: the participant id or handle of the agent whose note you hold')
+        if not isinstance(amount, int) or isinstance(amount, bool) or amount < 1:
+            raise ValunError('invalid_field', 'amount: whole nanoERG to redeem')
+        E = ergo.ergo_lib()
+        chain = self.chain()
+        reserve_tree = bytes(E.chain.Address(chain['reserve_contract']).ergo_tree()).hex() if chain.get('reserve_contract') else None
+        built = self.request('POST', '/pilot/v1/redemption/build', {'issuer': issuer, 'amount': amount})
+        issuer_pubkey = ((built or {}).get('issuer') or {}).get('pubkey')
+        if not isinstance(issuer_pubkey, str):
+            raise ValunError('bad_redemption', 'the server named no issuer key')
+        checked = ergo.check_redemption(E, built, issuer_pubkey=issuer_pubkey, recipient_pubkey=self.pubkey, amount=amount,
+                                        tracker_nft_id=chain.get('tracker_nft_id'), reserve_tree=reserve_tree)
+        signed = ergo.sign_redemption(built, self._secret().hex())
+        explorer = chain.get('explorer')
+        out = {'broadcast': bool(broadcast), 'tx_id': signed.get('id'), 'issuer': built['issuer'], 'amount': amount,
+               'reserve_box_id': checked['reserve_box_id'], 'address': ergo.p2pk_address(self.pubkey),
+               'explorer': f"{explorer}/en/transactions/{signed['id']}" if explorer and signed.get('id') else None}
+        if not broadcast:
+            return {**out, 'signed': signed}
+        sub = self.request('POST', '/pilot/v1/redemption/submit', {'signed_tx': signed, 'unsigned_tx': built['unsigned_tx']})
+        return {**out, 'tx_id': (sub or {}).get('tx_id') or out['tx_id'], 'explorer': (sub or {}).get('explorer') or out['explorer']}
+
     # ---------- circulating credit: my edges (PROTOCOL.md 18.14; design 6.1, 11) ----------
     def sync_edges(self, now_ms=None):
         """Bring this client's records up to date from GET /edges?since=<journal_seq> (mode bound and above).
