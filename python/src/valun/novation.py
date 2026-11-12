@@ -138,6 +138,7 @@ ctx keys (only me_pk, now_ms and verify are checked as arguments; the others giv
   me_pk            this participant's current public key (66 lowercase hex)
   now_ms           the time, ms since the epoch
   verify           verify(pubkey_hex, msg_bytes, sig_hex) -> bool (basis.verify over hex keys and signatures)
+  unit             the network's unit, only for the words of a refusal ('PC' when absent; 0.5.1)
   me_id            this participant's id: required for the payer roles and bound notes (deal_mismatch without it)
   pins             {tracker_nft_id, denomination} pinned at enroll or on the first 0.4 run (R13)
   records          records.py records ({pair: {confirmed, pending}}), with records['paid_deals'] {deal_id: {route,
@@ -547,6 +548,7 @@ class _Run:
         if ctx.get('edges') is not None and not isinstance(ctx['edges'], dict):
             raise ValueError("ctx['edges'] must be {edge: EdgeState or None}")
         self.ctx, self.me, self.now, self._verify = ctx, ctx['me_pk'], ctx['now_ms'], ctx['verify']
+        self.unit = ctx.get('unit') or 'PC'   # the network's unit, for the refusals' words (0.5.1; the pilot's by default)
         self.item_code, self.window_ms = item_code, window_ms
         self.ctx_edges = ctx.get('edges') or {}
         self.shown = {}                       # edge -> the state the item shows (verified), _ABSENT for an absent edge
@@ -926,7 +928,7 @@ class _Run:
     def cap(self, p, amount):
         cap = p.get('max_PC')
         if cap is not None and (not _nat(cap) or amount > cap):
-            self.refuse('policy_cap', f'{amount} PC is above the cap your local consent policy sets for one consent')
+            self.refuse('policy_cap', f'{amount} {self.unit} is above the cap your local consent policy sets for one consent')
 
     def issuer_accepted(self, p, m, issuer_pk, item_issuer_id):
         """R8's issuer lists, local (participant ids or public keys) and the mandate's (participant ids), checked against
@@ -1097,7 +1099,7 @@ def _bound(run, tpl):
             run.refuse('bound_note_required', 'this edge takes bound credit notes only (residue 997)')
         run.refuse('timestamp_domain', f'a bound credit note has a timestamp ending in 997 ms, not {ts % 1000}')
     if price != deal['price'] or total != P + price:
-        run.refuse('amount_mismatch', f'the note must add exactly the agreed price ({deal["price"]} PC)')
+        run.refuse('amount_mismatch', f'the note must add exactly the agreed price ({deal["price"]} {run.unit})')
     if prior is not None and not run.verified(I, R, prior):
         run.refuse('bad_prior_signature', 'the prior note shown is not signed by your key')
     run.fresh(ts, [] if prior is None else [prior['timestamp']])
@@ -1177,16 +1179,16 @@ def _payer(run, v, consent):
     if not _is_pk(payee_now) or C != payee_now or (v['C_id'] is not None and v['C_id'] != deal['payee']['id']):
         run.refuse('wrong_destination', "the destination is not the payee's current key")
     if a != deal['price']:
-        run.refuse('amount_mismatch', f'the amount must be the agreed price ({deal["price"]} PC)')
+        run.refuse('amount_mismatch', f'the amount must be the agreed price ({deal["price"]} {run.unit})')
     if T % 1000 != TRANSFER_MS:
         run.refuse('timestamp_domain', f'a transfer has a timestamp ending in 999 ms, not {T % 1000}')
     fb, tb = v['from_before'], v['to_before']
     if fb is None or fb['total'] < a or v['from_new'] != fb['total'] - a:
-        run.refuse('amount_mismatch', f'your held claim must fall by exactly {a} PC (and cover it)')
+        run.refuse('amount_mismatch', f'your held claim must fall by exactly {a} {run.unit} (and cover it)')
     X, Y = fb['total'], tb['total'] if tb is not None else 0
     p_ab = fb['timestamp']                    # the held edge's state (X, p_AB): what my prior slot acknowledges
     if v['to_new'] != Y + a:
-        run.refuse('amount_mismatch', f"the payee's claim must rise by exactly {a} PC")
+        run.refuse('amount_mismatch', f"the payee's claim must rise by exactly {a} {run.unit}")
     if not run.verified(A, me, fb) or (tb is not None and not run.verified(A, C, tb)):
         run.refuse('bad_prior_signature', "an edge state shown is not the issuer's signature")
     run.fresh(T, [fb['timestamp']] + ([tb['timestamp']] if tb is not None else []))
@@ -1312,7 +1314,7 @@ def _member(run, item, edges, context):
     as_creditor = sum(e['before']['total'] - e['new'] for e in edges if e['R'] == me)
     as_issuer = sum(e['before']['total'] - e['new'] for e in edges if e['I'] == me)
     if as_creditor != as_issuer:
-        run.refuse('not_net_neutral', f'your claims would fall by {as_creditor} PC and your debts by {as_issuer} PC')
+        run.refuse('not_net_neutral', f'your claims would fall by {as_creditor} {run.unit} and your debts by {as_issuer} {run.unit}')
     for e in edges:
         if not run.verified(e['I'], e['R'], e['before']):
             run.refuse('bad_prior_signature', "an edge state shown is not its issuer's signature")
@@ -1359,7 +1361,7 @@ def _issuer(run, item, edges, context):
         run.refuse('total_owed_changes', 'a transfer lowers one of your edges and raises the other by the same amount')
     fe, te = dec[0], inc[0]
     if fe['before']['total'] - fe['new'] != a or te['new'] - _before_total(te) != a:
-        run.refuse('total_owed_changes', f'your total owed would change: both edges must move exactly {a} PC')
+        run.refuse('total_owed_changes', f'your total owed would change: both edges must move exactly {a} {run.unit}')
     if not (_same_id(context.get('payer'), fe['recipient_id']) and _same_id(context.get('payee'), te['recipient_id'])):
         run.bad('the item names creditors other than the ones its edges are to')
     if any(e['before'] is not None and not run.verified(me, e['R'], e['before']) for e in (fe, te)):
@@ -1419,7 +1421,7 @@ def _payee(run, item, edges, context):
     run.cap(p, a)
     cap = m.get('max_accept_per_issuer')
     if cap is not None and (not _nat(cap) or Y + a > cap):
-        run.refuse('policy_cap', f'your claim on this issuer would be {Y + a} PC, above max_accept_per_issuer')
+        run.refuse('policy_cap', f'your claim on this issuer would be {Y + a} {run.unit}, above max_accept_per_issuer')
     run.contract()
     op = 'transfer:' + item['id']
     p_ac = e['before']['timestamp'] if e['before'] is not None else 0    # the state (Y, p_AC) I acknowledge, (0, 0): none

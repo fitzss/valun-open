@@ -1255,7 +1255,7 @@ class Client:
     # ---------- the signing firewall (novation.py) ----------
     def _ctx(self, state, now_ms, features, **extra):
         """The evaluators' context, from this client's state as just reloaded under the profile lock (novation.py)."""
-        ctx = {'me_pk': self.pubkey, 'me_id': self.participant_id, 'now_ms': now_ms, 'verify': _verify_hex,
+        ctx = {'me_pk': self.pubkey, 'me_id': self.participant_id, 'now_ms': now_ms, 'verify': _verify_hex, 'unit': self.unit,
                'pins': _pins_of(state), 'records': state.get('records'), 'signed': state.get('signed'),
                'transfer_attempts': state.get('transfer_attempts'), 'novated_edges': state.get('novated_edges'),
                'features': list(features), 'consent_policy': state.get('consent_policy'),

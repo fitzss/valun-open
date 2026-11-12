@@ -1138,7 +1138,8 @@ export class ValunAgent {
     await c.reload();
     const state = c.state;
     const pins = isDict(get(state, 'pins')) && truthy(get(state.pins, 'tracker_nft_id')) ? state.pins : null;
-    const ctx = {me_pk: c.pubkey, me_id: c.participantId, now_ms: c.nowMs(), verify: verifyHexFor, pins, records: get(state, 'records'),
+    const ctx = {me_pk: c.pubkey, me_id: c.participantId, now_ms: c.nowMs(), verify: verifyHexFor, unit: c.unit ?? UNIT, pins,
+      records: get(state, 'records'),
       signed: get(state, 'signed'), transfer_attempts: get(state, 'transfer_attempts'), novated_edges: get(state, 'novated_edges'),
       features: [...(this.features || [])], consent_policy: get(state, 'consent_policy'), deal, payee_current_pk: payeePk,
       approved_quote_digest: null, mandate, edges: null, novation: c.novationInfo ?? null};

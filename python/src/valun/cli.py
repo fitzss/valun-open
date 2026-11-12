@@ -220,7 +220,9 @@ def _join_steps(args, store, c, j, server, handle, owner, step):
         if not _key_stored(args, pid):
             # The profile is not saved (it holds no key), so the command names the server as well as the profile.
             enroll = f'`valun --profile {_profile(args)} enroll --server {server} --participant {pid}`'
-            if isinstance(e, vc.ValunError):    # refused, or never reached the server: no key is registered
+            # Refused, or never reached the server: no key is registered. wrong_network is the core's check of the
+            # server's answer (0.5): the server registered the key, so it is the case below.
+            if isinstance(e, vc.ValunError) and e.code != 'wrong_network':
                 print(f"Your participant {pid} was created, but this agent's key could not be registered "
                       f'({_failure(e)}): {_terminal_text(e)}')
                 print(f'To finish: issue an enrollment code in the owner console ({server}/pilot#owner) with your owner '
@@ -387,6 +389,10 @@ def cmd_enroll(args):
         r = c.enroll(participant, code)
     except vc.ValunError as e:
         print(f'Enrollment failed ({e.code}): {e}')
+        if e.code == 'wrong_network':     # the core's check of the answer: the server registered the key already
+            print('The server registered this key but named another network than this profile\'s, so the key was not '
+                  'stored. Use a profile of its own for that network (valun --profile NAME), and in the owner console, '
+                  'with your owner token, revoke this agent to get a new enrollment code.')
         return 1
     store.state.update({'server': server})
     store.state.setdefault('approvals', 'ask')
@@ -551,7 +557,8 @@ def cmd_config(args):
         elif val.strip().isdigit() and int(val) <= 100000 * vc.network_of(store.state.get('network') or vc.NETWORK)['scale']:
             changes = {key: int(val)}
         else:
-            print('consents.max_PC must be a whole number of PC (0..100000), or none for no cap')
+            net = vc.network_of(store.state.get('network') or vc.NETWORK)
+            print(f"consents.max_PC must be a whole number of {net['unit']} (0..{100000 * net['scale']}), or none for no cap")
             return 1
     else:
         print('keys: approvals, server, check_link_hosts, brief_status, consents.setoff, consents.as_issuer, '
@@ -1127,8 +1134,8 @@ def cmd_profile(args):
 
 def cmd_ergo(args):
     """Settlement on Ergo testnet (the Valun testnet network only): this agent's Ergo address, the chain view, the
-    reserves, a reserve of its own tERG, and the redemption of a note it holds. Signing needs ergo-lib
-    (pip install ergo-lib-python==0.28.0); reserve and redeem send nothing without --broadcast."""
+    reserves, a reserve of its own tERG, and the redemption of a note it holds. A redemption is signed natively; a
+    reserve of its own needs ergo-lib (pip install "valun[ergo]"); reserve and redeem send nothing without --broadcast."""
     store, name = _store(args), _profile(args)
     if not (store.state.get('participant_id') and store.secret()):
         print(f"Profile '{name}' is not joined yet; run `valun --profile {name} join` first.")
@@ -1189,7 +1196,7 @@ def cmd_sell(args):
     except vc.ValunError as e:
         print(json.dumps(error_payload(e), ensure_ascii=False))
         return 1
-    handle, offer = me.get('handle') or name, ais.services_text(services)
+    handle, offer = me.get('handle') or name, ais.services_text(services, c.unit, c.scale)
     if not args.keep_profile and me.get('services') != offer:
         try:
             c.set_profile(services=offer)       # so the directory and the agent's page show what it sells
@@ -1356,7 +1363,8 @@ the API's own token counts); set a hard spend limit on the key's workspace in th
   ANTHROPIC_API_KEY=... valun sell --services summary,code-review
 
 Services: summary (2 PC), rewrite (2 PC), translate (2 PC), code-review (3 PC), explain (2 PC), check (2 PC: does a
-delivery meet its terms? the buyer pastes the terms and the work). A job costs roughly
+delivery meet its terms? the buyer pastes the terms and the work); on the testnet network the same prices in nanoERG
+(x 1,000,000: 2 PC is 2000000 nanoERG, 0.002 tERG). A job costs roughly
 1-2 US cents on claude-opus-5-5 and far less on claude-haiku-5-5. Buyers send the text in a ``` block."""
 
 

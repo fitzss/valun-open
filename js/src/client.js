@@ -1314,7 +1314,7 @@ export class Client {
   // ---------- the signing firewall (novation.js) ----------
   /** The evaluators' context, from this client's state as just reloaded under the profile lock. */
   #ctx(state, nowMs, features, extra = {}) {
-    return {me_pk: this.pubkey, me_id: this.participantId, now_ms: nowMs, verify: verifyHexFor, pins: pinsOf(state),
+    return {me_pk: this.pubkey, me_id: this.participantId, now_ms: nowMs, verify: verifyHexFor, unit: this.unit, pins: pinsOf(state),
       records: state.records ?? null, signed: state.signed ?? null, transfer_attempts: state.transfer_attempts ?? null,
       novated_edges: state.novated_edges ?? null, features: [...features], consent_policy: state.consent_policy ?? null,
       novation: this.#novation, ...extra};

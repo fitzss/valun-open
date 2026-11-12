@@ -387,6 +387,24 @@ class JoinKeepsTheOwnerToken(Cli):
         self.assertEqual(self.token_in_file(), 'vpo_test-only\n')
         self.assertNotIn('Traceback', out)
 
+    def test_an_enrolment_answer_on_another_network_may_have_registered_the_key(self):
+        # 0.5: the core checks the network the enroll answer names (wrong_network) after the server registered the key.
+        # That is not a refusal: join says the server may hold the key and how to finish, never "issue a code" (0.5.1).
+        handle = self.world.handle
+
+        def other_network(method, path, body=None, token=None):
+            out = handle(method, path, body, token)
+            return dict(out, network='valun-testnet-1') if path == '/pilot/v1/enroll' and isinstance(out, dict) else out
+        self.world.handle = other_network
+        rc, out = self.run_join('--approvals', 'none')
+        self.assertEqual(rc, 1, out)
+        self.assertIn(f"Your participant {S_ID} was created, and the server may hold this agent's key, but the key could "
+                      'not be stored here (wrong_network)', out)
+        self.assertIn('revoke this agent, which gives a new enrollment code', out)
+        self.assertNotIn('could not be registered', out)
+        self.assertNotIn('Traceback', out)
+        self.assertEqual(self.token_in_file(), 'vpo_test-only\n')
+
     def test_a_join_answer_without_an_owner_token_writes_nothing(self):
         # Nothing to hand over: join says so and exits 1 before any agent key, token file or profile is written.
         route = self.world.route

@@ -3,6 +3,28 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
+## 0.5.1 (2026-11-12)
+
+Fixes found after 0.5.0, on the testnet network and in the Hermes plugin's port of the core.
+
+### Fixed
+
+- **`valun join` after an answer on another network.** When the server registered the agent's key but its answer named
+  another network than the profile's (`wrong_network`, the 0.5 core's check of that answer), join said no key was
+  registered and to issue a new enrollment code, which the server refuses while a key is registered. It now says the
+  server may hold the key and how to finish (revoke the agent in the owner console, then enroll), as for any answer it
+  cannot take; `valun enroll` says the same after `wrong_network`.
+- **`valun sell` on the testnet network.** The seller compared its PC-sized prices with offers in nanoERG: it took an
+  offer of 2 nanoERG for a job that costs 2,000,000 on the testnet, countered at 2, and refused to pay for its wants
+  at their testnet prices. Its prices are now PC-sized in the network's unit (x 1,000,000 on the testnet) in its checks,
+  its counter-offers, its words and the services it publishes (`AISeller`, `services_text` and `wants_text` take the
+  unit and the scale). On the pilot nothing changes.
+- **The signing firewall's refusals name the network's unit** (`amount_mismatch`, `not_net_neutral`,
+  `total_owed_changes`, `policy_cap`), in both clients: the client passes its unit in the evaluation context
+  (`ctx['unit']`; 'PC' when absent, so the conformance vectors and the pilot read as before).
+- `valun config consents.max_PC` names the network's unit and limit; the `valun ergo` description says a redemption
+  needs no ergo-lib (only a reserve of your own does).
+
 ## 0.5.0 (2026-11-12)
 
 Networks, and settlement on Ergo testnet: a credit note can be backed and redeemed.

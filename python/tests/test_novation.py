@@ -1788,5 +1788,18 @@ class ModuleContract(unittest.TestCase):
         self.assertEqual(CO(member_item(), member_ctx(verify=lambda *_a: 1))['code'], 'bad_prior_signature')   # not True
 
 
+class ReasonsInTheUnit(unittest.TestCase):
+    # 0.5.1: a refusal's words name the network's unit, ctx['unit'] (both clients pass it); 'PC' when it is absent.
+    def test_a_refusal_names_the_networks_unit(self):
+        ctx = issuer_ctx(consent_policy=dict(POLICY, max_PC=2))
+        r = CO(issuer_item(), ctx)
+        self.assertEqual(r['code'], 'policy_cap')
+        self.assertIn(' PC is above the cap', r['summary']['reason'])
+        r = CO(issuer_item(), dict(ctx, unit='nanoERG'))
+        self.assertEqual(r['code'], 'policy_cap')
+        self.assertIn(' nanoERG is above the cap', r['summary']['reason'])
+        self.assertNotIn(' PC', r['summary']['reason'])
+
+
 if __name__ == '__main__':
     unittest.main()

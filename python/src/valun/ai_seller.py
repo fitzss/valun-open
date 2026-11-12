@@ -117,8 +117,15 @@ WANT_PAID_STATUSES = ('note_issued', 'paid_by_transfer', 'completion_awaiting_ow
 BLOCK_RE = re.compile(r'^```[^\n]*\n(.*?)\n```', re.S | re.M)
 
 
-def wants_text(wants):
-    return '; '.join(spec['blurb'] for spec in (wants or {}).values())
+def in_unit(text, unit='PC', scale=1):
+    """A blurb's PC-sized prices ("(2 PC)", "(2 PC: ...") in a network's unit: as is on the pilot."""
+    if unit == 'PC':
+        return text
+    return re.sub(r'\((\d+) PC\b', lambda m: '(' + vc.amount_text(int(m.group(1)) * scale, unit), text)
+
+
+def wants_text(wants, unit='PC', scale=1):
+    return '; '.join(in_unit(spec['blurb'], unit, scale) for spec in (wants or {}).values())
 
 
 def which_want(wants, terms):
@@ -190,8 +197,8 @@ def parse_services(text):
     return names
 
 
-def services_text(services):
-    return '; '.join(SERVICE_SPECS[s]['blurb'] for s in services)
+def services_text(services, unit='PC', scale=1):
+    return '; '.join(in_unit(SERVICE_SPECS[s]['blurb'], unit, scale) for s in services)
 
 
 def which_service(services, terms):
@@ -360,6 +367,10 @@ class AISeller(vsandbox.Seller):
     def note(self, **kw):
         super().note(agent=self.handle, **kw)
 
+    def _price(self, spec):
+        """A service's or want's PC-sized price in this network's unit (times its scale; the pilot's as is)."""
+        return spec['price'] * getattr(self.c, 'scale', 1)
+
     def _decline(self, did, reason, why, **kw):
         self.c.decline(did, reason[:480])
         self.note(deal=did, action='decline', why=why, **kw)
@@ -400,7 +411,8 @@ class AISeller(vsandbox.Seller):
         except vc.ValunError as e:
             return self._decline(did, f'your offer failed my checks ({e.code}); please send a fresh one', e.code)
         terms = d['current']['terms']
-        menu = f'I offer: {services_text(self.services)}. Put the text in a ``` block in the description.'
+        menu = (f"I offer: {services_text(self.services, getattr(self.c, 'unit', 'PC'), getattr(self.c, 'scale', 1))}. "
+                'Put the text in a ``` block in the description.')
         if d.get('your_role') != 'payee':
             if self.wants:
                 return self.answer_want(item, d, chk, terms)
@@ -418,13 +430,13 @@ class AISeller(vsandbox.Seller):
             return self._decline(did, 'I could not find the text to work on. ' + vsandbox.HOW_TO_SEND, 'no_text', service=service)
         if len(text) > spec['max_chars']:
             return self._decline(did, f"The text is {len(text)} characters; {service} takes at most {spec['max_chars']}.", 'too_long')
-        price = terms['price']['amount']
-        if price < spec['price']:
+        price, ask = terms['price']['amount'], self._price(spec)
+        if price < ask:
             if self.countered.get(did):
-                return self._decline(did, f"My price for {service} is {spec['price']} PC.", 'price', price=price)
+                return self._decline(did, f"My price for {service} is {vc.amount_text(ask, getattr(self.c, 'unit', 'PC'))}.", 'price', price=price)
             self.countered[did] = True
-            self.c.counter(did, price=spec['price'])
-            return self.note(deal=did, action='counter', service=service, price=spec['price'])
+            self.c.counter(did, price=ask)
+            return self.note(deal=did, action='counter', service=service, price=ask)
         key, limit = self.counted(buyer, service), (self.checks_per_buyer if service == 'check' else self.jobs_per_buyer)
         if self.budget.buyer_jobs(key) >= limit:
             what = 'checks' if service == 'check' else 'jobs'
@@ -495,7 +507,8 @@ class AISeller(vsandbox.Seller):
                     self.note(deal=item['deal_id'], action='error', error=e.code, message=str(e)[:300])
 
     def want_menu(self):
-        return f'I pay for: {wants_text(self.wants)}. Propose one of them with role payee (you do the work).'
+        return (f"I pay for: {wants_text(self.wants, getattr(self.c, 'unit', 'PC'), getattr(self.c, 'scale', 1))}. "
+                'Propose one of them with role payee (you do the work).')
 
     def want_worst(self, spec):
         """The dearest a check of this want can cost before the delivery is known: its largest size and the reference's."""
@@ -512,12 +525,13 @@ class AISeller(vsandbox.Seller):
         if not name:
             return self._decline(did, 'I do not pay for that. ' + self.want_menu(), 'unknown_want')
         spec, price = self.wants[name], terms['price']['amount']
-        if price > spec['price']:
+        pay = self._price(spec)
+        if price > pay:
             if self.countered.get(did):
-                return self._decline(did, f"I pay {spec['price']} PC for {name}.", 'price', want=name, price=price)
+                return self._decline(did, f"I pay {vc.amount_text(pay, getattr(self.c, 'unit', 'PC'))} for {name}.", 'price', want=name, price=price)
             self.countered[did] = True
-            self.c.counter(did, price=spec['price'])
-            return self.note(deal=did, action='counter', want=name, price=spec['price'])
+            self.c.counter(did, price=pay)
+            return self.note(deal=did, action='counter', want=name, price=pay)
         per, day = f'{self.handle}|{payee}|want:{name}', f'{self.handle}|*|wants'
         if self.budget.count(per) >= self.wants_per_payee:
             return self._decline(did, f'I take at most {self.wants_per_payee} {name} a day from one agent; please come back '

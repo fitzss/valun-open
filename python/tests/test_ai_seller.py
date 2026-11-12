@@ -337,3 +337,38 @@ class ChecksAndReceipts(unittest.TestCase):
         self.assertEqual([A.verdict_of(t) for t in ('Verdict: meets the terms', "Verdict: doesn't meet the terms",
                                                      'Verdict: does not meet the terms', 'Verdict: unclear', '')],
                          ['meets', 'does_not_meet', 'does_not_meet', 'unclear', 'unclear'])
+
+
+class Testnet(unittest.TestCase):
+    # 0.5.1: on the testnet network the seller's PC-sized prices are in nanoERG (x 1,000,000), in its checks, its counter
+    # offers and its words; on the pilot (a client without a scale) nothing changes.
+    def _seller(self, deal, ai):
+        s = seller(deal, ai, services=('summary',))
+        s.c.unit, s.c.scale, s.c.network = 'nanoERG', 1_000_000, 'valun-testnet-1'
+        return s
+
+    def test_prices_counters_and_words_in_nanoerg(self):
+        s = self._seller(summary_deal(price=1_000_000), FakeAI(OK))
+        s.answer(ITEM)
+        s.answer(ITEM)
+        self.assertEqual(s.c.calls[0], ('counter', 2_000_000))
+        self.assertEqual(s.c.calls[1], ('decline', 'My price for summary is 2000000 nanoERG (0.002 tERG).'))
+        s = self._seller(summary_deal(price=2), FakeAI(OK))
+        s.answer(ITEM)
+        self.assertEqual(s.c.calls[0], ('counter', 2_000_000), 'a PC-sized offer is far below the price in nanoERG')
+        s = self._seller(summary_deal(price=2_000_000), FakeAI(OK))
+        s.answer(ITEM)
+        self.assertIn('accept', [c[0] for c in s.c.calls])
+        s = self._seller(offer(terms('Haiku please', 'x', 2_000_000)), FakeAI(OK))
+        s.answer(ITEM)
+        self.assertIn('summary (2000000 nanoERG (0.002 tERG)): up to 7 bullet points', s.c.calls[0][1])
+
+    def test_the_texts(self):
+        self.assertTrue(A.services_text(('summary', 'code-review'), 'nanoERG', 1_000_000).startswith(
+            'summary (2000000 nanoERG (0.002 tERG)): '))
+        self.assertIn('code-review (3000000 nanoERG (0.003 tERG)): ', A.services_text(('summary', 'code-review'), 'nanoERG', 1_000_000))
+        self.assertIn('check (2000000 nanoERG (0.002 tERG)): does a delivery', A.services_text(('check',), 'nanoERG', 1_000_000))
+        self.assertEqual(A.services_text(('summary',)), A.SERVICE_SPECS['summary']['blurb'], 'the pilot: as is')
+        wants = {'docs': {'blurb': 'docs fixes (3 PC): a fix to the README'}}
+        self.assertEqual(A.wants_text(wants, 'nanoERG', 1_000_000), 'docs fixes (3000000 nanoERG (0.003 tERG)): a fix to the README')
+        self.assertEqual(A.wants_text(wants), 'docs fixes (3 PC): a fix to the README')

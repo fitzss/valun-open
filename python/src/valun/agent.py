@@ -928,6 +928,7 @@ class ValunAgent:
         state = c.state
         pins = state.get('pins') if isinstance(state.get('pins'), dict) and state['pins'].get('tracker_nft_id') else None
         ctx = {'me_pk': c.pubkey, 'me_id': c.participant_id, 'now_ms': int(vc.time.time() * 1000), 'verify': _verify_hex,
+               'unit': getattr(c, 'unit', vc.UNIT),
                'pins': pins, 'records': state.get('records'), 'signed': state.get('signed'),
                'transfer_attempts': state.get('transfer_attempts'), 'novated_edges': state.get('novated_edges'),
                'features': list(self.features or []), 'consent_policy': state.get('consent_policy'), 'deal': deal,

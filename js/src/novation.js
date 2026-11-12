@@ -405,6 +405,7 @@ class Run {
     if (get(ctx, 'edges') !== null && !isDict(ctx.edges)) throw valueError("ctx['edges'] must be {edge: EdgeState or None}");
     this.ctx = ctx;
     this.me = ctx.me_pk;
+    this.unit = get(ctx, 'unit') || 'PC';   // the network's unit, for the refusals' words (0.5.1; the pilot's by default)
     this.now = ctx.now_ms;
     this.verifyFn = ctx.verify;
     this.itemCode = itemCode;
@@ -817,7 +818,7 @@ class Run {
   cap(p, amount) {
     const cap = get(p, 'max_PC');
     if (cap !== null && (!nat(cap) || amount > cap)) {
-      this.refuse('policy_cap', `${amount} PC is above the cap your local consent policy sets for one consent`);
+      this.refuse('policy_cap', `${amount} ${this.unit} is above the cap your local consent policy sets for one consent`);
     }
   }
 
@@ -1015,7 +1016,7 @@ function bound(run, tpl) {
     if (run.novated.has(edge) || run.boundAdvertised()) run.refuse('bound_note_required', 'this edge takes bound credit notes only (residue 997)');
     run.refuse('timestamp_domain', `a bound credit note has a timestamp ending in 997 ms, not ${ts % 1000}`);
   }
-  if (price !== deal.price || total !== P + price) run.refuse('amount_mismatch', `the note must add exactly the agreed price (${deal.price} PC)`);
+  if (price !== deal.price || total !== P + price) run.refuse('amount_mismatch', `the note must add exactly the agreed price (${deal.price} ${run.unit})`);
   if (prior !== null && !run.verified(I, R, prior)) run.refuse('bad_prior_signature', 'the prior note shown is not signed by your key');
   run.fresh(ts, prior === null ? [] : [prior.timestamp]);
   run.show(edge, prior, true);
@@ -1097,15 +1098,15 @@ function payer(run, v, consent) {
   if (!isPk(payeeNow) || C !== payeeNow || (v.C_id !== null && v.C_id !== deal.payee.id)) {
     run.refuse('wrong_destination', "the destination is not the payee's current key");
   }
-  if (a !== deal.price) run.refuse('amount_mismatch', `the amount must be the agreed price (${deal.price} PC)`);
+  if (a !== deal.price) run.refuse('amount_mismatch', `the amount must be the agreed price (${deal.price} ${run.unit})`);
   if (T % 1000 !== TRANSFER_MS) run.refuse('timestamp_domain', `a transfer has a timestamp ending in 999 ms, not ${T % 1000}`);
   const fb = v.from_before, tb = v.to_before;
   if (fb === null || fb.total < a || v.from_new !== fb.total - a) {
-    run.refuse('amount_mismatch', `your held claim must fall by exactly ${a} PC (and cover it)`);
+    run.refuse('amount_mismatch', `your held claim must fall by exactly ${a} ${run.unit} (and cover it)`);
   }
   const X = fb.total, Y = tb !== null ? tb.total : 0;
   const pAB = fb.timestamp;                  // the held edge's state (X, p_AB): what my prior slot acknowledges
-  if (v.to_new !== Y + a) run.refuse('amount_mismatch', `the payee's claim must rise by exactly ${a} PC`);
+  if (v.to_new !== Y + a) run.refuse('amount_mismatch', `the payee's claim must rise by exactly ${a} ${run.unit}`);
   if (!run.verified(A, me, fb) || (tb !== null && !run.verified(A, C, tb))) {
     run.refuse('bad_prior_signature', "an edge state shown is not the issuer's signature");
   }
@@ -1218,7 +1219,7 @@ function member(run, it, edges, context) {
   for (const e of edges) if (e.new >= e.before.total) run.refuse('increase_in_setoff', 'a set-off only lowers edges');
   const asCreditor = sum(edges.filter(e => e.R === me).map(e => e.before.total - e.new));
   const asIssuer = sum(edges.filter(e => e.I === me).map(e => e.before.total - e.new));
-  if (asCreditor !== asIssuer) run.refuse('not_net_neutral', `your claims would fall by ${asCreditor} PC and your debts by ${asIssuer} PC`);
+  if (asCreditor !== asIssuer) run.refuse('not_net_neutral', `your claims would fall by ${asCreditor} ${run.unit} and your debts by ${asIssuer} ${run.unit}`);
   for (const e of edges) {
     if (!run.verified(e.I, e.R, e.before)) run.refuse('bad_prior_signature', "an edge state shown is not its issuer's signature");
   }
@@ -1264,7 +1265,7 @@ function issuer(run, it, edges, context) {
   }
   const fe = dec[0], te = inc[0];
   if (fe.before.total - fe.new !== a || te.new - beforeTotal(te) !== a) {
-    run.refuse('total_owed_changes', `your total owed would change: both edges must move exactly ${a} PC`);
+    run.refuse('total_owed_changes', `your total owed would change: both edges must move exactly ${a} ${run.unit}`);
   }
   if (!(sameId(get(context, 'payer'), fe.recipient_id) && sameId(get(context, 'payee'), te.recipient_id))) {
     run.bad('the item names creditors other than the ones its edges are to');
@@ -1325,7 +1326,7 @@ function payee(run, it, edges, context) {
   run.cap(p, a);
   const cap = get(m, 'max_accept_per_issuer');
   if (cap !== null && (!nat(cap) || Y + a > cap)) {
-    run.refuse('policy_cap', `your claim on this issuer would be ${Y + a} PC, above max_accept_per_issuer`);
+    run.refuse('policy_cap', `your claim on this issuer would be ${Y + a} ${run.unit}, above max_accept_per_issuer`);
   }
   run.contract();
   const op = 'transfer:' + it.id;
