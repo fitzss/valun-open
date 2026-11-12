@@ -127,11 +127,13 @@ jobs:
   ergo:
     # Settlement on Ergo testnet with ergo-lib installed (the optional dependency the other jobs run without, so they
     # skip these signing tests): the JS client with ergo-lib-wasm-nodejs 0.28.0, the Python client with ergo-lib-python
-    # 0.28.0 (wheels for CPython 3.8 to 3.13). Offline: fixtures only, no Ergo node.
+    # 0.28.0 (wheels for CPython 3.8 to 3.13). Offline: fixtures only, no Ergo node. Linux and Windows only: its macOS
+    # leg passed (runs 43251565101 and 43256509884), but a twelfth macOS job made GitHub cancel macOS jobs that waited
+    # about 20 minutes for a runner (no step ran), so the macOS queue stays at the eleven jobs it had before.
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
