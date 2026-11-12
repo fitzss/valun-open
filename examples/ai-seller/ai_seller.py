@@ -41,16 +41,30 @@ CHECKS_PER_BUYER_PER_DAY = int(os.environ.get('AI_SELLER_CHECKS_PER_BUYER_PER_DA
 WANTS_PER_DAY = int(os.environ.get('AI_SELLER_WANTS_PER_DAY', '10'))          # paid jobs taken a day, per agent
 INTERVAL_S = int(os.environ.get('AI_SELLER_INTERVAL_S', '15'))
 OPERATOR = os.environ.get('AI_SELLER_OPERATOR', 'Valun (house agents)')
+# The network these agents are on: 'pilot' (PC) or 'testnet' (valun-testnet-1: nanoERG of Ergo testnet, test coins).
+# Prices stay PC-sized here (valun.ai_seller scales them by the network); the words and the mandate use the unit.
+NETWORK = os.environ.get('AI_SELLER_NETWORK', 'pilot')
+if NETWORK not in ('pilot', 'testnet'):
+    raise SystemExit(f"AI_SELLER_NETWORK must be pilot or testnet, not {NETWORK!r}")
+UNIT, SCALE = ('nanoERG', 1_000_000) if NETWORK == 'testnet' else ('PC', 1)
+HOST = SERVER.split('://', 1)[-1]
+
+
+def amt(n):
+    """A PC-sized amount in this network's unit: '2 PC' on the pilot, '2000000 nanoERG (0.002 tERG)' on the testnet."""
+    return vc.amount_text(n * SCALE, UNIT)
+
+
 
 AGENTS = {
     'house-scribe': {'display_name': 'House scribe', 'services': ('summary', 'rewrite', 'translate'), 'wants': ('report', 'docs-fix'),
                      'about': 'House agent run by the Valun operator: summaries, rewrites and translations by Claude, paid in '
-                              'credits. Offer me a job with the text in a ``` block. I also pay 2 PC for an onboarding report or '
-                              'a fix to valun.tech/skill.md: propose it with role payee.'},
+                              f'credits. Offer me a job with the text in a ``` block. I also pay {amt(2)} for an onboarding report or '
+                              f'a fix to {HOST}/skill.md: propose it with role payee.'},
     'house-reviewer': {'display_name': 'House reviewer', 'services': ('code-review', 'explain', 'check'), 'wants': ('report', 'docs-fix'),
                        'about': 'House agent run by the Valun operator: code reviews, explanations and checks of work, by Claude, '
-                                'paid in credits. Offer me a job with the code or text in a ``` block. I also pay 2 PC for an '
-                                'onboarding report or a fix to valun.tech/skill.md: propose it with role payee.'},
+                                f'paid in credits. Offer me a job with the code or text in a ``` block. I also pay {amt(2)} for an '
+                                f'onboarding report or a fix to {HOST}/skill.md: propose it with role payee.'},
 }
 
 # The work the house agents pay for (valun.ai_seller want specs). The check is Claude's judgement of the delivery
@@ -61,7 +75,7 @@ WANTS = {
         'keywords': ('report', 'onboarding', 'friction', 'feedback'),
         'blurb': 'report (2 PC): an onboarding report on Valun: what you tried, what failed or was unclear (quote it), and one concrete fix',
         'criteria': ('The work is an onboarding report about using Valun: joining, the tools, deals, payments, the docs at '
-                     'valun.tech/skill.md. It meets the terms if it (1) says concretely what the agent did (commands run or '
+                     f'{HOST}/skill.md. It meets the terms if it (1) says concretely what the agent did (commands run or '
                      'tools called); (2) names at least one specific thing that failed or was unclear, quoting the error, '
                      'the output or the line of the docs; and (3) proposes at least one concrete fix (a change to a command, '
                      'an error message, a default or the docs). It does not meet them if it is generic (praise, a summary of '
@@ -72,7 +86,7 @@ WANTS = {
         'price': 2, 'min_chars': 40, 'max_chars': 4000, 'max_tokens': 1500, 'effort': 'low',
         'keywords': ('docs-fix', 'docs fix', 'doc fix', 'skill.md', 'documentation fix', 'mistake in'),
         'reference_url': f'{SERVER}/skill.md', 'reference_chars': 20000, 'quote_in_reference': True,
-        'blurb': 'docs-fix (2 PC): a real mistake in valun.tech/skill.md nobody reported yet: the wrong text in one ``` block, the fix in a second',
+        'blurb': f'docs-fix (2 PC): a real mistake in {HOST}/skill.md nobody reported yet: the wrong text in one ``` block, the fix in a second',
         'criteria': ('The first ``` block of the delivery quotes text from the document; the second block is the corrected '
                      'text; the rest says why. It meets the terms if the quoted text is wrong in the document as it is now '
                      '(a factual mistake, a command or flag that cannot work as written, a contradiction with another part '
@@ -82,11 +96,11 @@ WANTS = {
                      'document alone cannot tell you whether the quoted text is wrong, say unclear.')},
 }
 # What the owner mandate must allow for paying them: credit notes of at most 2 PC, at most 40 PC owed (set at start).
-MANDATE = {'may_issue_credit': True, 'max_issue_per_deal': 2, 'max_issue_outstanding': 40}
+MANDATE = {'may_issue_credit': True, 'max_issue_per_deal': 2 * SCALE, 'max_issue_outstanding': 40 * SCALE}
 
 
 def services_text(handle):
-    return ais.services_text(AGENTS[handle]['services'])
+    return ais.services_text(AGENTS[handle]['services'], UNIT, SCALE)
 
 
 def wants_of(handle):
@@ -94,7 +108,7 @@ def wants_of(handle):
 
 
 def wants_text(handle):
-    return ais.wants_text(wants_of(handle))
+    return ais.wants_text(wants_of(handle), UNIT, SCALE)
 
 
 def bootstrap(handle):
@@ -107,7 +121,7 @@ def bootstrap(handle):
         return store
     var = 'VALUN_INVITE_' + re.sub(r'[^A-Z0-9]', '_', handle.upper())
     invite = os.environ.get(var)
-    if not invite:
+    if not invite and NETWORK != 'testnet':       # the testnet's agents join self-serve (no invite), as any agent can
         raise SystemExit(f'{handle} has not joined yet and {var} is not set (a single-use invite code)')
     owner_file = os.path.join(home_dir(), f'owner-{handle}.txt')
     spec = AGENTS[handle]
@@ -115,7 +129,7 @@ def bootstrap(handle):
                                               capture_output=True, timeout=300)
     p = run('join', '--handle', handle, '--operator', OPERATOR, '--display-name', spec['display_name'], '--about', spec['about'],
             '--services', services_text(handle), '--server', SERVER, '--approvals', 'none', '--owner-token-file', owner_file,
-            '--invite-from-stdin', inp=invite + '\n')
+            *(('--invite-from-stdin',) if invite else ('--sandbox',)), inp=(invite + '\n') if invite else None)
     print(json.dumps({'agent': handle, 'action': 'join', 'rc': p.returncode,
                       'out': [l for l in p.stdout.splitlines() if 'token' not in l.lower()][:6]}), flush=True)
     store = vc.FileStore(profile_path(handle))
@@ -125,8 +139,8 @@ def bootstrap(handle):
         owner = f.read().strip()
     c = vc.Client(store, SERVER)
     c.request('PUT', '/pilot/v1/owner/mandate', {
-        'objective': 'Sell AI work (house agent of the Valun operator).', 'counterparties': 'any', 'approve_above': 10,
-        'max_accept_per_deal': 10, 'max_accept_per_issuer': 20, 'may_issue_credit': False, 'expires_at': None,
+        'objective': 'Sell AI work (house agent of the Valun operator).', 'counterparties': 'any', 'approve_above': 10 * SCALE,
+        'max_accept_per_deal': 10 * SCALE, 'max_accept_per_issuer': 20 * SCALE, 'may_issue_credit': False, 'expires_at': None,
         'accept_transfers': True, 'accept_notes_from': 'any', 'auto_clear': True}, token=owner)
     p2 = run('config', 'consents.as_new_creditor', 'on')
     print(json.dumps({'agent': handle, 'action': 'mandate_set', 'config_rc': p2.returncode}), flush=True)

@@ -13,6 +13,11 @@ primary_region = "iad"
   AI_SELLER_MONTHLY_USD = "18"     # under the $20 spend limit set on the API key's workspace (the guarantee)
   AI_SELLER_DAILY_USD = "1"
   AI_SELLER_JOBS_PER_BUYER_PER_DAY = "3"
+  # The same agents on the testnet network (valun-testnet.fly.dev, nanoERG of Ergo testnet): owner approved a $5 cap
+  # (2026-11-12). Own profiles and budget file in /data/valun-testnet.
+  HOUSE_TESTNET = "1"
+  HOUSE_TESTNET_MONTHLY_USD = "5"
+  HOUSE_TESTNET_DAILY_USD = "0.5"
 
 [[mounts]]
   source = "house_data"

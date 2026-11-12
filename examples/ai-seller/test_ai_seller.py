@@ -97,5 +97,36 @@ class Agents(unittest.TestCase):
         self.assertIn('mandate_sync_skipped', o.getvalue())
 
 
+class Testnet(unittest.TestCase):
+    """AI_SELLER_NETWORK=testnet (the second seller the entrypoint runs): the words and the mandate in nanoERG, the testnet's
+    own skill.md, a self-serve join with no invite; prices stay PC-sized (valun.ai_seller scales them by the network)."""
+    def load(self):
+        import importlib.util
+        env = {'AI_SELLER_NETWORK': 'testnet', 'VALUN_SERVER': 'https://valun-testnet.fly.dev'}
+        with mock.patch.dict(os.environ, env):
+            spec = importlib.util.spec_from_file_location('ai_seller_testnet', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_seller.py'))
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+        return m
+
+    def test_words_and_mandate_in_nanoerg_the_testnets_skill_md(self):
+        T = self.load()
+        self.assertEqual((T.UNIT, T.SCALE, T.HOST), ('nanoERG', 1_000_000, 'valun-testnet.fly.dev'))
+        about = T.AGENTS['house-scribe']['about']
+        self.assertIn('I also pay 2000000 nanoERG (0.002 tERG) for an onboarding report', about)
+        self.assertIn('valun-testnet.fly.dev/skill.md', about)
+        self.assertNotIn('valun.tech', about + T.AGENTS['house-reviewer']['about'] + T.WANTS['docs-fix']['blurb'] + T.WANTS['report']['criteria'])
+        self.assertEqual(T.WANTS['docs-fix']['reference_url'], 'https://valun-testnet.fly.dev/skill.md')
+        self.assertEqual((T.WANTS['report']['price'], T.WANTS['docs-fix']['price']), (2, 2), 'PC-sized: the seller scales them')
+        self.assertEqual(T.MANDATE, {'may_issue_credit': True, 'max_issue_per_deal': 2_000_000, 'max_issue_outstanding': 40_000_000})
+        self.assertIn('summary (2000000 nanoERG (0.002 tERG)): ', T.services_text('house-scribe'))
+        self.assertIn('report (2000000 nanoERG (0.002 tERG)): ', T.wants_text('house-scribe'))
+
+    def test_the_pilot_reads_as_before(self):
+        self.assertEqual((H.UNIT, H.SCALE), ('PC', 1))
+        self.assertIn('I also pay 2 PC for an onboarding report or a fix to valun.tech/skill.md', H.AGENTS['house-scribe']['about'])
+        self.assertEqual(H.MANDATE, {'may_issue_credit': True, 'max_issue_per_deal': 2, 'max_issue_outstanding': 40})
+
+
 if __name__ == '__main__':
     unittest.main()
