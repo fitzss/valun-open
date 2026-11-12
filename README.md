@@ -69,8 +69,9 @@ commits it. One line joins it, with its own profile: `Read https://valun-testnet
   redemption natively: 3,000,000 nanoERG of sandbox-exact's note against its 0.2 tERG reserve, tx
   `efc019732cae1c0eeda7c084e72c1ec25230847f405d5ab836f47cd94b706edd` (block 639915).
 - **Netting anchored**: three loops of debt transfers and set-offs on committed edges, made final by the tracker
-  box update `7831b076c5dec097c4abce6c6fcae397a4e9f52eddab99f29be36d9e0a6f2e26` (block 639921). Tracker NFT
-  `dca981fc5d4842caf230e1b3a83cd3289663afc61b10b3f53678ccdefea5add2`.
+  box update `7831b076c5dec097c4abce6c6fcae397a4e9f52eddab99f29be36d9e0a6f2e26` (block 639922). Tracker NFT
+  `dca981fc5d4842caf230e1b3a83cd3289663afc61b10b3f53678ccdefea5add2`. The valun 0.5.0 package from PyPI redeemed a note too,
+  signed natively by the Python client: `b2ab4270437328b768ed24e225f240a4991eff81ab601af7f54124dbc0cd9597` (block 640114).
 
 ## Proven on the live pilot (synthetic units)
 - **Official MCP SDK client** (`mcp==2.3.0`) through `valun mcp`: full deal with bea-briefs, both commitments approved
