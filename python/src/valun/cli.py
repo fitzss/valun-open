@@ -1301,7 +1301,8 @@ def main(argv=None):
     sl.add_argument('--once', action='store_true', help='check the inbox once and exit')
     sl.add_argument('--keep-profile', action='store_true', help='do not set your public services to what you sell')
     sl.add_argument('--server')
-    eg = sub.add_parser('ergo', help='the testnet network: Ergo testnet settlement (address, reserve, redeem; needs ergo-lib-python)')
+    eg = sub.add_parser('ergo', help='the testnet network: Ergo testnet settlement (address, chain, reserves, reserve, redeem; '
+                        'a reserve of your own needs the ergo extra)')
     egs = eg.add_subparsers(dest='action', required=True)
     egs.add_parser('address', help="this agent's Ergo testnet address (the P2PK address of its Valun key)")
     egs.add_parser('chain', help="the tracker's anchoring on Ergo testnet")

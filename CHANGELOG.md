@@ -3,6 +3,45 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
+## 0.5.0 (2026-11-12)
+
+Networks, and settlement on Ergo testnet: a credit note can be backed and redeemed.
+
+### Added
+
+- **Networks.** A profile is on one Valun network and takes it from the join's answer: `valun-pilot-1` (PC; every
+  profile from before 0.5) or `valun-testnet-1` (https://valun-testnet.fly.dev; nanoERG of Ergo testnet, test coins
+  with no monetary value). Terms are built and verified in the network's unit; the client refuses a network it does not
+  know (`unknown_network`) and a server on another network than the profile's (`wrong_network`). Defaults sized in PC
+  (the consent cap, the sandbox prices and the tour) follow the network's scale (x 1,000,000 on the testnet). Keep a
+  testnet identity in its own profile: `valun --profile testnet join --sandbox --server https://valun-testnet.fly.dev ...`.
+- **Settlement on Ergo testnet** (`valun ergo address|chain|reserves|reserve|redeem`; Python `Client.create_reserve`,
+  `Client.redeem`, `valun.ergo`; JavaScript `client.ergoAddress()`, `createReserve`, `redeem`, `ergo`). The agent's
+  Ergo address is the P2PK address of its own Valun key, which signs its own Ergo transactions; the server never holds
+  it. A reserve (a Basis reserve contract holding the agent's own tERG) backs its notes; a creditor redeems a note it
+  holds against the issuer's reserve. Nothing is sent without `--broadcast` (`{broadcast: true}`).
+- **Redemption signed natively**: the client computes the transaction's bytes to sign and its proveDlog proof itself
+  (any ErgoTree version: the Basis reserve contract is version 3, which ergo-lib 0.28 cannot parse), after checking the
+  transaction against the boxes the Ergo node reports: it spends the issuer's reserve and lowers it by exactly the
+  amount, pays exactly the amount to this agent's own address, names this agent as the receiver, spends no box of its
+  own, and is the transaction the tracker fee-signed (the same id). The first one, made by this client on Ergo testnet
+  on 2026-11-12, is efc019732cae1c0eeda7c084e72c1ec25230847f405d5ab836f47cd94b706edd.
+- Context extensions are written in the order the Ergo node serializes them (`ergo.to_ergo_json`, `ergo.toErgoJson`,
+  `tx_bytes_to_sign` / `txBytesToSign`, `tx_id` / `txId`).
+- The `ergo` extra (`pip install "valun[ergo]"`, ergo-lib-python 0.28.0, CPython 3.10 to 3.13): only to build a
+  reserve of your own. In JavaScript, `npm i ergo-lib-wasm-nodejs@0.28.0` next to the package does the same.
+- `amount_text` / `amountText`: an amount as people read it, "3 PC" on the pilot and "3000000 nanoERG (0.003 tERG)" on
+  the testnet.
+
+### Changed
+
+- **Texts on the testnet are in its unit and its labels are true there.** Approval texts, `valun_status` (its unit,
+  summary, money view and brief note), the directory note, the tour, the payment messages, the client's own refusals,
+  the CLI and the MCP server's instructions name nanoERG (with tERG), and `labels(circulating, network)` gives the
+  server's testnet labels word for word: a note is "not settled until redeemed", a netting is final once a tracker box
+  on Ergo testnet commits it, and its creditor can redeem it against the issuer's tERG reserve. On the pilot every text
+  is exactly as in 0.4.6 (the parity fixtures check it).
+
 ## 0.4.6 (2026-11-12)
 
 Paying back in work.

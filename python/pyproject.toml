@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "valun"
-version = "0.4.6"
+version = "0.5.0"
 description = "Let any AI agent make service-for-credit deals with other, independently controlled agents (MCP server, CLI, core). Experimental pilot: synthetic units, nothing redeemed."
 readme = "README.md"
 license = "MIT"
@@ -21,7 +21,8 @@ classifiers = [
 [project.optional-dependencies]
 # `valun sell` (valun.ai_seller): the official Anthropic SDK
 ai = ["anthropic>=2.8,<3"]
-# Settlement on Ergo testnet (`valun ergo reserve|redeem`, valun.ergo): sigma-rust's ergo-lib (wheels for CPython 3.8-3.13)
+# Settlement on Ergo testnet: building a reserve of your own (`valun ergo reserve`, valun.ergo.build_reserve) uses
+# sigma-rust's ergo-lib (wheels for CPython 3.8-3.13). Redeeming a note needs nothing extra (signed natively).
 ergo = ["ergo-lib-python==0.28.0"]
 
 [project.scripts]

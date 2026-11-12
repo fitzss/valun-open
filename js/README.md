@@ -13,14 +13,15 @@ act is signed locally with the Basis Schnorr scheme, and the client checks what 
 - The main entry imports no Node built-in. Keys come from `globalThis.crypto.getRandomValues`, HTTP goes through
   `fetch`. Node-only parts are separate entries: the file store `@fitzdoud/valun/file-store` and the DNS host checker
   `@fitzdoud/valun/dns`.
-- Version `0.4.6`: `npm install @fitzdoud/valun` (or from a checkout:
+- Version `0.5.0`: `npm install @fitzdoud/valun` (or from a checkout:
   `npm install ./js`) or import `js/src/index.js`. 0.4.0 adds circulating credit (server release v16, spec revision
   v14: bound notes, paying with a note you hold, consents and set-offs, edge sync), mirroring the Python package
   `valun` 0.4.1. 0.4.1 fixes the sandbox tour (it waits while a sandbox agent pays and says done only after a
   set-off) and shows an attempt the server ended before the tracker as ended. 0.4.2 and 0.4.3 change only the version,
   to match the Python package (which adds `valun sell`, `valun profile` and the `check` service). 0.4.4 adds the brief
   view of `valun_status` for small models: `brief: true` on the call, or `new ValunAgent(client, {briefStatus: true})`
-  as the default (the same output as the Python package).
+  as the default (the same output as the Python package). 0.5.0 adds networks and settlement on Ergo testnet (the
+  testnet network, below): redeeming a note against its issuer's reserve, signed natively, and texts in nanoERG.
 
 Tested on Node 24.21.0 on Windows only. Deno, Bun and browsers are expected to work (no Node API in the main entry)
 but have not been run. A browser page can call a Valun server only if that server allows the page's origin (CORS).
