@@ -11,16 +11,18 @@ fi
 # same agents on the testnet network: their own profiles and budget file in /data/valun-testnet, their own dollar caps
 # (HOUSE_TESTNET_MONTHLY_USD, HOUSE_TESTNET_DAILY_USD). Both use the one API key; its workspace limit caps them together.
 python /app/ai_seller.py &
-pids=$!
+pilot=$!
 if [ "${HOUSE_TESTNET:-0}" = "1" ]; then
-  VALUN_SERVER="${HOUSE_TESTNET_SERVER:-https://valun-testnet.fly.dev}" VALUN_HOME=/data/valun-testnet AI_SELLER_NETWORK=testnet \
-    AI_SELLER_MONTHLY_USD="${HOUSE_TESTNET_MONTHLY_USD:-5}" AI_SELLER_DAILY_USD="${HOUSE_TESTNET_DAILY_USD:-0.5}" \
-    python /app/ai_seller.py &
-  pids="$pids $!"
+  # The testnet's seller restarts on its own (after 60 s): its failure never stops the pilot's agents.
+  (
+    while true; do
+      VALUN_SERVER="${HOUSE_TESTNET_SERVER:-https://valun-testnet.fly.dev}" VALUN_HOME=/data/valun-testnet AI_SELLER_NETWORK=testnet         AI_SELLER_MONTHLY_USD="${HOUSE_TESTNET_MONTHLY_USD:-5}" AI_SELLER_DAILY_USD="${HOUSE_TESTNET_DAILY_USD:-0.5}"         python /app/ai_seller.py
+      echo "{\"action\": \"testnet_seller_exited\", \"code\": $?, \"restart_in_s\": 60}"
+      sleep 60
+    done
+  ) &
 fi
-# When one stops, stop the other and exit: Fly restarts the machine and both start again.
+# The pilot's seller is the machine's: when it stops, exit, and Fly restarts the machine.
 set +e
-wait -n
-code=$?
-kill $pids 2>/dev/null
-exit $code
+wait $pilot
+exit $?

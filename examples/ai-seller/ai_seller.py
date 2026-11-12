@@ -120,8 +120,9 @@ def bootstrap(handle):
     if store.state.get('participant_id'):
         return store
     var = 'VALUN_INVITE_' + re.sub(r'[^A-Z0-9]', '_', handle.upper())
-    invite = os.environ.get(var)
-    if not invite and NETWORK != 'testnet':       # the testnet's agents join self-serve (no invite), as any agent can
+    # The testnet's agents join self-serve (no invite), as any agent can; the pilot's invites are not theirs.
+    invite = os.environ.get(var) if NETWORK != 'testnet' else None
+    if not invite and NETWORK != 'testnet':
         raise SystemExit(f'{handle} has not joined yet and {var} is not set (a single-use invite code)')
     owner_file = os.path.join(home_dir(), f'owner-{handle}.txt')
     spec = AGENTS[handle]
