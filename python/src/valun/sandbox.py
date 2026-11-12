@@ -36,10 +36,29 @@ SERVICES = {
     'notary': {'price': 2, 'keywords': ('notary', 'notar', 'sha-256', 'sha256')},
 }
 MIN_PRICE_FRACTION = 1.0     # accept only at or above the asking price; counter once below it
-SERVICES_TEXT = ('text-stats (3 PC): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent '
-                 'words of your text. notary (2 PC): SHA-256 and byte length of your text. Put the text in a ``` block, '
-                 'after TEXT: at the end, or as the only quoted string in the description. Deterministic: you can check every '
-                 'number yourself; the delivery echoes the exact text processed. I only do the work (payee).')
+
+
+def price_of(service, network=None):
+    """The published price of a sandbox service in a network's unit: the PC-sized price times the network's scale (PC
+    on the pilot; nanoERG on the testnet, x1e6), what the server's sandbox agents ask (lib/pilot/sandbox.mjs SERVICES)."""
+    return SERVICES[service]['price'] * vc.network_of(network or vc.NETWORK)['scale']
+
+
+def unit_of(network=None):
+    return vc.network_of(network or vc.NETWORK)['unit']
+
+
+def services_text(network=None):
+    """What the services cost and how to send the text, in the network's unit."""
+    u = unit_of(network)
+    return (f'text-stats ({price_of("text-stats", network)} {u}): exact word/character/line counts, unique words, SHA-256 and '
+            f'the 10 most frequent words of your text. notary ({price_of("notary", network)} {u}): SHA-256 and byte length of '
+            'your text. Put the text in a ``` block, after TEXT: at the end, or as the only quoted string in the description. '
+            'Deterministic: you can check every number yourself; the delivery echoes the exact text processed. I only do '
+            'the work (payee).')
+
+
+SERVICES_TEXT = services_text()      # the pilot's (kept for callers that read it)
 _FENCE = re.compile(r'^```[^\n]*\n(.*?)\n```', re.S | re.M)
 _LABEL = re.compile(r'(?:^|\n)\s*TEXT\s*:\s*(.+)\Z', re.S | re.I)
 _QUOTED = re.compile(r'"([^"\n]{1,16000})"|“([^”\n]{1,16000})”')
@@ -143,11 +162,11 @@ class Seller:
             return self.note(deal=did, action='decline', why=e.code)
         terms = d['current']['terms']
         if d.get('your_role') != 'payee':
-            self.c.decline(did, 'I only sell (I do the work); I do not buy. ' + SERVICES_TEXT)
+            self.c.decline(did, 'I only sell (I do the work); I do not buy. ' + services_text(self.c.network))
             return self.note(deal=did, action='decline', why='not_payee')
         service = which_service(terms)
         if not service:
-            self.c.decline(did, 'I do not offer that service. ' + SERVICES_TEXT)
+            self.c.decline(did, 'I do not offer that service. ' + services_text(self.c.network))
             return self.note(deal=did, action='decline', why='unknown_service')
         text = extract_text((terms.get('service') or {}).get('description'))
         if text is None:
@@ -156,10 +175,10 @@ class Seller:
         if len(text.encode('utf-8')) > 16000:
             self.c.decline(did, 'The text is longer than 16,000 bytes; send a shorter one.')
             return self.note(deal=did, action='decline', why='too_long')
-        price, ask = terms['price']['amount'], SERVICES[service]['price']
+        price, ask = terms['price']['amount'], price_of(service, self.c.network)
         if price < ask * MIN_PRICE_FRACTION:
             if self.countered.get(did):
-                self.c.decline(did, f'My price for {service} is {ask} PC.')
+                self.c.decline(did, f'My price for {service} is {ask} {self.c.unit}.')
                 return self.note(deal=did, action='decline', why='price', price=price)
             self.countered[did] = True
             self.c.counter(did, price=ask)
@@ -239,11 +258,11 @@ def buy(store, seller, service, text, price=None, server=None, wait_s=600, log=p
     holds; circulating credit), by moving that much of the issuer's debt to the seller (Client.pay_by_transfer)."""
     c = vc.Client(store, server=server)
     who = participant(c, seller)
-    price = price or SERVICES[service]['price']
+    price = price or price_of(service, c.network)
     desc = f'{service} for this text:\n```\n{text}\n```'
     d = c.propose(who['id'], 'payer', f'{service} job', desc, f'The exact {service} result as JSON.', price, 24, 1)
     did = d['id']
-    log(f'offered {price} PC to {who["handle"]}: deal {did}')
+    log(f'offered {price} {c.unit} to {who["handle"]}: deal {did}')
     deadline = time.time() + wait_s
     status = d['status']
     while time.time() < deadline:
@@ -254,10 +273,10 @@ def buy(store, seller, service, text, price=None, server=None, wait_s=600, log=p
             log(f'deal {did}: {status}')
         if status == 'open' and d['current']['by'] != c.participant_id:
             amount = d['current']['terms']['price']['amount']
-            if amount <= SERVICES[service]['price']:
+            if amount <= price_of(service, c.network):
                 c.accept(did, c.verify_offer(d)['terms_hash'])
             else:
-                c.decline(did, f'{amount} PC is above the published price')
+                c.decline(did, f'{amount} {c.unit} is above the published price')
         if status in ('delivered', 'declined', 'expired', 'withdrawn', 'disputed', 'note_issued'):
             break
     if status != 'delivered':
@@ -307,7 +326,7 @@ def _deliver_and_wait(c, did, service, text, price, wait_s, log, poll_s):
             status = d['status']
             log(f'deal {did}: {status}')
         if status == 'open' and (d.get('current') or {}).get('by') not in (None, c.participant_id):
-            c.decline(did, f'I offered this job at {price} PC.')       # a counter-offer: the price is the published one
+            c.decline(did, f'I offered this job at {price} {c.unit}.')       # a counter-offer: the price is the published one
             log(f'deal {did}: declined a counter-offer')
             continue
         if status == 'agreed' and not delivered:
@@ -328,10 +347,10 @@ def sell(store, buyer, service, text, price=None, server=None, wait_s=600, log=p
     paid, amount}."""
     c = vc.Client(store, server=server)
     who = participant(c, buyer)
-    price = price or SERVICES[service]['price']
+    price = price or price_of(service, c.network)
     desc = f'{service} for this text:\n```\n{text}\n```'
     d = c.propose(who['id'], 'payee', f'{service} job', desc, f'The exact {service} result as JSON.', price, 24, 1)
-    log(f'offered to do {service} for {who["handle"]} for {price} PC: deal {d["id"]}')
+    log(f'offered to do {service} for {who["handle"]} for {price} {c.unit}: deal {d["id"]}')
     return _deliver_and_wait(c, d['id'], service, text, price, wait_s, log, poll_s)
 
 
@@ -366,7 +385,7 @@ def earn(store, server=None, wait_s=600, log=print, poll_s=TOUR_POLL_S, text=Non
     if service is None or job is None:
         raise vc.ValunError('not_exact_service', f'the offer on {did} is not a text-stats or notary job with its text')
     c.accept(did, chk['terms_hash'])
-    log(f"accepted the {service} job from {offer['counterparty']} ({terms['price']['amount']} PC): deal {did}")
+    log(f"accepted the {service} job from {offer['counterparty']} ({terms['price']['amount']} {c.unit}): deal {did}")
     return _deliver_and_wait(c, did, service, job, terms['price']['amount'], wait_s, log, poll_s)
 
 
@@ -396,7 +415,7 @@ def _consents_due(c, log):
         log(f'  (consents: {e.code}: {e})')
         return None
     for e in (r or {}).get('signed', []):
-        log(f"  your Valun client signed a {e.get('kind')} as {e.get('role')} (your net change: {e.get('your_net_change_PC')} PC)")
+        log(f"  your Valun client signed a {e.get('kind')} as {e.get('role')} (your net change: {e.get('your_net_change_PC')} {c.unit})")
     for e in (r or {}).get('refused', []):
         log(f"  your Valun client refused a {e.get('kind')} ({e.get('code')})")
     return r
@@ -426,13 +445,14 @@ def tour_rules_problem(ag, name, args, ids):
     agents = set(_sandbox_ids(ag, ids).values())
     if not agents:
         return 'the directory lists no sandbox agent'
-    top = max(svc['price'] for svc in SERVICES.values())
+    network = getattr(ag.client(), 'network', None)
+    top = max(price_of(s, network) for s in SERVICES)
     if name == 'valun_propose':
         cp, role, price = args.get('counterparty'), args.get('role'), args.get('price')
         if cp not in agents:
             return 'the offer is not for one of the sandbox agents'
         if role not in ('payer', 'payee') or not _whole_pc(price) or (role == 'payer' and price > top):
-            return f'the offer is not at a published price (at most {top} PC to pay)'
+            return f'the offer is not at a published price (at most {top} {unit_of(network)} to pay)'
         return None
     if not ((name == 'valun_respond' and args.get('action') == 'accept')
             or (name == 'valun_review_delivery' and args.get('decision') == 'accept')):
@@ -454,10 +474,10 @@ def tour_rules_problem(ag, name, args, ids):
     if role is None or other not in agents:
         return 'the other party of the signed terms is not a sandbox agent'
     if not _whole_pc(price):
-        return 'the signed terms carry no price in whole PC'
+        return f'the signed terms carry no price in whole {unit_of(network)}'
     if role == 'payer':
         service = which_service(t)
-        if service is None or price > SERVICES[service]['price']:
+        if service is None or price > price_of(service, network):
             return 'the signed price is above the published price of the service'
     if name == 'valun_review_delivery':
         if role != 'payer':

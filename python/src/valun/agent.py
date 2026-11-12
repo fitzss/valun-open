@@ -1222,7 +1222,7 @@ class ValunAgent:
 
         def step_of(cp, role):
             if cp == SANDBOX_EXACT:
-                return 1 if role == 'payee' else (5 if hm >= sandbox.SERVICES['notary']['price'] else 3)
+                return 1 if role == 'payee' else (5 if hm >= sandbox.price_of('notary', getattr(c, 'network', None)) else 3)
             return 2 if role == 'payer' else 4
 
         def plan(step, calls, then):
@@ -1235,12 +1235,12 @@ class ValunAgent:
             return {'tool': tool, 'arguments': args, 'why': why}
 
         def offer(step, cp, role, service):
-            price = sandbox.SERVICES[service]['price']
+            price = sandbox.price_of(service, getattr(c, 'network', None))
             args = {'counterparty': cp, 'role': role, 'title': f'{service} job',
                     'description': f'{service} for this text:\n```\n{TOUR_TEXTS[step]}\n```',
                     'deliverable': f'The exact {service} result as JSON.', 'price': price, 'deliver_within_hours': 24,
                     'offer_valid_hours': 1}
-            why = (f'buy {service} from {cp} for {price} PC' if role == 'payer' else f'offer to sell {service} to {cp} for {price} PC')
+            why = (f'buy {service} from {cp} for {price} {getattr(c, "unit", vc.UNIT)}' if role == 'payer' else f'offer to sell {service} to {cp} for {price} {getattr(c, "unit", vc.UNIT)}')
             return plan(step, [call('valun_propose', args, why)],
                         f'{cp} answers within a few seconds; call valun_status again for the next step.')
         wait = 'The sandbox agents act within a few seconds: call valun_status again.'
@@ -1309,7 +1309,7 @@ class ValunAgent:
         if (hx > 0 or hm > 0) and ox > 0:
             return plan(3 if hx > 0 else 4, [], ('A set-off of the cycle is due: your Valun client signs it by itself at its '
                                                  'next consent run (within about a minute). Call valun_status again.'))
-        notary = sandbox.SERVICES['notary']['price']
+        notary = sandbox.price_of('notary', getattr(c, 'network', None))
         paid_by_transfer = count('paid_by_transfer')
         cleared = pos.get('cleared_by_setoff', pos.get('settled', 0))
         cleared = cleared if _whole(cleared) and cleared > 0 else 0

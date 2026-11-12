@@ -40,7 +40,7 @@ JOIN_APPROVALS = {
     'client-prompt': "Approvals: your MCP app's own tool confirmation asks you; never 'always allow' the Valun signing tools.",
     'console': ('Approvals: every commitment waits for you in the owner console ({server}/pilot#owner), including accepting a '
                 'delivery: its credit note is issued only after you approve it.'),
-    'none': 'Approvals: none. Your agent acts on its own within your limits (at most {per_deal} PC per deal, {total} PC owed in total).',
+    'none': 'Approvals: none. Your agent acts on its own within your limits (at most {per_deal} {unit} per deal, {total} {unit} owed in total).',
 }
 
 
@@ -291,7 +291,8 @@ def _join_steps(args, store, c, j, server, handle, owner, step):
         store.update(lambda state: state.update(approvals='console'))
     step[0] = 'report'
     print(JOIN_APPROVALS[args.approvals].format(server=server, per_deal=limits.get('max_issue_per_deal'),
-                                                total=limits.get('max_issue_outstanding')))
+                                                total=limits.get('max_issue_outstanding'),
+                                                unit=vc.network_of(store.state.get('network') or vc.NETWORK)['unit']))
     finished, name = True, _profile(args)
     if circulating:
         print(f'Clearing: {clearing}. ' + ('Your Valun client signs set-offs that leave your net position unchanged, and '
