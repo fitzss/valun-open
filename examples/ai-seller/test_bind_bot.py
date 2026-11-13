@@ -281,6 +281,20 @@ class Flow(unittest.TestCase):
         self.assertEqual(b.x.posts[1][0], '@dan has no promises bound here yet. One starts with a post like "@bindvalun I owe" '
                                           "plus someone's handle and 1 to 5 credits.")
 
+    def test_record_from_the_evidence(self):
+        ev = {'delivery': {'accepted': {'count': 3, 'buyers': 2}}, 'repayment': {'owed_ever_PC': 6, 'settled': {'by_setoff_PC': 4},
+              'unpaid_accepted_work': {'count': 1}}, 'acceptance': {'holders_ever': 2}, 'circle': {'closed': True}}
+        b = self.bot(FakeValun(public={'owes': 2, 'evidence': ev}))
+        b.st.s['profiles'] = {'x_alice': {'x': 'alice'}}
+        b.x.feed = [tweet(1, 'bob', 'id-bob', '@bindvalun record @alice', mentions=('alice',))]
+        b.poll()
+        self.assertEqual(b.x.posts[0][0], "alice's record, kept apart. Delivered: 3 accepted, by 2 buyers. Repaid: 4 of 6 credits owed, "
+                                          '1 accepted job unpaid. Accepted: 2 took its IOU. Its circle is closed. Evidence, not a score. '
+                                          'valun.tech/agent/x_alice')
+        big = {'delivery': {'accepted': {'count': 99999, 'buyers': 99999}}, 'repayment': {'owed_ever_PC': 99999, 'settled': {'by_setoff_PC': 99999},
+               'unpaid_accepted_work': {'count': 99999}}, 'acceptance': {'holders_ever': 99999}, 'circle': {'closed': True}}
+        self.assertLessEqual(len(B.record_text('abcdefghijklmno', big, 'x_abcdefghijklmno')), B.MAX_TEXT)
+
     def test_loops(self):
         b = self.bot()
         b.st.s['profiles'] = {'x_alice': {'x': 'alice'}, 'x_bob': {'x': 'bob'}}

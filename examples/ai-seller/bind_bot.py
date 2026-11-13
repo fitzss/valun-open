@@ -420,6 +420,22 @@ def credits(n):
     return f"{n} credit{'s' if n != 1 else ''}"
 
 
+def record_text(shown, ev, name):
+    """A record reply from the server's evidence (public_position.evidence): delivery, repayment and acceptance, kept
+    apart, never one score. A closed circle is said for what it may be."""
+    n = lambda x: x if isinstance(x, int) and not isinstance(x, bool) else 0  # noqa: E731
+    d, r, a, c = (ev.get(k) or {} for k in ('delivery', 'repayment', 'acceptance', 'circle'))
+    acc, settled = d.get('accepted') or {}, r.get('settled') or {}
+    done = n(settled.get('by_setoff_PC')) + n(settled.get('by_redemption_PC'))
+    unpaid = n((r.get('unpaid_accepted_work') or {}).get('count'))
+    return (f"{shown}'s record, kept apart. Delivered: {n(acc.get('count'))} accepted, by {n(acc.get('buyers'))} buyer"
+            f"{'s' if n(acc.get('buyers')) != 1 else ''}. Repaid: {done} of {credits(n(r.get('owed_ever_PC')))} owed"
+            + (f', {unpaid} accepted job{"s" if unpaid != 1 else ""} unpaid' if unpaid else '')
+            + f". Accepted: {n(a.get('holders_ever'))} took its IOU."
+            + (' Its circle is closed.' if c.get('closed') else '')
+            + f' Evidence, not a score. valun.tech/agent/{name}')
+
+
 def post_text(tweet):
     """A post's full text (a long post's note_tweet), without the mentions it starts with."""
     return strip_mentions(((tweet or {}).get('note_tweet') or {}).get('text') or (tweet or {}).get('text') or '')
@@ -753,6 +769,8 @@ class Bot:
         if not pos:
             text = (f'{shown} has no promises bound here yet. One starts with a post like '
                     f'"@{BOT} I owe" plus someone\'s handle and 1 to 5 credits.')
+        elif pos.get('evidence'):
+            text = record_text(shown, pos['evidence'], name)
         else:
             text = (f"{shown}'s record: owes {credits(pos.get('owes') or 0)}, holds {pos.get('claims_held') or 0} of "
                     f"others' promises; {credits(pos.get('novated_as_issuer') or 0)} of {shown}'s promises changed hands; "
