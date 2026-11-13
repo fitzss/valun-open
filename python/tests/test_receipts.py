@@ -155,5 +155,36 @@ class TestVerifyCheck(unittest.TestCase):
                 self.assertEqual(len(pk), 66, (net, handle))
 
 
+class TestVerifyCheckCommand(unittest.TestCase):
+    """`valun verify-check --file`: a saved record does not name its network, so it is read as the one network's
+    (valun-testnet-1, since the pilot retired) unless --network names another."""
+
+    def run_cli(self, w, *extra):
+        import contextlib
+        import io
+        import os
+        import tempfile
+        from unittest import mock
+        from valun import cli
+        with tempfile.TemporaryDirectory() as d:
+            check, work = os.path.join(d, 'check.json'), os.path.join(d, 'work.json')
+            for path, record in ((check, w.check), (work, w.work)):
+                with open(path, 'w', encoding='utf-8') as f:
+                    json.dump(record, f)
+            out = io.StringIO()
+            with mock.patch.object(R, 'PINNED_REVIEWERS', w.pinned), contextlib.redirect_stdout(out):
+                rc = cli.main(['verify-check', '--file', check, '--work-file', work, *extra])
+        return rc, json.loads(out.getvalue())
+
+    def test_a_saved_record_is_read_as_the_testnet_s_by_default(self):
+        rc, r = self.run_cli(World())
+        self.assertEqual((rc, r['ok'], r['network']), (0, True, NET))
+
+    def test_network_names_another_network_and_its_pins(self):
+        rc, r = self.run_cli(World(), '--network', 'valun-pilot-1')
+        self.assertEqual((rc, r['ok'], r['network']), (1, False, 'valun-pilot-1'))
+        self.assertIn('the seller is house-reviewer, by its pinned key', [c['check'] for c in r['checks'] if not c['ok']])
+
+
 if __name__ == '__main__':
     unittest.main()

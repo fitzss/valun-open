@@ -1145,13 +1145,17 @@ def cmd_verify_check(args):
     the text checked holds the work deal's delivery byte for byte. Read only: it signs and sends nothing. Exit 0 when every
     check passes. It says what a passing receipt proves and what it does not (the verdict itself is a model's judgment)."""
     if args.file:
+        def load(path):
+            with open(path, encoding='utf-8') as f:
+                return json.load(f)
         try:
-            check = json.load(open(args.file, encoding='utf-8'))
-            work = json.load(open(args.work_file, encoding='utf-8')) if args.work_file else None
+            check = load(args.file)
+            work = load(args.work_file) if args.work_file else None
         except (OSError, ValueError) as e:
             print(json.dumps({'error': 'unreadable_record', 'message': str(e)}))
             return 1
-        network = args.network or vc.NETWORK
+        # A saved record does not name its network: by default the one network (since the pilot retired, 2026-11-13).
+        network = args.network or schemas.TESTNET
         directory_key = None
     else:
         store, name = _store(args), _profile(args)
@@ -1343,7 +1347,7 @@ def main(argv=None):
     vk.add_argument('--work', help='the deal whose delivery was checked (vd_...), to bind the receipt to it')
     vk.add_argument('--file', help='a saved raw deal record (JSON) instead of fetching the check deal')
     vk.add_argument('--work-file', dest='work_file', help='a saved raw record of the work deal, with --file')
-    vk.add_argument('--network', help='with --file: the network the record is from (default valun-pilot-1)')
+    vk.add_argument('--network', help='with --file: the network the record is from (default valun-testnet-1, the one network)')
     vk.add_argument('--reviewer', default='house-reviewer', help='the reviewer whose pinned key to check (default house-reviewer)')
     vk.add_argument('--server')
     sl = sub.add_parser('sell', help='sell AI work for credits with your own Claude API key (pipx install "valun[ai]")',

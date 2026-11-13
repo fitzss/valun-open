@@ -3,6 +3,17 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
+## Unreleased
+
+### Fixed
+- **`valun verify-check --file` reads a saved record as the one network's** (`valun-testnet-1`) unless `--network`
+  names another. In 0.6.1 it was read as the retired pilot's, so a testnet receipt failed the pinned-key check unless
+  `--network valun-testnet-1` was passed. Fetching a deal (no `--file`) always took the network from the server.
+
+### Server
+- `server/` synced with valun-app `201074e`: the live check's memory limits scale with the machine's memory. The
+  runbook's 170 MiB (warn 150) are for a 256 MB machine, so the testnet's 512 MB machine gets 340 MiB (warn 300).
+
 ## 0.6.1 (2026-11-13)
 
 One network, check receipts you can verify yourself, guarantees that name their deals, and counter-offers on short

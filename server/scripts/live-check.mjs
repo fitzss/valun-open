@@ -11,8 +11,8 @@
 // Usage: node scripts/live-check.mjs [BASE_URL] [--fly APP] [--expect-mode off|bound|sandbox|on] [--json]
 //        BASE_URL defaults to https://valun-desk.fly.dev, APP to none (public reads only).
 //
-// The limits are the runbook's (step 5 "Go"): the app's VmRSS plus both trackers at most 170 MiB, MemAvailable at least
-// 40 MiB, no ALARM, no "fail closed", no OOM. WARN thresholds sit before them. Importing this file runs nothing
+// The limits are the runbook's (step 5 "Go"): the app's VmRSS plus both trackers at most 170 MiB (on a 256 MB machine;
+// it scales with the machine's memory), MemAvailable at least 40 MiB, no ALARM, no "fail closed", no OOM. WARN thresholds sit before them. Importing this file runs nothing
 // (test/live-check.test.mjs calls evaluate() with recorded snapshots).
 import {spawnSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
@@ -84,8 +84,13 @@ export function evaluate(snap, {expectMode = null, limits = LIMITS} = {}) {
     const rssKb = (mem.app_kb ?? 0) + (mem.trackers_kb ?? []).reduce((a, b) => a + b, 0);
     const rss = MiB(rssKb), avail = MiB(mem.mem_available_kb ?? 0);
     const trackers = (mem.trackers_kb ?? []).length;
+    // The runbook's VmRSS limits are for the pilot's 256 MB machine; they scale with the machine (the testnet's has
+    // 512 MB). Its size is MemTotal rounded up to Fly's 256 MB steps (the kernel keeps less than 256 MiB of it); a
+    // snapshot without MemTotal is read as a 256 MB machine.
+    const machineMiB = mem.mem_total_kb ? Math.max(256, Math.ceil(MiB(mem.mem_total_kb) / 256) * 256) : 256;
+    const rssFail = limits.rssFailMiB * machineMiB / 256, rssWarn = limits.rssWarnMiB * machineMiB / 256;
     add(trackers === 2 && mem.app_kb ? 'ok' : 'fail', 'the app and both trackers are running', `app ${mem.app_kb ? 'yes' : 'no'}, trackers ${trackers}`);
-    add(rss > limits.rssFailMiB ? 'fail' : rss > limits.rssWarnMiB ? 'warn' : 'ok', `app + trackers VmRSS at most ${limits.rssFailMiB} MiB`,
+    add(rss > rssFail ? 'fail' : rss > rssWarn ? 'warn' : 'ok', `app + trackers VmRSS at most ${rssFail} MiB (a ${machineMiB} MB machine)`,
       `${rss.toFixed(1)} MiB (app ${MiB(mem.app_kb ?? 0).toFixed(1)})`);
     add(avail < limits.availFailMiB ? 'fail' : avail < limits.availWarnMiB ? 'warn' : 'ok', `MemAvailable at least ${limits.availFailMiB} MiB`,
       `${avail.toFixed(1)} MiB; swap free ${MiB(mem.swap_free_kb ?? 0).toFixed(0)} MiB`);
@@ -108,7 +113,8 @@ export function evaluate(snap, {expectMode = null, limits = LIMITS} = {}) {
 const REMOTE = `node -e '
 const fs = require("fs"), out = {files: {}, trackers_kb: []};
 for (const l of fs.readFileSync("/proc/meminfo", "utf8").split("\\n")) {
-  const m = /^(MemAvailable|SwapFree):\\s+(\\d+)/.exec(l); if (m) out[m[1] === "MemAvailable" ? "mem_available_kb" : "swap_free_kb"] = +m[2];
+  const m = /^(MemTotal|MemAvailable|SwapFree):\\s+(\\d+)/.exec(l);
+  if (m) out[{MemTotal: "mem_total_kb", MemAvailable: "mem_available_kb", SwapFree: "swap_free_kb"}[m[1]]] = +m[2];
 }
 for (const d of fs.readdirSync("/proc").filter(x => /^\\d+$/.test(x) && x !== String(process.pid))) {
   let argv = []; try { argv = fs.readFileSync("/proc/" + d + "/cmdline", "utf8").split("\\0").filter(Boolean); } catch { continue; }

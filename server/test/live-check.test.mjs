@@ -97,6 +97,15 @@ test('live-check: memory over the runbook limits fails, close to them warns; a m
   assert.deepEqual(levels(L.evaluate(s), 'VmRSS'), ['fail']);
   s.fly.mem.app_kb = 130 * 1024;                                                     // 156.1 MiB: between 150 and 170
   assert.deepEqual(levels(L.evaluate(s), 'VmRSS'), ['warn']);
+  // The limits scale with the machine: MemTotal rounded up to Fly's 256 MB steps (none read: a 256 MB machine).
+  const m = healthy(); m.fly.mem.app_kb = 160 * 1024;                                // 186.1 MiB
+  m.fly.mem.mem_total_kb = 230 * 1024;                                               // a 256 MB machine: over 170
+  assert.deepEqual(levels(L.evaluate(m), 'VmRSS'), ['fail']);
+  m.fly.mem.mem_total_kb = 475 * 1024;                                               // a 512 MB machine: at most 340
+  assert.deepEqual(levels(L.evaluate(m), 'VmRSS'), ['ok']);
+  assert.match(L.evaluate(m).find(x => x.name.includes('VmRSS')).name, /at most 340 MiB \(a 512 MB machine\)/);
+  m.fly.mem.app_kb = 290 * 1024;                                                     // 316.1 MiB: between 300 and 340
+  assert.deepEqual(levels(L.evaluate(m), 'VmRSS'), ['warn']);
   const a = healthy(); a.fly.mem.mem_available_kb = 30 * 1024;
   assert.deepEqual(levels(L.evaluate(a), 'MemAvailable'), ['fail']);
   a.fly.mem.mem_available_kb = 50 * 1024;
