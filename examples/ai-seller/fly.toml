@@ -1,21 +1,20 @@
 # The Valun house agents (house-scribe, house-reviewer) on Fly.io: ONE always-on shared-cpu-1x / 256 MB machine, ONE
 # small volume. No public service: the agents only make outbound requests (to the Valun server and the Claude API).
-# Secrets (fly secrets): ANTHROPIC_API_KEY (a key from a Claude Console workspace with a monthly spend limit), and, for
-# the first run only, VALUN_INVITE_HOUSE_SCRIBE and VALUN_INVITE_HOUSE_REVIEWER (single-use invite codes).
+# One network: the testnet (valun-testnet-1: nanoERG of Ergo testnet, test coins with no monetary value), at
+# https://valun-testnet.fly.dev unless HOUSE_TESTNET_SERVER names another address of it (entrypoint.sh). The pilot
+# network is retired: its agents no longer run, and its files stay on the volume (/data/valun, /data/bind), untouched.
+# Secrets (fly secrets): ANTHROPIC_API_KEY (a key from a Claude Console workspace with a monthly spend limit). The
+# testnet agents join self-serve: no invite code.
 app = "valun-house"
 primary_region = "iad"
 
 [build]
 
 [env]
-  VALUN_SERVER = "https://valun.tech"
   AI_SELLER_MODEL = "claude-opus-5-5"
-  AI_SELLER_MONTHLY_USD = "18"     # under the $20 spend limit set on the API key's workspace (the guarantee)
-  AI_SELLER_DAILY_USD = "1"
   AI_SELLER_JOBS_PER_BUYER_PER_DAY = "3"
-  # The same agents on the testnet network (valun-testnet.fly.dev, nanoERG of Ergo testnet): owner approved a $5 cap
-  # (2026-11-12). Own profiles and budget file in /data/valun-testnet.
-  HOUSE_TESTNET = "1"
+  # The house agents' dollar caps: owner approved $5 a month (2026-11-12), $0.5 a day, under the $20 spend limit set on
+  # the API key's workspace (the guarantee). Profiles and budget file in /data/valun-testnet.
   HOUSE_TESTNET_MONTHLY_USD = "5"
   HOUSE_TESTNET_DAILY_USD = "0.5"
   # @bindvalun's bind bot (bind_bot.py): runs only once X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN and X_ACCESS_SECRET are

@@ -8,9 +8,13 @@ policy allows. The seller itself, its prices, budgets and limits are valun.ai_se
 repository); this file only says which agents run, joins them on the first run and keeps their public profiles and
 mandates in step.
 
-Both also pay for work (WANTS): an onboarding report on Valun, or a real mistake in valun.tech/skill.md, 2 PC each,
-paid with the agent's own IOU when Claude finds that the work meets the terms. An agent that owes a house agent pays it
-back this way in work: the two debts form a loop that the set-off cancels. Every checked delivery is kept in
+They run on the testnet network (valun-testnet-1, https://valun-testnet.fly.dev: nanoERG of Ergo testnet, test coins
+with no monetary value) unless AI_SELLER_NETWORK and VALUN_SERVER say otherwise. Amounts here are written PC-sized
+(credits) and scaled to the network's unit with the client's scale: 1 credit is 1,000,000 nanoERG (0.001 tERG).
+
+Both also pay for work (WANTS): an onboarding report on Valun, or a real mistake in the server's skill.md, 2 credits
+each, paid with the agent's own IOU when Claude finds that the work meets the terms. An agent that owes a house agent
+pays it back this way in work: the two debts form a loop that the set-off cancels. Every checked delivery is kept in
 wants-received-<handle>.jsonl next to the profiles, for the operator to read and act on.
 
 Spending is capped in dollars from the API's own token counts: AI_SELLER_MONTHLY_USD and AI_SELLER_DAILY_USD, shared
@@ -32,7 +36,7 @@ from valun import ai_seller as ais
 from valun import client as vc
 from valun.home import home_dir, profile_path
 
-SERVER = os.environ.get('VALUN_SERVER', 'https://valun.tech').rstrip('/')
+SERVER = os.environ.get('VALUN_SERVER', 'https://valun-testnet.fly.dev').rstrip('/')
 MODEL = os.environ.get('AI_SELLER_MODEL', ais.DEFAULT_MODEL)
 MONTHLY_USD = float(os.environ.get('AI_SELLER_MONTHLY_USD', '18'))
 DAILY_USD = float(os.environ.get('AI_SELLER_DAILY_USD', '1'))
@@ -41,12 +45,13 @@ CHECKS_PER_BUYER_PER_DAY = int(os.environ.get('AI_SELLER_CHECKS_PER_BUYER_PER_DA
 WANTS_PER_DAY = int(os.environ.get('AI_SELLER_WANTS_PER_DAY', '10'))          # paid jobs taken a day, per agent
 INTERVAL_S = int(os.environ.get('AI_SELLER_INTERVAL_S', '15'))
 OPERATOR = os.environ.get('AI_SELLER_OPERATOR', 'Valun (house agents)')
-# The network these agents are on: 'pilot' (PC) or 'testnet' (valun-testnet-1: nanoERG of Ergo testnet, test coins).
-# Prices stay PC-sized here (valun.ai_seller scales them by the network); the words and the mandate use the unit.
-NETWORK = os.environ.get('AI_SELLER_NETWORK', 'pilot')
+# The network these agents are on: 'testnet' (valun-testnet-1: nanoERG of Ergo testnet, test coins; the default) or
+# 'pilot' (valun-pilot-1, PC: retired). Prices stay PC-sized here (valun.ai_seller scales them by the client's network);
+# the words and the mandate use the unit and the scale of the client's own table of networks.
+NETWORK = os.environ.get('AI_SELLER_NETWORK', 'testnet')
 if NETWORK not in ('pilot', 'testnet'):
     raise SystemExit(f"AI_SELLER_NETWORK must be pilot or testnet, not {NETWORK!r}")
-UNIT, SCALE = ('nanoERG', 1_000_000) if NETWORK == 'testnet' else ('PC', 1)
+UNIT, SCALE = (vc.network_of('valun-testnet-1' if NETWORK == 'testnet' else 'valun-pilot-1')[k] for k in ('unit', 'scale'))
 HOST = SERVER.split('://', 1)[-1]
 
 

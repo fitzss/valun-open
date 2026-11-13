@@ -3,8 +3,8 @@
     @bindvalun I owe @bob 5 for the logo
         the account replies with an offer, mentioning @bob
     @bob replies "accept" to that offer
-        the account binds it on Valun (the pilot network, valun.tech: credits with no monetary value): @alice's
-        IOU of 5 credits to @bob is recorded by the Basis tracker, and the account replies "Bound." with the record
+        the account binds it on Valun (its testnet network, valun-testnet-1, which valun.tech serves): @alice's IOU
+        of 5 credits to @bob is recorded by the Basis tracker, and the account replies "Bound." with the record
     when promises among X users form a loop, the loop cancels and the account posts it, naming its members
 
     @bindvalun I owe @carol 3 for the review, pay with @alice
@@ -17,6 +17,12 @@
     @bindvalun record            the author's public record: owed, held, cancelled in loops, passed on
     @bindvalun record @alice     someone else's (named in the reply, not mentioned)
 
+Credits: people write whole credits and read credits. On Valun an amount is a whole number of the network's unit, and
+the client's scale converts (valun.client Client.scale, of the profiles this bot holds): on the testnet 1 credit is
+1,000,000 nanoERG = 0.001 tERG, test coins of Ergo testnet with no monetary value. Promises, tl;dr hires and feedback
+are proposed in the unit (credits x scale); what the server reports (promises held, records, loops) is shown in credits
+(units / scale, exact), never as raw nanoERG.
+
 Rules (BINDVALUN.md): only the debtor's own post creates a debt; the creditor's own reply binds it; 1 to 5 credits a
 promise (the self-serve limit); the account replies only to posts that mention it and never mentions anyone a post did
 not; an offer lapses after 24 hours. People with no Valun agent get a Valun identity this bot holds for them (x_HANDLE,
@@ -27,9 +33,13 @@ their total owed unchanged: a loop's set-off, and the passing on of a promise th
 Costs (X API, pay per use): about $0.005 a post read, $0.010 a user read, $0.015 a post written and $0.20 one that holds
 a link. The bot keeps its own count and stops at BIND_MONTHLY_USD (default 20) a month, BIND_DAILY_USD a day.
 
-Environment: X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET (OAuth 1.0a user keys of @bindvalun, read and
-write; never printed); BIND_HOME (default /data/bind: the profiles it holds, owner tokens, its state); BIND_SERVER
-(default https://valun.tech).
+Environment: the bot runs only when its X keys are set as secrets: X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN and
+X_ACCESS_SECRET, the OAuth 1.0a user keys of @bindvalun, read and write (the entrypoint starts it only then). It reads
+them from its environment to sign its X requests and never prints or logs them. BIND_HOME (default /data/bind-testnet:
+the profiles it holds, owner tokens, its state; a home of its own, since identities made for another network cannot be
+used on this one); BIND_SERVER (default https://valun-testnet.fly.dev); BIND_CARRY_STATE (optional: a state file of
+an earlier home whose X side carries over into a new home's first state: the mentions read and answered, and this
+month's and day's X spending and counts, never its identities, offers or jobs; that file is only read).
 """
 import base64
 import hashlib
@@ -45,16 +55,20 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from decimal import Decimal
+
+from valun import client as vc
 
 API = 'https://api.x.com/2'
-SERVER = os.environ.get('BIND_SERVER', 'https://valun.tech').rstrip('/')
-HOME = os.environ.get('BIND_HOME', '/data/bind')
+SERVER = os.environ.get('BIND_SERVER', 'https://valun-testnet.fly.dev').rstrip('/')
+HOME = os.environ.get('BIND_HOME', '/data/bind-testnet')
+CARRY_STATE = os.environ.get('BIND_CARRY_STATE', '')
 BOT = os.environ.get('BIND_BOT_HANDLE', 'bindvalun').lower()
 MONTHLY_USD = float(os.environ.get('BIND_MONTHLY_USD', '20'))
 DAILY_USD = float(os.environ.get('BIND_DAILY_USD', '2'))
 POLL_S = int(os.environ.get('BIND_POLL_S', '60'))
 LOOP_EVERY_S = int(os.environ.get('BIND_LOOP_EVERY_S', '300'))
-MIN_CREDITS, MAX_CREDITS = 1, 5
+MIN_CREDITS, MAX_CREDITS = 1, 5      # credits a promise, as people write them (times the client's scale on Valun)
 OFFERS_PER_DEBTOR_PER_DAY = 3
 BINDS_PER_DAY = 30
 OFFER_TTL_S = 24 * 3600
@@ -65,13 +79,18 @@ MAX_TEXT = 270                       # X allows 280 characters; a margin
 # The AI agent hired on X, and what it costs and pays (examples/ai-seller/ai_seller.py: house-scribe's summary service and
 # its x-feedback want; valun.ai_seller enforces its own limits: 3 jobs a day per buyer, 1 x-feedback a day per person).
 SCRIBE = os.environ.get('BIND_SCRIBE', 'house-scribe')
-TLDR_PRICE, FEEDBACK_PAY = 2, 2
+TLDR_PRICE, FEEDBACK_PAY = 2, 2             # credits: the scribe's PC-sized price and pay (valun.ai_seller scales them too)
 TLDR_MIN_CHARS, TLDR_SHOWN = 200, 200       # a post shorter than this needs no tl;dr; at most this much is posted
 FEEDBACK_MIN_CHARS = 40
 HIRES_PER_DAY, HIRES_PER_AUTHOR_PER_DAY = 25, 3
 FEEDBACK_PER_DAY, FEEDBACK_PER_AUTHOR_PER_DAY = 10, 1
 JOB_TTL_S = 75 * 60                  # the offer to the agent is open an hour; then the job is let go
 COST = {'post_read': 0.005, 'user_read': 0.010, 'post': 0.015, 'post_url': 0.20}
+NANOERG_PER_ERG = 10 ** 9
+# The state keys that are about X, not about a Valun network (and their types): what a new home takes from
+# BIND_CARRY_STATE.
+X_SIDE = {'since_id': str, 'handled': list, 'month': str, 'month_usd': (int, float), 'day': str, 'day_usd': (int, float),
+          'counts': dict}
 URL_RE = re.compile(r'https?://|\b[a-z0-9-]+\.(?:tech|dev|com|org|io|md)\b', re.I)
 
 H = r'@([A-Za-z0-9_]{1,15})'
@@ -161,22 +180,35 @@ class X:
 # State: what it has seen, the open offers, its spending and its counts (a JSON file in BIND_HOME).
 
 class State:
-    def __init__(self, path):
+    def __init__(self, path, carry=None):
+        """`carry`: the state file of an earlier home (BIND_CARRY_STATE). When this home has no state yet, its X side
+        (X_SIDE) starts as that file's, so a move to a new home never answers the same posts again or starts this
+        month's X spending from zero; the identities, offers and jobs there belong to their own network and stay there.
+        That file is only read."""
         self.path = path
         try:
             with open(path, encoding='utf-8') as f:
                 self.s = json.load(f)
         except (OSError, ValueError):
             self.s = {}
+            if carry and not os.path.exists(path):
+                try:
+                    with open(carry, encoding='utf-8') as f:
+                        old = json.load(f)
+                    if isinstance(old, dict):
+                        self.s = {k: old[k] for k, kind in X_SIDE.items() if isinstance(old.get(k), kind)}
+                        self.s['carried_from'] = carry
+                except (OSError, ValueError):
+                    pass
         for k, v in (('offers', {}), ('jobs', {}), ('handled', []), ('profiles', {}), ('loops_posted', []), ('counts', {})):
             self.s.setdefault(k, v)
         self.roll()
 
     def roll(self):
         month, day = now().strftime('%Y-%m'), now().strftime('%Y-%m-%d')
-        if self.s.get('month') != month:
+        if self.s.get('month') != month or 'month_usd' not in self.s:
             self.s.update(month=month, month_usd=0.0)
-        if self.s.get('day') != day:
+        if self.s.get('day') != day or 'day_usd' not in self.s:
             self.s.update(day=day, day_usd=0.0, counts={})
 
     def save(self):
@@ -216,9 +248,47 @@ def profile_name(x_handle):
 
 
 class Valun:
-    def __init__(self, home=HOME, server=SERVER, run=None):
+    def __init__(self, home=HOME, server=SERVER, run=None, fetch=None):
         self.home, self.server = home, server
         self.run = run or self._run
+        self.fetch = fetch or self._fetch
+        self._network = None
+
+    def _fetch(self, path):
+        """A public read of the server (GET, no token): parsed JSON."""
+        return json.loads(urllib.request.urlopen(self.server + path, timeout=30).read())
+
+    def profile_file(self, name):
+        return os.path.join(self.home, 'profiles', name + '.json')
+
+    def network(self):
+        """(unit, scale) of the network the identities this bot holds are on, found once: the client's own (Client.unit
+        and Client.scale, from the network a profile enrolled on) for the first profile in its home that has joined;
+        before any has, the network the server names (GET /pilot/v1/info; the client's table of networks). A credit is
+        `scale` units: 1,000,000 nanoERG (0.001 tERG) on the testnet; 1 where amounts are PC. BindError when the server
+        cannot be read or names a network the client does not know."""
+        if self._network is None:
+            folder = os.path.join(self.home, 'profiles')
+            names = sorted(f[:-5] for f in os.listdir(folder) if f.endswith('.json')) if os.path.isdir(folder) else []
+            for name in names:
+                try:
+                    c = vc.Client(self.profile_file(name))
+                    if c.state.get('participant_id'):
+                        self._network = (c.unit, c.scale)
+                        return self._network
+                except (OSError, ValueError, vc.ValunError):
+                    continue
+            try:
+                info = self.fetch('/pilot/v1/info')
+                net = vc.network_of((info.get('network') if isinstance(info, dict) else None) or vc.NETWORK)
+            except (OSError, ValueError, vc.ValunError) as e:
+                raise BindError('network_unknown', str(e)[:200]) from None
+            self._network = (net['unit'], net['scale'])
+        return self._network
+
+    def units(self, n):
+        """`n` credits in the network's units (to_units, with this network's scale)."""
+        return to_units(n, self.network()[1])
 
     def _run(self, args, timeout=180):
         p = subprocess.run([sys.executable, '-m', 'valun', *args], env=dict(os.environ, VALUN_HOME=self.home),
@@ -260,12 +330,15 @@ class Valun:
         the payment is refused."""
         debtor, creditor = self.ensure(state, offer['debtor']), self.ensure(state, offer['creditor'])
         what = offer['what'] or 'what the post names'
+        unit, scale = self.network()
+        price = to_units(offer['amount'], scale)
         r = self.call(debtor, 'valun_propose', {
             'counterparty': creditor, 'role': 'payer', 'title': f'Bound on X: {what}'[:120],
-            'description': (f"Bound on X with @{BOT}. @{offer['debtor']} posted: \"{offer['text'][:400]}\" "
+            'description': (f"Bound on X with @{BOT}, in credits: {credits(offer['amount'])} = {vc.amount_text(price, unit)}. "
+                            f"@{offer['debtor']} posted: \"{offer['text'][:400]}\" "
                             f"(https://x.com/{offer['debtor']}/status/{offer['post_id']}); "
                             f"@{offer['creditor']} accepted (https://x.com/{offer['creditor']}/status/{offer['accept_id']})."),
-            'deliverable': what[:200], 'price': offer['amount'], 'deliver_within_hours': 24, 'offer_valid_hours': 1})
+            'deliverable': what[:200], 'price': price, 'deliver_within_hours': 24, 'offer_valid_hours': 1})
         did = r.get('deal_id')
         if not did:
             raise BindError(r.get('error') or 'propose_failed', r.get('message') or '')
@@ -321,7 +394,7 @@ class Valun:
             'description': ('Format: one paragraph of at most 200 characters, plain text, with no links, no @mentions, no '
                             'hashtags and no bullet points. It is posted on X as a reply. Summarize this post:\n\n```\n'
                             f"{body}\n```\n\nAsked on X by @{author}: https://x.com/{author}/status/{post_id}"),
-            'deliverable': 'a tl;dr of at most 200 characters, one paragraph', 'price': TLDR_PRICE,
+            'deliverable': 'a tl;dr of at most 200 characters, one paragraph', 'price': self.units(TLDR_PRICE),
             'deliver_within_hours': 1, 'offer_valid_hours': 1})
         if not r.get('deal_id'):
             raise BindError(r.get('error') or 'propose_failed', r.get('message') or '')
@@ -335,15 +408,16 @@ class Valun:
             'counterparty': SCRIBE, 'role': 'payee', 'title': f'x-feedback from @{author} on X',
             'description': (f'Feedback on Valun, posted on X by @{author} (https://x.com/{author}/status/{post_id}). The '
                             'delivery is the feedback as posted.'),
-            'deliverable': 'x-feedback: the feedback as posted on X', 'price': FEEDBACK_PAY,
+            'deliverable': 'x-feedback: the feedback as posted on X', 'price': self.units(FEEDBACK_PAY),
             'deliver_within_hours': 1, 'offer_valid_hours': 1})
         if not r.get('deal_id'):
             raise BindError(r.get('error') or 'propose_failed', r.get('message') or '')
         return r['deal_id']
 
     def held(self, name):
-        """{issuer's Valun handle: credits} of the promises this profile holds and can pass on now (valun_status
-        notes_you_can_spend)."""
+        """{issuer's Valun handle: amount} of the promises this profile holds and can pass on now (valun_status
+        notes_you_can_spend). The amounts are the network's units, as the server reports them (amount_PC holds nanoERG
+        on the testnet): in_credits shows them."""
         r = self.call(name, 'valun_status', {'brief': True})
         return {n['issuer']: n['amount_PC'] for n in r.get('notes_you_can_spend') or []
                 if isinstance(n, dict) and isinstance(n.get('issuer'), str) and isinstance(n.get('amount_PC'), int)}
@@ -351,11 +425,11 @@ class Valun:
     def public(self, name, fetch=None):
         """The public record of a participant this bot holds (GET /participants/{id}: its public_position), or None.
         The id is the one its profile was enrolled with (a participant out of the directory is still found), else the
-        directory's."""
-        fetch = fetch or (lambda path: json.loads(urllib.request.urlopen(self.server + path, timeout=30).read()))
+        directory's. Its amounts are the network's units (in_credits shows them)."""
+        fetch = fetch or self.fetch
         pid = None
         try:
-            with open(os.path.join(self.home, 'profiles', name + '.json'), encoding='utf-8') as f:
+            with open(self.profile_file(name), encoding='utf-8') as f:
                 pid = json.load(f).get('participant_id')
         except (OSError, ValueError, AttributeError):
             pass
@@ -407,29 +481,55 @@ def parse_record(text):
     return None if not m else (m.group(1) or '').lower()
 
 
-def fit(make, what):
-    """make(what), shortened to fit one post by cutting `what` (a promise's description), never names or amounts."""
-    text, cut = make(what), what
+def fit(make, what, note=''):
+    """make(what) and then `note`, shortened to fit one post by cutting `what` (a promise's description), never names or
+    amounts; `note` (what a credit is) is left out only when the post cannot hold it even with `what` cut away."""
+    text, cut = make(what) + note, what
     while len(text) > MAX_TEXT and cut:
         cut = cut[:-(len(text) - MAX_TEXT + 1)].rstrip()
-        text = make(cut + '\u2026' if cut else '')
-    return text
+        text = make(cut + '\u2026' if cut else '') + note
+    return fit(make, what) if note and len(text) > MAX_TEXT else text
+
+
+def to_units(n, scale):
+    """`n` credits (a whole number, as people write them) in the network's units, for Valun: n x the client's scale
+    (1 credit is 1,000,000 nanoERG on the testnet)."""
+    return int(n) * scale
+
+
+def in_credits(units, scale):
+    """An amount Valun reports (a whole number of the network's units) in credits, exactly, as people read it: at scale
+    1,000,000 (nanoERG) 3000000 is '3' and 2500000 is '2.5'; at scale 1 the amount itself. Anything but a whole number
+    reads '0'."""
+    if not isinstance(units, int) or isinstance(units, bool):
+        return '0'
+    return format((Decimal(units) / Decimal(scale)).normalize(), 'f')
 
 
 def credits(n):
-    return f"{n} credit{'s' if n != 1 else ''}"
+    """'1 credit', '3 credits', '2.5 credits': `n` credits, a number or in_credits' text."""
+    return f"{n} credit{'' if str(n) == '1' else 's'}"
 
 
-def record_text(shown, ev, name):
+def credit_note(unit, scale):
+    """What a credit is, said once in a post where it helps: on the testnet (nanoERG) ' A credit is 0.001 tERG, test
+    coins with no value.'; nothing where amounts are PC."""
+    if unit != 'nanoERG':
+        return ''
+    return f" A credit is {format((Decimal(scale) / NANOERG_PER_ERG).normalize(), 'f')} tERG, test coins with no value."
+
+
+def record_text(shown, ev, name, scale=1):
     """A record reply from the server's evidence (public_position.evidence): delivery, repayment and acceptance, kept
-    apart, never one score. A closed circle is said for what it may be."""
+    apart, never one score; its amounts (the network's units) in credits. A closed circle is said for what it may be."""
     n = lambda x: x if isinstance(x, int) and not isinstance(x, bool) else 0  # noqa: E731
     d, r, a, c = (ev.get(k) or {} for k in ('delivery', 'repayment', 'acceptance', 'circle'))
     acc, settled = d.get('accepted') or {}, r.get('settled') or {}
-    done = n(settled.get('by_setoff_PC')) + n(settled.get('by_redemption_PC'))
+    done = in_credits(n(settled.get('by_setoff_PC')) + n(settled.get('by_redemption_PC')), scale)
+    owed = in_credits(n(r.get('owed_ever_PC')), scale)
     unpaid = n((r.get('unpaid_accepted_work') or {}).get('count'))
     return (f"{shown}'s record, kept apart. Delivered: {n(acc.get('count'))} accepted, by {n(acc.get('buyers'))} buyer"
-            f"{'s' if n(acc.get('buyers')) != 1 else ''}. Repaid: {done} of {credits(n(r.get('owed_ever_PC')))} owed"
+            f"{'s' if n(acc.get('buyers')) != 1 else ''}. Repaid: {done} of {credits(owed)} owed"
             + (f', {unpaid} accepted job{"s" if unpaid != 1 else ""} unpaid' if unpaid else '')
             + f". Accepted: {n(a.get('holders_ever'))} took its IOU."
             + (' Its circle is closed.' if c.get('closed') else '')
@@ -488,6 +588,13 @@ class Bot:
         self.x, self.v, self.st = x, valun, state
         self.log = log or (lambda **kw: print(json.dumps({'t': now().isoformat(timespec='seconds'), **kw}), flush=True))
         self.me = None
+
+    def note(self):
+        """What a credit is (credit_note), for a post where it helps; nothing when the network cannot be read now."""
+        try:
+            return credit_note(*self.v.network())
+        except BindError:
+            return ''
 
     def say(self, text, reply_to):
         """Post a reply, within the budget. None when there is no room left."""
@@ -561,7 +668,7 @@ class Bot:
         self.st.bump(f'hires:{author}')
         if text is None:
             return self.say(f'@{author} Reply "@{BOT} tldr" under a long post, and an AI agent summarizes it for '
-                            f'{credits(TLDR_PRICE)}.', t['id'])
+                            f'{credits(TLDR_PRICE)}.{self.note()}', t['id'])
         if len(text) < TLDR_MIN_CHARS:
             return self.say(f'@{author} That one is short already. A tl;dr here is for posts of {TLDR_MIN_CHARS} '
                             'characters or more.', t['id'])
@@ -583,7 +690,7 @@ class Bot:
         self.st.bump(f'feedback:{author}')
         if len(text) < FEEDBACK_MIN_CHARS:
             return self.say(f'@{author} Say a little more: what you tried, and what was unclear, broken or missing. '
-                            f'The scribe pays {credits(FEEDBACK_PAY)} for feedback it can act on.', t['id'])
+                            f'The scribe pays {credits(FEEDBACK_PAY)} for feedback it can act on.{self.note()}', t['id'])
         try:
             did = self.v.offer_feedback(self.st, author, t['id'])
         except BindError as e:
@@ -665,7 +772,8 @@ class Bot:
         if via in (debtor, creditor, BOT) or (via and via not in mentioned):
             return self.log(action='ignored_offer', tweet=t['id'], why='pays with its own, the payee\'s or the bot\'s promise, or one not mentioned')
         if not MIN_CREDITS <= amount <= MAX_CREDITS:
-            return self.say(f'@{debtor} A promise here is {MIN_CREDITS} to {MAX_CREDITS} credits for now. Try again with an amount in that range.', t['id'])
+            return self.say(f'@{debtor} A promise here is {MIN_CREDITS} to {MAX_CREDITS} credits for now.{self.note()} '
+                            'Try again with an amount in that range.', t['id'])
         key = f'offers:{debtor}'
         if self.st.count(key) >= OFFERS_PER_DEBTOR_PER_DAY:
             return self.log(action='ignored_offer', tweet=t['id'], why='debtor daily limit')
@@ -673,18 +781,19 @@ class Bot:
             # A promise of @via's that the debtor holds, through this bot (the bot signs for @via as its issuer).
             have = 0
             if profile_name(via) in self.st.s['profiles'] and profile_name(debtor) in self.st.s['profiles']:
-                have = self.v.held(profile_name(debtor)).get(profile_name(via), 0)
-            if have < amount:
+                have = self.v.held(profile_name(debtor)).get(profile_name(via), 0)        # in the network's units
+            scale = self.v.network()[1]
+            if have < to_units(amount, scale):
                 # The issuer is named, not mentioned: a refusal is no reason to notify them.
-                return self.say(f"@{debtor} You hold {credits(have)} of {via}'s promises here, so you cannot pay "
-                                f'{amount} with them. Nothing was offered.', t['id'])
+                return self.say(f"@{debtor} You hold {credits(in_credits(have, scale))} of {via}'s promises here, so you "
+                                f'cannot pay {amount} with them. Nothing was offered.', t['id'])
             reply = fit(lambda w: f"Offer: @{debtor} pays @{creditor} {credits(amount)}" + (f' for {w}' if w else '')
                         + f" with @{via}'s promise: @{via} would owe @{creditor} instead of @{debtor}. @{creditor}, reply "
-                        '"accept" to take it. Open for 24 hours.', what)
+                        '"accept" to take it. Open for 24 hours.', what, self.note())
         else:
             reply = fit(lambda w: f'Offer: @{debtor} owes @{creditor} {credits(amount)}' + (f' for {w}' if w else '')
                         + f'. @{creditor}, reply "accept" to this post to bind it. Open for 24 hours. Once bound, '
-                        f'@{creditor} can pass it on.', what)
+                        f'@{creditor} can pass it on.', what, self.note())
         rid = self.say(reply, t['id'])
         if rid:
             self.st.bump(key)
@@ -768,13 +877,15 @@ class Bot:
             return self.log(action='record_unreadable', tweet=t['id'], who=who)
         if not pos:
             text = (f'{shown} has no promises bound here yet. One starts with a post like '
-                    f'"@{BOT} I owe" plus someone\'s handle and 1 to 5 credits.')
+                    f'"@{BOT} I owe" plus someone\'s handle and {MIN_CREDITS} to {MAX_CREDITS} credits.{self.note()}')
         elif pos.get('evidence'):
-            text = record_text(shown, pos['evidence'], name)
+            text = record_text(shown, pos['evidence'], name, self.v.network()[1])
         else:
-            text = (f"{shown}'s record: owes {credits(pos.get('owes') or 0)}, holds {pos.get('claims_held') or 0} of "
-                    f"others' promises; {credits(pos.get('novated_as_issuer') or 0)} of {shown}'s promises changed hands; "
-                    f"{pos.get('cleared_by_setoff') or 0} cancelled in loops. valun.tech/agent/{name}")
+            scale = self.v.network()[1]
+            c = lambda k: in_credits(pos.get(k) or 0, scale)  # noqa: E731 - the network's units, in credits
+            text = (f"{shown}'s record: owes {credits(c('owes'))}, holds {c('claims_held')} of "
+                    f"others' promises; {credits(c('novated_as_issuer'))} of {shown}'s promises changed hands; "
+                    f"{c('cleared_by_setoff')} cancelled in loops. valun.tech/agent/{name}")
         if self.say(text, t['id']):
             self.st.bump('records')
             self.st.bump(f'records:{author}')
@@ -800,9 +911,10 @@ class Bot:
             k = next(i for i, n in enumerate(names) if n in held)          # start at a person on X, in the loop's order
             names = names[k:] + names[:k]
             shown = [f'@{held[n]}' if n in held else f'{n} (AI)' if str(n).startswith('house-') else str(n) for n in names]
-            each = loop.get('each_PC')
+            each = loop.get('each_PC')                     # the network's units (nanoERG on the testnet), or None
+            whole = isinstance(each, int) and not isinstance(each, bool) and each > 0
             text = (f'Loop closed: {ARROW.join(shown + shown[:1])}. '
-                    + (f'{each} credit{"s" if each != 1 else ""} of promises cancelled' if each else 'Promises cancelled')
+                    + (f'{credits(in_credits(each, self.v.network()[1]))} of promises cancelled' if whole else 'Promises cancelled')
                     + f'. Nobody paid anyone. valun.tech/loop/{loop["id"]}')
             cost = COST['post_url']
             if self.st.room() < cost:
@@ -825,9 +937,10 @@ def keys_from_env():
 
 def main():
     os.makedirs(HOME, exist_ok=True)
-    state = State(os.path.join(HOME, 'bind-state.json'))
+    state = State(os.path.join(HOME, 'bind-state.json'), carry=CARRY_STATE or None)
     bot = Bot(X(keys_from_env()), Valun(), state)
-    bot.log(action='start', server=SERVER, monthly_usd=MONTHLY_USD, daily_usd=DAILY_USD, month_usd=state.s['month_usd'])
+    bot.log(action='start', server=SERVER, home=HOME, carried_from=state.s.get('carried_from'), monthly_usd=MONTHLY_USD,
+            daily_usd=DAILY_USD, month_usd=state.s['month_usd'])
     last_loops = 0.0
     while True:
         try:
