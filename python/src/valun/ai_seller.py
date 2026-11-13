@@ -422,15 +422,20 @@ class AISeller(vsandbox.Seller):
         (checks_per_buyer) and a job and the check of it never compete for the same one."""
         return f"{self.handle}|{buyer}|{'check' if service == 'check' else 'work'}"
 
-    def deliverable(self, service, result, checked_text=None, deal_id=None):
+    def deliverable(self, service, result, checked_text=None, deal_id=None, blocks=None):
         """The work itself, with nothing added, since the terms may allow nothing else; who did it goes in the delivery's
         title. A check ends with its receipt: a JSON block with the check deal's id, the verdict and the SHA-256 of the
-        exact text it checked, which the delivery's signature (this agent's key) binds to that verdict."""
+        exact text it checked, which the delivery's signature (this agent's key) binds to that verdict. Receipt version 2
+        (fix inbox #3) adds each checked ``` block's SHA-256 and size, so whoever holds a delivery can see that it was
+        checked, byte for byte (valun verify-check)."""
         content = result['content']
         if service == 'check':
             receipt = {'service': 'check', **({'check_deal_id': deal_id} if deal_id else {}), 'verdict': verdict_of(content),
                        'checked_by': self.handle, 'model': result['model'],
                        'checked_text_sha256': hashlib.sha256((checked_text or '').encode('utf-8')).hexdigest()}
+            if blocks is not None:
+                receipt['receipt_version'] = 2
+                receipt['checked_blocks'] = [{'sha256': hashlib.sha256(b.encode('utf-8')).hexdigest(), 'bytes': len(b.encode('utf-8'))} for b in blocks]
             content += '\n\n```json\n' + json.dumps(receipt, indent=1) + '\n```\n'
         return content
 
@@ -494,7 +499,7 @@ class AISeller(vsandbox.Seller):
         if r.get('incomplete'):
             return self._decline(did, 'The job came out longer than I can deliver; please send a shorter text.', 'incomplete',
                                  cost=round(r['cost'], 5))
-        content = self.deliverable(service, r, text, did)
+        content = self.deliverable(service, r, text, did, blocks=JOB_BLOCK.findall((terms.get('service') or {}).get('description') or '') if service == 'check' else None)
         self.budget.s['pending'][did] = {'service': service, 'content': content, 'title': self.title(service, r)}
         self.budget.save()
         try:

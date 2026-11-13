@@ -331,7 +331,10 @@ class ChecksAndReceipts(unittest.TestCase):
         receipt = json.loads(content.split('```json\n', 1)[1].split('\n```', 1)[0])
         self.assertEqual(receipt, {'service': 'check', 'check_deal_id': ITEM['deal_id'], 'verdict': 'does_not_meet',
                                    'checked_by': 'my-seller', 'model': 'claude-opus-5-5',
-                                   'checked_text_sha256': hashlib.sha256(checked.encode('utf-8')).hexdigest()})
+                                   'checked_text_sha256': hashlib.sha256(checked.encode('utf-8')).hexdigest(),
+                                   # receipt version 2 (fix inbox #3): each checked block's hash and size
+                                   'receipt_version': 2,
+                                   'checked_blocks': [{'sha256': hashlib.sha256(checked.encode('utf-8')).hexdigest(), 'bytes': len(checked.encode('utf-8'))}]})
         self.assertEqual(s.c.calls[1][2], 'check by my-seller (claude-opus-5-5)')
 
     def test_verdict_codes(self):

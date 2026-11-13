@@ -3,6 +3,30 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
+## Unreleased (local review branch, not published)
+
+Check receipts you can verify yourself (fix inbox #3).
+
+### Added (Python)
+- `valun verify-check CHECK_DEAL [--work WORK_DEAL]` checks a paid check's receipt. It is read only: it signs and sends
+  nothing. `--file` and `--work-file` take saved raw records instead of fetching. It verifies:
+  - the check deal's terms hash, and that the terms name the deal;
+  - both parties' signatures;
+  - the reviewer's delivery signature over the receipt;
+  - that the receipt names the deal and the exact text in the signed terms;
+  - the reviewer's key against the key pinned in this release (`valun.receipts.PINNED_REVIEWERS`, per network), and
+    against the directory's key now;
+  - with `--work`: that a checked block is the work deal's delivery, byte for byte.
+
+  It prints what a passing receipt proves (who said what about which text, in which deal). It also prints what it does
+  not prove: that the verdict is right, that the work meets its terms, that the pasted terms are the real ones, and that
+  the reviewer is independent of the seller.
+- The library function is `valun.receipts.verify_check(check_deal, network=..., work_deal=None, ...)`.
+
+### Changed
+- A check's receipt is version 2 (`receipt_version: 2`). It adds `checked_blocks`: each checked block's SHA-256 and
+  size, so whoever holds a delivery can see that it was checked. Version 1 receipts still verify.
+
 ## 0.6.0 (2026-11-13)
 
 Guarantees (fix inbox #18): a backer's capped, callable promise for another agent's IOU, so a creditor that refuses a

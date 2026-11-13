@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from . import __version__
 from . import agent as va
 from . import client as vc
+from . import receipts as vr
 from . import schemas
 from .agent import ValunAgent, error_payload
 from .home import APPROVAL_MODES, DEFAULT_SERVER, home_dir, permission_problem, profile_path
@@ -1138,6 +1139,41 @@ def cmd_profile(args):
     return 0
 
 
+def cmd_verify_check(args):
+    """Verify a paid check's receipt (fix inbox #3): the check deal's signed terms, the reviewer's signed delivery, the
+    receipt naming that deal and that text, the reviewer's key against the key pinned in this release, and (--work) that
+    the text checked holds the work deal's delivery byte for byte. Read only: it signs and sends nothing. Exit 0 when every
+    check passes. It says what a passing receipt proves and what it does not (the verdict itself is a model's judgment)."""
+    if args.file:
+        try:
+            check = json.load(open(args.file, encoding='utf-8'))
+            work = json.load(open(args.work_file, encoding='utf-8')) if args.work_file else None
+        except (OSError, ValueError) as e:
+            print(json.dumps({'error': 'unreadable_record', 'message': str(e)}))
+            return 1
+        network = args.network or vc.NETWORK
+        directory_key = None
+    else:
+        store, name = _store(args), _profile(args)
+        if not (store.state.get('participant_id') and store.secret()):
+            print(f"Profile '{name}' is not joined yet; run `valun --profile {name} join` first (or pass --file with a saved deal record).")
+            return 1
+        c = vc.Client(store, _server(args, store))
+        try:
+            check = c.deal(args.deal)
+            work = c.deal(args.work) if args.work else None
+            payee = ((check.get('current') or {}).get('terms') or {}).get('payee') or {}
+            directory_key = (c.participant(payee['id']) or {}).get('pubkey') if payee.get('id') else None
+        except vc.ValunError as e:
+            print(json.dumps(error_payload(e), ensure_ascii=False))
+            return 1
+        network = c.network
+    r = vr.verify_check(check, network=network, work_deal=work, reviewer=args.reviewer, directory_key=directory_key)
+    print(json.dumps({'ok': r['ok'], 'verdict': r['verdict'], 'network': network, 'checks': r['checks'],
+                      'proves': r['proves'], 'does_not_prove': r['does_not_prove']}, ensure_ascii=False, indent=1))
+    return 0 if r['ok'] else 1
+
+
 def cmd_ergo(args):
     """Settlement on Ergo testnet (the Valun testnet network only): this agent's Ergo address, the chain view, the
     reserves, a reserve of its own tERG, and the redemption of a note it holds. A redemption is signed natively; a
@@ -1301,6 +1337,15 @@ def main(argv=None):
     pf.add_argument('--wants', help='the work you pay other agents for ("" clears it)')
     pf.add_argument('--display-name', dest='display_name')
     pf.add_argument('--server')
+    vk = sub.add_parser('verify-check', help="verify a check's receipt: signed by the reviewer's pinned key, naming its deal and the text it "
+                                             "checked (and, with --work, that deal's delivery); read only")
+    vk.add_argument('deal', nargs='?', help='the check deal id (vd_...); you must be a party to it')
+    vk.add_argument('--work', help='the deal whose delivery was checked (vd_...), to bind the receipt to it')
+    vk.add_argument('--file', help='a saved raw deal record (JSON) instead of fetching the check deal')
+    vk.add_argument('--work-file', dest='work_file', help='a saved raw record of the work deal, with --file')
+    vk.add_argument('--network', help='with --file: the network the record is from (default valun-pilot-1)')
+    vk.add_argument('--reviewer', default='house-reviewer', help='the reviewer whose pinned key to check (default house-reviewer)')
+    vk.add_argument('--server')
     sl = sub.add_parser('sell', help='sell AI work for credits with your own Claude API key (pipx install "valun[ai]")',
                         description=SELL_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     sl.add_argument('--services', required=True, help='comma-separated, from: ' + ', '.join(SERVICE_SPECS))
@@ -1356,7 +1401,7 @@ def main(argv=None):
         return 1
     return {'join': cmd_join, 'enroll': cmd_enroll, 'status': cmd_status, 'doctor': cmd_doctor, 'config': cmd_config,
             'tools': cmd_tools, 'call': cmd_call, 'mcp': cmd_mcp, 'clearing': cmd_clearing, 'policy': cmd_policy,
-            'attempts': cmd_attempts, 'sandbox': cmd_sandbox, 'profile': cmd_profile, 'sell': cmd_sell, 'ergo': cmd_ergo}[args.cmd](args)
+            'attempts': cmd_attempts, 'sandbox': cmd_sandbox, 'profile': cmd_profile, 'sell': cmd_sell, 'ergo': cmd_ergo, 'verify-check': cmd_verify_check}[args.cmd](args)
 
 
 SELL_HELP = """Sell AI work on Valun for credits, with your own Claude API key. This profile's agent answers offers for
