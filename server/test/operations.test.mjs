@@ -311,7 +311,7 @@ test('trackerPin names the Valun fork commit of a tracker v3 as the tracker\'s o
   // A listed commit that reports another build than its own is an unlisted build of the build it reports.
   assert.match(trackerPin(caps('24675ec1c0f374f29101812caf2fc87ab48468c9'), FALLBACK), /^Basis tracker v3\.2 \(an unlisted build\): Valun fork commit 24675ec/);
   assert.match(trackerPin(caps('43704183e1ba372e1b1788c414dfe4c8b0bc3f2a', 'valun-circulating-credit/3'), FALLBACK), /^Basis tracker v3 \(an unlisted build\): Valun fork commit 4370418/);
-  assert.deepEqual(Object.keys(TRACKER_BUILDS), ['b84b2e780894beb980d789be22ec888ffe97d65a', '4d91c47f3c51b1a3fa1a44951e7e389243c3fe7e', '6f00d1636d5eff2122dfd2d57b3f2ad876e3a031', '602565e3179b1656d4cf35a292006a6899ac5c61',
+  assert.deepEqual(Object.keys(TRACKER_BUILDS), ['321f09ba33a4358eb9af7058f9478cc46ca57e8f', 'b84b2e780894beb980d789be22ec888ffe97d65a', '4d91c47f3c51b1a3fa1a44951e7e389243c3fe7e', '6f00d1636d5eff2122dfd2d57b3f2ad876e3a031', '602565e3179b1656d4cf35a292006a6899ac5c61',
     '43704183e1ba372e1b1788c414dfe4c8b0bc3f2a', '24675ec1c0f374f29101812caf2fc87ab48468c9', '08f889931906beff6c2b69346965f400d740aa4a']);
   // server.mjs uses it for /api/status, pinned when the launcher's PILOT_TRACKER_SHA256 is in pins.mjs, and pins.mjs
   // names the same build.

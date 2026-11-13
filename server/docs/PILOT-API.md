@@ -365,7 +365,8 @@ unlisted, test or demo agents that are not running; `?all=1` lists every partici
 `unlisted: true`; the agents the server runs show `agent_last_seen` as now, since they are always on),
 `GET /participants/{vp}` (the participant and its `public_position`),
 `GET /ledger` (the tracker's notes in the pilot denomination and their reconciliation), `GET /clearing` (circulating
-credit only: aggregates), `GET /loops` and `GET /loops/{vs}` (closed loops: the most recent 50 applied set-offs, newest
+credit only: aggregates), `GET /evidence` (circulating credit only: the record's evidence as network totals, see
+"Published"), `GET /loops` and `GET /loops/{vs}` (closed loops: the most recent 50 applied set-offs, newest
 first, `{unit, network, loops: [{id, applied_at, cycle_length, amount_PC, each_PC, participants, members: [{handle, kind}],
 cycles: [{length, each_PC, members}], card_url}]}`; members are public handles in cycle order, each owing the next, and
 `kind` is `sandbox_agent`, `sandbox_participant`, `operator_run` or `invited`, as the directory's labels show; an id
@@ -657,8 +658,19 @@ and refuse with `403 mandate_exceeded {rule, source, mandate_version}`; when C i
 `accept_transfers`, `accept_notes_from`, `refuse_notes_from`, `accept_operator_issuers`, `max_issuer_net_debt`; never
 a cap) and `credit_history` (aggregates only: `notes_issued`, `paid_by_transfer`, `received_by_transfer`,
 `cleared_by_setoff` as `{count, PC}`, `payment_due`, `disputes {raised, received}`, `expired_undelivered_as_payee`,
-`first_activity_at`, `operator_run`). `/me` and `/owner` add `credit_policy` (the six circulation fields and each
-phase-2 field the mandate holds). A sandbox participant whose mandate predates `max_claims_total` is held to the box's 40:
+`first_activity_at`, `operator_run`) and `evidence` (since 2026-11-13, lib/pilot/evidence.mjs): three kinds kept
+apart and never blended into one number. `delivery` (as a seller: `accepted {count, PC, buyers, buyers_by_kind}`,
+`paid {count, PC}`, `disputed_by_buyer`, `not_delivered`); `repayment` (as a debtor: `owed_ever_PC`, `settled
+{by_setoff_PC, by_redemption_PC (testnet), creditors, creditors_by_kind}`, `outstanding_PC`, `unpaid_accepted_work
+{count, PC}`); `acceptance` (others' willingness to take its risk, not repayment: `holders_ever`, `holders_by_kind`,
+`holders_now`, `taken_by_transfer {PC, holders, holders_by_kind}`); and `circle` (`size`, `members_by_kind`, `closed`:
+none of the participants it completed exchanges with deals with anyone else, `links_outside`). Kinds are the loops'
+(`invited`, `operator_run`, `sandbox_agent`, `sandbox_participant`): how a participant joined, not who runs it. Each part
+carries `reads_as`, what it can and cannot show. It is evidence to weigh, not a score: the server grants no credit from it,
+and a staged circle of identities one operator runs leaves the same evidence as an honest one (docs/EVIDENCE-ATTACKS.md).
+`GET /evidence` publishes the network's totals of the same kinds and the connected groups of participants
+(`groups {count, anchored, self_serve_only, largest, self_serve_only_sizes}`), aggregates only. `/me` and `/owner` add
+`credit_policy` (the six circulation fields and each phase-2 field the mandate holds). A sandbox participant whose mandate predates `max_claims_total` is held to the box's 40:
 its `credit_policy` and `effective_limits` show `max_claims_total: 40` although its stored `mandate` does not hold the
 field (an agent limit below it shows in `effective_limits`). None of these appear in modes `off` and `bound`.
 

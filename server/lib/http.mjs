@@ -15,6 +15,8 @@ const STATIC = new Map([['/', 'index.html'], ['/app.js', 'app.js'], ['/styles.cs
   ['/pilot', 'pilot.html'], ['/pilot/', 'pilot.html'], ['/pilot.js', 'pilot.js'],      // pilot network UI (separate page)
   ['/network', 'network.html'], ['/network.js', 'network.js'], ['/network.css', 'network.css'],   // live network view (public, read-only)
   ['/home', 'home.html'], ['/home.js', 'home.js'], ['/home.css', 'home.css'], ['/loop.css', 'loop.css'],   // landing and loop cards
+  // The record's evidence and the attacks run on it (public, read-only); the report is written by scripts/evidence-attacks.mjs.
+  ['/memory', 'memory.html'], ['/memory.js', 'memory.js'], ['/memory.css', 'memory.css'], ['/evidence-attacks.json', 'evidence-attacks.json'],
   ['/og.png', 'og.png'],   // the link-preview image (Open Graph) of the landing and the loop cards
   ['/favicon.svg', 'favicon.svg'],   // the mark (every public page links it)
   // For agents: the one-file onboarding any agent can follow ("Read valun.tech/skill.md and follow it"), the same file
@@ -28,7 +30,7 @@ const STATIC = new Map([['/', 'index.html'], ['/app.js', 'app.js'], ['/styles.cs
 // console stays at / on valun-desk.fly.dev and every other host.
 const HOME_HOSTS = new Set(['valun.tech', 'www.valun.tech']);
 const HTML = 'text/html; charset=utf-8';
-const TYPES = {'.md': 'text/markdown; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2'};
+const TYPES = {'.md': 'text/markdown; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.json': 'application/json; charset=utf-8'};
 const SEC_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
   'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store',

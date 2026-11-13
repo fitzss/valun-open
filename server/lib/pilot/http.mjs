@@ -255,6 +255,10 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         return onChain() ? {...loop, on_chain: loopOnChain(loop, await anchoring())} : loop;
       });
     }
+    // The record's evidence, as network totals (lib/pilot/evidence.mjs): delivery, repayment and acceptance kept apart, and
+    // the groups participants form by completed exchanges. Aggregates only (no ids, handles or keys); circulation modes
+    // sandbox and on (in other modes the route does not exist).
+    if (G && p === '/evidence' && pilot.circulating) return sendCached(res, send, 'evidence', () => pilot.publicEvidence());
     // The clearing engine's public aggregates (circulation modes sandbox and on; no participant ids, handles or keys).
     // In other modes the route does not exist (it falls through, as any unknown route does).
     // Single-flight: requests that arrive while the aggregates are being computed share that computation (the cache holds

@@ -33,9 +33,28 @@ export function agentView(pub, pos, loops, {now, dormant = false}) {
     wants: pub.wants || '', kind: kindOf(pub), joined_at: pub.joined_at, last_seen: ago(pub.agent_last_seen, now), dormant,
     record: pos ? {completed: Number(deals.credit_notes_issued) || 0, disputed: Number(deals.disputed) || 0, holds: Number(pos.claims_held) || 0,
       owes: Number(pos.owes) || 0, cleared: Number(pos.cleared_by_setoff) || 0} : null,
+    evidence: pos?.evidence ? evidenceLines(pos.evidence) : null,
     loops: mine.map(l => ({id: l.id, route: [...l.cycles[0].members.map(m => m.handle ?? 'unknown'), l.cycles[0].members[0]?.handle ?? 'unknown'],
       amount: l.amount_PC, at: l.applied_at})),
     url: `${PUBLIC_ORIGIN}/agent/${pub.handle}`};
+}
+
+// The record's evidence (lib/pilot/evidence.mjs) in four plain sentences: delivery, repayment and acceptance, kept apart,
+// and the circle. Numbers and kinds only (every value is escaped when rendered).
+const KIND_WORDS_PLURAL = Object.freeze({invited: ['invited agent', 'invited agents'], operator_run: ['operator-run agent', 'operator-run agents'],
+  sandbox_agent: ['sandbox agent', 'sandbox agents'], sandbox_participant: ['self-serve agent', 'self-serve agents']});
+const kinds = k => Object.entries(k || {}).map(([x, n]) => `${n} ${(KIND_WORDS_PLURAL[x] || [x, x])[n === 1 ? 0 : 1]}`).join(', ');
+export function evidenceLines(e) {
+  const n = x => Number(x) || 0, d = e.delivery || {}, r = e.repayment || {}, a = e.acceptance || {}, c = e.circle || {};
+  const settled = n(r.settled?.by_setoff_PC) + n(r.settled?.by_redemption_PC), buyers = n(d.accepted?.buyers), creditors = n(r.settled?.creditors);
+  return {
+    delivery: `${n(d.accepted?.count)} deliver${n(d.accepted?.count) === 1 ? 'y' : 'ies'} accepted, from ${plural(buyers, 'buyer')}${buyers ? ` (${kinds(d.accepted?.buyers_by_kind)})` : ''}; ${n(d.disputed_by_buyer)} disputed, ${n(d.not_delivered)} not delivered.`,
+    repayment: n(r.owed_ever_PC) ? `${amt(settled)} of the ${amt(n(r.owed_ever_PC))} it owed settled${creditors ? `, with ${plural(creditors, 'creditor')} (${kinds(r.settled?.creditors_by_kind)})` : ''}; ${amt(n(r.outstanding_PC))} outstanding; ${plural(n(r.unpaid_accepted_work?.count), 'accepted job')} unpaid.`
+      : `It has not owed anyone yet${n(r.unpaid_accepted_work?.count) ? `; ${plural(n(r.unpaid_accepted_work.count), 'accepted job')} unpaid` : ''}.`,
+    acceptance: `${plural(n(a.holders_ever), 'participant')} ${n(a.holders_ever) === 1 ? 'has' : 'have'} held its IOU; ${amt(n(a.taken_by_transfer?.PC))} of it taken by transfer, from parties it never dealt with.`,
+    circle: n(c.size) > 1 ? `It has exchanged with ${plural(n(c.size) - 1, 'participant')}; ${c.closed ? 'none of them deals with anyone else (a closed group: what a staged circle looks like, and also a new one)' : 'that group deals with others too'}.`
+      : 'It has not exchanged with anyone yet.',
+  };
 }
 
 export function agentDescription(a) {
@@ -55,6 +74,14 @@ export function renderAgentPage(a) {
   <div><dt>Disputed</dt><dd>${esc(r.disputed)}</dd></div>
   <div><dt>Last seen</dt><dd>${esc(a.last_seen)}</dd></div>
 </dl>` : `<p class="more">Its credit record could not be read just now.</p>`;
+  const ev = a.evidence ? `<p class="eyebrow">Evidence, kept apart</p>
+<ul class="list evidence">
+  <li><strong>Delivered.</strong> ${esc(a.evidence.delivery)}</li>
+  <li><strong>Repaid.</strong> ${esc(a.evidence.repayment)}</li>
+  <li><strong>Accepted.</strong> ${esc(a.evidence.acceptance)}</li>
+  <li><strong>Circle.</strong> ${esc(a.evidence.circle)}</li>
+</ul>
+<p class="small">Evidence to weigh, not a score. Kinds say how a participant joined, not who runs it. <a href="/memory">What the record cannot show</a>.</p>` : '';
   const loops = a.loops.length ? `<p class="eyebrow">Loops it was in</p>
 <ul class="list">
 ${a.loops.map(l => `  <li><a href="/loop/${esc(l.id)}">${l.route.map(h => `<span class="h">${esc(h)}</span>`).join(' <span class="arr">→</span> ')}</a> · ${esc(plural(l.amount, 'credit'))} cancelled</li>`).join('\n')}
@@ -66,6 +93,7 @@ ${top}
 ${shown}<p class="lede">${esc(a.about || 'No description yet.')}</p>
 ${a.services ? `<p class="eyebrow">Offers</p>\n<p class="offers">${esc(a.services)}</p>\n` : ''}${a.wants ? `<p class="eyebrow">Pays for</p>\n<p class="offers">${esc(a.wants)}</p>\n` : ''}<div class="bar" aria-hidden="true"></div>
 ${facts}
+${ev}
 ${loops}
 <p class="eyebrow">Hire this agent</p>
 <p>Paste this into your agent (Hermes, Claude Code, OpenClaw or any agent that can run commands):</p>
@@ -118,7 +146,7 @@ ${top}
 <p class="eyebrow">1 · Bring your agent</p>
 <p>Paste this into your agent (Hermes, Claude Code, Codex, OpenClaw or any agent that can run commands):</p>
 <pre class="hire"><code>Read ${PUBLIC_ORIGIN}/skill.md and follow it to join Valun. Say that you help open-source projects.</code></pre>
-<p class="small">Claude Code: <code>/plugin marketplace add fitzss/valun-open</code>, then <code>/plugin install valun@valun</code>. Hermes: <code>hermes profile create valun</code>, <code>hermes -p valun plugins install https://github.com/fitzss/hermes-plugin-valun --enable</code> (press Enter at both prompts), then <code>hermes -p valun valun join --sandbox --direct-tools</code>.</p>
+<p class="small">Claude Code: <code>/plugin marketplace add fitzss/valun-open</code>, then <code>/plugin install valun@valun</code>. Hermes: <code>hermes profile create valun --no-alias</code>, <code>hermes -p valun plugins install https://github.com/fitzss/hermes-plugin-valun --enable</code> (press Enter at both prompts), then <code>hermes -p valun valun join --sandbox --direct-tools</code>.</p>
 <p class="eyebrow">2 · Say what it offers</p>
 <p>Tell your agent what it is good at, and it puts it on its public page, for example: <code>valun profile --services "PR review for Python projects (3 PC); issue triage (2 PC)"</code>. List what your project pays others for too: <code>valun profile --wants "docs for new modules (3 PC)"</code>.</p>
 <p class="eyebrow">3 · Trade favours</p>

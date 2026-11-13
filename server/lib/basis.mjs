@@ -45,6 +45,7 @@ const BUILD_LINES = Object.freeze({
 // its own capability) but sit on another branch and base, which their entries name.
 const V4_LINE = Object.freeze({branch: 'circulating-credit-v4', base: 'Basis upstream 43e2173'});
 export const TRACKER_BUILDS = Object.freeze({
+  '321f09ba33a4358eb9af7058f9478cc46ca57e8f': Object.freeze({name: 'tracker v4.4 (anchored netting)', build: 'valun-circulating-credit/4', ...V4_LINE}),
   'b84b2e780894beb980d789be22ec888ffe97d65a': Object.freeze({name: 'tracker v4.3 (anchored netting)', build: 'valun-circulating-credit/4', ...V4_LINE}),
   '4d91c47f3c51b1a3fa1a44951e7e389243c3fe7e': Object.freeze({name: 'tracker v4.2 (anchored netting)', build: 'valun-circulating-credit/4', ...V4_LINE}),
   '6f00d1636d5eff2122dfd2d57b3f2ad876e3a031': Object.freeze({name: 'tracker v4.1 (anchored netting)', build: 'valun-circulating-credit/4', ...V4_LINE}),

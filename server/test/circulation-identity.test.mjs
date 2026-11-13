@@ -446,8 +446,9 @@ test('the effective mode is off unless the capabilities have exactly the v3.2 va
   assert.deepEqual(validateCaps(V3_CAPS), {ok: true, reason: null});
   assert.deepEqual(TRACKER_SHA256_PINS, ['e13d37b4287ce8d1026eb6a7f10e78a0ef6cc4a4bb55d385d9b286d25292eea5',
     '6e410ab45a1a4a91efaa76ffd9d72acfc5c440ae4a4a553aad32ba1926a6849e', 'd13541944f0bffa2e4d78acea0ca4f7e351e28a4adb95fedc186f0e2b927bb77',
-    'b3e1a9b8cf72f77a3505f5073e680759539eeefd24e93b4f689798e6d9f03850', '9a114a1c3e3450add249701929c3445d19e68ae3992ad3d55ab6d3d3a59e1fb9'],
-    'the basis_server sha256 of tracker v3.2, v4, v4.1, v4.2 and v4.3 (v3.1 is not pinned)');
+    'b3e1a9b8cf72f77a3505f5073e680759539eeefd24e93b4f689798e6d9f03850', '9a114a1c3e3450add249701929c3445d19e68ae3992ad3d55ab6d3d3a59e1fb9',
+    'e417c4b8d9c82f32cd4454e827c36358c666f6bf49df522716ac750d29de5dc5'],
+    'the basis_server sha256 of tracker v3.2, v4, v4.1, v4.2, v4.3 and v4.4 (v3.1 is not pinned)');
   for (const mode of ['bound', 'sandbox', 'on']) {
     const {pilot: pl, logs} = stub({circulation: mode});
     assert.equal(pl.mode, mode); assert.equal(pl.circulating, mode !== 'bound'); assert.deepEqual(logs, []);

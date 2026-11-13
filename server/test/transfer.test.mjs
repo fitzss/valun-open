@@ -1166,7 +1166,7 @@ test('views with circulation on: credit_note.pair_changes_since lists the transf
   assert.deepEqual(Object.keys(me.position), keysOn);
   const pub = ok(await call('GET', `/participants/${B.id}`)).public_position;
   // The public position also publishes the credit policy's predicate fields and the credit history (phase 2, SV-8).
-  assert.deepEqual(Object.keys(pub), [...keysOn.filter(k => k !== 'spendable_notes' && k !== 'pending'), 'credit_policy', 'credit_history'], 'the public position shows no transfer in progress');
+  assert.deepEqual(Object.keys(pub), [...keysOn.filter(k => k !== 'spendable_notes' && k !== 'pending'), 'credit_policy', 'credit_history', 'evidence'], 'the public position shows no transfer in progress');
   assert.deepEqual(ok(await call('GET', '/me', null, C.agent)).position.spendable_notes, [{...spend, outstanding: 3, spendable: 3}], 'C holds A\'s note now');
   assert.deepEqual((await view(B, id)).payment.state, 'applied');
 });

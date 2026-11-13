@@ -577,7 +577,7 @@ test('GET /participants/{id} (circulation on): public_position.credit_policy sho
   set(w, {refuse_notes_from: [Z.id], max_claims_total: 500, max_issuer_net_debt: 50, max_accept_per_issuer: 300, accept_operator_issuers: true});
   pilot.setAgentLimits(C, {accept_notes_from: [X.id], accept_operator_issuers: false});
   const pub = await pilot.publicPosition(C);
-  assert.deepEqual(Object.keys(pub).slice(-2), ['credit_policy', 'credit_history']);
+  assert.deepEqual(Object.keys(pub).slice(-3), ['credit_policy', 'credit_history', 'evidence']);   // evidence: test/evidence.unit.test.mjs
   assert.deepEqual(Object.keys(pub.credit_policy), [...PUBLIC_POLICY_FIELDS]);
   assert.deepEqual(pub.credit_policy, {accept_transfers: true, accept_notes_from: [X.id], refuse_notes_from: [Z.id], accept_operator_issuers: false, max_issuer_net_debt: 50});
   assert.deepEqual(publicCreditPolicy(pilot, C), pub.credit_policy);
@@ -592,7 +592,7 @@ test('GET /participants/{id} (circulation on): public_position.credit_policy sho
   // adds the two.
   const own = await pilot.position(C, null, {own: true}), plain = await pilot.position(C);
   assert.equal('credit_history' in own || 'credit_policy' in own, false);
-  assert.deepEqual(Object.keys(pub), [...Object.keys(plain), 'credit_policy', 'credit_history']);
+  assert.deepEqual(Object.keys(pub), [...Object.keys(plain), 'credit_policy', 'credit_history', 'evidence']);
   // A participant with no deals.
   const fresh = await pilot.publicPosition(w.W);
   assert.deepEqual(fresh.credit_history, {notes_issued: {count: 0, PC: 0}, paid_by_transfer: {count: 0, PC: 0}, received_by_transfer: {count: 0, PC: 0},

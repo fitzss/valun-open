@@ -31,4 +31,11 @@ export const TRACKER_SHA256_PINS = Object.freeze([
   // contract), staged at /home/valun/valun-app-bins-v43-20261112T1455Z/t/release/basis_server. Tracker tests
   // (basis_offchain, basis_store, basis_server) 756 passed, 0 failed; basis_core is unchanged since v4.2 (35 passed).
   '9a114a1c3e3450add249701929c3445d19e68ae3992ad3d55ab6d3d3a59e1fb9',
+  // tracker v4.4 (branch circulating-credit-v4, commit 321f09ba33a4358eb9af7058f9478cc46ca57e8f: v4.3 + TR-19: every
+  // note tree is built in debt-key order and the live tree is rebuilt after each write, so the digest the tracker
+  // anchors is the one its committed proofs rebuild; fix inbox #17, where every testnet redemption failed with
+  // "Committed tree digest mismatch" after an edge was raised past another), staged at
+  // /home/valun/valun-app-bins-v44-20261113T1340Z/t/release/basis_server. Tracker tests (basis_store, basis_server,
+  // basis_offchain) 758 passed, 0 failed; the two new TR-19 tests fail on v4.3's code.
+  'e417c4b8d9c82f32cd4454e827c36358c666f6bf49df522716ac750d29de5dc5',
 ]);

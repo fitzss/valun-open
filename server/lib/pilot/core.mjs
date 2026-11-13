@@ -19,6 +19,7 @@ import {novationTimestamp, quoteDigest, transferSlots, transferMessages, slotMes
   transferOutcome, TRANSFER_SLOTS, MAX_AGE_MS, MAX_ATTEMPTS_PER_DAY, TRANSFER_TTL_MS} from './novation.mjs';
 // Phase-2 credit policies (circulation modes sandbox and on): the credit rules, the credit history, the agent limit kinds.
 import {creditCheck, creditHistory, publicCreditPolicy, policyValue, impliedPhase2, strictestLimit, agentLimitWidens, PHASE2_FIELDS, SANDBOX_MAX_CLAIMS_TOTAL} from './policy.mjs';
+import {evidenceOf, evidenceTotals} from './evidence.mjs';
 
 export {NETWORK} from './units.mjs';
 import {NETWORK, UNIT, pc, amt, BACKING, TRACKER_PLACE, ON_TESTNET} from './units.mjs';
@@ -180,7 +181,7 @@ const isInt = (v, min, max) => Number.isSafeInteger(v) && v >= min && v <= max;
 // Self-serve sandbox participants (joinSandbox): limits they can lower but never raise, and how long they last.
 // max_claims_total (phase-2 credit policy) is stored and enforced only with circulating credit on; with it off setMandate
 // ignores it, as any unknown field.
-const SANDBOX_CAPS = {max_issue_per_deal: pc(5), max_issue_outstanding: pc(40), max_accept_per_deal: pc(5), max_accept_per_issuer: pc(40), max_claims_total: SANDBOX_MAX_CLAIMS_TOTAL}, SANDBOX_DAYS = 7;
+export const SANDBOX_CAPS = Object.freeze({max_issue_per_deal: pc(5), max_issue_outstanding: pc(40), max_accept_per_deal: pc(5), max_accept_per_issuer: pc(40), max_claims_total: SANDBOX_MAX_CLAIMS_TOTAL}), SANDBOX_DAYS = 7;
 const SANDBOX_JOINS_PER_DAY = 200;
 // The open network (Pilot openNetwork, PILOT_OPEN_NETWORK=1): a self-serve participant may deal with any participant
 // whose own mandate allows it (other self-serve participants, invited participants, the sandbox agents), still within
@@ -982,10 +983,15 @@ export class Pilot {
   // predicate fields of p's credit policy (whose notes it accepts; never its caps) and its credit history, aggregates only
   // (lib/pilot/policy.mjs). In other modes it is position(p), v15's.
   async publicPosition(p, ledger = null) {
+    ledger ??= await this.ledger();
     const pos = await this.position(p, ledger);
     if (!this.circulating) return pos;
-    return {...pos, credit_policy: publicCreditPolicy(this, p), credit_history: creditHistory(this, p, this.dealsFor(p).map(d => this.sweep(d)))};
+    const deals = this.dealsFor(p).map(d => this.sweep(d));
+    // evidence (lib/pilot/evidence.mjs): delivery, repayment and acceptance, kept apart; evidence to weigh, not a score.
+    return {...pos, credit_policy: publicCreditPolicy(this, p), credit_history: creditHistory(this, p, deals), evidence: evidenceOf(this, p, {ledger, deals})};
   }
+  // GET /evidence: the network's totals of the same kinds (no ids, handles or keys).
+  async publicEvidence() { return {as_of: iso(this.now()), network: NETWORK, ...evidenceTotals(this, await this.ledger())}; }
   // Every key a participant has registered (current and past), and whether a key is a participant's past key.
   keysOf(p) { return new Set([p.pubkey, ...(p.past_pubkeys || []).map(k => k.pubkey)].filter(Boolean)); }
   isPastKey(pk) { const q = this.byPubkey(pk); return !!q && q.pubkey !== pk; }

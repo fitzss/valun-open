@@ -16,7 +16,11 @@ before(async () => {
   pilot.s.participants.vp_000000000003.about = 'Summaries <script>alert(1)</script> & "quotes"';
   pilot.publicPosition = async x => {
     if (x.handle === 'brief-bot') throw new Error('tracker down');
-    return {claims_held: 7, owes: 2, cleared_by_setoff: 4, deals: {credit_notes_issued: 5, disputed: 1}};
+    return {claims_held: 7, owes: 2, cleared_by_setoff: 4, deals: {credit_notes_issued: 5, disputed: 1},
+      // public_position.evidence (lib/pilot/evidence.mjs), with a kind name a participant cannot choose but the page escapes anyway
+      evidence: {delivery: {accepted: {count: 3, buyers: 2, buyers_by_kind: {invited: 1, sandbox_participant: 1}}, disputed_by_buyer: 1, not_delivered: 0},
+        repayment: {owed_ever_PC: 6, settled: {by_setoff_PC: 4, creditors: 1, creditors_by_kind: {'<b>x</b>': 1}}, outstanding_PC: 2, unpaid_accepted_work: {count: 1, PC: 2}},
+        acceptance: {holders_ever: 2, taken_by_transfer: {PC: 3}}, circle: {size: 3, closed: true}}};
   };
   server = http.createServer(createHandler({service: {}, mcp: {}, cfg: {}, publicDir: 'public', pilotRoutes: createPilotRoutes({pilot, cfg: {}})}));
   await new Promise(r => server.listen(0, '127.0.0.1', r));
@@ -41,6 +45,14 @@ test('an agent page: Open Graph tags, what it offers, its record, its loops and 
   assert.ok(r.text.includes('Read https://valun.tech/skill.md, join Valun, and offer open-poet a job.'));
   assert.ok(r.text.includes('<a href="/pilot/v1/participants/vp_000000000002">as JSON</a>'));
   assert.doesNotMatch(r.text, /<script/i, 'no script on the page');
+  // The evidence, kept apart, in plain sentences; a closed circle is named for what it may be.
+  assert.ok(r.text.includes('<p class="eyebrow">Evidence, kept apart</p>'));
+  assert.ok(r.text.includes('<li><strong>Delivered.</strong> 3 deliveries accepted, from 2 buyers (1 invited agent, 1 self-serve agent); 1 disputed, 0 not delivered.</li>'));
+  assert.ok(r.text.includes('<li><strong>Repaid.</strong> 4 PC of the 6 PC it owed settled, with 1 creditor (1 &lt;b&gt;x&lt;/b&gt;); 2 PC outstanding; 1 accepted job unpaid.</li>'));
+  assert.ok(r.text.includes('<li><strong>Accepted.</strong> 2 participants have held its IOU; 3 PC of it taken by transfer, from parties it never dealt with.</li>'));
+  assert.ok(r.text.includes('none of them deals with anyone else (a closed group: what a staged circle looks like, and also a new one).'));
+  assert.ok(r.text.includes('Evidence to weigh, not a score.') && r.text.includes('<a href="/memory">What the record cannot show</a>'));
+  assert.doesNotMatch(r.text, /<b>x<\/b>/, 'escaped');
 });
 
 test('an agent that pays for work: its page says what it pays for and how to earn credit from it', async () => {

@@ -1,0 +1,61 @@
+/* The memory page (public/memory.html): on top of home.css (the landing's theme, header, hero and footer). */
+.top nav a[aria-current="page"] { color: var(--line); }
+.memory-hero .lede + .lede { margin-top: -0.6rem; }
+.memory-hero cite { font-style: normal; color: var(--line); border-bottom: 1px solid var(--rule); }
+
+/* the triangle of the three questions */
+.tri { margin: 0; min-width: 0; }
+.tri-svg { display: block; width: 100%; max-width: 420px; height: auto; margin: 0 auto; }
+.tri-k { fill: var(--line); font: 400 11px var(--mono); letter-spacing: 0.16em; }
+.tri-q { fill: var(--dust); font: 300 13px var(--sans); }
+.tri-edge { animation: tri-flow 14s linear infinite; }
+@keyframes tri-flow { to { stroke-dashoffset: -180; } }
+.tri .caption { border-top: 1px solid var(--rule); padding-top: 0.9rem; margin-top: 0.6rem; }
+
+/* sections */
+.mem-sec { border-top: 1px solid var(--rule); padding: 3rem 0 2.6rem; }
+.mem-sec .wide { max-width: 44em; margin: 0 0 1.2rem; }
+.live { color: var(--dust); }
+.live.on { color: #3ddc97; }
+.tag { margin-left: 0.6rem; padding: 0.15em 0.6em; border: 1px solid var(--rule); border-radius: 2px; color: var(--dust); letter-spacing: 0.08em; }
+.list strong { font-weight: 400; color: var(--line); }
+
+/* the three cards */
+.cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; margin: 0 0 1.6rem; }
+.card { position: relative; border: 1px solid var(--rule); border-radius: 2px; padding: 1.3rem 1.3rem 1.2rem; background: #07090c; overflow: hidden; }
+.card::before { content: ""; position: absolute; left: 0; top: 0; right: 0; height: 2px; }
+.c-del::before { background: #ff5a5f; }
+.c-rep::before { background: #3ddc97; }
+.c-acc::before { background: #4f7cff; }
+.card-k { margin: 0 0 0.9rem; font: 400 0.72rem/1.4 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dust); }
+.big { margin: 0; font: 300 clamp(2.4rem, 7vw, 3.4rem)/1 var(--sans); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.card-u { margin: 0.35rem 0 0.9rem; color: var(--line); font-size: 0.98rem; }
+.card-d { margin: 0 0 0.9rem; font: 400 0.8rem/1.6 var(--mono); color: var(--line); font-variant-numeric: tabular-nums; }
+.card-n { margin: 0; color: var(--dust); font-size: 0.9rem; }
+.groups { margin: 0 0 0.8rem; max-width: 44em; }
+.honest { max-width: 44em; margin: 0; }
+
+/* the attacks table */
+.table-wrap { overflow-x: auto; margin: 0 0 1.4rem; border: 1px solid var(--rule); border-radius: 2px; }
+.atk { width: 100%; border-collapse: collapse; font-size: 0.9rem; min-width: 640px; }
+.atk caption { text-align: left; caption-side: bottom; padding: 0.7rem 0.9rem; border-top: 1px solid var(--rule); }
+.atk th, .atk td { padding: 0.65rem 0.9rem; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+.atk thead th { font: 400 0.7rem/1.4 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--dust); font-weight: 400; }
+.atk tbody th { font-weight: 400; color: var(--line); }
+.atk .kind { display: block; margin-top: 0.2rem; font: 400 0.68rem/1.3 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
+.atk .kind.honest { color: #3ddc97; }
+.atk .kind.attack { color: #ff5a5f; }
+.atk td { font: 400 0.82rem/1.4 var(--mono); font-variant-numeric: tabular-nums; }
+.atk td.takes { color: var(--line); }
+.atk td.refuses { color: var(--dust); }
+.atk tr.attack td.takes { color: #ffc145; }
+.atk .empty { color: var(--dust); }
+.callout { margin: 0 0 1.4rem; padding: 1rem 1.2rem; max-width: 44em; border-left: 2px solid #9b5cff; background: #0a0c10; }
+.callout .n { font-family: var(--mono); color: var(--line); }
+
+@media (min-width: 820px) {
+  .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tri-edge { animation: none; }
+}
