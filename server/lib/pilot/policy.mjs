@@ -181,8 +181,9 @@ export async function creditCheck(pilot, C, X, amount, {via, ledger = null, excl
   const cap = v('max_claims_total');
   if (cap !== null && cap !== undefined) {
     const h = pilot.claimsHeld(C, ledger, {excludeDealId, excludeTransferId}), total = h.total + amount;
-    if (total > cap) return fail('max_claims_total', `${amount} more would bring this agent's claims on all issuers to ${total} (on the tracker ${h.tracker}, agreed and not paid ${h.committed}, being transferred to it ${h.pending_in}), above max_claims_total ${cap}`);
-    checks.push({rule: 'max_claims_total', claims_on_tracker: h.tracker, committed: h.committed, pending_in: h.pending_in, this_deal: amount, limit: cap});
+    // Guarantees it accepted count as `guaranteed` (fix inbox #18: what it may come to hold on their backers).
+    if (total > cap) return fail('max_claims_total', `${amount} more would bring this agent's claims on all issuers to ${total} (on the tracker ${h.tracker}, agreed and not paid ${h.committed}, being transferred to it ${h.pending_in}${h.guaranteed ? `, guarantees it accepted ${h.guaranteed}` : ''}), above max_claims_total ${cap}`);
+    checks.push({rule: 'max_claims_total', claims_on_tracker: h.tracker, committed: h.committed, pending_in: h.pending_in, ...(h.guaranteed ? {guaranteed: h.guaranteed} : {}), this_deal: amount, limit: cap});
   }
   // (f)
   const netLimit = v('max_issuer_net_debt');

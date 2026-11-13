@@ -20,6 +20,10 @@ import {novationTimestamp, quoteDigest, transferSlots, transferMessages, slotMes
 // Phase-2 credit policies (circulation modes sandbox and on): the credit rules, the credit history, the agent limit kinds.
 import {creditCheck, creditHistory, publicCreditPolicy, policyValue, impliedPhase2, strictestLimit, agentLimitWidens, PHASE2_FIELDS, SANDBOX_MAX_CLAIMS_TOTAL} from './policy.mjs';
 import {evidenceOf, evidenceTotals} from './evidence.mjs';
+// Guarantees (fix inbox #18; lib/pilot/guarantees.mjs). guarantees.mjs imports PilotError and helpers from this module
+// and uses them only inside functions, so the import cycle is safe (as with novation.mjs).
+import {GuaranteeBook, guaranteeStatements} from './guarantees.mjs';
+export {guaranteeStatements};
 
 export {NETWORK} from './units.mjs';
 import {NETWORK, UNIT, pc, amt, BACKING, TRACKER_PLACE, ON_TESTNET} from './units.mjs';
@@ -44,7 +48,8 @@ const PAIR_BUSY_RETRY_MS = 60000;
 // The approval kinds this server decides. Any other kind (state from a newer release, or damaged) is refused before
 // anything changes; it used to fall through to the confirm_offer code, so rejecting it withdrew the deal.
 // pay_by_transfer (circulating credit): a payment by debt transfer held for the payer's owner (review_deliveries).
-const APPROVAL_KINDS = Object.freeze(['issue_note', 'pay_by_transfer', 'propose', 'accept', 'confirm_offer']);
+// guarantee_offer (fix inbox #18): a guarantee offer whose cap is above the backer's approve_above, held for its owner.
+const APPROVAL_KINDS = Object.freeze(['issue_note', 'pay_by_transfer', 'propose', 'accept', 'confirm_offer', 'guarantee_offer']);
 
 export class PilotError extends Error {
   constructor(code, message, status = 400, extra = {}) { super(message); this.name = 'PilotError'; this.code = code; this.status = status; this.extra = extra; }
@@ -169,6 +174,7 @@ const NOVATION_KEEP_MS = SETOFF_KEEP_MS, NOVATION_SIGNATURES_KEEP_MS = SETOFF_SI
 const CLEARING_RUNS_KEPT = 20, CLEARING_REFUSALS_KEPT = 200;
 const pause = ms => new Promise(r => setTimeout(r, ms));
 
+export {clean as cleanText};
 function clean(s, max, field, {required = false} = {}) {
   if (s == null || s === '') { if (required) throw new PilotError('invalid_field', `${field} is required`); return ''; }
   if (typeof s !== 'string') throw new PilotError('invalid_field', `${field} must be text`);
@@ -239,7 +245,7 @@ export function hasUnsafeText(s) {
   return false;
 }
 const RESERVED_HANDLES = new Set(['valun', 'admin', 'administrator', 'operator', 'owner', 'system', 'support', 'root', 'basis', 'tracker', 'null', 'undefined']);
-function signedText(s, max, field) {
+export function signedText(s, max, field) {
   const out = clean(s, max, field, {required: true});          // same type, length and required checks (and codes) as before
   if (hasUnsafeText(s)) throw new PilotError('invalid_field', `${field} contains control, bidi or zero-width characters; remove them and sign again`);
   if (s.length > max + 100) throw new PilotError('invalid_field', `${field} is longer than ${max} characters (including padding)`);
@@ -279,6 +285,7 @@ export class Pilot {
     // work; what it throws is ignored.
     this.changeListeners = new Set();
     this.circulationConfig = {circulation, trackerCaps, trackerSha256, trackerPins};
+    this.guarantees = new GuaranteeBook(this);   // fix inbox #18: s.guarantees, made on the first offer
     this.writesRefused = null;          // MIG-1 (release v16.1): {code, reason, since} while pilot writes are refused (writeRefusal)
     this.migrate();
     this.constructed = true;
@@ -972,7 +979,10 @@ export class Pilot {
         ...(this.operatorRun(l.issuer) ? OPERATOR_RUN_NOTE : {})})),
       debts: owes.map(l => ({to: l.recipient_handle, amount: l.outstanding, recipient_id: l.recipient, recipient_pubkey: l.recipient_pubkey, issuer_pubkey: l.issuer_pubkey,
         ...(this.serverRun(p) ? OPERATOR_RUN_NOTE : {})})),
-      deals: {...Object.fromEntries(POSITION_BUCKETS.map(b => [b, buckets[b]])), paid_by_transfer: buckets.paid_by_transfer, payment_due: deals.filter(d => d.status === 'payment_due').length},
+      // credit_notes_issued counts deals that ended with a credit note in either role; fix inbox #18 splits it:
+      // notes_issued_as_payer (this participant issued the note) and notes_received (it was paid with one).
+      deals: {...Object.fromEntries(POSITION_BUCKETS.map(b => [b, buckets[b]])), paid_by_transfer: buckets.paid_by_transfer, payment_due: deals.filter(d => d.status === 'payment_due').length,
+        notes_issued_as_payer: deals.filter(d => d.status === 'note_issued' && d.payer === p.id).length, notes_received: deals.filter(d => d.status === 'note_issued' && d.payee === p.id).length},
       ...(redeemed
         ? {settled: journal.setoff + redeemed.redeemed_claims + redeemed.redeemed_debts, settled_how: 'by set-off and by redemption on Ergo testnet', ...redeemed, backing,
           meaning: 'claims and debts are outstanding obligations recorded by the Valun testnet Basis tracker, which anchors its state on Ergo testnet (cumulative per pair). Some may have moved between creditors (transfer) or been cancelled in cycles (set-off); a claim is also settled when its creditor redeems it on Ergo testnet against its issuer\'s tERG reserve (GET /reserves). settled counts both: cleared_by_setoff, redeemed_claims (the claims you redeemed) and redeemed_debts (your debts redeemed from your reserve). tERG are test coins with no monetary value.'}
@@ -1028,7 +1038,10 @@ export class Pilot {
   // nobody has read it since (OQ-7, OQ-8).
   // Circulating credit: for a payee, the transfers it is being paid by that are still collecting (or applying) count
   // against their issuer (`pending_in`, design §5.4); `excludeTransferId` leaves one out (the transfer being checked).
-  exposure(p, ledger, {asRole, counterpartyId = null, excludeDealId = null, excludeTransferId = null}) {
+  // Guarantees (fix inbox #18): for a payer, what it may still have to pay under the guarantees it gave (`guaranteed`:
+  // their open caps, lib/pilot/guarantees.mjs obligation); for a payee, what it may come to hold on that payer under
+  // guarantees it accepted from it. Present only when not 0; `excludeGuaranteeId` leaves one out (the one being checked).
+  exposure(p, ledger, {asRole, counterpartyId = null, excludeDealId = null, excludeTransferId = null, excludeGuaranteeId = null}) {
     const deals = Object.values(this.s.deals).filter(d => d.id !== excludeDealId && (asRole === 'payer'
       ? d.payer === p.id : d.payee === p.id && d.payer === counterpartyId)).map(d => this.sweep(d));
     const price = d => this.current(d).terms.price.amount;
@@ -1041,7 +1054,9 @@ export class Pilot {
       : ledger.filter(l => l.recipient === p.id && l.issuer === counterpartyId).reduce((a, l) => a + l.outstanding, 0);
     const pendingIn = asRole === 'payee' ? Object.values(this.s.transfers || {}).map(t => this.sweepTransfer(t))
       .filter(t => t.id !== excludeTransferId && LIVE_TRANSFER.has(t.state) && t.payee.id === p.id && t.issuer.id === counterpartyId).reduce((a, t) => a + t.amount, 0) : 0;
-    return {tracker, committed, reserved, ...(pendingIn ? {pending_in: pendingIn} : {}), total: tracker + committed + reserved + pendingIn};
+    const guaranteed = !this.guarantees ? 0 : asRole === 'payer' ? this.guarantees.backerObligation(p, {excludeGuaranteeId})
+      : this.guarantees.contingentClaims(p, {backerId: counterpartyId, excludeGuaranteeId});
+    return {tracker, committed, reserved, ...(pendingIn ? {pending_in: pendingIn} : {}), ...(guaranteed ? {guaranteed} : {}), total: tracker + committed + reserved + pendingIn + guaranteed};
   }
   // What p holds and is owed as payee on every issuer together (the phase-2 max_claims_total, lib/pilot/policy.mjs): its
   // claims on the tracker, its committed deals as payee (any payer; `excludeDealId` left out, the deal being agreed or
@@ -1051,19 +1066,26 @@ export class Pilot {
   // counts as that transfer (pending_in), not also as a committed deal; and a transfer for the deal being agreed or paid
   // is that deal's amount, which the caller adds. Transfers are swept first: one that just expired has returned its deal
   // to delivered or payment_due, which then counts as committed.
-  claimsHeld(p, ledger, {excludeDealId = null, excludeTransferId = null} = {}) {
+  // Guarantees it accepted (fix inbox #18) count too, as `guaranteed` (only when not 0): what it may come to hold on their
+  // backers (`excludeGuaranteeId` left out).
+  claimsHeld(p, ledger, {excludeDealId = null, excludeTransferId = null, excludeGuaranteeId = null} = {}) {
     const tracker = ledger.filter(l => l.recipient === p.id).reduce((a, l) => a + l.outstanding, 0);
     const live = Object.values(this.s.transfers || {}).map(t => this.sweepTransfer(t)).filter(t => LIVE_TRANSFER.has(t.state) && t.payee.id === p.id);
     const inFlight = new Set(live.map(t => t.deal_id));
     const committed = Object.values(this.s.deals).filter(d => d.payee === p.id && d.id !== excludeDealId).map(d => this.sweep(d))
       .filter(d => statusClass(d.status)?.committed && !inFlight.has(d.id)).reduce((a, d) => a + this.current(d).terms.price.amount, 0);
     const pendingIn = live.filter(t => t.id !== excludeTransferId && t.deal_id !== excludeDealId).reduce((a, t) => a + t.amount, 0);
-    return {tracker, committed, pending_in: pendingIn, total: tracker + committed + pendingIn};
+    const guaranteed = this.guarantees ? this.guarantees.contingentClaims(p, {excludeGuaranteeId}) : 0;
+    return {tracker, committed, pending_in: pendingIn, ...(guaranteed ? {guaranteed} : {}), total: tracker + committed + pendingIn + guaranteed};
   }
 
   // Deterministic delegation check at the action boundary. Throws mandate_exceeded (nothing recorded) for a hard limit;
   // otherwise says whether the owner must approve.
-  async checkMandate(p, role, counterpartyId, price, {excludeDealId = null} = {}) {
+  // Guarantees (fix inbox #18, lib/pilot/guarantees.mjs): a backer's offer is checked as role payer toward the creditor,
+  // with `also` [the issuer] (whom the counterparty list and the self-serve box must allow too); a creditor's acceptance
+  // as role payee toward the backer with `guarantee` (no min_price_as_payee, which is about prices; no owner approval:
+  // accepting commits the creditor to nothing). `excludeGuaranteeId`: the guarantee being checked, whose cap is `price`.
+  async checkMandate(p, role, counterpartyId, price, {excludeDealId = null, excludeGuaranteeId = null, guarantee = false, also = []} = {}) {
     const m = this.effectiveLimits(p);                // owner mandate, tightened by any limits the agent recorded
     const fail = (rule, detail, from = null) => {
       // `source` keeps naming the limit set that applied (agent_limits | owner_mandate); `recorded_by` says who recorded an
@@ -1075,14 +1097,16 @@ export class Pilot {
       throw new PilotError('mandate_exceeded', `${label}: ${detail}`, 403, {rule, source, ...(recordedBy ? {recorded_by: recordedBy} : {}), mandate_version: p.mandate_version});
     };
     if (m.expires_at && Date.parse(m.expires_at) < this.now()) fail('expires_at', `the mandate expired at ${m.expires_at}; the owner must renew it`);
-    if (m.counterparties !== 'any' && !m.counterparties.includes(counterpartyId)) fail('counterparties', `${this.participant(counterpartyId).handle} is not on the owner's counterparty list`);
-    if (this.boxedOut(p, counterpartyId)) fail('counterparties', `a self-serve sandbox participant can deal only with the sandbox agents on this server, not ${this.participant(counterpartyId).handle}`);
+    for (const id of [counterpartyId, ...also]) {
+      if (m.counterparties !== 'any' && !m.counterparties.includes(id)) fail('counterparties', `${this.participant(id).handle} is not on the owner's counterparty list`);
+      if (this.boxedOut(p, id)) fail('counterparties', `a self-serve sandbox participant can deal only with the sandbox agents on this server, not ${this.participant(id).handle}`);
+    }
     const ledger = await this.ledger();
     const checks = [];
     if (role === 'payer') {
       if (!m.may_issue_credit) fail('may_issue_credit', 'the owner has not allowed this agent to issue credit');
       if (price > m.max_issue_per_deal) fail('max_issue_per_deal', `price ${price} exceeds max_issue_per_deal ${m.max_issue_per_deal}`);
-      const e = this.exposure(p, ledger, {asRole: 'payer', excludeDealId});
+      const e = this.exposure(p, ledger, {asRole: 'payer', excludeDealId, excludeGuaranteeId});
       // A sandbox agent with circulating credit on (design §5.8, spec 18.15): what it owes sandbox participants whose
       // sandbox time has ended (dormant) does not count against its own max_issue_outstanding; the check reports it as
       // dormant_PC (owed_on_tracker is then the part that counts). Every other check is v15's.
@@ -1090,26 +1114,31 @@ export class Pilot {
         ? ledger.filter(l => l.issuer === p.id && this.dormant(this.s.participants[l.recipient])).reduce((a, l) => a + l.outstanding, 0) : null;
       const owed = e.tracker - (dormant ?? 0), total = e.total - (dormant ?? 0);
       checks.push({rule: 'max_issue_outstanding', owed_on_tracker: owed, ...(dormant === null ? {} : {dormant_PC: dormant}), committed: e.committed, reserved: e.reserved,
-        this_deal: price, limit: m.max_issue_outstanding});
+        ...(e.guaranteed ? {guaranteed: e.guaranteed} : {}), this_deal: price, limit: m.max_issue_outstanding});
       if (total + price > m.max_issue_outstanding) fail('max_issue_outstanding', `issuing ${price} would bring this agent's outstanding credit to ${total + price}, above max_issue_outstanding ${m.max_issue_outstanding}`);
     } else {
       if (!m.may_accept_credit) fail('may_accept_credit', 'the owner has not allowed this agent to accept credit');
-      if (price < (m.min_price_as_payee || 0)) fail('min_price_as_payee', `price ${price} is below this agent's minimum of ${amt(m.min_price_as_payee)} set by its owner`);
-      if (price > m.max_accept_per_deal) fail('max_accept_per_deal', `price ${price} exceeds max_accept_per_deal ${m.max_accept_per_deal}`);
-      const e = this.exposure(p, ledger, {asRole: 'payee', counterpartyId, excludeDealId});
+      if (!guarantee && price < (m.min_price_as_payee || 0)) fail('min_price_as_payee', `price ${price} is below this agent's minimum of ${amt(m.min_price_as_payee)} set by its owner`);
+      if (price > m.max_accept_per_deal) fail('max_accept_per_deal', `${guarantee ? 'the guarantee\'s cap' : 'price'} ${price} exceeds max_accept_per_deal ${m.max_accept_per_deal}`);
+      const e = this.exposure(p, ledger, {asRole: 'payee', counterpartyId, excludeDealId, excludeGuaranteeId});
       // Payments by transfer to p from this payer's notes still being collected (circulating credit) count too, and are
-      // shown when there are any.
-      checks.push({rule: 'max_accept_per_issuer', claim_on_tracker: e.tracker, committed: e.committed, reserved: e.reserved, ...(e.pending_in ? {pending_in: e.pending_in} : {}), this_deal: price, limit: m.max_accept_per_issuer});
+      // shown when there are any; so do the open caps of guarantees from this payer that p accepted (guaranteed).
+      checks.push({rule: 'max_accept_per_issuer', claim_on_tracker: e.tracker, committed: e.committed, reserved: e.reserved, ...(e.pending_in ? {pending_in: e.pending_in} : {}),
+        ...(e.guaranteed ? {guaranteed: e.guaranteed} : {}), this_deal: price, limit: m.max_accept_per_issuer});
       if (e.total + price > m.max_accept_per_issuer) fail('max_accept_per_issuer', `accepting ${price} more from ${this.participant(counterpartyId).handle} would bring exposure to ${e.total + price}, above max_accept_per_issuer ${m.max_accept_per_issuer}`);
       // Whose credit to accept, by the tracker's own figures: the payer's claims on others (credit notes it holds) must
       // cover the given share of everything it would owe: its outstanding notes, its agreed deals whose note is not
       // issued yet, and this deal. This is the payer's OWN promise; no note held by the payer is transferred.
+      // Guarantees (fix inbox #18): the open cap of active guarantees backing the payer's debts to p counts as coverage
+      // too (backing_for_you), so an owner can require "backed or refused" with this rule alone.
       if (m.min_payer_coverage_pct > 0) {
         const payer = this.participant(counterpartyId), pe = this.exposure(payer, ledger, {asRole: 'payer', excludeDealId});
         const claims = ledger.filter(l => l.recipient === payer.id).reduce((a, l) => a + l.outstanding, 0);
-        const owes = pe.tracker + pe.committed + price, pct = Math.floor(claims * 100 / owes);
-        checks.push({rule: 'min_payer_coverage_pct', payer_claims_on_tracker: claims, payer_owes_on_tracker: pe.tracker, payer_committed: pe.committed, this_deal: price, coverage_pct: pct, limit: m.min_payer_coverage_pct});
-        if (pct < m.min_payer_coverage_pct) fail('min_payer_coverage_pct', `${payer.handle}'s claims on the tracker (${amt(claims)}) cover ${pct}% of what it would owe with this deal (${amt(owes)}); this agent's owner requires at least ${m.min_payer_coverage_pct}%`);
+        const back = this.guarantees ? this.guarantees.backingFor(p, payer.id) : {amount: 0, ids: []};
+        const owes = pe.tracker + pe.committed + price, pct = Math.floor((claims + back.amount) * 100 / owes);
+        checks.push({rule: 'min_payer_coverage_pct', payer_claims_on_tracker: claims, ...(back.amount ? {backing_for_you: back.amount, guarantees: back.ids} : {}),
+          payer_owes_on_tracker: pe.tracker, payer_committed: pe.committed, this_deal: price, coverage_pct: pct, limit: m.min_payer_coverage_pct});
+        if (pct < m.min_payer_coverage_pct) fail('min_payer_coverage_pct', `${payer.handle}'s claims on the tracker (${amt(claims)})${back.amount ? ` and the guarantees backing it to this agent (${amt(back.amount)})` : ''} cover ${pct}% of what it would owe with this deal (${amt(owes)}); this agent's owner requires at least ${m.min_payer_coverage_pct}%${back.amount ? '' : ' (a guarantee of its debts to this agent counts too)'}`);
       }
       // Circulating credit (modes sandbox and on): the phase-2 credit rules on the payer, as the issuer of the note p would
       // hold (lib/pilot/policy.mjs: refuse_notes_from, accept_operator_issuers, max_claims_total, max_issuer_net_debt).
@@ -1120,7 +1149,7 @@ export class Pilot {
         checks.push(...r.checks);
       }
     }
-    return {needsOwner: price > p.mandate.approve_above, checks, mandate_version: p.mandate_version};
+    return {needsOwner: !(guarantee && role === 'payee') && price > p.mandate.approve_above, checks, mandate_version: p.mandate_version};
   }
 
   // ---------- deals ----------
@@ -1475,6 +1504,8 @@ export class Pilot {
       }
       // MIG-1: approving a held credit note or payment by transfer sends it to the tracker; a rejection sends nothing.
       if (decision === 'approve' && (a.kind === 'issue_note' || a.kind === 'pay_by_transfer')) this.assertTrackerWritable();
+      // A guarantee offer held for the backer's owner (fix inbox #18): no deal; the guarantee book decides it.
+      if (a.kind === 'guarantee_offer') return this.guarantees.decideOffer(p, a, decision, clean(note, 300, 'note'));
       const d = this.sweep(this.deal(a.deal_id));
       if (a.state !== 'pending') throw new PilotError('not_pending', `approval is ${a.state}`, 409);
       const cleanNote = clean(note, 300, 'note');
@@ -1637,6 +1668,9 @@ export class Pilot {
       if (k.issuer === issuer && k.recipient === recipient)
         throw new PilotError('pair_busy', "another credit note for this key pair is being issued and the tracker has not confirmed it yet; a new note now could count it twice. Try again in 60 s.", 409, {retry_after_ms: PAIR_BUSY_RETRY_MS});
     }
+    // A backer's note honoring a guarantee call on this pair, being recorded (fix inbox #18), holds it the same way.
+    if (this.guarantees?.issuingOn(edgeKey(issuer, recipient)))
+      throw new PilotError('pair_busy', "another credit note for this key pair is being issued and the tracker has not confirmed it yet; a new note now could count it twice. Try again in 60 s.", 409, {retry_after_ms: PAIR_BUSY_RETRY_MS});
   }
 
   // The template's timestamp is after the pair's last note and never after this server's clock (OQ-12), which is the rule
@@ -1982,6 +2016,8 @@ export class Pilot {
     return this.serial(async () => {
       const out = [], refused = !!this.writeRefusal();
       for (const d of Object.values(this.s.deals)) if (d.status === 'issuing_note') { const st = (await this.submitNote(d, {recovering: true})).status; if (!refused || st !== 'issuing_note') out.push(st); }
+      // Backers' notes for guarantee calls left issuing (fix inbox #18): '<vgc id>:<state>'.
+      out.push(...await this.guarantees.recover({refused}));
       for (const t of Object.values(this.s.transfers || {})) {
         this.sweepTransfer(t);
         if (t.state === 'applying') { const st = (await this.recoverTransfer(t)).state; if (!refused || st !== 'applying') out.push(`${t.id}:${st}`); }
@@ -3286,7 +3322,7 @@ export class Pilot {
       const n = this.noteKeysOf(d);
       if (edgeKey(n.issuer, n.recipient) === k) return true;
     }
-    return false;
+    return !!this.guarantees?.issuingOn(k);         // a backer's note for a guarantee call, being recorded (fix inbox #18)
   }
   // Decision D-1 and set-offs: the edges that an earlier payment attempt of a deal not yet paid would change, each with
   // the earliest such attempt's timestamp (Map edge -> ms). A payer's client decides whether an earlier attempt can
@@ -4332,11 +4368,16 @@ export class Pilot {
   }
 
   approvalView(a, p, {deal = null} = {}) {
+    if (a.kind === 'guarantee_offer') return this.guarantees.approvalView(a, p);
     const d = this.sweep(this.deal(a.deal_id)), subject = this.approvalSubject(a, d);
     return {...a, subject, mandate_check: subject?.mandate_check ?? null, effect: this.approvalEffect(a, d, subject), deal: deal ?? this.view(d, p)};
   }
-  // The approval view the server answers with (GET /owner): its deal as dealView makes it.
-  async servedApprovalView(a, p) { return this.approvalView(a, p, {deal: await this.dealView(this.deal(a.deal_id), p)}); }
+  // The approval view the server answers with (GET /owner): its deal as dealView makes it (a guarantee offer: its
+  // guarantee, with the tracker's figures).
+  async servedApprovalView(a, p) {
+    if (a.kind === 'guarantee_offer') return this.guarantees.approvalView(a, p, await this.ledger());
+    return this.approvalView(a, p, {deal: await this.dealView(this.deal(a.deal_id), p)});
+  }
 
   inbox(p) {
     const deals = this.dealsFor(p).map(d => this.sweep(d));
@@ -4353,6 +4394,13 @@ export class Pilot {
       deliver: listed('deliver').map(brief),
       review_delivery: listed('review_delivery').map(brief),
       awaiting_your_owner: Object.values(this.s.approvals).filter(a => a.participant === p.id && a.state === 'pending').map(a => {
+        // A guarantee offer (fix inbox #18) has no deal: its guarantee id, and its cap as the price.
+        if (a.kind === 'guarantee_offer') {
+          const g = this.s.guarantees?.[a.guarantee_id];
+          return {approval_id: a.id, deal_id: null, guarantee_id: a.guarantee_id, kind: a.kind, version: a.version, terms_hash: a.terms_hash,
+            title: g ? `guarantee of ${this.s.participants[g.issuer]?.handle ?? g.issuer}'s debt to ${this.s.participants[g.creditor]?.handle ?? g.creditor}` : null,
+            price: g ? {amount: g.terms.cap.amount, unit: g.terms.cap.unit} : null};
+        }
         const s = this.approvalSubject(a, this.deal(a.deal_id));
         return {approval_id: a.id, deal_id: a.deal_id, kind: a.kind, version: a.version, terms_hash: a.terms_hash, title: s?.terms.service.title ?? null, price: s?.terms.price ?? null};
       }),
@@ -4365,8 +4413,10 @@ export class Pilot {
     // being applied, or of an outcome only the owner can resolve) with their payment block. Consents are not deals: they
     // never go into the deal lists above.
     const inProgress = deals.filter(d => { const t = this.paymentTransfer(d); return !!t && (LIVE_TRANSFER.has(t.state) || UNRESOLVED_TRANSFER.has(t.state)); });
+    // Guarantees (fix inbox #18): only for a participant that has any (offers to answer, calls to honor, active ones).
+    const guarantees = this.guarantees.available(p) ? this.guarantees.inboxOf(p) : null;
     return {...box, consents_waiting_for_your_client: this.pendingOf(p).consents_waiting_for_you,
-      payments_in_progress: inProgress.map(d => ({...brief(d), payment: this.paymentView(d)}))};
+      payments_in_progress: inProgress.map(d => ({...brief(d), payment: this.paymentView(d)})), ...(guarantees ? {guarantees} : {})};
   }
 
   // ---------- circulating credit: what /me, /owner and the participant's own position add (modes sandbox and on) ----------

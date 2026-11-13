@@ -1,5 +1,6 @@
 // Pilot HTTP routes (/pilot/v1/*). Per-participant bearer tokens; no global passphrase. See docs/PILOT-API.md.
-import {PilotError, NETWORK, PROTOCOL, statements, circulationStatements, sha256} from './core.mjs';
+import {PilotError, NETWORK, PROTOCOL, statements, circulationStatements, guaranteeStatements, sha256} from './core.mjs';
+import {GUARANTEE_INFO} from './guarantees.mjs';
 import {ON_TESTNET} from './units.mjs';
 import {toErgoJson} from '../ergo-json.mjs';
 import {featuresFor, NOVATION_INFO} from './caps.mjs';
@@ -187,6 +188,8 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         statements: sources(statements),
         participants: Object.values(pilot.s.participants).filter(x => x.status === 'active').length,
         ...(mode !== 'off' ? {features: featuresFor(mode), novation: NOVATION_INFO, circulation_statements: sources(circulationStatements)} : {}),
+        // Guarantees (fix inbox #18; modes sandbox and on): the protocol, its bounds and the statements each party signs.
+        ...(mode === 'sandbox' || mode === 'on' ? {guarantees: GUARANTEE_INFO, guarantee_statements: sources(guaranteeStatements)} : {}),
         // MIG-1 (release v16.1): only while pilot writes are refused (Pilot.writeRefusal), so that the operator's live
         // check sees it; absent otherwise (a v15 state in mode off answers exactly as before). Cached like the rest of
         // /info, so it shows at most PUBLIC_CACHE_MS after the refusal starts or ends.
@@ -408,6 +411,28 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         // A consent to a transfer (vt_) or a set-off (vs_).
         if ((m = /^\/consents\/(v[st]_[0-9a-f]{16})$/.exec(p))) return send(res, 200, await pilot.submitConsent(me, m[1], await readJson(req)));
         if ((m = /^\/consents\/(v[st]_[0-9a-f]{16})\/refuse$/.exec(p))) return send(res, 200, await pilot.refuseConsent(me, m[1], await readJson(req)));
+      }
+    }
+
+    // Guarantees (fix inbox #18, lib/pilot/guarantees.mjs; circulation modes sandbox and on, for participants circulating
+    // credit is on for; otherwise these routes do not exist). Reads: agent and owner; actions: the agent's key.
+    if (pilot.guarantees.available(me)) {
+      if (G && p === '/guarantees') return send(res, 200, await pilot.guarantees.viewsFor(me));
+      if (G && (m = /^\/guarantees\/(vg_[0-9a-f]{16})$/.exec(p))) return send(res, 200, await pilot.guarantees.viewFor(me, m[1]));
+      if (G && (m = /^\/guarantees\/(vg_[0-9a-f]{16})\/calls\/(vgc_[0-9a-f]{16})\/note-template$/.exec(p))) {
+        if (who.role !== 'agent') throw new PilotError('agent_only', 'credit notes are signed by the agent\'s key', 403);
+        const q = url.searchParams;
+        return send(res, 200, await pilot.guarantees.noteTemplate(me, m[1], m[2], {prior: q.get('prior') === '1', bound: q.get('bound') === '1'}));
+      }
+      if (P && who.role === 'agent') {
+        if (p === '/guarantees') return send(res, 201, await pilot.guarantees.offer(me, await readJson(req)));
+        if ((m = /^\/guarantees\/(vg_[0-9a-f]{16})\/(accept|decline|withdraw|release|calls)$/.exec(p))) {
+          const body = await readJson(req), id = m[1], b = pilot.guarantees;
+          const out = await ({accept: () => b.accept(me, id, body), decline: () => b.decline(me, id, body), withdraw: () => b.withdraw(me, id, body),
+            release: () => b.release(me, id, body), calls: () => b.call(me, id, body)})[m[2]]();
+          return send(res, m[2] === 'calls' ? 201 : 200, out);
+        }
+        if ((m = /^\/guarantees\/(vg_[0-9a-f]{16})\/calls\/(vgc_[0-9a-f]{16})\/honor$/.exec(p))) return send(res, 200, await pilot.guarantees.honor(me, m[1], m[2], await readJson(req)));
       }
     }
 

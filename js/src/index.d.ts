@@ -544,6 +544,26 @@ export class Client {
 
   /** The checks of spec 15.2 before accepting or countering; throws ValunError on any failure. */
   verifyOffer(deal: DealView): Promise<VerifiedOffer>;
+
+  // Guarantees (servers listing guarantees/1; fix inbox #18): a backer's signed promise to pay one creditor, up to a cap,
+  // what one issuer still owes it after a due time, if the creditor calls before the expiry.
+  guarantees(): Promise<GuaranteeView[]>;
+  guarantee(guaranteeId: string): Promise<GuaranteeView>;
+  /** The terms checked before anything is signed for them: hash, network and tracker, cover and cap, this agent's key, the backer's offer signature. */
+  verifyGuarantee(view: GuaranteeView, role?: 'backer' | 'issuer' | 'creditor' | null): Promise<{terms_hash: string; terms: GuaranteeTerms; role: string}>;
+  buildGuaranteeTerms(request: OfferGuaranteeRequest): Promise<GuaranteeTerms>;
+  /** Offer a guarantee as its backer (statement guarantee-offer). */
+  offerGuarantee(request: OfferGuaranteeRequest): Promise<GuaranteeView>;
+  /** Accept one as its creditor (it commits the creditor to nothing). */
+  acceptGuarantee(guaranteeId: string, options?: {expectedTermsHash?: string}): Promise<GuaranteeView>;
+  declineGuarantee(guaranteeId: string, reason?: string): Promise<GuaranteeView>;
+  withdrawGuarantee(guaranteeId: string): Promise<GuaranteeView>;
+  /** End an accepted one as its creditor: it can no longer be called. */
+  releaseGuarantee(guaranteeId: string, options?: {expectedTermsHash?: string}): Promise<GuaranteeView>;
+  /** Call one as its creditor: `amount`, or everything callable now. */
+  callGuarantee(guaranteeId: string, options?: {amount?: number | null; expectedTermsHash?: string}): Promise<GuaranteeView>;
+  /** Pay a call as its backer, with this agent's own credit note to the creditor (bound with bound_notes/1), within the cap its own records allow. */
+  honorGuarantee(guaranteeId: string, options?: {callId?: string | null; expectedTermsHash?: string}): Promise<GuaranteeView>;
   /** The agreed terms, after checking the hash and both signatures against the keys the terms name. */
   verifiedAgreement(deal: DealView): Terms;
 
@@ -900,9 +920,57 @@ export function utf8(text: string): Bytes;
 // ---------------------------------------------------------------------------------------------------------------------
 // Agent tools: the nine Valun tools of the Python reference (agent.py, schemas.py, measure.py, sandbox.py)
 // ---------------------------------------------------------------------------------------------------------------------
+/** valun-guarantee/1 terms (fix inbox #18). */
+export interface GuaranteeTerms {
+  protocol: 'valun-guarantee/1';
+  network: string;
+  tracker_nft_id: string;
+  denomination: string;
+  guarantee_id: string;
+  nonce: string;
+  backer: {id: string; pubkey: string};
+  issuer: {id: string; pubkey: string};
+  creditor: {id: string; pubkey: string};
+  cap: {amount: number; unit: string};
+  covers: 'issuer_debt_to_creditor';
+  due_at: string;
+  expires_at: string;
+  honor_within_hours: number;
+  offer_expires_at: string;
+  note: string;
+}
+
+/** The server's view of a guarantee (GET /pilot/v1/guarantees/{id}). */
+export interface GuaranteeView extends Record<string, unknown> {
+  guarantee_id: string;
+  state: string;
+  your_role: 'backer' | 'issuer' | 'creditor';
+  terms: GuaranteeTerms;
+  terms_hash: string;
+  cap: number;
+  claimed: number;
+  honored: number;
+  issuer_owes_creditor: number | null;
+  callable_now: number;
+  recovered_for_backer: number | null;
+  calls: Array<Record<string, unknown>>;
+}
+
+export interface OfferGuaranteeRequest {
+  issuerId: string;
+  creditorId: string;
+  cap: number;
+  dueInHours: number;
+  callableForHours?: number;
+  honorWithinHours?: number;
+  offerValidHours?: number;
+  note?: string;
+}
+
 export type ToolName =
   | 'valun_status' | 'valun_directory' | 'valun_inbox' | 'valun_deal' | 'valun_propose' | 'valun_respond' | 'valun_deliver'
-  | 'valun_review_delivery' | 'valun_set_limits';
+  | 'valun_review_delivery' | 'valun_set_limits'
+  | 'valun_guarantees' | 'valun_offer_guarantee' | 'valun_respond_guarantee' | 'valun_call_guarantee';
 
 /** A JSON Schema (the subset the tools use: type, properties, required, enum, items, minimum, maximum, minLength, description). */
 export type JsonSchema = {readonly [keyword: string]: JsonValue | JsonSchema | undefined};
@@ -925,7 +993,12 @@ export namespace schemas {
   const DELIVER: ToolDefinition;
   const REVIEW: ToolDefinition;
   const SET_LIMITS: ToolDefinition;
-  /** The nine tools, in the order every adapter lists them. */
+  /** 0.6 (fix inbox #18): the guarantee tools. */
+  const GUARANTEES: ToolDefinition;
+  const OFFER_GUARANTEE: ToolDefinition;
+  const RESPOND_GUARANTEE: ToolDefinition;
+  const CALL_GUARANTEE: ToolDefinition;
+  /** The tools, in the order every adapter lists them: the original nine, then the guarantee tools. */
   const ALL: readonly ToolDefinition[];
   /** 'valun-testnet-1'. */
   const TESTNET: string;

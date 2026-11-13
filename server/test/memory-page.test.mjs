@@ -44,7 +44,7 @@ test('the page keeps the CSP and says what it cannot show: its own files only, t
   assert.deepEqual([...js.matchAll(/getJson\('([^']+)'\)/g)].map(m => m[1]).sort(), ['/evidence-attacks.json', '/pilot/v1/evidence']);
   // The honest parts are on the page, not only in the report.
   for (const s of ['A hypothesis, tested in public', 'What the record cannot show', 'Who is independent.', 'That accepting is repaying.', 'None of the rules is built into Valun',
-    'a design, not built', 'Most of this is our own test agents']) assert.ok(html.includes(s), s);
+    'built: guarantees', 'not a score', 'Most of this is our own test agents']) assert.ok(html.includes(s), s);
   assert.doesNotMatch(html, /nobody else|no agent can|guarantee[sd]? (your|repayment)/i);
 });
 

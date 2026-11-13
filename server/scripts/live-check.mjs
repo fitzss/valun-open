@@ -21,8 +21,8 @@ export const CONTRACT = Object.freeze({tracker_build: 'valun-circulating-credit/
   prior_ack: 'basis/prior-ack/1'});
 export const LIMITS = Object.freeze({rssFailMiB: 170, rssWarnMiB: 150, availFailMiB: 40, availWarnMiB: 60,
   edgeLogWarnMiB: 50, stateWarnMiB: 20});
-const FEATURES = Object.freeze({off: [], bound: ['bound_notes/1'], sandbox: ['bound_notes/1', 'circulation/1'],
-  on: ['bound_notes/1', 'circulation/1']});
+const FEATURES = Object.freeze({off: [], bound: ['bound_notes/1'], sandbox: ['bound_notes/1', 'circulation/1', 'guarantees/1'],
+  on: ['bound_notes/1', 'circulation/1', 'guarantees/1']});
 // Log lines worth a FAIL (ALARM: a tracker without capabilities on a volume where circulation ran, readiness R-18;
 // fail closed: circulation asked for but not taken; OOM) and a WARN (an exception the server logged and survived).
 const LOG_FAIL = /ALARM|fail closed|Out of memory|oom-kill|Killed process/i;

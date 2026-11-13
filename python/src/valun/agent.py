@@ -1,6 +1,6 @@
 """The Valun agent tools, independent of any agent framework.
 
-Every adapter (the MCP server, the `valun call` CLI, the Hermes plugin) exposes the same nine tools through this
+Every adapter (the MCP server, the `valun call` CLI, the Hermes plugin) exposes the same tools through this
 module. An adapter supplies a store (where the participant's key, token and non-secret state live), a few settings,
 and a sentence saying where approvals happen; this module does the protocol work: it builds and verifies what is
 signed, measures deliveries against the agreed terms, and explains results in plain words.
@@ -196,6 +196,43 @@ BRIEF_NOTE_TESTNET = ('Amounts are nanoERG of tERG, Ergo testnet coins with no m
                       'honest labels.')
 
 
+def guarantees_waiting(g):
+    """valun_status: the guarantees waiting for this agent, from the inbox's guarantees section (fix inbox #18): offers
+    to answer as creditor, calls to honor as backer, and the guarantees it holds that are due (callable only while the
+    issuer still owes it: valun_guarantees shows callable_now). None when nothing waits."""
+    if not isinstance(g, dict):
+        return None
+
+    def rows(k):
+        return [x for x in (g.get(k) if isinstance(g.get(k), list) else []) if isinstance(x, dict)]
+    out = {'to_answer': [{k: x.get(k) for k in ('guarantee_id', 'backer', 'issuer', 'cap', 'due_at', 'expires_at')} for x in rows('to_answer')],
+           'to_honor': [{k: x.get(k) for k in ('guarantee_id', 'call_id', 'amount', 'creditor', 'honor_by', 'overdue')} for x in rows('to_honor')],
+           'due': [{k: x.get(k) for k in ('guarantee_id', 'backer', 'issuer', 'cap', 'expires_at')} for x in rows('active')
+                   if x.get('your_role') == 'creditor' and x.get('due') is True and x.get('call_open') is not True]}
+    if not any(out.values()):
+        return None
+    out['how'] = ("valun_guarantees shows each one. valun_respond_guarantee action='accept' or 'decline' answers an offer; "
+                  "action='honor' pays a call with your own credit note. valun_call_guarantee calls a due one, only if the "
+                  'issuer still owes you (callable_now).')
+    return out
+
+
+def guarantee_brief(g):
+    """What the guarantee tools show of one guarantee view: its state and parties, the amounts, the calls."""
+    if not isinstance(g, dict):
+        return g
+    out = {k: g.get(k) for k in ('guarantee_id', 'state', 'your_role') if k in g}
+    for r in ('backer', 'issuer', 'creditor'):
+        if isinstance(g.get(r), dict):
+            out[r] = g[r].get('handle') or g[r].get('id')
+    out.update({k: g.get(k) for k in ('unit', 'cap', 'claimed', 'honored', 'remaining_cap', 'issuer_owes_creditor', 'callable_now',
+                                      'recovered_for_backer', 'due_at', 'expires_at', 'honor_within_hours', 'offer_expires_at', 'note',
+                                      'next_actions', 'terms_hash') if k in g})
+    out['calls'] = [{k: c.get(k) for k in ('call_id', 'amount', 'state', 'called_at', 'honor_by', 'overdue', 'honored_at', 'late', 'error')
+                     if c.get(k) is not None} for c in (g.get('calls') or []) if isinstance(c, dict)]
+    return out
+
+
 def brief_status(out):
     """valun_status's brief view (brief=true, for small models), made from the full view, so it reads and signs exactly
     the same: who you are, your owner's objective and goals, the limits in force, where approvals happen, what you hold
@@ -215,6 +252,8 @@ def brief_status(out):
                                     for n in (out.get('notes_you_can_spend') or []) if isinstance(n, dict)]
         b['payments_in_progress'] = len(out.get('payments_in_progress') or [])
         b['consents_pending'] = d(out.get('clearing')).get('consents_pending')
+    if out.get('guarantees_waiting'):
+        b['guarantees_waiting'] = out['guarantees_waiting']
     step = out.get('sandbox_next_steps')
     if isinstance(step, dict):
         b['sandbox_next_steps'] = {k: step[k] for k in ('tour_step', 'next_calls', 'then', 'retry_after_seconds') if k in step}
@@ -323,7 +362,7 @@ LIMIT_FIELDS = {
     'min_price_as_payee': ('min_price_as_payee', 'floor'), 'min_payer_coverage_pct': ('min_payer_coverage_pct', 'floor'),
 }
 TOOL_NAMES = [t['name'] for t in schemas.ALL]
-READ_ONLY_TOOLS = ('valun_status', 'valun_directory', 'valun_inbox', 'valun_deal')
+READ_ONLY_TOOLS = ('valun_status', 'valun_directory', 'valun_inbox', 'valun_deal', 'valun_guarantees')
 # The read-only tools before which an agent with consents_on_reads signs the value-safe consents (decision D-3 a), and
 # the keys of each entry of their consents_signed_now.
 CONSENTS_ON_READ_TOOLS = ('valun_status', 'valun_inbox')
@@ -340,6 +379,8 @@ QUOTE_MAX_CHARS = 2000      # per quoted field of an approval text (the server's
 ROLE_WORDS = {'payer': 'payer', 'payee': 'payee (you do the work)'}
 _PLAIN = re.compile(r'[A-Za-z0-9_.:@+-]{1,120}')
 _DEAL_ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
+_GUARANTEE_ID = re.compile(r'vg_[0-9a-f]{16}')
+_CALL_ID = re.compile(r'vgc_[0-9a-f]{16}')
 
 
 def quoted(value):
@@ -417,6 +458,22 @@ def loosens(current, body):
         if new is None or not (_whole(new) and _whole(old)) or (kind == 'cap' and new > old) or (kind == 'floor' and new < old):
             return True
     return False
+
+
+def _guarantee_int(a, k, default):
+    """A whole-number argument of a guarantee tool, or its default (None: required)."""
+    v = a.get(k, default) if isinstance(a, dict) else default
+    if v is None:
+        raise vc.ValunError('bad_arguments', f'{k} is required')
+    if not _whole(v):
+        raise vc.ValunError('bad_arguments', f'{k} must be a whole number')
+    return v
+
+
+def _party(g, role, terms):
+    """A guarantee party's handle as the view names it, else its id from the checked terms."""
+    x = g.get(role) if isinstance(g, dict) else None
+    return x.get('handle') if isinstance(x, dict) and isinstance(x.get('handle'), str) and x['handle'] else terms[role]['id']
 
 
 def _whole(v):
@@ -510,7 +567,7 @@ def error_payload(e, setup_hint='run `valun join` (or `valun enroll`) in a termi
 
 
 class ValunAgent:
-    """The nine Valun tools over one participant's store.
+    """The Valun tools over one participant's store.
 
     store: a path to a private state file, or any object with .state, .secret(), .token(), .save(), .save_credentials().
     approvals: one sentence telling the model where commitments are approved (adapter-specific).
@@ -543,7 +600,9 @@ class ValunAgent:
         self.features = None        # the feature tags the last GET /info this agent read listed (None: none read yet)
         self.handlers = {'valun_status': self.status, 'valun_directory': self.directory, 'valun_inbox': self.inbox,
                          'valun_deal': self.deal, 'valun_propose': self.propose, 'valun_respond': self.respond,
-                         'valun_deliver': self.deliver, 'valun_review_delivery': self.review, 'valun_set_limits': self.set_limits}
+                         'valun_deliver': self.deliver, 'valun_review_delivery': self.review, 'valun_set_limits': self.set_limits,
+                         'valun_guarantees': self.guarantees, 'valun_offer_guarantee': self.offer_guarantee,
+                         'valun_respond_guarantee': self.respond_guarantee, 'valun_call_guarantee': self.call_guarantee}
 
     # ---------- plumbing ----------
     def client(self, require_connection=True):
@@ -694,7 +753,9 @@ class ValunAgent:
         """Does this call sign something that commits the owner (or loosen a limit)? Adapters ask the owner first.
         Fails closed by name and by value: only these are not commitments: the read-only tools, valun_deliver,
         valun_respond with action exactly 'decline' or 'withdraw', valun_review_delivery with decision exactly 'dispute',
-        and valun_set_limits calls that do not loosen a recorded limit. Every other call, including any tool name this
+        valun_respond_guarantee with action exactly 'accept', 'decline' or 'withdraw' (taking or refusing a backing, or
+        taking back an offer, commits the owner to nothing), valun_call_guarantee (a claim the owner gains by), and
+        valun_set_limits calls that do not loosen a recorded limit. Every other call, including any tool name this
         client does not know and a misspelt "Accept", is a commitment."""
         a = args if isinstance(args, dict) else {}
         if name in LIMIT_TOOLS:
@@ -714,6 +775,10 @@ class ValunAgent:
             return a.get('action') not in ('decline', 'withdraw')
         if name == 'valun_review_delivery':
             return a.get('decision') != 'dispute'
+        if name == 'valun_respond_guarantee':
+            return a.get('action') not in ('accept', 'decline', 'withdraw')
+        if name == 'valun_call_guarantee':
+            return False
         return True
 
     def prepare(self, name, args):
@@ -826,6 +891,10 @@ class ValunAgent:
     def _needs_pins(name, a):
         if name == 'valun_respond' and a.get('action') in ('accept', 'counter'):
             return not a.get('expected_terms_hash')
+        if name == 'valun_respond_guarantee' and a.get('action') in ('release', 'honor'):
+            return not a.get('expected_terms_hash') or (a.get('action') == 'honor' and not a.get('call_id'))
+        if name == 'valun_offer_guarantee':
+            return True
         if name == 'valun_review_delivery' and a.get('decision') == 'accept':
             pins = ('expected_deliverable_sha256', 'expected_terms_hash')
             try:
@@ -851,6 +920,27 @@ class ValunAgent:
             if not isinstance(me, dict):
                 raise vc.ValunError('approval_unbound', 'the server sent no participant record')
             return {'me': me}
+        if name == 'valun_offer_guarantee':
+            people = {r: self._resolve(c, a.get(r)) for r in ('issuer', 'creditor')}
+            if not all(isinstance(p, dict) and isinstance(p.get('id'), str) and p['id'] for p in people.values()):
+                raise vc.ValunError('approval_unbound', 'the directory names no participant id')
+            return {**people, 'not_settled': labels(self._known_circulation(c), net)['not_settled'], 'unit': unit, 'network': net}
+        if name == 'valun_respond_guarantee':
+            gid = self._gid(a.get('guarantee_id'))
+            g = c.guarantee(gid)
+            role = 'backer' if a.get('action') == 'honor' else 'creditor'
+            chk = c.verify_guarantee(g, role)
+            snap = {'guarantee': g, 'checked': chk, 'not_settled': labels(True, net)['not_settled'], 'unit': unit, 'network': net}
+            if a.get('action') == 'honor':
+                calls = [x for x in (g.get('calls') or []) if isinstance(x, dict)]
+                cid = a.get('call_id')
+                call = next((x for x in calls if x.get('call_id') == cid), None) if cid else \
+                    next((x for x in calls if x.get('state') in ('open', 'failed')), None)
+                if call is None or call.get('state') not in ('open', 'failed') or not _whole(call.get('amount')) \
+                        or not (isinstance(call.get('call_id'), str) and _CALL_ID.fullmatch(call['call_id'])):
+                    raise vc.ValunError('nothing_to_honor', 'no call of this guarantee is waiting to be honored')
+                snap['call'] = call
+            return snap
         did = a.get('deal_id')
         if not (isinstance(did, str) and _DEAL_ID.fullmatch(did)):
             raise vc.ValunError('bad_arguments', 'deal_id is missing or malformed')
@@ -1029,6 +1119,12 @@ class ValunAgent:
                 pin('expected_claim_total', tr['claim'], 'stale_claim', 'your claim on the issuer changed after your agent read it')
         elif name == 'valun_propose' and 'counterparty' in snap:
             a['counterparty'] = snap['counterparty']['id']     # the offer is signed for exactly the participant shown
+        elif name == 'valun_offer_guarantee' and 'issuer' in snap:
+            a['issuer'], a['creditor'] = snap['issuer']['id'], snap['creditor']['id']   # exactly the participants shown
+        elif name == 'valun_respond_guarantee' and a.get('action') in ('release', 'honor'):
+            pin('expected_terms_hash', chk['terms_hash'], 'stale_terms', 'the guarantee changed after your agent read it')
+            if a.get('action') == 'honor':
+                pin('call_id', snap['call']['call_id'], 'stale_call', 'the call is not the one your agent read')
         return a
 
     def _text_for(self, name, a):
@@ -1043,7 +1139,60 @@ class ValunAgent:
             return self._text_counter
         if name == 'valun_review_delivery' and a.get('decision') == 'accept':
             return self._text_pay if self._pay_with(a) is not None else self._text_review
+        if name == 'valun_offer_guarantee':
+            return self._text_offer_guarantee
+        if name == 'valun_respond_guarantee' and a.get('action') == 'release':
+            return self._text_release_guarantee
+        if name == 'valun_respond_guarantee' and a.get('action') == 'honor':
+            return self._text_honor_guarantee
         raise vc.ValunError('approval_unbound', f'no approval text for {name} with these arguments')
+
+    @staticmethod
+    def _text_offer_guarantee(a, snap):
+        u = snap.get('unit', vc.UNIT)
+        issuer, creditor = shown(snap['issuer'].get('handle')), shown(snap['creditor'].get('handle'))
+        cap, due, window, honor, ttl = (_guarantee_int(a, k, d) for k, d in (('cap', None), ('due_in_hours', None), ('callable_for_hours', 168),
+                                                                             ('honor_within_hours', 24), ('offer_valid_hours', 24)))
+        return '\n'.join([
+            f"Valun - sign a GUARANTEE: back what {issuer} ({shown(snap['issuer']['id'])}) owes {creditor} ({shown(snap['creditor']['id'])}):",
+            f'  you pay {creditor} up to {vc.amount_text(cap, u)} in all, for what {issuer} still owes it after {due} h from now,',
+            f'  if {creditor} calls in the {window} h after that; you pay a call within {honor} h, with your own credit note',
+            f'  the offer stays open {ttl} h; until the guarantee ends its cap counts against your limits as credit you may have to issue',
+            f'If {creditor} accepts and calls, you will owe {creditor} what it called (your credit note); {issuer} still owes it too.',
+            snap.get('not_settled', NOT_SETTLED),
+            quote_line('Note written by your agent', {'note': a.get('note') or ''})])
+
+    @staticmethod
+    def _text_release_guarantee(a, snap):
+        chk, g, u = snap['checked'], snap['guarantee'], snap.get('unit', vc.UNIT)
+        t = chk['terms']
+        backer, issuer = shown(_party(g, 'backer', t)), shown(_party(g, 'issuer', t))
+        open_calls = [x for x in (g.get('calls') or []) if isinstance(x, dict) and x.get('state') in ('open', 'failed')]
+        return '\n'.join([
+            f"Valun - RELEASE guarantee {shown(g.get('guarantee_id'))} from {backer}: it backs what {issuer} owes you, up to "
+            f"{vc.amount_text(t['cap']['amount'], u)}.",
+            '  after this you can no longer call it' + (f'; its {len(open_calls)} unhonored call(s) end too' if open_calls else ''),
+            f"  terms hash {chk['terms_hash'][:16]}... (recomputed from these terms; your Valun client checks it again before signing)",
+            f'Releasing gives up the protection; {issuer} still owes you what it owes.'])
+
+    @staticmethod
+    def _text_honor_guarantee(a, snap):
+        chk, g, call, u = snap['checked'], snap['guarantee'], snap['call'], snap.get('unit', vc.UNIT)
+        t = chk['terms']
+        creditor, issuer = shown(_party(g, 'creditor', t)), shown(_party(g, 'issuer', t))
+        amount = call['amount']
+        return '\n'.join([
+            f"Valun - HONOR call {shown(call.get('call_id'))} of your guarantee {shown(g.get('guarantee_id'))}: ISSUE A CREDIT NOTE "
+            f'of {vc.amount_text(amount, u)} to {creditor}:',
+            f"  you backed what {issuer} owes {creditor}, up to {vc.amount_text(t['cap']['amount'], u)}; honored so far: "
+            f"{vc.amount_text(g.get('honored') if _whole(g.get('honored')) else 0, u)}",
+            f"  {issuer} owes {creditor} {shown(g.get('issuer_owes_creditor'))} {u} on the tracker now (as the server shows it); "
+            f"the call is due by {shown(call.get('honor_by'))}",
+            f"  terms hash {chk['terms_hash'][:16]}... (your Valun client checks the guarantee, the creditor's signature on the call "
+            'and your own record of the cap again before signing)',
+            f'Your agent signs a Basis note; {tracker_words(snap.get("network"))} then records that you owe {creditor} '
+            f'{vc.amount_text(amount, u)} more.',
+            snap.get('not_settled', NOT_SETTLED)])
 
     # The texts: computed lines first (values the client computed or checked against what is signed, shown so that they
     # cannot carry layout), then text written by a counterparty or by the agent, quoted as one JSON line (quote_line).
@@ -1262,6 +1411,9 @@ class ValunAgent:
                             'recent': [{k: e.get(k) for k in ('at', 'kind', 'decision', 'code', 'amount', 'your_net_change_PC')}
                                        for e in log[-5:] if isinstance(e, dict)]},
                'consent_policy_in_force': policy}
+        waiting = guarantees_waiting(box.get('guarantees'))
+        if waiting:
+            out['guarantees_waiting'] = waiting
         participant = me.get('participant') if isinstance(me.get('participant'), dict) else {}
         if participant.get('sandbox_only') is True:
             out['sandbox_next_steps'] = self._sandbox_next_steps(c, participant, pos, box, notes)
@@ -1477,6 +1629,85 @@ class ValunAgent:
 
     def inbox(self, a):
         return self.client().inbox()
+
+    # ---------- guarantees (fix inbox #18) ----------
+    @staticmethod
+    def _gid(v):
+        if not (isinstance(v, str) and _GUARANTEE_ID.fullmatch(v)):
+            raise vc.ValunError('bad_arguments', 'guarantee_id is missing or malformed (vg_ + 16 hex; valun_guarantees lists them)')
+        return v
+
+    def guarantees(self, a):
+        c = self.client()
+        if a.get('guarantee_id') is not None:
+            g = c.guarantee(self._gid(a.get('guarantee_id')))
+            out = guarantee_brief(g)
+            if isinstance(g, dict):
+                out['terms'] = g.get('terms')
+                out['covers'] = g.get('covers')
+                out['what_this_means'] = g.get('what_this_means')
+                try:
+                    chk = c.verify_guarantee(g)
+                    out['checked_by_your_client'] = {'terms_hash_recomputed': chk['terms_hash'], 'backer_signature_valid': True}
+                except vc.ValunError as e:
+                    out['checked_by_your_client'] = {'problem': e.code, 'message': str(e)}
+            return out
+        gs = c.guarantees()
+        return {'guarantees': [guarantee_brief(g) for g in (gs if isinstance(gs, list) else [])],
+                'how': ("A guarantee is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes it "
+                        'after the due time, if the creditor calls before it expires. valun_guarantees with guarantee_id shows one '
+                        'with its terms.')}
+
+    def offer_guarantee(self, a):
+        c = self.client()
+        issuer, creditor = self._resolve(c, a.get('issuer')), self._resolve(c, a.get('creditor'))
+        vals = {k: _guarantee_int(a, k, d) for k, d in (('cap', None), ('due_in_hours', None), ('callable_for_hours', 168),
+                                                         ('honor_within_hours', 24), ('offer_valid_hours', 24))}
+        note = a.get('note') or ''
+        if not isinstance(note, str):
+            raise vc.ValunError('bad_arguments', 'note must be text')
+        g = c.offer_guarantee(issuer['id'], creditor['id'], vals['cap'], vals['due_in_hours'], vals['callable_for_hours'],
+                              vals['honor_within_hours'], vals['offer_valid_hours'], note)
+        out = {'guarantee': guarantee_brief(g)}
+        out['what_happens_next'] = (f"Your owner must approve it first (approve_above); then {shown(creditor.get('handle'))} can accept it."
+                                    if isinstance(g, dict) and g.get('state') == 'awaiting_owner' else
+                                    f"{shown(creditor.get('handle'))} can accept or decline it. Once it is due, it can call what "
+                                    f"{shown(issuer.get('handle'))} still owes it, up to the cap; you then pay with your own credit note.")
+        return out
+
+    def respond_guarantee(self, a):
+        c = self.client()
+        gid, action = self._gid(a.get('guarantee_id')), a.get('action')
+        exp = a.get('expected_terms_hash')
+        if action == 'accept':
+            g = c.accept_guarantee(gid, exp)
+        elif action == 'decline':
+            reason = a.get('reason') or ''
+            if not isinstance(reason, str):
+                raise vc.ValunError('bad_arguments', 'reason must be text')
+            g = c.decline_guarantee(gid, reason)
+        elif action == 'withdraw':
+            g = c.withdraw_guarantee(gid)
+        elif action == 'release':
+            g = c.release_guarantee(gid, exp)
+        elif action == 'honor':
+            cid = a.get('call_id')
+            if cid is not None and not (isinstance(cid, str) and _CALL_ID.fullmatch(cid)):
+                raise vc.ValunError('bad_arguments', 'call_id is malformed (vgc_ + 16 hex)')
+            g = c.honor_guarantee(gid, cid, exp)
+        else:
+            raise vc.ValunError('bad_arguments', "action must be accept, decline, release, withdraw or honor")
+        return {'guarantee': guarantee_brief(g)}
+
+    def call_guarantee(self, a):
+        c = self.client()
+        gid, amount = self._gid(a.get('guarantee_id')), a.get('amount')
+        if amount is not None and not (_whole(amount) and amount > 0):
+            raise vc.ValunError('bad_arguments', 'amount must be a whole number of at least 1')
+        g = c.call_guarantee(gid, amount, a.get('expected_terms_hash'))
+        hours = g.get('honor_within_hours') if isinstance(g, dict) else None
+        return {'guarantee': guarantee_brief(g),
+                'what_happens_next': f'The backer has {shown(hours)} hours to honor the call with its own credit note to you.'}
 
     def deal(self, a):
         c = self.client()

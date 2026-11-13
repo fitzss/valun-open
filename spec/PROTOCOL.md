@@ -2545,6 +2545,131 @@ part of the contract; the rest describes the server so clients know what to expe
   `("bound_notes/1", "circulation/1")`); the checker holds a client that declares `circulation/1`, or a run given
   `--require circulation/1`, to the circulation vectors (17). Neither 0.4.0 client declares it yet (OQ-52).
 
+## 19. Guarantees (fix inbox #18; valun-app commit `25ce05c`, clients 0.6.0)
+
+A **guarantee** is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes that creditor
+on the tracker, if the creditor calls after the due time and before the expiry. It is the narrowest backing that pays
+someone and needs no new tracker operation: the remedy is the backer's own credit note to the creditor. A server lists
+the feature `guarantees/1` in `GET /info` in circulation modes `sandbox` and `on`, with `guarantees` (the protocol, what
+it covers, the bounds) and `guarantee_statements`; the routes exist only for participants circulating credit is on for,
+and all three parties must be such participants. Server: `lib/pilot/guarantees.mjs`, `docs/PILOT-API.md` "Guarantees";
+clients: `Client.offer_guarantee` ... `honor_guarantee` and the four tools of 19.6.
+
+### 19.1 Terms (`valun-guarantee/1`)
+
+Every field is required; the canonical JSON and the hash are those of 7 (`terms_hash = sha256(canonical(terms))`).
+
+| Field | Value |
+|---|---|
+| `protocol` | `"valun-guarantee/1"` |
+| `network`, `tracker_nft_id`, `denomination` | the server's (as in 7) |
+| `guarantee_id` | `vg_` + 16 lowercase hex, chosen by the backer's client |
+| `nonce` | 32 lowercase hex |
+| `backer`, `issuer`, `creditor` | `{id, pubkey}`: three different active participants, each with its registered key; `backer` is the signer |
+| `cap` | `{amount, unit}`: a whole amount of at least 1 in the network's unit, the most the backer pays in all |
+| `covers` | `"issuer_debt_to_creditor"` (the only kind) |
+| `due_at` | RFC 3339; at most 60 days ahead, or up to 60 minutes past (callable as soon as accepted) |
+| `expires_at` | at least 1 hour and at most 60 days after `due_at` |
+| `honor_within_hours` | 1 to 168 |
+| `offer_expires_at` | in the future, at most 7 days ahead, not after `expires_at` |
+| `note` | text, may be empty; at most 500 characters and the text rules of signed text (2) |
+
+The backer's cap is a commitment like a deal's price: the server checks the offer as a deal the backer pays the
+creditor (11: `may_issue_credit`, the cap within `max_issue_per_deal`, `max_issue_outstanding`), and the backer's
+counterparty list and the self-serve box must allow the issuer too.
+
+### 19.2 Statements
+
+Each is signed by the party's agent key over the UTF-8 bytes, as in 8; `h` is the terms hash.
+
+| Who | Statement |
+|---|---|
+| the backer offers | `valun-pilot/guarantee-offer/1\n<h>` |
+| the creditor accepts | `valun-pilot/guarantee-accept/1\n<h>` |
+| the creditor declines | `valun-pilot/guarantee-decline/1\n<h>\n<sha256(reason)>` |
+| the backer withdraws an offer | `valun-pilot/guarantee-withdraw/1\n<h>` |
+| the creditor releases | `valun-pilot/guarantee-release/1\n<h>` |
+| the creditor calls | `valun-pilot/guarantee-call/1\n<h>\n<call_id>\n<amount>` |
+| the backer honors a call | `valun-pilot/guarantee-honor/1\n<h>\n<call_id>\n<amount>` |
+
+`call_id` is `vgc_` + 16 lowercase hex, chosen by the creditor's client; `amount` is the decimal integer. A call and its
+honor name the amount, so a signature covers exactly that amount of exactly that call.
+
+### 19.3 Life cycle
+
+Guarantee states: `awaiting_owner` (the cap is above the backer's `approve_above`: approval kind `guarantee_offer`,
+decided at `POST /owner/approvals/{va}`; only the backer sees it), `offered`, `active`, `expired` (past `expires_at`:
+no new call; an open call stays to be honored), `released`, and the ends before acceptance `declined`, `withdrawn`,
+`rejected_by_owner`, `offer_expired`. Call states: `open`, `issuing` (written ahead; recovery decides it by read-back),
+`failed` (the tracker did not record the note; the backer signs again), `honored`, `lapsed`, `released`. The creditor
+and the issuer see a guarantee once it is offered; nobody else does.
+
+### 19.4 What a call can claim
+
+`owed` is what the issuer owes the creditor on the tracker (outstanding = recorded minus redeemed, summed over every key
+either has registered); `claimed` is the sum of the calls that are not lapsed or released. While the guarantee is
+active and due, with no call open, `callable_now = min(cap - claimed, owed - claimed)`; one call at a time. So a
+creditor that was repaid has nothing to call, and repayment counts first. An unhonored call can be honored while
+`owed >= claimed`; otherwise the honor makes it lapse (nothing is paid) and the creditor may call again for what is left.
+A call honored after `honor_by` (`called_at + honor_within_hours`) is `late`; until it is honored, a call past it is
+`overdue`.
+
+### 19.5 The honor
+
+The backer's credit note to the creditor, between their current keys, for exactly the call's amount: prior total P
+plus the amount, checked as a deal's note is at completion (9, 18.5: the timestamp rules and residues, a bound note's
+prior acknowledgment `PA(I,R,P,p,T)`; `pair_busy`, `novation_pending`, `edge_busy`). Template:
+`GET /guarantees/{vg}/calls/{vgc}/note-template[?prior=1][&bound=1]`; honor: `POST /guarantees/{vg}/calls/{vgc}/honor
+{terms_hash, amount, signature, credit_note}`. A recorded note is journaled (18.14) as kind `issue` with `ref` the call
+id, and the clearing engine may set it off like any other note. While it is `issuing`, its pair is held as a deal's
+issuing note holds it (no other note, no set-off).
+
+The issuer's own note to the creditor stays as it is (Basis changes no note without its issuer's signature), so the
+creditor holds both. `recovered_for_backer = max(0, honored - owed)`: what the creditor has recovered from the issuer
+beyond the part the backer did not pay, which belongs to the backer. It is shown, not enforced.
+
+A client MUST, before it signs an honor (and both 0.6 clients do): check the guarantee as in 19.7 for its own role
+`backer`; check that the call is `open` or `failed`, its id and whole amount, and that the creditor's call statement
+verifies under the creditor key the terms name or its current directory key; refuse when the calls its own records
+show honored or pending, with this one, would exceed the cap it signed (`exceeds_cap`: `guarantee_honors` in the
+client's state); check the template as it checks a deal's (its own key, the creditor's current key, exactly the call's
+amount on top of the prior, the pinned tracker and unit, a current timestamp; with `bound_notes/1`, a bound note whose
+prior is its own signature and not older than its records, only for the tracker v3.2 contract; otherwise an ordinary
+note whose prior equals its record, never on an edge a novation changed); record what it signs (R4, the pending entry of
+kind `guarantee_note`, ref the call id) before it sends it; and never sign another note for the same call while an
+earlier one may have applied (`honor_pending`).
+
+### 19.6 Limits, the inbox, the record
+
+- **The backer's limits.** Until the guarantee ends, its open cap (`cap - honored`; after the end, its unhonored calls)
+  counts against the backer's `max_issue_outstanding` (`guaranteed` in the check of 11).
+- **The creditor's.** Its acceptance is checked as a deal the backer pays it (its policy on the backer as the issuer of
+  the note it may come to hold; no `min_price_as_payee`; no owner approval: accepting commits the creditor to nothing).
+  The open caps of guarantees it accepted count in its `max_accept_per_issuer` toward that backer and in its
+  `max_claims_total` (`guaranteed`).
+- **Backed or refused.** A creditor's `min_payer_coverage_pct` counts the open cap of the active guarantees backing a
+  payer's debts to it (`backing_for_you` and `guarantees` in the check).
+- **The inbox.** `GET /inbox` adds `guarantees {to_answer, to_honor, active, waiting_for_your_owner}` for a participant
+  that has any.
+- **The record.** `public_position.evidence.backing`: `given` (accepted, active, open cap, called, honored, honored late,
+  overdue, ended uncalled), `backed_as_issuer` (accepted, backers by kind, called against), `held_as_creditor`; `GET
+  /evidence` the network's totals. Evidence to weigh, not a score: it grants nothing.
+- **The deal counts.** `position.deals` adds `notes_issued_as_payer` and `notes_received` (circulation modes):
+  `credit_notes_issued` counts deals that ended with a credit note in either role.
+- **The tools** (0.6 clients, appended after the nine): `valun_guarantees` (read-only), `valun_offer_guarantee`
+  (a commitment), `valun_respond_guarantee` (`accept`, `decline`, `withdraw` commit nothing; `release` and `honor` are
+  commitments, with their own approval texts), `valun_call_guarantee` (commits nothing). `valun_status` adds
+  `guarantees_waiting`.
+
+### 19.7 What a client MUST check before it accepts, releases or calls
+
+The terms hash to the view's `terms_hash`; `protocol` is `valun-guarantee/1`, `network`, `tracker_nft_id` and
+`denomination` are the server's; `covers` is `issuer_debt_to_creditor` with a whole cap in the network's unit; the terms
+name this agent, in the role it acts in, with its current key; and the backer's offer statement verifies under the
+backer key the terms name, which is the backer's current directory key. `expected_terms_hash`, when given, must be that
+hash (`stale_terms`). A creditor's call claims `callable_now` unless it names a smaller amount; the server checks the
+amount against the tracker again.
+
 ## Appendix A. Differences from `valun-app/docs/PILOT-API.md`
 
 - Its decline/dispute statement, `sha256(reason)`, matches release v8 (the reason as sent); it does not mention the

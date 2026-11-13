@@ -1,4 +1,4 @@
-// The nine Valun agent tools, independent of any agent framework (port of python/src/valun/agent.py).
+// The Valun agent tools, independent of any agent framework (port of python/src/valun/agent.py).
 //
 // An adapter supplies a Client (whose store holds the participant's key, token and non-secret state), a few settings and
 // a sentence saying where approvals happen; this module does the protocol work: it builds and verifies what is signed
@@ -201,6 +201,40 @@ export const BRIEF_NOTE_TESTNET = 'Amounts are nanoERG of tERG, Ergo testnet coi
   + 'honest labels.';
 
 /**
+ * valun_status: the guarantees waiting for this agent, from the inbox's guarantees section (fix inbox #18): offers to
+ * answer as creditor, calls to honor as backer, and the guarantees it holds that are due (callable only while the issuer
+ * still owes it: valun_guarantees shows callable_now). null when nothing waits. The Python core's guarantees_waiting.
+ */
+export function guaranteesWaiting(g) {
+  if (!isDict(g)) return null;
+  const rows = k => (Array.isArray(get(g, k)) ? g[k] : []).filter(isDict);
+  const pick = (x, keys) => Object.fromEntries(keys.map(k => [k, get(x, k)]));
+  const out = {
+    to_answer: rows('to_answer').map(x => pick(x, ['guarantee_id', 'backer', 'issuer', 'cap', 'due_at', 'expires_at'])),
+    to_honor: rows('to_honor').map(x => pick(x, ['guarantee_id', 'call_id', 'amount', 'creditor', 'honor_by', 'overdue'])),
+    due: rows('active').filter(x => get(x, 'your_role') === 'creditor' && get(x, 'due') === true && get(x, 'call_open') !== true)
+      .map(x => pick(x, ['guarantee_id', 'backer', 'issuer', 'cap', 'expires_at'])),
+  };
+  if (!Object.values(out).some(v => v.length)) return null;
+  out.how = "valun_guarantees shows each one. valun_respond_guarantee action='accept' or 'decline' answers an offer; "
+    + "action='honor' pays a call with your own credit note. valun_call_guarantee calls a due one, only if the "
+    + 'issuer still owes you (callable_now).';
+  return out;
+}
+
+/** What the guarantee tools show of one guarantee view: its state and parties, the amounts, the calls. */
+export function guaranteeBrief(g) {
+  if (!isDict(g)) return g;
+  const out = Object.fromEntries(['guarantee_id', 'state', 'your_role'].filter(k => Object.hasOwn(g, k)).map(k => [k, g[k]]));
+  for (const r of ['backer', 'issuer', 'creditor']) if (isDict(get(g, r))) out[r] = or(get(g[r], 'handle'), get(g[r], 'id'));
+  for (const k of ['unit', 'cap', 'claimed', 'honored', 'remaining_cap', 'issuer_owes_creditor', 'callable_now', 'recovered_for_backer', 'due_at',
+    'expires_at', 'honor_within_hours', 'offer_expires_at', 'note', 'next_actions', 'terms_hash']) if (Object.hasOwn(g, k)) out[k] = g[k];
+  out.calls = iterate(or(get(g, 'calls'), [])).filter(isDict).map(c => Object.fromEntries(
+    ['call_id', 'amount', 'state', 'called_at', 'honor_by', 'overdue', 'honored_at', 'late', 'error'].filter(k => get(c, k) !== null).map(k => [k, c[k]])));
+  return out;
+}
+
+/**
  * valun_status's brief view (brief=true, for small models), made from the full view, so it reads and signs exactly the
  * same: who you are, your owner's objective and goals, the limits in force, where approvals happen, what you hold and
  * owe, the notes you can spend, the payments and consents in progress, the next sandbox step, and one line on what PC
@@ -220,6 +254,7 @@ export function briefStatus(out) {
     b.payments_in_progress = (get(out, 'payments_in_progress') || []).length;
     b.consents_pending = get(d(get(out, 'clearing')), 'consents_pending');
   }
+  if (truthy(get(out, 'guarantees_waiting'))) b.guarantees_waiting = out.guarantees_waiting;
   const step = get(out, 'sandbox_next_steps');
   if (isDict(step)) b.sandbox_next_steps = Object.fromEntries(['tour_step', 'next_calls', 'then', 'retry_after_seconds'].filter(k => k in step).map(k => [k, step[k]]));
   b.note = get(out, 'network') === TESTNET ? BRIEF_NOTE_TESTNET : BRIEF_NOTE;
@@ -327,7 +362,7 @@ export const LIMIT_FIELDS = Object.freeze({
   min_price_as_payee: Object.freeze(['min_price_as_payee', 'floor']), min_payer_coverage_pct: Object.freeze(['min_payer_coverage_pct', 'floor']),
 });
 export const TOOL_NAMES = Object.freeze(schemas.ALL.map(t => t.name));
-export const READ_ONLY_TOOLS = Object.freeze(['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal']);
+export const READ_ONLY_TOOLS = Object.freeze(['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal', 'valun_guarantees']);
 // The read-only tools before which an agent with consentsOnReads signs the value-safe consents (decision D-3 a), and the
 // keys of each entry of their consents_signed_now.
 export const CONSENTS_ON_READ_TOOLS = Object.freeze(['valun_status', 'valun_inbox']);
@@ -363,11 +398,26 @@ const DEAL_FIELDS = ['id', 'status', 'your_role', 'counterparty', 'next_actions'
 const LIMITS_SHOWN = Object.entries(LIMIT_FIELDS);
 const PLAIN = /^[A-Za-z0-9_.:@+-]{1,120}$/;
 const DEAL_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const GUARANTEE_ID = /^vg_[0-9a-f]{16}$/, CALL_ID = /^vgc_[0-9a-f]{16}$/;
 const LONE_SURROGATE = /\p{Cs}/u;
 const TEXT_FIELDS = ['title', 'description', 'deliverable'];
 
 /** Python's isinstance(v, int) and not isinstance(v, bool), for JSON numbers (a safe integer). */
 const whole = v => typeof v === 'number' && Number.isSafeInteger(v);
+
+/** A whole-number argument of a guarantee tool, or its default (null: required). The Python core's _guarantee_int. */
+function guaranteeInt(a, k, dflt) {
+  const v = isDict(a) ? get(a, k, dflt) : dflt;
+  if (v === null) throw new ValunError('bad_arguments', `${k} is required`);
+  if (!whole(v)) throw new ValunError('bad_arguments', `${k} must be a whole number`);
+  return v;
+}
+
+/** A guarantee party's handle as the view names it, else its id from the checked terms. */
+function guaranteeParty(g, role, terms) {
+  const x = isDict(g) ? get(g, role) : null;
+  return isDict(x) && typeof get(x, 'handle') === 'string' && x.handle ? x.handle : terms[role].id;
+}
 
 function jsonString(s) {
   let out = '"';
@@ -605,7 +655,7 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
   return {error: 'internal_error', message: `Error: ${String(e)}`};
 }
 /**
- * The nine Valun tools over one participant's Client.
+ * The Valun tools over one participant's Client.
  *
  * options:
  *   approvals       one sentence telling the model where commitments are approved (adapter-specific; APPROVAL_TEXT has
@@ -657,6 +707,8 @@ export class ValunAgent {
       valun_status: a => this.status(a), valun_directory: a => this.directory(a), valun_inbox: a => this.inbox(a),
       valun_deal: a => this.deal(a), valun_propose: a => this.propose(a), valun_respond: a => this.respond(a),
       valun_deliver: a => this.deliver(a), valun_review_delivery: a => this.review(a), valun_set_limits: a => this.setLimits(a),
+      valun_guarantees: a => this.guarantees(a), valun_offer_guarantee: a => this.offerGuarantee(a),
+      valun_respond_guarantee: a => this.respondGuarantee(a), valun_call_guarantee: a => this.callGuarantee(a),
     });
   }
 
@@ -875,9 +927,11 @@ export class ValunAgent {
   /**
    * Does this call sign something that commits the owner (or loosen a limit)? Adapters ask the owner first. Fails closed
    * by name and by value: only these are not commitments: the read-only tools, valun_deliver, valun_respond with action
-   * exactly 'decline' or 'withdraw', valun_review_delivery with decision exactly 'dispute', and valun_set_limits calls
-   * that do not loosen a recorded limit. Every other call, including any tool name this client does not know and a
-   * misspelt "Accept", is a commitment.
+   * exactly 'decline' or 'withdraw', valun_review_delivery with decision exactly 'dispute', valun_respond_guarantee with
+   * action exactly 'accept', 'decline' or 'withdraw' (taking or refusing a backing, or taking back an offer, commits the
+   * owner to nothing), valun_call_guarantee (a claim the owner gains by), and valun_set_limits calls that do not loosen a
+   * recorded limit. Every other call, including any tool name this client does not know and a misspelt "Accept", is a
+   * commitment.
    */
   async isCommitment(name, args = null) {
     const a = isDict(args) ? args : {};
@@ -899,6 +953,8 @@ export class ValunAgent {
     if (NOT_COMMITMENT_TOOLS.includes(name)) return false;
     if (name === 'valun_respond') return !['decline', 'withdraw'].includes(get(a, 'action'));
     if (name === 'valun_review_delivery') return get(a, 'decision') !== 'dispute';
+    if (name === 'valun_respond_guarantee') return !['accept', 'decline', 'withdraw'].includes(get(a, 'action'));
+    if (name === 'valun_call_guarantee') return false;
     return true;
   }
 
@@ -1027,6 +1083,10 @@ export class ValunAgent {
 
   static #needsPins(name, a) {
     if (name === 'valun_respond' && ['accept', 'counter'].includes(get(a, 'action'))) return !truthy(get(a, 'expected_terms_hash'));
+    if (name === 'valun_respond_guarantee' && ['release', 'honor'].includes(get(a, 'action'))) {
+      return !truthy(get(a, 'expected_terms_hash')) || (get(a, 'action') === 'honor' && !truthy(get(a, 'call_id')));
+    }
+    if (name === 'valun_offer_guarantee') return true;
     if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept') {
       let pins = ['expected_deliverable_sha256', 'expected_terms_hash'];
       try {
@@ -1055,6 +1115,31 @@ export class ValunAgent {
       const me = await c.me();
       if (!isDict(me)) throw new ValunError('approval_unbound', 'the server sent no participant record');
       return {me};
+    }
+    if (name === 'valun_offer_guarantee') {
+      const people = {issuer: await this.#resolve(c, get(a, 'issuer')), creditor: await this.#resolve(c, get(a, 'creditor'))};
+      if (!Object.values(people).every(p => isDict(p) && typeof get(p, 'id') === 'string' && p.id)) {
+        throw new ValunError('approval_unbound', 'the directory names no participant id');
+      }
+      return {...people, not_settled: labels(await this.#knownCirculation(c), net).not_settled, unit, network: net};
+    }
+    if (name === 'valun_respond_guarantee') {
+      const gid = ValunAgent.#gid(get(a, 'guarantee_id'));
+      const g = await c.guarantee(gid);
+      const role = get(a, 'action') === 'honor' ? 'backer' : 'creditor';
+      const chk = await c.verifyGuarantee(g, role);
+      const snap = {guarantee: g, checked: chk, not_settled: labels(true, net).not_settled, unit, network: net};
+      if (get(a, 'action') === 'honor') {
+        const calls = iterate(or(get(g, 'calls'), [])).filter(isDict);
+        const cid = get(a, 'call_id');
+        const call = truthy(cid) ? calls.find(x => get(x, 'call_id') === cid) ?? null : calls.find(x => ['open', 'failed'].includes(get(x, 'state'))) ?? null;
+        if (call === null || !['open', 'failed'].includes(get(call, 'state')) || !whole(get(call, 'amount'))
+            || !(typeof get(call, 'call_id') === 'string' && CALL_ID.test(call.call_id))) {
+          throw new ValunError('nothing_to_honor', 'no call of this guarantee is waiting to be honored');
+        }
+        snap.call = call;
+      }
+      return snap;
     }
     const did = get(a, 'deal_id');
     if (!(typeof did === 'string' && DEAL_ID.test(did))) throw new ValunError('bad_arguments', 'deal_id is missing or malformed');
@@ -1234,6 +1319,12 @@ export class ValunAgent {
       }
     } else if (name === 'valun_propose' && Object.hasOwn(snap, 'counterparty')) {
       a.counterparty = snap.counterparty.id;          // the offer is signed for exactly the participant shown
+    } else if (name === 'valun_offer_guarantee' && Object.hasOwn(snap, 'issuer')) {
+      a.issuer = snap.issuer.id;                      // exactly the participants shown
+      a.creditor = snap.creditor.id;
+    } else if (name === 'valun_respond_guarantee' && ['release', 'honor'].includes(get(a, 'action'))) {
+      pin('expected_terms_hash', item(chk, 'terms_hash'), 'stale_terms', 'the guarantee changed after your agent read it');
+      if (get(a, 'action') === 'honor') pin('call_id', snap.call.call_id, 'stale_call', 'the call is not the one your agent read');
     }
     return a;
   }
@@ -1247,7 +1338,57 @@ export class ValunAgent {
     if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept') {
       return ValunAgent.#payWith(a) !== null ? (b, s) => this.#textPay(b, s) : (b, s) => this.#textReview(b, s);
     }
+    if (name === 'valun_offer_guarantee') return (b, s) => ValunAgent.#textOfferGuarantee(b, s);
+    if (name === 'valun_respond_guarantee' && get(a, 'action') === 'release') return (b, s) => ValunAgent.#textReleaseGuarantee(b, s);
+    if (name === 'valun_respond_guarantee' && get(a, 'action') === 'honor') return (b, s) => ValunAgent.#textHonorGuarantee(b, s);
     throw new ValunError('approval_unbound', `no approval text for ${name} with these arguments`);
+  }
+
+  static #textOfferGuarantee(a, snap) {
+    const u = get(snap, 'unit', UNIT);
+    const issuer = shown(get(snap.issuer, 'handle')), creditor = shown(get(snap.creditor, 'handle'));
+    const [cap, due, window, honor, ttl] = [['cap', null], ['due_in_hours', null], ['callable_for_hours', 168], ['honor_within_hours', 24],
+      ['offer_valid_hours', 24]].map(([k, d]) => guaranteeInt(a, k, d));
+    return [
+      `Valun - sign a GUARANTEE: back what ${issuer} (${shown(item(snap.issuer, 'id'))}) owes ${creditor} (${shown(item(snap.creditor, 'id'))}):`,
+      `  you pay ${creditor} up to ${amountText(cap, u)} in all, for what ${issuer} still owes it after ${due} h from now,`,
+      `  if ${creditor} calls in the ${window} h after that; you pay a call within ${honor} h, with your own credit note`,
+      `  the offer stays open ${ttl} h; until the guarantee ends its cap counts against your limits as credit you may have to issue`,
+      `If ${creditor} accepts and calls, you will owe ${creditor} what it called (your credit note); ${issuer} still owes it too.`,
+      get(snap, 'not_settled', NOT_SETTLED),
+      quoteLine('Note written by your agent', {note: or(get(a, 'note'), '')})].join('\n');
+  }
+
+  static #textReleaseGuarantee(a, snap) {
+    const chk = snap.checked, g = snap.guarantee, u = get(snap, 'unit', UNIT);
+    const t = chk.terms;
+    const backer = shown(guaranteeParty(g, 'backer', t)), issuer = shown(guaranteeParty(g, 'issuer', t));
+    const open = iterate(or(get(g, 'calls'), [])).filter(x => isDict(x) && ['open', 'failed'].includes(get(x, 'state')));
+    return [
+      `Valun - RELEASE guarantee ${shown(get(g, 'guarantee_id'))} from ${backer}: it backs what ${issuer} owes you, up to `
+        + `${amountText(t.cap.amount, u)}.`,
+      '  after this you can no longer call it' + (open.length ? `; its ${open.length} unhonored call(s) end too` : ''),
+      `  terms hash ${chk.terms_hash.slice(0, 16)}... (recomputed from these terms; your Valun client checks it again before signing)`,
+      `Releasing gives up the protection; ${issuer} still owes you what it owes.`].join('\n');
+  }
+
+  static #textHonorGuarantee(a, snap) {
+    const chk = snap.checked, g = snap.guarantee, call = snap.call, u = get(snap, 'unit', UNIT);
+    const t = chk.terms;
+    const creditor = shown(guaranteeParty(g, 'creditor', t)), issuer = shown(guaranteeParty(g, 'issuer', t));
+    const amount = call.amount;
+    return [
+      `Valun - HONOR call ${shown(get(call, 'call_id'))} of your guarantee ${shown(get(g, 'guarantee_id'))}: ISSUE A CREDIT NOTE `
+        + `of ${amountText(amount, u)} to ${creditor}:`,
+      `  you backed what ${issuer} owes ${creditor}, up to ${amountText(t.cap.amount, u)}; honored so far: `
+        + `${amountText(whole(get(g, 'honored')) ? g.honored : 0, u)}`,
+      `  ${issuer} owes ${creditor} ${shown(get(g, 'issuer_owes_creditor'))} ${u} on the tracker now (as the server shows it); `
+        + `the call is due by ${shown(get(call, 'honor_by'))}`,
+      `  terms hash ${chk.terms_hash.slice(0, 16)}... (your Valun client checks the guarantee, the creditor's signature on the call `
+        + 'and your own record of the cap again before signing)',
+      `Your agent signs a Basis note; ${trackerWords(get(snap, 'network'))} then records that you owe ${creditor} `
+        + `${amountText(amount, u)} more.`,
+      get(snap, 'not_settled', NOT_SETTLED)].join('\n');
   }
 
   // The texts: computed lines first (values the client computed or checked against what is signed, shown so that they
@@ -1482,6 +1623,8 @@ export class ValunAgent {
         recent: log.slice(-5).filter(isDict).map(e => Object.fromEntries(['at', 'kind', 'decision', 'code', 'amount', 'your_net_change_PC']
           .map(k => [k, get(e, k)])))},
       consent_policy_in_force: policy};
+    const waiting = guaranteesWaiting(get(box, 'guarantees'));
+    if (truthy(waiting)) out.guarantees_waiting = waiting;
     const participant = isDict(get(me, 'participant')) ? me.participant : {};
     if (get(participant, 'sandbox_only') === true) out.sandbox_next_steps = await this.#sandboxNextSteps(c, participant, pos, box, notes);
     return out;
@@ -1702,6 +1845,91 @@ export class ValunAgent {
 
   async inbox() {
     return this.client().inbox();
+  }
+
+  // ---------- guarantees (fix inbox #18) ----------
+  static #gid(v) {
+    if (!(typeof v === 'string' && GUARANTEE_ID.test(v))) {
+      throw new ValunError('bad_arguments', 'guarantee_id is missing or malformed (vg_ + 16 hex; valun_guarantees lists them)');
+    }
+    return v;
+  }
+
+  async guarantees(a) {
+    const c = this.client();
+    if (get(a, 'guarantee_id') !== null) {
+      const g = await c.guarantee(ValunAgent.#gid(get(a, 'guarantee_id')));
+      const out = guaranteeBrief(g);
+      if (isDict(g)) {
+        out.terms = get(g, 'terms');
+        out.covers = get(g, 'covers');
+        out.what_this_means = get(g, 'what_this_means');
+        try {
+          const chk = await c.verifyGuarantee(g);
+          out.checked_by_your_client = {terms_hash_recomputed: chk.terms_hash, backer_signature_valid: true};
+        } catch (e) {
+          if (!isValunError(e)) throw e;
+          out.checked_by_your_client = {problem: e.code, message: e.message};
+        }
+      }
+      return out;
+    }
+    const gs = await c.guarantees();
+    return {guarantees: (Array.isArray(gs) ? gs : []).map(guaranteeBrief),
+      how: "A guarantee is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes it "
+        + 'after the due time, if the creditor calls before it expires. valun_guarantees with guarantee_id shows one '
+        + 'with its terms.'};
+  }
+
+  async offerGuarantee(a) {
+    const c = this.client();
+    const issuer = await this.#resolve(c, get(a, 'issuer')), creditor = await this.#resolve(c, get(a, 'creditor'));
+    const vals = Object.fromEntries([['cap', null], ['due_in_hours', null], ['callable_for_hours', 168], ['honor_within_hours', 24],
+      ['offer_valid_hours', 24]].map(([k, d]) => [k, guaranteeInt(a, k, d)]));
+    const note = or(get(a, 'note'), '');
+    if (typeof note !== 'string') throw new ValunError('bad_arguments', 'note must be text');
+    const g = await c.offerGuarantee({issuerId: item(issuer, 'id'), creditorId: item(creditor, 'id'), cap: vals.cap, dueInHours: vals.due_in_hours,
+      callableForHours: vals.callable_for_hours, honorWithinHours: vals.honor_within_hours, offerValidHours: vals.offer_valid_hours, note});
+    const out = {guarantee: guaranteeBrief(g)};
+    out.what_happens_next = isDict(g) && get(g, 'state') === 'awaiting_owner'
+      ? `Your owner must approve it first (approve_above); then ${shown(get(creditor, 'handle'))} can accept it.`
+      : `${shown(get(creditor, 'handle'))} can accept or decline it. Once it is due, it can call what `
+        + `${shown(get(issuer, 'handle'))} still owes it, up to the cap; you then pay with your own credit note.`;
+    return out;
+  }
+
+  async respondGuarantee(a) {
+    const c = this.client();
+    const gid = ValunAgent.#gid(get(a, 'guarantee_id')), action = get(a, 'action');
+    const exp = get(a, 'expected_terms_hash');
+    let g;
+    if (action === 'accept') {
+      g = await c.acceptGuarantee(gid, {expectedTermsHash: exp});
+    } else if (action === 'decline') {
+      const reason = or(get(a, 'reason'), '');
+      if (typeof reason !== 'string') throw new ValunError('bad_arguments', 'reason must be text');
+      g = await c.declineGuarantee(gid, reason);
+    } else if (action === 'withdraw') {
+      g = await c.withdrawGuarantee(gid);
+    } else if (action === 'release') {
+      g = await c.releaseGuarantee(gid, {expectedTermsHash: exp});
+    } else if (action === 'honor') {
+      const cid = get(a, 'call_id');
+      if (cid !== null && !(typeof cid === 'string' && CALL_ID.test(cid))) throw new ValunError('bad_arguments', 'call_id is malformed (vgc_ + 16 hex)');
+      g = await c.honorGuarantee(gid, {callId: cid, expectedTermsHash: exp});
+    } else {
+      throw new ValunError('bad_arguments', 'action must be accept, decline, release, withdraw or honor');
+    }
+    return {guarantee: guaranteeBrief(g)};
+  }
+
+  async callGuarantee(a) {
+    const c = this.client();
+    const gid = ValunAgent.#gid(get(a, 'guarantee_id')), amount = get(a, 'amount');
+    if (amount !== null && !(whole(amount) && amount > 0)) throw new ValunError('bad_arguments', 'amount must be a whole number of at least 1');
+    const g = await c.callGuarantee(gid, {amount, expectedTermsHash: get(a, 'expected_terms_hash')});
+    const hours = isDict(g) ? get(g, 'honor_within_hours') : null;
+    return {guarantee: guaranteeBrief(g), what_happens_next: `The backer has ${shown(hours)} hours to honor the call with its own credit note to you.`};
   }
 
   async deal(a) {

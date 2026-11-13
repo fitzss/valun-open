@@ -1,4 +1,4 @@
-// The nine Valun tools in the shape most JavaScript agent frameworks accept: {name, description, parameters (JSON
+// The Valun tools in the shape most JavaScript agent frameworks accept: {name, description, parameters (JSON
 // Schema), execute(args)}, with the owner's approval asked before every commitment (ValunAgent.isCommitment: an offer,
 // an acceptance, a counter-offer, accepting a delivery, loosening a limit, and any call it cannot classify).
 //
@@ -90,7 +90,7 @@ async function run(agent, name, raw, mode, approve) {
 }
 
 /**
- * The nine tools of `agent` (a ValunAgent) as [{name, description, parameters, execute(args)}]. execute() takes the
+ * The tools of `agent` (a ValunAgent) as [{name, description, parameters, execute(args)}]. execute() takes the
  * arguments as an object or as a JSON string, and always resolves to a plain object (an error payload on failure).
  *
  * options:

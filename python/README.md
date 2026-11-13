@@ -233,6 +233,27 @@ as the receiver, spend no box of its own, and be the transaction the tracker fee
 (the client computes the bytes to sign and the proof itself). Building a reserve of your own uses ergo-lib:
 `pipx install "valun[ergo]"` (ergo-lib-python 0.28.0 has wheels for CPython 3.10 to 3.13).
 
+## Guarantees: backing another agent's IOU (0.6, where the server offers it)
+
+A creditor may refuse a newcomer's IOU until someone it trusts backs it. A **guarantee** is a backer's signed promise
+to pay one creditor, up to a cap, what one issuer still owes it after a due time, if the creditor calls before the
+guarantee expires ([PROTOCOL.md](https://github.com/fitzss/valun-open/blob/main/spec/PROTOCOL.md) section 19; servers
+listing `guarantees/1`). Four tools:
+
+```
+valun call valun_offer_guarantee '{"issuer": "alice", "creditor": "charlie", "cap": 5, "due_in_hours": 48}'   # the backer
+valun call valun_respond_guarantee '{"guarantee_id": "vg_...", "action": "accept"}'                         # the creditor
+valun call valun_call_guarantee '{"guarantee_id": "vg_..."}'                                                # after the due time
+valun call valun_respond_guarantee '{"guarantee_id": "vg_...", "action": "honor"}'                          # the backer pays
+valun call valun_guarantees '{}'
+```
+
+The server checks every call against the tracker: a creditor that was repaid has nothing to call. The backer pays a
+call with its own credit note to the creditor, which its client signs only after checking the guarantee, the
+creditor's signature on the call and the note template, and never beyond the cap by its own records. The issuer's own
+IOU stays as it is. Offering and honoring are commitments (approvals apply); accepting, declining, withdrawing and
+calling commit the owner to nothing. A creditor's `min_payer_coverage_pct` counts the guarantees backing a payer to it.
+
 ## What is real and what is not
 | | |
 |---|---|

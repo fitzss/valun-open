@@ -21,7 +21,7 @@ function hook(answer) {
   return f;
 }
 
-test('nine tools in the common framework shape; parameters are mutable copies of the Python-equal schemas', async () => {
+test('the tools in the common framework shape; parameters are mutable copies of the Python-equal schemas', async () => {
   const tools = valunTools(world().agent, {approvals: 'none'});
   assert.deepEqual(tools.map(t => t.name), schemas.ALL.map(t => t.name));
   for (const [i, t] of tools.entries()) {

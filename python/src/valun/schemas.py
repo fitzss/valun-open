@@ -158,7 +158,72 @@ SET_LIMITS = {
     }, "required": []},
 }
 
-ALL = [STATUS, DIRECTORY, INBOX, DEAL, PROPOSE, RESPOND, DELIVER, REVIEW, SET_LIMITS]
+GUARANTEES = {
+    "name": "valun_guarantees",
+    "description": (
+        "The guarantees you are part of, as backer, issuer or creditor, or one of them (guarantee_id): the exact terms, "
+        "the state, what the issuer owes the creditor on the tracker now, what the creditor can call now, and every call "
+        "with whether the backer honored it. A guarantee is a backer's signed promise to pay one creditor, up to a cap, "
+        "what one issuer still owes it after the due time, if the creditor calls before the guarantee expires. The "
+        "issuer's own IOU stays as it is; the backer pays a call with its own IOU. " + _SIM),
+    "parameters": {"type": "object", "properties": {
+        "guarantee_id": {"type": "string", "description": "Optional: one guarantee, e.g. vg_0123456789abcdef"}}, "required": []},
+}
+
+OFFER_GUARANTEE = {
+    "name": "valun_offer_guarantee",
+    "description": (
+        "Back another agent's IOUs to one creditor: you sign a promise to pay `creditor`, up to `cap` PC in all, what "
+        "`issuer` still owes it after the due time, if the creditor calls before the guarantee expires. You pay a call "
+        "with your OWN credit note to the creditor (you then owe it that much; it is not settled). Until the guarantee "
+        "ends, the cap counts against your owner's limits as credit you may have to issue. The creditor must accept it. "
+        "Ask your owner first: you may have to pay. " + _SIM),
+    "parameters": {"type": "object", "properties": {
+        "issuer": {"type": "string", "description": "Handle or participant id of the agent whose debt you back"},
+        "creditor": {"type": "string", "description": "Handle or participant id of the agent you would pay"},
+        "cap": {"type": "integer", "minimum": 1, "description": "The most you pay in all, in PC"},
+        "due_in_hours": {"type": "integer", "minimum": 0, "maximum": 1440, "description": "Hours from now until the creditor can call (0: as soon as it accepts)"},
+        "callable_for_hours": {"type": "integer", "minimum": 1, "maximum": 1440, "description": "Hours after the due time during which it can call; then the guarantee expires (default 168)"},
+        "honor_within_hours": {"type": "integer", "minimum": 1, "maximum": 168, "description": "Hours you have to honor a call (default 24)"},
+        "offer_valid_hours": {"type": "integer", "minimum": 1, "maximum": 168, "description": "How long the creditor has to accept (default 24)"},
+        "note": {"type": "string", "description": "Optional: what the backing is for, in one line; the three parties read it (up to 500 characters)"},
+    }, "required": ["issuer", "creditor", "cap", "due_in_hours"]},
+}
+
+RESPOND_GUARANTEE = {
+    "name": "valun_respond_guarantee",
+    "description": (
+        "Act on a guarantee. As its creditor: action='accept' takes the backing (it commits you to nothing; you can "
+        "call it once it is due), 'decline' refuses it, 'release' ends an accepted one (the issuer repaid you, say): it "
+        "can no longer be called. As its backer: 'withdraw' takes back your offer before it is accepted, and 'honor' "
+        "pays a call: your Valun client signs your OWN credit note to the creditor for the called amount (you then owe "
+        "it that much; it is not settled). Pass expected_terms_hash from valun_guarantees so you never sign terms that "
+        "changed. May ask your owner to confirm before releasing or honoring."),
+    "parameters": {"type": "object", "properties": {
+        "guarantee_id": {"type": "string"},
+        "action": {"type": "string", "enum": ["accept", "decline", "release", "withdraw", "honor"]},
+        "reason": {"type": "string", "description": "decline only: why, in one sentence (the backer reads it)"},
+        "call_id": {"type": "string", "description": "honor only: the call to pay (default: the call waiting to be honored)"},
+        "expected_terms_hash": {"type": "string", "description": "terms_hash you reviewed (accept, release, honor)"},
+    }, "required": ["guarantee_id", "action"]},
+}
+
+CALL_GUARANTEE = {
+    "name": "valun_call_guarantee",
+    "description": (
+        "Call a guarantee you hold as its creditor, once it is due and before it expires: you claim up to what the "
+        "issuer still owes you on the tracker, less what earlier calls claimed, within the cap left. The server checks "
+        "the amount against the tracker. The backer then has honor_within_hours to pay you with its own credit note. "
+        "What you later recover from the issuer beyond the part the backer did not pay belongs to the backer. " + _SIM),
+    "parameters": {"type": "object", "properties": {
+        "guarantee_id": {"type": "string"},
+        "amount": {"type": "integer", "minimum": 1, "description": "PC to claim (default: everything callable now)"},
+        "expected_terms_hash": {"type": "string", "description": "terms_hash you reviewed"},
+    }, "required": ["guarantee_id"]},
+}
+
+ALL = [STATUS, DIRECTORY, INBOX, DEAL, PROPOSE, RESPOND, DELIVER, REVIEW, SET_LIMITS, GUARANTEES, OFFER_GUARANTEE, RESPOND_GUARANTEE,
+       CALL_GUARANTEE]
 
 TESTNET = 'valun-testnet-1'
 _SIM_TESTNET = ("Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = "

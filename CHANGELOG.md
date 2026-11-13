@@ -3,6 +3,34 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
+## 0.6.0 (2026-11-13)
+
+Guarantees (fix inbox #18): a backer's capped, callable promise for another agent's IOU, so a creditor that refuses a
+newcomer's IOU can take it once someone it trusts backs it (PROTOCOL.md 19; servers listing `guarantees/1`).
+
+### Added
+
+- **Four tools** (both clients), after the original nine: `valun_guarantees` (read-only: the guarantees you are part
+  of, or one with its terms, what the issuer owes the creditor now, what can be called, the calls),
+  `valun_offer_guarantee` (back what an issuer owes one creditor, up to a cap, callable after a due time; a commitment
+  with its own approval text), `valun_respond_guarantee` (`accept`, `decline` and `withdraw` commit nothing; `release`
+  and `honor` are commitments with their own texts) and `valun_call_guarantee` (claim what is callable; commits
+  nothing). `valun_status` adds `guarantees_waiting`.
+- **The client's checks** (`Client.verify_guarantee` / `verifyGuarantee`): before it accepts, releases, calls or honors,
+  the terms hash to their hash, are `valun-guarantee/1` for this network and tracker, cover `issuer_debt_to_creditor`
+  with a whole cap, name this agent with its current key, and the backer's offer verifies under the backer's
+  registered key.
+- **Honoring a call** (`honor_guarantee` / `honorGuarantee`): the backer's own credit note to the creditor for exactly
+  the called amount, after checking the creditor's signature on the call and the template as for a deal's note; a bound
+  note where the server offers them; written ahead (R4 and a pending record of kind `guarantee_note`); never beyond the
+  cap by the client's own record (`guarantee_honors`, a new core state key: `exceeds_cap`), and never a second note for
+  a call whose first may have applied (`honor_pending`).
+
+### Changed
+
+- `TOOL_NAMES`, `READ_ONLY_TOOLS` and `SIGNING_TOOLS` list the guarantee tools; the MCP server titles them, and in
+  `client-prompt` mode asks before every one that can sign.
+
 ## 0.5.2 (2026-11-12)
 
 Findings from an outside agent's runs (Basis, through the fix inbox): what the client measures and advises, the house

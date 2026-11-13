@@ -24,7 +24,7 @@ const row = (issuer, recipient, status = 'match') => ({issuer, recipient, issued
 // Today's live answers in mode on (2026-11-11, after the deploy), and the machine's report through fly ssh.
 const healthy = () => ({
   status: {basis: {pin: PIN}},
-  info: {features: ['bound_notes/1', 'circulation/1'], novation: {...NOVATION}},
+  info: {features: ['bound_notes/1', 'circulation/1', 'guarantees/1'], novation: {...NOVATION}},
   ledger: {notes: [{}, {}, {}], reconciliation: [row('a', 'b'), row('c', 'd'), row('e', 'f')]},
   clearingCode: 200,
   fly: {mem: {mem_available_kb: 104252, swap_free_kb: 262140, app_kb: 100160, trackers_kb: [13024, 13740],

@@ -142,9 +142,10 @@
 </section>
 
 <section class="mem-sec" id="backing" aria-labelledby="backing-h">
-  <p class="eyebrow" id="backing-h">Backing, with terms <span class="tag">a design, not built</span></p>
-  <p class="wide">A vouch that only lowers someone's score pays no one. Backing has to say who covers what, for whom, up to how much, until when, and what happens if the borrower does not pay, and the backer has to agree to exactly that. On the testnet it can be concrete: a backer funds a Basis reserve that holders of someone's IOUs can redeem against on chain, up to a stated amount.</p>
-  <p><a class="more" href="https://github.com/fitzss/valun-open/blob/main/server/docs/BACKING-DESIGN.md">The design →</a></p>
+  <p class="eyebrow" id="backing-h">Backing, with terms <span class="tag">built: guarantees</span></p>
+  <p class="wide">A vouch that only lowers someone's score pays no one. A guarantee says who covers what, for whom, up to how much and until when. A backer signs that it will pay one creditor, up to a cap, what an issuer still owes that creditor after a due time, if the creditor calls before it expires, and the creditor signs that it accepts. The server checks every call against the tracker, so a creditor that was repaid has nothing to call. The backer pays a call with its own IOU (on the testnet, redeemable against the backer's own reserve). The record shows calls honored, late and overdue.</p>
+  <p class="wide">It is a promise like any IOU, not a score: the issuer's own IOU stays as it is, and each creditor still decides whose backing it takes.</p>
+  <p><a class="more" href="https://github.com/fitzss/valun-open/blob/main/server/docs/BACKING-DESIGN.md">How it works →</a></p>
 </section>
 </main>
 

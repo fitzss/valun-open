@@ -561,6 +561,53 @@ def payee_item(iid='vt_8b8b8b8b8b8b8b8b', amount=20, ts=None):
             'summary': {'your_net_change_PC': amount, 'your_total_owed_change_PC': 0}}
 
 
+# ---------- guarantees (fix inbox #18) ----------
+G_INFO = dict(CIRC_INFO, features=['bound_notes/1', 'circulation/1', 'guarantees/1'])
+G_COVERS = ('What the issuer owes the creditor on the tracker when the creditor calls (recorded minus redeemed, on every key either has '
+            'had), up to the cap in all, between due_at and expires_at. A call claims at most what is still owed less what earlier calls claimed.')
+G1, G2 = 'vg_' + '1a' * 8, 'vg_' + '2b' * 8
+C1 = 'vgc_' + '3c' * 8
+
+
+def g_terms(gid, backer, issuer, creditor, cap=5, note='backs frank for the briefs'):
+    """valun-guarantee/1 terms between three of the test participants."""
+    party = lambda n: {'id': ID[n], 'pubkey': K[n]['pubkey']}   # noqa: E731
+    return {'protocol': 'valun-guarantee/1', 'network': vc.NETWORK, 'tracker_nft_id': NFT, 'denomination': DENOM, 'guarantee_id': gid,
+            'nonce': 'ab' * 16, 'backer': party(backer), 'issuer': party(issuer), 'creditor': party(creditor), 'cap': {'amount': cap, 'unit': 'PC'},
+            'covers': 'issuer_debt_to_creditor', 'due_at': '2026-11-06T11:00:00.000Z', 'expires_at': '2026-11-13T12:00:00.000Z',
+            'honor_within_hours': 24, 'offer_expires_at': '2026-11-07T12:00:00.000Z', 'note': note}
+
+
+def g_view(t, me, state='offered', calls=(), owed=0, signer=None, **extra):
+    """The server's guarantee view for participant `me`, its offer signed by the backer (or `signer`)."""
+    h = vc.terms_hash(t)
+    who = lambda r: {'id': t[r]['id'], 'handle': PEOPLE_BY_ID[t[r]['id']]['handle']}   # noqa: E731
+    role = next(r for r in ('backer', 'creditor', 'issuer') if t[r]['id'] == ID[me])
+    claimed = sum(c['amount'] for c in calls if c['state'] in ('open', 'issuing', 'failed', 'honored'))
+    honored = sum(c['amount'] for c in calls if c['state'] == 'honored')
+    open_call = any(c['state'] in ('open', 'issuing', 'failed') for c in calls)
+    callable_now = max(0, min(t['cap']['amount'] - claimed, owed - claimed)) if state == 'active' and not open_call else 0
+    backer = NAME[t['backer']['id']]
+    out = {'guarantee_id': t['guarantee_id'], 'state': state, 'your_role': role, 'backer': who('backer'), 'issuer': who('issuer'),
+           'creditor': who('creditor'), 'unit': 'PC', 'cap': t['cap']['amount'], 'due_at': t['due_at'], 'expires_at': t['expires_at'],
+           'honor_within_hours': t['honor_within_hours'], 'offer_expires_at': t['offer_expires_at'], 'note': t['note'], 'covers': G_COVERS,
+           'claimed': claimed, 'honored': honored, 'remaining_cap': t['cap']['amount'] - claimed, 'issuer_owes_creditor': owed,
+           'callable_now': callable_now, 'callable_from': t['due_at'], 'recovered_for_backer': max(0, honored - owed), 'calls': list(calls),
+           'next_actions': [], 'terms': t, 'terms_hash': h,
+           'offer': {'by': t['backer']['id'], 'at': '2026-11-06T10:00:00.000Z', 'signature': sign(signer or backer, vc.statement('guarantee-offer', h)),
+                     'offered_at': '2026-11-06T10:00:00.000Z'},
+           'acceptance': None, 'history': [], 'what_this_means': "A guarantee is the backer's signed promise to pay the creditor."}
+    out.update(extra)
+    return out
+
+
+def g_call(t, cid, amount, state='open', signer=None):
+    h = vc.terms_hash(t)
+    creditor = NAME[t['creditor']['id']]
+    return {'call_id': cid, 'amount': amount, 'state': state, 'called_at': '2026-11-06T11:30:00.000Z', 'honor_by': '2026-11-07T11:30:00.000Z',
+            'overdue': False, 'issuer_owed_at_call': 7, 'signature': sign(signer or creditor, vc.statement('guarantee-call', h, cid, str(amount)))}
+
+
 def scenarios():
     D = deals()
     g = lambda name: {f"GET /pilot/v1/deals/{D[name]['id']}": {'body': D[name]}}   # noqa: E731
@@ -1077,6 +1124,59 @@ def scenarios():
     add('set_limits: not enrolled (asks the owner)', 'valun_set_limits', {'max_total_owed': 50}, store='unenrolled')
     add('set_limits: the server sends no mandate', 'valun_set_limits', {'max_per_deal_as_payer': 25},
         {'GET /pilot/v1/me': {'body': {k: v for k, v in ME.items() if k != 'mandate'}}})
+    # ---------- guarantees (fix inbox #18) ----------
+    gi = {'GET /pilot/v1/info': {'body': G_INFO}}
+    pinned = {'pins': dict(PINS)}
+    held = g_terms(G1, 'bob', 'frank', 'alice')                     # bob backs what frank owes alice: alice is the creditor
+    given = g_terms(G2, 'alice', 'frank', 'bob')                    # alice backs what frank owes bob: alice is the backer
+    gget = lambda view: {f"GET /pilot/v1/guarantees/{view['guarantee_id']}": {'body': view}}   # noqa: E731
+    gpost = lambda gid, act, body, status=200: {f'POST /pilot/v1/guarantees/{gid}/{act}': {'status': status, 'body': body}}   # noqa: E731
+    offered = g_view(held, 'alice')
+    active = g_view(held, 'alice', state='active', owed=3)
+    add('guarantees: the list', 'valun_guarantees', {}, {'GET /pilot/v1/guarantees': {'body': [offered, g_view(given, 'alice')]}})
+    add('guarantees: one, checked by the client', 'valun_guarantees', {'guarantee_id': G1}, {**gi, **gget(offered)}, state=pinned)
+    add('guarantees: one whose backer signature is forged', 'valun_guarantees', {'guarantee_id': G1},
+        {**gi, **gget(g_view(held, 'alice', signer='erin'))}, state=pinned)
+    add('guarantees: a malformed id', 'valun_guarantees', {'guarantee_id': 'vg_1'})
+    add('offer_guarantee: alice backs what frank owes bob', 'valun_offer_guarantee',
+        {'issuer': 'frank', 'creditor': 'bob', 'cap': 5, 'due_in_hours': 24, 'note': 'for the briefs'},
+        {**gi, 'POST /pilot/v1/guarantees': {'status': 201, 'body': g_view(given, 'alice')}}, state=pinned)
+    add('offer_guarantee: waiting for the owner', 'valun_offer_guarantee', {'issuer': 'frank', 'creditor': 'bob', 'cap': 30, 'due_in_hours': 0,
+                                                                           'callable_for_hours': 1},
+        {**gi, 'POST /pilot/v1/guarantees': {'status': 201, 'body': g_view(given, 'alice', state='awaiting_owner')}}, state=pinned)
+    add('offer_guarantee: the cap is missing', 'valun_offer_guarantee', {'issuer': 'frank', 'creditor': 'bob', 'due_in_hours': 24}, gi, state=pinned)
+    add('offer_guarantee: a server without guarantees', 'valun_offer_guarantee', {'issuer': 'frank', 'creditor': 'bob', 'cap': 5, 'due_in_hours': 24},
+        {'GET /pilot/v1/info': {'body': CIRC_INFO}}, state=pinned)
+    add('respond_guarantee: accept (alice is the creditor)', 'valun_respond_guarantee', {'guarantee_id': G1, 'action': 'accept'},
+        {**gi, **gget(offered), **gpost(G1, 'accept', g_view(held, 'alice', state='active'))}, state=pinned)
+    tampered = dict(offered, terms=dict(held, cap={'amount': 50, 'unit': 'PC'}))
+    add('respond_guarantee: accept terms that changed', 'valun_respond_guarantee', {'guarantee_id': G1, 'action': 'accept'},
+        {**gi, **gget(tampered)}, state=pinned)
+    add('respond_guarantee: decline', 'valun_respond_guarantee', {'guarantee_id': G1, 'action': 'decline', 'reason': 'I do not know bob yet'},
+        {**gi, **gget(offered), **gpost(G1, 'decline', g_view(held, 'alice', state='declined'))}, state=pinned)
+    add('respond_guarantee: release (alice is the creditor)', 'valun_respond_guarantee', {'guarantee_id': G1, 'action': 'release'},
+        {**gi, **gget(dict(active, calls=[g_call(held, C1, 3)], callable_now=0)), **gpost(G1, 'release', g_view(held, 'alice', state='released'))},
+        state=pinned)
+    honor_view = g_view(given, 'alice', state='active', owed=7, calls=[g_call(given, C1, 5)])
+    tpl = {'guarantee_id': G2, 'call_id': C1, 'terms_hash': vc.terms_hash(given), 'amount': 5, 'issuer_pubkey': K['alice']['pubkey'],
+           'recipient_pubkey': K['bob']['pubkey'], 'keys_as_agreed': True, 'prior_total': 0, 'total': 5, 'timestamp': T997,
+           'tracker_nft_id': NFT, 'denomination': DENOM, 'message_hex': '00', 'prior_note': None, 'prior_timestamp': 0, 'prior_message_hex': '00'}
+    honored_view = g_view(given, 'alice', state='active', owed=7, calls=[g_call(given, C1, 5, state='honored')])
+    honor_routes = {**gi, **gget(honor_view), f'GET /pilot/v1/guarantees/{G2}/calls/{C1}/note-template?prior=1&bound=1': {'body': tpl},
+                    f'POST /pilot/v1/guarantees/{G2}/calls/{C1}/honor': {'body': honored_view}}
+    add('respond_guarantee: honor a call with a bound note (alice is the backer)', 'valun_respond_guarantee', {'guarantee_id': G2, 'action': 'honor'},
+        honor_routes, state=pinned)
+    add('respond_guarantee: honor a call the creditor did not sign', 'valun_respond_guarantee', {'guarantee_id': G2, 'action': 'honor'},
+        {**honor_routes, **gget(g_view(given, 'alice', state='active', owed=7, calls=[g_call(given, C1, 5, signer='erin')]))}, state=pinned)
+    add('respond_guarantee: honor beyond the cap my own records allow', 'valun_respond_guarantee', {'guarantee_id': G2, 'action': 'honor'},
+        honor_routes, state=dict(pinned, guarantee_honors={G2: {'cap': 5, 'calls': {'vgc_' + '4d' * 8: {'amount': 1, 'state': 'honored'}}}}))
+    add('respond_guarantee: a misspelt action', 'valun_respond_guarantee', {'guarantee_id': G1, 'action': 'Accept'})
+    add('call_guarantee: everything callable', 'valun_call_guarantee', {'guarantee_id': G1},
+        {**gi, **gget(active), **gpost(G1, 'calls', dict(active, calls=[g_call(held, 'vgc_' + '01' * 8, 3)], callable_now=0, claimed=3), 201)},
+        state=pinned)
+    add('call_guarantee: nothing callable', 'valun_call_guarantee', {'guarantee_id': G1}, {**gi, **gget(g_view(held, 'alice', state='active'))},
+        state=pinned)
+    add('call_guarantee: a negative amount', 'valun_call_guarantee', {'guarantee_id': G1, 'amount': -2})
     return S
 
 

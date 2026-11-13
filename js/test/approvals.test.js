@@ -127,11 +127,12 @@ test('classification: an unknown tool is a commitment; only the listed calls are
   assert.deepEqual(a.fake.reads, [], 'no read');
 });
 
-test('classification: every tool is in exactly one class, and the signing tools are the three that sign', () => {
+test('classification: every tool is in exactly one class, and the signing tools are the six that sign', () => {
   for (const name of TOOL_NAMES) {
     assert.equal([NOT_COMMITMENT_TOOLS, LIMIT_TOOLS, SIGNING_TOOLS].filter(g => g.includes(name)).length, 1, name);
   }
-  assert.deepEqual([...SIGNING_TOOLS], ['valun_propose', 'valun_respond', 'valun_review_delivery']);
+  assert.deepEqual([...SIGNING_TOOLS], ['valun_propose', 'valun_respond', 'valun_review_delivery', 'valun_offer_guarantee', 'valun_respond_guarantee',
+    'valun_call_guarantee']);
   assert.deepEqual([...NOT_COMMITMENT_TOOLS], [...READ_ONLY_TOOLS, 'valun_deliver']);
 });
 

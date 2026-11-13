@@ -17,7 +17,7 @@ import {bytesToHex, hexToBytes, utf8} from './bytes.js';
 import {SignatureError, ValunError} from './errors.js';
 import * as nv from './novation.js';
 import {CONSIDERATION, NETWORK, NETWORKS, PROTOCOL, UNIT, networkOf, reasonProblem, sha256Hex, statement, statements, termsHash} from './protocol.js';
-import {get as pyGet, isDict, or, pyEq, repr, str, strip, truthy, cpSlice} from './py.js';
+import {get as pyGet, isDict, or, pyEq, repr, str, strip, truthy, cpSlice, cpLength} from './py.js';
 import {randomBytes as defaultRandomBytes} from './random.js';
 import * as records from './records.js';
 import * as ergo from './ergo.js';
@@ -34,13 +34,20 @@ const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d
  * signed (R4), novated_edges (R12), transfer_attempts (D-1), approved_payments {deal_id: quote_digest}, consent_policy,
  * consent_loop, consents_last_run_ms and consent_log, journal_seq, consents_last_safe_run_ms (decision D-3 a) and
  * consent_roles_declared (the roles the server last took from this client's X-Valun-Features header; '' once it took
- * the empty list, decision D-3 b).
+ * the empty list, decision D-3 b); guarantee_honors (fix inbox #18) {guarantee_id: {cap, calls: {call_id: {amount, state
+ * ('pending', 'honored' or 'failed'), total, timestamp}}}}: the calls this client honored or is honoring as a backer, so
+ * it never pays beyond the cap it signed, whatever a server shows.
  */
 export const CORE_STATE_KEYS = Object.freeze(['issued', 'records', 'signed', 'novated_edges', 'transfer_attempts', 'approved_payments',
   'consent_policy', 'consent_loop', 'consents_last_run_ms', 'consent_log', 'pins', 'journal_seq', 'consents_last_safe_run_ms',
-  'consent_roles_declared']);
+  'consent_roles_declared', 'guarantee_honors']);
 /** Timestamp residues (ts mod 1000) the v3 tracker keeps for other operations: an ordinary note never uses them. */
 export const RESERVED_MS_FROM = 995;
+/** Guarantees (servers listing guarantees/1; fix inbox #18): the terms protocol and the one kind of cover it has. */
+export const GUARANTEE_PROTOCOL = 'valun-guarantee/1';
+export const GUARANTEE_COVERS = 'issuer_debt_to_creditor';
+/** state[GUARANTEE_HONORS_KEY][guarantee_id] = {cap, calls: {call_id: {amount, state, total, timestamp}}}. */
+export const GUARANTEE_HONORS_KEY = 'guarantee_honors';
 // Circulating credit (PROTOCOL.md 18; design 4.1, 6.3, 6.6, 11).
 /** 'consents/1;roles=<roles>', sent once GET /info lists circulation/1. */
 export const FEATURES_HEADER = 'X-Valun-Features';
@@ -168,6 +175,19 @@ function mandateOf(me) {
 
 /** novation.js's verifier: a Basis signature (hex) over msg (bytes) by pubkeyHex. */
 const verifyHexFor = (pubkeyHex, msg, sigHex) => verifyHex(sigHex, msg, pubkeyHex);
+
+/**
+ * Whether sigHex is a Basis signature by pubkeyHex over the UTF-8 bytes of `text` (a Valun statement); false for
+ * anything malformed.
+ */
+function textSigned(pubkeyHex, text, sigHex) {
+  if (!(isPubkey(pubkeyHex) && typeof sigHex === 'string' && /^0[23][0-9a-f]{128}$/.test(sigHex))) return false;
+  try {
+    return verifyHex(sigHex, utf8(text), pubkeyHex) === true;
+  } catch {
+    return false;                               // a verifier that fails accepts nothing
+  }
+}
 
 const natural = v => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 const isPubkey = v => typeof v === 'string' && /^0[23][0-9a-f]{64}$/.test(v);
@@ -394,6 +414,11 @@ function isoSeconds(ms) {
 
 function isObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+/** A list from a server value: the list itself, or [] for anything else (Python's `x or []` over a list field). */
+function iterateList(v) {
+  return Array.isArray(v) ? v : [];
 }
 
 const TERMS_FIELDS = ['protocol', 'network', 'tracker_nft_id', 'denomination', 'deal_id', 'version', 'prior_terms_hash',
@@ -897,6 +922,309 @@ export class Client {
   #contract() {
     const problem = nv.contractProblem(this.#novation);
     if (problem) throw new ValunError('feature_unavailable', problem + '; nothing was signed');
+  }
+
+  // ---------- guarantees (servers listing guarantees/1; fix inbox #18) ----------
+  // A guarantee is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes that creditor
+  // after a due time, if the creditor calls before the expiry. What is signed here is checked first, as for deals: the
+  // terms hash to their hash, are valun-guarantee/1 for this network and tracker, and name this agent with its current
+  // key; the backer's offer verifies under the backer's registered key. The backer honors a call with its own credit
+  // note to the creditor, for exactly the amount the creditor signed and never beyond the cap by its own records,
+  // written ahead in its records before anything is sent. A port of the Python client's guarantee methods.
+  guarantees() {
+    return this.request('GET', '/pilot/v1/guarantees');
+  }
+
+  guarantee(guaranteeId) {
+    return this.request('GET', `/pilot/v1/guarantees/${seg(guaranteeId)}`);
+  }
+
+  async #guaranteesOffered() {
+    // GET /info itself (it pins a profile not pinned yet), not #features(), which serves such a profile as 0.3 did.
+    if (!featuresOf(await this.info()).includes('guarantees/1')) {
+      throw new ValunError('feature_unavailable', 'this Valun server offers no guarantees (GET /info features has no guarantees/1); nothing was signed');
+    }
+  }
+
+  /**
+   * The terms of a guarantee view, checked before anything is signed for it: they hash to terms_hash, are
+   * valun-guarantee/1 for this network and its tracker, cover issuer_debt_to_creditor with a whole cap in this
+   * network's unit, name this agent (as `role`, when given) with its current key, and the backer's offer signature
+   * verifies under the backer key the terms name, which must be the backer's registered key. Resolves to
+   * {terms_hash, terms, role}.
+   */
+  async verifyGuarantee(g, role = null) {
+    if (!isObject(g) || !isObject(g.terms)) throw new ValunError('bad_response', "the server did not return the guarantee's terms");
+    const t = g.terms;
+    const h = termsHash(t);
+    if (h !== pyGet(g, 'terms_hash')) throw new ValunError('hash_mismatch', "the guarantee's terms do not hash to its terms_hash; refusing to sign");
+    if (pyGet(t, 'protocol') !== GUARANTEE_PROTOCOL || pyGet(t, 'network') !== this.network) {
+      throw new ValunError('wrong_network', 'the guarantee is for a different network or protocol');
+    }
+    const info = await this.info();
+    if (pyGet(t, 'tracker_nft_id') !== info.tracker_nft_id || pyGet(t, 'denomination') !== info.denomination) {
+      throw new ValunError('wrong_tracker', 'the guarantee names a different tracker or unit than this network');
+    }
+    const cap = isObject(t.cap) ? t.cap : {};
+    if (pyGet(t, 'covers') !== GUARANTEE_COVERS || !(natural(cap.amount) && cap.amount > 0) || pyGet(cap, 'unit') !== this.unit) {
+      throw new ValunError('bad_terms', "the guarantee does not cover issuer_debt_to_creditor up to a whole cap in this network's unit");
+    }
+    const roles = ['backer', 'issuer', 'creditor'];
+    if (!roles.every(r => isObject(t[r]) && typeof t[r].id === 'string' && isPubkey(t[r].pubkey))) {
+      throw new ValunError('bad_terms', 'the guarantee must name a backer, an issuer and a creditor, each with its key');
+    }
+    const mine = roles.filter(r => t[r].id === this.participantId);
+    if (!mine.length || (role !== null && !mine.includes(role))) throw new ValunError('not_a_party', `you are not the ${role || 'a party'} of this guarantee`);
+    const r = role || mine[0];
+    if (t[r].pubkey !== this.pubkey) throw new ValunError('wrong_key', `the guarantee names a different key for you as its ${r}; ask your operator`);
+    const backerKey = t.backer.pubkey;
+    if (r !== 'backer' && (await this.#registeredKey(t.backer.id)) !== backerKey) {
+      throw new ValunError('wrong_key', "the backer key in the terms is not the backer's registered key");
+    }
+    if (!textSigned(backerKey, statement('guarantee-offer', h), pyGet(isObject(g.offer) ? g.offer : {}, 'signature'))) {
+      throw new ValunError('bad_signature', "the backer's offer signature does not verify");
+    }
+    return {terms_hash: h, terms: t, role: r};
+  }
+
+  /**
+   * The terms of a guarantee this agent offers as backer: the issuer's and the creditor's registered keys, the cap in
+   * this network's unit, callable from dueInHours from now for callableForHours, honored within honorWithinHours, open
+   * for offerValidHours (never past the expiry).
+   */
+  async buildGuaranteeTerms({issuerId, creditorId, cap, dueInHours, callableForHours = 168, honorWithinHours = 24, offerValidHours = 24, note = ''}) {
+    for (const [name, v, lo, hi] of [['cap', cap, 1, null], ['due_in_hours', dueInHours, 0, 1440], ['callable_for_hours', callableForHours, 1, 1440],
+      ['honor_within_hours', honorWithinHours, 1, 168], ['offer_valid_hours', offerValidHours, 1, 168]]) {
+      if (!natural(v) || v < lo || (hi !== null && v > hi)) {
+        throw new ValunError('bad_arguments', `${name} must be a whole number from ${lo}` + (hi !== null ? ` to ${hi}` : ''));
+      }
+    }
+    if (typeof note !== 'string' || cpLength(note) > 500) throw new ValunError('bad_arguments', 'note must be text of at most 500 characters');
+    if (issuerId === creditorId || [issuerId, creditorId].includes(this.participantId)) {
+      throw new ValunError('bad_arguments', 'the issuer, the creditor and you (the backer) must be three different participants');
+    }
+    const info = await this.info();
+    const now = this.#now(), due = now + dueInHours * HOUR, expires = due + callableForHours * HOUR;
+    const guaranteeId = 'vg_' + bytesToHex(this.#randomBytes(8)), nonce = bytesToHex(this.#randomBytes(16));
+    const issuer = {id: issuerId, pubkey: await this.#registeredKey(issuerId)};
+    const creditor = {id: creditorId, pubkey: await this.#registeredKey(creditorId)};
+    return {protocol: GUARANTEE_PROTOCOL, network: this.network, tracker_nft_id: info.tracker_nft_id, denomination: info.denomination,
+      guarantee_id: guaranteeId, nonce, backer: {id: this.participantId, pubkey: this.pubkey}, issuer, creditor,
+      cap: {amount: cap, unit: this.unit}, covers: GUARANTEE_COVERS, due_at: isoSeconds(due), expires_at: isoSeconds(expires),
+      honor_within_hours: honorWithinHours, offer_expires_at: isoSeconds(Math.min(now + offerValidHours * HOUR, expires)), note};
+  }
+
+  /** Offer a guarantee as its backer (buildGuaranteeTerms), signed with statement guarantee-offer. */
+  async offerGuarantee(options) {
+    await this.#guaranteesOffered();
+    const t = await this.buildGuaranteeTerms(options);
+    const h = termsHash(t);
+    return this.request('POST', '/pilot/v1/guarantees', {terms: t, terms_hash: h, signature: this.#sign(statement('guarantee-offer', h))});
+  }
+
+  async #checkedGuarantee(guaranteeId, role, expectedTermsHash) {
+    await this.#guaranteesOffered();
+    const g = await this.guarantee(guaranteeId);
+    const chk = await this.verifyGuarantee(g, role);
+    if (truthy(expectedTermsHash ?? null) && expectedTermsHash !== chk.terms_hash) {
+      throw new ValunError('stale_terms', 'the guarantee is not the one you reviewed; read it again (valun_guarantees) first');
+    }
+    return [g, chk];
+  }
+
+  /** Accept a guarantee offered to this agent as its creditor (it commits the creditor to nothing). */
+  async acceptGuarantee(guaranteeId, {expectedTermsHash = undefined} = {}) {
+    const [, chk] = await this.#checkedGuarantee(guaranteeId, 'creditor', expectedTermsHash);
+    const h = chk.terms_hash;
+    return this.request('POST', `/pilot/v1/guarantees/${seg(guaranteeId)}/accept`, {terms_hash: h, signature: this.#sign(statement('guarantee-accept', h))});
+  }
+
+  async declineGuarantee(guaranteeId, reason = '') {
+    const g = await this.guarantee(guaranteeId);
+    const h = g.terms_hash;
+    return this.request('POST', `/pilot/v1/guarantees/${seg(guaranteeId)}/decline`, {terms_hash: h, reason,
+      signature: this.#sign(statement('guarantee-decline', h, sha256Hex(reason)))});
+  }
+
+  async withdrawGuarantee(guaranteeId) {
+    const g = await this.guarantee(guaranteeId);
+    const h = g.terms_hash;
+    return this.request('POST', `/pilot/v1/guarantees/${seg(guaranteeId)}/withdraw`, {terms_hash: h, signature: this.#sign(statement('guarantee-withdraw', h))});
+  }
+
+  /** End a guarantee this agent accepted as its creditor: it can no longer be called. */
+  async releaseGuarantee(guaranteeId, {expectedTermsHash = undefined} = {}) {
+    const [, chk] = await this.#checkedGuarantee(guaranteeId, 'creditor', expectedTermsHash);
+    const h = chk.terms_hash;
+    return this.request('POST', `/pilot/v1/guarantees/${seg(guaranteeId)}/release`, {terms_hash: h, signature: this.#sign(statement('guarantee-release', h))});
+  }
+
+  /**
+   * Call a guarantee this agent holds as its creditor, for `amount` (default: everything callable now, as the server
+   * computes it from the tracker). The server checks the amount again against the tracker.
+   */
+  async callGuarantee(guaranteeId, {amount = null, expectedTermsHash = undefined} = {}) {
+    const [g, chk] = await this.#checkedGuarantee(guaranteeId, 'creditor', expectedTermsHash);
+    const t = chk.terms, callableNow = pyGet(g, 'callable_now');
+    const a = amount === null || amount === undefined ? callableNow : amount;
+    if (!natural(a) || a < 1) {
+      throw new ValunError('nothing_callable', `nothing can be called on this guarantee now (callable_now: ${str(callableNow)}). It is callable `
+        + `from ${str(t.due_at)} until ${str(t.expires_at)}, for what the issuer still owes you, `
+        + 'less what earlier calls claimed, within the cap left; nothing was signed');
+    }
+    const cid = 'vgc_' + bytesToHex(this.#randomBytes(8));
+    const h = chk.terms_hash;
+    return this.request('POST', `/pilot/v1/guarantees/${seg(guaranteeId)}/calls`, {call_id: cid, amount: a, terms_hash: h,
+      signature: this.#sign(statement('guarantee-call', h, cid, String(a)))});
+  }
+
+  /**
+   * Pay a call of a guarantee this agent gave, with its own credit note to the creditor. Checked before anything is
+   * signed (as in the Python client): the guarantee (verifyGuarantee, as its backer); the call (open or failed, its id
+   * and a whole amount, signed by the creditor over exactly that id and amount, under the key the terms name or its
+   * registered key); this agent's own record of the calls it honored or is honoring, which with this one must stay
+   * within the cap it signed (exceeds_cap); and the note template as complete() checks a deal's. With a server listing
+   * bound_notes/1 the note is bound (its prior is this agent's own signature and not older than its records, and the
+   * prior acknowledgment is signed too; tracker v3.2 contract only); otherwise ordinary. R4 and the pending record are
+   * written ahead before anything is sent; an earlier note for the same call that may have applied is never followed
+   * by another (honor_pending).
+   */
+  async honorGuarantee(guaranteeId, {callId = null, expectedTermsHash = undefined} = {}) {
+    const [g, chk] = await this.#checkedGuarantee(guaranteeId, 'backer', expectedTermsHash);
+    const t = chk.terms, h = chk.terms_hash;
+    const calls = iterateList(pyGet(g, 'calls')).filter(isObject);
+    let c;
+    if (callId === null || callId === undefined) {
+      const waiting = calls.filter(x => ['open', 'failed'].includes(pyGet(x, 'state')));
+      if (!waiting.length) throw new ValunError('nothing_to_honor', 'no call of this guarantee is waiting to be honored; nothing was signed');
+      c = waiting[0];
+    } else {
+      c = calls.find(x => pyGet(x, 'call_id') === callId) ?? null;
+      if (c === null) throw new ValunError('not_found', `this guarantee has no call ${str(callId)}`);
+    }
+    const cid = pyGet(c, 'call_id'), amount = pyGet(c, 'amount');
+    if (pyGet(c, 'state') === 'honored') throw new ValunError('already_honored', `call ${str(cid)} is honored already`);
+    if (!['open', 'failed'].includes(pyGet(c, 'state')) || typeof cid !== 'string' || !/^vgc_[0-9a-f]{16}$/.test(cid) || !(natural(amount) && amount > 0)) {
+      throw new ValunError('wrong_state', `call ${str(cid)} is ${str(pyGet(c, 'state'))}; nothing to honor`);
+    }
+    const creditorPk = await this.#registeredKey(t.creditor.id);
+    const callText = statement('guarantee-call', h, cid, String(amount));
+    if (![t.creditor.pubkey, creditorPk].some(k => textSigned(k, callText, pyGet(c, 'signature')))) {
+      throw new ValunError('bad_signature', "the creditor's signature on this call does not verify; nothing was signed");
+    }
+    const cap = t.cap.amount;
+    const features = await this.#features();
+    const bound = features.includes('bound_notes/1');
+    if (bound) this.#contract();                 // never an ordinary note instead: fail closed
+    const tpl = await this.request('GET', `/pilot/v1/guarantees/${seg(guaranteeId)}/calls/${seg(cid)}/note-template` + (bound ? '?prior=1&bound=1' : ''));
+    if (!isObject(tpl) || pyGet(tpl, 'issuer_pubkey') !== this.pubkey || pyGet(tpl, 'recipient_pubkey') !== creditorPk) {
+      throw new ValunError('bad_template', "the note template does not name your key and the creditor's current key");
+    }
+    const P = pyGet(tpl, 'prior_total'), total = pyGet(tpl, 'total'), ts = pyGet(tpl, 'timestamp');
+    if (pyGet(tpl, 'amount') !== amount || !(natural(P) && natural(total) && natural(ts)) || total !== P + amount) {
+      throw new ValunError('bad_template', "the note template does not add exactly the call's amount");
+    }
+    const nft = pyGet(tpl, 'tracker_nft_id'), denom = pyGet(tpl, 'denomination');
+    if (nft !== t.tracker_nft_id || denom !== t.denomination) throw new ValunError('bad_template', 'the note template names a different tracker or unit');
+    this.#checkPins(nft, denom);
+    const nowMs = this.#now();
+    if (bound) {
+      if (ts % 1000 !== nv.BOUND_MS || !(nowMs - NOTE_CLOCK_TOLERANCE_MS <= ts && ts <= nowMs + 5000)) {
+        throw new ValunError('bad_template', 'the note template is not a current bound note (residue 997)');
+      }
+    } else if (Math.abs(ts - nowMs) > NOTE_CLOCK_TOLERANCE_MS || (features.length && ts % 1000 >= RESERVED_MS_FROM)) {
+      throw new ValunError('bad_template', 'the note template timestamp is not current, or ends in a residue kept for other operations');
+    }
+    const pair = `${this.pubkey}>${creditorPk}`;
+    const verify = noteVerifier(nft, denom);
+    await this.#reload();
+    let p = 0;
+    if (bound) {
+      const prior = pyGet(tpl, 'prior_note');
+      if (prior === null || prior === undefined) {
+        const known = this.#knownTotal(pair);
+        if (P !== 0 || pyGet(tpl, 'prior_timestamp') !== 0 || !(known === null || known === 0)) {
+          throw new ValunError('ledger_mismatch', 'the server shows no note on this edge, but its template or your own records say otherwise. Ask your operator.');
+        }
+      } else {
+        const problem = records.priorProblem(recordsIn(this.state, false), pair, prior, this.pubkey, verify);
+        if (problem || pyGet(prior, 'total') !== P || pyGet(prior, 'timestamp') !== pyGet(tpl, 'prior_timestamp')) {
+          throw new ValunError('ledger_mismatch', 'the prior note the server shows on this edge is not your own latest note '
+            + `(${problem || 'it does not match the template'}). Ask your operator.`);
+        }
+        p = prior.timestamp;
+      }
+    } else {
+      const known = this.#knownTotal(pair);
+      if (known !== null && known !== P) {
+        throw new ValunError('ledger_mismatch', `the server says you have issued this creditor ${P} ${this.unit} of credit notes so far; your own record says ${str(known)}. Ask your operator.`);
+      }
+    }
+    const op = 'guarantee_note:' + cid, signedAt = isoSeconds(this.#now());
+    let slots = {[nv.slotKey(pair, 'new')]: total};
+    if (bound) slots = {[nv.slotKey(pair, 'prior')]: P, ...slots};
+    const wa = {op, signed: [{edge: pair, timestamp: ts, op, slots, ...(bound ? {prior_state: {total: P, timestamp: p}} : {})}],
+      pending: [{pair, total, timestamp: ts, kind: 'guarantee_note', ref: cid, direction: 'out'}], attempt: null};
+    const agreed = {tracker_nft_id: nft, denomination: denom};
+    this.#secretBytes().fill(0);                 // not_connected before anything is recorded
+    await this.#update(state => {                // written before the note is signed and sent: its outcome is not known yet
+      const err = pinProblem(pinsOf(state), nft, denom);
+      if (err) throw err;
+      if (!bound) {
+        const problem = nv.unboundNoteProblem(pair, state.novated_edges ?? null, features);
+        if (problem) {
+          throw new ValunError(problem, problem === 'bound_note_required' ? 'a novation changed this edge, so it takes bound credit notes only; nothing was signed'
+            : "this profile's record of novated edges cannot be read; nothing was signed");
+        }
+      }
+      const honors = dictIn(state, GUARANTEE_HONORS_KEY);
+      const rec = isObject(honors[guaranteeId]) ? honors[guaranteeId] : {};
+      const mine = isObject(rec.calls) ? rec.calls : {};
+      let others = 0;
+      for (const [k, x] of Object.entries(mine)) {
+        if (k !== cid && isObject(x) && ['pending', 'honored'].includes(pyGet(x, 'state')) && natural(pyGet(x, 'amount'))) others += x.amount;
+      }
+      if (others + amount > cap) {
+        throw new ValunError('exceeds_cap', `honoring ${amount} ${this.unit} would bring what you paid or are paying under this guarantee to `
+          + `${others + amount} ${this.unit}, above its cap of ${cap} ${this.unit} (by your own records); nothing was signed`);
+      }
+      const was = mine[cid];
+      if (isObject(was) && pyGet(was, 'state') === 'pending' && natural(pyGet(was, 'total')) && P >= was.total) {
+        throw new ValunError('honor_pending', `your earlier note for this call (${was.total} ${this.unit} in total to this creditor) may already be on `
+          + `the tracker: the edge is at ${P} ${this.unit} now. Refusing to sign another. Ask your operator.`);
+      }
+      guarded(nv.applyWriteAhead, state, wa, signedAt);
+      if (!pinsOf(state)) state.pins = {...agreed};
+      honors[guaranteeId] = {cap, calls: {...mine, [cid]: {amount, state: 'pending', total, timestamp: ts}}};
+    });
+    const note = {total, timestamp: ts, signature: this.#signBytes(nv.message(this.pubkey, creditorPk, total, ts, nft, denom))};
+    const creditNote = {...note};
+    if (bound) Object.assign(creditNote, {prior_total: P, prior_timestamp: p, prior_signature: this.#signBytes(nv.priorMessage(this.pubkey, creditorPk, P, p, ts, nft, denom))});
+    const body = {terms_hash: h, amount, signature: this.#sign(statement('guarantee-honor', h, cid, String(amount))), credit_note: creditNote};
+    const settle = (state, outcome) => {
+      const honors = dictIn(state, GUARANTEE_HONORS_KEY);
+      const rec = honors[guaranteeId];
+      const callsRec = isObject(rec) && isObject(rec.calls) ? rec.calls : null;
+      if (outcome === 'honored') {
+        this.#confirmIn(state, pair, note);
+        if (callsRec !== null && isObject(callsRec[cid])) callsRec[cid].state = 'honored';
+      } else {                                   // refused or failed: this note will not be recorded
+        records.removePending(recordsIn(state), pair, total, ts, cid);
+        if (callsRec !== null && isObject(callsRec[cid]) && callsRec[cid].timestamp === ts) callsRec[cid].state = 'failed';
+      }
+    };
+    let r;
+    try {
+      r = await this.request('POST', `/pilot/v1/guarantees/${seg(guaranteeId)}/calls/${seg(cid)}/honor`, body);
+    } catch (e) {
+      if (isValunError(e) && typeof e.status === 'number' && e.status >= 400 && e.status < 500) await this.#settle(state => settle(state, 'refused'));
+      throw e;                                   // otherwise (unreachable, 5xx) the outcome is unknown: it stays pending
+    }
+    const shown = isObject(r) ? iterateList(pyGet(r, 'calls')).find(x => isObject(x) && pyGet(x, 'call_id') === cid) ?? null : null;
+    const st = isObject(shown) ? pyGet(shown, 'state') : null;
+    if (st === 'honored') await this.#settle(state => settle(state, 'honored'));
+    else if (st === 'failed') await this.#settle(state => settle(state, 'failed'));
+    return r;
   }
 
   // ---------- independent checks ----------

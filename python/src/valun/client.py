@@ -68,11 +68,19 @@ def network_of(name):
 #             consents_last_safe_run_ms (the last process_consents(value_safe_only=True) run, decision D-3 a);
 #             consent_roles_declared (the roles, 'setoff,issuer' say, that the server last took from this client's
 #             X-Valun-Features header; '' once it took the empty list, decision D-3 b).
+#   guarantee_honors (fix inbox #18) {guarantee_id: {cap, calls: {call_id: {amount, state ('pending', 'honored' or
+#             'failed'), total, timestamp}}}}: the calls this client honored or is honoring as a backer, so it never pays
+#             beyond the cap it signed, whatever a server shows.
 CORE_STATE_KEYS = ('issued', 'records', 'signed', 'novated_edges', 'transfer_attempts', 'approved_payments', 'consent_policy',
                    'consent_loop', 'consents_last_run_ms', 'consent_log', 'pins', 'journal_seq', 'consents_last_safe_run_ms',
-                   'consent_roles_declared')
+                   'consent_roles_declared', 'guarantee_honors')
 # Timestamp residues (ts mod 1000) the v3 tracker keeps for other operations: an ordinary note never uses them.
 RESERVED_MS_FROM = 995
+
+# Guarantees (servers listing guarantees/1; fix inbox #18): the terms protocol and the one kind of cover it has.
+GUARANTEE_PROTOCOL = 'valun-guarantee/1'
+GUARANTEE_COVERS = 'issuer_debt_to_creditor'
+GUARANTEE_HONORS_KEY = 'guarantee_honors'    # state[...][guarantee_id] = {cap, calls: {call_id: {amount, state, total, timestamp}}}
 # Circulating credit (PROTOCOL.md 18; design 4.1, 6.3, 6.6, 11).
 FEATURES_HEADER = 'X-Valun-Features'          # 'consents/1;roles=<roles>', sent once /info lists circulation/1
 CONSENT_ROLES = (('setoff', 'setoff'), ('as_issuer', 'issuer'), ('as_new_creditor', 'creditor'))   # (policy flag, header role)
@@ -268,6 +276,17 @@ def _mandate_of(me):
 def _verify_hex(pubkey_hex, msg, sig_hex):
     """novation.py's verifier: a Basis signature (hex) over msg (bytes) by pubkey_hex."""
     return vb.verify(bytes.fromhex(sig_hex), msg, bytes.fromhex(pubkey_hex))
+
+
+def _text_signed(pubkey_hex, text, sig_hex):
+    """Whether sig_hex is a Basis signature by pubkey_hex over the UTF-8 bytes of `text` (a Valun statement); False for
+    anything malformed."""
+    if not (_is_pubkey(pubkey_hex) and isinstance(sig_hex, str) and re.fullmatch(r'0[23][0-9a-f]{128}', sig_hex)):
+        return False
+    try:
+        return vb.verify(bytes.fromhex(sig_hex), text.encode('utf-8'), bytes.fromhex(pubkey_hex)) is True
+    except Exception:  # noqa: BLE001 - a verifier that fails accepts nothing
+        return False
 
 
 def _nat(v):
@@ -964,6 +983,283 @@ class Client:
     def set_limits(self, body):
         """Record limits and goals the owner gave this agent; the server keeps them within the owner's mandate."""
         return self.request('PUT', '/pilot/v1/limits', body)
+
+    # ---------- guarantees (servers listing guarantees/1; fix inbox #18) ----------
+    # A guarantee is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes that
+    # creditor after a due time, if the creditor calls before the expiry. What is signed here is checked first, as for
+    # deals: the terms hash to their hash, are valun-guarantee/1 for this network and tracker, and name this agent with
+    # its current key; the backer's offer verifies under the backer's registered key. The backer honors a call with its
+    # own credit note to the creditor, for exactly the amount the creditor signed and never beyond the cap by its own
+    # records, written ahead in its records before anything is sent.
+    def guarantees(self):
+        return self.request('GET', '/pilot/v1/guarantees')
+
+    def guarantee(self, guarantee_id):
+        return self.request('GET', f'/pilot/v1/guarantees/{_seg(guarantee_id)}')
+
+    def _guarantees_offered(self):
+        # GET /info itself (it pins a profile not pinned yet), not _features(), which serves such a profile as 0.3 did.
+        if 'guarantees/1' not in _features_of(self.info()):
+            raise ValunError('feature_unavailable', 'this Valun server offers no guarantees (GET /info features has no '
+                                                    'guarantees/1); nothing was signed')
+
+    def verify_guarantee(self, g, role=None):
+        """The terms of a guarantee view, checked before anything is signed for it: they hash to terms_hash, are
+        valun-guarantee/1 for this network and its tracker, cover issuer_debt_to_creditor with a whole cap in this
+        network's unit, name this agent (as `role`, when given) with its current key, and the backer's offer signature
+        verifies under the backer key the terms name, which must be the backer's registered key. Returns
+        {'terms_hash', 'terms', 'role'}."""
+        if not isinstance(g, dict) or not isinstance(g.get('terms'), dict):
+            raise ValunError('bad_response', "the server did not return the guarantee's terms")
+        t = g['terms']
+        h = terms_hash(t)
+        if h != g.get('terms_hash'):
+            raise ValunError('hash_mismatch', "the guarantee's terms do not hash to its terms_hash; refusing to sign")
+        if t.get('protocol') != GUARANTEE_PROTOCOL or t.get('network') != self.network:
+            raise ValunError('wrong_network', 'the guarantee is for a different network or protocol')
+        info = self.info()
+        if t.get('tracker_nft_id') != info['tracker_nft_id'] or t.get('denomination') != info['denomination']:
+            raise ValunError('wrong_tracker', 'the guarantee names a different tracker or unit than this network')
+        cap = t.get('cap') if isinstance(t.get('cap'), dict) else {}
+        if t.get('covers') != GUARANTEE_COVERS or not (_nat(cap.get('amount')) and cap['amount'] > 0) or cap.get('unit') != self.unit:
+            raise ValunError('bad_terms', 'the guarantee does not cover issuer_debt_to_creditor up to a whole cap in this network\'s unit')
+        parties = {r: t.get(r) for r in ('backer', 'issuer', 'creditor')}
+        if not all(isinstance(x, dict) and isinstance(x.get('id'), str) and _is_pubkey(x.get('pubkey')) for x in parties.values()):
+            raise ValunError('bad_terms', 'the guarantee must name a backer, an issuer and a creditor, each with its key')
+        mine = [r for r, x in parties.items() if x['id'] == self.participant_id]
+        if not mine or (role is not None and role not in mine):
+            raise ValunError('not_a_party', f'you are not the {role or "a party"} of this guarantee')
+        r = role or mine[0]
+        if parties[r]['pubkey'] != self.pubkey:
+            raise ValunError('wrong_key', f'the guarantee names a different key for you as its {r}; ask your operator')
+        backer_key = parties['backer']['pubkey']
+        if r != 'backer' and self._registered_key(parties['backer']['id']) != backer_key:
+            raise ValunError('wrong_key', "the backer key in the terms is not the backer's registered key")
+        if not _text_signed(backer_key, statement('guarantee-offer', h), (g.get('offer') or {}).get('signature')):
+            raise ValunError('bad_signature', "the backer's offer signature does not verify")
+        return {'terms_hash': h, 'terms': t, 'role': r}
+
+    def build_guarantee_terms(self, issuer_id, creditor_id, cap, due_in_hours, callable_for_hours=168, honor_within_hours=24,
+                              offer_valid_hours=24, note=''):
+        """The terms of a guarantee this agent offers as backer: the issuer's and the creditor's registered keys, the cap
+        in this network's unit, callable from due_in_hours from now for callable_for_hours, honored within
+        honor_within_hours, open for offer_valid_hours (never past the expiry)."""
+        for name, v, lo, hi in (('cap', cap, 1, None), ('due_in_hours', due_in_hours, 0, 1440), ('callable_for_hours', callable_for_hours, 1, 1440),
+                                ('honor_within_hours', honor_within_hours, 1, 168), ('offer_valid_hours', offer_valid_hours, 1, 168)):
+            if not _nat(v) or v < lo or (hi is not None and v > hi):
+                raise ValunError('bad_arguments', f'{name} must be a whole number from {lo}' + (f' to {hi}' if hi is not None else ''))
+        if not isinstance(note, str) or len(note) > 500:
+            raise ValunError('bad_arguments', 'note must be text of at most 500 characters')
+        if issuer_id == creditor_id or self.participant_id in (issuer_id, creditor_id):
+            raise ValunError('bad_arguments', 'the issuer, the creditor and you (the backer) must be three different participants')
+        info = self.info()
+        now = datetime.now(timezone.utc)
+        due = now + timedelta(hours=due_in_hours)
+        expires = due + timedelta(hours=callable_for_hours)
+        return {'protocol': GUARANTEE_PROTOCOL, 'network': self.network, 'tracker_nft_id': info['tracker_nft_id'],
+                'denomination': info['denomination'], 'guarantee_id': 'vg_' + secrets.token_hex(8), 'nonce': secrets.token_hex(16),
+                'backer': {'id': self.participant_id, 'pubkey': self.pubkey},
+                'issuer': {'id': issuer_id, 'pubkey': self._registered_key(issuer_id)},
+                'creditor': {'id': creditor_id, 'pubkey': self._registered_key(creditor_id)},
+                'cap': {'amount': int(cap), 'unit': self.unit}, 'covers': GUARANTEE_COVERS,
+                'due_at': _iso(due), 'expires_at': _iso(expires), 'honor_within_hours': int(honor_within_hours),
+                'offer_expires_at': _iso(min(now + timedelta(hours=offer_valid_hours), expires)), 'note': note}
+
+    def offer_guarantee(self, issuer_id, creditor_id, cap, due_in_hours, callable_for_hours=168, honor_within_hours=24,
+                        offer_valid_hours=24, note=''):
+        """Offer a guarantee as its backer (build_guarantee_terms), signed with statement guarantee-offer."""
+        self._guarantees_offered()
+        t = self.build_guarantee_terms(issuer_id, creditor_id, cap, due_in_hours, callable_for_hours, honor_within_hours,
+                                       offer_valid_hours, note)
+        h = terms_hash(t)
+        return self.request('POST', '/pilot/v1/guarantees', {'terms': t, 'terms_hash': h, 'signature': self._sign(statement('guarantee-offer', h))})
+
+    def _checked_guarantee(self, guarantee_id, role, expected_terms_hash):
+        self._guarantees_offered()
+        g = self.guarantee(guarantee_id)
+        chk = self.verify_guarantee(g, role)
+        if expected_terms_hash and expected_terms_hash != chk['terms_hash']:
+            raise ValunError('stale_terms', 'the guarantee is not the one you reviewed; read it again (valun_guarantees) first')
+        return g, chk
+
+    def accept_guarantee(self, guarantee_id, expected_terms_hash=None):
+        """Accept a guarantee offered to this agent as its creditor (it commits the creditor to nothing)."""
+        _g, chk = self._checked_guarantee(guarantee_id, 'creditor', expected_terms_hash)
+        h = chk['terms_hash']
+        return self.request('POST', f'/pilot/v1/guarantees/{_seg(guarantee_id)}/accept', {'terms_hash': h, 'signature': self._sign(statement('guarantee-accept', h))})
+
+    def decline_guarantee(self, guarantee_id, reason=''):
+        g = self.guarantee(guarantee_id)
+        h = g['terms_hash']
+        return self.request('POST', f'/pilot/v1/guarantees/{_seg(guarantee_id)}/decline', {
+            'terms_hash': h, 'reason': reason, 'signature': self._sign(statement('guarantee-decline', h, sha256_hex(reason)))})
+
+    def withdraw_guarantee(self, guarantee_id):
+        g = self.guarantee(guarantee_id)
+        h = g['terms_hash']
+        return self.request('POST', f'/pilot/v1/guarantees/{_seg(guarantee_id)}/withdraw', {'terms_hash': h, 'signature': self._sign(statement('guarantee-withdraw', h))})
+
+    def release_guarantee(self, guarantee_id, expected_terms_hash=None):
+        """End a guarantee this agent accepted as its creditor: it can no longer be called."""
+        _g, chk = self._checked_guarantee(guarantee_id, 'creditor', expected_terms_hash)
+        h = chk['terms_hash']
+        return self.request('POST', f'/pilot/v1/guarantees/{_seg(guarantee_id)}/release', {'terms_hash': h, 'signature': self._sign(statement('guarantee-release', h))})
+
+    def call_guarantee(self, guarantee_id, amount=None, expected_terms_hash=None):
+        """Call a guarantee this agent holds as its creditor, for `amount` (default: everything callable now, as the
+        server computes it from the tracker). The server checks the amount again against the tracker."""
+        g, chk = self._checked_guarantee(guarantee_id, 'creditor', expected_terms_hash)
+        t, callable_now = chk['terms'], g.get('callable_now')
+        a = callable_now if amount is None else amount
+        if not _nat(a) or a < 1:
+            raise ValunError('nothing_callable', (f'nothing can be called on this guarantee now (callable_now: {callable_now}). It is callable '
+                                                  f"from {t['due_at']} until {t['expires_at']}, for what the issuer still owes you, "
+                                                  'less what earlier calls claimed, within the cap left; nothing was signed'))
+        cid = 'vgc_' + secrets.token_hex(8)
+        h = chk['terms_hash']
+        return self.request('POST', f'/pilot/v1/guarantees/{_seg(guarantee_id)}/calls', {
+            'call_id': cid, 'amount': a, 'terms_hash': h, 'signature': self._sign(statement('guarantee-call', h, cid, str(a)))})
+
+    def honor_guarantee(self, guarantee_id, call_id=None, expected_terms_hash=None):
+        """Pay a call of a guarantee this agent gave, with its own credit note to the creditor. Checked before anything
+        is signed: the guarantee (verify_guarantee, as its backer); the call (open or failed, its id and a whole
+        amount, signed by the creditor over exactly that id and amount, under the key the terms name or its registered
+        key); this agent's own record of the calls it honored or is honoring, which with this one must stay within the
+        cap it signed (exceeds_cap); and the note template as complete() checks a deal's: this agent's key, the
+        creditor's current key, exactly the call's amount on top of the prior total, the pinned tracker and unit, a
+        current timestamp. With a server listing bound_notes/1 the note is bound (its prior is this agent's own
+        signature and not older than its records, and the prior acknowledgment PA(I,R,P,p,ts) is signed too; only for
+        the tracker v3.2 contract); otherwise ordinary (the prior total must equal its record; an edge a novation
+        changed takes bound notes only). R4 and the pending record are written ahead before anything is sent; an
+        earlier note for the same call that may have applied is never followed by another (honor_pending)."""
+        g, chk = self._checked_guarantee(guarantee_id, 'backer', expected_terms_hash)
+        t, h = chk['terms'], chk['terms_hash']
+        calls = [c for c in (g.get('calls') or []) if isinstance(c, dict)]
+        if call_id is None:
+            waiting = [c for c in calls if c.get('state') in ('open', 'failed')]
+            if not waiting:
+                raise ValunError('nothing_to_honor', 'no call of this guarantee is waiting to be honored; nothing was signed')
+            c = waiting[0]
+        else:
+            c = next((x for x in calls if x.get('call_id') == call_id), None)
+            if c is None:
+                raise ValunError('not_found', f'this guarantee has no call {call_id}')
+        cid, amount = c.get('call_id'), c.get('amount')
+        if c.get('state') == 'honored':
+            raise ValunError('already_honored', f'call {cid} is honored already')
+        if c.get('state') not in ('open', 'failed') or not isinstance(cid, str) or not re.fullmatch(r'vgc_[0-9a-f]{16}', cid) or not (_nat(amount) and amount > 0):
+            raise ValunError('wrong_state', f'call {cid} is {c.get("state")}; nothing to honor')
+        creditor_id = t['creditor']['id']
+        creditor_pk = self._registered_key(creditor_id)
+        call_text = statement('guarantee-call', h, cid, str(amount))
+        if not any(_text_signed(k, call_text, c.get('signature')) for k in {t['creditor']['pubkey'], creditor_pk}):
+            raise ValunError('bad_signature', "the creditor's signature on this call does not verify; nothing was signed")
+        cap = t['cap']['amount']
+        features = self._features()
+        bound = 'bound_notes/1' in features
+        if bound:
+            self._contract()                    # never an ordinary note instead: fail closed
+        tpl = self.request('GET', f'/pilot/v1/guarantees/{_seg(guarantee_id)}/calls/{_seg(cid)}/note-template' + ('?prior=1&bound=1' if bound else ''))
+        if not isinstance(tpl, dict) or tpl.get('issuer_pubkey') != self.pubkey or tpl.get('recipient_pubkey') != creditor_pk:
+            raise ValunError('bad_template', "the note template does not name your key and the creditor's current key")
+        P, total, ts = tpl.get('prior_total'), tpl.get('total'), tpl.get('timestamp')
+        if tpl.get('amount') != amount or not (_nat(P) and _nat(total) and _nat(ts)) or total != P + amount:
+            raise ValunError('bad_template', "the note template does not add exactly the call's amount")
+        nft, denom = tpl.get('tracker_nft_id'), tpl.get('denomination')
+        if nft != t['tracker_nft_id'] or denom != t['denomination']:
+            raise ValunError('bad_template', 'the note template names a different tracker or unit')
+        self._check_pins(nft, denom)
+        now_ms = int(time.time() * 1000)
+        if bound:
+            if ts % 1000 != nv.BOUND_MS or not (now_ms - 10 * 60_000 <= ts <= now_ms + 5000):
+                raise ValunError('bad_template', 'the note template is not a current bound note (residue 997)')
+        elif abs(ts - now_ms) > 10 * 60_000 or (features and ts % 1000 >= RESERVED_MS_FROM):
+            raise ValunError('bad_template', 'the note template timestamp is not current, or ends in a residue kept for other operations')
+        pair = f'{self.pubkey}>{creditor_pk}'
+        verify = self._note_verifier(nft, denom)
+        self._reload()
+        p = 0
+        if bound:
+            prior = tpl.get('prior_note')
+            if prior is None:
+                known = self._known_total(pair)
+                if P != 0 or tpl.get('prior_timestamp') != 0 or known not in (None, 0):
+                    raise ValunError('ledger_mismatch', 'the server shows no note on this edge, but its template or your own records say otherwise. Ask your operator.')
+            else:
+                problem = records.prior_problem(_records_in(self.state, create=False), pair, prior, self.pubkey, verify)
+                if problem or prior.get('total') != P or prior.get('timestamp') != tpl.get('prior_timestamp'):
+                    raise ValunError('ledger_mismatch', ('the prior note the server shows on this edge is not your own latest note '
+                                                         f'({problem or "it does not match the template"}). Ask your operator.'))
+                p = prior['timestamp']
+        else:
+            known = self._known_total(pair)
+            if known is not None and known != P:
+                raise ValunError('ledger_mismatch', f'the server says you have issued this creditor {P} {self.unit} of credit notes so far; your own record says {known}. Ask your operator.')
+        op, signed_at = 'guarantee_note:' + cid, _iso(datetime.now(timezone.utc))
+        slots = {nv.slot_key(pair, 'new'): total}
+        if bound:
+            slots = {nv.slot_key(pair, 'prior'): P, **slots}
+        wa = {'op': op, 'signed': [dict({'edge': pair, 'timestamp': ts, 'op': op, 'slots': slots}, **({'prior_state': {'total': P, 'timestamp': p}} if bound else {}))],
+              'pending': [{'pair': pair, 'total': total, 'timestamp': ts, 'kind': 'guarantee_note', 'ref': cid, 'direction': 'out'}], 'attempt': None}
+        agreed = {'tracker_nft_id': nft, 'denomination': denom}
+
+        def ahead(state):                       # written before the note is signed and sent: its outcome is not known yet
+            err = _pin_problem(_pins_of(state), nft, denom)
+            if err:
+                raise err
+            if not bound:
+                problem = nv.unbound_note_problem(pair, state.get('novated_edges'), features)
+                if problem:
+                    raise ValunError(problem, 'a novation changed this edge, so it takes bound credit notes only; nothing was signed'
+                                     if problem == 'bound_note_required' else "this profile's record of novated edges cannot be read; nothing was signed")
+            honors = _dict_in(state, GUARANTEE_HONORS_KEY)
+            rec = honors.get(guarantee_id) if isinstance(honors.get(guarantee_id), dict) else {}
+            mine = rec.get('calls') if isinstance(rec.get('calls'), dict) else {}
+            others = sum(x.get('amount', 0) for k, x in mine.items() if k != cid and isinstance(x, dict) and x.get('state') in ('pending', 'honored') and _nat(x.get('amount')))
+            if others + amount > cap:
+                raise ValunError('exceeds_cap', (f'honoring {amount} {self.unit} would bring what you paid or are paying under this guarantee to '
+                                                 f'{others + amount} {self.unit}, above its cap of {cap} {self.unit} (by your own records); nothing was signed'))
+            was = mine.get(cid)
+            if isinstance(was, dict) and was.get('state') == 'pending' and _nat(was.get('total')) and P >= was['total']:
+                raise ValunError('honor_pending', (f'your earlier note for this call ({was["total"]} {self.unit} in total to this creditor) may already be on '
+                                                   f'the tracker: the edge is at {P} {self.unit} now. Refusing to sign another. Ask your operator.'))
+            _guarded(nv.apply_write_ahead, state, wa, signed_at)
+            if not _pins_of(state):
+                state['pins'] = dict(agreed)
+            honors[guarantee_id] = {'cap': cap, 'calls': dict(mine, **{cid: {'amount': amount, 'state': 'pending', 'total': total, 'timestamp': ts}})}
+        self._secret()                          # not_connected before anything is recorded
+        self._update(ahead)
+        note = {'total': total, 'timestamp': ts, 'signature': self._sign_message(nv.message(self.pubkey, creditor_pk, total, ts, nft, denom))}
+        credit_note = dict(note)
+        if bound:
+            credit_note.update(prior_total=P, prior_timestamp=p, prior_signature=self._sign_message(nv.prior_message(self.pubkey, creditor_pk, P, p, ts, nft, denom)))
+        body = {'terms_hash': h, 'amount': amount, 'signature': self._sign(statement('guarantee-honor', h, cid, str(amount))), 'credit_note': credit_note}
+
+        def settle(state, outcome):
+            honors = _dict_in(state, GUARANTEE_HONORS_KEY)
+            rec = honors.get(guarantee_id)
+            calls_rec = rec.get('calls') if isinstance(rec, dict) and isinstance(rec.get('calls'), dict) else None
+            if outcome == 'honored':
+                self._confirm_in(state, pair, note)
+                if calls_rec is not None and isinstance(calls_rec.get(cid), dict):
+                    calls_rec[cid]['state'] = 'honored'
+            else:                               # refused or failed: this note will not be recorded
+                records.remove_pending(_records_in(state), pair, total, ts, cid)
+                if calls_rec is not None and isinstance(calls_rec.get(cid), dict) and calls_rec[cid].get('timestamp') == ts:
+                    calls_rec[cid]['state'] = 'failed'
+        try:
+            r = self.request('POST', f'/pilot/v1/guarantees/{_seg(guarantee_id)}/calls/{_seg(cid)}/honor', body)
+        except ValunError as e:
+            if e.status is not None and 400 <= e.status < 500:
+                self._settle(lambda state: settle(state, 'refused'))
+            raise                               # otherwise (unreachable, 5xx) the outcome is unknown: it stays pending
+        shown = next((x for x in (r.get('calls') or []) if isinstance(x, dict) and x.get('call_id') == cid), None) if isinstance(r, dict) else None
+        st = shown.get('state') if isinstance(shown, dict) else None
+        if st == 'honored':
+            self._settle(lambda state: settle(state, 'honored'))
+        elif st == 'failed':
+            self._settle(lambda state: settle(state, 'failed'))
+        return r
 
     # ---------- independent checks ----------
     def _registered_key(self, pid):

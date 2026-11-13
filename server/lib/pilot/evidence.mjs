@@ -20,6 +20,7 @@
 // the work was good, that the issuer can pay, or that the debt will ever be settled.
 import {kindOf} from './loops.mjs';
 import {ON_TESTNET} from './units.mjs';
+import {backingRecord, backingTotals} from './guarantees.mjs';
 
 // A delivery the payer accepted: paid (its IOU issued, or paid with someone else's), being paid, or accepted and unpaid.
 export const ACCEPTED = Object.freeze(new Set(['note_issued', 'paid_by_transfer', 'paying_by_transfer', 'payment_due', 'note_failed',
@@ -34,6 +35,7 @@ export const EVIDENCE_READS_AS = Object.freeze({
   repayment: 'What it owed as an issuer, and how much of that was settled. A set-off among participants one operator runs can be staged: it shows settlement inside that group, not that it can pay anyone else.',
   acceptance: 'Participants who chose to hold its IOU. That is a willingness to take its risk, not repayment; some agents accept every IOU by policy.',
   circle: 'Everyone it completed a deal or took a transfer with, and whether that group deals with anyone outside it. A staged circle is a closed group; so is a real new one, and a single outside deal opens either.',
+  backing: "Guarantees it gave, was backed by, or holds: a backer's signed promise to pay a creditor, up to a cap, what an issuer still owes it after a due time, if the creditor calls. Calls honored, late or overdue are evidence about it as a backer. Being backed shows that someone took responsibility for part of its debt, not that it repays.",
   overall: 'Evidence to weigh, not a score. Valun grants no credit from it: each owner sets its own limits, and each holder decides whose IOU it takes.',
 });
 
@@ -121,6 +123,8 @@ export function evidenceOf(pilot, p, {ledger, deals, graph = null} = {}) {
       taken_by_transfer: {PC: taken, holders: takers.size, holders_by_kind: byKind(pilot, takers)},
       reads_as: EVIDENCE_READS_AS.acceptance,
     },
+    // Guarantees (fix inbox #18, lib/pilot/guarantees.mjs): as backer, as the issuer backed, as the creditor holding them.
+    backing: {...backingRecord(pilot, p, byKind), reads_as: EVIDENCE_READS_AS.backing},
     circle: {...circleOf(pilot, p.id, graph ?? exchangeGraph(pilot)), reads_as: EVIDENCE_READS_AS.circle},
     reads_as: EVIDENCE_READS_AS.overall,
   };
@@ -167,6 +171,7 @@ export function evidenceTotals(pilot, ledger) {
       settled_pct: owedEver > 0 ? Math.round(settled * 1000 / owedEver) / 10 : null, outstanding_PC: outstanding,
       unpaid_accepted_work: {count: unpaid.length, PC: sumPrice(pilot, unpaid)}},
     acceptance: {taken_by_transfer: {count: transfers.length, PC: taken}},
+    backing: backingTotals(pilot),
     groups: {count: groups.length, anchored: groups.filter(g => g.anchored).length, self_serve_only: groups.filter(g => !g.anchored).length,
       largest: groups[0]?.size ?? 0, self_serve_only_sizes: groups.filter(g => !g.anchored).map(g => g.size).slice(0, 50)},
     reads_as: {...EVIDENCE_READS_AS, groups: 'Connected groups of participants linked by completed exchanges. A group with no invited or operator-run member is what a staged circle looks like, and also what a new community looks like before it deals with anyone else.'},

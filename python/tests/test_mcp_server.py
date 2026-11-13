@@ -15,6 +15,8 @@ import unittest
 SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src')
 ORIGINAL_ORDER = ['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal', 'valun_propose', 'valun_respond',
                   'valun_deliver', 'valun_review_delivery', 'valun_set_limits']
+# 0.6 (fix inbox #18): the guarantee tools, appended after the original nine.
+GUARANTEE_TOOLS = ['valun_guarantees', 'valun_offer_guarantee', 'valun_respond_guarantee', 'valun_call_guarantee']
 
 FAKE = textwrap.dedent('''
     import sys
@@ -80,9 +82,11 @@ class Protocol(unittest.TestCase):
         self.assertEqual(r['result']['serverInfo']['name'], 'valun')
         self.assertIn('tools', r['result']['capabilities'])
         listed = s.request('tools/list')['result']['tools']
-        self.assertEqual([t['name'] for t in listed], ORIGINAL_ORDER)        # still nine tools, in the original order
+        self.assertEqual([t['name'] for t in listed], ORIGINAL_ORDER + GUARANTEE_TOOLS)   # the nine in their order, then the new ones
         tools = {t['name']: t for t in listed}
-        self.assertEqual(len(tools), 9)
+        self.assertEqual(len(tools), 13)
+        self.assertTrue(tools['valun_guarantees']['annotations']['readOnlyHint'])
+        self.assertTrue(tools['valun_offer_guarantee']['annotations']['destructiveHint'])
         for t in listed:
             self.assertTrue(t['title'].startswith('Valun: '), t['name'])
             self.assertEqual(t['annotations']['title'], t['title'])
@@ -320,7 +324,7 @@ class ConsentLoop(unittest.TestCase):
                       f'consent_loop_jitter_s=0))')
             s = Session(script=script)
             s.init()
-            self.assertEqual(len(s.request('tools/list')['result']['tools']), 9)
+            self.assertEqual(len(s.request('tools/list')['result']['tools']), 13)
             deadline = time.time() + 10
             while time.time() < deadline:                 # the loop's first run marks the profile (it cannot reach the server)
                 with open(path, encoding='utf-8') as f:

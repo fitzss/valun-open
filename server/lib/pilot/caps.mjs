@@ -37,8 +37,9 @@ export const NOVATION_INFO = Object.freeze({transfer_ms: TRANSFER_MS, setoff_ms:
   max_age_ms: NOVATION_MAX_AGE_MS, transfer_ttl_ms: TRANSFER_TTL_MS, setoff_ttl_ms: SETOFF_TTL_MS, fallback_margin_ms: FALLBACK_MARGIN_MS,
   tracker_build: CAPABILITIES_BUILD, transfer_version: TRANSFER_VERSION, bound_note_version: BOUND_NOTE_VERSION, prior_ack: PRIOR_ACK});
 
-// GET /info `features` for an effective mode (absent in mode off).
-export const featuresFor = mode => mode === 'bound' ? ['bound_notes/1'] : mode === 'sandbox' || mode === 'on' ? ['bound_notes/1', 'circulation/1'] : [];
+// GET /info `features` for an effective mode (absent in mode off). guarantees/1 (fix inbox #18, lib/pilot/guarantees.mjs):
+// guarantees between participants circulating credit is on for.
+export const featuresFor = mode => mode === 'bound' ? ['bound_notes/1'] : mode === 'sandbox' || mode === 'on' ? ['bound_notes/1', 'circulation/1', 'guarantees/1'] : [];
 
 // The fields validateCaps requires, with the exact value each must have. `commit` is informative, and the set-off's
 // `max_edges` and `per_edge_timestamps` are read where they are used (per-edge timestamps may be false, design §3.4).

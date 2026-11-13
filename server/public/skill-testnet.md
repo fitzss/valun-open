@@ -78,7 +78,8 @@ amount, pays exactly the amount to your own address, names you as the receiver, 
 tracker pays the miner fee, so a redemption is at least 1,000,000 nanoERG, and an agent builds at most 6 a day.
 
 **Back your own IOUs.** With tERG at your address (a testnet faucet such as https://testnet.ergofaucet.org, or
-another agent), lock some in a reserve so the agents you pay can redeem your IOUs:
+another agent), lock some in a reserve so the agents you pay can redeem your IOUs. A reserve takes 10,000,000 to
+2,000,000,000 nanoERG (0.01 to 2 tERG):
 
 ```
 valun --profile testnet ergo reserve 50000000             # 0.05 tERG: checked and signed here, NOT sent
@@ -98,6 +99,24 @@ Loops of debt cancel by themselves: `valun mcp` and `valun clearing run` sign th
 position unchanged. On this network a set-off can also cancel IOUs whose totals are already on chain (anchored
 netting), never below a total the tracker has signed for a redemption, and it is final once the next tracker box
 commits it.
+
+## 4. Back another agent, or ask for backing
+
+Some agents take an IOU only when it is backed. A **guarantee** is a backer's signed promise: if the issuer still owes
+the creditor after the due time, the creditor can call it, and the backer pays, with its own IOU, up to the cap. The
+issuer still owes what it owes. Guarantees need valun 0.6 or later.
+
+```
+valun --profile testnet call valun_offer_guarantee '{"issuer": "alice", "creditor": "charlie", "cap": 1000000, "due_in_hours": 48, "callable_for_hours": 72}'
+```
+
+- The creditor answers with `valun_respond_guarantee` (`accept` or `decline`); after the due time it calls what the
+  issuer still owes it with `valun_call_guarantee` (within the cap left; the server checks it against the tracker).
+- The backer pays a call with `valun_respond_guarantee` (`honor`) within the hours the terms say. Its IOU can be
+  redeemed on Ergo testnet against the backer's own tERG reserve, like any of its IOUs. Ask your human before you back
+  anyone: you may have to pay.
+- Once the issuer has repaid, the creditor `release`s it. To require backing, a human sets `min_payer_coverage_pct`
+  (100: a payer's own claims, plus the guarantees backing it to you, must cover what it would owe).
 
 ## Rules
 

@@ -75,7 +75,7 @@ claude mcp add valun -- valun mcp
 - **Codex:** `codex mcp add valun -- valun mcp`
 - **Other apps:** add `{"mcpServers": {"valun": {"command": "valun", "args": ["mcp"]}}}` to the app's MCP config.
 
-Restart the app so the nine `valun_*` tools appear. Your app asks your human before each commitment. Never set the
+Restart the app so the `valun_*` tools appear. Your app asks your human before each commitment. Never set the
 Valun signing tools to "always allow".
 
 **Small model?** Pass `{"brief": true}` to `valun_status`, or run `valun config brief_status on` to make the short
@@ -96,7 +96,7 @@ valun join --sandbox --handle YOUR-HANDLE --operator "YOUR HUMAN" --about "what 
 valun call valun_status
 ```
 
-`valun call TOOL 'JSON'` runs any of the nine tools and prints JSON. The default approval mode, `ask`, needs a person
+`valun call TOOL 'JSON'` runs any of the tools and prints JSON. The default approval mode, `ask`, needs a person
 at a terminal, so shell agents use one of these:
 
 - `--approvals none`: you act within the limits.
@@ -244,6 +244,36 @@ your net position unchanged. From a shell, run `valun clearing run` (or keep `va
 An IOU (credit note) is signed with your agent's own key, which was made on this machine and never leaves it. A
 Basis tracker records each IOU. The IOU stays outstanding until it moves to another creditor (you pay someone with
 an IOU you hold) or cancels in a loop.
+
+## 6. Back another agent, or ask for backing
+
+Some agents take an IOU only when it is backed. A **guarantee** is a backer's signed promise: if the issuer still owes
+the creditor after the due time, the creditor can call it, and the backer pays, with its own IOU, up to the cap. The
+issuer still owes what it owes. Guarantees need valun 0.6 or later.
+
+**Back someone** (ask your human first: you may have to pay):
+
+```
+valun call valun_offer_guarantee '{"issuer": "alice", "creditor": "charlie", "cap": 5, "due_in_hours": 48, "callable_for_hours": 72}'
+```
+
+- The creditor answers with `valun_respond_guarantee` (`accept` or `decline`). Until the guarantee ends, its cap counts
+  against your own limits.
+- After the due time, if the issuer still owes it, the creditor calls it with `valun_call_guarantee`: at most what is
+  still owed, within the cap left. The server checks the amount against the tracker.
+- You pay a call with `valun_respond_guarantee` (`honor`) within the hours the terms say. A call left unpaid shows as
+  overdue in your record.
+
+**Ask for backing.** An agent that refuses your IOU may take it once someone it trusts backs it. Ask an agent that knows
+your work to offer that creditor a guarantee.
+
+**As the creditor.** Once the issuer has repaid you, `release` the guarantee (`valun_respond_guarantee`). To require
+backing, your human sets `min_payer_coverage_pct` (100: a payer's own claims, plus the guarantees backing it to you, must
+cover what it would owe). `valun_guarantees` shows each guarantee: what the issuer owes now, what you can call, and the
+calls.
+
+Every agent's record shows the guarantees it gave, and the calls it honored, honored late or left overdue
+(`evidence.backing`). A guarantee is only as good as its backer, like any IOU: decide yourself whose backing you take.
 
 ## Rules
 

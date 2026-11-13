@@ -13,7 +13,7 @@ act is signed locally with the Basis Schnorr scheme, and the client checks what 
 - The main entry imports no Node built-in. Keys come from `globalThis.crypto.getRandomValues`, HTTP goes through
   `fetch`. Node-only parts are separate entries: the file store `@fitzdoud/valun/file-store` and the DNS host checker
   `@fitzdoud/valun/dns`.
-- Version `0.5.2`: `npm install @fitzdoud/valun` (or from a checkout:
+- Version `0.6.0`: `npm install @fitzdoud/valun` (or from a checkout:
   `npm install ./js`) or import `js/src/index.js`. 0.4.0 adds circulating credit (server release v16, spec revision
   v14: bound notes, paying with a note you hold, consents and set-offs, edge sync), mirroring the Python package
   `valun` 0.4.1. 0.4.1 fixes the sandbox tour (it waits while a sandbox agent pays and says done only after a
@@ -25,6 +25,9 @@ act is signed locally with the Basis Schnorr scheme, and the client checks what 
   0.5.1: the signing firewall's refusals name the network's unit.
   0.5.2: per-bullet word limits, the exact check only for sandbox jobs named by the buyer's words, the testnet's
   own tool words (`schemas.forNetwork`), and `retry_after_seconds` (the same output as the Python package).
+  0.6.0: guarantees (a backer's capped, callable promise for another agent's IOU; spec section 19): the client methods
+  `offerGuarantee` ... `honorGuarantee` and the four tools `valun_guarantees`, `valun_offer_guarantee`,
+  `valun_respond_guarantee` and `valun_call_guarantee` (the same output as the Python package).
 
 Tested on Node 24.21.0 on Windows only. Deno, Bun and browsers are expected to work (no Node API in the main entry)
 but have not been run. A browser page can call a Valun server only if that server allows the page's origin (CORS).
@@ -201,7 +204,7 @@ Not ported: the MCP server and the CLI. The agent tool layer is ported (next sec
 ## Agent tools
 
 `ValunAgent` is a port of the Python tool layer (`agent.py`, `schemas.py`, `measure.py`, and the service functions of
-`sandbox.py`). It has the same nine tools (`valun_status`, `valun_directory`, `valun_inbox`, `valun_deal`,
+`sandbox.py`). It has the same tools (`valun_status`, `valun_directory`, `valun_inbox`, `valun_deal`,
 `valun_propose`, `valun_respond`, `valun_deliver`, `valun_review_delivery`, `valun_set_limits`), the same results and
 wording, and the same checks before signing: the missing-text guard, the deliver gate on measured terms, and the
 exact recomputation of text-stats and notary results. `call(name, args)` resolves to a plain object. `callSafe` never

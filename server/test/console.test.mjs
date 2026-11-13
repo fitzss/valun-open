@@ -83,13 +83,14 @@ test('every deal history event lib/pilot/core.mjs records has a console title an
 
 test('every approval kind the server decides has a console name; an unknown kind is never shown as a proposal', () => {
   const kinds = JSON.parse(/const APPROVAL_KINDS = Object\.freeze\((\[[^\]]+\])\)/.exec(CORE)[1].replace(/'/g, '"'));
-  assert.deepEqual(kinds, ['issue_note', 'pay_by_transfer', 'propose', 'accept', 'confirm_offer']);
+  assert.deepEqual(kinds, ['issue_note', 'pay_by_transfer', 'propose', 'accept', 'confirm_offer', 'guarantee_offer']);
   const kindName = new Function(`return ${/const kindName = (a => [^;]+);/.exec(SRC)[1]}`)();
   const names = Object.fromEntries(kinds.map(k => [k, kindName({kind: k, version: 1})]));
-  assert.deepEqual(names, {issue_note: 'credit note', pay_by_transfer: 'payment by transfer', propose: 'proposal', accept: 'acceptance', confirm_offer: 'accepted offer'});
+  assert.deepEqual(names, {issue_note: 'credit note', pay_by_transfer: 'payment by transfer', propose: 'proposal', accept: 'acceptance', confirm_offer: 'accepted offer',
+    guarantee_offer: 'guarantee offer'});
   assert.equal(kindName({kind: 'propose', version: 2}), 'counter-offer');
   assert.equal(kindName({kind: 'some_future_kind', version: 1}), 'approval of kind some_future_kind');
-  assert.match(SRC, /const APPROVAL_KINDS = \['issue_note', 'pay_by_transfer', 'propose', 'accept', 'confirm_offer'\];/, 'the console names the same kinds');
+  assert.match(SRC, /const APPROVAL_KINDS = \['issue_note', 'pay_by_transfer', 'propose', 'accept', 'confirm_offer', 'guarantee_offer'\];/, 'the console names the same kinds');
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -500,4 +501,36 @@ test('circulation off (/info lists no circulation/1): the mandate form shows no 
   // With circulation/1 listed the same view has them.
   const on = await openConsole(serve({circulation: true}));
   assert.ok(on.doc.querySelector('#mandate-form [name=c_auto_clear]'), 'mode on: the circulation fields');
+});
+
+test('a guarantee offer held for the owner (fix inbox #18, approval kind guarantee_offer, no deal) shows its exact terms; Approve is on only while they hash to the terms hash; approving says it is offered', async () => {
+  const t = {protocol: 'valun-guarantee/1', network: 'valun-pilot-1', tracker_nft_id: H('d'), denomination: `token:${H('e')}`, guarantee_id: 'vg_aaaaaaaaaaaaaaaa', nonce: H('1').slice(0, 32),
+    backer: {id: ME.id, pubkey: ME.pubkey}, issuer: {id: PAYEE.id, pubkey: PAYEE.pubkey}, creditor: {id: ISS.id, pubkey: ISS.pubkey}, cap: {amount: 5, unit: 'PC'},
+    covers: 'issuer_debt_to_creditor', due_at: FUTURE, expires_at: FUTURE, honor_within_hours: 24, offer_expires_at: FUTURE, note: 'backs carol for sandbox-exact'};
+  const ga = h => ({id: 'va_bbbbbbbbbbbb', participant: ME.id, deal_id: null, guarantee_id: t.guarantee_id, kind: 'guarantee_offer', version: 1, terms_hash: h, created_at: PAST, state: 'pending',
+    subject: {terms: t, terms_hash: h, mandate_check: {checks: [], mandate_version: 3}, issuer: PAYEE.id, creditor: ISS.id}, mandate_check: {checks: [], mandate_version: 3},
+    effect: 'approving offers sandbox-exact this guarantee', deal: null,
+    guarantee: {guarantee_id: t.guarantee_id, state: 'awaiting_owner', covers: 'What the issuer owes the creditor on the tracker when the creditor calls', offer: {signature: SIG('c')},
+      creditor: {id: ISS.id, handle: ISS.handle}, offer_expires_at: FUTURE}});
+  let posted = null;
+  const routes = serve({circulation: true, change: o => { o.approvals = [ga(termsHash(t))]; }, extra: (m, p, b) => {
+    if (m === 'POST' && p === '/owner/approvals/va_bbbbbbbbbbbb') { posted = b; Object.assign(routes.owner.approvals[0], {state: 'approved'}); return {status: 200, body: {approval: {...routes.owner.approvals[0]}, guarantee: {...routes.owner.approvals[0].guarantee, state: 'offered'}}}; }
+  }});
+  const page = await openConsole(routes);
+  const appr = page.doc.querySelector('article.appr[data-kind=guarantee_offer]');
+  assert.ok(appr, 'the pending guarantee approval is shown, with no deal');
+  assert.match(text(appr), /guarantee offer/);
+  assert.match(text(appr), /Back what carol owes sandbox-exact/);
+  assert.match(text(appr), /up to 5 PC/);
+  assert.match(text(appr), /backs carol for sandbox-exact/);
+  assert.match(text(appr), /valun-pilot\/guarantee-offer\/1/, 'the statement the agent signed');
+  assert.doesNotMatch(text(appr), /new proposal/);
+  assert.equal(button(appr, 'Approve').disabled, false);
+  button(appr, 'Approve').click();
+  await settle();
+  assert.deepEqual(posted, {decision: 'approve', note: ''});
+  assert.match(text(page.doc.querySelector('#owner-console')), /Guarantee vg_aaaaaaaaaaaaaaaa is offered to sandbox-exact/);
+  // Terms that do not hash to the terms hash: Approve stays off.
+  const bad = await openConsole(serve({circulation: true, change: o => { o.approvals = [ga(H('7'))]; }}));
+  assert.equal(button(bad.doc.querySelector('article.appr[data-kind=guarantee_offer]'), 'Approve').disabled, true);
 });

@@ -1104,6 +1104,99 @@ self-serve join cap), would stop `sandbox-exact` buying and sending welcome jobs
 force are the 3 welcome jobs a tick, the room check above, the 20 PC earn cap, 3 purchases per stranger a day, and the
 join caps; bounding `deliver_by` on purchases is an open owner decision (Operations, "Open owner decisions").
 
+### Guarantees (modes `sandbox` and `on`; fix inbox #18)
+
+A guarantee is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes that creditor on
+the tracker, if the creditor calls after `due_at` and before `expires_at`. It is listed in `GET /info` as the feature
+`guarantees/1`, with `guarantees` (the protocol, what it covers, the bounds) and `guarantee_statements`. The routes
+exist only for participants circulating credit is on for (in mode `sandbox`: sandbox participants); the three parties
+must all be such participants. Code: `lib/pilot/guarantees.mjs`; tests: `test/guarantees.test.mjs`.
+
+Terms (`valun-guarantee/1`), every field required:
+
+```
+{"protocol": "valun-guarantee/1", "network", "tracker_nft_id", "denomination", "guarantee_id": "vg_<16 hex>", "nonce": "<32 hex>",
+ "backer": {id, pubkey}, "issuer": {id, pubkey}, "creditor": {id, pubkey},       three different active participants
+ "cap": {"amount": <whole number>, "unit"},                                       the most the backer pays in all
+ "covers": "issuer_debt_to_creditor",
+ "due_at", "expires_at",          due_at at most 60 days ahead (or up to 60 minutes past); 1 hour to 60 days later
+ "honor_within_hours": 1..168,    how long the backer has to honor a call
+ "offer_expires_at",              at most 7 days ahead, not after expires_at
+ "note": "<text, may be empty; at most 500 characters, the text rules of signed text>"}
+```
+
+Statements (`GET /info guarantee_statements`), each over the terms hash `h`:
+
+| Who | Statement |
+|---|---|
+| backer offers | `valun-pilot/guarantee-offer/1\n<h>` |
+| creditor accepts | `valun-pilot/guarantee-accept/1\n<h>` |
+| creditor declines | `valun-pilot/guarantee-decline/1\n<h>\n<sha256(reason)>` |
+| backer withdraws an offer | `valun-pilot/guarantee-withdraw/1\n<h>` |
+| creditor releases | `valun-pilot/guarantee-release/1\n<h>` |
+| creditor calls | `valun-pilot/guarantee-call/1\n<h>\n<call_id>\n<amount>` |
+| backer honors a call | `valun-pilot/guarantee-honor/1\n<h>\n<call_id>\n<amount>` |
+
+Routes (agent token for every action; the owner token reads):
+
+| Route | What |
+|---|---|
+| `GET /guarantees` | the guarantees you are a party to, newest first (the creditor and the issuer see one once it was offered) |
+| `GET /guarantees/{vg}` | one guarantee's view (404 for anyone else) |
+| `POST /guarantees` `{terms, terms_hash?, signature}` | the backer offers (201). Above the backer's `approve_above` it waits for its owner: approval kind `guarantee_offer`, decided at `POST /owner/approvals/{va}` like any other |
+| `POST /guarantees/{vg}/accept` `{terms_hash, signature}` | the creditor accepts |
+| `POST /guarantees/{vg}/decline` `{terms_hash, signature, reason?}` | the creditor declines |
+| `POST /guarantees/{vg}/withdraw` `{terms_hash, signature}` | the backer withdraws an offer not yet accepted |
+| `POST /guarantees/{vg}/release` `{terms_hash, signature}` | the creditor ends an accepted guarantee; its unhonored calls end with it |
+| `POST /guarantees/{vg}/calls` `{call_id: "vgc_<16 hex>", amount, terms_hash, signature}` | the creditor calls (201) |
+| `GET /guarantees/{vg}/calls/{vgc}/note-template[?bound=1][&prior=1]` | the backer's credit-note template for the call: as a deal's (`prior_total`, `total` = prior + the call's amount, `timestamp`, `message_hex`; `bound=1` adds `prior_note`, `prior_timestamp`, `prior_message_hex`) |
+| `POST /guarantees/{vg}/calls/{vgc}/honor` `{terms_hash, amount, signature, credit_note}` | the backer honors the call with its own credit note to the creditor (`credit_note` as at a deal's completion, bound or ordinary) |
+
+States: `awaiting_owner` (only the backer sees it), `offered`, `active`, `expired` (past `expires_at`: no new call; an
+open call stays to be honored), `released`, and the ends before acceptance `declined`, `withdrawn`,
+`rejected_by_owner`, `offer_expired`. Calls: `open`, `issuing` (written ahead; recovery finishes it), `failed` (the
+tracker did not record the note; the backer signs again), `honored`, `lapsed`, `released`.
+
+The rules:
+
+- **What a call can claim.** `issuer_owes_creditor` is what the issuer owes the creditor on the tracker now (recorded
+  minus redeemed, on every key either has registered). `claimed` is the sum of the calls that are not lapsed or
+  released. While the guarantee is active and due, with no call open, `callable_now = min(cap - claimed,
+  issuer_owes_creditor - claimed)`: a creditor that was repaid has nothing to call (409 `exceeds_callable {callable,
+  issuer_owes_creditor, claimed, cap}`), and a repayment counts first. One call at a time (409 `call_open`). Before
+  `due_at`: 409 `not_due {callable_from, retry_after_ms}`; after `expires_at`, or released: 409 `not_active`.
+- **The honor.** The backer's credit note to the creditor, between their current keys, for exactly the call's amount,
+  checked as a deal's note is at completion (the tracker's total, the timestamp rules and residues, a bound note's
+  prior acknowledgment; `pair_busy`, `novation_pending`, `edge_busy` as for a deal's note). A call can be honored while
+  the issuer still owes at least everything claimed; if the issuer repaid since the call, the honor makes the call
+  lapse (409 `call_lapsed {issuer_owes_creditor}`, nothing paid) and the creditor may call again for what is left. A
+  call honored after `honor_by` (`called_at` + `honor_within_hours`) is honored `late`; until then an unhonored call
+  past it is `overdue`. A recorded note is journaled as kind `issue` with `ref` the call id, and may close a loop
+  (the clearing engine), as a deal's note does.
+- **The issuer's IOU stays.** Basis changes no note without its issuer's signature, so the creditor holds both the
+  issuer's note and the backer's. `recovered_for_backer = max(0, honored - issuer_owes_creditor)`: what the creditor
+  has recovered from the issuer beyond the part the backer did not pay, which belongs to the backer. It is shown, not
+  enforced.
+- **Limits.** The backer's offer is checked as a deal it pays the creditor (`may_issue_credit`, the cap within
+  `max_issue_per_deal`, `max_issue_outstanding` with the open caps of its other guarantees as `guaranteed`, its
+  counterparty list and the self-serve box, which must allow the issuer too), again when the creditor accepts and when
+  its owner approves. Until the guarantee ends, the backer's open cap (`cap - honored`; after the end, its unhonored
+  calls) counts against its `max_issue_outstanding` (`guaranteed` in the check). The creditor's acceptance is checked
+  as a deal the backer pays it (its policy on the backer as the issuer of the note it may come to hold; no
+  `min_price_as_payee`, no owner approval); the open caps of guarantees it accepted count in its `max_accept_per_issuer`
+  toward that backer and its `max_claims_total` (`guaranteed`). A creditor's `min_payer_coverage_pct` counts the open
+  cap of the active guarantees backing a payer's debts to it (`backing_for_you`, `guarantees` in the check), so an
+  owner can require "backed or refused" with that rule alone.
+- **The inbox and the record.** `GET /inbox` adds `guarantees {to_answer, to_honor, active, waiting_for_your_owner}`
+  for a participant that has any. `public_position.evidence.backing` has `given` (accepted, active, open cap, called,
+  honored, honored late, overdue, ended uncalled), `backed_as_issuer` (accepted, backers by kind, called against) and
+  `held_as_creditor`; `GET /evidence` the network's totals. It is evidence, not a score, and grants nothing.
+- **The deal counts.** `position.deals.credit_notes_issued` counts deals that ended with a credit note in either role;
+  `notes_issued_as_payer` and `notes_received` split it (circulating modes).
+- **On the testnet** the backer's note is an IOU like any other: its creditor can redeem it against the backer's own
+  tERG reserve, if the backer posted one (`POST /reserves/create` takes 10,000,000 to 2,000,000,000 nanoERG: 0.01 to
+  2 tERG). Nothing on chain changes.
+
 ### Records kept and pruned
 
 Transfers and set-offs that ended without applying are dropped 7 days after they ended; applied ones keep their totals
@@ -1274,7 +1367,8 @@ Every error body is `{"error": <code>, "message": <text>, ...extra}`. By status:
   `hash_mismatch` (+`canonical`); `self_edge` (pay with a note you issued); `pay_with_is_payee` (pay the payee with its
   own note).
 - **401**: `unauthorized`.
-- **403**: `bad_signature`; `mandate_exceeded {rule, source, recorded_by?, mandate_version}`; `above_owner_mandate`,
+- **403**: `bad_signature`; `mandate_exceeded {rule, source, recorded_by?, mandate_version}`; `not_backer`,
+  `not_creditor` (guarantees); `above_owner_mandate`,
   `below_owner_mandate {field, owner_value}`; `invalid_invite`; `invalid_enrollment`; `no_key`; `not_payer`;
   `not_payee`; `agent_only`; `sandbox_only`; `payment_not_accepted {rule, by}` (`by`: payer, payee, issuer or member;
   rules: `pay_with_held_notes`, `expires_at`, `max_collecting_transfers`, `max_attempts_per_deal`,
@@ -1292,8 +1386,12 @@ Every error body is `{"error": <code>, "message": <text>, ...extra}`. By status:
   `payee_edge_not_applied {payee_edge}`, `transfer_stale {template?, transfer_id?, code?, regenerated_as?, deal?}`, `transfer_failed {code, transfer_id,
   regenerated_as, deal}`, `stale_payment {reason, rule?, by?, transfer_id, deal_status}`, `novation_pending
   {consent_ids}`, `edge_busy {retry_after_ms}`, `insufficient_claim`, `already_signed`, `clearing_not_running`;
-  settlement on Ergo testnet: `no_note`, `tracker_refused`.
-- **413**: `too_large`. **429**: `rate_limited`; `too_many_open_offers` (the open network).
+  settlement on Ergo testnet: `no_note`, `tracker_refused`; guarantees: `not_due {callable_from, retry_after_ms}`,
+  `not_active`, `call_open`, `exceeds_callable {callable, issuer_owes_creditor, claimed, cap}`, `call_lapsed
+  {issuer_owes_creditor}`, `already_honored`, `stale_amount`, `honor_in_progress {retry_after_ms}`,
+  `bound_note_required`, `creditor_no_key`.
+- **413**: `too_large`. **429**: `rate_limited`; `too_many_open_offers` (the open network; also more than 10 guarantee
+  offers open from one backer).
 - **502**: `tracker_unavailable`, `signer_error`, or `{"error": "internal error"}` for anything unexpected.
 - **503**: `tracker_downgraded {retry_after_ms}` (release v16.1: every pilot write while the tracker reports no valid
   tracker v3.2 capabilities and the state holds circulating-credit history; nothing was sent or recorded; Operations),

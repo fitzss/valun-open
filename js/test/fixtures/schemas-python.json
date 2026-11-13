@@ -1,15 +1,15 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "21b03b99c938b05f5bc412f42193c1ba37b81082a56f2b71180476f2ab93d531",
+  "agent.py": "a0fb6fe4e35801cfa5e5e928ece95f879efaa85747aa8020a21e1f6559d78188",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "018e33fe8947eab3f529eb516fa722db431d6fb1f6b794348eee2fc34d4c3673",
-  "mcp_server.py": "878b8223d840de927a57e33794d13ddcae2c4a8b3000fdbb43a24774f0843cc6",
+  "client.py": "f1995d5084e80a23b86f1da150ef49f416b9b8426931557bc7a93b6e81281aa7",
+  "mcp_server.py": "2b4cc4119077275964aba895744e77c636c1b733a6454684ef2f54e1c7e9eb0f",
   "measure.py": "ee2c1164c7a9ecfa9f934603872d0ec0aa194c6f07257a0734d1a163df4c6de9",
   "novation.py": "3579850c2307713ae538fddbd899dc75e017992c5d75069969e0a7140edfa741",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "aa968c2e628ac44bc906e1b41629a16da0018d463b63a34d9e4d610774c35048",
-  "schemas.py": "8ce325294116f2030b49724e818282cb5c21b04d33db640757a68ab1e9db5b33"
+  "schemas.py": "b6e81a745a9936b56f49f1637fe9e9e68d7b70f7a7d57efd8f3708c5a5808b8c"
  },
  "tools": [
   {
@@ -302,6 +302,138 @@
      }
     },
     "required": []
+   }
+  },
+  {
+   "name": "valun_guarantees",
+   "description": "The guarantees you are part of, as backer, issuer or creditor, or one of them (guarantee_id): the exact terms, the state, what the issuer owes the creditor on the tracker now, what the creditor can call now, and every call with whether the backer honored it. A guarantee is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes it after the due time, if the creditor calls before the guarantee expires. The issuer's own IOU stays as it is; the backer pays a call with its own IOU. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other independently controlled agents.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "guarantee_id": {
+      "type": "string",
+      "description": "Optional: one guarantee, e.g. vg_0123456789abcdef"
+     }
+    },
+    "required": []
+   }
+  },
+  {
+   "name": "valun_offer_guarantee",
+   "description": "Back another agent's IOUs to one creditor: you sign a promise to pay `creditor`, up to `cap` PC in all, what `issuer` still owes it after the due time, if the creditor calls before the guarantee expires. You pay a call with your OWN credit note to the creditor (you then owe it that much; it is not settled). Until the guarantee ends, the cap counts against your owner's limits as credit you may have to issue. The creditor must accept it. Ask your owner first: you may have to pay. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other independently controlled agents.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "issuer": {
+      "type": "string",
+      "description": "Handle or participant id of the agent whose debt you back"
+     },
+     "creditor": {
+      "type": "string",
+      "description": "Handle or participant id of the agent you would pay"
+     },
+     "cap": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The most you pay in all, in PC"
+     },
+     "due_in_hours": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1440,
+      "description": "Hours from now until the creditor can call (0: as soon as it accepts)"
+     },
+     "callable_for_hours": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1440,
+      "description": "Hours after the due time during which it can call; then the guarantee expires (default 168)"
+     },
+     "honor_within_hours": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 168,
+      "description": "Hours you have to honor a call (default 24)"
+     },
+     "offer_valid_hours": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 168,
+      "description": "How long the creditor has to accept (default 24)"
+     },
+     "note": {
+      "type": "string",
+      "description": "Optional: what the backing is for, in one line; the three parties read it (up to 500 characters)"
+     }
+    },
+    "required": [
+     "issuer",
+     "creditor",
+     "cap",
+     "due_in_hours"
+    ]
+   }
+  },
+  {
+   "name": "valun_respond_guarantee",
+   "description": "Act on a guarantee. As its creditor: action='accept' takes the backing (it commits you to nothing; you can call it once it is due), 'decline' refuses it, 'release' ends an accepted one (the issuer repaid you, say): it can no longer be called. As its backer: 'withdraw' takes back your offer before it is accepted, and 'honor' pays a call: your Valun client signs your OWN credit note to the creditor for the called amount (you then owe it that much; it is not settled). Pass expected_terms_hash from valun_guarantees so you never sign terms that changed. May ask your owner to confirm before releasing or honoring.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "guarantee_id": {
+      "type": "string"
+     },
+     "action": {
+      "type": "string",
+      "enum": [
+       "accept",
+       "decline",
+       "release",
+       "withdraw",
+       "honor"
+      ]
+     },
+     "reason": {
+      "type": "string",
+      "description": "decline only: why, in one sentence (the backer reads it)"
+     },
+     "call_id": {
+      "type": "string",
+      "description": "honor only: the call to pay (default: the call waiting to be honored)"
+     },
+     "expected_terms_hash": {
+      "type": "string",
+      "description": "terms_hash you reviewed (accept, release, honor)"
+     }
+    },
+    "required": [
+     "guarantee_id",
+     "action"
+    ]
+   }
+  },
+  {
+   "name": "valun_call_guarantee",
+   "description": "Call a guarantee you hold as its creditor, once it is due and before it expires: you claim up to what the issuer still owes you on the tracker, less what earlier calls claimed, within the cap left. The server checks the amount against the tracker. The backer then has honor_within_hours to pay you with its own credit note. What you later recover from the issuer beyond the part the backer did not pay belongs to the backer. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other independently controlled agents.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "guarantee_id": {
+      "type": "string"
+     },
+     "amount": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "PC to claim (default: everything callable now)"
+     },
+     "expected_terms_hash": {
+      "type": "string",
+      "description": "terms_hash you reviewed"
+     }
+    },
+    "required": [
+     "guarantee_id"
+    ]
    }
   }
  ],
@@ -596,6 +728,138 @@
      }
     },
     "required": []
+   }
+  },
+  {
+   "name": "valun_guarantees",
+   "description": "The guarantees you are part of, as backer, issuer or creditor, or one of them (guarantee_id): the exact terms, the state, what the issuer owes the creditor on the tracker now, what the creditor can call now, and every call with whether the backer honored it. A guarantee is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes it after the due time, if the creditor calls before the guarantee expires. The issuer's own IOU stays as it is; the backer pays a call with its own IOU. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other independently controlled agents.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "guarantee_id": {
+      "type": "string",
+      "description": "Optional: one guarantee, e.g. vg_0123456789abcdef"
+     }
+    },
+    "required": []
+   }
+  },
+  {
+   "name": "valun_offer_guarantee",
+   "description": "Back another agent's IOUs to one creditor: you sign a promise to pay `creditor`, up to `cap` nanoERG in all, what `issuer` still owes it after the due time, if the creditor calls before the guarantee expires. You pay a call with your OWN credit note to the creditor (you then owe it that much; it is not settled). Until the guarantee ends, the cap counts against your owner's limits as credit you may have to issue. The creditor must accept it. Ask your owner first: you may have to pay. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other independently controlled agents.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "issuer": {
+      "type": "string",
+      "description": "Handle or participant id of the agent whose debt you back"
+     },
+     "creditor": {
+      "type": "string",
+      "description": "Handle or participant id of the agent you would pay"
+     },
+     "cap": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The most you pay in all, in nanoERG"
+     },
+     "due_in_hours": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1440,
+      "description": "Hours from now until the creditor can call (0: as soon as it accepts)"
+     },
+     "callable_for_hours": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1440,
+      "description": "Hours after the due time during which it can call; then the guarantee expires (default 168)"
+     },
+     "honor_within_hours": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 168,
+      "description": "Hours you have to honor a call (default 24)"
+     },
+     "offer_valid_hours": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 168,
+      "description": "How long the creditor has to accept (default 24)"
+     },
+     "note": {
+      "type": "string",
+      "description": "Optional: what the backing is for, in one line; the three parties read it (up to 500 characters)"
+     }
+    },
+    "required": [
+     "issuer",
+     "creditor",
+     "cap",
+     "due_in_hours"
+    ]
+   }
+  },
+  {
+   "name": "valun_respond_guarantee",
+   "description": "Act on a guarantee. As its creditor: action='accept' takes the backing (it commits you to nothing; you can call it once it is due), 'decline' refuses it, 'release' ends an accepted one (the issuer repaid you, say): it can no longer be called. As its backer: 'withdraw' takes back your offer before it is accepted, and 'honor' pays a call: your Valun client signs your OWN credit note to the creditor for the called amount (you then owe it that much; it is not settled). Pass expected_terms_hash from valun_guarantees so you never sign terms that changed. May ask your owner to confirm before releasing or honoring.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "guarantee_id": {
+      "type": "string"
+     },
+     "action": {
+      "type": "string",
+      "enum": [
+       "accept",
+       "decline",
+       "release",
+       "withdraw",
+       "honor"
+      ]
+     },
+     "reason": {
+      "type": "string",
+      "description": "decline only: why, in one sentence (the backer reads it)"
+     },
+     "call_id": {
+      "type": "string",
+      "description": "honor only: the call to pay (default: the call waiting to be honored)"
+     },
+     "expected_terms_hash": {
+      "type": "string",
+      "description": "terms_hash you reviewed (accept, release, honor)"
+     }
+    },
+    "required": [
+     "guarantee_id",
+     "action"
+    ]
+   }
+  },
+  {
+   "name": "valun_call_guarantee",
+   "description": "Call a guarantee you hold as its creditor, once it is due and before it expires: you claim up to what the issuer still owes you on the tracker, less what earlier calls claimed, within the cap left. The server checks the amount against the tracker. The backer then has honor_within_hours to pay you with its own credit note. What you later recover from the issuer beyond the part the backer did not pay belongs to the backer. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other independently controlled agents.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "guarantee_id": {
+      "type": "string"
+     },
+     "amount": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "nanoERG to claim (default: everything callable now)"
+     },
+     "expected_terms_hash": {
+      "type": "string",
+      "description": "terms_hash you reviewed"
+     }
+    },
+    "required": [
+     "guarantee_id"
+    ]
    }
   }
  ]

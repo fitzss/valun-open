@@ -222,7 +222,7 @@ const SETOFF_STATE = {collecting: 'collecting the members\' signatures', applyin
   expired: 'expired before every member signed: nothing moved', refused: 'refused by a member: nothing moved', superseded: 'superseded: nothing moved',
   void_key_revoked: 'void: an agent key was revoked; nothing moved', inconsistent: 'inconsistent: an alarm for the operator'};
 // Approval kinds the server decides (release v16: issue_note, pay_by_transfer, propose, accept, confirm_offer).
-const kindName = a => a.kind === 'accept' ? 'acceptance' : a.kind === 'issue_note' ? 'credit note' : a.kind === 'pay_by_transfer' ? 'payment by transfer'
+const kindName = a => a.kind === 'accept' ? 'acceptance' : a.kind === 'issue_note' ? 'credit note' : a.kind === 'pay_by_transfer' ? 'payment by transfer' : a.kind === 'guarantee_offer' ? 'guarantee offer'
   : a.kind === 'confirm_offer' ? 'accepted offer' : a.kind === 'propose' || a.kind === undefined ? (a.version > 1 ? 'counter-offer' : 'proposal') : `approval of kind ${a.kind}`;
 const dealChip = d => el('span', {class: `status ps-${(DEAL_STATUS[d.status] || [0, 'ended'])[1]}`}, dealStatusLabel(d));
 // Circulating credit is listed in /info (server release v16, modes sandbox and on).
@@ -525,14 +525,14 @@ function approvalsCard(pending, kept = {}) {
     pending.length
       ? el('p', {class: 'hint'}, `Your agent signed these, but your mandate says they need you (${'review_deliveries' in S.owner.mandate ? `a price above approve_above, or review_deliveries for credit notes${S.owner.credit_policy ? ' and payments by transfer' : ''}` : 'the price is above approve_above'}). None of them takes effect until you decide. Check the exact terms.`)
       : el('p', {class: 'hint'}, `Nothing is waiting for you. Commitments priced above ${pc(S.owner.mandate.approve_above)} (approve_above) will appear here first.`),
-    ...pending.map(a => approvalItem(a, kept[a.id] || {})));
+    ...pending.map(a => (a.kind === 'guarantee_offer' ? guaranteeApprovalItem : approvalItem)(a, kept[a.id] || {})));
 }
 
 // What exactly is being approved. The server returns it with each approval: `subject` (the exact terms or credit note,
 // the agent's signature, the text it signed, the server's mandate check) and `effect` (what approving and rejecting do).
 // The kinds this console shows; the server decides exactly these (release v16), and refuses any other with
 // 409 unknown_approval_kind before anything changes.
-const APPROVAL_KINDS = ['issue_note', 'pay_by_transfer', 'propose', 'accept', 'confirm_offer'];
+const APPROVAL_KINDS = ['issue_note', 'pay_by_transfer', 'propose', 'accept', 'confirm_offer', 'guarantee_offer'];
 function approvalSubject(a) {
   const s = a.subject || null, tr = a.kind === 'pay_by_transfer' ? s?.transfer ?? null : null;
   const kindLabel = a.kind === 'issue_note' ? 'credit note: delivery accepted'
@@ -683,6 +683,55 @@ function approvalItem(a, kept = {}) {
     el('p', {class: 'tiny'}, SRC.owner(), ' Your decision is recorded by the Valun server under your owner token. It is not signed with a key.'));
 }
 
+// A guarantee offer held for you (fix inbox #18; approval kind guarantee_offer, no deal): your agent promises to pay a
+// creditor, up to a cap, what an issuer still owes it after a due time, if the creditor calls before the expiry. The
+// server returns the guarantee and its exact terms with the approval; Approve stays off unless the terms shown hash to
+// the terms hash being approved.
+function guaranteeApprovalItem(a, kept = {}) {
+  const g = a.guarantee || null, t = a.subject?.terms ?? null, me = S.owner.participant;
+  const note = el('input', {type: 'text', maxlength: 300, class: 'appr-note', placeholder: 'Note (optional). Only you and your agent can read it.', 'aria-label': 'Note for this decision'});
+  if (kept.note) note.value = kept.note;
+  const out = el('div', {class: 'msg', role: 'status'});
+  const approve = el('button', {type: 'button', class: 'approve'}, 'Approve');
+  const reject = el('button', {type: 'button', class: 'secondary reject'}, 'Reject');
+  const gate = {terms: !!t, hashOk: true};
+  const gateMsg = el('p', {class: 'tiny warn gate-msg', hidden: true});
+  const sync = () => {
+    const ok = gate.terms && gate.hashOk;
+    approve.disabled = !ok; gateMsg.hidden = ok;
+    gateMsg.textContent = !gate.terms ? 'Approve is off: this page cannot show the terms you would be approving.' : 'Approve is off: the terms shown here do not hash to the terms hash you would be approving.';
+  };
+  const reenable = () => { reject.disabled = false; sync(); };
+  approve.addEventListener('click', () => decide(a, 'approve', note, out, [approve, reject], reenable));
+  reject.addEventListener('click', () => decide(a, 'reject', note, out, [approve, reject], reenable));
+  sync();
+  const party = x => [`${handleOf(x.id)}${x.id === me.id ? ' (you)' : ''} `, keyFp(x.pubkey)];
+  return el('article', {class: 'appr', 'data-approval': a.id, 'data-guarantee': a.guarantee_id, 'data-kind': a.kind},
+    el('div', {class: 'appr-head'}, tag('owner', 'guarantee offer'),
+      el('b', {class: 'appr-title'}, t ? `Back what ${handleOf(t.issuer.id)} owes ${handleOf(t.creditor.id)}` : 'terms not returned by the server'),
+      t ? el('span', {class: 'appr-price'}, `up to ${pc(t.cap.amount, t.cap.unit)} – your agent pays a call with its own credit note`) : null),
+    el('div', {class: 'tiny'}, `asked ${whenRel(a.created_at)} · guarantee ${a.guarantee_id} · approval ${a.id}`),
+    a.effect ? el('div', {class: 'effect'}, el('p', {}, a.effect), el('p', {class: 'tiny'}, SRC.valun(), ' What approving does, as the server will apply it.')) : null,
+    t ? kv([
+      ['Backer (your agent)', party(t.backer)],
+      ['Issuer (whose debt it covers)', party(t.issuer)],
+      ['Creditor (who can call it)', party(t.creditor)],
+      ['Cap (the most your agent pays in all)', el('b', {}, pc(t.cap.amount, t.cap.unit))],
+      ['Covers', g?.covers ?? t.covers],
+      ['Callable', `from ${whenRel(t.due_at)} until ${whenRel(t.expires_at)}`],
+      ['Honored within', `${t.honor_within_hours} hours of a call`],
+      ['Offer open until', whenRel(t.offer_expires_at)],
+      t.note && ['Note', el('div', {class: 'pre-wrap'}, t.note)],
+      ['Terms hash', [code(a.terms_hash), el('div', {}, hashCheck(canonical(t), a.terms_hash, 'terms hash', ok => { if (ok === false) { gate.hashOk = false; sync(); } }))]],
+      ['Bound to', `${t.network} · tracker ${short(t.tracker_nft_id)} · ${t.protocol} · nonce ${short(t.nonce, 6, 4)}`],
+      g?.offer?.signature && ["Your agent's signature", [code(g.offer.signature), el('div', {class: 'tiny'}, 'over the text ', signedText(`valun-pilot/guarantee-offer/1\n${a.terms_hash}`), ' ', SRC.key(me.handle))]],
+    ]) : el('p', {class: 'warn'}, 'The server did not return the guarantee this approval is for, so this page cannot show it. Approve stays off; reject it, or refresh.'),
+    el('div', {class: 'actions'}, note, approve, reject),
+    gateMsg,
+    out,
+    el('p', {class: 'tiny'}, SRC.owner(), ' Your decision is recorded by the Valun server under your owner token. It is not signed with a key.'));
+}
+
 // For an issue_note approval: the delivery the agent accepted and the credit note it signed (held by Valun, not in Basis yet).
 function issueNoteDetails(s) {
   const dl = s?.delivery, n = s?.credit_note;
@@ -765,6 +814,11 @@ async function decide(a, decision, noteInput, out, buttons, reenable) {
   }
 }
 function outcomeText(r) {
+  if (r.approval?.kind === 'guarantee_offer') {
+    const a = r.approval, g = r.guarantee;
+    if (a.state !== 'approved') return `Rejected (${a.id}). Guarantee ${a.guarantee_id} was not offered.`;
+    return `Approved (${a.id}). Guarantee ${a.guarantee_id} is offered to ${g?.creditor?.handle ?? 'the creditor'}, who can accept or decline it${g ? ` until ${when(g.offer_expires_at)}` : ''}.`;
+  }
   const a = r.approval, d = r.deal, other = d.counterparty?.handle ?? 'the counterparty', t = d.current?.terms;
   if (a.kind === 'pay_by_transfer') {
     // The answer is 200 {approval, deal, transfer} also when the tracker refused the transfer right after the approval:
@@ -1056,7 +1110,8 @@ function decidedCard(decided) {
   return el('div', {class: 'card'}, el('details', {}, el('summary', {}, `Decided and void approvals (${decided.length})`),
     tableWrap(el('table', {class: 'tbl'}, thead(['approval', 'what', 'decision', 'when', 'note']),
       el('tbody', {}, ...decided.map(a => el('tr', {},
-        el('td', {class: 'mono'}, a.id), el('td', {}, `${kindName(a)} v${a.version} · `, el('a', {href: `#owner/deal/${a.deal_id}`}, a.deal_id)),
+        el('td', {class: 'mono'}, a.id), el('td', {}, ...(a.kind === 'guarantee_offer' ? [`guarantee offer · ${a.guarantee_id}`]
+          : [`${kindName(a)} v${a.version} · `, el('a', {href: `#owner/deal/${a.deal_id}`}, a.deal_id)])),
         el('td', {}, a.state.replace(/_/g, ' ')), el('td', {class: 'tiny'}, when(a.decided_at || a.created_at)), el('td', {}, a.note || '–')))))),
     el('p', {class: 'tiny'}, SRC.owner())));
 }

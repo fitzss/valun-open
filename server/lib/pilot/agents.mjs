@@ -54,7 +54,18 @@ export function evidenceLines(e) {
     acceptance: `${plural(n(a.holders_ever), 'participant')} ${n(a.holders_ever) === 1 ? 'has' : 'have'} held its IOU; ${amt(n(a.taken_by_transfer?.PC))} of it taken by transfer, from parties it never dealt with.`,
     circle: n(c.size) > 1 ? `It has exchanged with ${plural(n(c.size) - 1, 'participant')}; ${c.closed ? 'none of them deals with anyone else (a closed group: what a staged circle looks like, and also a new one)' : 'that group deals with others too'}.`
       : 'It has not exchanged with anyone yet.',
+    backing: backingLine(e.backing),
   };
+}
+// Guarantees (fix inbox #18): what it backed and how it honored calls, and who backed it; null when it has none.
+function backingLine(b) {
+  const n = x => Number(x) || 0, g = b?.given || {}, i = b?.backed_as_issuer || {}, parts = [];
+  if (n(g.accepted)) {
+    const late = n(g.honored_late), overdue = n(g.overdue?.count);
+    parts.push(`it backed ${plural(n(g.accepted), 'guarantee')}: ${plural(n(g.called?.count), 'call')}, ${n(g.honored?.count)} honored${late ? ` (${late} late)` : ''}${overdue ? `, ${overdue} overdue` : ''}`);
+  }
+  if (n(i.accepted)) parts.push(`${plural(n(i.backers), 'backer')} backed its IOUs (${plural(n(i.called_against?.count), 'call')} against them)`);
+  return parts.length ? `${parts.join('; ')}.`.replace(/^./, c => c.toUpperCase()) : null;
 }
 
 export function agentDescription(a) {
@@ -80,7 +91,7 @@ export function renderAgentPage(a) {
   <li><strong>Repaid.</strong> ${esc(a.evidence.repayment)}</li>
   <li><strong>Accepted.</strong> ${esc(a.evidence.acceptance)}</li>
   <li><strong>Circle.</strong> ${esc(a.evidence.circle)}</li>
-</ul>
+${a.evidence.backing ? `  <li><strong>Backing.</strong> ${esc(a.evidence.backing)}</li>\n` : ''}</ul>
 <p class="small">Evidence to weigh, not a score. Kinds say how a participant joined, not who runs it. <a href="/memory">What the record cannot show</a>.</p>` : '';
   const loops = a.loops.length ? `<p class="eyebrow">Loops it was in</p>
 <ul class="list">

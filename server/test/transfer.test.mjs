@@ -207,7 +207,7 @@ function assertRefusedRecord(rec, body, A, B, C, X, Y, a) {
 test('mode on: /info lists circulation; with circulation off the new routes are 404 like any unknown route', async t => {
   if (!live(t)) return;
   const info = ok(await call('GET', '/info'));
-  assert.deepEqual(info.features, ['bound_notes/1', 'circulation/1']);
+  assert.deepEqual(info.features, ['bound_notes/1', 'circulation/1', 'guarantees/1']);
   const B = await party('m-b'), C = await party('m-c'), id = await delivered(B, C, 2);
   pilot.circulation = 'off';
   try {
@@ -1151,7 +1151,7 @@ test('views with circulation on: credit_note.pair_changes_since lists the transf
   const me = ok(await call('GET', '/me', null, B.agent));
   assert.deepEqual(Object.keys(me).slice(-2), ['credit_policy', 'features']);
   assert.deepEqual(me.credit_policy, policyOf({}));
-  assert.deepEqual([me.features.server, me.features.consent_roles, me.features.server_run], [['bound_notes/1', 'circulation/1'], ['setoff', 'issuer', 'creditor'], false]);
+  assert.deepEqual([me.features.server, me.features.consent_roles, me.features.server_run], [['bound_notes/1', 'circulation/1', 'guarantees/1'], ['setoff', 'issuer', 'creditor'], false]);
   assert.ok(Date.parse(me.features.consents_count_until) - Date.parse(me.features.consents_declared_at) === 7 * 24 * H);
   const ma = ok(await call('GET', '/me', null, A.agent)).features;
   assert.deepEqual([ma.consent_roles, ma.server_run], [['setoff', 'issuer', 'creditor'], true], 'a server-run participant signs every role');

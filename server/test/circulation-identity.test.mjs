@@ -533,7 +533,7 @@ test('the effective mode is off unless the capabilities have exactly the v3.2 va
 test('/info: in mode off exactly v15\'s; from mode bound up it adds features, novation and circulation_statements; the pay statement is not in `statements`', async () => {
   const pay = circulationStatements.pay('vd_0123456789abcdef', 'f'.repeat(64));
   assert.equal(pay, `valun-pilot/pay/1\nvd_0123456789abcdef\n${'f'.repeat(64)}`); assert.equal(Buffer.byteLength(pay), 102);
-  for (const [mode, features] of [['off', null], ['bound', ['bound_notes/1']], ['sandbox', ['bound_notes/1', 'circulation/1']], ['on', ['bound_notes/1', 'circulation/1']]]) {
+  for (const [mode, features] of [['off', null], ['bound', ['bound_notes/1']], ['sandbox', ['bound_notes/1', 'circulation/1', 'guarantees/1']], ['on', ['bound_notes/1', 'circulation/1', 'guarantees/1']]]) {
     const {pilot: pl} = stub({circulation: mode});
     const srv = http.createServer(createHandler({service: {}, mcp: {}, cfg: {}, publicDir: '.', pilotRoutes: createPilotRoutes({pilot: pl, cfg: {pilotRateLimitPerMinute: 100000}})}));
     await new Promise(r => srv.listen(0, '127.0.0.1', r));
@@ -541,7 +541,8 @@ test('/info: in mode off exactly v15\'s; from mode bound up it adds features, no
       const info = ok(await call('GET', '/info', null, null, {}, `http://127.0.0.1:${srv.address().port}`));
       assert.deepEqual(info.statements, STATEMENT_SOURCES, mode);
       if (!features) { assert.deepEqual(keys(info), INFO_KEYS); continue; }
-      assert.deepEqual(keys(info), [...INFO_KEYS, 'features', 'novation', 'circulation_statements'], mode);
+      // Guarantees (fix inbox #18): modes sandbox and on also list the guarantee protocol and its statements.
+      assert.deepEqual(keys(info), [...INFO_KEYS, 'features', 'novation', 'circulation_statements', ...(mode === 'bound' ? [] : ['guarantees', 'guarantee_statements'])], mode);
       assert.deepEqual(info.features, features);
       // Since tracker v3.2 also the contract the 0.4 clients require before they sign a prior acknowledgment (valun-open
       // novation CONTRACT: these values with these JSON types), in mode bound too.
@@ -703,7 +704,7 @@ test('reconciliation v2, positions and GET /edges with circulation on; in mode o
     [4, 5, -1, 9, 0, 0, 0, 2, 0, 0]);
   assert.deepEqual(pos.claims, [{from: c.handle, amount: 4, issuer_id: c.id, issuer_pubkey: c.pubkey, recipient_pubkey: a.pubkey}]);
   assert.deepEqual(pos.debts.map(x => keys(x)), [['to', 'amount', 'recipient_id', 'recipient_pubkey', 'issuer_pubkey'], ['to', 'amount', 'recipient_id', 'recipient_pubkey', 'issuer_pubkey']]);
-  assert.deepEqual(keys(pos.deals), [...POSITION_DEAL_KEYS, 'paid_by_transfer', 'payment_due']);
+  assert.deepEqual(keys(pos.deals), [...POSITION_DEAL_KEYS, 'paid_by_transfer', 'payment_due', 'notes_issued_as_payer', 'notes_received']);
   assert.equal(pos.settled_how, 'by set-off only; nothing is redeemed'); assert.equal(pos.backing, BACKING);
   assert.equal(pos.meaning, 'claims and debts are outstanding obligations recorded by the pilot Basis tracker (cumulative per pair). Some may have moved between creditors (transfer) or been cancelled in cycles (set-off); settled counts only set-off. Nothing is redeemed; there is no reserve.');
   const posC = await pl.position(c.p, ledger);

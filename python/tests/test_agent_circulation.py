@@ -851,10 +851,11 @@ class Base(unittest.TestCase):
 
 # ---------------------------------------------------------------------------------------------------------------------
 class Schemas(unittest.TestCase):
-    def test_still_nine_tools_in_the_original_order_with_new_keys_appended(self):
+    def test_the_nine_tools_in_the_original_order_with_new_keys_and_tools_appended(self):
         self.assertEqual([t['name'] for t in schemas.ALL],
                          ['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal', 'valun_propose', 'valun_respond',
-                          'valun_deliver', 'valun_review_delivery', 'valun_set_limits'])
+                          'valun_deliver', 'valun_review_delivery', 'valun_set_limits',
+                          'valun_guarantees', 'valun_offer_guarantee', 'valun_respond_guarantee', 'valun_call_guarantee'])
         self.assertEqual(list(schemas.REVIEW['parameters']['properties']),
                          ['deal_id', 'decision', 'reason', 'expected_deliverable_sha256', 'pay_with'])
         self.assertEqual(list(schemas.DELIVER['parameters']['properties']),

@@ -445,7 +445,8 @@ test('the container rehearsal passes PILOT_CIRCULATION, PILOT_OPEN_SANDBOX and N
 test('docs/PILOT-API.md names every route the pilot server serves and every error code it answers', t => {
   if (!needs(t, 'docs/PILOT-API.md')) return;
   const doc = read('docs/PILOT-API.md'), src = read('lib/pilot/http.mjs');
-  const ID = {'vd_[0-9a-f]{16}': '{vd}', 'vt_[0-9a-f]{16}': '{vt}', 'vs_[0-9a-f]{16}': '{vs}', 'v[st]_[0-9a-f]{16}': '{vt|vs}', 'vp_[0-9a-f]{12}': '{vp}', 'va_[0-9a-f]{12}': '{va}'};
+  const ID = {'vd_[0-9a-f]{16}': '{vd}', 'vt_[0-9a-f]{16}': '{vt}', 'vs_[0-9a-f]{16}': '{vs}', 'v[st]_[0-9a-f]{16}': '{vt|vs}', 'vp_[0-9a-f]{12}': '{vp}', 'va_[0-9a-f]{12}': '{va}',
+    'vg_[0-9a-f]{16}': '{vg}', 'vgc_[0-9a-f]{16}': '{vgc}'};
   const routes = new Set([...src.matchAll(/p === '(\/[a-z/-]*)'/g)].map(m => m[1]));
   for (const m of src.matchAll(/\/\^((?:\\\/[^/$]*)+)\$\//g)) {
     let r = m[1].replace(/\\\//g, '/');

@@ -8,7 +8,7 @@ import {READ_ONLY_TOOLS, TOOL_NAMES, schemas} from '../src/index.js';
 const PY_ALL = JSON.parse(fs.readFileSync(new URL('./fixtures/schemas-python.json', import.meta.url), 'utf8'));
 const PY = PY_ALL.tools;
 
-test('the nine tool definitions are exactly Python schemas.ALL (names, descriptions, JSON Schemas, key order)', () => {
+test('the tool definitions are exactly Python schemas.ALL (names, descriptions, JSON Schemas, key order)', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(schemas.ALL)), PY);
   assert.equal(JSON.stringify(schemas.ALL), JSON.stringify(PY));
   // 0.5.2 (fix inbox #15): the testnet's tools in its own words, exactly Python schemas.for_network('valun-testnet-1')
@@ -18,9 +18,12 @@ test('the nine tool definitions are exactly Python schemas.ALL (names, descripti
   assert.doesNotMatch(JSON.stringify(schemas.forNetwork(schemas.TESTNET)), /\bPC\b|pilot/);
   assert.deepEqual(TOOL_NAMES, PY.map(t => t.name));
   const byName = {STATUS: 'valun_status', DIRECTORY: 'valun_directory', INBOX: 'valun_inbox', DEAL: 'valun_deal', PROPOSE: 'valun_propose',
-    RESPOND: 'valun_respond', DELIVER: 'valun_deliver', REVIEW: 'valun_review_delivery', SET_LIMITS: 'valun_set_limits'};
+    RESPOND: 'valun_respond', DELIVER: 'valun_deliver', REVIEW: 'valun_review_delivery', SET_LIMITS: 'valun_set_limits',
+    GUARANTEES: 'valun_guarantees', OFFER_GUARANTEE: 'valun_offer_guarantee', RESPOND_GUARANTEE: 'valun_respond_guarantee',
+    CALL_GUARANTEE: 'valun_call_guarantee'};
   for (const [k, name] of Object.entries(byName)) assert.equal(schemas[k].name, name);
-  assert.deepEqual([...READ_ONLY_TOOLS], ['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal']);
+  assert.equal(schemas.ALL.length, 13);
+  assert.deepEqual([...READ_ONLY_TOOLS], ['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal', 'valun_guarantees']);
 });
 
 test('every definition is a JSON Schema object whose required fields exist, and the exported definitions are frozen', () => {

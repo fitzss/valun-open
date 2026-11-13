@@ -182,7 +182,8 @@ class Classification(unittest.TestCase):
         for name in va.TOOL_NAMES:
             self.assertEqual(sum(name in g for g in groups), 1, name)
             self.assertIn(name, mcp_server.TITLES)
-        self.assertEqual(va.SIGNING_TOOLS, ('valun_propose', 'valun_respond', 'valun_review_delivery'))
+        self.assertEqual(va.SIGNING_TOOLS, ('valun_propose', 'valun_respond', 'valun_review_delivery', 'valun_offer_guarantee',
+                                            'valun_respond_guarantee', 'valun_call_guarantee'))
         self.assertIs(mcp_server.COMMITS, va.SIGNING_TOOLS)
 
     def test_loosens_fails_closed(self):

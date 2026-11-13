@@ -2,15 +2,15 @@
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python": "3.14.7",
  "python_sources_sha256": {
-  "agent.py": "21b03b99c938b05f5bc412f42193c1ba37b81082a56f2b71180476f2ab93d531",
+  "agent.py": "a0fb6fe4e35801cfa5e5e928ece95f879efaa85747aa8020a21e1f6559d78188",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "018e33fe8947eab3f529eb516fa722db431d6fb1f6b794348eee2fc34d4c3673",
-  "mcp_server.py": "878b8223d840de927a57e33794d13ddcae2c4a8b3000fdbb43a24774f0843cc6",
+  "client.py": "f1995d5084e80a23b86f1da150ef49f416b9b8426931557bc7a93b6e81281aa7",
+  "mcp_server.py": "2b4cc4119077275964aba895744e77c636c1b733a6454684ef2f54e1c7e9eb0f",
   "measure.py": "ee2c1164c7a9ecfa9f934603872d0ec0aa194c6f07257a0734d1a163df4c6de9",
   "novation.py": "3579850c2307713ae538fddbd899dc75e017992c5d75069969e0a7140edfa741",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "aa968c2e628ac44bc906e1b41629a16da0018d463b63a34d9e4d610774c35048",
-  "schemas.py": "8ce325294116f2030b49724e818282cb5c21b04d33db640757a68ab1e9db5b33"
+  "schemas.py": "b6e81a745a9936b56f49f1637fe9e9e68d7b70f7a7d57efd8f3708c5a5808b8c"
  },
  "python_tests_sha256": {
   "test_novation.py": "0fd42619151a746ead340cb3ea70c9f471de1a7874185cda59784ebc6a01ab5f"
@@ -94,19 +94,25 @@
    "valun_respond",
    "valun_deliver",
    "valun_review_delivery",
-   "valun_set_limits"
+   "valun_set_limits",
+   "valun_guarantees",
+   "valun_offer_guarantee",
+   "valun_respond_guarantee",
+   "valun_call_guarantee"
   ],
   "READ_ONLY_TOOLS": [
    "valun_status",
    "valun_directory",
    "valun_inbox",
-   "valun_deal"
+   "valun_deal",
+   "valun_guarantees"
   ],
   "NOT_COMMITMENT_TOOLS": [
    "valun_status",
    "valun_directory",
    "valun_inbox",
    "valun_deal",
+   "valun_guarantees",
    "valun_deliver"
   ],
   "LIMIT_TOOLS": [
@@ -115,12 +121,18 @@
   "SIGNING_TOOLS": [
    "valun_propose",
    "valun_respond",
-   "valun_review_delivery"
+   "valun_review_delivery",
+   "valun_offer_guarantee",
+   "valun_respond_guarantee",
+   "valun_call_guarantee"
   ],
   "COMMITS": [
    "valun_propose",
    "valun_respond",
-   "valun_review_delivery"
+   "valun_review_delivery",
+   "valun_offer_guarantee",
+   "valun_respond_guarantee",
+   "valun_call_guarantee"
   ],
   "UNBOUND_MESSAGE": "could not read what you would sign; nothing was signed",
   "GENERIC_TEXT": "Valun: sign a commitment ({name}).",
@@ -144,7 +156,8 @@
    "pins",
    "journal_seq",
    "consents_last_safe_run_ms",
-   "consent_roles_declared"
+   "consent_roles_declared",
+   "guarantee_honors"
   ],
   "RESERVED_MS_FROM": 995,
   "NETWORK": "valun-pilot-1",
