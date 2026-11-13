@@ -435,7 +435,7 @@ def referenced(tweet, refs, kinds=('replied_to', 'quoted')):
 
 
 DOMAIN = re.compile(r'\b([a-z0-9-]+)\.([a-z]{2,24})\b', re.I)
-DASH = chr(0x2014)
+DASH, ARROW = chr(0x2014), f' {chr(0x2192)} '
 
 
 def clean_for_x(text, limit):
@@ -779,9 +779,11 @@ class Bot:
             names = [m.get('handle') for m in loop.get('members') or []]
             if len(names) < 2 or not any(n in held for n in names):
                 continue
-            shown = [f'@{held[n]}' if n in held else str(n) for n in names]
+            k = next(i for i, n in enumerate(names) if n in held)          # start at a person on X, in the loop's order
+            names = names[k:] + names[:k]
+            shown = [f'@{held[n]}' if n in held else f'{n} (AI)' if str(n).startswith('house-') else str(n) for n in names]
             each = loop.get('each_PC')
-            text = (f"Loop closed: {' → '.join(shown + shown[:1])}. "
+            text = (f'Loop closed: {ARROW.join(shown + shown[:1])}. '
                     + (f'{each} credit{"s" if each != 1 else ""} of promises cancelled' if each else 'Promises cancelled')
                     + f'. Nobody paid anyone. valun.tech/loop/{loop["id"]}')
             cost = COST['post_url']

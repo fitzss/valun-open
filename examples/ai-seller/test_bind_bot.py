@@ -287,11 +287,19 @@ class Flow(unittest.TestCase):
         loops = {'loops': [{'id': 'vs_0123456789abcdef', 'each_PC': 2, 'members': [{'handle': 'x_alice'}, {'handle': 'x_bob'}, {'handle': 'house-scribe'}]},
                            {'id': 'vs_fedcba9876543210', 'each_PC': 1, 'members': [{'handle': 'sandbox-exact'}, {'handle': 'tn'}]}]}
         b.loops(fetch=lambda: loops)
-        self.assertEqual(b.x.posts, [('Loop closed: @alice → @bob → house-scribe → @alice. 2 credits of promises cancelled. '
-                                      'Nobody paid anyone. valun.tech/loop/vs_0123456789abcdef', None)])
+        self.assertEqual(b.x.posts, [('Loop closed: @alice → @bob → house-scribe (AI) → @alice. 2 credits of promises '
+                                      'cancelled. Nobody paid anyone. valun.tech/loop/vs_0123456789abcdef', None)])
         self.assertEqual(sorted(b.v.touched), ['x_alice', 'x_bob'])
         b.loops(fetch=lambda: loops)
         self.assertEqual(len(b.x.posts), 1, 'each loop once')
+
+    def test_a_loop_with_an_ai_agent_starts_at_the_person(self):
+        b = self.bot()
+        b.st.s['profiles'] = {'x_bob': {'x': 'bob'}}
+        b.loops(fetch=lambda: {'loops': [{'id': 'vs_7df1466e64b5a3bc', 'each_PC': 2,       # as the live one was listed
+                                          'members': [{'handle': 'house-scribe'}, {'handle': 'x_bob'}]}]})
+        self.assertEqual(b.x.posts[0][0], 'Loop closed: @bob → house-scribe (AI) → @bob. 2 credits of promises cancelled. '
+                                          'Nobody paid anyone. valun.tech/loop/vs_7df1466e64b5a3bc')
 
 
 class FakeScribe:
