@@ -8,6 +8,7 @@ import {renderLoopNotFound} from './pilot/loops.mjs';
 import {renderAgentNotFound, renderMaintainersPage} from './pilot/agents.mjs';
 import {A2A_PATHS} from './a2a.mjs';
 import {ON_TESTNET} from './pilot/units.mjs';
+import {ipKey} from './ipkey.mjs';
 
 const SKILL_FILE = ON_TESTNET ? 'skill-testnet.md' : 'skill.md';
 const LLMS_FILE = ON_TESTNET ? 'llms-testnet.txt' : 'llms.txt';
@@ -51,8 +52,9 @@ export function createHandler({service, mcp, cfg, publicDir, pilotRoutes = null,
     if (!t) return {};
     try { return JSON.parse(t); } catch { throw new UserError('body must be JSON'); }
   }
-  // Behind Fly's proxy every request comes from the proxy; the client address is in Fly-Client-IP.
-  const clientIp = req => (cfg.trustFlyClientIp && req.headers['fly-client-ip']) || req.socket.remoteAddress || '?';
+  // Behind Fly's proxy every request comes from the proxy; the client address is in Fly-Client-IP. Every per-address limit
+  // keys on ipKey (fix inbox #21): an IPv6 client by its /64, which one host or one customer controls as a whole.
+  const clientIp = req => ipKey((cfg.trustFlyClientIp && req.headers['fly-client-ip']) || req.socket.remoteAddress || '?', 64);
   const hits = new Map();
   const rateLimited = ip => {
     const now = Date.now(), w = (hits.get(ip) || []).filter(t => now - t < 600_000);

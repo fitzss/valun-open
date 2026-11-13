@@ -14,6 +14,7 @@
 !scripts/valun-mcp-stdio.mjs
 !scripts/pilot-admin.mjs
 !scripts/pilot-downgrade-check.mjs
+!scripts/replay-router.mjs
 !basis/run-tracker-testnet.sh
 !ergo/package.json
 !ergo/package-lock.json

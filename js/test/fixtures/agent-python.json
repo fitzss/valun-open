@@ -2,15 +2,15 @@
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python": "3.14.7",
  "python_sources_sha256": {
-  "agent.py": "cd4a5922dd19ebee219ce1ab4b79f231c6de000fe97e4847cde2aef0d5950c3e",
+  "agent.py": "64764b64bba84a1eccd0e378c843ab6c0dee0eaa730b0bfd2df4fbae1b1f5bb9",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "a15d2ee5c28af9a930a7a79d7dc5cfe7d0f517a77848537d683578673694b83c",
+  "client.py": "1c9176aecf596d12cfbc6bf3bdbad257575088602f2a657cdd05ad7e8484f9e7",
   "mcp_server.py": "2b4cc4119077275964aba895744e77c636c1b733a6454684ef2f54e1c7e9eb0f",
   "measure.py": "ee2c1164c7a9ecfa9f934603872d0ec0aa194c6f07257a0734d1a163df4c6de9",
   "novation.py": "3579850c2307713ae538fddbd899dc75e017992c5d75069969e0a7140edfa741",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "aa968c2e628ac44bc906e1b41629a16da0018d463b63a34d9e4d610774c35048",
-  "schemas.py": "256a9b7c0322a8d23c04e4da608ae7f88ebbf647e0d216a737b0bcc637e0e616"
+  "schemas.py": "6b68b07db793f36aaa4b4953fb276ee3b0ccafcd9b986faf41d416a35ada9754"
  },
  "base": "http://valun.invalid",
  "t0_ms": 1793966400000,
@@ -7248,23 +7248,102 @@
    "agent": {},
    "state": {},
    "result": {
-    "error": "bad_arguments",
-    "message": "the offer would stay open 24 h, longer than the 6 h it gives to deliver: it could be accepted after its work is due, which the server refuses. Pass offer_valid_hours of at most 6; nothing was signed"
+    "deal_id": "vd_0101010101010101",
+    "status": "open",
+    "terms_hash": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+    "what_happened": "bob can now accept, decline or counter your signed offer.",
+    "if_agreed": "After you accept their delivery you issue them a credit note of 18 PC (you will owe them; not settled)."
    },
-   "requests": [],
-   "signed": [],
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "POST /pilot/v1/deals",
+     "body": {
+      "terms": {
+       "protocol": "valun-deal/1",
+       "network": "valun-pilot-1",
+       "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+       "deal_id": "vd_0101010101010101",
+       "version": 1,
+       "prior_terms_hash": null,
+       "nonce": "02020202020202020202020202020202",
+       "proposer": "vp_a1a1a1a1a1a1",
+       "payer": {
+        "id": "vp_a1a1a1a1a1a1",
+        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+       },
+       "payee": {
+        "id": "vp_b0b0b0b0b0b0",
+        "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+       },
+       "service": {
+        "title": "Research brief",
+        "description": "A 300-500 word research brief with at least 3 cited sources.",
+        "deliverable": "Markdown, one file."
+       },
+       "price": {
+        "amount": 18,
+        "unit": "PC"
+       },
+       "consideration": "credit_note_on_delivery_accepted",
+       "deliver_by": "2026-11-06T18:00:00.000Z",
+       "offer_expires_at": "2026-11-06T18:00:00.000Z"
+      },
+      "terms_hash": "cbd0de77e07255f0407097c2d8848e275d6951949ae7e917608fcb3893fc6d89"
+     },
+     "features": null
+    }
+   ],
+   "signed": [
+    {
+     "key": "POST /pilot/v1/deals",
+     "signed": [
+      {
+       "message_hex": "76616c756e2d70696c6f742f70726f706f73652f310a63626430646537376530373235356630343037303937633264383834386532373564363935313934396165376539313736303866636233383933666336643839",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+      }
+     ]
+    }
+   ],
    "state_after": {
     "server": "http://valun.invalid",
     "participant_id": "vp_a1a1a1a1a1a1",
     "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
-    "issued": {}
+    "issued": {},
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    }
    },
    "is_commitment": true,
    "prepare": {
-    "raises": "ValunError",
-    "code": "approval_unbound",
-    "message": "could not read what you would sign; nothing was signed",
-    "cause": "bad_arguments"
+    "value": {
+     "args": {
+      "counterparty": "vp_b0b0b0b0b0b0",
+      "role": "payer",
+      "title": "Research brief",
+      "description": "A 300-500 word research brief with at least 3 cited sources.",
+      "deliverable": "Markdown, one file.",
+      "price": 18,
+      "deliver_within_hours": 6
+     },
+     "text": "Valun - sign a NEW OFFER to bob (vp_b0b0b0b0b0b0):\n  you are the payer; price: 18 PC\n  deliver within 6 h; the offer stays open 6 h\nIf bob accepts, the deal is binding without asking you again: after you accept their delivery you will owe bob 18 PC (your credit note).\nA credit note is an outstanding promise to pay, not a payment: nothing is settled in the pilot. PC are synthetic units with no monetary value.\nOffer text written by your agent (quoted exactly): {\"title\":\"Research brief\",\"description\":\"A 300-500 word research brief with at least 3 cited sources.\",\"deliverable\":\"Markdown, one file.\"}"
+    }
    },
    "prepare_requests": [
     {
@@ -7279,19 +7358,22 @@
     }
    ],
    "prepare_or_refusal": [
-    null,
     {
-     "error": "approval_unbound",
-     "message": "could not read what you would sign; nothing was signed",
-     "cause": "bad_arguments",
-     "what_this_means": "Nothing was signed and your owner was not asked: your Valun client could not read and check exactly what this call would sign (the deal, offer or delivery could not be read, does not match its hash, or changed after you read it). Read the deal again with valun_deal and retry; if it keeps failing, tell your owner."
-    }
+     "args": {
+      "counterparty": "vp_b0b0b0b0b0b0",
+      "role": "payer",
+      "title": "Research brief",
+      "description": "A 300-500 word research brief with at least 3 cited sources.",
+      "deliverable": "Markdown, one file.",
+      "price": 18,
+      "deliver_within_hours": 6
+     },
+     "text": "Valun - sign a NEW OFFER to bob (vp_b0b0b0b0b0b0):\n  you are the payer; price: 18 PC\n  deliver within 6 h; the offer stays open 6 h\nIf bob accepts, the deal is binding without asking you again: after you accept their delivery you will owe bob 18 PC (your credit note).\nA credit note is an outstanding promise to pay, not a payment: nothing is settled in the pilot. PC are synthetic units with no monetary value.\nOffer text written by your agent (quoted exactly): {\"title\":\"Research brief\",\"description\":\"A 300-500 word research brief with at least 3 cited sources.\",\"deliverable\":\"Markdown, one file.\"}"
+    },
+    null
    ],
    "describe": {
-    "raises": "ValunError",
-    "code": "approval_unbound",
-    "message": "could not read what you would sign; nothing was signed",
-    "cause": "bad_arguments"
+    "value": "Valun - sign a NEW OFFER to bob (vp_b0b0b0b0b0b0):\n  you are the payer; price: 18 PC\n  deliver within 6 h; the offer stays open 6 h\nIf bob accepts, the deal is binding without asking you again: after you accept their delivery you will owe bob 18 PC (your credit note).\nA credit note is an outstanding promise to pay, not a payment: nothing is settled in the pilot. PC are synthetic units with no monetary value.\nOffer text written by your agent (quoted exactly): {\"title\":\"Research brief\",\"description\":\"A 300-500 word research brief with at least 3 cited sources.\",\"deliverable\":\"Markdown, one file.\"}"
    },
    "bound": {
     "value": {
@@ -7306,10 +7388,7 @@
    },
    "bind_requests": [],
    "describe_bound": {
-    "raises": "ValunError",
-    "code": "approval_unbound",
-    "message": "could not read what you would sign; nothing was signed",
-    "cause": "bad_arguments"
+    "value": "Valun - sign a NEW OFFER to bob (vp_b0b0b0b0b0b0):\n  you are the payer; price: 18 PC\n  deliver within 6 h; the offer stays open 6 h\nIf bob accepts, the deal is binding without asking you again: after you accept their delivery you will owe bob 18 PC (your credit note).\nA credit note is an outstanding promise to pay, not a payment: nothing is settled in the pilot. PC are synthetic units with no monetary value.\nOffer text written by your agent (quoted exactly): {\"title\":\"Research brief\",\"description\":\"A 300-500 word research brief with at least 3 cited sources.\",\"deliverable\":\"Markdown, one file.\"}"
    }
   },
   {
@@ -52732,7 +52811,7 @@
       "due_in_hours": 24,
       "note": "for the briefs"
      },
-     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now,\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"for the briefs\"}"
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"for the briefs\"}"
     }
    },
    "prepare_requests": [
@@ -52761,12 +52840,12 @@
       "due_in_hours": 24,
       "note": "for the briefs"
      },
-     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now,\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"for the briefs\"}"
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"for the briefs\"}"
     },
     null
    ],
    "describe": {
-    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now,\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"for the briefs\"}"
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"for the briefs\"}"
    },
    "bound": {
     "value": {
@@ -52795,7 +52874,7 @@
     }
    ],
    "describe_bound": {
-    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now,\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"for the briefs\"}"
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"for the briefs\"}"
    }
   },
   {
@@ -53057,7 +53136,7 @@
       "due_in_hours": 0,
       "callable_for_hours": 1
      },
-     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 30 PC in all, for what frank still owes it after 0 h from now,\n  if bob calls in the 1 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 30 PC in all, for what frank still owes it after 0 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 1 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
     }
    },
    "prepare_requests": [
@@ -53086,12 +53165,12 @@
       "due_in_hours": 0,
       "callable_for_hours": 1
      },
-     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 30 PC in all, for what frank still owes it after 0 h from now,\n  if bob calls in the 1 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 30 PC in all, for what frank still owes it after 0 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 1 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
     },
     null
    ],
    "describe": {
-    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 30 PC in all, for what frank still owes it after 0 h from now,\n  if bob calls in the 1 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 30 PC in all, for what frank still owes it after 0 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 1 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
    },
    "bound": {
     "value": {
@@ -53120,7 +53199,7 @@
     }
    ],
    "describe_bound": {
-    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 30 PC in all, for what frank still owes it after 0 h from now,\n  if bob calls in the 1 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 30 PC in all, for what frank still owes it after 0 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 1 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
    }
   },
   {
@@ -53274,6 +53353,1230 @@
    }
   },
   {
+   "name": "offer_guarantee: backing named deals only",
+   "tool": "valun_offer_guarantee",
+   "args": {
+    "issuer": "frank",
+    "creditor": "bob",
+    "cap": 5,
+    "due_in_hours": 24,
+    "deals": [
+     "vd_1111111111111111",
+     "vd_2222222222222222"
+    ]
+   },
+   "routes": {
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1",
+       "guarantees/1"
+      ],
+      "novation": {
+       "transfer_ms": 999,
+       "setoff_ms": 998,
+       "bound_note_ms": 997,
+       "reserved_ms": [
+        995,
+        996,
+        997,
+        998,
+        999
+       ],
+       "max_age_ms": 3600000,
+       "transfer_ttl_ms": 1200000,
+       "setoff_ttl_ms": 1800000,
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
+      }
+     }
+    },
+    "POST /pilot/v1/guarantees": {
+     "status": 201,
+     "body": {
+      "guarantee_id": "vg_2b2b2b2b2b2b2b2b",
+      "state": "offered",
+      "your_role": "backer",
+      "backer": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "issuer": {
+       "id": "vp_f0f0f0f0f0f0",
+       "handle": "frank"
+      },
+      "creditor": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "unit": "PC",
+      "cap": 5,
+      "due_at": "2026-11-06T11:00:00.000Z",
+      "expires_at": "2026-11-13T12:00:00.000Z",
+      "honor_within_hours": 24,
+      "offer_expires_at": "2026-11-07T12:00:00.000Z",
+      "note": "backs frank for the briefs",
+      "covers": "What the issuer owes the creditor on the tracker when the creditor calls (recorded minus redeemed, on every key either has had), up to the cap in all, between due_at and expires_at. A call claims at most what is still owed less what earlier calls claimed.",
+      "claimed": 0,
+      "honored": 0,
+      "remaining_cap": 5,
+      "issuer_owes_creditor": 0,
+      "callable_now": 0,
+      "callable_from": "2026-11-06T11:00:00.000Z",
+      "recovered_for_backer": 0,
+      "calls": [],
+      "next_actions": [],
+      "terms": {
+       "protocol": "valun-guarantee/1",
+       "network": "valun-pilot-1",
+       "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+       "guarantee_id": "vg_2b2b2b2b2b2b2b2b",
+       "nonce": "abababababababababababababababab",
+       "backer": {
+        "id": "vp_a1a1a1a1a1a1",
+        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+       },
+       "issuer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "pubkey": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297"
+       },
+       "creditor": {
+        "id": "vp_b0b0b0b0b0b0",
+        "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+       },
+       "cap": {
+        "amount": 5,
+        "unit": "PC"
+       },
+       "covers": "issuer_debt_to_creditor",
+       "due_at": "2026-11-06T11:00:00.000Z",
+       "expires_at": "2026-11-13T12:00:00.000Z",
+       "honor_within_hours": 24,
+       "offer_expires_at": "2026-11-07T12:00:00.000Z",
+       "note": "backs frank for the briefs"
+      },
+      "terms_hash": "82ebdffd6c6127b1ca82f91cf4a33b89fc34e42eb4d03285a6bf396d13259fd5",
+      "offer": {
+       "by": "vp_a1a1a1a1a1a1",
+       "at": "2026-11-06T10:00:00.000Z",
+       "signature": "0296262173077746aeb4be2222f0faf1b08bece9766613f8fa0b31a60348ce35d6002585dcef24690338e760216dbffd52c4a0739e46938f89e4dc874a5a103862",
+       "offered_at": "2026-11-06T10:00:00.000Z"
+      },
+      "acceptance": null,
+      "history": [],
+      "what_this_means": "A guarantee is the backer's signed promise to pay the creditor."
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    }
+   },
+   "result": {
+    "guarantee": {
+     "guarantee_id": "vg_2b2b2b2b2b2b2b2b",
+     "state": "offered",
+     "your_role": "backer",
+     "backer": "alice",
+     "issuer": "frank",
+     "creditor": "bob",
+     "unit": "PC",
+     "cap": 5,
+     "claimed": 0,
+     "honored": 0,
+     "remaining_cap": 5,
+     "issuer_owes_creditor": 0,
+     "callable_now": 0,
+     "recovered_for_backer": 0,
+     "due_at": "2026-11-06T11:00:00.000Z",
+     "expires_at": "2026-11-13T12:00:00.000Z",
+     "honor_within_hours": 24,
+     "offer_expires_at": "2026-11-07T12:00:00.000Z",
+     "note": "backs frank for the briefs",
+     "next_actions": [],
+     "terms_hash": "82ebdffd6c6127b1ca82f91cf4a33b89fc34e42eb4d03285a6bf396d13259fd5",
+     "calls": []
+    },
+    "what_happens_next": "bob can accept or decline it. Once it is due, it can call what frank still owes it, up to the cap; you then pay with your own credit note."
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_f0f0f0f0f0f0",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "POST /pilot/v1/guarantees",
+     "body": {
+      "terms": {
+       "protocol": "valun-guarantee/1",
+       "network": "valun-pilot-1",
+       "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+       "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+       "guarantee_id": "vg_0101010101010101",
+       "nonce": "02020202020202020202020202020202",
+       "backer": {
+        "id": "vp_a1a1a1a1a1a1",
+        "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+       },
+       "issuer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "pubkey": "030b6dc5294201d711cb553d0ac7c65bc5c2b4b14483d507e71c8f58b895c57297"
+       },
+       "creditor": {
+        "id": "vp_b0b0b0b0b0b0",
+        "pubkey": "039ce92ed225dafa349eff0a99eca476219acdcc5991d7c12cdd587c3ee365bf05"
+       },
+       "cap": {
+        "amount": 5,
+        "unit": "PC"
+       },
+       "covers": "issuer_payment_for_deals",
+       "deals": [
+        "vd_1111111111111111",
+        "vd_2222222222222222"
+       ],
+       "due_at": "2026-11-07T12:00:00.000Z",
+       "expires_at": "2026-11-14T12:00:00.000Z",
+       "honor_within_hours": 24,
+       "offer_expires_at": "2026-11-07T12:00:00.000Z",
+       "note": ""
+      },
+      "terms_hash": "809e101713e315aabcddf47f252e992984dd76f6e8169e2ab79573f1f2a8ec6d"
+     },
+     "features": null
+    }
+   ],
+   "signed": [
+    {
+     "key": "POST /pilot/v1/guarantees",
+     "signed": [
+      {
+       "message_hex": "76616c756e2d70696c6f742f67756172616e7465652d6f666665722f310a38303965313031373133653331356161626364646634376632353265393932393834646437366636653831363965326162373935373366316632613865633664",
+       "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5"
+      }
+     ]
+    }
+   ],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {},
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    }
+   },
+   "is_commitment": true,
+   "prepare": {
+    "value": {
+     "args": {
+      "issuer": "vp_f0f0f0f0f0f0",
+      "creditor": "vp_b0b0b0b0b0b0",
+      "cap": 5,
+      "due_in_hours": 24,
+      "deals": [
+       "vd_1111111111111111",
+       "vd_2222222222222222"
+      ]
+     },
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_1111111111111111, vd_2222222222222222 after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    }
+   },
+   "prepare_requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "issuer": "vp_f0f0f0f0f0f0",
+      "creditor": "vp_b0b0b0b0b0b0",
+      "cap": 5,
+      "due_in_hours": 24,
+      "deals": [
+       "vd_1111111111111111",
+       "vd_2222222222222222"
+      ]
+     },
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_1111111111111111, vd_2222222222222222 after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    },
+    null
+   ],
+   "describe": {
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_1111111111111111, vd_2222222222222222 after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+   },
+   "bound": {
+    "value": {
+     "issuer": "vp_f0f0f0f0f0f0",
+     "creditor": "vp_b0b0b0b0b0b0",
+     "cap": 5,
+     "due_in_hours": 24,
+     "deals": [
+      "vd_1111111111111111",
+      "vd_2222222222222222"
+     ]
+    }
+   },
+   "bind_requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "describe_bound": {
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_1111111111111111, vd_2222222222222222 after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+   }
+  },
+  {
+   "name": "offer_guarantee: an empty deal list",
+   "tool": "valun_offer_guarantee",
+   "args": {
+    "issuer": "frank",
+    "creditor": "bob",
+    "cap": 5,
+    "due_in_hours": 24,
+    "deals": []
+   },
+   "routes": {
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1",
+       "guarantees/1"
+      ],
+      "novation": {
+       "transfer_ms": 999,
+       "setoff_ms": 998,
+       "bound_note_ms": 997,
+       "reserved_ms": [
+        995,
+        996,
+        997,
+        998,
+        999
+       ],
+       "max_age_ms": 3600000,
+       "transfer_ttl_ms": 1200000,
+       "setoff_ttl_ms": 1800000,
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    }
+   },
+   "result": {
+    "error": "bad_arguments",
+    "message": "deals must be 1 to 10 different deal ids (vd_ + 16 hex)"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {},
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    }
+   },
+   "is_commitment": true,
+   "prepare": {
+    "value": {
+     "args": {
+      "issuer": "vp_f0f0f0f0f0f0",
+      "creditor": "vp_b0b0b0b0b0b0",
+      "cap": 5,
+      "due_in_hours": 24,
+      "deals": []
+     },
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    }
+   },
+   "prepare_requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "issuer": "vp_f0f0f0f0f0f0",
+      "creditor": "vp_b0b0b0b0b0b0",
+      "cap": 5,
+      "due_in_hours": 24,
+      "deals": []
+     },
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    },
+    null
+   ],
+   "describe": {
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+   },
+   "bound": {
+    "value": {
+     "issuer": "vp_f0f0f0f0f0f0",
+     "creditor": "vp_b0b0b0b0b0b0",
+     "cap": 5,
+     "due_in_hours": 24,
+     "deals": []
+    }
+   },
+   "bind_requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "describe_bound": {
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+   }
+  },
+  {
+   "name": "offer_guarantee: a malformed deal id",
+   "tool": "valun_offer_guarantee",
+   "args": {
+    "issuer": "frank",
+    "creditor": "bob",
+    "cap": 5,
+    "due_in_hours": 24,
+    "deals": [
+     "vd_1"
+    ]
+   },
+   "routes": {
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1",
+       "guarantees/1"
+      ],
+      "novation": {
+       "transfer_ms": 999,
+       "setoff_ms": 998,
+       "bound_note_ms": 997,
+       "reserved_ms": [
+        995,
+        996,
+        997,
+        998,
+        999
+       ],
+       "max_age_ms": 3600000,
+       "transfer_ttl_ms": 1200000,
+       "setoff_ttl_ms": 1800000,
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    }
+   },
+   "result": {
+    "error": "bad_arguments",
+    "message": "deals must be 1 to 10 different deal ids (vd_ + 16 hex)"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {},
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    }
+   },
+   "is_commitment": true,
+   "prepare": {
+    "value": {
+     "args": {
+      "issuer": "vp_f0f0f0f0f0f0",
+      "creditor": "vp_b0b0b0b0b0b0",
+      "cap": 5,
+      "due_in_hours": 24,
+      "deals": [
+       "vd_1"
+      ]
+     },
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_1 after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    }
+   },
+   "prepare_requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "issuer": "vp_f0f0f0f0f0f0",
+      "creditor": "vp_b0b0b0b0b0b0",
+      "cap": 5,
+      "due_in_hours": 24,
+      "deals": [
+       "vd_1"
+      ]
+     },
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_1 after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    },
+    null
+   ],
+   "describe": {
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_1 after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+   },
+   "bound": {
+    "value": {
+     "issuer": "vp_f0f0f0f0f0f0",
+     "creditor": "vp_b0b0b0b0b0b0",
+     "cap": 5,
+     "due_in_hours": 24,
+     "deals": [
+      "vd_1"
+     ]
+    }
+   },
+   "bind_requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "describe_bound": {
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_1 after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+   }
+  },
+  {
+   "name": "offer_guarantee: the same deal twice",
+   "tool": "valun_offer_guarantee",
+   "args": {
+    "issuer": "frank",
+    "creditor": "bob",
+    "cap": 5,
+    "due_in_hours": 24,
+    "deals": [
+     "vd_1111111111111111",
+     "vd_1111111111111111"
+    ]
+   },
+   "routes": {
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1",
+       "guarantees/1"
+      ],
+      "novation": {
+       "transfer_ms": 999,
+       "setoff_ms": 998,
+       "bound_note_ms": 997,
+       "reserved_ms": [
+        995,
+        996,
+        997,
+        998,
+        999
+       ],
+       "max_age_ms": 3600000,
+       "transfer_ttl_ms": 1200000,
+       "setoff_ttl_ms": 1800000,
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    }
+   },
+   "result": {
+    "error": "bad_arguments",
+    "message": "deals must be 1 to 10 different deal ids (vd_ + 16 hex)"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {},
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    }
+   },
+   "is_commitment": true,
+   "prepare": {
+    "value": {
+     "args": {
+      "issuer": "vp_f0f0f0f0f0f0",
+      "creditor": "vp_b0b0b0b0b0b0",
+      "cap": 5,
+      "due_in_hours": 24,
+      "deals": [
+       "vd_1111111111111111",
+       "vd_1111111111111111"
+      ]
+     },
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_1111111111111111, vd_1111111111111111 after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    }
+   },
+   "prepare_requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "issuer": "vp_f0f0f0f0f0f0",
+      "creditor": "vp_b0b0b0b0b0b0",
+      "cap": 5,
+      "due_in_hours": 24,
+      "deals": [
+       "vd_1111111111111111",
+       "vd_1111111111111111"
+      ]
+     },
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_1111111111111111, vd_1111111111111111 after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    },
+    null
+   ],
+   "describe": {
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_1111111111111111, vd_1111111111111111 after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+   },
+   "bound": {
+    "value": {
+     "issuer": "vp_f0f0f0f0f0f0",
+     "creditor": "vp_b0b0b0b0b0b0",
+     "cap": 5,
+     "due_in_hours": 24,
+     "deals": [
+      "vd_1111111111111111",
+      "vd_1111111111111111"
+     ]
+    }
+   },
+   "bind_requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "describe_bound": {
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_1111111111111111, vd_1111111111111111 after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+   }
+  },
+  {
+   "name": "offer_guarantee: eleven deals",
+   "tool": "valun_offer_guarantee",
+   "args": {
+    "issuer": "frank",
+    "creditor": "bob",
+    "cap": 5,
+    "due_in_hours": 24,
+    "deals": [
+     "vd_0000000000000000",
+     "vd_0000000000000001",
+     "vd_0000000000000002",
+     "vd_0000000000000003",
+     "vd_0000000000000004",
+     "vd_0000000000000005",
+     "vd_0000000000000006",
+     "vd_0000000000000007",
+     "vd_0000000000000008",
+     "vd_0000000000000009",
+     "vd_000000000000000a"
+    ]
+   },
+   "routes": {
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1",
+       "guarantees/1"
+      ],
+      "novation": {
+       "transfer_ms": 999,
+       "setoff_ms": 998,
+       "bound_note_ms": 997,
+       "reserved_ms": [
+        995,
+        996,
+        997,
+        998,
+        999
+       ],
+       "max_age_ms": 3600000,
+       "transfer_ttl_ms": 1200000,
+       "setoff_ttl_ms": 1800000,
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    }
+   },
+   "result": {
+    "error": "bad_arguments",
+    "message": "deals must be 1 to 10 different deal ids (vd_ + 16 hex)"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {},
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    }
+   },
+   "is_commitment": true,
+   "prepare": {
+    "value": {
+     "args": {
+      "issuer": "vp_f0f0f0f0f0f0",
+      "creditor": "vp_b0b0b0b0b0b0",
+      "cap": 5,
+      "due_in_hours": 24,
+      "deals": [
+       "vd_0000000000000000",
+       "vd_0000000000000001",
+       "vd_0000000000000002",
+       "vd_0000000000000003",
+       "vd_0000000000000004",
+       "vd_0000000000000005",
+       "vd_0000000000000006",
+       "vd_0000000000000007",
+       "vd_0000000000000008",
+       "vd_0000000000000009",
+       "vd_000000000000000a"
+      ]
+     },
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_0000000000000000, vd_0000000000000001, vd_0000000000000002, vd_0000000000000003, vd_0000000000000004, vd_0000000000000005, vd_0000000000000006, vd_0000000000000007, vd_0000000000000008, vd_0000000000000009, vd_000000000000000a after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    }
+   },
+   "prepare_requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "issuer": "vp_f0f0f0f0f0f0",
+      "creditor": "vp_b0b0b0b0b0b0",
+      "cap": 5,
+      "due_in_hours": 24,
+      "deals": [
+       "vd_0000000000000000",
+       "vd_0000000000000001",
+       "vd_0000000000000002",
+       "vd_0000000000000003",
+       "vd_0000000000000004",
+       "vd_0000000000000005",
+       "vd_0000000000000006",
+       "vd_0000000000000007",
+       "vd_0000000000000008",
+       "vd_0000000000000009",
+       "vd_000000000000000a"
+      ]
+     },
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_0000000000000000, vd_0000000000000001, vd_0000000000000002, vd_0000000000000003, vd_0000000000000004, vd_0000000000000005, vd_0000000000000006, vd_0000000000000007, vd_0000000000000008, vd_0000000000000009, vd_000000000000000a after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    },
+    null
+   ],
+   "describe": {
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_0000000000000000, vd_0000000000000001, vd_0000000000000002, vd_0000000000000003, vd_0000000000000004, vd_0000000000000005, vd_0000000000000006, vd_0000000000000007, vd_0000000000000008, vd_0000000000000009, vd_000000000000000a after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+   },
+   "bound": {
+    "value": {
+     "issuer": "vp_f0f0f0f0f0f0",
+     "creditor": "vp_b0b0b0b0b0b0",
+     "cap": 5,
+     "due_in_hours": 24,
+     "deals": [
+      "vd_0000000000000000",
+      "vd_0000000000000001",
+      "vd_0000000000000002",
+      "vd_0000000000000003",
+      "vd_0000000000000004",
+      "vd_0000000000000005",
+      "vd_0000000000000006",
+      "vd_0000000000000007",
+      "vd_0000000000000008",
+      "vd_0000000000000009",
+      "vd_000000000000000a"
+     ]
+    }
+   },
+   "bind_requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "describe_bound": {
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it for the deals vd_0000000000000000, vd_0000000000000001, vd_0000000000000002, vd_0000000000000003, vd_0000000000000004, vd_0000000000000005, vd_0000000000000006, vd_0000000000000007, vd_0000000000000008, vd_0000000000000009, vd_000000000000000a after 24 h from now (debt from any other deal is not covered),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+   }
+  },
+  {
+   "name": "offer_guarantee: deals not a list",
+   "tool": "valun_offer_guarantee",
+   "args": {
+    "issuer": "frank",
+    "creditor": "bob",
+    "cap": 5,
+    "due_in_hours": 24,
+    "deals": "vd_1111111111111111"
+   },
+   "routes": {
+    "GET /pilot/v1/info": {
+     "body": {
+      "network": "valun-pilot-1",
+      "protocol": "valun-deal/1",
+      "unit": "PC",
+      "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274",
+      "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+      "tracker_on_chain": false,
+      "features": [
+       "bound_notes/1",
+       "circulation/1",
+       "guarantees/1"
+      ],
+      "novation": {
+       "transfer_ms": 999,
+       "setoff_ms": 998,
+       "bound_note_ms": 997,
+       "reserved_ms": [
+        995,
+        996,
+        997,
+        998,
+        999
+       ],
+       "max_age_ms": 3600000,
+       "transfer_ttl_ms": 1200000,
+       "setoff_ttl_ms": 1800000,
+       "fallback_margin_ms": 60000,
+       "tracker_build": "valun-circulating-credit/4",
+       "transfer_version": 4,
+       "bound_note_version": 3,
+       "prior_ack": "basis/prior-ack/1"
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    }
+   },
+   "result": {
+    "error": "bad_arguments",
+    "message": "deals must be 1 to 10 different deal ids (vd_ + 16 hex)"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {},
+    "pins": {
+     "tracker_nft_id": "6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa",
+     "denomination": "token:01cb4b85df0e2e4fd965b52ca943a96f654f8bd91ed3ba60df67a3a2aeaa3274"
+    }
+   },
+   "is_commitment": true,
+   "prepare": {
+    "value": {
+     "args": {
+      "issuer": "vp_f0f0f0f0f0f0",
+      "creditor": "vp_b0b0b0b0b0b0",
+      "cap": 5,
+      "due_in_hours": 24,
+      "deals": "vd_1111111111111111"
+     },
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    }
+   },
+   "prepare_requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "issuer": "vp_f0f0f0f0f0f0",
+      "creditor": "vp_b0b0b0b0b0b0",
+      "cap": 5,
+      "due_in_hours": 24,
+      "deals": "vd_1111111111111111"
+     },
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    },
+    null
+   ],
+   "describe": {
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+   },
+   "bound": {
+    "value": {
+     "issuer": "vp_f0f0f0f0f0f0",
+     "creditor": "vp_b0b0b0b0b0b0",
+     "cap": 5,
+     "due_in_hours": 24,
+     "deals": "vd_1111111111111111"
+    }
+   },
+   "bind_requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/info",
+     "body": null,
+     "features": null
+    }
+   ],
+   "describe_bound": {
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+   }
+  },
+  {
    "name": "offer_guarantee: a server without guarantees",
    "tool": "valun_offer_guarantee",
    "args": {
@@ -53368,7 +54671,7 @@
       "cap": 5,
       "due_in_hours": 24
      },
-     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now,\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
     }
    },
    "prepare_requests": [
@@ -53396,12 +54699,12 @@
       "cap": 5,
       "due_in_hours": 24
      },
-     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now,\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+     "text": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
     },
     null
    ],
    "describe": {
-    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now,\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
    },
    "bound": {
     "value": {
@@ -53429,7 +54732,7 @@
     }
    ],
    "describe_bound": {
-    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now,\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
+    "value": "Valun - sign a GUARANTEE: back what frank (vp_f0f0f0f0f0f0) owes bob (vp_b0b0b0b0b0b0):\n  you pay bob up to 5 PC in all, for what frank still owes it after 24 h from now (any debt to it, also new debt: the cap is your exposure),\n  if bob calls in the 168 h after that; you pay a call within 24 h, with your own credit note\n  the offer stays open 24 h; until the guarantee ends its cap counts against your limits as credit you may have to issue\nIf bob accepts and calls, you will owe bob what it called (your credit note); frank still owes it too.\nnot settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.\nNote written by your agent (quoted exactly): {\"note\":\"\"}"
    }
   },
   {

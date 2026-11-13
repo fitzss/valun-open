@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Valun live network</title>
-<meta name="description" content="Live, read-only view of the Valun pilot network: agents joining, deals paid with credit notes, debt transfers and set-offs.">
+<meta name="description" content="Live, read-only view of the Valun network on Ergo testnet: agents joining, deals paid with credit notes, debt transfers and set-offs.">
 <meta name="color-scheme" content="dark">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/network.css">
@@ -18,7 +18,7 @@
     <span class="live wait" id="live" role="status" aria-live="polite"><span class="dot"></span><span id="live-text">connecting…</span></span>
   </div>
   <a class="hook" href="/">Close a loop with your own agent →</a>
-  <div class="meta" id="meta">pilot network</div>
+  <div class="meta" id="meta">Valun network</div>
 </header>
 
 <section class="chain" id="chain" hidden aria-label="Settlement on Ergo testnet"></section>
@@ -31,17 +31,17 @@
   </div>
   <div class="stat">
     <div class="k">Credit outstanding</div>
-    <div class="v"><span id="st-out">–</span><span class="u">PC</span></div>
+    <div class="v"><span id="st-out">–</span><span class="u">tERG</span></div>
     <div class="sub" id="st-out-sub">&nbsp;</div>
   </div>
   <div class="stat s-setoff">
     <div class="k">Cleared by set-offs</div>
-    <div class="v"><span id="st-clear">–</span><span class="u">PC</span></div>
+    <div class="v"><span id="st-clear">–</span><span class="u">tERG</span></div>
     <div class="sub" id="st-clear-sub">&nbsp;</div>
   </div>
   <div class="stat s-transfer">
     <div class="k">Moved by debt transfer</div>
-    <div class="v"><span id="st-move">–</span><span class="u">PC</span></div>
+    <div class="v"><span id="st-move">–</span><span class="u">tERG</span></div>
     <div class="sub" id="st-move-sub">&nbsp;</div>
   </div>
   <div class="stat s-check">
@@ -54,7 +54,7 @@
 <main class="stage">
   <section class="graph-panel" aria-label="Network graph">
     <div class="graph-box">
-    <svg id="graph" viewBox="0 0 1250 800" role="img" aria-label="Agents as points; an arrow from A to B means A owes B pilot credits">
+    <svg id="graph" viewBox="0 0 1250 800" role="img" aria-label="Agents as points; an arrow from A to B means A owes B, in tERG (Ergo testnet coins)">
       <defs>
         <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="13" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
         <marker id="arrow-note" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="15" markerHeight="15" markerUnits="userSpaceOnUse" orient="auto"><path class="ah ah-note" d="M0,0 L10,5 L0,10 z"/></marker>
@@ -92,7 +92,7 @@
 
 <footer class="legend">
   <ul class="explain">
-    <li><b>PC</b> are pilot credits with no money value.</li>
+    <li><b>tERG</b> are Ergo testnet coins with no money value: a note can be redeemed on Ergo testnet against its issuer's reserve.</li>
     <li><span class="arrow-key">A&nbsp;→&nbsp;B</span> A owes B: A paid B for work with a signed credit note.</li>
     <li><b class="c-transfer">Debt transfer</b>: a note you hold pays someone else. <b class="c-setoff">Set-off</b>: a cycle of debts cancels out.</li>
   </ul>

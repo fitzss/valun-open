@@ -210,6 +210,38 @@ class Offer(unittest.TestCase):
         self.assertEqual(w.g, {})
 
 
+class DealMode(unittest.TestCase):
+    """Fix inbox #29: a guarantee that names the deals it backs (covers issuer_payment_for_deals)."""
+    DEALS = ['vd_' + '1' * 16, 'vd_' + '2' * 16]
+
+    def test_the_terms_name_the_deals_and_the_creditor_accepts_them(self):
+        w = World()
+        gid = offered(w, deals=list(self.DEALS))
+        t = w.g[gid]['terms']
+        self.assertEqual((t['covers'], t['deals']), ('issuer_payment_for_deals', self.DEALS))
+        self.assertEqual(client(w, 'charlie').accept_guarantee(gid)['state'], 'active')
+
+    def test_bad_deal_lists_sign_nothing(self):
+        w = World()
+        c = client(w, 'bob')
+        for deals in ([], ['vd_123'], [self.DEALS[0], self.DEALS[0]], ['vd_' + '1' * 16] * 11, 'vd_' + '1' * 16, [7]):
+            with self.assertRaises(vc.ValunError) as e:
+                c.offer_guarantee(IDS['alice'], IDS['charlie'], 5, 0, deals=deals)
+            self.assertEqual(e.exception.code, 'bad_arguments', deals)
+        self.assertEqual(w.g, {})
+
+    def test_the_creditor_refuses_deals_in_the_floating_mode_and_a_deal_mode_without_them(self):
+        for tamper in (lambda g: _rehash(g, deals=['vd_' + '3' * 16]),
+                       lambda g: (_rehash(g, covers='issuer_payment_for_deals'))):
+            w = World()
+            gid = offered(w)
+            tamper(w.g[gid])
+            with self.assertRaises(vc.ValunError) as e:
+                client(w, 'charlie').accept_guarantee(gid)
+            self.assertEqual(e.exception.code, 'bad_terms')
+            self.assertEqual(w.g[gid]['state'], 'offered')
+
+
 class CreditorChecks(unittest.TestCase):
     def test_accept_checks_the_terms_and_the_backers_signature_first(self):
         for tamper, code in ((lambda g: g['terms'].update(cap={'amount': 50, 'unit': 'PC'}), 'hash_mismatch'),

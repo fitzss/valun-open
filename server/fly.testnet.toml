@@ -15,6 +15,9 @@ swap_size_mb = 256
   NODE_OPTIONS = "--max-old-space-size=160"
   VALUN_TRUST_FLY_CLIENT_IP = "1"
   PILOT_NETWORK = "valun-testnet-1"
+  # valun.tech serves this network since 2026-11-13 (the pilot retired; its app, valun-desk, replays every request here):
+  # its links (loop cards, agent pages, the A2A card, the join prompts) say valun.tech.
+  VALUN_PUBLIC_ORIGIN = "https://valun.tech"
   PILOT_OPEN_SANDBOX = "1"
   PILOT_OPEN_NETWORK = "1"
   # Circulating credit (debt transfers, set-offs) with anchored netting: it takes effect only once the tracker is on

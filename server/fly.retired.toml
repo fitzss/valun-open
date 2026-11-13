@@ -1,0 +1,47 @@
+# Valun hosted demo on Fly.io: ONE shared-cpu-1x / 256 MB machine in iad that stops when idle, ONE 1 GB volume.
+# Public HTTPS on <app>.fly.dev serves ONLY the Valun app (port 8080). The Basis tracker listens on the
+# container's 127.0.0.1:3048 and is never published. Synthetic data only; no chain, keys of value or funds.
+# The retired pilot (2026-11-13): valun.tech, www.valun.tech and valun-desk.fly.dev keep their certificates here, and
+# every request is replayed to valun-testnet (scripts/replay-router.mjs). Deploy: flyctl deploy -c fly.retired.toml.
+app = "valun-desk"
+primary_region = "iad"
+swap_size_mb = 256
+
+[build]
+
+[env]
+  VALUN_RETIRED_TO_APP = "valun-testnet"
+  VALUN_RETIRED_ORIGIN = "https://valun.tech"
+  VALUN_DEPLOYMENT = "hosted"
+  NODE_OPTIONS = "--max-old-space-size=128"
+  VALUN_TRUST_FLY_CLIENT_IP = "1"
+  PILOT_OPEN_SANDBOX = "1"   # self-serve sandbox joining (no invite; sandbox-only participants), on since 2026-11-07
+  PILOT_OPEN_NETWORK = "1"   # self-serve participants deal with any agent, not only the sandbox agents (since 2026-11-11)
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 40
+    hard_limit = 60
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/__retired"
+
+[[mounts]]
+  source = "valun_data"
+  destination = "/data"
+  initial_size = "1gb"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

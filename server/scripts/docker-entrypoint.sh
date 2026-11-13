@@ -11,6 +11,12 @@ if [ "$(id -u)" = "0" ]; then
   chown -R valun:valun "$DATA"
   exec setpriv --reuid=valun --regid=valun --init-groups --inh-caps=-all "$0" "$@"
 fi
+# Retired (the pilot, 2026-11-13): VALUN_RETIRED_TO_APP names the Fly app that now serves Valun; only the replay router
+# runs (scripts/replay-router.mjs: every request replayed to that app by Fly's proxy). No tracker, no app; the volume's
+# data stays as it is.
+if [ -n "${VALUN_RETIRED_TO_APP:-}" ]; then
+  exec node "$ROOT/app/scripts/replay-router.mjs"
+fi
 # Maintenance (MIG-3): VALUN_MAINTENANCE=downgrade-check (or downgrade-check-dry-run) runs the v15 rollback check on the
 # volume's pilot state with nothing started (no tracker, no app: nothing else writes the file), and exits with its exit
 # code (0 prepared, 1 refused, 2 unreadable); the machine then stays stopped until the operator deploys release v15 or

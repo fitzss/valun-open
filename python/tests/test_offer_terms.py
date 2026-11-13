@@ -275,12 +275,19 @@ class ToolArguments(Clocked):
 
     def test_a_proposal_open_longer_than_it_gives_to_deliver_is_refused(self):
         net = Server()
-        r = Agent(net).call_safe('valun_propose', dict(PROPOSE, deliver_within_hours=6))     # open 24 h by default
+        r = Agent(net).call_safe('valun_propose', dict(PROPOSE, deliver_within_hours=6, offer_valid_hours=24))
         self.assertEqual(r, {'error': 'bad_arguments', 'message': (
             'the offer would stay open 24 h, longer than the 6 h it gives to deliver: it could be accepted after its work is '
             'due, which the server refuses. Pass offer_valid_hours of at most 6; nothing was signed')})
         self.assertEqual(net.log, [])
         self.assertEqual(Agent(net).call('valun_propose', dict(PROPOSE, deliver_within_hours=6, offer_valid_hours=6))['status'], 'open')
+
+    def test_a_proposal_s_default_validity_is_never_longer_than_its_delivery_window(self):
+        # Without offer_valid_hours a 6 h job's offer stays open 6 h (24 h otherwise), so it is valid terms as it is.
+        net = Server()
+        self.assertEqual(Agent(net).call('valun_propose', dict(PROPOSE, deliver_within_hours=6))['status'], 'open')
+        t = net.signed()
+        self.assertEqual(at(t['deliver_by']) - at(t['offer_expires_at']), timedelta(0))
 
     def test_the_approval_texts_say_how_long_the_counter_offer_stays_open(self):
         d = offer(6, 6)
@@ -295,7 +302,7 @@ class ToolArguments(Clocked):
                     Agent(Server(d)).prepare('valun_respond', args)
                 self.assertEqual((str(e.exception), e.exception.extra['cause']), (UNBOUND, 'bad_arguments'))
         with self.assertRaises(vc.ValunError) as e:
-            Agent(Server()).prepare('valun_propose', dict(PROPOSE, deliver_within_hours=6))
+            Agent(Server()).prepare('valun_propose', dict(PROPOSE, deliver_within_hours=6, offer_valid_hours=24))
         self.assertEqual(e.exception.extra['cause'], 'bad_arguments')
 
     def test_messages_name_the_networks_unit(self):

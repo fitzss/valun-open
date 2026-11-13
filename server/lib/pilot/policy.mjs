@@ -119,7 +119,9 @@ export function cents(x, dir) {
 // owes, but only edges that reconcile (the tracker's total is the one Valun's edge journal expects: the reconciliation
 // status `match`) count for claims, so a note issued around Valun can never raise a coverage. committed: X's committed
 // deals as payer (excluding `excludeDealId`, whose amount comes in as delta).
-export function issuerNetDebt(pilot, X, ledger, {excludeDealId = null, delta = 0} = {}) {
+// X's open guarantee caps (what it may still have to pay as a backer) count as committed too (review F5);
+// `excludeGuaranteeId`: the guarantee being accepted, whose cap is the delta.
+export function issuerNetDebt(pilot, X, ledger, {excludeDealId = null, excludeGuaranteeId = null, delta = 0} = {}) {
   const edges = pilot.s.edges || {}, owes = new Map(), claims = new Map(), held = new Map();
   const add = (m, id, v) => m.set(id, (m.get(id) ?? 0) + v);
   for (const l of ledger) {
@@ -128,7 +130,7 @@ export function issuerNetDebt(pilot, X, ledger, {excludeDealId = null, delta = 0
     add(claims, l.recipient, l.outstanding);
     if (l.recipient === X.id && l.issuer && l.issuer !== X.id) add(held, l.issuer, l.outstanding);
   }
-  const committed = pilot.exposure(X, ledger, {asRole: 'payer', excludeDealId}).committed, own = owes.get(X.id) ?? 0;
+  const ex = pilot.exposure(X, ledger, {asRole: 'payer', excludeDealId, excludeGuaranteeId}), committed = ex.committed + (ex.guaranteed ?? 0), own = owes.get(X.id) ?? 0;
   const r = haircutNetDebt({owes: own, committed, delta, issuers: [...held].map(([I, h]) => ({held: h, claims: claims.get(I) ?? 0, owes: owes.get(I) ?? 0}))});
   return {owes: own, committed, delta, ...r};
 }
@@ -149,7 +151,7 @@ export function issuerNetDebt(pilot, X, ledger, {excludeDealId = null, delta = 0
 // A rule adds an entry to `checks` only when it is set (a value other than its default), so the mandate_check of an owner
 // who sets none of them is as before. Returns {ok: true, checks} or {ok: false, rule, detail, source, checks}; `source`
 // is who set the value that refused (owner_mandate or agent_limits, Pilot.limitSource).
-export async function creditCheck(pilot, C, X, amount, {via, ledger = null, excludeDealId = null, excludeTransferId = null} = {}) {
+export async function creditCheck(pilot, C, X, amount, {via, ledger = null, excludeDealId = null, excludeTransferId = null, excludeGuaranteeId = null} = {}) {
   if (via !== 'agreement' && via !== 'transfer') throw new TypeError(`policy: via must be 'agreement' or 'transfer', not ${JSON.stringify(via)}`);
   const m = pilot.effectiveLimits(C), v = k => policyValue(C, m, k), checks = [];
   const fail = (rule, detail) => ({ok: false, rule, detail, source: pilot.limitSource(C, rule, {issuer: X.id}), checks});
@@ -188,7 +190,7 @@ export async function creditCheck(pilot, C, X, amount, {via, ledger = null, excl
   // (f)
   const netLimit = v('max_issuer_net_debt');
   if (netLimit !== null && netLimit !== undefined) {
-    const f = issuerNetDebt(pilot, X, ledger, {excludeDealId, delta: via === 'agreement' ? amount : 0});
+    const f = issuerNetDebt(pilot, X, ledger, {excludeDealId, excludeGuaranteeId, delta: via === 'agreement' ? amount : 0});
     const entry = {rule: 'max_issuer_net_debt', issuer_owes_on_tracker: f.owes, issuer_committed: f.committed, this_deal: f.delta,
       issuer_adjusted_claims: cents(f.adjusted, 'down'), issuer_net_debt: cents(f.net, 'up'), limit: netLimit};
     if (exceeds(f.net, netLimit)) return fail('max_issuer_net_debt', `${X.handle}'s net debt would be ${amt(entry.issuer_net_debt)} (it owes ${f.owes} on the tracker and ${f.committed} agreed${f.delta ? `, ${f.delta} more with this deal` : ''}; its claims count for ${amt(entry.issuer_adjusted_claims)} after the one-level haircut), above max_issuer_net_debt ${netLimit}`);
@@ -208,13 +210,16 @@ export function creditHistory(pilot, p, deals) {
   const price = d => d.agreement?.terms?.price?.amount ?? pilot.current(d).terms.price.amount;
   const of = (role, status) => deals.filter(d => d[role] === p.id && d.status === status);
   const sum = xs => ({count: xs.length, PC: xs.reduce((a, d) => a + price(d), 0)});
+  // Notes it issued to honor guarantee calls count as issued notes too (fix inbox #25), shown apart as via_guarantee.
+  const honors = pilot.guarantees ? pilot.guarantees.list().filter(g => g.backer === p.id).flatMap(g => g.calls.filter(c => c.state === 'honored')) : [];
+  const issued = sum(of('payer', 'note_issued')), viaG = {count: honors.length, PC: honors.reduce((a, c) => a + c.amount, 0)};
   const keys = pilot.keysOf(p);
   let cleared = 0;
   for (const [k, e] of Object.entries(pilot.s.edges || {})) if (keys.has(k.split('>')[0])) cleared += e.setoff_PC ?? 0;
   let first = null;
   for (const d of deals) { const at = d.versions?.[0]?.offered_at; if (typeof at === 'string' && (first === null || at < first)) first = at; }
   return {
-    notes_issued: sum(of('payer', 'note_issued')),
+    notes_issued: honors.length ? {count: issued.count + viaG.count, PC: issued.PC + viaG.PC, via_guarantee: viaG} : issued,
     paid_by_transfer: sum(of('payer', 'paid_by_transfer')),
     received_by_transfer: sum(of('payee', 'paid_by_transfer')),
     cleared_by_setoff: {count: Object.values(pilot.s.setoffs || {}).filter(o => o.state === 'applied' && o.members?.includes(p.id)).length, PC: cleared},

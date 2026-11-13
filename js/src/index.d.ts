@@ -952,7 +952,9 @@ export interface GuaranteeTerms {
   issuer: {id: string; pubkey: string};
   creditor: {id: string; pubkey: string};
   cap: {amount: number; unit: string};
-  covers: 'issuer_debt_to_creditor';
+  covers: 'issuer_debt_to_creditor' | 'issuer_payment_for_deals';
+  /** Only with covers 'issuer_payment_for_deals': the deals backed. */
+  deals?: string[];
   due_at: string;
   expires_at: string;
   honor_within_hours: number;
@@ -985,6 +987,8 @@ export interface OfferGuaranteeRequest {
   honorWithinHours?: number;
   offerValidHours?: number;
   note?: string;
+  /** The deal ids the guarantee backs (fix inbox #29): it then covers only what is unpaid of them. */
+  deals?: string[] | null;
 }
 
 export type ToolName =

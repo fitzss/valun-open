@@ -32,7 +32,9 @@ export const CONSIDERATION = 'credit_note_on_delivery_accepted';
 export const PILOT_TOKEN_ID = bytesToHex(sha256(utf8('valun-pilot-credit/1')));
 export const PILOT_DENOMINATION = `token:${PILOT_TOKEN_ID}`;
 /** The pilot server the Python CLI uses by default. The Client never contacts it unless you pass it as `server`. */
-export const DEFAULT_SERVER = 'https://valun-desk.fly.dev';
+// The one network's server (valun-testnet-1 since 2026-11-13; https://valun-desk.fly.dev, the default before, serves
+// it too).
+export const DEFAULT_SERVER = 'https://valun.tech';
 
 /** Lowercase hex SHA-256 of a string's UTF-8 bytes (or of a byte array). */
 export function sha256Hex(x) {

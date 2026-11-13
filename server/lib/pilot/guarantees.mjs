@@ -38,11 +38,18 @@ import {PilotError, sha256, canonical, termsHash, residueTimestamp, signedText, 
 import {ordinaryTimestamp} from '../basis.mjs';
 import {BOUND_NOTE_MS, PRIOR_ACK} from './caps.mjs';
 import {MAX_AGE_MS} from './novation.mjs';
-import {appendEntries, edgeKey} from './journal.mjs';
+import {appendEntries, edgeKey, edgeEntries} from './journal.mjs';
 import {NETWORK, ON_TESTNET, amt} from './units.mjs';
+import {statusClass} from './status.mjs';
 
 export const GUARANTEE_PROTOCOL = 'valun-guarantee/1';
 export const COVERS = 'issuer_debt_to_creditor';
+// The deal mode (fix inbox #29): the guarantee names the deals it backs (terms.deals, 1 to MAX_DEALS deal ids between the
+// issuer as payer and the creditor as payee) and covers only what is unpaid of them.
+export const COVERS_DEALS = 'issuer_payment_for_deals';
+export const COVERS_MODES = Object.freeze([COVERS, COVERS_DEALS]);
+const MAX_DEALS = 10, DEAL_RE = /^vd_[0-9a-f]{16}$/;
+const DEAD_DEAL = new Set(['declined', 'expired', 'withdrawn', 'cancelled', 'disputed', 'expired_undelivered', 'rejected_by_owner']);
 export const GUARANTEE_FIELDS = Object.freeze(['protocol', 'network', 'tracker_nft_id', 'denomination', 'guarantee_id', 'nonce', 'backer', 'issuer', 'creditor',
   'cap', 'covers', 'due_at', 'expires_at', 'honor_within_hours', 'offer_expires_at', 'note']);
 // Bounds: due_at at most 60 days ahead (or up to an hour past: callable as soon as it is accepted); between due_at and
@@ -51,11 +58,15 @@ export const GUARANTEE_LIMITS = Object.freeze({max_due_days: 60, due_past_minute
   honor_within_hours: Object.freeze([1, 168]), note_max_chars: 500, max_open_offers_per_backer: 10});
 const DAY = 864e5, HOUR = 3600e3;
 const GID_RE = /^vg_[0-9a-f]{16}$/, CID_RE = /^vgc_[0-9a-f]{16}$/, PID_RE = /^vp_[0-9a-f]{12}$/;
+// A guarantee's times: ISO 8601 in UTC, as the clients write them (review F10: Date.parse alone also takes free text and
+// times without an offset, read in the server's local time).
+const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+// What ended an offer that was never accepted (ENDED_UNACCEPTED): also void_key_revoked (review F11).
 // Calls that claim part of the cap (a lapsed or released call claims nothing).
 const CLAIMING = new Set(['open', 'issuing', 'failed', 'honored']);
 const UNHONORED = new Set(['open', 'failed']);
 const OPEN_OFFER = new Set(['awaiting_owner', 'offered']);
-const ENDED_UNACCEPTED = new Set(['declined', 'withdrawn', 'rejected_by_owner', 'offer_expired']);
+const ENDED_UNACCEPTED = new Set(['declined', 'withdrawn', 'rejected_by_owner', 'offer_expired', 'void_key_revoked']);
 const NOTE_CLOCK_WAIT_MS = 3000;
 
 // The statements each party signs (GET /info guarantee_statements). The call and the honor name the amount, so a
@@ -70,7 +81,8 @@ export const guaranteeStatements = {
   honor: (h, callId, amount) => `valun-pilot/guarantee-honor/1\n${h}\n${callId}\n${amount}`,
 };
 
-export const COVERS_TEXT = 'What the issuer owes the creditor on the tracker when the creditor calls (recorded minus redeemed, on every key either has had), up to the cap in all, between due_at and expires_at. A call claims at most what is still owed less what earlier calls claimed.';
+export const COVERS_TEXT = 'What the issuer owes the creditor on the tracker when the creditor calls (recorded minus redeemed, on every key either has had), up to the cap in all, between due_at and expires_at. A call claims at most what is still owed less what earlier calls claimed. This includes debt created after the guarantee was accepted: the cap, not today\'s debt, is the backer\'s exposure.';
+export const COVERS_DEALS_TEXT = 'What the issuer still owes the creditor for the deals the terms name, up to the cap in all, between due_at and expires_at: each deal\'s price once its credit note is issued, less what the issuer repaid since (repayments retire the oldest debt first), so debt created after a deal\'s note never counts toward it. A call claims at most that less what earlier calls claimed.';
 const WHAT_IT_MEANS = `A guarantee is the backer's signed promise to pay the creditor, up to the cap, what the issuer still owes the creditor after due_at, if the creditor calls before expires_at. The backer pays a call with its own credit note to the creditor for that amount, within honor_within_hours: an IOU like any other${ON_TESTNET ? ', redeemable on Ergo testnet against the backer\'s tERG reserve if it posted one' : ''}. The issuer's IOU to the creditor stays as it is; what the creditor later recovers from the issuer beyond the part the backer did not pay belongs to the backer (recovered_for_backer). It is not a score and grants no credit limit.`;
 
 // GET /info guarantees: the protocol, what it covers, the bounds and the statements' meaning.
@@ -109,24 +121,79 @@ export class GuaranteeBook {
   claimed(g) { return sum(g.calls.filter(c => CLAIMING.has(c.state))); }
   honoredAmount(g) { return sum(g.calls.filter(c => c.state === 'honored')); }
   openCall(g) { return g.calls.find(c => c.state === 'open' || c.state === 'issuing' || c.state === 'failed') ?? null; }
+  // One debt, every guarantee of it (fix inbox #19). Every guarantee naming the same issuer and creditor covers the same
+  // debt, so a call on any of them claims part of that one debt: what is callable or honorable on one counts the calls on
+  // all of them, ever (a creditor repaid after backers paid holds what they paid as cover for the issuer's next debt).
+  // Without this, N guarantees of one debt each paid it in full (the creditor collected N + 1 times).
+  ofDebt(g) { return this.list().filter(x => x.issuer === g.issuer && x.creditor === g.creditor); }
+  debtClaimed(g) { return this.ofDebt(g).reduce((a, x) => a + this.claimed(x), 0); }
+  debtHonored(g) { return this.ofDebt(g).reduce((a, x) => a + this.honoredAmount(x), 0); }
+  // What the creditor recovered from the issuer beyond the part the backers did not pay (honored on the debt less what the
+  // issuer still owes), shared among the backers in proportion to what each paid (largest remainder, earliest first).
+  // Shown, not enforced: the tracker moves no note without its issuer's signature.
+  recoveredShares(g, owed) {
+    const gs = this.ofDebt(g).filter(x => this.honoredAmount(x) > 0).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+    const H = gs.reduce((a, x) => a + this.honoredAmount(x), 0), R = Math.max(0, H - owed), out = new Map();
+    if (!R) return {total: 0, honored: H, of: () => 0};
+    let left = R;
+    const parts = gs.map(x => { const n = BigInt(R) * BigInt(this.honoredAmount(x)), q = Number(n / BigInt(H)); left -= q; return {id: x.id, q, r: n % BigInt(H)}; });
+    for (const p of [...parts].sort((a, b) => (b.r > a.r ? 1 : b.r < a.r ? -1 : 0))) { if (left <= 0) break; p.q += 1; left -= 1; }
+    for (const p of parts) out.set(p.id, p.q);
+    return {total: R, honored: H, of: id => out.get(id) ?? 0};
+  }
   // What the issuer owes the creditor on the tracker (every key either has registered).
-  owed(g, ledger) {
+  owedOnTracker(g, ledger) {
     const iq = this.P.s.participants[g.issuer], cq = this.P.s.participants[g.creditor];
     if (!iq || !cq) return 0;
     const ik = this.P.keysOf(iq), ck = this.P.keysOf(cq);
     return ledger.filter(l => ik.has(l.issuer_pubkey) && ck.has(l.recipient_pubkey)).reduce((a, l) => a + l.outstanding, 0);
   }
+  // What the issuer owes the creditor because it paid the creditor as a backer: its honor notes on other guarantees to
+  // that creditor (fix inbox #19, chains: Basis E8, T19-7).
+  honorDebt(g) {
+    return this.list().filter(x => x.backer === g.issuer && x.creditor === g.creditor).reduce((a, x) => a + this.honoredAmount(x), 0);
+  }
+  // The deal mode (fix inbox #29): what is still unpaid of the named deals, first in, first out. A deal counts once its
+  // credit note is recorded: its price P, noted at timestamp t. Repayments (set-offs, transfers out, redemptions) retire
+  // the oldest debt first, so what is outstanding now is the newest debt; of it, the debt added after t (notes and
+  // transfers in on the pair, on every key) came after the deal. So unpaid = min(P, max(0, owed now - added after t)).
+  // A made-up deal after the named one adds debt after t and can never raise what the named one covers.
+  dealsUnpaid(g, ledger) {
+    if (g.terms.covers !== COVERS_DEALS) return null;
+    const owed = this.owedOnTracker(g, ledger), iq = this.P.s.participants[g.issuer], cq = this.P.s.participants[g.creditor];
+    if (!iq || !cq) return 0;
+    const edges = [];
+    for (const i of this.P.keysOf(iq)) for (const r of this.P.keysOf(cq)) edges.push(edgeKey(i, r));
+    const entries = edges.flatMap(k => edgeEntries(this.P, k));
+    let total = 0;
+    for (const id of g.terms.deals) {
+      const d = this.P.s.deals[id], n = d?.credit_note;
+      if (!d || d.status !== 'note_issued' || n?.state !== 'recorded' || !Number.isSafeInteger(n.note?.timestamp)) continue;
+      const after = entries.filter(e => e.timestamp > n.note.timestamp && e.delta > 0).reduce((a, e) => a + e.delta, 0);
+      total += Math.min(n.amount, Math.max(0, owed - after));
+    }
+    return total;
+  }
+  // The debt a guarantee covers: what the issuer owes the creditor on the tracker, less what it owes it as a backer.
+  // A guarantee of a backer's debts therefore never pays the creditor again for a default another guarantee already
+  // paid: in a chain (g2 backs the note b1 honored g1 with, g3 the note b2 honored g2 with...) only the first layer pays,
+  // and all of them together recover at most the root debt. Conservative: honor notes that were set off or redeemed
+  // since are still subtracted, so such a guarantee may cover less of the backer's other debt to the creditor.
+  owed(g, ledger) { return Math.max(0, this.owedOnTracker(g, ledger) - this.honorDebt(g)); }
   due(g) { return this.now() >= Date.parse(g.terms.due_at); }
   // What the creditor can call now: nothing unless the guarantee is active, due, before its expiry and with no call
-  // open; otherwise the cap left and the debt not yet claimed, whichever is smaller.
-  callable(g, owed) {
+  // open; otherwise the cap left and the debt not yet claimed by the calls on every guarantee of it, whichever is smaller.
+  // The deal mode also: no more than what is unpaid of its deals (`unpaid`, dealsUnpaid) less its own calls.
+  callable(g, owed, unpaid = null) {
     if (g.state !== 'active' || !this.due(g) || this.now() >= Date.parse(g.terms.expires_at) || this.openCall(g) || owed === null) return 0;
-    const claimed = this.claimed(g);
-    return Math.max(0, Math.min(g.terms.cap.amount - claimed, owed - claimed));
+    const deals = g.terms.covers === COVERS_DEALS ? (unpaid ?? 0) - this.claimed(g) : Infinity;
+    return Math.max(0, Math.min(g.terms.cap.amount - this.claimed(g), owed - this.debtClaimed(g), deals));
   }
-  // An unhonored call can still be honored while the issuer owes at least everything claimed so far (this call
-  // included); otherwise paying it would pay more than the issuer owes.
-  honorable(g, c, owed) { return UNHONORED.has(c.state) && owed >= this.claimed(g); }
+  // An unhonored call can still be honored while the issuer owes at least everything claimed on the debt so far (this
+  // call and the calls on the debt's other guarantees included); otherwise paying it would pay more than the issuer owes.
+  honorable(g, c, owed, unpaid = null) {
+    return UNHONORED.has(c.state) && owed >= this.debtClaimed(g) && (g.terms.covers !== COVERS_DEALS || unpaid === null || unpaid >= this.claimed(g));
+  }
 
   // Lazy expiry (as deals are swept): an offer past offer_expires_at, an active guarantee past expires_at. Saves when
   // something changed.
@@ -157,7 +224,7 @@ export class GuaranteeBook {
   validateTerms(t, backer) {
     const P = this.P, bad = m => { throw new PilotError('invalid_terms', m); };
     if (!t || typeof t !== 'object' || Array.isArray(t)) bad('terms must be an object');
-    for (const k of Object.keys(t)) if (!GUARANTEE_FIELDS.includes(k)) bad(`unknown terms field ${k}`);
+    for (const k of Object.keys(t)) if (!GUARANTEE_FIELDS.includes(k) && k !== 'deals') bad(`unknown terms field ${k}`);
     for (const k of GUARANTEE_FIELDS) if (!(k in t)) bad(`terms field ${k} is missing`);
     if (t.protocol !== GUARANTEE_PROTOCOL) bad(`protocol must be ${GUARANTEE_PROTOCOL}`);
     if (t.network !== NETWORK) bad(`network must be ${NETWORK}`);
@@ -175,12 +242,21 @@ export class GuaranteeBook {
     if (new Set([t.backer.id, t.issuer.id, t.creditor.id]).size !== 3) bad('the backer, the issuer and the creditor must be three different participants');
     if (!t.cap || typeof t.cap !== 'object' || Object.keys(t.cap).sort().join() !== 'amount,unit' || t.cap.unit !== P.unit || !isInt(t.cap.amount, 1, Number.MAX_SAFE_INTEGER))
       bad(`cap must be {amount: a whole number of at least 1, unit: "${P.unit}"}`);
-    if (t.covers !== COVERS) bad(`covers must be "${COVERS}" (what the issuer owes the creditor on the tracker, up to the cap)`);
+    if (!COVERS_MODES.includes(t.covers)) bad(`covers must be "${COVERS}" (what the issuer owes the creditor on the tracker, up to the cap) or "${COVERS_DEALS}" (only the deals in deals)`);
+    if (t.covers === COVERS_DEALS) {
+      if (!Array.isArray(t.deals) || t.deals.length < 1 || t.deals.length > MAX_DEALS || new Set(t.deals).size !== t.deals.length || !t.deals.every(id => typeof id === 'string' && DEAL_RE.test(id)))
+        bad(`deals must be 1 to ${MAX_DEALS} different deal ids (vd_ + 16 hex)`);
+      for (const id of t.deals) {
+        const d = Object.hasOwn(P.s.deals, id) ? P.s.deals[id] : null;
+        if (!d || d.payer !== t.issuer.id || d.payee !== t.creditor.id || DEAD_DEAL.has(d.status))
+          bad(`each deal must be a deal, not ended, in which the issuer pays the creditor (${id} is not)`);
+      }
+    } else if (t.deals !== undefined) bad(`deals is only for covers "${COVERS_DEALS}"`);
     if (!isInt(t.honor_within_hours, ...GUARANTEE_LIMITS.honor_within_hours)) bad(`honor_within_hours must be a whole number from ${GUARANTEE_LIMITS.honor_within_hours[0]} to ${GUARANTEE_LIMITS.honor_within_hours[1]}`);
     if (typeof t.note !== 'string') bad('note must be text (it may be empty)');
     if (t.note !== '') signedText(t.note, GUARANTEE_LIMITS.note_max_chars, 'note');
     const now = this.now(), due = Date.parse(t.due_at), exp = Date.parse(t.expires_at), offer = Date.parse(t.offer_expires_at);
-    for (const k of ['due_at', 'expires_at', 'offer_expires_at']) if (typeof t[k] !== 'string' || !Number.isFinite(Date.parse(t[k]))) bad(`${k} must be an ISO 8601 time`);
+    for (const k of ['due_at', 'expires_at', 'offer_expires_at']) if (typeof t[k] !== 'string' || !ISO_UTC_RE.test(t[k]) || !Number.isFinite(Date.parse(t[k]))) bad(`${k} must be an ISO 8601 time in UTC, like 2026-11-13T18:00:00.000Z`);
     if (!(due >= now - GUARANTEE_LIMITS.due_past_minutes * 60e3 && due <= now + GUARANTEE_LIMITS.max_due_days * DAY)) bad(`due_at must be at most ${GUARANTEE_LIMITS.max_due_days} days ahead (or up to ${GUARANTEE_LIMITS.due_past_minutes} minutes past: callable as soon as it is accepted)`);
     if (!(exp >= due + GUARANTEE_LIMITS.min_call_window_hours * HOUR && exp <= due + GUARANTEE_LIMITS.max_call_window_days * DAY)) bad(`expires_at must be at least ${GUARANTEE_LIMITS.min_call_window_hours} hour and at most ${GUARANTEE_LIMITS.max_call_window_days} days after due_at`);
     if (!(offer > now && offer <= now + GUARANTEE_LIMITS.max_offer_days * DAY)) bad(`offer_expires_at must be in the future, at most ${GUARANTEE_LIMITS.max_offer_days} days ahead`);
@@ -294,7 +370,14 @@ export class GuaranteeBook {
       // pays it; no owner approval: accepting a guarantee commits the creditor to nothing).
       const chk = await P.checkMandate(p, 'payee', g.backer, g.terms.cap.amount, {guarantee: true, excludeGuaranteeId: g.id});
       await this.backerStillAuthorized(g);
-      g.acceptance = {by: p.id, signature, at: iso(this.now()), mandate_check: {checks: chk.checks, mandate_version: chk.mandate_version}};
+      // A read outside the lock may have swept the offer to offer_expired (or a revocation voided it) meanwhile (review F3).
+      this.sweep(g);
+      if (g.state !== 'offered') throw new PilotError('not_open', `guarantee is ${g.state}; nothing to accept`, 409);
+      // What the issuer owed the creditor when it accepted (fix inbox #29): a call above it is flagged in the floating mode.
+      const owedNow = this.owed(g, await P.ledger());
+      this.sweep(g);
+      if (g.state !== 'offered') throw new PilotError('not_open', `guarantee is ${g.state}; nothing to accept`, 409);
+      g.acceptance = {by: p.id, signature, at: iso(this.now()), mandate_check: {checks: chk.checks, mandate_version: chk.mandate_version}, owed_at_acceptance: owedNow};
       g.state = 'active';
       this.event(g, p.id, 'accepted', {terms_hash: g.terms_hash});
       P.save(); P.store.audit({type: 'guarantee.accepted', guarantee: g.id, by: p.id});
@@ -323,6 +406,10 @@ export class GuaranteeBook {
       if (g.state !== 'active' && g.state !== 'expired') throw new PilotError('not_active', `guarantee is ${g.state}; only an accepted guarantee can be released`, 409);
       if (g.calls.some(c => c.state === 'issuing')) throw new PilotError('honor_in_progress', 'the backer\'s note for a call is being recorded; try again in a minute', 409, {retry_after_ms: 60000});
       if (terms_hash !== g.terms_hash) throw new PilotError('stale_terms', `terms_hash does not match this guarantee (${g.terms_hash})`, 409);
+      // A deal this creditor agreed because this guarantee covered it (its owner's min_payer_coverage_pct) holds it until
+      // the deal is paid or ended: the agent's key alone cannot undo the cover its owner required (review F6).
+      const relied = this.reliedOnBy(g);
+      if (relied.length) throw new PilotError('guarantee_in_use', `${relied.join(', ')} ${relied.length === 1 ? 'was' : 'were'} agreed because this guarantee covered ${relied.length === 1 ? 'it' : 'them'} (your owner's coverage rule); it can be released once ${relied.length === 1 ? 'that deal is' : 'those deals are'} paid or ended`, 409, {deals: relied});
       await this.P.verifySig(p, guaranteeStatements.release(g.terms_hash), signature, 'release');
       const voided = g.calls.filter(c => UNHONORED.has(c.state));
       for (const c of voided) c.state = 'released';
@@ -344,24 +431,61 @@ export class GuaranteeBook {
       await P.verifySig(p, guaranteeStatements.call(g.terms_hash, callId, amount), signature, 'call');
       if (this.list().some(x => x.calls.some(c => c.id === callId))) throw new PilotError('duplicate', 'that call id already exists', 409);
       const ledger = await P.ledger();
-      const owed = this.owed(g, ledger);
+      const owed = this.owed(g, ledger), unpaid = this.dealsUnpaid(g, ledger);
       // A call left open that the issuer's repayment made unpayable lapses now (it claimed more than is owed).
       const open = this.openCall(g);
-      if (open && open.state !== 'issuing' && !this.honorable(g, open, owed)) this.lapse(g, open, owed);
+      if (open && open.state !== 'issuing' && !this.honorable(g, open, owed, unpaid)) this.lapse(g, open, owed);
       if (this.openCall(g)) throw new PilotError('call_open', `call ${this.openCall(g).id} is still open; it must be honored (or lapse) before another call`, 409);
-      const callable = this.callable(g, owed);
+      const callable = this.callable(g, owed, unpaid);
       if (amount > callable) {
-        const claimed = this.claimed(g);
-        throw new PilotError('exceeds_callable', `at most ${amt(callable)} can be called now: the cap left is ${amt(g.terms.cap.amount - claimed)}, and the issuer owes you ${amt(owed)} on the tracker, of which earlier calls claimed ${amt(claimed)}`, 409,
-          {callable, issuer_owes_creditor: owed, claimed, cap: g.terms.cap.amount});
+        const claimed = this.claimed(g), onDebt = this.debtClaimed(g);
+        const others = this.ofDebt(g).filter(x => x.id !== g.id && this.claimed(x) > 0).map(x => ({guarantee_id: x.id, claimed: this.claimed(x)}));
+        const via = others.length ? ` (${others.map(o => `${amt(o.claimed)} via ${o.guarantee_id}`).join(', ')}${claimed ? `, ${amt(claimed)} via this one` : ''})` : '';
+        const honorDebt = this.honorDebt(g);
+        throw new PilotError('exceeds_callable', `at most ${amt(callable)} can be called now: the cap left is ${amt(g.terms.cap.amount - claimed)}${unpaid !== null ? `, what is unpaid of the deals it backs is ${amt(unpaid)}` : ''}, and the issuer owes you ${amt(owed)} that this guarantee covers${honorDebt ? ` (on the tracker ${amt(owed + honorDebt)}, of which ${amt(honorDebt)} are its own payments to you as a backer, which a guarantee of its debts does not cover)` : ''}, of which earlier calls on this debt claimed ${amt(onDebt)}${via}`, 409,
+          {callable, issuer_owes_creditor: owed, claimed, claimed_on_debt: onDebt, ...(others.length ? {claimed_by_other_guarantees: others} : {}), ...(honorDebt ? {issuer_honor_debt: honorDebt} : {}),
+            ...(unpaid !== null ? {deals_unpaid: unpaid} : {}), cap: g.terms.cap.amount});
       }
       const now = this.now();
-      const c = {id: callId, amount, signature, called_at: iso(now), honor_by: iso(now + g.terms.honor_within_hours * HOUR), state: 'open', owed_at_call: owed, claimed_before: this.claimed(g)};
+      const c = {id: callId, amount, signature, called_at: iso(now), honor_by: iso(now + g.terms.honor_within_hours * HOUR), state: 'open', owed_at_call: owed, claimed_before: this.claimed(g),
+        claimed_on_debt_before: this.debtClaimed(g)};
       g.calls.push(c);
       this.event(g, p.id, 'called', {call_id: callId, amount, issuer_owes_creditor: owed});
       P.save(); P.store.audit({type: 'guarantee.called', guarantee: g.id, call: callId, amount});
       return this.view(g, p, ledger);
     });
+  }
+  // Calls the issuer's repayment made unpayable lapse as soon as anything reads the debt (review F2, F7): a view, a mandate
+  // check. Before, only the creditor's next call or the backer's own honor made them lapse, so colluders could leave them
+  // "against" an issuer that owes nothing, and the backer's limits and record held them. A call being issued stays.
+  lapseStale(ledger, gs = this.list()) {
+    let n = 0;
+    for (const g of gs) {
+      if (!g.calls.some(c => UNHONORED.has(c.state))) continue;
+      const owed = this.owed(g, ledger), unpaid = this.dealsUnpaid(g, ledger);
+      for (const c of g.calls) if (UNHONORED.has(c.state) && !this.honorable(g, c, owed, unpaid)) { this.lapse(g, c, owed); n++; }
+    }
+    if (n) this.P.save();
+    return n;
+  }
+  // The committed deals (not yet paid or ended) between this guarantee's issuer and creditor whose acceptance counted it
+  // as cover (the min_payer_coverage_pct entry of the acceptance's mandate check names it).
+  reliedOnBy(g) {
+    return Object.values(this.P.s.deals).filter(d => d.payer === g.issuer && d.payee === g.creditor && statusClass(d.status)?.committed
+      && (d.acceptance?.mandate_check?.checks ?? []).some(c => c.rule === 'min_payer_coverage_pct' && Array.isArray(c.guarantees) && c.guarantees.includes(g.id))).map(d => d.id);
+  }
+  // Revoking an agent (Pilot.revokeAgent, lock held): every offer not yet accepted that names its key, as backer, issuer
+  // or creditor, can never be accepted (key_changed); it ends now as void_key_revoked (review F11). Returns their ids.
+  voidOffersOfKey(pubkey, participantId) {
+    const out = [];
+    for (const g of this.list()) {
+      if (!OPEN_OFFER.has(g.state) || !['backer', 'issuer', 'creditor'].some(r => g.terms[r].pubkey === pubkey)) continue;
+      const was = g.state;
+      g.state = 'void_key_revoked'; this.voidApproval(g, 'void_key_revoked');
+      this.event(g, 'valun', 'void_key_revoked', {participant: participantId}, was === 'awaiting_owner' ? g.backer : null);
+      out.push(g.id);
+    }
+    return out;
   }
   lapse(g, c, owed) {
     c.state = 'lapsed'; c.lapsed_at = iso(this.now()); c.issuer_owed_at_lapse = owed;
@@ -396,16 +520,16 @@ export class GuaranteeBook {
     const c = this.callOf(g, callId);
     if (c.state === 'honored') throw new PilotError('already_honored', `call ${c.id} is honored already`, 409);
     if (!UNHONORED.has(c.state)) throw new PilotError('wrong_state', `call ${c.id} is ${c.state}; nothing to honor`, 409);
-    const ledger = await this.P.ledger(), owed = this.owed(g, ledger);
-    return {g, c, ledger, owed};
+    const ledger = await this.P.ledger(), owed = this.owed(g, ledger), unpaid = this.dealsUnpaid(g, ledger);
+    return {g, c, ledger, owed, unpaid};
   }
   // GET .../calls/{vgc}/note-template: as a deal's credit-note template (Pilot.noteTemplate), for the call's amount.
   //   bound: true  a bound note (mode bound and above): the timestamp ends in 997 ms; adds prior_note, prior_timestamp and
   //                prior_message_hex (the backer's prior acknowledgment of the pair's note, for information).
   //   prior: true  adds prior_note (the pair's tracker note, signed by the backer itself), or null.
   async noteTemplate(p, id, callId, {wait = true, prior: withPrior = false, bound = false} = {}) {
-    const P = this.P, {g, c, owed} = await this.honorContext(p, id, callId);
-    if (!this.honorable(g, c, owed)) throw new PilotError('call_lapsed', `the issuer now owes the creditor ${amt(owed)}, less than the ${amt(this.claimed(g))} claimed with this call: it can no longer be honored (it lapses at the next honor or call)`, 409, {issuer_owes_creditor: owed});
+    const P = this.P, {g, c, owed, unpaid} = await this.honorContext(p, id, callId);
+    if (!this.honorable(g, c, owed, unpaid)) throw new PilotError('call_lapsed', `the issuer now owes the creditor ${amt(owed)}, less than the ${amt(this.debtClaimed(g))} claimed on this debt with this call: it can no longer be honored (it lapses at the next honor or call)`, 409, {issuer_owes_creditor: owed, claimed_on_debt: this.debtClaimed(g)});
     if (bound && P.mode === 'off') throw new PilotError('feature_unavailable', 'bound credit notes are not enabled on this server; fetch the template without bound=1', 409);
     const {issuer, recipient} = this.noteParties(g), k = edgeKey(issuer, recipient);
     this.assertPairFree(c, issuer, recipient);
@@ -447,11 +571,11 @@ export class GuaranteeBook {
     return this.P.serial(async () => {
       const P = this.P;
       P.assertTrackerWritable();
-      const {g, c, ledger, owed} = await this.honorContext(p, id, callId);
+      const {g, c, ledger, owed, unpaid} = await this.honorContext(p, id, callId);
       if (terms_hash !== g.terms_hash) throw new PilotError('stale_terms', `terms_hash does not match this guarantee (${g.terms_hash})`, 409);
       if (amount !== c.amount) throw new PilotError('stale_amount', `call ${c.id} is for ${c.amount}, not ${amount}`, 409);
       await P.verifySig(p, guaranteeStatements.honor(g.terms_hash, c.id, c.amount), signature, 'honor');
-      if (!this.honorable(g, c, owed)) {
+      if (!this.honorable(g, c, owed, unpaid)) {
         this.lapse(g, c, owed); P.save();
         throw new PilotError('call_lapsed', `the issuer now owes the creditor ${amt(owed)}, less than what this call and the earlier ones claim: the call lapsed and nothing was paid. The creditor may call again for what is still owed.`, 409, {issuer_owes_creditor: owed});
       }
@@ -475,6 +599,8 @@ export class GuaranteeBook {
         if (!(await P.safeVerify(issuer, ack, note.prior_signature)))
           throw new PilotError('bad_signature', `the prior acknowledgment (credit_note.prior_signature) does not verify: it must be the backer's signature over the prior acknowledgment ${PRIOR_ACK} of the pair's current note (total ${prior}, timestamp ${priorTs}) at the note's timestamp`, 403);
       }
+      // A read outside the lock may have lapsed the call meanwhile (the issuer repaid): nothing is paid then (review F3).
+      if (!UNHONORED.has(c.state)) throw new PilotError('wrong_state', `call ${c.id} is ${c.state} now; nothing to honor`, 409);
       c.state = 'issuing'; c.honor_signature = signature; c.keys = {issuer, recipient}; c.prior_total = prior;
       c.note_prior = {total: prior, timestamp: cur?.timestamp ?? null, signature: cur?.signature ?? null};
       c.note = {total: note.total, timestamp: note.timestamp, signature: note.signature, message_hex, ...(bound ? {prior_signature: note.prior_signature} : {})};
@@ -541,13 +667,33 @@ export class GuaranteeBook {
     return this.list().filter(g => g.creditor === C.id && g.acceptance && g.id !== excludeGuaranteeId && (backerId === null || g.backer === backerId))
       .map(g => this.sweep(g)).reduce((a, g) => a + (OPEN_OFFER.has(g.state) ? 0 : this.obligation(g)), 0);
   }
-  // The open cap of the active guarantees backing `issuerId`'s debts to creditor C (min_payer_coverage_pct counts it),
-  // with their ids.
-  backingFor(C, issuerId) {
-    const gs = this.list().filter(g => g.creditor === C.id && g.issuer === issuerId).map(g => this.sweep(g)).filter(g => g.state === 'active');
-    const parts = gs.map(g => ({id: g.id, open: Math.max(0, g.terms.cap.amount - this.claimed(g))})).filter(x => x.open > 0);
-    return {amount: parts.reduce((a, x) => a + x.open, 0), ids: parts.map(x => x.id)};
+  // What backs `issuerId`'s debt to creditor C once it is `debtAfter` (what the issuer would owe C with the deal being
+  // agreed), for min_payer_coverage_pct (fix inbox #19):
+  //   amount        what backers could still be called for on that debt: the open caps of the active guarantees, but no
+  //                 more than the debt less what calls on its guarantees (any, ever) claimed;
+  //   already_paid  what calls on the debt's guarantees claimed (honored, or open and still to be honored);
+  //   cover         what the backers pay or paid of that debt in all: already_paid + amount, at most debtAfter.
+  // ids: the active guarantees with an open cap.
+  // ratio(backerId): what a backer's IOU is worth to C, from 0 to 1 (Pilot.groundedFor, fix inbox #20); each guarantee's
+  // open cap and what its calls claimed count at it. Without it, at face value. What can still be called is limited by the
+  // face amounts claimed (a call claims face value whatever the backer is worth).
+  // debtFrom (ms): when the debt being covered can first arise (a deal's deliver_by); an active guarantee counts only if it
+  // can still be called an hour after that (review F6b: one callable for an hour must not cover a deal delivered in days).
+  // dealId: the deal being agreed; a guarantee in the deal mode (fix inbox #29) counts only for the deals it names.
+  backingFor(C, issuerId, {debtAfter = null, ratio = () => 1, debtFrom = null, dealId = null} = {}) {
+    const r = id => Math.max(0, Math.min(1, ratio(id)));
+    const all = this.list().filter(g => g.creditor === C.id && g.issuer === issuerId && (g.terms.covers !== COVERS_DEALS || (dealId && g.terms.deals.includes(dealId)))).map(g => this.sweep(g));
+    const lasts = g => debtFrom === null || Date.parse(g.terms.expires_at) >= debtFrom + GUARANTEE_LIMITS.min_call_window_hours * HOUR;
+    const parts = all.filter(g => g.state === 'active' && lasts(g)).map(g => ({id: g.id, open: Math.max(0, g.terms.cap.amount - this.claimed(g)), r: r(g.backer)})).filter(x => x.open > 0);
+    const openFace = parts.reduce((a, x) => a + x.open, 0), openValue = parts.reduce((a, x) => a + x.open * x.r, 0);
+    const paidFace = all.reduce((a, g) => a + this.claimed(g), 0), paid = Math.floor(all.reduce((a, g) => a + this.claimed(g) * r(g.backer), 0) + 1e-9);
+    if (debtAfter === null) return {amount: Math.floor(openValue + 1e-9), already_paid: paid, cover: Math.floor(openValue + 1e-9) + paid, ids: parts.map(x => x.id)};
+    const callable = Math.min(openFace, Math.max(0, debtAfter - paidFace));
+    const amount = openFace ? Math.floor(callable * openValue / openFace + 1e-9) : 0;
+    return {amount, already_paid: paid, cover: Math.min(debtAfter, paid + amount), ids: parts.map(x => x.id)};
   }
+  // The backers of `issuerId`'s debt to creditor C (accepted guarantees), by participant id.
+  backersOf(C, issuerId) { return [...new Set(this.list().filter(g => g.creditor === C.id && g.issuer === issuerId && g.acceptance).map(g => g.backer))]; }
 
   // ---------- views ----------
   nextActions(g, p, callable) {
@@ -563,27 +709,40 @@ export class GuaranteeBook {
     }
     return out;
   }
-  callView(g, c, owed) {
+  callView(g, c, owed, role = 'backer', unpaid = null) {
     const overdue = UNHONORED.has(c.state) && this.now() > Date.parse(c.honor_by);
-    return {call_id: c.id, amount: c.amount, state: c.state, called_at: c.called_at, honor_by: c.honor_by, overdue,
-      ...(UNHONORED.has(c.state) && owed !== null ? {honorable_now: this.honorable(g, c, owed)} : {}),
+    // The floating mode: a call for more than the issuer owed when the guarantee was accepted (fix inbox #29).
+    const above = g.terms.covers !== COVERS_DEALS && Number.isSafeInteger(g.acceptance?.owed_at_acceptance) && (c.claimed_before ?? 0) + c.amount > g.acceptance.owed_at_acceptance;
+    return {call_id: c.id, amount: c.amount, state: c.state, called_at: c.called_at, honor_by: c.honor_by, overdue, ...(above ? {above_debt_at_acceptance: true} : {}),
+      ...(UNHONORED.has(c.state) && owed !== null ? {honorable_now: this.honorable(g, c, owed, unpaid)} : {}),
       issuer_owed_at_call: c.owed_at_call, signature: c.signature,
       ...(c.honored_at ? {honored_at: c.honored_at, late: !!c.late} : {}),
+      // The backer's note and honor signatures: the backer's and the creditor's to see, not the issuer's (it is not on
+      // that edge; review F8).
       ...(c.tracker_note ? {note: {issuer_pubkey: c.keys.issuer, recipient_pubkey: c.keys.recipient, total: c.tracker_note.amount_collected, timestamp: c.tracker_note.timestamp,
-        signature: c.tracker_note.signature, confirmation: c.tracker_note.confirmation}, honor_signature: c.honor_signature} : {}),
+        ...(role !== 'issuer' ? {signature: c.tracker_note.signature} : {}), confirmation: c.tracker_note.confirmation}, ...(role !== 'issuer' ? {honor_signature: c.honor_signature} : {})} : {}),
       ...(c.state === 'failed' ? {error: c.error} : {}), ...(c.lapsed_at ? {lapsed_at: c.lapsed_at, issuer_owed_at_lapse: c.issuer_owed_at_lapse} : {})};
   }
   view(g, p, ledger = null) {
     this.sweep(g);
+    if (ledger) this.lapseStale(ledger, [g]);
     const P = this.P, t = g.terms, who = id => { const q = P.s.participants[id]; return {id, handle: q?.handle ?? null}; };
-    const owed = ledger ? this.owed(g, ledger) : null, claimed = this.claimed(g), honored = this.honoredAmount(g), callable = this.callable(g, owed);
+    const owed = ledger ? this.owed(g, ledger) : null, unpaid = ledger ? this.dealsUnpaid(g, ledger) : null;
+    const claimed = this.claimed(g), honored = this.honoredAmount(g), callable = this.callable(g, owed, unpaid);
+    const shares = owed === null ? null : this.recoveredShares(g, owed);
     const role = g.backer === p.id ? 'backer' : g.creditor === p.id ? 'creditor' : 'issuer';
     return {guarantee_id: g.id, state: g.state, your_role: role, backer: who(g.backer), issuer: who(g.issuer), creditor: who(g.creditor), unit: P.unit,
       cap: t.cap.amount, due_at: t.due_at, expires_at: t.expires_at, honor_within_hours: t.honor_within_hours, offer_expires_at: t.offer_expires_at, note: t.note,
-      covers: COVERS_TEXT, claimed, honored, remaining_cap: Math.max(0, t.cap.amount - claimed),
-      issuer_owes_creditor: owed, callable_now: callable, callable_from: t.due_at,
-      recovered_for_backer: owed === null ? null : Math.max(0, honored - owed),
-      calls: g.calls.map(c => this.callView(g, c, owed)),
+      covers: t.covers === COVERS_DEALS ? COVERS_DEALS_TEXT : COVERS_TEXT, ...(t.covers === COVERS_DEALS ? {deals: t.deals, deals_unpaid: unpaid} : {}),
+      ...(g.acceptance && Number.isSafeInteger(g.acceptance.owed_at_acceptance) ? {owed_at_acceptance: g.acceptance.owed_at_acceptance} : {}),
+      claimed, honored, remaining_cap: Math.max(0, t.cap.amount - claimed),
+      issuer_owes_creditor: owed, ...(ledger && this.honorDebt(g) ? {issuer_owes_on_tracker: this.owedOnTracker(g, ledger), issuer_honor_debt: this.honorDebt(g)} : {}),
+      callable_now: callable, callable_from: t.due_at,
+      recovered_for_backer: shares === null ? null : shares.of(g.id),
+      // The debt this guarantee covers, with every guarantee of it (fix inbox #19): amounts only, no other backer named.
+      debt: {issuer_owes_creditor: owed, claimed_by_all_guarantees: this.debtClaimed(g), honored_by_all_backers: this.debtHonored(g),
+        recovered_for_backers: shares === null ? null : shares.total, guarantees_of_it: this.ofDebt(g).filter(x => x.acceptance).length},
+      calls: g.calls.map(c => this.callView(g, c, owed, role, unpaid)),
       next_actions: this.nextActions(g, p, callable),
       terms: t, terms_hash: g.terms_hash,
       offer: {by: g.offer.by, at: g.offer.at, signature: g.offer.signature, offered_at: g.offer.offered_at,
@@ -630,10 +789,13 @@ export class GuaranteeBook {
 // ---------- the record (lib/pilot/evidence.mjs reads these; aggregates only) ----------
 // A participant's guarantees, by role: as backer (given), as the issuer backed, as the creditor holding them. Counts and
 // amounts of calls, how many were honored (on time or late), and how many are overdue (unhonored past honor_by).
-export function backingRecord(pilot, p, byKind) {
-  const book = pilot.guarantees, now = pilot.now();
+// With the ledger, an unhonored call the issuer's repayment made unpayable no longer stands (review F2, F7): it is not
+// counted, called or overdue, whether or not anything has lapsed it yet.
+const standing = (book, ledger) => (g, c) => CLAIMING.has(c.state) && (!ledger || !UNHONORED.has(c.state) || book.honorable(g, c, book.owed(g, ledger), book.dealsUnpaid(g, ledger)));
+export function backingRecord(pilot, p, byKind, ledger = null) {
+  const book = pilot.guarantees, now = pilot.now(), stands = book ? standing(book, ledger) : () => false;
   const gs = book ? book.list().map(g => book.sweep(g)).filter(g => g.acceptance) : [];
-  const calls = xs => xs.flatMap(g => g.calls.filter(c => CLAIMING.has(c.state)));
+  const calls = xs => xs.flatMap(g => g.calls.filter(c => stands(g, c)));
   const tally = cs => ({count: cs.length, PC: sum(cs)});
   const given = gs.filter(g => g.backer === p.id), backed = gs.filter(g => g.issuer === p.id), held = gs.filter(g => g.creditor === p.id);
   const gc = calls(given), honored = gc.filter(c => c.state === 'honored'), overdue = gc.filter(c => UNHONORED.has(c.state) && now > Date.parse(c.honor_by));
@@ -642,16 +804,16 @@ export function backingRecord(pilot, p, byKind) {
     given: {accepted: given.length, active: given.filter(g => g.state === 'active').length,
       open_cap_PC: given.filter(g => g.state === 'active').reduce((a, g) => a + Math.max(0, g.terms.cap.amount - book.claimed(g)), 0),
       called: tally(gc), honored: tally(honored), honored_late: honored.filter(c => c.late).length, overdue: tally(overdue),
-      ended_uncalled: given.filter(g => (g.state === 'expired' || g.state === 'released') && !g.calls.some(c => CLAIMING.has(c.state))).length},
+      ended_uncalled: given.filter(g => (g.state === 'expired' || g.state === 'released') && !g.calls.some(c => stands(g, c))).length},
     backed_as_issuer: {accepted: backed.length, backers: backers.size, backers_by_kind: byKind(pilot, backers), called_against: tally(calls(backed))},
     held_as_creditor: {accepted: held.length, called: tally(calls(held))},
   };
 }
 // The network's totals of the same.
-export function backingTotals(pilot) {
-  const book = pilot.guarantees, now = pilot.now();
+export function backingTotals(pilot, ledger = null) {
+  const book = pilot.guarantees, now = pilot.now(), stands = book ? standing(book, ledger) : () => false;
   const gs = book ? book.list().map(g => book.sweep(g)).filter(g => g.acceptance) : [];
-  const cs = gs.flatMap(g => g.calls.filter(c => CLAIMING.has(c.state)));
+  const cs = gs.flatMap(g => g.calls.filter(c => stands(g, c)));
   const honored = cs.filter(c => c.state === 'honored');
   return {accepted: gs.length, active: gs.filter(g => g.state === 'active').length, called: {count: cs.length, PC: sum(cs)}, honored: {count: honored.length, PC: sum(honored)},
     overdue: cs.filter(c => UNHONORED.has(c.state) && now > Date.parse(c.honor_by)).length};

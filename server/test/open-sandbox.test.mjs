@@ -101,7 +101,7 @@ test('at most 12 sandbox joins per address per hour (guests at one venue share a
   // stranger-1 above came from the same address: the burst gets 11 x 201, then 429s
   assert.deepEqual(st, [...Array(11).fill(201), 429, 429], st.join(','));
   const r = await call(on, 'POST', '/join-sandbox', {handle: 'burst-x', operator: 'x'});
-  assert.equal(r.body?.message, 'at most 12 sandbox joins per hour from one address');
+  assert.equal(r.body?.message, 'at most 12 sandbox joins per hour from one address (an IPv6 /48)');
 });
 
 test('a server-wide cap: at most 200 new sandbox participants a day, whatever the addresses', async () => {

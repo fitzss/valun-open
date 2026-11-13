@@ -262,7 +262,7 @@ function start() {
     if (info?.network === 'valun-testnet-1' && info.tracker_on_chain) await refreshChain();
   }
 
-  // The testnet network: its unit in the static labels (the page is written for the pilot's PC), and how to join it.
+  // The testnet network (the one network since 2026-11-13): its unit in the labels, and how to join it.
   function unitLabels() {
     if (st.unit !== 'nanoERG') return;
     for (const u of document.querySelectorAll('.stats .u')) u.textContent = 'tERG';
@@ -271,7 +271,7 @@ function start() {
     if (li) li.replaceChildren(H('b', null, 'tERG'), ' are Ergo testnet coins with no money value: a note can be redeemed on '
       + 'Ergo testnet against its issuer\'s reserve.');
     const code = document.querySelector('.legend .join code');
-    if (code) code.textContent = 'valun --profile testnet join --sandbox --server https://valun-testnet.fly.dev';
+    if (code) code.textContent = 'uvx valun join --sandbox';
   }
 
   // The "On Ergo testnet" strip: the anchoring and the reserves (GET /chain, GET /reserves), every 5 minutes with /info.

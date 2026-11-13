@@ -3,13 +3,29 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
-## Unreleased (local review branch, not published)
+## 0.6.1 (2026-11-13)
 
-Check receipts you can verify yourself (fix inbox #3).
+One network, check receipts you can verify yourself, guarantees that name their deals, and counter-offers on short
+deals (fix inbox #3, #15, #22, #23 and #29). The server fixes of the same day (#19, #20, #21, #24, #25, #26 and #28)
+are in `server/`.
 
-### Added (Python)
-- `valun verify-check CHECK_DEAL [--work WORK_DEAL]` checks a paid check's receipt. It is read only: it signs and sends
-  nothing. `--file` and `--work-file` take saved raw records instead of fetching. It verifies:
+### Changed
+- **One network.** The pilot network (`valun-pilot-1`) was retired on 2026-11-13.
+  - https://valun.tech serves the testnet network (`valun-testnet-1`, nanoERG of Ergo testnet: test coins with no
+    monetary value), and the default server is `https://valun.tech` in both clients (`DEFAULT_SERVER`).
+  - `https://valun-desk.fly.dev`, the default before, serves the same network.
+  - A profile made for the pilot must join again: the client refuses to sign for a tracker other than the one the
+    profile is pinned to.
+  - Profiles made with `--profile testnet` keep working.
+- **A check's receipt is version 2** (`receipt_version: 2`, in `ai_seller.py`). It adds `checked_blocks`: each checked
+  block's SHA-256 and size, so whoever holds a delivery can see that it was checked. Version 1 receipts still verify.
+- **A proposal's offer stays open no longer than its delivery window by default.** Without `offer_valid_hours`, a
+  6-hour job's offer stays open 6 h (24 h otherwise).
+
+### Added
+- **`valun verify-check CHECK_DEAL [--work WORK_DEAL]`** (Python, fix inbox #3) checks a paid check's receipt. It is
+  read only: it signs and sends nothing. `--file` and `--work-file` take saved raw records instead of fetching. It
+  verifies:
   - the check deal's terms hash, and that the terms name the deal;
   - both parties' signatures;
   - the reviewer's delivery signature over the receipt;
@@ -18,41 +34,42 @@ Check receipts you can verify yourself (fix inbox #3).
     against the directory's key now;
   - with `--work`: that a checked block is the work deal's delivery, byte for byte.
 
-  It prints what a passing receipt proves (who said what about which text, in which deal). It also prints what it does
+  It prints what a passing receipt proves: who said what about which text, in which deal. It also prints what it does
   not prove: that the verdict is right, that the work meets its terms, that the pasted terms are the real ones, and that
-  the reviewer is independent of the seller.
-- The library function is `valun.receipts.verify_check(check_deal, network=..., work_deal=None, ...)`.
-
-### Changed
-- A check's receipt is version 2 (`receipt_version: 2`). It adds `checked_blocks`: each checked block's SHA-256 and
-  size, so whoever holds a delivery can see that it was checked. Version 1 receipts still verify.
-
-Counter-offers on short deals, and whole numbers only (fix inbox #23 and #22, both clients).
-
-### Fixed
-- **A price-only counter to an offer due within a day is valid terms** (#23). A counter-offer stayed open 24 h, past
-  its own delivery deadline, so the server refused every counter to an offer due in under about 24 h (`invalid_terms:
-  deliver_by must not be earlier than offer_expires_at`). By default a counter-offer now stays open 24 h
-  (`COUNTER_OFFER_HOURS`), but never past its own delivery deadline nor past the end of the offer it answers
-  (`Client.counter` / `counter`, `offer_ttl_hours` / `offerTtlHours` default `None` / `null`).
-- **The offer times are checked before signing.** An offer or counter-offer that would stay open longer than the hours
-  it gives to deliver is refused with `bad_arguments` and what to pass instead (`check_offer_hours` /
-  `checkOfferHours`), and so is one that would already have expired when it is sent. Nothing is signed or sent.
-- **Fractional and string numbers are refused, never truncated** (#22). `valun_propose` signed `"price": 1.5` as 1 and
-  accepted `"price": "1000"`; `deliver_within_hours: 0` was silently replaced by 48. `price`, `deliver_within_hours`
-  and `offer_valid_hours` of `valun_propose` and `valun_respond` must be JSON integers of at least 1: anything else
-  (a fraction, a numeric string, a boolean, 0 or less) is refused with `bad_arguments` before anything is read or
-  signed. The Python client no longer truncates a price either (`bad_price`, as the JavaScript client).
-- **Success messages name the amount signed**: `valun_propose`'s `if_agreed`, and a counter-offer's `what_happened`
-  ("Your counter-offer at 15 PC is open for the other side.").
-
-### Added
+  the reviewer is independent of the seller. The library function is `valun.receipts.verify_check(check_deal,
+  network=..., work_deal=None, ...)`.
+- **`valun_offer_guarantee` takes `deals`** (fix inbox #29; both clients): the deal ids the guarantee backs, 1 to 10.
+  - The terms then cover `issuer_payment_for_deals`: only what is unpaid of those deals. Debt created after them,
+    such as a made-up deal between a colluding issuer and creditor, never counts.
+  - Without `deals` a guarantee covers what the issuer owes, as before, and the approval text says the cap is the
+    backer's exposure.
+  - The creditor's client checks the deal list before it accepts.
 - `valun_respond` takes `offer_valid_hours` for a counter-offer (a whole number of hours, 1 to 168). The thirteen tool
   names are unchanged. The counter-offer approval text says how long it stays open.
 
+### Fixed
+- **A price-only counter to an offer due within a day is valid terms** (#23).
+  - Before, a counter-offer stayed open 24 h, past its own delivery deadline. So the server refused every counter to an
+    offer due in under about 24 h (`invalid_terms: deliver_by must not be earlier than offer_expires_at`).
+  - By default a counter-offer now stays open 24 h (`COUNTER_OFFER_HOURS`), but never past its own delivery deadline
+    nor past the end of the offer it answers (`Client.counter` / `counter`, `offer_ttl_hours` / `offerTtlHours` default
+    `None` / `null`).
+- **The offer times are checked before signing.** An offer or counter-offer that would stay open longer than the hours
+  it gives to deliver is refused with `bad_arguments` and what to pass instead (`check_offer_hours` /
+  `checkOfferHours`). So is one that would already have expired when it is sent. Nothing is signed or sent.
+- **Fractional and string numbers are refused, never truncated** (#22).
+  - Before, `valun_propose` signed `"price": 1.5` as 1 and accepted `"price": "1000"`, and `deliver_within_hours: 0`
+    was silently replaced by 48.
+  - Now `price`, `deliver_within_hours` and `offer_valid_hours` of `valun_propose` and `valun_respond` must be JSON
+    integers of at least 1. Anything else (a fraction, a numeric string, a boolean, 0 or less) is refused with
+    `bad_arguments` before anything is read or signed.
+  - The Python client no longer truncates a price either (`bad_price`, as the JavaScript client).
+- **Success messages name the amount signed**: `valun_propose`'s `if_agreed`, and a counter-offer's `what_happened`.
+- **The testnet's words** (#15, with the Hermes plugin 0.6.1): no "synthetic" outside the retired pilot's own branch.
+
 ### Vectors
 - `transcript.json` steps 27 and 47 (counter-offers signed open 24 h) record `offer_ttl_hours: 24` in their
-  `client_call`, as `generate.mjs` now writes it: the new default would end them a minute earlier, when the offer they
+  `client_call`, as `generate.mjs` now writes it. The new default would end them a minute earlier, when the offer they
   answer ends. Request bodies, hashes and signatures are unchanged.
 
 ## 0.6.0 (2026-11-13)

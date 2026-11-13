@@ -104,8 +104,11 @@ async function world({backerApproveAbove = 1000} = {}) {
   // Charlie's coverage rule applies to bob too, as the issuer of the note charlie may come to hold: bob holds claims
   // (eve owes him 30), as a backer someone trusts would.
   const E = await person('eve');
-  const w = {pilot, tracker, clock, dir, A, B, C, E, book: pilot.guarantees};
+  const w = {pilot, tracker, clock, dir, A, B, C, E, book: pilot.guarantees, person};
   await issue(w, E, B, 30, {ts: clock.t - 120e3});
+  // Charlie's owner trusts bob (fix inbox #20): coverage counts an IOU only as far as a reserve or the owner's own trust
+  // stands behind it, so a backer is worth what the creditor's owner says it is, not what it holds from anyone.
+  C.mandate.accept_notes_from = [B.id];
   return w;
 }
 const sign = (X, m) => real.signHex(X.pubkey, m, X.secret);
@@ -163,7 +166,8 @@ test('backed or refused: a creditor whose owner requires coverage refuses a newc
   assert.deepEqual(a.next_actions, ['release'], 'nothing to call: alice owes charlie nothing yet');
   const chk = await pilot.checkMandate(C, 'payee', A.id, 3);
   const cov = chk.checks.find(x => x.rule === 'min_payer_coverage_pct');
-  assert.deepEqual([cov.backing_for_you, cov.guarantees, cov.coverage_pct], [5, [g.guarantee_id], 166]);
+  // The cap of 5 counts for 3: no more can be called on alice's debt to charlie of 3 (fix inbox #19).
+  assert.deepEqual([cov.backing_for_you, cov.already_paid_by_backers, cov.guarantees, cov.coverage_pct], [3, 0, [g.guarantee_id], 100]);
   // Beyond the cap it is refused again.
   await rejects(pilot.checkMandate(C, 'payee', A.id, 6), 'mandate_exceeded');
   // The guarantee covers alice's debts to charlie only: to anyone else it is no coverage.
@@ -401,4 +405,150 @@ test('HTTP: /info lists guarantees/1 and the statements; the routes take agent t
     const unknown = await req('GET', `/guarantees/vg_${'0'.repeat(16)}`, {token: C.token});
     assert.equal(unknown.status, 404);
   } finally { server.close(); }
+});
+
+// ---------- fix inbox #19: several guarantees on one issuer->creditor debt ----------
+// A second backer (dan) who, like bob, holds claims (eve owes him 30), so charlie's policy on him passes.
+async function secondBacker(w, handle = 'dan') {
+  const D = await w.person(handle, {approve_above: 1000});
+  await issue(w, w.E, D, 30, {ts: w.clock.t - 110e3});
+  w.C.mandate.accept_notes_from = [...w.C.mandate.accept_notes_from, D.id];
+  return D;
+}
+
+test('#19: two guarantees of one debt cannot both be called for it: the second call is refused once the first claims what is owed', async () => {
+  const w = await world(), {A, B, C, book, clock} = w, D = await secondBacker(w);
+  const g1 = await accept(w, await offer(w, {cap: 5}));
+  const g2 = await accept(w, await offer(w, {cap: 5, backer: D}));
+  await issue(w, A, C, 5);
+  assert.equal((await book.viewFor(C, g1.guarantee_id)).callable_now, 5);
+  const id1 = 'vgc_' + hex(8);
+  await call(w, g1, 5, {id: id1});
+  // The debt is claimed in full by g1's call: nothing is left to call on g2.
+  assert.equal((await book.viewFor(C, g2.guarantee_id)).callable_now, 0, 'the debt is already claimed by the call on g1');
+  await rejects(call(w, g2, 5), 'exceeds_callable');
+  clock.t += 5000;
+  assert.equal((await honor(w, g1, id1)).calls[0].state, 'honored');
+  // Still nothing on g2 after the honor: bob paid what alice owes.
+  assert.equal((await book.viewFor(C, g2.guarantee_id)).callable_now, 0);
+  await rejects(call(w, g2, 1), 'exceeds_callable');
+  // Alice borrows 3 more: that, and only that, can be called on g2.
+  await issue(w, A, C, 8, {ts: clock.t - 1000});
+  assert.equal((await book.viewFor(C, g2.guarantee_id)).callable_now, 3);
+  const id2 = 'vgc_' + hex(8);
+  await call(w, g2, 3, {id: id2});
+  clock.t += 5000;
+  assert.equal((await honor(w, g2, id2, {B: D})).calls[0].state, 'honored');
+  const BC = w.tracker.edges.get(`${B.pubkey}>${C.pubkey}`).total, DC = w.tracker.edges.get(`${D.pubkey}>${C.pubkey}`).total, AC = w.tracker.edges.get(`${A.pubkey}>${C.pubkey}`).total;
+  assert.deepEqual([BC, DC, AC], [5, 3, 8], 'the backers paid 8 in all: what alice owes, not twice');
+});
+
+test('#19: caps of 10 and 5 on a debt of 10 pay at most 10 in all (Basis\'s second edge)', async () => {
+  const w = await world(), {A, C, book, clock} = w, D = await secondBacker(w);
+  const g1 = await accept(w, await offer(w, {cap: 10}));
+  const g2 = await accept(w, await offer(w, {cap: 5, backer: D}));
+  await issue(w, A, C, 10);
+  const id1 = 'vgc_' + hex(8);
+  await call(w, g1, 10, {id: id1});
+  clock.t += 5000;
+  await honor(w, g1, id1);
+  assert.equal((await book.viewFor(C, g2.guarantee_id)).callable_now, 0);
+  await rejects(call(w, g2, 5), 'exceeds_callable');
+});
+
+test('#19: open calls on two guarantees of one debt never claim more than is owed, and both lapse when a repayment leaves too little', async () => {
+  const w = await world(), {A, C, book, clock} = w, D = await secondBacker(w);
+  const g1 = await accept(w, await offer(w, {cap: 5}));
+  const g2 = await accept(w, await offer(w, {cap: 5, backer: D}));
+  await issue(w, A, C, 6);
+  const id1 = 'vgc_' + hex(8);
+  await call(w, g1, 4, {id: id1});
+  assert.equal((await book.viewFor(C, g2.guarantee_id)).callable_now, 2, 'owed 6, of which g1\'s open call claims 4');
+  await rejects(call(w, g2, 3), 'exceeds_callable');
+  const id2 = 'vgc_' + hex(8);
+  await call(w, g2, 2, {id: id2});
+  // Alice repays 3: she owes 3 but 6 is claimed; neither call can be honored, so nobody pays more than she owes.
+  await repay(w, A, C, 3);
+  clock.t += 5000;
+  await rejects(w.book.noteTemplate(w.B, g1.guarantee_id, id1, {bound: true, wait: false}), 'call_lapsed');
+  await rejects(w.book.noteTemplate(D, g2.guarantee_id, id2, {bound: true, wait: false}), 'call_lapsed');
+});
+
+test('#19: what the creditor recovers after backers paid belongs to them in proportion to what each paid, shown on each guarantee', async () => {
+  const w = await world(), {A, B, C, book, clock} = w, D = await secondBacker(w);
+  const g1 = await accept(w, await offer(w, {cap: 6}));
+  const g2 = await accept(w, await offer(w, {cap: 6, backer: D}));
+  await issue(w, A, C, 9);
+  const id1 = 'vgc_' + hex(8), id2 = 'vgc_' + hex(8);
+  await call(w, g1, 6, {id: id1});
+  await call(w, g2, 3, {id: id2});
+  clock.t += 5000;
+  await honor(w, g1, id1);
+  clock.t += 5000;
+  await honor(w, g2, id2, {B: D});
+  // Alice repays all 9: the backers paid 9, so all 9 recovered is theirs, 6 to bob and 3 to dan.
+  await repay(w, A, C, 0, {ts: clock.t - 1000});
+  const v1 = await book.viewFor(B, g1.guarantee_id), v2 = await book.viewFor(D, g2.guarantee_id);
+  assert.deepEqual([v1.recovered_for_backer, v2.recovered_for_backer], [6, 3]);
+  // Shown on the creditor's view as well, for the debt as a whole.
+  const vc = await book.viewFor(C, g1.guarantee_id);
+  assert.deepEqual([vc.debt.honored_by_all_backers, vc.debt.recovered_for_backers], [9, 9]);
+});
+
+test('#19: coverage counts the backing of one debt only up to what backers could still be called for', async () => {
+  const w = await world(), {pilot, A, C, clock} = w, D = await secondBacker(w);
+  const g1 = await accept(w, await offer(w, {cap: 5}));
+  await issue(w, A, C, 5);
+  const id1 = 'vgc_' + hex(8);
+  await call(w, g1, 5, {id: id1});
+  clock.t += 5000;
+  await honor(w, g1, id1);
+  await repay(w, A, C, 0, {ts: clock.t - 1000});        // alice repaid: charlie holds bob's 5 as cover for her next debt
+  const g2 = await accept(w, await offer(w, {cap: 3, backer: D}));
+  // A new deal of 3: alice would owe charlie 3, and the 5 bob paid already covers it, so g2 could never be called.
+  const chk = await pilot.checkMandate(C, 'payee', A.id, 3);
+  const cov = chk.checks.find(x => x.rule === 'min_payer_coverage_pct');
+  assert.equal(cov.backing_for_you, 0, 'dan\'s open cap of 3 is not callable on a debt bob\'s payment covers');
+  assert.equal(cov.already_paid_by_backers, 5);
+  assert.ok(cov.coverage_pct >= 100, 'covered by the 5 charlie already holds from bob');
+  void g2;
+});
+
+// ---------- fix inbox #20: coverage counts only what a reserve or the owner's trust stands behind ----------
+test('#20: a wash trade with a fresh sybil gives a newcomer no coverage (the IOU it holds has nothing behind it)', async () => {
+  const w = await world(), {pilot, A, C} = w, S = await w.person('s2a');
+  await rejects(pilot.checkMandate(C, 'payee', A.id, 3), 'mandate_exceeded');
+  await issue(w, S, A, 30);                                     // the sybil "buys" from alice: alice holds 30 of its IOUs
+  await assert.rejects(pilot.checkMandate(C, 'payee', A.id, 3), e => e.code === 'mandate_exceeded' && e.extra.rule === 'min_payer_coverage_pct' && /of which 0 PC count/.test(e.message));
+  // A chain of sybils is no better.
+  const S2 = await w.person('s2b'), S3 = await w.person('s2c');
+  await issue(w, S3, S2, 30); await issue(w, S2, S, 30);
+  await rejects(pilot.checkMandate(C, 'payee', A.id, 3), 'mandate_exceeded');
+  // An IOU from an issuer charlie's owner trusts counts in full.
+  C.mandate.accept_notes_from = [w.B.id, S.id];
+  const chk = await pilot.checkMandate(C, 'payee', A.id, 3), cov = chk.checks.find(x => x.rule === 'min_payer_coverage_pct');
+  assert.deepEqual([cov.payer_claims_on_tracker, cov.payer_claims_grounded, cov.coverage_pct], [30, 30, 1000]);
+});
+
+test('#20: a sybil backer is no backing: charlie refuses its guarantee, and a guarantee from it would count 0 anyway', async () => {
+  const w = await world(), {pilot, A, C, book} = w, S2 = await w.person('s2b'), S3 = await w.person('s2c');
+  await issue(w, S3, S2, 30);                                   // s2b looks covered: it holds 30 of s2c's IOUs
+  const g = await offer(w, {cap: 5, backer: S2});
+  await assert.rejects(accept(w, g), e => e.code === 'mandate_exceeded' && e.extra.rule === 'min_payer_coverage_pct');
+  // Even accepted (an owner who does not require coverage of backers, then does of payers), it counts for nothing.
+  C.mandate.min_payer_coverage_pct = 0;
+  assert.equal((await accept(w, g)).state, 'active');
+  C.mandate.min_payer_coverage_pct = 100;
+  await assert.rejects(pilot.checkMandate(C, 'payee', A.id, 3), e => e.code === 'mandate_exceeded' && e.extra.rule === 'min_payer_coverage_pct');
+  const cov = await pilot.checkMandate(C, 'payee', A.id, 3).catch(e => e);
+  assert.ok(!/and what guarantees/.test(cov.message), 'the sybil guarantee adds nothing');
+  void book;
+});
+
+test('#20: the north star still holds with a backer the creditor\'s owner trusts', async () => {
+  const w = await world(), {pilot, A, C} = w;
+  await rejects(pilot.checkMandate(C, 'payee', A.id, 3), 'mandate_exceeded');
+  const g = await accept(w, await offer(w, {cap: 5}));
+  const chk = await pilot.checkMandate(C, 'payee', A.id, 3), cov = chk.checks.find(x => x.rule === 'min_payer_coverage_pct');
+  assert.deepEqual([cov.backing_for_you, cov.guarantees, cov.coverage_pct], [3, [g.guarantee_id], 100]);
 });

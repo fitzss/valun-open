@@ -1193,6 +1193,14 @@ def scenarios():
                                                                            'callable_for_hours': 1},
         {**gi, 'POST /pilot/v1/guarantees': {'status': 201, 'body': g_view(given, 'alice', state='awaiting_owner')}}, state=pinned)
     add('offer_guarantee: the cap is missing', 'valun_offer_guarantee', {'issuer': 'frank', 'creditor': 'bob', 'due_in_hours': 24}, gi, state=pinned)
+    # Fix inbox #29: a guarantee that names the deals it backs, and deal lists the client refuses before anything is signed.
+    add('offer_guarantee: backing named deals only', 'valun_offer_guarantee',
+        {'issuer': 'frank', 'creditor': 'bob', 'cap': 5, 'due_in_hours': 24, 'deals': ['vd_' + '1' * 16, 'vd_' + '2' * 16]},
+        {**gi, 'POST /pilot/v1/guarantees': {'status': 201, 'body': g_view(given, 'alice')}}, state=pinned)
+    for label, bad_deals in (('an empty deal list', []), ('a malformed deal id', ['vd_1']), ('the same deal twice', ['vd_' + '1' * 16] * 2),
+                             ('eleven deals', ['vd_%016x' % i for i in range(11)]), ('deals not a list', 'vd_' + '1' * 16)):
+        add(f'offer_guarantee: {label}', 'valun_offer_guarantee', {'issuer': 'frank', 'creditor': 'bob', 'cap': 5, 'due_in_hours': 24, 'deals': bad_deals},
+            gi, state=pinned)
     add('offer_guarantee: a server without guarantees', 'valun_offer_guarantee', {'issuer': 'frank', 'creditor': 'bob', 'cap': 5, 'due_in_hours': 24},
         {'GET /pilot/v1/info': {'body': CIRC_INFO}}, state=pinned)
     add('respond_guarantee: accept (alice is the creditor)', 'valun_respond_guarantee', {'guarantee_id': G1, 'action': 'accept'},

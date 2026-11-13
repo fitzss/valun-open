@@ -80,6 +80,10 @@ RESERVED_MS_FROM = 995
 # Guarantees (servers listing guarantees/1; fix inbox #18): the terms protocol and the one kind of cover it has.
 GUARANTEE_PROTOCOL = 'valun-guarantee/1'
 GUARANTEE_COVERS = 'issuer_debt_to_creditor'
+# The deal mode (fix inbox #29): the terms name the deals they back (terms.deals) and cover only what is unpaid of them.
+GUARANTEE_COVERS_DEALS = 'issuer_payment_for_deals'
+GUARANTEE_MAX_DEALS = 10
+_DEAL_ID_RE = re.compile(r'vd_[0-9a-f]{16}')
 GUARANTEE_HONORS_KEY = 'guarantee_honors'    # state[...][guarantee_id] = {cap, calls: {call_id: {amount, state, total, timestamp}}}
 # Circulating credit (PROTOCOL.md 18; design 4.1, 6.3, 6.6, 11).
 FEATURES_HEADER = 'X-Valun-Features'          # 'consents/1;roles=<roles>', sent once /info lists circulation/1
@@ -169,6 +173,13 @@ def canonical(v) -> str:
 
 def terms_hash(terms) -> str:
     return sha256_hex(canonical(terms))
+
+
+def _check_deal_ids(deals, code):
+    """The deals a guarantee names (fix inbox #29): 1 to GUARANTEE_MAX_DEALS different deal ids."""
+    if (not isinstance(deals, list) or not 1 <= len(deals) <= GUARANTEE_MAX_DEALS or len(set(deals)) != len(deals)
+            or not all(isinstance(d, str) and _DEAL_ID_RE.fullmatch(d) for d in deals)):
+        raise ValunError(code, f'deals must be 1 to {GUARANTEE_MAX_DEALS} different deal ids (vd_ + 16 hex)')
 
 
 def statement(kind, *parts) -> str:
@@ -1045,8 +1056,12 @@ class Client:
         if t.get('tracker_nft_id') != info['tracker_nft_id'] or t.get('denomination') != info['denomination']:
             raise ValunError('wrong_tracker', 'the guarantee names a different tracker or unit than this network')
         cap = t.get('cap') if isinstance(t.get('cap'), dict) else {}
-        if t.get('covers') != GUARANTEE_COVERS or not (_nat(cap.get('amount')) and cap['amount'] > 0) or cap.get('unit') != self.unit:
-            raise ValunError('bad_terms', 'the guarantee does not cover issuer_debt_to_creditor up to a whole cap in this network\'s unit')
+        if t.get('covers') not in (GUARANTEE_COVERS, GUARANTEE_COVERS_DEALS) or not (_nat(cap.get('amount')) and cap['amount'] > 0) or cap.get('unit') != self.unit:
+            raise ValunError('bad_terms', 'the guarantee does not cover issuer_debt_to_creditor or issuer_payment_for_deals up to a whole cap in this network\'s unit')
+        if t.get('covers') == GUARANTEE_COVERS_DEALS:
+            _check_deal_ids(t.get('deals'), 'bad_terms')
+        elif 'deals' in t:
+            raise ValunError('bad_terms', 'the guarantee names deals but does not cover issuer_payment_for_deals')
         parties = {r: t.get(r) for r in ('backer', 'issuer', 'creditor')}
         if not all(isinstance(x, dict) and isinstance(x.get('id'), str) and _is_pubkey(x.get('pubkey')) for x in parties.values()):
             raise ValunError('bad_terms', 'the guarantee must name a backer, an issuer and a creditor, each with its key')
@@ -1064,10 +1079,13 @@ class Client:
         return {'terms_hash': h, 'terms': t, 'role': r}
 
     def build_guarantee_terms(self, issuer_id, creditor_id, cap, due_in_hours, callable_for_hours=168, honor_within_hours=24,
-                              offer_valid_hours=24, note=''):
+                              offer_valid_hours=24, note='', deals=None):
         """The terms of a guarantee this agent offers as backer: the issuer's and the creditor's registered keys, the cap
         in this network's unit, callable from due_in_hours from now for callable_for_hours, honored within
-        honor_within_hours, open for offer_valid_hours (never past the expiry)."""
+        honor_within_hours, open for offer_valid_hours (never past the expiry). With `deals` (1 to 10 deal ids, in which
+        the issuer pays the creditor), it covers only what is unpaid of those deals (fix inbox #29)."""
+        if deals is not None:
+            _check_deal_ids(deals, 'bad_arguments')
         for name, v, lo, hi in (('cap', cap, 1, None), ('due_in_hours', due_in_hours, 0, 1440), ('callable_for_hours', callable_for_hours, 1, 1440),
                                 ('honor_within_hours', honor_within_hours, 1, 168), ('offer_valid_hours', offer_valid_hours, 1, 168)):
             if not _nat(v) or v < lo or (hi is not None and v > hi):
@@ -1085,16 +1103,17 @@ class Client:
                 'backer': {'id': self.participant_id, 'pubkey': self.pubkey},
                 'issuer': {'id': issuer_id, 'pubkey': self._registered_key(issuer_id)},
                 'creditor': {'id': creditor_id, 'pubkey': self._registered_key(creditor_id)},
-                'cap': {'amount': int(cap), 'unit': self.unit}, 'covers': GUARANTEE_COVERS,
+                'cap': {'amount': int(cap), 'unit': self.unit}, 'covers': GUARANTEE_COVERS_DEALS if deals is not None else GUARANTEE_COVERS,
+                **({'deals': list(deals)} if deals is not None else {}),
                 'due_at': _iso(due), 'expires_at': _iso(expires), 'honor_within_hours': int(honor_within_hours),
                 'offer_expires_at': _iso(min(now + timedelta(hours=offer_valid_hours), expires)), 'note': note}
 
     def offer_guarantee(self, issuer_id, creditor_id, cap, due_in_hours, callable_for_hours=168, honor_within_hours=24,
-                        offer_valid_hours=24, note=''):
+                        offer_valid_hours=24, note='', deals=None):
         """Offer a guarantee as its backer (build_guarantee_terms), signed with statement guarantee-offer."""
         self._guarantees_offered()
         t = self.build_guarantee_terms(issuer_id, creditor_id, cap, due_in_hours, callable_for_hours, honor_within_hours,
-                                       offer_valid_hours, note)
+                                       offer_valid_hours, note, deals)
         h = terms_hash(t)
         return self.request('POST', '/pilot/v1/guarantees', {'terms': t, 'terms_hash': h, 'signature': self._sign(statement('guarantee-offer', h))})
 

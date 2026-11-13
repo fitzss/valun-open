@@ -16,7 +16,7 @@ COPY lib /opt/valun/app/lib
 COPY public /opt/valun/app/public
 COPY test /opt/valun/app/test
 COPY basis/run-tracker.sh /opt/valun/app/basis/run-tracker.sh
-COPY scripts/check-persistence.mjs scripts/check-exposure.mjs scripts/valun-mcp-stdio.mjs scripts/pilot-admin.mjs scripts/pilot-downgrade-check.mjs /opt/valun/app/scripts/
+COPY scripts/check-persistence.mjs scripts/check-exposure.mjs scripts/valun-mcp-stdio.mjs scripts/pilot-admin.mjs scripts/pilot-downgrade-check.mjs scripts/replay-router.mjs /opt/valun/app/scripts/
 
 # Starts as root only to chown the mounted volume, then drops to 'valun' (see docker-entrypoint.sh).
 # VALUN_APP_COPY=image marks this app folder as the image's copy (only the files above): a test that needs another file

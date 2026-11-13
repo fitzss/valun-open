@@ -46,6 +46,16 @@ export const RESERVED_MS_FROM = 995;
 /** Guarantees (servers listing guarantees/1; fix inbox #18): the terms protocol and the one kind of cover it has. */
 export const GUARANTEE_PROTOCOL = 'valun-guarantee/1';
 export const GUARANTEE_COVERS = 'issuer_debt_to_creditor';
+/** The deal mode (fix inbox #29): the terms name the deals they back (terms.deals) and cover only what is unpaid of them. */
+export const GUARANTEE_COVERS_DEALS = 'issuer_payment_for_deals';
+export const GUARANTEE_MAX_DEALS = 10;
+/** The deals a guarantee names (fix inbox #29): 1 to GUARANTEE_MAX_DEALS different deal ids, else ValunError(code). */
+function checkDealIds(deals, code) {
+  if (!Array.isArray(deals) || deals.length < 1 || deals.length > GUARANTEE_MAX_DEALS || new Set(deals).size !== deals.length
+      || !deals.every(d => typeof d === 'string' && DEAL_ID_RE.test(d))) {
+    throw new ValunError(code, `deals must be 1 to ${GUARANTEE_MAX_DEALS} different deal ids (vd_ + 16 hex)`);
+  }
+}
 /** state[GUARANTEE_HONORS_KEY][guarantee_id] = {cap, calls: {call_id: {amount, state, total, timestamp}}}. */
 export const GUARANTEE_HONORS_KEY = 'guarantee_honors';
 // Circulating credit (PROTOCOL.md 18; design 4.1, 6.3, 6.6, 11).
@@ -986,9 +996,11 @@ export class Client {
       throw new ValunError('wrong_tracker', 'the guarantee names a different tracker or unit than this network');
     }
     const cap = isObject(t.cap) ? t.cap : {};
-    if (pyGet(t, 'covers') !== GUARANTEE_COVERS || !(natural(cap.amount) && cap.amount > 0) || pyGet(cap, 'unit') !== this.unit) {
-      throw new ValunError('bad_terms', "the guarantee does not cover issuer_debt_to_creditor up to a whole cap in this network's unit");
+    if (![GUARANTEE_COVERS, GUARANTEE_COVERS_DEALS].includes(pyGet(t, 'covers')) || !(natural(cap.amount) && cap.amount > 0) || pyGet(cap, 'unit') !== this.unit) {
+      throw new ValunError('bad_terms', "the guarantee does not cover issuer_debt_to_creditor or issuer_payment_for_deals up to a whole cap in this network's unit");
     }
+    if (pyGet(t, 'covers') === GUARANTEE_COVERS_DEALS) checkDealIds(pyGet(t, 'deals'), 'bad_terms');
+    else if (Object.hasOwn(t, 'deals')) throw new ValunError('bad_terms', 'the guarantee names deals but does not cover issuer_payment_for_deals');
     const roles = ['backer', 'issuer', 'creditor'];
     if (!roles.every(r => isObject(t[r]) && typeof t[r].id === 'string' && isPubkey(t[r].pubkey))) {
       throw new ValunError('bad_terms', 'the guarantee must name a backer, an issuer and a creditor, each with its key');
@@ -1012,7 +1024,10 @@ export class Client {
    * this network's unit, callable from dueInHours from now for callableForHours, honored within honorWithinHours, open
    * for offerValidHours (never past the expiry).
    */
-  async buildGuaranteeTerms({issuerId, creditorId, cap, dueInHours, callableForHours = 168, honorWithinHours = 24, offerValidHours = 24, note = ''}) {
+  async buildGuaranteeTerms({issuerId, creditorId, cap, dueInHours, callableForHours = 168, honorWithinHours = 24, offerValidHours = 24, note = '', deals = null}) {
+    // With deals (1 to 10 deal ids in which the issuer pays the creditor) it covers only what is unpaid of them (#29).
+    if (deals !== null && deals !== undefined) checkDealIds(deals, 'bad_arguments');
+    const dealMode = deals !== null && deals !== undefined;
     for (const [name, v, lo, hi] of [['cap', cap, 1, null], ['due_in_hours', dueInHours, 0, 1440], ['callable_for_hours', callableForHours, 1, 1440],
       ['honor_within_hours', honorWithinHours, 1, 168], ['offer_valid_hours', offerValidHours, 1, 168]]) {
       if (!natural(v) || v < lo || (hi !== null && v > hi)) {
@@ -1030,7 +1045,8 @@ export class Client {
     const creditor = {id: creditorId, pubkey: await this.#registeredKey(creditorId)};
     return {protocol: GUARANTEE_PROTOCOL, network: this.network, tracker_nft_id: info.tracker_nft_id, denomination: info.denomination,
       guarantee_id: guaranteeId, nonce, backer: {id: this.participantId, pubkey: this.pubkey}, issuer, creditor,
-      cap: {amount: cap, unit: this.unit}, covers: GUARANTEE_COVERS, due_at: isoSeconds(due), expires_at: isoSeconds(expires),
+      cap: {amount: cap, unit: this.unit}, covers: dealMode ? GUARANTEE_COVERS_DEALS : GUARANTEE_COVERS, ...(dealMode ? {deals: [...deals]} : {}),
+      due_at: isoSeconds(due), expires_at: isoSeconds(expires),
       honor_within_hours: honorWithinHours, offer_expires_at: isoSeconds(Math.min(now + offerValidHours * HOUR, expires)), note};
   }
 

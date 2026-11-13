@@ -21,7 +21,11 @@ export const ON_TESTNET = CHAIN === 'ergo-testnet';
 // Where this network is reached in public. Its links (loop cards, agent pages, the A2A card, the join prompts) point
 // here, so a testnet page never sends an agent to the pilot's records or onboarding (the first testnet run found its
 // loop cards at valun.tech/loop/<id>, a 404 there).
-export const PUBLIC_ORIGIN = NETWORKS[NETWORK].origin;
+// VALUN_PUBLIC_ORIGIN overrides it (an https origin, no path): the testnet once valun.tech serves it (2026-11-13, the
+// pilot retired; its app replays every request to the testnet's).
+const override = process.env.VALUN_PUBLIC_ORIGIN;
+if (override !== undefined && !/^https:\/\/[a-z0-9.-]+$/.test(override)) throw new Error(`VALUN_PUBLIC_ORIGIN must be an https origin with no path, not '${override}'`);
+export const PUBLIC_ORIGIN = override || NETWORKS[NETWORK].origin;
 
 // A default or bound written in PC-sized amounts, in this network's unit.
 export const pc = n => n * SCALE;

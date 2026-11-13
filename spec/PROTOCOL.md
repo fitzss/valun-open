@@ -2545,7 +2545,7 @@ part of the contract; the rest describes the server so clients know what to expe
   `("bound_notes/1", "circulation/1")`); the checker holds a client that declares `circulation/1`, or a run given
   `--require circulation/1`, to the circulation vectors (17). Neither 0.4.0 client declares it yet (OQ-52).
 
-## 19. Guarantees (fix inbox #18; valun-app commit `25ce05c`, clients 0.6.0)
+## 19. Guarantees (fix inbox #18; valun-app commit `25ce05c`, clients 0.6.0; one debt, chains and the deal mode: valun-app `4f5b904`, clients 0.6.1)
 
 A **guarantee** is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes that creditor
 on the tracker, if the creditor calls after the due time and before the expiry. It is the narrowest backing that pays
@@ -2557,7 +2557,8 @@ clients: `Client.offer_guarantee` ... `honor_guarantee` and the four tools of 19
 
 ### 19.1 Terms (`valun-guarantee/1`)
 
-Every field is required; the canonical JSON and the hash are those of 7 (`terms_hash = sha256(canonical(terms))`).
+Every field is required except `deals`, which exists exactly when `covers` is `issuer_payment_for_deals`; the canonical
+JSON and the hash are those of 7 (`terms_hash = sha256(canonical(terms))`).
 
 | Field | Value |
 |---|---|
@@ -2567,8 +2568,9 @@ Every field is required; the canonical JSON and the hash are those of 7 (`terms_
 | `nonce` | 32 lowercase hex |
 | `backer`, `issuer`, `creditor` | `{id, pubkey}`: three different active participants, each with its registered key; `backer` is the signer |
 | `cap` | `{amount, unit}`: a whole amount of at least 1 in the network's unit, the most the backer pays in all |
-| `covers` | `"issuer_debt_to_creditor"` (the only kind) |
-| `due_at` | RFC 3339; at most 60 days ahead, or up to 60 minutes past (callable as soon as accepted) |
+| `covers` | `"issuer_debt_to_creditor"` (what the issuer owes the creditor when it calls, also debt created after acceptance: the cap is the backer's exposure) or, since 0.6.1, `"issuer_payment_for_deals"` (only what is unpaid of `deals`, 19.4) |
+| `deals` | only with `issuer_payment_for_deals`: 1 to 10 different deal ids, each a deal not ended in which the issuer pays the creditor |
+| `due_at` | RFC 3339 in UTC (`…Z`, with or without milliseconds); at most 60 days ahead, or up to 60 minutes past (callable as soon as accepted). `expires_at` and `offer_expires_at` too |
 | `expires_at` | at least 1 hour and at most 60 days after `due_at` |
 | `honor_within_hours` | 1 to 168 |
 | `offer_expires_at` | in the future, at most 7 days ahead, not after `expires_at` |
@@ -2600,17 +2602,46 @@ honor name the amount, so a signature covers exactly that amount of exactly that
 Guarantee states: `awaiting_owner` (the cap is above the backer's `approve_above`: approval kind `guarantee_offer`,
 decided at `POST /owner/approvals/{va}`; only the backer sees it), `offered`, `active`, `expired` (past `expires_at`:
 no new call; an open call stays to be honored), `released`, and the ends before acceptance `declined`, `withdrawn`,
-`rejected_by_owner`, `offer_expired`. Call states: `open`, `issuing` (written ahead; recovery decides it by read-back),
+`rejected_by_owner`, `offer_expired` and `void_key_revoked` (an offer naming a key revoked since). A guarantee that a
+committed deal's acceptance counted as cover cannot be released until that deal is paid or ended (409
+`guarantee_in_use {deals}`). Call states: `open`, `issuing` (written ahead; recovery decides it by read-back),
 `failed` (the tracker did not record the note; the backer signs again), `honored`, `lapsed`, `released`. The creditor
 and the issuer see a guarantee once it is offered; nobody else does.
 
 ### 19.4 What a call can claim
 
 `owed` is what the issuer owes the creditor on the tracker (outstanding = recorded minus redeemed, summed over every key
-either has registered); `claimed` is the sum of the calls that are not lapsed or released. While the guarantee is
-active and due, with no call open, `callable_now = min(cap - claimed, owed - claimed)`; one call at a time. So a
-creditor that was repaid has nothing to call, and repayment counts first. An unhonored call can be honored while
-`owed >= claimed`; otherwise the honor makes it lapse (nothing is paid) and the creditor may call again for what is left.
+either has registered), less what the issuer owes the creditor because it honored guarantees to it as a backer (its
+honor notes). So a guarantee of a backer's debts never pays the creditor again for a default another guarantee paid, and
+a chain of guarantees recovers at most its root debt.
+
+**One debt.** Every guarantee naming the same issuer and creditor covers one debt. `claimed(g)` is the sum of this
+guarantee's calls that are not lapsed or released; `claimed_on_debt` is the same over every guarantee of the debt,
+ever. While the guarantee is active and due, with no call of its own open:
+
+    callable_now = min(cap - claimed(g), owed - claimed_on_debt)
+
+and, in the deal mode, also at most `deals_unpaid - claimed(g)`. So a creditor that was repaid, or that other backers
+already paid, has nothing to call, and repayment counts first. One call at a time on each guarantee.
+
+**The deal mode** (`issuer_payment_for_deals`). A named deal counts once its credit note is recorded (its price P, its
+note timestamped t). Repayments (set-offs, transfers out, redemptions) retire the oldest debt first. So what is
+outstanding now is the newest debt, and of it, the debt added after t on the pair (notes and transfers in, on every key)
+came after the deal:
+
+    unpaid(deal) = min(P, max(0, owed now - added after t))
+    deals_unpaid = sum of unpaid(deal) over the named deals
+
+A made-up deal after a named one adds debt after t, so it can never raise what the named one covers.
+
+**Honor and lapse.** An unhonored call can be honored while `owed >= claimed_on_debt` (and, in the deal mode,
+`deals_unpaid >= claimed(g)`). Otherwise the call lapses as soon as anything reads the debt (a view, a mandate check, a
+call or an honor): nothing is paid, and the creditor may call again for what is left. A lapsed call no longer counts in
+the record or against the backer's limits.
+
+**Recovery.** `debt.recovered_for_backers = max(0, honored on the debt - owed)` is what the creditor recovered from the
+issuer beyond the part the backers did not pay. `recovered_for_backer` is one guarantee's share, in proportion to what
+each backer paid. It is shown, not enforced.
 A call honored after `honor_by` (`called_at + honor_within_hours`) is `late`; until it is honored, a call past it is
 `overdue`.
 

@@ -1171,7 +1171,11 @@ class ValunAgent:
                                                                              ('honor_within_hours', 24), ('offer_valid_hours', 24)))
         return '\n'.join([
             f"Valun - sign a GUARANTEE: back what {issuer} ({shown(snap['issuer']['id'])}) owes {creditor} ({shown(snap['creditor']['id'])}):",
-            f'  you pay {creditor} up to {vc.amount_text(cap, u)} in all, for what {issuer} still owes it after {due} h from now,',
+            (f'  you pay {creditor} up to {vc.amount_text(cap, u)} in all, for what {issuer} still owes it for the deals '
+             f"{', '.join(shown(d) for d in a['deals'])} after {due} h from now (debt from any other deal is not covered),"
+             if isinstance(a.get('deals'), list) and a.get('deals') else
+             f'  you pay {creditor} up to {vc.amount_text(cap, u)} in all, for what {issuer} still owes it after {due} h from now '
+             f'(any debt to it, also new debt: the cap is your exposure),'),
             f'  if {creditor} calls in the {window} h after that; you pay a call within {honor} h, with your own credit note',
             f'  the offer stays open {ttl} h; until the guarantee ends its cap counts against your limits as credit you may have to issue',
             f'If {creditor} accepts and calls, you will owe {creditor} what it called (your credit note); {issuer} still owes it too.',
@@ -1253,11 +1257,13 @@ class ValunAgent:
 
     @staticmethod
     def _offer_numbers(a, unit):
-        """valun_propose's price, deliver_within_hours (default 48) and offer_valid_hours (default 24): each a JSON
-        integer of at least 1 (_count), and the offer open no longer than the hours it gives to deliver
-        (check_offer_hours). Exactly what propose() signs, or bad_arguments before anything is read or signed."""
+        """valun_propose's price, deliver_within_hours (default 48) and offer_valid_hours (default 24, and never longer
+        than the hours it gives to deliver: a 6 h job's offer stays open 6 h): each a JSON integer of at least 1
+        (_count), and the offer open no longer than the hours it gives to deliver (check_offer_hours). Exactly what
+        propose() signs, or bad_arguments before anything is read or signed."""
         price = _count('price', a['price'], unit)
-        due, ttl = _count_or(a, 'deliver_within_hours', 'hours', 48), _count_or(a, 'offer_valid_hours', 'hours', 24)
+        due = _count_or(a, 'deliver_within_hours', 'hours', 48)
+        ttl = _count_or(a, 'offer_valid_hours', 'hours', min(24, due))
         vc.check_offer_hours(ttl, due)
         return price, due, ttl
 
@@ -1718,8 +1724,9 @@ class ValunAgent:
         note = a.get('note') or ''
         if not isinstance(note, str):
             raise vc.ValunError('bad_arguments', 'note must be text')
+        deals = a.get('deals')
         g = c.offer_guarantee(issuer['id'], creditor['id'], vals['cap'], vals['due_in_hours'], vals['callable_for_hours'],
-                              vals['honor_within_hours'], vals['offer_valid_hours'], note)
+                              vals['honor_within_hours'], vals['offer_valid_hours'], note, deals)
         out = {'guarantee': guarantee_brief(g)}
         out['what_happens_next'] = (f"Your owner must approve it first (approve_above); then {shown(creditor.get('handle'))} can accept it."
                                     if isinstance(g, dict) and g.get('state') == 'awaiting_owner' else

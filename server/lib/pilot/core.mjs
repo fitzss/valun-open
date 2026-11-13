@@ -23,6 +23,7 @@ import {evidenceOf, evidenceTotals} from './evidence.mjs';
 // Guarantees (fix inbox #18; lib/pilot/guarantees.mjs). guarantees.mjs imports PilotError and helpers from this module
 // and uses them only inside functions, so the import cycle is safe (as with novation.mjs).
 import {GuaranteeBook, guaranteeStatements} from './guarantees.mjs';
+import {grounded} from './grounding.mjs';
 export {guaranteeStatements};
 
 export {NETWORK} from './units.mjs';
@@ -577,6 +578,8 @@ export class Pilot {
       }
       // A set-off collecting signatures with an edge under the revoked key is voided and purged too (one being applied
       // is left to recovery, which decides by read-back); the edges under that key are frozen from now on.
+      // Guarantee offers that name the revoked key can never be accepted: they end now (review F11).
+      const voidedGuarantees = this.guarantees ? this.guarantees.voidOffersOfKey(old, p.id) : [];
       const voidedSetoffs = [];
       for (const o of Object.values(this.s.setoffs || {})) {
         if (o.state === 'collecting' && o.edges.some(e => e.issuer.pubkey === old || e.recipient.pubkey === old)) {
@@ -608,8 +611,10 @@ export class Pilot {
       }
       const code = this.newEnrollmentCode(p);
       this.store.audit({type: 'agent.revoked', id: p.id, pubkey: old, cancelled, voided_credit_notes: voided, ...(voidedTransfers.length ? {voided_transfers: voidedTransfers} : {}),
-        ...(voidedSetoffs.length ? {voided_setoffs: voidedSetoffs} : {})});
-      return {...code, revoked_pubkey: old, cancelled_deals: cancelled, voided_credit_notes: voided, ...(this.circulating ? {voided_transfers: voidedTransfers, voided_setoffs: voidedSetoffs} : {})};
+        ...(voidedSetoffs.length ? {voided_setoffs: voidedSetoffs} : {}), ...(voidedGuarantees.length ? {voided_guarantee_offers: voidedGuarantees} : {})});
+      if (voidedGuarantees.length) this.save();
+      return {...code, revoked_pubkey: old, cancelled_deals: cancelled, voided_credit_notes: voided, ...(this.circulating ? {voided_transfers: voidedTransfers, voided_setoffs: voidedSetoffs} : {}),
+        ...(voidedGuarantees.length ? {voided_guarantee_offers: voidedGuarantees} : {})};
     });
   }
 
@@ -685,6 +690,12 @@ export class Pilot {
       if (m.pay_with_held_notes !== undefined) {
         if (!PAY_WITH_HELD_NOTES.includes(m.pay_with_held_notes)) throw new PilotError('invalid_field', `pay_with_held_notes must be ${PAY_WITH_HELD_NOTES.join(', ')}`);
         next.pay_with_held_notes = m.pay_with_held_notes;
+      }
+      // The coverage bar for backers (fix inbox #24): null (a backer is held to min_payer_coverage_pct, as before) or a
+      // whole percentage 0..100, applied when this agent accepts a guarantee instead of the bar for payers.
+      if (m.min_backer_coverage_pct !== undefined) {
+        if (m.min_backer_coverage_pct !== null && !isInt(m.min_backer_coverage_pct, 0, 100)) throw new PilotError('invalid_field', 'min_backer_coverage_pct must be null (the same as min_payer_coverage_pct) or a whole number 0..100');
+        next.min_backer_coverage_pct = m.min_backer_coverage_pct;
       }
       // Phase-2 credit policy (lib/pilot/policy.mjs): a mandate that does not hold one of these has its default
       // (max_claims_total null, or 40 for a sandbox joiner; max_issuer_net_debt null; accept_operator_issuers true).
@@ -872,6 +883,36 @@ export class Pilot {
     const m = new Map();
     for (const p of Object.values(this.s.participants)) for (const k of [p.pubkey, ...(p.past_pubkeys || []).map(x => x?.pubkey)]) if (k && !m.has(k)) m.set(k, p);
     return m;
+  }
+  // What each participant holds in Basis reserves on Ergo testnet, by participant id (fix inbox #20): only the testnet
+  // network once its tracker is on chain; a reserve whose owner announced a refund (R7 set) counts nothing, since the
+  // owner may take it all once the waiting period ends. Unreadable reserves count nothing either. The pilot: none.
+  async reservesById() {
+    const out = new Map();
+    if (!ON_TESTNET || !this.chain?.on_chain || typeof this.basis.reserves !== 'function') return out;
+    let list;
+    try { list = await this.basis.reserves(); } catch { return out; }
+    const keys = this.pubkeyMap();
+    for (const r of Array.isArray(list) ? list : []) {
+      const who = typeof r?.owner_pubkey === 'string' ? keys.get(r.owner_pubkey) : null, amount = Number(r?.collateral_amount ?? 0);
+      if (!who || !(amount > 0) || Number(r?.refund_initiation_height ?? 0) > 0) continue;
+      out.set(who.id, (out.get(who.id) ?? 0) + amount);
+    }
+    return out;
+  }
+  // The grounded value of IOUs as participant C sees them (lib/pilot/grounding.mjs, fix inbox #20): value enters only at
+  // a reserve (reservesById) or at an issuer C's owner trusts (C itself, and accept_notes_from when it is a list), and a
+  // claim counts only on an edge that reconciles (the tracker's total is the one Valun's journal expects), as for
+  // max_issuer_net_debt. extraOwes: contingent debts to count (a backer's open guarantee caps).
+  trustedBy(C) {
+    const list = policyValue(C, this.effectiveLimits(C), 'accept_notes_from');
+    return new Set([C.id, ...(Array.isArray(list) ? list : [])]);
+  }
+  async groundedFor(C, ledger, {extraOwes = new Map()} = {}) {
+    const edges = this.s.edges || {};
+    const rows = ledger.filter(l => l.issuer && l.recipient).map(l => ({issuer: l.issuer, recipient: l.recipient, outstanding: l.outstanding,
+      claim: l.total === (edges[edgeKey(l.issuer_pubkey, l.recipient_pubkey)]?.expected_total ?? 0)}));
+    return grounded({rows, reserves: await this.reservesById(), trusted: this.trustedBy(C), extraOwes});
   }
 
   // The tracker's notes in the pilot denomination (a tracker may also hold notes in other denominations).
@@ -1085,7 +1126,7 @@ export class Pilot {
   // with `also` [the issuer] (whom the counterparty list and the self-serve box must allow too); a creditor's acceptance
   // as role payee toward the backer with `guarantee` (no min_price_as_payee, which is about prices; no owner approval:
   // accepting commits the creditor to nothing). `excludeGuaranteeId`: the guarantee being checked, whose cap is `price`.
-  async checkMandate(p, role, counterpartyId, price, {excludeDealId = null, excludeGuaranteeId = null, guarantee = false, also = []} = {}) {
+  async checkMandate(p, role, counterpartyId, price, {excludeDealId = null, excludeGuaranteeId = null, guarantee = false, also = [], debtFrom = null, dealId = null} = {}) {
     const m = this.effectiveLimits(p);                // owner mandate, tightened by any limits the agent recorded
     const fail = (rule, detail, from = null) => {
       // `source` keeps naming the limit set that applied (agent_limits | owner_mandate); `recorded_by` says who recorded an
@@ -1102,6 +1143,7 @@ export class Pilot {
       if (this.boxedOut(p, id)) fail('counterparties', `a self-serve sandbox participant can deal only with the sandbox agents on this server, not ${this.participant(id).handle}`);
     }
     const ledger = await this.ledger();
+    this.guarantees?.lapseStale(ledger);
     const checks = [];
     if (role === 'payer') {
       if (!m.may_issue_credit) fail('may_issue_credit', 'the owner has not allowed this agent to issue credit');
@@ -1131,20 +1173,42 @@ export class Pilot {
       // issued yet, and this deal. This is the payer's OWN promise; no note held by the payer is transferred.
       // Guarantees (fix inbox #18): the open cap of active guarantees backing the payer's debts to p counts as coverage
       // too (backing_for_you), so an owner can require "backed or refused" with this rule alone.
-      if (m.min_payer_coverage_pct > 0) {
-        const payer = this.participant(counterpartyId), pe = this.exposure(payer, ledger, {asRole: 'payer', excludeDealId});
-        const claims = ledger.filter(l => l.recipient === payer.id).reduce((a, l) => a + l.outstanding, 0);
-        const back = this.guarantees ? this.guarantees.backingFor(p, payer.id) : {amount: 0, ids: []};
-        const owes = pe.tracker + pe.committed + price, pct = Math.floor((claims + back.amount) * 100 / owes);
-        checks.push({rule: 'min_payer_coverage_pct', payer_claims_on_tracker: claims, ...(back.amount ? {backing_for_you: back.amount, guarantees: back.ids} : {}),
-          payer_owes_on_tracker: pe.tracker, payer_committed: pe.committed, this_deal: price, coverage_pct: pct, limit: m.min_payer_coverage_pct});
-        if (pct < m.min_payer_coverage_pct) fail('min_payer_coverage_pct', `${payer.handle}'s claims on the tracker (${amt(claims)})${back.amount ? ` and the guarantees backing it to this agent (${amt(back.amount)})` : ''} cover ${pct}% of what it would owe with this deal (${amt(owes)}); this agent's owner requires at least ${m.min_payer_coverage_pct}%${back.amount ? '' : ' (a guarantee of its debts to this agent counts too)'}`);
+      // Accepting a guarantee, the bar is the one for backers when the owner set it (fix inbox #24).
+      const backerBar = guarantee && this.circulating && m.min_backer_coverage_pct != null;
+      const bar = backerBar ? m.min_backer_coverage_pct : m.min_payer_coverage_pct, barRule = backerBar ? 'min_backer_coverage_pct' : 'min_payer_coverage_pct';
+      if (bar > 0) {
+        // The payer's open guarantee caps count in what it would owe (review F5), the one being accepted left out (it is
+        // the price here).
+        const payer = this.participant(counterpartyId), pe = this.exposure(payer, ledger, {asRole: 'payer', excludeDealId, excludeGuaranteeId});
+        const deliverBy = debtFrom ?? (excludeDealId && this.s.deals[excludeDealId] ? Date.parse(this.current(this.s.deals[excludeDealId]).terms.deliver_by) : null);
+        // What counts is grounded (fix inbox #20): the payer's own reserve, its claims at what their issuers' reserves and
+        // this owner's trust stand behind (an IOU from an agent with nothing behind it counts 0, however it was traded),
+        // and backers at what they can pay, their open caps counted as debts. A payer this owner trusts is covered.
+        // Modes off and bound (no circulating credit, so no accept_notes_from to name whom an owner trusts): v15's
+        // computation, every claim at face value (docs/ADVERSARIAL-FINDINGS.md F3 stays open there).
+        const circ = this.circulating;
+        const backers = circ && this.guarantees ? this.guarantees.backersOf(p, payer.id) : [];
+        const gv = circ ? await this.groundedFor(p, ledger, {extraOwes: new Map(backers.map(b => [b, this.guarantees.backerObligation(this.s.participants[b])]))}) : null;
+        const face = circ ? gv.claimsFace(payer.id) : ledger.filter(l => l.recipient === payer.id).reduce((a, l) => a + l.outstanding, 0);
+        const claims = circ ? gv.claimsValue(payer.id) : face, reserve = circ ? gv.reserve(payer.id) : 0;
+        const trusted = circ && payer.id !== p.id && this.trustedBy(p).has(payer.id);
+        // Backing counts only for the payer's debt to this agent, and only as far as backers pay or could still be
+        // called for it (fix inbox #19): what they paid already, then the open caps, at most that debt with this deal.
+        const back = this.guarantees ? this.guarantees.backingFor(p, payer.id, {debtAfter: e.tracker + e.committed + price, ratio: circ ? id => gv.ratio(id) : () => 1,
+          debtFrom: Number.isFinite(deliverBy) ? deliverBy : null, dealId: dealId ?? excludeDealId}) : {amount: 0, already_paid: 0, cover: 0, ids: []};
+        const owes = pe.tracker + pe.committed + (pe.guaranteed ?? 0) + price, raw = Math.floor((reserve + claims + back.cover) * 100 / owes), pct = trusted ? Math.max(100, raw) : raw;
+        checks.push({rule: barRule, payer_claims_on_tracker: face, ...(circ ? {payer_claims_grounded: claims} : {}), ...(reserve ? {payer_reserve: reserve} : {}),
+          ...(trusted ? {payer_trusted_by_owner: true} : {}),
+          ...(back.cover || back.ids.length ? {backing_for_you: back.amount, already_paid_by_backers: back.already_paid, guarantees: back.ids} : {}),
+          payer_owes_on_tracker: pe.tracker, payer_committed: pe.committed, ...(pe.guaranteed ? {payer_guaranteed: pe.guaranteed} : {}), this_deal: price, coverage_pct: pct, limit: bar});
+        const counted = circ ? ` (${amt(face)}, of which ${amt(claims)} count: an IOU counts only as far as a reserve on chain or an issuer this agent's owner trusts stands behind it)` : ` (${amt(face)})`;
+        if (pct < bar) fail(barRule, `${payer.handle}'s ${reserve ? `reserve (${amt(reserve)}) and ` : ''}claims on the tracker${counted}${back.cover ? ` and what guarantees of its debt to this agent pay or could still be called for (${amt(back.cover)})` : ''} cover ${pct}% of what it would owe with this ${guarantee ? 'guarantee' : 'deal'} (${amt(owes)}); this agent's owner requires at least ${bar}% for a ${guarantee ? `backer${backerBar ? '' : ' (min_payer_coverage_pct; min_backer_coverage_pct sets a separate bar for backers)'}` : 'payer'}${back.cover || guarantee ? '' : ' (a guarantee of its debts to this agent counts too)'}`);
       }
       // Circulating credit (modes sandbox and on): the phase-2 credit rules on the payer, as the issuer of the note p would
       // hold (lib/pilot/policy.mjs: refuse_notes_from, accept_operator_issuers, max_claims_total, max_issuer_net_debt).
       // Each adds an entry only when it is set, so with none set the checks are as before.
       if (this.circulating) {
-        const r = await creditCheck(this, p, this.participant(counterpartyId), price, {via: 'agreement', ledger, excludeDealId});
+        const r = await creditCheck(this, p, this.participant(counterpartyId), price, {via: 'agreement', ledger, excludeDealId, excludeGuaranteeId});
         if (!r.ok) fail(r.rule, r.detail, r.source);
         checks.push(...r.checks);
       }
@@ -1375,7 +1439,7 @@ export class Pilot {
         if (mine >= OPEN_NETWORK_MAX_OPEN_OFFERS) throw new PilotError('too_many_open_offers',
           `a self-serve participant has at most ${OPEN_NETWORK_MAX_OPEN_OFFERS} offers of its own open at once; withdraw one or wait for answers`, 429);
       }
-      const chk = await this.checkMandate(p, role, other, t.price.amount);
+      const chk = await this.checkMandate(p, role, other, t.price.amount, {debtFrom: Date.parse(t.deliver_by), dealId: t.deal_id});
       const v = {v: 1, by: p.id, terms: t, terms_hash: h, signature, created_at: iso(this.now()), state: chk.needsOwner ? 'awaiting_owner' : 'open', mandate_check: chk,
         offered_at: chk.needsOwner ? null : iso(this.now())};
       const d = {id: t.deal_id, payer: t.payer.id, payee: t.payee.id, created_at: iso(this.now()), status: chk.needsOwner ? 'proposed_awaiting_owner' : 'open', versions: [v], history: []};
@@ -1400,7 +1464,7 @@ export class Pilot {
       if (claimed && claimed !== h) throw new PilotError('hash_mismatch', `the server computes terms_hash ${h}; the client sent ${claimed}`, 400, {canonical: canonical(t)});
       await this.verifySig(p, statements.propose(h), signature, 'counter-offer');
       const role = d.payer === p.id ? 'payer' : 'payee';
-      const chk = await this.checkMandate(p, role, role === 'payer' ? d.payee : d.payer, t.price.amount);
+      const chk = await this.checkMandate(p, role, role === 'payer' ? d.payee : d.payer, t.price.amount, {debtFrom: Date.parse(t.deliver_by), dealId: d.id});
       const v = {v: t.version, by: p.id, terms: t, terms_hash: h, signature, created_at: iso(this.now()), state: chk.needsOwner ? 'awaiting_owner' : 'open', mandate_check: chk,
         offered_at: chk.needsOwner ? null : iso(this.now())};
       if (chk.needsOwner) { v.approval_id = this.approval(p, d, 'propose', v).id; d.pending_counter = v; }
@@ -1422,7 +1486,7 @@ export class Pilot {
       this.partiesCurrent(cur);
       await this.verifySig(p, statements.accept(cur.terms_hash), signature, 'acceptance');
       const role = d.payer === p.id ? 'payer' : 'payee';
-      const chk = await this.checkMandate(p, role, role === 'payer' ? d.payee : d.payer, cur.terms.price.amount);
+      const chk = await this.checkMandate(p, role, role === 'payer' ? d.payee : d.payer, cur.terms.price.amount, {debtFrom: Date.parse(cur.terms.deliver_by), dealId: d.id});
       const pchk = await this.proposerStillAuthorized(d, cur);
       d.acceptance = {version: cur.v, by: p.id, terms_hash: cur.terms_hash, signature, at: iso(this.now()), mandate_check: chk, state: 'awaiting_owner'};
       this.event(d, p.id, 'accepted', {version: cur.v, terms_hash: cur.terms_hash, awaiting_owner: chk.needsOwner});
@@ -2225,6 +2289,9 @@ export class Pilot {
     const other = this.transfersOnEdge(k, exceptTransfer)[0];
     if (other) throw new PilotError('edge_busy', 'another payment by transfer holds this edge until it is applied or ends; try again later', 409, {retry_after_ms: this.retryAfter(other)});
     const [i, r] = k.split('>');
+    // A backer's note honoring a guarantee call, being issued on this edge, holds it as a deal's note does (review F4: a
+    // transfer applied meanwhile made recovery call the recorded note failed, and the backer paid the call twice).
+    if (this.guarantees?.issuingOn(k)) throw new PilotError('edge_busy', 'a credit note honoring a guarantee call is being issued on this edge; try again later', 409, {retry_after_ms: PAIR_BUSY_RETRY_MS});
     for (const d of Object.values(this.s.deals)) {
       if ((d.status !== 'issuing_note' && d.status !== 'completion_awaiting_owner') || !d.credit_note) continue;
       const n = this.noteKeysOf(d);
@@ -2278,9 +2345,12 @@ export class Pilot {
     if (!r.ok) no(r.rule);
     // Coverage is judged on the issuer of the note received, without adding a (A's total does not change).
     if (m.min_payer_coverage_pct > 0) {
-      const pe = this.exposure(A, ledger, {asRole: 'payer'}), owes = pe.tracker + pe.committed;
-      const claims = ledger.filter(l => l.recipient === A.id).reduce((x, l) => x + l.outstanding, 0);
-      if (owes > 0 && Math.floor(claims * 100 / owes) < m.min_payer_coverage_pct) no('min_payer_coverage_pct');
+      // A's open guarantee caps count in what it owes (fix inbox #28), as at an agreement.
+      const pe = this.exposure(A, ledger, {asRole: 'payer'}), owes = pe.tracker + pe.committed + (pe.guaranteed ?? 0);
+      // Grounded, as at an agreement (fix inbox #20): A's reserve and what its claims are worth; an issuer C's owner
+      // trusts is covered.
+      const gv = await this.groundedFor(C, ledger), value = gv.reserve(A.id) + gv.claimsValue(A.id);
+      if (!this.trustedBy(C).has(A.id) && owes > 0 && Math.floor(value * 100 / owes) < m.min_payer_coverage_pct) no('min_payer_coverage_pct');
     }
     if (!this.consentCapable(C, 'creditor')) no('creditor_consent');
   }

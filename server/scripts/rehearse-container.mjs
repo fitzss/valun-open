@@ -20,7 +20,7 @@ const NODE_DIR = '/opt/valun-ic1/node-v24.21.0-linux-x64/bin';
 // tests; the image does not need it). They go to WSL as a tar stream (WSL has no access to C:).
 export const APP_FILES = Object.freeze(['package.json', 'server.mjs', 'lib', 'public', 'test', 'basis/run-tracker.sh',
   'scripts/check-persistence.mjs', 'scripts/check-exposure.mjs', 'scripts/valun-mcp-stdio.mjs', 'scripts/pilot-admin.mjs',
-  'scripts/pilot-downgrade-check.mjs', 'scripts/run-tests.mjs']);
+  'scripts/pilot-downgrade-check.mjs', 'scripts/replay-router.mjs', 'scripts/run-tests.mjs']);
 // The files the Dockerfile copies outside the app folder, at the image's places: [source, path under /opt/valun, mode].
 export const IMAGE_FILES = Object.freeze([['dist/bin/basis_server', 'bin/basis_server', 755], ['dist/bin/valun_signer', 'bin/valun_signer', 755],
   ['basis/run-tracker.sh', 'run-tracker.sh', 755], ['basis/run-tracker-testnet.sh', 'run-tracker-testnet.sh', 755],

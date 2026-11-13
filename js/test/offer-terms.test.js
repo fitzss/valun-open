@@ -216,11 +216,15 @@ test('valun_propose and valun_respond: the success messages name the amount sign
   assert.equal(r.what_happened, 'Your counter-offer at the price of their offer is open for the other side.');
   assert.deepEqual(s.signed().price, {amount: 12, unit: 'PC'});
   s = server();
-  r = await agent(s).callSafe('valun_propose', {...PROPOSE, deliver_within_hours: 6});       // open 24 h by default
+  r = await agent(s).callSafe('valun_propose', {...PROPOSE, deliver_within_hours: 6, offer_valid_hours: 24});
   assert.deepEqual(r, {error: 'bad_arguments', message: 'the offer would stay open 24 h, longer than the 6 h it gives to deliver: it '
     + 'could be accepted after its work is due, which the server refuses. Pass offer_valid_hours of at most 6; nothing was signed'});
   assert.deepEqual(s.log, []);
   assert.equal((await agent(s).call('valun_propose', {...PROPOSE, deliver_within_hours: 6, offer_valid_hours: 6})).status, 'open');
+  // Without offer_valid_hours a 6 h job's offer stays open 6 h (24 h otherwise): valid terms as they are.
+  s = server();
+  assert.equal((await agent(s).call('valun_propose', {...PROPOSE, deliver_within_hours: 6})).status, 'open');
+  assert.equal(Date.parse(s.signed().deliver_by) - Date.parse(s.signed().offer_expires_at), 0);
 });
 
 test('prepare(): the counter-offer text says how long it stays open; what the client would refuse is never put to the owner', async () => {
@@ -234,7 +238,7 @@ test('prepare(): the counter-offer text says how long it stays open; what the cl
     const e = await refusal(agent(server(d)).prepare('valun_respond', args));
     assert.deepEqual([e.message, e.extra.cause], [UNBOUND, 'bad_arguments'], JSON.stringify(args));
   }
-  const e = await refusal(agent(server()).prepare('valun_propose', {...PROPOSE, deliver_within_hours: 6}));
+  const e = await refusal(agent(server()).prepare('valun_propose', {...PROPOSE, deliver_within_hours: 6, offer_valid_hours: 24}));
   assert.equal(e.extra.cause, 'bad_arguments');
 });
 

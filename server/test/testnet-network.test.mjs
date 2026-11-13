@@ -81,10 +81,10 @@ test('the testnet serves its own skill.md (nanoERG, valun 0.5, settlement on Erg
       const r = await fetch(`http://127.0.0.1:${srv.address().port}${p}`);
       assert.equal(r.status, 200);
       const text = await r.text();
-      assert.match(text, /^---\nname: valun-testnet\n/, p);
-      assert.match(text, /nanoERG of Ergo\ntestnet/);
+      assert.match(text, /^---\nname: valun\n/, p);
+      assert.match(text, /nanoERG\s+of\s+Ergo\s+testnet/);
       assert.match(text, /valun 0\.5 or later/);
-      assert.match(text, /valun --profile testnet ergo redeem sandbox-exact 3000000 --broadcast/);
+      assert.match(text, /uvx --from valun==0\.6\.1 valun ergo redeem sandbox-exact 3000000 --broadcast/);
       assert.doesNotMatch(text, /\bPC\b/, 'no pilot credits on the testnet');
     }
   } finally { srv.close(); }
@@ -235,14 +235,22 @@ test('on chain: a redemption is built only for a note the agent holds and within
     assert.equal(bad.status, 409);
     assert.deepEqual(bad.body, {error: 'tracker_refused', message: 'input 0: proof does not verify'});
     assert.deepEqual(audit.map(a => a.type), ['redemption.built', 'redemption.built', 'redemption.submitted']);
-    // At most REDEMPTION_BUILDS_PER_DAY builds a day per agent (each can cost the tracker a miner fee); refused requests
-    // count only towards REDEMPTION_ATTEMPTS_PER_DAY (fix inbox #14: a note not anchored yet used up a build).
+    // The reserve's box is spent: the next build against it waits until the tracker follows its new box (fix inbox #26).
+    const busy = await call('POST', '/redemption/build', {issuer: 'issuer-a', amount: 1_000_000}, 'vpa_b');
+    assert.deepEqual([busy.status, busy.body.error], [409, 'reserve_busy']);
+    assert.ok(busy.body.message.includes(`being confirmed (tx ${'f0'.repeat(32)})`), busy.body.message);
+  } finally { server.close(); }
+  // At most REDEMPTION_BUILDS_PER_DAY builds a day per agent (each can cost the tracker a miner fee); refused requests
+  // count only towards REDEMPTION_ATTEMPTS_PER_DAY (fix inbox #14: a note not anchored yet used up a build). Builds an
+  // agent replaces (none submitted) are its own: the reserve's hold does not refuse them.
+  const s2 = await onChainServer();
+  try {
     let last;
-    for (let i = 0; i < routes.REDEMPTION_BUILDS_PER_DAY; i++) last = await call('POST', '/redemption/build', {issuer: 'issuer-a', amount: 1_000_000}, 'vpa_b');
+    for (let i = 0; i <= routes.REDEMPTION_BUILDS_PER_DAY; i++) last = await s2.call('POST', '/redemption/build', {issuer: 'issuer-a', amount: 1_000_000}, 'vpa_b');
     assert.equal(last.status, 429);
     assert.equal(last.body.error, 'rate_limited');
     assert.match(last.body.message, /redemption builds a day per agent/);
-  } finally { server.close(); }
+  } finally { s2.server.close(); }
 });
 
 // The testnet's public links point to the testnet (lib/pilot/units.mjs PUBLIC_ORIGIN): the first testnet run found its

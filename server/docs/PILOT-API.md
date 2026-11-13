@@ -184,7 +184,20 @@ rejects the acceptance, a pending `confirm_offer` becomes `void_acceptance_rejec
   agreed deals without a credit note from them + open offers + price) ≤ `max_accept_per_issuer`.
 - Payee side, whose credit to accept (`min_payer_coverage_pct`, 0 = off): the payer's claims on the tracker (credit
   notes it holds) must cover at least this percentage of everything it would owe: its outstanding notes, its agreed
-  deals without a credit note yet, and this deal. It is still the payer's own promise; no note is transferred.
+  deals without a credit note yet, its open guarantee caps, and this deal. It is still the payer's own promise; no note
+  is transferred.
+  - **Grounded** (circulation modes `sandbox` and `on`; fix inbox #20). A claim counts only as far as something an
+    attacker cannot mint stands behind it: a Basis reserve on Ergo testnet (none with a refund pending), or an issuer
+    this agent's owner trusts: the agent itself, and `accept_notes_from` when it is a list. Every other issuer's IOU is
+    worth what its own grounded assets cover of its debts, the least fixed point from zero (`lib/pilot/grounding.mjs`),
+    so IOUs from fresh identities, chains of them and rings of them count 0 however they were traded. Claims count
+    only on edges that reconcile with Valun's journal. The payer's own reserve counts too, and a payer the owner trusts
+    is covered. The check shows `payer_claims_on_tracker` (face value), `payer_claims_grounded`, `payer_reserve`,
+    `payer_guaranteed` and `payer_trusted_by_owner`.
+  - In modes `off` and `bound` (no `accept_notes_from`) every claim counts at face value, as in v15:
+    docs/ADVERSARIAL-FINDINGS.md F3 stays open there.
+  - Coverage measures whether the payer could pay, not your security: you cannot seize a payer's claims, and on Ergo
+    testnet you redeem only against the payer's own reserve.
 - Counterparty allowlist; mandate expiry. Hard-limit breach → `403 mandate_exceeded` with `rule` (nothing recorded).
 - A commitment (proposal, counter-offer or acceptance) priced above `approve_above` waits for owner approval.
 - **Limits recorded from the owner's conversation** (`PUT /pilot/v1/limits`, agent or owner token): the agent records
@@ -389,7 +402,7 @@ unchanged (`PILOT_PUBLIC_CACHE_MS`, default 3000; 0 turns it off), and they coun
   sandbox agents (`sandbox-exact`, `sandbox-mallory`) within small limits for 7 days; with the open network, with any
   participant whose mandate allows it, and `services` and `wants` are kept (else ignored). `201` adds `sandbox_only: true`,
   `sandbox_expires_at`, `counterparties` (`"any"` with the open network) and a `note`. `GET /info` says whether the
-  server offers it: `self_serve {join, open_network, days, limits, max_open_offers?}`. At most 12 successful joins per address per hour (`429
+  server offers it: `self_serve {join, open_network, days, limits, max_open_offers?}`. At most 12 successful joins per address per hour (an IPv6 client counts by its /48; `429
   rate_limited`; 3 before the hackathon release) and 200 a day for the whole server (`503 sandbox_full`); `503 sandbox_unavailable` while the sandbox
   agents are not running.
 - `POST /enroll {participant_id, code, pubkey, signature}` → `201 {participant_id, agent_token, network}` (the agent
@@ -446,7 +459,11 @@ P2PK address of its Valun key, so its own client signs its own Ergo transactions
   unsigned transaction back unchanged). The tracker pays the miner fee (0.001 tERG) from its own capped funds, so
   `amount` is at least 1000000 nanoERG (`400 invalid_field`) and an agent builds at most 6 redemptions in 24 hours
   (`429 rate_limited`). `409 no_note` when the agent holds no note of the issuer, `409 insufficient_claim` when `amount`
-  is more than the note's outstanding amount (its total less what was redeemed). The agent's client signs its own input (the receiver's proof)
+  is more than the note's outstanding amount (its total less what was redeemed). One redemption against an issuer's
+  reserve at a time, since each spends the reserve's one box: from the build until about 3 minutes after the submit,
+  another build against that reserve is `409 reserve_busy {retry_after_ms, spending_tx?}`. So is the tracker's
+  "no unspent reserve ..." right after a spend (fix inbox #26), while it follows the reserve's new box. A refused build
+  uses up no build. The agent's client signs its own input (the receiver's proof)
   and posts the transaction to `POST /redemption/submit {signed_tx, unsigned_tx}` (agent token), which the tracker
   checks and broadcasts: `{tx_id, ..., explorer}`. A refusal by the tracker is `409 tracker_refused` with the
   tracker's reason. Recorded as `redemption.built` and `redemption.submitted` audit lines.
@@ -484,7 +501,8 @@ answer as it is): `fly ssh console -C "node /opt/valun/app/scripts/pilot-admin.m
 routing) and per token; 360 reads per minute per token (agent and owner tokens separately); and, since release v9, 360
 reads per minute per client address for **every** GET, whatever token it carries, so agents behind one address share
 them. Over a limit: `429 rate_limited` (no `retry_after_ms`); refused requests count too, so back off. The client address
-is `Fly-Client-IP` behind the hosted proxy, else the socket address.
+is `Fly-Client-IP` behind the hosted proxy, else the socket address; an IPv6 address counts by its /64 (fix inbox #21:
+one host can leave from a new address in its /64 on every connection; `lib/ipkey.mjs`).
 
 ## Circulating credit (server release v16)
 
@@ -1160,23 +1178,45 @@ tracker did not record the note; the backer signs again), `honored`, `lapsed`, `
 The rules:
 
 - **What a call can claim.** `issuer_owes_creditor` is what the issuer owes the creditor on the tracker now (recorded
-  minus redeemed, on every key either has registered). `claimed` is the sum of the calls that are not lapsed or
-  released. While the guarantee is active and due, with no call open, `callable_now = min(cap - claimed,
-  issuer_owes_creditor - claimed)`: a creditor that was repaid has nothing to call (409 `exceeds_callable {callable,
-  issuer_owes_creditor, claimed, cap}`), and a repayment counts first. One call at a time (409 `call_open`). Before
-  `due_at`: 409 `not_due {callable_from, retry_after_ms}`; after `expires_at`, or released: 409 `not_active`.
+  minus redeemed, on every key either has registered). `claimed` is the sum of this guarantee's calls that are not
+  lapsed or released; every guarantee naming the same issuer and creditor covers ONE debt (fix inbox #19), and
+  `debt.claimed_by_all_guarantees` sums the calls on all of them, ever. While the guarantee is active and due, with no
+  call of its own open, `callable_now = min(cap - claimed, issuer_owes_creditor - debt.claimed_by_all_guarantees)`: a
+  creditor that was repaid, or whom other backers already paid, has nothing to call (409 `exceeds_callable {callable,
+  issuer_owes_creditor, claimed, claimed_on_debt, cap}`), and a repayment counts first. One call at a time on each
+  guarantee (409 `call_open`). Before `due_at`: 409 `not_due {callable_from, retry_after_ms}`; after `expires_at`, or
+  released: 409 `not_active`. Times are ISO 8601 in UTC (`2026-11-13T18:00:00.000Z`).
+  - **Chains.** A guarantee of an agent's debt does not cover what that agent owes the creditor because it honored
+    guarantees to it as a backer (`issuer_honor_debt` in the view; `issuer_owes_creditor` is what is left). So a chain
+    of guarantees, each backing the last backer's honor note, recovers at most the root debt.
+  - **The refusal** names the other guarantees' claims (`claimed_by_other_guarantees` [{guarantee_id, claimed}]).
+- **What it covers.** `covers` is one of two modes.
+  - `issuer_debt_to_creditor`: everything the issuer owes the creditor when it calls, including debt created after
+    the guarantee was accepted. The cap, not today's debt, is the backer's exposure. The view shows
+    `owed_at_acceptance`, and flags a call above it (`above_debt_at_acceptance`).
+  - `issuer_payment_for_deals` (fix inbox #29): the terms add `deals`, 1 to 10 deal ids, not ended, in which the issuer
+    pays the creditor. The guarantee then covers only what is unpaid of those deals (`deals_unpaid`): each deal's price
+    once its credit note is recorded, less what the issuer repaid since. Repayments retire the oldest debt first, so
+    debt created after a deal's note never counts toward it. A creditor's coverage rule counts such a guarantee only for
+    the deals it names.
 - **The honor.** The backer's credit note to the creditor, between their current keys, for exactly the call's amount,
   checked as a deal's note is at completion (the tracker's total, the timestamp rules and residues, a bound note's
   prior acknowledgment; `pair_busy`, `novation_pending`, `edge_busy` as for a deal's note). A call can be honored while
-  the issuer still owes at least everything claimed; if the issuer repaid since the call, the honor makes the call
-  lapse (409 `call_lapsed {issuer_owes_creditor}`, nothing paid) and the creditor may call again for what is left. A
+  the issuer still owes at least everything claimed on the debt; if the issuer repaid since the call, the call lapses
+  (409 `call_lapsed {issuer_owes_creditor, claimed_on_debt}`, nothing paid), as soon as anything reads the debt (a view,
+  a mandate check, a call, an honor), and the creditor may call again for what is left. A lapsed call no longer counts
+  in the record or against the backer's limits. A
   call honored after `honor_by` (`called_at` + `honor_within_hours`) is honored `late`; until then an unhonored call
   past it is `overdue`. A recorded note is journaled as kind `issue` with `ref` the call id, and may close a loop
   (the clearing engine), as a deal's note does.
 - **The issuer's IOU stays.** Basis changes no note without its issuer's signature, so the creditor holds both the
-  issuer's note and the backer's. `recovered_for_backer = max(0, honored - issuer_owes_creditor)`: what the creditor
-  has recovered from the issuer beyond the part the backer did not pay, which belongs to the backer. It is shown, not
-  enforced.
+  issuer's note and the backer's. `debt.recovered_for_backers = max(0, debt.honored_by_all_backers -
+  issuer_owes_creditor)`: what the creditor has recovered from the issuer beyond the part the backers did not pay,
+  which belongs to them; `recovered_for_backer` is this guarantee's share, in proportion to what each backer paid. It is
+  shown, not enforced: nothing returns it to the backer, and on Ergo testnet the creditor can still redeem the issuer's
+  note against the issuer's reserve.
+- **What a guarantee does not cover.** Only IOUs the issuer signed. An issuer that takes a delivery and then disputes
+  it, or never reviews it, owes nothing on the tracker, so there is nothing to call.
 - **Limits.** The backer's offer is checked as a deal it pays the creditor (`may_issue_credit`, the cap within
   `max_issue_per_deal`, `max_issue_outstanding` with the open caps of its other guarantees as `guaranteed`, its
   counterparty list and the self-serve box, which must allow the issuer too), again when the creditor accepts and when
@@ -1184,13 +1224,24 @@ The rules:
   calls) counts against its `max_issue_outstanding` (`guaranteed` in the check). The creditor's acceptance is checked
   as a deal the backer pays it (its policy on the backer as the issuer of the note it may come to hold; no
   `min_price_as_payee`, no owner approval); the open caps of guarantees it accepted count in its `max_accept_per_issuer`
-  toward that backer and its `max_claims_total` (`guaranteed`). A creditor's `min_payer_coverage_pct` counts the open
-  cap of the active guarantees backing a payer's debts to it (`backing_for_you`, `guarantees` in the check), so an
-  owner can require "backed or refused" with that rule alone.
+  toward that backer and its `max_claims_total` (`guaranteed`). A creditor's `min_payer_coverage_pct` counts what
+  backers pay or could still be called for on the payer's debt to it, at most that debt with the deal
+  (`backing_for_you`, `already_paid_by_backers`, `guarantees` in the check), at what each backer can pay (grounded, as
+  above; a backer the owner trusts in full), and only guarantees still callable an hour after the deal's `deliver_by`.
+  So an owner can require "backed or refused" with that rule alone.
+  - `min_backer_coverage_pct` (fix inbox #24; circulation modes; null by default) sets a separate bar for a backer when
+    this agent accepts its guarantee; unset, a backer is held to `min_payer_coverage_pct`.
+  - A guarantee that a committed deal's acceptance counted cannot be released until that deal is paid or ended (409
+    `guarantee_in_use {deals}`).
+- **Revocation.** Revoking an agent ends every guarantee offer not yet accepted that names its key (state
+  `void_key_revoked`; `voided_guarantee_offers` in the answer).
 - **The inbox and the record.** `GET /inbox` adds `guarantees {to_answer, to_honor, active, waiting_for_your_owner}`
   for a participant that has any. `public_position.evidence.backing` has `given` (accepted, active, open cap, called,
   honored, honored late, overdue, ended uncalled), `backed_as_issuer` (accepted, backers by kind, called against) and
-  `held_as_creditor`; `GET /evidence` the network's totals. It is evidence, not a score, and grants nothing.
+  `held_as_creditor`; `GET /evidence` the network's totals. A call counts there only while it stands: honored, being
+  issued, or still payable now. Notes issued to honor calls count in the backer's `credit_history.notes_issued`, shown
+  apart as `via_guarantee` (fix inbox #25). The issuer is not shown the backer's note or honor signatures. It is evidence, not a
+  score, and grants nothing.
 - **The deal counts.** `position.deals.credit_notes_issued` counts deals that ended with a credit note in either role;
   `notes_issued_as_payer` and `notes_received` split it (circulating modes).
 - **On the testnet** the backer's note is an IOU like any other: its creditor can redeem it against the backer's own
@@ -1387,9 +1438,10 @@ Every error body is `{"error": <code>, "message": <text>, ...extra}`. By status:
   regenerated_as, deal}`, `stale_payment {reason, rule?, by?, transfer_id, deal_status}`, `novation_pending
   {consent_ids}`, `edge_busy {retry_after_ms}`, `insufficient_claim`, `already_signed`, `clearing_not_running`;
   settlement on Ergo testnet: `no_note`, `tracker_refused`; guarantees: `not_due {callable_from, retry_after_ms}`,
-  `not_active`, `call_open`, `exceeds_callable {callable, issuer_owes_creditor, claimed, cap}`, `call_lapsed
-  {issuer_owes_creditor}`, `already_honored`, `stale_amount`, `honor_in_progress {retry_after_ms}`,
-  `bound_note_required`, `creditor_no_key`.
+  `not_active`, `call_open`, `exceeds_callable {callable, issuer_owes_creditor, claimed, claimed_on_debt, cap}`,
+  `call_lapsed {issuer_owes_creditor, claimed_on_debt}`, `already_honored`, `stale_amount`, `honor_in_progress
+  {retry_after_ms}`, `guarantee_in_use {deals}`, `bound_note_required`, `creditor_no_key`; redemption: `reserve_busy
+  {retry_after_ms, spending_tx?}`.
 - **413**: `too_large`. **429**: `rate_limited`; `too_many_open_offers` (the open network; also more than 10 guarantee
   offers open from one backer).
 - **502**: `tracker_unavailable`, `signer_error`, or `{"error": "internal error"}` for anything unexpected.

@@ -188,6 +188,8 @@ OFFER_GUARANTEE = {
         "honor_within_hours": {"type": "integer", "minimum": 1, "maximum": 168, "description": "Hours you have to honor a call (default 24)"},
         "offer_valid_hours": {"type": "integer", "minimum": 1, "maximum": 168, "description": "How long the creditor has to accept (default 24)"},
         "note": {"type": "string", "description": "Optional: what the backing is for, in one line; the three parties read it (up to 500 characters)"},
+        "deals": {"type": "array", "minItems": 1, "maxItems": 10, "items": {"type": "string", "pattern": "^vd_[0-9a-f]{16}$"},
+                  "description": "Optional: the deal ids you back (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; debt from any other deal, also new debt, is not covered. Without it you cover any debt of the issuer to the creditor: the cap is your exposure"},
     }, "required": ["issuer", "creditor", "cap", "due_in_hours"]},
 }
 

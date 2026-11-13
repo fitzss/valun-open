@@ -332,7 +332,8 @@ test('Pilot.checkMandate (payee, an agreement): a refusal is 403 mandate_exceede
   const w = scenario(), {pilot, C, X, O} = w, base = structuredClone(C.mandate);
   const before = await pilot.checkMandate(C, 'payee', X.id, 3);
   assert.deepEqual(before.checks, [{rule: 'max_accept_per_issuer', claim_on_tracker: 4, committed: 0, reserved: 0, this_deal: 3, limit: 1000}], 'nothing set: as before');
-  set(w, {refuse_notes_from: [w.Y.id], accept_operator_issuers: false, max_claims_total: 10, max_issuer_net_debt: 5, min_payer_coverage_pct: 1});
+  // Coverage is grounded in mode on (fix inbox #20): X's claims are on Z, which C's owner names as an issuer it trusts.
+  set(w, {refuse_notes_from: [w.Y.id], accept_operator_issuers: false, max_claims_total: 10, max_issuer_net_debt: 5, min_payer_coverage_pct: 1, accept_notes_from: [w.Z.id]});
   const all = await pilot.checkMandate(C, 'payee', X.id, 3);
   assert.deepEqual(all.checks.map(c => c.rule), ['max_accept_per_issuer', 'min_payer_coverage_pct', 'refuse_notes_from', 'accept_operator_issuers', 'max_claims_total', 'max_issuer_net_debt']);
   assert.deepEqual(all.checks.slice(2), [{rule: 'refuse_notes_from', issuer_listed: false}, {rule: 'accept_operator_issuers', issuer_operator_run: false, limit: false},

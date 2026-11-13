@@ -13,7 +13,9 @@ import re
 import stat
 import sys
 
-DEFAULT_SERVER = 'https://valun-desk.fly.dev'
+# The one network's server (valun-testnet-1 since 2026-11-13; https://valun-desk.fly.dev, the default before, serves it
+# too).
+DEFAULT_SERVER = 'https://valun.tech'
 APPROVAL_MODES = ('ask', 'client-prompt', 'console', 'none')
 _PROFILE_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,31}$')
 

@@ -1369,7 +1369,11 @@ export class ValunAgent {
       ['offer_valid_hours', 24]].map(([k, d]) => guaranteeInt(a, k, d));
     return [
       `Valun - sign a GUARANTEE: back what ${issuer} (${shown(item(snap.issuer, 'id'))}) owes ${creditor} (${shown(item(snap.creditor, 'id'))}):`,
-      `  you pay ${creditor} up to ${amountText(cap, u)} in all, for what ${issuer} still owes it after ${due} h from now,`,
+      (Array.isArray(get(a, 'deals')) && get(a, 'deals').length
+        ? `  you pay ${creditor} up to ${amountText(cap, u)} in all, for what ${issuer} still owes it for the deals `
+          + `${get(a, 'deals').map(d => shown(d)).join(', ')} after ${due} h from now (debt from any other deal is not covered),`
+        : `  you pay ${creditor} up to ${amountText(cap, u)} in all, for what ${issuer} still owes it after ${due} h from now `
+          + '(any debt to it, also new debt: the cap is your exposure),'),
       `  if ${creditor} calls in the ${window} h after that; you pay a call within ${honor} h, with your own credit note`,
       `  the offer stays open ${ttl} h; until the guarantee ends its cap counts against your limits as credit you may have to issue`,
       `If ${creditor} accepts and calls, you will owe ${creditor} what it called (your credit note); ${issuer} still owes it too.`,
@@ -1456,7 +1460,8 @@ export class ValunAgent {
    */
   static #offerNumbers(a, unit) {
     const price = count('price', item(a, 'price'), unit);
-    const due = countOr(a, 'deliver_within_hours', 'hours', 48), ttl = countOr(a, 'offer_valid_hours', 'hours', 24);
+    // The offer's default validity is never longer than the hours it gives to deliver: a 6 h job's offer is open 6 h.
+    const due = countOr(a, 'deliver_within_hours', 'hours', 48), ttl = countOr(a, 'offer_valid_hours', 'hours', Math.min(24, due));
     checkOfferHours(ttl, due);
     return [price, due, ttl];
   }
@@ -1946,8 +1951,10 @@ export class ValunAgent {
       ['offer_valid_hours', 24]].map(([k, d]) => [k, guaranteeInt(a, k, d)]));
     const note = or(get(a, 'note'), '');
     if (typeof note !== 'string') throw new ValunError('bad_arguments', 'note must be text');
+    const deals = get(a, 'deals');
     const g = await c.offerGuarantee({issuerId: item(issuer, 'id'), creditorId: item(creditor, 'id'), cap: vals.cap, dueInHours: vals.due_in_hours,
-      callableForHours: vals.callable_for_hours, honorWithinHours: vals.honor_within_hours, offerValidHours: vals.offer_valid_hours, note});
+      callableForHours: vals.callable_for_hours, honorWithinHours: vals.honor_within_hours, offerValidHours: vals.offer_valid_hours, note,
+      deals: deals === undefined ? null : deals});
     const out = {guarantee: guaranteeBrief(g)};
     out.what_happens_next = isDict(g) && get(g, 'state') === 'awaiting_owner'
       ? `Your owner must approve it first (approve_above); then ${shown(get(creditor, 'handle'))} can accept it.`

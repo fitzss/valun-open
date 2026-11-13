@@ -2,6 +2,7 @@
 import {PilotError, NETWORK, PROTOCOL, statements, circulationStatements, guaranteeStatements, sha256} from './core.mjs';
 import {GUARANTEE_INFO} from './guarantees.mjs';
 import {ON_TESTNET} from './units.mjs';
+import {ipKey} from '../ipkey.mjs';
 import {toErgoJson} from '../ergo-json.mjs';
 import {featuresFor, NOVATION_INFO} from './caps.mjs';
 import {METRICS_CACHE_MS} from './clearing.mjs';
@@ -27,12 +28,17 @@ export const INFO_DESCRIPTIONS = Object.freeze({
   on: `${INFO_PREFIX} An issued note is ${INFO_SETTLEMENT}`,
   sandbox: `${INFO_PREFIX} An issued note is ${INFO_SETTLEMENT} On this server circulating credit is on for sandbox participants only: the sandbox agents and those who joined with join-sandbox.`,
 });
-// Self-serve sandbox joins per client address per hour (guests at one venue share an address); the server-wide daily
+// Self-serve sandbox joins per client address per hour (guests at one venue share an address; an IPv6 client counts by
+// its /48, lib/ipkey.mjs); the server-wide daily
 // cap is SANDBOX_JOINS_PER_DAY in core.mjs.
 export const SANDBOX_JOINS_PER_HOUR_PER_ADDRESS = 12;
 // Settlement on Ergo testnet: the smallest redemption (the miner fee the tracker pays for it) and the redemption builds
 // one agent may ask for in 24 hours (in memory; a restart forgets them).
 export const REDEMPTION_MIN_NANOERG = 1_000_000, REDEMPTION_BUILDS_PER_DAY = 6, REDEMPTION_ATTEMPTS_PER_DAY = 30;
+// One redemption against an issuer's reserve at a time (every redemption spends that reserve's one box): held from the
+// build until the holder submits (RESERVE_BUILD_HOLD_MS), then until the spend is about confirmed and the tracker follows
+// the reserve's new box (RESERVE_SPEND_HOLD_MS). Another build meanwhile: 409 reserve_busy {retry_after_ms, spending_tx}.
+export const RESERVE_BUILD_HOLD_MS = 120e3, RESERVE_SPEND_HOLD_MS = 180e3;
 export const IP_READS_PER_MINUTE = 1800;           // per client address (venue Wi-Fi); each token keeps its own reads-per-minute limit
 // Burst protection: the public reads (GET /info, /participants, /participants/<id>, /ledger, /loops, /loops/<id> and the
 // loop card) are computed at most once per PUBLIC_CACHE_MS while the pilot state is unchanged (Pilot.generation, bumped
@@ -84,6 +90,10 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
   // POST /redemption/submit still takes besides the transactions (issuer, recipient, amounts; the tracker reads them
   // from its own build entry and ignores these, but its request shape requires them).
   const builtRedemptions = new Map();
+  // issuer pubkey -> {until, tx_id, building}: the redemption in flight against that issuer's reserve (in memory).
+  const reserveHolds = new Map();
+  const reserveBusy = (X, hold, now) => new PilotError('reserve_busy', `a redemption against ${X.handle}'s reserve is ${hold.tx_id ? `being confirmed (tx ${hold.tx_id})` : 'being built or signed'}; each redemption spends the reserve's one box, so the next waits until the tracker follows its new box. Try again in ${Math.ceil(Math.max(1000, hold.until - now) / 1000)} s.`, 409,
+    {retry_after_ms: Math.max(1000, hold.until - now), ...(hold.tx_id ? {spending_tx: hold.tx_id} : {})});
   // Several agents and viewers may share one address (a venue Wi-Fi): public reads are served from the burst cache, so the
   // per-address read budget is larger than one token's (each token keeps readsPerMinute).
   const ipReadsPerMinute = cfg.pilotIpReadLimitPerMinute
@@ -281,10 +291,11 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       throw new PilotError('testnet_bootstrapping', 'the Valun testnet tracker is not on chain yet; try again once its tracker NFT is minted (GET /pilot/v1/info: tracker_on_chain)', 503);
     if (P && p === '/join') return send(res, 201, await pilot.join(await readJson(req)));
     if (P && p === '/join-sandbox') {        // no invite: sandbox-only participants (off unless enabled); 12 per address per hour
-      const now = Date.now(), w = (sandboxJoins.get(ip) || []).filter(t => now - t < 3600e3);
-      if (pilot.openSandbox && w.length >= SANDBOX_JOINS_PER_HOUR_PER_ADDRESS) throw new PilotError('rate_limited', `at most ${SANDBOX_JOINS_PER_HOUR_PER_ADDRESS} sandbox joins per hour from one address`, 429);
+      // An IPv6 client counts by its /48 here (fix inbox #21: one host left from a new address on every join).
+      const k = ipKey(ip, 48), now = Date.now(), w = (sandboxJoins.get(k) || []).filter(t => now - t < 3600e3);
+      if (pilot.openSandbox && w.length >= SANDBOX_JOINS_PER_HOUR_PER_ADDRESS) throw new PilotError('rate_limited', `at most ${SANDBOX_JOINS_PER_HOUR_PER_ADDRESS} sandbox joins per hour from one address (an IPv6 /48)`, 429);
       const r = await pilot.joinSandbox(await readJson(req));
-      w.push(now); sandboxJoins.set(ip, w);
+      w.push(now); sandboxJoins.set(k, w);
       return send(res, 201, r);
     }
     if (P && p === '/enroll') return send(res, 201, await pilot.enroll(await readJson(req)));
@@ -334,18 +345,36 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         const tries = (redemptionAttempts.get(me.id) || []).filter(t => now - t < 864e5);
         if (tries.length >= REDEMPTION_ATTEMPTS_PER_DAY) throw new PilotError('rate_limited', `at most ${REDEMPTION_ATTEMPTS_PER_DAY} redemption requests a day per agent`, 429);
         tries.push(now); redemptionAttempts.set(me.id, tries);
-        const note = await relay(() => pilot.basis.note(X.pubkey, me.pubkey));
-        if (!note) throw new PilotError('no_note', `you hold no note of ${X.handle}`, 409);
-        const outstanding = Number(note.amount_collected) - Number(note.amount_redeemed || 0);
-        if (amount > outstanding) throw new PilotError('insufficient_claim', `you can redeem at most ${outstanding} nanoERG of ${X.handle}'s note`, 409);
-        const built = await relay(() => pilot.basis.redemptionBuild({issuer_pubkey: X.pubkey, recipient_pubkey: me.pubkey, amount,
-          timestamp: Number(note.timestamp), issuer_signature: note.signature, denomination: 'erg'})).catch(e => {
-          // A note recorded after the tracker's last box (fix inbox #14): say how long that normally lasts and where to look.
-          if (e?.code === 'tracker_refused' && /not committed on-?chain/i.test(e.message)) {
-            throw new PilotError('tracker_refused', `${e.message}. The tracker checks every ${CHECK_INTERVAL_S} seconds and posts a new tracker box when its state changed; GET /pilot/v1/chain shows its anchoring (anchoring.state). Try again once it is anchored.`, 409);
-          }
+        // The reserve's hold is taken before anything is awaited, so two requests at once cannot both build.
+        // A holder may build again to replace its own build not yet submitted (its client lost it); nobody else may.
+        const held = reserveHolds.get(X.pubkey), mine = held && !held.building && !held.tx_id && held.holder === me.id;
+        if (held && !mine && (held.building || held.until > now)) throw reserveBusy(X, held.building ? {until: now + 5000} : held, now);
+        const hold = {building: true, until: now + RESERVE_BUILD_HOLD_MS, tx_id: null, holder: me.id};
+        reserveHolds.set(X.pubkey, hold);
+        let built;
+        try {
+          const note = await relay(() => pilot.basis.note(X.pubkey, me.pubkey));
+          if (!note) throw new PilotError('no_note', `you hold no note of ${X.handle}`, 409);
+          const outstanding = Number(note.amount_collected) - Number(note.amount_redeemed || 0);
+          if (amount > outstanding) throw new PilotError('insufficient_claim', `you can redeem at most ${outstanding} nanoERG of ${X.handle}'s note`, 409);
+          built = await relay(() => pilot.basis.redemptionBuild({issuer_pubkey: X.pubkey, recipient_pubkey: me.pubkey, amount,
+            timestamp: Number(note.timestamp), issuer_signature: note.signature, denomination: 'erg'})).catch(e => {
+            // A note recorded after the tracker's last box (fix inbox #14): say how long that normally lasts and where to look.
+            if (e?.code === 'tracker_refused' && /not committed on-?chain/i.test(e.message)) {
+              throw new PilotError('tracker_refused', `${e.message}. The tracker checks every ${CHECK_INTERVAL_S} seconds and posts a new tracker box when its state changed; GET /pilot/v1/chain shows its anchoring (anchoring.state). Try again once it is anchored.`, 409);
+            }
+            // Just after a spend the tracker still looks for the reserve's old box (fix inbox #26): busy, not refused.
+            if (e?.code === 'tracker_refused' && /no unspent reserve/i.test(e.message)) {
+              const last = [...builtRedemptions.values()].filter(v => v.issuer_pubkey === X.pubkey && v.tx_id).sort((a, b) => b.at - a.at)[0];
+              throw reserveBusy(X, {until: Date.now() + 60e3, tx_id: last?.tx_id ?? null}, Date.now());
+            }
+            throw e;
+          });
+        } catch (e) {
+          if (reserveHolds.get(X.pubkey) === hold) reserveHolds.delete(X.pubkey);
           throw e;
-        });
+        }
+        hold.building = false; hold.until = Date.now() + RESERVE_BUILD_HOLD_MS;
         builds.push(now); redemptionBuilds.set(me.id, builds);
         pilot.store.audit({type: 'redemption.built', issuer: X.id, recipient: me.id, amount});
         for (const [k, v] of builtRedemptions) if (now - v.at > 30 * 60e3) builtRedemptions.delete(k);
@@ -360,7 +389,14 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       const out = await relay(() => pilot.basis.redemptionSubmit({signed_tx: body?.signed_tx, unsigned_tx: body?.unsigned_tx,
         issuer_pubkey: rec?.issuer_pubkey ?? '', recipient_pubkey: me.pubkey, redeemed_amount: rec?.redeemed_amount ?? 0,
         new_already_redeemed: rec?.new_already_redeemed ?? 0}));
-      if (rec) builtRedemptions.delete(body.signed_tx.id);
+      if (rec) {
+        builtRedemptions.delete(body.signed_tx.id);
+        // Submitted: the reserve stays held until the spend is about confirmed and the tracker follows its new box.
+        if (rec.issuer_pubkey) {
+          reserveHolds.set(rec.issuer_pubkey, {building: false, until: Date.now() + RESERVE_SPEND_HOLD_MS, tx_id: out?.tx_id ?? null, holder: me.id});
+          builtRedemptions.set(`spent:${out?.tx_id ?? body.signed_tx.id}`, {at: Date.now(), issuer_pubkey: rec.issuer_pubkey, tx_id: out?.tx_id ?? null});
+        }
+      }
       pilot.store.audit({type: 'redemption.submitted', recipient: me.id, tx_id: out?.tx_id ?? null});
       return send(res, 200, {...out, explorer: out?.tx_id ? `${pilot.chain.explorer}/en/transactions/${out.tx_id}` : null});
     }

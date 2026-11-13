@@ -124,7 +124,7 @@ export function evidenceOf(pilot, p, {ledger, deals, graph = null} = {}) {
       reads_as: EVIDENCE_READS_AS.acceptance,
     },
     // Guarantees (fix inbox #18, lib/pilot/guarantees.mjs): as backer, as the issuer backed, as the creditor holding them.
-    backing: {...backingRecord(pilot, p, byKind), reads_as: EVIDENCE_READS_AS.backing},
+    backing: {...backingRecord(pilot, p, byKind, ledger), reads_as: EVIDENCE_READS_AS.backing},
     circle: {...circleOf(pilot, p.id, graph ?? exchangeGraph(pilot)), reads_as: EVIDENCE_READS_AS.circle},
     reads_as: EVIDENCE_READS_AS.overall,
   };
@@ -171,7 +171,7 @@ export function evidenceTotals(pilot, ledger) {
       settled_pct: owedEver > 0 ? Math.round(settled * 1000 / owedEver) / 10 : null, outstanding_PC: outstanding,
       unpaid_accepted_work: {count: unpaid.length, PC: sumPrice(pilot, unpaid)}},
     acceptance: {taken_by_transfer: {count: transfers.length, PC: taken}},
-    backing: backingTotals(pilot),
+    backing: backingTotals(pilot, ledger),
     groups: {count: groups.length, anchored: groups.filter(g => g.anchored).length, self_serve_only: groups.filter(g => !g.anchored).length,
       largest: groups[0]?.size ?? 0, self_serve_only_sizes: groups.filter(g => !g.anchored).map(g => g.size).slice(0, 50)},
     reads_as: {...EVIDENCE_READS_AS, groups: 'Connected groups of participants linked by completed exchanges. A group with no invited or operator-run member is what a staged circle looks like, and also what a new community looks like before it deals with anyone else.'},
