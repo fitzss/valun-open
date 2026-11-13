@@ -81,6 +81,58 @@ test('the anchoring state: anchored, an update in flight, waiting for the next u
   assert.equal(w.state(null).state, 'unknown');
 });
 
+test('the owner\'s daily cap: once used up, the state says so and when it resets, never that the tracker failed', () => {
+  const now = Date.parse('2026-11-13T22:10:00Z');
+  const f = ledgerFile([
+    {t: '2026-11-12T23:59:59.000Z', kind: 'tracker_box', tx_id: H('1'), inputs: [H('a')]},        // yesterday
+    {t: '2026-11-13T21:41:03.087Z', kind: 'tracker_box', tx_id: H('2'), inputs: [H('b')]},
+    {t: '2026-11-13T21:38:27.898Z', kind: 'tracker_tx', tx_id: H('3'), inputs: [H('c')]},         // not a tracker box
+    {t: '2026-11-13T21:41:34.577Z', kind: 'tracker_box', tx_id: H('4'), inputs: [H('d')]},
+  ]);
+  assert.deepEqual(anchors.dailyCap(f, now), {limit: 50, signed_today: 2, used_up: false, resets_at: '2026-11-14T00:00:00.000Z'});
+  const cap = anchors.dailyCap(f, now, 2);
+  assert.equal(cap.used_up, true);
+  assert.deepEqual(anchors.dailyCap(null, now), {limit: 50, signed_today: 0, used_up: false, resets_at: '2026-11-14T00:00:00.000Z'});
+  // The wallet adapter enforces the same cap (ergo/chain.mjs; read as text: the server does not load ergo-lib).
+  const adapter = fs.readFileSync(new URL('../ergo/chain.mjs', import.meta.url), 'utf8');
+  assert.equal(Number(/DEFAULT_DAILY_TRACKER_SIGNATURES = (\d+);/.exec(adapter)[1]), anchors.DAILY_TRACKER_SIGNATURES);
+
+  let t = Date.parse('2026-11-13T21:43:02.087Z');
+  const w = new anchors.AnchorWatch({now: () => t});
+  const changed = {local_digest: 'b', confirmed_digest: 'a', pending_tx_id: null};
+  assert.equal(w.state(changed, cap).state, 'daily_cap_reached');
+  t += (anchors.CHECK_INTERVAL_S + anchors.OVERDUE_GRACE_S) * 1000 + 1;              // long past "overdue"
+  const s = w.state(changed, cap);
+  assert.equal(s.state, 'daily_cap_reached');
+  assert.equal(s.resumes_at, '2026-11-14T00:00:00.000Z');
+  assert.equal(s.unanchored_since, '2026-11-13T21:43:02.087Z');
+  assert.match(s.what_this_means, /daily cap of 2 tracker boxes \(per UTC day\) is used up: the next box is posted after 2026-11-14T00:00:00\.000Z/);
+  assert.match(s.what_this_means, /not a fault/);
+  assert.doesNotMatch(s.what_this_means, /a fault of the tracker/);
+  assert.equal(w.state(changed, {...cap, used_up: false}).state, 'overdue', 'with room under the cap, a long wait is still a fault');
+  assert.equal(w.state({...changed, pending_tx_id: H('5')}, cap).state, 'update_in_flight');
+  assert.equal(w.state({local_digest: 'a', confirmed_digest: 'a'}, cap).state, 'anchored');
+});
+
+test('GET /chain names the daily cap, and its state when the cap is used up', async () => {
+  const day = new Date().toISOString().slice(0, 10), start = Date.parse(`${day}T00:00:00.000Z`);
+  const today = Array.from({length: 50}, (_, i) => ({t: new Date(start + i).toISOString(), kind: 'tracker_box', tx_id: H((i % 16).toString(16)), inputs: [H('e')]}));
+  const unanchored = async () => ({local_digest: 'e', confirmed_digest: 'd', confirmed_box_id: H('c'), confirmed_height: 642814, pending_tx_id: null});
+  const {srv, call} = await server({trackerState: unanchored, spendLedger: ledgerFile(today.slice(0, 49))});
+  try {
+    const chain = (await call('GET', '/pilot/v1/chain')).body.anchoring;
+    assert.equal(chain.state, 'waiting_for_next_update');
+    assert.deepEqual(chain.daily_cap, {limit: 50, signed_today: 49, resets_at: new Date(start + 864e5).toISOString()});
+  } finally { srv.close(); }
+  const s2 = await server({trackerState: unanchored, spendLedger: ledgerFile(today)});
+  try {
+    const chain = (await s2.call('GET', '/pilot/v1/chain')).body.anchoring;
+    assert.equal(chain.state, 'daily_cap_reached');
+    assert.equal(chain.daily_cap.signed_today, 50);
+    assert.equal(chain.resumes_at, new Date(start + 864e5).toISOString());
+  } finally { s2.srv.close(); }
+});
+
 test('the transaction of the confirmed box, from the node, once per box', async () => {
   let asked = 0;
   const fetchFn = async url => { asked++; assert.equal(url, `http://node/utxo/byId/${H('b')}`); return {ok: true, json: async () => ({transactionId: H('2')})}; };

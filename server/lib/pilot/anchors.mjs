@@ -11,6 +11,10 @@ import fs from 'node:fs';
 
 export const CHECK_INTERVAL_S = Number(process.env.BASIS_TRACKER_UPDATE_INTERVAL_SECONDS) || 1800;
 export const OVERDUE_GRACE_S = 180;
+// The owner's daily cap on tracker-box signatures (per UTC day), as the wallet adapter enforces it (ergo/chain.mjs
+// DEFAULT_DAILY_TRACKER_SIGNATURES; test/anchoring.test.mjs checks they agree). Once it is used up the tracker posts no
+// box until 00:00 UTC: GET /chain says so (state daily_cap_reached), not that the tracker failed.
+export const DAILY_TRACKER_SIGNATURES = 50;
 // A loop's set-off applied this soon before an update was signed may or may not be in it (the updater reads the digest a
 // moment before it signs): such an update counts for the loop only while the tracker's state is anchored now.
 export const LOOP_GUARD_MS = 15_000;
@@ -37,8 +41,18 @@ export function trackerBoxUpdates(file) {
     all.push({t, tx_id: r.tx_id, input: Array.isArray(r.inputs) && HEX64.test(String(r.inputs[0])) ? r.inputs[0] : null});
   }
   const rows = all.filter((u, i) => !(all[i + 1] && u.input && all[i + 1].input === u.input));
-  cache = {file, size: st.size, mtimeMs: st.mtimeMs, rows};
+  cache = {file, size: st.size, mtimeMs: st.mtimeMs, rows, all};
   return rows;
+}
+
+// The owner's daily cap as it stands at `now`: the tracker-box signatures of this UTC day (every one the adapter
+// recorded, as it counts them), the limit, and when the day ends (when a used-up cap resets).
+export function dailyCap(file, now = Date.now(), limit = DAILY_TRACKER_SIGNATURES) {
+  trackerBoxUpdates(file);
+  const day = new Date(now).toISOString().slice(0, 10);
+  const signed = (cache && cache.file === file ? cache.all : []).filter(u => new Date(u.t).toISOString().slice(0, 10) === day).length;
+  const resets = new Date(`${day}T00:00:00.000Z`).getTime() + 864e5;
+  return {limit, signed_today: signed, used_up: signed >= limit, resets_at: new Date(resets).toISOString()};
 }
 
 // The confirmed updates: every update but the one in flight (the updater posts the next only after the previous one
@@ -78,8 +92,9 @@ export class AnchorWatch {
     else this.since ??= this.now();
     return this.since;
   }
-  // The anchoring state GET /chain shows, with what it means for a creditor who wants to redeem.
-  state(st) {
+  // The anchoring state GET /chain shows, with what it means for a creditor who wants to redeem. `cap`: the owner's
+  // daily cap as dailyCap() gives it (none: not known, as before).
+  state(st, cap = null) {
     const since = this.observe(st);
     if (!st) return {state: 'unknown', what_this_means: 'The tracker\'s state could not be read just now; try again in a minute.'};
     const n = CHECK_INTERVAL_S;
@@ -88,6 +103,10 @@ export class AnchorWatch {
     }
     if (st.pending_tx_id) {
       return {state: 'update_in_flight', what_this_means: 'The tracker posted a new tracker box (pending_tx_id): once a block includes it, in about two minutes, the notes recorded before it can be redeemed and the nettings before it are final.'};
+    }
+    if (cap?.used_up) {
+      return {state: 'daily_cap_reached', ...(since !== null ? {unanchored_since: new Date(since).toISOString()} : {}), resumes_at: cap.resets_at,
+        what_this_means: `The tracker's state changed since its last tracker box, and the operator's daily cap of ${cap.limit} tracker boxes (per UTC day) is used up: the next box is posted after ${cap.resets_at} (within ${Math.round(n / 60) + 3} minutes of it). This is a limit the operator set, not a fault. Nothing is lost: the notes recorded since the last box can be redeemed, and the nettings since then are final, once that box is confirmed.`};
     }
     const overdue = since !== null && this.now() - since > (n + OVERDUE_GRACE_S) * 1000;
     if (overdue) {

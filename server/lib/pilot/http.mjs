@@ -7,7 +7,7 @@ import {toErgoJson} from '../ergo-json.mjs';
 import {featuresFor, NOVATION_INFO} from './caps.mjs';
 import {METRICS_CACHE_MS} from './clearing.mjs';
 import {loopsOf, loopOf, LOOP_ID_RE, renderLoopPage, renderLoopNotFound} from './loops.mjs';
-import {AnchorWatch, CHECK_INTERVAL_S, confirmedUpdates, creatingTx, loopAnchor, trackerBoxUpdates} from './anchors.mjs';
+import {AnchorWatch, CHECK_INTERVAL_S, confirmedUpdates, creatingTx, dailyCap, loopAnchor, trackerBoxUpdates} from './anchors.mjs';
 import {AGENT_HANDLE_RE, agentView, renderAgentPage, renderAgentNotFound} from './agents.mjs';
 
 // The source text of each statement template, as /info publishes it (OQ-18).
@@ -219,10 +219,13 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         // fix inbox #14: the anchoring's state (anchored, waiting for the next update, an update in flight, overdue) and
         // what it means for redeeming, the updater's interval, and the last tracker-box update the server knows of.
         const last = st ? confirmedUpdates(trackerBoxUpdates(pilot.chain.spend_ledger), st).at(-1) : null;
+        // The owner's daily cap on tracker boxes: once used up, the state says so (daily_cap_reached), not "overdue".
+        const cap = pilot.chain.spend_ledger ? dailyCap(pilot.chain.spend_ledger) : null;
         return {network: NETWORK, ...chain, anchoring: st && {local_digest: st.local_digest, confirmed_digest: st.confirmed_digest ?? null,
           confirmed_box_id: st.confirmed_box_id ?? null, confirmed_height: st.confirmed_height ?? null, pending_tx_id: st.pending_tx_id ?? null,
           anchored: !!st.confirmed_digest && st.confirmed_digest === st.local_digest, check_interval_seconds: CHECK_INTERVAL_S,
-          ...anchorWatch.state(st),
+          ...(cap ? {daily_cap: {limit: cap.limit, signed_today: cap.signed_today, resets_at: cap.resets_at}} : {}),
+          ...anchorWatch.state(st, cap),
           ...(last ? {last_update: {tx_id: last.tx_id, signed_at: new Date(last.t).toISOString(), explorer_url: explorerTx(last.tx_id)}} : {})},
           links: {tracker_nft: `${ex}/en/token/${pilot.chain.tracker_nft_id}`, tracker_address: pilot.chain.tracker_address && `${ex}/en/addresses/${pilot.chain.tracker_address}`}};
       });

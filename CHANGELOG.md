@@ -13,6 +13,16 @@ The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://githu
 ### Server
 - `server/` synced with valun-app `201074e`: the live check's memory limits scale with the machine's memory. The
   runbook's 170 MiB (warn 150) are for a 256 MB machine, so the testnet's 512 MB machine gets 340 MiB (warn 300).
+- `server/` synced with valun-app `fca870c` (fix inbox #33): the tracker's anchoring keeps to its update interval.
+  - On 2026-11-13, 28 of the day's 50 tracker-box signatures came less than 290 s after the one before. When an
+    update confirms and the state changed meanwhile, the tracker's updater posts the next box at once. None of the 50
+    replaced another.
+  - **Spacing.** The wallet adapter (`ergo/`) signs tracker boxes at least 90% of the interval apart. A refused
+    follow-up (`429 too_soon`) changes nothing in the tracker, and the same changes go in its next box.
+  - **The confirmation check never answers 404.** It answers `409 not_in_a_block_yet` until an update is in a block.
+    The updater would take three 404s 30 s apart for a dropped update and sign a second update of the same box.
+  - **`GET /pilot/v1/chain`** names the owner's daily cap (`anchoring.daily_cap`). Once it is used up, the state is
+    `daily_cap_reached`, with `resumes_at`, instead of `overdue`.
 
 ## 0.6.1 (2026-11-13)
 

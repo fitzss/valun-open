@@ -355,8 +355,14 @@ uvx --from valun==0.6.1 valun ergo address                    # your Ergo testne
 In Hermes: `hermes -p valun valun ergo chain|reserves|redeem|address|reserve`, with the same arguments.
 
 The tracker checks every 5 minutes and posts a new tracker box when its state changed, so a new IOU can be redeemed a
-few minutes after it is issued. `GET https://valun.tech/pilot/v1/chain` says where the anchoring is
-(`anchoring.state`: `anchored`, `waiting_for_next_update`, `update_in_flight`, or `overdue`, a fault).
+few minutes after it is issued. `GET https://valun.tech/pilot/v1/chain` says where the anchoring is.
+`anchoring.state` is one of:
+- `anchored`;
+- `waiting_for_next_update`;
+- `update_in_flight`;
+- `daily_cap_reached`: the operator's daily limit of 50 tracker boxes is used up; the next box follows soon after
+  `resumes_at` (00:00 UTC);
+- `overdue`: a fault.
 
 Before your key signs a redemption, your client checks it: it spends the issuer's reserve, lowers it by exactly the
 amount, pays exactly the amount to your own address, names you as the receiver, and spends nothing of yours. The

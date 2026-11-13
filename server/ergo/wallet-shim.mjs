@@ -6,17 +6,21 @@
 //   - the node is a testnet node (never mainnet);
 //   - the request carries exactly one secret, and it is the tracker's key (TRACKER_PUBKEY): nothing else is signed;
 //   - every input is a box the tracker owns, and the transaction keeps the tracker NFT in a tracker-owned box;
-//   - the spend ledger's caps: 20 tERG in all, at most 50 tracker-box signatures a UTC day.
+//   - the spend ledger's caps: 20 tERG in all, at most 50 tracker-box signatures a UTC day, and tracker-box signatures
+//     at least 90% of the tracker's update interval apart (BASIS_TRACKER_UPDATE_INTERVAL_SECONDS, 1800 by default as
+//     for the tracker; minGapMsFor in chain.mjs).
 // Request bodies are never logged (they hold the secret). Usage:
 //   TRACKER_PUBKEY=<33-byte hex> TRACKER_NFT_ID=<hex> SPEND_LEDGER=/data/.../spend-ledger.jsonl \
 //   ERGO_NODE_URL=http://213.239.193.208:9052 node ergo/wallet-shim.mjs --port 9053
 import http from 'node:http';
-import {ChainError, SpendLedger, addressOf, nodeClient, p2pkTree, pubkeyOf, signTransaction, spentFrom, stateContext} from './chain.mjs';
+import {ChainError, SpendLedger, addressOf, minGapMsFor, nodeClient, p2pkTree, pubkeyOf, signTransaction, spentFrom, stateContext} from './chain.mjs';
 
 const MAX_BODY = 1_000_000;
 const PROXY = [/^\/info$/, /^\/blocks\/lastHeaders\/\d{1,2}$/, /^\/blockchain\/box\/unspent\/byTokenId\/[0-9a-f]{64}$/, /^\/blockchain\/box\/unspent\/byAddress$/,
-  /^\/blockchain\/box\/byId\/[0-9a-f]{64}$/, /^\/blockchain\/transaction\/byId\/[0-9a-f]{64}$/, /^\/utxo\/byId\/[0-9a-f]{64}$/, /^\/utxo\/byIdBinary\/[0-9a-f]{64}$/,
+  /^\/blockchain\/box\/byId\/[0-9a-f]{64}$/, /^\/utxo\/byId\/[0-9a-f]{64}$/, /^\/utxo\/byIdBinary\/[0-9a-f]{64}$/,
   /^\/transactions$/, /^\/transactions\/check$/, /^\/transactions\/unconfirmed\/byTransactionId\/[0-9a-f]{64}$/, /^\/blockchain\/indexedHeight$/];
+// The tracker updater's confirmation check of its pending update (see the handler).
+const TX_BY_ID = /^\/blockchain\/transaction\/byId\/([0-9a-f]{64})$/;
 
 export function createShim({trackerPubkey, trackerNftId = null, ledger, node = nodeClient(), log = m => console.log(m)}) {
   if (!/^0[23][0-9a-f]{64}$/.test(trackerPubkey || '')) throw new Error('TRACKER_PUBKEY must be the tracker key (33 bytes hex)');
@@ -88,6 +92,17 @@ export function createShim({trackerPubkey, trackerNftId = null, ledger, node = n
       if (req.method === 'GET' && p === '/wallet/boxes/unspent') return send(200, await walletBoxes());
       if (req.method === 'POST' && p === '/wallet/transaction/sign') return send(200, await sign(await readBody(req)));
       if (req.method === 'POST' && p === '/transactions') return send(200, await broadcast(await readBody(req)));
+      // The updater's confirmation check: 200 once its update is in a block. Until then the node answers 404, and this
+      // adapter answers 409, never 404. The updater counts a 404 as "missing", and three in a row (90 s at its 30 s
+      // poll) as an update the network dropped: it would then sign a second update of the same tracker box. On a 409 it
+      // waits and asks again.
+      const byId = req.method === 'GET' && TX_BY_ID.exec(p);
+      if (byId) {
+        try { return send(200, await node.call(p)); } catch (e) {
+          if (e?.nodeStatus !== 404) throw e;
+          return send(409, {error: 409, reason: 'not_in_a_block_yet', detail: `transaction ${byId[1]} is not in a block yet; the tracker waits and asks again`});
+        }
+      }
       if (PROXY.some(re => re.test(p)) && (req.method === 'GET' || req.method === 'POST')) {
         const body = req.method === 'POST' ? await readBody(req) : undefined;
         if (p === '/transactions') await node.assertTestnet();
@@ -105,7 +120,8 @@ export function createShim({trackerPubkey, trackerNftId = null, ledger, node = n
 
 if (process.argv[1] && process.argv[1].endsWith('wallet-shim.mjs')) {
   const port = Number((process.argv.indexOf('--port') > 0 && process.argv[process.argv.indexOf('--port') + 1]) || 9053);
-  const ledger = new SpendLedger(process.env.SPEND_LEDGER || '/data/pilot/tracker/spend-ledger.jsonl');
+  const ledger = new SpendLedger(process.env.SPEND_LEDGER || '/data/pilot/tracker/spend-ledger.jsonl',
+    {minGapMs: minGapMsFor(process.env.BASIS_TRACKER_UPDATE_INTERVAL_SECONDS || 1800)});
   const handler = createShim({trackerPubkey: process.env.TRACKER_PUBKEY, trackerNftId: process.env.TRACKER_NFT_ID || null, ledger});
   http.createServer(handler).listen(port, '127.0.0.1', () => console.log(`wallet-shim: listening on 127.0.0.1:${port}, node ${nodeClient().base}`));
 }

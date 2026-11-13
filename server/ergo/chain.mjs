@@ -75,7 +75,11 @@ export function nodeClient(base = process.env.ERGO_NODE_URL || PUBLIC_TESTNET_NO
         body: body === undefined ? undefined : (typeof body === 'string' && raw ? body : JSON.stringify(body)), signal: AbortSignal.timeout(timeoutMs)});
     } catch (e) { throw new ChainError('node_unreachable', `the Ergo node did not answer ${method} ${p}: ${e.message}`, 502); }
     const text = await r.text();
-    if (!r.ok) throw new ChainError('node_error', `the Ergo node answered ${r.status} to ${method} ${p}: ${text.slice(0, 300)}`, r.status >= 500 ? 502 : 400);
+    if (!r.ok) {
+      const e = new ChainError('node_error', `the Ergo node answered ${r.status} to ${method} ${p}: ${text.slice(0, 300)}`, r.status >= 500 ? 502 : 400);
+      e.nodeStatus = r.status;
+      throw e;
+    }
     return text ? JSON.parse(text) : null;
   }
   // Every write and every signature first checks, once, that the node is a TESTNET node.
@@ -138,10 +142,22 @@ export function spentFrom(ourTree, inputBoxes, outputs) {
   return sum(inputBoxes.filter(b => b.ergoTree === ourTree)) - sum(outputs.filter(o => o.ergoTree === ourTree));
 }
 
+// The least time between two tracker-box signatures, for the tracker's update interval (in seconds): 90% of it. The
+// tracker's updater posts the next box right after one confirms when its state changed meanwhile, so in busy hours it
+// signed about once a block instead of once an interval (28 of the 50 signatures of 2026-11-13 came less than 290 s after
+// the one before). Held to its interval, the same changes go in its next box. The 10% absorbs timer jitter.
+export const minGapMsFor = intervalSeconds => (Number(intervalSeconds) > 0 ? Math.round(Number(intervalSeconds) * 900) : 0);
+
 // ---------- the spend ledger (one JSON line per signed transaction, on the volume) ----------
 export class SpendLedger {
-  constructor(file, {capNano = DEFAULT_CAP_NANO, dailySignatures = DEFAULT_DAILY_TRACKER_SIGNATURES, now = () => Date.now()} = {}) {
-    this.file = file; this.capNano = BigInt(capNano); this.daily = dailySignatures; this.now = now;
+  constructor(file, {capNano = DEFAULT_CAP_NANO, dailySignatures = DEFAULT_DAILY_TRACKER_SIGNATURES, minGapMs = 0, now = () => Date.now()} = {}) {
+    this.file = file; this.capNano = BigInt(capNano); this.daily = dailySignatures; this.minGapMs = minGapMs; this.now = now;
+  }
+  // When the last signature of this kind was made (ms), or null.
+  lastSignature(kind) {
+    const e = this.entries().filter(x => x.kind === kind).at(-1);
+    const t = e ? Date.parse(e.t) : NaN;
+    return Number.isFinite(t) ? t : null;
   }
   entries() {
     try { return fs.readFileSync(this.file, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { return []; }
@@ -151,12 +167,17 @@ export class SpendLedger {
     const day = new Date(this.now()).toISOString().slice(0, 10);
     return this.entries().filter(e => e.kind === kind && String(e.t).slice(0, 10) === day).length;
   }
-  // Refuses (ChainError) when this signature would pass either cap; else nothing.
+  // Refuses (ChainError) when this signature would pass either cap, or (a tracker box) come sooner than minGapMs after
+  // the last one; else nothing. A refused update changes nothing in the tracker: its next cycle tries again.
   check(kind, spentNano) {
     if (this.spentNano() + BigInt(spentNano) > this.capNano)
       throw new ChainError('cap_reached', `this would bring testnet spending to ${this.spentNano() + BigInt(spentNano)} nanoERG, over the owner's cap of ${this.capNano}`, 403);
     if (kind === 'tracker_box' && this.todaySignatures(kind) >= this.daily)
       throw new ChainError('daily_cap', `the tracker box was already signed ${this.daily} times today (UTC): the owner's daily cap`, 429);
+    const last = kind === 'tracker_box' && this.minGapMs > 0 ? this.lastSignature(kind) : null;
+    if (last !== null && this.now() - last < this.minGapMs)
+      throw new ChainError('too_soon', `the last tracker box was signed ${Math.round((this.now() - last) / 1000)} s ago: the next can be signed from `
+        + `${new Date(last + this.minGapMs).toISOString()} (at most one every ${Math.round(this.minGapMs / 1000)} s, the tracker's update interval)`, 429);
   }
   record(e) {
     fs.mkdirSync(path.dirname(this.file), {recursive: true});
