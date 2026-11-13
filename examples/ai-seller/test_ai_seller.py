@@ -24,9 +24,14 @@ class Agents(unittest.TestCase):
         self.assertIn('summary (2 PC)', H.services_text('house-scribe'))
 
     def test_the_wants_are_whole_specs_and_affordable_to_check(self):
-        for h in H.AGENTS:
-            self.assertEqual(sorted(H.wants_of(h)), ['docs-fix', 'report'])
-            self.assertTrue(H.wants_text(h).startswith('report (2 PC): an onboarding report on Valun'))
+        self.assertEqual(list(H.wants_of('house-scribe')), ['x-feedback', 'report', 'docs-fix'])   # x-feedback first
+        self.assertEqual(list(H.wants_of('house-reviewer')), ['report', 'docs-fix'])
+        self.assertTrue(H.wants_text('house-reviewer').startswith('report (2 PC): an onboarding report on Valun'))
+        self.assertTrue(H.wants_text('house-scribe').startswith('x-feedback (2 PC)'), H.wants_text('house-scribe'))
+        # "feedback" is also a report's keyword: the scribe's x-feedback is found first, a plain report stays a report.
+        scribe = H.wants_of('house-scribe')
+        self.assertEqual(ais.which_want(scribe, {'service': {'title': 'x-feedback from @alice on X'}}), 'x-feedback')
+        self.assertEqual(ais.which_want(scribe, {'service': {'title': 'Onboarding feedback report'}}), 'report')
         for name, spec in H.WANTS.items():
             for k in ('price', 'max_chars', 'max_tokens', 'effort', 'keywords', 'blurb', 'criteria'):
                 self.assertIn(k, spec, f'{name}.{k}')
@@ -46,7 +51,7 @@ class Agents(unittest.TestCase):
         self.assertEqual([s.services for s in run], [tuple(a['services']) for a in H.AGENTS.values()])
         self.assertTrue(all(s.budget is b for s in run))
         self.assertEqual((run[1].jobs_per_buyer, run[1].checks_per_buyer), (H.JOBS_PER_BUYER_PER_DAY, H.CHECKS_PER_BUYER_PER_DAY))
-        self.assertEqual([sorted(s.wants) for s in run], [['docs-fix', 'report']] * 2)
+        self.assertEqual([sorted(s.wants) for s in run], [['docs-fix', 'report', 'x-feedback'], ['docs-fix', 'report']])
         self.assertEqual((run[0].wants_per_payee, run[0].wants_per_day), (1, H.WANTS_PER_DAY))
         self.assertTrue(run[0].received.endswith('wants-received-house-scribe.jsonl'))
         self.assertNotEqual(run[1].counted('ana', 'check'), run[1].counted('ana', 'code-review'))

@@ -62,7 +62,8 @@ def amt(n):
 
 
 AGENTS = {
-    'house-scribe': {'display_name': 'House scribe', 'services': ('summary', 'rewrite', 'translate'), 'wants': ('report', 'docs-fix'),
+    # x-feedback first: which_want takes the first want whose keyword the offer holds, and "feedback" is also a report's.
+    'house-scribe': {'display_name': 'House scribe', 'services': ('summary', 'rewrite', 'translate'), 'wants': ('x-feedback', 'report', 'docs-fix'),
                      'about': 'House agent run by the Valun operator: summaries, rewrites and translations by Claude, paid in '
                               f'credits. Offer me a job with the text in a ``` block. I also pay {amt_short(2)} for an onboarding report or '
                               f'a fix to {HOST}/skill.md: propose it with role payee.'},
@@ -75,6 +76,19 @@ AGENTS = {
 # The work the house agents pay for (valun.ai_seller want specs). The check is Claude's judgement of the delivery
 # against `criteria`; a docs-fix must also quote skill.md as it is now (checked without the model).
 WANTS = {
+    # Feedback posted on X with @bindvalun (bind_bot.py proposes it for the X user and delivers the post's text). It is
+    # how a person on X earns back what a tl;dr from house-scribe cost: the two IOUs form a loop, which the set-off cancels.
+    'x-feedback': {
+        'price': 2, 'min_chars': 40, 'max_chars': 4000, 'max_tokens': 800, 'effort': 'low',
+        'keywords': ('x-feedback',),
+        'blurb': 'x-feedback (2 PC): specific feedback on Valun or @bindvalun, posted on X (proposed for you by @bindvalun)',
+        'criteria': ('The work is feedback about Valun (valun.tech, its agents, tools and docs) or about @bindvalun on X '
+                     '(binding promises, paying with promises, loops, records, tl;dr). It meets the terms if it is specific: '
+                     'it names something the person tried, saw or wants, and says what was unclear, broken, missing or could '
+                     'be better, or proposes a concrete change or feature. It does not meet them if it is only praise or only '
+                     'criticism with nothing specific in it, a question with no feedback in it, spam or advertising, abuse, '
+                     'or not about Valun or @bindvalun. It need not be long, polished or right: judge whether a maintainer '
+                     'could act on it.')},
     'report': {
         'price': 2, 'min_chars': 200, 'max_chars': 6000, 'max_tokens': 1500, 'effort': 'low',
         'keywords': ('report', 'onboarding', 'friction', 'feedback'),

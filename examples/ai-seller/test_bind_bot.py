@@ -53,6 +53,22 @@ class Reading(unittest.TestCase):
         self.assertTrue(text.endswith('x\u2026. Open.'))
         self.assertEqual(B.fit(make, 'a logo'), make('a logo'))
 
+    def test_tldr_and_feedback(self):
+        for t in ('@bindvalun tldr', '@bob @bindvalun TL;DR please', '@bindvalun summarize this', '@bindvalun tl;dr: x'):
+            self.assertTrue(B.TLDR.match(B.post_text({'text': t})), t)
+        for t in ('@bindvalun tldrs are fun', '@bindvalun I owe @bob 1', '@bindvalun record'):
+            self.assertFalse(B.TLDR.match(B.post_text({'text': t})), t)
+        self.assertEqual(B.FEEDBACK.match('feedback: the offer reply is too long').group(1), 'the offer reply is too long')
+        self.assertEqual(B.post_text({'text': 'short', 'note_tweet': {'text': '@a long text'}}), 'long text')
+
+    def test_clean_for_x(self):
+        t = B.clean_for_x('TL;DR: **Bold** claim by @alice about #AI, see https://evil.example/x and valun.tech.\n- a bullet', 200)
+        self.assertEqual(t, 'Bold claim by alice about AI, see and valun\u2024tech. a bullet')
+        self.assertNotRegex(t, B.URL_RE)
+        long = B.clean_for_x('word ' * 100, 50)
+        self.assertLessEqual(len(long), 50)
+        self.assertTrue(long.endswith('word\u2026'))
+
     def test_accept(self):
         for t in ('@bindvalun accept', '@bindvalun @alice Accepted!', 'yes', '@bindvalun bind'):
             self.assertTrue(B.is_accept(t), t)
@@ -72,10 +88,12 @@ class FakeX:
 
     def mentions(self, uid, since_id=None):
         data, self.feed = self.feed, []
+        refs, self.refs = getattr(self, 'refs', []), []
         users = {}
         for t in data:
             users[t['author_id']] = {'id': t['author_id'], 'username': t.pop('_author')}
-        return {'data': data, 'includes': {'users': list(users.values())}, 'meta': {'newest_id': data[-1]['id']} if data else {}}
+        return {'data': data, 'includes': {'users': list(users.values()), 'tweets': refs},
+                'meta': {'newest_id': data[-1]['id']} if data else {}}
 
     def post(self, text, reply_to=None):
         self.n += 1
@@ -274,6 +292,111 @@ class Flow(unittest.TestCase):
         self.assertEqual(sorted(b.v.touched), ['x_alice', 'x_bob'])
         b.loops(fetch=lambda: loops)
         self.assertEqual(len(b.x.posts), 1, 'each loop once')
+
+
+class FakeScribe:
+    """The CLI with house-scribe on the other side: a tl;dr is delivered on the second read of the deal; feedback is
+    accepted, then checked once delivered (paid, or disputed with a note)."""
+    def __init__(self, answer='Valun lets AI agents pay each other with signed IOUs, and debts that form a loop cancel.',
+                 feedback_ok=True):
+        self.answer, self.ok, self.deals, self.calls = answer, feedback_ok, {}, []
+
+    def __call__(self, args, timeout=180):
+        profile, cmd = args[1], args[2]
+        self.calls.append((profile, *args[2:4]))
+        if cmd in ('join', 'clearing'):
+            return 0, 'ok', ''
+        tool, a = args[3], json.loads(args[4])
+        if tool == 'valun_propose':
+            did = f'vd_{len(self.deals) + 1}'
+            self.deals[did] = {'role': a['role'], 'reads': 0, 'status': 'open', 'text': a['description']}
+            return 0, json.dumps({'deal_id': did, 'status': 'open'}), ''
+        d = self.deals[a['deal_id']]
+        if tool == 'valun_deal':
+            d['reads'] += 1
+            if d['role'] == 'payer' and d['status'] == 'open' and d['reads'] >= 2:
+                d['status'], d['delivery'] = 'delivered', {'content': self.answer, 'sha256': 'cd' * 32}
+            elif d['role'] == 'payee' and d['status'] == 'open':
+                d['status'] = 'agreed'
+            elif d['role'] == 'payee' and d['status'] == 'delivered':
+                d['status'] = 'note_issued' if self.ok else 'disputed'
+                d['dispute'] = None if self.ok else {'reason': 'Verdict: does not meet the terms. It is only praise. Name one thing that was unclear.'}
+            return 0, json.dumps({'status': d['status'], 'delivery': d.get('delivery'), 'dispute': d.get('dispute')}), ''
+        if tool == 'valun_review_delivery':
+            d['status'] = 'note_issued' if a['decision'] == 'accept' else 'disputed'
+            d['review'] = a
+            return 0, json.dumps({'status': d['status']}), ''
+        if tool == 'valun_deliver':
+            d['status'], d['delivered'] = 'delivered', a['content']
+            return 0, json.dumps({'status': 'delivered'}), ''
+        raise AssertionError(tool)
+
+
+class Agents(unittest.TestCase):
+    """tl;dr and feedback: the real Bot and Valun steps, X and the scribe faked."""
+    def bot(self, scribe):
+        home = tempfile.mkdtemp()
+        st = B.State(os.path.join(home, 's.json'))
+        return B.Bot(FakeX(), B.Valun(home=home, server='https://example.invalid', run=scribe), st, log=lambda **kw: None)
+
+    def test_tldr_under_a_post(self):
+        scribe = FakeScribe()
+        b = self.bot(scribe)
+        long_post = 'A long post about agents and credit. ' * 8
+        b.x.feed = [tweet(1, 'alice', 'id-alice', '@bob @bindvalun tldr', reply_to='500', mentions=('bob',))]
+        b.x.refs = [{'id': '500', 'author_id': 'id-bob', 'text': long_post}]
+        b.poll()
+        self.assertEqual(b.x.posts, [], 'asked, not yet delivered')
+        self.assertIn(long_post.strip(), scribe.deals['vd_1']['text'])
+        self.assertIn('at most 200 characters', scribe.deals['vd_1']['text'])
+        b.poll()
+        self.assertEqual(b.x.posts, [('Valun lets AI agents pay each other with signed IOUs, and debts that form a loop cancel.'
+                                      '\n\n\u2014 tl;dr by house-scribe, an AI agent, for 2 credits that @alice now owes it.', '1')])
+        self.assertEqual(scribe.deals['vd_1']['review']['expected_deliverable_sha256'], 'cd' * 32)
+        b.poll()
+        self.assertEqual(len(b.x.posts), 1, 'answered once')
+        b = self.bot(FakeScribe(answer='word ' * 40))                    # a full 200 characters, a 15-letter handle
+        b.x.feed = [tweet(2, 'abcdefghijklmno', 'id-l', '@bob @bindvalun tldr', reply_to='500', mentions=('bob',))]
+        b.x.refs = [{'id': '500', 'author_id': 'id-bob', 'text': long_post}]
+        b.poll()
+        b.poll()
+        self.assertLessEqual(len(b.x.posts[0][0]), B.MAX_TEXT)
+        self.assertTrue(b.x.posts[0][0].endswith('that @abcdefghijklmno now owes it.'))
+
+    def test_tldr_refusals(self):
+        b = self.bot(FakeScribe())
+        b.x.feed = [tweet(1, 'alice', 'id-alice', '@bindvalun tldr'),                                # under nothing
+                    tweet(2, 'carol', 'id-carol', '@bob @bindvalun tldr', reply_to='501', mentions=('bob',))]
+        b.x.refs = [{'id': '501', 'author_id': 'id-bob', 'text': 'too short'}]
+        b.poll()
+        self.assertEqual([p[0][:22] for p in b.x.posts], ['@alice Reply "@bindval', '@carol That one is sho'])
+        b = self.bot(FakeScribe(answer='x' * 2000))                                                  # far too long: disputed
+        b.x.feed = [tweet(3, 'dan', 'id-dan', '@bob @bindvalun tldr', reply_to='502', mentions=('bob',))]
+        b.x.refs = [{'id': '502', 'author_id': 'id-bob', 'text': 'y' * 300}]
+        b.poll()
+        b.poll()
+        self.assertEqual(b.x.posts, [])
+        self.assertEqual(b.v.run.deals['vd_1']['review']['decision'], 'dispute')
+
+    def test_feedback_paid_and_passed(self):
+        scribe = FakeScribe()
+        b = self.bot(scribe)
+        fb = 'feedback: the offer reply should show the link to the record before I accept, not after.'
+        b.x.feed = [tweet(1, 'alice', 'id-alice', '@bindvalun ' + fb)]
+        b.poll()                                    # offered, then accepted by the scribe (agreed): delivered
+        self.assertEqual(scribe.deals['vd_1']['delivered'], fb[len('feedback: '):])
+        b.poll()                                    # checked and paid
+        self.assertEqual(b.x.posts, [('Thank you. house-scribe, an AI agent, read this and found it specific enough to act on: '
+                                      'it now owes @alice 2 credits. A tl;dr @alice owes it cancels against that.', '1')])
+        b.x.feed = [tweet(2, 'alice', 'id-alice', '@bindvalun feedback: and another thing about the record page.')]
+        b.poll()
+        self.assertEqual(len(b.x.posts), 1, 'one feedback a day per person')
+        b = self.bot(FakeScribe(feedback_ok=False))
+        b.x.feed = [tweet(3, 'bob', 'id-bob', '@bindvalun feedback: this is great, I love it, well done everyone!!')]
+        b.poll()
+        b.poll()
+        self.assertEqual(b.x.posts, [('@bob house-scribe, an AI agent, passed on this one, so nothing is owed. Its note: '
+                                      'Name one thing that was unclear.', '3')])
 
 
 class ValunSteps(unittest.TestCase):

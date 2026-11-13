@@ -62,6 +62,15 @@ SETTLE_MAX_S = 6 * 3600              # a payment by transfer still unsettled aft
 RECORDS_PER_DAY = 5                  # record replies hold a link ($0.20 each)
 RECORDS_PER_AUTHOR_PER_DAY = 1
 MAX_TEXT = 270                       # X allows 280 characters; a margin
+# The AI agent hired on X, and what it costs and pays (examples/ai-seller/ai_seller.py: house-scribe's summary service and
+# its x-feedback want; valun.ai_seller enforces its own limits: 3 jobs a day per buyer, 1 x-feedback a day per person).
+SCRIBE = os.environ.get('BIND_SCRIBE', 'house-scribe')
+TLDR_PRICE, FEEDBACK_PAY = 2, 2
+TLDR_MIN_CHARS, TLDR_SHOWN = 200, 200       # a post shorter than this needs no tl;dr; at most this much is posted
+FEEDBACK_MIN_CHARS = 40
+HIRES_PER_DAY, HIRES_PER_AUTHOR_PER_DAY = 25, 3
+FEEDBACK_PER_DAY, FEEDBACK_PER_AUTHOR_PER_DAY = 10, 1
+JOB_TTL_S = 75 * 60                  # the offer to the agent is open an hour; then the job is let go
 COST = {'post_read': 0.005, 'user_read': 0.010, 'post': 0.015, 'post_url': 0.20}
 URL_RE = re.compile(r'https?://|\b[a-z0-9-]+\.(?:tech|dev|com|org|io|md)\b', re.I)
 
@@ -70,11 +79,14 @@ H = r'@([A-Za-z0-9_]{1,15})'
 OWE = re.compile(r'\bi\s+owe\s+' + H + r'\s+(\d{1,4})(?:\s*(?:credits?|pc)\b)?(?:[\s,;]*(?:for|:)\s*(.+))?', re.I | re.S)
 # Paying with a promise one holds: ", pay with @alice", "paid with @alice's IOU", "with @alice's promise". A bare
 # "with @alice" is not one ("for dinner with @alice").
-VIA = re.compile(r"[,;]?\s*(?:\band\s+)?(?:\b(?:pay(?:ing)?|paid)\s+(?:it\s+)?with\s+" + H + r"(?:['’]s)?(?:\s+(?:promise|note|iou|debt)s?)?"
-                 r"|\bwith\s+" + H + r"['’]s\s+(?:promise|note|iou|debt)s?)\b", re.I)
+VIA = re.compile(r"[,;]?\s*(?:\band\s+)?(?:\b(?:pay(?:ing)?|paid)\s+(?:it\s+)?with\s+" + H + r"(?:['\u2019]s)?(?:\s+(?:promise|note|iou|debt)s?)?"
+                 r"|\bwith\s+" + H + r"['\u2019]s\s+(?:promise|note|iou|debt)s?)\b", re.I)
 # "pay @carol 3 for the review" (what is left of "pay @carol 3 with @alice's promise for the review"; only with VIA)
 PAYTO = re.compile(r'^pay\s+' + H + r'\s+(\d{1,4})(?:\s*(?:credits?|pc)\b)?(?:[\s,;]*(?:for|:)\s*(.+))?', re.I | re.S)
 RECORD = re.compile(r'^(?:my\s+)?record\b(?:\s+(?:of\s+)?' + H + r')?', re.I)
+# "tldr" / "tl;dr" / "summarize this" under a post (or before a text of one's own); "feedback: ..."
+TLDR = re.compile(r'^(?:tl;?dr|summari[sz]e(?:\s+(?:this|it))?)(?![\w;])[\s:,.!-]*(.*)$', re.I | re.S)
+FEEDBACK = re.compile(r'^feedback\b[\s:,.-]*(.*)$', re.I | re.S)
 ACCEPT = re.compile(r'^(?:accept(?:ed)?|bind|bound|yes|agreed?|deal)\b', re.I)
 LEADING_MENTIONS = re.compile(r'^(?:@[A-Za-z0-9_]{1,15}\s+)+')
 
@@ -132,8 +144,10 @@ class X:
         return self.call('GET', '/users/me')['data']
 
     def mentions(self, user_id, since_id=None):
-        p = {'max_results': 25, 'tweet.fields': 'author_id,conversation_id,created_at,entities,referenced_tweets',
-             'expansions': 'author_id', 'user.fields': 'username'}
+        """Mentions of the account, with their authors and the posts they reply to or quote (includes.tweets: a tl;dr
+        works on the post it is under; note_tweet holds a long post's full text)."""
+        p = {'max_results': 25, 'tweet.fields': 'author_id,conversation_id,created_at,entities,referenced_tweets,note_tweet',
+             'expansions': 'author_id,referenced_tweets.id', 'user.fields': 'username'}
         if since_id:
             p['since_id'] = since_id
         return self.call('GET', f'/users/{user_id}/mentions', p)
@@ -154,7 +168,7 @@ class State:
                 self.s = json.load(f)
         except (OSError, ValueError):
             self.s = {}
-        for k, v in (('offers', {}), ('handled', []), ('profiles', {}), ('loops_posted', []), ('counts', {})):
+        for k, v in (('offers', {}), ('jobs', {}), ('handled', []), ('profiles', {}), ('loops_posted', []), ('counts', {})):
             self.s.setdefault(k, v)
         self.roll()
 
@@ -296,6 +310,37 @@ class Valun:
                 return 'own_note' if r.get('status') == 'note_issued' else 'pending'
         return 'pending'
 
+    def hire(self, state, author, text, post_id):
+        """@author hires the scribe for a tl;dr: an offer from the identity held for them (payer, at the scribe's price),
+        the text in a ``` block and the format the account can post. The scribe does the job before it accepts and
+        delivers it; Bot.progress_jobs reviews it. Returns the deal id."""
+        me = self.ensure(state, author)
+        body = text.replace('```', "'''")[:4000]
+        r = self.call(me, 'valun_propose', {
+            'counterparty': SCRIBE, 'role': 'payer', 'title': 'summary: a tl;dr for a post on X',
+            'description': ('Format: one paragraph of at most 200 characters, plain text, with no links, no @mentions, no '
+                            'hashtags and no bullet points. It is posted on X as a reply. Summarize this post:\n\n```\n'
+                            f"{body}\n```\n\nAsked on X by @{author}: https://x.com/{author}/status/{post_id}"),
+            'deliverable': 'a tl;dr of at most 200 characters, one paragraph', 'price': TLDR_PRICE,
+            'deliver_within_hours': 1, 'offer_valid_hours': 1})
+        if not r.get('deal_id'):
+            raise BindError(r.get('error') or 'propose_failed', r.get('message') or '')
+        return r['deal_id']
+
+    def offer_feedback(self, state, author, post_id):
+        """@author's feedback, offered to the scribe as its x-feedback want (payee: the scribe pays if its check finds the
+        feedback specific). The text is delivered once the scribe accepts (Bot.progress_jobs). Returns the deal id."""
+        me = self.ensure(state, author)
+        r = self.call(me, 'valun_propose', {
+            'counterparty': SCRIBE, 'role': 'payee', 'title': f'x-feedback from @{author} on X',
+            'description': (f'Feedback on Valun, posted on X by @{author} (https://x.com/{author}/status/{post_id}). The '
+                            'delivery is the feedback as posted.'),
+            'deliverable': 'x-feedback: the feedback as posted on X', 'price': FEEDBACK_PAY,
+            'deliver_within_hours': 1, 'offer_valid_hours': 1})
+        if not r.get('deal_id'):
+            raise BindError(r.get('error') or 'propose_failed', r.get('message') or '')
+        return r['deal_id']
+
     def held(self, name):
         """{issuer's Valun handle: credits} of the promises this profile holds and can pass on now (valun_status
         notes_you_can_spend)."""
@@ -367,12 +412,45 @@ def fit(make, what):
     text, cut = make(what), what
     while len(text) > MAX_TEXT and cut:
         cut = cut[:-(len(text) - MAX_TEXT + 1)].rstrip()
-        text = make(cut + '…' if cut else '')
+        text = make(cut + '\u2026' if cut else '')
     return text
 
 
 def credits(n):
     return f"{n} credit{'s' if n != 1 else ''}"
+
+
+def post_text(tweet):
+    """A post's full text (a long post's note_tweet), without the mentions it starts with."""
+    return strip_mentions(((tweet or {}).get('note_tweet') or {}).get('text') or (tweet or {}).get('text') or '')
+
+
+def referenced(tweet, refs, kinds=('replied_to', 'quoted')):
+    """The post this one replies to or quotes, from the includes of the read (refs: id -> post), or None."""
+    for kind in kinds:
+        rid = next((r['id'] for r in tweet.get('referenced_tweets') or [] if r.get('type') == kind), None)
+        if rid and rid in refs:
+            return refs[rid]
+    return None
+
+
+DOMAIN = re.compile(r'\b([a-z0-9-]+)\.([a-z]{2,24})\b', re.I)
+DASH = chr(0x2014)
+
+
+def clean_for_x(text, limit):
+    """An AI agent's answer as the account may post it: plain text on one paragraph, no links (a domain's dot becomes a
+    one-dot leader, so X does not link it), no mentions, no hashtags, at most `limit` characters (cut at a word)."""
+    t = re.sub(r'https?://\S+', '', text or '')
+    t = re.sub(r'^\s*(?:tl;?dr|summary|in one sentence)\s*[:\-]\s*', '', t, flags=re.I)
+    t = re.sub(r'[@\uff20](\w)', r'\1', t)
+    t = re.sub(r'(?<!\w)[#\uff03](\w)', r'\1', t)
+    t = re.sub(r'[*_`>~|]+|^\s*[-\u2022]\s+', ' ', t, flags=re.M)
+    t = DOMAIN.sub(lambda m: f'{m.group(1)}\u2024{m.group(2)}', t)
+    t = ' '.join(t.split())
+    if len(t) > limit:
+        t = t[:limit - 1].rsplit(' ', 1)[0].rstrip(',;:') + '\u2026'
+    return t
 
 
 def is_accept(text):
@@ -414,7 +492,8 @@ class Bot:
         r = self.x.mentions(self.me['id'], self.st.s.get('since_id'))
         tweets = r.get('data') or []
         users = {u['id']: u['username'] for u in (r.get('includes') or {}).get('users') or []}
-        self.st.spend(COST['post_read'] * len(tweets) + COST['user_read'] * len(users))
+        self.refs = {p['id']: p for p in (r.get('includes') or {}).get('tweets') or [] if isinstance(p, dict) and p.get('id')}
+        self.st.spend(COST['post_read'] * (len(tweets) + len(self.refs)) + COST['user_read'] * len(users))
         if (r.get('meta') or {}).get('newest_id'):
             self.st.s['since_id'] = r['meta']['newest_id']
         for t in sorted(tweets, key=lambda t: int(t['id'])):
@@ -425,6 +504,7 @@ class Bot:
                 self.handle(t, users.get(t.get('author_id'), '').lower())
             except (XError, BindError, OSError, subprocess.SubprocessError) as e:
                 self.log(action='error', tweet=t['id'], error=str(e)[:300])
+        self.progress_jobs()
         self.expire()
         self.st.save()
 
@@ -440,9 +520,126 @@ class Bot:
         who = parse_record(t.get('text'))
         if who is not None:
             return self.record(t, author, who or author)
+        text = post_text(t)
+        m = TLDR.match(text)
+        if m:
+            parent = referenced(t, getattr(self, 'refs', {}))
+            if parent and parent.get('author_id') == (self.me or {}).get('id'):
+                return self.log(action='ignored_tldr', tweet=t['id'], why='a post of this account')
+            own = m.group(1).strip()
+            if len(own) >= TLDR_MIN_CHARS:
+                return self.tldr(t, author, own)
+            return self.tldr(t, author, post_text(parent) if parent else None)
+        m = FEEDBACK.match(text)
+        if m:
+            return self.feedback(t, author, m.group(1).strip())
         owe = parse_owe(t.get('text'))
         if owe:
             return self.offer(t, author, *owe)
+
+    # ---------- AI agents for hire, and paying for feedback ----------
+    def tldr(self, t, author, text):
+        """A tl;dr by the scribe, of the post this one is under: @author will owe it TLDR_PRICE credits."""
+        if self.st.count('hires') >= HIRES_PER_DAY or self.st.count(f'hires:{author}') >= HIRES_PER_AUTHOR_PER_DAY:
+            return self.log(action='ignored_tldr', tweet=t['id'], why='daily limit')
+        self.st.bump(f'hires:{author}')
+        if text is None:
+            return self.say(f'@{author} Reply "@{BOT} tldr" under a long post, and an AI agent summarizes it for '
+                            f'{credits(TLDR_PRICE)}.', t['id'])
+        if len(text) < TLDR_MIN_CHARS:
+            return self.say(f'@{author} That one is short already. A tl;dr here is for posts of {TLDR_MIN_CHARS} '
+                            'characters or more.', t['id'])
+        try:
+            did = self.v.hire(self.st, author, text, t['id'])
+        except BindError as e:
+            self.log(action='tldr_failed', tweet=t['id'], error=str(e)[:300])
+            return self.say(f'@{author} The scribe could not be asked: Valun refused it ({e.code}). Nothing is owed.', t['id'])
+        self.st.bump('hires')
+        self.st.s['jobs'][t['id']] = {'kind': 'tldr', 'state': 'asked', 'deal_id': did, 'author': author,
+                                      'at': now().isoformat(timespec='seconds')}
+        self.log(action='tldr_asked', tweet=t['id'], deal=did, author=author)
+
+    def feedback(self, t, author, text):
+        """Feedback on Valun, offered to the scribe as paid work: if its check finds it specific, the scribe owes @author
+        FEEDBACK_PAY credits (which cancel against a tl;dr @author owes it)."""
+        if self.st.count('feedback') >= FEEDBACK_PER_DAY or self.st.count(f'feedback:{author}') >= FEEDBACK_PER_AUTHOR_PER_DAY:
+            return self.log(action='ignored_feedback', tweet=t['id'], why='daily limit')
+        self.st.bump(f'feedback:{author}')
+        if len(text) < FEEDBACK_MIN_CHARS:
+            return self.say(f'@{author} Say a little more: what you tried, and what was unclear, broken or missing. '
+                            f'The scribe pays {credits(FEEDBACK_PAY)} for feedback it can act on.', t['id'])
+        try:
+            did = self.v.offer_feedback(self.st, author, t['id'])
+        except BindError as e:
+            self.log(action='feedback_failed', tweet=t['id'], error=str(e)[:300])
+            return self.say(f'@{author} The feedback could not be offered: Valun refused it ({e.code}).', t['id'])
+        self.st.bump('feedback')
+        self.st.s['jobs'][t['id']] = {'kind': 'feedback', 'state': 'offered', 'deal_id': did, 'author': author,
+                                      'text': text[:4000], 'at': now().isoformat(timespec='seconds')}
+        self.log(action='feedback_offered', tweet=t['id'], deal=did, author=author)
+
+    def progress_jobs(self):
+        """The jobs and feedback waiting on the scribe, carried on from the deal's state, each answered once in its
+        thread. A tl;dr is checked before it is paid: an empty answer, or one far longer than asked, is disputed."""
+        for tid, j in self.st.s['jobs'].items():
+            if j['state'] not in ('asked', 'offered', 'delivered'):
+                continue
+            me = profile_name(j['author'])
+            try:
+                d = self.v.call(me, 'valun_deal', {'deal_id': j['deal_id']})
+                self.progress_job(tid, j, me, d)
+            except (XError, BindError, OSError, subprocess.SubprocessError) as e:
+                self.log(action='error', job=tid, error=str(e)[:300])
+
+    def progress_job(self, tid, j, me, d):
+        status, a = d.get('status'), j['author']
+        if status in ('declined', 'expired', 'withdrawn', 'cancelled'):
+            j['state'] = 'declined'
+            why = clean_for_x(((d.get('decline') or {}).get('reason') or 'no reason given'), 140).rstrip('.') + '.'
+            self.log(action='job_declined', job=tid, deal=j['deal_id'], why=why)
+            return self.say(f'@{a} The scribe did not take this one: {why} Nothing is owed.', tid)
+        age = time.time() - datetime.fromisoformat(j['at']).timestamp()
+        if (age > JOB_TTL_S and status in ('open', 'agreed')) or age > SETTLE_MAX_S:
+            j['state'] = 'lapsed'
+            return self.log(action='job_lapsed', job=tid, deal=j['deal_id'], status=status)
+        if j['kind'] == 'tldr' and status == 'delivered':
+            if self.st.room() < COST['post']:
+                return None                 # paid and posted together, once there is room
+            dl = d.get('delivery') or {}
+            sign = f'\n\n{DASH} tl;dr by {SCRIBE}, an AI agent, for {credits(TLDR_PRICE)} that @{a} now owes it.'
+            text = clean_for_x(dl.get('content'), min(TLDR_SHOWN, MAX_TEXT - len(sign)))
+            if len(text) < 20 or len(dl.get('content') or '') > 4 * TLDR_SHOWN:
+                self.v.call(me, 'valun_review_delivery', {'deal_id': j['deal_id'], 'decision': 'dispute',
+                                                          'reason': 'The tl;dr is not one paragraph of at most 200 characters, as agreed.'})
+                j['state'] = 'disputed'
+                return self.log(action='tldr_disputed', job=tid, deal=j['deal_id'])
+            r = self.v.call(me, 'valun_review_delivery', {'deal_id': j['deal_id'], 'decision': 'accept',
+                                                          'expected_deliverable_sha256': dl.get('sha256')})
+            if r.get('status') != 'note_issued':
+                j['state'] = 'unpaid'
+                return self.log(action='tldr_unpaid', job=tid, deal=j['deal_id'], error=r.get('error') or r.get('status'))
+            j['state'] = 'done'
+            self.log(action='tldr_done', job=tid, deal=j['deal_id'])
+            return self.say(text + sign, tid)
+        if j['kind'] == 'feedback':
+            if status == 'agreed' and j['state'] == 'offered':
+                r = self.v.call(me, 'valun_deliver', {'deal_id': j['deal_id'], 'title': 'x-feedback', 'content': j['text']})
+                if r.get('error'):
+                    raise BindError(r['error'], r.get('message') or '')
+                j['state'] = 'delivered'
+                return self.log(action='feedback_delivered', job=tid, deal=j['deal_id'])
+            if status in ('note_issued', 'paid_by_transfer'):
+                j['state'] = 'paid'
+                self.log(action='feedback_paid', job=tid, deal=j['deal_id'])
+                return self.say(f'Thank you. {SCRIBE}, an AI agent, read this and found it specific enough to act on: it '
+                                f'now owes @{a} {credits(FEEDBACK_PAY)}. A tl;dr @{a} owes it cancels against that.', tid)
+            if status == 'disputed':
+                j['state'] = 'passed'
+                reason = (d.get('dispute') or {}).get('reason') or ''
+                tip = clean_for_x(re.split(r'(?<=[.!?])\s+', reason.strip())[-1] if reason.strip() else '', 150)
+                self.log(action='feedback_passed', job=tid, deal=j['deal_id'])
+                return self.say(f"@{a} {SCRIBE}, an AI agent, passed on this one, so nothing is owed."
+                                + (f' Its note: {tip}' if tip else ''), tid)
 
     def offer(self, t, debtor, creditor, amount, what, via=None):
         mentioned = mentioned_ids(t)
