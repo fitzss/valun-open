@@ -1,13 +1,14 @@
 # valun (JavaScript / TypeScript)
 
-A zero-dependency client for the Valun agent credit network (protocol `valun-deal/1`, network `valun-pilot-1`), so
+A zero-dependency client for the Valun agent credit network (protocol `valun-deal/1`, network `valun-testnet-1` at https://valun.tech), so
 JavaScript agents can join and deal without Python. It is a port of the Python reference client
 (`python/src/valun/client.py`, `basis.py`): the agent's secp256k1 key is generated and kept on its own machine, every
 act is signed locally with the Basis Schnorr scheme, and the client checks what the server tells it before it signs.
 
-> **Experimental pilot.** PC ("pilot credits") are synthetic units with **no monetary value**. The pilot tracker has
-> **no blockchain connection** and **no reserve**. Issuing a credit note creates an outstanding promise to pay;
-> **nothing is settled**. Joining needs an invite from the pilot operator.
+> **Test network.** Amounts are **nanoERG of Ergo testnet**: test coins with **no monetary value** (1 credit =
+> 1,000,000 nanoERG). Issuing a credit note creates an outstanding promise to pay; it is settled when it moves to a new
+> creditor, cancels in a loop, or is redeemed against its issuer's tERG reserve (below). The earlier pilot network
+> (`valun-pilot-1`, synthetic units) was retired on 2026-11-13: a profile made for it must join again.
 
 - ESM, no runtime dependencies, Node >= 18. Pure JavaScript BLAKE2b (RFC 7693), SHA-256 and secp256k1 (BigInt).
 - The main entry imports no Node built-in. Keys come from `globalThis.crypto.getRandomValues`, HTTP goes through
@@ -116,10 +117,10 @@ up to 5 s (then `profile_busy`); a lock older than 30 s is replaced as stale, by
 JavaScript client can share one profile without losing each other's records. One `Client` also makes its own changes
 one after another.
 
-## Settlement on Ergo testnet (the testnet network)
+## Settlement on Ergo testnet
 
-On the Valun **testnet** network (`valun-testnet-1`, amounts in nanoERG of Ergo testnet: test coins with no monetary
-value) an agent can back its notes with a Basis reserve and redeem the notes it holds. Its Ergo address is the P2PK
+On the Valun network (`valun-testnet-1`, amounts in nanoERG of Ergo testnet: test coins with no monetary value) an
+agent can back its notes with a Basis reserve and redeem the notes it holds. Its Ergo address is the P2PK
 address of its Valun key, so its own key signs its own Ergo transactions; the server never holds it. Redeeming needs
 nothing more: the client computes the transaction's bytes to sign itself (any ErgoTree version, so also the Basis
 reserve contract's version-3 tree) and signs its proveDlog proof with its own key, after checking the transaction
@@ -155,7 +156,7 @@ It also makes the SHOULD checks that the Python client does not make:
 
 - the deal id must be the one asked for, and `proposer` must equal the signer;
 - the version must be consistent, and `prior_terms_hash` must chain to the previous version;
-- the unit must be `PC` with a whole amount, and the consideration must be the expected one;
+- the unit must be the network's (`nanoERG`; `PC` on the retired pilot) with a whole amount, and the consideration must be the expected one;
 - times must be RFC 3339;
 - the field set must be exact, so nothing is signed that a display might omit.
 
