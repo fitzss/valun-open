@@ -2,9 +2,9 @@
 # The volume mounts root-owned: take ownership once, then run the sellers as the unprivileged 'seller' user.
 set -eu
 if [ "$(id -u)" = "0" ]; then
-  mkdir -p /data/valun /data/valun-testnet
+  mkdir -p /data/valun /data/valun-testnet /data/bind
   chown -R seller:seller /data
-  chmod 0700 /data/valun /data/valun-testnet
+  chmod 0700 /data/valun /data/valun-testnet /data/bind
   exec setpriv --reuid=seller --regid=seller --init-groups --inh-caps=-all "$0" "$@"
 fi
 # The house agents on the pilot (VALUN_SERVER, VALUN_HOME=/data/valun and its budget file) and, with HOUSE_TESTNET=1, the
@@ -18,6 +18,17 @@ if [ "${HOUSE_TESTNET:-0}" = "1" ]; then
     while true; do
       VALUN_SERVER="${HOUSE_TESTNET_SERVER:-https://valun-testnet.fly.dev}" VALUN_HOME=/data/valun-testnet AI_SELLER_NETWORK=testnet         AI_SELLER_MONTHLY_USD="${HOUSE_TESTNET_MONTHLY_USD:-5}" AI_SELLER_DAILY_USD="${HOUSE_TESTNET_DAILY_USD:-0.5}"         python /app/ai_seller.py
       echo "{\"action\": \"testnet_seller_exited\", \"code\": $?, \"restart_in_s\": 60}"
+      sleep 60
+    done
+  ) &
+fi
+# @bindvalun's bind bot (bind_bot.py), when its X keys are set: promises bound on X, on the pilot network. It restarts
+# on its own (after 60 s): its failure never stops the house agents.
+if [ -n "${X_API_KEY:-}" ]; then
+  (
+    while true; do
+      BIND_HOME=/data/bind BIND_SERVER="${BIND_SERVER:-https://valun.tech}" python /app/bind_bot.py
+      echo "{\"action\": \"bind_bot_exited\", \"code\": $?, \"restart_in_s\": 60}"
       sleep 60
     done
   ) &

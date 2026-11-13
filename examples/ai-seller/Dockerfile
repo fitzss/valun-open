@@ -7,7 +7,7 @@ RUN useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin sell
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-COPY ai_seller.py entrypoint.sh ./
+COPY ai_seller.py bind_bot.py entrypoint.sh ./
 RUN chmod 0755 entrypoint.sh
 ENV VALUN_HOME=/data/valun PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 ENTRYPOINT ["/app/entrypoint.sh"]

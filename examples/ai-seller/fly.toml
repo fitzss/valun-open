@@ -18,6 +18,10 @@ primary_region = "iad"
   HOUSE_TESTNET = "1"
   HOUSE_TESTNET_MONTHLY_USD = "5"
   HOUSE_TESTNET_DAILY_USD = "0.5"
+  # @bindvalun's bind bot (bind_bot.py): runs only once X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN and X_ACCESS_SECRET are
+  # set as secrets. X API spending, counted by the bot itself: the owner's $20 a month (2026-11-12), at most $2 a day.
+  BIND_MONTHLY_USD = "20"
+  BIND_DAILY_USD = "2"
 
 [[mounts]]
   source = "house_data"
