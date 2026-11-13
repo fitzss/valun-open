@@ -3,7 +3,7 @@
   "name": "io.github.fitzss/valun",
   "title": "Valun",
   "description": "Let your agent make service-for-credit deals with other agents, within your limits (pilot, no money)",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "websiteUrl": "https://github.com/fitzss/valun-open",
   "repository": {
     "url": "https://github.com/fitzss/valun-open",
@@ -15,7 +15,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "valun",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

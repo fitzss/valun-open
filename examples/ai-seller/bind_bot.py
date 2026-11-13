@@ -519,14 +519,20 @@ def credit_note(unit, scale):
     return f" A credit is {format((Decimal(scale) / NANOERG_PER_ERG).normalize(), 'f')} tERG, test coins with no value."
 
 
+def amount_of(d, name):
+    """An amount of the server's public record by its unit-neutral name (fix inbox #32: `owed_ever`), or by the
+    deprecated `<name>_PC` a server before that names it by; None when neither is there."""
+    return d[name] if name in d else d.get(f'{name}_PC')
+
+
 def record_text(shown, ev, name, scale=1):
     """A record reply from the server's evidence (public_position.evidence): delivery, repayment and acceptance, kept
     apart, never one score; its amounts (the network's units) in credits. A closed circle is said for what it may be."""
     n = lambda x: x if isinstance(x, int) and not isinstance(x, bool) else 0  # noqa: E731
     d, r, a, c = (ev.get(k) or {} for k in ('delivery', 'repayment', 'acceptance', 'circle'))
     acc, settled = d.get('accepted') or {}, r.get('settled') or {}
-    done = in_credits(n(settled.get('by_setoff_PC')) + n(settled.get('by_redemption_PC')), scale)
-    owed = in_credits(n(r.get('owed_ever_PC')), scale)
+    done = in_credits(n(amount_of(settled, 'by_setoff')) + n(amount_of(settled, 'by_redemption')), scale)
+    owed = in_credits(n(amount_of(r, 'owed_ever')), scale)
     unpaid = n((r.get('unpaid_accepted_work') or {}).get('count'))
     return (f"{shown}'s record, kept apart. Delivered: {n(acc.get('count'))} accepted, by {n(acc.get('buyers'))} buyer"
             f"{'s' if n(acc.get('buyers')) != 1 else ''}. Repaid: {done} of {credits(owed)} owed"
@@ -911,7 +917,7 @@ class Bot:
             k = next(i for i, n in enumerate(names) if n in held)          # start at a person on X, in the loop's order
             names = names[k:] + names[:k]
             shown = [f'@{held[n]}' if n in held else f'{n} (AI)' if str(n).startswith('house-') else str(n) for n in names]
-            each = loop.get('each_PC')                     # the network's units (nanoERG on the testnet), or None
+            each = amount_of(loop, 'each')                 # the network's units (nanoERG on the testnet), or None
             whole = isinstance(each, int) and not isinstance(each, bool) and each > 0
             text = (f'Loop closed: {ARROW.join(shown + shown[:1])}. '
                     + (f'{credits(in_credits(each, self.v.network()[1]))} of promises cancelled' if whole else 'Promises cancelled')

@@ -792,6 +792,26 @@ export class GuaranteeBook {
 // With the ledger, an unhonored call the issuer's repayment made unpayable no longer stands (review F2, F7): it is not
 // counted, called or overdue, whether or not anything has lapsed it yet.
 const standing = (book, ledger) => (g, c) => CLAIMING.has(c.state) && (!ledger || !UNHONORED.has(c.state) || book.honorable(g, c, book.owed(g, ledger), book.dealsUnpaid(g, ledger)));
+// Fix inbox #31: the public vouches of p, when p chose them (setProfile public_vouches). These are the accepted
+// guarantees between p and a counterpart who chose them too:
+//   given: p backed the issuer;
+//   received: the backer backed p's IOUs.
+// Each shows who backed whom, the cap, what it covers, its state and how its calls stand. The creditor is never named.
+// Each side counts all of them and shows the newest PUBLIC_VOUCHES_SHOWN. null when p did not choose them.
+export const PUBLIC_VOUCHES_SHOWN = 50;
+function publicVouches(pilot, p, given, backed, calls) {
+  if (!p.public_vouches) return null;
+  const who = id => pilot.s.participants[id], chose = id => !!who(id)?.public_vouches;
+  const vouch = g => {
+    const cs = calls([g]), honored = cs.filter(c => c.state === 'honored');
+    return {guarantee_id: g.id, backer: who(g.backer)?.handle ?? null, issuer: who(g.issuer)?.handle ?? null, cap: g.terms.cap.amount,
+      covers: g.terms.covers, state: g.state, accepted_at: g.acceptance.at,
+      called: {count: cs.length, amount: sum(cs)}, honored: {count: honored.length, amount: sum(honored), late: honored.filter(c => c.late).length}};
+  };
+  const side = gs => ({count: gs.length,
+    shown: [...gs].sort((a, b) => Date.parse(b.acceptance.at) - Date.parse(a.acceptance.at)).slice(0, PUBLIC_VOUCHES_SHOWN).map(vouch)});
+  return {given: side(given.filter(g => chose(g.issuer))), received: side(backed.filter(g => chose(g.backer)))};
+}
 export function backingRecord(pilot, p, byKind, ledger = null) {
   const book = pilot.guarantees, now = pilot.now(), stands = book ? standing(book, ledger) : () => false;
   const gs = book ? book.list().map(g => book.sweep(g)).filter(g => g.acceptance) : [];
@@ -799,7 +819,7 @@ export function backingRecord(pilot, p, byKind, ledger = null) {
   const tally = cs => ({count: cs.length, PC: sum(cs)});
   const given = gs.filter(g => g.backer === p.id), backed = gs.filter(g => g.issuer === p.id), held = gs.filter(g => g.creditor === p.id);
   const gc = calls(given), honored = gc.filter(c => c.state === 'honored'), overdue = gc.filter(c => UNHONORED.has(c.state) && now > Date.parse(c.honor_by));
-  const backers = new Set(backed.map(g => g.backer));
+  const backers = new Set(backed.map(g => g.backer)), vouches = publicVouches(pilot, p, given, backed, calls);
   return {
     given: {accepted: given.length, active: given.filter(g => g.state === 'active').length,
       open_cap_PC: given.filter(g => g.state === 'active').reduce((a, g) => a + Math.max(0, g.terms.cap.amount - book.claimed(g)), 0),
@@ -807,6 +827,7 @@ export function backingRecord(pilot, p, byKind, ledger = null) {
       ended_uncalled: given.filter(g => (g.state === 'expired' || g.state === 'released') && !g.calls.some(c => stands(g, c))).length},
     backed_as_issuer: {accepted: backed.length, backers: backers.size, backers_by_kind: byKind(pilot, backers), called_against: tally(calls(backed))},
     held_as_creditor: {accepted: held.length, called: tally(calls(held))},
+    ...(vouches ? {public_vouches: vouches} : {}),
   };
 }
 // The network's totals of the same.

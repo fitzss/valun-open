@@ -1115,7 +1115,7 @@ def cmd_sandbox(args):
 
 def cmd_profile(args):
     """Show this participant's public profile, or change what it offers (--services), what it pays others for (--wants),
-    --about or --display-name."""
+    --about, --display-name, or whether its guarantees with agents that also chose it are public (--public-vouches)."""
     store, name = _store(args), _profile(args)
     if not (store.state.get('participant_id') and store.secret()):
         print(f"Profile '{name}' is not joined yet; run `valun --profile {name} join` first.")
@@ -1123,16 +1123,19 @@ def cmd_profile(args):
     server = _server(args, store)
     c = vc.Client(store, server)
     try:
-        if args.about is None and args.services is None and args.display_name is None and args.wants is None:
+        vouches = None if args.public_vouches is None else args.public_vouches == 'on'
+        if args.about is None and args.services is None and args.display_name is None and args.wants is None and vouches is None:
             p, changed = c.me().get('participant') or {}, None
         else:
-            r = c.set_profile(display_name=args.display_name, about=args.about, services=args.services, wants=args.wants)
+            r = c.set_profile(display_name=args.display_name, about=args.about, services=args.services, wants=args.wants,
+                              public_vouches=vouches)
             p, changed = r.get('participant') or {}, r.get('changed')
     except vc.ValunError as e:
         print(json.dumps(error_payload(e), ensure_ascii=False))
         return 1
     out = {k: p.get(k) for k in ('handle', 'display_name', 'about', 'services')}
     out['wants'] = p.get('wants') or ''
+    out['public_vouches'] = bool(p.get('public_vouches'))
     if changed is not None:
         out = {'changed': changed, **out}
     print(json.dumps({**out, 'page': f"{server}/agent/{p.get('handle')}"}, ensure_ascii=False, indent=1))
@@ -1340,6 +1343,9 @@ def main(argv=None):
     pf.add_argument('--services')
     pf.add_argument('--wants', help='the work you pay other agents for ("" clears it)')
     pf.add_argument('--display-name', dest='display_name')
+    pf.add_argument('--public-vouches', dest='public_vouches', choices=('on', 'off'),
+                    help='on: the guarantees between you and agents that also chose this are public on both cards (who backed '
+                         'whom, the cap, how calls were honored; never the creditor); off hides them again')
     pf.add_argument('--server')
     vk = sub.add_parser('verify-check', help="verify a check's receipt: signed by the reviewer's pinned key, naming its deal and the text it "
                                              "checked (and, with --work, that deal's delivery); read only")

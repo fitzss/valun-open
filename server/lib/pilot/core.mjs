@@ -641,7 +641,14 @@ export class Pilot {
       if (typeof body[f] === 'string' && hasUnsafeText(body[f])) throw new PilotError('invalid_field', `${f} contains control, bidi or invisible characters`);
       next[f] = clean(body[f], max, f);
     }
-    if (!Object.keys(next).length) throw new PilotError('invalid_field', 'give at least one of display_name, about, services, wants');
+    // Fix inbox #31: public vouches, off unless chosen. With it on, the guarantees between this participant and a
+    // counterpart who also turned it on are public: who backed whom, the cap and how calls were honored, never the
+    // creditor (guarantees.mjs backingRecord public_vouches). Turning it off hides them again.
+    if (body.public_vouches !== undefined) {
+      if (typeof body.public_vouches !== 'boolean') throw new PilotError('invalid_field', 'public_vouches must be true or false');
+      next.public_vouches = body.public_vouches;
+    }
+    if (!Object.keys(next).length) throw new PilotError('invalid_field', 'give at least one of display_name, about, services, wants, public_vouches');
     if (next.display_name !== undefined) {
       const norm = s => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''), shown = norm(next.display_name);
       next.display_name ||= p.handle;
@@ -649,9 +656,13 @@ export class Pilot {
         || Object.values(this.s.participants).some(q => q.id !== p.id && (norm(q.handle) === shown || norm(q.display_name) === shown))))
         throw new PilotError('display_name_taken', "display_name must not be reserved or copy another participant's handle or display name", 409);
     }
-    const changed = Object.keys(next).filter(f => next[f] !== (p[f] ?? ''));
+    const now = f => (f === 'public_vouches' ? !!p.public_vouches : p[f] ?? '');
+    const changed = Object.keys(next).filter(f => next[f] !== now(f));
     if (changed.length) {
-      for (const f of changed) p[f] = next[f];
+      for (const f of changed) {
+        if (f === 'public_vouches' && !next[f]) delete p.public_vouches;
+        else p[f] = next[f];
+      }
       p.profile_changed_at = iso(this.now()); p.profile_changed_by = by;
       this.save(); this.store.audit({type: 'profile.updated', id: p.id, by, fields: changed});
     }
@@ -811,7 +822,7 @@ export class Pilot {
   // operator_run: the operator holds its keys (spec 3, 18.15). In other modes the record is v15's.
   publicParticipant(p) {
     return {id: p.id, handle: p.handle, display_name: p.display_name, operator: p.operator, about: p.about, services: p.services,
-      ...(p.wants ? {wants: p.wants} : {}), pubkey: p.pubkey, status: p.status, joined_at: p.created_at, agent_last_seen: p.last_seen_agent,
+      ...(p.wants ? {wants: p.wants} : {}), ...(p.public_vouches ? {public_vouches: true} : {}), pubkey: p.pubkey, status: p.status, joined_at: p.created_at, agent_last_seen: p.last_seen_agent,
       ...(p.sandbox_only ? {sandbox_only: true, sandbox_expires_at: p.sandbox_expires_at} : {}),
       ...(this.serverRun(p) && this.circulating ? {operator_run: true} : {})};
   }

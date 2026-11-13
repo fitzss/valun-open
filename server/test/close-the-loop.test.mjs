@@ -77,7 +77,8 @@ const rawGet = (p, host, method = 'GET') => new Promise((resolve, reject) => {
 });
 
 // ---------- the loops API ----------
-const LOOP_KEYS = ['amount_PC', 'applied_at', 'card_url', 'cycle_length', 'cycles', 'each_PC', 'id', 'members', 'participants'].sort();
+// amount and each: the unit-neutral names (fix inbox #32), next to the deprecated amount_PC and each_PC.
+const LOOP_KEYS = ['amount', 'amount_PC', 'applied_at', 'card_url', 'cycle_length', 'cycles', 'each', 'each_PC', 'id', 'members', 'participants'].sort();
 test('GET /pilot/v1/loops: applied set-offs only, newest first, members as public handles in cycle order with their kinds', async () => {
   const r = await getJson('/pilot/v1/loops');
   assert.equal(r.status, 200);
@@ -87,9 +88,9 @@ test('GET /pilot/v1/loops: applied set-offs only, newest first, members as publi
   assert.deepEqual(r.body.loops.map(l => l.id), [LH, L3, L2], 'the expired and the collecting proposals are not loops');
   const l3 = r.body.loops[1];
   assert.deepEqual(Object.keys(l3).sort(), LOOP_KEYS);
-  assert.deepEqual(l3, {id: L3, applied_at: '2026-11-11T13:00:00.000Z', cycle_length: 3, amount_PC: 3, each_PC: 1, participants: 3,
+  assert.deepEqual(l3, {id: L3, applied_at: '2026-11-11T13:00:00.000Z', cycle_length: 3, amount: 3, amount_PC: 3, each: 1, each_PC: 1, participants: 3,
     members: [{handle: 'sandbox-mallory', kind: 'sandbox_agent'}, {handle: 'ana', kind: 'sandbox_participant'}, {handle: 'sandbox-exact', kind: 'sandbox_agent'}],
-    cycles: [{length: 3, each_PC: 1, members: [{handle: 'sandbox-mallory', kind: 'sandbox_agent'}, {handle: 'ana', kind: 'sandbox_participant'}, {handle: 'sandbox-exact', kind: 'sandbox_agent'}]}],
+    cycles: [{length: 3, each: 1, each_PC: 1, members: [{handle: 'sandbox-mallory', kind: 'sandbox_agent'}, {handle: 'ana', kind: 'sandbox_participant'}, {handle: 'sandbox-exact', kind: 'sandbox_agent'}]}],
     card_url: `https://valun.tech/loop/${L3}`});
   // A record without the engine's cycle list: the order is read by following its edges.
   assert.deepEqual(r.body.loops[0].members.map(m => m.handle), [HOSTILE, 'bo', 'ana']);

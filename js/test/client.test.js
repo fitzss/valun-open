@@ -475,4 +475,12 @@ test('the public profile: join, joinSandbox and setProfile send services and wan
   await me.setProfile({services: 'summary (2 PC)', wants: 'reports (2 PC)'});
   assert.deepEqual(f.calls.at(-1).body, {services: 'summary (2 PC)', wants: 'reports (2 PC)'});
   await refuses(me.setProfile({}), 'invalid_field');
+  // Fix inbox #31: public vouches, true or false.
+  await me.setProfile({publicVouches: true});
+  assert.deepEqual(f.calls.at(-1).body, {public_vouches: true});
+  await me.setProfile({publicVouches: false});
+  assert.deepEqual(f.calls.at(-1).body, {public_vouches: false});
+  const sent = f.calls.length;
+  await refuses(me.setProfile({publicVouches: 'yes'}), 'invalid_field');
+  assert.equal(f.calls.length, sent, 'nothing sent for a bad value');
 });

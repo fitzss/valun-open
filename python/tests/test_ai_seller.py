@@ -246,6 +246,18 @@ class ClientCalls(unittest.TestCase):
         with self.assertRaises(vc.ValunError):
             c.set_profile()
 
+    def test_set_profile_public_vouches(self):
+        """Fix inbox #31: public vouches, True or False, sent only when given."""
+        c = Recorder(vc.FileStore(tempfile.mktemp(suffix='.json', dir=HOME)), 'https://example.test')
+        c.set_profile(public_vouches=True)
+        c.set_profile(public_vouches=False)
+        self.assertEqual([x[2] for x in c.calls], [{'public_vouches': True}, {'public_vouches': False}])
+        for bad in ('yes', 1, 'on'):
+            with self.assertRaises(vc.ValunError) as e:
+                c.set_profile(public_vouches=bad)
+            self.assertEqual(e.exception.code, 'invalid_field')
+        self.assertEqual(len(c.calls), 2, 'nothing sent for a bad value')
+
 
 class Cli(unittest.TestCase):
     def run_cli(self, *argv, env=None):
@@ -275,6 +287,26 @@ class Cli(unittest.TestCase):
         rc, out = self.run_cli('profile', '--services', 'x')
         self.assertEqual(rc, 1)
         self.assertIn('not joined yet', out)
+
+    def test_profile_public_vouches_on_and_off(self):
+        """Fix inbox #31: `valun profile --public-vouches on|off` sends True or False, and shows the choice."""
+        joined = types.SimpleNamespace(state={'participant_id': 'vp_000000000001', 'server': 'http://127.0.0.1:9'}, secret=lambda: 'x')
+        sent = []
+
+        def set_profile(self, **kw):
+            sent.append(kw)
+            return {'participant': {'handle': 'amy', 'public_vouches': True} if kw['public_vouches'] else {'handle': 'amy'},
+                    'changed': ['public_vouches']}
+        with mock.patch.object(cli, '_store', return_value=joined), mock.patch.object(vc.Client, 'set_profile', set_profile):
+            rc, out = self.run_cli('profile', '--public-vouches', 'on')
+            self.assertEqual(rc, 0, out)
+            self.assertEqual(json.loads(out)['public_vouches'], True)
+            rc, out = self.run_cli('profile', '--public-vouches', 'off')
+            self.assertEqual(json.loads(out)['public_vouches'], False)
+        self.assertEqual([kw['public_vouches'] for kw in sent], [True, False])
+        self.assertTrue(all(kw['services'] is None and kw['wants'] is None for kw in sent), 'nothing else changes')
+        with redirect_stdout(io.StringIO()), mock.patch('sys.stderr', io.StringIO()), self.assertRaises(SystemExit):
+            cli.main(['profile', '--public-vouches', 'yes'])
 
     def test_help_names_the_services(self):
         out = io.StringIO()

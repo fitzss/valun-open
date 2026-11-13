@@ -102,11 +102,13 @@ test('GET /pilot/v1/evidence: network totals of the three kinds and the groups, 
     const r = await fetch(`http://127.0.0.1:${server.address().port}/pilot/v1/evidence`), text = await r.text(), body = JSON.parse(text);
     assert.equal(r.status, 200);
     assert.equal(body.unit, 'PC');
-    assert.deepEqual(body.delivery, {accepted: {count: 5, PC: 10}, paid: {count: 4, PC: 7}, disputed: 0, not_delivered: 0});
+    // Every amount under its unit-neutral name, next to the deprecated _PC / PC one (fix inbox #32).
+    assert.deepEqual(body.delivery, {accepted: {count: 5, amount: 10, PC: 10}, paid: {count: 4, amount: 7, PC: 7}, disputed: 0, not_delivered: 0});
     // Issued 5 (ana's 2 to bo, cy's 2 to ana, the reviewer's 1 to bo); ana's IOU moved to cy, and the loop retired both of
     // ana's and cy's: 4 of the 5 settled, the reviewer's 1 outstanding (bo's unpaid 3 is no IOU at all).
-    assert.deepEqual(body.repayment, {owed_ever_PC: 5, settled: {by_setoff_PC: 4}, settled_pct: 80, outstanding_PC: 1, unpaid_accepted_work: {count: 1, PC: 3}});
-    assert.deepEqual(body.acceptance, {taken_by_transfer: {count: 1, PC: 2}});
+    assert.deepEqual(body.repayment, {owed_ever: 5, owed_ever_PC: 5, settled: {by_setoff: 4, by_setoff_PC: 4}, settled_pct: 80, outstanding: 1, outstanding_PC: 1,
+      unpaid_accepted_work: {count: 1, amount: 3, PC: 3}});
+    assert.deepEqual(body.acceptance, {taken_by_transfer: {count: 1, amount: 2, PC: 2}});
     assert.deepEqual(body.groups, {count: 1, anchored: 1, self_serve_only: 0, largest: 4, self_serve_only_sizes: []});
     assert.equal(body.participants_with_exchanges, 4);
     for (const p of [a, b, c, h]) for (const secret of [p.id, p.pubkey, p.handle]) assert.ok(!text.includes(secret), `no ${secret}`);

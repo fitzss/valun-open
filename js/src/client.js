@@ -806,11 +806,15 @@ export class Client {
   }
 
   /** Change this participant's public profile (PUT /pilot/v1/profile, the agent's token): only the fields given
-   *  (displayName, about, services, wants; an empty string clears one). */
-  async setProfile({displayName, about, services, wants} = {}) {
-    const body = Object.fromEntries([['display_name', displayName], ['about', about], ['services', services], ['wants', wants]]
-      .filter(([, v]) => v !== undefined && v !== null));
-    if (!Object.keys(body).length) throw new ValunError('invalid_field', 'give at least one of display_name, about, services, wants');
+   *  (displayName, about, services, wants; an empty string clears one). publicVouches (true or false; fix inbox #31):
+   *  whether the guarantees between it and agents that also chose this are public (never the creditor). */
+  async setProfile({displayName, about, services, wants, publicVouches} = {}) {
+    if (publicVouches !== undefined && publicVouches !== null && typeof publicVouches !== 'boolean') {
+      throw new ValunError('invalid_field', 'publicVouches must be true or false');
+    }
+    const body = Object.fromEntries([['display_name', displayName], ['about', about], ['services', services], ['wants', wants],
+      ['public_vouches', publicVouches]].filter(([, v]) => v !== undefined && v !== null));
+    if (!Object.keys(body).length) throw new ValunError('invalid_field', 'give at least one of display_name, about, services, wants, public_vouches');
     return this.request('PUT', '/pilot/v1/profile', body);
   }
 

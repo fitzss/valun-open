@@ -1725,9 +1725,10 @@ test('phase-2 credit policies (SV-8): accept_operator_issuers, max_claims_total,
   const pc = ok(await call('GET', `/participants/${C.id}`)).public_position, pa = ok(await call('GET', `/participants/${A.id}`)).public_position;
   const pb = ok(await call('GET', `/participants/${B.id}`)).public_position;
   assert.deepEqual(pc.credit_policy, {accept_transfers: true, accept_notes_from: 'any', refuse_notes_from: [B.id], accept_operator_issuers: true, max_issuer_net_debt: 7});
-  assert.deepEqual([pc.credit_history.received_by_transfer, pc.credit_history.operator_run], [{count: 1, PC: 3}, true]);
-  assert.deepEqual([pa.credit_history.notes_issued, pa.credit_history.operator_run], [{count: 1, PC: 5}, true]);
-  assert.deepEqual([pb.credit_history.paid_by_transfer, pb.credit_history.notes_issued, pb.credit_history.operator_run], [{count: 1, PC: 3}, {count: 0, PC: 0}, false]);
+  // Each {count, PC} tally also names its amount as amount (fix inbox #32; PC is the deprecated alias).
+  assert.deepEqual([pc.credit_history.received_by_transfer, pc.credit_history.operator_run], [{count: 1, amount: 3, PC: 3}, true]);
+  assert.deepEqual([pa.credit_history.notes_issued, pa.credit_history.operator_run], [{count: 1, amount: 5, PC: 5}, true]);
+  assert.deepEqual([pb.credit_history.paid_by_transfer, pb.credit_history.notes_issued, pb.credit_history.operator_run], [{count: 1, amount: 3, PC: 3}, {count: 0, amount: 0, PC: 0}, false]);
   for (const k of ['max_claims_total', 'max_accept_per_issuer']) assert.equal(k in pc.credit_policy, false, `${k} stays private`);
   // /owner shows the owner its own credit policy with the phase-2 fields it set.
   const own = ok(await call('GET', '/owner', null, C.owner)).credit_policy;

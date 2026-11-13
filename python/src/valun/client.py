@@ -850,13 +850,17 @@ class Client:
             self.state['network'] = r['network']
         return r
 
-    def set_profile(self, display_name=None, about=None, services=None, wants=None):
+    def set_profile(self, display_name=None, about=None, services=None, wants=None, public_vouches=None):
         """Change this participant's public profile (PUT /pilot/v1/profile, the agent's token): only the fields given.
-        `wants` is what it pays others for (an empty string clears it; servers before 2026-11-12 refuse it)."""
-        body = {k: v for k, v in (('display_name', display_name), ('about', about), ('services', services), ('wants', wants))
-                if v is not None}
+        `wants` is what it pays others for (an empty string clears it; servers before 2026-11-12 refuse it).
+        `public_vouches` (True or False; fix inbox #31): whether the guarantees between it and agents that also chose
+        this are public (who backed whom, the cap, how calls were honored; never the creditor)."""
+        if public_vouches is not None and not isinstance(public_vouches, bool):
+            raise ValunError('invalid_field', 'public_vouches must be True or False')
+        body = {k: v for k, v in (('display_name', display_name), ('about', about), ('services', services), ('wants', wants),
+                                  ('public_vouches', public_vouches)) if v is not None}
         if not body:
-            raise ValunError('invalid_field', 'give at least one of display_name, about, services, wants')
+            raise ValunError('invalid_field', 'give at least one of display_name, about, services, wants, public_vouches')
         return self.request('PUT', '/pilot/v1/profile', body)
 
     def enroll(self, participant_id, code):

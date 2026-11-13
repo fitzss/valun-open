@@ -3,7 +3,20 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
-## Unreleased
+## 0.6.2 (2026-11-13)
+
+Public vouches (fix inbox #31), unit-neutral amount names in the public record (#32), and the fixes below. The Hermes
+plugin is unchanged (0.6.1: its core is valun 0.6.1).
+
+### Added
+- **Public vouches** (#31). `valun profile --public-vouches on|off` (Python CLI), `Client.set_profile(public_vouches=...)`
+  and `setProfile({publicVouches})` (JavaScript) choose whether an agent's guarantees are public. Off unless chosen.
+  - A guarantee between two agents that **both** chose it shows on both agent pages and in
+    `public_position.evidence.backing.public_vouches {given, received}`: the backer, the issuer, the cap and how its
+    calls were honored. The creditor is never named.
+  - Turning it off, on either side, hides the guarantees between the two again.
+  - The guarantee's signed terms do not change, so every client keeps working.
+  - The Hermes plugin has no profile command yet.
 
 ### Fixed
 - **`valun verify-check --file` reads a saved record as the one network's** (`valun-testnet-1`) unless `--network`
@@ -11,6 +24,16 @@ The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://githu
   `--network valun-testnet-1` was passed. Fetching a deal (no `--file`) always took the network from the server.
 
 ### Server
+- `server/` synced with valun-app `7c7f4ec` (fix inbox #31 and #32).
+  - **Unit-neutral amount names** (#32). The public answers add a unit-neutral name next to each amount:
+    `GET /participants/{vp}`, `/evidence`, `/clearing`, `/loops`, `/loops/{id}`, and the `position` of `GET /me` and
+    `GET /owner`.
+    - `<name>_PC` gets `<name>` (`owed_ever`, `outstanding`, `by_setoff`, `cleared`, `each`, ...), and the `PC` of a
+      `{count, PC}` tally gets `amount`, with the same values, in the answer's `unit`.
+    - The `_PC` names are deprecated aliases. A later release removes them, announced first.
+    - The A2A front door and the agent pages give loop amounts in nanoERG on the testnet. They said "credits" before.
+  - **Public vouches** (#31): `PUT /profile {public_vouches}`, and the record's `public_position.evidence.backing.public_vouches`.
+  - The house agents' bind bot (`examples/ai-seller/bind_bot.py`) reads the new names first.
 - `server/` synced with valun-app `201074e`: the live check's memory limits scale with the machine's memory. The
   runbook's 170 MiB (warn 150) are for a 256 MB machine, so the testnet's 512 MB machine gets 340 MiB (warn 300).
 - `server/` synced with valun-app `fca870c` (fix inbox #33): the tracker's anchoring keeps to its update interval.

@@ -1114,11 +1114,15 @@ test('GET /clearing: the documented aggregates, without participant ids, handles
   assert.deepEqual([c.unit, c.tier], ['PC', 'pure_credit']);
   assert.deepEqual(Object.keys(c.engine), ['enabled', 'interval_ms', 'limits', 'last_run']);
   assert.deepEqual(Object.keys(c.engine.last_run), ['at', 'reason', 'eligible_edges', 'excluded']);
-  assert.deepEqual(Object.keys(c.graph_now), ['participants_with_positions', 'edges', 'gross_PC', 'net_floor_PC', 'clearable_mtcs_PC', 'clearable_within_limits_PC', 'bound_gap']);
-  assert.deepEqual(Object.keys(c.totals), ['setoffs_applied', 'cleared_PC', 'edges_closed', 'transfers_applied', 'transferred_PC']);
-  assert.deepEqual(Object.keys(c.last_7_days), ['issued_PC', 'cleared_PC', 'liquidity_saving_pct', 'capacity_restored_PC']);
+  // Each amount under its unit-neutral name just before the deprecated _PC one (fix inbox #32).
+  assert.deepEqual(Object.keys(c.graph_now), ['participants_with_positions', 'edges', 'gross', 'gross_PC', 'net_floor', 'net_floor_PC', 'clearable_mtcs',
+    'clearable_mtcs_PC', 'clearable_within_limits', 'clearable_within_limits_PC', 'bound_gap']);
+  assert.deepEqual(Object.keys(c.totals), ['setoffs_applied', 'cleared', 'cleared_PC', 'edges_closed', 'transfers_applied', 'transferred', 'transferred_PC']);
+  assert.deepEqual(Object.keys(c.last_7_days), ['issued', 'issued_PC', 'cleared', 'cleared_PC', 'liquidity_saving_pct', 'capacity_restored', 'capacity_restored_PC']);
+  for (const [o, k] of [[c.graph_now, 'gross'], [c.totals, 'cleared'], [c.totals, 'transferred'], [c.last_7_days, 'issued']]) assert.equal(o[k], o[`${k}_PC`], k);
+  assert.equal(c.engine.limits.min_amount, c.engine.limits.min_amount_PC);
   assert.deepEqual(Object.keys(c.proposals), ['collecting', 'applied', 'stale', 'expired', 'refused', 'failed', 'completion_rate_pct', 'median_ms_to_apply']);
-  assert.deepEqual(Object.keys(c.sandbox), ['dormant_PC']);
+  assert.deepEqual(Object.keys(c.sandbox), ['dormant', 'dormant_PC']);
   assert.ok(c.totals.setoffs_applied >= 6 && c.totals.cleared_PC >= 30 && c.proposals.expired >= 4 && c.proposals.refused >= 2 && c.proposals.stale >= 1, JSON.stringify(c));
   assert.ok(c.graph_now.gross_PC > 0 && c.graph_now.edges > 0 && c.last_7_days.issued_PC > 0 && c.cycles_by_length['2'] >= 1);
   const text = JSON.stringify(c);

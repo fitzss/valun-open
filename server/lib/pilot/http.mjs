@@ -9,6 +9,7 @@ import {METRICS_CACHE_MS} from './clearing.mjs';
 import {loopsOf, loopOf, LOOP_ID_RE, renderLoopPage, renderLoopNotFound} from './loops.mjs';
 import {AnchorWatch, CHECK_INTERVAL_S, confirmedUpdates, creatingTx, dailyCap, loopAnchor, trackerBoxUpdates} from './anchors.mjs';
 import {AGENT_HANDLE_RE, agentView, renderAgentPage, renderAgentNotFound} from './agents.mjs';
+import {withUnitNeutralNames as unitNeutral} from './amount-names.mjs';
 
 // The source text of each statement template, as /info publishes it (OQ-18).
 const sources = o => Object.fromEntries(Object.entries(o).map(([k, f]) => [k, f.toString().replace(/\s+/g, ' ')]));
@@ -249,7 +250,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     }
     if (G && (m = /^\/participants\/(vp_[0-9a-f]{12})$/.exec(p))) {
       const x = pilot.participant(m[1]);
-      return sendCached(res, send, `participant:${x.id}`, async () => ({...pilot.directoryRecord(x), public_position: await pilot.publicPosition(x)}));
+      return sendCached(res, send, `participant:${x.id}`, async () => ({...pilot.directoryRecord(x), public_position: unitNeutral(await pilot.publicPosition(x))}));
     }
     // The reconciliation rows are v15's in every mode (SV-PRIV-1, owner decision 9): no per-edge journal columns here.
     if (G && p === '/ledger') return sendCached(res, send, 'ledger', async () => { const l = await pilot.ledger(); return {unit: pilot.unit, notes: l, reconciliation: await pilot.reconcile(l, {public: true})}; });
@@ -259,22 +260,22 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     // its explorer link, or that it is not final yet).
     if (G && p === '/loops') return sendCached(res, send, 'loops', async () => {
       const loops = loopsOf(pilot.s.setoffs, pilot.s.participants, publicOf);
-      if (!onChain()) return {unit: pilot.unit, network: NETWORK, loops};
+      if (!onChain()) return unitNeutral({unit: pilot.unit, network: NETWORK, loops});
       const a = await anchoring();
-      return {unit: pilot.unit, network: NETWORK, loops: loops.map(l => ({...l, on_chain: loopOnChain(l, a)}))};
+      return unitNeutral({unit: pilot.unit, network: NETWORK, loops: loops.map(l => ({...l, on_chain: loopOnChain(l, a)}))});
     });
     if (G && (m = /^\/loops\/([^/]+)$/.exec(p))) {
       const o = LOOP_ID_RE.test(m[1]) ? pilot.setoff(m[1]) : null;
       if (!o || o.state !== 'applied') throw new PilotError('not_found', 'unknown loop', 404);
       return sendCached(res, send, `loop:${o.id}`, async () => {
         const loop = loopOf(o, pilot.s.participants, publicOf);
-        return onChain() ? {...loop, on_chain: loopOnChain(loop, await anchoring())} : loop;
+        return unitNeutral(onChain() ? {...loop, on_chain: loopOnChain(loop, await anchoring())} : loop);
       });
     }
     // The record's evidence, as network totals (lib/pilot/evidence.mjs): delivery, repayment and acceptance kept apart, and
     // the groups participants form by completed exchanges. Aggregates only (no ids, handles or keys); circulation modes
     // sandbox and on (in other modes the route does not exist).
-    if (G && p === '/evidence' && pilot.circulating) return sendCached(res, send, 'evidence', () => pilot.publicEvidence());
+    if (G && p === '/evidence' && pilot.circulating) return sendCached(res, send, 'evidence', async () => unitNeutral(await pilot.publicEvidence()));
     // The clearing engine's public aggregates (circulation modes sandbox and on; no participant ids, handles or keys).
     // In other modes the route does not exist (it falls through, as any unknown route does).
     // Single-flight: requests that arrive while the aggregates are being computed share that computation (the cache holds
@@ -282,7 +283,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     if (G && p === '/clearing' && pilot.circulating) {
       const t = Date.now();
       if (!clearingCache || t - clearingCache.at >= METRICS_CACHE_MS || t < clearingCache.at) {
-        const entry = {at: t, value: Promise.resolve().then(() => pilot.publicClearing())};
+        const entry = {at: t, value: Promise.resolve().then(() => pilot.publicClearing()).then(unitNeutral)};
         entry.value.catch(() => { if (clearingCache === entry) clearingCache = null; });
         clearingCache = entry;
       }
@@ -410,7 +411,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     const circulationKeys = () => (pilot.circulating ? {credit_policy: pilot.creditPolicy(me), features: pilot.featuresOf(me)} : {});
     if (G && p === '/me') return send(res, 200, {role: who.role, participant: pilot.publicParticipant(me), mandate: me.mandate, mandate_version: me.mandate_version,
       agent_limits: me.agent_limits || {}, agent_limits_recorded_by: me.agent_limits_recorded_by || {}, effective_limits: pilot.effectiveLimits(me), mandate_changed_by: me.mandate_changed_by || 'owner',
-      position: await pilot.position(me, null, {own: true}), network: NETWORK, unit: pilot.unit,
+      position: unitNeutral(await pilot.position(me, null, {own: true})), network: NETWORK, unit: pilot.unit,
       authority: who.role === 'agent'
         ? 'agent token: may read this participant\'s deals and act within the owner\'s mandate; commitments above approve_above wait for the owner'
         : 'owner token: may change the mandate, decide approvals, revoke the agent and rotate this owner token',
@@ -496,7 +497,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         past_keys: me.past_pubkeys || [],
         approvals: await Promise.all(Object.values(pilot.s.approvals).filter(a => a.participant === me.id).reverse().map(a => pilot.servedApprovalView(a, me))),
         deals: (await Promise.all(pilot.dealsFor(me).map(d => pilot.dealView(d, me)))).reverse(),
-        inbox: pilot.inbox(me), position: await pilot.position(me, null, {own: true}), ...circulationKeys()});
+        inbox: pilot.inbox(me), position: unitNeutral(await pilot.position(me, null, {own: true})), ...circulationKeys()});
       if (U && p === '/owner/mandate') return send(res, 200, pilot.setMandate(me, await readJson(req)));
       if (P && (m = /^\/owner\/approvals\/(va_[0-9a-f]{12})$/.exec(p))) return send(res, 200, await pilot.decideApproval(me, m[1], await readJson(req)));
       // Circulating credit (decision D-2 d; modes sandbox and on, else the same 404 as any unknown route): the payer's

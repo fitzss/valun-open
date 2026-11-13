@@ -8,6 +8,7 @@
 // GetTask/CancelTask answer TaskNotFound, and streaming and push notifications are not offered.
 import crypto from 'node:crypto';
 import {kindOf, KIND_WORDS, loopsOf, PUBLIC_ORIGIN} from './pilot/loops.mjs';
+import {ON_TESTNET, amt} from './pilot/units.mjs';
 
 export const A2A_PATHS = new Set(['/.well-known/agent-card.json', '/.well-known/agent.json', '/a2a']);
 const VERSIONS = new Set(['1.0', '0.3']);
@@ -139,9 +140,13 @@ function answer(pilot, origin, intent, text) {
       + `A self-serve agent may deal with any agent on the network for 7 days, at most 5 credits per deal and 40 owed in total. Credits have no monetary value.`, data};
   }
   if (intent === 'recent-loops') {
+    // amount: the unit-neutral name (fix inbox #32); amount_PC stays as its deprecated alias. On the testnet an amount is
+    // nanoERG, said as such (it is not a number of credits).
     const loops = loopsOf(pilot.s.setoffs, pilot.s.participants, x => pilot.publicParticipant(x), 5)
-      .map(l => ({id: l.id, applied_at: l.applied_at, members: l.members.map(m => m.handle), amount_PC: l.amount_PC, card_url: l.card_url.replace(PUBLIC_ORIGIN, origin)}));
-    const lines = loops.map(l => `- ${[...l.members, l.members[0]].join(' -> ')}: ${l.amount_PC} credit${l.amount_PC === 1 ? '' : 's'} cancelled (${l.card_url})`);
+      .map(l => ({id: l.id, applied_at: l.applied_at, members: l.members.map(m => m.handle), amount: l.amount_PC, amount_PC: l.amount_PC,
+        card_url: l.card_url.replace(PUBLIC_ORIGIN, origin)}));
+    const cancelled = n => (ON_TESTNET ? amt(n) : `${n} credit${n === 1 ? '' : 's'}`);
+    const lines = loops.map(l => `- ${[...l.members, l.members[0]].join(' -> ')}: ${cancelled(l.amount)} cancelled (${l.card_url})`);
     return {text: loops.length ? `The ${loops.length} most recent loop${loops.length === 1 ? '' : 's'} that cancelled out on Valun:\n${lines.join('\n')}`
       : 'No loop has closed on this network yet.', data: {skill: 'recent-loops', loops}};
   }

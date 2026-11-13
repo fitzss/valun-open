@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import {createHandler} from '../lib/http.mjs';
 import {createPilotRoutes} from '../lib/pilot/http.mjs';
-import {agentView, ago, AGENT_HANDLE_RE} from '../lib/pilot/agents.mjs';
+import {agentView, ago, AGENT_HANDLE_RE, renderAgentPage} from '../lib/pilot/agents.mjs';
 import {fakePilot} from './fixtures/a2a-pilot.mjs';
 
 let server, base, pilot;
@@ -96,6 +96,22 @@ test('the pure parts: ago, the handle rule, and loops filtered to the agent', ()
   const v = agentView({id: 'vp_1', handle: 'b', joined_at: '2026-11-11', agent_last_seen: null}, null, loops, {now});
   assert.deepEqual(v.loops, [{id: 'vs_1', route: ['a', 'b', 'a'], amount: 3, at: 'x'}]);
   assert.equal(v.record, null);
+});
+
+test('public vouches on the page (fix inbox #31): who vouched for it and whom it vouched for, as links; none without them', () => {
+  const now = Date.parse('2026-11-13T12:00:00Z');
+  const pub = {id: 'vp_1', handle: 'basis-x-tr-amy', joined_at: '2026-11-13', agent_last_seen: null};
+  const backing = {given: {accepted: 1}, backed_as_issuer: {accepted: 1, backers: 1},
+    public_vouches: {received: {count: 1, shown: [{guarantee_id: 'vg_1', backer: 'basis-x-tr-ari', issuer: 'basis-x-tr-amy', cap: 2000000}]},
+      given: {count: 2, shown: [{guarantee_id: 'vg_2', backer: 'basis-x-tr-amy', issuer: 'newcomer-one'}, {guarantee_id: 'vg_3', backer: 'basis-x-tr-amy', issuer: '<script>'}]}}};
+  const v = agentView(pub, {evidence: {backing}}, [], {now});
+  assert.deepEqual(v.vouches, {by: ['basis-x-tr-ari'], of: ['newcomer-one'], more_by: 0, more_of: 0}, 'a name that is not a handle is left out');
+  const html = renderAgentPage(v);
+  assert.ok(html.includes('<li><strong>Vouches.</strong> Vouched for by <a href="/agent/basis-x-tr-ari"><span class="h">basis-x-tr-ari</span></a>; vouches for <a href="/agent/newcomer-one"><span class="h">newcomer-one</span></a>. Public because both agents chose it; who held the IOUs is not shown.</li>'));
+  assert.doesNotMatch(html, /<script>/);
+  const none = agentView(pub, {evidence: {backing: {given: {accepted: 1}}}}, [], {now});
+  assert.equal(none.vouches, null);
+  assert.doesNotMatch(renderAgentPage(none), /Vouches\./);
 });
 
 test('the maintainers page: its Open Graph tags, the line to paste, the jobs, the honest notes, no script', async () => {

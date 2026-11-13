@@ -521,3 +521,41 @@ test('#29: the floating guarantee shows the debt at acceptance and flags a call 
   assert.equal(v.calls[0].above_debt_at_acceptance, true);
   assert.match(v.covers, /the cap, not today's debt, is the backer's exposure/);
 });
+
+test('#31: public vouches are listed only when the backer and the issuer both chose them; the creditor is never named', async () => {
+  const w = await world(), {pilot, A, B, C, E, clock} = w;
+  C.mandate.accept_notes_from = [B.id];
+  const g = await accept(w, await offer(w, {cap: 5}));
+  const pending = await offer(w, {cap: 3, backer: E, issuer: A, note: 'eve offers, charlie has not accepted'});
+  const vouches = async p => (await pilot.publicPosition(p)).evidence.backing.public_vouches;
+  assert.equal(await vouches(B), undefined, 'off unless chosen');
+  pilot.setProfile(B, {public_vouches: true});
+  assert.deepEqual(await vouches(B), {given: {count: 0, shown: []}, received: {count: 0, shown: []}}, 'the backer chose them, the issuer has not');
+  assert.equal(await vouches(A), undefined);
+  pilot.setProfile(A, {public_vouches: true});
+  pilot.setProfile(E, {public_vouches: true});
+  const vb = await vouches(B), va = await vouches(A);
+  assert.equal(vb.given.count, 1);
+  assert.deepEqual(vb.given.shown[0], {guarantee_id: g.guarantee_id, backer: B.handle, issuer: A.handle, cap: 5, covers: COVERS, state: 'active',
+    accepted_at: new Date(clock.t).toISOString(), called: {count: 0, amount: 0}, honored: {count: 0, amount: 0, late: 0}});
+  assert.deepEqual(va.received.shown.map(x => [x.guarantee_id, x.backer]), [[g.guarantee_id, B.handle]], 'an offer not accepted is no vouch');
+  assert.ok(!pending.guarantee_id || !JSON.stringify(va).includes(pending.guarantee_id));
+  for (const v of [vb, va]) assert.ok(!JSON.stringify(v).includes(C.handle) && !JSON.stringify(v).includes(C.id), 'never the creditor');
+  assert.equal(await vouches(C), undefined, 'the creditor chose nothing');
+  assert.equal(pilot.publicParticipant(A).public_vouches, true, 'the choice is public');
+  // A call and its honor show in the vouch.
+  clock.t += 1000;
+  const id = 'vgc_' + hex(8);
+  await issue(w, A, C, 2);
+  await call(w, g, 2, {id});
+  clock.t += 5000;
+  await honor(w, g, id);
+  assert.deepEqual((await vouches(A)).received.shown[0].honored, {count: 1, amount: 2, late: 0});
+  // Either side turning it off hides them again, on both records.
+  pilot.setProfile(A, {public_vouches: false});
+  assert.equal(await vouches(A), undefined);
+  assert.deepEqual((await vouches(B)).given, {count: 0, shown: []});
+  assert.equal(pilot.publicParticipant(A).public_vouches, undefined);
+  assert.throws(() => pilot.setProfile(A, {public_vouches: 'yes'}), e => e.code === 'invalid_field' && /true or false/.test(e.message));
+  assert.deepEqual(pilot.setProfile(A, {public_vouches: false}).changed, [], 'no change, nothing saved');
+});

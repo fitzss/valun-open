@@ -7,10 +7,14 @@
 // and `now` for "last seen"); renderAgentPage() renders it. No inline script or style (CSP): /loop.css styles it, and
 // every value is HTML-escaped (handles, names and texts are chosen by participants).
 import {esc, page, top, plural, kindOf, PUBLIC_ORIGIN, startHref} from './loops.mjs';
-import {amt} from './units.mjs';
+import {amt, ON_TESTNET} from './units.mjs';
 
 export const AGENT_HANDLE_RE = /^[a-z][a-z0-9_-]{2,23}$/;
 const LOOPS_SHOWN = 5;
+// Fix inbox #31: the handles shown on each side of an agent's public vouches.
+const VOUCHES_SHOWN = 12;
+// A loop's amount on the page: nanoERG on the testnet (amt), credits on the pilot.
+const loopAmount = n => (ON_TESTNET ? amt(n) : plural(n, 'credit'));
 const KIND_LABEL = Object.freeze({sandbox_agent: 'always-on sandbox agent', sandbox_participant: 'self-serve agent', operator_run: 'operator-run agent',
   invited: 'agent', unknown: 'agent'});
 
@@ -34,9 +38,27 @@ export function agentView(pub, pos, loops, {now, dormant = false}) {
     record: pos ? {completed: Number(deals.credit_notes_issued) || 0, disputed: Number(deals.disputed) || 0, holds: Number(pos.claims_held) || 0,
       owes: Number(pos.owes) || 0, cleared: Number(pos.cleared_by_setoff) || 0} : null,
     evidence: pos?.evidence ? evidenceLines(pos.evidence) : null,
+    vouches: vouchesOf(pos?.evidence?.backing?.public_vouches),
     loops: mine.map(l => ({id: l.id, route: [...l.cycles[0].members.map(m => m.handle ?? 'unknown'), l.cycles[0].members[0]?.handle ?? 'unknown'],
       amount: l.amount_PC, at: l.applied_at})),
     url: `${PUBLIC_ORIGIN}/agent/${pub.handle}`};
+}
+
+// Fix inbox #31: the public vouches (guarantees between this agent and agents that both chose public vouches): who
+// vouched for it (backed its IOUs) and whom it vouched for, as handles (each checked as a handle, and escaped when
+// rendered); null when there are none.
+export function vouchesOf(v) {
+  if (!v) return null;
+  const names = (side, key) => [...new Set((side?.shown || []).map(x => x?.[key]).filter(h => typeof h === 'string' && AGENT_HANDLE_RE.test(h)))];
+  const by = names(v.received, 'backer'), of = names(v.given, 'issuer');
+  return by.length || of.length ? {by: by.slice(0, VOUCHES_SHOWN), of: of.slice(0, VOUCHES_SHOWN), more_by: Math.max(0, by.length - VOUCHES_SHOWN),
+    more_of: Math.max(0, of.length - VOUCHES_SHOWN)} : null;
+}
+const agentLink = h => `<a href="/agent/${esc(h)}"><span class="h">${esc(h)}</span></a>`;
+function vouchesHtml(v) {
+  const list = (hs, more) => hs.map(agentLink).join(', ') + (more ? ` and ${more} more` : '');
+  const parts = [v.by.length ? `Vouched for by ${list(v.by, v.more_by)}` : '', v.of.length ? `${v.by.length ? 'v' : 'V'}ouches for ${list(v.of, v.more_of)}` : ''];
+  return `${parts.filter(Boolean).join('; ')}. Public because both agents chose it; who held the IOUs is not shown.`;
 }
 
 // The record's evidence (lib/pilot/evidence.mjs) in four plain sentences: delivery, repayment and acceptance, kept apart,
@@ -91,11 +113,11 @@ export function renderAgentPage(a) {
   <li><strong>Repaid.</strong> ${esc(a.evidence.repayment)}</li>
   <li><strong>Accepted.</strong> ${esc(a.evidence.acceptance)}</li>
   <li><strong>Circle.</strong> ${esc(a.evidence.circle)}</li>
-${a.evidence.backing ? `  <li><strong>Backing.</strong> ${esc(a.evidence.backing)}</li>\n` : ''}</ul>
+${a.evidence.backing ? `  <li><strong>Backing.</strong> ${esc(a.evidence.backing)}</li>\n` : ''}${a.vouches ? `  <li><strong>Vouches.</strong> ${vouchesHtml(a.vouches)}</li>\n` : ''}</ul>
 <p class="small">Evidence to weigh, not a score. Kinds say how a participant joined, not who runs it. <a href="/memory">What the record cannot show</a>.</p>` : '';
   const loops = a.loops.length ? `<p class="eyebrow">Loops it was in</p>
 <ul class="list">
-${a.loops.map(l => `  <li><a href="/loop/${esc(l.id)}">${l.route.map(h => `<span class="h">${esc(h)}</span>`).join(' <span class="arr">→</span> ')}</a> · ${esc(plural(l.amount, 'credit'))} cancelled</li>`).join('\n')}
+${a.loops.map(l => `  <li><a href="/loop/${esc(l.id)}">${l.route.map(h => `<span class="h">${esc(h)}</span>`).join(' <span class="arr">→</span> ')}</a> · ${esc(loopAmount(l.amount))} cancelled</li>`).join('\n')}
 </ul>` : '';
   const body = `<main class="card agent">
 ${top}

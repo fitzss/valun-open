@@ -412,6 +412,20 @@ class Flow(unittest.TestCase):
                'unpaid_accepted_work': {'count': 99999}}, 'acceptance': {'holders_ever': 99999}, 'circle': {'closed': True}}
         self.assertLessEqual(len(B.record_text('abcdefghijklmno', big, 'x_abcdefghijklmno', self.scale)), B.MAX_TEXT)
 
+    def test_record_and_loops_by_the_unit_neutral_names(self):
+        """Fix inbox #32: the server names amounts owed_ever, by_setoff, each (the _PC names are deprecated aliases): the
+        bot reads the new names first, and the same record reads the same."""
+        old = {'repayment': {'owed_ever_PC': self.u(6), 'settled': {'by_setoff_PC': self.u(4)}}}
+        new = {'repayment': {'owed_ever': self.u(6), 'settled': {'by_setoff': self.u(4), 'by_redemption': 0}}}
+        both = {'repayment': {'owed_ever': self.u(6), 'owed_ever_PC': self.u(99), 'settled': {'by_setoff': self.u(4), 'by_setoff_PC': self.u(99)}}}
+        texts = [B.record_text('amy', ev, 'x_amy', self.scale) for ev in (old, new, both)]
+        self.assertIn('Repaid: 4 of 6 credits owed', texts[0])
+        self.assertEqual(texts[0], texts[1])
+        self.assertEqual(texts[1], texts[2], 'the new name wins over the old one')
+        self.assertEqual(B.amount_of({'each': self.u(2), 'each_PC': self.u(9)}, 'each'), self.u(2))
+        self.assertEqual(B.amount_of({'each_PC': self.u(9)}, 'each'), self.u(9))
+        self.assertIsNone(B.amount_of({}, 'each'))
+
     def test_loops(self):
         b = self.bot()
         b.st.s['profiles'] = {'x_alice': {'x': 'alice'}, 'x_bob': {'x': 'bob'}}

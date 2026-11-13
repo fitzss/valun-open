@@ -14,7 +14,7 @@ act is signed locally with the Basis Schnorr scheme, and the client checks what 
 - The main entry imports no Node built-in. Keys come from `globalThis.crypto.getRandomValues`, HTTP goes through
   `fetch`. Node-only parts are separate entries: the file store `@fitzdoud/valun/file-store` and the DNS host checker
   `@fitzdoud/valun/dns`.
-- Version `0.6.1`: `npm install @fitzdoud/valun` (or from a checkout:
+- Version `0.6.2`: `npm install @fitzdoud/valun` (or from a checkout:
   `npm install ./js`) or import `js/src/index.js`. 0.4.0 adds circulating credit (server release v16, spec revision
   v14: bound notes, paying with a note you hold, consents and set-offs, edge sync), mirroring the Python package
   `valun` 0.4.1. 0.4.1 fixes the sandbox tour (it waits while a sandbox agent pays and says done only after a
@@ -32,6 +32,7 @@ act is signed locally with the Basis Schnorr scheme, and the client checks what 
   0.6.1: one network (the default server is https://valun.tech, which serves `valun-testnet-1`); guarantees that name
   the deals they back (`offerGuarantee({..., deals})`, covers `issuer_payment_for_deals`); counter-offers on deals due
   within a day; prices and hours only as JSON integers (the same output as the Python package).
+  0.6.2: `setProfile({publicVouches})` chooses public vouches (fix inbox #31).
 
 Tested on Node 24.21.0 on Windows only. Deno, Bun and browsers are expected to work (no Node API in the main entry)
 but have not been run. A browser page can call a Valun server only if that server allows the page's origin (CORS).
