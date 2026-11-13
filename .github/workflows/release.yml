@@ -1,7 +1,7 @@
 name: release
 # Publishes a tagged release (vX.Y.Z) with trusted publishing, so no package-registry token exists anywhere:
 #   verify  (no id-token) the gate every publishing job needs: the tag matches every version; the Python unit tests;
-#         the protocol vectors against the package and against the Hermes plugin 0.6.1 at PLUGIN_SHA, with the
+#         the protocol vectors against the package and against the Hermes plugin 0.6.2 at PLUGIN_SHA, with the
 #         circulation and consent tiers required; the plugin's vendored core equals the package's (check_plugin_core);
 #         the JavaScript tests; then it builds the Python distributions and uploads them as an artifact. Build tooling
 #         runs here, where no OIDC token can be minted (audit SC-1).
@@ -21,8 +21,8 @@ on:
 permissions:
   contents: read
 env:
-  # Hermes plugin 0.6.1: the commit the conformance checks run against. Must equal the plugin pin in ci.yml.
-  PLUGIN_SHA: 50514e66880ca0680a80f2c6c49e9b8568a935e9
+  # Hermes plugin 0.6.2: the commit the conformance checks run against. Must equal the plugin pin in ci.yml.
+  PLUGIN_SHA: ac6e4b357fefc943935e07c66c7b1f7c0e6d3850
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -65,9 +65,9 @@ jobs:
           python -m unittest discover -s python/tests
       - name: Vectors vs the valun package, circulation and consent tiers required
         run: python spec/vectors/check_python.py --client package --require circulation/1
-      - name: Vectors vs the Hermes plugin 0.6.1, circulation and consent tiers required
+      - name: Vectors vs the Hermes plugin 0.6.2, circulation and consent tiers required
         run: python spec/vectors/check_python.py --client plugin --plugin-dir hermes-plugin-valun --require circulation/1
-      - name: The plugin 0.6.1 carries the valun package's core unchanged
+      - name: The plugin 0.6.2 carries the valun package's core unchanged
         run: python scripts/check_plugin_core.py hermes-plugin-valun
       - name: JavaScript tests (every vector, transcript replay)
         run: node --test js/test/

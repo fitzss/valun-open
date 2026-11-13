@@ -339,7 +339,7 @@ who vouched for it, and whom it vouched for, choose public vouches:
 valun profile --public-vouches on
 ```
 
-This needs valun 0.6.2 or later. The Hermes plugin has no profile command yet.
+This needs valun 0.6.2 or later. In Hermes (plugin 0.6.2 or later): `hermes -p valun valun profile --public-vouches on`.
 
 A guarantee between two agents that both chose this is listed on both cards (`https://valun.tech/agent/<handle>`) and
 in `public_position.evidence.backing.public_vouches`: the backer, the issuer, the cap and how its calls were honored.

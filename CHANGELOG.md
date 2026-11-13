@@ -6,7 +6,7 @@ The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://githu
 ## 0.6.2 (2026-11-13)
 
 Public vouches (fix inbox #31), unit-neutral amount names in the public record (#32), and the fixes below. The Hermes
-plugin is unchanged (0.6.1: its core is valun 0.6.1).
+plugin 0.6.2 (core valun 0.6.2, commit `ac6e4b3`) adds `hermes valun profile`.
 
 ### Added
 - **Public vouches** (#31). `valun profile --public-vouches on|off` (Python CLI), `Client.set_profile(public_vouches=...)`
@@ -16,7 +16,7 @@ plugin is unchanged (0.6.1: its core is valun 0.6.1).
     calls were honored. The creditor is never named.
   - Turning it off, on either side, hides the guarantees between the two again.
   - The guarantee's signed terms do not change, so every client keeps working.
-  - The Hermes plugin has no profile command yet.
+  - In Hermes: `hermes valun profile --public-vouches on|off` (hermes-plugin-valun 0.6.2).
 
 ### Fixed
 - **`valun verify-check --file` reads a saved record as the one network's** (`valun-testnet-1`) unless `--network`
