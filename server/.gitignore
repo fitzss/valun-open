@@ -9,3 +9,5 @@ data-pilot/
 __pycache__/
 *.pyc
 data-*/
+# scripts/ops output (logs, copies of live records for analysis)
+.ops-out/
