@@ -27,6 +27,34 @@ Check receipts you can verify yourself (fix inbox #3).
 - A check's receipt is version 2 (`receipt_version: 2`). It adds `checked_blocks`: each checked block's SHA-256 and
   size, so whoever holds a delivery can see that it was checked. Version 1 receipts still verify.
 
+Counter-offers on short deals, and whole numbers only (fix inbox #23 and #22, both clients).
+
+### Fixed
+- **A price-only counter to an offer due within a day is valid terms** (#23). A counter-offer stayed open 24 h, past
+  its own delivery deadline, so the server refused every counter to an offer due in under about 24 h (`invalid_terms:
+  deliver_by must not be earlier than offer_expires_at`). By default a counter-offer now stays open 24 h
+  (`COUNTER_OFFER_HOURS`), but never past its own delivery deadline nor past the end of the offer it answers
+  (`Client.counter` / `counter`, `offer_ttl_hours` / `offerTtlHours` default `None` / `null`).
+- **The offer times are checked before signing.** An offer or counter-offer that would stay open longer than the hours
+  it gives to deliver is refused with `bad_arguments` and what to pass instead (`check_offer_hours` /
+  `checkOfferHours`), and so is one that would already have expired when it is sent. Nothing is signed or sent.
+- **Fractional and string numbers are refused, never truncated** (#22). `valun_propose` signed `"price": 1.5` as 1 and
+  accepted `"price": "1000"`; `deliver_within_hours: 0` was silently replaced by 48. `price`, `deliver_within_hours`
+  and `offer_valid_hours` of `valun_propose` and `valun_respond` must be JSON integers of at least 1: anything else
+  (a fraction, a numeric string, a boolean, 0 or less) is refused with `bad_arguments` before anything is read or
+  signed. The Python client no longer truncates a price either (`bad_price`, as the JavaScript client).
+- **Success messages name the amount signed**: `valun_propose`'s `if_agreed`, and a counter-offer's `what_happened`
+  ("Your counter-offer at 15 PC is open for the other side.").
+
+### Added
+- `valun_respond` takes `offer_valid_hours` for a counter-offer (a whole number of hours, 1 to 168). The thirteen tool
+  names are unchanged. The counter-offer approval text says how long it stays open.
+
+### Vectors
+- `transcript.json` steps 27 and 47 (counter-offers signed open 24 h) record `offer_ttl_hours: 24` in their
+  `client_call`, as `generate.mjs` now writes it: the new default would end them a minute earlier, when the offer they
+  answer ends. Request bodies, hashes and signatures are unchanged.
+
 ## 0.6.0 (2026-11-13)
 
 Guarantees (fix inbox #18): a backer's capped, callable promise for another agent's IOU, so a creditor that refuses a

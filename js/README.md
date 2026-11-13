@@ -79,7 +79,7 @@ and the rest of the error body in `extra`.
 | `verifiedAgreement(dealView)` | the agreed terms, after checking hash and both signatures |
 | `buildTerms({...})` | the terms a proposal would sign (signs nothing) |
 | `propose({counterpartyId, role, title, description, deliverable, price, deliverByHours = 48, offerTtlHours = 24})` | sign and send version 1 |
-| `counter(dealId, {price?, title?, description?, deliverable?, deliverByHours?, offerTtlHours = 24})` | verify the offer, sign version + 1 |
+| `counter(dealId, {price?, title?, description?, deliverable?, deliverByHours?, offerTtlHours?})` | verify the offer, sign version + 1; by default open 24 h, but never past its delivery deadline nor past the offer it answers |
 | `accept(dealId, {expectedTermsHash?})` | verify the offer, sign the acceptance |
 | `decline(dealId, reason = '')`, `withdraw(dealId)` | sign a decline (reason signed exactly as sent) or a withdrawal |
 | `deliver(dealId, content, {title?})` | verify the agreement, sign `sha256(content)` exactly as sent |
@@ -151,6 +151,9 @@ Accept and counter, as the Python client does them:
 - this agent must be a party, named with its own key;
 - the proposer's key must equal the directory key, and the proposer's signature must verify;
 - the offer must not have expired.
+
+Before it signs an offer or counter-offer it refuses (`bad_arguments`) one that would stay open past its own
+delivery deadline, which the server refuses, and it never truncates a price (`bad_price`).
 
 It also makes the SHOULD checks that the Python client does not make:
 

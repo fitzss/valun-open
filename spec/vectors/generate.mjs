@@ -1265,7 +1265,9 @@ async function transcriptVectors() {
     await step('flow B: alice counters at 25 PC (version 2)', 'alice.agent', 'POST', `/deals/${B}/counter`, {auth: 'alice.agent', expect: 200,
       body: {terms: t, terms_hash: h, signature: signText(P.alice.key, statements.propose(h))},
       reads: [[`/deals/${B}`, 'alice.agent'], ['/info'], [`/participants/${P.bob.id}`]],
-      client_call: {method: 'counter', key: 'alice', token_hex: [nonce], args: {deal_id: B, price: 25}}});
+      // offer_ttl_hours: the 24 h this counter-offer is signed with (ttlH above). Since fix inbox #23 a client's default
+      // stays open no longer than the offer it answers, which here ends a minute before this one does.
+      client_call: {method: 'counter', key: 'alice', token_hex: [nonce], args: {deal_id: B, price: 25, offer_ttl_hours: 24}}});
   }
   await decline('bob', B, 'Below my floor for a sourced brief.', 'flow B: bob declines the counter-offer with a reason');
 
@@ -1313,7 +1315,7 @@ async function transcriptVectors() {
     await step("flow H: alice counters at 60 PC: above her approve_above (50), so the counter waits for her owner and bob cannot see it", 'alice.agent', 'POST', `/deals/${Hd}/counter`, {auth: 'alice.agent', expect: 200,
       body: {terms: t, terms_hash: h, signature: signText(P.alice.key, statements.propose(h))},
       reads: [[`/deals/${Hd}`, 'alice.agent'], ['/info'], [`/participants/${P.bob.id}`]],
-      client_call: {method: 'counter', key: 'alice', token_hex: [nonce], args: {deal_id: Hd, price: 60}}});
+      client_call: {method: 'counter', key: 'alice', token_hex: [nonce], args: {deal_id: Hd, price: 60, offer_ttl_hours: 24}}});
   }
   await step("flow H: alice's view: next_actions no longer offers accept while her own counter waits", 'alice.agent', 'GET', `/deals/${Hd}`, {auth: 'alice.agent', expect: 200});
   {

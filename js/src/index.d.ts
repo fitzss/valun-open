@@ -456,27 +456,47 @@ export interface BuildTermsRequest {
   title: string;
   description: string;
   deliverable: string;
-  /** Whole PC, at least 1 (a number or a decimal string). */
+  /** Whole units of the network (PC on the pilot), at least 1 (a number or a decimal string); never truncated (bad_price). */
   price: number | string;
+  /** Hours from now until delivery is due (default 48). */
   deliverByHours?: number;
-  offerTtlHours?: number;
+  /**
+   * Hours the offer stays open (default 24); never more than deliverByHours (bad_arguments). null: COUNTER_OFFER_HOURS,
+   * but never past the delivery deadline nor past priorExpiresAt.
+   */
+  offerTtlHours?: number | null;
   dealId?: string;
   version?: number;
   prior?: string | null;
+  /** A counter-offer: when the offer it answers expires (RFC 3339); with offerTtlHours null it stays open no longer. */
+  priorExpiresAt?: string | null;
 }
 
-export type ProposeRequest = Omit<BuildTermsRequest, 'dealId' | 'version' | 'prior'>;
+export type ProposeRequest = Omit<BuildTermsRequest, 'dealId' | 'version' | 'prior' | 'priorExpiresAt'>;
 
 export interface CounterRequest {
   price?: number | string;
   title?: string;
   description?: string;
   deliverable?: string;
-  deliverByHours?: number;
-  offerTtlHours?: number;
+  /** Default: the current offer's deadline, rounded down to the hour, at least 1 h from now. */
+  deliverByHours?: number | null;
+  /**
+   * Default: COUNTER_OFFER_HOURS (24), but never past the counter-offer's delivery deadline nor past the end of the
+   * offer it answers (fix inbox #23). An explicit value longer than the time to deliver is refused (bad_arguments).
+   */
+  offerTtlHours?: number | null;
   /** The hash of the offer that was inspected: anything else is refused (stale_terms) before signing. */
   expectedTermsHash?: string;
 }
+
+/** How long a counter-offer stays open by default, at most (hours). */
+export const COUNTER_OFFER_HOURS: 24;
+/**
+ * Throws ValunError bad_arguments when an offer would stay open longer than the hours it gives to deliver (the server
+ * refuses such terms: deliver_by must not be earlier than offer_expires_at).
+ */
+export function checkOfferHours(offerHours: number, deliverHours: number): void;
 
 export interface CompleteOptions {
   /** The sha256 of the delivery that was reviewed: anything else is refused (stale_delivery). */

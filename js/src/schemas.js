@@ -92,7 +92,7 @@ export const RESPOND = deepFreeze({
   description:
     'Answer an open offer on a deal: action=\'accept\' signs the exact current terms (forming a binding agreement, '
     + 'possibly after your owner approves); \'decline\' rejects them with a reason; \'counter\' signs a new version with '
-    + 'the fields you change (price, title, description, deliverable, deadline); \'withdraw\' takes back your own open '
+    + 'the fields you change (price, title, description, deliverable, deadline, how long it stays open); \'withdraw\' takes back your own open '
     + 'offer. Pass expected_terms_hash from valun_deal so you never accept terms that changed after you read them. '
     + 'May ask your owner to confirm before signing an acceptance or counter.',
   parameters: {type: 'object', properties: {
@@ -105,6 +105,7 @@ export const RESPOND = deepFreeze({
     description: {type: 'string', description: 'counter only'},
     deliverable: {type: 'string', description: 'counter only'},
     deliver_within_hours: {type: 'integer', minimum: 1, maximum: 720, description: 'counter only'},
+    offer_valid_hours: {type: 'integer', minimum: 1, maximum: 168, description: 'counter only: how long they have to answer (default 24, but never past the delivery deadline nor past the end of the offer you answer)'},
   }, required: ['deal_id', 'action']},
 });
 

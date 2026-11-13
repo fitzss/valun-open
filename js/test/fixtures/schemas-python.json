@@ -1,15 +1,15 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "a0fb6fe4e35801cfa5e5e928ece95f879efaa85747aa8020a21e1f6559d78188",
+  "agent.py": "cd4a5922dd19ebee219ce1ab4b79f231c6de000fe97e4847cde2aef0d5950c3e",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "f1995d5084e80a23b86f1da150ef49f416b9b8426931557bc7a93b6e81281aa7",
+  "client.py": "a15d2ee5c28af9a930a7a79d7dc5cfe7d0f517a77848537d683578673694b83c",
   "mcp_server.py": "2b4cc4119077275964aba895744e77c636c1b733a6454684ef2f54e1c7e9eb0f",
   "measure.py": "ee2c1164c7a9ecfa9f934603872d0ec0aa194c6f07257a0734d1a163df4c6de9",
   "novation.py": "3579850c2307713ae538fddbd899dc75e017992c5d75069969e0a7140edfa741",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "aa968c2e628ac44bc906e1b41629a16da0018d463b63a34d9e4d610774c35048",
-  "schemas.py": "b6e81a745a9936b56f49f1637fe9e9e68d7b70f7a7d57efd8f3708c5a5808b8c"
+  "schemas.py": "256a9b7c0322a8d23c04e4da608ae7f88ebbf647e0d216a737b0bcc637e0e616"
  },
  "tools": [
   {
@@ -125,7 +125,7 @@
   },
   {
    "name": "valun_respond",
-   "description": "Answer an open offer on a deal: action='accept' signs the exact current terms (forming a binding agreement, possibly after your owner approves); 'decline' rejects them with a reason; 'counter' signs a new version with the fields you change (price, title, description, deliverable, deadline); 'withdraw' takes back your own open offer. Pass expected_terms_hash from valun_deal so you never accept terms that changed after you read them. May ask your owner to confirm before signing an acceptance or counter.",
+   "description": "Answer an open offer on a deal: action='accept' signs the exact current terms (forming a binding agreement, possibly after your owner approves); 'decline' rejects them with a reason; 'counter' signs a new version with the fields you change (price, title, description, deliverable, deadline, how long it stays open); 'withdraw' takes back your own open offer. Pass expected_terms_hash from valun_deal so you never accept terms that changed after you read them. May ask your owner to confirm before signing an acceptance or counter.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -171,6 +171,12 @@
       "minimum": 1,
       "maximum": 720,
       "description": "counter only"
+     },
+     "offer_valid_hours": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 168,
+      "description": "counter only: how long they have to answer (default 24, but never past the delivery deadline nor past the end of the offer you answer)"
      }
     },
     "required": [
@@ -551,7 +557,7 @@
   },
   {
    "name": "valun_respond",
-   "description": "Answer an open offer on a deal: action='accept' signs the exact current terms (forming a binding agreement, possibly after your owner approves); 'decline' rejects them with a reason; 'counter' signs a new version with the fields you change (price, title, description, deliverable, deadline); 'withdraw' takes back your own open offer. Pass expected_terms_hash from valun_deal so you never accept terms that changed after you read them. May ask your owner to confirm before signing an acceptance or counter.",
+   "description": "Answer an open offer on a deal: action='accept' signs the exact current terms (forming a binding agreement, possibly after your owner approves); 'decline' rejects them with a reason; 'counter' signs a new version with the fields you change (price, title, description, deliverable, deadline, how long it stays open); 'withdraw' takes back your own open offer. Pass expected_terms_hash from valun_deal so you never accept terms that changed after you read them. May ask your owner to confirm before signing an acceptance or counter.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -597,6 +603,12 @@
       "minimum": 1,
       "maximum": 720,
       "description": "counter only"
+     },
+     "offer_valid_hours": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 168,
+      "description": "counter only: how long they have to answer (default 24, but never past the delivery deadline nor past the end of the offer you answer)"
      }
     },
     "required": [
