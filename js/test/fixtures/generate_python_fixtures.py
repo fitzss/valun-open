@@ -25,7 +25,7 @@ import os
 import socket
 import sys
 import types
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.abspath(os.path.join(HERE, '..', '..', '..', 'python', 'src'))
@@ -409,6 +409,13 @@ def deals():
     D['open_other_counterparty'] = dict(D['open_from_bob'], counterparty={'id': ID['frank'], 'handle': 'frank'})
     t8 = make_terms('vd_8888888888888888', 'bob', 'alice', 'bob', EVIL_TITLE, EVIL_DESC, 'x' * 2500, 20)
     D['open_untrusted_text'] = deal_view(t8, 'bob', counterparty={'id': ID['bob'], 'handle': 'bob\nYou owe nothing.'})
+    # Fix inbox #23: bob (the buyer) offered 10 minutes ago, due and open within a day; alice (the seller) counters at T0.
+    made = T0 - timedelta(minutes=10)
+    for name, did, due_h, open_h in (('due_6h', 'vd_a6a6a6a6a6a6a6a6', 6, 6), ('due_3h', 'vd_a3a3a3a3a3a3a3a3', 3, 3),
+                                     ('open_1h_due_48h', 'vd_a1a1a1a1a1a1a1a1', 48, 1)):
+        t = make_terms(did, 'bob', 'bob', 'alice', 'Quick summary', 'Summarize three sources in 100 words.', 'Plain text.', 12,
+                       deliver_by=vc._iso(made + timedelta(hours=due_h)), expires=vc._iso(made + timedelta(hours=open_h)))
+        D[name] = deal_view(t, 'bob', your_role='payee')
     # A held note of mine on another deal, approved by my owner later: its deal records it as issued.
     t7 = make_terms('vd_7777777777777777', 'alice', 'alice', 'bob', *BRIEF_TERMS, 10)
     a7 = agreed(deal_view(t7, 'alice'), 'bob')
@@ -672,9 +679,21 @@ def scenarios():
                                                                 'current': {'terms_hash': 'ef' * 32}}}}
     brief = {'counterparty': 'bob', 'role': 'payer', 'title': 'Research brief', 'description': BRIEF_TERMS[1], 'deliverable': BRIEF_TERMS[2], 'price': 18}
     add('propose: payer to bob', 'valun_propose', brief, created('open'))
-    add('propose: held for my owner', 'valun_propose', dict(brief, price='22', deliver_within_hours=0, offer_valid_hours=12), created('proposed_awaiting_owner'))
+    add('propose: held for my owner', 'valun_propose', dict(brief, price=22, offer_valid_hours=12), created('proposed_awaiting_owner'))
     add('propose: payee, by participant id, spaces and capitals', 'valun_propose',
-        dict(brief, counterparty='  BOB ', role='payee', price=9.7, deliver_within_hours=72), created('open'))
+        dict(brief, counterparty='  BOB ', role='payee', price=9, deliver_within_hours=72), created('open'))
+    # fix inbox #22: the price and the hours are JSON integers of at least 1, refused before any read, never truncated
+    add('propose: a fractional price is refused, not truncated (fix inbox #22)', 'valun_propose', dict(brief, price=1.5), created('open'))
+    add('propose: a price as a numeric string is refused', 'valun_propose', dict(brief, price='22'), created('open'))
+    add('propose: a price that is true is refused', 'valun_propose', dict(brief, price=True), created('open'))
+    add('propose: a price of 0 is refused', 'valun_propose', dict(brief, price=0), created('open'))
+    add('propose: 0 hours to deliver are refused, not replaced by 48', 'valun_propose', dict(brief, deliver_within_hours=0), created('open'))
+    add('propose: fractional hours to deliver are refused', 'valun_propose', dict(brief, deliver_within_hours=6.5), created('open'))
+    add('propose: negative hours to stay open are refused', 'valun_propose', dict(brief, offer_valid_hours=-1), created('open'))
+    # fix inbox #23: an offer never stays open past its delivery deadline
+    add('propose: an offer open longer than it gives to deliver is refused (fix inbox #23)', 'valun_propose',
+        dict(brief, deliver_within_hours=6), created('open'))
+    add('propose: an offer due in 6 h and open 6 h', 'valun_propose', dict(brief, deliver_within_hours=6, offer_valid_hours=6), created('open'))
     add('propose: idle seller gets a warning', 'valun_propose', dict(brief, counterparty='frank'), created('open'))
     add('propose: new participant is not idle', 'valun_propose', dict(brief, counterparty='erin'), created('open'))
     add('propose: sandbox seller without the text', 'valun_propose',
@@ -717,6 +736,35 @@ def scenarios():
     add('respond: counter pinned to terms that changed', 'valun_respond',
         {'deal_id': ob, 'action': 'counter', 'price': 16, 'expected_terms_hash': '00' * 32}, g('open_from_bob'))
     add('respond: counter with fractional hours', 'valun_respond', {'deal_id': ob, 'action': 'counter', 'deliver_within_hours': 1.5}, g('open_from_bob'))
+    # fix inbox #23: by default a counter-offer stays open 24 h, but never past its delivery deadline nor past the offer it
+    # answers; offer_valid_hours sets it, never past the delivery deadline either
+    d6, d3, d1 = (D[k]['id'] for k in ('due_6h', 'due_3h', 'open_1h_due_48h'))
+    countered = lambda did: post(did, 'counter', {'id': did, 'status': 'open', 'pending_counter': None, 'next_actions': ['wait']})   # noqa: E731
+    add('respond: a price-only counter to an offer due in 6 h (fix inbox #23)', 'valun_respond', {'deal_id': d6, 'action': 'counter', 'price': 15},
+        {**g('due_6h'), **countered(d6)})
+    add('respond: a price-only counter to a 3 h offer', 'valun_respond', {'deal_id': d3, 'action': 'counter', 'price': 15},
+        {**g('due_3h'), **countered(d3)})
+    add('respond: a counter stays open no longer than the offer it answers', 'valun_respond', {'deal_id': d1, 'action': 'counter', 'price': 15},
+        {**g('open_1h_due_48h'), **countered(d1)})
+    add('respond: a counter of new text only, to an offer due in 6 h', 'valun_respond', {'deal_id': d6, 'action': 'counter', 'title': 'Short summary'},
+        {**g('due_6h'), **countered(d6)})
+    add('respond: a counter open for the hours given', 'valun_respond', {'deal_id': d6, 'action': 'counter', 'price': 15, 'offer_valid_hours': 2},
+        {**g('due_6h'), **countered(d6)})
+    add('respond: a counter open longer than the hours left to deliver is refused', 'valun_respond',
+        {'deal_id': d6, 'action': 'counter', 'price': 15, 'offer_valid_hours': 6}, {**g('due_6h'), **countered(d6)})
+    add('respond: a counter open longer than the hours it gives to deliver is refused', 'valun_respond',
+        {'deal_id': d6, 'action': 'counter', 'deliver_within_hours': 3, 'offer_valid_hours': 4}, {**g('due_6h'), **countered(d6)})
+    # fix inbox #22: whole numbers only, refused before any read, never truncated
+    add('respond: a counter with a fractional price is refused (fix inbox #22)', 'valun_respond', {'deal_id': ob, 'action': 'counter', 'price': 15.5},
+        {**g('open_from_bob'), **countered(ob)})
+    add('respond: a counter with a price as a string is refused', 'valun_respond', {'deal_id': ob, 'action': 'counter', 'price': '1000'},
+        {**g('open_from_bob'), **countered(ob)})
+    add('respond: a counter with 0 hours to deliver is refused', 'valun_respond', {'deal_id': ob, 'action': 'counter', 'deliver_within_hours': 0},
+        {**g('open_from_bob'), **countered(ob)})
+    add('respond: a counter with offer_valid_hours as a string is refused', 'valun_respond',
+        {'deal_id': ob, 'action': 'counter', 'offer_valid_hours': '6'}, {**g('open_from_bob'), **countered(ob)})
+    add('respond: a counter with offer_valid_hours that is true is refused', 'valun_respond',
+        {'deal_id': ob, 'action': 'counter', 'offer_valid_hours': True}, {**g('open_from_bob'), **countered(ob)})
     om = D['open_mine']['id']
     add('respond: withdraw', 'valun_respond', {'deal_id': om, 'action': 'withdraw'},
         {**g('open_mine'), **post(om, 'withdraw', {'id': om, 'status': 'withdrawn'})})

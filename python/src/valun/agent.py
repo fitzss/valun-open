@@ -470,6 +470,22 @@ def _guarantee_int(a, k, default):
     return v
 
 
+def _count(k, v, units):
+    """v, the value of argument k of valun_propose or valun_respond (price, deliver_within_hours, offer_valid_hours),
+    when it is a JSON integer of at least 1. Anything else is refused (bad_arguments, fix inbox #22), never truncated,
+    rounded or replaced by a default: a float (1.5), a numeric string ("1000"), a boolean, 0 or a negative number."""
+    if _whole(v) and 1 <= v <= nv.MAX_SAFE_INTEGER:
+        return v
+    got = quoted(v)
+    raise vc.ValunError('bad_arguments', f'{k} must be a whole number of {units}, at least 1 (a JSON integer), not '
+                                         f"{got if len(got) <= 40 else got[:37] + '...'}; nothing was signed")
+
+
+def _count_or(a, k, units, default=None):
+    """Argument k checked by _count, or `default` when it is absent or null."""
+    return default if a.get(k) is None else _count(k, a[k], units)
+
+
 def _party(g, role, terms):
     """A guarantee party's handle as the view names it, else its id from the checked terms."""
     x = g.get(role) if isinstance(g, dict) else None
@@ -1225,7 +1241,7 @@ class ValunAgent:
         role = a.get('role')
         if role not in ('payer', 'payee'):
             raise vc.ValunError('bad_role', 'role must be payer or payee')
-        price, due, ttl = int(a['price']), int(a.get('deliver_within_hours') or 48), int(a.get('offer_valid_hours') or 24)
+        price, due, ttl = ValunAgent._offer_numbers(a, u)      # exactly what propose() signs, or its refusal
         who = shown(other.get('handle'))
         return '\n'.join([
             f"Valun - sign a NEW OFFER to {who} ({shown(other['id'])}):",
@@ -1234,6 +1250,37 @@ class ValunAgent:
             f'If {who} accepts, the deal is binding without asking you again: ' + owes(role, who, price, u),
             snap.get('not_settled', NOT_SETTLED),
             quote_line('Offer text written by your agent', {k: a.get(k) for k in ('title', 'description', 'deliverable')})])
+
+    @staticmethod
+    def _offer_numbers(a, unit):
+        """valun_propose's price, deliver_within_hours (default 48) and offer_valid_hours (default 24): each a JSON
+        integer of at least 1 (_count), and the offer open no longer than the hours it gives to deliver
+        (check_offer_hours). Exactly what propose() signs, or bad_arguments before anything is read or signed."""
+        price = _count('price', a['price'], unit)
+        due, ttl = _count_or(a, 'deliver_within_hours', 'hours', 48), _count_or(a, 'offer_valid_hours', 'hours', 24)
+        vc.check_offer_hours(ttl, due)
+        return price, due, ttl
+
+    @staticmethod
+    def _counter_numbers(a, unit):
+        """valun_respond counter's price, deliver_within_hours and offer_valid_hours: each None when absent or null (the
+        price and deadline of their offer; Client.counter's default validity), else a JSON integer of at least 1
+        (_count); with both hours given, the counter-offer open no longer than the hours it gives to deliver."""
+        price, hours, ttl = (_count_or(a, k, units) for k, units in (('price', unit), ('deliver_within_hours', 'hours'),
+                                                                   ('offer_valid_hours', 'hours')))
+        if hours is not None and ttl is not None:
+            vc.check_offer_hours(ttl, hours)
+        return price, hours, ttl
+
+    @staticmethod
+    def _hours_to_deliver(deadline):
+        """The hours Client.counter() gives a counter-offer to deliver when it keeps the deadline of the offer it answers:
+        the whole hours left until `deadline`, at least 1. None when the deadline cannot be read."""
+        try:
+            left = datetime.fromisoformat(str(deadline).replace('Z', '+00:00')) - datetime.now(timezone.utc)
+        except (TypeError, ValueError):
+            return None
+        return max(1, int(left.total_seconds() // 3600))
 
     def _text_accept(self, a, snap):
         chk = snap['checked']
@@ -1252,20 +1299,25 @@ class ValunAgent:
         t, who, old, svc = chk['terms'], self._who(chk), chk['price'], chk['service']
         u = snap.get('unit', vc.UNIT)
         # Exactly what Client.counter() signs: these arguments, and the rest copied from the terms pinned by hash.
-        price = int(a['price']) if a.get('price') is not None else old
-        hours = a.get('deliver_within_hours')
-        if hours is not None and not _whole(hours):
-            raise vc.ValunError('bad_arguments', 'deliver_within_hours must be a whole number of hours')
+        new, hours, ttl = ValunAgent._counter_numbers(a, u)
+        if ttl is not None and hours is None:     # their deadline, in the whole hours Client.counter() will give to deliver
+            due = self._hours_to_deliver(t.get('deliver_by'))
+            if due is not None:
+                vc.check_offer_hours(ttl, due)
+        price = old if new is None else new
         texts = [k for k in ('title', 'description', 'deliverable') if a.get(k)]
-        changes = ([f'price {old} -> {price} {u}'] if a.get('price') is not None else []) \
+        changes = ([f'price {old} -> {price} {u}'] if new is not None else []) \
             + ([f'deliver within {hours} h'] if hours is not None else []) + [f'{k} (quoted below)' for k in texts]
+        stays = (f'the counter-offer stays open {ttl} h' if ttl is not None else
+                 f'the counter-offer stays open {vc.COUNTER_OFFER_HOURS} h, or less: never past its delivery deadline, nor past '
+                 f"{shown(t.get('offer_expires_at'))}, when their offer ends")
         return '\n'.join([
             f"Valun - sign a COUNTER-OFFER to {who} ({shown(chk['other_id'])}, deal {shown(t['deal_id'])}), "
             f"replacing their version {shown(t.get('version'))}:",
             f"  you are the {ROLE_WORDS[chk['role']]}; price: {vc.amount_text(price, u)}",
             '  deliver ' + (f'within {hours} h of signing' if hours is not None else
                             f"by {shown(t.get('deliver_by'))} as in their offer (rounded down to the hour, at least 1 h after signing)"),
-            '  your agent changes: ' + (', '.join(changes) or 'nothing') + '; the counter-offer stays open 24 h',
+            '  your agent changes: ' + (', '.join(changes) or 'nothing') + '; ' + stays,
             f'If {who} accepts it, the deal is binding without asking you again: ' + owes(chk['role'], who, price, u),
             snap.get('not_settled', NOT_SETTLED),
             quote_line(f"Counter-offer text, with what your agent did not change copied from {who}'s offer",
@@ -1838,6 +1890,8 @@ class ValunAgent:
 
     def propose(self, a):
         c = self.client()
+        unit = getattr(c, 'unit', vc.UNIT)
+        price, due, ttl = self._offer_numbers(a, unit)      # whole numbers, refused before any read (fix inbox #22)
         other = self._resolve(c, a['counterparty'])
         # A seller of exactly checkable work publishes that it needs the text in the description; check before signing.
         if a.get('role') == 'payer' and '``` block' in str(other.get('services') or '') \
@@ -1846,21 +1900,22 @@ class ValunAgent:
                 f"Not signed. {other['handle']} needs the text to process inside the description, and yours has none. Put the "
                 'exact text in a ``` fenced block in the description (or as the only "quoted" string, or after TEXT: at the '
                 'end), then make the offer again.'))
-        r = c.propose(other['id'], a['role'], a['title'], a['description'], a['deliverable'], int(a['price']),
-                      int(a.get('deliver_within_hours') or 48), int(a.get('offer_valid_hours') or 24))
+        r = c.propose(other['id'], a['role'], a['title'], a['description'], a['deliverable'], price, due, ttl)
         waiting = r['status'] == 'proposed_awaiting_owner'
         idle = None if recently_active(other.get('agent_last_seen'), joined_at=other.get('joined_at')) else (
             f"{other['handle']}'s agent has not been seen in the last 24 hours; it may never answer. Consider an active seller too.")
+        signed = vc.amount_text(price, unit)                # the amount signed, never the argument as given
         return {'deal_id': r['id'], 'status': r['status'], 'terms_hash': r['current']['terms_hash'] if r.get('current') else None,
                 'what_happened': (f"Your signed offer is waiting for your owner's approval before {other['handle']} can see it." if waiting
                                   else f"{other['handle']} can now accept, decline or counter your signed offer."),
-                'if_agreed': (f"After you accept their delivery you issue them a credit note of {vc.amount_text(a['price'], getattr(c, 'unit', vc.UNIT))} (you will owe them; not settled)."
-                              if a['role'] == 'payer' else f"After they accept your delivery they issue you a credit note of {vc.amount_text(a['price'], getattr(c, 'unit', vc.UNIT))} (they will owe you; not settled)."),
+                'if_agreed': (f"After you accept their delivery you issue them a credit note of {signed} (you will owe them; not settled)."
+                              if a['role'] == 'payer' else f"After they accept your delivery they issue you a credit note of {signed} (they will owe you; not settled)."),
                 **({'warning': idle} if idle else {})}
 
     def respond(self, a):
         c = self.client()
         act, did = a['action'], a['deal_id']
+        at = ''                                             # a counter-offer's price, as signed
         if act == 'accept':
             r = c.accept(did, a.get('expected_terms_hash'))
         elif act == 'decline':
@@ -1870,16 +1925,19 @@ class ValunAgent:
         elif act == 'withdraw':
             r = c.withdraw(did)
         elif act == 'counter':
-            r = c.counter(did, price=a.get('price'), title=a.get('title'), description=a.get('description'), deliverable=a.get('deliverable'),
-                          deliver_by_hours=a.get('deliver_within_hours'), expected_terms_hash=a.get('expected_terms_hash'))
+            unit = getattr(c, 'unit', vc.UNIT)
+            price, hours, ttl = self._counter_numbers(a, unit)    # whole numbers, refused before any read (fix inbox #22)
+            r = c.counter(did, price=price, title=a.get('title'), description=a.get('description'), deliverable=a.get('deliverable'),
+                          deliver_by_hours=hours, offer_ttl_hours=ttl, expected_terms_hash=a.get('expected_terms_hash'))
+            at = f' at {vc.amount_text(price, unit)}' if price is not None else ' at the price of their offer'
         else:
             raise vc.ValunError('bad_action', 'action must be accept, decline, counter or withdraw')
         held = act == 'counter' and r.get('pending_counter')
         explain = {'agreed': 'Agreement formed: both sides have signed the same terms.',
                    'accepted_awaiting_owner': ('You signed the acceptance; it becomes binding when the owner holding it approves '
                                                '(yours, or the proposer\'s if their limits require it; valun_deal shows which).'),
-                   'open': ("Your signed counter-offer waits for your owner's approval; the other side cannot see it yet." if held
-                            else 'Your counter-offer is open for the other side.' if act == 'counter' else 'The offer is open.'),
+                   'open': (f"Your signed counter-offer{at} waits for your owner's approval; the other side cannot see it yet." if held
+                            else f'Your counter-offer{at} is open for the other side.' if act == 'counter' else 'The offer is open.'),
                    'declined': 'You declined; nothing is owed.', 'withdrawn': 'Your offer is withdrawn.'}
         return {'deal_id': did, 'status': r['status'], 'what_happened': explain.get(r['status'], r['status']), 'next_actions': r.get('next_actions')}
 

@@ -24,7 +24,7 @@
 // a client of its own (Client.fresh(), as the Python agent makes a new Client for each).
 
 import {verifyHex} from './basis.js';
-import {VALUE_SAFE_HEADER_ROLES, consentRoles} from './client.js';
+import {COUNTER_OFFER_HOURS, VALUE_SAFE_HEADER_ROLES, checkOfferHours, consentRoles} from './client.js';
 import {ValunError} from './errors.js';
 import {measure} from './measure.js';
 import * as nv from './novation.js';
@@ -411,6 +411,24 @@ function guaranteeInt(a, k, dflt) {
   if (v === null) throw new ValunError('bad_arguments', `${k} is required`);
   if (!whole(v)) throw new ValunError('bad_arguments', `${k} must be a whole number`);
   return v;
+}
+
+/**
+ * v, the value of argument k of valun_propose or valun_respond (price, deliver_within_hours, offer_valid_hours), when it
+ * is a JSON integer of at least 1. Anything else is refused (bad_arguments, fix inbox #22), never truncated, rounded or
+ * replaced by a default: a float (1.5), a numeric string ("1000"), a boolean, 0 or a negative number. The Python core's
+ * _count (JavaScript cannot tell 2.0 from 2: both are 2 here).
+ */
+function count(k, v, units) {
+  if (whole(v) && v >= 1) return v;
+  const got = quoted(v);
+  throw new ValunError('bad_arguments', `${k} must be a whole number of ${units}, at least 1 (a JSON integer), not `
+    + `${got.length <= 40 ? got : got.slice(0, 37) + '...'}; nothing was signed`);
+}
+
+/** Argument k checked by count(), or `dflt` when it is absent or null. The Python core's _count_or. */
+function countOr(a, k, units, dflt = null) {
+  return get(a, k) === null ? dflt : count(k, a[k], units);
 }
 
 /** A guarantee party's handle as the view names it, else its id from the checked terms. */
@@ -1420,7 +1438,7 @@ export class ValunAgent {
     const other = snap.counterparty, u = get(snap, 'unit', UNIT);
     const role = get(a, 'role');
     if (role !== 'payer' && role !== 'payee') throw new ValunError('bad_role', 'role must be payer or payee');
-    const price = int(item(a, 'price')), due = int(or(get(a, 'deliver_within_hours'), 48)), ttl = int(or(get(a, 'offer_valid_hours'), 24));
+    const [price, due, ttl] = ValunAgent.#offerNumbers(a, u);     // exactly what propose() signs, or its refusal
     const who = shown(get(other, 'handle'));
     return [
       `Valun - sign a NEW OFFER to ${who} (${shown(item(other, 'id'))}):`,
@@ -1429,6 +1447,40 @@ export class ValunAgent {
       `If ${who} accepts, the deal is binding without asking you again: ` + owes(role, who, price, u),
       get(snap, 'not_settled', NOT_SETTLED),
       quoteLine('Offer text written by your agent', Object.fromEntries(TEXT_FIELDS.map(k => [k, get(a, k)])))].join('\n');
+  }
+
+  /**
+   * valun_propose's price, deliver_within_hours (default 48) and offer_valid_hours (default 24): each a JSON integer of
+   * at least 1 (count), and the offer open no longer than the hours it gives to deliver (checkOfferHours). Exactly what
+   * propose() signs, or bad_arguments before anything is read or signed.
+   */
+  static #offerNumbers(a, unit) {
+    const price = count('price', item(a, 'price'), unit);
+    const due = countOr(a, 'deliver_within_hours', 'hours', 48), ttl = countOr(a, 'offer_valid_hours', 'hours', 24);
+    checkOfferHours(ttl, due);
+    return [price, due, ttl];
+  }
+
+  /**
+   * valun_respond counter's price, deliver_within_hours and offer_valid_hours: each null when absent or null (the price
+   * and deadline of their offer; Client.counter's default validity), else a JSON integer of at least 1 (count); with
+   * both hours given, the counter-offer open no longer than the hours it gives to deliver.
+   */
+  static #counterNumbers(a, unit) {
+    const [price, hours, ttl] = [['price', unit], ['deliver_within_hours', 'hours'], ['offer_valid_hours', 'hours']]
+      .map(([k, units]) => countOr(a, k, units));
+    if (hours !== null && ttl !== null) checkOfferHours(ttl, hours);
+    return [price, hours, ttl];
+  }
+
+  /**
+   * The hours Client.counter() gives a counter-offer to deliver when it keeps the deadline of the offer it answers: the
+   * whole hours left until `deadline`, at least 1. null when the deadline cannot be read (the Python core's
+   * _hours_to_deliver).
+   */
+  #hoursToDeliver(deadline) {
+    const t = isoAwareMs(str(deadline).replaceAll('Z', '+00:00'));
+    return t === null ? null : Math.max(1, Math.floor((t - this.#now()) / 3_600_000));
   }
 
   #textAccept(a, snap) {
@@ -1447,19 +1499,25 @@ export class ValunAgent {
     const chk = snap.checked;
     const t = chk.terms, who = this.#who(chk), old = chk.price, svc = chk.service, u = get(snap, 'unit', UNIT);
     // Exactly what Client.counter() signs: these arguments, and the rest copied from the terms pinned by hash.
-    const price = get(a, 'price') !== null ? int(item(a, 'price')) : old;
-    const hours = get(a, 'deliver_within_hours');
-    if (hours !== null && !whole(hours)) throw new ValunError('bad_arguments', 'deliver_within_hours must be a whole number of hours');
+    const [nw, hours, ttl] = ValunAgent.#counterNumbers(a, u);
+    if (ttl !== null && hours === null) {     // their deadline, in the whole hours Client.counter() will give to deliver
+      const due = this.#hoursToDeliver(get(t, 'deliver_by'));
+      if (due !== null) checkOfferHours(ttl, due);
+    }
+    const price = nw === null ? old : nw;
     const texts = TEXT_FIELDS.filter(k => truthy(get(a, k)));
-    const changes = [...(get(a, 'price') !== null ? [`price ${old} -> ${price} ${u}`] : []),
+    const changes = [...(nw !== null ? [`price ${old} -> ${price} ${u}`] : []),
       ...(hours !== null ? [`deliver within ${hours} h`] : []), ...texts.map(k => `${k} (quoted below)`)];
+    const stays = ttl !== null ? `the counter-offer stays open ${ttl} h`
+      : `the counter-offer stays open ${COUNTER_OFFER_HOURS} h, or less: never past its delivery deadline, nor past `
+        + `${shown(get(t, 'offer_expires_at'))}, when their offer ends`;
     return [
       `Valun - sign a COUNTER-OFFER to ${who} (${shown(chk.other_id)}, deal ${shown(t.deal_id)}), `
         + `replacing their version ${shown(get(t, 'version'))}:`,
       `  you are the ${ROLE_WORDS[chk.role]}; price: ${amountText(price, u)}`,
       '  deliver ' + (hours !== null ? `within ${hours} h of signing`
         : `by ${shown(get(t, 'deliver_by'))} as in their offer (rounded down to the hour, at least 1 h after signing)`),
-      '  your agent changes: ' + (changes.join(', ') || 'nothing') + '; the counter-offer stays open 24 h',
+      '  your agent changes: ' + (changes.join(', ') || 'nothing') + '; ' + stays,
       `If ${who} accepts it, the deal is binding without asking you again: ` + owes(chk.role, who, price, u),
       get(snap, 'not_settled', NOT_SETTLED),
       quoteLine(`Counter-offer text, with what your agent did not change copied from ${who}'s offer`,
@@ -2080,6 +2138,8 @@ export class ValunAgent {
 
   async propose(a) {
     const c = this.client();
+    const unit = c.unit ?? UNIT;
+    const [price, deliverByHours, offerTtlHours] = ValunAgent.#offerNumbers(a, unit);   // refused before any read (fix inbox #22)
     const other = await this.#resolve(c, item(a, 'counterparty'));
     // A seller of exactly checkable work publishes that it needs the text in the description; check before signing.
     if (get(a, 'role') === 'payer' && str(or(get(other, 'services'), '')).includes('``` block')
@@ -2090,13 +2150,12 @@ export class ValunAgent {
         + 'end), then make the offer again.');
     }
     const counterpartyId = item(other, 'id'), role = item(a, 'role'), title = item(a, 'title'), description = item(a, 'description');
-    const deliverable = item(a, 'deliverable'), price = int(item(a, 'price'));
-    const deliverByHours = int(or(get(a, 'deliver_within_hours'), 48)), offerTtlHours = int(or(get(a, 'offer_valid_hours'), 24));
+    const deliverable = item(a, 'deliverable');
     const r = await c.propose({counterpartyId, role, title, description, deliverable, price, deliverByHours, offerTtlHours});
     const waiting = item(r, 'status') === 'proposed_awaiting_owner';
     const idle = recentlyActive(get(other, 'agent_last_seen'), 24, get(other, 'joined_at'), this.#now()) ? null
       : `${str(item(other, 'handle'))}'s agent has not been seen in the last 24 hours; it may never answer. Consider an active seller too.`;
-    const handle = str(item(other, 'handle')), shownPrice = amountText(item(a, 'price'), c.unit ?? UNIT);
+    const handle = str(item(other, 'handle')), shownPrice = amountText(price, unit);   // the amount signed, never the argument as given
     return {deal_id: item(r, 'id'), status: item(r, 'status'),
       terms_hash: truthy(get(r, 'current')) ? item(item(r, 'current'), 'terms_hash') : null,
       what_happened: waiting ? `Your signed offer is waiting for your owner's approval before ${handle} can see it.`
@@ -2110,7 +2169,7 @@ export class ValunAgent {
   async respond(a) {
     const c = this.client();
     const act = item(a, 'action'), did = item(a, 'deal_id');
-    let r;
+    let r, at = '';                                     // at: a counter-offer's price, as signed
     if (act === 'accept') {
       r = await c.accept(did, {expectedTermsHash: get(a, 'expected_terms_hash')});
     } else if (act === 'decline') {
@@ -2121,8 +2180,11 @@ export class ValunAgent {
     } else if (act === 'withdraw') {
       r = await c.withdraw(did);
     } else if (act === 'counter') {
-      r = await c.counter(did, {price: get(a, 'price'), title: get(a, 'title'), description: get(a, 'description'),
-        deliverable: get(a, 'deliverable'), deliverByHours: get(a, 'deliver_within_hours'), expectedTermsHash: get(a, 'expected_terms_hash')});
+      const unit = c.unit ?? UNIT;
+      const [price, hours, ttl] = ValunAgent.#counterNumbers(a, unit);   // refused before any read (fix inbox #22)
+      r = await c.counter(did, {price, title: get(a, 'title'), description: get(a, 'description'),
+        deliverable: get(a, 'deliverable'), deliverByHours: hours, offerTtlHours: ttl, expectedTermsHash: get(a, 'expected_terms_hash')});
+      at = price !== null ? ` at ${amountText(price, unit)}` : ' at the price of their offer';
     } else {
       throw new ValunError('bad_action', 'action must be accept, decline, counter or withdraw');
     }
@@ -2130,8 +2192,8 @@ export class ValunAgent {
     const explain = {agreed: 'Agreement formed: both sides have signed the same terms.',
       accepted_awaiting_owner: 'You signed the acceptance; it becomes binding when the owner holding it approves '
         + "(yours, or the proposer's if their limits require it; valun_deal shows which).",
-      open: held ? "Your signed counter-offer waits for your owner's approval; the other side cannot see it yet."
-        : act === 'counter' ? 'Your counter-offer is open for the other side.' : 'The offer is open.',
+      open: held ? `Your signed counter-offer${at} waits for your owner's approval; the other side cannot see it yet.`
+        : act === 'counter' ? `Your counter-offer${at} is open for the other side.` : 'The offer is open.',
       declined: 'You declined; nothing is owed.', withdrawn: 'Your offer is withdrawn.'};
     const status = item(r, 'status');
     return {deal_id: did, status, what_happened: typeof status === 'string' && Object.hasOwn(explain, status) ? explain[status] : status,

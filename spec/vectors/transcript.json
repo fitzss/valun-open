@@ -2750,7 +2750,8 @@
     ],
     "args": {
      "deal_id": "vd_9c290f21bbf106d0",
-     "price": 25
+     "price": 25,
+     "offer_ttl_hours": 24
     }
    },
    "client_reads": {
@@ -9232,7 +9233,8 @@
     ],
     "args": {
      "deal_id": "vd_896ae1930dfe6560",
-     "price": 60
+     "price": 60,
+     "offer_ttl_hours": 24
     }
    },
    "client_reads": {

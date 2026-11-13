@@ -437,15 +437,35 @@ function seg(id) {
   return encodeURIComponent(id);
 }
 
-function toPrice(price) {
+/** A price as it is signed: a whole number of at least 1, or a string of its decimal digits; never truncated (bad_price). */
+function toPrice(price, unit = 'PC') {
   const n = typeof price === 'string' && /^[0-9]+$/.test(price) ? Number(price) : price;
   if (typeof n === 'number' && Number.isSafeInteger(n) && n >= 1) return n;
-  throw new ValunError('bad_price', 'price must be a whole number of PC, at least 1');
+  throw new ValunError('bad_price', `price must be a whole number of ${unit}, at least 1`);
 }
 
 function toHours(h, what) {
   if (typeof h !== 'number' || !Number.isFinite(h)) throw new ValunError('bad_terms', `${what} must be a number of hours`);
   return h;
+}
+
+/**
+ * How long a counter-offer stays open by default, at most (fix inbox #23): never past its own delivery deadline, nor past
+ * the end of the offer it answers (Client.counter).
+ */
+export const COUNTER_OFFER_HOURS = 24;
+
+/**
+ * Refuse (bad_arguments, fix inbox #23), before anything is signed, an offer that would stay open longer than the hours
+ * it gives to deliver: it could be accepted after its work is due, and the server refuses such terms (deliver_by must not
+ * be earlier than offer_expires_at). The Python client's check_offer_hours.
+ */
+export function checkOfferHours(offerHours, deliverHours) {
+  if (offerHours > deliverHours) {
+    throw new ValunError('bad_arguments', `the offer would stay open ${offerHours} h, longer than the ${deliverHours} h it `
+      + 'gives to deliver: it could be accepted after its work is due, which the server '
+      + `refuses. Pass offer_valid_hours of at most ${deliverHours}; nothing was signed`);
+  }
 }
 
 /** Structural guard: the fields every check below reads, with the types it relies on. */
@@ -1334,22 +1354,39 @@ export class Client {
   }
 
   // ---------- acts (all signed locally) ----------
-  /** valun-deal/1 terms for a new proposal (or, with dealId/version/prior, a counter-offer). Signs nothing. */
+  /**
+   * valun-deal/1 terms for a new proposal (or, with dealId/version/prior, a counter-offer). Signs nothing. The price is a
+   * whole number of this network's unit, at least 1 (bad_price; never truncated). Delivery is due deliverByHours from now;
+   * the offer stays open offerTtlHours, or, with offerTtlHours null, COUNTER_OFFER_HOURS but never past deliver_by nor
+   * past priorExpiresAt (an RFC 3339 time: the end of the offer a counter-offer answers). Times are whole seconds,
+   * rounded down. Terms the server would refuse for their times are refused here first (bad_arguments, fix inbox #23): an
+   * offer open longer than the hours it gives to deliver (checkOfferHours), or one already expired when it is sent.
+   */
   async buildTerms({counterpartyId, role, title, description, deliverable, price, deliverByHours = 48, offerTtlHours = 24,
-    dealId = undefined, version = 1, prior = null}) {
+    dealId = undefined, version = 1, prior = null, priorExpiresAt = null}) {
     if (role !== 'payer' && role !== 'payee') {
       throw new ValunError('bad_role', 'role must be payer (you pay with your credit) or payee (you do the work)');
     }
     if (![title, description, deliverable].every(x => typeof x === 'string')) {
       throw new ValunError('bad_terms', 'title, description and deliverable must be strings');
     }
-    const amount = toPrice(price);
-    const dueH = toHours(deliverByHours, 'deliverByHours'), ttlH = toHours(offerTtlHours, 'offerTtlHours');
+    const amount = toPrice(price, this.unit);
+    const dueH = toHours(deliverByHours, 'deliverByHours');
+    const ttlH = offerTtlHours === null ? null : toHours(offerTtlHours, 'offerTtlHours');
+    if (ttlH !== null) checkOfferHours(ttlH, dueH);
     this.#secretBytes().fill(0);   // fail early (not_connected) rather than after the reads
     const info = await this.#networkInfo();
     const other = {id: counterpartyId, pubkey: await this.#registeredKey(counterpartyId)};
     const me = {id: this.participantId, pubkey: this.pubkey};
     const now = this.#now();
+    const deliverBy = now + dueH * HOUR;
+    const ends = ttlH === null ? [now + COUNTER_OFFER_HOURS * HOUR, deliverBy] : [now + ttlH * HOUR];
+    if (ttlH === null && priorExpiresAt !== null && priorExpiresAt !== undefined) ends.push(Date.parse(priorExpiresAt));
+    const expires = isoSeconds(Math.min(...ends));
+    if (!(Date.parse(expires) > now)) {
+      throw new ValunError('bad_arguments', `the offer would expire at ${expires}, before it is sent: it must stay open `
+        + 'for at least 1 h (offer_valid_hours); nothing was signed');
+    }
     return {
       protocol: PROTOCOL, network: this.network, tracker_nft_id: info.tracker_nft_id, denomination: info.denomination,
       deal_id: dealId || ('vd_' + bytesToHex(this.#randomBytes(8))), version, prior_terms_hash: prior,
@@ -1357,7 +1394,7 @@ export class Client {
       payer: role === 'payer' ? me : other, payee: role === 'payer' ? other : me,
       service: {title, description, deliverable},
       price: {amount, unit: this.unit}, consideration: CONSIDERATION,
-      deliver_by: isoSeconds(now + dueH * HOUR), offer_expires_at: isoSeconds(now + ttlH * HOUR),
+      deliver_by: isoSeconds(deliverBy), offer_expires_at: expires,
     };
   }
 
@@ -1371,10 +1408,13 @@ export class Client {
   /**
    * Counter the current offer: verify it, then sign new terms (version + 1, prior = its hash). Unset fields carry over.
    * With expectedTermsHash (the hash of the offer the owner or agent inspected), refuses (stale_terms) if the current
-   * offer is another.
+   * offer is another. Delivery is due deliverByHours from now, by default by the current offer's deadline (rounded down
+   * to the hour, at least 1 h from now). The counter-offer stays open offerTtlHours; by default (fix inbox #23)
+   * COUNTER_OFFER_HOURS, but never past its own delivery deadline nor past the end of the offer it answers, so a
+   * price-only counter to an offer due within a day is valid terms too.
    */
   async counter(dealId, {price = undefined, title = undefined, description = undefined, deliverable = undefined,
-    deliverByHours = undefined, offerTtlHours = 24, expectedTermsHash = undefined} = {}) {
+    deliverByHours = undefined, offerTtlHours = undefined, expectedTermsHash = undefined} = {}) {
     const d = await this.deal(dealId);
     const chk = await this.verifyOffer(d);
     if (truthy(expectedTermsHash ?? null) && expectedTermsHash !== chk.terms_hash) {
@@ -1388,7 +1428,8 @@ export class Client {
       counterpartyId: other, role,
       title: title || t0.service.title, description: description || t0.service.description,
       deliverable: deliverable || t0.service.deliverable, price: price ?? t0.price.amount,
-      deliverByHours: dueH, offerTtlHours, dealId, version: t0.version + 1, prior: chk.terms_hash,
+      deliverByHours: dueH, offerTtlHours: offerTtlHours ?? null, dealId, version: t0.version + 1, prior: chk.terms_hash,
+      priorExpiresAt: t0.offer_expires_at,
     });
     const h = termsHash(t);
     return this.request('POST', `/pilot/v1/deals/${seg(dealId)}/counter`,
