@@ -1,5 +1,6 @@
 """bind_bot.py offline: X's published OAuth 1.0a signature example, reading posts, every rule, and the whole flow with
 a fake X and a fake Valun (no network, nothing posted, nothing spent)."""
+import json
 import os
 import sys
 import tempfile
@@ -23,11 +24,34 @@ class OAuth(unittest.TestCase):
 
 class Reading(unittest.TestCase):
     def test_owe(self):
-        self.assertEqual(B.parse_owe('@bindvalun I owe @Bob 5 for the logo.'), ('bob', 5, 'the logo'))
-        self.assertEqual(B.parse_owe('@bindvalun i owe @bob 3 credits'), ('bob', 3, ''))
-        self.assertEqual(B.parse_owe('@bindvalun I owe @bob 2: a review of @carol_x work'), ('bob', 2, 'a review of carol_x work'))
+        self.assertEqual(B.parse_owe('@bindvalun I owe @Bob 5 for the logo.'), ('bob', 5, 'the logo', None))
+        self.assertEqual(B.parse_owe('@bindvalun i owe @bob 3 credits'), ('bob', 3, '', None))
+        self.assertEqual(B.parse_owe('@bindvalun I owe @bob 2: a review of @carol_x work'), ('bob', 2, 'a review of carol_x work', None))
+        self.assertEqual(B.parse_owe('@bindvalun I owe @bob 5 for dinner with @carol'), ('bob', 5, 'dinner with carol', None))
         self.assertIsNone(B.parse_owe('@bindvalun @bob owes me 5'))
         self.assertIsNone(B.parse_owe('@bindvalun hello'))
+
+    def test_pay_with_a_promise(self):
+        self.assertEqual(B.parse_owe('@bindvalun I owe @carol 3 for the review, pay with @alice'), ('carol', 3, 'the review', 'alice'))
+        self.assertEqual(B.parse_owe("@bindvalun pay @carol 3 with @alice's promise for the review"), ('carol', 3, 'the review', 'alice'))
+        self.assertEqual(B.parse_owe('@bindvalun I owe @carol 2, paid with @Alice\u2019s IOU.'), ('carol', 2, '', 'alice'))
+        self.assertEqual(B.parse_owe('@bindvalun I owe @carol 1, pay with @alice, for a test'), ('carol', 1, 'a test', 'alice'))
+        self.assertIsNone(B.parse_owe('@bindvalun pay @carol 3'), 'a bare "pay" binds nothing')
+        self.assertIsNone(B.parse_owe('@bindvalun pay @carol 3 with @alice'), 'pay ... with @x needs "promise" (or "pay with")')
+
+    def test_record(self):
+        self.assertEqual(B.parse_record('@bindvalun record'), '')
+        self.assertEqual(B.parse_record('@bindvalun my record'), '')
+        self.assertEqual(B.parse_record('@bindvalun record @Alice'), 'alice')
+        self.assertIsNone(B.parse_record('@bindvalun recording a video'))
+        self.assertIsNone(B.parse_record('@bindvalun I owe @bob 1'))
+
+    def test_fit(self):
+        make = lambda w: f'Offer: @aaaaaaaaaaaaaaa owes @bbbbbbbbbbbbbbb 5 credits for {w}. Open.'  # noqa: E731
+        text = B.fit(make, 'x' * 300)
+        self.assertLessEqual(len(text), B.MAX_TEXT)
+        self.assertTrue(text.endswith('x\u2026. Open.'))
+        self.assertEqual(B.fit(make, 'a logo'), make('a logo'))
 
     def test_accept(self):
         for t in ('@bindvalun accept', '@bindvalun @alice Accepted!', 'yes', '@bindvalun bind'):
@@ -60,8 +84,9 @@ class FakeX:
 
 
 class FakeValun:
-    def __init__(self, fail=None):
-        self.binds, self.fail, self.touched = [], fail, []
+    def __init__(self, fail=None, how='note', held=None, settle_to='transfer', public=None):
+        self.binds, self.fail, self.touched, self.how, self._held = [], fail, [], how, held or {}
+        self.settle_to, self._public, self.settles = settle_to, public, 0
 
     def bind(self, state, offer):
         if self.fail:
@@ -69,10 +94,49 @@ class FakeValun:
         for x in (offer['debtor'], offer['creditor']):
             state.s['profiles'].setdefault(B.profile_name(x), {'x': x})
         self.binds.append(dict(offer))
-        return 'vd_' + '1' * 16
+        return 'vd_' + '1' * 16, self.how
+
+    def settle(self, offer, did, tries=1, wait_s=5):
+        self.settles += 1
+        return self.settle_to
+
+    def held(self, name):
+        return self._held.get(name, {})
+
+    def public(self, name, fetch=None):
+        return self._public
 
     def touch(self, name):
         self.touched.append(name)
+
+
+class FakeCLI:
+    """The `python -m valun` commands Valun runs, answered as the pilot answered them (pay_probe, 2026-11-13)."""
+    def __init__(self, transfer_applies=True):
+        self.status, self.calls, self.cleared, self.applies = None, [], set(), transfer_applies
+
+    def __call__(self, args, timeout=180):
+        profile, cmd = args[1], args[2]
+        self.calls.append((profile, *args[2:]))
+        if cmd == 'join':
+            return 0, 'joined', ''
+        if cmd == 'clearing':
+            self.cleared.add(profile)
+            if self.status == 'paying_by_transfer' and {'x_alice', 'x_carol'} <= self.cleared:
+                self.status = 'paid_by_transfer' if self.applies else 'payment_due'
+            return 0, 'signed', ''
+        tool, a = args[3], json.loads(args[4])
+        r = {'valun_propose': lambda: {'deal_id': 'vd_2', 'status': 'open'},
+             'valun_respond': lambda: {'status': 'agreed'},
+             'valun_deliver': lambda: {'status': 'delivered'},
+             'valun_deal': lambda: {'status': self.status or 'delivered', 'delivery': {'sha256': 'ab' * 32}}}.get(tool)
+        if r:
+            return 0, json.dumps(r()), ''
+        if tool == 'valun_review_delivery':
+            assert a['expected_deliverable_sha256'] == 'ab' * 32
+            self.status = 'paying_by_transfer' if a.get('pay_with') else 'note_issued'
+            return 0, json.dumps({'status': self.status}), ''
+        raise AssertionError(tool)
 
 
 def tweet(tid, author, author_id, text, reply_to=None, mentions=()):
@@ -92,7 +156,8 @@ class Flow(unittest.TestCase):
         b.poll()
         text, reply_to = b.x.posts[0]
         self.assertEqual(reply_to, '1')
-        self.assertEqual(text, 'Offer: @alice owes @bob 5 credits for the logo. @bob, reply "accept" to this post to bind it. Open for 24 hours.')
+        self.assertEqual(text, 'Offer: @alice owes @bob 5 credits for the logo. @bob, reply "accept" to this post to bind it. '
+                               'Open for 24 hours. Once bound, @bob can pass it on.')
         offer_id = '1001'
         b.x.feed = [tweet(2, 'mallory', 'id-mallory', '@bindvalun accept', reply_to=offer_id)]   # not the creditor
         b.poll()
@@ -101,7 +166,8 @@ class Flow(unittest.TestCase):
         b.poll()
         self.assertEqual(b.v.binds[0]['amount'], 5)
         self.assertEqual(b.v.binds[0]['accept_id'], '3')
-        self.assertEqual(b.x.posts[1], ('Bound. @alice owes @bob 5 credits for the logo. Recorded by a Basis tracker: valun.tech/agent/x_alice', '3'))
+        self.assertEqual(b.x.posts[1], ('Bound. @alice owes @bob 5 credits for the logo. @bob can now pay others with it. '
+                                        'Recorded by a Basis tracker: valun.tech/agent/x_alice', '3'))
         self.assertEqual(b.st.s['offers'][offer_id]['state'], 'bound')
         # spending: one plain reply, one with a link, the posts and users read
         self.assertAlmostEqual(b.st.s['month_usd'], 0.015 + 0.20 + 3 * 0.005 + 3 * 0.010 + 0.010, places=6)
@@ -138,6 +204,65 @@ class Flow(unittest.TestCase):
         b.poll()
         self.assertEqual(b.x.posts, [], 'no room: nothing is read or posted')
 
+    def circulating(self, **kw):
+        b = self.bot(FakeValun(**kw))
+        b.st.s['profiles'] = {'x_alice': {'x': 'alice'}, 'x_bob': {'x': 'bob'}}
+        b.x.feed = [tweet(1, 'bob', 'id-bob', '@bindvalun I owe @carol 3 for the review, pay with @alice', mentions=('carol', 'alice'))]
+        b.poll()
+        return b
+
+    def test_pay_with_a_promise(self):
+        b = self.circulating(how='transfer', held={'x_bob': {'x_alice': 3}})
+        self.assertEqual(b.x.posts[0], ("Offer: @bob pays @carol 3 credits for the review with @alice's promise: @alice would "
+                                        'owe @carol instead of @bob. @carol, reply "accept" to take it. Open for 24 hours.', '1'))
+        b.x.feed = [tweet(2, 'carol', 'id-carol', '@bindvalun accept', reply_to='1001')]
+        b.poll()
+        self.assertEqual(b.v.binds[0]['via'], 'alice')
+        self.assertEqual(b.x.posts[1], ("Paid with a promise. 3 credits of @alice's IOU to @bob now belong to @carol: @alice owes "
+                                        '@carol instead, and @bob paid for the review with no new IOU. Recorded by a Basis '
+                                        'tracker: valun.tech/agent/x_carol', '2'))
+        self.assertEqual(b.st.s['offers']['1001']['state'], 'bound')
+
+    def test_pay_with_a_promise_one_does_not_hold(self):
+        b = self.circulating(held={'x_bob': {'x_alice': 1}})
+        self.assertEqual(b.x.posts, [("@bob You hold 1 credit of alice's promises here, so you cannot pay 3 with them. "
+                                      'Nothing was offered.', '1')])
+        self.assertEqual(b.st.s['offers'], {})
+        b = self.bot()
+        b.x.feed = [tweet(1, 'bob', 'id-bob', '@bindvalun I owe @carol 3, pay with @carol', mentions=('carol',)),
+                    tweet(2, 'bob', 'id-bob', '@bindvalun I owe @carol 3, pay with @alice', mentions=('carol',))]   # @alice not tagged
+        b.poll()
+        self.assertEqual(b.x.posts, [])
+
+    def test_transfer_waiting_then_settled(self):
+        b = self.circulating(how='pending', held={'x_bob': {'x_alice': 3}}, settle_to='pending')
+        b.x.feed = [tweet(2, 'carol', 'id-carol', 'accept', reply_to='1001')]
+        b.poll()
+        self.assertIn('waits for its signatures', b.x.posts[1][0])
+        self.assertEqual(b.st.s['offers']['1001']['state'], 'settling')
+        b.settle_pending()
+        self.assertEqual(len(b.x.posts), 2, 'still pending: nothing posted')
+        b.v.settle_to = 'own_note'
+        b.settle_pending()
+        self.assertEqual(b.x.posts[2], ("Bound. Moving @alice's promise did not apply, so @bob's own IOU paid: @bob owes @carol "
+                                        '3 credits for the review. Recorded by a Basis tracker: valun.tech/agent/x_bob', '2'))
+        b.settle_pending()
+        self.assertEqual((len(b.x.posts), b.v.settles), (3, 2), 'settled once')
+
+    def test_record(self):
+        pos = {'owes': 2, 'claims_held': 5, 'cleared_by_setoff': 1, 'novated_as_issuer': 3}
+        b = self.bot(FakeValun(public=pos))
+        b.st.s['profiles'] = {'x_alice': {'x': 'alice'}}
+        b.x.feed = [tweet(1, 'bob', 'id-bob', '@bindvalun record @alice', mentions=('alice',)),
+                    tweet(2, 'bob', 'id-bob', '@bindvalun record')]          # one a day per author
+        b.poll()
+        self.assertEqual(b.x.posts, [("alice's record: owes 2 credits, holds 5 of others' promises; 3 credits of alice's "
+                                      "promises changed hands; 1 cancelled in loops. valun.tech/agent/x_alice", '1')])
+        b.x.feed = [tweet(3, 'dan', 'id-dan', '@bindvalun my record')]
+        b.poll()
+        self.assertEqual(b.x.posts[1][0], '@dan has no promises bound here yet. One starts with a post like "@bindvalun I owe" '
+                                          "plus someone's handle and 1 to 5 credits.")
+
     def test_loops(self):
         b = self.bot()
         b.st.s['profiles'] = {'x_alice': {'x': 'alice'}, 'x_bob': {'x': 'bob'}}
@@ -149,6 +274,31 @@ class Flow(unittest.TestCase):
         self.assertEqual(sorted(b.v.touched), ['x_alice', 'x_bob'])
         b.loops(fetch=lambda: loops)
         self.assertEqual(len(b.x.posts), 1, 'each loop once')
+
+
+class ValunSteps(unittest.TestCase):
+    """Valun.bind and Valun.settle against a fake CLI: which key signs what."""
+    def run_bind(self, applies):
+        home = tempfile.mkdtemp()
+        cli = FakeCLI(transfer_applies=applies)
+        v = B.Valun(home=home, server='https://example.invalid', run=cli)
+        st = B.State(os.path.join(home, 's.json'))
+        offer = {'debtor': 'bob', 'creditor': 'carol', 'via': 'alice', 'amount': 3, 'what': 'the review', 'text': 't',
+                 'post_id': '1', 'accept_id': '2'}
+        return v.bind(st, offer), cli
+
+    def test_paid_with_a_promise(self):
+        (did, how), cli = self.run_bind(True)
+        self.assertEqual((did, how), ('vd_2', 'transfer'))
+        review = [c for c in cli.calls if c[1:3] == ('call', 'valun_review_delivery')]
+        self.assertEqual([(c[0], json.loads(c[3]).get('pay_with')) for c in review], [('x_bob', 'x_alice')])
+        self.assertEqual(sorted(c[0] for c in cli.calls if c[1] == 'clearing'), ['x_alice', 'x_carol'], 'the issuer and the payee sign')
+
+    def test_transfer_fails_own_iou_pays(self):
+        (did, how), cli = self.run_bind(False)
+        self.assertEqual(how, 'own_note')
+        review = [json.loads(c[3]) for c in cli.calls if c[1:3] == ('call', 'valun_review_delivery')]
+        self.assertEqual([r.get('pay_with') for r in review], ['x_alice', None])
 
 
 if __name__ == '__main__':
