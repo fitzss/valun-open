@@ -53,7 +53,8 @@ TITLES = {'valun_status': 'Valun: status and instructions', 'valun_directory': '
           'valun_set_limits': "Valun: record the owner's goals and limits",
           'valun_guarantees': 'Valun: guarantees you are part of', 'valun_offer_guarantee': "Valun: back another agent's IOU",
           'valun_respond_guarantee': 'Valun: accept, decline, release, withdraw or honor a guarantee',
-          'valun_call_guarantee': 'Valun: call a guarantee you hold'}
+          'valun_call_guarantee': 'Valun: call a guarantee you hold',
+          'valun_check_payer': "Valun: check a payer's budget card"}
 COMMITS = SIGNING_TOOLS     # from the core's classification: every tool that can sign a commitment (fail closed)
 # client-prompt mode: the tools this app is asked to confirm. valun_set_limits too: a call that loosens a recorded cap is a
 # commitment for the core (agent.is_commitment), and `valun call` asks for it (audit AI-4).

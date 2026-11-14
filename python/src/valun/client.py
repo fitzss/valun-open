@@ -142,6 +142,7 @@ _JOURNAL_NOVATIONS = ('transfer_out', 'transfer_in', 'setoff')     # journal kin
 # SETOFF_MS, TRANSFER_MS; written out because novation.py imports this module, so nv is not complete at import time).
 _EXPIRING_MS = (997, 998, 999)
 _DEAL_ID_RE = re.compile(r'vd_[0-9a-f]{16}\Z')
+_PARTICIPANT_ID_RE = re.compile(r'vp_[0-9a-f]{12}\Z')
 _TRANSFER_ID_RE = re.compile(r'vt_[0-9a-f]{16}\Z')
 _ATTEMPT_REF_RE = re.compile(r'#[1-9][0-9]{0,3}\Z')
 _SERVER_WORD_RE = re.compile(r'[a-z_]{1,40}\Z')
@@ -1022,6 +1023,78 @@ class Client:
     def set_limits(self, body):
         """Record limits and goals the owner gave this agent; the server keeps them within the owner's mandate."""
         return self.request('PUT', '/pilot/v1/limits', body)
+
+    # ---------- budget cards ----------
+    # An owner may publish its agent's budget card (set_public_card): the limits of its mandate, the room it leaves, the
+    # guarantees that back the agent in public, and its record. Anyone can read a card (card) and check a payment against
+    # it (check_payer): public reads, sent without a token, that sign nothing. Where the owner has not published its card,
+    # both answer 404 card_not_public.
+    def resolve_participant(self, who):
+        """The participant `who` names, as {'id', 'handle'}. `who` is stripped and lower-cased; a participant id (vp_ + 12
+        hex) is taken as it is, with handle None, without a read (it may be an unlisted participant). Anything else is a
+        handle, looked up in the directory (GET /participants) the way the agent tools look up a counterparty: a
+        participant with exactly that id first, else the one with that handle. unknown_participant when there is none;
+        bad_arguments for a `who` that is not a name."""
+        if not isinstance(who, str) or not who.strip():
+            raise ValunError('bad_arguments', 'name the participant by its handle or participant id')
+        w = who.strip().lower()
+        if _PARTICIPANT_ID_RE.fullmatch(w):
+            return {'id': w, 'handle': None}
+        listed = self.directory()
+        people = [p for p in (listed if isinstance(listed, list) else []) if isinstance(p, dict)]
+        for key in ('id', 'handle'):
+            for p in people:
+                if p.get(key) == w and isinstance(p.get('id'), str) and p['id']:
+                    return {'id': p['id'], 'handle': p.get('handle')}
+        raise ValunError('unknown_participant', f'no participant called {w!r}; use valun_directory')
+
+    def _card_read(self, path):
+        """A public budget-card read. A server from before budget cards answers these routes 401 (they are not public
+        there, and no token is sent): feature_unavailable."""
+        try:
+            return self.request('GET', path, auth=False)
+        except ValunError as e:
+            if e.status == 401:
+                raise ValunError('feature_unavailable', 'this Valun server offers no budget cards (it does not serve '
+                                                        'GET /participants/{id}/card); nothing was read', 401) from None
+            raise
+
+    def card(self, who):
+        """The budget card of the participant `who` names (a handle or participant id: resolve_participant), as GET
+        /participants/{id}/card shows it: {card, network, unit, agent, mandate, room, backing, record, card_hash, check,
+        page}, amounts in the network's unit. card_not_public (404) when its owner has not published it."""
+        return self._card_read(f"/pilot/v1/participants/{_seg(self.resolve_participant(who)['id'])}/card")
+
+    def check_payer(self, payer, amount, payee=None):
+        """May `payer` (a handle or participant id) owe `payee` (a handle or participant id; default: this participant)
+        `amount` more, by the budget card its owner published? GET /participants/{id}/check?amount=N&payee=ID answers
+        {verdict ('accept', 'ask_owner' or 'decline'), reasons, rule, payer, payee, amount, mandate {version, expires_at},
+        room_left, approval_needed, cover {covered, guarantees}, record, card_hash, checked_at, took_ms}. Read only: it
+        signs nothing. amount is a whole number of this network's unit, at least 1 (bad_arguments otherwise, before
+        anything is read). card_not_public (404) when the payer's owner has not published its card."""
+        if not (isinstance(amount, int) and not isinstance(amount, bool) and 1 <= amount <= nv.MAX_SAFE_INTEGER):
+            raise ValunError('bad_arguments', f'amount must be a whole number of {self.unit}, at least 1; nothing was read')
+        payer_id = self.resolve_participant(payer)['id']
+        if payee is None:
+            payee_id = self.participant_id
+            if not payee_id:
+                raise ValunError('bad_arguments', 'give payee: this client has no participant id of its own (it is not joined)')
+        else:
+            payee_id = self.resolve_participant(payee)['id']
+        return self._card_read(f'/pilot/v1/participants/{_seg(payer_id)}/check?amount={amount}&payee={_seg(payee_id)}')
+
+    def set_public_card(self, on, owner_token):
+        """The OWNER's choice: publish (on=True) or hide (on=False) this participant's budget card, PUT /owner/mandate
+        {public_card}. owner_token is the owner token of this profile's participant: checked first (GET /owner; not_owner
+        when it is not, and nothing changes), used as the bearer of these requests only, never stored. Returns the
+        server's answer ({mandate, mandate_version, changed_by, changed})."""
+        if not isinstance(on, bool):
+            raise ValunError('invalid_field', 'on must be True or False')
+        if not (isinstance(owner_token, str) and owner_token.strip()):
+            raise ValunError('bad_arguments', 'the owner token is needed to publish or hide the budget card; nothing was changed')
+        owner_token = owner_token.strip()
+        self._check_owner(owner_token)
+        return self.request('PUT', '/pilot/v1/owner/mandate', {'public_card': on}, token=owner_token)
 
     # ---------- guarantees (servers listing guarantees/1; fix inbox #18) ----------
     # A guarantee is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes that
@@ -2182,7 +2255,8 @@ class Client:
     def _check_owner(self, owner_token):
         """The owner token is the owner's of this profile's participant: GET /pilot/v1/owner with it (read only). For a
         resolution only this client's records record (the server is not told, so it does not check the token), and
-        for `valun config approvals` to or from console (an owner token changes the mandate of its own participant).
+        for `valun config approvals` to or from console and set_public_card (an owner token changes the mandate of its
+        own participant).
         Returns the GET /owner answer (a dict that names this participant); not_owner when the server refuses the
         token (401, 403, 404: an agent token gets 404) or names another participant, or none."""
         try:

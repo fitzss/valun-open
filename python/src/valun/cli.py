@@ -13,6 +13,8 @@
   valun policy show     the consent policy in force (local policy and owner mandate; the stricter applies)
   valun attempts list | resolve DEAL ATTEMPT --not-applied|--applied
                         the payment attempts your client records; the OWNER resolves one whose outcome is unknown
+  valun card [WHO] | check PAYER AMOUNT | publish | unpublish
+                        budget cards: show one, check a payer against one; the OWNER publishes or hides yours
   valun sandbox ...     deterministic sandbox agents: seller, buy, earn, tour
 Add --profile NAME to keep several identities apart. Secrets are never printed (the owner token is shown once at
 join, or written to --owner-token-file).
@@ -1142,6 +1144,94 @@ def cmd_profile(args):
     return 0
 
 
+CARD_WORDS = ('check', 'publish', 'unpublish')       # `valun card` sub-commands; any other single word is WHO
+CARD_USAGE = 'usage: valun card [WHO] | valun card check PAYER AMOUNT | valun card publish | valun card unpublish'
+
+
+def _public_card_of(answer):
+    """public_card as the server's answer to PUT /owner/mandate shows it, at its top or in its mandate; None when it
+    shows none (a server from before budget cards ignores the field)."""
+    if isinstance(answer, dict):
+        for where in (answer, answer.get('mandate')):
+            if isinstance(where, dict) and isinstance(where.get('public_card'), bool):
+                return where['public_card']
+    return None
+
+
+def cmd_card(args):
+    """valun card [WHO] | check PAYER AMOUNT | publish | unpublish: budget cards. A card of WHO (a handle or participant
+    id), which needs no joined profile, or of this profile's own agent. `check` is valun_check_payer with this profile's
+    agent as the payee: it prints the tool's answer and exits 0 only for the verdict accept. publish and unpublish are the
+    OWNER's: they use the owner token once, in memory (from --owner-token-file or a hidden prompt), never stored."""
+    words, store, name = list(args.words or []), _store(args), _profile(args)
+    kind = words[0] if words and words[0] in CARD_WORDS else 'show'
+    if (kind == 'check' and len(words) != 3) or (kind in ('publish', 'unpublish') and len(words) != 1) \
+            or (kind == 'show' and len(words) > 1):
+        print(CARD_USAGE)
+        return 2
+    if not (kind == 'show' and words) and not (store.state.get('participant_id') and store.secret()):
+        print(f"Profile '{name}' is not joined yet; run `valun --profile {name} join` first.")
+        return 1
+    if kind == 'check':
+        if not re.fullmatch(r'[0-9]{1,16}', words[2]):
+            print(f'AMOUNT must be a whole number of {_unit(store)}, at least 1')
+            return 2
+        agent, _mode = _agent(args, store)
+        out = agent.call_safe('valun_check_payer', {'payer': words[1], 'amount': int(words[2])})
+        print(json.dumps(out, ensure_ascii=False, indent=1))
+        return 0 if out.get('verdict') == 'accept' else 1
+    c = vc.Client(store, _server(args, store))
+    if kind == 'show':
+        return _show_card(args, c, words[0] if words else None)
+    owner = _owner_token(args)
+    if owner is None:
+        return 1
+    on = kind == 'publish'
+    try:
+        r = c.set_public_card(on, owner)
+    except vc.ValunError as e:
+        print(f'Could not change your budget card ({e.code}): {e}')
+        if e.code == 'not_owner':
+            print(f"  Profile '{name}' needs the owner token of its participant ({store.state.get('participant_id')}); "
+                  '`valun --profile NAME card ...` acts on another profile.')
+        return 1
+    if _public_card_of(r) is not on:
+        print('The server did not record it (its answer shows no public_card): this server may not offer budget cards.')
+        return 1
+    if not on:
+        print('Your budget card is no longer public: reading it, or checking a payment against it, now answers card_not_public.')
+        return 0
+    try:
+        page = (c.card(c.participant_id) or {}).get('page')
+    except vc.ValunError:
+        page = None
+    print('Your budget card is public' + (f': {_terminal_text(page, 200)}' if isinstance(page, str) and page else '.'))
+    print("Anyone can read it (your agent's limits and objective, the room it has left, its public backing and its record) "
+          'and check a payment against it. To hide it again: '
+          f'`valun --profile {name} card unpublish --owner-token-file FILE` (FILE: the file holding your owner token).')
+    return 0
+
+
+def _show_card(args, c, who):
+    """`valun card [WHO]`: the card as the server shows it (JSON), or why there is none to show (exit 1)."""
+    try:
+        card = c.card(c.participant_id if who is None else who)
+    except vc.ValunError as e:
+        if e.code == 'card_not_public' and who is None:
+            print('Your budget card is not public. Your owner can publish it: '
+                  f'`valun --profile {_profile(args)} card publish --owner-token-file FILE` (FILE: the file holding your '
+                  'owner token).')
+        elif e.code == 'card_not_public':
+            print(f"{_terminal_text(who, 64)}'s owner has not published a budget card.")
+        elif e.code == 'feature_unavailable':
+            print(_terminal_text(e))
+        else:
+            print(json.dumps(error_payload(e), ensure_ascii=False))
+        return 1
+    print(json.dumps(card, ensure_ascii=False, indent=1))
+    return 0
+
+
 def cmd_verify_check(args):
     """Verify a paid check's receipt (fix inbox #3): the check deal's signed terms, the reviewer's signed delivery, the
     receipt naming that deal and that text, the reviewer's key against the key pinned in this release, and (--work) that
@@ -1347,6 +1437,12 @@ def main(argv=None):
                     help='on: the guarantees between you and agents that also chose this are public on both cards (who backed '
                          'whom, the cap, how calls were honored; never the creditor); off hides them again')
     pf.add_argument('--server')
+    cd = sub.add_parser('card', help="budget cards: show one (yours by default), check a payer against one, or publish or "
+                                     'hide yours (owner)', description=CARD_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
+    cd.add_argument('words', nargs='*', metavar='ARG', help='WHO, or check PAYER AMOUNT, or publish, or unpublish')
+    cd.add_argument('--owner-token-file', help='publish and unpublish: the file holding your owner token (read once, not '
+                                               'stored); else it is asked')
+    cd.add_argument('--server')
     vk = sub.add_parser('verify-check', help="verify a check's receipt: signed by the reviewer's pinned key, naming its deal and the text it "
                                              "checked (and, with --work, that deal's delivery); read only")
     vk.add_argument('deal', nargs='?', help='the check deal id (vd_...); you must be a party to it')
@@ -1411,7 +1507,8 @@ def main(argv=None):
         return 1
     return {'join': cmd_join, 'enroll': cmd_enroll, 'status': cmd_status, 'doctor': cmd_doctor, 'config': cmd_config,
             'tools': cmd_tools, 'call': cmd_call, 'mcp': cmd_mcp, 'clearing': cmd_clearing, 'policy': cmd_policy,
-            'attempts': cmd_attempts, 'sandbox': cmd_sandbox, 'profile': cmd_profile, 'sell': cmd_sell, 'ergo': cmd_ergo, 'verify-check': cmd_verify_check}[args.cmd](args)
+            'attempts': cmd_attempts, 'sandbox': cmd_sandbox, 'profile': cmd_profile, 'card': cmd_card, 'sell': cmd_sell, 'ergo': cmd_ergo,
+            'verify-check': cmd_verify_check}[args.cmd](args)
 
 
 SELL_HELP = """Sell AI work on Valun for credits, with your own Claude API key. This profile's agent answers offers for
@@ -1427,6 +1524,20 @@ Services: summary (2 PC), rewrite (2 PC), translate (2 PC), code-review (3 PC), 
 delivery meet its terms? the buyer pastes the terms and the work); on the testnet network the same prices in nanoERG
 (x 1,000,000: 2 PC is 2000000 nanoERG, 0.002 tERG). A job costs roughly
 1-2 US cents on claude-opus-5-5 and far less on claude-haiku-5-5. Buyers send the text in a ``` block."""
+
+
+CARD_HELP = """Budget cards. An owner may publish its agent's budget card: the limits of its mandate (per deal, in total,
+the amount above which the owner approves, how many counterparties it may deal with), its objective and expiry, the room
+it has left, the guarantees that back it in public, and its record. Anyone can read a card and check a payment against it.
+
+  valun card                       your agent's own card (or that it is not public)
+  valun card WHO                   the card of WHO, a handle or participant id (no joined profile needed)
+  valun card check PAYER AMOUNT    may PAYER owe you AMOUNT more? The verdict, as valun_check_payer gives it; exits 0
+                                   only for accept
+  valun card publish               OWNER: publish your agent's card (--owner-token-file FILE, else the token is asked)
+  valun card unpublish             OWNER: hide it again
+
+For the card of an agent whose handle is check, publish or unpublish, give its participant id."""
 
 
 MCP_HELP = """Run Valun as a local MCP server (stdio). Add it to your MCP client, for example:

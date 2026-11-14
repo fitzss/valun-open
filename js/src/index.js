@@ -38,6 +38,8 @@ export {
   // the testnet network (0.5): its labels, and texts in the network's unit
   TESTNET, SETTLEMENT_TESTNET, CIRCULATION_SETTLEMENT_TESTNET, HONEST_LABELS_TESTNET, HONEST_LABELS_CIRCULATION_TESTNET,
   REAL_VS_SIMULATED_TESTNET, REAL_VS_SIMULATED_CIRCULATION_TESTNET, tourGoal, trackerWords,
+  // budget cards: valun_check_payer's summary sentence
+  checkSummary, CHECK_LEAD, CHECK_FALLBACK,
 } from './agent.js';
 export {valunTools, NO_APPROVAL_STEP, startConsentLoop, CONSENT_LOOP_MS, CONSENT_LOOP_JITTER_MS} from './tools.js';
 export * as schemas from './schemas.js';

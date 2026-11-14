@@ -236,8 +236,8 @@ def guarantee_brief(g):
 def brief_status(out):
     """valun_status's brief view (brief=true, for small models), made from the full view, so it reads and signs exactly
     the same: who you are, your owner's objective and goals, the limits in force, where approvals happen, what you hold
-    and owe, the notes you can spend, the payments and consents in progress, the next sandbox step, and one line on what
-    PC are (the honest labels stay in the full view)."""
+    and owe (and the room your mandate leaves, where GET /me shows it), the notes you can spend, the payments and
+    consents in progress, the next sandbox step, and one line on what PC are (the honest labels stay in the full view)."""
     def d(v):
         return v if isinstance(v, dict) else {}
     you, pos = d(out.get('you')), d(out.get('position'))
@@ -247,6 +247,8 @@ def brief_status(out):
          'goals_your_owner_told_you': out.get('goals_your_owner_told_you'),
          'limits_in_force': out.get('limits_in_force'), 'approvals': out.get('approvals'),
          'you_hold_PC': pos.get('claims_held'), 'you_owe_PC': pos.get('owes'), 'net_PC': pos.get('net')}
+    if isinstance(out.get('room'), dict):
+        b['room'] = out['room']
     if 'notes_you_can_spend' in out:
         b['notes_you_can_spend'] = [{k: n.get(k) for k in ('issuer', 'amount_PC', 'checked_by_your_client')}
                                     for n in (out.get('notes_you_can_spend') or []) if isinstance(n, dict)]
@@ -362,7 +364,7 @@ LIMIT_FIELDS = {
     'min_price_as_payee': ('min_price_as_payee', 'floor'), 'min_payer_coverage_pct': ('min_payer_coverage_pct', 'floor'),
 }
 TOOL_NAMES = [t['name'] for t in schemas.ALL]
-READ_ONLY_TOOLS = ('valun_status', 'valun_directory', 'valun_inbox', 'valun_deal', 'valun_guarantees')
+READ_ONLY_TOOLS = ('valun_status', 'valun_directory', 'valun_inbox', 'valun_deal', 'valun_guarantees', 'valun_check_payer')
 # The read-only tools before which an agent with consents_on_reads signs the value-safe consents (decision D-3 a), and
 # the keys of each entry of their consents_signed_now.
 CONSENTS_ON_READ_TOOLS = ('valun_status', 'valun_inbox')
@@ -484,6 +486,72 @@ def _count(k, v, units):
 def _count_or(a, k, units, default=None):
     """Argument k checked by _count, or `default` when it is absent or null."""
     return default if a.get(k) is None else _count(k, a[k], units)
+
+
+# What each required argument of a tool is, for the refusal when it is missing (fix inbox #58).
+ARGUMENT_WORDS = {
+    'deal_id': 'the deal id, vd_ + 16 hex, as valun_inbox lists it',
+    'action': 'accept, decline, counter or withdraw',
+    'counterparty': 'their handle or participant id',
+    'role': 'payer to buy, payee to sell',
+    'title': 'a short name of the service',
+    'description': 'what exactly is to be done',
+    'deliverable': 'what will be delivered and in what form',
+    'payer': 'the handle or participant id of the agent that would owe you',
+}
+
+
+# The arguments valun_propose needs besides its numbers (the price is checked as a number: _count).
+PROPOSE_TEXTS = ('counterparty', 'role', 'title', 'description', 'deliverable')
+
+
+def _required(a, keys, signs=True):
+    """The values of the required arguments `keys` of a tool call, in that order. Fix inbox #58: a call without one (or
+    with it null) is refused with bad_arguments naming each one missing and what it is, before anything is read, instead
+    of failing on a KeyError (internal_error); arguments that are not a JSON object are refused the same way."""
+    if not isinstance(a, dict):
+        raise vc.ValunError('bad_arguments', 'the arguments are not a JSON object' + ('; nothing was signed' if signs else ''))
+    missing = [k for k in keys if a.get(k) is None]
+    if missing:
+        raise vc.ValunError('bad_arguments', ('missing argument: ' if len(missing) == 1 else 'missing arguments: ')
+                            + ', '.join(f'{k} ({ARGUMENT_WORDS[k]})' for k in missing) + ('; nothing was signed' if signs else ''))
+    return [a[k] for k in keys]
+
+
+# valun_check_payer (budget cards): the summary's first word for each verdict the server gives, and its words when the
+# server gives no reasons.
+CHECK_LEAD = {'accept': 'Accept', 'ask_owner': 'Ask owner', 'decline': 'Decline'}
+CHECK_FALLBACK = {'accept': "its owner's budget card allows this IOU",
+                  'ask_owner': "an owner's approval is needed for an IOU this size",
+                  'decline': "its owner's budget card does not allow this IOU"}
+
+
+def check_summary(v):
+    """valun_check_payer's summary: the verdict and its reasons as one plain sentence, e.g. 'Accept: within its budget
+    (31 of 40 left), backed for you up to 3.' The reasons are the server's, each put on one line without its final stop;
+    without any, the words of CHECK_FALLBACK. A verdict this client does not know reads Unknown."""
+    v = v if isinstance(v, dict) else {}
+    verdict = v.get('verdict') if isinstance(v.get('verdict'), str) else None
+    reasons = v.get('reasons') if isinstance(v.get('reasons'), list) else []
+    parts = [p for p in (' '.join(r.split()).rstrip(' .;,') for r in reasons if isinstance(r, str)) if p]
+    if not parts:
+        parts = [CHECK_FALLBACK.get(verdict, 'the server gave no verdict this client knows')]
+    return f"{CHECK_LEAD.get(verdict, 'Unknown')}: {', '.join(parts)}."
+
+
+def unchecked_payer(payer, amount, code):
+    """valun_check_payer's answer when the payer cannot be checked: its owner has not published a budget card
+    (card_not_public), or the server has none (feature_unavailable). An answer, not an error: verdict 'unknown'."""
+    who = shown(payer.get('handle') or payer.get('id'))
+    if code == 'feature_unavailable':
+        reason = 'this Valun server offers no budget cards'
+        summary = (f'Unknown: this Valun server offers no budget cards, so the budget of {who} cannot be checked; decide '
+                   'from its record (valun_directory) or ask your owner.')
+    else:
+        reason = "the payer's owner has not published a budget card"
+        summary = (f"Unknown: {who}'s owner has not published a budget card, so its budget cannot be checked; decide from "
+                   'its record (valun_directory) or ask your owner.')
+    return {'summary': summary, 'verdict': 'unknown', 'reasons': [reason], 'rule': None, 'payer': payer, 'amount': amount}
 
 
 def _party(g, role, terms):
@@ -654,7 +722,8 @@ class ValunAgent:
                          'valun_deal': self.deal, 'valun_propose': self.propose, 'valun_respond': self.respond,
                          'valun_deliver': self.deliver, 'valun_review_delivery': self.review, 'valun_set_limits': self.set_limits,
                          'valun_guarantees': self.guarantees, 'valun_offer_guarantee': self.offer_guarantee,
-                         'valun_respond_guarantee': self.respond_guarantee, 'valun_call_guarantee': self.call_guarantee}
+                         'valun_respond_guarantee': self.respond_guarantee, 'valun_call_guarantee': self.call_guarantee,
+                         'valun_check_payer': self.check_payer}
 
     # ---------- plumbing ----------
     def client(self, require_connection=True):
@@ -1278,6 +1347,7 @@ class ValunAgent:
     @staticmethod
     def _text_propose(a, snap):
         other, u = snap['counterparty'], snap.get('unit', vc.UNIT)
+        _required(a, PROPOSE_TEXTS)         # what propose() refuses (fix inbox #58) is never put to the owner
         role = a.get('role')
         if role not in ('payer', 'payee'):
             raise vc.ValunError('bad_role', 'role must be payer or payee')
@@ -1296,8 +1366,8 @@ class ValunAgent:
         """valun_propose's price, deliver_within_hours (default 48) and offer_valid_hours (default 24, and never longer
         than the hours it gives to deliver: a 6 h job's offer stays open 6 h): each a JSON integer of at least 1
         (_count), and the offer open no longer than the hours it gives to deliver (check_offer_hours). Exactly what
-        propose() signs, or bad_arguments before anything is read or signed."""
-        price = _count('price', a['price'], unit)
+        propose() signs, or bad_arguments before anything is read or signed (also for a missing price: fix inbox #58)."""
+        price = _count('price', a.get('price'), unit)
         due = _count_or(a, 'deliver_within_hours', 'hours', 48)
         ttl = _count_or(a, 'offer_valid_hours', 'hours', min(24, due))
         vc.check_offer_hours(ttl, due)
@@ -1453,8 +1523,11 @@ class ValunAgent:
                'limits_you_recorded': {k: v for k, v in recorded.items() if k not in ('notes', 'set_at')},
                'limits_in_force': {arg: (me.get('effective_limits') or me['mandate']).get(field) for arg, (field, _k) in LIMIT_FIELDS.items()},
                'mandate': {k: v for k, v in me['mandate'].items() if k != 'objective'}, 'mandate_version': me['mandate_version'],
-               'approvals': approvals, 'position': me['position'], 'authority': me['authority'], 'settlement': lab['settlement'],
-               'honest_labels': lab['honest_labels'], 'real_vs_simulated': lab['real_vs_simulated']}
+               'approvals': approvals, 'position': me['position']}
+        if isinstance(me.get('room'), dict):        # budget cards: what this agent owes now and may still owe
+            out['room'] = me['room']
+        out.update({'authority': me['authority'], 'settlement': lab['settlement'], 'honest_labels': lab['honest_labels'],
+                    'real_vs_simulated': lab['real_vs_simulated']})
         if circulating:
             out.update(self._circulation_status(c, me))
         return out
@@ -1837,9 +1910,32 @@ class ValunAgent:
         return {'guarantee': guarantee_brief(g),
                 'what_happens_next': f'The backer has {shown(hours)} hours to honor the call with its own credit note to you.'}
 
+    # ---------- budget cards ----------
+    def check_payer(self, a):
+        """valun_check_payer (read only): may `payer` owe this agent `amount` more, by the budget card its owner published?
+        The server's verdict object (Client.check_payer) with `summary` first (check_summary). The amount is checked as
+        valun_propose checks its price (_count), before anything is read. A payer whose owner has not published a card, or
+        a server without budget cards, gets verdict 'unknown' (unchecked_payer): an answer, not an error."""
+        c = self.client()
+        payer, = _required(a, ('payer',), signs=False)
+        if not isinstance(payer, str) or not payer.strip():
+            raise vc.ValunError('bad_arguments', 'payer must be the handle or participant id (text) of the agent that would owe you')
+        amount = _count('amount', a.get('amount'), getattr(c, 'unit', vc.UNIT))
+        ref = c.resolve_participant(payer)
+        try:
+            v = c.check_payer(ref['id'], amount)
+        except vc.ValunError as e:
+            if e.code in ('card_not_public', 'feature_unavailable'):
+                return unchecked_payer(ref, amount, e.code)
+            raise
+        if not isinstance(v, dict):
+            raise vc.ValunError('bad_response', 'the server answered the check with no verdict')
+        return {'summary': check_summary(v), **{k: x for k, x in v.items() if k != 'summary'}}
+
     def deal(self, a):
         c = self.client()
-        d = c.deal(a['deal_id'])
+        did, = _required(a, ('deal_id',), signs=False)
+        d = c.deal(did)
         out = {k: d.get(k) for k in ('id', 'status', 'your_role', 'counterparty', 'next_actions', 'versions', 'acceptance', 'agreement',
                                      'decline', 'completion', 'dispute', 'cancellation', 'approvals', 'labels')}
         if isinstance(d.get('retry_after_seconds'), int) and not isinstance(d['retry_after_seconds'], bool):
@@ -1911,7 +2007,7 @@ class ValunAgent:
             out['payment'] = d['payment']
         if d.get('your_role') == 'payer' and st in PAYABLE and self._offers_circulation(c, d):
             try:
-                out['how_you_can_pay'] = self._how_you_can_pay(c, a['deal_id'])
+                out['how_you_can_pay'] = self._how_you_can_pay(c, did)
             except vc.ValunError as e:
                 out['how_you_can_pay'] = {'problem': e.code, 'message': str(e)}
         out['history'] = d.get('history', [])[-12:]
@@ -1967,16 +2063,17 @@ class ValunAgent:
     def propose(self, a):
         c = self.client()
         unit = getattr(c, 'unit', vc.UNIT)
+        counterparty, role, title, description, deliverable = _required(a, PROPOSE_TEXTS)   # fix inbox #58
         price, due, ttl = self._offer_numbers(a, unit)      # whole numbers, refused before any read (fix inbox #22)
-        other = self._resolve(c, a['counterparty'])
+        other = self._resolve(c, counterparty)
         # A seller of exactly checkable work publishes that it needs the text in the description; check before signing.
-        if a.get('role') == 'payer' and '``` block' in str(other.get('services') or '') \
-                and sandbox.extract_text(a.get('description') or '') is None:
+        if role == 'payer' and '``` block' in str(other.get('services') or '') \
+                and sandbox.extract_text(description or '') is None:
             raise vc.ValunError('missing_text', (
                 f"Not signed. {other['handle']} needs the text to process inside the description, and yours has none. Put the "
                 'exact text in a ``` fenced block in the description (or as the only "quoted" string, or after TEXT: at the '
                 'end), then make the offer again.'))
-        r = c.propose(other['id'], a['role'], a['title'], a['description'], a['deliverable'], price, due, ttl)
+        r = c.propose(other['id'], role, title, description, deliverable, price, due, ttl)
         waiting = r['status'] == 'proposed_awaiting_owner'
         idle = None if recently_active(other.get('agent_last_seen'), joined_at=other.get('joined_at')) else (
             f"{other['handle']}'s agent has not been seen in the last 24 hours; it may never answer. Consider an active seller too.")
@@ -1985,12 +2082,12 @@ class ValunAgent:
                 'what_happened': (f"Your signed offer is waiting for your owner's approval before {other['handle']} can see it." if waiting
                                   else f"{other['handle']} can now accept, decline or counter your signed offer."),
                 'if_agreed': (f"After you accept their delivery you issue them a credit note of {signed} (you will owe them; not settled)."
-                              if a['role'] == 'payer' else f"After they accept your delivery they issue you a credit note of {signed} (they will owe you; not settled)."),
+                              if role == 'payer' else f"After they accept your delivery they issue you a credit note of {signed} (they will owe you; not settled)."),
                 **({'warning': idle} if idle else {})}
 
     def respond(self, a):
         c = self.client()
-        act, did = a['action'], a['deal_id']
+        did, act = _required(a, ('deal_id', 'action'))     # fix inbox #58: a missing one was a KeyError (internal_error)
         at = ''                                             # a counter-offer's price, as signed
         if act == 'accept':
             r = c.accept(did, a.get('expected_terms_hash'))
@@ -2019,6 +2116,7 @@ class ValunAgent:
 
     def deliver(self, a):
         c = self.client()
+        did, = _required(a, ('deal_id',))                  # fix inbox #58
         exact = a.get('exact_result')
         if exact is not None and not isinstance(exact, bool):
             raise vc.ValunError('bad_arguments', 'exact_result is true or false')
@@ -2029,7 +2127,7 @@ class ValunAgent:
         if not isinstance(a.get('content'), str) or not a['content']:
             raise vc.ValunError('bad_arguments', 'give content (the complete deliverable), or exact_result=true for a text-stats '
                                                  'or notary job')
-        d = c.deal(a['deal_id'])
+        d = c.deal(did)
         m = measure.measure(a['content'], terms_text(d), check_hosts=self.check_link_hosts)
         problems = [f"{x['requirement']}: measured {x['measured']}" for x in m['checks_against_agreed_terms'] if not x['met']]
         if m.get('warning'):
@@ -2038,7 +2136,7 @@ class ValunAgent:
             raise vc.ValunError('draft_does_not_meet_terms', 'Not sent. Your draft does not meet the agreed terms as measured: '
                                 + ' | '.join(problems) + ' Fix it and deliver again (send_anyway=true only if you are sure; '
                                 'the payer sees the same measurements).', extra={'measured': m})
-        r = c.deliver(a['deal_id'], a['content'], a.get('title') or '')
+        r = c.deliver(did, a['content'], a.get('title') or '')
         return {'deal_id': r['id'], 'status': r['status'], 'sha256': r['delivery']['sha256'],
                 'what_happened': 'Delivered and signed. The payer will accept it (issuing you a credit note) or dispute it.'}
 
@@ -2065,15 +2163,16 @@ class ValunAgent:
         if a.get('decision') not in ('accept', 'dispute'):
             raise vc.ValunError('bad_decision', "decision must be exactly 'accept' or 'dispute'; nothing was signed")
         c = self.client()
+        did, = _required(a, ('deal_id',))                  # fix inbox #58
         if a['decision'] == 'dispute':
             if not (a.get('reason') or '').strip():
                 raise vc.ValunError('reason_required', 'a dispute needs a reason')
-            r = c.dispute(a['deal_id'], a['reason'])
+            r = c.dispute(did, a['reason'])
             return {'deal_id': r['id'], 'status': r['status'], 'what_happened': 'Disputed. No credit note was issued; the dispute is recorded.'}
         issuer = self._pay_with(a)
         if issuer is not None:
             return self._review_pay_with(c, a, issuer)
-        r = c.complete(a['deal_id'], a.get('expected_deliverable_sha256'), a.get('expected_terms_hash'))
+        r = c.complete(did, a.get('expected_deliverable_sha256'), a.get('expected_terms_hash'))
         n = r.get('credit_note') or {}
         if r['status'] == 'completion_awaiting_owner':
             msg = 'You accepted the delivery and signed the credit note; your owner must approve before it is issued to the tracker.'

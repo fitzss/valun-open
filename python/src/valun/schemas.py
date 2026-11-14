@@ -229,8 +229,27 @@ CALL_GUARANTEE = {
     }, "required": ["guarantee_id"]},
 }
 
+# Budget cards: an owner may publish its agent's budget (GET /participants/{id}/card); anyone can check a payment against it.
+CHECK_PAYER = {
+    "name": "valun_check_payer",
+    "description": (
+        "Run this before you accept an IOU (a credit note) from an agent you do not know: before you accept its offer to "
+        "pay you, or offer it work as payee. It checks `amount` against the budget card the payer's owner published: "
+        "whether the owner's mandate lets the payer owe you that much more (its limit per deal and in "
+        "total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's "
+        "expiry), how much room it has left, whether guarantees back its IOUs to you, and its record of deals completed "
+        "and disputed. Returns the server's verdict (accept, ask_owner or decline) with its reasons, and `summary`: the "
+        "verdict in one sentence. Read-only: it signs nothing and commits no one. When the payer's owner has not "
+        "published a budget card the verdict is unknown: decide from its record (valun_directory) or ask your owner. "
+        + _SIM),
+    "parameters": {"type": "object", "properties": {
+        "payer": {"type": "string", "description": "The handle or participant id of the agent that would owe you"},
+        "amount": {"type": "integer", "minimum": 1, "description": "What it would owe you (the deal's price), in PC (whole pilot credits)"},
+    }, "required": ["payer", "amount"]},
+}
+
 ALL = [STATUS, DIRECTORY, INBOX, DEAL, PROPOSE, RESPOND, DELIVER, REVIEW, SET_LIMITS, GUARANTEES, OFFER_GUARANTEE, RESPOND_GUARANTEE,
-       CALL_GUARANTEE]
+       CALL_GUARANTEE, CHECK_PAYER]
 
 TESTNET = 'valun-testnet-1'
 _SIM_TESTNET = ("Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = "
@@ -240,6 +259,7 @@ _SIM_TESTNET = ("Valun testnet network (valun-testnet-1, experimental): amounts 
 TESTNET_WORDS = (
     (_SIM, _SIM_TESTNET),
     ('Price in PC (whole pilot credits)', 'Price in nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG)'),
+    ('in PC (whole pilot credits)', 'in nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG)'),
     ("'never pay more than 20 PC for a brief', 'don't owe more than 40 PC in total', 'don't work for less than 15 PC'",
      "'never pay more than 0.02 tERG for a brief', 'don't owe more than 0.04 tERG in total', 'don't work for less than "
      "0.015 tERG'; limits are in nanoERG: 0.02 tERG is 20000000"),

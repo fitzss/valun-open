@@ -562,6 +562,28 @@ export class Client {
   ledger(): Promise<Record<string, unknown>>;
   setLimits(body: Record<string, number | string | null>): Promise<Record<string, unknown>>;
 
+  // Budget cards: an owner may publish its agent's budget card; anyone can read it and check a payment against it (public
+  // reads, sent without a token, that sign nothing). Both reject with card_not_public (404) where it is not published,
+  // and with feature_unavailable on a server from before budget cards.
+  /**
+   * The participant `who` names (stripped, lower-cased): a participant id (vp_ + 12 hex) as it is, without a read
+   * (handle null); else a handle looked up in the directory, an exact id first. unknown_participant when there is none.
+   */
+  resolveParticipant(who: string): Promise<{id: string; handle: string | null}>;
+  /** GET /participants/{id}/card of the participant `who` names (a handle or participant id). */
+  card(who: string): Promise<BudgetCard>;
+  /**
+   * GET /participants/{id}/check?amount=N&payee=ID: may `payer` owe `payee` (default: this participant) `amount` more, by
+   * its owner's budget card? amount: a whole number of the network's unit, at least 1 (bad_arguments otherwise).
+   */
+  checkPayer(payer: string, amount: number, options?: {payee?: string | null}): Promise<PayerCheck>;
+  /**
+   * The OWNER's choice: PUT /owner/mandate {public_card: on}. ownerToken (this profile's participant's owner token) is
+   * checked first (GET /owner; not_owner otherwise, nothing changed) and never stored.
+   */
+  setPublicCard(on: boolean, ownerToken: string): Promise<{mandate?: Record<string, unknown>; mandate_version?: number; changed_by?: string;
+    changed?: boolean} & Record<string, unknown>>;
+
   /** The checks of spec 15.2 before accepting or countering; throws ValunError on any failure. */
   verifyOffer(deal: DealView): Promise<VerifiedOffer>;
 
@@ -991,10 +1013,59 @@ export interface OfferGuaranteeRequest {
   deals?: string[] | null;
 }
 
+/** A participant as a budget card or a check names it. */
+export interface CardParty {
+  id: string;
+  handle: string | null;
+}
+
+/** An agent's budget card, as GET /participants/{id}/card shows it (amounts in the network's unit). */
+export interface BudgetCard extends Record<string, unknown> {
+  card: number;
+  network: string;
+  unit: string;
+  agent: {id: string; handle: string; display_name: string; operator: string};
+  mandate: {version: number; expires_at: string | null; may_issue_credit: boolean; per_deal: number; outstanding_cap: number;
+    approve_above: number; counterparties: 'any' | {listed: number}; objective: string};
+  room: {outstanding: number; room_left: number; as_of: string};
+  backing: {active: number; total_cap: number; remaining: number; public: Array<{guarantee_id: string; backer: CardParty;
+    creditor: CardParty; cap: number; remaining: number; expires_at: string}>};
+  record: {completed: number; disputed: number; holds: number; owes: number; cleared: number};
+  card_hash: string;
+  check: string;
+  page: string;
+}
+
+/** The server's verdict on a payment against a payer's budget card (GET /participants/{id}/check). */
+export interface PayerCheck extends Record<string, unknown> {
+  verdict: 'accept' | 'ask_owner' | 'decline';
+  reasons: string[];
+  rule: string | null;
+  payer: CardParty;
+  payee: CardParty;
+  amount: number;
+  mandate: {version: number; expires_at: string | null};
+  room_left: number;
+  approval_needed: unknown;
+  cover: {covered: unknown; guarantees: Array<{guarantee_id: string; backer: CardParty | null; remaining: number}>};
+  record: Record<string, unknown>;
+  card_hash: string;
+  checked_at: string;
+  took_ms: number;
+}
+
+/**
+ * valun_check_payer's answer: the server's verdict object with `summary` (one sentence) first; or, when the payer's owner
+ * has not published a budget card (or the server has none), verdict 'unknown' with a summary that says so.
+ */
+export type PayerCheckAnswer = ({summary: string} & PayerCheck)
+  | {summary: string; verdict: 'unknown'; reasons: string[]; rule: null; payer: CardParty; amount: number};
+
 export type ToolName =
   | 'valun_status' | 'valun_directory' | 'valun_inbox' | 'valun_deal' | 'valun_propose' | 'valun_respond' | 'valun_deliver'
   | 'valun_review_delivery' | 'valun_set_limits'
-  | 'valun_guarantees' | 'valun_offer_guarantee' | 'valun_respond_guarantee' | 'valun_call_guarantee';
+  | 'valun_guarantees' | 'valun_offer_guarantee' | 'valun_respond_guarantee' | 'valun_call_guarantee'
+  | 'valun_check_payer';
 
 /** A JSON Schema (the subset the tools use: type, properties, required, enum, items, minimum, maximum, minLength, description). */
 export type JsonSchema = {readonly [keyword: string]: JsonValue | JsonSchema | undefined};
@@ -1022,7 +1093,9 @@ export namespace schemas {
   const OFFER_GUARANTEE: ToolDefinition;
   const RESPOND_GUARANTEE: ToolDefinition;
   const CALL_GUARANTEE: ToolDefinition;
-  /** The tools, in the order every adapter lists them: the original nine, then the guarantee tools. */
+  /** Budget cards: valun_check_payer (read only). */
+  const CHECK_PAYER: ToolDefinition;
+  /** The tools, in the order every adapter lists them: the original nine, the guarantee tools, then valun_check_payer. */
   const ALL: readonly ToolDefinition[];
   /** 'valun-testnet-1'. */
   const TESTNET: string;
@@ -1218,6 +1291,16 @@ export const REAL_VS_SIMULATED_CIRCULATION_TESTNET: Readonly<{real: string; simu
 export function tourGoal(step: unknown, unit?: string, scale?: number): string;
 /** The tracker a credit note goes to, in an approval text. */
 export function trackerWords(network: unknown): string;
+/**
+ * valun_check_payer's summary: the verdict and its reasons as one plain sentence, e.g. 'Accept: within its budget (31 of
+ * 40 left), backed for you up to 3.' Without reasons, the words of CHECK_FALLBACK; a verdict this client does not know
+ * reads Unknown.
+ */
+export function checkSummary(check: unknown): string;
+/** The summary's first word for each verdict: Accept, Ask owner, Decline. */
+export const CHECK_LEAD: Readonly<{accept: string; ask_owner: string; decline: string}>;
+/** The summary's words for each verdict when the server gives no reasons. */
+export const CHECK_FALLBACK: Readonly<{accept: string; ask_owner: string; decline: string}>;
 /** processConsents() runs at most this often (60 000 ms). */
 export const CONSENTS_EVERY_MS: number;
 /** The local consent policy an invited (sandbox) join writes. */
@@ -1426,6 +1509,11 @@ export class ValunAgent {
   deliver(args: ToolArgs): Promise<ToolResult>;
   review(args: ToolArgs): Promise<ToolResult>;
   setLimits(args: ToolArgs): Promise<ToolResult>;
+  /**
+   * valun_check_payer ({payer, amount}; read only): the server's verdict on the payer's budget card with `summary` first,
+   * or verdict 'unknown' when its owner has not published one. The amount is checked as valun_propose checks its price.
+   */
+  checkPayer(args: ToolArgs): Promise<PayerCheckAnswer & ToolResult>;
 }
 
 /** A tool in the shape most JavaScript agent frameworks take: JSON Schema parameters and an execute function. */

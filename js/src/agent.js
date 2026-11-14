@@ -35,7 +35,7 @@ import {checkDelivery, extractText} from './sandbox.js';
 import * as schemas from './schemas.js';
 import {
   PyError, cmpCodePoints, cpLength, cpSlice, dictCopy, get, int, isDict, isoAwareMs, isoAwareUs, item, items, iterate, lower, or, pyEq,
-  repr, str, strip, truthy, typeName,
+  repr, rstripChars, splitWords, str, strip, truthy, typeName,
 } from './py.js';
 
 export const SETTLEMENT_NOTE = 'Issuing a credit note creates an outstanding obligation (the payer owes the payee that many PC). '
@@ -237,8 +237,9 @@ export function guaranteeBrief(g) {
 /**
  * valun_status's brief view (brief=true, for small models), made from the full view, so it reads and signs exactly the
  * same: who you are, your owner's objective and goals, the limits in force, where approvals happen, what you hold and
- * owe, the notes you can spend, the payments and consents in progress, the next sandbox step, and one line on what PC
- * are (the honest labels stay in the full view). The same as the Python core's brief_status.
+ * owe (and the room your mandate leaves, where GET /me shows it), the notes you can spend, the payments and consents in
+ * progress, the next sandbox step, and one line on what PC are (the honest labels stay in the full view). The same as
+ * the Python core's brief_status.
  */
 export function briefStatus(out) {
   const d = v => (isDict(v) ? v : {});
@@ -248,6 +249,7 @@ export function briefStatus(out) {
     objective_from_your_owner: get(out, 'objective_from_your_owner'), goals_your_owner_told_you: get(out, 'goals_your_owner_told_you'),
     limits_in_force: get(out, 'limits_in_force'), approvals: get(out, 'approvals'),
     you_hold_PC: get(pos, 'claims_held'), you_owe_PC: get(pos, 'owes'), net_PC: get(pos, 'net')};
+  if (isDict(get(out, 'room'))) b.room = out.room;
   if ('notes_you_can_spend' in out) {
     b.notes_you_can_spend = (get(out, 'notes_you_can_spend') || []).filter(isDict)
       .map(n => Object.fromEntries(['issuer', 'amount_PC', 'checked_by_your_client'].map(k => [k, get(n, k)])));
@@ -362,7 +364,8 @@ export const LIMIT_FIELDS = Object.freeze({
   min_price_as_payee: Object.freeze(['min_price_as_payee', 'floor']), min_payer_coverage_pct: Object.freeze(['min_payer_coverage_pct', 'floor']),
 });
 export const TOOL_NAMES = Object.freeze(schemas.ALL.map(t => t.name));
-export const READ_ONLY_TOOLS = Object.freeze(['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal', 'valun_guarantees']);
+export const READ_ONLY_TOOLS = Object.freeze(['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal', 'valun_guarantees',
+  'valun_check_payer']);
 // The read-only tools before which an agent with consentsOnReads signs the value-safe consents (decision D-3 a), and the
 // keys of each entry of their consents_signed_now.
 export const CONSENTS_ON_READ_TOOLS = Object.freeze(['valun_status', 'valun_inbox']);
@@ -429,6 +432,79 @@ function count(k, v, units) {
 /** Argument k checked by count(), or `dflt` when it is absent or null. The Python core's _count_or. */
 function countOr(a, k, units, dflt = null) {
   return get(a, k) === null ? dflt : count(k, a[k], units);
+}
+
+/** What each required argument of a tool is, for the refusal when it is missing (fix inbox #58). The Python core's. */
+const ARGUMENT_WORDS = Object.freeze({
+  deal_id: 'the deal id, vd_ + 16 hex, as valun_inbox lists it',
+  action: 'accept, decline, counter or withdraw',
+  counterparty: 'their handle or participant id',
+  role: 'payer to buy, payee to sell',
+  title: 'a short name of the service',
+  description: 'what exactly is to be done',
+  deliverable: 'what will be delivered and in what form',
+  payer: 'the handle or participant id of the agent that would owe you',
+});
+
+/** The arguments valun_propose needs besides its numbers (the price is checked as a number: count()). */
+const PROPOSE_TEXTS = Object.freeze(['counterparty', 'role', 'title', 'description', 'deliverable']);
+
+/**
+ * The values of the required arguments `keys` of a tool call, in that order. Fix inbox #58: a call without one (or with
+ * it null) is refused with bad_arguments naming each one missing and what it is, before anything is read, instead of
+ * failing on a KeyError (internal_error); arguments that are not a JSON object are refused the same way. The Python
+ * core's _required.
+ */
+function required(a, keys, signs = true) {
+  const tail = signs ? '; nothing was signed' : '';
+  if (!isDict(a)) throw new ValunError('bad_arguments', 'the arguments are not a JSON object' + tail);
+  const missing = keys.filter(k => get(a, k) === null || get(a, k) === undefined);
+  if (missing.length) {
+    throw new ValunError('bad_arguments', (missing.length === 1 ? 'missing argument: ' : 'missing arguments: ')
+      + missing.map(k => `${k} (${ARGUMENT_WORDS[k]})`).join(', ') + tail);
+  }
+  return keys.map(k => a[k]);
+}
+
+// valun_check_payer (budget cards): the summary's first word for each verdict the server gives, and its words when the
+// server gives no reasons. The Python core's.
+export const CHECK_LEAD = Object.freeze({accept: 'Accept', ask_owner: 'Ask owner', decline: 'Decline'});
+export const CHECK_FALLBACK = Object.freeze({accept: "its owner's budget card allows this IOU",
+  ask_owner: "an owner's approval is needed for an IOU this size",
+  decline: "its owner's budget card does not allow this IOU"});
+
+/**
+ * valun_check_payer's summary: the verdict and its reasons as one plain sentence, e.g. 'Accept: within its budget (31 of
+ * 40 left), backed for you up to 3.' The reasons are the server's, each put on one line without its final stop; without
+ * any, the words of CHECK_FALLBACK. A verdict this client does not know reads Unknown. The Python core's check_summary.
+ */
+export function checkSummary(v) {
+  const d = isDict(v) ? v : {};
+  const verdict = typeof get(d, 'verdict') === 'string' ? d.verdict : null;
+  const reasons = Array.isArray(get(d, 'reasons')) ? d.reasons : [];
+  let parts = reasons.filter(r => typeof r === 'string').map(r => rstripChars(splitWords(r).join(' '), ' .;,')).filter(Boolean);
+  if (!parts.length) parts = [verdict !== null && Object.hasOwn(CHECK_FALLBACK, verdict) ? CHECK_FALLBACK[verdict] : 'the server gave no verdict this client knows'];
+  return `${verdict !== null && Object.hasOwn(CHECK_LEAD, verdict) ? CHECK_LEAD[verdict] : 'Unknown'}: ${parts.join(', ')}.`;
+}
+
+/**
+ * valun_check_payer's answer when the payer cannot be checked: its owner has not published a budget card
+ * (card_not_public), or the server has none (feature_unavailable). An answer, not an error: verdict 'unknown'. The Python
+ * core's unchecked_payer.
+ */
+function uncheckedPayer(payer, amount, code) {
+  const who = shown(or(get(payer, 'handle'), get(payer, 'id')));
+  let reason, summary;
+  if (code === 'feature_unavailable') {
+    reason = 'this Valun server offers no budget cards';
+    summary = `Unknown: this Valun server offers no budget cards, so the budget of ${who} cannot be checked; decide `
+      + 'from its record (valun_directory) or ask your owner.';
+  } else {
+    reason = "the payer's owner has not published a budget card";
+    summary = `Unknown: ${who}'s owner has not published a budget card, so its budget cannot be checked; decide from `
+      + 'its record (valun_directory) or ask your owner.';
+  }
+  return {summary, verdict: 'unknown', reasons: [reason], rule: null, payer, amount};
 }
 
 /** A guarantee party's handle as the view names it, else its id from the checked terms. */
@@ -758,6 +834,7 @@ export class ValunAgent {
       valun_deliver: a => this.deliver(a), valun_review_delivery: a => this.review(a), valun_set_limits: a => this.setLimits(a),
       valun_guarantees: a => this.guarantees(a), valun_offer_guarantee: a => this.offerGuarantee(a),
       valun_respond_guarantee: a => this.respondGuarantee(a), valun_call_guarantee: a => this.callGuarantee(a),
+      valun_check_payer: a => this.checkPayer(a),
     });
   }
 
@@ -1471,6 +1548,7 @@ export class ValunAgent {
 
   #textPropose(a, snap) {
     const other = snap.counterparty, u = get(snap, 'unit', UNIT);
+    required(a, PROPOSE_TEXTS);                     // what propose() refuses (fix inbox #58) is never put to the owner
     const role = get(a, 'role');
     if (role !== 'payer' && role !== 'payee') throw new ValunError('bad_role', 'role must be payer or payee');
     const [price, due, ttl] = ValunAgent.#offerNumbers(a, u);     // exactly what propose() signs, or its refusal
@@ -1487,10 +1565,10 @@ export class ValunAgent {
   /**
    * valun_propose's price, deliver_within_hours (default 48) and offer_valid_hours (default 24): each a JSON integer of
    * at least 1 (count), and the offer open no longer than the hours it gives to deliver (checkOfferHours). Exactly what
-   * propose() signs, or bad_arguments before anything is read or signed.
+   * propose() signs, or bad_arguments before anything is read or signed (also for a missing price: fix inbox #58).
    */
   static #offerNumbers(a, unit) {
-    const price = count('price', item(a, 'price'), unit);
+    const price = count('price', get(a, 'price'), unit);
     // The offer's default validity is never longer than the hours it gives to deliver: a 6 h job's offer is open 6 h.
     const due = countOr(a, 'deliver_within_hours', 'hours', 48), ttl = countOr(a, 'offer_valid_hours', 'hours', Math.min(24, due));
     checkOfferHours(ttl, due);
@@ -1659,9 +1737,11 @@ export class ValunAgent {
       limits_you_recorded: Object.fromEntries(items(recorded).filter(([k]) => k !== 'notes' && k !== 'set_at')),
       limits_in_force: Object.fromEntries(LIMITS_SHOWN.map(([arg, [field]]) => [arg, get(inForce, field)])),
       mandate: Object.fromEntries(items(item(me, 'mandate')).filter(([k]) => k !== 'objective')), mandate_version: item(me, 'mandate_version'),
-      approvals, position: item(me, 'position'), authority: item(me, 'authority'), settlement: lab.settlement,
-      honest_labels: {...lab.honest_labels}, real_vs_simulated: {...lab.real_vs_simulated},
+      approvals, position: item(me, 'position'),
     };
+    if (isDict(get(me, 'room'))) out.room = me.room;         // budget cards: what this agent owes now and may still owe
+    Object.assign(out, {authority: item(me, 'authority'), settlement: lab.settlement, honest_labels: {...lab.honest_labels},
+      real_vs_simulated: {...lab.real_vs_simulated}});
     if (circulating) Object.assign(out, await this.#circulationStatus(c, me));
     return out;
   }
@@ -2061,9 +2141,38 @@ export class ValunAgent {
     return {guarantee: guaranteeBrief(g), what_happens_next: `The backer has ${shown(hours)} hours to honor the call with its own credit note to you.`};
   }
 
+  // ---------- budget cards ----------
+  /**
+   * valun_check_payer (read only): may `payer` owe this agent `amount` more, by the budget card its owner published? The
+   * server's verdict object (Client.checkPayer) with `summary` first (checkSummary). The amount is checked as
+   * valun_propose checks its price (count), before anything is read. A payer whose owner has not published a card, or a
+   * server without budget cards, gets verdict 'unknown' (uncheckedPayer): an answer, not an error.
+   */
+  async checkPayer(a) {
+    const c = this.client();
+    const [payer] = required(a, ['payer'], false);
+    if (typeof payer !== 'string' || !strip(payer)) {
+      throw new ValunError('bad_arguments', 'payer must be the handle or participant id (text) of the agent that would owe you');
+    }
+    const amount = count('amount', get(a, 'amount'), c.unit ?? UNIT);
+    const ref = await c.resolveParticipant(payer);
+    let v;
+    try {
+      v = await c.checkPayer(ref.id, amount);
+    } catch (e) {
+      if (isValunError(e) && (e.code === 'card_not_public' || e.code === 'feature_unavailable')) return uncheckedPayer(ref, amount, e.code);
+      throw e;
+    }
+    if (!isDict(v)) throw new ValunError('bad_response', 'the server answered the check with no verdict');
+    const out = {summary: checkSummary(v)};
+    for (const [k, x] of Object.entries(v)) if (k !== 'summary') out[k] = x;
+    return out;
+  }
+
   async deal(a) {
     const c = this.client();
-    const d = await c.deal(item(a, 'deal_id'));
+    const [did] = required(a, ['deal_id'], false);
+    const d = await c.deal(did);
     const out = Object.fromEntries(DEAL_FIELDS.map(k => [k, get(d, k)]));
     const retryAfter = get(d, 'retry_after_seconds');
     if (Number.isInteger(retryAfter)) out.retry_after_seconds = retryAfter;   // the server's hint while it waits on the other side (#8)
@@ -2142,7 +2251,7 @@ export class ValunAgent {
     if ((get(d, 'payment') ?? null) !== null) out.payment = d.payment;   // circulating credit: the payment by transfer, as shown
     if (get(d, 'your_role') === 'payer' && PAYABLE.includes(st) && await this.#offersCirculation(c, d)) {
       try {
-        out.how_you_can_pay = await ValunAgent.#howYouCanPay(c, item(a, 'deal_id'));
+        out.how_you_can_pay = await ValunAgent.#howYouCanPay(c, did);
       } catch (e) {
         if (!isValunError(e)) throw e;
         out.how_you_can_pay = {problem: e.code, message: e.message};
@@ -2210,18 +2319,18 @@ export class ValunAgent {
   async propose(a) {
     const c = this.client();
     const unit = c.unit ?? UNIT;
+    const [counterparty, role, title, description, deliverable] = required(a, PROPOSE_TEXTS);   // fix inbox #58
     const [price, deliverByHours, offerTtlHours] = ValunAgent.#offerNumbers(a, unit);   // refused before any read (fix inbox #22)
-    const other = await this.#resolve(c, item(a, 'counterparty'));
+    const other = await this.#resolve(c, counterparty);
     // A seller of exactly checkable work publishes that it needs the text in the description; check before signing.
-    if (get(a, 'role') === 'payer' && str(or(get(other, 'services'), '')).includes('``` block')
-        && extractText(or(get(a, 'description'), '')) === null) {
+    if (role === 'payer' && str(or(get(other, 'services'), '')).includes('``` block')
+        && extractText(or(description, '')) === null) {
       throw new ValunError('missing_text',
         `Not signed. ${str(item(other, 'handle'))} needs the text to process inside the description, and yours has none. Put the `
         + 'exact text in a ``` fenced block in the description (or as the only "quoted" string, or after TEXT: at the '
         + 'end), then make the offer again.');
     }
-    const counterpartyId = item(other, 'id'), role = item(a, 'role'), title = item(a, 'title'), description = item(a, 'description');
-    const deliverable = item(a, 'deliverable');
+    const counterpartyId = item(other, 'id');
     const r = await c.propose({counterpartyId, role, title, description, deliverable, price, deliverByHours, offerTtlHours});
     const waiting = item(r, 'status') === 'proposed_awaiting_owner';
     const idle = recentlyActive(get(other, 'agent_last_seen'), 24, get(other, 'joined_at'), this.#now()) ? null
@@ -2231,7 +2340,7 @@ export class ValunAgent {
       terms_hash: truthy(get(r, 'current')) ? item(item(r, 'current'), 'terms_hash') : null,
       what_happened: waiting ? `Your signed offer is waiting for your owner's approval before ${handle} can see it.`
         : `${handle} can now accept, decline or counter your signed offer.`,
-      if_agreed: item(a, 'role') === 'payer'
+      if_agreed: role === 'payer'
         ? `After you accept their delivery you issue them a credit note of ${shownPrice} (you will owe them; not settled).`
         : `After they accept your delivery they issue you a credit note of ${shownPrice} (they will owe you; not settled).`,
       ...(idle ? {warning: idle} : {})};
@@ -2239,7 +2348,7 @@ export class ValunAgent {
 
   async respond(a) {
     const c = this.client();
-    const act = item(a, 'action'), did = item(a, 'deal_id');
+    const [did, act] = required(a, ['deal_id', 'action']);   // fix inbox #58: a missing one was a KeyError (internal_error)
     let r, at = '';                                     // at: a counter-offer's price, as signed
     if (act === 'accept') {
       r = await c.accept(did, {expectedTermsHash: get(a, 'expected_terms_hash')});
@@ -2273,6 +2382,7 @@ export class ValunAgent {
 
   async deliver(a) {
     const c = this.client();
+    const [did] = required(a, ['deal_id']);            // fix inbox #58
     const exact = get(a, 'exact_result');
     if (exact !== null && typeof exact !== 'boolean') throw new ValunError('bad_arguments', 'exact_result is true or false');
     if (exact) {
@@ -2285,7 +2395,7 @@ export class ValunAgent {
       throw new ValunError('bad_arguments', 'give content (the complete deliverable), or exact_result=true for a text-stats '
         + 'or notary job');
     }
-    const d = await c.deal(item(a, 'deal_id'));
+    const d = await c.deal(did);
     const m = await measure(item(a, 'content'), termsText(d), this.#measureOptions(this.checkLinkHosts));
     const problems = m.checks_against_agreed_terms.filter(x => !x.met).map(x => `${x.requirement}: measured ${x.measured}`);
     if (truthy(m.warning ?? null)) problems.push(m.warning);
@@ -2294,7 +2404,7 @@ export class ValunAgent {
         + problems.join(' | ') + ' Fix it and deliver again (send_anyway=true only if you are sure; '
         + 'the payer sees the same measurements).', undefined, {measured: m});
     }
-    const r = await c.deliver(item(a, 'deal_id'), item(a, 'content'), {title: or(get(a, 'title'), '')});
+    const r = await c.deliver(did, item(a, 'content'), {title: or(get(a, 'title'), '')});
     return {deal_id: item(r, 'id'), status: item(r, 'status'), sha256: item(item(r, 'delivery'), 'sha256'),
       what_happened: 'Delivered and signed. The payer will accept it (issuing you a credit note) or dispute it.'};
   }
@@ -2326,14 +2436,15 @@ export class ValunAgent {
       throw new ValunError('bad_decision', "decision must be exactly 'accept' or 'dispute'; nothing was signed");
     }
     const c = this.client();
+    const [did] = required(a, ['deal_id']);            // fix inbox #58
     if (item(a, 'decision') === 'dispute') {
       if (!truthy(strip(or(get(a, 'reason'), '')))) throw new ValunError('reason_required', 'a dispute needs a reason');
-      const r = await c.dispute(item(a, 'deal_id'), item(a, 'reason'));
+      const r = await c.dispute(did, item(a, 'reason'));
       return {deal_id: item(r, 'id'), status: item(r, 'status'), what_happened: 'Disputed. No credit note was issued; the dispute is recorded.'};
     }
     const issuer = ValunAgent.#payWith(a);
     if (issuer !== null) return this.#reviewPayWith(c, a, issuer);
-    const r = await c.complete(item(a, 'deal_id'), {expectedDeliverableSha256: get(a, 'expected_deliverable_sha256'),
+    const r = await c.complete(did, {expectedDeliverableSha256: get(a, 'expected_deliverable_sha256'),
       expectedTermsHash: get(a, 'expected_terms_hash')});
     const n = or(get(r, 'credit_note'), {});
     const status = item(r, 'status');

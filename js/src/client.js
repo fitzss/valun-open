@@ -111,6 +111,7 @@ const EXPIRING_MS = [997, 998, 999];
 const PUBLIC_ROUTES = ['/pilot/v1/info', '/pilot/v1/participants', '/pilot/v1/ledger', '/pilot/v1/clearing', '/pilot/v1/join',
   '/pilot/v1/join-sandbox', '/pilot/v1/enroll'];
 const DEAL_ID_RE = /^vd_[0-9a-f]{16}$/;
+const PARTICIPANT_ID_RE = /^vp_[0-9a-f]{12}$/;
 const TRANSFER_ID_RE = /^vt_[0-9a-f]{16}$/;
 const ATTEMPT_REF_RE = /^#[1-9][0-9]{0,3}$/;
 const SERVER_WORD_RE = /^[a-z_]{1,40}$/;
@@ -903,6 +904,95 @@ export class Client {
 
   /** Record limits and goals the owner gave this agent; the server keeps them within the owner's mandate. */
   setLimits(body) { return this.request('PUT', '/pilot/v1/limits', body); }
+
+  // ---------- budget cards ----------
+  // An owner may publish its agent's budget card (setPublicCard): the limits of its mandate, the room it leaves, the
+  // guarantees that back the agent in public, and its record. Anyone can read a card (card) and check a payment against it
+  // (checkPayer): public reads, sent without a token, that sign nothing. Where the owner has not published its card, both
+  // answer 404 card_not_public.
+
+  /**
+   * The participant `who` names, as {id, handle}. `who` is stripped and lower-cased; a participant id (vp_ + 12 hex) is
+   * taken as it is, with handle null, without a read (it may be an unlisted participant). Anything else is a handle,
+   * looked up in the directory (GET /participants) the way the agent tools look up a counterparty: a participant with
+   * exactly that id first, else the one with that handle. unknown_participant when there is none; bad_arguments for a
+   * `who` that is not a name.
+   */
+  async resolveParticipant(who) {
+    if (typeof who !== 'string' || !strip(who)) throw new ValunError('bad_arguments', 'name the participant by its handle or participant id');
+    const w = strip(who).toLowerCase();
+    if (PARTICIPANT_ID_RE.test(w)) return {id: w, handle: null};
+    const listed = await this.directory();
+    const people = (Array.isArray(listed) ? listed : []).filter(isDict);
+    for (const key of ['id', 'handle']) {
+      for (const p of people) {
+        if (pyGet(p, key) === w && typeof pyGet(p, 'id') === 'string' && p.id) return {id: p.id, handle: pyGet(p, 'handle')};
+      }
+    }
+    throw new ValunError('unknown_participant', `no participant called ${repr(w)}; use valun_directory`);
+  }
+
+  /** A public budget-card read. A server from before budget cards answers these routes 401: feature_unavailable. */
+  async #cardRead(path) {
+    try {
+      return await this.request('GET', path, undefined, {auth: false});
+    } catch (e) {
+      if (isValunError(e) && e.status === 401) {
+        throw new ValunError('feature_unavailable', 'this Valun server offers no budget cards (it does not serve '
+          + 'GET /participants/{id}/card); nothing was read', 401);
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * The budget card of the participant `who` names (a handle or participant id: resolveParticipant), as GET
+   * /participants/{id}/card shows it: {card, network, unit, agent, mandate, room, backing, record, card_hash, check,
+   * page}, amounts in the network's unit. card_not_public (404) when its owner has not published it.
+   */
+  async card(who) {
+    const {id} = await this.resolveParticipant(who);
+    return this.#cardRead(`/pilot/v1/participants/${seg(id)}/card`);
+  }
+
+  /**
+   * May `payer` (a handle or participant id) owe `payee` (a handle or participant id; default: this participant)
+   * `amount` more, by the budget card its owner published? GET /participants/{id}/check?amount=N&payee=ID answers
+   * {verdict ('accept', 'ask_owner' or 'decline'), reasons, rule, payer, payee, amount, mandate {version, expires_at},
+   * room_left, approval_needed, cover {covered, guarantees}, record, card_hash, checked_at, took_ms}. Read only: it signs
+   * nothing. amount is a whole number of this network's unit, at least 1 (bad_arguments otherwise, before anything is
+   * read). card_not_public (404) when the payer's owner has not published its card.
+   */
+  async checkPayer(payer, amount, {payee = null} = {}) {
+    if (!(typeof amount === 'number' && Number.isSafeInteger(amount) && amount >= 1)) {
+      throw new ValunError('bad_arguments', `amount must be a whole number of ${this.unit}, at least 1; nothing was read`);
+    }
+    const payerId = (await this.resolveParticipant(payer)).id;
+    let payeeId;
+    if (payee === null || payee === undefined) {
+      payeeId = this.participantId;
+      if (!payeeId) throw new ValunError('bad_arguments', 'give payee: this client has no participant id of its own (it is not joined)');
+    } else {
+      payeeId = (await this.resolveParticipant(payee)).id;
+    }
+    return this.#cardRead(`/pilot/v1/participants/${seg(payerId)}/check?amount=${amount}&payee=${seg(payeeId)}`);
+  }
+
+  /**
+   * The OWNER's choice: publish (on true) or hide (on false) this participant's budget card, PUT /owner/mandate
+   * {public_card}. ownerToken is the owner token of this profile's participant: checked first (GET /owner; not_owner when
+   * it is not, and nothing changes), used as the bearer of these requests only, never stored. Resolves to the server's
+   * answer ({mandate, mandate_version, changed_by, changed}).
+   */
+  async setPublicCard(on, ownerToken) {
+    if (typeof on !== 'boolean') throw new ValunError('invalid_field', 'on must be true or false');
+    if (!(typeof ownerToken === 'string' && strip(ownerToken))) {
+      throw new ValunError('bad_arguments', 'the owner token is needed to publish or hide the budget card; nothing was changed');
+    }
+    const token = strip(ownerToken);
+    await this.#checkOwner(token);
+    return this.request('PUT', '/pilot/v1/owner/mandate', {public_card: on}, {token});
+  }
 
   // ---------- pins (R13) ----------
   #pinned() {
