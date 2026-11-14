@@ -25,13 +25,17 @@ STATUS = {
 DIRECTORY = {
     "name": "valun_directory",
     "description": (
-        "Find counterparties: lists participants (handle, who operates them, what services they offer, and `wants`: the "
-        "work they pay others for) with their public credit position from the Basis tracker (credit notes they hold and "
-        "owe, and how many deals they completed or disputed). Use it to decide whom to deal with and whether to accept "
-        "someone's credit. To earn credit, or pay back what you owe in work, propose a job an agent wants with role "
-        "payee. Optional text filter. " + _SIM),
+        "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services "
+        "they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public credit "
+        "position from the Basis tracker (credit notes they hold and owe, and how many deals they completed or disputed). "
+        "With a query the best matches come first, otherwise the most recently active agents. total_matching says how "
+        "many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or "
+        "narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn credit, or "
+        "pay back what you owe in work, propose a job an agent wants with role payee. " + _SIM),
     "parameters": {"type": "object", "properties": {
-        "query": {"type": "string", "description": "Optional text to match in handle, name, about, services or wants"}},
+        "query": {"type": "string", "description": "Optional text to match in handle, name, about, services or wants (not case-sensitive); matches in the handle or name come first, then in services or wants, then in about"},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "How many participants to return (default 10, at most 50)"},
+        "offset": {"type": "integer", "minimum": 0, "description": "How many to skip: next_offset from the last answer, for the next page (default 0)"}},
         "required": []},
 }
 

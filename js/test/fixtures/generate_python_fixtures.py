@@ -283,6 +283,53 @@ def base_routes():
     return r
 
 
+def dir_person(n, handle, seen, **fields):
+    """A participant of the directory valun_directory pages through (fix inbox #36): `seen` is its agent_last_seen (...:
+    the key is left out), and it joined long before T0 unless `fields` say otherwise."""
+    p = {'id': f'vp_{n:012x}', 'handle': handle, 'display_name': handle.title(), 'operator': 'Example operator', 'about': 'An agent.',
+         'services': 'Summaries', 'status': 'active', 'joined_at': '2026-10-01T00:00:00.000Z', 'agent_last_seen': seen}
+    if seen is ...:
+        del p['agent_last_seen']
+    p.update(fields)
+    return p
+
+
+# At T0 (2026-11-06T12:00Z). Without a query the order is kai .. wes (active: seen, then joined within 24 hours), oli ..
+# uma (seen, most recent first; equal times by handle in code point order), jo .. sam (never seen, or a time that is not
+# readable: by handle). For 'brief': yan and zed-briefs (handle or name), xia and wes (services, wants), vic (about).
+DIR_PEOPLE = [
+    {**PEOPLE[0]},                                               # alice: this agent, never listed
+    dir_person(1, 'zed-briefs', '2026-11-06T11:59:59.999999Z'),
+    dir_person(2, 'yan', '2026-11-06T13:00:00+01:00', display_name='Yan Daily Brief'),     # T0, written in another offset
+    dir_person(3, 'xia', '2026-11-06T12:00:00.000Z', services='Research briefs, 300-500 words'),
+    dir_person(4, 'wes', None, wants='A weekly brief', joined_at='2026-11-06T09:00:00.000Z'),
+    dir_person(5, 'vic', '2026-11-05T12:00:00.001Z', about='Reads BRIEFS all day.'),
+    dir_person(6, 'uma', '2026-10-30T00:00:00.000Z', about='Ends in cheese', services='F is next'),   # 'cheese f' across two fields
+    dir_person(7, 'tess', '2026-11-01T00:00:00.000Z', services='Cheese fondue recipes'),
+    dir_person(8, 'sam', 'garbage'),
+    dir_person(9, 'rex', '2026-11-06T11:00:00'),                # no UTC offset: never seen
+    dir_person(10, 'quinn', '2026-11-06T11:00:00.000Z', status='awaiting_agent'),
+    dir_person(11, 'pia', '2026-11-06T06:00:00.000Z', about='A' * 300, services='s' * 160, wants='w' * 161),
+    dir_person(12, 'oli', '2026-11-04T00:00:00.000Z', about='\U0001F600' * 170, services='é' * 200, wants='中' * 160),
+    dir_person(13, 'n\U0001F600x', '2026-11-03T00:00:00.000Z'),
+    dir_person(14, 'nａx', '2026-11-03T00:00:00+00:00'),
+    dir_person(15, 'mo', '2026-11-02T00:00:00.000Z', about=None, services=7),
+    dir_person(16, 'lu', None),
+    dir_person(17, 'kai', '2026-11-06T12:30:00.000Z'),          # ahead of T0 (the server's clock): the most recently seen
+    dir_person(18, 'jo', ...),
+]
+
+
+def dir_routes():
+    """The directory above, and each participant's public position (every one, so a lookup beyond the page would show)."""
+    r = {'GET /pilot/v1/participants': {'body': DIR_PEOPLE}}
+    for i, p in enumerate(DIR_PEOPLE[1:], 1):
+        r[f"GET /pilot/v1/participants/{p['id']}"] = {'body': {'id': p['id'], 'handle': p['handle'], 'status': p['status'],
+                                                               'public_position': {'claims_held': i, 'owes': 2 * i % 7,
+                                                                                   'deals': {'completed': i % 3, 'disputed': i % 2}}}}
+    return r
+
+
 def sign(name, text):
     return vb.sign(text.encode('utf-8'), bytes.fromhex(K[name]['secret'])).hex()
 
@@ -651,6 +698,26 @@ def scenarios():
     add('directory: query', 'valun_directory', {'query': 'BRIEF'})
     add('directory: no match', 'valun_directory', {'query': 'nothing like this'})
     add('directory: query not text', 'valun_directory', {'query': 5})
+    # directory pages (fix inbox #36): the order from the list's own fields, only the page looked up, long texts cut
+    dr = dir_routes()
+    add('directory: the first page, most recently active first', 'valun_directory', {}, dr)
+    add('directory: the next page', 'valun_directory', {'offset': 10}, dr)
+    add('directory: a query ranks handle or name, then services or wants, then about', 'valun_directory', {'query': 'Brief'}, dr)
+    add('directory: a page of a query', 'valun_directory', {'query': 'brief', 'limit': 2, 'offset': 2}, dr)
+    add('directory: a query matched only across two fields comes last', 'valun_directory', {'query': 'cheese F'}, dr)
+    add('directory: limit above 50 counts as 50', 'valun_directory', {'limit': 1000}, dr)
+    add('directory: limit 0 counts as 1', 'valun_directory', {'limit': 0}, dr)
+    add('directory: a negative offset counts as 0', 'valun_directory', {'offset': -3, 'limit': 3}, dr)
+    add('directory: an offset past the end', 'valun_directory', {'offset': 99}, dr)
+    add('directory: null limit and offset are the defaults', 'valun_directory', {'limit': None, 'offset': None})
+    # refused before anything is read (so over the base routes)
+    add('directory: limit as text', 'valun_directory', {'limit': '10'})
+    add('directory: limit true', 'valun_directory', {'limit': True})
+    add('directory: limit as long text', 'valun_directory', {'limit': 'ten ' * 15})
+    add('directory: offset a fraction', 'valun_directory', {'offset': 2.5})
+    add('directory: offset a list', 'valun_directory', {'offset': [1]})
+    add('directory: offset false', 'valun_directory', {'offset': False})
+    add('directory: a query not text is refused before a bad limit', 'valun_directory', {'query': 5, 'limit': 'x'})
     # inbox
     add('inbox', 'valun_inbox', {})
     # deal
@@ -1848,6 +1915,12 @@ def parity():
                              ['2026-11-01T00:00:00Z', 24, '2026-10-01T00:00:00Z', va.recently_active('2026-11-01T00:00:00Z', joined_at='2026-10-01T00:00:00Z')],
                              ['2026-11-06T06:00:00Z', 4, None, va.recently_active('2026-11-06T06:00:00Z', hours=4)],
                              ['2026-11-06T09:00:00Z', 4, None, va.recently_active('2026-11-06T09:00:00Z', hours=4)]]
+    # valun_directory's order (fix inbox #36): agent_last_seen in exact microseconds, as a string (JavaScript reads JSON
+    # numbers above 2**53 inexactly), or None (never seen)
+    seen = times + ['2026-11-06T11:59:59.999999Z', '2026-11-06T13:00:00+01:00', '2026-11-06T12:00:00.1234567Z',
+                    '1969-12-31T23:59:59.999999Z', '2262-04-11T23:47:16.854776Z', '9999-12-31T23:59:59.999999-23:59',
+                    '2026-11-06T12:00:00.000001-00:00:00.000001', '2026-11-03T00:00:00+00:00']
+    P['seen_us'] = [[t, None if va.seen_us(t) is None else str(va.seen_us(t))] for t in seen]
 
     lb = [{}, {'max_per_deal_as_payer': 10}, {'max_per_deal_as_payer': '12', 'max_total_owed': 7.9, 'min_price_as_payee': True},
           {'clear': ['max_total_owed', 'nope', 'min_payer_coverage_pct']}, {'max_total_owed': 5, 'clear': ['max_total_owed']},

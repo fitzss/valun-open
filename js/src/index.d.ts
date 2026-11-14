@@ -1282,6 +1282,45 @@ export function recentlyActive(lastSeen: unknown, hours?: number, joinedAt?: unk
 /** The current terms' title, description and deliverable, joined by spaces. */
 export function termsText(deal: unknown): string;
 
+/** One participant as valun_directory lists it: the directory's fields and its public position on the tracker. */
+export interface DirectoryEntry {
+  handle: string;
+  id: string;
+  /** Its display name. */
+  name: string;
+  operator: string;
+  /** about, services and wants: cut to 160 code points, with '…' appended when cut (fix inbox #36). */
+  about: string;
+  services: string;
+  /** The work it pays others for ('' when it lists none). */
+  wants: string;
+  credit_notes_they_hold_PC: number | null;
+  credit_notes_they_owe_PC: number | null;
+  /** How many of its deals ended in each state, as GET /participants/{id} public_position.deals counts them. */
+  deals: Record<string, number> | null;
+  agent_last_seen: string | null;
+  /** Its agent was seen, or it joined, within the last 24 hours. */
+  agent_recently_active: boolean;
+}
+
+/**
+ * valun_directory's answer (fix inbox #36): one page of the active participants other than this agent, the best matches
+ * for `query` first (handle or name, then services or wants, then about), then those recently active, then the most
+ * recently seen, then by handle. The page is `limit` long (10 by default, clamped to 1..50) from `offset` (default 0).
+ */
+export interface DirectoryPage {
+  participants: DirectoryEntry[];
+  /** How many participants match, before paging. */
+  total_matching: number;
+  /** The offset used (a negative one counts as 0). */
+  offset: number;
+  /** Only when more remain: the offset of the next page. */
+  next_offset?: number;
+  note: string;
+  /** Only when more remain: a sentence telling the model how to see them. */
+  how_to_see_more?: string;
+}
+
 export interface ValunAgentOptions {
   /** One sentence telling the model where commitments are approved (see APPROVAL_TEXT). valunTools() fills it in if empty. */
   approvals?: string;
@@ -1375,7 +1414,11 @@ export class ValunAgent {
   /** prepare()'s text: null for a call that commits nothing; rejects with approval_unbound, never a generic text for a known tool. */
   describeCommitment(name: ToolName | string, args?: ToolArgs | null): Promise<string | null>;
   status(args?: ToolArgs): Promise<ToolResult>;
-  directory(args: ToolArgs): Promise<ToolResult>;
+  /**
+   * valun_directory: one page of participants ({query?, limit?, offset?}). Only the page's participants are looked up. A
+   * limit or offset that is not a whole number rejects with ValunError('bad_arguments').
+   */
+  directory(args: ToolArgs): Promise<DirectoryPage & ToolResult>;
   inbox(args?: ToolArgs): Promise<ToolResult>;
   deal(args: ToolArgs): Promise<ToolResult>;
   propose(args: ToolArgs): Promise<ToolResult>;

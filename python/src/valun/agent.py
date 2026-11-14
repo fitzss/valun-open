@@ -507,6 +507,42 @@ def recently_active(last_seen, hours=24, joined_at=None):
     return within(last_seen) or within(joined_at)
 
 
+# valun_directory answers one page (fix inbox #36: small models stalled on the whole directory, about 72 KB for 137
+# participants): DIRECTORY_PAGE participants unless the agent asks for up to DIRECTORY_PAGE_MAX, with each about, services
+# and wants cut to DIRECTORY_TEXT_MAX code points.
+DIRECTORY_PAGE = 10
+DIRECTORY_PAGE_MAX = 50
+DIRECTORY_TEXT_MAX = 160
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def directory_text(v):
+    """An about, services or wants text as valun_directory shows it: its first DIRECTORY_TEXT_MAX code points, and '…'
+    when it is longer. Any other value is returned as it is."""
+    return v[:DIRECTORY_TEXT_MAX] + '…' if isinstance(v, str) and len(v) > DIRECTORY_TEXT_MAX else v
+
+
+def seen_us(iso):
+    """A time as recently_active reads it (ISO 8601 with a UTC offset; 'Z' is UTC) in microseconds since 1970-01-01
+    UTC, exactly; None for anything else (a missing, naive or unreadable time: never seen)."""
+    try:
+        return (datetime.fromisoformat(str(iso).replace('Z', '+00:00')) - _EPOCH) // timedelta(microseconds=1)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _page_arg(a, k, default, what):
+    """valun_directory's limit or offset: `default` when it is absent or null, else a JSON integer (a bool is not one;
+    nor is a number JavaScript cannot hold exactly). Anything else is refused (bad_arguments)."""
+    v = a.get(k)
+    if v is None:
+        return default
+    if _whole(v) and -nv.MAX_SAFE_INTEGER <= v <= nv.MAX_SAFE_INTEGER:
+        return v
+    got = quoted(v)
+    raise vc.ValunError('bad_arguments', f"{k} must be a whole number ({what}), not {got if len(got) <= 40 else got[:37] + '...'}")
+
+
 def terms_text(d):
     """The agreed (or current) service text: where numeric requirements such as '300-500 words' are written."""
     t = ((d.get('current') or {}).get('terms') or {}).get('service') or {}
@@ -1664,26 +1700,59 @@ class ValunAgent:
                                     '(the stricter of the two applies). Only your owner can raise the mandate.')}
 
     def directory(self, a):
+        """One page of the active participants other than this one (fix inbox #36), from the list's own fields: those
+        matching `query` (case-insensitive) in their handle or display name first, then in services or wants, then only in
+        about (then the rest the text filter matches, across two fields); then those whose agent was active in the last 24
+        hours (recently_active); then the most recently seen (agent_last_seen, never seen last); then by handle. Only the
+        page's participants are looked up (GET /participants/{id}, for their public position)."""
         c = self.client()
         q = (a.get('query') or '').lower()
-        out = []
+        limit = min(max(_page_arg(a, 'limit', DIRECTORY_PAGE, f'how many participants to show: 1 to {DIRECTORY_PAGE_MAX}, '
+                                                             f'{DIRECTORY_PAGE} by default'), 1), DIRECTORY_PAGE_MAX)
+        offset = max(_page_arg(a, 'offset', 0, 'how many participants to skip: next_offset from the last answer, 0 by default'), 0)
+        ranked = []
         for p in c.directory():
             if p['id'] == c.participant_id or p['status'] != 'active':
                 continue
-            text = ' '.join(str(p.get(k) or '') for k in ('handle', 'display_name', 'about', 'services', 'wants')).lower()
-            if q and q not in text:
+            handle, name, about, services, wants = (str(p.get(k) or '').lower() for k in ('handle', 'display_name', 'about', 'services', 'wants'))
+            if not q or q in handle or q in name:
+                tier = 0
+            elif q in services or q in wants:
+                tier = 1
+            elif q in about:
+                tier = 2
+            elif q in ' '.join((handle, name, about, services, wants)):
+                tier = 3
+            else:
                 continue
+            active = recently_active(p.get('agent_last_seen'), joined_at=p.get('joined_at'))
+            seen = seen_us(p.get('agent_last_seen'))
+            ranked.append(((tier, not active, seen is None, -(seen or 0), str(p.get('handle') or '')), p, active))
+        ranked.sort(key=lambda r: r[0])
+        out = []
+        for _, p, active in ranked[offset:offset + limit]:
             pos = c.participant(p['id']).get('public_position', {})
-            out.append({'handle': p['handle'], 'id': p['id'], 'name': p['display_name'], 'operator': p['operator'], 'about': p['about'],
-                        'services': p['services'], 'wants': p.get('wants') or '', 'credit_notes_they_hold_PC': pos.get('claims_held'), 'credit_notes_they_owe_PC': pos.get('owes'),
-                        'deals': pos.get('deals'), 'agent_last_seen': p.get('agent_last_seen'),
-                        'agent_recently_active': recently_active(p.get('agent_last_seen'), joined_at=p.get('joined_at'))})
-        out.sort(key=lambda x: not x['agent_recently_active'])
+            out.append({'handle': p['handle'], 'id': p['id'], 'name': p['display_name'], 'operator': p['operator'],
+                        'about': directory_text(p['about']), 'services': directory_text(p['services']),
+                        'wants': directory_text(p.get('wants') or ''), 'credit_notes_they_hold_PC': pos.get('claims_held'),
+                        'credit_notes_they_owe_PC': pos.get('owes'), 'deals': pos.get('deals'),
+                        'agent_last_seen': p.get('agent_last_seen'), 'agent_recently_active': active})
         where = ("positions are outstanding credit notes recorded by the Valun testnet Basis tracker and anchored on Ergo testnet; a "
                  "creditor can redeem one against its issuer's reserve, if it has one; tERG have no monetary value."
                  if getattr(c, 'network', vc.NETWORK) == TESTNET else
                  'positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value.')
-        return {'participants': out, 'note': where + ' A participant whose agent has not been seen in the last 24 hours may never answer an offer.'}
+        total, end = len(ranked), offset + len(out)
+        r = {'participants': out, 'total_matching': total, 'offset': offset}
+        if end < total:
+            r['next_offset'] = end
+        r['note'] = where + ' A participant whose agent has not been seen in the last 24 hours may never answer an offer.'
+        if end < total:
+            r['how_to_see_more'] = (
+                f'Showing {offset + 1}-{end} of {total} matching the query (best matches first). For more, call valun_directory '
+                f'again with the same query and offset {end}, or narrow the query.' if q else
+                f'Showing {offset + 1}-{end} of {total} (most recently active first). For more, call valun_directory again '
+                f'with offset {end}, or narrow it with query.')
+        return r
 
     def inbox(self, a):
         return self.client().inbox()

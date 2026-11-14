@@ -292,12 +292,10 @@ function clock(m) {
 }
 
 /**
- * Milliseconds since the epoch of datetime.fromisoformat(s) when that gives an AWARE datetime (one with a UTC offset);
- * null where Python gives a naive datetime or raises ValueError. Covers the forms Python accepts for dates (extended
- * or basic calendar dates; not week dates), any one-character date/time separator, hour 24 (the next midnight), and
- * offsets of hours to fractional seconds. Callers replace 'Z' by '+00:00' first, as the Python code does.
+ * The parts of an aware datetime.fromisoformat(s) (see isoAwareMs): the local date and clock in whole milliseconds, the
+ * clock's microseconds, and the UTC offset in microseconds (signed); null where Python gives no aware datetime.
  */
-export function isoAwareMs(s) {
+function isoAware(s) {
   const dm = ISO_DATE.exec(s);
   if (!dm || s.length <= dm[0].length + 1) return null;
   const [y, mo, d] = (dm[1] ? dm.slice(1, 4) : dm.slice(4, 7)).map(Number);
@@ -313,6 +311,25 @@ export function isoAwareMs(s) {
   if (o.mi > 59 || o.s > 59) return null;
   const offsetUs = ((o.h * 60 + o.mi) * 60 + o.s) * 1e6 + o.us;
   if (offsetUs >= 86_400e6) return null;
-  const localMs = day + ((t.h * 60 + t.mi) * 60 + t.s) * 1000 + t.us / 1000;
-  return localMs - (rest[k] === '-' ? -1 : 1) * offsetUs / 1000;
+  return {day, clockMs: ((t.h * 60 + t.mi) * 60 + t.s) * 1000, us: t.us, offsetUs: (rest[k] === '-' ? -1 : 1) * offsetUs};
+}
+
+/**
+ * Milliseconds since the epoch of datetime.fromisoformat(s) when that gives an AWARE datetime (one with a UTC offset);
+ * null where Python gives a naive datetime or raises ValueError. Covers the forms Python accepts for dates (extended
+ * or basic calendar dates; not week dates), any one-character date/time separator, hour 24 (the next midnight), and
+ * offsets of hours to fractional seconds. Callers replace 'Z' by '+00:00' first, as the Python code does.
+ */
+export function isoAwareMs(s) {
+  const a = isoAware(s);
+  return a === null ? null : a.day + a.clockMs + a.us / 1000 - a.offsetUs / 1000;
+}
+
+/**
+ * The same time in whole microseconds since the epoch, exactly (a BigInt: Python's (dt - epoch) // timedelta(microseconds=1)),
+ * so that two times compare as they do in Python; null where isoAwareMs is null.
+ */
+export function isoAwareUs(s) {
+  const a = isoAware(s);
+  return a === null ? null : (BigInt(a.day) + BigInt(a.clockMs)) * 1000n + BigInt(a.us) - BigInt(a.offsetUs);
 }

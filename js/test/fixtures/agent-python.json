@@ -2,7 +2,7 @@
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python": "3.14.7",
  "python_sources_sha256": {
-  "agent.py": "64764b64bba84a1eccd0e378c843ab6c0dee0eaa730b0bfd2df4fbae1b1f5bb9",
+  "agent.py": "154d8b43d9633312770e12086225437c91a9275972ab9afd5e0e272a35e66d19",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
   "client.py": "acf122a5c3b9914de96b729576a3807d7e8a03ca5d160c53e426f61cc55d99e8",
   "mcp_server.py": "2b4cc4119077275964aba895744e77c636c1b733a6454684ef2f54e1c7e9eb0f",
@@ -10,7 +10,7 @@
   "novation.py": "3579850c2307713ae538fddbd899dc75e017992c5d75069969e0a7140edfa741",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "aa968c2e628ac44bc906e1b41629a16da0018d463b63a34d9e4d610774c35048",
-  "schemas.py": "6b68b07db793f36aaa4b4953fb276ee3b0ccafcd9b986faf41d416a35ada9754"
+  "schemas.py": "2cdffc020aa15117bfc275a158d703e7e31df1b0c542959313191c40bb656e25"
  },
  "base": "http://valun.invalid",
  "t0_ms": 1793966400000,
@@ -1503,23 +1503,6 @@
       "agent_recently_active": true
      },
      {
-      "handle": "sandbox-exact",
-      "id": "vp_c0c0c0c0c0c0",
-      "name": "Sandbox: exact results",
-      "operator": "Valun operator (sandbox)",
-      "about": "Deterministic test agent.",
-      "services": "text-stats (3 PC): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. notary (2 PC): SHA-256 and byte length of your text. Put the text in a ``` block, after TEXT: at the end, or as the only quoted string in the description. Deterministic: you can ch",
-      "wants": "",
-      "credit_notes_they_hold_PC": 12,
-      "credit_notes_they_owe_PC": 0,
-      "deals": {
-       "completed": 6,
-       "disputed": 0
-      },
-      "agent_last_seen": "2026-11-01T00:00:00.000Z",
-      "agent_recently_active": false
-     },
-     {
       "handle": "frank",
       "id": "vp_f0f0f0f0f0f0",
       "name": "Frank",
@@ -1535,8 +1518,27 @@
       },
       "agent_last_seen": "2026-11-03T12:00:00.000Z",
       "agent_recently_active": false
+     },
+     {
+      "handle": "sandbox-exact",
+      "id": "vp_c0c0c0c0c0c0",
+      "name": "Sandbox: exact results",
+      "operator": "Valun operator (sandbox)",
+      "about": "Deterministic test agent.",
+      "services": "text-stats (3 PC): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. notary (2 PC): SHA-256 and byte length o…",
+      "wants": "",
+      "credit_notes_they_hold_PC": 12,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "completed": 6,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-11-01T00:00:00.000Z",
+      "agent_recently_active": false
      }
     ],
+    "total_matching": 4,
+    "offset": 0,
     "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer."
    },
    "requests": [
@@ -1551,17 +1553,17 @@
      "features": null
     },
     {
-     "key": "GET /pilot/v1/participants/vp_c0c0c0c0c0c0",
-     "body": null,
-     "features": null
-    },
-    {
      "key": "GET /pilot/v1/participants/vp_e0e0e0e0e0e0",
      "body": null,
      "features": null
     },
     {
      "key": "GET /pilot/v1/participants/vp_f0f0f0f0f0f0",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_c0c0c0c0c0c0",
      "body": null,
      "features": null
     }
@@ -1636,6 +1638,8 @@
       "agent_recently_active": false
      }
     ],
+    "total_matching": 2,
+    "offset": 0,
     "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer."
    },
    "requests": [
@@ -1694,6 +1698,8 @@
    "state": {},
    "result": {
     "participants": [],
+    "total_matching": 0,
+    "offset": 0,
     "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer."
    },
    "requests": [
@@ -1766,6 +1772,6328 @@
     {
      "args": {
       "query": 5
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: the first page, most recently active first",
+   "tool": "valun_directory",
+   "args": {},
+   "routes": {
+    "GET /pilot/v1/participants": {
+     "body": [
+      {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "operator": "Alice Example",
+       "about": "Buys research briefs.",
+       "services": "",
+       "status": "active",
+       "agent_last_seen": "2026-11-06T11:59:00.000Z",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000001",
+       "handle": "zed-briefs",
+       "display_name": "Zed-Briefs",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:59:59.999999Z"
+      },
+      {
+       "id": "vp_000000000002",
+       "handle": "yan",
+       "display_name": "Yan Daily Brief",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T13:00:00+01:00"
+      },
+      {
+       "id": "vp_000000000003",
+       "handle": "xia",
+       "display_name": "Xia",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Research briefs, 300-500 words",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000004",
+       "handle": "wes",
+       "display_name": "Wes",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-11-06T09:00:00.000Z",
+       "agent_last_seen": null,
+       "wants": "A weekly brief"
+      },
+      {
+       "id": "vp_000000000005",
+       "handle": "vic",
+       "display_name": "Vic",
+       "operator": "Example operator",
+       "about": "Reads BRIEFS all day.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-05T12:00:00.001Z"
+      },
+      {
+       "id": "vp_000000000006",
+       "handle": "uma",
+       "display_name": "Uma",
+       "operator": "Example operator",
+       "about": "Ends in cheese",
+       "services": "F is next",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-10-30T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000007",
+       "handle": "tess",
+       "display_name": "Tess",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Cheese fondue recipes",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000008",
+       "handle": "sam",
+       "display_name": "Sam",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "garbage"
+      },
+      {
+       "id": "vp_000000000009",
+       "handle": "rex",
+       "display_name": "Rex",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00"
+      },
+      {
+       "id": "vp_00000000000a",
+       "handle": "quinn",
+       "display_name": "Quinn",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "awaiting_agent",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000b",
+       "handle": "pia",
+       "display_name": "Pia",
+       "operator": "Example operator",
+       "about": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+       "services": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T06:00:00.000Z",
+       "wants": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+      },
+      {
+       "id": "vp_00000000000c",
+       "handle": "oli",
+       "display_name": "Oli",
+       "operator": "Example operator",
+       "about": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+       "services": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-04T00:00:00.000Z",
+       "wants": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中"
+      },
+      {
+       "id": "vp_00000000000d",
+       "handle": "n😀x",
+       "display_name": "N😀X",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000e",
+       "handle": "nａx",
+       "display_name": "Nａx",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00+00:00"
+      },
+      {
+       "id": "vp_00000000000f",
+       "handle": "mo",
+       "display_name": "Mo",
+       "operator": "Example operator",
+       "about": null,
+       "services": 7,
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-02T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000010",
+       "handle": "lu",
+       "display_name": "Lu",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": null
+      },
+      {
+       "id": "vp_000000000011",
+       "handle": "kai",
+       "display_name": "Kai",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:30:00.000Z"
+      },
+      {
+       "id": "vp_000000000012",
+       "handle": "jo",
+       "display_name": "Jo",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      }
+     ]
+    },
+    "GET /pilot/v1/participants/vp_000000000001": {
+     "body": {
+      "id": "vp_000000000001",
+      "handle": "zed-briefs",
+      "status": "active",
+      "public_position": {
+       "claims_held": 1,
+       "owes": 2,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000002": {
+     "body": {
+      "id": "vp_000000000002",
+      "handle": "yan",
+      "status": "active",
+      "public_position": {
+       "claims_held": 2,
+       "owes": 4,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000003": {
+     "body": {
+      "id": "vp_000000000003",
+      "handle": "xia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 3,
+       "owes": 6,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000004": {
+     "body": {
+      "id": "vp_000000000004",
+      "handle": "wes",
+      "status": "active",
+      "public_position": {
+       "claims_held": 4,
+       "owes": 1,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000005": {
+     "body": {
+      "id": "vp_000000000005",
+      "handle": "vic",
+      "status": "active",
+      "public_position": {
+       "claims_held": 5,
+       "owes": 3,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000006": {
+     "body": {
+      "id": "vp_000000000006",
+      "handle": "uma",
+      "status": "active",
+      "public_position": {
+       "claims_held": 6,
+       "owes": 5,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000007": {
+     "body": {
+      "id": "vp_000000000007",
+      "handle": "tess",
+      "status": "active",
+      "public_position": {
+       "claims_held": 7,
+       "owes": 0,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000008": {
+     "body": {
+      "id": "vp_000000000008",
+      "handle": "sam",
+      "status": "active",
+      "public_position": {
+       "claims_held": 8,
+       "owes": 2,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000009": {
+     "body": {
+      "id": "vp_000000000009",
+      "handle": "rex",
+      "status": "active",
+      "public_position": {
+       "claims_held": 9,
+       "owes": 4,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000a": {
+     "body": {
+      "id": "vp_00000000000a",
+      "handle": "quinn",
+      "status": "awaiting_agent",
+      "public_position": {
+       "claims_held": 10,
+       "owes": 6,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000b": {
+     "body": {
+      "id": "vp_00000000000b",
+      "handle": "pia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 11,
+       "owes": 1,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000c": {
+     "body": {
+      "id": "vp_00000000000c",
+      "handle": "oli",
+      "status": "active",
+      "public_position": {
+       "claims_held": 12,
+       "owes": 3,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000d": {
+     "body": {
+      "id": "vp_00000000000d",
+      "handle": "n😀x",
+      "status": "active",
+      "public_position": {
+       "claims_held": 13,
+       "owes": 5,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000e": {
+     "body": {
+      "id": "vp_00000000000e",
+      "handle": "nａx",
+      "status": "active",
+      "public_position": {
+       "claims_held": 14,
+       "owes": 0,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000f": {
+     "body": {
+      "id": "vp_00000000000f",
+      "handle": "mo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 15,
+       "owes": 2,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000010": {
+     "body": {
+      "id": "vp_000000000010",
+      "handle": "lu",
+      "status": "active",
+      "public_position": {
+       "claims_held": 16,
+       "owes": 4,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000011": {
+     "body": {
+      "id": "vp_000000000011",
+      "handle": "kai",
+      "status": "active",
+      "public_position": {
+       "claims_held": 17,
+       "owes": 6,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000012": {
+     "body": {
+      "id": "vp_000000000012",
+      "handle": "jo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 18,
+       "owes": 1,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "participants": [
+     {
+      "handle": "kai",
+      "id": "vp_000000000011",
+      "name": "Kai",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 17,
+      "credit_notes_they_owe_PC": 6,
+      "deals": {
+       "completed": 2,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T12:30:00.000Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "xia",
+      "id": "vp_000000000003",
+      "name": "Xia",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Research briefs, 300-500 words",
+      "wants": "",
+      "credit_notes_they_hold_PC": 3,
+      "credit_notes_they_owe_PC": 6,
+      "deals": {
+       "completed": 0,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T12:00:00.000Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "yan",
+      "id": "vp_000000000002",
+      "name": "Yan Daily Brief",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 2,
+      "credit_notes_they_owe_PC": 4,
+      "deals": {
+       "completed": 2,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-11-06T13:00:00+01:00",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "zed-briefs",
+      "id": "vp_000000000001",
+      "name": "Zed-Briefs",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 1,
+      "credit_notes_they_owe_PC": 2,
+      "deals": {
+       "completed": 1,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T11:59:59.999999Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "pia",
+      "id": "vp_00000000000b",
+      "name": "Pia",
+      "operator": "Example operator",
+      "about": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA…",
+      "services": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "wants": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww…",
+      "credit_notes_they_hold_PC": 11,
+      "credit_notes_they_owe_PC": 1,
+      "deals": {
+       "completed": 2,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T06:00:00.000Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "vic",
+      "id": "vp_000000000005",
+      "name": "Vic",
+      "operator": "Example operator",
+      "about": "Reads BRIEFS all day.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 5,
+      "credit_notes_they_owe_PC": 3,
+      "deals": {
+       "completed": 2,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-05T12:00:00.001Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "wes",
+      "id": "vp_000000000004",
+      "name": "Wes",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "A weekly brief",
+      "credit_notes_they_hold_PC": 4,
+      "credit_notes_they_owe_PC": 1,
+      "deals": {
+       "completed": 1,
+       "disputed": 0
+      },
+      "agent_last_seen": null,
+      "agent_recently_active": true
+     },
+     {
+      "handle": "oli",
+      "id": "vp_00000000000c",
+      "name": "Oli",
+      "operator": "Example operator",
+      "about": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀…",
+      "services": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé…",
+      "wants": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中",
+      "credit_notes_they_hold_PC": 12,
+      "credit_notes_they_owe_PC": 3,
+      "deals": {
+       "completed": 0,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-11-04T00:00:00.000Z",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "nａx",
+      "id": "vp_00000000000e",
+      "name": "Nａx",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 14,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "completed": 2,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-11-03T00:00:00+00:00",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "n😀x",
+      "id": "vp_00000000000d",
+      "name": "N😀X",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 13,
+      "credit_notes_they_owe_PC": 5,
+      "deals": {
+       "completed": 1,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-03T00:00:00.000Z",
+      "agent_recently_active": false
+     }
+    ],
+    "total_matching": 17,
+    "offset": 0,
+    "next_offset": 10,
+    "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer.",
+    "how_to_see_more": "Showing 1-10 of 17 (most recently active first). For more, call valun_directory again with offset 10, or narrow it with query."
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000011",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000003",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000002",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000001",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_00000000000b",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000005",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000004",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_00000000000c",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_00000000000e",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_00000000000d",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {},
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {},
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: the next page",
+   "tool": "valun_directory",
+   "args": {
+    "offset": 10
+   },
+   "routes": {
+    "GET /pilot/v1/participants": {
+     "body": [
+      {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "operator": "Alice Example",
+       "about": "Buys research briefs.",
+       "services": "",
+       "status": "active",
+       "agent_last_seen": "2026-11-06T11:59:00.000Z",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000001",
+       "handle": "zed-briefs",
+       "display_name": "Zed-Briefs",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:59:59.999999Z"
+      },
+      {
+       "id": "vp_000000000002",
+       "handle": "yan",
+       "display_name": "Yan Daily Brief",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T13:00:00+01:00"
+      },
+      {
+       "id": "vp_000000000003",
+       "handle": "xia",
+       "display_name": "Xia",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Research briefs, 300-500 words",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000004",
+       "handle": "wes",
+       "display_name": "Wes",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-11-06T09:00:00.000Z",
+       "agent_last_seen": null,
+       "wants": "A weekly brief"
+      },
+      {
+       "id": "vp_000000000005",
+       "handle": "vic",
+       "display_name": "Vic",
+       "operator": "Example operator",
+       "about": "Reads BRIEFS all day.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-05T12:00:00.001Z"
+      },
+      {
+       "id": "vp_000000000006",
+       "handle": "uma",
+       "display_name": "Uma",
+       "operator": "Example operator",
+       "about": "Ends in cheese",
+       "services": "F is next",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-10-30T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000007",
+       "handle": "tess",
+       "display_name": "Tess",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Cheese fondue recipes",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000008",
+       "handle": "sam",
+       "display_name": "Sam",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "garbage"
+      },
+      {
+       "id": "vp_000000000009",
+       "handle": "rex",
+       "display_name": "Rex",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00"
+      },
+      {
+       "id": "vp_00000000000a",
+       "handle": "quinn",
+       "display_name": "Quinn",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "awaiting_agent",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000b",
+       "handle": "pia",
+       "display_name": "Pia",
+       "operator": "Example operator",
+       "about": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+       "services": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T06:00:00.000Z",
+       "wants": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+      },
+      {
+       "id": "vp_00000000000c",
+       "handle": "oli",
+       "display_name": "Oli",
+       "operator": "Example operator",
+       "about": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+       "services": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-04T00:00:00.000Z",
+       "wants": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中"
+      },
+      {
+       "id": "vp_00000000000d",
+       "handle": "n😀x",
+       "display_name": "N😀X",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000e",
+       "handle": "nａx",
+       "display_name": "Nａx",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00+00:00"
+      },
+      {
+       "id": "vp_00000000000f",
+       "handle": "mo",
+       "display_name": "Mo",
+       "operator": "Example operator",
+       "about": null,
+       "services": 7,
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-02T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000010",
+       "handle": "lu",
+       "display_name": "Lu",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": null
+      },
+      {
+       "id": "vp_000000000011",
+       "handle": "kai",
+       "display_name": "Kai",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:30:00.000Z"
+      },
+      {
+       "id": "vp_000000000012",
+       "handle": "jo",
+       "display_name": "Jo",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      }
+     ]
+    },
+    "GET /pilot/v1/participants/vp_000000000001": {
+     "body": {
+      "id": "vp_000000000001",
+      "handle": "zed-briefs",
+      "status": "active",
+      "public_position": {
+       "claims_held": 1,
+       "owes": 2,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000002": {
+     "body": {
+      "id": "vp_000000000002",
+      "handle": "yan",
+      "status": "active",
+      "public_position": {
+       "claims_held": 2,
+       "owes": 4,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000003": {
+     "body": {
+      "id": "vp_000000000003",
+      "handle": "xia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 3,
+       "owes": 6,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000004": {
+     "body": {
+      "id": "vp_000000000004",
+      "handle": "wes",
+      "status": "active",
+      "public_position": {
+       "claims_held": 4,
+       "owes": 1,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000005": {
+     "body": {
+      "id": "vp_000000000005",
+      "handle": "vic",
+      "status": "active",
+      "public_position": {
+       "claims_held": 5,
+       "owes": 3,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000006": {
+     "body": {
+      "id": "vp_000000000006",
+      "handle": "uma",
+      "status": "active",
+      "public_position": {
+       "claims_held": 6,
+       "owes": 5,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000007": {
+     "body": {
+      "id": "vp_000000000007",
+      "handle": "tess",
+      "status": "active",
+      "public_position": {
+       "claims_held": 7,
+       "owes": 0,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000008": {
+     "body": {
+      "id": "vp_000000000008",
+      "handle": "sam",
+      "status": "active",
+      "public_position": {
+       "claims_held": 8,
+       "owes": 2,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000009": {
+     "body": {
+      "id": "vp_000000000009",
+      "handle": "rex",
+      "status": "active",
+      "public_position": {
+       "claims_held": 9,
+       "owes": 4,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000a": {
+     "body": {
+      "id": "vp_00000000000a",
+      "handle": "quinn",
+      "status": "awaiting_agent",
+      "public_position": {
+       "claims_held": 10,
+       "owes": 6,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000b": {
+     "body": {
+      "id": "vp_00000000000b",
+      "handle": "pia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 11,
+       "owes": 1,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000c": {
+     "body": {
+      "id": "vp_00000000000c",
+      "handle": "oli",
+      "status": "active",
+      "public_position": {
+       "claims_held": 12,
+       "owes": 3,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000d": {
+     "body": {
+      "id": "vp_00000000000d",
+      "handle": "n😀x",
+      "status": "active",
+      "public_position": {
+       "claims_held": 13,
+       "owes": 5,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000e": {
+     "body": {
+      "id": "vp_00000000000e",
+      "handle": "nａx",
+      "status": "active",
+      "public_position": {
+       "claims_held": 14,
+       "owes": 0,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000f": {
+     "body": {
+      "id": "vp_00000000000f",
+      "handle": "mo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 15,
+       "owes": 2,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000010": {
+     "body": {
+      "id": "vp_000000000010",
+      "handle": "lu",
+      "status": "active",
+      "public_position": {
+       "claims_held": 16,
+       "owes": 4,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000011": {
+     "body": {
+      "id": "vp_000000000011",
+      "handle": "kai",
+      "status": "active",
+      "public_position": {
+       "claims_held": 17,
+       "owes": 6,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000012": {
+     "body": {
+      "id": "vp_000000000012",
+      "handle": "jo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 18,
+       "owes": 1,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "participants": [
+     {
+      "handle": "mo",
+      "id": "vp_00000000000f",
+      "name": "Mo",
+      "operator": "Example operator",
+      "about": null,
+      "services": 7,
+      "wants": "",
+      "credit_notes_they_hold_PC": 15,
+      "credit_notes_they_owe_PC": 2,
+      "deals": {
+       "completed": 0,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-02T00:00:00.000Z",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "tess",
+      "id": "vp_000000000007",
+      "name": "Tess",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Cheese fondue recipes",
+      "wants": "",
+      "credit_notes_they_hold_PC": 7,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "completed": 1,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-01T00:00:00.000Z",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "uma",
+      "id": "vp_000000000006",
+      "name": "Uma",
+      "operator": "Example operator",
+      "about": "Ends in cheese",
+      "services": "F is next",
+      "wants": "",
+      "credit_notes_they_hold_PC": 6,
+      "credit_notes_they_owe_PC": 5,
+      "deals": {
+       "completed": 0,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-10-30T00:00:00.000Z",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "jo",
+      "id": "vp_000000000012",
+      "name": "Jo",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 18,
+      "credit_notes_they_owe_PC": 1,
+      "deals": {
+       "completed": 0,
+       "disputed": 0
+      },
+      "agent_last_seen": null,
+      "agent_recently_active": false
+     },
+     {
+      "handle": "lu",
+      "id": "vp_000000000010",
+      "name": "Lu",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 16,
+      "credit_notes_they_owe_PC": 4,
+      "deals": {
+       "completed": 1,
+       "disputed": 0
+      },
+      "agent_last_seen": null,
+      "agent_recently_active": false
+     },
+     {
+      "handle": "rex",
+      "id": "vp_000000000009",
+      "name": "Rex",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 9,
+      "credit_notes_they_owe_PC": 4,
+      "deals": {
+       "completed": 0,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T11:00:00",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "sam",
+      "id": "vp_000000000008",
+      "name": "Sam",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 8,
+      "credit_notes_they_owe_PC": 2,
+      "deals": {
+       "completed": 2,
+       "disputed": 0
+      },
+      "agent_last_seen": "garbage",
+      "agent_recently_active": false
+     }
+    ],
+    "total_matching": 17,
+    "offset": 10,
+    "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer."
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_00000000000f",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000007",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000006",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000012",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000010",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000009",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000008",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "offset": 10
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "offset": 10
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: a query ranks handle or name, then services or wants, then about",
+   "tool": "valun_directory",
+   "args": {
+    "query": "Brief"
+   },
+   "routes": {
+    "GET /pilot/v1/participants": {
+     "body": [
+      {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "operator": "Alice Example",
+       "about": "Buys research briefs.",
+       "services": "",
+       "status": "active",
+       "agent_last_seen": "2026-11-06T11:59:00.000Z",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000001",
+       "handle": "zed-briefs",
+       "display_name": "Zed-Briefs",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:59:59.999999Z"
+      },
+      {
+       "id": "vp_000000000002",
+       "handle": "yan",
+       "display_name": "Yan Daily Brief",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T13:00:00+01:00"
+      },
+      {
+       "id": "vp_000000000003",
+       "handle": "xia",
+       "display_name": "Xia",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Research briefs, 300-500 words",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000004",
+       "handle": "wes",
+       "display_name": "Wes",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-11-06T09:00:00.000Z",
+       "agent_last_seen": null,
+       "wants": "A weekly brief"
+      },
+      {
+       "id": "vp_000000000005",
+       "handle": "vic",
+       "display_name": "Vic",
+       "operator": "Example operator",
+       "about": "Reads BRIEFS all day.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-05T12:00:00.001Z"
+      },
+      {
+       "id": "vp_000000000006",
+       "handle": "uma",
+       "display_name": "Uma",
+       "operator": "Example operator",
+       "about": "Ends in cheese",
+       "services": "F is next",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-10-30T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000007",
+       "handle": "tess",
+       "display_name": "Tess",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Cheese fondue recipes",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000008",
+       "handle": "sam",
+       "display_name": "Sam",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "garbage"
+      },
+      {
+       "id": "vp_000000000009",
+       "handle": "rex",
+       "display_name": "Rex",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00"
+      },
+      {
+       "id": "vp_00000000000a",
+       "handle": "quinn",
+       "display_name": "Quinn",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "awaiting_agent",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000b",
+       "handle": "pia",
+       "display_name": "Pia",
+       "operator": "Example operator",
+       "about": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+       "services": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T06:00:00.000Z",
+       "wants": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+      },
+      {
+       "id": "vp_00000000000c",
+       "handle": "oli",
+       "display_name": "Oli",
+       "operator": "Example operator",
+       "about": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+       "services": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-04T00:00:00.000Z",
+       "wants": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中"
+      },
+      {
+       "id": "vp_00000000000d",
+       "handle": "n😀x",
+       "display_name": "N😀X",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000e",
+       "handle": "nａx",
+       "display_name": "Nａx",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00+00:00"
+      },
+      {
+       "id": "vp_00000000000f",
+       "handle": "mo",
+       "display_name": "Mo",
+       "operator": "Example operator",
+       "about": null,
+       "services": 7,
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-02T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000010",
+       "handle": "lu",
+       "display_name": "Lu",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": null
+      },
+      {
+       "id": "vp_000000000011",
+       "handle": "kai",
+       "display_name": "Kai",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:30:00.000Z"
+      },
+      {
+       "id": "vp_000000000012",
+       "handle": "jo",
+       "display_name": "Jo",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      }
+     ]
+    },
+    "GET /pilot/v1/participants/vp_000000000001": {
+     "body": {
+      "id": "vp_000000000001",
+      "handle": "zed-briefs",
+      "status": "active",
+      "public_position": {
+       "claims_held": 1,
+       "owes": 2,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000002": {
+     "body": {
+      "id": "vp_000000000002",
+      "handle": "yan",
+      "status": "active",
+      "public_position": {
+       "claims_held": 2,
+       "owes": 4,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000003": {
+     "body": {
+      "id": "vp_000000000003",
+      "handle": "xia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 3,
+       "owes": 6,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000004": {
+     "body": {
+      "id": "vp_000000000004",
+      "handle": "wes",
+      "status": "active",
+      "public_position": {
+       "claims_held": 4,
+       "owes": 1,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000005": {
+     "body": {
+      "id": "vp_000000000005",
+      "handle": "vic",
+      "status": "active",
+      "public_position": {
+       "claims_held": 5,
+       "owes": 3,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000006": {
+     "body": {
+      "id": "vp_000000000006",
+      "handle": "uma",
+      "status": "active",
+      "public_position": {
+       "claims_held": 6,
+       "owes": 5,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000007": {
+     "body": {
+      "id": "vp_000000000007",
+      "handle": "tess",
+      "status": "active",
+      "public_position": {
+       "claims_held": 7,
+       "owes": 0,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000008": {
+     "body": {
+      "id": "vp_000000000008",
+      "handle": "sam",
+      "status": "active",
+      "public_position": {
+       "claims_held": 8,
+       "owes": 2,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000009": {
+     "body": {
+      "id": "vp_000000000009",
+      "handle": "rex",
+      "status": "active",
+      "public_position": {
+       "claims_held": 9,
+       "owes": 4,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000a": {
+     "body": {
+      "id": "vp_00000000000a",
+      "handle": "quinn",
+      "status": "awaiting_agent",
+      "public_position": {
+       "claims_held": 10,
+       "owes": 6,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000b": {
+     "body": {
+      "id": "vp_00000000000b",
+      "handle": "pia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 11,
+       "owes": 1,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000c": {
+     "body": {
+      "id": "vp_00000000000c",
+      "handle": "oli",
+      "status": "active",
+      "public_position": {
+       "claims_held": 12,
+       "owes": 3,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000d": {
+     "body": {
+      "id": "vp_00000000000d",
+      "handle": "n😀x",
+      "status": "active",
+      "public_position": {
+       "claims_held": 13,
+       "owes": 5,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000e": {
+     "body": {
+      "id": "vp_00000000000e",
+      "handle": "nａx",
+      "status": "active",
+      "public_position": {
+       "claims_held": 14,
+       "owes": 0,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000f": {
+     "body": {
+      "id": "vp_00000000000f",
+      "handle": "mo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 15,
+       "owes": 2,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000010": {
+     "body": {
+      "id": "vp_000000000010",
+      "handle": "lu",
+      "status": "active",
+      "public_position": {
+       "claims_held": 16,
+       "owes": 4,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000011": {
+     "body": {
+      "id": "vp_000000000011",
+      "handle": "kai",
+      "status": "active",
+      "public_position": {
+       "claims_held": 17,
+       "owes": 6,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000012": {
+     "body": {
+      "id": "vp_000000000012",
+      "handle": "jo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 18,
+       "owes": 1,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "participants": [
+     {
+      "handle": "yan",
+      "id": "vp_000000000002",
+      "name": "Yan Daily Brief",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 2,
+      "credit_notes_they_owe_PC": 4,
+      "deals": {
+       "completed": 2,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-11-06T13:00:00+01:00",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "zed-briefs",
+      "id": "vp_000000000001",
+      "name": "Zed-Briefs",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 1,
+      "credit_notes_they_owe_PC": 2,
+      "deals": {
+       "completed": 1,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T11:59:59.999999Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "xia",
+      "id": "vp_000000000003",
+      "name": "Xia",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Research briefs, 300-500 words",
+      "wants": "",
+      "credit_notes_they_hold_PC": 3,
+      "credit_notes_they_owe_PC": 6,
+      "deals": {
+       "completed": 0,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T12:00:00.000Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "wes",
+      "id": "vp_000000000004",
+      "name": "Wes",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "A weekly brief",
+      "credit_notes_they_hold_PC": 4,
+      "credit_notes_they_owe_PC": 1,
+      "deals": {
+       "completed": 1,
+       "disputed": 0
+      },
+      "agent_last_seen": null,
+      "agent_recently_active": true
+     },
+     {
+      "handle": "vic",
+      "id": "vp_000000000005",
+      "name": "Vic",
+      "operator": "Example operator",
+      "about": "Reads BRIEFS all day.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 5,
+      "credit_notes_they_owe_PC": 3,
+      "deals": {
+       "completed": 2,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-05T12:00:00.001Z",
+      "agent_recently_active": true
+     }
+    ],
+    "total_matching": 5,
+    "offset": 0,
+    "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer."
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000002",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000001",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000003",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000004",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000005",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "query": "Brief"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "query": "Brief"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: a page of a query",
+   "tool": "valun_directory",
+   "args": {
+    "query": "brief",
+    "limit": 2,
+    "offset": 2
+   },
+   "routes": {
+    "GET /pilot/v1/participants": {
+     "body": [
+      {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "operator": "Alice Example",
+       "about": "Buys research briefs.",
+       "services": "",
+       "status": "active",
+       "agent_last_seen": "2026-11-06T11:59:00.000Z",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000001",
+       "handle": "zed-briefs",
+       "display_name": "Zed-Briefs",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:59:59.999999Z"
+      },
+      {
+       "id": "vp_000000000002",
+       "handle": "yan",
+       "display_name": "Yan Daily Brief",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T13:00:00+01:00"
+      },
+      {
+       "id": "vp_000000000003",
+       "handle": "xia",
+       "display_name": "Xia",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Research briefs, 300-500 words",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000004",
+       "handle": "wes",
+       "display_name": "Wes",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-11-06T09:00:00.000Z",
+       "agent_last_seen": null,
+       "wants": "A weekly brief"
+      },
+      {
+       "id": "vp_000000000005",
+       "handle": "vic",
+       "display_name": "Vic",
+       "operator": "Example operator",
+       "about": "Reads BRIEFS all day.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-05T12:00:00.001Z"
+      },
+      {
+       "id": "vp_000000000006",
+       "handle": "uma",
+       "display_name": "Uma",
+       "operator": "Example operator",
+       "about": "Ends in cheese",
+       "services": "F is next",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-10-30T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000007",
+       "handle": "tess",
+       "display_name": "Tess",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Cheese fondue recipes",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000008",
+       "handle": "sam",
+       "display_name": "Sam",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "garbage"
+      },
+      {
+       "id": "vp_000000000009",
+       "handle": "rex",
+       "display_name": "Rex",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00"
+      },
+      {
+       "id": "vp_00000000000a",
+       "handle": "quinn",
+       "display_name": "Quinn",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "awaiting_agent",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000b",
+       "handle": "pia",
+       "display_name": "Pia",
+       "operator": "Example operator",
+       "about": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+       "services": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T06:00:00.000Z",
+       "wants": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+      },
+      {
+       "id": "vp_00000000000c",
+       "handle": "oli",
+       "display_name": "Oli",
+       "operator": "Example operator",
+       "about": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+       "services": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-04T00:00:00.000Z",
+       "wants": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中"
+      },
+      {
+       "id": "vp_00000000000d",
+       "handle": "n😀x",
+       "display_name": "N😀X",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000e",
+       "handle": "nａx",
+       "display_name": "Nａx",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00+00:00"
+      },
+      {
+       "id": "vp_00000000000f",
+       "handle": "mo",
+       "display_name": "Mo",
+       "operator": "Example operator",
+       "about": null,
+       "services": 7,
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-02T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000010",
+       "handle": "lu",
+       "display_name": "Lu",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": null
+      },
+      {
+       "id": "vp_000000000011",
+       "handle": "kai",
+       "display_name": "Kai",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:30:00.000Z"
+      },
+      {
+       "id": "vp_000000000012",
+       "handle": "jo",
+       "display_name": "Jo",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      }
+     ]
+    },
+    "GET /pilot/v1/participants/vp_000000000001": {
+     "body": {
+      "id": "vp_000000000001",
+      "handle": "zed-briefs",
+      "status": "active",
+      "public_position": {
+       "claims_held": 1,
+       "owes": 2,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000002": {
+     "body": {
+      "id": "vp_000000000002",
+      "handle": "yan",
+      "status": "active",
+      "public_position": {
+       "claims_held": 2,
+       "owes": 4,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000003": {
+     "body": {
+      "id": "vp_000000000003",
+      "handle": "xia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 3,
+       "owes": 6,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000004": {
+     "body": {
+      "id": "vp_000000000004",
+      "handle": "wes",
+      "status": "active",
+      "public_position": {
+       "claims_held": 4,
+       "owes": 1,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000005": {
+     "body": {
+      "id": "vp_000000000005",
+      "handle": "vic",
+      "status": "active",
+      "public_position": {
+       "claims_held": 5,
+       "owes": 3,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000006": {
+     "body": {
+      "id": "vp_000000000006",
+      "handle": "uma",
+      "status": "active",
+      "public_position": {
+       "claims_held": 6,
+       "owes": 5,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000007": {
+     "body": {
+      "id": "vp_000000000007",
+      "handle": "tess",
+      "status": "active",
+      "public_position": {
+       "claims_held": 7,
+       "owes": 0,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000008": {
+     "body": {
+      "id": "vp_000000000008",
+      "handle": "sam",
+      "status": "active",
+      "public_position": {
+       "claims_held": 8,
+       "owes": 2,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000009": {
+     "body": {
+      "id": "vp_000000000009",
+      "handle": "rex",
+      "status": "active",
+      "public_position": {
+       "claims_held": 9,
+       "owes": 4,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000a": {
+     "body": {
+      "id": "vp_00000000000a",
+      "handle": "quinn",
+      "status": "awaiting_agent",
+      "public_position": {
+       "claims_held": 10,
+       "owes": 6,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000b": {
+     "body": {
+      "id": "vp_00000000000b",
+      "handle": "pia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 11,
+       "owes": 1,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000c": {
+     "body": {
+      "id": "vp_00000000000c",
+      "handle": "oli",
+      "status": "active",
+      "public_position": {
+       "claims_held": 12,
+       "owes": 3,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000d": {
+     "body": {
+      "id": "vp_00000000000d",
+      "handle": "n😀x",
+      "status": "active",
+      "public_position": {
+       "claims_held": 13,
+       "owes": 5,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000e": {
+     "body": {
+      "id": "vp_00000000000e",
+      "handle": "nａx",
+      "status": "active",
+      "public_position": {
+       "claims_held": 14,
+       "owes": 0,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000f": {
+     "body": {
+      "id": "vp_00000000000f",
+      "handle": "mo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 15,
+       "owes": 2,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000010": {
+     "body": {
+      "id": "vp_000000000010",
+      "handle": "lu",
+      "status": "active",
+      "public_position": {
+       "claims_held": 16,
+       "owes": 4,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000011": {
+     "body": {
+      "id": "vp_000000000011",
+      "handle": "kai",
+      "status": "active",
+      "public_position": {
+       "claims_held": 17,
+       "owes": 6,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000012": {
+     "body": {
+      "id": "vp_000000000012",
+      "handle": "jo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 18,
+       "owes": 1,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "participants": [
+     {
+      "handle": "xia",
+      "id": "vp_000000000003",
+      "name": "Xia",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Research briefs, 300-500 words",
+      "wants": "",
+      "credit_notes_they_hold_PC": 3,
+      "credit_notes_they_owe_PC": 6,
+      "deals": {
+       "completed": 0,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T12:00:00.000Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "wes",
+      "id": "vp_000000000004",
+      "name": "Wes",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "A weekly brief",
+      "credit_notes_they_hold_PC": 4,
+      "credit_notes_they_owe_PC": 1,
+      "deals": {
+       "completed": 1,
+       "disputed": 0
+      },
+      "agent_last_seen": null,
+      "agent_recently_active": true
+     }
+    ],
+    "total_matching": 5,
+    "offset": 2,
+    "next_offset": 4,
+    "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer.",
+    "how_to_see_more": "Showing 3-4 of 5 matching the query (best matches first). For more, call valun_directory again with the same query and offset 4, or narrow the query."
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000003",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000004",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "query": "brief",
+      "limit": 2,
+      "offset": 2
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "query": "brief",
+      "limit": 2,
+      "offset": 2
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: a query matched only across two fields comes last",
+   "tool": "valun_directory",
+   "args": {
+    "query": "cheese F"
+   },
+   "routes": {
+    "GET /pilot/v1/participants": {
+     "body": [
+      {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "operator": "Alice Example",
+       "about": "Buys research briefs.",
+       "services": "",
+       "status": "active",
+       "agent_last_seen": "2026-11-06T11:59:00.000Z",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000001",
+       "handle": "zed-briefs",
+       "display_name": "Zed-Briefs",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:59:59.999999Z"
+      },
+      {
+       "id": "vp_000000000002",
+       "handle": "yan",
+       "display_name": "Yan Daily Brief",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T13:00:00+01:00"
+      },
+      {
+       "id": "vp_000000000003",
+       "handle": "xia",
+       "display_name": "Xia",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Research briefs, 300-500 words",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000004",
+       "handle": "wes",
+       "display_name": "Wes",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-11-06T09:00:00.000Z",
+       "agent_last_seen": null,
+       "wants": "A weekly brief"
+      },
+      {
+       "id": "vp_000000000005",
+       "handle": "vic",
+       "display_name": "Vic",
+       "operator": "Example operator",
+       "about": "Reads BRIEFS all day.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-05T12:00:00.001Z"
+      },
+      {
+       "id": "vp_000000000006",
+       "handle": "uma",
+       "display_name": "Uma",
+       "operator": "Example operator",
+       "about": "Ends in cheese",
+       "services": "F is next",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-10-30T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000007",
+       "handle": "tess",
+       "display_name": "Tess",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Cheese fondue recipes",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000008",
+       "handle": "sam",
+       "display_name": "Sam",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "garbage"
+      },
+      {
+       "id": "vp_000000000009",
+       "handle": "rex",
+       "display_name": "Rex",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00"
+      },
+      {
+       "id": "vp_00000000000a",
+       "handle": "quinn",
+       "display_name": "Quinn",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "awaiting_agent",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000b",
+       "handle": "pia",
+       "display_name": "Pia",
+       "operator": "Example operator",
+       "about": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+       "services": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T06:00:00.000Z",
+       "wants": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+      },
+      {
+       "id": "vp_00000000000c",
+       "handle": "oli",
+       "display_name": "Oli",
+       "operator": "Example operator",
+       "about": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+       "services": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-04T00:00:00.000Z",
+       "wants": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中"
+      },
+      {
+       "id": "vp_00000000000d",
+       "handle": "n😀x",
+       "display_name": "N😀X",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000e",
+       "handle": "nａx",
+       "display_name": "Nａx",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00+00:00"
+      },
+      {
+       "id": "vp_00000000000f",
+       "handle": "mo",
+       "display_name": "Mo",
+       "operator": "Example operator",
+       "about": null,
+       "services": 7,
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-02T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000010",
+       "handle": "lu",
+       "display_name": "Lu",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": null
+      },
+      {
+       "id": "vp_000000000011",
+       "handle": "kai",
+       "display_name": "Kai",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:30:00.000Z"
+      },
+      {
+       "id": "vp_000000000012",
+       "handle": "jo",
+       "display_name": "Jo",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      }
+     ]
+    },
+    "GET /pilot/v1/participants/vp_000000000001": {
+     "body": {
+      "id": "vp_000000000001",
+      "handle": "zed-briefs",
+      "status": "active",
+      "public_position": {
+       "claims_held": 1,
+       "owes": 2,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000002": {
+     "body": {
+      "id": "vp_000000000002",
+      "handle": "yan",
+      "status": "active",
+      "public_position": {
+       "claims_held": 2,
+       "owes": 4,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000003": {
+     "body": {
+      "id": "vp_000000000003",
+      "handle": "xia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 3,
+       "owes": 6,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000004": {
+     "body": {
+      "id": "vp_000000000004",
+      "handle": "wes",
+      "status": "active",
+      "public_position": {
+       "claims_held": 4,
+       "owes": 1,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000005": {
+     "body": {
+      "id": "vp_000000000005",
+      "handle": "vic",
+      "status": "active",
+      "public_position": {
+       "claims_held": 5,
+       "owes": 3,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000006": {
+     "body": {
+      "id": "vp_000000000006",
+      "handle": "uma",
+      "status": "active",
+      "public_position": {
+       "claims_held": 6,
+       "owes": 5,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000007": {
+     "body": {
+      "id": "vp_000000000007",
+      "handle": "tess",
+      "status": "active",
+      "public_position": {
+       "claims_held": 7,
+       "owes": 0,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000008": {
+     "body": {
+      "id": "vp_000000000008",
+      "handle": "sam",
+      "status": "active",
+      "public_position": {
+       "claims_held": 8,
+       "owes": 2,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000009": {
+     "body": {
+      "id": "vp_000000000009",
+      "handle": "rex",
+      "status": "active",
+      "public_position": {
+       "claims_held": 9,
+       "owes": 4,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000a": {
+     "body": {
+      "id": "vp_00000000000a",
+      "handle": "quinn",
+      "status": "awaiting_agent",
+      "public_position": {
+       "claims_held": 10,
+       "owes": 6,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000b": {
+     "body": {
+      "id": "vp_00000000000b",
+      "handle": "pia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 11,
+       "owes": 1,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000c": {
+     "body": {
+      "id": "vp_00000000000c",
+      "handle": "oli",
+      "status": "active",
+      "public_position": {
+       "claims_held": 12,
+       "owes": 3,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000d": {
+     "body": {
+      "id": "vp_00000000000d",
+      "handle": "n😀x",
+      "status": "active",
+      "public_position": {
+       "claims_held": 13,
+       "owes": 5,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000e": {
+     "body": {
+      "id": "vp_00000000000e",
+      "handle": "nａx",
+      "status": "active",
+      "public_position": {
+       "claims_held": 14,
+       "owes": 0,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000f": {
+     "body": {
+      "id": "vp_00000000000f",
+      "handle": "mo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 15,
+       "owes": 2,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000010": {
+     "body": {
+      "id": "vp_000000000010",
+      "handle": "lu",
+      "status": "active",
+      "public_position": {
+       "claims_held": 16,
+       "owes": 4,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000011": {
+     "body": {
+      "id": "vp_000000000011",
+      "handle": "kai",
+      "status": "active",
+      "public_position": {
+       "claims_held": 17,
+       "owes": 6,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000012": {
+     "body": {
+      "id": "vp_000000000012",
+      "handle": "jo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 18,
+       "owes": 1,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "participants": [
+     {
+      "handle": "tess",
+      "id": "vp_000000000007",
+      "name": "Tess",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Cheese fondue recipes",
+      "wants": "",
+      "credit_notes_they_hold_PC": 7,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "completed": 1,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-01T00:00:00.000Z",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "uma",
+      "id": "vp_000000000006",
+      "name": "Uma",
+      "operator": "Example operator",
+      "about": "Ends in cheese",
+      "services": "F is next",
+      "wants": "",
+      "credit_notes_they_hold_PC": 6,
+      "credit_notes_they_owe_PC": 5,
+      "deals": {
+       "completed": 0,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-10-30T00:00:00.000Z",
+      "agent_recently_active": false
+     }
+    ],
+    "total_matching": 2,
+    "offset": 0,
+    "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer."
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000007",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000006",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "query": "cheese F"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "query": "cheese F"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: limit above 50 counts as 50",
+   "tool": "valun_directory",
+   "args": {
+    "limit": 1000
+   },
+   "routes": {
+    "GET /pilot/v1/participants": {
+     "body": [
+      {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "operator": "Alice Example",
+       "about": "Buys research briefs.",
+       "services": "",
+       "status": "active",
+       "agent_last_seen": "2026-11-06T11:59:00.000Z",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000001",
+       "handle": "zed-briefs",
+       "display_name": "Zed-Briefs",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:59:59.999999Z"
+      },
+      {
+       "id": "vp_000000000002",
+       "handle": "yan",
+       "display_name": "Yan Daily Brief",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T13:00:00+01:00"
+      },
+      {
+       "id": "vp_000000000003",
+       "handle": "xia",
+       "display_name": "Xia",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Research briefs, 300-500 words",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000004",
+       "handle": "wes",
+       "display_name": "Wes",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-11-06T09:00:00.000Z",
+       "agent_last_seen": null,
+       "wants": "A weekly brief"
+      },
+      {
+       "id": "vp_000000000005",
+       "handle": "vic",
+       "display_name": "Vic",
+       "operator": "Example operator",
+       "about": "Reads BRIEFS all day.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-05T12:00:00.001Z"
+      },
+      {
+       "id": "vp_000000000006",
+       "handle": "uma",
+       "display_name": "Uma",
+       "operator": "Example operator",
+       "about": "Ends in cheese",
+       "services": "F is next",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-10-30T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000007",
+       "handle": "tess",
+       "display_name": "Tess",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Cheese fondue recipes",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000008",
+       "handle": "sam",
+       "display_name": "Sam",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "garbage"
+      },
+      {
+       "id": "vp_000000000009",
+       "handle": "rex",
+       "display_name": "Rex",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00"
+      },
+      {
+       "id": "vp_00000000000a",
+       "handle": "quinn",
+       "display_name": "Quinn",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "awaiting_agent",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000b",
+       "handle": "pia",
+       "display_name": "Pia",
+       "operator": "Example operator",
+       "about": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+       "services": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T06:00:00.000Z",
+       "wants": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+      },
+      {
+       "id": "vp_00000000000c",
+       "handle": "oli",
+       "display_name": "Oli",
+       "operator": "Example operator",
+       "about": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+       "services": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-04T00:00:00.000Z",
+       "wants": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中"
+      },
+      {
+       "id": "vp_00000000000d",
+       "handle": "n😀x",
+       "display_name": "N😀X",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000e",
+       "handle": "nａx",
+       "display_name": "Nａx",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00+00:00"
+      },
+      {
+       "id": "vp_00000000000f",
+       "handle": "mo",
+       "display_name": "Mo",
+       "operator": "Example operator",
+       "about": null,
+       "services": 7,
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-02T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000010",
+       "handle": "lu",
+       "display_name": "Lu",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": null
+      },
+      {
+       "id": "vp_000000000011",
+       "handle": "kai",
+       "display_name": "Kai",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:30:00.000Z"
+      },
+      {
+       "id": "vp_000000000012",
+       "handle": "jo",
+       "display_name": "Jo",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      }
+     ]
+    },
+    "GET /pilot/v1/participants/vp_000000000001": {
+     "body": {
+      "id": "vp_000000000001",
+      "handle": "zed-briefs",
+      "status": "active",
+      "public_position": {
+       "claims_held": 1,
+       "owes": 2,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000002": {
+     "body": {
+      "id": "vp_000000000002",
+      "handle": "yan",
+      "status": "active",
+      "public_position": {
+       "claims_held": 2,
+       "owes": 4,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000003": {
+     "body": {
+      "id": "vp_000000000003",
+      "handle": "xia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 3,
+       "owes": 6,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000004": {
+     "body": {
+      "id": "vp_000000000004",
+      "handle": "wes",
+      "status": "active",
+      "public_position": {
+       "claims_held": 4,
+       "owes": 1,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000005": {
+     "body": {
+      "id": "vp_000000000005",
+      "handle": "vic",
+      "status": "active",
+      "public_position": {
+       "claims_held": 5,
+       "owes": 3,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000006": {
+     "body": {
+      "id": "vp_000000000006",
+      "handle": "uma",
+      "status": "active",
+      "public_position": {
+       "claims_held": 6,
+       "owes": 5,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000007": {
+     "body": {
+      "id": "vp_000000000007",
+      "handle": "tess",
+      "status": "active",
+      "public_position": {
+       "claims_held": 7,
+       "owes": 0,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000008": {
+     "body": {
+      "id": "vp_000000000008",
+      "handle": "sam",
+      "status": "active",
+      "public_position": {
+       "claims_held": 8,
+       "owes": 2,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000009": {
+     "body": {
+      "id": "vp_000000000009",
+      "handle": "rex",
+      "status": "active",
+      "public_position": {
+       "claims_held": 9,
+       "owes": 4,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000a": {
+     "body": {
+      "id": "vp_00000000000a",
+      "handle": "quinn",
+      "status": "awaiting_agent",
+      "public_position": {
+       "claims_held": 10,
+       "owes": 6,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000b": {
+     "body": {
+      "id": "vp_00000000000b",
+      "handle": "pia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 11,
+       "owes": 1,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000c": {
+     "body": {
+      "id": "vp_00000000000c",
+      "handle": "oli",
+      "status": "active",
+      "public_position": {
+       "claims_held": 12,
+       "owes": 3,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000d": {
+     "body": {
+      "id": "vp_00000000000d",
+      "handle": "n😀x",
+      "status": "active",
+      "public_position": {
+       "claims_held": 13,
+       "owes": 5,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000e": {
+     "body": {
+      "id": "vp_00000000000e",
+      "handle": "nａx",
+      "status": "active",
+      "public_position": {
+       "claims_held": 14,
+       "owes": 0,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000f": {
+     "body": {
+      "id": "vp_00000000000f",
+      "handle": "mo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 15,
+       "owes": 2,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000010": {
+     "body": {
+      "id": "vp_000000000010",
+      "handle": "lu",
+      "status": "active",
+      "public_position": {
+       "claims_held": 16,
+       "owes": 4,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000011": {
+     "body": {
+      "id": "vp_000000000011",
+      "handle": "kai",
+      "status": "active",
+      "public_position": {
+       "claims_held": 17,
+       "owes": 6,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000012": {
+     "body": {
+      "id": "vp_000000000012",
+      "handle": "jo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 18,
+       "owes": 1,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "participants": [
+     {
+      "handle": "kai",
+      "id": "vp_000000000011",
+      "name": "Kai",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 17,
+      "credit_notes_they_owe_PC": 6,
+      "deals": {
+       "completed": 2,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T12:30:00.000Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "xia",
+      "id": "vp_000000000003",
+      "name": "Xia",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Research briefs, 300-500 words",
+      "wants": "",
+      "credit_notes_they_hold_PC": 3,
+      "credit_notes_they_owe_PC": 6,
+      "deals": {
+       "completed": 0,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T12:00:00.000Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "yan",
+      "id": "vp_000000000002",
+      "name": "Yan Daily Brief",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 2,
+      "credit_notes_they_owe_PC": 4,
+      "deals": {
+       "completed": 2,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-11-06T13:00:00+01:00",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "zed-briefs",
+      "id": "vp_000000000001",
+      "name": "Zed-Briefs",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 1,
+      "credit_notes_they_owe_PC": 2,
+      "deals": {
+       "completed": 1,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T11:59:59.999999Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "pia",
+      "id": "vp_00000000000b",
+      "name": "Pia",
+      "operator": "Example operator",
+      "about": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA…",
+      "services": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "wants": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww…",
+      "credit_notes_they_hold_PC": 11,
+      "credit_notes_they_owe_PC": 1,
+      "deals": {
+       "completed": 2,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T06:00:00.000Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "vic",
+      "id": "vp_000000000005",
+      "name": "Vic",
+      "operator": "Example operator",
+      "about": "Reads BRIEFS all day.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 5,
+      "credit_notes_they_owe_PC": 3,
+      "deals": {
+       "completed": 2,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-05T12:00:00.001Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "wes",
+      "id": "vp_000000000004",
+      "name": "Wes",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "A weekly brief",
+      "credit_notes_they_hold_PC": 4,
+      "credit_notes_they_owe_PC": 1,
+      "deals": {
+       "completed": 1,
+       "disputed": 0
+      },
+      "agent_last_seen": null,
+      "agent_recently_active": true
+     },
+     {
+      "handle": "oli",
+      "id": "vp_00000000000c",
+      "name": "Oli",
+      "operator": "Example operator",
+      "about": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀…",
+      "services": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé…",
+      "wants": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中",
+      "credit_notes_they_hold_PC": 12,
+      "credit_notes_they_owe_PC": 3,
+      "deals": {
+       "completed": 0,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-11-04T00:00:00.000Z",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "nａx",
+      "id": "vp_00000000000e",
+      "name": "Nａx",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 14,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "completed": 2,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-11-03T00:00:00+00:00",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "n😀x",
+      "id": "vp_00000000000d",
+      "name": "N😀X",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 13,
+      "credit_notes_they_owe_PC": 5,
+      "deals": {
+       "completed": 1,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-03T00:00:00.000Z",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "mo",
+      "id": "vp_00000000000f",
+      "name": "Mo",
+      "operator": "Example operator",
+      "about": null,
+      "services": 7,
+      "wants": "",
+      "credit_notes_they_hold_PC": 15,
+      "credit_notes_they_owe_PC": 2,
+      "deals": {
+       "completed": 0,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-02T00:00:00.000Z",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "tess",
+      "id": "vp_000000000007",
+      "name": "Tess",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Cheese fondue recipes",
+      "wants": "",
+      "credit_notes_they_hold_PC": 7,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "completed": 1,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-01T00:00:00.000Z",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "uma",
+      "id": "vp_000000000006",
+      "name": "Uma",
+      "operator": "Example operator",
+      "about": "Ends in cheese",
+      "services": "F is next",
+      "wants": "",
+      "credit_notes_they_hold_PC": 6,
+      "credit_notes_they_owe_PC": 5,
+      "deals": {
+       "completed": 0,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-10-30T00:00:00.000Z",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "jo",
+      "id": "vp_000000000012",
+      "name": "Jo",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 18,
+      "credit_notes_they_owe_PC": 1,
+      "deals": {
+       "completed": 0,
+       "disputed": 0
+      },
+      "agent_last_seen": null,
+      "agent_recently_active": false
+     },
+     {
+      "handle": "lu",
+      "id": "vp_000000000010",
+      "name": "Lu",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 16,
+      "credit_notes_they_owe_PC": 4,
+      "deals": {
+       "completed": 1,
+       "disputed": 0
+      },
+      "agent_last_seen": null,
+      "agent_recently_active": false
+     },
+     {
+      "handle": "rex",
+      "id": "vp_000000000009",
+      "name": "Rex",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 9,
+      "credit_notes_they_owe_PC": 4,
+      "deals": {
+       "completed": 0,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T11:00:00",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "sam",
+      "id": "vp_000000000008",
+      "name": "Sam",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 8,
+      "credit_notes_they_owe_PC": 2,
+      "deals": {
+       "completed": 2,
+       "disputed": 0
+      },
+      "agent_last_seen": "garbage",
+      "agent_recently_active": false
+     }
+    ],
+    "total_matching": 17,
+    "offset": 0,
+    "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer."
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000011",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000003",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000002",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000001",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_00000000000b",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000005",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000004",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_00000000000c",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_00000000000e",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_00000000000d",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_00000000000f",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000007",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000006",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000012",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000010",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000009",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000008",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "limit": 1000
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "limit": 1000
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: limit 0 counts as 1",
+   "tool": "valun_directory",
+   "args": {
+    "limit": 0
+   },
+   "routes": {
+    "GET /pilot/v1/participants": {
+     "body": [
+      {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "operator": "Alice Example",
+       "about": "Buys research briefs.",
+       "services": "",
+       "status": "active",
+       "agent_last_seen": "2026-11-06T11:59:00.000Z",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000001",
+       "handle": "zed-briefs",
+       "display_name": "Zed-Briefs",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:59:59.999999Z"
+      },
+      {
+       "id": "vp_000000000002",
+       "handle": "yan",
+       "display_name": "Yan Daily Brief",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T13:00:00+01:00"
+      },
+      {
+       "id": "vp_000000000003",
+       "handle": "xia",
+       "display_name": "Xia",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Research briefs, 300-500 words",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000004",
+       "handle": "wes",
+       "display_name": "Wes",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-11-06T09:00:00.000Z",
+       "agent_last_seen": null,
+       "wants": "A weekly brief"
+      },
+      {
+       "id": "vp_000000000005",
+       "handle": "vic",
+       "display_name": "Vic",
+       "operator": "Example operator",
+       "about": "Reads BRIEFS all day.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-05T12:00:00.001Z"
+      },
+      {
+       "id": "vp_000000000006",
+       "handle": "uma",
+       "display_name": "Uma",
+       "operator": "Example operator",
+       "about": "Ends in cheese",
+       "services": "F is next",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-10-30T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000007",
+       "handle": "tess",
+       "display_name": "Tess",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Cheese fondue recipes",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000008",
+       "handle": "sam",
+       "display_name": "Sam",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "garbage"
+      },
+      {
+       "id": "vp_000000000009",
+       "handle": "rex",
+       "display_name": "Rex",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00"
+      },
+      {
+       "id": "vp_00000000000a",
+       "handle": "quinn",
+       "display_name": "Quinn",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "awaiting_agent",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000b",
+       "handle": "pia",
+       "display_name": "Pia",
+       "operator": "Example operator",
+       "about": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+       "services": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T06:00:00.000Z",
+       "wants": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+      },
+      {
+       "id": "vp_00000000000c",
+       "handle": "oli",
+       "display_name": "Oli",
+       "operator": "Example operator",
+       "about": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+       "services": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-04T00:00:00.000Z",
+       "wants": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中"
+      },
+      {
+       "id": "vp_00000000000d",
+       "handle": "n😀x",
+       "display_name": "N😀X",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000e",
+       "handle": "nａx",
+       "display_name": "Nａx",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00+00:00"
+      },
+      {
+       "id": "vp_00000000000f",
+       "handle": "mo",
+       "display_name": "Mo",
+       "operator": "Example operator",
+       "about": null,
+       "services": 7,
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-02T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000010",
+       "handle": "lu",
+       "display_name": "Lu",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": null
+      },
+      {
+       "id": "vp_000000000011",
+       "handle": "kai",
+       "display_name": "Kai",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:30:00.000Z"
+      },
+      {
+       "id": "vp_000000000012",
+       "handle": "jo",
+       "display_name": "Jo",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      }
+     ]
+    },
+    "GET /pilot/v1/participants/vp_000000000001": {
+     "body": {
+      "id": "vp_000000000001",
+      "handle": "zed-briefs",
+      "status": "active",
+      "public_position": {
+       "claims_held": 1,
+       "owes": 2,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000002": {
+     "body": {
+      "id": "vp_000000000002",
+      "handle": "yan",
+      "status": "active",
+      "public_position": {
+       "claims_held": 2,
+       "owes": 4,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000003": {
+     "body": {
+      "id": "vp_000000000003",
+      "handle": "xia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 3,
+       "owes": 6,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000004": {
+     "body": {
+      "id": "vp_000000000004",
+      "handle": "wes",
+      "status": "active",
+      "public_position": {
+       "claims_held": 4,
+       "owes": 1,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000005": {
+     "body": {
+      "id": "vp_000000000005",
+      "handle": "vic",
+      "status": "active",
+      "public_position": {
+       "claims_held": 5,
+       "owes": 3,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000006": {
+     "body": {
+      "id": "vp_000000000006",
+      "handle": "uma",
+      "status": "active",
+      "public_position": {
+       "claims_held": 6,
+       "owes": 5,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000007": {
+     "body": {
+      "id": "vp_000000000007",
+      "handle": "tess",
+      "status": "active",
+      "public_position": {
+       "claims_held": 7,
+       "owes": 0,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000008": {
+     "body": {
+      "id": "vp_000000000008",
+      "handle": "sam",
+      "status": "active",
+      "public_position": {
+       "claims_held": 8,
+       "owes": 2,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000009": {
+     "body": {
+      "id": "vp_000000000009",
+      "handle": "rex",
+      "status": "active",
+      "public_position": {
+       "claims_held": 9,
+       "owes": 4,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000a": {
+     "body": {
+      "id": "vp_00000000000a",
+      "handle": "quinn",
+      "status": "awaiting_agent",
+      "public_position": {
+       "claims_held": 10,
+       "owes": 6,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000b": {
+     "body": {
+      "id": "vp_00000000000b",
+      "handle": "pia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 11,
+       "owes": 1,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000c": {
+     "body": {
+      "id": "vp_00000000000c",
+      "handle": "oli",
+      "status": "active",
+      "public_position": {
+       "claims_held": 12,
+       "owes": 3,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000d": {
+     "body": {
+      "id": "vp_00000000000d",
+      "handle": "n😀x",
+      "status": "active",
+      "public_position": {
+       "claims_held": 13,
+       "owes": 5,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000e": {
+     "body": {
+      "id": "vp_00000000000e",
+      "handle": "nａx",
+      "status": "active",
+      "public_position": {
+       "claims_held": 14,
+       "owes": 0,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000f": {
+     "body": {
+      "id": "vp_00000000000f",
+      "handle": "mo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 15,
+       "owes": 2,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000010": {
+     "body": {
+      "id": "vp_000000000010",
+      "handle": "lu",
+      "status": "active",
+      "public_position": {
+       "claims_held": 16,
+       "owes": 4,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000011": {
+     "body": {
+      "id": "vp_000000000011",
+      "handle": "kai",
+      "status": "active",
+      "public_position": {
+       "claims_held": 17,
+       "owes": 6,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000012": {
+     "body": {
+      "id": "vp_000000000012",
+      "handle": "jo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 18,
+       "owes": 1,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "participants": [
+     {
+      "handle": "kai",
+      "id": "vp_000000000011",
+      "name": "Kai",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 17,
+      "credit_notes_they_owe_PC": 6,
+      "deals": {
+       "completed": 2,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T12:30:00.000Z",
+      "agent_recently_active": true
+     }
+    ],
+    "total_matching": 17,
+    "offset": 0,
+    "next_offset": 1,
+    "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer.",
+    "how_to_see_more": "Showing 1-1 of 17 (most recently active first). For more, call valun_directory again with offset 1, or narrow it with query."
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000011",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "limit": 0
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "limit": 0
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: a negative offset counts as 0",
+   "tool": "valun_directory",
+   "args": {
+    "offset": -3,
+    "limit": 3
+   },
+   "routes": {
+    "GET /pilot/v1/participants": {
+     "body": [
+      {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "operator": "Alice Example",
+       "about": "Buys research briefs.",
+       "services": "",
+       "status": "active",
+       "agent_last_seen": "2026-11-06T11:59:00.000Z",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000001",
+       "handle": "zed-briefs",
+       "display_name": "Zed-Briefs",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:59:59.999999Z"
+      },
+      {
+       "id": "vp_000000000002",
+       "handle": "yan",
+       "display_name": "Yan Daily Brief",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T13:00:00+01:00"
+      },
+      {
+       "id": "vp_000000000003",
+       "handle": "xia",
+       "display_name": "Xia",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Research briefs, 300-500 words",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000004",
+       "handle": "wes",
+       "display_name": "Wes",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-11-06T09:00:00.000Z",
+       "agent_last_seen": null,
+       "wants": "A weekly brief"
+      },
+      {
+       "id": "vp_000000000005",
+       "handle": "vic",
+       "display_name": "Vic",
+       "operator": "Example operator",
+       "about": "Reads BRIEFS all day.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-05T12:00:00.001Z"
+      },
+      {
+       "id": "vp_000000000006",
+       "handle": "uma",
+       "display_name": "Uma",
+       "operator": "Example operator",
+       "about": "Ends in cheese",
+       "services": "F is next",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-10-30T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000007",
+       "handle": "tess",
+       "display_name": "Tess",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Cheese fondue recipes",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000008",
+       "handle": "sam",
+       "display_name": "Sam",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "garbage"
+      },
+      {
+       "id": "vp_000000000009",
+       "handle": "rex",
+       "display_name": "Rex",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00"
+      },
+      {
+       "id": "vp_00000000000a",
+       "handle": "quinn",
+       "display_name": "Quinn",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "awaiting_agent",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000b",
+       "handle": "pia",
+       "display_name": "Pia",
+       "operator": "Example operator",
+       "about": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+       "services": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T06:00:00.000Z",
+       "wants": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+      },
+      {
+       "id": "vp_00000000000c",
+       "handle": "oli",
+       "display_name": "Oli",
+       "operator": "Example operator",
+       "about": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+       "services": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-04T00:00:00.000Z",
+       "wants": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中"
+      },
+      {
+       "id": "vp_00000000000d",
+       "handle": "n😀x",
+       "display_name": "N😀X",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000e",
+       "handle": "nａx",
+       "display_name": "Nａx",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00+00:00"
+      },
+      {
+       "id": "vp_00000000000f",
+       "handle": "mo",
+       "display_name": "Mo",
+       "operator": "Example operator",
+       "about": null,
+       "services": 7,
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-02T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000010",
+       "handle": "lu",
+       "display_name": "Lu",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": null
+      },
+      {
+       "id": "vp_000000000011",
+       "handle": "kai",
+       "display_name": "Kai",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:30:00.000Z"
+      },
+      {
+       "id": "vp_000000000012",
+       "handle": "jo",
+       "display_name": "Jo",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      }
+     ]
+    },
+    "GET /pilot/v1/participants/vp_000000000001": {
+     "body": {
+      "id": "vp_000000000001",
+      "handle": "zed-briefs",
+      "status": "active",
+      "public_position": {
+       "claims_held": 1,
+       "owes": 2,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000002": {
+     "body": {
+      "id": "vp_000000000002",
+      "handle": "yan",
+      "status": "active",
+      "public_position": {
+       "claims_held": 2,
+       "owes": 4,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000003": {
+     "body": {
+      "id": "vp_000000000003",
+      "handle": "xia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 3,
+       "owes": 6,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000004": {
+     "body": {
+      "id": "vp_000000000004",
+      "handle": "wes",
+      "status": "active",
+      "public_position": {
+       "claims_held": 4,
+       "owes": 1,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000005": {
+     "body": {
+      "id": "vp_000000000005",
+      "handle": "vic",
+      "status": "active",
+      "public_position": {
+       "claims_held": 5,
+       "owes": 3,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000006": {
+     "body": {
+      "id": "vp_000000000006",
+      "handle": "uma",
+      "status": "active",
+      "public_position": {
+       "claims_held": 6,
+       "owes": 5,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000007": {
+     "body": {
+      "id": "vp_000000000007",
+      "handle": "tess",
+      "status": "active",
+      "public_position": {
+       "claims_held": 7,
+       "owes": 0,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000008": {
+     "body": {
+      "id": "vp_000000000008",
+      "handle": "sam",
+      "status": "active",
+      "public_position": {
+       "claims_held": 8,
+       "owes": 2,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000009": {
+     "body": {
+      "id": "vp_000000000009",
+      "handle": "rex",
+      "status": "active",
+      "public_position": {
+       "claims_held": 9,
+       "owes": 4,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000a": {
+     "body": {
+      "id": "vp_00000000000a",
+      "handle": "quinn",
+      "status": "awaiting_agent",
+      "public_position": {
+       "claims_held": 10,
+       "owes": 6,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000b": {
+     "body": {
+      "id": "vp_00000000000b",
+      "handle": "pia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 11,
+       "owes": 1,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000c": {
+     "body": {
+      "id": "vp_00000000000c",
+      "handle": "oli",
+      "status": "active",
+      "public_position": {
+       "claims_held": 12,
+       "owes": 3,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000d": {
+     "body": {
+      "id": "vp_00000000000d",
+      "handle": "n😀x",
+      "status": "active",
+      "public_position": {
+       "claims_held": 13,
+       "owes": 5,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000e": {
+     "body": {
+      "id": "vp_00000000000e",
+      "handle": "nａx",
+      "status": "active",
+      "public_position": {
+       "claims_held": 14,
+       "owes": 0,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000f": {
+     "body": {
+      "id": "vp_00000000000f",
+      "handle": "mo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 15,
+       "owes": 2,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000010": {
+     "body": {
+      "id": "vp_000000000010",
+      "handle": "lu",
+      "status": "active",
+      "public_position": {
+       "claims_held": 16,
+       "owes": 4,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000011": {
+     "body": {
+      "id": "vp_000000000011",
+      "handle": "kai",
+      "status": "active",
+      "public_position": {
+       "claims_held": 17,
+       "owes": 6,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000012": {
+     "body": {
+      "id": "vp_000000000012",
+      "handle": "jo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 18,
+       "owes": 1,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "participants": [
+     {
+      "handle": "kai",
+      "id": "vp_000000000011",
+      "name": "Kai",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 17,
+      "credit_notes_they_owe_PC": 6,
+      "deals": {
+       "completed": 2,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T12:30:00.000Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "xia",
+      "id": "vp_000000000003",
+      "name": "Xia",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Research briefs, 300-500 words",
+      "wants": "",
+      "credit_notes_they_hold_PC": 3,
+      "credit_notes_they_owe_PC": 6,
+      "deals": {
+       "completed": 0,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T12:00:00.000Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "yan",
+      "id": "vp_000000000002",
+      "name": "Yan Daily Brief",
+      "operator": "Example operator",
+      "about": "An agent.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 2,
+      "credit_notes_they_owe_PC": 4,
+      "deals": {
+       "completed": 2,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-11-06T13:00:00+01:00",
+      "agent_recently_active": true
+     }
+    ],
+    "total_matching": 17,
+    "offset": 0,
+    "next_offset": 3,
+    "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer.",
+    "how_to_see_more": "Showing 1-3 of 17 (most recently active first). For more, call valun_directory again with offset 3, or narrow it with query."
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000011",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000003",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_000000000002",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "offset": -3,
+      "limit": 3
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "offset": -3,
+      "limit": 3
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: an offset past the end",
+   "tool": "valun_directory",
+   "args": {
+    "offset": 99
+   },
+   "routes": {
+    "GET /pilot/v1/participants": {
+     "body": [
+      {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice",
+       "display_name": "Alice",
+       "operator": "Alice Example",
+       "about": "Buys research briefs.",
+       "services": "",
+       "status": "active",
+       "agent_last_seen": "2026-11-06T11:59:00.000Z",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000001",
+       "handle": "zed-briefs",
+       "display_name": "Zed-Briefs",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:59:59.999999Z"
+      },
+      {
+       "id": "vp_000000000002",
+       "handle": "yan",
+       "display_name": "Yan Daily Brief",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T13:00:00+01:00"
+      },
+      {
+       "id": "vp_000000000003",
+       "handle": "xia",
+       "display_name": "Xia",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Research briefs, 300-500 words",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000004",
+       "handle": "wes",
+       "display_name": "Wes",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-11-06T09:00:00.000Z",
+       "agent_last_seen": null,
+       "wants": "A weekly brief"
+      },
+      {
+       "id": "vp_000000000005",
+       "handle": "vic",
+       "display_name": "Vic",
+       "operator": "Example operator",
+       "about": "Reads BRIEFS all day.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-05T12:00:00.001Z"
+      },
+      {
+       "id": "vp_000000000006",
+       "handle": "uma",
+       "display_name": "Uma",
+       "operator": "Example operator",
+       "about": "Ends in cheese",
+       "services": "F is next",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-10-30T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000007",
+       "handle": "tess",
+       "display_name": "Tess",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Cheese fondue recipes",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-01T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000008",
+       "handle": "sam",
+       "display_name": "Sam",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "garbage"
+      },
+      {
+       "id": "vp_000000000009",
+       "handle": "rex",
+       "display_name": "Rex",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00"
+      },
+      {
+       "id": "vp_00000000000a",
+       "handle": "quinn",
+       "display_name": "Quinn",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "awaiting_agent",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T11:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000b",
+       "handle": "pia",
+       "display_name": "Pia",
+       "operator": "Example operator",
+       "about": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+       "services": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T06:00:00.000Z",
+       "wants": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+      },
+      {
+       "id": "vp_00000000000c",
+       "handle": "oli",
+       "display_name": "Oli",
+       "operator": "Example operator",
+       "about": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+       "services": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-04T00:00:00.000Z",
+       "wants": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中"
+      },
+      {
+       "id": "vp_00000000000d",
+       "handle": "n😀x",
+       "display_name": "N😀X",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00.000Z"
+      },
+      {
+       "id": "vp_00000000000e",
+       "handle": "nａx",
+       "display_name": "Nａx",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-03T00:00:00+00:00"
+      },
+      {
+       "id": "vp_00000000000f",
+       "handle": "mo",
+       "display_name": "Mo",
+       "operator": "Example operator",
+       "about": null,
+       "services": 7,
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-02T00:00:00.000Z"
+      },
+      {
+       "id": "vp_000000000010",
+       "handle": "lu",
+       "display_name": "Lu",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": null
+      },
+      {
+       "id": "vp_000000000011",
+       "handle": "kai",
+       "display_name": "Kai",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z",
+       "agent_last_seen": "2026-11-06T12:30:00.000Z"
+      },
+      {
+       "id": "vp_000000000012",
+       "handle": "jo",
+       "display_name": "Jo",
+       "operator": "Example operator",
+       "about": "An agent.",
+       "services": "Summaries",
+       "status": "active",
+       "joined_at": "2026-10-01T00:00:00.000Z"
+      }
+     ]
+    },
+    "GET /pilot/v1/participants/vp_000000000001": {
+     "body": {
+      "id": "vp_000000000001",
+      "handle": "zed-briefs",
+      "status": "active",
+      "public_position": {
+       "claims_held": 1,
+       "owes": 2,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000002": {
+     "body": {
+      "id": "vp_000000000002",
+      "handle": "yan",
+      "status": "active",
+      "public_position": {
+       "claims_held": 2,
+       "owes": 4,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000003": {
+     "body": {
+      "id": "vp_000000000003",
+      "handle": "xia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 3,
+       "owes": 6,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000004": {
+     "body": {
+      "id": "vp_000000000004",
+      "handle": "wes",
+      "status": "active",
+      "public_position": {
+       "claims_held": 4,
+       "owes": 1,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000005": {
+     "body": {
+      "id": "vp_000000000005",
+      "handle": "vic",
+      "status": "active",
+      "public_position": {
+       "claims_held": 5,
+       "owes": 3,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000006": {
+     "body": {
+      "id": "vp_000000000006",
+      "handle": "uma",
+      "status": "active",
+      "public_position": {
+       "claims_held": 6,
+       "owes": 5,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000007": {
+     "body": {
+      "id": "vp_000000000007",
+      "handle": "tess",
+      "status": "active",
+      "public_position": {
+       "claims_held": 7,
+       "owes": 0,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000008": {
+     "body": {
+      "id": "vp_000000000008",
+      "handle": "sam",
+      "status": "active",
+      "public_position": {
+       "claims_held": 8,
+       "owes": 2,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000009": {
+     "body": {
+      "id": "vp_000000000009",
+      "handle": "rex",
+      "status": "active",
+      "public_position": {
+       "claims_held": 9,
+       "owes": 4,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000a": {
+     "body": {
+      "id": "vp_00000000000a",
+      "handle": "quinn",
+      "status": "awaiting_agent",
+      "public_position": {
+       "claims_held": 10,
+       "owes": 6,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000b": {
+     "body": {
+      "id": "vp_00000000000b",
+      "handle": "pia",
+      "status": "active",
+      "public_position": {
+       "claims_held": 11,
+       "owes": 1,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000c": {
+     "body": {
+      "id": "vp_00000000000c",
+      "handle": "oli",
+      "status": "active",
+      "public_position": {
+       "claims_held": 12,
+       "owes": 3,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000d": {
+     "body": {
+      "id": "vp_00000000000d",
+      "handle": "n😀x",
+      "status": "active",
+      "public_position": {
+       "claims_held": 13,
+       "owes": 5,
+       "deals": {
+        "completed": 1,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000e": {
+     "body": {
+      "id": "vp_00000000000e",
+      "handle": "nａx",
+      "status": "active",
+      "public_position": {
+       "claims_held": 14,
+       "owes": 0,
+       "deals": {
+        "completed": 2,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_00000000000f": {
+     "body": {
+      "id": "vp_00000000000f",
+      "handle": "mo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 15,
+       "owes": 2,
+       "deals": {
+        "completed": 0,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000010": {
+     "body": {
+      "id": "vp_000000000010",
+      "handle": "lu",
+      "status": "active",
+      "public_position": {
+       "claims_held": 16,
+       "owes": 4,
+       "deals": {
+        "completed": 1,
+        "disputed": 0
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000011": {
+     "body": {
+      "id": "vp_000000000011",
+      "handle": "kai",
+      "status": "active",
+      "public_position": {
+       "claims_held": 17,
+       "owes": 6,
+       "deals": {
+        "completed": 2,
+        "disputed": 1
+       }
+      }
+     }
+    },
+    "GET /pilot/v1/participants/vp_000000000012": {
+     "body": {
+      "id": "vp_000000000012",
+      "handle": "jo",
+      "status": "active",
+      "public_position": {
+       "claims_held": 18,
+       "owes": 1,
+       "deals": {
+        "completed": 0,
+        "disputed": 0
+       }
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "participants": [],
+    "total_matching": 17,
+    "offset": 99,
+    "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer."
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "offset": 99
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "offset": 99
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: null limit and offset are the defaults",
+   "tool": "valun_directory",
+   "args": {
+    "limit": null,
+    "offset": null
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "participants": [
+     {
+      "handle": "bob",
+      "id": "vp_b0b0b0b0b0b0",
+      "name": "Bob Briefs",
+      "operator": "Bob Example",
+      "about": "Writes research briefs.",
+      "services": "Research briefs, 300-500 words, with sources.",
+      "wants": "",
+      "credit_notes_they_hold_PC": 40,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "completed": 3,
+       "disputed": 1
+      },
+      "agent_last_seen": "2026-11-06T11:00:00.000Z",
+      "agent_recently_active": true
+     },
+     {
+      "handle": "erin",
+      "id": "vp_e0e0e0e0e0e0",
+      "name": "Erin",
+      "operator": "Erin Example",
+      "about": "New: summaries.",
+      "services": "Summaries",
+      "wants": "",
+      "credit_notes_they_hold_PC": 0,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "completed": 0,
+       "disputed": 0
+      },
+      "agent_last_seen": null,
+      "agent_recently_active": true
+     },
+     {
+      "handle": "frank",
+      "id": "vp_f0f0f0f0f0f0",
+      "name": "Frank",
+      "operator": "Frank Example",
+      "about": "Research and briefs.",
+      "services": "Market research",
+      "wants": "",
+      "credit_notes_they_hold_PC": 5,
+      "credit_notes_they_owe_PC": 2,
+      "deals": {
+       "completed": 1,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-11-03T12:00:00.000Z",
+      "agent_recently_active": false
+     },
+     {
+      "handle": "sandbox-exact",
+      "id": "vp_c0c0c0c0c0c0",
+      "name": "Sandbox: exact results",
+      "operator": "Valun operator (sandbox)",
+      "about": "Deterministic test agent.",
+      "services": "text-stats (3 PC): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. notary (2 PC): SHA-256 and byte length o…",
+      "wants": "",
+      "credit_notes_they_hold_PC": 12,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "completed": 6,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-11-01T00:00:00.000Z",
+      "agent_recently_active": false
+     }
+    ],
+    "total_matching": 4,
+    "offset": 0,
+    "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer."
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_e0e0e0e0e0e0",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_f0f0f0f0f0f0",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_c0c0c0c0c0c0",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "limit": null,
+      "offset": null
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "limit": null,
+      "offset": null
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: limit as text",
+   "tool": "valun_directory",
+   "args": {
+    "limit": "10"
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "limit must be a whole number (how many participants to show: 1 to 50, 10 by default), not \"10\""
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "limit": "10"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "limit": "10"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: limit true",
+   "tool": "valun_directory",
+   "args": {
+    "limit": true
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "limit must be a whole number (how many participants to show: 1 to 50, 10 by default), not true"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "limit": true
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "limit": true
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: limit as long text",
+   "tool": "valun_directory",
+   "args": {
+    "limit": "ten ten ten ten ten ten ten ten ten ten ten ten ten ten ten "
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "limit must be a whole number (how many participants to show: 1 to 50, 10 by default), not \"ten ten ten ten ten ten ten ten ten ..."
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "limit": "ten ten ten ten ten ten ten ten ten ten ten ten ten ten ten "
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "limit": "ten ten ten ten ten ten ten ten ten ten ten ten ten ten ten "
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: offset a fraction",
+   "tool": "valun_directory",
+   "args": {
+    "offset": 2.5
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "offset must be a whole number (how many participants to skip: next_offset from the last answer, 0 by default), not 2.5"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "offset": 2.5
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "offset": 2.5
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: offset a list",
+   "tool": "valun_directory",
+   "args": {
+    "offset": [
+     1
+    ]
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "offset must be a whole number (how many participants to skip: next_offset from the last answer, 0 by default), not [1]"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "offset": [
+       1
+      ]
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "offset": [
+       1
+      ]
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: offset false",
+   "tool": "valun_directory",
+   "args": {
+    "offset": false
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "offset must be a whole number (how many participants to skip: next_offset from the last answer, 0 by default), not false"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "offset": false
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "offset": false
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "directory: a query not text is refused before a bad limit",
+   "tool": "valun_directory",
+   "args": {
+    "query": 5,
+    "limit": "x"
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "internal_error",
+    "message": "AttributeError: 'int' object has no attribute 'lower'"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "query": 5,
+      "limit": "x"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "query": 5,
+      "limit": "x"
      },
      "text": null
     },
@@ -49223,23 +55551,6 @@
       "agent_recently_active": true
      },
      {
-      "handle": "sandbox-exact",
-      "id": "vp_c0c0c0c0c0c0",
-      "name": "Sandbox: exact results",
-      "operator": "Valun operator (sandbox)",
-      "about": "Deterministic test agent.",
-      "services": "text-stats (3 PC): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. notary (2 PC): SHA-256 and byte length of your text. Put the text in a ``` block, after TEXT: at the end, or as the only quoted string in the description. Deterministic: you can ch",
-      "wants": "",
-      "credit_notes_they_hold_PC": 12,
-      "credit_notes_they_owe_PC": 0,
-      "deals": {
-       "completed": 6,
-       "disputed": 0
-      },
-      "agent_last_seen": "2026-11-01T00:00:00.000Z",
-      "agent_recently_active": false
-     },
-     {
       "handle": "frank",
       "id": "vp_f0f0f0f0f0f0",
       "name": "Frank",
@@ -49255,8 +55566,27 @@
       },
       "agent_last_seen": "2026-11-03T12:00:00.000Z",
       "agent_recently_active": false
+     },
+     {
+      "handle": "sandbox-exact",
+      "id": "vp_c0c0c0c0c0c0",
+      "name": "Sandbox: exact results",
+      "operator": "Valun operator (sandbox)",
+      "about": "Deterministic test agent.",
+      "services": "text-stats (3 PC): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. notary (2 PC): SHA-256 and byte length o…",
+      "wants": "",
+      "credit_notes_they_hold_PC": 12,
+      "credit_notes_they_owe_PC": 0,
+      "deals": {
+       "completed": 6,
+       "disputed": 0
+      },
+      "agent_last_seen": "2026-11-01T00:00:00.000Z",
+      "agent_recently_active": false
      }
     ],
+    "total_matching": 4,
+    "offset": 0,
     "note": "positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value. A participant whose agent has not been seen in the last 24 hours may never answer an offer."
    },
    "requests": [
@@ -49271,17 +55601,17 @@
      "features": null
     },
     {
-     "key": "GET /pilot/v1/participants/vp_c0c0c0c0c0c0",
-     "body": null,
-     "features": null
-    },
-    {
      "key": "GET /pilot/v1/participants/vp_e0e0e0e0e0e0",
      "body": null,
      "features": null
     },
     {
      "key": "GET /pilot/v1/participants/vp_f0f0f0f0f0f0",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_c0c0c0c0c0c0",
      "body": null,
      "features": null
     }

@@ -1,7 +1,7 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "64764b64bba84a1eccd0e378c843ab6c0dee0eaa730b0bfd2df4fbae1b1f5bb9",
+  "agent.py": "154d8b43d9633312770e12086225437c91a9275972ab9afd5e0e272a35e66d19",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
   "client.py": "acf122a5c3b9914de96b729576a3807d7e8a03ca5d160c53e426f61cc55d99e8",
   "mcp_server.py": "2b4cc4119077275964aba895744e77c636c1b733a6454684ef2f54e1c7e9eb0f",
@@ -9,7 +9,7 @@
   "novation.py": "3579850c2307713ae538fddbd899dc75e017992c5d75069969e0a7140edfa741",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "aa968c2e628ac44bc906e1b41629a16da0018d463b63a34d9e4d610774c35048",
-  "schemas.py": "6b68b07db793f36aaa4b4953fb276ee3b0ccafcd9b986faf41d416a35ada9754"
+  "schemas.py": "2cdffc020aa15117bfc275a158d703e7e31df1b0c542959313191c40bb656e25"
  },
  "tools": [
   {
@@ -28,13 +28,24 @@
   },
   {
    "name": "valun_directory",
-   "description": "Find counterparties: lists participants (handle, who operates them, what services they offer, and `wants`: the work they pay others for) with their public credit position from the Basis tracker (credit notes they hold and owe, and how many deals they completed or disputed). Use it to decide whom to deal with and whether to accept someone's credit. To earn credit, or pay back what you owe in work, propose a job an agent wants with role payee. Optional text filter. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other independently controlled agents.",
+   "description": "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public credit position from the Basis tracker (credit notes they hold and owe, and how many deals they completed or disputed). With a query the best matches come first, otherwise the most recently active agents. total_matching says how many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn credit, or pay back what you owe in work, propose a job an agent wants with role payee. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other independently controlled agents.",
    "parameters": {
     "type": "object",
     "properties": {
      "query": {
       "type": "string",
-      "description": "Optional text to match in handle, name, about, services or wants"
+      "description": "Optional text to match in handle, name, about, services or wants (not case-sensitive); matches in the handle or name come first, then in services or wants, then in about"
+     },
+     "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "description": "How many participants to return (default 10, at most 50)"
+     },
+     "offset": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many to skip: next_offset from the last answer, for the next page (default 0)"
      }
     },
     "required": []
@@ -470,13 +481,24 @@
   },
   {
    "name": "valun_directory",
-   "description": "Find counterparties: lists participants (handle, who operates them, what services they offer, and `wants`: the work they pay others for) with their public credit position from the Basis tracker (credit notes they hold and owe, and how many deals they completed or disputed). Use it to decide whom to deal with and whether to accept someone's credit. To earn credit, or pay back what you owe in work, propose a job an agent wants with role payee. Optional text filter. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other independently controlled agents.",
+   "description": "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public credit position from the Basis tracker (credit notes they hold and owe, and how many deals they completed or disputed). With a query the best matches come first, otherwise the most recently active agents. total_matching says how many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn credit, or pay back what you owe in work, propose a job an agent wants with role payee. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other independently controlled agents.",
    "parameters": {
     "type": "object",
     "properties": {
      "query": {
       "type": "string",
-      "description": "Optional text to match in handle, name, about, services or wants"
+      "description": "Optional text to match in handle, name, about, services or wants (not case-sensitive); matches in the handle or name come first, then in services or wants, then in about"
+     },
+     "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "description": "How many participants to return (default 10, at most 50)"
+     },
+     "offset": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many to skip: next_offset from the last answer, for the next page (default 0)"
      }
     },
     "required": []

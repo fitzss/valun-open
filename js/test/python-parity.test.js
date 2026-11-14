@@ -10,7 +10,7 @@ import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import * as api from '../src/index.js';
 import {FileStore} from '../src/file-store.js';
-import {PyError, int, repr, typeName} from '../src/py.js';
+import {PyError, int, isoAwareUs, repr, str, typeName} from '../src/py.js';
 import {FIX, PARITY as P} from './agent-world.js';
 
 const {ValunError, errorPayload, limitsBody, loosens, measure, owes, quoteLine, quoted, recentlyActive, records, sandbox, shown, termsText,
@@ -128,6 +128,14 @@ test('agent helpers: recently_active, limits_body, loosens, terms_text and error
   }
   assert.deepEqual(errorPayload(new TypeError('boom')), {error: 'internal_error', message: 'TypeError: boom'});
   assert.deepEqual(errorPayload('thrown text'), {error: 'internal_error', message: 'Error: thrown text'});
+});
+
+test('agent helpers: seen_us (valun_directory orders by it, fix inbox #36) gives Python\'s exact microseconds', () => {
+  assert.ok(P.seen_us.length > 30);
+  for (const [t, us] of P.seen_us) {
+    const got = isoAwareUs(str(t).replaceAll('Z', '+00:00'));
+    assert.equal(got === null ? null : String(got), us, show(t));
+  }
 });
 
 test('Python semantics: int() and repr() of JSON values', () => {

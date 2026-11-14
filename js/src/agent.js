@@ -34,8 +34,8 @@ import * as sandbox from './sandbox.js';
 import {checkDelivery, extractText} from './sandbox.js';
 import * as schemas from './schemas.js';
 import {
-  PyError, cpLength, cpSlice, dictCopy, get, int, isDict, isoAwareMs, item, items, iterate, lower, or, pyEq, repr, str, strip, truthy,
-  typeName,
+  PyError, cmpCodePoints, cpLength, cpSlice, dictCopy, get, int, isDict, isoAwareMs, isoAwareUs, item, items, iterate, lower, or, pyEq,
+  repr, str, strip, truthy, typeName,
 } from './py.js';
 
 export const SETTLEMENT_NOTE = 'Issuing a credit note creates an outstanding obligation (the payer owes the payee that many PC). '
@@ -559,6 +559,37 @@ export function recentlyActive(lastSeen, hours = 24, joinedAt = null, nowMs = Da
     return t !== null && nowMs - t < hours * 3_600_000;
   };
   return within(lastSeen) || within(joinedAt);
+}
+
+// valun_directory answers one page (fix inbox #36: small models stalled on the whole directory, about 72 KB for 137
+// participants): DIRECTORY_PAGE participants unless the agent asks for up to DIRECTORY_PAGE_MAX, with each about, services
+// and wants cut to DIRECTORY_TEXT_MAX code points. The Python core's constants of the same names.
+const DIRECTORY_PAGE = 10, DIRECTORY_PAGE_MAX = 50, DIRECTORY_TEXT_MAX = 160;
+
+/**
+ * An about, services or wants text as valun_directory shows it: its first DIRECTORY_TEXT_MAX code points, and '…' when
+ * it is longer. Any other value is returned as it is. The Python core's directory_text.
+ */
+function directoryText(v) {
+  return typeof v === 'string' && cpLength(v) > DIRECTORY_TEXT_MAX ? cpSlice(v, DIRECTORY_TEXT_MAX) + '…' : v;
+}
+
+/**
+ * A time as recentlyActive reads it in whole microseconds since the epoch (a BigInt), or null when it is missing, naive
+ * or unreadable (never seen). The Python core's seen_us.
+ */
+const seenUs = iso => isoAwareUs(str(iso).replaceAll('Z', '+00:00'));
+
+/**
+ * valun_directory's limit or offset: `dflt` when it is absent or null, else a JSON integer (a safe integer; a boolean is
+ * not one). Anything else is refused (bad_arguments). The Python core's _page_arg (JavaScript cannot tell 2.0 from 2).
+ */
+function pageArg(a, k, dflt, what) {
+  const v = get(a, k);
+  if (v === null || v === undefined) return dflt;
+  if (whole(v)) return v;
+  const got = quoted(v);
+  throw new ValunError('bad_arguments', `${k} must be a whole number (${what}), not ${got.length <= 40 ? got : got.slice(0, 37) + '...'}`);
 }
 
 /** The agreed (or current) service text: where numeric requirements such as '300-500 words' are written. */
@@ -1883,27 +1914,60 @@ export class ValunAgent {
         + '(the stricter of the two applies). Only your owner can raise the mandate.'};
   }
 
+  /**
+   * One page of the active participants other than this one (fix inbox #36), from the list's own fields: those matching
+   * `query` (case-insensitive) in their handle or display name first, then in services or wants, then only in about
+   * (then the rest the text filter matches, across two fields); then those whose agent was active in the last 24 hours
+   * (recentlyActive); then the most recently seen (agent_last_seen, never seen last); then by handle (code points).
+   * Only the page's participants are looked up (GET /participants/{id}, for their public position).
+   */
   async directory(a) {
     const c = this.client();
     const q = lower(or(get(a, 'query'), ''));
-    const out = [];
+    const limit = Math.min(Math.max(pageArg(a, 'limit', DIRECTORY_PAGE, `how many participants to show: 1 to ${DIRECTORY_PAGE_MAX}, `
+      + `${DIRECTORY_PAGE} by default`), 1), DIRECTORY_PAGE_MAX);
+    const offset = Math.max(pageArg(a, 'offset', 0, 'how many participants to skip: next_offset from the last answer, 0 by default'), 0);
+    const ranked = [];
     for (const p of iterate(await c.directory())) {
       if (item(p, 'id') === c.participantId || item(p, 'status') !== 'active') continue;
-      const text = lower(['handle', 'display_name', 'about', 'services', 'wants'].map(k => str(or(get(p, k), ''))).join(' '));
-      if (q && !text.includes(q)) continue;
-      const pos = get(await c.participant(item(p, 'id')), 'public_position', {});
-      out.push({handle: item(p, 'handle'), id: item(p, 'id'), name: item(p, 'display_name'), operator: item(p, 'operator'), about: item(p, 'about'),
-        services: item(p, 'services'), wants: or(get(p, 'wants'), ''), credit_notes_they_hold_PC: get(pos, 'claims_held'),
-        credit_notes_they_owe_PC: get(pos, 'owes'),
-        deals: get(pos, 'deals'), agent_last_seen: get(p, 'agent_last_seen'),
-        agent_recently_active: recentlyActive(get(p, 'agent_last_seen'), 24, get(p, 'joined_at'), this.#now())});
+      const [handle, name, about, services, wants] = ['handle', 'display_name', 'about', 'services', 'wants'].map(k => lower(str(or(get(p, k), ''))));
+      let tier;
+      if (!q || handle.includes(q) || name.includes(q)) tier = 0;
+      else if (services.includes(q) || wants.includes(q)) tier = 1;
+      else if (about.includes(q)) tier = 2;
+      else if ([handle, name, about, services, wants].join(' ').includes(q)) tier = 3;
+      else continue;
+      const active = recentlyActive(get(p, 'agent_last_seen'), 24, get(p, 'joined_at'), this.#now());
+      ranked.push({tier, active, seen: seenUs(get(p, 'agent_last_seen')), handle: str(or(get(p, 'handle'), '')), p});
     }
-    out.sort((x, y) => Number(!x.agent_recently_active) - Number(!y.agent_recently_active));   // stable: active first
+    // as Python sorts its key (tier, not active, never seen, -seen, handle); stable, as Python's sort
+    ranked.sort((x, y) => x.tier - y.tier || Number(!x.active) - Number(!y.active) || Number(x.seen === null) - Number(y.seen === null)
+      || (x.seen === y.seen ? 0 : x.seen > y.seen ? -1 : 1) || cmpCodePoints(x.handle, y.handle));
+    const out = [];
+    for (const {p, active} of ranked.slice(offset, offset + limit)) {
+      const pos = get(await c.participant(item(p, 'id')), 'public_position', {});
+      out.push({handle: item(p, 'handle'), id: item(p, 'id'), name: item(p, 'display_name'), operator: item(p, 'operator'),
+        about: directoryText(item(p, 'about')), services: directoryText(item(p, 'services')),
+        wants: directoryText(or(get(p, 'wants'), '')), credit_notes_they_hold_PC: get(pos, 'claims_held'),
+        credit_notes_they_owe_PC: get(pos, 'owes'), deals: get(pos, 'deals'),
+        agent_last_seen: get(p, 'agent_last_seen'), agent_recently_active: active});
+    }
     const where = (c.network ?? NETWORK) === TESTNET
       ? 'positions are outstanding credit notes recorded by the Valun testnet Basis tracker and anchored on Ergo testnet; a '
         + "creditor can redeem one against its issuer's reserve, if it has one; tERG have no monetary value."
       : 'positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value.';
-    return {participants: out, note: where + ' A participant whose agent has not been seen in the last 24 hours may never answer an offer.'};
+    const total = ranked.length, end = offset + out.length;
+    const r = {participants: out, total_matching: total, offset};
+    if (end < total) r.next_offset = end;
+    r.note = where + ' A participant whose agent has not been seen in the last 24 hours may never answer an offer.';
+    if (end < total) {
+      r.how_to_see_more = q
+        ? `Showing ${offset + 1}-${end} of ${total} matching the query (best matches first). For more, call valun_directory `
+          + `again with the same query and offset ${end}, or narrow the query.`
+        : `Showing ${offset + 1}-${end} of ${total} (most recently active first). For more, call valun_directory again `
+          + `with offset ${end}, or narrow it with query.`;
+    }
+    return r;
   }
 
   async inbox() {
