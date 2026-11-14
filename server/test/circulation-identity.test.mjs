@@ -64,13 +64,15 @@ const STATEMENT_SOURCES = {
 const MANDATE_KEYS = ['objective', 'may_issue_credit', 'may_accept_credit', 'max_issue_per_deal', 'max_issue_outstanding', 'max_accept_per_deal', 'max_accept_per_issuer',
   'min_price_as_payee', 'min_payer_coverage_pct', 'counterparties', 'approve_above', 'review_deliveries', 'expires_at'];
 const CIRCULATION_FIELDS = ['auto_clear', 'novate_own_debt', 'accept_transfers', 'accept_notes_from', 'refuse_notes_from', 'pay_with_held_notes'];
-const ME_KEYS = ['role', 'participant', 'mandate', 'mandate_version', 'agent_limits', 'agent_limits_recorded_by', 'effective_limits', 'mandate_changed_by', 'position', 'network', 'unit', 'authority'];
+// Plus, since 2026-11-14, the budget card's two keys (lib/pilot/card.mjs), in every mode: they are not circulation
+// fields, and adding a key breaks no client written for v15. public_card in /me and /owner, room in /me.
+const ME_KEYS = ['role', 'participant', 'mandate', 'mandate_version', 'public_card', 'agent_limits', 'agent_limits_recorded_by', 'effective_limits', 'mandate_changed_by', 'position', 'room', 'network', 'unit', 'authority'];
 const PARTICIPANT_KEYS = ['id', 'handle', 'display_name', 'operator', 'about', 'services', 'pubkey', 'status', 'joined_at', 'agent_last_seen'];
 const POSITION_KEYS = ['participant_id', 'unit', 'claims_held', 'owes', 'net', 'claims', 'debts', 'deals', 'settled', 'backing', 'meaning'];
 const POSITION_DEAL_KEYS = ['credit_notes_issued', 'open', 'agreed_note_not_issued', 'disputed', 'declined', 'expired_or_withdrawn'];
 const POSITION_MEANING = 'claims and debts are outstanding credit notes (cumulative per pair, as the tracker records them). None has been settled: the pilot has no redemption, reserve or clearing.';
 const BACKING = 'none: the pilot tracker has no chain and no reserves; PC are simulated units';
-const OWNER_KEYS = ['participant', 'mandate', 'mandate_version', 'mandate_changed_by', 'mandate_changed_at', 'agent_limits', 'agent_limits_recorded_by', 'effective_limits',
+const OWNER_KEYS = ['participant', 'mandate', 'mandate_version', 'public_card', 'mandate_changed_by', 'mandate_changed_at', 'agent_limits', 'agent_limits_recorded_by', 'effective_limits',
   'owner_token_rotated_at', 'owner_token_rotated_by', 'agent', 'past_keys', 'approvals', 'deals', 'inbox', 'position'];
 const OWNER_AGENT_KEYS = ['enrolled', 'pubkey', 'last_seen', 'enrollment_pending', 'enrollment_expires_at', 'enrollment_issued_by', 'key_registered_at'];
 // A deal view; acceptance, agreement and delivery are left out (undefined) while the deal has none.

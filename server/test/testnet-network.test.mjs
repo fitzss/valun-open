@@ -84,7 +84,7 @@ test('the testnet serves its own skill.md (nanoERG, valun 0.5, settlement on Erg
       assert.match(text, /^---\nname: valun\n/, p);
       assert.match(text, /nanoERG\s+of\s+Ergo\s+testnet/);
       assert.match(text, /valun 0\.5 or later/);
-      assert.match(text, /uvx --from valun==0\.6\.3 valun ergo redeem sandbox-exact 3000000 --broadcast/);
+      assert.match(text, /uvx --from valun==0\.7\.0 valun ergo redeem sandbox-exact 3000000 --broadcast/);
       assert.doesNotMatch(text, /\bPC\b/, 'no pilot credits on the testnet');
     }
   } finally { srv.close(); }
@@ -288,4 +288,36 @@ test('the testnet links to itself: loop cards, agent pages, the A2A card, llms.t
     assert.match(text, /reads https:\/\/valun-testnet\.fly\.dev\/skill\.md/);
     assert.doesNotMatch(text, /https:\/\/valun\.tech\/(skill\.md|a2a|pilot|network|\.well-known)/, 'no pilot links but the landing');
   } finally { srv.close(); }
+});
+
+// The budget card (lib/pilot/card.mjs) on the testnet: its amounts are nanoERG, its reasons and the agent page's line read
+// them as people do (nanoERG with tERG), its links are the testnet's, and nothing says PC.
+test('the budget card on the testnet: nanoERG amounts, reasons and the page line in nanoERG (tERG), testnet links, no PC', async () => {
+  const fs = await import('node:fs'), os = await import('node:os'), pathMod = await import('node:path'), crypto = await import('node:crypto');
+  const {budgetCard, checkPayer} = await import('../lib/pilot/card.mjs');
+  const agents = await import('../lib/pilot/agents.mjs');
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'valun-testnet-card-')), hex = n => crypto.randomBytes(n).toString('hex'), now = Date.now();
+  try {
+    const notes = [];
+    const pilot = new core.Pilot({store: new core.PilotStore(dir), basis: {nft: '0'.repeat(64), denomination: 'erg', allNotes: async () => notes, note: async () => null}, log: () => {}});
+    const person = handle => (pilot.s.participants['vp_' + hex(6)] = {handle, display_name: handle, operator: 'test', pubkey: '02' + hex(32), status: 'active', created_at: new Date(now).toISOString(),
+      mandate: {...core.DEFAULT_MANDATE, ...core.SANDBOX_CAPS, approve_above: units.pc(1000), expires_at: new Date(now + 864e5).toISOString()}, mandate_version: 1, past_pubkeys: []});
+    const amy = person('amy-payer'), bob = person('bob-payee');
+    for (const [id, p] of Object.entries(pilot.s.participants)) p.id = id;
+    notes.push({issuer_pubkey: amy.pubkey, recipient_pubkey: bob.pubkey, amount_collected: '9000000', amount_redeemed: '0', timestamp: 1000, signature: '02' + hex(64), denomination: 'erg'});
+    pilot.setMandate(amy, {public_card: true});
+    const card = await budgetCard(pilot, amy);
+    assert.deepEqual([card.network, card.unit, card.mandate.per_deal, card.mandate.outstanding_cap, card.room.outstanding, card.room.room_left], ['valun-testnet-1', 'nanoERG', 5_000_000, 40_000_000, 9_000_000, 31_000_000]);
+    assert.equal(card.check, `https://valun-testnet.fly.dev/pilot/v1/participants/${amy.id}/check?amount={amount}&payee={payee}`);
+    assert.equal(card.page, 'https://valun-testnet.fly.dev/agent/amy-payer');
+    const c = await checkPayer(pilot, amy, {amount: 3_000_000, payee: bob});
+    assert.deepEqual([c.verdict, c.reasons], ['accept', ['Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 31000000 nanoERG (0.031 tERG) of 40000000 nanoERG (0.04 tERG) left.']]);
+    const d = await checkPayer(pilot, amy, {amount: 6_000_000, payee: bob});
+    assert.deepEqual(d.reasons, ['Over its limit per deal: 6000000 nanoERG (0.006 tERG) is more than the 5000000 nanoERG (0.005 tERG) a deal its owner allows.']);
+    const view = agents.agentView({id: amy.id, handle: amy.handle, joined_at: amy.created_at, agent_last_seen: null}, null, [], {now, card});
+    assert.equal(view.budget.line, 'Can commit up to 5000000 nanoERG (0.005 tERG) a deal and 40000000 nanoERG (0.04 tERG) in all for its owner · 31000000 nanoERG (0.031 tERG) left');
+    const description = agents.agentDescription(view);
+    assert.ok(description.length <= 300 && description.endsWith('Budget card: can commit up to 5000000 nanoERG (0.005 tERG) a deal and 40000000 nanoERG (0.04 tERG) in all for its owner; 31000000 nanoERG (0.031 tERG) left.'), description);
+    for (const text of [JSON.stringify(card), JSON.stringify(c), JSON.stringify(d), agents.renderAgentPage(view)]) assert.doesNotMatch(text, /\bPC\b|_PC"/);
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });

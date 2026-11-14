@@ -8,7 +8,8 @@ import {featuresFor, NOVATION_INFO} from './caps.mjs';
 import {METRICS_CACHE_MS} from './clearing.mjs';
 import {loopsOf, loopOf, LOOP_ID_RE, renderLoopPage, renderLoopNotFound} from './loops.mjs';
 import {AnchorWatch, CHECK_INTERVAL_S, confirmedUpdates, creatingTx, dailyCap, loopAnchor, trackerBoxUpdates} from './anchors.mjs';
-import {AGENT_HANDLE_RE, agentView, renderAgentPage, renderAgentNotFound} from './agents.mjs';
+import {AGENT_HANDLE_RE, agentPageShown, agentView, renderAgentPage, renderAgentNotFound} from './agents.mjs';
+import {assertCardPublic, budgetCard, cardPublic, checkPayer, findPayee, parseAmount, roomOf} from './card.mjs';
 import {withUnitNeutralNames as unitNeutral} from './amount-names.mjs';
 import {ENVIRONMENT} from '../environment.mjs';
 
@@ -31,9 +32,10 @@ export const INFO_DESCRIPTIONS = Object.freeze({
   sandbox: `${INFO_PREFIX} An issued note is ${INFO_SETTLEMENT} On this server circulating credit is on for sandbox participants only: the sandbox agents and those who joined with join-sandbox.`,
 });
 // Self-serve sandbox joins per client address per hour (guests at one venue share an address; an IPv6 client counts by
-// its /48, lib/ipkey.mjs): counted in the state by Pilot.joinSandbox (fix inbox #21), so a restart does not reset it.
-// The server-wide daily cap is SANDBOX_JOINS_PER_DAY in core.mjs.
-export {SANDBOX_JOINS_PER_HOUR_PER_ADDRESS} from './core.mjs';
+// its /48, lib/ipkey.mjs), and per hour from all addresses together (one host can rotate across many /48s): counted in
+// the state by Pilot.joinSandbox (fix inbox #21), so a restart does not reset them. The server-wide daily cap is
+// SANDBOX_JOINS_PER_DAY in core.mjs.
+export {SANDBOX_JOINS_PER_HOUR_PER_ADDRESS, SANDBOX_JOINS_PER_HOUR_TOTAL} from './core.mjs';
 // Settlement on Ergo testnet: the smallest redemption (the miner fee the tracker pays for it) and the redemption builds
 // one agent may ask for in 24 hours (in memory; a restart forgets them).
 export const REDEMPTION_MIN_NANOERG = 1_000_000, REDEMPTION_BUILDS_PER_DAY = 6, REDEMPTION_ATTEMPTS_PER_DAY = 30;
@@ -260,6 +262,20 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       const x = pilot.participant(m[1]);
       return sendCached(res, send, `participant:${x.id}`, async () => ({...pilot.directoryRecord(x), public_position: unitNeutral(await pilot.publicPosition(x))}));
     }
+    // The budget card and its check (lib/pilot/card.mjs), once the agent's owner published it (mandate public_card);
+    // otherwise 404 card_not_public. Cached as the other public reads are: a check is keyed by its payee and amount, which
+    // are checked first (400 invalid_field, 404 not_found).
+    if (G && (m = /^\/participants\/(vp_[0-9a-f]{12})\/(card|check)$/.exec(p))) {
+      const x = pilot.participant(m[1]);
+      assertCardPublic(x);
+      if (m[2] === 'card') return sendCached(res, send, `card:${x.id}`, () => budgetCard(pilot, x));
+      const amount = parseAmount(url.searchParams.get('amount'), pilot.unit), payee = findPayee(pilot, url.searchParams.get('payee'), x);
+      // The payee's cover is its own business: shown only to a check sent with the payee's token (agent or owner), and
+      // such an answer is never cached; everyone else gets the cached public answer, with cover.covered null.
+      const asker = bearer(req) ? pilot.authenticate(bearer(req)) : null;
+      if (asker?.p?.id === payee.id) return send(res, 200, await checkPayer(pilot, x, {amount, payee, showCover: true}));
+      return sendCached(res, send, `check:${x.id}:${payee.id}:${amount}`, () => checkPayer(pilot, x, {amount, payee}));
+    }
     // The reconciliation rows are v15's in every mode (SV-PRIV-1, owner decision 9): no per-edge journal columns here.
     if (G && p === '/ledger') return sendCached(res, send, 'ledger', async () => { const l = await pilot.ledger(); return {unit: pilot.unit, notes: l, reconciliation: await pilot.reconcile(l, {public: true})}; });
     // Closed loops (applied set-offs; lib/pilot/loops.mjs): public handles and amounts only, newest first. In every mode
@@ -303,7 +319,8 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       throw new PilotError('testnet_bootstrapping', 'the Valun testnet tracker is not on chain yet; try again once its tracker NFT is minted (GET /pilot/v1/info: tracker_on_chain)', 503);
     if (P && p === '/join') return send(res, 201, await pilot.join(await readJson(req)));
     // No invite: sandbox-only participants (off unless enabled); at most 12 an hour from one address, which for an IPv6
-    // client is its /48 (fix inbox #21: one host left from a new address on every join).
+    // client is its /48 (fix inbox #21: one host left from a new address on every join), and 40 an hour from all
+    // addresses (one host's egress rotated across about 10 /48s).
     if (P && p === '/join-sandbox') return send(res, 201, await pilot.joinSandbox(await readJson(req), {addressKey: ipKey(ip, 48)}));
     if (P && p === '/enroll') return send(res, 201, await pilot.enroll(await readJson(req)));
 
@@ -412,13 +429,19 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     // With circulating credit on (modes sandbox and on) /me and /owner also give the owner's credit policy and the
     // features (the server's, and the consent roles counted for the agent's client); in other modes they are as before.
     const circulationKeys = () => (pilot.circulating ? {credit_policy: pilot.creditPolicy(me), features: pilot.featuresOf(me)} : {});
-    if (G && p === '/me') return send(res, 200, {role: who.role, participant: pilot.publicParticipant(me), mandate: me.mandate, mandate_version: me.mandate_version,
-      agent_limits: me.agent_limits || {}, agent_limits_recorded_by: me.agent_limits_recorded_by || {}, effective_limits: pilot.effectiveLimits(me), mandate_changed_by: me.mandate_changed_by || 'owner',
-      position: unitNeutral(await pilot.position(me, null, {own: true})), network: NETWORK, unit: pilot.unit,
-      authority: who.role === 'agent'
-        ? 'agent token: may read this participant\'s deals and act within the owner\'s mandate; commitments above approve_above wait for the owner'
-        : 'owner token: may change the mandate, decide approvals, revoke the agent and rotate this owner token',
-      ...circulationKeys()});
+    // public_card: whether the owner published the budget card (lib/pilot/card.mjs). room (fix inbox #54 item 7): what the
+    // agent owes and has committed as a payer, and what is left under max_issue_outstanding, counted as checkMandate
+    // counts it (the card's room).
+    if (G && p === '/me') {
+      const ledger = await pilot.ledger();
+      return send(res, 200, {role: who.role, participant: pilot.publicParticipant(me), mandate: me.mandate, mandate_version: me.mandate_version, public_card: cardPublic(me),
+        agent_limits: me.agent_limits || {}, agent_limits_recorded_by: me.agent_limits_recorded_by || {}, effective_limits: pilot.effectiveLimits(me), mandate_changed_by: me.mandate_changed_by || 'owner',
+        position: unitNeutral(await pilot.position(me, ledger, {own: true})), room: roomOf(pilot, me, ledger), network: NETWORK, unit: pilot.unit,
+        authority: who.role === 'agent'
+          ? 'agent token: may read this participant\'s deals and act within the owner\'s mandate; commitments above approve_above wait for the owner'
+          : 'owner token: may change the mandate, decide approvals, revoke the agent and rotate this owner token',
+        ...circulationKeys()});
+    }
     if (G && p === '/inbox') return send(res, 200, pilot.inbox(me));
     // Deal views as the server answers them (dealView: next_actions judged as the payment routes judge them).
     if (G && p === '/deals') return send(res, 200, (await Promise.all(pilot.dealsFor(me).map(d => pilot.dealView(d, me)))).reverse());
@@ -491,7 +514,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     }
 
     if (who.role === 'owner') {
-      if (G && p === '/owner') return send(res, 200, {participant: pilot.publicParticipant(me), mandate: me.mandate, mandate_version: me.mandate_version,
+      if (G && p === '/owner') return send(res, 200, {participant: pilot.publicParticipant(me), mandate: me.mandate, mandate_version: me.mandate_version, public_card: cardPublic(me),
         mandate_changed_by: me.mandate_changed_by || 'owner', mandate_changed_at: me.mandate_changed_at || null,
         agent_limits: me.agent_limits || {}, agent_limits_recorded_by: me.agent_limits_recorded_by || {}, effective_limits: pilot.effectiveLimits(me),
         owner_token_rotated_at: me.owner_token_rotated_at ?? null, owner_token_rotated_by: me.owner_token_rotated_by ?? null,
@@ -533,18 +556,20 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     return send(res, r.status, r.body, HTML);
   };
   // The agent page (GET /agent/<handle>, lib/http.mjs; lib/pilot/agents.mjs): server-rendered HTML of a participant's
-  // public record, position and loops, cached as the public reads are and counted against the same per-address read
-  // budget. A handle no participant with an agent (active now, or with an earlier key) has is a 404 page (not cached).
+  // public record, position and loops, and its budget card once its owner published it (lib/pilot/card.mjs), cached as
+  // the public reads are and counted against the same per-address read budget. A handle no participant with an agent
+  // (active now, or with an earlier key) has is a 404 page (not cached).
   handle.agentPage = async (req, res, name, send, clientIp) => {
     if (limited(`ipr:${clientIp(req)}`, ipReadsPerMinute)) throw new PilotError('rate_limited', 'too many requests; slow down', 429);
     const h = String(name || '').toLowerCase();
-    const x = AGENT_HANDLE_RE.test(h) ? Object.values(pilot.s.participants).find(q => q.handle === h && !q.unlisted && (q.status === 'active' || q.past_pubkeys?.length)) : null;
+    const x = AGENT_HANDLE_RE.test(h) ? Object.values(pilot.s.participants).find(q => q.handle === h && agentPageShown(q)) : null;
     if (!x) return send(res, 404, renderAgentNotFound(), HTML);
     const r = await cachedRead(`agent-page:${x.id}`, async () => {
-      let pos = null;
+      let pos = null, card = null;
       try { pos = await pilot.publicPosition(x); } catch { pos = null; }   // the page still shows, without the record
+      if (cardPublic(x)) { try { card = await budgetCard(pilot, x); } catch { card = null; } }   // and without the card
       const loops = loopsOf(pilot.s.setoffs, pilot.s.participants, publicOf);
-      return {status: 200, body: renderAgentPage(agentView(pilot.directoryRecord(x), pos, loops, {now: Date.now(), dormant: !!pilot.dormant?.(x)}))};
+      return {status: 200, body: renderAgentPage(agentView(pilot.directoryRecord(x), pos, loops, {now: Date.now(), dormant: !!pilot.dormant?.(x), card}))};
     });
     return send(res, r.status, r.body, HTML);
   };

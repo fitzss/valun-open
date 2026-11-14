@@ -1,13 +1,15 @@
 // The per-address limit on self-serve sandbox joins (fix inbox #21). A tester made 15 joins from one IPv4 address in four
 // minutes: the count lived in the server's memory, and a deploy in the middle started it again from zero. The count now
 // lives in the state, as keyed hashes of the address, so it survives a restart; no address is stored. No tracker.
+// The hourly total from all addresses (fix inbox #21, reopened): one host's egress rotated across about 10 IPv6 /48s,
+// each with its own per-address allowance, so only a total over every address bounds one host.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {Pilot, PilotStore, PILOT_DENOMINATION, SANDBOX_JOINS_PER_HOUR_PER_ADDRESS} from '../lib/pilot/core.mjs';
-import {SANDBOX_JOINS_PER_HOUR_PER_ADDRESS as FROM_HTTP} from '../lib/pilot/http.mjs';
+import {Pilot, PilotStore, PILOT_DENOMINATION, SANDBOX_JOINS_PER_HOUR_PER_ADDRESS, SANDBOX_JOINS_PER_HOUR_TOTAL} from '../lib/pilot/core.mjs';
+import {SANDBOX_JOINS_PER_HOUR_PER_ADDRESS as FROM_HTTP, SANDBOX_JOINS_PER_HOUR_TOTAL as TOTAL_FROM_HTTP} from '../lib/pilot/http.mjs';
 
 const basis = {nft: '0'.repeat(64), denomination: PILOT_DENOMINATION, note: async () => null, allNotes: async () => []};
 const A = '203.0.113.7', B = '2001:db8:1::/48';
@@ -123,4 +125,63 @@ test('callers inside the server (no address) are not limited per address', async
   for (let i = 0; i < 13; i++) await p.joinSandbox({handle: `inside-${i}`, operator: 'x'});
   assert.equal(p.s.sandbox_joins, undefined);
   assert.ok(!fs.existsSync(path.join(dir, 'sandbox-join-key')), 'the key is made on the first limited join only');
+});
+
+// ---------- the hourly total from all addresses ----------
+const net = i => `2001:db8:${i}::/48`;
+
+test('the hourly total from all addresses is the one the HTTP layer names: 40', () => {
+  assert.equal(SANDBOX_JOINS_PER_HOUR_TOTAL, 40);
+  assert.equal(TOTAL_FROM_HTTP, 40);
+});
+
+test('one host rotating across ten /48s: the 41st join within an hour from all addresses is refused, a restart does not reset the count, and the oldest join frees the next slot', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'valun-join-limit-'));
+  const clock = {t: Date.parse('2026-11-14T10:00:00Z')};
+  let p = server(dir, clock);
+  for (let i = 0; i < 40; i++) { await join(p, net(i % 10)); clock.t += 1000; }   // 4 from each of ten /48s: each far under its 12
+  let e = await refusal(join(p, net(10)));                                         // an eleventh /48, never seen before
+  assert.equal(e.code, 'rate_limited');
+  assert.equal(e.status, 429);
+  // The oldest of the 40 stops counting an hour after it was made: 40 s have passed since.
+  assert.equal(e.extra.retry_after_ms, 3600e3 - 40_000);
+  assert.equal(e.message, 'the sandbox takes at most 40 new participants an hour from all addresses; try again in 60 min');
+  assert.equal(p.s.sandbox_joins.length, 40, 'the refused join recorded nothing');
+
+  // A restart: the new process reads the count from the state.
+  clock.t += 60_000;
+  p = server(dir, clock);
+  e = await refusal(join(p, net(11)));
+  assert.equal(e.code, 'rate_limited');
+  assert.equal(e.extra.retry_after_ms, 3600e3 - 100_000);
+  assert.match(e.message, /; try again in 59 min$/);
+
+  // An hour after the first join its slot is free again (only that one: the next frees a second later).
+  clock.t = Date.parse('2026-11-14T11:00:00Z');
+  await join(p, net(12));
+  e = await refusal(join(p, net(13)));
+  assert.equal(e.extra.retry_after_ms, 1000);
+  assert.match(e.message, /; try again in 1 min$/);
+});
+
+test('the hourly total is checked before the per-address limit, and the server\'s own joins (no address) are not counted in it', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'valun-join-limit-'));
+  const p = server(dir, {t: Date.parse('2026-11-14T10:00:00Z')});
+  for (let i = 0; i < 12; i++) await join(p, A);                                 // A has used its 12
+  for (let i = 0; i < 28; i++) await join(p, net(i));                            // 40 from all addresses
+  const e = await refusal(join(p, A));
+  assert.equal(e.message, 'the sandbox takes at most 40 new participants an hour from all addresses; try again in 60 min');
+  assert.equal(e.extra.retry_after_ms, 3600e3);
+  await p.joinSandbox({handle: 'inside-after-total', operator: 'x'});
+  assert.equal(p.s.sandbox_joins.length, 40);
+});
+
+test('joins at the same moment count each other in the total: 41 at once from 41 addresses, 40 joined', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'valun-join-limit-'));
+  const p = server(dir, {t: Date.parse('2026-11-14T10:00:00Z')});
+  const before = Object.keys(p.s.participants).length;
+  const done = await Promise.allSettled(Array.from({length: 41}, (_, i) => join(p, net(i))));
+  assert.equal(done.filter(r => r.status === 'fulfilled').length, 40);
+  assert.deepEqual(done.filter(r => r.status === 'rejected').map(r => r.reason.code), ['rate_limited']);
+  assert.equal(Object.keys(p.s.participants).length - before, 40);
 });

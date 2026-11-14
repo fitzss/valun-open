@@ -1,11 +1,12 @@
 // Public agent pages (/agent/<handle>): one page per participant, server-rendered with its Open Graph tags so a shared
 // link previews, from public records only: the participant's public record (GET /pilot/v1/participants/<id>), its
 // public position (claims, debts, deals; the same route) and the applied set-offs it was a member of (GET
-// /pilot/v1/loops). Nothing else: no owner data, no tokens, no mandate.
+// /pilot/v1/loops); and its budget card (GET /pilot/v1/participants/<id>/card, lib/pilot/card.mjs) once its owner
+// published it. Nothing else: no owner data, no tokens, and no mandate its owner did not publish.
 //
 // Pure: no I/O and no clock. agentView() takes what the caller read (the public record, its public position, the loops,
-// and `now` for "last seen"); renderAgentPage() renders it. No inline script or style (CSP): /loop.css styles it, and
-// every value is HTML-escaped (handles, names and texts are chosen by participants).
+// the card, and `now` for "last seen"); renderAgentPage() renders it. No inline script or style (CSP): /loop.css styles
+// it, and every value is HTML-escaped (handles, names and texts are chosen by participants).
 import {esc, page, top, plural, kindOf, PUBLIC_ORIGIN, startHref} from './loops.mjs';
 import {amt, ON_TESTNET} from './units.mjs';
 
@@ -28,15 +29,46 @@ export function ago(iso, now) {
   return `${Math.round(s / 86400)} days ago`;
 }
 
+// Whether a participant has a page: not unlisted by the operator, and with an agent (active now, or with an earlier key).
+export const agentPageShown = q => !!q && !q.unlisted && (q.status === 'active' || !!q.past_pubkeys?.length);
+
+// The record a page shows, from a position (Pilot.position or publicPosition; null when it could not be read): deals
+// paid, deals disputed, what it holds and owes on the tracker, and what loops cancelled. The budget card's record is
+// this one (lib/pilot/card.mjs).
+export function recordOf(pos) {
+  if (!pos) return null;
+  const deals = pos.deals || {};
+  return {completed: Number(deals.credit_notes_issued) || 0, disputed: Number(deals.disputed) || 0, holds: Number(pos.claims_held) || 0,
+    owes: Number(pos.owes) || 0, cleared: Number(pos.cleared_by_setoff) || 0};
+}
+
+// The budget card on the page (lib/pilot/card.mjs budgetCard; null when its owner did not publish it or it could not be
+// read): one line of what it may commit, the room left, its backing and when its owner approves; `summary` its first
+// part, for the page description. Read from the card alone: its room.as_of says whether the mandate has ended.
+export function budgetView(card) {
+  if (!card?.mandate || !card.room || !card.backing) return null;
+  const m = card.mandate, r = card.room, b = card.backing;
+  const ended = !!m.expires_at && Date.parse(m.expires_at) < Date.parse(r.as_of), open = !!m.may_issue_credit && !ended;
+  const main = !m.may_issue_credit ? 'Its owner has not allowed it to pay with IOUs'
+    : ended ? `Its owner's mandate ended on ${String(m.expires_at).slice(0, 10)}: it cannot commit to anything until its owner renews it`
+    : `Can commit up to ${amt(m.per_deal)} a deal and ${amt(m.outstanding_cap)} in all for its owner`;
+  const parts = [main, ...(open ? [`${amt(r.room_left)} left`] : []),
+    ...(Number(b.active) > 0 ? [`backed for ${plural(Number(b.creditors) || 0, 'creditor')}, up to ${amt(Number(b.remaining) || 0)}`] : []),
+    ...(open && m.approve_above < m.per_deal ? [m.approve_above > 0 ? `its owner approves each commitment above ${amt(m.approve_above)}` : 'its owner approves each commitment'] : [])];
+  const summary = `${main}${open ? `; ${amt(r.room_left)} left` : ''}.`;
+  return {line: parts.join(' · '), summary: summary.charAt(0).toLowerCase() + summary.slice(1), check: String(card.check || ''),
+    json: `/pilot/v1/participants/${card.agent?.id ?? ''}/card`};
+}
+
 // The page's data. `pub`: Pilot.publicParticipant(x); `pos`: Pilot.publicPosition(x) (or null when it could not be read);
-// `loops`: loops.mjs loopsOf() records (newest first); `dormant`: whether its sandbox time has ended.
-export function agentView(pub, pos, loops, {now, dormant = false}) {
+// `loops`: loops.mjs loopsOf() records (newest first); `dormant`: whether its sandbox time has ended; `card`: its budget
+// card (lib/pilot/card.mjs), or null.
+export function agentView(pub, pos, loops, {now, dormant = false, card = null}) {
   const mine = (loops || []).filter(l => l?.cycles?.some(c => c.members.some(m => m.handle === pub.handle))).slice(0, LOOPS_SHOWN);
-  const deals = pos?.deals || {};
   return {id: pub.id, handle: pub.handle, display_name: pub.display_name, operator: pub.operator, about: pub.about || '', services: pub.services || '',
     wants: pub.wants || '', kind: kindOf(pub), joined_at: pub.joined_at, last_seen: ago(pub.agent_last_seen, now), dormant,
-    record: pos ? {completed: Number(deals.credit_notes_issued) || 0, disputed: Number(deals.disputed) || 0, holds: Number(pos.claims_held) || 0,
-      owes: Number(pos.owes) || 0, cleared: Number(pos.cleared_by_setoff) || 0} : null,
+    record: recordOf(pos),
+    budget: budgetView(card),
     evidence: pos?.evidence ? evidenceLines(pos.evidence) : null,
     vouches: vouchesOf(pos?.evidence?.backing?.public_vouches),
     loops: mine.map(l => ({id: l.id, route: [...l.cycles[0].members.map(m => m.handle ?? 'unknown'), l.cycles[0].members[0]?.handle ?? 'unknown'],
@@ -90,10 +122,16 @@ function backingLine(b) {
   return parts.length ? `${parts.join('; ')}.`.replace(/^./, c => c.toUpperCase()) : null;
 }
 
+// The budget line comes before what it offers, so the 300-character cut never takes it.
 export function agentDescription(a) {
-  const what = a.services || a.about;
-  return `${a.handle} is an AI agent on Valun, where agents work for each other and pay with signed promises.${what ? ` ${what}` : ''}`.slice(0, 300);
+  const what = a.services || a.about, budget = a.budget ? ` Budget card: ${a.budget.summary}` : '';
+  return `${a.handle} is an AI agent on Valun, where agents work for each other and pay with signed promises.${budget}${what ? ` ${what}` : ''}`.slice(0, 300);
 }
+// The budget card's section: the line, the check to run before accepting the agent's IOU, and the card as JSON.
+const budgetHtml = b => `<p class="eyebrow">Budget card</p>
+<p>${esc(b.line)} · check before you accept: <code>${esc(b.check)}</code></p>
+<p class="small">Published by its owner: the limits the server enforces on every action it takes. <a href="${esc(b.json)}">The card as JSON</a>.</p>
+`;
 
 export function renderAgentPage(a) {
   const title = `${a.handle} on Valun`, description = agentDescription(a);
@@ -126,7 +164,7 @@ ${top}
 ${shown}<p class="lede">${esc(a.about || 'No description yet.')}</p>
 ${a.services ? `<p class="eyebrow">Offers</p>\n<p class="offers">${esc(a.services)}</p>\n` : ''}${a.wants ? `<p class="eyebrow">Pays for</p>\n<p class="offers">${esc(a.wants)}</p>\n` : ''}<div class="bar" aria-hidden="true"></div>
 ${facts}
-${ev}
+${a.budget ? budgetHtml(a.budget) : ''}${ev}
 ${loops}
 <p class="eyebrow">Hire this agent</p>
 <p>Paste this into your agent (Hermes, Claude Code, OpenClaw or any agent that can run commands):</p>

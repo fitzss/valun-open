@@ -32,7 +32,7 @@ export const PROTOCOL = 'valun-deal/1';
 // The pilot unit: a synthetic token id the pilot tracker serves (it exists on no chain).
 export const PILOT_TOKEN_ID = crypto.createHash('sha256').update('valun-pilot-credit/1').digest('hex');
 export const PILOT_DENOMINATION = `token:${PILOT_TOKEN_ID}`;
-const PRICE_CAP = pc(1000);               // per deal, network-wide sanity cap (1000 PC on the pilot)
+export const PRICE_CAP = pc(1000);        // per deal, network-wide sanity cap (1000 PC on the pilot)
 const LIMIT_MAX = pc(100000);             // the largest limit an owner or agent may set (100000 PC on the pilot)
 const MAX_OFFER_TTL_MS = 7 * 864e5, MAX_DELIVERY_MS = 30 * 864e5;
 const ENROLL_TTL_MS = 30 * 60e3;
@@ -195,6 +195,11 @@ const SANDBOX_JOINS_PER_DAY = 200;
 // it. `k` is a keyed hash of the address (HMAC-SHA256 with a random key kept in its own file beside the state, never in
 // it), so the state holds no address; a record is dropped at the first save after its hour.
 export const SANDBOX_JOINS_PER_HOUR_PER_ADDRESS = 12;
+// At most this many self-serve joins an hour from all addresses together (fix inbox #21, reopened), counted over every
+// record of the last hour in s.sandbox_joins. A per-address limit cannot bound one host: an outside tester showed one
+// host's egress rotating across about 10 IPv6 /48s, each with its own 12 an hour. What bounds a host is this hourly
+// total, with SANDBOX_JOINS_PER_DAY for the day.
+export const SANDBOX_JOINS_PER_HOUR_TOTAL = 40;
 const SANDBOX_JOIN_WINDOW_MS = 3600e3, SANDBOX_JOIN_KEY_FILE = 'sandbox-join-key';
 // The open network (Pilot openNetwork, PILOT_OPEN_NETWORK=1): a self-serve participant may deal with any participant
 // whose own mandate allows it (other self-serve participants, invited participants, the sandbox agents), still within
@@ -705,6 +710,13 @@ export class Pilot {
       if (m.expires_at !== null && isNaN(Date.parse(m.expires_at))) throw new PilotError('invalid_field', 'expires_at must be a date or null');
       next.expires_at = m.expires_at && iso(Date.parse(m.expires_at));
     }
+    // The budget card (lib/pilot/card.mjs: GET /participants/{vp}/card and /check), off unless the owner publishes it.
+    // It is not a limit, so a self-serve sandbox owner may set it too (the box below checks only limits, counterparties,
+    // issuers and the expiry). false removes the key, as public_vouches does in setProfile.
+    if (m.public_card !== undefined) {
+      if (typeof m.public_card !== 'boolean') throw new PilotError('invalid_field', 'public_card must be true or false');
+      if (m.public_card) next.public_card = true; else delete next.public_card;
+    }
     // The credit-policy fields of circulating credit (design §8) exist only in mode sandbox or on; in other modes they
     // are ignored, as any unknown field is.
     const circulating = this.circulating;
@@ -873,16 +885,23 @@ export class Pilot {
     if (kept.length) this.s.sandbox_joins = kept; else delete this.s.sandbox_joins;
     return kept;
   }
-  // Records a join from this address and returns its record, or refuses (429) when the address has had
-  // SANDBOX_JOINS_PER_HOUR_PER_ADDRESS joins in the last hour, saying when the oldest of them stops counting.
+  // Records a join from this address and returns its record, or refuses (429) when the server has had
+  // SANDBOX_JOINS_PER_HOUR_TOTAL joins in the last hour from all addresses (checked first), or the address has had
+  // SANDBOX_JOINS_PER_HOUR_PER_ADDRESS; each refusal says when the oldest join it counted stops counting.
   takeSandboxJoinSlot(addressKey) {
     this.sandboxJoinKey ??= this.store.secret(SANDBOX_JOIN_KEY_FILE);
     const k = crypto.createHmac('sha256', this.sandboxJoinKey).update(String(addressKey)).digest('hex').slice(0, 32), now = this.now();
-    const mine = this.recentSandboxJoins(now).filter(r => r.k === k);
+    const recent = this.recentSandboxJoins(now);
+    const retryAfter = rs => Math.max(1000, Math.min(...rs.map(r => Date.parse(r.at))) + SANDBOX_JOIN_WINDOW_MS - now);
+    if (recent.length >= SANDBOX_JOINS_PER_HOUR_TOTAL) {
+      const ms = retryAfter(recent);
+      throw new PilotError('rate_limited', `the sandbox takes at most ${SANDBOX_JOINS_PER_HOUR_TOTAL} new participants an hour from all addresses; try again in ${Math.ceil(ms / 60e3)} min`, 429,
+        {retry_after_ms: ms});
+    }
+    const mine = recent.filter(r => r.k === k);
     if (mine.length >= SANDBOX_JOINS_PER_HOUR_PER_ADDRESS) {
-      const frees = Math.min(...mine.map(r => Date.parse(r.at))) + SANDBOX_JOIN_WINDOW_MS;
       throw new PilotError('rate_limited', `at most ${SANDBOX_JOINS_PER_HOUR_PER_ADDRESS} sandbox joins per hour from one address (an IPv6 /48)`, 429,
-        {retry_after_ms: Math.max(1000, frees - now)});
+        {retry_after_ms: retryAfter(mine)});
     }
     const slot = {k, at: iso(now)};
     (this.s.sandbox_joins ||= []).push(slot);
@@ -895,12 +914,13 @@ export class Pilot {
   // any issuer, within the same limits and days; `services` (what it offers, public) and `wants` (what it pays others
   // for, public) are kept as an invited joiner's are.
   // `addressKey` (from the HTTP layer: the client's IPv4 address or IPv6 /48) counts the join against that address
-  // (SANDBOX_JOINS_PER_HOUR_PER_ADDRESS); without it, as for the server's own callers, no per-address limit applies.
+  // (SANDBOX_JOINS_PER_HOUR_PER_ADDRESS) and in the hourly total (SANDBOX_JOINS_PER_HOUR_TOTAL); without it, as for the
+  // server's own callers, neither hourly limit applies (the daily SANDBOX_JOINS_PER_DAY does).
   async joinSandbox({handle, display_name, operator, about, services, wants} = {}, {addressKey = null} = {}) {
     if (!this.openSandbox) throw new PilotError('not_found', 'self-serve sandbox joining is not enabled on this server', 404);
     const ids = [...(this.sandboxIds || [])];
     if (!ids.length) throw new PilotError('sandbox_unavailable', 'the sandbox agents are not running on this server', 503);
-    // A cap for the whole server, on top of the per-address limit: many addresses cannot fill a small machine's state.
+    // A cap for the whole server per day, on top of the hourly limits: many addresses cannot fill a small machine's state.
     const since = this.now() - 864e5;
     if (Object.values(this.s.participants).filter(x => x.sandbox_only && Date.parse(x.created_at) > since).length >= SANDBOX_JOINS_PER_DAY)
       throw new PilotError('sandbox_full', `the sandbox takes at most ${SANDBOX_JOINS_PER_DAY} new participants a day; try again later`, 503);
@@ -1165,6 +1185,16 @@ export class Pilot {
       : this.guarantees.contingentClaims(p, {backerId: counterpartyId, excludeGuaranteeId});
     return {tracker, committed, reserved, ...(pendingIn ? {pending_in: pendingIn} : {}), ...(guaranteed ? {guaranteed} : {}), total: tracker + committed + reserved + pendingIn + guaranteed};
   }
+  // What counts against p's max_issue_outstanding: its exposure as a payer, less what a sandbox agent owes participants
+  // whose sandbox time has ended (dormant; circulating credit on, design §5.8, spec 18.15; null otherwise). `owed` is the
+  // part on the tracker that counts, `total` everything that counts. checkMandate and the budget card (lib/pilot/card.mjs)
+  // both count with it, so the card's room is the room the server enforces.
+  issueExposure(p, ledger, {excludeDealId = null, excludeGuaranteeId = null} = {}) {
+    const e = this.exposure(p, ledger, {asRole: 'payer', excludeDealId, excludeGuaranteeId});
+    const dormant = this.circulating && this.sandboxIds?.has(p.id)
+      ? ledger.filter(l => l.issuer === p.id && this.dormant(this.s.participants[l.recipient])).reduce((a, l) => a + l.outstanding, 0) : null;
+    return {e, dormant, owed: e.tracker - (dormant ?? 0), total: e.total - (dormant ?? 0)};
+  }
   // What p holds and is owed as payee on every issuer together (the phase-2 max_claims_total, lib/pilot/policy.mjs): its
   // claims on the tracker, its committed deals as payee (any payer; `excludeDealId` left out, the deal being agreed or
   // paid, whose amount the caller adds) and the payments by transfer to it still collecting or being applied
@@ -1192,7 +1222,9 @@ export class Pilot {
   // with `also` [the issuer] (whom the counterparty list and the self-serve box must allow too); a creditor's acceptance
   // as role payee toward the backer with `guarantee` (no min_price_as_payee, which is about prices; no owner approval:
   // accepting commits the creditor to nothing). `excludeGuaranteeId`: the guarantee being checked, whose cap is `price`.
-  async checkMandate(p, role, counterpartyId, price, {excludeDealId = null, excludeGuaranteeId = null, guarantee = false, also = [], debtFrom = null, dealId = null} = {}) {
+  // `ledger`: the tracker's notes as the caller already read them (Pilot.ledger), so a read that shows them beside the
+  // check (the budget card's check) counts from the same notes; otherwise they are read here.
+  async checkMandate(p, role, counterpartyId, price, {excludeDealId = null, excludeGuaranteeId = null, guarantee = false, also = [], debtFrom = null, dealId = null, ledger: given = null} = {}) {
     const m = this.effectiveLimits(p);                // owner mandate, tightened by any limits the agent recorded
     const fail = (rule, detail, from = null) => {
       // `source` keeps naming the limit set that applied (agent_limits | owner_mandate); `recorded_by` says who recorded an
@@ -1208,19 +1240,16 @@ export class Pilot {
       if (m.counterparties !== 'any' && !m.counterparties.includes(id)) fail('counterparties', `${this.participant(id).handle} is not on the owner's counterparty list`);
       if (this.boxedOut(p, id)) fail('counterparties', `a self-serve sandbox participant can deal only with the sandbox agents on this server, not ${this.participant(id).handle}`);
     }
-    const ledger = await this.ledger();
+    const ledger = given ?? await this.ledger();
     this.guarantees?.lapseStale(ledger);
     const checks = [];
     if (role === 'payer') {
       if (!m.may_issue_credit) fail('may_issue_credit', 'the owner has not allowed this agent to issue credit');
       if (price > m.max_issue_per_deal) fail('max_issue_per_deal', `price ${price} exceeds max_issue_per_deal ${m.max_issue_per_deal}`);
-      const e = this.exposure(p, ledger, {asRole: 'payer', excludeDealId, excludeGuaranteeId});
       // A sandbox agent with circulating credit on (design §5.8, spec 18.15): what it owes sandbox participants whose
       // sandbox time has ended (dormant) does not count against its own max_issue_outstanding; the check reports it as
       // dormant_PC (owed_on_tracker is then the part that counts). Every other check is v15's.
-      const dormant = this.circulating && this.sandboxIds?.has(p.id)
-        ? ledger.filter(l => l.issuer === p.id && this.dormant(this.s.participants[l.recipient])).reduce((a, l) => a + l.outstanding, 0) : null;
-      const owed = e.tracker - (dormant ?? 0), total = e.total - (dormant ?? 0);
+      const {e, dormant, owed, total} = this.issueExposure(p, ledger, {excludeDealId, excludeGuaranteeId});
       checks.push({rule: 'max_issue_outstanding', owed_on_tracker: owed, ...(dormant === null ? {} : {dormant_PC: dormant}), committed: e.committed, reserved: e.reserved,
         ...(e.guaranteed ? {guaranteed: e.guaranteed} : {}), this_deal: price, limit: m.max_issue_outstanding});
       if (total + price > m.max_issue_outstanding) fail('max_issue_outstanding', `issuing ${price} would bring this agent's outstanding credit to ${total + price}, above max_issue_outstanding ${m.max_issue_outstanding}`);
