@@ -505,9 +505,11 @@ class BindError(Exception):
 
 
 def error_code(e):
-    """The code a Valun server's error answer names ({error, message}), from an HTTPError; '' when it names none."""
+    """The code a Valun server's error answer names ({error, message}), read from an HTTPError (which is then closed);
+    '' when it names none."""
     try:
-        j = json.loads(e.read() or b'{}')
+        with e:
+            j = json.loads(e.read() or b'{}')
     except (OSError, ValueError, AttributeError):
         return ''
     return j['error'] if isinstance(j, dict) and isinstance(j.get('error'), str) else ''
