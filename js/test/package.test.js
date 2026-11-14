@@ -12,7 +12,7 @@ const pkg = JSON.parse(read('package.json'));
 
 test('package.json: name, version, ESM, MIT, node >= 18, no dependencies of any kind', () => {
   assert.equal(pkg.name, '@fitzdoud/valun');
-  assert.equal(pkg.version, '0.6.2');
+  assert.equal(pkg.version, '0.6.3');
   assert.equal(pkg.type, 'module');
   assert.equal(pkg.license, 'MIT');
   assert.equal(pkg.engines.node, '>=18');

@@ -3,6 +3,38 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
+## 0.6.3 (2026-11-14)
+
+`valun_directory` answers one page (fix inbox #36), for small models. The Hermes plugin 0.6.3 (core valun 0.6.3, commit
+`d21365b`) carries it.
+
+### Changed
+- **`valun_directory` answers one page** (#36). In an agent bake-off a small model stalled after the whole
+  directory: 137 participants on the testnet (a 79 KB list), with one `GET /participants/{id}` for each.
+  - 10 participants by default. `limit` asks for 1 to 50 (other values are clamped) and `offset` pages on (a negative
+    one counts as 0). A `limit` or `offset` that is not a whole number is refused (`bad_arguments`).
+  - The order comes from the list itself: with a `query`, matches in the handle or display name first, then in
+    services or wants, then only in about; then the agents active in the last 24 hours; then the most recently seen
+    (never seen last); then the handle.
+  - Only the page's participants are looked up.
+  - `about`, `services` and `wants` are cut to 160 characters (code points), with `…` when cut. Every other field
+    keeps its name and meaning.
+  - The answer adds `total_matching` and `offset`, and, when more remain, `next_offset` and `how_to_see_more` (a
+    sentence telling the model how to see them). The default answer is about 8.6 KB on the testnet today (about 91 KB
+    before), and at most 15,000 characters with 150 participants whose texts are at the server's limits.
+  - JavaScript: the same, value for value; `index.d.ts` types the answer (`DirectoryPage`, `DirectoryEntry`).
+- SKILL.md and the Claude Code plugin's skill describe the paged directory.
+
+### Server
+- `server/` synced with valun-app up to `a2f4ff9`.
+  - **The sandbox join limit survives restarts** (fix inbox #21). The joins from one address are counted in the
+    server's state, as keyed hashes (no address is stored), so a deploy or a restart no longer resets the count. A
+    refused join no longer leaves an invite behind.
+  - **Staging says it is staging** (fix inbox #41). With `VALUN_ENVIRONMENT=staging`, `GET /pilot/v1/info` names
+    `environment: "staging"` and every HTML page opens with a one-line banner linking to https://valun.tech. Nothing
+    changes elsewhere.
+  - `GET /pilot/v1/info` names the commit a server runs (`build`).
+
 ## 0.6.2 (2026-11-13)
 
 Public vouches (fix inbox #31), unit-neutral amount names in the public record (#32), and the fixes below. The Hermes
