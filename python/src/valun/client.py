@@ -1027,8 +1027,9 @@ class Client:
     # ---------- budget cards ----------
     # An owner may publish its agent's budget card (set_public_card): the limits of its mandate, the room it leaves, the
     # guarantees that back the agent in public, and its record. Anyone can read a card (card) and check a payment against
-    # it (check_payer): public reads, sent without a token, that sign nothing. Where the owner has not published its card,
-    # both answer 404 card_not_public.
+    # it (check_payer): public reads that sign nothing. A card is read without a token; a check carries this agent's own
+    # token, because the server shows the cover (what guarantees would pay the payee) only to the payee itself. Where the
+    # owner has not published its card, both answer 404 card_not_public.
     def resolve_participant(self, who):
         """The participant `who` names, as {'id', 'handle'}. `who` is stripped and lower-cased; a participant id (vp_ + 12
         hex) is taken as it is, with handle None, without a read (it may be an unlisted participant). Anything else is a
@@ -1048,13 +1049,15 @@ class Client:
                     return {'id': p['id'], 'handle': p.get('handle')}
         raise ValunError('unknown_participant', f'no participant called {w!r}; use valun_directory')
 
-    def _card_read(self, path):
-        """A public budget-card read. A server from before budget cards answers these routes 401 (they are not public
-        there, and no token is sent): feature_unavailable."""
+    def _card_read(self, path, auth=False):
+        """A budget-card read (GET), with this agent's token when `auth` and the store holds one. A server from before
+        budget cards answers a request without a token 401 (the route is not public there): feature_unavailable. A 401
+        to a request that carried the token is the server refusing that token, raised as it is."""
+        sent = auth and bool(self.store.token())
         try:
-            return self.request('GET', path, auth=False)
+            return self.request('GET', path, auth=auth)
         except ValunError as e:
-            if e.status == 401:
+            if e.status == 401 and not sent:
                 raise ValunError('feature_unavailable', 'this Valun server offers no budget cards (it does not serve '
                                                         'GET /participants/{id}/card); nothing was read', 401) from None
             raise
@@ -1070,15 +1073,17 @@ class Client:
         `amount` more, by the budget card its owner published? GET /participants/{id}/check?amount=N&payee=ID answers
         {verdict ('accept', 'ask_owner' or 'decline'), reasons, rule, payer, payee, amount, mandate {version, expires_at},
         room_left, approval_needed, cover {covered, guarantees}, record, card_hash, checked_at, took_ms}. Read only: it
-        signs nothing. amount is a whole number of this network's unit, at least 1 (bad_arguments otherwise, before
-        anything is read). card_not_public (404) when the payer's owner has not published its card."""
+        signs nothing. The request carries this agent's own token (when it has one): the server shows the cover only to
+        the payee itself, so with another payee (or without a token) cover.covered is null, not shown. amount is a whole
+        number of this network's unit, at least 1 (bad_arguments otherwise, before anything is read). card_not_public
+        (404) when the payer's owner has not published its card."""
         if not (isinstance(amount, int) and not isinstance(amount, bool) and 1 <= amount <= nv.MAX_SAFE_INTEGER):
             raise ValunError('bad_arguments', f'amount must be a whole number of {self.unit}, at least 1; nothing was read')
         if payee is None and not self.participant_id:
             raise ValunError('bad_arguments', 'give payee: this client has no participant id of its own (it is not joined)')
         payer_id = self.resolve_participant(payer)['id']
         payee_id = self.participant_id if payee is None else self.resolve_participant(payee)['id']
-        return self._card_read(f'/pilot/v1/participants/{_seg(payer_id)}/check?amount={amount}&payee={_seg(payee_id)}')
+        return self._card_read(f'/pilot/v1/participants/{_seg(payer_id)}/check?amount={amount}&payee={_seg(payee_id)}', auth=True)
 
     def set_public_card(self, on, owner_token):
         """The OWNER's choice: publish (on=True) or hide (on=False) this participant's budget card, PUT /owner/mandate

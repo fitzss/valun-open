@@ -563,8 +563,9 @@ export class Client {
   setLimits(body: Record<string, number | string | null>): Promise<Record<string, unknown>>;
 
   // Budget cards: an owner may publish its agent's budget card; anyone can read it and check a payment against it (public
-  // reads, sent without a token, that sign nothing). Both reject with card_not_public (404) where it is not published,
-  // and with feature_unavailable on a server from before budget cards.
+  // reads that sign nothing; a check carries this agent's own token, since the server shows the cover only to the payee
+  // itself). Both reject with card_not_public (404) where it is not published, and a card read with feature_unavailable
+  // on a server from before budget cards.
   /**
    * The participant `who` names (stripped, lower-cased): a participant id (vp_ + 12 hex) as it is, without a read
    * (handle null); else a handle looked up in the directory, an exact id first. unknown_participant when there is none.
@@ -573,8 +574,9 @@ export class Client {
   /** GET /participants/{id}/card of the participant `who` names (a handle or participant id). */
   card(who: string): Promise<BudgetCard>;
   /**
-   * GET /participants/{id}/check?amount=N&payee=ID: may `payer` owe `payee` (default: this participant) `amount` more, by
-   * its owner's budget card? amount: a whole number of the network's unit, at least 1 (bad_arguments otherwise).
+   * GET /participants/{id}/check?amount=N&payee=ID, with this agent's own token: may `payer` owe `payee` (default: this
+   * participant) `amount` more, by its owner's budget card? With another payee, cover.covered is null (not shown).
+   * amount: a whole number of the network's unit, at least 1 (bad_arguments otherwise).
    */
   checkPayer(payer: string, amount: number, options?: {payee?: string | null}): Promise<PayerCheck>;
   /**
@@ -1047,7 +1049,8 @@ export interface PayerCheck extends Record<string, unknown> {
   mandate: {version: number; expires_at: string | null};
   room_left: number;
   approval_needed: unknown;
-  cover: {covered: unknown; guarantees: Array<{guarantee_id: string; backer: CardParty | null; remaining: number}>};
+  /** Shown only to the payee itself: otherwise covered is null (not shown, never 0) and guarantees is empty. */
+  cover: {covered: number | null; guarantees: Array<{guarantee_id: string; backer: CardParty | null; remaining: number}>};
   record: Record<string, unknown>;
   card_hash: string;
   checked_at: string;
@@ -1056,7 +1059,7 @@ export interface PayerCheck extends Record<string, unknown> {
 
 /**
  * valun_check_payer's answer: the server's verdict object with `summary` (one sentence) first; or, when the payer's owner
- * has not published a budget card (or the server has none), verdict 'unknown' with a summary that says so.
+ * has not published a budget card, verdict 'unknown' with a summary that says so.
  */
 export type PayerCheckAnswer = ({summary: string} & PayerCheck)
   | {summary: string; verdict: 'unknown'; reasons: string[]; rule: null; payer: CardParty; amount: number};
@@ -1292,9 +1295,10 @@ export function tourGoal(step: unknown, unit?: string, scale?: number): string;
 /** The tracker a credit note goes to, in an approval text. */
 export function trackerWords(network: unknown): string;
 /**
- * valun_check_payer's summary: the verdict and its reasons as one plain sentence, e.g. 'Accept: within its budget (31 of
- * 40 left), backed for you up to 3.' Without reasons, the words of CHECK_FALLBACK; a verdict this client does not know
- * reads Unknown.
+ * valun_check_payer's summary: the verdict, its reasons and the cover as one plain sentence, e.g. 'Accept: within its
+ * budget (31 of 40 left), backed for you up to 3.' Without reasons, the words of CHECK_FALLBACK; the cover only for
+ * accept and ask_owner, and only when cover.covered is a whole number above 0; a verdict this client does not know reads
+ * Unknown.
  */
 export function checkSummary(check: unknown): string;
 /** The summary's first word for each verdict: Accept, Ask owner, Decline. */

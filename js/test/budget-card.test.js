@@ -34,14 +34,20 @@ const SUMMARY_NOT_PUBLIC = "Unknown: bob's owner has not published a budget card
   + 'record (valun_directory) or ask your owner.';
 const MISSING_DEAL = 'missing argument: deal_id (the deal id, vd_ + 16 hex, as valun_inbox lists it)';
 
-function verdict(v = 'accept', reasons = ['within its budget (31 of 40 left)', 'backed for you up to 3'], extra = {}) {
+// The cover the server shows the payee itself (a request with its own token), and what anyone else sees: null, not 0.
+const COVER = {covered: 3, guarantees: [{guarantee_id: 'vg_' + '3c'.repeat(8), backer: {id: ERIN, handle: 'erin'}, remaining: 3}]};
+const NO_COVER_SHOWN = {covered: null, guarantees: []};
+
+function verdict(v = 'accept', reasons = ['within its budget (31 of 40 left)'], extra = {}) {
   return {verdict: v, reasons, rule: null, payer: {id: BOB, handle: 'bob'}, payee: {id: ME, handle: null}, amount: 18,
-    mandate: {version: 4, expires_at: '2026-12-01T00:00:00.000Z'}, room_left: 31, approval_needed: false,
-    cover: {covered: true, guarantees: [{guarantee_id: 'vg_' + '3c'.repeat(8), backer: {id: ERIN, handle: 'erin'}, remaining: 3}]},
+    mandate: {version: 4, expires_at: '2026-12-01T00:00:00.000Z'}, room_left: 31, approval_needed: false, cover: structuredClone(COVER),
     record: {completed: 3, disputed: 1}, card_hash: 'c4'.repeat(32), checked_at: '2026-11-06T12:00:00.000Z', took_ms: 7, ...extra};
 }
 
-/** A fake server as in the Python test: the directory, cards and checks (public), /me and /info, the owner routes. */
+/**
+ * A fake server as in the Python test: the directory, cards and checks (public; a check shows the cover only to a request
+ * with the payee's own token), /me and /info, the owner routes.
+ */
 function world() {
   const w = {routes: {}, cardPublic: {[BOB]: true, [HIDDEN]: true, [ME]: false}, me: structuredClone(ME_VIEW), putAnswer: null};
   w.fetch = fakeFetch((key, init) => {
@@ -65,7 +71,10 @@ function world() {
     if (m) {
       if (!Object.hasOwn(w.cardPublic, m[1])) return {status: 404, body: {error: 'not_found', message: `unknown participant ${m[1]}`}};
       if (!w.cardPublic[m[1]]) return {status: 404, body: {error: 'card_not_public', message: "this participant's owner has not published its budget card"}};
-      return {body: m[2] === 'card' ? CARD : verdict()};
+      if (m[2] === 'card') return {body: CARD};
+      const payee = m[3].split('payee=')[1];
+      const own = token === AGENT_TOKEN && payee === ME;           // the payee's own token: only it sees its cover
+      return {body: verdict('accept', undefined, {payee: {id: payee, handle: null}, cover: own ? structuredClone(COVER) : NO_COVER_SHOWN})};
     }
     return undefined;
   }, BASE);
@@ -98,13 +107,15 @@ test('card(): not public, a server from before budget cards, and names that are 
   for (const who of ['', '  ', null, 7]) await rejects(w.client().card(who), 'bad_arguments');
 });
 
-test('checkPayer(): this participant is the payee by default; an explicit payee by handle; public GETs only', async () => {
+test("checkPayer(): this participant is the payee by default, asked with its own token (its cover shown); another payee's is not", async () => {
   const w = world();
   assert.deepEqual(await w.client().checkPayer('bob', 18), verdict());
-  assert.deepEqual(w.calls().at(-1), ['GET', `/pilot/v1/participants/${BOB}/check?amount=18&payee=${ME}`, null]);
-  await w.client().checkPayer(BOB, 5, {payee: 'erin'});
-  assert.deepEqual(w.calls().at(-1), ['GET', `/pilot/v1/participants/${BOB}/check?amount=5&payee=${ERIN}`, null]);
-  assert.ok(w.calls().every(([m, , auth]) => m === 'GET' && auth === null));
+  assert.deepEqual(w.calls().at(-1), ['GET', `/pilot/v1/participants/${BOB}/check?amount=18&payee=${ME}`, `Bearer ${AGENT_TOKEN}`]);
+  const r = await w.client().checkPayer(BOB, 5, {payee: 'erin'});
+  assert.deepEqual(w.calls().at(-1), ['GET', `/pilot/v1/participants/${BOB}/check?amount=5&payee=${ERIN}`, `Bearer ${AGENT_TOKEN}`]);
+  assert.deepEqual(r.cover, NO_COVER_SHOWN);
+  assert.ok(w.calls().every(([m]) => m === 'GET'));
+  assert.deepEqual(w.calls().filter(([, p]) => !p.includes('/check')).map(([, , auth]) => auth), [null, null], 'the directory without a token');
 });
 
 test('checkPayer(): an amount that is not a whole number, or no payee for an unjoined client, is refused before any read', async () => {
@@ -115,7 +126,18 @@ test('checkPayer(): an amount that is not a whole number, or no payee for an unj
   }
   await assert.rejects(w.client(false).checkPayer('bob', 18), e => e.code === 'bad_arguments' && /give payee/.test(e.message));
   assert.deepEqual(w.fetch.calls, []);
-  assert.deepEqual(await w.client(false).checkPayer(BOB, 18, {payee: ERIN}), verdict());
+  assert.deepEqual(await w.client(false).checkPayer(BOB, 18, {payee: ERIN}),
+    verdict('accept', undefined, {payee: {id: ERIN, handle: null}, cover: NO_COVER_SHOWN}));
+  assert.equal(w.calls().at(-1)[2], null, 'an unjoined client has no token to send');
+});
+
+test("checkPayer(): a 401 means no budget cards only for a request without a token; with this agent's token it is refused", async () => {
+  const w = world();
+  for (const payee of [ERIN, ME]) {
+    w.routes[`GET /pilot/v1/participants/${BOB}/check?amount=18&payee=${payee}`] = {status: 401, body: {error: 'unauthorized', message: 'missing or invalid token'}};
+  }
+  await rejects(w.client(false).checkPayer(BOB, 18, {payee: ERIN}), 'feature_unavailable');
+  await assert.rejects(w.client().checkPayer(BOB, 18), e => e.code === 'unauthorized' && e.status === 401);
 });
 
 test('setPublicCard(): checks the owner token (GET /owner), then PUTs public_card with it; the token is never stored', async () => {
@@ -149,10 +171,10 @@ test('valun_check_payer: the summary for accept, ask_owner, decline and not publ
   const route = amount => `GET /pilot/v1/participants/${BOB}/check?amount=${amount}&payee=${ME}`;
   assert.equal((await check({payer: 'bob', amount: 18})).summary, SUMMARY_ACCEPT);
   w.routes[route(30)] = {body: verdict('ask_owner', ['within its budget (13 of 40 left)', 'its owner approves each IOU above 25'],
-    {amount: 30, rule: 'approve_above', approval_needed: true})};
+    {amount: 30, rule: 'approve_above', approval_needed: true, cover: {covered: 0, guarantees: []}})};
   assert.equal((await check({payer: 'bob', amount: 30})).summary, SUMMARY_ASK);
   w.routes[route(45)] = {body: verdict('decline', ['above its limit per deal (30)', 'more than the room it has left (31)'],
-    {amount: 45, rule: 'max_issue_per_deal'})};
+    {amount: 45, rule: 'max_issue_per_deal', cover: NO_COVER_SHOWN})};
   assert.equal((await check({payer: 'bob', amount: 45})).summary, SUMMARY_DECLINE);
   w.cardPublic[BOB] = false;
   assert.deepEqual(await check({payer: 'bob', amount: 18}), {summary: SUMMARY_NOT_PUBLIC, verdict: 'unknown',
@@ -165,7 +187,7 @@ test('checkSummary(): without reasons, a verdict this client does not know, and 
   assert.equal(checkSummary({verdict: 'decline', reasons: null}), "Decline: its owner's budget card does not allow this IOU.");
   assert.equal(checkSummary({verdict: 'maybe', reasons: ['unsure']}), 'Unknown: unsure.');
   assert.equal(checkSummary(null), 'Unknown: the server gave no verdict this client knows.');
-  assert.equal(checkSummary({verdict: 'accept', reasons: [' within\nits budget.. ', 3, '', 'backed;']}), 'Accept: within its budget, backed.');
+  assert.equal(checkSummary({verdict: 'accept', reasons: [' within\nits budget.. ', 3, '', 'fine;']}), 'Accept: within its budget, fine.');
   assert.deepEqual(Object.keys(CHECK_LEAD), ['accept', 'ask_owner', 'decline']);
   assert.deepEqual(Object.keys(CHECK_FALLBACK), ['accept', 'ask_owner', 'decline']);
 });
@@ -180,12 +202,34 @@ test("valun_check_payer: the server's verdict with the summary first (the server
   assert.deepEqual(rest, verdict());
 });
 
-test('valun_check_payer: a server without budget cards (401) is an answer too, naming the payer by id', async () => {
+test('checkSummary(): the cover is named only when it is shown and above 0, and not for a decline', () => {
+  const s = (verdict, covered) => checkSummary({verdict, reasons: ['r'], cover: {covered}});
+  assert.equal(s('accept', 3), 'Accept: r, backed for you up to 3.');
+  assert.equal(s('ask_owner', 2), 'Ask owner: r, backed for you up to 2.');
+  for (const covered of [null, undefined, 0, -1, 2.5, true, '3', 2 ** 53]) assert.equal(s('accept', covered), 'Accept: r.', String(covered));
+  assert.equal(s('decline', 3), 'Decline: r.', 'a declined IOU would not be issued: its cover is not named');
+  assert.equal(checkSummary({verdict: 'accept', cover: {covered: 3}}), "Accept: its owner's budget card allows this IOU, backed for you up to 3.");
+});
+
+test('valun_check_payer: the new decline rules (no_agent, network_limit) read as other declines', async () => {
   const w = world();
-  w.routes[`GET /pilot/v1/participants/${BOB}/check?amount=18&payee=${ME}`] = {status: 401, body: {error: 'unauthorized'}};
-  const r = await w.agent().call('valun_check_payer', {payer: BOB, amount: 18});
-  assert.deepEqual([r.verdict, r.reasons, r.payer], ['unknown', ['this Valun server offers no budget cards'], {id: BOB, handle: null}]);
-  assert.match(r.summary, /offers no budget cards, so the budget of vp_b0b0b0b0b0b0 cannot be checked/);
+  const route = amount => `GET /pilot/v1/participants/${BOB}/check?amount=${amount}&payee=${ME}`;
+  w.routes[route(18)] = {body: verdict('decline', ['bob has no active agent key, so it cannot sign an IOU'], {rule: 'no_agent'})};
+  let r = await w.agent().call('valun_check_payer', {payer: 'bob', amount: 18});
+  assert.deepEqual([r.summary, r.rule], ['Decline: bob has no active agent key, so it cannot sign an IOU.', 'no_agent']);
+  w.routes[route(5000)] = {body: verdict('decline', ["5000 is above the network's limit per deal (1000)."],
+    {amount: 5000, rule: 'network_limit', cover: NO_COVER_SHOWN})};
+  r = await w.agent().call('valun_check_payer', {payer: 'bob', amount: 5000});
+  assert.deepEqual([r.summary, r.rule], ["Decline: 5000 is above the network's limit per deal (1000).", 'network_limit']);
+});
+
+test("valun_check_payer: a refused token and a server from before budget cards are errors (the check carries this agent's token)", async () => {
+  const w = world();
+  const route = `GET /pilot/v1/participants/${BOB}/check?amount=18&payee=${ME}`;
+  w.routes[route] = {status: 401, body: {error: 'unauthorized', message: 'missing or invalid token'}};
+  assert.equal((await w.agent().callSafe('valun_check_payer', {payer: BOB, amount: 18})).error, 'unauthorized');
+  w.routes[route] = {status: 404, body: {error: 'not_found', message: 'not found'}};
+  assert.deepEqual(await w.agent().callSafe('valun_check_payer', {payer: BOB, amount: 18}), {error: 'not_found', message: 'not found'});
 });
 
 test('valun_check_payer: read only, never asks the owner, runs where commitments cannot be approved', async () => {
@@ -195,8 +239,10 @@ test('valun_check_payer: read only, never asks the owner, runs where commitments
   assert.equal(await a.isCommitment('valun_check_payer', {payer: 'bob', amount: 18}), false);
   assert.deepEqual(await a.prepare('valun_check_payer', {payer: 'bob', amount: 18}), {args: {payer: 'bob', amount: 18}, text: null});
   const tool = valunTools(a).find(t => t.name === 'valun_check_payer');          // no approve hook: commitments fail closed
-  assert.equal((await tool.execute({payer: 'bob', amount: 18})).summary, SUMMARY_ACCEPT);
-  assert.ok(w.calls().every(([m, , auth]) => m === 'GET' && auth === null), 'public reads, no token, nothing sent');
+  const r = await tool.execute({payer: 'bob', amount: 18});
+  assert.deepEqual([r.summary, r.cover], [SUMMARY_ACCEPT, COVER], 'its own cover, shown to it');
+  assert.deepEqual(w.calls(), [['GET', '/pilot/v1/participants', null],
+    ['GET', `/pilot/v1/participants/${BOB}/check?amount=18&payee=${ME}`, `Bearer ${AGENT_TOKEN}`]], 'nothing sent but its own token');
 });
 
 test('valun_check_payer: the amount is checked as valun_propose checks its price, before anything is read', async () => {

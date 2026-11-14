@@ -2,9 +2,9 @@
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python": "3.14.7",
  "python_sources_sha256": {
-  "agent.py": "4d69b2940c09cb82f89e23a721c2b9ffd7a866ae78f6d82f99dcd10839d5b28c",
+  "agent.py": "e185da209abdc9baadfc3f5580e3b42784cd654182a300ff76c48edbb8e549d4",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "841f9a6939ca8407c1d5890e3d3bba4d7f4b6e2db37c26d932e49a8c2339baeb",
+  "client.py": "04c436a5d5d190fe8d9129b542f48e1428c149ff21e0837a323be4293b229ea3",
   "mcp_server.py": "66e82fab18ad1d3b7e5532396e276b644ef9330827a9638966c95763ffec9acf",
   "measure.py": "ee2c1164c7a9ecfa9f934603872d0ec0aa194c6f07257a0734d1a163df4c6de9",
   "novation.py": "3579850c2307713ae538fddbd899dc75e017992c5d75069969e0a7140edfa741",
@@ -63985,7 +63985,7 @@
    ]
   },
   {
-   "name": "check_payer: accept, by handle",
+   "name": "check_payer: accept, by handle, backed for me",
    "tool": "valun_check_payer",
    "args": {
     "payer": "bob",
@@ -63996,8 +63996,7 @@
      "body": {
       "verdict": "accept",
       "reasons": [
-       "within its budget (31 of 40 left)",
-       "backed for you up to 3"
+       "within its budget (31 of 40 left)"
       ],
       "rule": null,
       "payer": {
@@ -64016,7 +64015,7 @@
       "room_left": 31,
       "approval_needed": false,
       "cover": {
-       "covered": true,
+       "covered": 3,
        "guarantees": [
         {
          "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
@@ -64048,8 +64047,7 @@
     "summary": "Accept: within its budget (31 of 40 left), backed for you up to 3.",
     "verdict": "accept",
     "reasons": [
-     "within its budget (31 of 40 left)",
-     "backed for you up to 3"
+     "within its budget (31 of 40 left)"
     ],
     "rule": null,
     "payer": {
@@ -64068,7 +64066,7 @@
     "room_left": 31,
     "approval_needed": false,
     "cover": {
-     "covered": true,
+     "covered": 3,
      "guarantees": [
       {
        "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
@@ -64133,7 +64131,7 @@
    ]
   },
   {
-   "name": "check_payer: ask_owner, above the amount its owner approves",
+   "name": "check_payer: ask_owner, above the amount its owner approves, nothing backs it for me",
    "tool": "valun_check_payer",
    "args": {
     "payer": "bob",
@@ -64164,17 +64162,8 @@
       "room_left": 13,
       "approval_needed": true,
       "cover": {
-       "covered": true,
-       "guarantees": [
-        {
-         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
-         "backer": {
-          "id": "vp_f0f0f0f0f0f0",
-          "handle": "frank"
-         },
-         "remaining": 3
-        }
-       ]
+       "covered": 0,
+       "guarantees": []
       },
       "record": {
        "completed": 3,
@@ -64216,17 +64205,8 @@
     "room_left": 13,
     "approval_needed": true,
     "cover": {
-     "covered": true,
-     "guarantees": [
-      {
-       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
-       "backer": {
-        "id": "vp_f0f0f0f0f0f0",
-        "handle": "frank"
-       },
-       "remaining": 3
-      }
-     ]
+     "covered": 0,
+     "guarantees": []
     },
     "record": {
      "completed": 3,
@@ -64281,7 +64261,7 @@
    ]
   },
   {
-   "name": "check_payer: decline, above its limit per deal",
+   "name": "check_payer: decline, above its limit per deal, the cover not shown",
    "tool": "valun_check_payer",
    "args": {
     "payer": "bob",
@@ -64312,7 +64292,7 @@
       "room_left": 31,
       "approval_needed": false,
       "cover": {
-       "covered": false,
+       "covered": null,
        "guarantees": []
       },
       "record": {
@@ -64355,7 +64335,7 @@
     "room_left": 31,
     "approval_needed": false,
     "cover": {
-     "covered": false,
+     "covered": null,
      "guarantees": []
     },
     "record": {
@@ -64411,18 +64391,20 @@
    ]
   },
   {
-   "name": "check_payer: no reasons, by participant id with spaces and capitals (no directory read)",
+   "name": "check_payer: decline, the payer has no active agent key (no_agent)",
    "tool": "valun_check_payer",
    "args": {
-    "payer": "  VP_B0B0B0B0B0B0 ",
+    "payer": "bob",
     "amount": 18
    },
    "routes": {
     "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
      "body": {
-      "verdict": "accept",
-      "reasons": [],
-      "rule": null,
+      "verdict": "decline",
+      "reasons": [
+       "bob has no active agent key, so it cannot sign an IOU"
+      ],
+      "rule": "no_agent",
       "payer": {
        "id": "vp_b0b0b0b0b0b0",
        "handle": "bob"
@@ -64439,7 +64421,7 @@
       "room_left": 31,
       "approval_needed": false,
       "cover": {
-       "covered": true,
+       "covered": 3,
        "guarantees": [
         {
          "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
@@ -64468,7 +64450,279 @@
    "agent": {},
    "state": {},
    "result": {
-    "summary": "Accept: its owner's budget card allows this IOU.",
+    "summary": "Decline: bob has no active agent key, so it cannot sign an IOU.",
+    "verdict": "decline",
+    "reasons": [
+     "bob has no active agent key, so it cannot sign an IOU"
+    ],
+    "rule": "no_agent",
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 18,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: decline, above the network's limit per deal (network_limit)",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 5000
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=5000&payee=vp_a1a1a1a1a1a1": {
+     "body": {
+      "verdict": "decline",
+      "reasons": [
+       "5000 is above the network's limit per deal (1000)."
+      ],
+      "rule": "network_limit",
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 5000,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": null,
+       "guarantees": []
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Decline: 5000 is above the network's limit per deal (1000).",
+    "verdict": "decline",
+    "reasons": [
+     "5000 is above the network's limit per deal (1000)."
+    ],
+    "rule": "network_limit",
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 5000,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": null,
+     "guarantees": []
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=5000&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 5000
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 5000
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: no reasons, by participant id with spaces and capitals (no directory read)",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "  VP_B0B0B0B0B0B0 ",
+    "amount": 18
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Accept: its owner's budget card allows this IOU, backed for you up to 3.",
     "verdict": "accept",
     "reasons": [],
     "rule": null,
@@ -64488,7 +64742,7 @@
     "room_left": 31,
     "approval_needed": false,
     "cover": {
-     "covered": true,
+     "covered": 3,
      "guarantees": [
       {
        "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
@@ -64563,8 +64817,8 @@
        5,
        "",
        " . ",
-       "backed for you\tup to 3...",
-       "ok now;"
+       "ok\tnow...",
+       "all done;"
       ],
       "rule": null,
       "payer": {
@@ -64583,7 +64837,7 @@
       "room_left": 31,
       "approval_needed": false,
       "cover": {
-       "covered": true,
+       "covered": 3,
        "guarantees": [
         {
          "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
@@ -64613,15 +64867,15 @@
    "agent": {},
    "state": {},
    "result": {
-    "summary": "Accept: within its budget (31 of 40 left), backed for you up to 3, ok now.",
+    "summary": "Accept: within its budget (31 of 40 left), ok now, all done, backed for you up to 3.",
     "verdict": "accept",
     "reasons": [
      "  within its budget\n(31 of 40 left).  ",
      5,
      "",
      " . ",
-     "backed for you\tup to 3...",
-     "ok now;"
+     "ok\tnow...",
+     "all done;"
     ],
     "rule": null,
     "payer": {
@@ -64640,7 +64894,153 @@
     "room_left": 31,
     "approval_needed": false,
     "cover": {
-     "covered": true,
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a cover that is not a whole number is not named",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [
+       "within its budget (31 of 40 left)"
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": "3",
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Accept: within its budget (31 of 40 left).",
+    "verdict": "accept",
+    "reasons": [
+     "within its budget (31 of 40 left)"
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 18,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": "3",
      "guarantees": [
       {
        "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
@@ -64735,17 +65135,8 @@
       "room_left": 31,
       "approval_needed": false,
       "cover": {
-       "covered": true,
-       "guarantees": [
-        {
-         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
-         "backer": {
-          "id": "vp_f0f0f0f0f0f0",
-          "handle": "frank"
-         },
-         "remaining": 3
-        }
-       ]
+       "covered": null,
+       "guarantees": []
       },
       "record": {
        "completed": 3,
@@ -64786,17 +65177,8 @@
     "room_left": 31,
     "approval_needed": false,
     "cover": {
-     "covered": true,
-     "guarantees": [
-      {
-       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
-       "backer": {
-        "id": "vp_f0f0f0f0f0f0",
-        "handle": "frank"
-       },
-       "remaining": 3
-      }
-     ]
+     "covered": null,
+     "guarantees": []
     },
     "record": {
      "completed": 3,
@@ -64879,17 +65261,8 @@
       "room_left": 31,
       "approval_needed": false,
       "cover": {
-       "covered": true,
-       "guarantees": [
-        {
-         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
-         "backer": {
-          "id": "vp_f0f0f0f0f0f0",
-          "handle": "frank"
-         },
-         "remaining": 3
-        }
-       ]
+       "covered": null,
+       "guarantees": []
       },
       "record": {
        "completed": 3,
@@ -64928,17 +65301,8 @@
     "room_left": 31,
     "approval_needed": false,
     "cover": {
-     "covered": true,
-     "guarantees": [
-      {
-       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
-       "backer": {
-        "id": "vp_f0f0f0f0f0f0",
-        "handle": "frank"
-       },
-       "remaining": 3
-      }
-     ]
+     "covered": null,
+     "guarantees": []
     },
     "record": {
      "completed": 3,
@@ -65134,7 +65498,7 @@
    ]
   },
   {
-   "name": "check_payer: a server from before budget cards answers 401",
+   "name": "check_payer: the server refuses this agent's token (401)",
    "tool": "valun_check_payer",
    "args": {
     "payer": "bob",
@@ -65153,17 +65517,73 @@
    "agent": {},
    "state": {},
    "result": {
-    "summary": "Unknown: this Valun server offers no budget cards, so the budget of bob cannot be checked; decide from its record (valun_directory) or ask your owner.",
-    "verdict": "unknown",
-    "reasons": [
-     "this Valun server offers no budget cards"
-    ],
-    "rule": null,
-    "payer": {
-     "id": "vp_b0b0b0b0b0b0",
-     "handle": "bob"
+    "error": "unauthorized",
+    "message": "missing or invalid token",
+    "what_this_means": "This agent is not connected to Valun. Its owner must run `valun join` (or `valun enroll`) in a terminal."
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
     },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a server from before budget cards (404 to an agent)",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
     "amount": 18
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "status": 404,
+     "body": {
+      "error": "not_found",
+      "message": "not found"
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "not_found",
+    "message": "not found"
    },
    "requests": [
     {
@@ -87562,17 +87982,8 @@
       "room_left": 31,
       "approval_needed": false,
       "cover": {
-       "covered": true,
-       "guarantees": [
-        {
-         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
-         "backer": {
-          "id": "vp_f0f0f0f0f0f0",
-          "handle": "frank"
-         },
-         "remaining": 3
-        }
-       ]
+       "covered": null,
+       "guarantees": []
       },
       "record": {
        "completed": 3,
@@ -87612,17 +88023,8 @@
      "room_left": 31,
      "approval_needed": false,
      "cover": {
-      "covered": true,
-      "guarantees": [
-       {
-        "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
-        "backer": {
-         "id": "vp_f0f0f0f0f0f0",
-         "handle": "frank"
-        },
-        "remaining": 3
-       }
-      ]
+      "covered": null,
+      "guarantees": []
      },
      "record": {
       "completed": 3,
@@ -87693,17 +88095,8 @@
       "room_left": 31,
       "approval_needed": false,
       "cover": {
-       "covered": true,
-       "guarantees": [
-        {
-         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
-         "backer": {
-          "id": "vp_f0f0f0f0f0f0",
-          "handle": "frank"
-         },
-         "remaining": 3
-        }
-       ]
+       "covered": null,
+       "guarantees": []
       },
       "record": {
        "completed": 3,
@@ -87743,17 +88136,8 @@
      "room_left": 31,
      "approval_needed": false,
      "cover": {
-      "covered": true,
-      "guarantees": [
-       {
-        "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
-        "backer": {
-         "id": "vp_f0f0f0f0f0f0",
-         "handle": "frank"
-        },
-        "remaining": 3
-       }
-      ]
+      "covered": null,
+      "guarantees": []
      },
      "record": {
       "completed": 3,
@@ -87798,6 +88182,80 @@
    "signed": [],
    "state_after": {
     "server": "http://valun.invalid"
+   }
+  },
+  {
+   "name": "check_payer: an unjoined client on a server from before budget cards (401 to a request without a token)",
+   "method": "check_payer",
+   "kwargs": {
+    "payer": "vp_b0b0b0b0b0b0",
+    "amount": 18,
+    "payee": "vp_e0e0e0e0e0e0"
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_e0e0e0e0e0e0": {
+     "status": 401,
+     "body": {
+      "error": "unauthorized",
+      "message": "missing or invalid token"
+     }
+    }
+   },
+   "state": {},
+   "store": "unenrolled",
+   "result": {
+    "raises": "ValunError",
+    "code": "feature_unavailable",
+    "message": "this Valun server offers no budget cards (it does not serve GET /participants/{id}/card); nothing was read"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_e0e0e0e0e0e0",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid"
+   }
+  },
+  {
+   "name": "check_payer: a 401 to a request with this agent's token is the token refused",
+   "method": "check_payer",
+   "kwargs": {
+    "payer": "vp_b0b0b0b0b0b0",
+    "amount": 18
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "status": 401,
+     "body": {
+      "error": "unauthorized",
+      "message": "missing or invalid token"
+     }
+    }
+   },
+   "state": {},
+   "store": "alice",
+   "result": {
+    "raises": "ValunError",
+    "code": "unauthorized",
+    "message": "missing or invalid token"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
    }
   },
   {

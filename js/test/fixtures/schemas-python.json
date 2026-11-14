@@ -1,9 +1,9 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "4d69b2940c09cb82f89e23a721c2b9ffd7a866ae78f6d82f99dcd10839d5b28c",
+  "agent.py": "e185da209abdc9baadfc3f5580e3b42784cd654182a300ff76c48edbb8e549d4",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "841f9a6939ca8407c1d5890e3d3bba4d7f4b6e2db37c26d932e49a8c2339baeb",
+  "client.py": "04c436a5d5d190fe8d9129b542f48e1428c149ff21e0837a323be4293b229ea3",
   "mcp_server.py": "66e82fab18ad1d3b7e5532396e276b644ef9330827a9638966c95763ffec9acf",
   "measure.py": "ee2c1164c7a9ecfa9f934603872d0ec0aa194c6f07257a0734d1a163df4c6de9",
   "novation.py": "3579850c2307713ae538fddbd899dc75e017992c5d75069969e0a7140edfa741",

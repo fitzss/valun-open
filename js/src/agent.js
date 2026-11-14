@@ -474,9 +474,12 @@ export const CHECK_FALLBACK = Object.freeze({accept: "its owner's budget card al
   decline: "its owner's budget card does not allow this IOU"});
 
 /**
- * valun_check_payer's summary: the verdict and its reasons as one plain sentence, e.g. 'Accept: within its budget (31 of
- * 40 left), backed for you up to 3.' The reasons are the server's, each put on one line without its final stop; without
- * any, the words of CHECK_FALLBACK. A verdict this client does not know reads Unknown. The Python core's check_summary.
+ * valun_check_payer's summary: the verdict, its reasons and the cover as one plain sentence, e.g. 'Accept: within its
+ * budget (31 of 40 left), backed for you up to 3.' The reasons are the server's, each put on one line without its final
+ * stop; without any, the words of CHECK_FALLBACK. The cover is named only when cover.covered is a whole number above 0
+ * (the server shows it only to the payee itself, and null means not shown, never 0), and only for accept and ask_owner: a
+ * declined IOU would not be issued at all. A verdict this client does not know reads Unknown. The Python core's
+ * check_summary.
  */
 export function checkSummary(v) {
   const d = isDict(v) ? v : {};
@@ -484,27 +487,20 @@ export function checkSummary(v) {
   const reasons = Array.isArray(get(d, 'reasons')) ? d.reasons : [];
   let parts = reasons.filter(r => typeof r === 'string').map(r => rstripChars(splitWords(r).join(' '), ' .;,')).filter(Boolean);
   if (!parts.length) parts = [verdict !== null && Object.hasOwn(CHECK_FALLBACK, verdict) ? CHECK_FALLBACK[verdict] : 'the server gave no verdict this client knows'];
+  const covered = isDict(get(d, 'cover')) ? get(d.cover, 'covered') : null;
+  if ((verdict === 'accept' || verdict === 'ask_owner') && whole(covered) && covered > 0) parts.push(`backed for you up to ${covered}`);
   return `${verdict !== null && Object.hasOwn(CHECK_LEAD, verdict) ? CHECK_LEAD[verdict] : 'Unknown'}: ${parts.join(', ')}.`;
 }
 
 /**
- * valun_check_payer's answer when the payer cannot be checked: its owner has not published a budget card
- * (card_not_public), or the server has none (feature_unavailable). An answer, not an error: verdict 'unknown'. The Python
- * core's unchecked_payer.
+ * valun_check_payer's answer when the payer's owner has not published a budget card (card_not_public): an answer, not an
+ * error, with verdict 'unknown'. The Python core's unchecked_payer.
  */
-function uncheckedPayer(payer, amount, code) {
+function uncheckedPayer(payer, amount) {
   const who = shown(or(get(payer, 'handle'), get(payer, 'id')));
-  let reason, summary;
-  if (code === 'feature_unavailable') {
-    reason = 'this Valun server offers no budget cards';
-    summary = `Unknown: this Valun server offers no budget cards, so the budget of ${who} cannot be checked; decide `
-      + 'from its record (valun_directory) or ask your owner.';
-  } else {
-    reason = "the payer's owner has not published a budget card";
-    summary = `Unknown: ${who}'s owner has not published a budget card, so its budget cannot be checked; decide from `
-      + 'its record (valun_directory) or ask your owner.';
-  }
-  return {summary, verdict: 'unknown', reasons: [reason], rule: null, payer, amount};
+  return {summary: `Unknown: ${who}'s owner has not published a budget card, so its budget cannot be checked; decide `
+      + 'from its record (valun_directory) or ask your owner.',
+    verdict: 'unknown', reasons: ["the payer's owner has not published a budget card"], rule: null, payer, amount};
 }
 
 /** A guarantee party's handle as the view names it, else its id from the checked terms. */
@@ -2145,9 +2141,9 @@ export class ValunAgent {
   // ---------- budget cards ----------
   /**
    * valun_check_payer (read only): may `payer` owe this agent `amount` more, by the budget card its owner published? The
-   * server's verdict object (Client.checkPayer) with `summary` first (checkSummary). The amount is checked as
-   * valun_propose checks its price (count), before anything is read. A payer whose owner has not published a card, or a
-   * server without budget cards, gets verdict 'unknown' (uncheckedPayer): an answer, not an error.
+   * server's verdict object (Client.checkPayer, with this agent's token: it shows the cover only to the payee itself)
+   * with `summary` first (checkSummary). The amount is checked as valun_propose checks its price (count), before anything
+   * is read. A payer whose owner has not published a card gets verdict 'unknown' (uncheckedPayer): an answer, not an error.
    */
   async checkPayer(a) {
     const c = this.client();
@@ -2161,7 +2157,7 @@ export class ValunAgent {
     try {
       v = await c.checkPayer(ref.id, amount);
     } catch (e) {
-      if (isValunError(e) && (e.code === 'card_not_public' || e.code === 'feature_unavailable')) return uncheckedPayer(ref, amount, e.code);
+      if (isValunError(e) && e.code === 'card_not_public') return uncheckedPayer(ref, amount);
       throw e;
     }
     if (!isDict(v)) throw new ValunError('bad_response', 'the server answered the check with no verdict');

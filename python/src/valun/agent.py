@@ -527,31 +527,31 @@ CHECK_FALLBACK = {'accept': "its owner's budget card allows this IOU",
 
 
 def check_summary(v):
-    """valun_check_payer's summary: the verdict and its reasons as one plain sentence, e.g. 'Accept: within its budget
-    (31 of 40 left), backed for you up to 3.' The reasons are the server's, each put on one line without its final stop;
-    without any, the words of CHECK_FALLBACK. A verdict this client does not know reads Unknown."""
+    """valun_check_payer's summary: the verdict, its reasons and the cover as one plain sentence, e.g. 'Accept: within its
+    budget (31 of 40 left), backed for you up to 3.' The reasons are the server's, each put on one line without its final
+    stop; without any, the words of CHECK_FALLBACK. The cover is named only when cover.covered is a whole number above 0
+    (the server shows it only to the payee itself, and null means not shown, never 0), and only for accept and ask_owner:
+    a declined IOU would not be issued at all. A verdict this client does not know reads Unknown."""
     v = v if isinstance(v, dict) else {}
     verdict = v.get('verdict') if isinstance(v.get('verdict'), str) else None
     reasons = v.get('reasons') if isinstance(v.get('reasons'), list) else []
     parts = [p for p in (' '.join(r.split()).rstrip(' .;,') for r in reasons if isinstance(r, str)) if p]
     if not parts:
         parts = [CHECK_FALLBACK.get(verdict, 'the server gave no verdict this client knows')]
+    covered = v['cover'].get('covered') if isinstance(v.get('cover'), dict) else None
+    if verdict in ('accept', 'ask_owner') and _whole(covered) and 0 < covered <= nv.MAX_SAFE_INTEGER:
+        parts.append(f'backed for you up to {covered}')
     return f"{CHECK_LEAD.get(verdict, 'Unknown')}: {', '.join(parts)}."
 
 
-def unchecked_payer(payer, amount, code):
-    """valun_check_payer's answer when the payer cannot be checked: its owner has not published a budget card
-    (card_not_public), or the server has none (feature_unavailable). An answer, not an error: verdict 'unknown'."""
+def unchecked_payer(payer, amount):
+    """valun_check_payer's answer when the payer's owner has not published a budget card (card_not_public): an answer,
+    not an error, with verdict 'unknown'."""
     who = shown(payer.get('handle') or payer.get('id'))
-    if code == 'feature_unavailable':
-        reason = 'this Valun server offers no budget cards'
-        summary = (f'Unknown: this Valun server offers no budget cards, so the budget of {who} cannot be checked; decide '
-                   'from its record (valun_directory) or ask your owner.')
-    else:
-        reason = "the payer's owner has not published a budget card"
-        summary = (f"Unknown: {who}'s owner has not published a budget card, so its budget cannot be checked; decide from "
-                   'its record (valun_directory) or ask your owner.')
-    return {'summary': summary, 'verdict': 'unknown', 'reasons': [reason], 'rule': None, 'payer': payer, 'amount': amount}
+    return {'summary': (f"Unknown: {who}'s owner has not published a budget card, so its budget cannot be checked; decide "
+                        'from its record (valun_directory) or ask your owner.'),
+            'verdict': 'unknown', 'reasons': ["the payer's owner has not published a budget card"], 'rule': None, 'payer': payer,
+            'amount': amount}
 
 
 def _party(g, role, terms):
@@ -1914,9 +1914,10 @@ class ValunAgent:
     # ---------- budget cards ----------
     def check_payer(self, a):
         """valun_check_payer (read only): may `payer` owe this agent `amount` more, by the budget card its owner published?
-        The server's verdict object (Client.check_payer) with `summary` first (check_summary). The amount is checked as
-        valun_propose checks its price (_count), before anything is read. A payer whose owner has not published a card, or
-        a server without budget cards, gets verdict 'unknown' (unchecked_payer): an answer, not an error."""
+        The server's verdict object (Client.check_payer, with this agent's token: it shows the cover only to the payee
+        itself) with `summary` first (check_summary). The amount is checked as valun_propose checks its price (_count),
+        before anything is read. A payer whose owner has not published a card gets verdict 'unknown' (unchecked_payer):
+        an answer, not an error."""
         c = self.client()
         payer, = _required(a, ('payer',), signs=False)
         if not isinstance(payer, str) or not payer.strip():
@@ -1926,8 +1927,8 @@ class ValunAgent:
         try:
             v = c.check_payer(ref['id'], amount)
         except vc.ValunError as e:
-            if e.code in ('card_not_public', 'feature_unavailable'):
-                return unchecked_payer(ref, amount, e.code)
+            if e.code == 'card_not_public':
+                return unchecked_payer(ref, amount)
             raise
         if not isinstance(v, dict):
             raise vc.ValunError('bad_response', 'the server answered the check with no verdict')

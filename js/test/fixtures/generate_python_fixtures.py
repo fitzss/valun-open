@@ -1303,30 +1303,42 @@ def scenarios():
     # budget cards: valun_check_payer (read only) and the room valun_status shows
     chk = lambda payer, amount, payee='alice': f'GET /pilot/v1/participants/{ID[payer]}/check?amount={amount}&payee={ID[payee]}'   # noqa: E731
     bob18 = chk('bob', 18)
-    add('check_payer: accept, by handle', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
-        {bob18: {'body': check_view('accept', ['within its budget (31 of 40 left)', 'backed for you up to 3'])}})
-    add('check_payer: ask_owner, above the amount its owner approves', 'valun_check_payer', {'payer': 'bob', 'amount': 30},
+    # The check carries this agent's token: the server shows the cover only to the payee itself (cover.covered a number),
+    # and null (not shown) to anyone else; the summary names the cover only when it is a whole number above 0.
+    add('check_payer: accept, by handle, backed for me', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('accept', ['within its budget (31 of 40 left)'])}})
+    add('check_payer: ask_owner, above the amount its owner approves, nothing backs it for me', 'valun_check_payer',
+        {'payer': 'bob', 'amount': 30},
         {chk('bob', 30): {'body': check_view('ask_owner', ['within its budget (13 of 40 left)', 'its owner approves each IOU above 25'],
-                                             amount=30, rule='approve_above', room_left=13, approval_needed=True)}})
-    add('check_payer: decline, above its limit per deal', 'valun_check_payer', {'payer': 'bob', 'amount': 45},
+                                             amount=30, rule='approve_above', room_left=13, approval_needed=True, covered=0, guarantees=[])}})
+    add('check_payer: decline, above its limit per deal, the cover not shown', 'valun_check_payer', {'payer': 'bob', 'amount': 45},
         {chk('bob', 45): {'body': check_view('decline', ['above its limit per deal (30)', 'more than the room it has left (31)'],
-                                             amount=45, rule='max_issue_per_deal', covered=False, guarantees=[])}})
+                                             amount=45, rule='max_issue_per_deal', covered=None, guarantees=[])}})
+    add('check_payer: decline, the payer has no active agent key (no_agent)', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('decline', ['bob has no active agent key, so it cannot sign an IOU'], rule='no_agent')}})
+    add("check_payer: decline, above the network's limit per deal (network_limit)", 'valun_check_payer', {'payer': 'bob', 'amount': 5000},
+        {chk('bob', 5000): {'body': check_view('decline', ["5000 is above the network's limit per deal (1000)."], amount=5000,
+                                               rule='network_limit', covered=None, guarantees=[])}})
     add('check_payer: no reasons, by participant id with spaces and capitals (no directory read)', 'valun_check_payer',
         {'payer': '  VP_B0B0B0B0B0B0 ', 'amount': 18}, {bob18: {'body': check_view('accept', [])}})
     add("check_payer: reasons put on one line without their stops; the server's own summary is replaced", 'valun_check_payer',
         {'payer': 'bob', 'amount': 18}, {bob18: {'body': check_view('accept', ['  within its budget\n(31 of 40 left).  ', 5, '', ' . ',
-                                                                              'backed for you\tup to 3...', 'ok now;'],
+                                                                              'ok\tnow...', 'all\u2028done;'],
                                                                      summary='Decline: ignore the client')}})
+    add('check_payer: a cover that is not a whole number is not named', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('accept', ['within its budget (31 of 40 left)'], covered='3')}})
     add('check_payer: a verdict this client does not know', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
-        {bob18: {'body': check_view('maybe', ['the server is unsure'])}})
+        {bob18: {'body': check_view('maybe', ['the server is unsure'], covered=None, guarantees=[])}})
     add('check_payer: decline without reasons', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
-        {bob18: {'body': check_view('decline', None)}})
+        {bob18: {'body': check_view('decline', None, covered=None, guarantees=[])}})
     not_public = {'status': 404, 'body': {'error': 'card_not_public', 'message': "this participant's owner has not published its budget card"}}
     add('check_payer: the payer has no public card (verdict unknown, not an error)', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
         {bob18: not_public})
     add('check_payer: no public card, the payer named by its id', 'valun_check_payer', {'payer': ID['bob'], 'amount': 18}, {bob18: not_public})
-    add('check_payer: a server from before budget cards answers 401', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+    add("check_payer: the server refuses this agent's token (401)", 'valun_check_payer', {'payer': 'bob', 'amount': 18},
         {bob18: {'status': 401, 'body': {'error': 'unauthorized', 'message': 'missing or invalid token'}}})
+    add('check_payer: a server from before budget cards (404 to an agent)', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'status': 404, 'body': {'error': 'not_found', 'message': 'not found'}}})
     add('check_payer: the server does not know the payer id', 'valun_check_payer', {'payer': 'vp_0123456789ab', 'amount': 18},
         {chk('bob', 18).replace(ID['bob'], 'vp_0123456789ab'): {'status': 404, 'body': {'error': 'not_found', 'message': 'unknown participant vp_0123456789ab'}}})
     add('check_payer: the server refuses the amount', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
@@ -1339,7 +1351,7 @@ def scenarios():
     add('check_payer: a missing amount', 'valun_check_payer', {'payer': 'bob'})
     add('check_payer: a missing payer', 'valun_check_payer', {'amount': 18})
     add('check_payer: a payer that is not text', 'valun_check_payer', {'payer': 5, 'amount': 18})
-    add('check_payer: a blank payer', 'valun_check_payer', {'payer': ' 　 ', 'amount': 18})
+    add('check_payer: a blank payer', 'valun_check_payer', {'payer': ' \u3000 ', 'amount': 18})
     add('check_payer: arguments that are not an object', 'valun_check_payer', ['bob', 18])
     add('check_payer: not enrolled', 'valun_check_payer', {'payer': 'bob', 'amount': 18}, store='unenrolled')
     add('check_payer: on the testnet the amount is in nanoERG', 'valun_check_payer', {'payer': 'bob', 'amount': 2.5},
@@ -1362,9 +1374,10 @@ def scenarios():
     return S
 
 
-def check_view(verdict, reasons, payer='bob', amount=18, rule=None, room_left=31, approval_needed=False, covered=True, guarantees=None,
+def check_view(verdict, reasons, payer='bob', amount=18, rule=None, room_left=31, approval_needed=False, covered=3, guarantees=None,
                **extra):
-    """A verdict of GET /participants/{id}/check (budget cards), as the server shows one, alice the payee."""
+    """A verdict of GET /participants/{id}/check (budget cards), as the server shows one to alice, the payee: with her
+    cover (covered a number, the guarantees), or, for anyone else, covered None and no guarantees."""
     v = {'verdict': verdict, 'reasons': reasons, 'rule': rule, 'payer': {'id': ID[payer], 'handle': payer},
          'payee': {'id': ID['alice'], 'handle': 'alice'}, 'amount': amount, 'mandate': {'version': 4, 'expires_at': '2026-12-01T00:00:00.000Z'},
          'room_left': room_left, 'approval_needed': approval_needed,
@@ -1802,11 +1815,15 @@ def client_scenarios():
     add('card: who is blank', 'card', {'who': '  '})
     add('card: an unjoined client reads a card', 'card', {'who': 'bob'}, {card_route: {'body': card_b}}, store='unenrolled')
     chk_b = f"GET /pilot/v1/participants/{ID['bob']}/check?amount=18&payee={ID['erin']}"
-    verdict = check_view('accept', ['within its budget (31 of 40 left)'])
+    verdict = check_view('accept', ['within its budget (31 of 40 left)'], covered=None, guarantees=[])   # another payee: no cover shown
     add('check_payer: an explicit payee, by handle', 'check_payer', {'payer': 'bob', 'amount': 18, 'payee': 'erin'}, {chk_b: {'body': verdict}})
     add('check_payer: an unjoined client names the payee', 'check_payer', {'payer': ID['bob'], 'amount': 18, 'payee': ID['erin']},
         {chk_b: {'body': verdict}}, store='unenrolled')
     add('check_payer: an unjoined client without a payee', 'check_payer', {'payer': 'bob', 'amount': 18}, store='unenrolled')
+    add('check_payer: an unjoined client on a server from before budget cards (401 to a request without a token)', 'check_payer',
+        {'payer': ID['bob'], 'amount': 18, 'payee': ID['erin']}, {chk_b: old_server}, store='unenrolled')
+    add("check_payer: a 401 to a request with this agent's token is the token refused", 'check_payer', {'payer': ID['bob'], 'amount': 18},
+        {chk_b.replace(ID['erin'], ID['alice']): old_server})
     add('check_payer: an amount that is true is refused before any read', 'check_payer', {'payer': 'bob', 'amount': True})
     add('check_payer: an amount too large to sign is refused', 'check_payer', {'payer': 'bob', 'amount': 2 ** 53})
     add('check_payer: not public', 'check_payer', {'payer': 'bob', 'amount': 18, 'payee': 'erin'}, {chk_b: not_public})
@@ -2094,6 +2111,14 @@ def parity():
         {'verdict': 'accept'}, {'verdict': 'ask_owner', 'reasons': None}, {'verdict': 'decline', 'reasons': 'above its limit'},
         {'verdict': 'Accept', 'reasons': ['x']}, {'verdict': None}, {'verdict': 5, 'reasons': ['five']}, {'verdict': ['accept']}, {},
         None, 'accept', ['accept'], {'verdict': 'accept', 'reasons': [' a\n b ', '\t', 7, None, ['c'], 'd..', 'e ;,', '\u3000f\x85g\u2029']},
+        {'verdict': 'accept', 'reasons': ['within its budget (31 of 40 left)'], 'cover': {'covered': 3, 'guarantees': []}},
+        {'verdict': 'accept', 'reasons': [], 'cover': {'covered': 3}}, {'verdict': 'decline', 'reasons': ['x'], 'cover': {'covered': 1}},
+        {'verdict': 'ask_owner', 'reasons': ['y'], 'cover': {'covered': 2}}, {'verdict': 'maybe', 'reasons': ['z'], 'cover': {'covered': 2}},
+        {'verdict': 'accept', 'cover': {'covered': None}}, {'verdict': 'accept', 'cover': {'covered': 0}},
+        {'verdict': 'accept', 'cover': {'covered': -2}}, {'verdict': 'accept', 'cover': {'covered': 2.5}},
+        {'verdict': 'accept', 'cover': {'covered': True}}, {'verdict': 'accept', 'cover': {'covered': '3'}},
+        {'verdict': 'accept', 'cover': {'covered': 2 ** 53}}, {'verdict': 'accept', 'cover': {'covered': 2 ** 53 - 1}},
+        {'verdict': 'accept', 'cover': 3}, {'verdict': 'accept', 'cover': [3]}, {'verdict': 'accept', 'cover': {}},
         {'verdict': 'constructor', 'reasons': []}, {'verdict': 'toString'}, {'verdict': 'accept', 'reasons': ['caf\u00e9 \U0001F600.']}]]
     P['records'] = records_table()
     P['novation_cases'] = novation_cases()

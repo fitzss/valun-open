@@ -47,20 +47,24 @@ SUMMARY_NOT_PUBLIC = ("Unknown: bob's owner has not published a budget card, so 
                       'record (valun_directory) or ask your owner.')
 
 
-def verdict(v='accept', reasons=('within its budget (31 of 40 left)', 'backed for you up to 3'), payee=ME, amount=18, **extra):
+# The cover the server shows the payee itself (a request with its own token), and what anyone else sees: null, not 0.
+COVER = {'covered': 3, 'guarantees': [{'guarantee_id': 'vg_' + '3c' * 8, 'backer': {'id': ERIN, 'handle': 'erin'}, 'remaining': 3}]}
+NO_COVER_SHOWN = {'covered': None, 'guarantees': []}
+
+
+def verdict(v='accept', reasons=('within its budget (31 of 40 left)',), payee=ME, amount=18, cover=COVER, **extra):
     out = {'verdict': v, 'reasons': list(reasons), 'rule': None, 'payer': {'id': BOB, 'handle': 'bob'},
            'payee': {'id': payee, 'handle': None}, 'amount': amount, 'mandate': {'version': 4, 'expires_at': '2026-12-01T00:00:00.000Z'},
-           'room_left': 31, 'approval_needed': False,
-           'cover': {'covered': True, 'guarantees': [{'guarantee_id': 'vg_' + '3c' * 8, 'backer': {'id': ERIN, 'handle': 'erin'},
-                                                      'remaining': 3}]},
+           'room_left': 31, 'approval_needed': False, 'cover': json.loads(json.dumps(cover)),
            'record': {'completed': 3, 'disputed': 1}, 'card_hash': 'c4' * 32, 'checked_at': '2026-11-06T12:00:00.000Z', 'took_ms': 7}
     out.update(extra)
     return out
 
 
 class World:
-    """A fake server: the directory, cards and checks (public), GET /me and /info (the agent's token), the owner routes
-    (an owner token). Every request is logged as (method, path, body, token): token is the bearer sent, None for none."""
+    """A fake server: the directory, cards and checks (public; a check shows the cover only to a request with the payee's
+    own token), GET /me and /info (the agent's token), the owner routes (an owner token). Every request is logged as
+    (method, path, body, token): token is the bearer sent, None for none."""
 
     def __init__(self):
         self.log = []
@@ -105,7 +109,11 @@ class World:
                 raise vc.ValunError('not_found', f'unknown participant {pid}', 404)
             if not self.card_public[pid]:
                 raise vc.ValunError(NOT_PUBLIC[1]['error'], NOT_PUBLIC[1]['message'], NOT_PUBLIC[0])
-            return dict(CARD) if parts[5] == 'card' else verdict()
+            if parts[5] == 'card':
+                return dict(CARD)
+            payee = path.split('payee=', 1)[1]
+            own = token == AGENT_TOKEN and payee == ME          # the payee's own token: only it sees its cover
+            return verdict(payee=payee, cover=COVER if own else NO_COVER_SHOWN)
         raise vc.ValunError('not_found', f'no route {key}', 404)
 
 
@@ -172,13 +180,15 @@ class ClientMethods(Card):
                 self.client().card(who)
             self.assertEqual(e.exception.code, code, who)
 
-    def test_check_payer_asks_for_this_participant_by_default_and_signs_nothing(self):
+    def test_check_payer_asks_for_this_participant_with_its_own_token_and_signs_nothing(self):
         c = self.client()
-        self.assertEqual(c.check_payer('bob', 18), verdict())
-        self.assertEqual(self.world.log[-1], ('GET', f'/pilot/v1/participants/{BOB}/check?amount=18&payee={ME}', None, None))
-        c.check_payer(BOB, 5, payee='erin')
-        self.assertEqual(self.paths()[-1], ('GET', f'/pilot/v1/participants/{BOB}/check?amount=5&payee={ERIN}'))
+        self.assertEqual(c.check_payer('bob', 18), verdict())          # this agent is the payee: it sees its own cover
+        self.assertEqual(self.world.log[-1], ('GET', f'/pilot/v1/participants/{BOB}/check?amount=18&payee={ME}', None, AGENT_TOKEN))
+        r = c.check_payer(BOB, 5, payee='erin')                         # another payee: its cover is not shown (null)
+        self.assertEqual(self.world.log[-1], ('GET', f'/pilot/v1/participants/{BOB}/check?amount=5&payee={ERIN}', None, AGENT_TOKEN))
+        self.assertEqual(r['cover'], NO_COVER_SHOWN)
         self.assertTrue(all(m == 'GET' for m, _p in self.paths()))
+        self.assertEqual([t for m, p, _b, t in self.world.log if '/check' not in p], [None, None], 'the directory is read without a token')
 
     def test_check_payer_refuses_an_amount_that_is_not_a_whole_number_before_any_read(self):
         for amount in (0, -1, 1.5, '18', True, None, 2 ** 53):
@@ -190,7 +200,18 @@ class ClientMethods(Card):
         self.assertEqual(e.exception.code, 'bad_arguments')
         self.assertIn('give payee', str(e.exception))
         self.assertEqual(self.world.log, [])
-        self.assertEqual(self.client(joined=False).check_payer(BOB, 18, payee=ERIN), verdict())
+        self.assertEqual(self.client(joined=False).check_payer(BOB, 18, payee=ERIN), verdict(payee=ERIN, cover=NO_COVER_SHOWN))
+        self.assertEqual(self.world.log[-1][3], None, 'an unjoined client has no token to send')
+
+    def test_a_401_means_no_budget_cards_only_for_a_request_without_a_token(self):
+        route = f'GET /pilot/v1/participants/{BOB}/check?amount=18&payee=%s'
+        self.world.routes[route % ERIN] = self.world.routes[route % ME] = (401, {'error': 'unauthorized', 'message': 'missing or invalid token'})
+        with self.assertRaises(vc.ValunError) as e:
+            self.client(joined=False).check_payer(BOB, 18, payee=ERIN)     # a server from before budget cards
+        self.assertEqual(e.exception.code, 'feature_unavailable')
+        with self.assertRaises(vc.ValunError) as e:
+            self.client().check_payer(BOB, 18)                               # this agent's token refused
+        self.assertEqual((e.exception.code, e.exception.status), ('unauthorized', 401))
 
     def test_set_public_card_checks_the_owner_token_then_puts_and_never_stores_it(self):
         c = self.client()
@@ -225,10 +246,10 @@ class CheckPayerTool(Card):
         route = f'GET /pilot/v1/participants/{BOB}/check?amount=%d&payee={ME}'
         self.assertEqual(self.check(payer='bob', amount=18)['summary'], SUMMARY_ACCEPT)
         self.world.routes[route % 30] = (200, verdict('ask_owner', ['within its budget (13 of 40 left)', 'its owner approves each IOU above 25'],
-                                                      amount=30, rule='approve_above', approval_needed=True))
+                                                      amount=30, rule='approve_above', approval_needed=True, cover={'covered': 0, 'guarantees': []}))
         self.assertEqual(self.check(payer='bob', amount=30)['summary'], SUMMARY_ASK)
         self.world.routes[route % 45] = (200, verdict('decline', ['above its limit per deal (30)', 'more than the room it has left (31)'],
-                                                      amount=45, rule='max_issue_per_deal'))
+                                                      amount=45, rule='max_issue_per_deal', cover=NO_COVER_SHOWN))
         self.assertEqual(self.check(payer='bob', amount=45)['summary'], SUMMARY_DECLINE)
         self.world.card_public[BOB] = False
         r = self.check(payer='bob', amount=18)
@@ -242,8 +263,28 @@ class CheckPayerTool(Card):
         self.assertEqual(va.check_summary({'verdict': 'decline', 'reasons': None}), "Decline: its owner's budget card does not allow this IOU.")
         self.assertEqual(va.check_summary({'verdict': 'maybe', 'reasons': ['unsure']}), 'Unknown: unsure.')
         self.assertEqual(va.check_summary(None), 'Unknown: the server gave no verdict this client knows.')
-        self.assertEqual(va.check_summary({'verdict': 'accept', 'reasons': [' within\nits budget.. ', 3, '', 'backed;']}),
-                         'Accept: within its budget, backed.')
+        self.assertEqual(va.check_summary({'verdict': 'accept', 'reasons': [' within\nits budget.. ', 3, '', 'fine;']}),
+                         'Accept: within its budget, fine.')
+
+    def test_the_summary_names_the_cover_only_when_it_is_shown_and_above_0(self):
+        s = lambda verdict, covered: va.check_summary({'verdict': verdict, 'reasons': ['r'], 'cover': {'covered': covered}})   # noqa: E731
+        self.assertEqual(s('accept', 3), 'Accept: r, backed for you up to 3.')
+        self.assertEqual(s('ask_owner', 2), 'Ask owner: r, backed for you up to 2.')
+        for covered in (None, 0, -1, 2.5, True, '3', 2 ** 53):          # null is "not shown", never 0
+            self.assertEqual(s('accept', covered), 'Accept: r.', covered)
+        self.assertEqual(s('decline', 3), 'Decline: r.', 'a declined IOU would not be issued: its cover is not named')
+        self.assertEqual(va.check_summary({'verdict': 'accept', 'cover': {'covered': 3}}),
+                         "Accept: its owner's budget card allows this IOU, backed for you up to 3.")
+
+    def test_the_new_decline_rules_read_as_other_declines(self):
+        route = f'GET /pilot/v1/participants/{BOB}/check?amount=%d&payee={ME}'
+        self.world.routes[route % 18] = (200, verdict('decline', ['bob has no active agent key, so it cannot sign an IOU'], rule='no_agent'))
+        r = self.check(payer='bob', amount=18)
+        self.assertEqual((r['summary'], r['rule']), ('Decline: bob has no active agent key, so it cannot sign an IOU.', 'no_agent'))
+        self.world.routes[route % 5000] = (200, verdict('decline', ["5000 is above the network's limit per deal (1000)."], amount=5000,
+                                                        rule='network_limit', cover=NO_COVER_SHOWN))
+        r = self.check(payer='bob', amount=5000)
+        self.assertEqual((r['summary'], r['rule']), ("Decline: 5000 is above the network's limit per deal (1000).", 'network_limit'))
 
     def test_the_answer_is_the_servers_verdict_with_the_summary_first(self):
         self.world.routes[f'GET /pilot/v1/participants/{BOB}/check?amount=18&payee={ME}'] = (200, verdict(summary='Decline: not ours'))
@@ -252,21 +293,22 @@ class CheckPayerTool(Card):
         self.assertEqual(r['summary'], SUMMARY_ACCEPT, "the server's own summary is replaced")
         self.assertEqual({k: v for k, v in r.items() if k != 'summary'}, {k: v for k, v in verdict().items()})
 
-    def test_a_server_without_budget_cards_is_an_answer_too(self):
-        self.world.routes[f'GET /pilot/v1/participants/{BOB}/check?amount=18&payee={ME}'] = (401, {'error': 'unauthorized'})
-        r = self.check(payer=BOB, amount=18)
-        self.assertEqual((r['verdict'], r['reasons'], r['payer']), ('unknown', ['this Valun server offers no budget cards'],
-                                                                   {'id': BOB, 'handle': None}))
-        self.assertIn('offers no budget cards, so the budget of vp_b0b0b0b0b0b0 cannot be checked', r['summary'])
+    def test_a_refused_token_and_a_server_from_before_budget_cards_are_errors(self):
+        route = f'GET /pilot/v1/participants/{BOB}/check?amount=18&payee={ME}'
+        self.world.routes[route] = (401, {'error': 'unauthorized', 'message': 'missing or invalid token'})
+        self.assertEqual(self.check(payer=BOB, amount=18)['error'], 'unauthorized')     # the check carried this agent's token
+        self.world.routes[route] = (404, {'error': 'not_found', 'message': 'not found'})
+        self.assertEqual(self.check(payer=BOB, amount=18), {'error': 'not_found', 'message': 'not found'})
 
-    def test_it_is_read_only_and_never_asks_the_owner(self):
+    def test_it_is_read_only_never_asks_the_owner_and_sends_only_its_own_token(self):
         a = self.agent()
         self.assertIn('valun_check_payer', va.READ_ONLY_TOOLS)
         self.assertNotIn('valun_check_payer', va.SIGNING_TOOLS)
         self.assertFalse(a.is_commitment('valun_check_payer', {'payer': 'bob', 'amount': 18}))
         self.assertEqual(a.prepare('valun_check_payer', {'payer': 'bob', 'amount': 18}), {'args': {'payer': 'bob', 'amount': 18}, 'text': None})
-        a.call('valun_check_payer', {'payer': 'bob', 'amount': 18})
-        self.assertTrue(all(m == 'GET' and t is None for m, _p, _b, t in self.world.log), 'public reads, no token, nothing sent')
+        self.assertEqual(a.call('valun_check_payer', {'payer': 'bob', 'amount': 18})['cover'], COVER, 'its own cover, shown to it')
+        self.assertEqual([(m, p, t) for m, p, _b, t in self.world.log],
+                         [('GET', '/pilot/v1/participants', None), ('GET', f'/pilot/v1/participants/{BOB}/check?amount=18&payee={ME}', AGENT_TOKEN)])
 
     def test_the_amount_is_checked_as_valun_propose_checks_its_price(self):
         price = schemas.PROPOSE['parameters']['properties']['price']

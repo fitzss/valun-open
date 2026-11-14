@@ -908,8 +908,9 @@ export class Client {
   // ---------- budget cards ----------
   // An owner may publish its agent's budget card (setPublicCard): the limits of its mandate, the room it leaves, the
   // guarantees that back the agent in public, and its record. Anyone can read a card (card) and check a payment against it
-  // (checkPayer): public reads, sent without a token, that sign nothing. Where the owner has not published its card, both
-  // answer 404 card_not_public.
+  // (checkPayer): public reads that sign nothing. A card is read without a token; a check carries this agent's own token,
+  // because the server shows the cover (what guarantees would pay the payee) only to the payee itself. Where the owner has
+  // not published its card, both answer 404 card_not_public.
 
   /**
    * The participant `who` names, as {id, handle}. `who` is stripped and lower-cased; a participant id (vp_ + 12 hex) is
@@ -932,12 +933,17 @@ export class Client {
     throw new ValunError('unknown_participant', `no participant called ${repr(w)}; use valun_directory`);
   }
 
-  /** A public budget-card read. A server from before budget cards answers these routes 401: feature_unavailable. */
-  async #cardRead(path) {
+  /**
+   * A budget-card read (GET), with this agent's token when `auth` and the store holds one. A server from before budget
+   * cards answers a request without a token 401 (the route is not public there): feature_unavailable. A 401 to a request
+   * that carried the token is the server refusing that token, thrown as it is.
+   */
+  async #cardRead(path, {auth = false} = {}) {
+    const sent = auth && Boolean(this.#store.token());
     try {
-      return await this.request('GET', path, undefined, {auth: false});
+      return await this.request('GET', path, undefined, {auth});
     } catch (e) {
-      if (isValunError(e) && e.status === 401) {
+      if (isValunError(e) && e.status === 401 && !sent) {
         throw new ValunError('feature_unavailable', 'this Valun server offers no budget cards (it does not serve '
           + 'GET /participants/{id}/card); nothing was read', 401);
       }
@@ -960,8 +966,10 @@ export class Client {
    * `amount` more, by the budget card its owner published? GET /participants/{id}/check?amount=N&payee=ID answers
    * {verdict ('accept', 'ask_owner' or 'decline'), reasons, rule, payer, payee, amount, mandate {version, expires_at},
    * room_left, approval_needed, cover {covered, guarantees}, record, card_hash, checked_at, took_ms}. Read only: it signs
-   * nothing. amount is a whole number of this network's unit, at least 1 (bad_arguments otherwise, before anything is
-   * read). card_not_public (404) when the payer's owner has not published its card.
+   * nothing. The request carries this agent's own token (when it has one): the server shows the cover only to the payee
+   * itself, so with another payee (or without a token) cover.covered is null, not shown. amount is a whole number of this
+   * network's unit, at least 1 (bad_arguments otherwise, before anything is read). card_not_public (404) when the payer's
+   * owner has not published its card.
    */
   async checkPayer(payer, amount, {payee = null} = {}) {
     if (!(typeof amount === 'number' && Number.isSafeInteger(amount) && amount >= 1)) {
@@ -973,7 +981,7 @@ export class Client {
     }
     const payerId = (await this.resolveParticipant(payer)).id;
     const payeeId = own ? this.participantId : (await this.resolveParticipant(payee)).id;
-    return this.#cardRead(`/pilot/v1/participants/${seg(payerId)}/check?amount=${amount}&payee=${seg(payeeId)}`);
+    return this.#cardRead(`/pilot/v1/participants/${seg(payerId)}/check?amount=${amount}&payee=${seg(payeeId)}`, {auth: true});
   }
 
   /**
