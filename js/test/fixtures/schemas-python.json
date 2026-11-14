@@ -1,15 +1,15 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "154d8b43d9633312770e12086225437c91a9275972ab9afd5e0e272a35e66d19",
+  "agent.py": "4d69b2940c09cb82f89e23a721c2b9ffd7a866ae78f6d82f99dcd10839d5b28c",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "acf122a5c3b9914de96b729576a3807d7e8a03ca5d160c53e426f61cc55d99e8",
-  "mcp_server.py": "2b4cc4119077275964aba895744e77c636c1b733a6454684ef2f54e1c7e9eb0f",
+  "client.py": "841f9a6939ca8407c1d5890e3d3bba4d7f4b6e2db37c26d932e49a8c2339baeb",
+  "mcp_server.py": "66e82fab18ad1d3b7e5532396e276b644ef9330827a9638966c95763ffec9acf",
   "measure.py": "ee2c1164c7a9ecfa9f934603872d0ec0aa194c6f07257a0734d1a163df4c6de9",
   "novation.py": "3579850c2307713ae538fddbd899dc75e017992c5d75069969e0a7140edfa741",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "aa968c2e628ac44bc906e1b41629a16da0018d463b63a34d9e4d610774c35048",
-  "schemas.py": "2cdffc020aa15117bfc275a158d703e7e31df1b0c542959313191c40bb656e25"
+  "schemas.py": "c35ce02a457de4b2e4a61b66fab8f1462af21860ff9f5672f5c89d2e45bfe4c9"
  },
  "tools": [
   {
@@ -460,6 +460,28 @@
     },
     "required": [
      "guarantee_id"
+    ]
+   }
+  },
+  {
+   "name": "valun_check_payer",
+   "description": "Run this before you accept an IOU (a credit note) from an agent you do not know: before you accept its offer to pay you, or offer it work as payee. It checks `amount` against the budget card the payer's owner published: whether the owner's mandate lets the payer owe you that much more (its limit per deal and in total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's expiry), how much room it has left, whether guarantees back its IOUs to you, and its record of deals completed and disputed. Returns the server's verdict (accept, ask_owner or decline) with its reasons, and `summary`: the verdict in one sentence. Read-only: it signs nothing and commits no one. When the payer's owner has not published a budget card the verdict is unknown: decide from its record (valun_directory) or ask your owner. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other independently controlled agents.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "payer": {
+      "type": "string",
+      "description": "The handle or participant id of the agent that would owe you"
+     },
+     "amount": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "What it would owe you (the deal's price), in PC (whole pilot credits)"
+     }
+    },
+    "required": [
+     "payer",
+     "amount"
     ]
    }
   }
@@ -913,6 +935,28 @@
     },
     "required": [
      "guarantee_id"
+    ]
+   }
+  },
+  {
+   "name": "valun_check_payer",
+   "description": "Run this before you accept an IOU (a credit note) from an agent you do not know: before you accept its offer to pay you, or offer it work as payee. It checks `amount` against the budget card the payer's owner published: whether the owner's mandate lets the payer owe you that much more (its limit per deal and in total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's expiry), how much room it has left, whether guarantees back its IOUs to you, and its record of deals completed and disputed. Returns the server's verdict (accept, ask_owner or decline) with its reasons, and `summary`: the verdict in one sentence. Read-only: it signs nothing and commits no one. When the payer's owner has not published a budget card the verdict is unknown: decide from its record (valun_directory) or ask your owner. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other independently controlled agents.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "payer": {
+      "type": "string",
+      "description": "The handle or participant id of the agent that would owe you"
+     },
+     "amount": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "What it would owe you (the deal's price), in nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG)"
+     }
+    },
+    "required": [
+     "payer",
+     "amount"
     ]
    }
   }

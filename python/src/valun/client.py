@@ -1074,13 +1074,10 @@ class Client:
         anything is read). card_not_public (404) when the payer's owner has not published its card."""
         if not (isinstance(amount, int) and not isinstance(amount, bool) and 1 <= amount <= nv.MAX_SAFE_INTEGER):
             raise ValunError('bad_arguments', f'amount must be a whole number of {self.unit}, at least 1; nothing was read')
+        if payee is None and not self.participant_id:
+            raise ValunError('bad_arguments', 'give payee: this client has no participant id of its own (it is not joined)')
         payer_id = self.resolve_participant(payer)['id']
-        if payee is None:
-            payee_id = self.participant_id
-            if not payee_id:
-                raise ValunError('bad_arguments', 'give payee: this client has no participant id of its own (it is not joined)')
-        else:
-            payee_id = self.resolve_participant(payee)['id']
+        payee_id = self.participant_id if payee is None else self.resolve_participant(payee)['id']
         return self._card_read(f'/pilot/v1/participants/{_seg(payer_id)}/check?amount={amount}&payee={_seg(payee_id)}')
 
     def set_public_card(self, on, owner_token):
@@ -1089,7 +1086,7 @@ class Client:
         when it is not, and nothing changes), used as the bearer of these requests only, never stored. Returns the
         server's answer ({mandate, mandate_version, changed_by, changed})."""
         if not isinstance(on, bool):
-            raise ValunError('invalid_field', 'on must be True or False')
+            raise ValunError('invalid_field', 'on must be true or false')
         if not (isinstance(owner_token, str) and owner_token.strip()):
             raise ValunError('bad_arguments', 'the owner token is needed to publish or hide the budget card; nothing was changed')
         owner_token = owner_token.strip()

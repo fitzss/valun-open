@@ -242,14 +242,14 @@ test('prepare(): the counter-offer text says how long it stays open; what the cl
   assert.equal(e.extra.cause, 'bad_arguments');
 });
 
-test('valun_respond takes offer_valid_hours (a whole number of hours, 1 to 168); the thirteen tools are unchanged', () => {
+test('valun_respond takes offer_valid_hours (a whole number of hours, 1 to 168); the tools are the thirteen and valun_check_payer', () => {
   const props = schemas.RESPOND.parameters.properties;
   const {description, ...rest} = props.offer_valid_hours;
   assert.deepEqual(rest, {type: 'integer', minimum: 1, maximum: 168});
   assert.match(description, /^counter only: /);
   assert.deepEqual(Object.keys(props).slice(-2), ['deliver_within_hours', 'offer_valid_hours']);
   assert.deepEqual(schemas.RESPOND.parameters.required, ['deal_id', 'action']);
-  assert.equal(TOOL_NAMES.length, 13);
+  assert.equal(TOOL_NAMES.length, 14);
   assert.deepEqual(TOOL_NAMES, schemas.ALL.map(t => t.name));
   assert.doesNotMatch(JSON.stringify(schemas.forNetwork(schemas.TESTNET)[5]), /\bPC\b/);
 });

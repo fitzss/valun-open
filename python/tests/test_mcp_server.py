@@ -17,6 +17,8 @@ ORIGINAL_ORDER = ['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal'
                   'valun_deliver', 'valun_review_delivery', 'valun_set_limits']
 # 0.6 (fix inbox #18): the guarantee tools, appended after the original nine.
 GUARANTEE_TOOLS = ['valun_guarantees', 'valun_offer_guarantee', 'valun_respond_guarantee', 'valun_call_guarantee']
+# Budget cards: valun_check_payer (read only), after them.
+CARD_TOOLS = ['valun_check_payer']
 
 FAKE = textwrap.dedent('''
     import sys
@@ -82,10 +84,13 @@ class Protocol(unittest.TestCase):
         self.assertEqual(r['result']['serverInfo']['name'], 'valun')
         self.assertIn('tools', r['result']['capabilities'])
         listed = s.request('tools/list')['result']['tools']
-        self.assertEqual([t['name'] for t in listed], ORIGINAL_ORDER + GUARANTEE_TOOLS)   # the nine in their order, then the new ones
+        self.assertEqual([t['name'] for t in listed], ORIGINAL_ORDER + GUARANTEE_TOOLS + CARD_TOOLS)   # the nine, then the new ones
         tools = {t['name']: t for t in listed}
-        self.assertEqual(len(tools), 13)
+        self.assertEqual(len(tools), 14)
         self.assertTrue(tools['valun_guarantees']['annotations']['readOnlyHint'])
+        self.assertEqual({k: tools['valun_check_payer']['annotations'][k] for k in ('readOnlyHint', 'destructiveHint', 'idempotentHint')},
+                         {'readOnlyHint': True, 'destructiveHint': False, 'idempotentHint': True})
+        self.assertEqual(tools['valun_check_payer']['inputSchema']['required'], ['payer', 'amount'])
         self.assertTrue(tools['valun_offer_guarantee']['annotations']['destructiveHint'])
         for t in listed:
             self.assertTrue(t['title'].startswith('Valun: '), t['name'])
@@ -324,7 +329,7 @@ class ConsentLoop(unittest.TestCase):
                       f'consent_loop_jitter_s=0))')
             s = Session(script=script)
             s.init()
-            self.assertEqual(len(s.request('tools/list')['result']['tools']), 13)
+            self.assertEqual(len(s.request('tools/list')['result']['tools']), 14)
             deadline = time.time() + 10
             while time.time() < deadline:                 # the loop's first run marks the profile (it cannot reach the server)
                 with open(path, encoding='utf-8') as f:

@@ -1548,7 +1548,8 @@ export class ValunAgent {
 
   #textPropose(a, snap) {
     const other = snap.counterparty, u = get(snap, 'unit', UNIT);
-    required(a, PROPOSE_TEXTS);                     // what propose() refuses (fix inbox #58) is never put to the owner
+    required(a, PROPOSE_TEXTS.slice(1));            // what propose() refuses (fix inbox #58) is never put to the owner; the
+    // counterparty is the snapshot's (bound by #bindFrom)
     const role = get(a, 'role');
     if (role !== 'payer' && role !== 'payee') throw new ValunError('bad_role', 'role must be payer or payee');
     const [price, due, ttl] = ValunAgent.#offerNumbers(a, u);     // exactly what propose() signs, or its refusal

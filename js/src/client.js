@@ -967,14 +967,12 @@ export class Client {
     if (!(typeof amount === 'number' && Number.isSafeInteger(amount) && amount >= 1)) {
       throw new ValunError('bad_arguments', `amount must be a whole number of ${this.unit}, at least 1; nothing was read`);
     }
-    const payerId = (await this.resolveParticipant(payer)).id;
-    let payeeId;
-    if (payee === null || payee === undefined) {
-      payeeId = this.participantId;
-      if (!payeeId) throw new ValunError('bad_arguments', 'give payee: this client has no participant id of its own (it is not joined)');
-    } else {
-      payeeId = (await this.resolveParticipant(payee)).id;
+    const own = payee === null || payee === undefined;
+    if (own && !this.participantId) {
+      throw new ValunError('bad_arguments', 'give payee: this client has no participant id of its own (it is not joined)');
     }
+    const payerId = (await this.resolveParticipant(payer)).id;
+    const payeeId = own ? this.participantId : (await this.resolveParticipant(payee)).id;
     return this.#cardRead(`/pilot/v1/participants/${seg(payerId)}/check?amount=${amount}&payee=${seg(payeeId)}`);
   }
 

@@ -13,8 +13,8 @@ import {FileStore} from '../src/file-store.js';
 import {PyError, int, isoAwareUs, repr, str, typeName} from '../src/py.js';
 import {FIX, PARITY as P} from './agent-world.js';
 
-const {ValunError, errorPayload, limitsBody, loosens, measure, owes, quoteLine, quoted, recentlyActive, records, sandbox, shown, termsText,
-  verifyNote} = api;
+const {ValunError, checkSummary, errorPayload, limitsBody, loosens, measure, owes, quoteLine, quoted, recentlyActive, records, sandbox, shown,
+  termsText, verifyNote} = api;
 const fixture = name => JSON.parse(fs.readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'));
 const SANDBOX = fixture('sandbox-python.json');
 const SCHEMAS = fixture('schemas-python.json');
@@ -148,6 +148,9 @@ test('approval text helpers: quoted (Python json.dumps, ASCII, compact), shown, 
   for (const [v, out] of P.shown) assert.equal(shown(v), out, show(v));
   for (const [label, fields, out] of P.quote_line) assert.equal(quoteLine(label, fields), out, label);
   for (const [role, who, price, out] of P.owes) assert.equal(owes(role, who, price), out, role);
+  // budget cards: valun_check_payer's summary sentence (the verdict and its reasons)
+  assert.ok(P.check_summary.length >= 15);
+  for (const [v, out] of P.check_summary) assert.equal(checkSummary(v), out, show(v));
 });
 
 test('records.py step by step: every call gives the same outcome and leaves the same records (real signatures)', () => {
@@ -189,7 +192,7 @@ test('constants: circulating-credit labels, consent policies, tour texts, client
     'TOUR_GOALS', 'TOUR_TEXTS', 'TOUR_AFTER', 'CONSENTS_ON_READ_TOOLS', 'SIGNED_NOW_KEYS', 'FEATURES_HEADER', 'CONSENT_ROLES',
     'VALUE_SAFE_ROLES', 'VALUE_SAFE_HEADER_ROLES', 'CONSENT_LOG_MAX', 'RECORDS_KEEP_MS', 'SIGNATURES_KEEP_MS', 'ATTEMPT_OUTCOMES',
     'UNRESOLVED_TRANSFER', 'LIVE_TRANSFER', 'LOCAL_CHOICES', 'NEVER_APPLIED_TRANSFER', 'RESOLVE_NOTE_MAX', 'PAYEE_EDGE_WHY', 'PAYEE_EDGE_NEXT', 'EDGES_PAGE',
-    'EDGES_MAX_PAGES']) {
+    'EDGES_MAX_PAGES', 'CHECK_LEAD', 'CHECK_FALLBACK']) {
     assert.ok(Object.hasOwn(C, name), `the generator records ${name}`);
     assert.ok(Object.hasOwn(api, name), `the package exports ${name}`);
     assert.deepEqual(JSON.parse(JSON.stringify(api[name])), C[name], name);

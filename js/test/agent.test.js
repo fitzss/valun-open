@@ -16,8 +16,9 @@ test('every tool runs through call() and callSafe(); call() rejects with ValunEr
   assert.equal(st.connected, true);
   assert.equal(st.you.handle, 'alice');
   await assert.rejects(agent.call('valun_nope', {}), e => e instanceof ValunError && e.code === 'unknown_tool');
-  await assert.rejects(agent.call('valun_deal', {}), e => e.name === 'KeyError' && e.message === "'deal_id'");
-  assert.deepEqual(await agent.callSafe('valun_deal', {}), {error: 'internal_error', message: "KeyError: 'deal_id'"});
+  // fix inbox #58: a missing argument is bad_arguments with a plain message (it was a KeyError: internal_error)
+  await assert.rejects(agent.call('valun_deal', {}), e => e instanceof ValunError && e.code === 'bad_arguments' && e.message === 'missing argument: deal_id (the deal id, vd_ + 16 hex, as valun_inbox lists it)');
+  assert.deepEqual(await agent.callSafe('valun_deal', {}), {error: 'bad_arguments', message: 'missing argument: deal_id (the deal id, vd_ + 16 hex, as valun_inbox lists it)'});
   assert.deepEqual(Object.keys(agent.handlers), [...TOOL_NAMES]);
 });
 

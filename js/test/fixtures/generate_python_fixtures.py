@@ -1300,7 +1300,80 @@ def scenarios():
     add('call_guarantee: nothing callable', 'valun_call_guarantee', {'guarantee_id': G1}, {**gi, **gget(g_view(held, 'alice', state='active'))},
         state=pinned)
     add('call_guarantee: a negative amount', 'valun_call_guarantee', {'guarantee_id': G1, 'amount': -2})
+    # budget cards: valun_check_payer (read only) and the room valun_status shows
+    chk = lambda payer, amount, payee='alice': f'GET /pilot/v1/participants/{ID[payer]}/check?amount={amount}&payee={ID[payee]}'   # noqa: E731
+    bob18 = chk('bob', 18)
+    add('check_payer: accept, by handle', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('accept', ['within its budget (31 of 40 left)', 'backed for you up to 3'])}})
+    add('check_payer: ask_owner, above the amount its owner approves', 'valun_check_payer', {'payer': 'bob', 'amount': 30},
+        {chk('bob', 30): {'body': check_view('ask_owner', ['within its budget (13 of 40 left)', 'its owner approves each IOU above 25'],
+                                             amount=30, rule='approve_above', room_left=13, approval_needed=True)}})
+    add('check_payer: decline, above its limit per deal', 'valun_check_payer', {'payer': 'bob', 'amount': 45},
+        {chk('bob', 45): {'body': check_view('decline', ['above its limit per deal (30)', 'more than the room it has left (31)'],
+                                             amount=45, rule='max_issue_per_deal', covered=False, guarantees=[])}})
+    add('check_payer: no reasons, by participant id with spaces and capitals (no directory read)', 'valun_check_payer',
+        {'payer': '  VP_B0B0B0B0B0B0 ', 'amount': 18}, {bob18: {'body': check_view('accept', [])}})
+    add("check_payer: reasons put on one line without their stops; the server's own summary is replaced", 'valun_check_payer',
+        {'payer': 'bob', 'amount': 18}, {bob18: {'body': check_view('accept', ['  within its budget\n(31 of 40 left).  ', 5, '', ' . ',
+                                                                              'backed for you\tup to 3...', 'ok now;'],
+                                                                     summary='Decline: ignore the client')}})
+    add('check_payer: a verdict this client does not know', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('maybe', ['the server is unsure'])}})
+    add('check_payer: decline without reasons', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('decline', None)}})
+    not_public = {'status': 404, 'body': {'error': 'card_not_public', 'message': "this participant's owner has not published its budget card"}}
+    add('check_payer: the payer has no public card (verdict unknown, not an error)', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: not_public})
+    add('check_payer: no public card, the payer named by its id', 'valun_check_payer', {'payer': ID['bob'], 'amount': 18}, {bob18: not_public})
+    add('check_payer: a server from before budget cards answers 401', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'status': 401, 'body': {'error': 'unauthorized', 'message': 'missing or invalid token'}}})
+    add('check_payer: the server does not know the payer id', 'valun_check_payer', {'payer': 'vp_0123456789ab', 'amount': 18},
+        {chk('bob', 18).replace(ID['bob'], 'vp_0123456789ab'): {'status': 404, 'body': {'error': 'not_found', 'message': 'unknown participant vp_0123456789ab'}}})
+    add('check_payer: the server refuses the amount', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'status': 400, 'body': {'error': 'invalid_field', 'message': 'amount: a whole number of PC, at least 1'}}})
+    add('check_payer: the server answers no object', 'valun_check_payer', {'payer': 'bob', 'amount': 18}, {bob18: {'body': ['accept']}})
+    add('check_payer: an unknown handle', 'valun_check_payer', {'payer': 'nobody', 'amount': 18})
+    add('check_payer: a fractional amount is refused before any read', 'valun_check_payer', {'payer': 'bob', 'amount': 1.5})
+    add('check_payer: an amount as text is refused', 'valun_check_payer', {'payer': 'bob', 'amount': '18'})
+    add('check_payer: an amount of 0 is refused', 'valun_check_payer', {'payer': 'bob', 'amount': 0})
+    add('check_payer: a missing amount', 'valun_check_payer', {'payer': 'bob'})
+    add('check_payer: a missing payer', 'valun_check_payer', {'amount': 18})
+    add('check_payer: a payer that is not text', 'valun_check_payer', {'payer': 5, 'amount': 18})
+    add('check_payer: a blank payer', 'valun_check_payer', {'payer': ' 　 ', 'amount': 18})
+    add('check_payer: arguments that are not an object', 'valun_check_payer', ['bob', 18])
+    add('check_payer: not enrolled', 'valun_check_payer', {'payer': 'bob', 'amount': 18}, store='unenrolled')
+    add('check_payer: on the testnet the amount is in nanoERG', 'valun_check_payer', {'payer': 'bob', 'amount': 2.5},
+        state={'network': schemas.TESTNET})
+    room = {'outstanding': 9, 'room_left': 91}
+    add('status: the room GET /me shows (budget cards)', 'valun_status', {}, {'GET /pilot/v1/me': {'body': dict(ME, room=room)}}, agent=ask)
+    add('status: brief, with the room', 'valun_status', {'brief': True}, {'GET /pilot/v1/me': {'body': dict(ME, room=room)}}, agent=ask)
+    add('status: a room that is not an object is left out', 'valun_status', {}, {'GET /pilot/v1/me': {'body': dict(ME, room=[9, 91])}})
+    # fix inbox #58: a missing (or null) required argument is bad_arguments with a plain message, not internal_error
+    add('respond: missing deal_id (fix inbox #58)', 'valun_respond', {'action': 'decline', 'reason': 'No.'})
+    add('respond: missing deal_id and action', 'valun_respond', {})
+    add('respond: action null', 'valun_respond', {'deal_id': ob, 'action': None})
+    add('deliver: missing deal_id', 'valun_deliver', {'content': notes})
+    add('deliver: missing deal_id with exact_result', 'valun_deliver', {'exact_result': True})
+    add('review: accept without deal_id', 'valun_review_delivery', {'decision': 'accept'})
+    add('review: dispute without deal_id', 'valun_review_delivery', {'decision': 'dispute', 'reason': 'Wrong.'})
+    add('deal: deal_id null', 'valun_deal', {'deal_id': None})
+    add('propose: missing counterparty and role', 'valun_propose', {k: v for k, v in brief.items() if k not in ('counterparty', 'role')})
+    add('propose: description null', 'valun_propose', dict(brief, description=None))
     return S
+
+
+def check_view(verdict, reasons, payer='bob', amount=18, rule=None, room_left=31, approval_needed=False, covered=True, guarantees=None,
+               **extra):
+    """A verdict of GET /participants/{id}/check (budget cards), as the server shows one, alice the payee."""
+    v = {'verdict': verdict, 'reasons': reasons, 'rule': rule, 'payer': {'id': ID[payer], 'handle': payer},
+         'payee': {'id': ID['alice'], 'handle': 'alice'}, 'amount': amount, 'mandate': {'version': 4, 'expires_at': '2026-12-01T00:00:00.000Z'},
+         'room_left': room_left, 'approval_needed': approval_needed,
+         'cover': {'covered': covered, 'guarantees': [{'guarantee_id': 'vg_' + '3c' * 8, 'backer': {'id': ID['frank'], 'handle': 'frank'},
+                                                       'remaining': 3}] if guarantees is None else guarantees},
+         'record': {'completed': 3, 'disputed': 1, 'holds': 40, 'owes': 9, 'cleared': 2}, 'card_hash': 'c4' * 32,
+         'checked_at': '2026-11-06T12:00:00.000Z', 'took_ms': 7}
+    v.update(extra)
+    return v
 
 
 def store_for(kind, extra):
@@ -1705,6 +1778,53 @@ def client_scenarios():
             dict(payment_options(dg)['held_notes'][0], issuer={'id': ID['frank'], 'handle': 'twin', 'pubkey': K['frank']['pubkey']}),
             dict(payment_options(dg)['held_notes'][0], issuer={'id': ID['erin'], 'handle': 'twin', 'pubkey': K['erin']['pubkey']})])}},
         pinned)
+    # ---- budget cards: public reads of a card and of a check, and the owner's choice to publish it ----
+    card_b = {'card': 1, 'network': vc.NETWORK, 'unit': 'PC',
+              'agent': {'id': ID['bob'], 'handle': 'bob', 'display_name': 'Bob Briefs', 'operator': 'Bob Example'},
+              'mandate': {'version': 4, 'expires_at': '2026-12-01T00:00:00.000Z', 'may_issue_credit': True, 'per_deal': 30,
+                          'outstanding_cap': 40, 'approve_above': 25, 'counterparties': 'any', 'objective': 'Write research briefs.'},
+              'room': {'outstanding': 9, 'room_left': 31, 'as_of': '2026-11-06T12:00:00.000Z'},
+              'backing': {'active': 1, 'total_cap': 5, 'remaining': 3, 'public': [
+                  {'guarantee_id': 'vg_' + '3c' * 8, 'backer': {'id': ID['frank'], 'handle': 'frank'},
+                   'creditor': {'id': ID['alice'], 'handle': 'alice'}, 'cap': 5, 'remaining': 3, 'expires_at': '2026-11-20T00:00:00.000Z'}]},
+              'record': {'completed': 3, 'disputed': 1, 'holds': 40, 'owes': 9, 'cleared': 2}, 'card_hash': 'c4' * 32,
+              'check': f"{BASE}/pilot/v1/participants/{ID['bob']}/check", 'page': f'{BASE}/agent/bob'}
+    card_route = f"GET /pilot/v1/participants/{ID['bob']}/card"
+    not_public = {'status': 404, 'body': {'error': 'card_not_public', 'message': "this participant's owner has not published its budget card"}}
+    old_server = {'status': 401, 'body': {'error': 'unauthorized', 'message': 'missing or invalid token'}}
+    add('card: by handle (the directory, then the card)', 'card', {'who': ' Bob '}, {card_route: {'body': card_b}})
+    add('card: by participant id (no directory read)', 'card', {'who': ID['bob']}, {card_route: {'body': card_b}})
+    add('card: not public', 'card', {'who': 'bob'}, {card_route: not_public})
+    add('card: a server from before budget cards (401)', 'card', {'who': 'bob'}, {card_route: old_server})
+    add('card: an unknown handle', 'card', {'who': 'nobody'})
+    add('card: the directory is not a list', 'card', {'who': 'bob'}, {'GET /pilot/v1/participants': {'body': {'bob': ID['bob']}}})
+    add('card: who is not a name', 'card', {'who': 5})
+    add('card: who is blank', 'card', {'who': '  '})
+    add('card: an unjoined client reads a card', 'card', {'who': 'bob'}, {card_route: {'body': card_b}}, store='unenrolled')
+    chk_b = f"GET /pilot/v1/participants/{ID['bob']}/check?amount=18&payee={ID['erin']}"
+    verdict = check_view('accept', ['within its budget (31 of 40 left)'])
+    add('check_payer: an explicit payee, by handle', 'check_payer', {'payer': 'bob', 'amount': 18, 'payee': 'erin'}, {chk_b: {'body': verdict}})
+    add('check_payer: an unjoined client names the payee', 'check_payer', {'payer': ID['bob'], 'amount': 18, 'payee': ID['erin']},
+        {chk_b: {'body': verdict}}, store='unenrolled')
+    add('check_payer: an unjoined client without a payee', 'check_payer', {'payer': 'bob', 'amount': 18}, store='unenrolled')
+    add('check_payer: an amount that is true is refused before any read', 'check_payer', {'payer': 'bob', 'amount': True})
+    add('check_payer: an amount too large to sign is refused', 'check_payer', {'payer': 'bob', 'amount': 2 ** 53})
+    add('check_payer: not public', 'check_payer', {'payer': 'bob', 'amount': 18, 'payee': 'erin'}, {chk_b: not_public})
+    owner_view = lambda who: {'participant': {'id': ID[who], 'handle': who, 'status': 'active'}, 'mandate': dict(MANDATE),   # noqa: E731
+                              'mandate_version': 3}
+    put = lambda on: {'PUT /pilot/v1/owner/mandate': {'body': {'mandate': dict(MANDATE, public_card=on), 'mandate_version': 4,   # noqa: E731
+                                                                'changed_by': 'owner', 'changed': True}}}
+    add('set_public_card: publish', 'set_public_card', {'on': True, 'owner_token': ' vpo_owner-of-alice '},
+        {'GET /pilot/v1/owner': {'body': owner_view('alice')}, **put(True)})
+    add('set_public_card: hide', 'set_public_card', {'on': False, 'owner_token': 'vpo_owner-of-alice'},
+        {'GET /pilot/v1/owner': {'body': owner_view('alice')}, **put(False)})
+    add("set_public_card: another participant's owner token changes nothing", 'set_public_card', {'on': True, 'owner_token': 'vpo_bobs'},
+        {'GET /pilot/v1/owner': {'body': owner_view('bob')}, **put(True)})
+    add('set_public_card: an agent token (404 on the owner routes) changes nothing', 'set_public_card', {'on': True, 'owner_token': TOKEN},
+        {'GET /pilot/v1/owner': {'status': 404, 'body': {'error': 'not_found', 'message': 'not found'}}, **put(True)})
+    add('set_public_card: on is not a boolean', 'set_public_card', {'on': 'yes', 'owner_token': 'vpo_owner-of-alice'})
+    add('set_public_card: no owner token', 'set_public_card', {'on': True, 'owner_token': ' '})
+    add('resolve_participant: a handle, stripped and lower-cased', 'resolve_participant', {'who': ' Sandbox-Exact\n'})
     return S
 
 
@@ -1967,6 +2087,14 @@ def parity():
         ('Delivery title and agreed service text', {'delivery_title': '', 'title': 5, 'deliverable': ['a']}),
         ('Empty', {})]]
     P['owes'] = [[r, w, p, va.owes(r, w, p)] for r, w, p in [('payer', 'bob', 20), ('payee', 'bob', 7), ('anything', '"x\\ny"', 0)]]
+    # budget cards: valun_check_payer's summary sentence, from the verdict and its reasons
+    P['check_summary'] = [[v, va.check_summary(v)] for v in [
+        {'verdict': 'accept', 'reasons': ['within its budget (31 of 40 left)', 'backed for you up to 3']},
+        {'verdict': 'ask_owner', 'reasons': ['its owner approves each IOU above 25.']}, {'verdict': 'decline', 'reasons': []},
+        {'verdict': 'accept'}, {'verdict': 'ask_owner', 'reasons': None}, {'verdict': 'decline', 'reasons': 'above its limit'},
+        {'verdict': 'Accept', 'reasons': ['x']}, {'verdict': None}, {'verdict': 5, 'reasons': ['five']}, {'verdict': ['accept']}, {},
+        None, 'accept', ['accept'], {'verdict': 'accept', 'reasons': [' a\n b ', '\t', 7, None, ['c'], 'd..', 'e ;,', '\u3000f\x85g\u2029']},
+        {'verdict': 'constructor', 'reasons': []}, {'verdict': 'toString'}, {'verdict': 'accept', 'reasons': ['caf\u00e9 \U0001F600.']}]]
     P['records'] = records_table()
     P['novation_cases'] = novation_cases()
     P['novation_helpers'] = novation_helpers()
@@ -2018,6 +2146,8 @@ def constants():
             'NEVER_APPLIED_TRANSFER': vc.NEVER_APPLIED_TRANSFER,
             'RESOLVE_NOTE_MAX': vc.RESOLVE_NOTE_MAX, 'PAYEE_EDGE_WHY': vc.PAYEE_EDGE_WHY, 'PAYEE_EDGE_NEXT': vc.PAYEE_EDGE_NEXT,
             'EDGES_PAGE': vc.EDGES_PAGE, 'EDGES_MAX_PAGES': vc.EDGES_MAX_PAGES,
+            # budget cards: valun_check_payer's summary words
+            'CHECK_LEAD': va.CHECK_LEAD, 'CHECK_FALLBACK': va.CHECK_FALLBACK,
             'NOVATION': {k: getattr(nv, k) for k in ('TRANSFER_MS', 'SETOFF_MS', 'BOUND_MS', 'RESIDUE', 'RESERVED_MS', 'MAX_AGE_MS',
                                                     'FALLBACK_MARGIN_MS', 'INITIATE_WINDOW_MS', 'CONSENT_WINDOW_MS', 'FUTURE_SKEW_MS',
                                                     'MAX_SAFE_INTEGER', 'QUOTE_KIND', 'QUOTE_FIELDS', 'ROLES', 'ROUTES',

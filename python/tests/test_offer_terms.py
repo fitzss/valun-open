@@ -319,7 +319,7 @@ class ToolArguments(Clocked):
                          {'type': 'integer', 'minimum': 1, 'maximum': 168})
         self.assertEqual(list(props)[-2:], ['deliver_within_hours', 'offer_valid_hours'])
         self.assertEqual(schemas.RESPOND['parameters']['required'], ['deal_id', 'action'])
-        self.assertEqual(len(schemas.ALL), 13)
+        self.assertEqual(len(schemas.ALL), 14)
         self.assertEqual(va.TOOL_NAMES, [t['name'] for t in schemas.ALL])
         self.assertNotIn('PC', json.dumps(schemas.for_network(schemas.TESTNET)[5]))
 

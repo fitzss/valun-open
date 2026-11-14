@@ -248,7 +248,8 @@ class Prepare(unittest.TestCase):
         cases = [(Agent(DEAL), *ACCEPT, "ACCEPT bob's offer"),
                  (Agent(DEAL), *COUNTER, 'COUNTER-OFFER to bob'),
                  (Agent(DEAL), *REVIEW, 'ISSUE A CREDIT NOTE of 20 PC'),
-                 (Agent(people=PEOPLE), 'valun_propose', {'counterparty': 'BOB ', 'role': 'payer', 'title': 't', 'deliverable': 'd', 'price': 3},
+                 (Agent(people=PEOPLE), 'valun_propose', {'counterparty': 'BOB ', 'role': 'payer', 'title': 't', 'description': 'x',
+                                                          'deliverable': 'd', 'price': 3},
                   f'NEW OFFER to bob ({BOB_ID})'),
                  (Agent(me=ME), 'valun_set_limits', {'max_per_deal_as_payer': 20}, 'max_per_deal_as_payer: 10 -> 20 (your owner mandate: 25)')]
         for agent, name, args, expect in cases:

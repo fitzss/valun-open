@@ -20,10 +20,11 @@ test('the tool definitions are exactly Python schemas.ALL (names, descriptions, 
   const byName = {STATUS: 'valun_status', DIRECTORY: 'valun_directory', INBOX: 'valun_inbox', DEAL: 'valun_deal', PROPOSE: 'valun_propose',
     RESPOND: 'valun_respond', DELIVER: 'valun_deliver', REVIEW: 'valun_review_delivery', SET_LIMITS: 'valun_set_limits',
     GUARANTEES: 'valun_guarantees', OFFER_GUARANTEE: 'valun_offer_guarantee', RESPOND_GUARANTEE: 'valun_respond_guarantee',
-    CALL_GUARANTEE: 'valun_call_guarantee'};
+    CALL_GUARANTEE: 'valun_call_guarantee', CHECK_PAYER: 'valun_check_payer'};
   for (const [k, name] of Object.entries(byName)) assert.equal(schemas[k].name, name);
-  assert.equal(schemas.ALL.length, 13);
-  assert.deepEqual([...READ_ONLY_TOOLS], ['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal', 'valun_guarantees']);
+  assert.equal(schemas.ALL.length, 14);
+  assert.deepEqual([...READ_ONLY_TOOLS], ['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal', 'valun_guarantees',
+    'valun_check_payer']);
 });
 
 test('every definition is a JSON Schema object whose required fields exist, and the exported definitions are frozen', () => {

@@ -855,7 +855,8 @@ class Schemas(unittest.TestCase):
         self.assertEqual([t['name'] for t in schemas.ALL],
                          ['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal', 'valun_propose', 'valun_respond',
                           'valun_deliver', 'valun_review_delivery', 'valun_set_limits',
-                          'valun_guarantees', 'valun_offer_guarantee', 'valun_respond_guarantee', 'valun_call_guarantee'])
+                          'valun_guarantees', 'valun_offer_guarantee', 'valun_respond_guarantee', 'valun_call_guarantee',
+                          'valun_check_payer'])
         self.assertEqual(list(schemas.REVIEW['parameters']['properties']),
                          ['deal_id', 'decision', 'reason', 'expected_deliverable_sha256', 'pay_with'])
         self.assertEqual(list(schemas.DELIVER['parameters']['properties']),

@@ -1347,7 +1347,8 @@ class ValunAgent:
     @staticmethod
     def _text_propose(a, snap):
         other, u = snap['counterparty'], snap.get('unit', vc.UNIT)
-        _required(a, PROPOSE_TEXTS)         # what propose() refuses (fix inbox #58) is never put to the owner
+        _required(a, PROPOSE_TEXTS[1:])     # what propose() refuses (fix inbox #58) is never put to the owner; the
+        # counterparty is the snapshot's (bound by _bind_from)
         role = a.get('role')
         if role not in ('payer', 'payee'):
             raise vc.ValunError('bad_role', 'role must be payer or payee')

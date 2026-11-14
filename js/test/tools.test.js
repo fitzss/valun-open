@@ -202,7 +202,7 @@ test('execute() takes an object, a JSON string or nothing; anything else is bad_
   const deal = tool(valunTools(world(sc).agent, {approvals: 'none'}), 'valun_deal');
   assert.equal((await deal.execute(JSON.stringify(sc.args))).status, 'open');
   assert.equal((await deal.execute(sc.args)).status, 'open');
-  assert.deepEqual(await deal.execute(), {error: 'internal_error', message: "KeyError: 'deal_id'"});
+  assert.deepEqual(await deal.execute(), {error: 'bad_arguments', message: 'missing argument: deal_id (the deal id, vd_ + 16 hex, as valun_inbox lists it)'});   // fix inbox #58
   for (const bad of ['{not json', '[1,2]', '"text"', '7']) {
     const r = await deal.execute(bad);
     assert.equal(r.error, 'bad_arguments', bad);

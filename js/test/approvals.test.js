@@ -198,7 +198,8 @@ test('prepare(): a missing hash, a misspelt value or unreadable arguments give a
 test('prepare(): known commitments get their own text, unknown tools the generic one, non-commitments none', async () => {
   const cases = [[Agent(DEAL), ...ACCEPT, "ACCEPT bob's offer"], [Agent(DEAL), ...COUNTER, 'COUNTER-OFFER to bob'],
     [Agent(DEAL), ...REVIEW, 'ISSUE A CREDIT NOTE of 20 PC'],
-    [Agent({}, null, PEOPLE), 'valun_propose', {counterparty: 'BOB ', role: 'payer', title: 't', deliverable: 'd', price: 3}, `NEW OFFER to bob (${BOB_ID})`],
+    [Agent({}, null, PEOPLE), 'valun_propose', {counterparty: 'BOB ', role: 'payer', title: 't', description: 'x', deliverable: 'd', price: 3},
+      `NEW OFFER to bob (${BOB_ID})`],
     [Agent({}, ME), 'valun_set_limits', {max_per_deal_as_payer: 20}, 'max_per_deal_as_payer: 10 -> 20 (your owner mandate: 25)']];
   for (const [agent, name, args, expect] of cases) {
     const p = await agent.prepare(name, args);

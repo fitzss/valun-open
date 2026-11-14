@@ -90,7 +90,9 @@ test('the recorded scenarios cover every tool, every commitment kind and the mai
     'stale_note']) assert.ok(errors.has(code), code);
   const causes = new Set(FIX.scenarios.map(s => s.prepare.cause).filter(Boolean));
   for (const cause of ['hash_mismatch', 'role_mismatch', 'counterparty_mismatch', 'own_offer', 'not_payer', 'stale_terms', 'stale_delivery',
-    'bad_arguments', 'not_connected', 'not_found', 'approval_unbound', 'KeyError', 'ValueError']) assert.ok(causes.has(cause), `prepare refuses: ${cause}`);
+    'bad_arguments', 'not_connected', 'not_found', 'approval_unbound', 'ValueError']) assert.ok(causes.has(cause), `prepare refuses: ${cause}`);
+  // fix inbox #58: a missing argument is bad_arguments, never a KeyError (internal_error), in the tools and in prepare()
+  assert.ok(!causes.has('KeyError') && !FIX.scenarios.some(s => /KeyError/.test(s.result.message ?? '')), 'no KeyError left');
   const texts = FIX.scenarios.filter(s => typeof s.prepare.value?.text === 'string');
   assert.ok(texts.length >= 30, 'approval texts recorded');
   assert.ok(texts.some(s => s.prepare.value.text.startsWith('Valun: sign a commitment (')), 'the generic text, for an unknown tool');
@@ -150,6 +152,11 @@ const CALL = {
   refuse_consent: (c, k) => c.refuseConsent(k.consent_id, k.reason ?? null),
   pay_by_transfer: (c, k) => c.payByTransfer(k.deal_id, k.issuer, {expectedDeliverableSha256: k.expected_deliverable_sha256,
     expectedQuoteDigest: k.expected_quote_digest, expectedClaimTotal: k.expected_claim_total}),
+  // budget cards
+  resolve_participant: (c, k) => c.resolveParticipant(k.who),
+  card: (c, k) => c.card(k.who),
+  check_payer: (c, k) => c.checkPayer(k.payer, k.amount, {payee: k.payee ?? null}),
+  set_public_card: (c, k) => c.setPublicCard(k.on, k.owner_token),
 };
 
 test(`client methods: ${FIX.client_scenarios.length} scenarios give the Python reference's results, requests, signatures and records`, async t => {
