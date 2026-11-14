@@ -17,11 +17,17 @@
     @bindvalun record            the author's public record: owed, held, cancelled in loops, passed on
     @bindvalun record @alice     someone else's (named in the reply, not mentioned)
 
+    @bindvalun card claude-eng   a participant's budget card, by its Valun handle (also "card of claude-eng" and
+                                 "budget card claude-eng"): what it may commit for its owner, a deal at a time and the
+                                 room left of all it may owe, how many back it, and a link to the card's page
+    @bindvalun card              the author's own (the identity this bot holds for them); "card @alice" is @alice's
+                                 (named in the reply, not mentioned)
+
 Credits: people write whole credits and read credits. On Valun an amount is a whole number of the network's unit, and
 the client's scale converts (valun.client Client.scale, of the profiles this bot holds): on the testnet 1 credit is
 1,000,000 nanoERG = 0.001 tERG, test coins of Ergo testnet with no monetary value. Promises, tl;dr hires and feedback
-are proposed in the unit (credits x scale); what the server reports (promises held, records, loops) is shown in credits
-(units / scale, exact), never as raw nanoERG.
+are proposed in the unit (credits x scale); what the server reports (promises held, records, budget cards, loops) is
+shown in credits (units / scale, exact), never as raw nanoERG.
 
 Rules (BINDVALUN.md): only the debtor's own post creates a debt; the creditor's own reply binds it; 1 to 5 credits a
 promise (the self-serve limit); the account replies only to posts that mention it and never mentions anyone a post did
@@ -75,6 +81,8 @@ OFFER_TTL_S = 24 * 3600
 SETTLE_MAX_S = 6 * 3600              # a payment by transfer still unsettled after this is reported and left as it is
 RECORDS_PER_DAY = 5                  # record replies hold a link ($0.20 each)
 RECORDS_PER_AUTHOR_PER_DAY = 1
+CARDS_PER_DAY = 10                   # budget-card replies: one with the card's link costs $0.20, one without a post's
+CARDS_PER_AUTHOR_PER_DAY = 2
 MAX_TEXT = 270                       # X allows 280 characters; a margin
 # The AI agent hired on X, and what it costs and pays (examples/ai-seller/ai_seller.py: house-scribe's summary service and
 # its x-feedback want; valun.ai_seller enforces its own limits: 3 jobs a day per buyer, 1 x-feedback a day per person).
@@ -103,6 +111,15 @@ VIA = re.compile(r"[,;]?\s*(?:\band\s+)?(?:\b(?:pay(?:ing)?|paid)\s+(?:it\s+)?wi
 # "pay @carol 3 for the review" (what is left of "pay @carol 3 with @alice's promise for the review"; only with VIA)
 PAYTO = re.compile(r'^pay\s+' + H + r'\s+(\d{1,4})(?:\s*(?:credits?|pc)\b)?(?:[\s,;]*(?:for|:)\s*(.+))?', re.I | re.S)
 RECORD = re.compile(r'^(?:my\s+)?record\b(?:\s+(?:of\s+)?' + H + r')?', re.I)
+# "card claude-eng", "card of claude-eng", "budget card claude-eng": a budget card by Valun handle (3 to 24 characters,
+# starting with a letter, as the server allows them); "card @alice": of the identity this bot holds for @alice; "card",
+# "my card": the author's own. The command is the whole post: a word after "card" is taken for a handle, so a post that
+# only starts with "card" ("card games tonight?") is none.
+VH = r'([a-z][a-z0-9_-]{2,23})'
+CARD = re.compile(r'^(?:my\s+(?:budget\s+)?card|(?:budget\s+)?card(?:\s+(?:of\s+)?(?:' + H + '|' + VH + r'))?)[\s.!?]*$', re.I)
+PID = re.compile(r'vp_[0-9a-f]{12}')
+# A card's page as the bot posts it (the card's `page`): an https address with no user part and no spaces.
+PAGE = re.compile(r'https://[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:/[A-Za-z0-9._~/%#?=&+-]*)?')
 # "tldr" / "tl;dr" / "summarize this" under a post (or before a text of one's own); "feedback: ..."
 TLDR = re.compile(r'^(?:tl;?dr|summari[sz]e(?:\s+(?:this|it))?)(?![\w;])[\s:,.!-]*(.*)$', re.I | re.S)
 FEEDBACK = re.compile(r'^feedback\b[\s:,.-]*(.*)$', re.I | re.S)
@@ -422,22 +439,58 @@ class Valun:
         return {n['issuer']: n['amount_PC'] for n in r.get('notes_you_can_spend') or []
                 if isinstance(n, dict) and isinstance(n.get('issuer'), str) and isinstance(n.get('amount_PC'), int)}
 
-    def public(self, name, fetch=None):
-        """The public record of a participant this bot holds (GET /participants/{id}: its public_position), or None.
-        The id is the one its profile was enrolled with (a participant out of the directory is still found), else the
-        directory's. Its amounts are the network's units (in_credits shows them)."""
+    def participant_id(self, name, fetch=None):
+        """The participant id of the Valun handle `name`, or None when no participant has it: for a participant this
+        bot holds, the one its profile was enrolled with (a participant out of the directory is still found), else the
+        directory's (GET /participants). A failed read raises (OSError, ValueError)."""
         fetch = fetch or self.fetch
         pid = None
-        try:
-            with open(self.profile_file(name), encoding='utf-8') as f:
-                pid = json.load(f).get('participant_id')
-        except (OSError, ValueError, AttributeError):
-            pass
-        if not (isinstance(pid, str) and re.fullmatch(r'vp_[0-9a-f]{12}', pid)):
+        if isinstance(name, str) and re.fullmatch(r'[a-z0-9_-]{1,32}', name):        # a handle, never a path
+            try:
+                with open(self.profile_file(name), encoding='utf-8') as f:
+                    pid = json.load(f).get('participant_id')
+            except (OSError, ValueError, AttributeError):
+                pass
+        if not (isinstance(pid, str) and PID.fullmatch(pid)):
             rows = fetch('/pilot/v1/participants')
-            rows = rows if isinstance(rows, list) else rows.get('participants') or []
+            rows = rows if isinstance(rows, list) else (rows.get('participants') if isinstance(rows, dict) else None) or []
             pid = next((p.get('id') for p in rows if isinstance(p, dict) and p.get('handle') == name), None)
+        return pid if isinstance(pid, str) and PID.fullmatch(pid) else None
+
+    def public(self, name, fetch=None):
+        """The public record of a participant this bot holds (GET /participants/{id}: its public_position), or None.
+        The id is participant_id's. Its amounts are the network's units (in_credits shows them)."""
+        fetch = fetch or self.fetch
+        pid = self.participant_id(name, fetch)
         return (fetch(f'/pilot/v1/participants/{pid}').get('public_position') or None) if pid else None
+
+    def card(self, name, fetch=None):
+        """The budget card of the participant with the Valun handle `name` (participant_id), as GET
+        /participants/{id}/card shows it: what its agent may commit for its owner, the room it has left, who backs it,
+        its record and its public page; amounts in the network's units. BindError when there is no card to show:
+        unknown_participant (no participant has that handle), card_not_public (404: its owner has not published it),
+        feature_unavailable (401: a server from before budget cards), card_unreadable (any other answer, or none).
+        The bot's own read, kept here: the published client gains card(who), with the first three codes, and the bot
+        can use that once its image installs a release that has it."""
+        fetch = fetch or self.fetch
+        try:
+            pid = self.participant_id(name, fetch)
+        except (OSError, ValueError) as e:
+            raise BindError('card_unreadable', str(e)[:200]) from None
+        if not pid:
+            raise BindError('unknown_participant', f'no participant called {name}')
+        try:
+            card = fetch(f'/pilot/v1/participants/{pid}/card')
+        except urllib.error.HTTPError as e:
+            code = error_code(e)
+            if e.code == 404:
+                raise BindError('card_not_public' if code == 'card_not_public' else 'unknown_participant', code) from None
+            raise BindError('feature_unavailable' if e.code == 401 else 'card_unreadable', f'HTTP {e.code} {code}') from None
+        except (OSError, ValueError) as e:
+            raise BindError('card_unreadable', str(e)[:200]) from None
+        if not isinstance(card, dict):
+            raise BindError('card_unreadable', 'the server sent no card')
+        return card
 
     def touch(self, name):
         """A status read: keeps the identity active (it lapses 7 days after its last activity) and lets its client sign
@@ -449,6 +502,15 @@ class BindError(Exception):
     def __init__(self, code, message=''):
         super().__init__(f'{code}: {message}')
         self.code = code
+
+
+def error_code(e):
+    """The code a Valun server's error answer names ({error, message}), from an HTTPError; '' when it names none."""
+    try:
+        j = json.loads(e.read() or b'{}')
+    except (OSError, ValueError, AttributeError):
+        return ''
+    return j['error'] if isinstance(j, dict) and isinstance(j.get('error'), str) else ''
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -479,6 +541,16 @@ def parse_record(text):
     """"record" (the author's own: '') or "record @alice" ('alice'); None for anything else."""
     m = RECORD.match(strip_mentions(text))
     return None if not m else (m.group(1) or '').lower()
+
+
+def parse_card(text):
+    """A budget-card request: ('valun', 'claude-eng') from "card claude-eng" (or "card of", "budget card"), by Valun
+    handle; ('x', 'alice') from "card @alice", the identity this bot holds for an X user; ('x', '') from "card" or "my
+    card", the author's own. None for anything else."""
+    m = CARD.match(strip_mentions(text))
+    if not m:
+        return None
+    return ('valun', m.group(2).lower()) if m.group(2) else ('x', (m.group(1) or '').lower())
 
 
 def fit(make, what, note=''):
@@ -540,6 +612,37 @@ def record_text(shown, ev, name, scale=1):
             + f". Accepted: {n(a.get('holders_ever'))} took its IOU."
             + (' Its circle is closed.' if c.get('closed') else '')
             + f' Evidence, not a score. valun.tech/agent/{name}')
+
+
+def lapsed(expires_at):
+    """Whether a mandate's expiry (an ISO time; null for none) has passed. None when it is neither."""
+    if expires_at is None:
+        return False
+    try:
+        t = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+    except (AttributeError, ValueError):
+        return None
+    return (t if t.tzinfo else t.replace(tzinfo=timezone.utc)) <= now()
+
+
+def card_text(shown, card, unit, scale):
+    """A budget-card reply from the server's card (GET /participants/{id}/card), a fixed template that never quotes the
+    card's free text (its owner's objective): what the agent may commit for its owner, a deal at a time and the room left
+    of all it may owe, in credits (the card's amounts are the network's units); how many back it; the card's page. An
+    agent that may issue no IOUs now (its owner's mandate says so, or has expired) is said to. None when the card does
+    not read as one (another unit, an amount that is not a whole number, a page that is not a plain https address)."""
+    m, room, back = (card.get(k) if isinstance(card.get(k), dict) else {} for k in ('mandate', 'room', 'backing'))
+    per_deal, cap, left, backers = m.get('per_deal'), m.get('outstanding_cap'), room.get('room_left'), back.get('active')
+    page, gone = card.get('page'), lapsed(m.get('expires_at'))
+    if (card.get('unit', unit) != unit or gone is None
+            or not all(isinstance(x, int) and not isinstance(x, bool) for x in (per_deal, cap, left, backers))
+            or min(per_deal, cap, backers) < 0 or not (isinstance(page, str) and len(page) <= 120 and PAGE.fullmatch(page))):
+        return None
+    may = ('may issue no IOUs now' if gone or m.get('may_issue_credit') is False else
+           f'up to {credits(in_credits(per_deal, scale))} a deal, {in_credits(max(left, 0), scale)} of '
+           f'{in_credits(cap, scale)} left')
+    text = f"{shown}'s budget card: {may}, {f'backed by {backers}' if backers else 'not backed'}. {page}"
+    return text if len(text) <= MAX_TEXT else None
 
 
 def post_text(tweet):
@@ -649,6 +752,9 @@ class Bot:
         who = parse_record(t.get('text'))
         if who is not None:
             return self.record(t, author, who or author)
+        card = parse_card(t.get('text'))
+        if card:
+            return self.card(t, author, *card)
         text = post_text(t)
         m = TLDR.match(text)
         if m:
@@ -882,8 +988,7 @@ class Bot:
         if held and not pos:
             return self.log(action='record_unreadable', tweet=t['id'], who=who)
         if not pos:
-            text = (f'{shown} has no promises bound here yet. One starts with a post like '
-                    f'"@{BOT} I owe" plus someone\'s handle and {MIN_CREDITS} to {MAX_CREDITS} credits.{self.note()}')
+            text = self.no_promises(shown)
         elif pos.get('evidence'):
             text = record_text(shown, pos['evidence'], name, self.v.network()[1])
         else:
@@ -895,6 +1000,42 @@ class Bot:
         if self.say(text, t['id']):
             self.st.bump('records')
             self.st.bump(f'records:{author}')
+
+    def no_promises(self, shown):
+        """The answer for an X user this bot holds no identity for: none of their promises is bound here yet."""
+        return (f'{shown} has no promises bound here yet. One starts with a post like '
+                f'"@{BOT} I owe" plus someone\'s handle and {MIN_CREDITS} to {MAX_CREDITS} credits.{self.note()}')
+
+    def card(self, t, author, kind, who):
+        """A participant's budget card, as one reply: card_text, with the card's link; without a link, that its owner
+        has published none, or that there is no such participant. `kind` 'valun': `who` is a Valun handle, looked up as
+        it is; 'x': an X user (the author when `who` is ''), by the identity this bot holds for them, as record() reads
+        one. Handles are written without @, so the reply mentions no one the post did not. An unknown Valun handle is
+        not repeated (it is any word a post wrote)."""
+        if kind == 'x':
+            who = who or author
+            if who == BOT or (who != author and who not in mentioned_ids(t)):
+                return
+        if self.st.count('cards') >= CARDS_PER_DAY or self.st.count(f'cards:{author}') >= CARDS_PER_AUTHOR_PER_DAY:
+            return self.log(action='ignored_card', tweet=t['id'], why='daily card limit')
+        name = profile_name(who) if kind == 'x' else who
+        if kind == 'x' and name not in self.st.s['profiles']:
+            text = self.no_promises(who)
+        else:
+            try:
+                text = card_text(who, self.v.card(name), *self.v.network())
+            except BindError as e:
+                if e.code == 'card_not_public':
+                    text = f'{who} has not published a budget card.'
+                elif e.code == 'unknown_participant' and kind == 'valun':
+                    text = 'No Valun participant has that handle.'
+                else:
+                    return self.log(action='card_unreadable', tweet=t['id'], who=name, error=e.code)
+            if text is None:
+                return self.log(action='card_unreadable', tweet=t['id'], who=name, error='not_a_card')
+        if self.say(text, t['id']):
+            self.st.bump('cards')
+            self.st.bump(f'cards:{author}')
 
     def expire(self):
         cutoff = time.time() - OFFER_TTL_S
