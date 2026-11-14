@@ -30,9 +30,9 @@ export const INFO_DESCRIPTIONS = Object.freeze({
   sandbox: `${INFO_PREFIX} An issued note is ${INFO_SETTLEMENT} On this server circulating credit is on for sandbox participants only: the sandbox agents and those who joined with join-sandbox.`,
 });
 // Self-serve sandbox joins per client address per hour (guests at one venue share an address; an IPv6 client counts by
-// its /48, lib/ipkey.mjs); the server-wide daily
-// cap is SANDBOX_JOINS_PER_DAY in core.mjs.
-export const SANDBOX_JOINS_PER_HOUR_PER_ADDRESS = 12;
+// its /48, lib/ipkey.mjs): counted in the state by Pilot.joinSandbox (fix inbox #21), so a restart does not reset it.
+// The server-wide daily cap is SANDBOX_JOINS_PER_DAY in core.mjs.
+export {SANDBOX_JOINS_PER_HOUR_PER_ADDRESS} from './core.mjs';
 // Settlement on Ergo testnet: the smallest redemption (the miner fee the tracker pays for it) and the redemption builds
 // one agent may ask for in 24 hours (in memory; a restart forgets them).
 export const REDEMPTION_MIN_NANOERG = 1_000_000, REDEMPTION_BUILDS_PER_DAY = 6, REDEMPTION_ATTEMPTS_PER_DAY = 30;
@@ -47,6 +47,10 @@ export const IP_READS_PER_MINUTE = 1800;           // per client address (venue 
 // hosted server turns it on (server.mjs: PILOT_PUBLIC_CACHE_MS, default PUBLIC_CACHE_MS); off unless cfg.publicCacheMs
 // is set, so a read right after a change made around the pilot (a test writing to the tracker) is never stale.
 export const PUBLIC_CACHE_MS = 3000;
+// The commit this server runs (GET /info `build`), as its deploy sets VALUN_BUILD_SHA (scripts/ops, the CI deploys):
+// staging and the testnet say which code they run, so a promotion can check it moves what staging tested. Absent
+// unless set to a full commit id.
+export const BUILD_SHA = /^[0-9a-f]{40}$/.test(process.env.VALUN_BUILD_SHA || '') ? process.env.VALUN_BUILD_SHA : null;
 const PUBLIC_CACHE_MAX = 500;
 const HTML = 'text/html; charset=utf-8';
 
@@ -100,7 +104,6 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
   const ipReadsPerMinute = cfg.pilotIpReadLimitPerMinute
     ?? (cfg.pilotReadLimitPerMinute != null || cfg.pilotRateLimitPerMinute != null ? readsPerMinute : Math.max(readsPerMinute, IP_READS_PER_MINUTE));
   let calls = 0;
-  const sandboxJoins = new Map();
   // GET /clearing is computed at most once per 10 s (METRICS_CACHE_MS: it reads the tracker and runs the engine's measures).
   let clearingCache = null;
   // The public read cache: key -> {at, gen, value: Promise<{status, body}>} (body a string, sent as it is). Single-flight:
@@ -195,6 +198,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         network: NETWORK, protocol: PROTOCOL, unit: pilot.unit, denomination: pilot.basis.denomination, tracker_nft_id: pilot.basis.nft,
         tracker_on_chain: !!pilot.chain?.on_chain, experimental: true,
         ...(pilot.chain ? {chain: pilot.chain} : {}),
+        ...(BUILD_SHA ? {build: BUILD_SHA} : {}),
         description: infoDescription(mode),
         statements: sources(statements),
         participants: Object.values(pilot.s.participants).filter(x => x.status === 'active').length,
@@ -294,14 +298,9 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     if (ON_TESTNET && !pilot.chain?.on_chain && req.method !== 'GET' && req.method !== 'HEAD' && !p.startsWith('/admin/'))
       throw new PilotError('testnet_bootstrapping', 'the Valun testnet tracker is not on chain yet; try again once its tracker NFT is minted (GET /pilot/v1/info: tracker_on_chain)', 503);
     if (P && p === '/join') return send(res, 201, await pilot.join(await readJson(req)));
-    if (P && p === '/join-sandbox') {        // no invite: sandbox-only participants (off unless enabled); 12 per address per hour
-      // An IPv6 client counts by its /48 here (fix inbox #21: one host left from a new address on every join).
-      const k = ipKey(ip, 48), now = Date.now(), w = (sandboxJoins.get(k) || []).filter(t => now - t < 3600e3);
-      if (pilot.openSandbox && w.length >= SANDBOX_JOINS_PER_HOUR_PER_ADDRESS) throw new PilotError('rate_limited', `at most ${SANDBOX_JOINS_PER_HOUR_PER_ADDRESS} sandbox joins per hour from one address (an IPv6 /48)`, 429);
-      const r = await pilot.joinSandbox(await readJson(req));
-      w.push(now); sandboxJoins.set(k, w);
-      return send(res, 201, r);
-    }
+    // No invite: sandbox-only participants (off unless enabled); at most 12 an hour from one address, which for an IPv6
+    // client is its /48 (fix inbox #21: one host left from a new address on every join).
+    if (P && p === '/join-sandbox') return send(res, 201, await pilot.joinSandbox(await readJson(req), {addressKey: ipKey(ip, 48)}));
     if (P && p === '/enroll') return send(res, 201, await pilot.enroll(await readJson(req)));
 
     // ---------- authenticated ----------

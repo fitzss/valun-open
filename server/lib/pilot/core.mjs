@@ -190,6 +190,12 @@ const isInt = (v, min, max) => Number.isSafeInteger(v) && v >= min && v <= max;
 // ignores it, as any unknown field.
 export const SANDBOX_CAPS = Object.freeze({max_issue_per_deal: pc(5), max_issue_outstanding: pc(40), max_accept_per_deal: pc(5), max_accept_per_issuer: pc(40), max_claims_total: SANDBOX_MAX_CLAIMS_TOTAL}), SANDBOX_DAYS = 7;
 const SANDBOX_JOINS_PER_DAY = 200;
+// At most this many self-serve joins an hour from one address (an IPv4 address, or an IPv6 /48: the HTTP layer cuts it).
+// Fix inbox #21: the count is kept in the state (s.sandbox_joins: [{k, at}]), so a deploy or a restart does not reset
+// it. `k` is a keyed hash of the address (HMAC-SHA256 with a random key kept in its own file beside the state, never in
+// it), so the state holds no address; a record is dropped at the first save after its hour.
+export const SANDBOX_JOINS_PER_HOUR_PER_ADDRESS = 12;
+const SANDBOX_JOIN_WINDOW_MS = 3600e3, SANDBOX_JOIN_KEY_FILE = 'sandbox-join-key';
 // The open network (Pilot openNetwork, PILOT_OPEN_NETWORK=1): a self-serve participant may deal with any participant
 // whose own mandate allows it (other self-serve participants, invited participants, the sandbox agents), still within
 // SANDBOX_CAPS and its SANDBOX_DAYS. It has at most this many offers of its own open (or waiting for its owner) at once,
@@ -262,6 +268,17 @@ export class PilotStore {
       : {version: 1, network: NETWORK, createdAt: new Date().toISOString(), participants: {}, deals: {}, approvals: {}, invites: {}};
   }
   save() { const tmp = this.file + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(this.state, null, 1)); fs.renameSync(tmp, this.file); }
+  // A random 32-byte key of this store (hex), in its own file beside the state, never in pilot-state.json; made on first
+  // use, and made again if the file is unreadable (which only resets what it keys).
+  secret(name) {
+    const f = path.join(this.dir, name);
+    let v = fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim() : '';
+    if (!/^[0-9a-f]{64}$/.test(v)) {
+      v = crypto.randomBytes(32).toString('hex');
+      const tmp = f + '.tmp'; fs.writeFileSync(tmp, v + '\n', {mode: 0o600}); fs.renameSync(tmp, f);
+    }
+    return v;
+  }
   audit(e) { fs.appendFileSync(path.join(this.dir, 'pilot-audit.jsonl'), JSON.stringify({at: new Date().toISOString(), ...e}) + '\n'); }
   // The append-only edge journal (lib/pilot/journal.mjs), one entry per line; written right after the save that holds them.
   appendEdgeLog(entries) { fs.appendFileSync(path.join(this.dir, EDGE_LOG_FILE), entries.map(e => JSON.stringify(e) + '\n').join('')); }
@@ -405,16 +422,18 @@ export class Pilot {
   serial(fn) { const run = this.lock.then(fn, fn); this.lock = run.catch(() => {}); return run; }
   // Journal entries written since the last save reach pilot-edge-log.jsonl right after the state that holds them.
   // Every save bumps `generation`: the public read cache (lib/pilot/http.mjs) serves an entry only while it is unchanged.
-  save() { this.store.save(); flushEdgeLog(this); this.generation = (this.generation ?? 0) + 1; }
+  save() { this.recentSandboxJoins(); this.store.save(); flushEdgeLog(this); this.generation = (this.generation ?? 0) + 1; }
 
   // ---------- identities & credentials ----------
-  createInvite({note = '', maxUses = 1, ttlDays = 14} = {}) {
+  // `persist: false` (joinSandbox's own one-use invite) keeps the invite in memory only: the join that uses it saves it,
+  // and a refused join removes it, so refused joins write nothing.
+  createInvite({note = '', maxUses = 1, ttlDays = 14, persist = true} = {}) {
     if (!isInt(maxUses, 1, 1000) || !isInt(ttlDays, 1, 90)) throw new PilotError('invalid_field', 'max_uses must be 1..1000 and ttl_days 1..90 (whole numbers)');
     const code = 'vpi_' + crypto.randomBytes(9).toString('base64url');
     const id = rid('inv_', 4);
     this.s.invites[id] = {id, code_hash: sha256(code), note: clean(note, 200, 'note'), max_uses: maxUses, uses: 0,
       created_at: iso(this.now()), expires_at: iso(this.now() + ttlDays * 864e5)};
-    this.save(); this.store.audit({type: 'invite.created', id});
+    if (persist) { this.save(); this.store.audit({type: 'invite.created', id}); }
     return {id, code, expires_at: this.s.invites[id].expires_at};
   }
 
@@ -847,12 +866,37 @@ export class Pilot {
   // Whether the participant with this id is one the server runs (its notes are issued with keys the operator holds).
   operatorRun(id) { const q = typeof id === 'string' && Object.hasOwn(this.s.participants, id) ? this.s.participants[id] : null; return this.serverRun(q); }
 
+  // The sandbox joins of the last hour (s.sandbox_joins), older records dropped (the list is removed once empty).
+  recentSandboxJoins(now = this.now()) {
+    if (!this.s.sandbox_joins) return [];
+    const kept = this.s.sandbox_joins.filter(r => now - Date.parse(r.at) < SANDBOX_JOIN_WINDOW_MS);
+    if (kept.length) this.s.sandbox_joins = kept; else delete this.s.sandbox_joins;
+    return kept;
+  }
+  // Records a join from this address and returns its record, or refuses (429) when the address has had
+  // SANDBOX_JOINS_PER_HOUR_PER_ADDRESS joins in the last hour, saying when the oldest of them stops counting.
+  takeSandboxJoinSlot(addressKey) {
+    this.sandboxJoinKey ??= this.store.secret(SANDBOX_JOIN_KEY_FILE);
+    const k = crypto.createHmac('sha256', this.sandboxJoinKey).update(String(addressKey)).digest('hex').slice(0, 32), now = this.now();
+    const mine = this.recentSandboxJoins(now).filter(r => r.k === k);
+    if (mine.length >= SANDBOX_JOINS_PER_HOUR_PER_ADDRESS) {
+      const frees = Math.min(...mine.map(r => Date.parse(r.at))) + SANDBOX_JOIN_WINDOW_MS;
+      throw new PilotError('rate_limited', `at most ${SANDBOX_JOINS_PER_HOUR_PER_ADDRESS} sandbox joins per hour from one address (an IPv6 /48)`, 429,
+        {retry_after_ms: Math.max(1000, frees - now)});
+    }
+    const slot = {k, at: iso(now)};
+    (this.s.sandbox_joins ||= []).push(slot);
+    return slot;
+  }
+
   // Self-serve sandbox join (off unless the server is started with it): no invite; the participant can deal only with
   // the always-on sandbox agents, within small limits, for SANDBOX_DAYS. Lets anyone try Valun with their own agent.
   // With the open network (openNetwork) it may deal with any participant whose mandate allows it, and accepts notes of
   // any issuer, within the same limits and days; `services` (what it offers, public) and `wants` (what it pays others
   // for, public) are kept as an invited joiner's are.
-  async joinSandbox({handle, display_name, operator, about, services, wants} = {}) {
+  // `addressKey` (from the HTTP layer: the client's IPv4 address or IPv6 /48) counts the join against that address
+  // (SANDBOX_JOINS_PER_HOUR_PER_ADDRESS); without it, as for the server's own callers, no per-address limit applies.
+  async joinSandbox({handle, display_name, operator, about, services, wants} = {}, {addressKey = null} = {}) {
     if (!this.openSandbox) throw new PilotError('not_found', 'self-serve sandbox joining is not enabled on this server', 404);
     const ids = [...(this.sandboxIds || [])];
     if (!ids.length) throw new PilotError('sandbox_unavailable', 'the sandbox agents are not running on this server', 503);
@@ -860,10 +904,21 @@ export class Pilot {
     const since = this.now() - 864e5;
     if (Object.values(this.s.participants).filter(x => x.sandbox_only && Date.parse(x.created_at) > since).length >= SANDBOX_JOINS_PER_DAY)
       throw new PilotError('sandbox_full', `the sandbox takes at most ${SANDBOX_JOINS_PER_DAY} new participants a day; try again later`, 503);
-    const inv = this.createInvite({note: 'self-serve sandbox join', maxUses: 1, ttlDays: 1});
+    // The address's slot is taken before the first await, so joins running at the same time count each other, and is
+    // given back if the join is refused: only joins that happen count.
+    const slot = addressKey == null ? null : this.takeSandboxJoinSlot(addressKey);
+    const inv = this.createInvite({note: 'self-serve sandbox join', maxUses: 1, ttlDays: 1, persist: false});
     const open = this.openNetwork;
-    const j = await this.join({invite: inv.code, handle, display_name, operator: operator || 'self-serve sandbox tester', about,
-      services: open ? services : '', wants: open ? wants : ''});
+    let j;
+    try {
+      j = await this.join({invite: inv.code, handle, display_name, operator: operator || 'self-serve sandbox tester', about,
+        services: open ? services : '', wants: open ? wants : ''});
+    } catch (e) {
+      delete this.s.invites[inv.id];
+      const i = slot ? (this.s.sandbox_joins || []).indexOf(slot) : -1;
+      if (i >= 0) this.s.sandbox_joins.splice(i, 1);
+      throw e;
+    }
     const p = this.s.participants[j.participant_id], until = iso(this.now() + SANDBOX_DAYS * 864e5);
     p.sandbox_only = true; p.sandbox_expires_at = until;
     // With circulation on, a sandbox joiner also accepts transfers of notes the sandbox agents issued (and only those);
