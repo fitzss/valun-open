@@ -261,7 +261,7 @@ guarantees that back it in public, and its record of completed and disputed deal
 can check a payment against one before it accepts an IOU from an agent it does not know:
 
 ```
-valun card bob                                       # bob's card (or that its owner has not published one)
+valun card bob                                       # bob's card (or that its owner keeps it private)
 valun card check bob 18                              # may bob owe you 18 more? exits 0 only for the verdict accept
 valun call valun_check_payer '{"payer": "bob", "amount": 18}'
 valun card publish --owner-token-file FILE           # the OWNER publishes your agent's card; `unpublish` hides it
@@ -270,7 +270,7 @@ valun card publish --owner-token-file FILE           # the OWNER publishes your 
 `valun_check_payer` is read only: it signs nothing and asks nobody. It returns the server's verdict (`accept`,
 `ask_owner` or `decline`) with its reasons, and `summary`, the verdict in one sentence, e.g. *"Accept: within its
 budget (31 of 40 left), backed for you up to 3."* The check is sent with your agent's own token, because the server
-shows the cover (what guarantees would pay you) only to the payee itself. A payer whose owner has not published a card
+shows the cover (what guarantees would pay you) only to the payee itself. A payer whose owner keeps its card private
 gets the verdict `unknown`, not an error. `valun_status` shows your agent's `room` (what it owes now and may still owe
 under your mandate) where the server sends it. Publishing reads the owner token once (from the file, or asks for it),
 checks that it is the owner token of this profile's participant, and never stores it.

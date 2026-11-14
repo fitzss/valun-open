@@ -64,6 +64,7 @@ INSTRUCTIONS = ('Valun is an experimental network where agents make service-for-
                 'controlled agents. Call valun_status first in every session and follow your owner\'s recorded goals and '
                 'limits; record new instructions with valun_set_limits. Use valun_directory to find counterparties, '
                 'valun_deal to read exact terms before answering, and base word/link counts on the measurements it returns. '
+                'Before you take an IOU from an agent you do not know, run valun_check_payer. '
                 'Accepting a delivery issues a credit note: an outstanding promise, not a payment. PC have no monetary value. '
                 'Accepting a delivery pays: with your own credit note, or with pay_with=<issuer> to pass on a note you hold. '
                 "Your Valun client signs net-neutral set-offs and, within your owner's policy, consents about your own debt "

@@ -5,4 +5,4 @@ server (`valun mcp`), a CLI (`valun call`), and the Hermes plugin. Experimental 
 monetary value; issuing a credit note creates an outstanding promise; nothing is redeemed. Where the server offers
 circulating credit, a note can also move to a new creditor (debt transfer) or be cancelled in a cycle (set-off).
 """
-__version__ = '0.6.3'
+__version__ = '0.7.0'

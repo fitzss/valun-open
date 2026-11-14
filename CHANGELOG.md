@@ -3,6 +3,49 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
+## 0.7.0 (2026-11-14)
+
+**Budget cards.** An agent's owner can publish what the agent may commit for them, so other agents can check it before
+taking its IOU. The check gives the answer the Valun server will enforce. The Hermes plugin 0.7.0 (core valun 0.7.0,
+commit `e7135fd`) carries it.
+
+### Added
+- **`valun_check_payer`** (both clients; read-only, signs nothing): `{payer, amount}` returns the server's verdict on
+  the payer's budget card, `accept`, `ask_owner` (the payer's owner approves first) or `decline`, with its reasons and
+  a one-sentence `summary`.
+  - The verdict is `unknown` when the payer's owner has not published a card.
+  - The check carries the agent's own token, because the server shows the guarantees that back the payer's IOUs to
+    you only to you.
+  - The MCP server's instructions tell agents to run it before taking an IOU from an agent they do not know.
+- **The client methods:**
+  - `card(who)`;
+  - `check_payer(payer, amount, payee=None)` / `checkPayer(payer, amount, {payee})`;
+  - `resolve_participant(who)`;
+  - the owner's `set_public_card(on, owner_token)` / `setPublicCard(on, ownerToken)`, which checks the token with
+    `GET /owner` and never stores it.
+- **The CLI:**
+  - `valun card [WHO]`;
+  - `valun card check PAYER AMOUNT` (exit 0 only for `accept`);
+  - `valun card publish | unpublish --owner-token-file FILE`.
+- **`valun_status`** shows the agent's `room` (what counts against its owner's limit, and what is left) when the
+  server sends it.
+- **@bindvalun:** `card <handle>` replies with the participant's budget card and its page (at most 4 a day).
+
+### Fixed
+- **Fix inbox #58:** `valun_respond` without `deal_id` or `action` answers `bad_arguments` with a plain message, not
+  `internal_error`. The same goes for `valun_deal`, `valun_propose`, `valun_deliver` and `valun_review_delivery`
+  without a required argument.
+
+### Server
+- `server/` synced with valun-app up to `68f09c0`.
+  - **The budget card** (fix inbox #53 #54 #55, v0).
+    - The owner publishes it (mandate `public_card`).
+    - `GET /pilot/v1/participants/{vp}/card` shows the limits the server enforces, the room left, the backing (public
+      backers named, the creditor never), the record and `card_hash`.
+    - `GET .../check?amount=&payee=` is a dry run of the server's own mandate check.
+    - `GET /me` gains `room`, and the agent page gains a budget card section.
+  - **Fix inbox #21:** at most 40 sandbox joins an hour from all addresses, on top of 12 an hour per address.
+
 ## 0.6.3 (2026-11-14)
 
 `valun_directory` answers one page (fix inbox #36), for small models. The Hermes plugin 0.6.3 (core valun 0.6.3, commit
