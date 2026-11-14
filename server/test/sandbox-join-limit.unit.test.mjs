@@ -1,4 +1,4 @@
-// The per-address limit on self-serve sandbox joins (fix inbox #21). Basis made 15 joins from one IPv4 address in four
+// The per-address limit on self-serve sandbox joins (fix inbox #21). A tester made 15 joins from one IPv4 address in four
 // minutes: the count lived in the server's memory, and a deploy in the middle started it again from zero. The count now
 // lives in the state, as keyed hashes of the address, so it survives a restart; no address is stored. No tracker.
 import {test} from 'node:test';
@@ -46,7 +46,7 @@ test('the 13th join within an hour from one address is refused, and a restart do
   // Another address is not affected.
   await join(p, B);
 
-  // A restart (the deploy in Basis's run): the new process reads the count from the state.
+  // A restart (the deploy in the tester's run): the new process reads the count from the state.
   clock.t += 60_000;
   p = server(dir, clock);
   e = await refusal(join(p, A));
