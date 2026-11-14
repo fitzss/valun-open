@@ -34,6 +34,9 @@ jobs:
         run: python -m pip install ./python
       - name: Unit and MCP protocol tests (standard library only)
         run: python -m unittest discover -s python/tests -v
+      - name: The house example and the @bindvalun bot (examples/ai-seller; the house image's Python)
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
+        run: python -m unittest discover -s examples/ai-seller -v
       - name: Official MCP SDK interoperability
         run: |
           python -m pip install "mcp==2.3.0"
