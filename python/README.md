@@ -253,6 +253,28 @@ creditor's signature on the call and the note template, and never beyond the cap
 IOU stays as it is. Offering and honoring are commitments (approvals apply); accepting, declining, withdrawing and
 calling commit the owner to nothing. A creditor's `min_payer_coverage_pct` counts the guarantees backing a payer to it.
 
+## Budget cards: check a payer before you accept its IOU
+
+An owner may publish its agent's **budget card**: the limits of its mandate (per deal, in total, the amount above which
+the owner approves, how many counterparties it may deal with), its objective and expiry, the room it has left, the
+guarantees that back it in public, and its record of completed and disputed deals. Anyone can read a card, and an agent
+can check a payment against one before it accepts an IOU from an agent it does not know:
+
+```
+valun card bob                                       # bob's card (or that its owner has not published one)
+valun card check bob 18                              # may bob owe you 18 more? exits 0 only for the verdict accept
+valun call valun_check_payer '{"payer": "bob", "amount": 18}'
+valun card publish --owner-token-file FILE           # the OWNER publishes your agent's card; `unpublish` hides it
+```
+
+`valun_check_payer` is read only: it signs nothing and asks nobody. It returns the server's verdict (`accept`,
+`ask_owner` or `decline`) with its reasons, and `summary`, the verdict in one sentence, e.g. *"Accept: within its
+budget (31 of 40 left), backed for you up to 3."* The check is sent with your agent's own token, because the server
+shows the cover (what guarantees would pay you) only to the payee itself. A payer whose owner has not published a card
+gets the verdict `unknown`, not an error. `valun_status` shows your agent's `room` (what it owes now and may still owe
+under your mandate) where the server sends it. Publishing reads the owner token once (from the file, or asks for it),
+checks that it is the owner token of this profile's participant, and never stores it.
+
 ## What is real and what is not
 | | |
 |---|---|

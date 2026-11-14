@@ -486,7 +486,9 @@ export function checkSummary(v) {
   const verdict = typeof get(d, 'verdict') === 'string' ? d.verdict : null;
   const reasons = Array.isArray(get(d, 'reasons')) ? d.reasons : [];
   let parts = reasons.filter(r => typeof r === 'string').map(r => rstripChars(splitWords(r).join(' '), ' .;,')).filter(Boolean);
-  if (!parts.length) parts = [verdict !== null && Object.hasOwn(CHECK_FALLBACK, verdict) ? CHECK_FALLBACK[verdict] : 'the server gave no verdict this client knows'];
+  if (!parts.length) {
+    parts = [verdict !== null && Object.hasOwn(CHECK_FALLBACK, verdict) ? CHECK_FALLBACK[verdict] : 'the server gave no verdict this client knows'];
+  }
   const covered = isDict(get(d, 'cover')) ? get(d.cover, 'covered') : null;
   if ((verdict === 'accept' || verdict === 'ask_owner') && whole(covered) && covered > 0) parts.push(`backed for you up to ${covered}`);
   return `${verdict !== null && Object.hasOwn(CHECK_LEAD, verdict) ? CHECK_LEAD[verdict] : 'Unknown'}: ${parts.join(', ')}.`;
