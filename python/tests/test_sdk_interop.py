@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover
     ClientSession = None
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_mcp_server import FAKE, GUARANTEE_TOOLS, ORIGINAL_ORDER, SRC  # noqa: E402
+from test_mcp_server import CARD_TOOLS, FAKE, GUARANTEE_TOOLS, ORIGINAL_ORDER, SRC  # noqa: E402
 
 
 @unittest.skipIf(ClientSession is None, 'official MCP SDK not installed (pip install mcp)')
@@ -41,8 +41,8 @@ class OfficialSdk(unittest.TestCase):
     def test_handshake_tools_and_approved_commitment(self):
         init, tools, status, propose, asked = self.run_session(approve=True)
         self.assertEqual(init.server_info.name, 'valun')
-        self.assertEqual(len(tools), 13)
-        self.assertEqual([t.name for t in tools], ORIGINAL_ORDER + GUARANTEE_TOOLS)
+        self.assertEqual(len(tools), 14)                 # 0.7.0: valun_check_payer
+        self.assertEqual([t.name for t in tools], ORIGINAL_ORDER + GUARANTEE_TOOLS + CARD_TOOLS)
         self.assertTrue(all(isinstance(t.title, str) and t.title.startswith('Valun: ') for t in tools))
         ann = {t.name: t.annotations for t in tools}
         self.assertTrue(ann['valun_deal'].read_only_hint)
@@ -91,7 +91,7 @@ class OfficialSdk20260728(unittest.TestCase):
 
     def test_modern_approved(self):
         tools, status, propose, version, asked = self.run_modern(approve=True)
-        self.assertEqual(len(tools), 13)
+        self.assertEqual(len(tools), 14)                 # 0.7.0: valun_check_payer
         self.assertTrue(all(isinstance(t.title, str) and t.title.startswith('Valun: ') for t in tools))
         self.assertFalse(status.is_error)
         self.assertEqual(len(asked), 1)
