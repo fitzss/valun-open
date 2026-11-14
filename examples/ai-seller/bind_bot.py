@@ -81,8 +81,10 @@ OFFER_TTL_S = 24 * 3600
 SETTLE_MAX_S = 6 * 3600              # a payment by transfer still unsettled after this is reported and left as it is
 RECORDS_PER_DAY = 5                  # record replies hold a link ($0.20 each)
 RECORDS_PER_AUTHOR_PER_DAY = 1
-CARDS_PER_DAY = 10                   # budget-card replies: one with the card's link costs $0.20, one without a post's
-CARDS_PER_AUTHOR_PER_DAY = 2
+# Budget-card replies: one with the card's link costs $0.20, one without a post's. At most 4 a day ($0.80), so cards
+# never take more than part of the daily X budget (BIND_DAILY_USD, $2 by default) that binds and offers need too.
+CARDS_PER_DAY = 4
+CARDS_PER_AUTHOR_PER_DAY = 1
 MAX_TEXT = 270                       # X allows 280 characters; a margin
 # The AI agent hired on X, and what it costs and pays (examples/ai-seller/ai_seller.py: house-scribe's summary service and
 # its x-feedback want; valun.ai_seller enforces its own limits: 3 jobs a day per buyer, 1 x-feedback a day per person).

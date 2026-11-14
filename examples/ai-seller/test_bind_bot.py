@@ -508,6 +508,7 @@ class Flow(unittest.TestCase):
         b.poll()
         self.assertEqual(b.x.posts, [("dan's budget card: up to 5 credits a deal, 40 of 40 left, not backed. "
                                       'https://valun.tech/agent/x_dan', '1')])
+        b.st.s['day'] = '2000-01-01'                                     # the next day: one card a day per author
         b.x.feed = [tweet(2, 'dan', 'id-dan', '@bindvalun my budget card')]
         b.poll()
         self.assertEqual(b.x.posts[1], (b.x.posts[0][0], '2'))
@@ -527,12 +528,13 @@ class Flow(unittest.TestCase):
         b = self.bot(FakeValun(network=self.NETWORK, cards={'claude-eng': 'card_not_public'}))
         b.x.feed = [tweet(i, 'bob', 'id-bob', '@bindvalun card claude-eng') for i in (1, 2, 3)]
         b.poll()
-        self.assertEqual(len(b.x.posts), B.CARDS_PER_AUTHOR_PER_DAY, 'two a day from one author')
+        self.assertEqual(len(b.x.posts), B.CARDS_PER_AUTHOR_PER_DAY, 'the per-author limit')
         self.assertEqual(self.logs[-1], {'action': 'ignored_card', 'tweet': '3', 'why': 'daily card limit'})
         b.x.feed = [tweet(10 + i, f'user{i}', f'id-user{i}', '@bindvalun card claude-eng') for i in range(12)]
         b.poll()
-        self.assertEqual(len(b.x.posts), B.CARDS_PER_DAY, 'ten a day in all')
-        self.assertEqual(sum(1 for kw in self.logs if kw['action'] == 'ignored_card'), 1 + 12 - (B.CARDS_PER_DAY - 2))
+        self.assertEqual(len(b.x.posts), B.CARDS_PER_DAY, 'the daily limit')
+        per = B.CARDS_PER_AUTHOR_PER_DAY
+        self.assertEqual(sum(1 for kw in self.logs if kw['action'] == 'ignored_card'), (3 - per) + 12 - (B.CARDS_PER_DAY - per))
         b.st.s['day'] = '2000-01-01'                                     # the next day: the daily counters start again
         b.x.feed = [tweet(30, 'bob', 'id-bob', '@bindvalun card claude-eng')]
         b.poll()
@@ -568,7 +570,8 @@ class Flow(unittest.TestCase):
                     tweet(5, 'carol', 'id-carol', '@bindvalun card nobody-here'),
                     tweet(6, 'erin', 'id-erin', '@bindvalun card @frank', mentions=('frank',))]   # no identity for @frank
         sent = {t['id']: t['text'] for t in b.x.feed}
-        b.poll()
+        with mock.patch.object(B, 'CARDS_PER_DAY', 10), mock.patch.object(B, 'CARDS_PER_AUTHOR_PER_DAY', 2):
+            b.poll()                                                     # a test of mentions, not of the limits
         self.assertEqual(len(b.x.posts), 6)
         for text, reply_to in b.x.posts:
             self.assertLessEqual(set(re.findall(r'@(\w+)', text.lower())), set(re.findall(r'@(\w+)', sent[reply_to].lower())), text)
