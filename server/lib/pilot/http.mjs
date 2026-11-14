@@ -10,6 +10,7 @@ import {loopsOf, loopOf, LOOP_ID_RE, renderLoopPage, renderLoopNotFound} from '.
 import {AnchorWatch, CHECK_INTERVAL_S, confirmedUpdates, creatingTx, dailyCap, loopAnchor, trackerBoxUpdates} from './anchors.mjs';
 import {AGENT_HANDLE_RE, agentView, renderAgentPage, renderAgentNotFound} from './agents.mjs';
 import {withUnitNeutralNames as unitNeutral} from './amount-names.mjs';
+import {ENVIRONMENT} from '../environment.mjs';
 
 // The source text of each statement template, as /info publishes it (OQ-18).
 const sources = o => Object.fromEntries(Object.entries(o).map(([k, f]) => [k, f.toString().replace(/\s+/g, ' ')]));
@@ -195,7 +196,10 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     if (G && p === '/info') return sendCached(res, send, 'info', () => {
       const mode = pilot.mode;
       return {
-        network: NETWORK, protocol: PROTOCOL, unit: pilot.unit, denomination: pilot.basis.denomination, tracker_nft_id: pilot.basis.nft,
+        network: NETWORK,
+        // Staging says so (fix inbox #41; lib/environment.mjs), next to the network it copies; absent anywhere else.
+        ...(ENVIRONMENT ? {environment: ENVIRONMENT} : {}),
+        protocol: PROTOCOL, unit: pilot.unit, denomination: pilot.basis.denomination, tracker_nft_id: pilot.basis.nft,
         tracker_on_chain: !!pilot.chain?.on_chain, experimental: true,
         ...(pilot.chain ? {chain: pilot.chain} : {}),
         ...(BUILD_SHA ? {build: BUILD_SHA} : {}),

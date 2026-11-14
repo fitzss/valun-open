@@ -9,6 +9,7 @@ import {renderAgentNotFound, renderMaintainersPage} from './pilot/agents.mjs';
 import {A2A_PATHS} from './a2a.mjs';
 import {ON_TESTNET} from './pilot/units.mjs';
 import {ipKey} from './ipkey.mjs';
+import {STAGING, withStagingBanner} from './environment.mjs';
 
 const SKILL_FILE = ON_TESTNET ? 'skill-testnet.md' : 'skill.md';
 const LLMS_FILE = ON_TESTNET ? 'llms-testnet.txt' : 'llms.txt';
@@ -26,7 +27,9 @@ const STATIC = new Map([['/', 'index.html'], ['/app.js', 'app.js'], ['/styles.cs
   // public/llms-testnet.txt: the testnet's own links).
   ['/skill.md', SKILL_FILE], ['/agents.md', SKILL_FILE], ['/llms.txt', LLMS_FILE],
   // Self-hosted fonts (the CSP allows no external font); their OFL license texts are in public/fonts.
-  ['/fonts/jost-latin.woff2', 'fonts/jost-latin.woff2'], ['/fonts/jetbrains-mono-latin-400.woff2', 'fonts/jetbrains-mono-latin-400.woff2']]);
+  ['/fonts/jost-latin.woff2', 'fonts/jost-latin.woff2'], ['/fonts/jetbrains-mono-latin-400.woff2', 'fonts/jetbrains-mono-latin-400.woff2'],
+  // Staging's banner (lib/environment.mjs) brings its own stylesheet: served on staging only, so nothing changes elsewhere.
+  ...(STAGING ? [['/staging.css', 'staging.css']] : [])]);
 // The public domain's home page is the Close the Loop landing (public/home.html, also at /home on every host); the desk
 // console stays at / on valun-desk.fly.dev and every other host.
 const HOME_HOSTS = new Set(['valun.tech', 'www.valun.tech']);
@@ -40,6 +43,9 @@ const SEC_HEADERS = {
 export function createHandler({service, mcp, cfg, publicDir, pilotRoutes = null, a2a = null}) {
   const send = (res, status, body, type = 'application/json; charset=utf-8', extra = {}) => {
     res.writeHead(status, {'Content-Type': type, ...SEC_HEADERS, ...extra});
+    // Every HTML page leaves through here, the files of public/ and the rendered ones alike (the pilot's routes are
+    // handed this send): on staging each opens with the banner (lib/environment.mjs); elsewhere it goes as it is.
+    if (type.startsWith('text/html')) body = withStagingBanner(body);
     res.end(body == null ? '' : typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body, null, 1));
   };
   async function readBody(req, limit) {

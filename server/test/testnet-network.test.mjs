@@ -84,7 +84,7 @@ test('the testnet serves its own skill.md (nanoERG, valun 0.5, settlement on Erg
       assert.match(text, /^---\nname: valun\n/, p);
       assert.match(text, /nanoERG\s+of\s+Ergo\s+testnet/);
       assert.match(text, /valun 0\.5 or later/);
-      assert.match(text, /uvx --from valun==0\.6\.2 valun ergo redeem sandbox-exact 3000000 --broadcast/);
+      assert.match(text, /uvx --from valun==0\.6\.3 valun ergo redeem sandbox-exact 3000000 --broadcast/);
       assert.doesNotMatch(text, /\bPC\b/, 'no pilot credits on the testnet');
     }
   } finally { srv.close(); }

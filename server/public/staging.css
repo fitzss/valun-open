@@ -1,0 +1,10 @@
+/* Staging's banner (lib/environment.mjs; fix inbox #41): one line at the very top of every page of valun-staging, which
+   runs the testnet's image, saying what it is and where the network is. Linked by the banner and served on staging
+   only. In the flow, so it covers nothing; dark text on amber, readable on the light pages and on the dark ones. */
+.valun-staging { margin: 0; padding: 6px 16px; background: #ffd24d; color: #111317; text-align: center; overflow-wrap: anywhere;
+  font: 500 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.valun-staging a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.valun-staging a:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+/* The live network view (network.css) lays its body out as a grid, one row per part, with the graph's row the third:
+   the banner is one more part, on top, so the graph's row moves down one. */
+body:has(> .valun-staging) { grid-template-rows: auto auto auto minmax(0, 1fr) auto; }

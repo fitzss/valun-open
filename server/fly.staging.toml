@@ -19,6 +19,9 @@ swap_size_mb = 256
   PILOT_NETWORK = "valun-testnet-1"
   # Staging's own links (loop cards, agent pages, the A2A card) name staging, not valun.tech.
   VALUN_PUBLIC_ORIGIN = "https://valun-staging.fly.dev"
+  # Staging says it is staging (lib/environment.mjs, fix inbox #41): GET /pilot/v1/info names `environment: "staging"`
+  # and every page opens with a one-line banner that links to the network (https://valun.tech). The testnet sets none.
+  VALUN_ENVIRONMENT = "staging"
   PILOT_OPEN_SANDBOX = "1"
   PILOT_OPEN_NETWORK = "1"
   # Circulating credit (debt transfers, set-offs) with anchored netting: it takes effect only once the tracker is on
