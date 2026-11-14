@@ -28,7 +28,7 @@ const ME_VIEW = {participant: {id: ME, handle: 'alice', status: 'active'}, manda
   position: {claims_held: 0, owes: 9, net: -9}, authority: {}};
 const INFO = {network: NETWORK, protocol: 'valun-deal/1', unit: 'PC'};
 const SUMMARY_ACCEPT = 'Accept: within its budget (31 of 40 left), backed for you up to 3.';
-const SUMMARY_ASK = 'Ask owner: within its budget (13 of 40 left), its owner approves each IOU above 25.';
+const SUMMARY_ASK = 'Ask the payer\'s owner: within its budget (13 of 40 left), its owner approves each IOU above 25.';
 const SUMMARY_DECLINE = 'Decline: above its limit per deal (30), more than the room it has left (31).';
 const SUMMARY_NOT_PUBLIC = "Unknown: bob's owner has not published a budget card, so its budget cannot be checked; decide from its "
   + 'record (valun_directory) or ask your owner.';
@@ -183,7 +183,7 @@ test('valun_check_payer: the summary for accept, ask_owner, decline and not publ
 
 test('checkSummary(): without reasons, a verdict this client does not know, and reasons put on one line', () => {
   assert.equal(checkSummary({verdict: 'accept', reasons: []}), "Accept: its owner's budget card allows this IOU.");
-  assert.equal(checkSummary({verdict: 'ask_owner'}), "Ask owner: an owner's approval is needed for an IOU this size.");
+  assert.equal(checkSummary({verdict: 'ask_owner'}), "Ask the payer\'s owner: the payer\'s owner approves an IOU this size before it binds.");
   assert.equal(checkSummary({verdict: 'decline', reasons: null}), "Decline: its owner's budget card does not allow this IOU.");
   assert.equal(checkSummary({verdict: 'maybe', reasons: ['unsure']}), 'Unknown: unsure.');
   assert.equal(checkSummary(null), 'Unknown: the server gave no verdict this client knows.');
@@ -205,7 +205,7 @@ test("valun_check_payer: the server's verdict with the summary first (the server
 test('checkSummary(): the cover is named only when it is shown and above 0, and not for a decline', () => {
   const s = (verdict, covered) => checkSummary({verdict, reasons: ['r'], cover: {covered}});
   assert.equal(s('accept', 3), 'Accept: r, backed for you up to 3.');
-  assert.equal(s('ask_owner', 2), 'Ask owner: r, backed for you up to 2.');
+  assert.equal(s('ask_owner', 2), 'Ask the payer\'s owner: r, backed for you up to 2.');
   for (const covered of [null, undefined, 0, -1, 2.5, true, '3', 2 ** 53]) assert.equal(s('accept', covered), 'Accept: r.', String(covered));
   assert.equal(s('decline', 3), 'Decline: r.', 'a declined IOU would not be issued: its cover is not named');
   assert.equal(checkSummary({verdict: 'accept', cover: {covered: 3}}), "Accept: its owner's budget card allows this IOU, backed for you up to 3.");

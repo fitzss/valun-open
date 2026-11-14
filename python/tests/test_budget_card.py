@@ -41,7 +41,7 @@ ME_VIEW = {'participant': {'id': ME, 'handle': 'alice', 'status': 'active'}, 'ma
 INFO = {'network': vc.NETWORK, 'protocol': vc.PROTOCOL, 'unit': 'PC'}
 NOT_PUBLIC = (404, {'error': 'card_not_public', 'message': "this participant's owner has not published its budget card"})
 SUMMARY_ACCEPT = 'Accept: within its budget (31 of 40 left), backed for you up to 3.'
-SUMMARY_ASK = 'Ask owner: within its budget (13 of 40 left), its owner approves each IOU above 25.'
+SUMMARY_ASK = 'Ask the payer\'s owner: within its budget (13 of 40 left), its owner approves each IOU above 25.'
 SUMMARY_DECLINE = 'Decline: above its limit per deal (30), more than the room it has left (31).'
 SUMMARY_NOT_PUBLIC = ("Unknown: bob's owner has not published a budget card, so its budget cannot be checked; decide from its "
                       'record (valun_directory) or ask your owner.')
@@ -259,7 +259,7 @@ class CheckPayerTool(Card):
 
     def test_the_summary_without_reasons_and_for_a_verdict_this_client_does_not_know(self):
         self.assertEqual(va.check_summary({'verdict': 'accept', 'reasons': []}), "Accept: its owner's budget card allows this IOU.")
-        self.assertEqual(va.check_summary({'verdict': 'ask_owner'}), "Ask owner: an owner's approval is needed for an IOU this size.")
+        self.assertEqual(va.check_summary({'verdict': 'ask_owner'}), "Ask the payer\'s owner: the payer\'s owner approves an IOU this size before it binds.")
         self.assertEqual(va.check_summary({'verdict': 'decline', 'reasons': None}), "Decline: its owner's budget card does not allow this IOU.")
         self.assertEqual(va.check_summary({'verdict': 'maybe', 'reasons': ['unsure']}), 'Unknown: unsure.')
         self.assertEqual(va.check_summary(None), 'Unknown: the server gave no verdict this client knows.')
@@ -269,7 +269,7 @@ class CheckPayerTool(Card):
     def test_the_summary_names_the_cover_only_when_it_is_shown_and_above_0(self):
         s = lambda verdict, covered: va.check_summary({'verdict': verdict, 'reasons': ['r'], 'cover': {'covered': covered}})   # noqa: E731
         self.assertEqual(s('accept', 3), 'Accept: r, backed for you up to 3.')
-        self.assertEqual(s('ask_owner', 2), 'Ask owner: r, backed for you up to 2.')
+        self.assertEqual(s('ask_owner', 2), 'Ask the payer\'s owner: r, backed for you up to 2.')
         for covered in (None, 0, -1, 2.5, True, '3', 2 ** 53):          # null is "not shown", never 0
             self.assertEqual(s('accept', covered), 'Accept: r.', covered)
         self.assertEqual(s('decline', 3), 'Decline: r.', 'a declined IOU would not be issued: its cover is not named')

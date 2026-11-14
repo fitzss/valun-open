@@ -468,9 +468,9 @@ function required(a, keys, signs = true) {
 
 // valun_check_payer (budget cards): the summary's first word for each verdict the server gives, and its words when the
 // server gives no reasons. The Python core's.
-export const CHECK_LEAD = Object.freeze({accept: 'Accept', ask_owner: 'Ask owner', decline: 'Decline'});
+export const CHECK_LEAD = Object.freeze({accept: 'Accept', ask_owner: "Ask the payer's owner", decline: 'Decline'});
 export const CHECK_FALLBACK = Object.freeze({accept: "its owner's budget card allows this IOU",
-  ask_owner: "an owner's approval is needed for an IOU this size",
+  ask_owner: "the payer's owner approves an IOU this size before it binds",
   decline: "its owner's budget card does not allow this IOU"});
 
 /**

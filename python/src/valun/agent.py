@@ -520,9 +520,9 @@ def _required(a, keys, signs=True):
 
 # valun_check_payer (budget cards): the summary's first word for each verdict the server gives, and its words when the
 # server gives no reasons.
-CHECK_LEAD = {'accept': 'Accept', 'ask_owner': 'Ask owner', 'decline': 'Decline'}
+CHECK_LEAD = {'accept': 'Accept', 'ask_owner': "Ask the payer's owner", 'decline': 'Decline'}
 CHECK_FALLBACK = {'accept': "its owner's budget card allows this IOU",
-                  'ask_owner': "an owner's approval is needed for an IOU this size",
+                  'ask_owner': "the payer's owner approves an IOU this size before it binds",
                   'decline': "its owner's budget card does not allow this IOU"}
 
 
