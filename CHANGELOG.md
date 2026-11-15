@@ -3,6 +3,69 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
+## 0.7.1 (unreleased)
+
+**The offer under review, and plain answers for small models.** `valun_check_payer` can check an offer the payer made
+you, counted once, and says so when an answer is for a new deal on top of one. Every tool refuses missing or malformed
+arguments by name, and every tool's answer names its amounts in the network's unit. The JavaScript client gains the
+tracker's AVL+ digest. A candidate: the versions still say 0.7.0, and the release sets this heading's date.
+
+### Added
+- **`valun_check_payer` `deal_id`** (fix inbox #60; both clients): the deal whose offer you are deciding on, with its
+  price as `amount`. The payer's room already counts its own open offers, so a check without `deal_id` answers for a
+  new deal on top of that offer: the server leaves the offer out and counts it once only when the check names it
+  (`&deal=`). It is answered only to the payee itself, which the tool always is.
+  - A `deal_id` that is not a deal id (`vd_` + 16 hex) is refused before anything is read.
+  - A server that ignores `deal=` (one from before #60) answers for a new deal, counting the offer twice: the client
+    refuses that answer with `offer_not_checked`, never taking it for the offer's verdict.
+  - The server's refusals pass through: `409 wrong_state` (the deal is agreed already, or ended), `400 invalid_field`
+    (not between these two, or not at that price), `404 not_found`.
+  - Client methods: `check_payer(payer, amount, payee=None, deal_id=None)` / `checkPayer(payer, amount, {payee, dealId})`.
+  - CLI: `valun card check PAYER AMOUNT --deal vd_...`.
+- **`avl` in the JavaScript client** (fix inbox #66 item 4): `avl.digest(rows)`, `avl.debtKey()`, `avl.insertDigest()`
+  and `avl.AvlError`, the AVL+ digest a Basis tracker anchors on Ergo, recomputed from the published notes: the same
+  construction, digests and refusals as the Python `valun/avl.py` and the server's `lib/avl.mjs`, tested against the
+  same Rust references and against what `avl.py` gives for the same inputs.
+
+### Changed
+- **`valun_check_payer`'s summary** (fix inbox #60):
+  - A check of a new deal at the price of an offer the payer made you, which its outstanding already counts (the
+    server's `counted_offers`), says so and gives the call that checks that offer: *"Decline, for a new deal on top of
+    the offer you received at this price (vd_..., already counted): ... To check that offer itself, call
+    valun_check_payer again with deal_id vd_..."*.
+  - When your own side of the step would not simply go ahead (the server's `payee_side`, shown only to you: your own
+    limits refuse it, or your owner decides first), the summary ends with *"Your own side: ..."* and its reasons.
+- **Unit-neutral amount names in every tool's answer** (fix inbox #35; both clients), by the rule of the server's public
+  answers (#32): each `<name>_PC` gets `<name>` just before it, and the `PC` of a `{count, PC}` tally gets `amount`,
+  with the same value, in the network's unit. So `valun_status` gives `you_hold`, `you_owe`, `net` and
+  `cleared_so_far`, `notes_you_can_spend[].amount`, `valun_deal` `credit_note.amount` and `tracker_cumulative_total`,
+  `valun_directory` `credit_notes_they_hold` and `credit_notes_they_owe`, `how_you_can_pay` `spendable`, the consent
+  policy's `max` (the most one consent may move), and `consents_signed_now` `your_net_change` and
+  `your_total_owed_change`. The local setting keeps its name (`valun config consents.max_PC N`).
+  - **The `_PC` and `PC` names are deprecated.** They stay, as aliases with the same values, until a later release
+    removes them. The removal is announced in the fix inbox and in this changelog first. Read the new names.
+  - JavaScript: `withUnitNeutralNames()`.
+
+### Fixed
+- **Fix inbox #58: every tool's arguments are checked once, where every call comes in** (both clients). Arguments that
+  are not a JSON object, or without one of the arguments the tool's schema requires (null counts as missing), answer
+  `bad_arguments` naming each one missing and what it is, before anything is read or signed, never `internal_error`.
+  0.7.0 checked only some tools: `valun_directory`, `valun_review_delivery`, `valun_set_limits` and the four guarantee
+  tools answered `"x"`, `42` or `[1]` with an `AttributeError` (Python).
+  - The adapters that ask the owner give the same answer instead of asking (`prepare_or_refusal`), except where no
+    commitment can be signed at all (an MCP client that cannot be asked: `approval_unavailable`, as before).
+  - Answers that change, all for a missing argument: `valun_review_delivery` without `decision` is `bad_arguments`
+    (a misspelt decision is still `bad_decision`); `valun_propose` without `price`, `valun_check_payer` without
+    `amount` and `valun_offer_guarantee` without `cap` say "missing argument: ..."; arguments that are falsy but not
+    an object (`[]`, `""`, `0`, `false`), which 0.7.0 took as `{}`, are refused too.
+  - JavaScript: `toolArguments()`, `REQUIRED_ARGUMENTS`, `ARGUMENT_WORDS`.
+
+### Server
+- `deal_id` needs a server with fix inbox #60 (valun-app `de989a2` or later, on staging now); against an older one the
+  check refuses with `offer_not_checked`. `counted_offers` and `payee_side` come from the same release.
+- At release: re-vendor the Hermes plugin's core (agent.py, client.py and schemas.py changed), and update the server's
+  skill (`public/skill-testnet.md`, which `SKILL.md` here copies) to pass `deal_id` for an offer under review.
+
 ## 0.7.0 (2026-11-14)
 
 **Budget cards.** An agent's owner can publish what the agent may commit for them, so other agents can check it before
