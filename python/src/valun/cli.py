@@ -1289,27 +1289,67 @@ MINE_WORDS = {
 def cmd_audit(args):
     """valun audit (--explorer URL | --node URL) [--server ORIGIN] [--json] [--mine]: check the operator (valun.audit, fix
     inbox #62). Read only: GET requests, no token sent, nothing signed or written. Without --mine no profile is needed.
-    Exit codes: valun.audit.exit_code (0 MATCH, 1 MISMATCH, 2 usage, 3 UNKNOWN, 4 MATCH and an edge of --mine not
-    proven)."""
-    store, name = _store(args), _profile(args)
+    Exit codes: valun.audit.exit_code (0 MATCH, 1 MISMATCH, 2 nothing compared, 3 MATCH and an edge of --mine not
+    proven), as anchor-audit.mjs's. Exit 1 means a comparison found a MISMATCH and nothing else: a usage error (a
+    profile it cannot use among them) is 2, and so is a fault of this command (any exception: UNKNOWN, reason fault),
+    never Python's 1."""
+    try:
+        return _audit_command(args)
+    except Exception as e:  # noqa: BLE001 - a fault of this command compared nothing: exit 2, never 1 (MISMATCH)
+        why = f'the audit itself failed ({type(e).__name__}: {_terminal_text(e, 300)}), so nothing was compared'
+        _print_encodable(json.dumps({'verdict': 'UNKNOWN', 'reason': 'fault', 'message': why}, ensure_ascii=True, indent=1)
+                         if getattr(args, 'json', False) else f'UNKNOWN (fault): not checked, so nothing is proven. {why[:1].upper()}{why[1:]}.')
+        return vaudit.EXIT_NOTHING_COMPARED
+
+
+def _audit_command(args):
+    """cmd_audit, but for its faults: the usage errors (exit 2: nothing is read) and the audit's own result."""
+    name = _profile(args)
+    try:
+        store = _store(args)
+        if not isinstance(store.state, dict):
+            raise ValueError('it is not a JSON object')
+    except (OSError, ValueError) as e:                  # a profile name it refuses, or a file it cannot read
+        _print_encodable(f"Profile '{_terminal_text(name, 40)}' cannot be used ({_terminal_text(e, 300)}): nothing was read or "
+                         'compared. Name another profile with --profile NAME.')
+        return vaudit.EXIT_USAGE
     if args.mine and not (store.state.get('participant_id') and store.state.get('pubkey')):
-        print(f"--mine lists your edges, and profile '{name}' is not joined yet: run `valun --profile {name} join` first, or "
-              'name your profile with --profile NAME.')
+        _print_encodable(f"--mine lists your edges, and profile '{_terminal_text(name, 40)}' is not joined yet: run "
+                         f"`valun --profile {_terminal_text(name, 40)} join` first, or name your profile with --profile NAME.")
         return vaudit.EXIT_USAGE
     try:
         server = vaudit.base_url(_server(args, store), '--server')
         source = vaudit.Explorer(args.explorer) if args.explorer is not None else vaudit.Node(args.node)
     except ValueError as e:
-        print(e)
+        _print_encodable(str(e))
+        return vaudit.EXIT_USAGE
+    if vaudit.same_origin(source.url, server):         # the server's word is what is checked, never a chain source
+        _print_encodable(f'The chain source {_terminal_text(source.url, 120)} is the server itself ({_terminal_text(server, 120)}): '
+                         'name an Ergo explorer or node that the server does not answer for, such as '
+                         'https://api-testnet.ergoplatform.com.')
         return vaudit.EXIT_USAGE
     state = {k: store.state[k] for k in AUDIT_STATE_KEYS if k in store.state}
     r = vaudit.audit(server, source, profile_state=state, mine=args.mine)
-    if args.json:
-        print(json.dumps(r, ensure_ascii=False, indent=1))
-    else:
-        for line in _audit_lines(r, args.mine):
-            print(line)
-    return vaudit.exit_code(r)
+    # ensure_ascii: the same JSON, and printable on any stdout.
+    text = json.dumps(r, ensure_ascii=True, indent=1) if args.json else '\n'.join(_audit_lines(r, args.mine))
+    code = vaudit.exit_code(r)
+    _print_encodable(text)
+    return code
+
+
+def _print_encodable(text):
+    """Print text as this stdout can encode it, a character it cannot as '?': a server's, explorer's or node's text may
+    hold any character, and a redirected stdout on Windows writes the ANSI code page. A reader that went away (a closed
+    pipe) changes no verdict: the caller's exit code stands."""
+    enc = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+    try:
+        text = text.encode(enc, 'replace').decode(enc)
+    except LookupError:
+        pass
+    try:
+        print(text)
+    except OSError:
+        pass
 
 
 def _audit_lines(r, mine):
@@ -1332,7 +1372,7 @@ def _audit_lines(r, mine):
         lines.append(f"  rebuilt   {rows['digest']} from {rows['count']} rows of GET {rows['from']}")
         lines.append(f"  tracker   NFT {r['tracker_nft_id']}, as GET /pilot/v1/chain names it"
                      + (', and the one this profile pinned' if r.get('tracker_nft_pinned') else ''))
-    if box:
+    if box and r.get('nettings_refused_from_height') is not None:     # none for a box no redemption can use
         lines.append(f"  windows   nettings of anchored edges refused from height {r['nettings_refused_from_height']}; "
                      f"redemption without the tracker from height {r['tracker_less_redemption_from_height']}")
     for w in r.get('warnings') or []:
@@ -1343,8 +1383,8 @@ def _audit_lines(r, mine):
         lines.append('--mine: nothing listed. Only a MATCH shows which totals of yours the chain commits.')
     m = r.get('mine')
     if m is not None:
-        keys = ', '.join(f"{k['pubkey'][:10]}... ({'this agent' if k['known_from'] == 'this_agent' else 'named by GET /ledger'})"
-                         for k in m['keys'])
+        known = {'this_agent': 'this agent', 'ledger': 'named by GET /ledger', 'records': 'signed with, by your records'}
+        keys = ', '.join(f"{k['pubkey'][:10]}... ({known.get(k['known_from'], '?')})" for k in m['keys'])
         lines.append(f"Your edges (participant {t(m['participant'], 20)}; keys {keys or 'none'}):")
         if m.get('problem'):
             lines.append(f"  none compared ({m['problem']}): {t(m['message'], 600)}")
@@ -1353,7 +1393,11 @@ def _audit_lines(r, mine):
         unit = vc.NETWORKS.get(r.get('network'), {}).get('unit')
         for e in m['edges']:
             who = t(e['counterparty'] or (e['counterparty_key'] or '?')[:16], 30)
-            what = ('you owe ' if e['role'] == 'issuer' else 'owed to you by ' if e['role'] == 'recipient' else 'edge ') + who
+            if e['role'] in ('issuer', 'recipient'):
+                what = ('you owe ' if e['role'] == 'issuer' else 'owed to you by ') + who
+            else:                   # both keys yours, or a records edge on keys the audit could not place
+                i, _sep, rc = e['edge'].partition('>')
+                what = f'edge {t(i, 10)}...>{t(rc, 10)}...' + (' (both keys yours)' if e['role'] else '')
             rec = e['recorded']
             if e['anchored_total'] is None:
                 facts = f"your records: {_audit_amount(rec['total'], e['denomination'], unit)}"
@@ -1637,11 +1681,13 @@ written (not even your records).
 
 MATCH: the box commits exactly the published notes (each one's issuer key, recipient key and cumulative total). It does
 not prove what is outstanding, that an issuer can pay, that any deal was real, or who holds a key.
---mine lists your participant's edges, as issuer and as recipient, on every key it has (this agent's, and the others
-GET /ledger names as yours), with their anchored totals, and whether each is the state your records confirm with an
-issuer signature that verifies (signed). Your records are read as they are.
-Exit codes: 0 MATCH (with --mine: every edge signed), 1 MISMATCH, 2 usage, 3 UNKNOWN (not checked: the reason is
-printed), 4 MATCH, and an edge of yours not proven."""
+--mine lists your participant's edges, as issuer and as recipient, on every key it has (this agent's, the others
+GET /ledger names as yours, and those your records show you signed with), with their anchored totals, and whether each
+is the state your records confirm with an issuer signature that verifies (signed). Your records are read as they are.
+Exit codes (the server-side anchor audit's, so one watcher reads both): 0 MATCH (with --mine: every edge signed),
+1 MISMATCH and nothing else, 2 nothing was compared (UNKNOWN, with its reason; a usage error, such as a profile that
+cannot be read or the server itself named as the chain source; a fault of this command), 3 MATCH, and an edge of
+yours not proven."""
 
 
 SELL_HELP = """Sell AI work on Valun for credits, with your own Claude API key. This profile's agent answers offers for

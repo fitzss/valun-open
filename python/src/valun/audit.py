@@ -8,33 +8,51 @@ The check, as the server-side auditor makes it (valun-app scripts/ops/anchor-aud
      profile pinned a tracker (at its first read of the server's GET /info) and the audit is of the profile's own server,
      or with --mine, the id must be the pinned one, or the audit is UNKNOWN (tracker_mismatch): the notes this profile
      signs and verifies name that tracker. A chain source that is the node /chain itself names is used, with a warning:
-     the operator may run it.
-  2. The rows the server publishes for its confirmed tracker box: GET /pilot/v1/ledger/committed {box_id, rows
-     [{issuer_pubkey, recipient_pubkey, denomination, committed_total}], ...}. From a server without that route (it
-     answers an unknown public route 401 without a token, 404 with one), GET /chain, GET /ledger, GET /chain: the
-     ledger's rows are taken as the confirmed state only while both reads of /chain say the tracker's state is anchored
-     (anchoring.anchored, and its local digest equal to the one its confirmed box commits) and name the same box and
-     digest. The ledger lists the notes in the network's denomination only (GET /info denomination), so a note in
-     another denomination on the tracker would give MISMATCH there; the committed snapshot lists every denomination.
+     the operator may run it. One at the server's own origin is refused (the command's usage error, as anchor-audit.mjs
+     refuses it): the server's word is what is checked.
+  2. The rows the server publishes for its confirmed tracker box: GET /pilot/v1/ledger/committed {network,
+     construction, box_id, height, digest, rows [{issuer_pubkey, recipient_pubkey, denomination, committed_total,
+     debt_key}], ...}. Its construction must be CONSTRUCTION (a snapshot that names none is refused too), its network
+     the one GET /chain names, its box, height and digest given, and a row's debt_key, where it has one, the debt key
+     of its issuer, recipient and denomination; anything else is UNKNOWN. A row's denomination that is null or absent
+     is erg. From a server without that route (it answers an unknown public route 401 without a token, 404 with one),
+     GET /chain, GET /ledger, GET /chain: the ledger's rows are taken as the confirmed state only while both reads of
+     /chain say the tracker's state is anchored (anchoring.anchored, and its local digest equal to the one its
+     confirmed box commits) and name the same tracker NFT, box, height, digest and update in flight (pending_tx_id).
+     Those reads are SETTLE_S apart, longer than the server's public read cache (valun-app lib/pilot/http.mjs
+     PUBLIC_CACHE_MS, 3 s), so each one is computed after the one before it: the server serves GET /chain and GET
+     /ledger from that cache while its state is unsaved, and it writes the tracker before it saves, so without the
+     wait the second /chain could be the first one's cached answer, older than a note the ledger shows. The ledger
+     lists the notes in the network's denomination only (GET /info denomination, also a note's null or absent one),
+     with totals as JSON numbers; the committed snapshot lists every denomination, with totals as decimal strings.
   3. The chain source's unspent boxes holding the NFT: exactly one, which holds the NFT (one token), is not spent and is
-     on the main chain. Anything else is UNKNOWN (source_inconsistent, no_tracker_box), never a pass.
+     on the main chain. Anything else is UNKNOWN (source_inconsistent, no_tracker_box), never a pass. The NFT's place
+     among the box's tokens (in the order of their index, when the source gives every token one): the reserve contract
+     reads a tracker box's NFT as its first token (basis.es tracker.tokens(0)).
   4. R5 decoded as an AvlTree constant: 0x64 || digest (33 bytes) || flags || key length (VLQ) || value length (an
      Option of a VLQ). The construction this client rebuilds (CONSTRUCTION) has key length 32 and no fixed value
      length; another tree is UNKNOWN (not_an_avl_tree).
-  5. The rows' digest (avl.digest: sorted by debt key, refused when malformed) against R5's:
-       MATCH     equal: the box commits exactly the published rows;
-       MISMATCH  different, and the server's rows are for that very box (the box id it names is the source's);
+  5. The chain source's height: the box's age in blocks, and the two windows that open as the box ages: nettings
+     (transfers and set-offs that lower an anchored edge) are refused from H + 1440 (the tracker's anchored netting,
+     fresh_blocks), and the reserve contract redeems without the tracker's signature from H + 2161 (a box older than
+     2160 blocks), H being the box's creation height. A source that gives no height is UNKNOWN (source_unreadable,
+     source_inconsistent), as anchor-audit.mjs has it.
+  6. The rows' digest (avl.digest: sorted by debt key, refused when malformed) against R5's:
+       MATCH     equal, and the NFT is the box's first token: the box commits exactly the published rows;
+       MISMATCH  different, and the server's rows are for that very box (the box id it names is the source's). Rows
+                 of GET /ledger are a MISMATCH only when they give the digest both reads of GET /chain name as the
+                 anchored state, which is not R5: the server's confirmed digest is not on chain. Rows of GET /ledger
+                 that give neither are not the state the server calls anchored; a ledger read under a server cache
+                 longer than SETTLE_S looks so, as does a tracker note GET /ledger does not list (another
+                 denomination), so they are read again, and UNKNOWN (ledger_moving) when they stay so;
        UNKNOWN   anything that leaves the comparison undecided. The snapshot naming another box than the source's one
                  unspent box (the chain moved during the audit, or the source lags), a snapshot still moving (503
                  snapshot_moving) and a ledger read that moved are read again, ATTEMPTS times in all, waiting between
-                 reads (RETRY_S, or the server's retry_after_ms, at most MAX_WAIT_S); then UNKNOWN.
+                 reads (RETRY_S, or the server's retry_after_ms, at most MAX_WAIT_S); then UNKNOWN. Rows that give R5
+                 of a box holding the NFT other than as its first token are UNKNOWN (nft_not_first): no redemption can
+                 use that box.
      A total the server wrote as a JSON number above 2^53 - 1 is UNKNOWN (inexact_total): a JavaScript server's Number
-     may have been rounded before it was written, and an exact int of a rounded total would give a false MISMATCH. The
-     committed snapshot writes totals as decimal strings.
-  Then the chain source's height: the box's age in blocks, and the two windows that open as the box ages: nettings
-  (transfers and set-offs that lower an anchored edge) are refused from H + 1440 (the tracker's anchored netting,
-  fresh_blocks), and the reserve contract redeems without the tracker's signature from H + 2161 (a box older than 2160
-  blocks), H being the box's creation height.
+     may have been rounded before it was written, and an exact int of a rounded total would give a false MISMATCH.
 
 What a MATCH proves: the one unspent tracker-NFT box, created at height H, commits in R5 the AVL+ digest of exactly the
 published set of (debt key, cumulative total). It does not prove what is outstanding (redemptions are recorded in each
@@ -42,9 +60,11 @@ reserve's own tree), that an issuer can pay, that any deal was real, that the pa
 belongs to a handle (names are not anchored) or that a mandate was kept (DOES_NOT_PROVE).
 
 --mine (a joined profile; on a MATCH only, since only then are the published totals the anchored ones) lists this
-participant's edges in those rows, as issuer and as recipient, on every key it has: this agent's key, and every other
-key GET /ledger names as this participant's (current or past; the server's word, since names are not anchored; no
-derived keys exist yet), and every edge this profile's records confirm. Each edge's
+participant's edges in those rows, as issuer and as recipient, on every key it has: this agent's key, every other key
+GET /ledger names as this participant's (current or past; the server's word, since names are not anchored; no
+derived keys exist yet), and every key this profile's records show it signed with (a pending entry's direction: out,
+the edge's issuer; in, its recipient); and every edge this profile's records confirm, on any key, at the total the
+rows hold for that edge (an edge's key the audit cannot place still has its anchored total). Each edge's
 anchored total is compared with the state this profile's records confirm for it (records.py: {total, timestamp,
 signature}, the issuer's signature on that state, verified when it was recorded and verified again here on this
 profile's pinned tracker and unit). The records are read as they are: the audit does not sync them. Status (MINE_STATUS):
@@ -60,8 +80,30 @@ profile's pinned tracker and unit). The records are read as they are: the audit 
 A profile without a pinned tracker and denomination (pins, set at its first read of the server's GET /info) has records
 that cannot be matched to the rows or verified: --mine then lists no edge and says so (problem no_pinned_tracker), and
 nothing of it is proven.
-Exit codes (EXIT_*): 0 MATCH (with --mine: and every edge signed); 1 MISMATCH; 2 usage; 3 UNKNOWN; 4 MATCH, and with
---mine an edge not proven.
+
+Exit codes (EXIT_*), the same as anchor-audit.mjs's (EXIT), so that one watcher reads both:
+  0  MATCH (with --mine: and every edge signed);
+  1  MISMATCH, and nothing else;
+  2  nothing was compared: UNKNOWN, whatever its reason, a usage error (argparse's, and the command's own: a profile it
+     cannot use, a URL, the server itself as the chain source, --mine without a joined profile) and a fault of the
+     command (UNKNOWN, reason fault). anchor-audit.mjs gives 2 for all of these too (INCONSISTENT, REFUSED, ERROR);
+  3  MATCH, and with --mine an edge not proven (anchor-audit.mjs has no --mine).
+On the same reads the two give the same verdict (anchor-audit.mjs at valun-app 887312c), but for the tracker NFT
+(below) and where this one leaves undecided what the script decides:
+  - R5 a tree of another construction (a key length other than 32, or a fixed value length): UNKNOWN here
+    (not_an_avl_tree), MISMATCH there;
+  - the server's box (box_id, or GET /chain confirmed_box_id) not the source's one unspent box, and rows that do not
+    give the source box's R5: UNKNOWN here (box_moved, read again first), MISMATCH there for rows that give neither
+    digest, and for rows that give the digest the server claims for a box the source does not have, that is no tracker
+    box, whose R5 is not that digest, or that the chain replaced long ago;
+  - rows of GET /ledger that give neither R5 nor the digest GET /chain names: UNKNOWN here (ledger_moving), MISMATCH
+    there;
+  - rows that give R5 of a box holding the NFT other than as its first token: UNKNOWN here (nft_not_first), MISMATCH
+    there;
+  - a total written as a JSON number above 2^53 - 1: UNKNOWN here (inexact_total); read as written there.
+The tracker NFT is checked against this profile's pin only (step 1), where anchor-audit.mjs pins it for the servers it
+knows (TRACKER_NFTS, --tracker-nft) and otherwise requires a reserve at the reserve contract it pins to name it (else
+its exit 2): without a pin, the NFT here is the server's word, and this audit compares where the script may not.
 """
 import http.client
 import json
@@ -77,15 +119,25 @@ from . import client as vc
 from . import records
 
 CONSTRUCTION = 'basis-avl/1'            # the tree avl.py builds: what GET /ledger/committed names as its construction
+LEDGER_ROUTE = '/pilot/v1/ledger'       # the older reads' rows (step 2): the result's rows.from
 USER_AGENT = f'valun-audit/{__version__}'
 FRESH_BLOCKS = 1440                     # nettings of anchored edges are refused once the box is this old (anchored netting)
 TRACKER_LESS_AFTER_BLOCKS = 2160        # the reserve contract waives the tracker's signature for a box older than this
 ATTEMPTS = 3
 RETRY_S = 5.0
 MAX_WAIT_S = 15.0
+# The wait before each of GET /ledger and the second GET /chain of the older reads (step 2), from the answer before it:
+# longer than the server's public read cache (valun-app lib/pilot/http.mjs PUBLIC_CACHE_MS, 3 s; an entry is served
+# while it is younger than that and the server's state unsaved). A request sent SETTLE_S after an answer is then served
+# an entry computed after that answer was, so the three reads are computed in the order they are sent. As
+# scripts/ops/anchor-audit.mjs SETTLE_MS.
+SETTLE_S = 3.5
 MAX_ANSWER_BYTES = 64 * 1024 * 1024
 BOX_LIMIT = 10                          # boxes asked for: more than one is already inconsistent
-EXIT_MATCH, EXIT_MISMATCH, EXIT_USAGE, EXIT_UNKNOWN, EXIT_NOT_PROVEN = 0, 1, 2, 3, 4
+# The module docstring: one code for every "nothing was compared", 2, as anchor-audit.mjs EXIT.INCONSISTENT,
+# EXIT.REFUSED and its faults (and as argparse exits on a usage error).
+EXIT_MATCH, EXIT_MISMATCH, EXIT_NOTHING_COMPARED, EXIT_NOT_PROVEN = 0, 1, 2, 3
+EXIT_UNKNOWN = EXIT_USAGE = EXIT_NOTHING_COMPARED
 MINE_STATUS = ('signed', 'signature_not_held', 'bad_signature', 'differs', 'not_in_records', 'not_anchored')
 PROVES = ('The one unspent box holding the tracker NFT, created at height {height}, commits in R5 the AVL+ digest of exactly '
           'these {count} rows: for each note, its issuer key, recipient key, denomination and cumulative total, as anchored.')
@@ -98,6 +150,7 @@ DOES_NOT_PROVE = (
     'that a mandate was kept',
 )
 _HEX64 = re.compile(r'[0-9a-f]{64}')
+_HEX66 = re.compile(r'[0-9a-f]{66}')
 _HEX = re.compile(r'(?:[0-9a-f]{2})+')
 
 
@@ -151,6 +204,8 @@ def get_json(url, timeout=30.0):
             body = json.loads(e.read(65536).decode('utf-8'))
         except Exception:  # noqa: BLE001 - an error body that is not JSON: the status says enough
             body = None
+        finally:
+            e.close()                           # the error's answer, read: its connection is not left to the collector
         body = body if isinstance(body, dict) else {}
         code = body.get('error') if isinstance(body.get('error'), str) else None
         msg = body.get('message') if isinstance(body.get('message'), str) else None
@@ -187,6 +242,18 @@ def same_place(a, b):
         p = urllib.parse.urlsplit(u.strip())
         port = p.port or {'http': 80, 'https': 443}.get(p.scheme.lower())
         return p.scheme.lower(), (p.hostname or '').lower(), port, p.path.rstrip('/')
+    try:
+        return isinstance(a, str) and isinstance(b, str) and norm(a) == norm(b)
+    except ValueError:
+        return False
+
+
+def same_origin(a, b):
+    """Whether two URLs name the same scheme, host and port (the host's case and the default port aside): one server
+    answers both, whatever their paths."""
+    def norm(u):
+        p = urllib.parse.urlsplit(u.strip())
+        return p.scheme.lower(), (p.hostname or '').lower(), p.port or {'http': 80, 'https': 443}.get(p.scheme.lower())
     try:
         return isinstance(a, str) and isinstance(b, str) and norm(a) == norm(b)
     except ValueError:
@@ -315,9 +382,13 @@ def _box_view(b, nft_id, kind):
     if isinstance(r5, dict):                    # the explorer: {serializedValue, sigmaType, renderedValue}
         r5 = r5.get('serializedValue')
     tx = b.get('transactionId')
+    # The tokens in their order in the box: by their index when the source gives every one an index (the explorer
+    # does), else as listed; as anchor-audit.mjs assetsOf orders them.
+    indexed = all(isinstance(a, dict) and isinstance(a.get('index'), int) and not isinstance(a['index'], bool) for a in assets)
+    order = sorted(assets, key=lambda a: a['index']) if indexed else assets
     return {'box_id': box_id, 'tx_id': tx.lower() if isinstance(tx, str) and _HEX64.fullmatch(tx.lower()) else None,
             'creation_height': b['creationHeight'], 'r5': r5.lower() if isinstance(r5, str) else None,
-            'nft_index': assets.index(held[0])}
+            'nft_index': next(i for i, a in enumerate(order) if a is held[0])}
 
 
 def _hint(source, e):
@@ -388,27 +459,32 @@ def _chain(get, server):
 
 
 def _anchor_of(chain):
-    """The fields of /chain anchoring that must stay the same around a ledger read."""
+    """The fields of /chain anchoring that must stay the same around a ledger read (anchor-audit.mjs sameAnchoring: the
+    update in flight too)."""
     a = chain.get('anchoring') if isinstance(chain.get('anchoring'), dict) else {}
-    return {k: a.get(k) for k in ('anchored', 'local_digest', 'confirmed_digest', 'confirmed_box_id', 'confirmed_height')}
+    return {k: a.get(k) for k in ('anchored', 'local_digest', 'confirmed_digest', 'confirmed_box_id', 'confirmed_height',
+                                  'pending_tx_id')}
 
 
 def _row_of(n, denomination, total_key):
-    """A row avl.digest() takes, from a ledger note or a committed row: a malformed one is passed on as it is, so that
-    digest() refuses it with its row number."""
+    """A row avl.digest() takes, from a ledger note (total_key 'total') or a committed row ('committed_total', never its
+    live total): a malformed one is passed on as it is, so that digest() refuses it with its row number. A denomination
+    that is null or absent is `denomination` (None: none is given, which digest() reads as erg), as anchor-audit.mjs
+    reads one (null as erg)."""
     if not isinstance(n, dict):
         return n
-    row = {'issuer_pubkey': n.get('issuer_pubkey'), 'recipient_pubkey': n.get('recipient_pubkey'),
-           'total': n.get(total_key) if total_key in n else n.get('total')}
-    d = n.get('denomination', denomination)
-    if d is not None or 'denomination' in n:
+    row = {'issuer_pubkey': n.get('issuer_pubkey'), 'recipient_pubkey': n.get('recipient_pubkey'), 'total': n.get(total_key)}
+    d = n.get('denomination')
+    if d is None:
+        d = denomination
+    if d is not None:
         row['denomination'] = d
     return row
 
 
-def _committed(get, server):
+def _committed(get, server, chain):
     """GET /pilot/v1/ledger/committed, or None from a server without it (an unknown public route answers 401
-    unauthorized without a token, 404 with one)."""
+    unauthorized without a token, 404 with one). chain: this attempt's GET /chain, whose network the snapshot's must be."""
     try:
         snap = get(server + '/pilot/v1/ledger/committed')
     except ReadError as e:
@@ -418,24 +494,52 @@ def _committed(get, server):
             wait = e.extra.get('retry_after_ms')
             raise _Again('snapshot_moving', f'the server\'s committed snapshot kept moving ({e})',
                          wait / 1000 if _nat(wait) else RETRY_S) from None
+        if e.status == 503 and e.code == 'no_confirmed_box':
+            raise _Unknown('not_anchored', f'the server\'s tracker names no confirmed tracker box yet (GET '
+                                           f'/pilot/v1/ledger/committed: {e}), so nothing is anchored to compare: run '
+                                           'the audit again in a minute') from None
         raise _Unknown('server_unreadable', f'the server did not answer GET /pilot/v1/ledger/committed: {e}') from None
     if not isinstance(snap, dict) or not isinstance(snap.get('rows'), list):
         raise _Unknown('server_unreadable', 'GET /pilot/v1/ledger/committed did not answer {box_id, rows, ...}')
-    if snap.get('construction', CONSTRUCTION) != CONSTRUCTION:
-        raise _Unknown('unknown_construction', f"the server names the construction {_short(snap.get('construction'), 60)!r}; this "
-                                               f'client rebuilds {CONSTRUCTION} only: update valun')
-    box_id = snap.get('box_id')
-    if not isinstance(box_id, str) or not _HEX64.fullmatch(box_id):
-        raise _Unknown('server_unreadable', 'GET /pilot/v1/ledger/committed names no box (box_id, 64 lowercase hex)')
-    return {'from': '/pilot/v1/ledger/committed', 'rows': [_row_of(n, None, 'committed_total') for n in snap['rows']],
-            'box_id': box_id, 'height': snap.get('height') if _nat(snap.get('height')) else None,
-            'digest': snap.get('digest') if isinstance(snap.get('digest'), str) else None,
+    # The construction is named, never assumed: rows of another tree, rebuilt as this one, would be a false MISMATCH.
+    if snap.get('construction') != CONSTRUCTION:
+        named = f"the construction {_short(snap.get('construction'), 60)!r}" if 'construction' in snap else 'no construction'
+        raise _Unknown('unknown_construction', f'GET /pilot/v1/ledger/committed names {named}; this client rebuilds '
+                                               f'{CONSTRUCTION} only' + (': update valun' if 'construction' in snap else ''))
+    net, chain_net = snap.get('network'), chain.get('network')
+    if net and chain_net and net != chain_net:              # as anchor-audit.mjs: compared where both name one
+        raise _Unknown('server_inconsistent', f'the committed snapshot is of network {_short(net, 40)!r}, and GET '
+                                              f'/pilot/v1/chain of {_short(chain_net, 40)!r}')
+    box_id, height, digest = snap.get('box_id'), snap.get('height'), snap.get('digest')
+    if not (isinstance(box_id, str) and _HEX64.fullmatch(box_id)) or not _nat(height) \
+            or not (isinstance(digest, str) and _HEX66.fullmatch(digest)):
+        raise _Unknown('server_unreadable', 'GET /pilot/v1/ledger/committed names no box, height or digest (box_id: 64 '
+                                            'lowercase hex; height: a block height; digest: 66 lowercase hex)')
+    rows = [_row_of(n, None, 'committed_total') for n in snap['rows']]
+    # A row's debt key, where the snapshot gives one, must be its issuer's, recipient's and denomination's (as
+    # anchor-audit.mjs checks it): a key the row's fields cannot give is left to digest(), which refuses the row.
+    for i, (n, row) in enumerate(zip(snap['rows'], rows)):
+        its_key = n.get('debt_key') if isinstance(n, dict) else None
+        if its_key is None:
+            continue
+        try:
+            own = avl.debt_key(row['issuer_pubkey'], row['recipient_pubkey'], row.get('denomination', 'erg')).hex()
+        except avl.AvlError:
+            continue
+        if its_key != own:
+            raise _Unknown('server_inconsistent', f'rows[{i}] of GET /pilot/v1/ledger/committed names the debt key '
+                                                  f'{_short(its_key, 70)}, and its issuer, recipient and denomination give {own}')
+    return {'from': '/pilot/v1/ledger/committed', 'rows': rows, 'box_id': box_id, 'height': height, 'digest': digest,
             'consistent': snap.get('consistent') if isinstance(snap.get('consistent'), bool) else None, 'notes': None}
 
 
-def _ledger_between(get, server, chain_a):
+def _ledger_between(get, server, chain_a, sleep):
     """GET /ledger between two reads of GET /chain, taken as the confirmed state only while both say the same box and
-    digest and that the tracker's state is anchored."""
+    digest and that the tracker's state is anchored. GET /ledger is sent SETTLE_S after chain_a was answered, and the
+    second GET /chain SETTLE_S after the ledger was: the server's public read cache serves an entry for at most
+    PUBLIC_CACHE_MS, so each answer is computed after the one before it, and the two /chain answers bracket the ledger.
+    (The pilot writes the tracker, then saves, and only a save ends a cache entry: a second /chain sent at once could be
+    the first one's cached answer, older than a note the ledger computed after the write shows.)"""
     a = _anchor_of(chain_a)
     if a['anchored'] is not True or not isinstance(a['local_digest'], str) or a['local_digest'] != a['confirmed_digest'] \
             or not (isinstance(a['confirmed_box_id'], str) and _HEX64.fullmatch(a['confirmed_box_id'])):
@@ -451,12 +555,17 @@ def _ledger_between(get, server, chain_a):
     denomination = info.get('denomination') if isinstance(info, dict) else None
     if not isinstance(denomination, str):
         raise _Unknown('server_unreadable', 'GET /pilot/v1/info names no denomination')
+    sleep(SETTLE_S)
     ledger = _read(get, server, '/pilot/v1/ledger')
     if not isinstance(ledger, dict) or not isinstance(ledger.get('notes'), list):
         raise _Unknown('server_unreadable', 'GET /pilot/v1/ledger did not answer {notes, ...}')
-    if _anchor_of(_chain(get, server)) != a:
+    sleep(SETTLE_S)
+    chain_b = _chain(get, server)
+    if chain_b['tracker_nft_id'] != chain_a['tracker_nft_id']:
+        raise _Unknown('server_inconsistent', 'GET /pilot/v1/chain named another tracker NFT during the audit')
+    if _anchor_of(chain_b) != a:
         raise _Again('ledger_moving', 'the tracker\'s state or box changed while its ledger was read')
-    return {'from': '/pilot/v1/ledger', 'rows': [_row_of(n, denomination, 'total') for n in ledger['notes']],
+    return {'from': LEDGER_ROUTE, 'rows': [_row_of(n, denomination, 'total') for n in ledger['notes']],
             'box_id': a['confirmed_box_id'], 'height': a['confirmed_height'] if _nat(a['confirmed_height']) else None,
             'digest': a['confirmed_digest'] if isinstance(a['confirmed_digest'], str) else None, 'consistent': None,
             'notes': ledger['notes']}
@@ -482,7 +591,8 @@ def audit(server, source, *, profile_state=None, mine=False, get=None, sleep=Non
     NFT. Returns the result as a JSON-ready dict: verdict MATCH, MISMATCH or UNKNOWN, reason
     and message, the box, the rows' source, count and digest, what the server says, the height, the box's age and
     windows, warnings, and with mine the edges (mine_report). exit_code(result) is the command's exit code. get(url)
-    reads the server (get_json by default) and sleep(seconds) waits between attempts (time.sleep)."""
+    reads the server (get_json by default) and sleep(seconds) waits between attempts and between the older reads of
+    step 2 (time.sleep)."""
     get, sleep = get or get_json, sleep or time.sleep
     out = {'verdict': None, 'reason': None, 'message': None, 'server': server, 'network': None, 'tracker_nft_id': None,
            'tracker_nft_pinned': False, 'construction': CONSTRUCTION, 'chain_source': {'kind': source.kind, 'url': source.url, 'named_by_server': False},
@@ -493,7 +603,7 @@ def audit(server, source, *, profile_state=None, mine=False, get=None, sleep=Non
     try:
         chain = _chain(get, server)
         nft = chain['tracker_nft_id']
-        out.update(network=chain.get('network'), tracker_nft_id=nft)
+        out.update(network=chain.get('network') if isinstance(chain.get('network'), str) else None, tracker_nft_id=nft)
         if source.kind == 'node' and same_place(source.url, chain.get('node')):
             out['chain_source']['named_by_server'] = True
             out['warnings'].append(f'the chain source {source.url} is the node the server itself names (GET /pilot/v1/chain '
@@ -516,7 +626,7 @@ def audit(server, source, *, profile_state=None, mine=False, get=None, sleep=Non
                     chain = _chain(get, server)
                     if chain['tracker_nft_id'] != nft:
                         raise _Unknown('server_inconsistent', 'GET /pilot/v1/chain named another tracker NFT during the audit')
-                snap = _committed(get, server) or _ledger_between(get, server, chain)
+                snap = _committed(get, server, chain) or _ledger_between(get, server, chain, sleep)
                 box = _the_box(source, nft)
                 inexact = _inexact(snap['rows'])
                 if inexact:
@@ -532,43 +642,77 @@ def audit(server, source, *, profile_state=None, mine=False, get=None, sleep=Non
                     raise _Again('box_moved', f"GET {snap['from']} is for box {snap['box_id']}, and the {source.kind}'s one "
                                               f"unspent tracker box is {box['box_id']} (the chain moved during the audit, or "
                                               'the source lags): run the audit again in a minute')
+                # Rows of GET /ledger that give neither R5 nor the digest GET /chain, read before and after them, names
+                # as the anchored state are not that state: a ledger read under a server cache longer than SETTLE_S
+                # looks so, as does a tracker note GET /ledger does not list. Read again, and UNKNOWN when they stay so:
+                # never a MISMATCH (the module docstring), which on this route needs rows that give that digest.
+                if snap['from'] == LEDGER_ROUTE and rebuilt != box['digest'] and rebuilt != snap['digest']:
+                    raise _Again('ledger_moving', (
+                        f"the {len(snap['rows'])} rows of GET {LEDGER_ROUTE} give {rebuilt}, which is neither R5 of box "
+                        f"{box['box_id']} ({box['digest']}) nor the digest GET /pilot/v1/chain, read before and after them, "
+                        f"names as the tracker's anchored state ({_short(snap['digest'], 80)}): the ledger the server "
+                        'published is not the state it calls anchored, so it is not compared with the box. A ledger read '
+                        'under a server cache longer than this audit waits looks so, and so does a tracker note GET '
+                        "/pilot/v1/ledger does not list (it lists the network's denomination only): run the audit again, "
+                        'and if it stays so, against a server with GET /pilot/v1/ledger/committed (every note, exactly)'))
                 break
             except _Again as again:
                 if attempt == attempts:
                     raise _Unknown(again.reason, str(again)) from None
                 sleep(min(max(again.wait_s, 0.0), MAX_WAIT_S))
+        # The source's height, which the box's age and windows need: none is UNKNOWN (as anchor-audit.mjs has it).
+        try:
+            height = source.height()
+        except ReadError as e:
+            raise _Unknown('source_unreadable', f"the {source.kind} at {source.url} did not give its height, so the box's "
+                                                f'age is not known: {e}{_hint(source, e)}') from None
+        h = box['creation_height']
         out['box'] = {k: box[k] for k in ('box_id', 'tx_id', 'creation_height', 'r5', 'digest', 'flags')}
-        if box['nft_index'] != 0:
-            out['warnings'].append(f"box {box['box_id']} holds the tracker NFT as its token {box['nft_index']}, and the reserve "
-                                   'contract reads the tracker box\'s NFT as its token 0: it cannot serve redemptions as it is')
         out['rows'] = {'from': snap['from'], 'count': len(snap['rows']), 'digest': rebuilt}
         out['server_says'] = {'box_id': snap['box_id'], 'height': snap['height'], 'digest': snap['digest'],
                               'consistent': snap['consistent']}
+        out['height'], out['box_age_blocks'] = height, height - h
+        out['nettings_refused_from_height'], out['tracker_less_redemption_from_height'] = h + FRESH_BLOCKS, h + TRACKER_LESS_AFTER_BLOCKS + 1
+        if out['box_age_blocks'] < 0:
+            out['warnings'].append(f"the {source.kind}'s height {height} is below the box's creation height {h}")
+        if box['nft_index'] != 0:
+            not_first = (f"box {box['box_id']} holds the tracker NFT as its token {box['nft_index']}, and the reserve contract "
+                         "reads a tracker box's NFT as its first token (basis.es tracker.tokens(0)): no redemption can use "
+                         'this box as it is')
+            # No window of the box's age applies to a box no redemption can use (anchor-audit.mjs: windows null).
+            out['nettings_refused_from_height'] = out['tracker_less_redemption_from_height'] = None
+            if rebuilt == box['digest']:
+                raise _Unknown('nft_not_first', f'the rows give R5 of the one unspent box holding the tracker NFT, and {not_first}, '
+                                                'so what it commits binds no redemption: nothing is proven')
+            out['warnings'].append(not_first)
         if rebuilt == box['digest']:
             out.update(verdict='MATCH', message=PROVES.format(height=box['creation_height'], count=len(snap['rows'])))
+            # What the server says of its box, where the chain says otherwise (the rows give R5 all the same).
             if snap['box_id'] != box['box_id']:
                 out['warnings'].append(f"the server's rows are for box {snap['box_id']}, and the source's one unspent tracker box "
                                        f"is {box['box_id']}; their digests are equal")
+            elif snap['digest'] is not None and snap['digest'] != box['digest']:
+                out['warnings'].append(f"the server says box {box['box_id']} commits {_short(snap['digest'], 80)}, and its R5 "
+                                       f"is {box['digest']}: the rows give R5")
+            elif snap['height'] is not None and snap['height'] != box['creation_height']:
+                out['warnings'].append(f"the server says box {box['box_id']} was created at height {snap['height']}; the "
+                                       f"{source.kind} says {box['creation_height']}")
+            if snap['consistent'] is False:
+                out['warnings'].append("the server's own check of these rows says consistent: false, and they give R5")
         else:
+            claimed = snap['digest']
             out.update(verdict='MISMATCH', reason='records_disagree_with_chain', message=(
                 f"the {len(snap['rows'])} rows of GET {snap['from']}, which the server publishes for box {box['box_id']}, do "
                 f"not rebuild the digest that box commits in R5 ({box['digest']}, read from the {source.kind} at "
-                f"{source.url}; the rows give {rebuilt}): the tracker's records and the chain disagree. Either the "
-                'tracker anchored a state other than the one it reports (a fault, such as a write between its digest and '
-                'its confirmation) or the published records were changed. Report it with this output.'
+                f"{source.url}; the rows give {rebuilt}): the tracker's records and the chain disagree."
+                + ('' if claimed is None else
+                   f" The rows give the digest the server says that box commits ({_short(claimed, 80)}), which is not "
+                   "its R5: the server's confirmed digest is not on chain." if rebuilt == claimed else
+                   f" They do not give the digest the server says that box commits either ({_short(claimed, 80)}).")
+                + ' Either the tracker anchored a state other than the one it reports (a fault, such as a write between '
+                'its digest and its confirmation) or the published records were changed. Report it with this output.'
                 + (' The server\'s own check of these rows says consistent: '
-                   f"{str(snap['consistent']).lower()}." if snap['consistent'] is not None else '')
-                + (' GET /pilot/v1/ledger lists the notes in the network\'s denomination only, so a note in another '
-                   'denomination on the tracker would also give this result.' if snap['from'] == '/pilot/v1/ledger' else '')))
-        h = box['creation_height']
-        out['nettings_refused_from_height'], out['tracker_less_redemption_from_height'] = h + FRESH_BLOCKS, h + TRACKER_LESS_AFTER_BLOCKS + 1
-        try:
-            out['height'] = source.height()
-            out['box_age_blocks'] = out['height'] - h
-            if out['box_age_blocks'] < 0:
-                out['warnings'].append(f"the {source.kind}'s height {out['height']} is below the box's creation height {h}")
-        except (ReadError, _Unknown) as e:
-            out['warnings'].append(f"the {source.kind} did not give its height, so the box's age is not known: {e}")
+                   f"{str(snap['consistent']).lower()}." if snap['consistent'] is not None else '')))
     except _Unknown as u:
         out.update(verdict='UNKNOWN', reason=u.reason, message=str(u))
         return out
@@ -580,8 +724,8 @@ def audit(server, source, *, profile_state=None, mine=False, get=None, sleep=Non
             notes = snap['notes'] if snap['notes'] is not None else _read(get, server, '/pilot/v1/ledger').get('notes')
         except (_Unknown, AttributeError) as e:
             notes = None
-            out['warnings'].append(f'--mine: GET /pilot/v1/ledger could not be read, so only this agent\'s own key is '
-                                   f'known: {e}')
+            out['warnings'].append(f'--mine: GET /pilot/v1/ledger could not be read, so only this agent\'s own key and the '
+                                   f'keys this profile\'s records show are known: {e}')
         out['mine'] = mine_report(state, snap['rows'], notes if isinstance(notes, list) else [])
     return out
 
@@ -592,7 +736,7 @@ def exit_code(result):
     if v == 'MISMATCH':
         return EXIT_MISMATCH
     if v != 'MATCH':
-        return EXIT_UNKNOWN
+        return EXIT_NOTHING_COMPARED
     mine = result.get('mine')
     if mine is not None and not mine.get('all_proven'):
         return EXIT_NOT_PROVEN
@@ -606,12 +750,20 @@ def _pubkey_ok(v):
     return isinstance(v, str) and len(v) == 66 and v[:2] in ('02', '03') and all(c in '0123456789abcdef' for c in v)
 
 
+def _pair_keys(pair):
+    """(issuer, recipient) of a records pair '<issuer>><recipient>' of two public keys; (None, None) for anything else
+    (records['paid_deals'] among them)."""
+    i, sep, rc = pair.partition('>') if isinstance(pair, str) else ('', '', '')
+    return (i, rc) if sep and _pubkey_ok(i) and _pubkey_ok(rc) else (None, None)
+
+
 def mine_report(state, rows, notes):
     """This participant's edges in the anchored rows and in this profile's records (the module docstring): {participant,
     keys [{pubkey, known_from}], edges [...], proven, not_proven, all_proven}, and {problem, message} when nothing can
     be compared. state: the profile's state, read and never changed; rows: the rows the chain commits (an audit's MATCH:
-    digested already, so each total is a str of digits, an int or a safe-integer float); notes: GET /ledger's notes,
-    which name each key's participant."""
+    digested already, so each total is a str of digits, an int or a safe-integer float, and no two rows share a pair
+    and denomination); notes: GET /ledger's notes, which name each key's participant. known_from: this_agent (the
+    profile's key), ledger (GET /ledger names it as this participant's) or records (this profile signed with it)."""
     pid, me, pins = state.get('participant_id'), state.get('pubkey'), vc._pins_of(state)
     keys, owner = {}, {}
     if _pubkey_ok(me):
@@ -623,6 +775,18 @@ def mine_report(state, rows, notes):
                 owner.setdefault(k, p)
                 if p == pid and k not in keys:
                     keys[k] = 'ledger'
+    recs = state.get('records') if isinstance(state.get('records'), dict) else {}
+    # Every pair of the records is an edge this client is party to (records.py), on the key it held when it signed: a
+    # pending entry's direction says which side that key is (out: the issuer; in: the recipient). A pair with neither
+    # key known, and no single direction, places no key: its edge is still listed below, at its anchored total.
+    for pair in recs:
+        i, rc = _pair_keys(pair)
+        if i is None or i in keys or rc in keys:
+            continue
+        dirs = {p.get('direction') for p in records.get(recs, pair)['pending'] if isinstance(p, dict)}
+        k = i if dirs == {'out'} else rc if dirs == {'in'} else None
+        if k is not None:
+            keys[k] = 'records'
     key_list = [{'pubkey': k, 'known_from': how} for k, how in keys.items()]
     if not (pins and isinstance(pins.get('denomination'), str)):
         return {'participant': pid, 'keys': key_list, 'edges': [], 'proven': 0, 'not_proven': 0, 'all_proven': False,
@@ -630,28 +794,31 @@ def mine_report(state, rows, notes):
                 'message': 'this profile has no pinned tracker and denomination yet (it pins them at its first read of the '
                            "server's GET /info, such as `valun call valun_status`), so its records can be neither matched "
                            'to the anchored rows nor verified: nothing of yours is proven'}
-    recs = state.get('records') if isinstance(state.get('records'), dict) else {}
     denomination = pins['denomination']
     verify = vc.Client._note_verifier(pins['tracker_nft_id'], denomination)
-    edges, published = [], set()
-    for r in rows:
-        i, rc = r['issuer_pubkey'], r['recipient_pubkey']
+    # Every row by (pair, denomination), whatever its keys, indexed once: the rows on a key of this participant are
+    # listed from it, and each edge this profile's records confirm is looked up in it (the records are about the pinned
+    # denomination only), so an edge on a key the audit did not place is compared at its anchored total, never called
+    # not_anchored.
+    anchored = {(records.pair_key(r['issuer_pubkey'], r['recipient_pubkey']), r.get('denomination', 'erg')):
+                (r['issuer_pubkey'], r['recipient_pubkey'], int(r['total'])) for r in rows}
+    edges, listed = [], set()
+    for (pair, d), (i, rc, total) in anchored.items():
         if i not in keys and rc not in keys:
             continue
-        d = r.get('denomination', 'erg')
-        pair = records.pair_key(i, rc)
         mine_here = d == denomination                   # this profile's records are about its pinned denomination only
         if mine_here:
-            published.add(pair)
-        edges.append(_edge(pair, i, rc, d, int(r['total']), records.get(recs, pair) if mine_here else None, verify, keys, owner))
+            listed.add(pair)
+        edges.append(_edge(pair, i, rc, d, total, records.get(recs, pair) if mine_here else None, verify, keys, owner))
     for pair in recs:
-        if pair == 'paid_deals' or pair in published or not isinstance(pair, str) or '>' not in pair:
+        if pair == 'paid_deals' or pair in listed or not isinstance(pair, str) or '>' not in pair:
             continue
         rec = records.get(recs, pair)
         if rec['confirmed'] is None:
             continue
         i, _sep, rc = pair.partition('>')
-        edges.append(_edge(pair, i, rc, denomination, None, rec, verify, keys, owner))
+        hit = anchored.get((pair, denomination))
+        edges.append(_edge(pair, i, rc, denomination, hit[2] if hit else None, rec, verify, keys, owner))
     proven = sum(1 for e in edges if e['status'] == 'signed')
     return {'participant': pid, 'keys': key_list, 'edges': edges, 'proven': proven, 'not_proven': len(edges) - proven, 'all_proven': proven == len(edges)}
 

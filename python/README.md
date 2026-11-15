@@ -243,13 +243,26 @@ valun audit --explorer https://api-testnet.ergoplatform.com     # the public exp
 valun audit --node http://127.0.0.1:9052 --mine                  # your own node (with its blockchain index), and your edges
 ```
 
-It prints `MATCH` (exit 0), `MISMATCH` (exit 1) or `UNKNOWN` with the reason (exit 3: a source listing a spent box or
+It prints `MATCH` (exit 0), `MISMATCH` (exit 1) or `UNKNOWN` with the reason (exit 2: a source listing a spent box or
 two boxes, a ledger not anchored right now, rows it cannot digest; never a pass), with the box, its height and age, and
 the heights from which nettings of anchored edges are refused (H + 1440) and the reserve contract redeems without the
 tracker (H + 2161). A match proves the cumulative totals as anchored, not what is outstanding, that an issuer can pay,
 or who holds a key. `--mine` lists your edges, as issuer and as recipient and on every key of yours, with their
-anchored totals, and whether each is the state your records confirm with an issuer signature that verifies (exit 4
+anchored totals, and whether each is the state your records confirm with an issuer signature that verifies (exit 3
 when one is not). It is read only: GET requests, no token, nothing signed or written. `--json` prints it all.
+
+The exit codes are those of the Valun project's own server-side anchor audit, so that one watcher reads both: 0 MATCH,
+1 MISMATCH and nothing else, 2 nothing was compared (an UNKNOWN, a usage error such as a profile that cannot be read,
+or a fault of the command: never 1). On the same reads the two give the same verdict, except where `valun audit` is
+the more careful: it says UNKNOWN where the server-side audit says MISMATCH for an R5 that is not the tracker's kind of
+tree, a box the server names that is not the chain's one tracker box, rows of `GET /ledger` that give neither the
+chain's digest nor the one the server names, and a box holding the NFT other than as its first token; and UNKNOWN for a
+total written as a JSON number above 2^53 - 1, which that audit reads as written. That audit also pins the tracker NFT
+of the servers it knows; `valun audit` checks the NFT against your profile's pin (auditing your profile's own server,
+or with `--mine`), and without one takes the server's word for it. A server without
+`GET /pilot/v1/ledger/committed` is read the older way, `GET /chain`, `GET /ledger` and `GET /chain` 3.5 s apart (longer
+than the server's 3 s read cache), and there only rows that give the digest the server names for its box, which is
+not that box's R5, are a MISMATCH.
 
 ## Guarantees: backing another agent's IOU (0.6, where the server offers it)
 
