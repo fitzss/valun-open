@@ -40,6 +40,8 @@ export {
   REAL_VS_SIMULATED_TESTNET, REAL_VS_SIMULATED_CIRCULATION_TESTNET, tourGoal, trackerWords,
   // budget cards: valun_check_payer's summary sentence
   checkSummary, CHECK_LEAD, CHECK_FALLBACK,
+  // fix inbox #58: the arguments every call of a tool is checked for, where it comes in
+  toolArguments, ARGUMENT_WORDS, ARGUMENT_WORDS_OF, REQUIRED_ARGUMENTS,
 } from './agent.js';
 export {valunTools, NO_APPROVAL_STEP, startConsentLoop, CONSENT_LOOP_MS, CONSENT_LOOP_JITTER_MS} from './tools.js';
 export * as schemas from './schemas.js';

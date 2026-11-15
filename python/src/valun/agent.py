@@ -488,7 +488,9 @@ def _count_or(a, k, units, default=None):
     return default if a.get(k) is None else _count(k, a[k], units)
 
 
-# What each required argument of a tool is, for the refusal when it is missing (fix inbox #58).
+# What each required argument of a tool is, for the refusal when it is missing (fix inbox #58): every argument a tool's
+# schema requires (REQUIRED_ARGUMENTS) has its words here, and ARGUMENT_WORDS_OF has a tool's own words for an argument
+# that means something else there.
 ARGUMENT_WORDS = {
     'deal_id': 'the deal id, vd_ + 16 hex, as valun_inbox lists it',
     'action': 'accept, decline, counter or withdraw',
@@ -498,24 +500,55 @@ ARGUMENT_WORDS = {
     'description': 'what exactly is to be done',
     'deliverable': 'what will be delivered and in what form',
     'payer': 'the handle or participant id of the agent that would owe you',
+    'price': 'the price: a whole number, at least 1',
+    'decision': 'accept or dispute',
+    'amount': "what it would owe you, the deal's price: a whole number, at least 1",
+    'issuer': 'the handle or participant id of the agent whose debt you back',
+    'creditor': 'the handle or participant id of the agent you would pay',
+    'cap': 'the most you pay in all: a whole number, at least 1',
+    'due_in_hours': 'hours from now until the creditor can call: 0 for as soon as it accepts',
+    'guarantee_id': 'the guarantee id, vg_ + 16 hex, as valun_guarantees lists it',
 }
+ARGUMENT_WORDS_OF = {'valun_respond_guarantee': {'action': 'accept, decline, release, withdraw or honor'}}
+# The arguments each tool requires: its schema's `required`, what the model reads (tool_arguments refuses a call without one).
+REQUIRED_ARGUMENTS = {t['name']: tuple(t['parameters'].get('required') or ()) for t in schemas.ALL}
 
 
 # The arguments valun_propose needs besides its numbers (the price is checked as a number: _count).
 PROPOSE_TEXTS = ('counterparty', 'role', 'title', 'description', 'deliverable')
 
 
-def _required(a, keys, signs=True):
+def _required(a, keys, signs=True, words=None):
     """The values of the required arguments `keys` of a tool call, in that order. Fix inbox #58: a call without one (or
-    with it null) is refused with bad_arguments naming each one missing and what it is, before anything is read, instead
-    of failing on a KeyError (internal_error); arguments that are not a JSON object are refused the same way."""
+    with it null) is refused with bad_arguments naming each one missing and what it is (ARGUMENT_WORDS, or `words` for a
+    tool's own), before anything is read, instead of failing on a KeyError (internal_error); arguments that are not a
+    JSON object are refused the same way."""
     if not isinstance(a, dict):
         raise vc.ValunError('bad_arguments', 'the arguments are not a JSON object' + ('; nothing was signed' if signs else ''))
     missing = [k for k in keys if a.get(k) is None]
     if missing:
+        w = {**ARGUMENT_WORDS, **(words or {})}
         raise vc.ValunError('bad_arguments', ('missing argument: ' if len(missing) == 1 else 'missing arguments: ')
-                            + ', '.join(f'{k} ({ARGUMENT_WORDS[k]})' for k in missing) + ('; nothing was signed' if signs else ''))
+                            + ', '.join(f'{k} ({w[k]})' for k in missing) + ('; nothing was signed' if signs else ''))
     return [a[k] for k in keys]
+
+
+def tool_arguments(name, args):
+    """The arguments of a call of the tool `name` (one of TOOL_NAMES), as its handler takes them: {} when there are none
+    (absent or null), else the JSON object given, itself. Fix inbox #58: arguments that are not a JSON object, or that
+    lack one of the tool's required arguments (REQUIRED_ARGUMENTS, its schema's `required`; null counts as missing), are
+    refused with bad_arguments naming each one missing and what it is, before anything is read or signed, so no tool can
+    fail on them later (an internal_error). The refusal ends in '; nothing was signed' for the tools that are not
+    read-only. ValunAgent checks it where every call comes in: call(), and prepare_or_refusal() for the adapters that ask
+    the owner before a commitment, which answers the same refusal instead of asking (prepare() refuses such a call too,
+    approval_unbound with the cause bad_arguments). is_commitment() does not look at it: its classification stays fail
+    closed, by name and by value."""
+    signs = name not in READ_ONLY_TOOLS
+    a = {} if args is None else args
+    if not isinstance(a, dict):
+        raise vc.ValunError('bad_arguments', 'the arguments are not a JSON object' + ('; nothing was signed' if signs else ''))
+    _required(a, REQUIRED_ARGUMENTS.get(name, ()), signs=signs, words=ARGUMENT_WORDS_OF.get(name))
+    return a
 
 
 # valun_check_payer (budget cards): the summary's first word for each verdict the server gives, and its words when the
@@ -733,18 +766,20 @@ class ValunAgent:
         return c
 
     def call(self, name, args=None):
-        """Run one tool. Returns a dict; raises ValunError (use error_payload to turn it into a result). Before a tool
-        that is not read-only, the client signs the consents its owner's policy allows (consents_if_due). With
-        consents_on_reads, before valun_status and valun_inbox it signs the value-safe ones (consents_on_read), and when
-        that run took place the result adds consents_signed_now: one entry (SIGNED_NOW_KEYS) for each consent it signed
-        ([]: none)."""
+        """Run one tool. Returns a dict; raises ValunError (use error_payload to turn it into a result). Its arguments
+        are checked first (tool_arguments, fix inbox #58: bad_arguments for arguments that are not a JSON object or lack
+        a required one, before anything is read or signed). Before a tool that is not read-only, the client signs the
+        consents its owner's policy allows (consents_if_due). With consents_on_reads, before valun_status and
+        valun_inbox it signs the value-safe ones (consents_on_read), and when that run took place the result adds
+        consents_signed_now: one entry (SIGNED_NOW_KEYS) for each consent it signed ([]: none)."""
         if name not in self.handlers:
             raise vc.ValunError('unknown_tool', f'no Valun tool called {name!r}')
+        a = tool_arguments(name, args)
         if name not in READ_ONLY_TOOLS:
             self.consents_if_due()
-            return self.handlers[name](args or {})
+            return self.handlers[name](a)
         report = self.consents_on_read() if name in CONSENTS_ON_READ_TOOLS else None
-        out = self.handlers[name](args or {})
+        out = self.handlers[name](a)
         if report is not None and isinstance(out, dict):
             out['consents_signed_now'] = [{k: e.get(k) for k in SIGNED_NOW_KEYS} for e in report.get('signed') or []
                                           if isinstance(e, dict)]
@@ -924,16 +959,16 @@ class ValunAgent:
         refuses another quote or claim (stale_quote, stale_claim).
 
         Raises ValunError('approval_unbound') when what would be signed cannot be read or checked (any error, a missing
-        or wrong hash, or a pin the agent passed that is not the snapshot's): the adapter must then refuse the call.
-        A tool this client does not know gets a generic text; a known commitment never does."""
+        or wrong hash, or a pin the agent passed that is not the snapshot's; with the cause bad_arguments, before any
+        read, for arguments the tool refuses: tool_arguments): the adapter must then refuse the call. A tool this client
+        does not know gets a generic text; a known commitment never does."""
         a = dict(args) if isinstance(args, dict) else {}
         if name not in self.handlers:
             return {'args': a, 'text': GENERIC_TEXT.format(name=shown(name))}
         if not self._may_commit(name, a):
             return {'args': a, 'text': None}
         try:
-            if args is not None and not isinstance(args, dict):
-                raise vc.ValunError('bad_arguments', 'the arguments are not a JSON object')
+            tool_arguments(name, args)               # fix inbox #58: not a JSON object, or a required argument missing
             render = self._text_for(name, a)          # before any read: a misspelt action or decision has no text
             snap = self._snapshot(name, a)
             if name in LIMIT_TOOLS and not loosens(snap['me'].get('agent_limits') or {}, limits_body(a)):
@@ -950,7 +985,13 @@ class ValunAgent:
         the result to return instead of asking when what would be signed cannot be read or checked: the owner is then
         never asked with a generic text, and nothing is signed (approval_unbound, with the code of the cause). A profile
         that is not connected or configured, or whose pinned tracker the server no longer names, gets that refusal
-        itself (not_connected, not_configured, tracker_mismatch), with its own advice."""
+        itself (not_connected, not_configured, tracker_mismatch), with its own advice, and so do arguments the tool
+        refuses before anything is read (tool_arguments: bad_arguments, as the call itself answers; fix inbox #58)."""
+        if name in TOOL_NAMES:
+            try:
+                tool_arguments(name, args)
+            except vc.ValunError as e:
+                return None, error_payload(e, self.setup_hint)
         extra = {}
         try:
             prepared = self.prepare(name, args)

@@ -137,7 +137,10 @@ class Protocol(unittest.TestCase):
         s = Session('ask')
         s.init(caps={'elicitation': {}})
         s.n += 1
-        s.send({'jsonrpc': '2.0', 'id': s.n, 'method': 'tools/call', 'params': {'name': 'valun_propose', 'arguments': {'price': 15}}})
+        # complete arguments: an offer missing one is refused (bad_arguments) without asking the owner (fix inbox #58)
+        offer = {'counterparty': 'bea-briefs', 'role': 'payer', 'title': 'Brief', 'description': 'A brief.', 'deliverable': 'Markdown',
+                 'price': 15}
+        s.send({'jsonrpc': '2.0', 'id': s.n, 'method': 'tools/call', 'params': {'name': 'valun_propose', 'arguments': offer}})
         ask = s.recv()
         self.assertEqual(ask['method'], 'elicitation/create')
         self.assertIn('NEW OFFER to bea-briefs', ask['params']['message'])

@@ -1305,6 +1305,19 @@ export function checkSummary(check: unknown): string;
 export const CHECK_LEAD: Readonly<{accept: string; ask_owner: string; decline: string}>;
 /** The summary's words for each verdict when the server gives no reasons. */
 export const CHECK_FALLBACK: Readonly<{accept: string; ask_owner: string; decline: string}>;
+/**
+ * Fix inbox #58: the arguments of a call of the tool `name`, as its handler takes them ({} for null or undefined, else the
+ * JSON object given). Arguments that are not a JSON object, or without one of the tool's required arguments
+ * (REQUIRED_ARGUMENTS; null counts as missing), throw ValunError('bad_arguments') naming each one missing and what it is
+ * (ARGUMENT_WORDS), before anything is read or signed. ValunAgent.call() and prepareOrRefusal() check every call with it.
+ */
+export function toolArguments(name: ToolName | string, args: unknown): ToolArgs;
+/** What each required argument of a tool is, for the refusal when it is missing. */
+export const ARGUMENT_WORDS: Readonly<Record<string, string>>;
+/** A tool's own words for an argument that means something else there (valun_respond_guarantee's action). */
+export const ARGUMENT_WORDS_OF: Readonly<Record<string, Readonly<Record<string, string>>>>;
+/** The arguments each tool requires: its schema's `required`. */
+export const REQUIRED_ARGUMENTS: Readonly<Record<ToolName, readonly string[]>>;
 /** processConsents() runs at most this often (60 000 ms). */
 export const CONSENTS_EVERY_MS: number;
 /** The local consent policy an invited (sandbox) join writes. */
@@ -1472,7 +1485,10 @@ export class ValunAgent {
    * set to the agent's current value, after checking it is enrolled (ValunError not_connected otherwise).
    */
   client(requireConnection?: boolean): Client;
-  /** Runs one tool; rejects with a ValunError (or another error) on failure. */
+  /**
+   * Runs one tool; rejects with a ValunError (or another error) on failure. Arguments that are not a JSON object, or
+   * without one the tool requires, reject with bad_arguments before anything is read or signed (toolArguments).
+   */
   call(name: ToolName | string, args?: ToolArgs | null): Promise<ToolResult>;
   /** Like call(), but never rejects: failures resolve to a ToolError. */
   callSafe(name: ToolName | string, args?: ToolArgs | null): Promise<ToolResult>;
@@ -1490,7 +1506,10 @@ export class ValunAgent {
    * ValunError('approval_unbound') (extra.cause says why) when that cannot be read or checked: then refuse the call.
    */
   prepare(name: ToolName | string, args?: ToolArgs | null): Promise<{args: ToolArgs; text: string | null}>;
-  /** For adapters: [prepared, null], or [null, refusal] where refusal is the approval_unbound tool result. Never rejects. */
+  /**
+   * For adapters: [prepared, null], or [null, refusal] where refusal is the approval_unbound tool result (or the
+   * bad_arguments one the call itself gives, for arguments toolArguments refuses). Never rejects.
+   */
   prepareOrRefusal(name: ToolName | string, args?: ToolArgs | null): Promise<[{args: ToolArgs; text: string | null}, null] | [null, ToolError]>;
   /**
    * prepare()'s pins alone (kept for compatibility): an acceptance or counter-offer pinned to the recomputed terms

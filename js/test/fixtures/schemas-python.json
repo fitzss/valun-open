@@ -1,7 +1,7 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "c6a6c655c70f61eb3dec48acb371c1317d2733471006560614a4634a29bb3134",
+  "agent.py": "4f51fdee42bcb05b248e086c65da75e82ed25da423b4ddaa7d73ee754077af08",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
   "client.py": "04c436a5d5d190fe8d9129b542f48e1428c149ff21e0837a323be4293b229ea3",
   "mcp_server.py": "0f2fb1970aabab765072667a83ac2da97cab759c4f37aaaff41261b3009860ea",

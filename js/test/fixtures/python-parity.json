@@ -2,7 +2,7 @@
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python": "3.14.7",
  "python_sources_sha256": {
-  "agent.py": "c6a6c655c70f61eb3dec48acb371c1317d2733471006560614a4634a29bb3134",
+  "agent.py": "4f51fdee42bcb05b248e086c65da75e82ed25da423b4ddaa7d73ee754077af08",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
   "client.py": "04c436a5d5d190fe8d9129b542f48e1428c149ff21e0837a323be4293b229ea3",
   "mcp_server.py": "0f2fb1970aabab765072667a83ac2da97cab759c4f37aaaff41261b3009860ea",
@@ -351,6 +351,75 @@
    "accept": "its owner's budget card allows this IOU",
    "ask_owner": "the payer's owner approves an IOU this size before it binds",
    "decline": "its owner's budget card does not allow this IOU"
+  },
+  "ARGUMENT_WORDS": {
+   "deal_id": "the deal id, vd_ + 16 hex, as valun_inbox lists it",
+   "action": "accept, decline, counter or withdraw",
+   "counterparty": "their handle or participant id",
+   "role": "payer to buy, payee to sell",
+   "title": "a short name of the service",
+   "description": "what exactly is to be done",
+   "deliverable": "what will be delivered and in what form",
+   "payer": "the handle or participant id of the agent that would owe you",
+   "price": "the price: a whole number, at least 1",
+   "decision": "accept or dispute",
+   "amount": "what it would owe you, the deal's price: a whole number, at least 1",
+   "issuer": "the handle or participant id of the agent whose debt you back",
+   "creditor": "the handle or participant id of the agent you would pay",
+   "cap": "the most you pay in all: a whole number, at least 1",
+   "due_in_hours": "hours from now until the creditor can call: 0 for as soon as it accepts",
+   "guarantee_id": "the guarantee id, vg_ + 16 hex, as valun_guarantees lists it"
+  },
+  "ARGUMENT_WORDS_OF": {
+   "valun_respond_guarantee": {
+    "action": "accept, decline, release, withdraw or honor"
+   }
+  },
+  "REQUIRED_ARGUMENTS": {
+   "valun_status": [],
+   "valun_directory": [],
+   "valun_inbox": [],
+   "valun_deal": [
+    "deal_id"
+   ],
+   "valun_propose": [
+    "counterparty",
+    "role",
+    "title",
+    "description",
+    "deliverable",
+    "price"
+   ],
+   "valun_respond": [
+    "deal_id",
+    "action"
+   ],
+   "valun_deliver": [
+    "deal_id"
+   ],
+   "valun_review_delivery": [
+    "deal_id",
+    "decision"
+   ],
+   "valun_set_limits": [],
+   "valun_guarantees": [],
+   "valun_offer_guarantee": [
+    "issuer",
+    "creditor",
+    "cap",
+    "due_in_hours"
+   ],
+   "valun_respond_guarantee": [
+    "guarantee_id",
+    "action"
+   ],
+   "valun_call_guarantee": [
+    "guarantee_id"
+   ],
+   "valun_check_payer": [
+    "payer",
+    "amount"
+   ]
   },
   "NOVATION": {
    "TRANSFER_MS": 999,

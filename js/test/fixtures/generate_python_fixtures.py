@@ -1371,6 +1371,15 @@ def scenarios():
     add('deal: deal_id null', 'valun_deal', {'deal_id': None})
     add('propose: missing counterparty and role', 'valun_propose', {k: v for k, v in brief.items() if k not in ('counterparty', 'role')})
     add('propose: description null', 'valun_propose', dict(brief, description=None))
+    # fix inbox #58, the sweep: every tool with no arguments ({}, and null), and with arguments that are not a JSON object
+    # (the falsy ones included, which 0.7.0 took as {}). A tool its schema gives required arguments answers bad_arguments
+    # naming each of them, before anything is read; every other one answers as it does for {}; never internal_error.
+    for t in schemas.ALL:
+        routes = {'GET /pilot/v1/guarantees': {'body': []}} if t['name'] == 'valun_guarantees' else None
+        add(f"arguments: {t['name']} with {{}}", t['name'], {}, routes)
+        add(f"arguments: {t['name']} with null", t['name'], None, routes)
+        for bad in ('x', 42, [1], [], '', False, 1.5):
+            add(f"arguments: {t['name']} with {json.dumps(bad)}", t['name'], bad, routes)
     return S
 
 
@@ -2173,6 +2182,8 @@ def constants():
             'EDGES_PAGE': vc.EDGES_PAGE, 'EDGES_MAX_PAGES': vc.EDGES_MAX_PAGES,
             # budget cards: valun_check_payer's summary words
             'CHECK_LEAD': va.CHECK_LEAD, 'CHECK_FALLBACK': va.CHECK_FALLBACK,
+            # fix inbox #58: each tool's required arguments, and what each one is
+            'ARGUMENT_WORDS': va.ARGUMENT_WORDS, 'ARGUMENT_WORDS_OF': va.ARGUMENT_WORDS_OF, 'REQUIRED_ARGUMENTS': va.REQUIRED_ARGUMENTS,
             'NOVATION': {k: getattr(nv, k) for k in ('TRANSFER_MS', 'SETOFF_MS', 'BOUND_MS', 'RESIDUE', 'RESERVED_MS', 'MAX_AGE_MS',
                                                     'FALLBACK_MARGIN_MS', 'INITIATE_WINDOW_MS', 'CONSENT_WINDOW_MS', 'FUTURE_SKEW_MS',
                                                     'MAX_SAFE_INTEGER', 'QUOTE_KIND', 'QUOTE_FIELDS', 'ROLES', 'ROUTES',

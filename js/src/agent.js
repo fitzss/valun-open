@@ -434,8 +434,12 @@ function countOr(a, k, units, dflt = null) {
   return get(a, k) === null ? dflt : count(k, a[k], units);
 }
 
-/** What each required argument of a tool is, for the refusal when it is missing (fix inbox #58). The Python core's. */
-const ARGUMENT_WORDS = Object.freeze({
+/**
+ * What each required argument of a tool is, for the refusal when it is missing (fix inbox #58): every argument a tool's
+ * schema requires (REQUIRED_ARGUMENTS) has its words here, and ARGUMENT_WORDS_OF has a tool's own words for an argument
+ * that means something else there. The Python core's.
+ */
+export const ARGUMENT_WORDS = Object.freeze({
   deal_id: 'the deal id, vd_ + 16 hex, as valun_inbox lists it',
   action: 'accept, decline, counter or withdraw',
   counterparty: 'their handle or participant id',
@@ -444,26 +448,58 @@ const ARGUMENT_WORDS = Object.freeze({
   description: 'what exactly is to be done',
   deliverable: 'what will be delivered and in what form',
   payer: 'the handle or participant id of the agent that would owe you',
+  price: 'the price: a whole number, at least 1',
+  decision: 'accept or dispute',
+  amount: "what it would owe you, the deal's price: a whole number, at least 1",
+  issuer: 'the handle or participant id of the agent whose debt you back',
+  creditor: 'the handle or participant id of the agent you would pay',
+  cap: 'the most you pay in all: a whole number, at least 1',
+  due_in_hours: 'hours from now until the creditor can call: 0 for as soon as it accepts',
+  guarantee_id: 'the guarantee id, vg_ + 16 hex, as valun_guarantees lists it',
 });
+export const ARGUMENT_WORDS_OF = Object.freeze({valun_respond_guarantee: Object.freeze({action: 'accept, decline, release, withdraw or honor'})});
+/** The arguments each tool requires: its schema's `required`, what the model reads (toolArguments refuses a call without one). */
+export const REQUIRED_ARGUMENTS = Object.freeze(Object.fromEntries(schemas.ALL.map(t => [t.name, Object.freeze([...(t.parameters.required ?? [])])])));
 
 /** The arguments valun_propose needs besides its numbers (the price is checked as a number: count()). */
 const PROPOSE_TEXTS = Object.freeze(['counterparty', 'role', 'title', 'description', 'deliverable']);
 
 /**
  * The values of the required arguments `keys` of a tool call, in that order. Fix inbox #58: a call without one (or with
- * it null) is refused with bad_arguments naming each one missing and what it is, before anything is read, instead of
- * failing on a KeyError (internal_error); arguments that are not a JSON object are refused the same way. The Python
- * core's _required.
+ * it null) is refused with bad_arguments naming each one missing and what it is (ARGUMENT_WORDS, or `words` for a tool's
+ * own), before anything is read, instead of failing on a KeyError (internal_error); arguments that are not a JSON object
+ * are refused the same way. The Python core's _required.
  */
-function required(a, keys, signs = true) {
+function required(a, keys, signs = true, words = null) {
   const tail = signs ? '; nothing was signed' : '';
   if (!isDict(a)) throw new ValunError('bad_arguments', 'the arguments are not a JSON object' + tail);
   const missing = keys.filter(k => get(a, k) === null || get(a, k) === undefined);
   if (missing.length) {
+    const w = {...ARGUMENT_WORDS, ...(words ?? {})};
     throw new ValunError('bad_arguments', (missing.length === 1 ? 'missing argument: ' : 'missing arguments: ')
-      + missing.map(k => `${k} (${ARGUMENT_WORDS[k]})`).join(', ') + tail);
+      + missing.map(k => `${k} (${w[k]})`).join(', ') + tail);
   }
   return keys.map(k => a[k]);
+}
+
+/**
+ * The arguments of a call of the tool `name` (one of TOOL_NAMES), as its handler takes them: {} when there are none
+ * (null or undefined), else the JSON object given, itself. Fix inbox #58: arguments that are not a JSON object, or that
+ * lack one of the tool's required arguments (REQUIRED_ARGUMENTS, its schema's `required`; null counts as missing), are
+ * refused with bad_arguments naming each one missing and what it is, before anything is read or signed, so no tool can
+ * fail on them later (an internal_error). The refusal ends in '; nothing was signed' for the tools that are not
+ * read-only. ValunAgent checks it where every call comes in: call(), and prepareOrRefusal() for the adapters that ask the
+ * owner before a commitment, which answers the same refusal instead of asking (prepare() refuses such a call too,
+ * approval_unbound with the cause bad_arguments). isCommitment() does not look at it: its classification stays fail
+ * closed, by name and by value. The Python core's tool_arguments.
+ */
+export function toolArguments(name, args) {
+  const signs = !READ_ONLY_TOOLS.includes(name);
+  const a = args === null || args === undefined ? {} : args;
+  if (!isDict(a)) throw new ValunError('bad_arguments', 'the arguments are not a JSON object' + (signs ? '; nothing was signed' : ''));
+  required(a, Object.hasOwn(REQUIRED_ARGUMENTS, name) ? REQUIRED_ARGUMENTS[name] : [], signs,
+    Object.hasOwn(ARGUMENT_WORDS_OF, name) ? ARGUMENT_WORDS_OF[name] : null);
+  return a;
 }
 
 // valun_check_payer (budget cards): the summary's first word for each verdict the server gives, and its words when the
@@ -871,25 +907,28 @@ export class ValunAgent {
   }
 
   /**
-   * Run one tool. Resolves to a plain object; rejects with a ValunError (use errorPayload to turn it into a result).
-   * Before a tool that is not read-only, the client signs the consents its owner's policy allows (consentsIfDue). With
-   * consentsOnReads, before valun_status and valun_inbox it signs the value-safe ones (consentsOnRead), and when that
-   * run took place the result adds consents_signed_now: one entry (SIGNED_NOW_KEYS) for each consent it signed ([]: none).
+   * Run one tool. Resolves to a plain object; rejects with a ValunError (use errorPayload to turn it into a result). Its
+   * arguments are checked first (toolArguments, fix inbox #58: bad_arguments for arguments that are not a JSON object or
+   * lack a required one, before anything is read or signed). Before a tool that is not read-only, the client signs the
+   * consents its owner's policy allows (consentsIfDue). With consentsOnReads, before valun_status and valun_inbox it signs
+   * the value-safe ones (consentsOnRead), and when that run took place the result adds consents_signed_now: one entry
+   * (SIGNED_NOW_KEYS) for each consent it signed ([]: none).
    */
   async call(name, args = null) {
     if (typeof name !== 'string' || !Object.hasOwn(this.handlers, name)) {
       throw new ValunError('unknown_tool', `no Valun tool called ${repr(name)}`);
     }
-    return this.exclusive(() => this.#call(name, args));
+    const a = toolArguments(name, args);
+    return this.exclusive(() => this.#call(name, a));
   }
 
-  async #call(name, args) {
+  async #call(name, a) {
     if (!READ_ONLY_TOOLS.includes(name)) {
       await this.#consentsIfDue();
-      return this.handlers[name](truthy(args) ? args : {});
+      return this.handlers[name](a);
     }
     const report = CONSENTS_ON_READ_TOOLS.includes(name) ? await this.#consentsOnRead() : null;
-    const out = await this.handlers[name](truthy(args) ? args : {});
+    const out = await this.handlers[name](a);
     if (report !== null && isDict(out)) {
       out.consents_signed_now = iterate(or(get(report, 'signed'), [])).filter(isDict)
         .map(e => Object.fromEntries(SIGNED_NOW_KEYS.map(k => [k, get(e, k)])));
@@ -1097,8 +1136,9 @@ export class ValunAgent {
    * text shows. So the signature covers what the owner saw.
    *
    * Rejects with ValunError('approval_unbound') when what would be signed cannot be read or checked (any error, a missing
-   * or wrong hash, or a pin the agent passed that is not the snapshot's): the adapter must then refuse the call. A tool
-   * this client does not know gets a generic text; a known commitment never does. Holds the agent's lock (exclusive()).
+   * or wrong hash, or a pin the agent passed that is not the snapshot's; with the cause bad_arguments, before any read,
+   * for arguments the tool refuses: toolArguments): the adapter must then refuse the call. A tool this client does not
+   * know gets a generic text; a known commitment never does. Holds the agent's lock (exclusive()).
    */
   async prepare(name, args = null) {
     return this.exclusive(() => this.#prepare(name, args));
@@ -1113,7 +1153,7 @@ export class ValunAgent {
     if (!ValunAgent.#mayCommit(name, a)) return {args: a, text: null};
     let bound, text;
     try {
-      if (args !== null && args !== undefined && !isDict(args)) throw new ValunError('bad_arguments', 'the arguments are not a JSON object');
+      toolArguments(name, args);                      // fix inbox #58: not a JSON object, or a required argument missing
       const render = this.#textFor(name, a);          // before any read: a misspelt action or decision has no text
       const snap = await this.#snapshot(name, a);
       if (LIMIT_TOOLS.includes(name) && !loosens(or(get(snap.me, 'agent_limits'), {}), limitsBody(a))) {
@@ -1131,9 +1171,20 @@ export class ValunAgent {
    * For adapters: [prepared, null], or [null, refusal]. Ask the owner with prepared.text, then sign with prepared.args;
    * when prepared.text is null the call commits nothing and runs without asking. The refusal is the result to return
    * instead of asking when what would be signed cannot be read or checked: the owner is then never asked with a generic
-   * text, and nothing is signed (approval_unbound).
+   * text, and nothing is signed (approval_unbound). A profile that is not connected or configured, or whose pinned
+   * tracker the server no longer names, gets that refusal itself (not_connected, not_configured, tracker_mismatch), with
+   * its own advice, and so do arguments the tool refuses before anything is read (toolArguments: bad_arguments, as the
+   * call itself answers; fix inbox #58).
    */
   async prepareOrRefusal(name, args = null) {
+    if (TOOL_NAMES.includes(name)) {
+      try {
+        toolArguments(name, args);
+      } catch (e) {
+        if (!isValunError(e)) throw e;
+        return [null, errorPayload(e, this.setupHint)];
+      }
+    }
     let prepared, extra = {};
     try {
       prepared = await this.prepare(name, args);

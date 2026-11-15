@@ -315,11 +315,14 @@ class CheckPayerTool(Card):
         amount = schemas.CHECK_PAYER['parameters']['properties']['amount']
         self.assertEqual({k: v for k, v in amount.items() if k != 'description'}, {k: v for k, v in price.items() if k != 'description'})
         self.assertEqual(schemas.CHECK_PAYER['parameters']['required'], ['payer', 'amount'])
-        for bad in (1.5, '18', True, 0, -2, None):
+        for bad in (1.5, '18', True, 0, -2):
             r = self.check(payer='bob', amount=bad)
             with self.assertRaises(vc.ValunError) as e:
                 va._count('amount', bad, 'PC')
             self.assertEqual(r, {'error': 'bad_arguments', 'message': str(e.exception)}, bad)
+        # a null amount is a missing one (fix inbox #58: the tool's schema requires it)
+        self.assertEqual(self.check(payer='bob', amount=None), {'error': 'bad_arguments', 'message': (
+            "missing argument: amount (what it would owe you, the deal's price: a whole number, at least 1)")})
         self.assertEqual(self.world.log, [], 'refused before anything is read')
         self.assertEqual(self.check(payer=5, amount=18)['error'], 'bad_arguments')
         self.assertEqual(self.check(amount=18), {'error': 'bad_arguments', 'message': 'missing argument: payer (the handle or participant id of '
@@ -382,15 +385,24 @@ class MissingArguments(Card):
             self.assertEqual(r['error'], 'bad_arguments', (tool, args))
             self.assertTrue(r['message'].startswith(f'missing argument: {missing} ('), r['message'])
         r = a.call_safe('valun_propose', {k: v for k, v in brief.items() if k != 'price'})
-        self.assertEqual(r, {'error': 'bad_arguments', 'message': 'price must be a whole number of PC, at least 1 (a JSON integer), not null; '
+        self.assertEqual(r, {'error': 'bad_arguments', 'message': 'missing argument: price (the price: a whole number, at least 1); '
+                                                                  'nothing was signed'})
+        r = a.call_safe('valun_propose', dict(brief, price=1.5))       # a price that is there, but not a whole number
+        self.assertEqual(r, {'error': 'bad_arguments', 'message': 'price must be a whole number of PC, at least 1 (a JSON integer), not 1.5; '
                                                                   'nothing was signed'})
         self.assertEqual(self.world.log, [], 'refused before anything is read')
 
     def test_an_offer_missing_a_text_is_never_put_to_the_owner(self):
         brief = {'counterparty': 'bob', 'role': 'payer', 'title': 'Brief', 'deliverable': 'Markdown', 'price': 5}
-        prepared, refusal = self.agent().prepare_or_refusal('valun_propose', brief)
+        a = self.agent()
+        prepared, refusal = a.prepare_or_refusal('valun_propose', brief)
         self.assertIsNone(prepared)
-        self.assertEqual((refusal['error'], refusal['cause']), ('approval_unbound', 'bad_arguments'))
+        self.assertEqual(refusal, {'error': 'bad_arguments', 'message': 'missing argument: description (what exactly is to be done); '
+                                                                        'nothing was signed'}, 'the refusal the call itself gives')
+        with self.assertRaises(vc.ValunError) as e:
+            a.prepare('valun_propose', brief)
+        self.assertEqual((e.exception.code, e.exception.extra['cause']), ('approval_unbound', 'bad_arguments'))
+        self.assertEqual(self.world.log, [], 'nothing is read for it')
 
 
 class CardCommands(Card):

@@ -251,10 +251,13 @@ test('valun_check_payer: the amount is checked as valun_propose checks its price
   assert.deepEqual(amount, price);
   assert.deepEqual([...schemas.CHECK_PAYER.parameters.required], ['payer', 'amount']);
   const w = world();
-  for (const [bad, shownAs] of [[1.5, '1.5'], ['18', '"18"'], [true, 'true'], [0, '0'], [-2, '-2'], [null, 'null']]) {
+  for (const [bad, shownAs] of [[1.5, '1.5'], ['18', '"18"'], [true, 'true'], [0, '0'], [-2, '-2']]) {
     assert.deepEqual(await w.agent().callSafe('valun_check_payer', {payer: 'bob', amount: bad}), {error: 'bad_arguments',
       message: `amount must be a whole number of PC, at least 1 (a JSON integer), not ${shownAs}; nothing was signed`}, String(bad));
   }
+  // a null amount is a missing one (fix inbox #58: the tool's schema requires it)
+  assert.deepEqual(await w.agent().callSafe('valun_check_payer', {payer: 'bob', amount: null}), {error: 'bad_arguments',
+    message: "missing argument: amount (what it would owe you, the deal's price: a whole number, at least 1)"});
   assert.deepEqual(w.fetch.calls, []);
   assert.equal((await w.agent().callSafe('valun_check_payer', {payer: 5, amount: 18})).error, 'bad_arguments');
   assert.deepEqual(await w.agent().callSafe('valun_check_payer', {amount: 18}), {error: 'bad_arguments',
@@ -320,9 +323,15 @@ test('fix inbox #58: the other tools that failed on a missing argument, refused 
   }
   const {price: _p, ...noPrice} = brief;
   assert.deepEqual(await a.callSafe('valun_propose', noPrice), {error: 'bad_arguments',
-    message: 'price must be a whole number of PC, at least 1 (a JSON integer), not null; nothing was signed'});
+    message: 'missing argument: price (the price: a whole number, at least 1); nothing was signed'});
+  assert.deepEqual(await a.callSafe('valun_propose', {...brief, price: 1.5}), {error: 'bad_arguments',
+    message: 'price must be a whole number of PC, at least 1 (a JSON integer), not 1.5; nothing was signed'}, 'a price there, not whole');
   assert.deepEqual(w.fetch.calls, []);
   const [prepared, refusal] = await a.prepareOrRefusal('valun_propose', {...noTitle, title: undefined});
   assert.equal(prepared, null);
-  assert.deepEqual([refusal.error, refusal.cause], ['approval_unbound', 'bad_arguments'], 'an offer missing a text is never put to the owner');
+  assert.deepEqual(refusal, {error: 'bad_arguments', message: 'missing argument: title (a short name of the service); nothing was signed'},
+    'an offer missing a text is never put to the owner: the refusal the call itself gives');
+  const e = await a.prepare('valun_propose', noTitle).then(() => null, x => x);
+  assert.deepEqual([e?.code, e?.extra?.cause], ['approval_unbound', 'bad_arguments']);
+  assert.deepEqual(w.fetch.calls, [], 'nothing is read for it');
 });

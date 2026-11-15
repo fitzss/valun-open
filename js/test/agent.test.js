@@ -108,7 +108,9 @@ test("fail closed: a misspelt decision or action counts as a commitment, and rev
     const w = world(sc);
     assert.equal(await w.agent.isCommitment('valun_review_delivery', {deal_id: sc.args.deal_id, decision}), true, String(decision));
     const r = await w.agent.callSafe('valun_review_delivery', {deal_id: sc.args.deal_id, decision});
-    assert.deepEqual(r, {error: 'bad_decision', message: "decision must be exactly 'accept' or 'dispute'; nothing was signed"}, String(decision));
+    // a null decision is a missing one (fix inbox #58: the tool's schema requires it)
+    assert.deepEqual(r, decision === null ? {error: 'bad_arguments', message: 'missing argument: decision (accept or dispute); nothing was signed'}
+      : {error: 'bad_decision', message: "decision must be exactly 'accept' or 'dispute'; nothing was signed"}, String(decision));
     assert.equal(w.fetch.calls.length, 0, 'no request at all: refused before connecting');
   }
   const w = world(sc);
