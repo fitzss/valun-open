@@ -12,6 +12,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -470,6 +471,66 @@ class OfferUnderReview(Card):
         testnet = schemas.for_network(schemas.TESTNET)[-1]
         self.assertEqual(testnet['parameters']['properties']['deal_id'], p['properties']['deal_id'])
         self.assertNotRegex(json.dumps(testnet), r'\bPC\b|pilot')
+
+
+REPO = os.path.dirname(os.path.dirname(HERE))
+# The valun release from which a tool reads each of these arguments. A valun from before ignores an argument it does not
+# read, so a skill must not pass one to the valun it pins (fix inbox #60: valun 0.7.0's valun_check_payer ignores deal_id
+# and answers for a new deal on top of the offer under review, counting that offer twice, with nothing to say so).
+ARGUMENTS_SINCE = {('valun_check_payer', 'deal_id'): (0, 7, 1)}
+# A skill's tool-call example, `valun_x` (`{...}`), and a valun pin (valun==X.Y.Z, valun[ai]==X.Y.Z).
+TOOL_EXAMPLE = re.compile(r'`(valun_[a-z_]+)`\s*\(`(\{[^`]*\})`')
+VALUN_PIN = re.compile(r'valun(?:\[[a-z,]+\])?==(\d+)\.(\d+)\.(\d+)')
+
+
+def skill_problems(text, pins):
+    """The arguments of ARGUMENTS_SINCE a skill's tool-call examples pass to a valun that does not read them: pins is
+    every valun version the skill runs (its own and, for the Claude Code plugin, its .mcp.json's), as (X, Y, Z)."""
+    out = []
+    for tool, example in TOOL_EXAMPLE.findall(text):
+        for arg in re.findall(r'"([a-z_]+)"\s*:', example):
+            since = ARGUMENTS_SINCE.get((tool, arg))
+            if since and (not pins or min(pins) < since):
+                out.append(f'{tool} {arg} needs valun {".".join(map(str, since))}; the skill runs '
+                           f'{", ".join(".".join(map(str, p)) for p in sorted(pins)) or "no pinned valun"}')
+    return out
+
+
+class SkillPins(unittest.TestCase):
+    """The skills that pin a valun pass a tool only the arguments that valun reads: the server's (SKILL.md copies it) and
+    the Claude Code plugin's, which the marketplace serves from main with the valun its .mcp.json pins. So the plugin's
+    skill passes valun_check_payer's deal_id only from the commit that moves its pin to 0.7.1 (`release.py bump`),
+    never on main before it (CHANGELOG.md 0.7.1, Server)."""
+
+    def read(self, *parts):
+        with open(os.path.join(REPO, *parts), encoding='utf-8') as f:
+            return f.read()
+
+    def skills(self):
+        plugin = self.read('plugins', 'valun', 'skills', 'valun', 'SKILL.md')
+        mcp = self.read('plugins', 'valun', '.mcp.json')
+        root = self.read('SKILL.md')
+        pins = lambda *texts: {tuple(map(int, v)) for t in texts for v in VALUN_PIN.findall(t)}   # noqa: E731
+        return {'plugins/valun/skills/valun/SKILL.md': (plugin, pins(plugin, mcp)), 'SKILL.md': (root, pins(root))}
+
+    def test_no_skill_passes_an_argument_its_pinned_valun_ignores(self):
+        for rel, (text, pins) in self.skills().items():
+            self.assertTrue(pins, f'{rel} pins no valun')
+            self.assertIn('valun_check_payer', [t for t, _e in TOOL_EXAMPLE.findall(text)],
+                          f'{rel}: no `valun_check_payer` (`{{...}}`) example found: TOOL_EXAMPLE should match how the skill writes one')
+            self.assertEqual(skill_problems(text, pins), [], rel)
+
+    def test_the_plugin_skill_with_deal_id_waits_for_its_pin_to_move(self):
+        text = self.skills()['plugins/valun/skills/valun/SKILL.md'][0]
+        old = '(`{"payer": "<handle>", "amount": <the price>}`)'
+        self.assertIn(old, text)
+        planted = text.replace(old, '(`{"payer": "<handle>", "amount": <the price>, "deal_id": "<the deal id>"}`)')
+        self.assertEqual(skill_problems(planted, {(0, 7, 0)}), ['valun_check_payer deal_id needs valun 0.7.1; the skill runs 0.7.0'])
+        self.assertEqual(skill_problems(planted, {(0, 7, 0), (0, 7, 1)}), ['valun_check_payer deal_id needs valun 0.7.1; the skill '
+                                                                           'runs 0.7.0, 0.7.1'], 'every pin must read it')
+        self.assertEqual(skill_problems(planted, {(0, 7, 1)}), [])
+        self.assertEqual(skill_problems(planted, set()), ['valun_check_payer deal_id needs valun 0.7.1; the skill runs no pinned valun'])
+        self.assertEqual(skill_problems(text, {(0, 7, 0)}), [], 'as it is now')
 
 
 class StatusRoom(Card):

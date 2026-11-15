@@ -67,8 +67,15 @@ tracker's AVL+ digest. A candidate: the versions still say 0.7.0, and the releas
 ### Server
 - `deal_id` needs a server with fix inbox #60 (valun-app `de989a2` or later, on staging now); against an older one the
   check refuses with `offer_not_checked`. `counted_offers` and `payee_side` come from the same release.
-- At release: re-vendor the Hermes plugin's core (agent.py, client.py and schemas.py changed), and update the server's
-  skill (`public/skill-testnet.md`, which `SKILL.md` here copies) to pass `deal_id` for an offer under review.
+- At release: re-vendor the Hermes plugin's core (agent.py, client.py and schemas.py changed). The two skills that pin
+  valun pass `deal_id` for an offer under review only from the change that moves their pin to 0.7.1, never before:
+  the server's (`public/skill-testnet.md`, which `SKILL.md` here copies) and the Claude Code plugin's
+  (`plugins/valun/skills/valun/SKILL.md`, in the commit of `release.py bump 0.7.1`: the marketplace serves
+  `plugins/valun` from `main`). Until then they run valun 0.7.0, whose `valun_check_payer` ignores `deal_id` and
+  answers for a new deal on top of the offer, counting it twice. The plugin skill's selling step then shows
+  `{"payer": "<handle>", "amount": <the price>, "deal_id": "<the deal id>"}` and says that `deal_id` makes it check
+  that offer, which the payer's room already counts (leave it out only to check a new deal). `test_budget_card.py`'s
+  `SkillPins` fails while a skill passes it to an older pin.
 
 ## 0.7.0 (2026-11-14)
 
