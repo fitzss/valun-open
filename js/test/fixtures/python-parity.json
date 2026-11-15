@@ -2,15 +2,15 @@
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python": "3.14.7",
  "python_sources_sha256": {
-  "agent.py": "4f51fdee42bcb05b248e086c65da75e82ed25da423b4ddaa7d73ee754077af08",
+  "agent.py": "3725f33410c1fb34eaea824f4e522cda791b21c0f9218fa50cdd2dec24b6a512",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "04c436a5d5d190fe8d9129b542f48e1428c149ff21e0837a323be4293b229ea3",
+  "client.py": "35539ff8541630416fb0328c7ff077bfc41ed8f707f2da63473b99295481065a",
   "mcp_server.py": "0f2fb1970aabab765072667a83ac2da97cab759c4f37aaaff41261b3009860ea",
   "measure.py": "ee2c1164c7a9ecfa9f934603872d0ec0aa194c6f07257a0734d1a163df4c6de9",
   "novation.py": "3579850c2307713ae538fddbd899dc75e017992c5d75069969e0a7140edfa741",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "aa968c2e628ac44bc906e1b41629a16da0018d463b63a34d9e4d610774c35048",
-  "schemas.py": "c35ce02a457de4b2e4a61b66fab8f1462af21860ff9f5672f5c89d2e45bfe4c9"
+  "schemas.py": "8c8cd92bbccf0e4370543a16c69b24fae89b2623c6576da71708194e7969b315"
  },
  "python_tests_sha256": {
   "test_novation.py": "0fd42619151a746ead340cb3ea70c9f471de1a7874185cda59784ebc6a01ab5f"
@@ -4426,6 +4426,623 @@
     ]
    },
    "Accept: café 😀."
+  ],
+  [
+   {
+    "verdict": "accept",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ]
+   },
+   "Accept, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "accept",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ],
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "Accept: r."
+  ],
+  [
+   {
+    "verdict": "accept",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     },
+     {
+      "deal_id": "vd_7b7b7b7b7b7b7b7b",
+      "amount": 18
+     }
+    ]
+   },
+   "Accept, for a new deal on top of the 2 offers you received at this price (vd_6a6a6a6a6a6a6a6a, vd_7b7b7b7b7b7b7b7b, already counted): r. To check one of them, call valun_check_payer again with its deal_id."
+  ],
+  [
+   {
+    "verdict": "accept",
+    "reasons": [
+     "r."
+    ],
+    "amount": 9007199254740991,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ]
+   },
+   "Accept: r."
+  ],
+  [
+   {
+    "verdict": "accept",
+    "reasons": [
+     "r."
+    ],
+    "amount": 9007199254740991,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 9007199254740991
+     }
+    ]
+   },
+   "Accept, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "accept",
+    "reasons": [
+     "r."
+    ],
+    "amount": -18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": -18
+     }
+    ]
+   },
+   "Accept, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "accept",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ],
+    "cover": {
+     "covered": 3
+    }
+   },
+   "Accept, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r, backed for you up to 3. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "decline",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ]
+   },
+   "Decline, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "decline",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ],
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "Decline: r."
+  ],
+  [
+   {
+    "verdict": "decline",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     },
+     {
+      "deal_id": "vd_7b7b7b7b7b7b7b7b",
+      "amount": 18
+     }
+    ]
+   },
+   "Decline, for a new deal on top of the 2 offers you received at this price (vd_6a6a6a6a6a6a6a6a, vd_7b7b7b7b7b7b7b7b, already counted): r. To check one of them, call valun_check_payer again with its deal_id."
+  ],
+  [
+   {
+    "verdict": "decline",
+    "reasons": [
+     "r."
+    ],
+    "amount": 9007199254740991,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ]
+   },
+   "Decline: r."
+  ],
+  [
+   {
+    "verdict": "decline",
+    "reasons": [
+     "r."
+    ],
+    "amount": 9007199254740991,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 9007199254740991
+     }
+    ]
+   },
+   "Decline, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "decline",
+    "reasons": [
+     "r."
+    ],
+    "amount": -18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": -18
+     }
+    ]
+   },
+   "Decline, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "decline",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ],
+    "cover": {
+     "covered": 3
+    }
+   },
+   "Decline, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "ask_owner",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ]
+   },
+   "Ask the payer's owner, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "ask_owner",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ],
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "Ask the payer's owner: r."
+  ],
+  [
+   {
+    "verdict": "ask_owner",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     },
+     {
+      "deal_id": "vd_7b7b7b7b7b7b7b7b",
+      "amount": 18
+     }
+    ]
+   },
+   "Ask the payer's owner, for a new deal on top of the 2 offers you received at this price (vd_6a6a6a6a6a6a6a6a, vd_7b7b7b7b7b7b7b7b, already counted): r. To check one of them, call valun_check_payer again with its deal_id."
+  ],
+  [
+   {
+    "verdict": "ask_owner",
+    "reasons": [
+     "r."
+    ],
+    "amount": 9007199254740991,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ]
+   },
+   "Ask the payer's owner: r."
+  ],
+  [
+   {
+    "verdict": "ask_owner",
+    "reasons": [
+     "r."
+    ],
+    "amount": 9007199254740991,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 9007199254740991
+     }
+    ]
+   },
+   "Ask the payer's owner, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "ask_owner",
+    "reasons": [
+     "r."
+    ],
+    "amount": -18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": -18
+     }
+    ]
+   },
+   "Ask the payer's owner, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "ask_owner",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ],
+    "cover": {
+     "covered": 3
+    }
+   },
+   "Ask the payer's owner, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r, backed for you up to 3. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "maybe",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ]
+   },
+   "Unknown, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "maybe",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ],
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "Unknown: r."
+  ],
+  [
+   {
+    "verdict": "maybe",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     },
+     {
+      "deal_id": "vd_7b7b7b7b7b7b7b7b",
+      "amount": 18
+     }
+    ]
+   },
+   "Unknown, for a new deal on top of the 2 offers you received at this price (vd_6a6a6a6a6a6a6a6a, vd_7b7b7b7b7b7b7b7b, already counted): r. To check one of them, call valun_check_payer again with its deal_id."
+  ],
+  [
+   {
+    "verdict": "maybe",
+    "reasons": [
+     "r."
+    ],
+    "amount": 9007199254740991,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ]
+   },
+   "Unknown: r."
+  ],
+  [
+   {
+    "verdict": "maybe",
+    "reasons": [
+     "r."
+    ],
+    "amount": 9007199254740991,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 9007199254740991
+     }
+    ]
+   },
+   "Unknown, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "maybe",
+    "reasons": [
+     "r."
+    ],
+    "amount": -18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": -18
+     }
+    ]
+   },
+   "Unknown, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "maybe",
+    "reasons": [
+     "r."
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ],
+    "cover": {
+     "covered": 3
+    }
+   },
+   "Unknown, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a."
+  ],
+  [
+   {
+    "verdict": "accept",
+    "reasons": [],
+    "payee_side": {
+     "verdict": "decline",
+     "reasons": [
+      " Your own limits\nrefuse it. ",
+      7
+     ]
+    }
+   },
+   "Accept: its owner's budget card allows this IOU. Your own side: Your own limits refuse it."
+  ],
+  [
+   {
+    "verdict": "decline",
+    "payee_side": {
+     "verdict": "decline"
+    }
+   },
+   "Decline: its owner's budget card does not allow this IOU. Your own side: your own limits refuse it."
+  ],
+  [
+   {
+    "verdict": "accept",
+    "payee_side": {
+     "verdict": "ask_owner",
+     "reasons": null
+    }
+   },
+   "Accept: its owner's budget card allows this IOU. Your own side: your owner approves it before it binds."
+  ],
+  [
+   {
+    "verdict": "accept",
+    "payee_side": {
+     "verdict": "constructor"
+    }
+   },
+   "Accept: its owner's budget card allows this IOU."
+  ],
+  [
+   {
+    "verdict": "accept",
+    "payee_side": [
+     "decline"
+    ]
+   },
+   "Accept: its owner's budget card allows this IOU."
+  ],
+  [
+   {
+    "verdict": "accept",
+    "reasons": [
+     "r"
+    ],
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ],
+    "payee_side": {
+     "verdict": "ask_owner",
+     "reasons": [
+      "Your owner approves it."
+     ]
+    }
+   },
+   "Accept, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): r. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a. Your own side: Your owner approves it."
+  ]
+ ],
+ "offers_counted_at": [
+  [
+   null,
+   []
+  ],
+  [
+   {},
+   []
+  ],
+  [
+   {
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     },
+     {
+      "deal_id": "vd_7b7b7b7b7b7b7b7b",
+      "amount": 18
+     }
+    ]
+   },
+   [
+    "vd_6a6a6a6a6a6a6a6a",
+    "vd_7b7b7b7b7b7b7b7b"
+   ]
+  ],
+  [
+   {
+    "amount": 18,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18.5
+     },
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": false
+     }
+    ]
+   },
+   []
+  ],
+  [
+   {
+    "amount": true,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": true
+     }
+    ]
+   },
+   []
+  ],
+  [
+   {
+    "amount": 18,
+    "counted_offers": "vd_x"
+   },
+   []
   ]
  ],
  "records": [

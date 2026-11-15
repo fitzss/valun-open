@@ -39,7 +39,7 @@ export {
   TESTNET, SETTLEMENT_TESTNET, CIRCULATION_SETTLEMENT_TESTNET, HONEST_LABELS_TESTNET, HONEST_LABELS_CIRCULATION_TESTNET,
   REAL_VS_SIMULATED_TESTNET, REAL_VS_SIMULATED_CIRCULATION_TESTNET, tourGoal, trackerWords,
   // budget cards: valun_check_payer's summary sentence
-  checkSummary, CHECK_LEAD, CHECK_FALLBACK,
+  checkSummary, CHECK_LEAD, CHECK_FALLBACK, CHECK_PAYEE_SIDE, offersCountedAt,
   // fix inbox #58: the arguments every call of a tool is checked for, where it comes in
   toolArguments, ARGUMENT_WORDS, ARGUMENT_WORDS_OF, REQUIRED_ARGUMENTS,
 } from './agent.js';

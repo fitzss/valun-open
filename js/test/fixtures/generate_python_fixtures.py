@@ -1356,6 +1356,63 @@ def scenarios():
     add('check_payer: not enrolled', 'valun_check_payer', {'payer': 'bob', 'amount': 18}, store='unenrolled')
     add('check_payer: on the testnet the amount is in nanoERG', 'valun_check_payer', {'payer': 'bob', 'amount': 2.5},
         state={'network': schemas.TESTNET})
+    # fix inbox #60: the offer under review (deal_id, deal=), counted once; and a new deal at the price of an offer bob
+    # made alice, which bob's outstanding already counts (counted_offers)
+    X, Y = 'vd_' + '6a' * 8, 'vd_' + '7b' * 8
+    counted = ('Its open offer to you (%s: 18) is already counted in its outstanding: this answer is for a new deal on top. To check an '
+               'offer you received, ask again with deal=<its id>.')
+    add('check_payer: the offer under review (deal_id), counted once', 'valun_check_payer', {'payer': 'bob', 'amount': 18, 'deal_id': X},
+        {f'{bob18}&deal={X}': {'body': check_view('accept', [f'Within its budget: up to 30 a deal; deal {X} is counted once, and 4 of 40 is '
+                                                              'left with it.'], deal_id=X)}})
+    add('check_payer: the offer under review, held for the payer\'s owner', 'valun_check_payer', {'payer': 'bob', 'amount': 30, 'deal_id': X},
+        {f"{chk('bob', 30)}&deal={X}": {'body': check_view('ask_owner', ['Within its budget.', 'Its owner approves each commitment above 25: '
+                                                                        'this one waits for the owner before it binds.'], amount=30,
+                                                            rule='approve_above', approval_needed=True, deal_id=X)}})
+    add('check_payer: the offer under review is agreed already (409)', 'valun_check_payer', {'payer': 'bob', 'amount': 18, 'deal_id': X},
+        {f'{bob18}&deal={X}': {'status': 409, 'body': {'error': 'wrong_state', 'message': f'deal {X} is agreed: it is agreed already and '
+                                                                                            'binds both of you, so there is no offer left to check'}}})
+    add('check_payer: the offer under review at another price (400)', 'valun_check_payer', {'payer': 'bob', 'amount': 18, 'deal_id': X},
+        {f'{bob18}&deal={X}': {'status': 400, 'body': {'error': 'invalid_field', 'message': f'amount must be the price of deal {X} as it '
+                                                                                              'stands, 25 (PC)'}}})
+    add('check_payer: a server that ignores deal= (from before fix inbox #60)', 'valun_check_payer', {'payer': 'bob', 'amount': 18, 'deal_id': X},
+        {f'{bob18}&deal={X}': {'body': check_view('decline', ['Over its budget: it has 0 of 40 left, less than 18.'])}})
+    add('check_payer: a server that answers for another deal', 'valun_check_payer', {'payer': 'bob', 'amount': 18, 'deal_id': X},
+        {f'{bob18}&deal={X}': {'body': check_view('accept', ['Within its budget.'], deal_id=Y)}})
+    add('check_payer: no public card, with the offer under review', 'valun_check_payer', {'payer': 'bob', 'amount': 18, 'deal_id': X},
+        {f'{bob18}&deal={X}': not_public})
+    add('check_payer: deal_id null is a new deal', 'valun_check_payer', {'payer': 'bob', 'amount': 18, 'deal_id': None},
+        {bob18: {'body': check_view('accept', ['within its budget (31 of 40 left)'])}})
+    for bad in ('vd_123', 'VD_' + '6A' * 8, X + '\n', ' ' + X, '', 5, ['vd_' + '6a' * 8], {'id': X}, 'x' * 60):
+        add(f'check_payer: a deal_id that is not one is refused before any read ({json.dumps(bad)[:24]})', 'valun_check_payer',
+            {'payer': 'bob', 'amount': 18, 'deal_id': bad})
+    add('check_payer: a new deal at the price of the one offer bob made me (counted_offers)', 'valun_check_payer',
+        {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('decline', ['Over its budget: it has 4 of 40 left, less than 18.', counted % X],
+                                    rule='max_issue_outstanding', counted_offers=[{'deal_id': X, 'amount': 18}])}})
+    add('check_payer: an offer of mine counted at this price, accept', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('accept', ['Within its budget: up to 30 a deal, 22 of 40 left.', counted % X],
+                                    counted_offers=[{'deal_id': Y, 'amount': 25}, {'deal_id': X, 'amount': 18}])}})
+    add('check_payer: two offers counted at this price', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('decline', ['Over its budget.'], counted_offers=[{'deal_id': X, 'amount': 18}, {'deal_id': Y, 'amount': 18}])}})
+    add('check_payer: offers counted at other prices only', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('accept', ['Within its budget.'], counted_offers=[{'deal_id': Y, 'amount': 25}])}})
+    add('check_payer: counted_offers entries that are not offers are left out', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('accept', ['Within its budget.'], counted_offers=[
+            {'deal_id': 'vd_1', 'amount': 18}, {'deal_id': X.upper(), 'amount': 18}, {'deal_id': X, 'amount': '18'}, {'deal_id': X, 'amount': True},
+            {'deal_id': X, 'amount': 2 ** 53}, {'amount': 18}, [X, 18], X, None, {'deal_id': Y, 'amount': 18}])}})
+    add('check_payer: counted_offers that is not a list', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('accept', ['Within its budget.'], counted_offers={'deal_id': X, 'amount': 18})}})
+    add('check_payer: your own side declines (payee_side)', 'valun_check_payer', {'payer': 'bob', 'amount': 18, 'deal_id': X},
+        {f'{bob18}&deal={X}': {'body': check_view('accept', ['Within its budget.'], deal_id=X, payee_side={
+            'verdict': 'decline', 'rule': 'max_accept_per_deal',
+            'reasons': ['Your own limits refuse it (max_accept_per_deal): more than the 10 you may accept in one deal.']})}})
+    add('check_payer: your owner decides first (payee_side ask_owner, no reasons)', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('accept', ['Within its budget.'], payee_side={'verdict': 'ask_owner', 'rule': 'approve_above', 'reasons': []})}})
+    add('check_payer: your own side allows it (payee_side accept)', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('accept', ['Within its budget.'], payee_side={'verdict': 'accept', 'rule': None,
+                                                                                   'reasons': ['Your own limits allow it.']})}})
+    add('check_payer: a payee_side this client does not know', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('accept', ['Within its budget.'], payee_side={'verdict': ['decline'], 'reasons': ['x']})}})
     room = {'outstanding': 9, 'room_left': 91}
     add('status: the room GET /me shows (budget cards)', 'valun_status', {}, {'GET /pilot/v1/me': {'body': dict(ME, room=room)}}, agent=ask)
     add('status: brief, with the room', 'valun_status', {'brief': True}, {'GET /pilot/v1/me': {'body': dict(ME, room=room)}}, agent=ask)
@@ -1836,6 +1893,23 @@ def client_scenarios():
     add('check_payer: an amount that is true is refused before any read', 'check_payer', {'payer': 'bob', 'amount': True})
     add('check_payer: an amount too large to sign is refused', 'check_payer', {'payer': 'bob', 'amount': 2 ** 53})
     add('check_payer: not public', 'check_payer', {'payer': 'bob', 'amount': 18, 'payee': 'erin'}, {chk_b: not_public})
+    # fix inbox #60: the offer under review, deal=
+    X = 'vd_' + '6a' * 8
+    chk_a = chk_b.replace(ID['erin'], ID['alice'])
+    add('check_payer: deal_id names the offer under review (deal=)', 'check_payer', {'payer': 'bob', 'amount': 18, 'deal_id': X},
+        {f'{chk_a}&deal={X}': {'body': check_view('accept', ['Within its budget.'], deal_id=X)}})
+    add('check_payer: deal_id null is a new deal', 'check_payer', {'payer': 'bob', 'amount': 18, 'deal_id': None}, {chk_a: {'body': verdict}})
+    for bad in ('vd_6a', X.upper(), X + '\n', 7, ''):
+        add(f'check_payer: a deal_id that is not one is refused before any read ({json.dumps(bad)})', 'check_payer',
+            {'payer': 'bob', 'amount': 18, 'deal_id': bad})
+    add('check_payer: deal_id for another payee (the server answers it only to the payee: 403)', 'check_payer',
+        {'payer': 'bob', 'amount': 18, 'payee': 'erin', 'deal_id': X},
+        {f'{chk_b}&deal={X}': {'status': 403, 'body': {'error': 'not_payee', 'message': "deal= is answered only to the payee: send the "
+                                                                                       "check with the payee's agent or owner token"}}})
+    add('check_payer: a server that ignores deal= answers for a new deal', 'check_payer', {'payer': 'bob', 'amount': 18, 'deal_id': X},
+        {f'{chk_a}&deal={X}': {'body': check_view('decline', ['Over its budget.'])}})
+    add('check_payer: an answer that is not an object passes through', 'check_payer', {'payer': 'bob', 'amount': 18, 'deal_id': X},
+        {f'{chk_a}&deal={X}': {'body': ['accept']}})
     owner_view = lambda who: {'participant': {'id': ID[who], 'handle': who, 'status': 'active'}, 'mandate': dict(MANDATE),   # noqa: E731
                               'mandate_version': 3}
     put = lambda on: {'PUT /pilot/v1/owner/mandate': {'body': {'mandate': dict(MANDATE, public_card=on), 'mandate_version': 4,   # noqa: E731
@@ -2128,7 +2202,25 @@ def parity():
         {'verdict': 'accept', 'cover': {'covered': True}}, {'verdict': 'accept', 'cover': {'covered': '3'}},
         {'verdict': 'accept', 'cover': {'covered': 2 ** 53}}, {'verdict': 'accept', 'cover': {'covered': 2 ** 53 - 1}},
         {'verdict': 'accept', 'cover': 3}, {'verdict': 'accept', 'cover': [3]}, {'verdict': 'accept', 'cover': {}},
-        {'verdict': 'constructor', 'reasons': []}, {'verdict': 'toString'}, {'verdict': 'accept', 'reasons': ['caf\u00e9 \U0001F600.']}]]
+        {'verdict': 'constructor', 'reasons': []}, {'verdict': 'toString'}, {'verdict': 'accept', 'reasons': ['caf\u00e9 \U0001F600.']},
+        # fix inbox #60: offers the payer's outstanding counts at the amount checked, and the payee's own side
+        *({'verdict': v, 'reasons': ['r.'], 'amount': 18, 'counted_offers': offers, **more} for v in ('accept', 'decline', 'ask_owner', 'maybe')
+          for offers, more in (([{'deal_id': 'vd_' + '6a' * 8, 'amount': 18}], {}), ([{'deal_id': 'vd_' + '6a' * 8, 'amount': 18}],
+                                                                                    {'deal_id': 'vd_' + '6a' * 8}),
+                               ([{'deal_id': 'vd_' + '6a' * 8, 'amount': 18}, {'deal_id': 'vd_' + '7b' * 8, 'amount': 18}], {}),
+                               ([{'deal_id': 'vd_' + '6a' * 8, 'amount': 18}], {'amount': 2 ** 53 - 1}),
+                               ([{'deal_id': 'vd_' + '6a' * 8, 'amount': 2 ** 53 - 1}], {'amount': 2 ** 53 - 1}),
+                               ([{'deal_id': 'vd_' + '6a' * 8, 'amount': -18}], {'amount': -18}),
+                               ([{'deal_id': 'vd_' + '6a' * 8, 'amount': 18}], {'cover': {'covered': 3}}))),
+        {'verdict': 'accept', 'reasons': [], 'payee_side': {'verdict': 'decline', 'reasons': [' Your own limits\nrefuse it. ', 7]}},
+        {'verdict': 'decline', 'payee_side': {'verdict': 'decline'}}, {'verdict': 'accept', 'payee_side': {'verdict': 'ask_owner', 'reasons': None}},
+        {'verdict': 'accept', 'payee_side': {'verdict': 'constructor'}}, {'verdict': 'accept', 'payee_side': ['decline']},
+        {'verdict': 'accept', 'reasons': ['r'], 'amount': 18, 'counted_offers': [{'deal_id': 'vd_' + '6a' * 8, 'amount': 18}],
+         'payee_side': {'verdict': 'ask_owner', 'reasons': ['Your owner approves it.']}}]]
+    P['offers_counted_at'] = [[v, va.offers_counted_at(v)] for v in [
+        None, {}, {'amount': 18, 'counted_offers': [{'deal_id': 'vd_' + '6a' * 8, 'amount': 18}, {'deal_id': 'vd_' + '7b' * 8, 'amount': 18}]},
+        {'amount': 18, 'counted_offers': [{'deal_id': 'vd_' + '6a' * 8, 'amount': 18.5}, {'deal_id': 'vd_' + '6a' * 8, 'amount': False}]},
+        {'amount': True, 'counted_offers': [{'deal_id': 'vd_' + '6a' * 8, 'amount': True}]}, {'amount': 18, 'counted_offers': 'vd_x'}]]
     P['records'] = records_table()
     P['novation_cases'] = novation_cases()
     P['novation_helpers'] = novation_helpers()

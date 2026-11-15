@@ -503,42 +503,91 @@ export function toolArguments(name, args) {
 }
 
 // valun_check_payer (budget cards): the summary's first word for each verdict the server gives, and its words when the
-// server gives no reasons. The Python core's.
+// server gives no reasons; and the words for the payee's own side of the step (payee_side) when it would not simply go
+// ahead and the server gives no reasons for it. The Python core's.
 export const CHECK_LEAD = Object.freeze({accept: 'Accept', ask_owner: "Ask the payer's owner", decline: 'Decline'});
 export const CHECK_FALLBACK = Object.freeze({accept: "its owner's budget card allows this IOU",
   ask_owner: "the payer's owner approves an IOU this size before it binds",
   decline: "its owner's budget card does not allow this IOU"});
+export const CHECK_PAYEE_SIDE = Object.freeze({decline: 'your own limits refuse it', ask_owner: 'your owner approves it before it binds'});
+/** A deal id as the server writes one (the offer under review, deal=; counted_offers). */
+const OFFER_ID = /^vd_[0-9a-f]{16}$/;
+
+/** The server's reasons for a summary: each a text put on one line without its final stop; the others left out. */
+function summaryParts(reasons) {
+  return (Array.isArray(reasons) ? reasons : []).filter(r => typeof r === 'string')
+    .map(r => rstripChars(splitWords(r).join(' '), ' .;,')).filter(Boolean);
+}
+
+/**
+ * For a check of a new deal (an answer that names no deal_id): the deal ids of the payer's open offers to this agent that
+ * the answer says its outstanding already counts (counted_offers [{deal_id, amount}], fix inbox #60), at exactly the
+ * amount checked, as listed. An entry that is not {deal_id: a deal id, amount: a whole number} is left out. The Python
+ * core's offers_counted_at.
+ */
+export function offersCountedAt(v) {
+  const d = isDict(v) ? v : {};
+  const amount = get(d, 'amount'), rows = get(d, 'counted_offers');
+  if (Object.hasOwn(d, 'deal_id') || !whole(amount) || !Array.isArray(rows)) return [];
+  return rows.filter(o => isDict(o) && typeof get(o, 'deal_id') === 'string' && OFFER_ID.test(o.deal_id) && whole(get(o, 'amount'))
+    && o.amount === amount).map(o => o.deal_id);
+}
 
 /**
  * valun_check_payer's summary: the verdict, its reasons and the cover as one plain sentence, e.g. 'Accept: within its
  * budget (31 of 40 left), backed for you up to 3.' The reasons are the server's, each put on one line without its final
  * stop; without any, the words of CHECK_FALLBACK. The cover is named only when cover.covered is a whole number above 0
  * (the server shows it only to the payee itself, and null means not shown, never 0), and only for accept and ask_owner: a
- * declined IOU would not be issued at all. A verdict this client does not know reads Unknown. The Python core's
- * check_summary.
+ * declined IOU would not be issued at all. A verdict this client does not know reads Unknown.
+ *
+ * Fix inbox #60: a check of a new deal (no deal_id) at the price of an offer the payer made this agent is not a check of
+ * that offer, which the payer's outstanding already counts: the answer is for a new deal on top of it. So when the
+ * answer's counted_offers has offers at exactly the amount checked (offersCountedAt), the summary says so after the
+ * verdict and gives the call that answers for the offer. Several such offers are listed, and the call is with one of
+ * their deal_ids. The payee's own side of the step (payee_side): when it is decline or ask_owner, the summary ends with
+ * 'Your own side: ' and its reasons (or the words of CHECK_PAYEE_SIDE). The Python core's check_summary.
  */
 export function checkSummary(v) {
   const d = isDict(v) ? v : {};
   const verdict = typeof get(d, 'verdict') === 'string' ? d.verdict : null;
-  const reasons = Array.isArray(get(d, 'reasons')) ? d.reasons : [];
-  let parts = reasons.filter(r => typeof r === 'string').map(r => rstripChars(splitWords(r).join(' '), ' .;,')).filter(Boolean);
+  let parts = summaryParts(get(d, 'reasons'));
   if (!parts.length) {
     parts = [verdict !== null && Object.hasOwn(CHECK_FALLBACK, verdict) ? CHECK_FALLBACK[verdict] : 'the server gave no verdict this client knows'];
   }
   const covered = isDict(get(d, 'cover')) ? get(d.cover, 'covered') : null;
   if ((verdict === 'accept' || verdict === 'ask_owner') && whole(covered) && covered > 0) parts.push(`backed for you up to ${covered}`);
-  return `${verdict !== null && Object.hasOwn(CHECK_LEAD, verdict) ? CHECK_LEAD[verdict] : 'Unknown'}: ${parts.join(', ')}.`;
+  const lead = verdict !== null && Object.hasOwn(CHECK_LEAD, verdict) ? CHECK_LEAD[verdict] : 'Unknown';
+  const offers = offersCountedAt(d);
+  let out;
+  if (offers.length === 1) {
+    out = `${lead}, for a new deal on top of the offer you received at this price (${offers[0]}, already counted): `
+      + `${parts.join(', ')}. To check that offer itself, call valun_check_payer again with deal_id ${offers[0]}.`;
+  } else if (offers.length) {
+    out = `${lead}, for a new deal on top of the ${offers.length} offers you received at this price (${offers.join(', ')}, `
+      + `already counted): ${parts.join(', ')}. To check one of them, call valun_check_payer again with its deal_id.`;
+  } else {
+    out = `${lead}: ${parts.join(', ')}.`;
+  }
+  const side = isDict(get(d, 'payee_side')) ? d.payee_side : {};
+  const sv = get(side, 'verdict');
+  if (typeof sv === 'string' && Object.hasOwn(CHECK_PAYEE_SIDE, sv)) {
+    const sp = summaryParts(get(side, 'reasons'));
+    out += ` Your own side: ${(sp.length ? sp : [CHECK_PAYEE_SIDE[sv]]).join(', ')}.`;
+  }
+  return out;
 }
 
 /**
  * valun_check_payer's answer when the payer's owner has not published a budget card (card_not_public): an answer, not an
- * error, with verdict 'unknown'. The Python core's unchecked_payer.
+ * error, with verdict 'unknown' (and the offer under review, deal_id, when the check named one). The Python core's
+ * unchecked_payer.
  */
-function uncheckedPayer(payer, amount) {
+function uncheckedPayer(payer, amount, dealId = null) {
   const who = shown(or(get(payer, 'handle'), get(payer, 'id')));
   return {summary: `Unknown: ${who}'s owner has not published a budget card, so its budget cannot be checked; decide `
       + 'from its record (valun_directory) or ask your owner.',
-    verdict: 'unknown', reasons: ["the payer's owner has not published a budget card"], rule: null, payer, amount};
+    verdict: 'unknown', reasons: ["the payer's owner has not published a budget card"], rule: null, payer, amount,
+    ...(dealId === null ? {} : {deal_id: dealId})};
 }
 
 /** A guarantee party's handle as the view names it, else its id from the checked terms. */
@@ -2196,7 +2245,10 @@ export class ValunAgent {
    * valun_check_payer (read only): may `payer` owe this agent `amount` more, by the budget card its owner published? The
    * server's verdict object (Client.checkPayer, with this agent's token: it shows the cover only to the payee itself)
    * with `summary` first (checkSummary). The amount is checked as valun_propose checks its price (count), before anything
-   * is read. A payer whose owner has not published a card gets verdict 'unknown' (uncheckedPayer): an answer, not an error.
+   * is read, and so is deal_id (fix inbox #60: the offer under review, which the server then counts once; vd_ + 16 hex).
+   * Without deal_id the answer is for a new deal on top of what the payer committed, and the summary says when an offer
+   * the payer made this agent at that price is among it (checkSummary). A payer whose owner has not published a card
+   * gets verdict 'unknown' (uncheckedPayer): an answer, not an error.
    */
   async checkPayer(a) {
     const c = this.client();
@@ -2205,12 +2257,18 @@ export class ValunAgent {
       throw new ValunError('bad_arguments', 'payer must be the handle or participant id (text) of the agent that would owe you');
     }
     const amount = count('amount', get(a, 'amount'), c.unit ?? UNIT);
+    const dealId = get(a, 'deal_id') ?? null;
+    if (dealId !== null && !(typeof dealId === 'string' && OFFER_ID.test(dealId))) {
+      const got = quoted(dealId);
+      throw new ValunError('bad_arguments', 'deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as valun_inbox '
+        + `lists it, not ${got.length <= 40 ? got : got.slice(0, 37) + '...'}`);
+    }
     const ref = await c.resolveParticipant(payer);
     let v;
     try {
-      v = await c.checkPayer(ref.id, amount);
+      v = await c.checkPayer(ref.id, amount, {dealId});
     } catch (e) {
-      if (isValunError(e) && e.code === 'card_not_public') return uncheckedPayer(ref, amount);
+      if (isValunError(e) && e.code === 'card_not_public') return uncheckedPayer(ref, amount, dealId);
       throw e;
     }
     if (!isDict(v)) throw new ValunError('bad_response', 'the server answered the check with no verdict');

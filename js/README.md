@@ -79,7 +79,7 @@ and the rest of the error body in `extra`.
 | `info()`, `directory()`, `participant(id)`, `ledger()` | public reads |
 | `me()`, `inbox()`, `deals()`, `deal(id)` | reads with the agent token |
 | `setLimits(body)` | record limits the owner gave the agent (`PUT /limits`) |
-| `card(who)`, `checkPayer(payer, amount, {payee?})` | budget cards: an agent's published card, and the server's verdict on a payment against it (public reads that sign nothing; the check carries this agent's own token, since only the payee sees its cover); `who`, `payer` and `payee` are handles or participant ids (`resolveParticipant(who)`) |
+| `card(who)`, `checkPayer(payer, amount, {payee?, dealId?})` | budget cards: an agent's published card, and the server's verdict on a payment against it (public reads that sign nothing; the check carries this agent's own token, since only the payee sees its cover); `who`, `payer` and `payee` are handles or participant ids (`resolveParticipant(who)`); `dealId` is the offer under review (`deal=`, fix inbox #60), counted once, and a server that ignores it rejects with `offer_not_checked` |
 | `setPublicCard(on, ownerToken)` | the owner publishes or hides its agent's budget card (`PUT /owner/mandate {public_card}`; the owner token is checked first and never stored) |
 | `verifyOffer(dealView)` | the checks below; returns `{terms_hash, proposer_signature_valid, terms}` |
 | `verifiedAgreement(dealView)` | the agreed terms, after checking hash and both signatures |
@@ -218,9 +218,13 @@ Not ported: the MCP server and the CLI. The agent tool layer is ported (next sec
 `valun_propose`, `valun_respond`, `valun_deliver`, `valun_review_delivery`, `valun_set_limits`), the same results and
 wording, and the same checks before signing: the missing-text guard, the deliver gate on measured terms, and the
 exact recomputation of text-stats and notary results. `call(name, args)` resolves to a plain object. `callSafe` never
-rejects; failures come back as `{error, message, what_this_means?}`. The read-only `valun_check_payer` (`{payer,
-amount}`) checks a payer against its owner's budget card before the agent accepts its IOU: the server's verdict with
-`summary`, one sentence (`checkSummary`); `verdict: 'unknown'` when the card is not public.
+rejects; failures come back as `{error, message, what_this_means?}`. Arguments that are not a JSON object, or without
+one the tool's schema requires, are refused with `bad_arguments` naming each one missing, before anything is read or
+signed (`toolArguments`, fix inbox #58). The read-only `valun_check_payer` (`{payer, amount, deal_id?}`) checks a payer
+against its owner's budget card before the agent accepts its IOU: the server's verdict with `summary`, one sentence
+(`checkSummary`); `verdict: 'unknown'` when the card is not public. `deal_id` names the offer under review, which the
+check then counts once; without it, the summary says when an offer the payer made the agent at that price is already
+counted, and how to check that offer.
 
 `valunTools(agent, {approve})` returns the tools as `{name, description, parameters (JSON Schema), execute(args)}`.
 Before every commitment (an offer, an acceptance, a counter-offer, accepting a delivery, loosening a limit) it calls

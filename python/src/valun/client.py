@@ -1068,22 +1068,44 @@ class Client:
         page}, amounts in the network's unit. card_not_public (404) when its owner has not published it."""
         return self._card_read(f"/pilot/v1/participants/{_seg(self.resolve_participant(who)['id'])}/card")
 
-    def check_payer(self, payer, amount, payee=None):
+    def check_payer(self, payer, amount, payee=None, deal_id=None):
         """May `payer` (a handle or participant id) owe `payee` (a handle or participant id; default: this participant)
         `amount` more, by the budget card its owner published? GET /participants/{id}/check?amount=N&payee=ID answers
         {verdict ('accept', 'ask_owner' or 'decline'), reasons, rule, payer, payee, amount, mandate {version, expires_at},
         room_left, approval_needed, cover {covered, guarantees}, record, card_hash, checked_at, took_ms}. Read only: it
         signs nothing. The request carries this agent's own token (when it has one): the server shows the cover only to
-        the payee itself, so with another payee (or without a token) cover.covered is null, not shown. amount is a whole
-        number of this network's unit, at least 1 (bad_arguments otherwise, before anything is read). card_not_public
-        (404) when the payer's owner has not published its card."""
+        the payee itself, so with another payee (or without a token) cover.covered is null, not shown, and so is its own
+        side of the step (payee_side {verdict, rule, reasons}, from a server that sends it). amount is a whole number of
+        this network's unit, at least 1 (bad_arguments otherwise, before anything is read). card_not_public (404) when
+        the payer's owner has not published its card.
+
+        deal_id (fix inbox #60; &deal=): the offer under review, a deal where the payer pays the payee, still in its offer
+        phase (open, waiting for its proposer's owner, or accepted and waiting for an owner), at exactly `amount`, its
+        price as it stands. The server then leaves that deal out of the payer's outstanding before it adds `amount`, so
+        an offer the payee received is counted once, and answers for what the deal's next steps do for the payer
+        (deal_id in the answer). Without it the answer is for a new deal on top of everything the payer committed, its
+        open offers to the payee included: the payee's own answer lists those its outstanding already counts
+        (counted_offers [{deal_id, amount}], newest first). A deal_id that is not one (vd_ + 16 hex) is bad_arguments,
+        before anything is read. The server answers it only to the payee's own token (403 not_payee otherwise, so for
+        another payee or a client that is not joined), and refuses a deal not between these two or not at that price
+        (400 invalid_field), unknown to the payee (404 not_found), or past its offer phase (409 wrong_state); each is
+        raised as the server gives it. A server from before fix inbox #60 ignores deal=: its answer, which names no
+        deal_id (or another one), is for a new deal on top of the offer, counted twice, so it is refused
+        (offer_not_checked), never returned as the offer's."""
         if not (isinstance(amount, int) and not isinstance(amount, bool) and 1 <= amount <= nv.MAX_SAFE_INTEGER):
             raise ValunError('bad_arguments', f'amount must be a whole number of {self.unit}, at least 1; nothing was read')
+        if deal_id is not None and not (isinstance(deal_id, str) and _DEAL_ID_RE.fullmatch(deal_id)):
+            raise ValunError('bad_arguments', 'deal_id must be a deal id, vd_ and 16 hex digits; nothing was read')
         if payee is None and not self.participant_id:
             raise ValunError('bad_arguments', 'give payee: this client has no participant id of its own (it is not joined)')
         payer_id = self.resolve_participant(payer)['id']
         payee_id = self.participant_id if payee is None else self.resolve_participant(payee)['id']
-        return self._card_read(f'/pilot/v1/participants/{_seg(payer_id)}/check?amount={amount}&payee={_seg(payee_id)}', auth=True)
+        deal = '' if deal_id is None else f'&deal={deal_id}'
+        r = self._card_read(f'/pilot/v1/participants/{_seg(payer_id)}/check?amount={amount}&payee={_seg(payee_id)}{deal}', auth=True)
+        if deal_id is not None and isinstance(r, dict) and r.get('deal_id') != deal_id:
+            raise ValunError('offer_not_checked', f'this Valun server does not check the offer under review ({deal_id}): its answer '
+                                                  'is for a new deal on top of that offer, which it counts twice')
+        return r
 
     def set_public_card(self, on, owner_token):
         """The OWNER's choice: publish (on=True) or hide (on=False) this participant's budget card, PUT /owner/mandate

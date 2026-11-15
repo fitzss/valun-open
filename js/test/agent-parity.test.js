@@ -155,7 +155,7 @@ const CALL = {
   // budget cards
   resolve_participant: (c, k) => c.resolveParticipant(k.who),
   card: (c, k) => c.card(k.who),
-  check_payer: (c, k) => c.checkPayer(k.payer, k.amount, {payee: k.payee ?? null}),
+  check_payer: (c, k) => c.checkPayer(k.payer, k.amount, {payee: k.payee ?? null, dealId: k.deal_id ?? null}),
   set_public_card: (c, k) => c.setPublicCard(k.on, k.owner_token),
 };
 

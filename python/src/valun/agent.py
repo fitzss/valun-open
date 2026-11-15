@@ -552,11 +552,37 @@ def tool_arguments(name, args):
 
 
 # valun_check_payer (budget cards): the summary's first word for each verdict the server gives, and its words when the
-# server gives no reasons.
+# server gives no reasons; and the words for the payee's own side of the step (payee_side) when it would not simply go
+# ahead and the server gives no reasons for it.
 CHECK_LEAD = {'accept': 'Accept', 'ask_owner': "Ask the payer's owner", 'decline': 'Decline'}
 CHECK_FALLBACK = {'accept': "its owner's budget card allows this IOU",
                   'ask_owner': "the payer's owner approves an IOU this size before it binds",
                   'decline': "its owner's budget card does not allow this IOU"}
+CHECK_PAYEE_SIDE = {'decline': 'your own limits refuse it', 'ask_owner': 'your owner approves it before it binds'}
+# A deal id as the server writes one (the offer under review, deal=; counted_offers).
+_OFFER_ID = re.compile(r'vd_[0-9a-f]{16}')
+
+
+def _summary_parts(reasons):
+    """The server's reasons for a summary: each a text put on one line without its final stop; the others left out."""
+    return [p for p in (' '.join(r.split()).rstrip(' .;,') for r in (reasons if isinstance(reasons, list) else [])
+                        if isinstance(r, str)) if p]
+
+
+def _safe_whole(v):
+    return _whole(v) and -nv.MAX_SAFE_INTEGER <= v <= nv.MAX_SAFE_INTEGER
+
+
+def offers_counted_at(v):
+    """For a check of a new deal (an answer that names no deal_id): the deal ids of the payer's open offers to this agent
+    that the answer says its outstanding already counts (counted_offers [{deal_id, amount}], fix inbox #60), at exactly
+    the amount checked, as listed. An entry that is not {deal_id: a deal id, amount: a whole number} is left out."""
+    v = v if isinstance(v, dict) else {}
+    amount, rows = v.get('amount'), v.get('counted_offers')
+    if 'deal_id' in v or not _safe_whole(amount) or not isinstance(rows, list):
+        return []
+    return [o['deal_id'] for o in rows if isinstance(o, dict) and isinstance(o.get('deal_id'), str)
+            and _OFFER_ID.fullmatch(o['deal_id']) and _safe_whole(o.get('amount')) and o['amount'] == amount]
 
 
 def check_summary(v):
@@ -564,27 +590,49 @@ def check_summary(v):
     budget (31 of 40 left), backed for you up to 3.' The reasons are the server's, each put on one line without its final
     stop; without any, the words of CHECK_FALLBACK. The cover is named only when cover.covered is a whole number above 0
     (the server shows it only to the payee itself, and null means not shown, never 0), and only for accept and ask_owner:
-    a declined IOU would not be issued at all. A verdict this client does not know reads Unknown."""
+    a declined IOU would not be issued at all. A verdict this client does not know reads Unknown.
+
+    Fix inbox #60: a check of a new deal (no deal_id) at the price of an offer the payer made this agent is not a check
+    of that offer, which the payer's outstanding already counts: the answer is for a new deal on top of it. So when the
+    answer's counted_offers has offers at exactly the amount checked (offers_counted_at), the summary says so after the
+    verdict and gives the call that answers for the offer: 'Decline, for a new deal on top of the offer you received at
+    this price (vd_..., already counted): ... To check that offer itself, call valun_check_payer again with deal_id
+    vd_...'. Several such offers are listed, and the call is with one of their deal_ids.
+
+    The payee's own side of the step (payee_side, which the server shows only to the payee itself): when it is decline
+    (the payee's own limits refuse it) or ask_owner (the payee's owner decides first), the summary ends with 'Your own
+    side: ' and its reasons (or the words of CHECK_PAYEE_SIDE), so an Accept for the payer never reads as one for you."""
     v = v if isinstance(v, dict) else {}
     verdict = v.get('verdict') if isinstance(v.get('verdict'), str) else None
-    reasons = v.get('reasons') if isinstance(v.get('reasons'), list) else []
-    parts = [p for p in (' '.join(r.split()).rstrip(' .;,') for r in reasons if isinstance(r, str)) if p]
+    parts = _summary_parts(v.get('reasons'))
     if not parts:
         parts = [CHECK_FALLBACK.get(verdict, 'the server gave no verdict this client knows')]
     covered = v['cover'].get('covered') if isinstance(v.get('cover'), dict) else None
     if verdict in ('accept', 'ask_owner') and _whole(covered) and 0 < covered <= nv.MAX_SAFE_INTEGER:
         parts.append(f'backed for you up to {covered}')
-    return f"{CHECK_LEAD.get(verdict, 'Unknown')}: {', '.join(parts)}."
+    lead, offers = CHECK_LEAD.get(verdict, 'Unknown'), offers_counted_at(v)
+    if len(offers) == 1:
+        out = (f'{lead}, for a new deal on top of the offer you received at this price ({offers[0]}, already counted): '
+               f"{', '.join(parts)}. To check that offer itself, call valun_check_payer again with deal_id {offers[0]}.")
+    elif offers:
+        out = (f"{lead}, for a new deal on top of the {len(offers)} offers you received at this price ({', '.join(offers)}, "
+               f"already counted): {', '.join(parts)}. To check one of them, call valun_check_payer again with its deal_id.")
+    else:
+        out = f"{lead}: {', '.join(parts)}."
+    side = v.get('payee_side') if isinstance(v.get('payee_side'), dict) else {}
+    if isinstance(side.get('verdict'), str) and side['verdict'] in CHECK_PAYEE_SIDE:
+        out += f" Your own side: {', '.join(_summary_parts(side.get('reasons')) or [CHECK_PAYEE_SIDE[side['verdict']]])}."
+    return out
 
 
-def unchecked_payer(payer, amount):
+def unchecked_payer(payer, amount, deal_id=None):
     """valun_check_payer's answer when the payer's owner has not published a budget card (card_not_public): an answer,
-    not an error, with verdict 'unknown'."""
+    not an error, with verdict 'unknown' (and the offer under review, deal_id, when the check named one)."""
     who = shown(payer.get('handle') or payer.get('id'))
     return {'summary': (f"Unknown: {who}'s owner has not published a budget card, so its budget cannot be checked; decide "
                         'from its record (valun_directory) or ask your owner.'),
             'verdict': 'unknown', 'reasons': ["the payer's owner has not published a budget card"], 'rule': None, 'payer': payer,
-            'amount': amount}
+            'amount': amount, **({} if deal_id is None else {'deal_id': deal_id})}
 
 
 def _party(g, role, terms):
@@ -1957,19 +2005,26 @@ class ValunAgent:
         """valun_check_payer (read only): may `payer` owe this agent `amount` more, by the budget card its owner published?
         The server's verdict object (Client.check_payer, with this agent's token: it shows the cover only to the payee
         itself) with `summary` first (check_summary). The amount is checked as valun_propose checks its price (_count),
-        before anything is read. A payer whose owner has not published a card gets verdict 'unknown' (unchecked_payer):
-        an answer, not an error."""
+        before anything is read, and so is deal_id (fix inbox #60: the offer under review, which the server then counts
+        once; vd_ + 16 hex). Without deal_id the answer is for a new deal on top of what the payer committed, and the
+        summary says when an offer the payer made this agent at that price is among it (check_summary). A payer whose
+        owner has not published a card gets verdict 'unknown' (unchecked_payer): an answer, not an error."""
         c = self.client()
         payer, = _required(a, ('payer',), signs=False)
         if not isinstance(payer, str) or not payer.strip():
             raise vc.ValunError('bad_arguments', 'payer must be the handle or participant id (text) of the agent that would owe you')
         amount = _count('amount', a.get('amount'), getattr(c, 'unit', vc.UNIT))
+        deal_id = a.get('deal_id')
+        if deal_id is not None and not (isinstance(deal_id, str) and _OFFER_ID.fullmatch(deal_id)):
+            got = quoted(deal_id)
+            raise vc.ValunError('bad_arguments', 'deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as valun_inbox '
+                                                 f"lists it, not {got if len(got) <= 40 else got[:37] + '...'}")
         ref = c.resolve_participant(payer)
         try:
-            v = c.check_payer(ref['id'], amount)
+            v = c.check_payer(ref['id'], amount, deal_id=deal_id)
         except vc.ValunError as e:
             if e.code == 'card_not_public':
-                return unchecked_payer(ref, amount)
+                return unchecked_payer(ref, amount, deal_id)
             raise
         if not isinstance(v, dict):
             raise vc.ValunError('bad_response', 'the server answered the check with no verdict')

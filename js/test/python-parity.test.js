@@ -148,9 +148,13 @@ test('approval text helpers: quoted (Python json.dumps, ASCII, compact), shown, 
   for (const [v, out] of P.shown) assert.equal(shown(v), out, show(v));
   for (const [label, fields, out] of P.quote_line) assert.equal(quoteLine(label, fields), out, label);
   for (const [role, who, price, out] of P.owes) assert.equal(owes(role, who, price), out, role);
-  // budget cards: valun_check_payer's summary sentence (the verdict and its reasons)
-  assert.ok(P.check_summary.length >= 15);
+  // budget cards: valun_check_payer's summary sentence (the verdict and its reasons; since 0.7.1 the offers counted at the
+  // amount checked and the payee's own side, fix inbox #60)
+  assert.ok(P.check_summary.length >= 60);
   for (const [v, out] of P.check_summary) assert.equal(checkSummary(v), out, show(v));
+  assert.ok(P.check_summary.some(([, out]) => out.includes('call valun_check_payer again with deal_id')));
+  assert.ok(P.check_summary.some(([, out]) => out.includes(' Your own side: ')));
+  for (const [v, out] of P.offers_counted_at) assert.deepEqual(api.offersCountedAt(v), out, show(v));
 });
 
 test('records.py step by step: every call gives the same outcome and leaves the same records (real signatures)', () => {

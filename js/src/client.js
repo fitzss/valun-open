@@ -967,13 +967,31 @@ export class Client {
    * {verdict ('accept', 'ask_owner' or 'decline'), reasons, rule, payer, payee, amount, mandate {version, expires_at},
    * room_left, approval_needed, cover {covered, guarantees}, record, card_hash, checked_at, took_ms}. Read only: it signs
    * nothing. The request carries this agent's own token (when it has one): the server shows the cover only to the payee
-   * itself, so with another payee (or without a token) cover.covered is null, not shown. amount is a whole number of this
-   * network's unit, at least 1 (bad_arguments otherwise, before anything is read). card_not_public (404) when the payer's
-   * owner has not published its card.
+   * itself, so with another payee (or without a token) cover.covered is null, not shown, and so is its own side of the
+   * step (payee_side {verdict, rule, reasons}, from a server that sends it). amount is a whole number of this network's
+   * unit, at least 1 (bad_arguments otherwise, before anything is read). card_not_public (404) when the payer's owner has
+   * not published its card.
+   *
+   * dealId (fix inbox #60; &deal=): the offer under review, a deal where the payer pays the payee, still in its offer
+   * phase (open, waiting for its proposer's owner, or accepted and waiting for an owner), at exactly `amount`, its price
+   * as it stands. The server then leaves that deal out of the payer's outstanding before it adds `amount`, so an offer the
+   * payee received is counted once, and answers for what the deal's next steps do for the payer (deal_id in the answer).
+   * Without it the answer is for a new deal on top of everything the payer committed, its open offers to the payee
+   * included: the payee's own answer lists those its outstanding already counts (counted_offers [{deal_id, amount}],
+   * newest first). A dealId that is not one (vd_ + 16 hex) is bad_arguments, before anything is read. The server answers
+   * it only to the payee's own token (403 not_payee otherwise, so for another payee or a client that is not joined), and
+   * refuses a deal not between these two or not at that price (400 invalid_field), unknown to the payee (404 not_found),
+   * or past its offer phase (409 wrong_state); each rejects as the server gives it. A server from before fix inbox #60
+   * ignores deal=: its answer, which names no deal_id (or another one), is for a new deal on top of the offer, counted
+   * twice, so it is refused (offer_not_checked), never returned as the offer's. The Python client's check_payer.
    */
-  async checkPayer(payer, amount, {payee = null} = {}) {
+  async checkPayer(payer, amount, {payee = null, dealId = null} = {}) {
     if (!(typeof amount === 'number' && Number.isSafeInteger(amount) && amount >= 1)) {
       throw new ValunError('bad_arguments', `amount must be a whole number of ${this.unit}, at least 1; nothing was read`);
+    }
+    const deal = dealId === null || dealId === undefined ? null : dealId;
+    if (deal !== null && !(typeof deal === 'string' && DEAL_ID_RE.test(deal))) {
+      throw new ValunError('bad_arguments', 'deal_id must be a deal id, vd_ and 16 hex digits; nothing was read');
     }
     const own = payee === null || payee === undefined;
     if (own && !this.participantId) {
@@ -981,7 +999,13 @@ export class Client {
     }
     const payerId = (await this.resolveParticipant(payer)).id;
     const payeeId = own ? this.participantId : (await this.resolveParticipant(payee)).id;
-    return this.#cardRead(`/pilot/v1/participants/${seg(payerId)}/check?amount=${amount}&payee=${seg(payeeId)}`, {auth: true});
+    const r = await this.#cardRead(`/pilot/v1/participants/${seg(payerId)}/check?amount=${amount}&payee=${seg(payeeId)}`
+      + (deal === null ? '' : `&deal=${deal}`), {auth: true});
+    if (deal !== null && isDict(r) && (Object.hasOwn(r, 'deal_id') ? r.deal_id : null) !== deal) {
+      throw new ValunError('offer_not_checked', `this Valun server does not check the offer under review (${deal}): its answer `
+        + 'is for a new deal on top of that offer, which it counts twice');
+    }
+    return r;
   }
 
   /**

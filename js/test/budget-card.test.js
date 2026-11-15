@@ -2,13 +2,14 @@
 // publish its agent's budget card, anyone can read it (Client.card) and check a payment against it (Client.checkPayer,
 // the read-only tool valun_check_payer), the owner publishes or hides it with its owner token (Client.setPublicCard), and
 // valun_status shows the agent's room. Also fix inbox #58: a tool called without a required argument answers
-// bad_arguments with a plain message, not internal_error. The same over a recorded server, value for value with Python:
-// the 'check_payer:', 'card:', 'set_public_card:' and #58 scenarios of agent-parity.test.js.
+// bad_arguments with a plain message, not internal_error; and fix inbox #60: the offer under review (deal_id). The same
+// over a recorded server, value for value with Python: the 'check_payer:', 'card:', 'set_public_card:' and #58 scenarios
+// of agent-parity.test.js.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {
-  CHECK_FALLBACK, CHECK_LEAD, Client, MemoryStore, NETWORK, READ_ONLY_TOOLS, SIGNING_TOOLS, ValunAgent, ValunError, checkSummary, schemas,
-  valunTools,
+  CHECK_FALLBACK, CHECK_LEAD, CHECK_PAYEE_SIDE, Client, MemoryStore, NETWORK, READ_ONLY_TOOLS, SIGNING_TOOLS, ValunAgent, ValunError,
+  checkSummary, offersCountedAt, schemas, valunTools,
 } from '../src/index.js';
 import {fakeFetch} from './helpers.js';
 
@@ -49,7 +50,9 @@ function verdict(v = 'accept', reasons = ['within its budget (31 of 40 left)'], 
  * with the payee's own token), /me and /info, the owner routes.
  */
 function world() {
-  const w = {routes: {}, cardPublic: {[BOB]: true, [HIDDEN]: true, [ME]: false}, me: structuredClone(ME_VIEW), putAnswer: null};
+  // ignoresDeal: a server from before fix inbox #60 (deal= ignored); extra: more fields of a check without deal=
+  const w = {routes: {}, cardPublic: {[BOB]: true, [HIDDEN]: true, [ME]: false}, me: structuredClone(ME_VIEW), putAnswer: null,
+    ignoresDeal: false, extra: {}};
   w.fetch = fakeFetch((key, init) => {
     const token = (init.headers?.Authorization ?? '').replace(/^Bearer /, '') || null;
     if (Object.hasOwn(w.routes, key)) return w.routes[key];
@@ -72,9 +75,13 @@ function world() {
       if (!Object.hasOwn(w.cardPublic, m[1])) return {status: 404, body: {error: 'not_found', message: `unknown participant ${m[1]}`}};
       if (!w.cardPublic[m[1]]) return {status: 404, body: {error: 'card_not_public', message: "this participant's owner has not published its budget card"}};
       if (m[2] === 'card') return {body: CARD};
-      const payee = m[3].split('payee=')[1];
+      const query = new URLSearchParams(m[3].slice(1)), payee = query.get('payee');
       const own = token === AGENT_TOKEN && payee === ME;           // the payee's own token: only it sees its cover
-      return {body: verdict('accept', undefined, {payee: {id: payee, handle: null}, cover: own ? structuredClone(COVER) : NO_COVER_SHOWN})};
+      if (query.has('deal') && !w.ignoresDeal) {                   // fix inbox #60: the offer under review, the payee's only
+        if (!own) return {status: 403, body: {error: 'not_payee', message: "deal= is answered only to the payee: send the check with the payee's agent or owner token"}};
+        return {body: verdict('accept', undefined, {payee: {id: payee, handle: null}, deal_id: query.get('deal')})};
+      }
+      return {body: verdict('accept', undefined, {payee: {id: payee, handle: null}, cover: own ? structuredClone(COVER) : NO_COVER_SHOWN, ...w.extra})};
     }
     return undefined;
   }, BASE);
@@ -334,4 +341,74 @@ test('fix inbox #58: the other tools that failed on a missing argument, refused 
   const e = await a.prepare('valun_propose', noTitle).then(() => null, x => x);
   assert.deepEqual([e?.code, e?.extra?.cause], ['approval_unbound', 'bad_arguments']);
   assert.deepEqual(w.fetch.calls, [], 'nothing is read for it');
+});
+
+// ---------- fix inbox #60: the offer under review (deal_id), and a new deal at the price of an offer counted already ----------
+const OFFER = 'vd_' + '6a'.repeat(8), OTHER_OFFER = 'vd_' + '7b'.repeat(8);
+
+test('valun_check_payer deal_id: sent as deal= with this agent\'s token, and the answer names it', async () => {
+  const w = world();
+  const r = await w.agent().callSafe('valun_check_payer', {payer: 'bob', amount: 18, deal_id: OFFER});
+  assert.deepEqual(w.calls().at(-1), ['GET', `/pilot/v1/participants/${BOB}/check?amount=18&payee=${ME}&deal=${OFFER}`, `Bearer ${AGENT_TOKEN}`]);
+  assert.deepEqual([r.deal_id, r.summary], [OFFER, SUMMARY_ACCEPT]);
+  assert.equal((await w.client().checkPayer('bob', 18, {dealId: OFFER})).deal_id, OFFER);
+  await w.client().checkPayer('bob', 18, {dealId: null});
+  assert.ok(!w.calls().at(-1)[1].includes('deal='), 'null: a new deal');
+});
+
+test('valun_check_payer deal_id: one that is not a deal id is refused before any read, in the tool and the client', async () => {
+  const w = world();
+  for (const bad of ['vd_123', OFFER.toUpperCase(), OFFER + '\n', ' ' + OFFER, '', 5, true, [OFFER], {deal_id: OFFER}]) {
+    const r = await w.agent().callSafe('valun_check_payer', {payer: 'bob', amount: 18, deal_id: bad});
+    assert.equal(r.error, 'bad_arguments', String(bad));
+    assert.ok(r.message.startsWith('deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as valun_inbox lists it, not '));
+    await assert.rejects(w.client().checkPayer('bob', 18, {dealId: bad}),
+      e => e.code === 'bad_arguments' && e.message === 'deal_id must be a deal id, vd_ and 16 hex digits; nothing was read');
+  }
+  assert.deepEqual(w.fetch.calls, []);
+});
+
+test('valun_check_payer deal_id: a server that ignores deal= (or answers for another deal) is refused: offer_not_checked', async () => {
+  const w = world();
+  w.ignoresDeal = true;
+  assert.deepEqual(await w.agent().callSafe('valun_check_payer', {payer: 'bob', amount: 18, deal_id: OFFER}), {error: 'offer_not_checked',
+    message: `this Valun server does not check the offer under review (${OFFER}): its answer is for a new deal on top of that offer, which it counts twice`});
+  w.ignoresDeal = false;
+  w.routes[`GET /pilot/v1/participants/${BOB}/check?amount=18&payee=${ME}&deal=${OFFER}`] = {body: verdict('accept', undefined, {deal_id: OTHER_OFFER})};
+  await assert.rejects(w.client().checkPayer('bob', 18, {dealId: OFFER}), e => e.code === 'offer_not_checked');
+  await assert.rejects(world().client().checkPayer('bob', 18, {payee: 'erin', dealId: OFFER}), e => e.code === 'not_payee' && e.status === 403);
+});
+
+test('valun_check_payer: a new deal at the price of an offer the payer made you says so, and how to check that offer', async () => {
+  const w = world();
+  w.extra = {counted_offers: [{deal_id: OFFER, amount: 18}]};
+  const r = await w.agent().callSafe('valun_check_payer', {payer: 'bob', amount: 18});
+  assert.equal(r.summary, `Accept, for a new deal on top of the offer you received at this price (${OFFER}, already counted): within its `
+    + `budget (31 of 40 left), backed for you up to 3. To check that offer itself, call valun_check_payer again with deal_id ${OFFER}.`);
+  const s = (offers, more = {}) => checkSummary({verdict: 'accept', reasons: ['r'], amount: 18, counted_offers: offers, ...more});
+  assert.equal(s([{deal_id: OFFER, amount: 18}, {deal_id: OTHER_OFFER, amount: 18}]), `Accept, for a new deal on top of the 2 offers you `
+    + `received at this price (${OFFER}, ${OTHER_OFFER}, already counted): r. To check one of them, call valun_check_payer again with its deal_id.`);
+  for (const offers of [[{deal_id: OTHER_OFFER, amount: 25}], [], null, [{deal_id: OFFER, amount: '18'}], [{deal_id: 'vd_1', amount: 18}]]) {
+    assert.equal(s(offers), 'Accept: r.', JSON.stringify(offers));
+  }
+  assert.equal(s([{deal_id: OFFER, amount: 18}], {deal_id: OFFER}), 'Accept: r.', 'an answer for the offer itself');
+  assert.deepEqual(offersCountedAt({amount: 18, counted_offers: [{deal_id: OFFER, amount: 18}]}), [OFFER]);
+});
+
+test('valun_check_payer: your own side (payee_side) ends the summary when it would not simply go ahead', () => {
+  const s = side => checkSummary({verdict: 'accept', reasons: ['r'], payee_side: side});
+  assert.equal(s({verdict: 'decline', reasons: ['Your own limits refuse it (max_accept_per_deal): over your limit.']}),
+    'Accept: r. Your own side: Your own limits refuse it (max_accept_per_deal): over your limit.');
+  assert.equal(s({verdict: 'ask_owner', reasons: []}), `Accept: r. Your own side: ${CHECK_PAYEE_SIDE.ask_owner}.`);
+  for (const side of [{verdict: 'accept', reasons: ['Your own limits allow it.']}, {verdict: 'toString'}, {verdict: ['decline']}, 'decline', null]) {
+    assert.equal(s(side), 'Accept: r.', JSON.stringify(side));
+  }
+});
+
+test('valun_check_payer: the schema offers deal_id, optional, and says when to pass it', () => {
+  const p = schemas.CHECK_PAYER.parameters;
+  assert.deepEqual([...p.required], ['payer', 'amount']);
+  const {description: _d, ...dealId} = p.properties.deal_id;
+  assert.deepEqual(dealId, {type: 'string', pattern: '^vd_[0-9a-f]{16}$'});
+  assert.match(schemas.CHECK_PAYER.description, /Pass that deal's deal_id/);
 });

@@ -238,13 +238,16 @@ CHECK_PAYER = {
         "whether the owner's mandate lets the payer owe you that much more (its limit per deal and in "
         "total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's "
         "expiry), how much room it has left, whether guarantees back its IOUs to you, and its record of deals completed "
-        "and disputed. Returns the server's verdict (accept, ask_owner or decline) with its reasons, and `summary`: the "
-        "verdict in one sentence. Read-only: it signs nothing and commits no one. When the payer's owner has not "
-        "published a budget card the verdict is unknown: decide from its record (valun_directory) or ask your owner. "
-        + _SIM),
+        "and disputed. Deciding on an offer it made you? Pass that deal's deal_id (valun_inbox lists it) and its price "
+        "as amount: the payer's room already counts its open offer, and deal_id makes the check count it once. Without "
+        "deal_id the answer is for a new deal on top of everything the payer has committed. Returns the server's verdict "
+        "(accept, ask_owner or decline) with its reasons, and `summary`: the verdict in one sentence. Read-only: it signs "
+        "nothing and commits no one. When the payer's owner has not published a budget card the verdict is unknown: "
+        "decide from its record (valun_directory) or ask your owner. " + _SIM),
     "parameters": {"type": "object", "properties": {
         "payer": {"type": "string", "description": "The handle or participant id of the agent that would owe you"},
         "amount": {"type": "integer", "minimum": 1, "description": "What it would owe you (the deal's price), in PC (whole pilot credits)"},
+        "deal_id": {"type": "string", "pattern": "^vd_[0-9a-f]{16}$", "description": "Optional: the deal whose offer you are deciding on, one in which this payer would pay you (vd_ + 16 hex, as valun_inbox lists it); amount must then be its price as it stands. Leave it out to check a new deal."},
     }, "required": ["payer", "amount"]},
 }
 

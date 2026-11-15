@@ -576,9 +576,12 @@ export class Client {
   /**
    * GET /participants/{id}/check?amount=N&payee=ID, with this agent's own token: may `payer` owe `payee` (default: this
    * participant) `amount` more, by its owner's budget card? With another payee, cover.covered is null (not shown).
-   * amount: a whole number of the network's unit, at least 1 (bad_arguments otherwise).
+   * amount: a whole number of the network's unit, at least 1 (bad_arguments otherwise). dealId (fix inbox #60, &deal=):
+   * the offer under review, at exactly `amount`, which the server then counts once; answered only to the payee itself
+   * (403 not_payee otherwise). A server that answers without naming that deal_id (one from before #60) rejects with
+   * offer_not_checked.
    */
-  checkPayer(payer: string, amount: number, options?: {payee?: string | null}): Promise<PayerCheck>;
+  checkPayer(payer: string, amount: number, options?: {payee?: string | null; dealId?: string | null}): Promise<PayerCheck>;
   /**
    * The OWNER's choice: PUT /owner/mandate {public_card: on}. ownerToken (this profile's participant's owner token) is
    * checked first (GET /owner; not_owner otherwise, nothing changed) and never stored.
@@ -1055,6 +1058,12 @@ export interface PayerCheck extends Record<string, unknown> {
   card_hash: string;
   checked_at: string;
   took_ms: number;
+  /** The offer under review, when the check named one (dealId; fix inbox #60). */
+  deal_id?: string;
+  /** For the payee's own check of a new deal: the payer's open offers to it that its outstanding already counts. */
+  counted_offers?: Array<{deal_id: string; amount: number}>;
+  /** For the payee's own check: its own limits on the same step. */
+  payee_side?: {verdict: 'accept' | 'ask_owner' | 'decline'; rule: string | null; reasons: string[]};
 }
 
 /**
@@ -1062,7 +1071,7 @@ export interface PayerCheck extends Record<string, unknown> {
  * has not published a budget card, verdict 'unknown' with a summary that says so.
  */
 export type PayerCheckAnswer = ({summary: string} & PayerCheck)
-  | {summary: string; verdict: 'unknown'; reasons: string[]; rule: null; payer: CardParty; amount: number};
+  | {summary: string; verdict: 'unknown'; reasons: string[]; rule: null; payer: CardParty; amount: number; deal_id?: string};
 
 export type ToolName =
   | 'valun_status' | 'valun_directory' | 'valun_inbox' | 'valun_deal' | 'valun_propose' | 'valun_respond' | 'valun_deliver'
@@ -1298,13 +1307,22 @@ export function trackerWords(network: unknown): string;
  * valun_check_payer's summary: the verdict, its reasons and the cover as one plain sentence, e.g. 'Accept: within its
  * budget (31 of 40 left), backed for you up to 3.' Without reasons, the words of CHECK_FALLBACK; the cover only for
  * accept and ask_owner, and only when cover.covered is a whole number above 0; a verdict this client does not know reads
- * Unknown.
+ * Unknown. A check of a new deal at the price of an offer the payer made you (offersCountedAt) says it is for a new deal
+ * on top of that offer, and how to check the offer itself (deal_id); a payee_side of decline or ask_owner adds 'Your own
+ * side: ' and its reasons.
  */
 export function checkSummary(check: unknown): string;
 /** The summary's first word for each verdict: Accept, Ask owner, Decline. */
 export const CHECK_LEAD: Readonly<{accept: string; ask_owner: string; decline: string}>;
 /** The summary's words for each verdict when the server gives no reasons. */
 export const CHECK_FALLBACK: Readonly<{accept: string; ask_owner: string; decline: string}>;
+/** The summary's words for the payee's own side (payee_side) when it is decline or ask_owner and has no reasons. */
+export const CHECK_PAYEE_SIDE: Readonly<{decline: string; ask_owner: string}>;
+/**
+ * For a check of a new deal (no deal_id in the answer): the deal ids of the payer's open offers to this agent its
+ * outstanding already counts (counted_offers) at exactly the amount checked, as listed (fix inbox #60).
+ */
+export function offersCountedAt(check: unknown): string[];
 /**
  * Fix inbox #58: the arguments of a call of the tool `name`, as its handler takes them ({} for null or undefined, else the
  * JSON object given). Arguments that are not a JSON object, or without one of the tool's required arguments
@@ -1533,8 +1551,9 @@ export class ValunAgent {
   review(args: ToolArgs): Promise<ToolResult>;
   setLimits(args: ToolArgs): Promise<ToolResult>;
   /**
-   * valun_check_payer ({payer, amount}; read only): the server's verdict on the payer's budget card with `summary` first,
-   * or verdict 'unknown' when its owner has not published one. The amount is checked as valun_propose checks its price.
+   * valun_check_payer ({payer, amount, deal_id?}; read only): the server's verdict on the payer's budget card with
+   * `summary` first, or verdict 'unknown' when its owner has not published one. The amount is checked as valun_propose
+   * checks its price; deal_id (the offer under review, fix inbox #60) is a deal id (vd_ + 16 hex).
    */
   checkPayer(args: ToolArgs): Promise<PayerCheckAnswer & ToolResult>;
 }

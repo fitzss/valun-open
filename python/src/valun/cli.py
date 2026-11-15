@@ -13,8 +13,9 @@
   valun policy show     the consent policy in force (local policy and owner mandate; the stricter applies)
   valun attempts list | resolve DEAL ATTEMPT --not-applied|--applied
                         the payment attempts your client records; the OWNER resolves one whose outcome is unknown
-  valun card [WHO] | check PAYER AMOUNT | publish | unpublish
-                        budget cards: show one, check a payer against one; the OWNER publishes or hides yours
+  valun card [WHO] | check PAYER AMOUNT [--deal vd_...] | publish | unpublish
+                        budget cards: show one, check a payer against one (--deal: the offer you are deciding on); the
+                        OWNER publishes or hides yours
   valun sandbox ...     deterministic sandbox agents: seller, buy, earn, tour
   valun audit --explorer URL | --node URL [--mine] [--json]
                         check the operator: the published ledger against its tracker box on Ergo testnet (read only)
@@ -1148,7 +1149,7 @@ def cmd_profile(args):
 
 
 CARD_WORDS = ('check', 'publish', 'unpublish')       # `valun card` sub-commands; any other single word is WHO
-CARD_USAGE = 'usage: valun card [WHO] | valun card check PAYER AMOUNT | valun card publish | valun card unpublish'
+CARD_USAGE = 'usage: valun card [WHO] | valun card check PAYER AMOUNT [--deal vd_...] | valun card publish | valun card unpublish'
 
 
 def _public_card_of(answer):
@@ -1162,14 +1163,17 @@ def _public_card_of(answer):
 
 
 def cmd_card(args):
-    """valun card [WHO] | check PAYER AMOUNT | publish | unpublish: budget cards. A card of WHO (a handle or participant
-    id), which needs no joined profile, or of this profile's own agent. `check` is valun_check_payer with this profile's
-    agent as the payee: it prints the tool's answer and exits 0 only for the verdict accept. publish and unpublish are the
-    OWNER's: they use the owner token once, in memory (from --owner-token-file or a hidden prompt), never stored."""
+    """valun card [WHO] | check PAYER AMOUNT [--deal vd_...] | publish | unpublish: budget cards. A card of WHO (a handle
+    or participant id), which needs no joined profile, or of this profile's own agent. `check` is valun_check_payer with
+    this profile's agent as the payee: it prints the tool's answer and exits 0 only for the verdict accept; --deal names
+    the offer under review (its deal_id, fix inbox #60: the deal whose offer you are deciding on, AMOUNT its price).
+    publish and unpublish are the OWNER's: they use the owner token once, in memory (from --owner-token-file or a hidden
+    prompt), never stored."""
     words, store, name = list(args.words or []), _store(args), _profile(args)
     kind = words[0] if words and words[0] in CARD_WORDS else 'show'
+    deal = getattr(args, 'deal', None)
     if (kind == 'check' and len(words) != 3) or (kind in ('publish', 'unpublish') and len(words) != 1) \
-            or (kind == 'show' and len(words) > 1):
+            or (kind == 'show' and len(words) > 1) or (deal is not None and kind != 'check'):
         print(CARD_USAGE)
         return 2
     if not (kind == 'show' and words) and not (store.state.get('participant_id') and store.secret()):
@@ -1179,8 +1183,12 @@ def cmd_card(args):
         if not re.fullmatch(r'[0-9]{1,16}', words[2]):
             print(f'AMOUNT must be a whole number of {_unit(store)}, at least 1')
             return 2
+        if deal is not None and not re.fullmatch(r'vd_[0-9a-f]{16}', deal):
+            print('--deal must be a deal id (vd_ and 16 hex digits, as valun_inbox lists it): the offer you are deciding on')
+            return 2
         agent, _mode = _agent(args, store)
-        out = agent.call_safe('valun_check_payer', {'payer': words[1], 'amount': int(words[2])})
+        out = agent.call_safe('valun_check_payer', {'payer': words[1], 'amount': int(words[2]),
+                                                    **({} if deal is None else {'deal_id': deal})})
         print(json.dumps(out, ensure_ascii=False, indent=1))
         return 0 if out.get('verdict') == 'accept' else 1
     c = vc.Client(store, _server(args, store))
@@ -1587,6 +1595,7 @@ def main(argv=None):
     cd = sub.add_parser('card', help="budget cards: show one (yours by default), check a payer against one, or publish or "
                                      'hide yours (owner)', description=CARD_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     cd.add_argument('words', nargs='*', metavar='ARG', help='WHO, or check PAYER AMOUNT, or publish, or unpublish')
+    cd.add_argument('--deal', help='check: the offer you are deciding on (vd_...), so it is counted once; AMOUNT is its price')
     cd.add_argument('--owner-token-file', help='publish and unpublish: the file holding your owner token (read once, not '
                                                'stored); else it is asked')
     cd.add_argument('--server')
@@ -1712,7 +1721,8 @@ it has left, the guarantees that back it in public, and its record. Anyone can r
   valun card                       your agent's own card (or that it is not public)
   valun card WHO                   the card of WHO, a handle or participant id (no joined profile needed)
   valun card check PAYER AMOUNT    may PAYER owe you AMOUNT more? The verdict, as valun_check_payer gives it; exits 0
-                                   only for accept
+                                   only for accept. Deciding on an offer PAYER made you? Add --deal vd_... (its deal
+                                   id) with AMOUNT its price: the check then counts that offer once
   valun card publish               OWNER: publish your agent's card (--owner-token-file FILE, else the token is asked)
   valun card unpublish             OWNER: hide it again
 

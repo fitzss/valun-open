@@ -2,7 +2,9 @@
 (Client.card) and check a payment against it (Client.check_payer, the read-only tool valun_check_payer, `valun card
 check`), the owner publishes or hides it with its owner token (Client.set_public_card, `valun card publish|unpublish`),
 and valun_status shows the agent's room. Also fix inbox #58: a tool called without a required argument answers
-bad_arguments with a plain message, not internal_error. The same over a recorded server, value for value in the
+bad_arguments with a plain message, not internal_error; and fix inbox #60: the offer under review (valun_check_payer
+deal_id, Client.check_payer deal_id, `valun card check --deal`), counted once, and the summary of a new deal at the
+price of an offer the payer's outstanding already counts. The same over a recorded server, value for value in the
 JavaScript client: the 'check_payer:', 'card:', 'set_public_card:' and #58 scenarios of
 js/test/fixtures/generate_python_fixtures.py."""
 import contextlib
@@ -72,6 +74,8 @@ class World:
         self.card_public = {BOB: True, HIDDEN: True, ME: False}
         self.me = dict(ME_VIEW)
         self.put_answer = None          # the PUT /owner/mandate answer, if not the default
+        self.ignores_deal = False       # a server from before fix inbox #60: deal= is ignored
+        self.extra = {}                 # more fields of a check's answer without deal= (counted_offers, payee_side)
 
     def handle(self, method, path, body, token):
         self.log.append((method, path, body, token))
@@ -111,9 +115,15 @@ class World:
                 raise vc.ValunError(NOT_PUBLIC[1]['error'], NOT_PUBLIC[1]['message'], NOT_PUBLIC[0])
             if parts[5] == 'card':
                 return dict(CARD)
-            payee = path.split('payee=', 1)[1]
+            query = dict(kv.split('=', 1) for kv in path.split('?', 1)[1].split('&'))
+            payee = query['payee']
             own = token == AGENT_TOKEN and payee == ME          # the payee's own token: only it sees its cover
-            return verdict(payee=payee, cover=COVER if own else NO_COVER_SHOWN)
+            if 'deal' in query and not self.ignores_deal:      # fix inbox #60: the offer under review, the payee's only
+                if not own:
+                    raise vc.ValunError('not_payee', "deal= is answered only to the payee: send the check with the payee's agent or "
+                                                     'owner token', 403)
+                return verdict(payee=payee, cover=COVER, deal_id=query['deal'])
+            return verdict(payee=payee, cover=COVER if own else NO_COVER_SHOWN, **self.extra)
         raise vc.ValunError('not_found', f'no route {key}', 404)
 
 
@@ -343,6 +353,124 @@ class CheckPayerTool(Card):
         self.assertEqual(self.agent(joined=False).call_safe('valun_check_payer', {'payer': 'bob', 'amount': 18})['error'], 'not_connected')
 
 
+OFFER, OTHER_OFFER = 'vd_' + '6a' * 8, 'vd_' + '7b' * 8
+# The server's own reason for an offer its outstanding counts (valun-app lib/pilot/card.mjs checkPayer, fix inbox #60).
+COUNTED_REASON = (f'Its open offer to you ({OFFER}: 18) is already counted in its outstanding: this answer is for a new deal on top. '
+                  'To check an offer you received, ask again with deal=<its id>.')
+
+
+class OfferUnderReview(Card):
+    """Fix inbox #60: valun_check_payer's deal_id, the offer under review (deal=), which the server counts once; and the
+    summary of a new deal at the price of an offer the payer made this agent, which its outstanding already counts."""
+
+    def check(self, **args):
+        return self.agent().call_safe('valun_check_payer', args)
+
+    def test_deal_id_is_sent_as_deal_with_this_agents_token_and_the_answer_names_it(self):
+        r = self.check(payer='bob', amount=18, deal_id=OFFER)
+        self.assertEqual(self.world.log[-1], ('GET', f'/pilot/v1/participants/{BOB}/check?amount=18&payee={ME}&deal={OFFER}', None, AGENT_TOKEN))
+        self.assertEqual((r['deal_id'], r['summary']), (OFFER, SUMMARY_ACCEPT))
+        self.assertEqual({k: v for k, v in r.items() if k != 'summary'}, verdict(deal_id=OFFER))
+        self.assertEqual(self.client().check_payer('bob', 18, deal_id=OFFER)['deal_id'], OFFER)
+        self.client().check_payer('bob', 18, deal_id=None)
+        self.assertNotIn('deal=', self.world.log[-1][1], 'null: a new deal')
+
+    def test_a_deal_id_that_is_not_one_is_refused_before_any_read(self):
+        for bad in ('vd_123', OFFER.upper(), OFFER + '\n', ' ' + OFFER, '', 5, True, [OFFER], {'deal_id': OFFER}):
+            r = self.check(payer='bob', amount=18, deal_id=bad)
+            self.assertEqual(r['error'], 'bad_arguments', bad)
+            self.assertTrue(r['message'].startswith('deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as '
+                                                    'valun_inbox lists it, not '), r['message'])
+            with self.assertRaises(vc.ValunError) as e:
+                self.client().check_payer('bob', 18, deal_id=bad)
+            self.assertEqual((e.exception.code, str(e.exception)), ('bad_arguments', 'deal_id must be a deal id, vd_ and 16 hex digits; '
+                                                                                     'nothing was read'))
+        self.assertEqual(self.world.log, [])
+
+    def test_a_server_that_ignores_deal_is_never_taken_for_the_offers_answer(self):
+        self.world.ignores_deal = True              # a server from before fix inbox #60 answers for a new deal on top
+        r = self.check(payer='bob', amount=18, deal_id=OFFER)
+        self.assertEqual(r, {'error': 'offer_not_checked', 'message': f'this Valun server does not check the offer under review ({OFFER}): its '
+                                                                      'answer is for a new deal on top of that offer, which it counts twice'})
+        with self.assertRaises(vc.ValunError) as e:
+            self.client().check_payer('bob', 18, deal_id=OFFER)
+        self.assertEqual(e.exception.code, 'offer_not_checked')
+        self.world.ignores_deal = False
+        self.world.routes[f'GET /pilot/v1/participants/{BOB}/check?amount=18&payee={ME}&deal={OFFER}'] = (200, verdict(deal_id=OTHER_OFFER))
+        self.assertEqual(self.check(payer='bob', amount=18, deal_id=OFFER)['error'], 'offer_not_checked', 'an answer for another deal')
+
+    def test_the_servers_refusals_of_deal_pass_through(self):
+        route = f'GET /pilot/v1/participants/{BOB}/check?amount=18&payee={ME}&deal={OFFER}'
+        for status, code in ((409, 'wrong_state'), (400, 'invalid_field'), (404, 'not_found'), (403, 'not_payee')):
+            self.world.routes[route] = (status, {'error': code, 'message': f'the server says {code}'})
+            self.assertEqual(self.check(payer='bob', amount=18, deal_id=OFFER), {'error': code, 'message': f'the server says {code}'})
+        with self.assertRaises(vc.ValunError) as e:             # another payee: the server answers deal= only to the payee
+            self.client().check_payer('bob', 18, payee='erin', deal_id=OFFER)
+        self.assertEqual((e.exception.code, e.exception.status), ('not_payee', 403))
+        del self.world.routes[route]
+        self.world.card_public[BOB] = False
+        r = self.check(payer='bob', amount=18, deal_id=OFFER)
+        self.assertEqual((r['verdict'], r['deal_id'], r['summary']), ('unknown', OFFER, SUMMARY_NOT_PUBLIC))
+
+    def test_a_new_deal_at_the_price_of_an_offer_it_made_you_says_so_and_how_to_check_the_offer(self):
+        route = f'GET /pilot/v1/participants/{BOB}/check?amount=18&payee={ME}'
+        self.world.routes[route] = (200, verdict('decline', ['Over its budget: it has 4 of 40 left, less than 18.', COUNTED_REASON],
+                                                 cover=NO_COVER_SHOWN, counted_offers=[{'deal_id': OFFER, 'amount': 18}]))
+        r = self.check(payer='bob', amount=18)
+        self.assertEqual(r['summary'], f'Decline, for a new deal on top of the offer you received at this price ({OFFER}, already counted): '
+                                       'Over its budget: it has 4 of 40 left, less than 18, ' + COUNTED_REASON.rstrip('.') +
+                         f'. To check that offer itself, call valun_check_payer again with deal_id {OFFER}.')
+        self.assertEqual(r['counted_offers'], [{'deal_id': OFFER, 'amount': 18}], 'the answer itself is the server\'s')
+        self.assertEqual(r['verdict'], 'decline')
+        # the call the summary gives answers for the offer, counted once
+        self.assertEqual(self.check(payer='bob', amount=18, deal_id=OFFER)['summary'], SUMMARY_ACCEPT)
+
+    def test_the_counted_offers_the_summary_names(self):
+        s = lambda offers, amount=18, **more: va.check_summary({'verdict': 'accept', 'reasons': ['r'], 'amount': amount,   # noqa: E731
+                                                                 'counted_offers': offers, **more})
+        one = f'Accept, for a new deal on top of the offer you received at this price ({OFFER}, already counted): r. To check that ' \
+              f'offer itself, call valun_check_payer again with deal_id {OFFER}.'
+        self.assertEqual(s([{'deal_id': OFFER, 'amount': 18}]), one)
+        self.assertEqual(s([{'deal_id': OTHER_OFFER, 'amount': 25}, {'deal_id': OFFER, 'amount': 18}]), one, 'only those at this price')
+        self.assertEqual(s([{'deal_id': OFFER, 'amount': 18}, {'deal_id': OTHER_OFFER, 'amount': 18}]),
+                         f'Accept, for a new deal on top of the 2 offers you received at this price ({OFFER}, {OTHER_OFFER}, already counted): '
+                         'r. To check one of them, call valun_check_payer again with its deal_id.')
+        for offers in ([{'deal_id': OTHER_OFFER, 'amount': 25}], [], None, {'deal_id': OFFER, 'amount': 18}, [OFFER],
+                       [{'deal_id': OFFER.upper(), 'amount': 18}], [{'deal_id': 'vd_1', 'amount': 18}], [{'deal_id': OFFER, 'amount': '18'}],
+                       [{'deal_id': OFFER, 'amount': True}], [{'deal_id': OFFER}], [{'amount': 18}]):
+            self.assertEqual(s(offers), 'Accept: r.', offers)
+        self.assertEqual(s([{'deal_id': OFFER, 'amount': 18}], deal_id=OFFER), 'Accept: r.', 'an answer for the offer itself')
+        self.assertEqual(s([{'deal_id': OFFER, 'amount': 18}], amount='18'), 'Accept: r.', 'no amount checked')
+        self.assertEqual(s([{'deal_id': OFFER, 'amount': 2 ** 53}], amount=2 ** 53), 'Accept: r.', 'not an amount a client signs')
+        self.assertEqual(va.offers_counted_at({'amount': 18, 'counted_offers': [{'deal_id': OFFER, 'amount': 18}]}), [OFFER])
+        self.assertEqual(va.offers_counted_at(None), [])
+
+    def test_your_own_side_ends_the_summary_when_it_would_not_simply_go_ahead(self):
+        s = lambda side: va.check_summary({'verdict': 'accept', 'reasons': ['r'], 'payee_side': side})   # noqa: E731
+        self.assertEqual(s({'verdict': 'decline', 'rule': 'max_accept_per_deal', 'reasons': ['Your own limits refuse it (max_accept_per_deal): '
+                                                                                           'over your limit.']}),
+                         'Accept: r. Your own side: Your own limits refuse it (max_accept_per_deal): over your limit.')
+        self.assertEqual(s({'verdict': 'ask_owner', 'reasons': []}), 'Accept: r. Your own side: your owner approves it before it binds.')
+        self.assertEqual(s({'verdict': 'decline'}), 'Accept: r. Your own side: your own limits refuse it.')
+        for side in ({'verdict': 'accept', 'reasons': ['Your own limits allow it.']}, {'verdict': 'Decline'}, {'verdict': ['decline']},
+                     'decline', None, {}):
+            self.assertEqual(s(side), 'Accept: r.', side)
+        self.world.extra = {'payee_side': {'verdict': 'decline', 'rule': 'min_price_as_payee', 'reasons': ['Your own limits refuse it.']}}
+        self.assertEqual(self.check(payer='bob', amount=18)['summary'], SUMMARY_ACCEPT[:-1] + '. Your own side: Your own limits refuse it.')
+
+    def test_the_schema_offers_deal_id_and_says_when_to_pass_it(self):
+        p = schemas.CHECK_PAYER['parameters']
+        self.assertEqual(p['required'], ['payer', 'amount'], 'deal_id is optional')
+        self.assertEqual({k: v for k, v in p['properties']['deal_id'].items() if k != 'description'},
+                         {'type': 'string', 'pattern': '^vd_[0-9a-f]{16}$'})
+        self.assertIn('Pass that deal\'s deal_id', schemas.CHECK_PAYER['description'])
+        self.assertIn('Without deal_id the answer is for a new deal on top of everything the payer has committed',
+                      schemas.CHECK_PAYER['description'])
+        testnet = schemas.for_network(schemas.TESTNET)[-1]
+        self.assertEqual(testnet['parameters']['properties']['deal_id'], p['properties']['deal_id'])
+        self.assertNotRegex(json.dumps(testnet), r'\bPC\b|pilot')
+
+
 class StatusRoom(Card):
     def test_status_shows_the_room_get_me_shows_in_the_full_and_brief_views(self):
         self.assertNotIn('room', self.agent().call('valun_status', {}))
@@ -489,6 +617,24 @@ class CardCommands(Card):
         rc, out = self.run_cli('publish', '--owner-token-file', os.path.join(self.home.name, 'missing.txt'))
         self.assertEqual(rc, 1)
         self.assertIn('Cannot read the owner token file', out)
+
+    def test_check_with_deal_checks_the_offer_under_review(self):
+        rc, out = self.run_cli('check', 'bob', '18', '--deal', OFFER)
+        self.assertEqual((rc, json.loads(out)['deal_id'], json.loads(out)['summary']), (0, OFFER, SUMMARY_ACCEPT))
+        self.assertEqual(self.world.log[-1][1], f'/pilot/v1/participants/{BOB}/check?amount=18&payee={ME}&deal={OFFER}')
+        self.world.ignores_deal = True
+        rc, out = self.run_cli('check', 'bob', '18', '--deal', OFFER)
+        self.assertEqual((rc, json.loads(out)['error']), (1, 'offer_not_checked'))
+        n = len(self.world.log)
+        for bad in ('vd_123', OFFER.upper(), ''):
+            rc, out = self.run_cli('check', 'bob', '18', '--deal', bad)
+            self.assertEqual(rc, 2, bad)
+            self.assertIn('--deal must be a deal id', out)
+        for argv in (('bob', '--deal', OFFER), ('publish', '--deal', OFFER), ('--deal', OFFER)):
+            rc, out = self.run_cli(*argv)
+            self.assertEqual((rc, out.strip()), (2, cli.CARD_USAGE), argv)
+        self.assertEqual(len(self.world.log), n, 'nothing read for any of them')
+        self.assertIn('[--deal vd_...]', cli.CARD_USAGE)
 
     def test_usage(self):
         for argv in (('check', 'bob'), ('check',), ('bob', 'erin'), ('publish', 'now'), ('check', 'bob', '1', '2')):

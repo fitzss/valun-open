@@ -1,15 +1,15 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "4f51fdee42bcb05b248e086c65da75e82ed25da423b4ddaa7d73ee754077af08",
+  "agent.py": "3725f33410c1fb34eaea824f4e522cda791b21c0f9218fa50cdd2dec24b6a512",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "04c436a5d5d190fe8d9129b542f48e1428c149ff21e0837a323be4293b229ea3",
+  "client.py": "35539ff8541630416fb0328c7ff077bfc41ed8f707f2da63473b99295481065a",
   "mcp_server.py": "0f2fb1970aabab765072667a83ac2da97cab759c4f37aaaff41261b3009860ea",
   "measure.py": "ee2c1164c7a9ecfa9f934603872d0ec0aa194c6f07257a0734d1a163df4c6de9",
   "novation.py": "3579850c2307713ae538fddbd899dc75e017992c5d75069969e0a7140edfa741",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "aa968c2e628ac44bc906e1b41629a16da0018d463b63a34d9e4d610774c35048",
-  "schemas.py": "c35ce02a457de4b2e4a61b66fab8f1462af21860ff9f5672f5c89d2e45bfe4c9"
+  "schemas.py": "8c8cd92bbccf0e4370543a16c69b24fae89b2623c6576da71708194e7969b315"
  },
  "tools": [
   {
@@ -465,7 +465,7 @@
   },
   {
    "name": "valun_check_payer",
-   "description": "Run this before you accept an IOU (a credit note) from an agent you do not know: before you accept its offer to pay you, or offer it work as payee. It checks `amount` against the budget card the payer's owner published: whether the owner's mandate lets the payer owe you that much more (its limit per deal and in total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's expiry), how much room it has left, whether guarantees back its IOUs to you, and its record of deals completed and disputed. Returns the server's verdict (accept, ask_owner or decline) with its reasons, and `summary`: the verdict in one sentence. Read-only: it signs nothing and commits no one. When the payer's owner has not published a budget card the verdict is unknown: decide from its record (valun_directory) or ask your owner. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other independently controlled agents.",
+   "description": "Run this before you accept an IOU (a credit note) from an agent you do not know: before you accept its offer to pay you, or offer it work as payee. It checks `amount` against the budget card the payer's owner published: whether the owner's mandate lets the payer owe you that much more (its limit per deal and in total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's expiry), how much room it has left, whether guarantees back its IOUs to you, and its record of deals completed and disputed. Deciding on an offer it made you? Pass that deal's deal_id (valun_inbox lists it) and its price as amount: the payer's room already counts its open offer, and deal_id makes the check count it once. Without deal_id the answer is for a new deal on top of everything the payer has committed. Returns the server's verdict (accept, ask_owner or decline) with its reasons, and `summary`: the verdict in one sentence. Read-only: it signs nothing and commits no one. When the payer's owner has not published a budget card the verdict is unknown: decide from its record (valun_directory) or ask your owner. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other independently controlled agents.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -477,6 +477,11 @@
       "type": "integer",
       "minimum": 1,
       "description": "What it would owe you (the deal's price), in PC (whole pilot credits)"
+     },
+     "deal_id": {
+      "type": "string",
+      "pattern": "^vd_[0-9a-f]{16}$",
+      "description": "Optional: the deal whose offer you are deciding on, one in which this payer would pay you (vd_ + 16 hex, as valun_inbox lists it); amount must then be its price as it stands. Leave it out to check a new deal."
      }
     },
     "required": [
@@ -940,7 +945,7 @@
   },
   {
    "name": "valun_check_payer",
-   "description": "Run this before you accept an IOU (a credit note) from an agent you do not know: before you accept its offer to pay you, or offer it work as payee. It checks `amount` against the budget card the payer's owner published: whether the owner's mandate lets the payer owe you that much more (its limit per deal and in total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's expiry), how much room it has left, whether guarantees back its IOUs to you, and its record of deals completed and disputed. Returns the server's verdict (accept, ask_owner or decline) with its reasons, and `summary`: the verdict in one sentence. Read-only: it signs nothing and commits no one. When the payer's owner has not published a budget card the verdict is unknown: decide from its record (valun_directory) or ask your owner. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other independently controlled agents.",
+   "description": "Run this before you accept an IOU (a credit note) from an agent you do not know: before you accept its offer to pay you, or offer it work as payee. It checks `amount` against the budget card the payer's owner published: whether the owner's mandate lets the payer owe you that much more (its limit per deal and in total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's expiry), how much room it has left, whether guarantees back its IOUs to you, and its record of deals completed and disputed. Deciding on an offer it made you? Pass that deal's deal_id (valun_inbox lists it) and its price as amount: the payer's room already counts its open offer, and deal_id makes the check count it once. Without deal_id the answer is for a new deal on top of everything the payer has committed. Returns the server's verdict (accept, ask_owner or decline) with its reasons, and `summary`: the verdict in one sentence. Read-only: it signs nothing and commits no one. When the payer's owner has not published a budget card the verdict is unknown: decide from its record (valun_directory) or ask your owner. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other independently controlled agents.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -952,6 +957,11 @@
       "type": "integer",
       "minimum": 1,
       "description": "What it would owe you (the deal's price), in nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG)"
+     },
+     "deal_id": {
+      "type": "string",
+      "pattern": "^vd_[0-9a-f]{16}$",
+      "description": "Optional: the deal whose offer you are deciding on, one in which this payer would pay you (vd_ + 16 hex, as valun_inbox lists it); amount must then be its price as it stands. Leave it out to check a new deal."
      }
     },
     "required": [

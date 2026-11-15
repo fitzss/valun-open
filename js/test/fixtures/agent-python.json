@@ -2,15 +2,15 @@
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python": "3.14.7",
  "python_sources_sha256": {
-  "agent.py": "4f51fdee42bcb05b248e086c65da75e82ed25da423b4ddaa7d73ee754077af08",
+  "agent.py": "3725f33410c1fb34eaea824f4e522cda791b21c0f9218fa50cdd2dec24b6a512",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "04c436a5d5d190fe8d9129b542f48e1428c149ff21e0837a323be4293b229ea3",
+  "client.py": "35539ff8541630416fb0328c7ff077bfc41ed8f707f2da63473b99295481065a",
   "mcp_server.py": "0f2fb1970aabab765072667a83ac2da97cab759c4f37aaaff41261b3009860ea",
   "measure.py": "ee2c1164c7a9ecfa9f934603872d0ec0aa194c6f07257a0734d1a163df4c6de9",
   "novation.py": "3579850c2307713ae538fddbd899dc75e017992c5d75069969e0a7140edfa741",
   "records.py": "633b0262d93c5602bfb4b158c58b2ba978d40104fefee582129c0735ceec5943",
   "sandbox.py": "aa968c2e628ac44bc906e1b41629a16da0018d463b63a34d9e4d610774c35048",
-  "schemas.py": "c35ce02a457de4b2e4a61b66fab8f1462af21860ff9f5672f5c89d2e45bfe4c9"
+  "schemas.py": "8c8cd92bbccf0e4370543a16c69b24fae89b2623c6576da71708194e7969b315"
  },
  "base": "http://valun.invalid",
  "t0_ms": 1793966400000,
@@ -66237,6 +66237,2994 @@
    ]
   },
   {
+   "name": "check_payer: the offer under review (deal_id), counted once",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [
+       "Within its budget: up to 30 a deal; deal vd_6a6a6a6a6a6a6a6a is counted once, and 4 of 40 is left with it."
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Accept: Within its budget: up to 30 a deal; deal vd_6a6a6a6a6a6a6a6a is counted once, and 4 of 40 is left with it, backed for you up to 3.",
+    "verdict": "accept",
+    "reasons": [
+     "Within its budget: up to 30 a deal; deal vd_6a6a6a6a6a6a6a6a is counted once, and 4 of 40 is left with it."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 18,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: the offer under review, held for the payer's owner",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 30,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=30&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a": {
+     "body": {
+      "verdict": "ask_owner",
+      "reasons": [
+       "Within its budget.",
+       "Its owner approves each commitment above 25: this one waits for the owner before it binds."
+      ],
+      "rule": "approve_above",
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 30,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": true,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Ask the payer's owner: Within its budget, Its owner approves each commitment above 25: this one waits for the owner before it binds, backed for you up to 3.",
+    "verdict": "ask_owner",
+    "reasons": [
+     "Within its budget.",
+     "Its owner approves each commitment above 25: this one waits for the owner before it binds."
+    ],
+    "rule": "approve_above",
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 30,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": true,
+    "cover": {
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=30&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 30,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 30,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: the offer under review is agreed already (409)",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a": {
+     "status": 409,
+     "body": {
+      "error": "wrong_state",
+      "message": "deal vd_6a6a6a6a6a6a6a6a is agreed: it is agreed already and binds both of you, so there is no offer left to check"
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "wrong_state",
+    "message": "deal vd_6a6a6a6a6a6a6a6a is agreed: it is agreed already and binds both of you, so there is no offer left to check"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: the offer under review at another price (400)",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a": {
+     "status": 400,
+     "body": {
+      "error": "invalid_field",
+      "message": "amount must be the price of deal vd_6a6a6a6a6a6a6a6a as it stands, 25 (PC)"
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "invalid_field",
+    "message": "amount must be the price of deal vd_6a6a6a6a6a6a6a6a as it stands, 25 (PC)"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a server that ignores deal= (from before fix inbox #60)",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a": {
+     "body": {
+      "verdict": "decline",
+      "reasons": [
+       "Over its budget: it has 0 of 40 left, less than 18."
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "offer_not_checked",
+    "message": "this Valun server does not check the offer under review (vd_6a6a6a6a6a6a6a6a): its answer is for a new deal on top of that offer, which it counts twice"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a server that answers for another deal",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [
+       "Within its budget."
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7,
+      "deal_id": "vd_7b7b7b7b7b7b7b7b"
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "offer_not_checked",
+    "message": "this Valun server does not check the offer under review (vd_6a6a6a6a6a6a6a6a): its answer is for a new deal on top of that offer, which it counts twice"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: no public card, with the offer under review",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a": {
+     "status": 404,
+     "body": {
+      "error": "card_not_public",
+      "message": "this participant's owner has not published its budget card"
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Unknown: bob's owner has not published a budget card, so its budget cannot be checked; decide from its record (valun_directory) or ask your owner.",
+    "verdict": "unknown",
+    "reasons": [
+     "the payer's owner has not published a budget card"
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "amount": 18,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: deal_id null is a new deal",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": null
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [
+       "within its budget (31 of 40 left)"
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Accept: within its budget (31 of 40 left), backed for you up to 3.",
+    "verdict": "accept",
+    "reasons": [
+     "within its budget (31 of 40 left)"
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 18,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": null
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": null
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a deal_id that is not one is refused before any read (\"vd_123\")",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "vd_123"
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as valun_inbox lists it, not \"vd_123\""
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_123"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_123"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a deal_id that is not one is refused before any read (\"VD_6A6A6A6A6A6A6A6A\")",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "VD_6A6A6A6A6A6A6A6A"
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as valun_inbox lists it, not \"VD_6A6A6A6A6A6A6A6A\""
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "VD_6A6A6A6A6A6A6A6A"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "VD_6A6A6A6A6A6A6A6A"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a deal_id that is not one is refused before any read (\"vd_6a6a6a6a6a6a6a6a\\n\")",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a\n"
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as valun_inbox lists it, not \"vd_6a6a6a6a6a6a6a6a\\n\""
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a\n"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a\n"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a deal_id that is not one is refused before any read (\" vd_6a6a6a6a6a6a6a6a\")",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": " vd_6a6a6a6a6a6a6a6a"
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as valun_inbox lists it, not \" vd_6a6a6a6a6a6a6a6a\""
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": " vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": " vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a deal_id that is not one is refused before any read (\"\")",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": ""
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as valun_inbox lists it, not \"\""
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": ""
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": ""
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a deal_id that is not one is refused before any read (5)",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": 5
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as valun_inbox lists it, not 5"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": 5
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": 5
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a deal_id that is not one is refused before any read ([\"vd_6a6a6a6a6a6a6a6a\"])",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": [
+     "vd_6a6a6a6a6a6a6a6a"
+    ]
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as valun_inbox lists it, not [\"vd_6a6a6a6a6a6a6a6a\"]"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": [
+       "vd_6a6a6a6a6a6a6a6a"
+      ]
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": [
+       "vd_6a6a6a6a6a6a6a6a"
+      ]
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a deal_id that is not one is refused before any read ({\"id\": \"vd_6a6a6a6a6a6a6)",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": {
+     "id": "vd_6a6a6a6a6a6a6a6a"
+    }
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as valun_inbox lists it, not {\"id\":\"vd_6a6a6a6a6a6a6a6a\"}"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": {
+       "id": "vd_6a6a6a6a6a6a6a6a"
+      }
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": {
+       "id": "vd_6a6a6a6a6a6a6a6a"
+      }
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a deal_id that is not one is refused before any read (\"xxxxxxxxxxxxxxxxxxxxxxx)",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as valun_inbox lists it, not \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx..."
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a new deal at the price of the one offer bob made me (counted_offers)",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "body": {
+      "verdict": "decline",
+      "reasons": [
+       "Over its budget: it has 4 of 40 left, less than 18.",
+       "Its open offer to you (vd_6a6a6a6a6a6a6a6a: 18) is already counted in its outstanding: this answer is for a new deal on top. To check an offer you received, ask again with deal=<its id>."
+      ],
+      "rule": "max_issue_outstanding",
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7,
+      "counted_offers": [
+       {
+        "deal_id": "vd_6a6a6a6a6a6a6a6a",
+        "amount": 18
+       }
+      ]
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Decline, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): Over its budget: it has 4 of 40 left, less than 18, Its open offer to you (vd_6a6a6a6a6a6a6a6a: 18) is already counted in its outstanding: this answer is for a new deal on top. To check an offer you received, ask again with deal=<its id>. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a.",
+    "verdict": "decline",
+    "reasons": [
+     "Over its budget: it has 4 of 40 left, less than 18.",
+     "Its open offer to you (vd_6a6a6a6a6a6a6a6a: 18) is already counted in its outstanding: this answer is for a new deal on top. To check an offer you received, ask again with deal=<its id>."
+    ],
+    "rule": "max_issue_outstanding",
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 18,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ]
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: an offer of mine counted at this price, accept",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [
+       "Within its budget: up to 30 a deal, 22 of 40 left.",
+       "Its open offer to you (vd_6a6a6a6a6a6a6a6a: 18) is already counted in its outstanding: this answer is for a new deal on top. To check an offer you received, ask again with deal=<its id>."
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7,
+      "counted_offers": [
+       {
+        "deal_id": "vd_7b7b7b7b7b7b7b7b",
+        "amount": 25
+       },
+       {
+        "deal_id": "vd_6a6a6a6a6a6a6a6a",
+        "amount": 18
+       }
+      ]
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Accept, for a new deal on top of the offer you received at this price (vd_6a6a6a6a6a6a6a6a, already counted): Within its budget: up to 30 a deal, 22 of 40 left, Its open offer to you (vd_6a6a6a6a6a6a6a6a: 18) is already counted in its outstanding: this answer is for a new deal on top. To check an offer you received, ask again with deal=<its id>, backed for you up to 3. To check that offer itself, call valun_check_payer again with deal_id vd_6a6a6a6a6a6a6a6a.",
+    "verdict": "accept",
+    "reasons": [
+     "Within its budget: up to 30 a deal, 22 of 40 left.",
+     "Its open offer to you (vd_6a6a6a6a6a6a6a6a: 18) is already counted in its outstanding: this answer is for a new deal on top. To check an offer you received, ask again with deal=<its id>."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 18,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7,
+    "counted_offers": [
+     {
+      "deal_id": "vd_7b7b7b7b7b7b7b7b",
+      "amount": 25
+     },
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     }
+    ]
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: two offers counted at this price",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "body": {
+      "verdict": "decline",
+      "reasons": [
+       "Over its budget."
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7,
+      "counted_offers": [
+       {
+        "deal_id": "vd_6a6a6a6a6a6a6a6a",
+        "amount": 18
+       },
+       {
+        "deal_id": "vd_7b7b7b7b7b7b7b7b",
+        "amount": 18
+       }
+      ]
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Decline, for a new deal on top of the 2 offers you received at this price (vd_6a6a6a6a6a6a6a6a, vd_7b7b7b7b7b7b7b7b, already counted): Over its budget. To check one of them, call valun_check_payer again with its deal_id.",
+    "verdict": "decline",
+    "reasons": [
+     "Over its budget."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 18,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7,
+    "counted_offers": [
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 18
+     },
+     {
+      "deal_id": "vd_7b7b7b7b7b7b7b7b",
+      "amount": 18
+     }
+    ]
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: offers counted at other prices only",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [
+       "Within its budget."
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7,
+      "counted_offers": [
+       {
+        "deal_id": "vd_7b7b7b7b7b7b7b7b",
+        "amount": 25
+       }
+      ]
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Accept: Within its budget, backed for you up to 3.",
+    "verdict": "accept",
+    "reasons": [
+     "Within its budget."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 18,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7,
+    "counted_offers": [
+     {
+      "deal_id": "vd_7b7b7b7b7b7b7b7b",
+      "amount": 25
+     }
+    ]
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: counted_offers entries that are not offers are left out",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [
+       "Within its budget."
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7,
+      "counted_offers": [
+       {
+        "deal_id": "vd_1",
+        "amount": 18
+       },
+       {
+        "deal_id": "VD_6A6A6A6A6A6A6A6A",
+        "amount": 18
+       },
+       {
+        "deal_id": "vd_6a6a6a6a6a6a6a6a",
+        "amount": "18"
+       },
+       {
+        "deal_id": "vd_6a6a6a6a6a6a6a6a",
+        "amount": true
+       },
+       {
+        "deal_id": "vd_6a6a6a6a6a6a6a6a",
+        "amount": 9007199254740992
+       },
+       {
+        "amount": 18
+       },
+       [
+        "vd_6a6a6a6a6a6a6a6a",
+        18
+       ],
+       "vd_6a6a6a6a6a6a6a6a",
+       null,
+       {
+        "deal_id": "vd_7b7b7b7b7b7b7b7b",
+        "amount": 18
+       }
+      ]
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Accept, for a new deal on top of the offer you received at this price (vd_7b7b7b7b7b7b7b7b, already counted): Within its budget, backed for you up to 3. To check that offer itself, call valun_check_payer again with deal_id vd_7b7b7b7b7b7b7b7b.",
+    "verdict": "accept",
+    "reasons": [
+     "Within its budget."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 18,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7,
+    "counted_offers": [
+     {
+      "deal_id": "vd_1",
+      "amount": 18
+     },
+     {
+      "deal_id": "VD_6A6A6A6A6A6A6A6A",
+      "amount": 18
+     },
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": "18"
+     },
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": true
+     },
+     {
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "amount": 9007199254740992
+     },
+     {
+      "amount": 18
+     },
+     [
+      "vd_6a6a6a6a6a6a6a6a",
+      18
+     ],
+     "vd_6a6a6a6a6a6a6a6a",
+     null,
+     {
+      "deal_id": "vd_7b7b7b7b7b7b7b7b",
+      "amount": 18
+     }
+    ]
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: counted_offers that is not a list",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [
+       "Within its budget."
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7,
+      "counted_offers": {
+       "deal_id": "vd_6a6a6a6a6a6a6a6a",
+       "amount": 18
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Accept: Within its budget, backed for you up to 3.",
+    "verdict": "accept",
+    "reasons": [
+     "Within its budget."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 18,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7,
+    "counted_offers": {
+     "deal_id": "vd_6a6a6a6a6a6a6a6a",
+     "amount": 18
+    }
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: your own side declines (payee_side)",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [
+       "Within its budget."
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a",
+      "payee_side": {
+       "verdict": "decline",
+       "rule": "max_accept_per_deal",
+       "reasons": [
+        "Your own limits refuse it (max_accept_per_deal): more than the 10 you may accept in one deal."
+       ]
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Accept: Within its budget, backed for you up to 3. Your own side: Your own limits refuse it (max_accept_per_deal): more than the 10 you may accept in one deal.",
+    "verdict": "accept",
+    "reasons": [
+     "Within its budget."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 18,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a",
+    "payee_side": {
+     "verdict": "decline",
+     "rule": "max_accept_per_deal",
+     "reasons": [
+      "Your own limits refuse it (max_accept_per_deal): more than the 10 you may accept in one deal."
+     ]
+    }
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: your owner decides first (payee_side ask_owner, no reasons)",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [
+       "Within its budget."
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7,
+      "payee_side": {
+       "verdict": "ask_owner",
+       "rule": "approve_above",
+       "reasons": []
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Accept: Within its budget, backed for you up to 3. Your own side: your owner approves it before it binds.",
+    "verdict": "accept",
+    "reasons": [
+     "Within its budget."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 18,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7,
+    "payee_side": {
+     "verdict": "ask_owner",
+     "rule": "approve_above",
+     "reasons": []
+    }
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: your own side allows it (payee_side accept)",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [
+       "Within its budget."
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7,
+      "payee_side": {
+       "verdict": "accept",
+       "rule": null,
+       "reasons": [
+        "Your own limits allow it."
+       ]
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Accept: Within its budget, backed for you up to 3.",
+    "verdict": "accept",
+    "reasons": [
+     "Within its budget."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 18,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7,
+    "payee_side": {
+     "verdict": "accept",
+     "rule": null,
+     "reasons": [
+      "Your own limits allow it."
+     ]
+    }
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
+   "name": "check_payer: a payee_side this client does not know",
+   "tool": "valun_check_payer",
+   "args": {
+    "payer": "bob",
+    "amount": 18
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [
+       "Within its budget."
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7,
+      "payee_side": {
+       "verdict": [
+        "decline"
+       ],
+       "reasons": [
+        "x"
+       ]
+      }
+     }
+    }
+   },
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "summary": "Accept: Within its budget, backed for you up to 3.",
+    "verdict": "accept",
+    "reasons": [
+     "Within its budget."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 18,
+    "mandate": {
+     "version": 4,
+     "expires_at": "2026-12-01T00:00:00.000Z"
+    },
+    "room_left": 31,
+    "approval_needed": false,
+    "cover": {
+     "covered": 3,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": {
+        "id": "vp_f0f0f0f0f0f0",
+        "handle": "frank"
+       },
+       "remaining": 3
+      }
+     ]
+    },
+    "record": {
+     "completed": 3,
+     "disputed": 1,
+     "holds": 40,
+     "owes": 9,
+     "cleared": 2
+    },
+    "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "checked_at": "2026-11-06T12:00:00.000Z",
+    "took_ms": 7,
+    "payee_side": {
+     "verdict": [
+      "decline"
+     ],
+     "reasons": [
+      "x"
+     ]
+    }
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    {
+     "args": {
+      "payer": "bob",
+      "amount": 18
+     },
+     "text": null
+    },
+    null
+   ]
+  },
+  {
    "name": "status: the room GET /me shows (budget cards)",
    "tool": "valun_status",
    "args": {},
@@ -94077,6 +97065,543 @@
     },
     {
      "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_e0e0e0e0e0e0",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   }
+  },
+  {
+   "name": "check_payer: deal_id names the offer under review (deal=)",
+   "method": "check_payer",
+   "kwargs": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [
+       "Within its budget."
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7,
+      "deal_id": "vd_6a6a6a6a6a6a6a6a"
+     }
+    }
+   },
+   "state": {},
+   "store": "alice",
+   "result": {
+    "value": {
+     "verdict": "accept",
+     "reasons": [
+      "Within its budget."
+     ],
+     "rule": null,
+     "payer": {
+      "id": "vp_b0b0b0b0b0b0",
+      "handle": "bob"
+     },
+     "payee": {
+      "id": "vp_a1a1a1a1a1a1",
+      "handle": "alice"
+     },
+     "amount": 18,
+     "mandate": {
+      "version": 4,
+      "expires_at": "2026-12-01T00:00:00.000Z"
+     },
+     "room_left": 31,
+     "approval_needed": false,
+     "cover": {
+      "covered": 3,
+      "guarantees": [
+       {
+        "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+        "backer": {
+         "id": "vp_f0f0f0f0f0f0",
+         "handle": "frank"
+        },
+        "remaining": 3
+       }
+      ]
+     },
+     "record": {
+      "completed": 3,
+      "disputed": 1,
+      "holds": 40,
+      "owes": 9,
+      "cleared": 2
+     },
+     "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+     "checked_at": "2026-11-06T12:00:00.000Z",
+     "took_ms": 7,
+     "deal_id": "vd_6a6a6a6a6a6a6a6a"
+    }
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   }
+  },
+  {
+   "name": "check_payer: deal_id null is a new deal",
+   "method": "check_payer",
+   "kwargs": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": null
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1": {
+     "body": {
+      "verdict": "accept",
+      "reasons": [
+       "within its budget (31 of 40 left)"
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": null,
+       "guarantees": []
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7
+     }
+    }
+   },
+   "state": {},
+   "store": "alice",
+   "result": {
+    "value": {
+     "verdict": "accept",
+     "reasons": [
+      "within its budget (31 of 40 left)"
+     ],
+     "rule": null,
+     "payer": {
+      "id": "vp_b0b0b0b0b0b0",
+      "handle": "bob"
+     },
+     "payee": {
+      "id": "vp_a1a1a1a1a1a1",
+      "handle": "alice"
+     },
+     "amount": 18,
+     "mandate": {
+      "version": 4,
+      "expires_at": "2026-12-01T00:00:00.000Z"
+     },
+     "room_left": 31,
+     "approval_needed": false,
+     "cover": {
+      "covered": null,
+      "guarantees": []
+     },
+     "record": {
+      "completed": 3,
+      "disputed": 1,
+      "holds": 40,
+      "owes": 9,
+      "cleared": 2
+     },
+     "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+     "checked_at": "2026-11-06T12:00:00.000Z",
+     "took_ms": 7
+    }
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   }
+  },
+  {
+   "name": "check_payer: a deal_id that is not one is refused before any read (\"vd_6a\")",
+   "method": "check_payer",
+   "kwargs": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "vd_6a"
+   },
+   "routes": {},
+   "state": {},
+   "store": "alice",
+   "result": {
+    "raises": "ValunError",
+    "code": "bad_arguments",
+    "message": "deal_id must be a deal id, vd_ and 16 hex digits; nothing was read"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   }
+  },
+  {
+   "name": "check_payer: a deal_id that is not one is refused before any read (\"VD_6A6A6A6A6A6A6A6A\")",
+   "method": "check_payer",
+   "kwargs": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "VD_6A6A6A6A6A6A6A6A"
+   },
+   "routes": {},
+   "state": {},
+   "store": "alice",
+   "result": {
+    "raises": "ValunError",
+    "code": "bad_arguments",
+    "message": "deal_id must be a deal id, vd_ and 16 hex digits; nothing was read"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   }
+  },
+  {
+   "name": "check_payer: a deal_id that is not one is refused before any read (\"vd_6a6a6a6a6a6a6a6a\\n\")",
+   "method": "check_payer",
+   "kwargs": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a\n"
+   },
+   "routes": {},
+   "state": {},
+   "store": "alice",
+   "result": {
+    "raises": "ValunError",
+    "code": "bad_arguments",
+    "message": "deal_id must be a deal id, vd_ and 16 hex digits; nothing was read"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   }
+  },
+  {
+   "name": "check_payer: a deal_id that is not one is refused before any read (7)",
+   "method": "check_payer",
+   "kwargs": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": 7
+   },
+   "routes": {},
+   "state": {},
+   "store": "alice",
+   "result": {
+    "raises": "ValunError",
+    "code": "bad_arguments",
+    "message": "deal_id must be a deal id, vd_ and 16 hex digits; nothing was read"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   }
+  },
+  {
+   "name": "check_payer: a deal_id that is not one is refused before any read (\"\")",
+   "method": "check_payer",
+   "kwargs": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": ""
+   },
+   "routes": {},
+   "state": {},
+   "store": "alice",
+   "result": {
+    "raises": "ValunError",
+    "code": "bad_arguments",
+    "message": "deal_id must be a deal id, vd_ and 16 hex digits; nothing was read"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   }
+  },
+  {
+   "name": "check_payer: deal_id for another payee (the server answers it only to the payee: 403)",
+   "method": "check_payer",
+   "kwargs": {
+    "payer": "bob",
+    "amount": 18,
+    "payee": "erin",
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_e0e0e0e0e0e0&deal=vd_6a6a6a6a6a6a6a6a": {
+     "status": 403,
+     "body": {
+      "error": "not_payee",
+      "message": "deal= is answered only to the payee: send the check with the payee's agent or owner token"
+     }
+    }
+   },
+   "state": {},
+   "store": "alice",
+   "result": {
+    "raises": "ValunError",
+    "code": "not_payee",
+    "message": "deal= is answered only to the payee: send the check with the payee's agent or owner token"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_e0e0e0e0e0e0&deal=vd_6a6a6a6a6a6a6a6a",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   }
+  },
+  {
+   "name": "check_payer: a server that ignores deal= answers for a new deal",
+   "method": "check_payer",
+   "kwargs": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a": {
+     "body": {
+      "verdict": "decline",
+      "reasons": [
+       "Over its budget."
+      ],
+      "rule": null,
+      "payer": {
+       "id": "vp_b0b0b0b0b0b0",
+       "handle": "bob"
+      },
+      "payee": {
+       "id": "vp_a1a1a1a1a1a1",
+       "handle": "alice"
+      },
+      "amount": 18,
+      "mandate": {
+       "version": 4,
+       "expires_at": "2026-12-01T00:00:00.000Z"
+      },
+      "room_left": 31,
+      "approval_needed": false,
+      "cover": {
+       "covered": 3,
+       "guarantees": [
+        {
+         "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+         "backer": {
+          "id": "vp_f0f0f0f0f0f0",
+          "handle": "frank"
+         },
+         "remaining": 3
+        }
+       ]
+      },
+      "record": {
+       "completed": 3,
+       "disputed": 1,
+       "holds": 40,
+       "owes": 9,
+       "cleared": 2
+      },
+      "card_hash": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "checked_at": "2026-11-06T12:00:00.000Z",
+      "took_ms": 7
+     }
+    }
+   },
+   "state": {},
+   "store": "alice",
+   "result": {
+    "raises": "ValunError",
+    "code": "offer_not_checked",
+    "message": "this Valun server does not check the offer under review (vd_6a6a6a6a6a6a6a6a): its answer is for a new deal on top of that offer, which it counts twice"
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a",
+     "body": null,
+     "features": null
+    }
+   ],
+   "signed": [],
+   "state_after": {
+    "server": "http://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   }
+  },
+  {
+   "name": "check_payer: an answer that is not an object passes through",
+   "method": "check_payer",
+   "kwargs": {
+    "payer": "bob",
+    "amount": 18,
+    "deal_id": "vd_6a6a6a6a6a6a6a6a"
+   },
+   "routes": {
+    "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a": {
+     "body": [
+      "accept"
+     ]
+    }
+   },
+   "state": {},
+   "store": "alice",
+   "result": {
+    "value": [
+     "accept"
+    ]
+   },
+   "requests": [
+    {
+     "key": "GET /pilot/v1/participants",
+     "body": null,
+     "features": null
+    },
+    {
+     "key": "GET /pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=18&payee=vp_a1a1a1a1a1a1&deal=vd_6a6a6a6a6a6a6a6a",
      "body": null,
      "features": null
     }
