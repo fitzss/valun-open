@@ -16,6 +16,8 @@
   valun card [WHO] | check PAYER AMOUNT | publish | unpublish
                         budget cards: show one, check a payer against one; the OWNER publishes or hides yours
   valun sandbox ...     deterministic sandbox agents: seller, buy, earn, tour
+  valun audit --explorer URL | --node URL [--mine] [--json]
+                        check the operator: the published ledger against its tracker box on Ergo testnet (read only)
 Add --profile NAME to keep several identities apart. Secrets are never printed (the owner token is shown once at
 join, or written to --owner-token-file).
 """
@@ -30,6 +32,7 @@ from datetime import datetime, timezone
 
 from . import __version__
 from . import agent as va
+from . import audit as vaudit
 from . import client as vc
 from . import receipts as vr
 from . import schemas
@@ -1271,6 +1274,106 @@ def cmd_verify_check(args):
     return 0 if r['ok'] else 1
 
 
+# What `valun audit` gives the audit of this profile's own state: never its key or tokens.
+AUDIT_STATE_KEYS = ('server', 'participant_id', 'pubkey', 'network', 'pins', 'records')
+MINE_WORDS = {
+    'signed': 'its issuer signed this total: the signature in your records verifies',
+    'signature_not_held': 'your records confirm this total, and no longer hold its signature (dropped 30 days after it)',
+    'bad_signature': 'your records confirm this total, and the signature they hold for it does not verify',
+    'differs': 'your records confirm another total',
+    'not_in_records': 'your records hold no state of this edge',
+    'not_anchored': 'the anchored rows have no such edge',
+}
+
+
+def cmd_audit(args):
+    """valun audit (--explorer URL | --node URL) [--server ORIGIN] [--json] [--mine]: check the operator (valun.audit, fix
+    inbox #62). Read only: GET requests, no token sent, nothing signed or written. Without --mine no profile is needed.
+    Exit codes: valun.audit.exit_code (0 MATCH, 1 MISMATCH, 2 usage, 3 UNKNOWN, 4 MATCH and an edge of --mine not
+    proven)."""
+    store, name = _store(args), _profile(args)
+    if args.mine and not (store.state.get('participant_id') and store.state.get('pubkey')):
+        print(f"--mine lists your edges, and profile '{name}' is not joined yet: run `valun --profile {name} join` first, or "
+              'name your profile with --profile NAME.')
+        return vaudit.EXIT_USAGE
+    try:
+        server = vaudit.base_url(_server(args, store), '--server')
+        source = vaudit.Explorer(args.explorer) if args.explorer is not None else vaudit.Node(args.node)
+    except ValueError as e:
+        print(e)
+        return vaudit.EXIT_USAGE
+    state = {k: store.state[k] for k in AUDIT_STATE_KEYS if k in store.state}
+    r = vaudit.audit(server, source, profile_state=state, mine=args.mine)
+    if args.json:
+        print(json.dumps(r, ensure_ascii=False, indent=1))
+    else:
+        for line in _audit_lines(r, args.mine):
+            print(line)
+    return vaudit.exit_code(r)
+
+
+def _audit_lines(r, mine):
+    """The audit's result as lines for this terminal (--json prints it whole)."""
+    t, v, box, rows, src = _terminal_text, r['verdict'], r.get('box'), r.get('rows'), r['chain_source']
+    if v == 'MATCH':
+        lines = [f"MATCH: the {rows['count']} notes {t(r['server'], 100)} publishes are exactly what its tracker box on Ergo "
+                 'testnet commits.']
+    elif v == 'MISMATCH':
+        why = t(r['message'], 1500)
+        lines = [f'MISMATCH: {why[:1].upper()}{why[1:]}']
+    else:
+        why = t(r['message'], 1500)
+        lines = [f"UNKNOWN ({t(r['reason'], 40)}): not checked, so nothing is proven. {why[:1].upper()}{why[1:]}"]
+    if box:
+        age = f", {r['box_age_blocks']} blocks old at height {r['height']}" if r.get('box_age_blocks') is not None else ''
+        lines.append(f"  box       {box['box_id']} (created at height {box['creation_height']}{age})")
+        lines.append(f"  R5        {box['digest']}, read from the {src['kind']} {t(src['url'], 120)}")
+    if rows:
+        lines.append(f"  rebuilt   {rows['digest']} from {rows['count']} rows of GET {rows['from']}")
+        lines.append(f"  tracker   NFT {r['tracker_nft_id']}, as GET /pilot/v1/chain names it"
+                     + (', and the one this profile pinned' if r.get('tracker_nft_pinned') else ''))
+    if box:
+        lines.append(f"  windows   nettings of anchored edges refused from height {r['nettings_refused_from_height']}; "
+                     f"redemption without the tracker from height {r['tracker_less_redemption_from_height']}")
+    for w in r.get('warnings') or []:
+        lines.append(f'  warning: {t(w, 600)}')
+    if v == 'MATCH':
+        lines.append('  This proves the cumulative totals as anchored. It does not prove ' + '; '.join(r['does_not_prove']) + '.')
+    if mine and 'mine' not in r:
+        lines.append('--mine: nothing listed. Only a MATCH shows which totals of yours the chain commits.')
+    m = r.get('mine')
+    if m is not None:
+        keys = ', '.join(f"{k['pubkey'][:10]}... ({'this agent' if k['known_from'] == 'this_agent' else 'named by GET /ledger'})"
+                         for k in m['keys'])
+        lines.append(f"Your edges (participant {t(m['participant'], 20)}; keys {keys or 'none'}):")
+        if m.get('problem'):
+            lines.append(f"  none compared ({m['problem']}): {t(m['message'], 600)}")
+        elif not m['edges']:
+            lines.append('  none: the anchored rows and your records hold no edge of yours.')
+        unit = vc.NETWORKS.get(r.get('network'), {}).get('unit')
+        for e in m['edges']:
+            who = t(e['counterparty'] or (e['counterparty_key'] or '?')[:16], 30)
+            what = ('you owe ' if e['role'] == 'issuer' else 'owed to you by ' if e['role'] == 'recipient' else 'edge ') + who
+            rec = e['recorded']
+            if e['anchored_total'] is None:
+                facts = f"your records: {_audit_amount(rec['total'], e['denomination'], unit)}"
+            else:
+                facts = f"anchored {_audit_amount(e['anchored_total'], e['denomination'], unit)}" + (
+                    f", your records: {_audit_amount(rec['total'], e['denomination'], unit)}" if rec and e['status'] == 'differs' else '')
+            lines.append(f"  {e['status']:<19} {what}: {facts}: {MINE_WORDS.get(e['status'], '')}")
+        lines.append(f"  {m['proven']} of {len(m['edges'])} edges proven (signed). Your records are read as they are: the audit "
+                     'does not sync them.')
+    return lines
+
+
+def _audit_amount(n, denomination, unit):
+    """An edge's total for this terminal: in the network's unit for its own denomination (erg on the testnet), else with
+    the denomination it is in."""
+    if denomination == 'erg' and unit:
+        return vc.amount_text(n, unit)
+    return f'{n} in {_terminal_text(denomination, 22)}...' if isinstance(denomination, str) else str(n)
+
+
 def cmd_ergo(args):
     """Settlement on Ergo testnet (the Valun testnet network only): this agent's Ergo address, the chain view, the
     reserves, a reserve of its own tERG, and the redemption of a note it holds. A redemption is signed natively; a
@@ -1480,6 +1583,18 @@ def main(argv=None):
     ed.add_argument('--broadcast', action='store_true')
     for x in (eg,):
         x.add_argument('--server')
+    au = sub.add_parser('audit', help='check the operator: the ledger a Valun server publishes against its tracker box on Ergo '
+                                      'testnet, read from a chain source you name (read only)',
+                        description=AUDIT_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
+    aus = au.add_mutually_exclusive_group(required=True)
+    aus.add_argument('--explorer', metavar='URL', help='the Ergo explorer API to read the chain from, such as '
+                                                       'https://api-testnet.ergoplatform.com')
+    aus.add_argument('--node', metavar='URL', help='your own Ergo testnet node (its REST API, with the blockchain index)')
+    au.add_argument('--server', help="the Valun server to check (default: this profile's, else VALUN_SERVER, else "
+                                     'https://valun.tech)')
+    au.add_argument('--json', action='store_true', help='print the whole result as JSON')
+    au.add_argument('--mine', action='store_true', help="also list this profile's edges with their anchored totals, and "
+                                                        'whether your client holds and verifies the issuer signature of each')
     sb = sub.add_parser('sandbox', help='deterministic test agents that need no AI model')
     sbs = sb.add_subparsers(dest='role', required=True)
     se = sbs.add_parser('seller', help='sell text-stats and notary jobs (polls the inbox; Ctrl+C to stop)')
@@ -1508,7 +1623,25 @@ def main(argv=None):
     return {'join': cmd_join, 'enroll': cmd_enroll, 'status': cmd_status, 'doctor': cmd_doctor, 'config': cmd_config,
             'tools': cmd_tools, 'call': cmd_call, 'mcp': cmd_mcp, 'clearing': cmd_clearing, 'policy': cmd_policy,
             'attempts': cmd_attempts, 'sandbox': cmd_sandbox, 'profile': cmd_profile, 'card': cmd_card, 'sell': cmd_sell, 'ergo': cmd_ergo,
-            'verify-check': cmd_verify_check}[args.cmd](args)
+            'verify-check': cmd_verify_check, 'audit': cmd_audit}[args.cmd](args)
+
+
+AUDIT_HELP = """Check the operator (fix inbox #62). Rebuilds the AVL+ digest of the ledger a Valun server publishes, and
+compares it with R5 of the one unspent box holding its tracker NFT, read from a chain source you name: the public Ergo
+explorer or your own node, never one the server names for you. Read only: GET requests, no token, nothing signed or
+written (not even your records).
+
+  valun audit --explorer https://api-testnet.ergoplatform.com
+  valun audit --node http://127.0.0.1:9052 --mine          your own node, and your own edges
+  valun audit --explorer URL --server https://valun-staging.fly.dev --json
+
+MATCH: the box commits exactly the published notes (each one's issuer key, recipient key and cumulative total). It does
+not prove what is outstanding, that an issuer can pay, that any deal was real, or who holds a key.
+--mine lists your participant's edges, as issuer and as recipient, on every key it has (this agent's, and the others
+GET /ledger names as yours), with their anchored totals, and whether each is the state your records confirm with an
+issuer signature that verifies (signed). Your records are read as they are.
+Exit codes: 0 MATCH (with --mine: every edge signed), 1 MISMATCH, 2 usage, 3 UNKNOWN (not checked: the reason is
+printed), 4 MATCH, and an edge of yours not proven."""
 
 
 SELL_HELP = """Sell AI work on Valun for credits, with your own Claude API key. This profile's agent answers offers for
