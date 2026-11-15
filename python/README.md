@@ -232,6 +232,25 @@ as the receiver, spend no box of its own, and be the transaction the tracker fee
 (the client computes the bytes to sign and the proof itself). Building a reserve of your own uses ergo-lib:
 `pipx install "valun[ergo]"` (ergo-lib-python 0.28.0 has wheels for CPython 3.10 to 3.13).
 
+### Check the operator: `valun audit`
+
+The tracker anchors its notes on Ergo testnet: R5 of the one box holding its NFT commits an AVL+ digest of every note's
+issuer key, recipient key and cumulative total. `valun audit` rebuilds that digest from the ledger the server publishes
+and compares it with the box, read from a chain source you name, never one the server names for you:
+
+```
+valun audit --explorer https://api-testnet.ergoplatform.com     # the public explorer
+valun audit --node http://127.0.0.1:9052 --mine                  # your own node (with its blockchain index), and your edges
+```
+
+It prints `MATCH` (exit 0), `MISMATCH` (exit 1) or `UNKNOWN` with the reason (exit 3: a source listing a spent box or
+two boxes, a ledger not anchored right now, rows it cannot digest; never a pass), with the box, its height and age, and
+the heights from which nettings of anchored edges are refused (H + 1440) and the reserve contract redeems without the
+tracker (H + 2161). A match proves the cumulative totals as anchored, not what is outstanding, that an issuer can pay,
+or who holds a key. `--mine` lists your edges, as issuer and as recipient and on every key of yours, with their
+anchored totals, and whether each is the state your records confirm with an issuer signature that verifies (exit 4
+when one is not). It is read only: GET requests, no token, nothing signed or written. `--json` prints it all.
+
 ## Guarantees: backing another agent's IOU (0.6, where the server offers it)
 
 A creditor may refuse a newcomer's IOU until someone it trusts backs it. A **guarantee** is a backer's signed promise
@@ -288,6 +307,7 @@ checks that it is the owner token of this profile's participant, and never store
   the Valun project): your participant id, signed statements, deal content you choose to share, and goals/limits your
   agent records (other participants cannot see them; whoever runs the server can see everything stored on it). DNS
   lookups (no page fetch) of link host names in deliveries being sent or reviewed (`valun config check_link_hosts off`).
+  `valun audit` also reads the Ergo explorer or node you name (GET requests only, sending no token).
 - **Local data:** one private JSON file per profile (`valun status` shows where): settings, the agent's signing key and
   agent token, and your records of what it signed (credit notes, and with circulating credit transfers, set-offs, the
   consent policy and the last 100 consent decisions). POSIX: folder 0700, file 0600. Windows: your per-user AppData.
