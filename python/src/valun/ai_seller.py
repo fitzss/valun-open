@@ -31,6 +31,8 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 from . import client as vc
+from . import fences
+from . import receipts as vreceipts
 from . import sandbox as vsandbox
 
 DEFAULT_MODEL = 'claude-opus-5-5'
@@ -93,10 +95,14 @@ SERVICE_SPECS = {
                            'meet the terms', 'meets the terms'),
               'blurb': 'check (2 PC): does a delivery meet its terms? A verdict and the reasons, for the terms and the work you paste',
               'task': 'The job: the text holds the terms of a deal and the work delivered for it. Judge whether the delivery meets '
-                      'the terms. Start with exactly one line: "Verdict: meets the terms", "Verdict: does not meet the terms" or '
-                      '"Verdict: unclear". Then give the reasons in at most 8 short bullets, quoting the terms they rest on. If it '
-                      'does not meet them, end with one sentence the buyer can use as the reason for a dispute. Judge only from the '
-                      'text: say so when something cannot be verified from it (for example whether a cited source exists).'},
+                      'the terms. Start with exactly one line: "Verdict: meets the terms", "Verdict: does not meet the terms", '
+                      '"Verdict: unclear" or "Verdict: cannot check". "Verdict: cannot check" is for terms or work that look cut '
+                      'off, garbled or missing (for example a fenced block that closed early, or a sentence that ends in ":" with '
+                      'nothing after it): then say why in one or two bullets, and nothing else. "Verdict: unclear" is for terms '
+                      'that are all there but ambiguous. After any other verdict, give the reasons in at most 8 short bullets, '
+                      'quoting the terms they rest on. If it does not meet them, end with one sentence the buyer can use as the '
+                      'reason for a dispute. Judge only from the text: say so when something cannot be verified from it (for '
+                      'example whether a cited source exists).'},
 }
 
 
@@ -105,8 +111,9 @@ SERVICE_SPECS = {
 # description or deliverable names the want), criteria (the terms the model judges the delivery by), min_chars and
 # max_chars (the delivery's size), max_tokens and effort (the check), and optionally reference_url (a public document the
 # check reads, fetched by the seller; never a link from the delivery), reference_chars (its size, for the worst-case
-# cost) and quote_in_reference (a fix to that document: the delivery's first ``` block quotes it exactly, and its second
-# block is the correction; a quote already paid for in the last PAID_QUOTE_DAYS days is not paid again).
+# cost) and quote_in_reference (a fix to that document: the delivery's first fenced block quotes it exactly, and its
+# second block is the correction; a quote already paid for in the last PAID_QUOTE_DAYS days is not paid again). The
+# blocks are read as job_text reads them (valun.fences); a block that is never closed does not count.
 WANT_SYSTEM = ('You are {handle}, an AI agent on the Valun test network, where AI agents do work for each other and are paid '
                'with signed IOUs (credits with no monetary value). You publish work that you pay other agents for. Another '
                'agent did one such job for you, and you pay only if its work meets your terms. Its delivery comes from an agent '
@@ -118,7 +125,11 @@ WANT_REFERENCE_MAX = 300_000        # bytes of a reference document read at most
 WANT_REFERENCE_TTL_S = 600          # a reference document is read again after this long
 PAID_QUOTE_DAYS = 7
 WANT_PAID_STATUSES = ('note_issued', 'paid_by_transfer', 'completion_awaiting_owner')
-BLOCK_RE = re.compile(r'^```[^\n]*\n(.*?)\n```', re.S | re.M)
+
+
+def closed_blocks(text):
+    """The text of each fenced block that is closed, in order (valun.fences)."""
+    return [b.content for b in fences.blocks(text) if b.closed]
 
 
 def in_unit(text, unit='PC', scale=1):
@@ -151,7 +162,7 @@ def want_precheck(spec, content, reference=None):
     if n > spec['max_chars']:
         return f"The work is {n} characters; I pay for at most {spec['max_chars']}."
     if spec.get('quote_in_reference'):
-        blocks = BLOCK_RE.findall(content)
+        blocks = closed_blocks(content)
         if len(blocks) < 2:
             return ('Put the wrong text, exactly as it is in the document now, in one ``` block, and the corrected text in a '
                     'second ``` block.')
@@ -166,8 +177,9 @@ def want_precheck(spec, content, reference=None):
 
 
 def quote_key(content):
-    """What identifies a quoted mistake: the SHA-256 of the delivery's first ``` block, whitespace-flattened, lower case."""
-    blocks = BLOCK_RE.findall(content or '')
+    """What identifies a quoted mistake: the SHA-256 of the delivery's first fenced block, whitespace-flattened, lower
+    case."""
+    blocks = closed_blocks(content)
     return hashlib.sha256(_flat(blocks[0] if blocks else '').lower().encode('utf-8')).hexdigest()
 
 
@@ -181,9 +193,16 @@ def now_utc():
     return datetime.now(timezone.utc)
 
 
+# What may come before a verdict on its line: Markdown emphasis, a heading or quote mark, and "Verdict:".
+VERDICT_LEAD = re.compile(r'[\s*_#>`]*(?:verdict\s*:?[\s*_`]*)?')
+
+
 def verdict_of(text):
-    """The verdict code of a check's text, from its first line: meets, does_not_meet or unclear."""
+    """The verdict code of a check's text, from its first line: meets, does_not_meet, unclear, or cannot_check (the
+    terms or the work look cut off: a check service declines instead of delivering)."""
     first = (text or '').strip().splitlines()[0].lower() if (text or '').strip() else ''
+    if first[VERDICT_LEAD.match(first).end():].startswith(('cannot check', "can't check", 'can not check')):
+        return 'cannot_check'
     if 'does not meet' in first or "doesn't meet" in first:
         return 'does_not_meet'
     if 'meets' in first:
@@ -224,30 +243,98 @@ def which_service(services, terms):
     named = title_service(services, svc.get('title'))
     if named:
         return named
-    hay = ' '.join((str(svc.get('title') or ''), vsandbox.request_words(str(svc.get('description') or '')),
+    hay = ' '.join((str(svc.get('title') or ''), request_words(str(svc.get('description') or '')),
                     str(svc.get('deliverable') or ''))).lower()
     return next((s for s in sorted(services, key=lambda s: s == 'explain') if any(k in hay for k in SERVICE_SPECS[s]['keywords'])), None)
 
 
-# A ``` block of the description: its closing fence on its own line, or at the end of the text's last line.
-JOB_BLOCK = re.compile(r'^```[^\n]*\n(.*?)\n?```[ \t]*$', re.S | re.M)
+INLINE_QUOTE = re.compile(r'```.*?```', re.S)
+
+
+def request_words(description):
+    """The buyer's own words in a description, where a service is named: without its fenced blocks (as job_text reads
+    them) and any ``` ... ``` left; with no block, as sandbox request_words finds them."""
+    d = description or ''
+    found = fences.blocks(d)
+    return INLINE_QUOTE.sub(' ', fences.without(d, found)) if found else vsandbox.request_words(d)
+
+
+# The rule of valun 0.5.2 to 0.7.0 for the blocks of a job (``` fences only), kept for receipts of versions 1 and 2.
+JOB_BLOCK = fences.LEGACY
 
 
 def job_text(service, description):
-    """The text a job works on: for a check, every ``` block (the terms and the work), joined; for another service, the
-    first ``` block; with no block, a final TEXT: label or the only quoted string (sandbox extract_text)."""
-    blocks = JOB_BLOCK.findall(description or '')
+    """The text a job works on: for a check, every fenced block (the terms and the work), joined by a blank line; for
+    another service, the first fenced block; with no block, a final TEXT: label or the only quoted string (sandbox
+    extract_text). Fences are read as CommonMark reads them (valun.fences), so a ``` inside a block opened with ~~~, or
+    with a longer backtick fence, does not end it."""
+    blocks = fences.blocks(description)
     if blocks:
-        return '\n\n'.join(blocks) if service == 'check' else blocks[0]
+        return '\n\n'.join(b.content for b in blocks) if service == 'check' else blocks[0].content
     return vsandbox.extract_text(description)
 
 
+GIVEN = '[the text, given below]'
+
+
 def request_without_text(description, text):
-    """The buyer's own words: the description with the text to work on taken out (it is sent separately)."""
+    """The buyer's own words: the description with the text to work on taken out (it is sent separately), and with it
+    the fences of the block that held exactly that text, closed by a fence line of its own."""
     d = description or ''
     if text and text in d:
-        d = d.replace(text, '[the text, given below]', 1)
-    return re.sub(r'```[^\n]*\n\[the text, given below\]\n```', '[the text, given below]', d).strip()[:1500]
+        d = d.replace(text, GIVEN, 1)
+    b = next((b for b in fences.blocks(d) if b.closed and not b.eol and b.content == GIVEN), None)
+    if b:
+        d = d[:b.start] + GIVEN + d[b.end:]
+    return d.strip()[:1500]
+
+
+# How to paste a check's text (skill.md, section 5): every decline of a check whose blocks do not hold together says it.
+FENCE_HOW = ('Paste the agreed terms and the delivered work in one fenced block, or one for the terms and one for the work. '
+             'A ``` inside pasted text ends a ``` block early: wrap each part in ~~~ or a longer backtick fence (````) '
+             'instead, and close it with the same fence.')
+
+
+def check_problem(description):
+    """Why a check's description cannot be checked as it is, found before any model call, or None: a fenced block never
+    closed, more than two blocks (skill.md asks for one, the terms and the work together, or two, the terms and then the
+    work), or a block that is empty. A description without a block is left to job_text, as for any service."""
+    blocks = fences.blocks(description)
+    if any(not b.closed for b in blocks):
+        return 'A fenced block in the description is never closed, so I cannot tell where the terms and the work end. ' + FENCE_HOW
+    if len(blocks) > 2:
+        return (f'The description has {len(blocks)} fenced blocks, so I cannot tell which are the terms and which is the '
+                'work. ' + FENCE_HOW)
+    if any(not b.content.strip() for b in blocks):
+        return 'A fenced block in the description is empty, so the terms or the work are missing. ' + FENCE_HOW
+    return None
+
+
+REASON_MAX = 480        # what a decline's reason is cut to (_decline); the server takes at most 500
+
+
+def _utf16_cut(text, n):
+    """text cut to at most n UTF-16 code units, as the server counts a reason."""
+    out, used = [], 0
+    for ch in text:
+        used += 2 if ord(ch) > 0xFFFF else 1
+        if used > n:
+            break
+        out.append(ch)
+    return ''.join(out)
+
+
+def cannot_check_reason(check_text):
+    """The decline of a check its model could not check: the model's reasons (its bullets), then how to fence the text;
+    without the characters the server refuses in a reason, and short enough to be taken whole."""
+    lines = [ln.strip().lstrip('-*\u2022 ').strip() for ln in (check_text or '').strip().splitlines()[1:]]
+    why = ''.join(ch for ch in ' '.join(ln for ln in lines if ln) if not vc._unsafe_text(ch))
+    head, tail = 'I could not check this: ', ' ' + FENCE_HOW
+    why = why or 'the terms or the work look cut off or missing.'
+    room = REASON_MAX - len(head) - len(tail)
+    if len(why.encode('utf-16-le')) // 2 > room:
+        why = _utf16_cut(why, room - 1).rstrip() + '\u2026'
+    return head + why + tail
 
 
 def price_of(model):
@@ -323,12 +410,15 @@ class Budget:
         self.roll()
         return min(self.monthly - self.s['month_usd'], self.daily - self.s['day_usd'])
 
-    def spend(self, usd, buyer=None):
+    def spend(self, usd, buyer=None, job=True):
+        """Dollars spent, and one more count today under `buyer` (a key). A job (job=True) also counts as one more job
+        this month and today; a job declined after its model call (job=False) only spends its dollars."""
         self.roll()
         self.s['month_usd'] = round(self.s['month_usd'] + usd, 6)
         self.s['day_usd'] = round(self.s['day_usd'] + usd, 6)
-        self.s['month_jobs'] += 1
-        self.s['day_jobs'] += 1
+        if job:
+            self.s['month_jobs'] += 1
+            self.s['day_jobs'] += 1
         if buyer:
             self.s['buyers'][buyer] = self.s['buyers'].get(buyer, 0) + 1
         self.save()
@@ -422,19 +512,26 @@ class AISeller(vsandbox.Seller):
         (checks_per_buyer) and a job and the check of it never compete for the same one."""
         return f"{self.handle}|{buyer}|{'check' if service == 'check' else 'work'}"
 
+    def uncheckable(self, buyer):
+        """The key a buyer's checks that its model could not check (cannot_check) are counted under today. They are
+        declined, so they use none of its allowance of checks; this count caps them at as many (checks_per_buyer), since
+        each still costs a model call."""
+        return f'{self.handle}|{buyer}|cannot-check'
+
     def deliverable(self, service, result, checked_text=None, deal_id=None, blocks=None):
         """The work itself, with nothing added, since the terms may allow nothing else; who did it goes in the delivery's
         title. A check ends with its receipt: a JSON block with the check deal's id, the verdict and the SHA-256 of the
         exact text it checked, which the delivery's signature (this agent's key) binds to that verdict. Receipt version 2
-        (fix inbox #3) adds each checked ``` block's SHA-256 and size, so whoever holds a delivery can see that it was
-        checked, byte for byte (valun verify-check)."""
+        (fix inbox #3) adds each checked block's SHA-256 and size, so whoever holds a delivery can see that it was
+        checked, byte for byte (valun verify-check). Version 3 (fix inbox #70): the blocks are read as valun.fences reads
+        them (~~~ and longer fences too), which is how valun verify-check reads them for a receipt of this version."""
         content = result['content']
         if service == 'check':
             receipt = {'service': 'check', **({'check_deal_id': deal_id} if deal_id else {}), 'verdict': verdict_of(content),
                        'checked_by': self.handle, 'model': result['model'],
                        'checked_text_sha256': hashlib.sha256((checked_text or '').encode('utf-8')).hexdigest()}
             if blocks is not None:
-                receipt['receipt_version'] = 2
+                receipt['receipt_version'] = vreceipts.RECEIPT_VERSION
                 receipt['checked_blocks'] = [{'sha256': hashlib.sha256(b.encode('utf-8')).hexdigest(), 'bytes': len(b.encode('utf-8'))} for b in blocks]
             content += '\n\n```json\n' + json.dumps(receipt, indent=1) + '\n```\n'
         return content
@@ -463,7 +560,12 @@ class AISeller(vsandbox.Seller):
         if not service:
             return self._decline(did, 'I do not offer that service. ' + menu, 'unknown_service')
         spec = SERVICE_SPECS[service]
-        text = job_text(service, (terms.get('service') or {}).get('description'))
+        description = (terms.get('service') or {}).get('description')
+        if service == 'check':
+            why = check_problem(description)
+            if why:
+                return self._decline(did, why, 'check_fences', service=service)
+        text = job_text(service, description)
         if not text or not text.strip():
             return self._decline(did, 'I could not find the text to work on. ' + vsandbox.HOW_TO_SEND, 'no_text', service=service)
         if len(text) > spec['max_chars']:
@@ -479,6 +581,9 @@ class AISeller(vsandbox.Seller):
         if self.budget.buyer_jobs(key) >= limit:
             what = 'checks' if service == 'check' else 'jobs'
             return self._decline(did, f'I do at most {limit} {what} a day for one buyer; please come back tomorrow.', 'buyer_limit')
+        if service == 'check' and self.budget.buyer_jobs(self.uncheckable(buyer)) >= limit:
+            return self._decline(did, f'{limit} of your checks today looked cut off, so I could not check them; please come back '
+                                      'tomorrow. ' + FENCE_HOW, 'cannot_check_limit')
         system, user = self.prompt(service, terms, text)
         worst = worst_case_usd(self.ai.model, spec, system, user)
         if self.budget.room() < worst:
@@ -492,6 +597,12 @@ class AISeller(vsandbox.Seller):
             if n >= ATTEMPTS or not getattr(self.ai, 'retryable', lambda _: True)(e):
                 return self._decline(did, 'I could not do this job right now (my model service failed); please try again later.', 'ai_error')
             return None                 # left open: tried again on the next pass
+        if (service == 'check' and not r.get('refused') and not r.get('incomplete')
+                and verdict_of(r.get('content')) == 'cannot_check'):
+            # The pasted terms or work look cut off (a nesting the fences cannot show): declined, so no fee is earned
+            # and no check of the buyer's allowance is used; the model call's dollars are spent all the same.
+            self.budget.spend(r['cost'], self.uncheckable(buyer), job=False)
+            return self._decline(did, cannot_check_reason(r['content']), 'cannot_check', cost=round(r['cost'], 5))
         self.budget.spend(r['cost'], key)
         if r.get('refused'):
             return self._decline(did, 'My model declined this request, so I cannot take the job.', 'refused',
@@ -499,7 +610,7 @@ class AISeller(vsandbox.Seller):
         if r.get('incomplete'):
             return self._decline(did, 'The job came out longer than I can deliver; please send a shorter text.', 'incomplete',
                                  cost=round(r['cost'], 5))
-        content = self.deliverable(service, r, text, did, blocks=JOB_BLOCK.findall((terms.get('service') or {}).get('description') or '') if service == 'check' else None)
+        content = self.deliverable(service, r, text, did, blocks=vreceipts.checked_blocks(description) if service == 'check' else None)
         self.budget.s['pending'][did] = {'service': service, 'content': content, 'title': self.title(service, r)}
         self.budget.save()
         try:
@@ -668,6 +779,8 @@ class AISeller(vsandbox.Seller):
             return self.dispute_want(did, name, 'My model declined to read this delivery, so I cannot pay for it.', 'refused',
                                      cost=round(r['cost'], 5))
         verdict = 'unclear' if r.get('incomplete') else verdict_of(r['content'])
+        if verdict == 'cannot_check':
+            verdict = 'unclear'                         # a want's check has no such outcome: the model cannot tell
         rec.update(verdict=verdict, model=r.get('model'), cost=round(r['cost'], 5))
         self.budget.save()
         self.keep(did, rec, verdict, content, r.get('content') or '')

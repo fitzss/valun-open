@@ -33,6 +33,7 @@ SRC = os.path.abspath(os.path.join(HERE, '..', '..', '..', 'python', 'src'))
 sys.dont_write_bytecode = True          # read python/src only: no __pycache__ written there
 sys.path.insert(0, SRC)
 from valun import agent as va, basis as vb, client as vc, measure as vm, records as vr, sandbox as vs, schemas  # noqa: E402
+from valun import fences as vf  # noqa: E402
 from valun import novation as nv  # noqa: E402
 from valun import mcp_server  # noqa: E402
 from valun.mcp_server import APPROVAL_TEXT  # noqa: E402
@@ -2050,8 +2051,24 @@ def parity():
                  'reach under 5 words', chr(0xe9) + 'each under 5 words', 'each' + chr(0x3000) + 'line under 6 words',
                  'Check a delivery.\n```\nTerms: under 20 words, at least 3 links\nWork: x\n```\nverdict',
                  '300-500 words about this:\n```\nunder 20 words\n```', 'a ```300-500 words``` b', 'odd ``` fence under 30 words',
-                 'each l' + chr(0x130) + 'ne under 6 words', 'e' + chr(0x17f) + 'ach under 6 words']
+                 'each l' + chr(0x130) + 'ne under 6 words', 'e' + chr(0x17f) + 'ach under 6 words',
+                 # 0.7.1 (fix inbox #70): numbers inside ~~~ and longer fences, an unclosed fence, an indented one
+                 'Check a delivery.\n~~~\nTerms: 300-500 words, at least 3 links\n```\nunder 20 words\n```\n~~~\nverdict',
+                 'Check a delivery.\n````\nTerms: at least 3 links\n```\nunder 20 words\n```\n````\nverdict', 'at most 99 words\n~~~\nat least 3 links',
+                 'at most 99 words\n  ~~~\nat least 3 links\n  ~~~', 'at most 99 words\n    ~~~\nat least 3 links\n    ~~~',
+                 '```\nunder 9 words```\nat least 2 links', 'a ```x``` b\n~~~\nunder 9 words\n~~~ ```c``` at least 2 links']
     P['requirements'] = [[t, vm.requirements(t)] for t in req_texts]
+    fence_texts = [
+        '', 'no fence', 'Sum:\n```\nline one\nline two\n```\nthanks', 'Sum:\n```\nline one```', '```\nterms\n```\nand\n```\nwork\n```',
+        'x\n```\n```', 'x\n```\n\n\n```', '```\nA\n```  \nB', '```\nA\n``` x\nB', '```\nA\n```python\nB\n```',
+        '~~~\nterms\n```\ninner\n```\n~~~\n~~~\nwork\n~~~', '````\nouter\n```\nin\n```\n````', '~~~~\na\n~~~\nb\n~~~~~~',
+        '```\nunclosed', '```\nunclosed\n', '```\nunclosed\n\n', 'x\n```', '```x```\nA\n```', '``` `a` b\nA', '~~~ `ok` here\nA\n~~~',
+        '  ```\n  two\n   three\n one\n  ```', '    ```\nx\n```', '\t```\nx\n```', '```\nx\n   ```', '```\nx\n    ```',
+        '```\r\nA\r\n```\r\nB', '```\nA\u2028B\n```', '```\nA\x85B\r\n```', '```\nuse ``` here\nmore````', '````\nuse ```\nmore````',
+        '~~~\nterms ~~~', 'a ```inline``` mention\n```\nreal\n```', '```\n\U0001F600 emoji\n```\n~~~\n\U0001F600\U0001F600\n~~~',
+        '```\nterms: Summarize:\n```\nS\n```\nwork: X\n```']
+    P['fences'] = [[t, [[b.content, b.closed, b.eol, t[b.start:b.end]] for b in vf.blocks(t)], vf.without(t)] for t in fence_texts]
+    P['unquoted'] = [[t, vm.unquoted(t)] for t in fence_texts + ['one ```a``` two ```b``` three', 'odd ``` fence']]
     P['item_word_counts'] = [[t, vm.item_word_counts(t)] for t in [
         '- one two three four\n- five six seven\n\nIn one sentence: gist', '1. alpha beta\n2) gamma', '* a\n\u2022 b c\n-d e',
         'A paragraph of five words.\n\nTwo words.', '', '   \n\t\n', 'x\r\ny\rz\u2028w', '\u3000- spaced bullet', '12. twelve items']]

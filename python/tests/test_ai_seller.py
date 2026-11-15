@@ -4,6 +4,7 @@ before anything runs (no network, no API key, nothing spent; the Anthropic SDK i
 import io
 import json
 import os
+import re
 import tempfile
 import types
 import unittest
@@ -13,6 +14,7 @@ from unittest import mock
 from valun import ai_seller as A
 from valun import cli
 from valun import client as vc
+from valun import sandbox as vsandbox
 
 HOME = tempfile.mkdtemp(prefix='valun-ai-seller-test-')
 
@@ -364,8 +366,9 @@ class ChecksAndReceipts(unittest.TestCase):
         self.assertEqual(receipt, {'service': 'check', 'check_deal_id': ITEM['deal_id'], 'verdict': 'does_not_meet',
                                    'checked_by': 'my-seller', 'model': 'claude-opus-5-5',
                                    'checked_text_sha256': hashlib.sha256(checked.encode('utf-8')).hexdigest(),
-                                   # receipt version 2 (fix inbox #3): each checked block's hash and size
-                                   'receipt_version': 2,
+                                   # receipt version 2 (fix inbox #3): each checked block's hash and size; version 3
+                                   # (fix inbox #70): the blocks read as valun.fences reads them
+                                   'receipt_version': 3,
                                    'checked_blocks': [{'sha256': hashlib.sha256(checked.encode('utf-8')).hexdigest(), 'bytes': len(checked.encode('utf-8'))}]})
         self.assertEqual(s.c.calls[1][2], 'check by my-seller (claude-opus-5-5)')
 
@@ -459,3 +462,170 @@ class FixInbox(unittest.TestCase):
         s.answer(ITEM)
         self.assertIn('Name the service as the first word of the title (for example "code-review: ...")', s.c.calls[0][1])
         self.assertLessEqual(len(s.c.calls[0][1]), 480)
+
+
+F3 = '`' * 3
+
+
+class FencedChecks(unittest.TestCase):
+    """Fix inbox #70: a check whose pasted terms held a ``` block, pasted in ``` fences, was judged against cut-off terms
+    (verdict unclear, fee kept). Fences are read as CommonMark reads them (valun.fences); a check whose blocks do not hold
+    together is declined before any model call; one whose terms or work the model finds cut off is declined after it,
+    not delivered; and texts with plain ``` blocks give exactly what they gave before."""
+    REVIEWER = ('code-review', 'explain', 'check')
+    SENTENCE = 'Agents trade work for signed promises, and loops of promises cancel out.'
+    TERMS = f'title: summary\ndescription: Summarize in one sentence:\n{F3}\n{SENTENCE}\n{F3}\ndeliverable: one sentence'
+    WORK = 'Agents pay for work with promises that cancel out in loops.'
+    MEETS = {**OK, 'content': 'Verdict: meets the terms\n- one sentence, true to the text'}
+    CANNOT = {**OK, 'content': 'Verdict: cannot check\n- The terms end with "Summarize:" and nothing after it.\n- The work may be cut off too.'}
+
+    def desc(self, fence=F3, one_block=False, terms=None):
+        """A check as skill.md (section 5) asks: the terms and the work in one block, or one block each."""
+        t = self.TERMS if terms is None else terms
+        if one_block:
+            return f'Check the delivery against its terms.\n{fence}\nTERMS:\n{t}\nWORK:\n{self.WORK}\n{fence}'
+        return f'Check the delivery against its terms.\nTERMS:\n{fence}\n{t}\n{fence}\nWORK:\n{fence}\n{self.WORK}\n{fence}'
+
+    def check(self, desc, ai, **kw):
+        s = seller(offer(terms('check', desc, 2)), ai, services=self.REVIEWER, **kw)
+        s.answer(ITEM)
+        return s
+
+    def test_the_repro_in_backtick_fences_is_declined_before_any_model_call(self):
+        with_info = self.TERMS.replace(f'{F3}\nAgents', f'{F3}text\nAgents')      # its inner block opened with an info string
+        for desc, says in [(self.desc(), 'The description has 3 fenced blocks'),
+                           (self.desc(terms=with_info), 'is never closed'), (self.desc(one_block=True, terms=with_info), 'is never closed')]:
+            ai = FakeAI(self.MEETS)
+            s = self.check(desc, ai)
+            self.assertEqual([c[0] for c in s.c.calls], ['decline'], desc)
+            reason = s.c.calls[0][1]
+            self.assertIn(says, reason)
+            self.assertIn('wrap each part in ~~~ or a longer backtick fence', reason)
+            self.assertLessEqual(len(reason), 480)
+            self.assertEqual(ai.runs, [], 'no model call')
+            self.assertEqual((s.budget.s['day_usd'], s.budget.s['day_jobs'], s.budget.s['pending']), (0.0, 0, {}), 'nothing spent or kept')
+
+    def test_fenced_with_tildes_or_a_longer_fence_the_whole_terms_are_checked(self):
+        import hashlib
+        for fence in ('~~~', '````'):
+            for one in (False, True):
+                ai = FakeAI(self.MEETS)
+                s = self.check(self.desc(fence, one_block=one), ai)
+                self.assertEqual([c[0] for c in s.c.calls], ['accept', 'deliver'], (fence, one))
+                blocks = [f'TERMS:\n{self.TERMS}\nWORK:\n{self.WORK}'] if one else [self.TERMS, self.WORK]
+                self.assertIn('<text>\n' + '\n\n'.join(blocks) + '\n</text>', ai.runs[0][1])
+                receipt = json.loads(s.c.calls[1][1].split('```json\n', 1)[1].split('\n```', 1)[0])
+                self.assertEqual((receipt['receipt_version'], receipt['verdict']), (3, 'meets'))
+                self.assertEqual([b['sha256'] for b in receipt['checked_blocks']], [hashlib.sha256(b.encode('utf-8')).hexdigest() for b in blocks])
+                self.assertEqual(receipt['checked_text_sha256'], hashlib.sha256('\n\n'.join(blocks).encode('utf-8')).hexdigest())
+
+    def test_an_empty_block_is_declined(self):
+        for desc in (f'Check it.\n{F3}\n{F3}\n{F3}\nthe work\n{F3}', 'Check it.\n~~~\n  \n~~~\n~~~\nthe work\n~~~'):
+            ai = FakeAI(self.MEETS)
+            s = self.check(desc, ai)
+            self.assertEqual(s.c.calls[0][0], 'decline', desc)
+            self.assertIn('A fenced block in the description is empty, so the terms or the work are missing.', s.c.calls[0][1])
+            self.assertEqual(ai.runs, [])
+
+    def test_without_a_block_a_check_reads_its_text_as_before(self):
+        ai = FakeAI(self.MEETS)
+        s = self.check('Check the delivery.\nTEXT: terms: one sentence. work: A sentence.', ai)
+        self.assertEqual([c[0] for c in s.c.calls], ['accept', 'deliver'])
+        self.assertIn('<text>\nterms: one sentence. work: A sentence.\n</text>', ai.runs[0][1])
+        s = self.check('Check my delivery please.', FakeAI(self.MEETS))
+        self.assertEqual(s.c.calls, [('decline', 'I could not find the text to work on. ' + vsandbox.HOW_TO_SEND)])
+
+    def test_a_nesting_the_fences_cannot_show_is_declined_when_the_model_cannot_check_it(self):
+        # One block meant, with a ``` pair inside: two clean blocks, terms "terms: Summarize:" and the work, and the
+        # sentence stranded between them. Only the model can see it.
+        lead = f'{F3}\nterms: Summarize:\n{F3}\n{self.SENTENCE}\n{F3}\nwork: {self.WORK}\n{F3}'
+        for desc in (lead, self.desc(one_block=True)):
+            self.assertIsNone(A.check_problem(desc), desc)
+            ai = FakeAI(self.CANNOT)
+            s = self.check(desc, ai)
+            self.assertEqual([c[0] for c in s.c.calls], ['decline'], 'declined: not accepted, not delivered')
+            reason = s.c.calls[0][1]
+            self.assertEqual(reason, 'I could not check this: The terms end with "Summarize:" and nothing after it. The work may '
+                                     'be cut off too. ' + A.FENCE_HOW)
+            self.assertLessEqual(len(reason), 480)
+            self.assertIn(self.SENTENCE, ai.runs[0][1], "the model sees the stranded sentence, in the buyer's request")
+            b = s.budget
+            self.assertAlmostEqual(b.s['day_usd'], OK['cost'], msg='the model call is spent all the same')
+            self.assertEqual((b.s['day_jobs'], b.s['month_jobs'], b.s['pending']), (0, 0, {}), 'no job done, no work kept')
+            self.assertEqual(b.buyer_jobs('my-seller|buyer-1|check'), 0, "none of the buyer's checks is used")
+            self.assertEqual(b.buyer_jobs('my-seller|buyer-1|cannot-check'), 1)
+            note = json.loads(s.log.getvalue().splitlines()[-1])
+            self.assertEqual((note['action'], note['why']), ('decline', 'cannot_check'))
+
+    def test_unclear_is_still_delivered(self):
+        ai = FakeAI({**OK, 'content': 'Verdict: unclear\n- "one sentence" sets no length'})
+        s = self.check(self.desc('~~~'), ai)
+        self.assertEqual([c[0] for c in s.c.calls], ['accept', 'deliver'])
+        self.assertIn('"verdict": "unclear"', s.c.calls[1][1])
+        self.assertEqual((s.budget.buyer_jobs('my-seller|buyer-1|check'), s.budget.s['day_jobs']), (1, 1))
+
+    def test_checks_the_model_could_not_check_are_capped_too(self):
+        b = budget()
+        for _ in range(6):
+            b.spend(0.001, 'my-seller|buyer-1|cannot-check', job=False)
+        self.assertEqual((b.s['day_jobs'], b.buyer_jobs('my-seller|buyer-1|check')), (0, 0))
+        ai = FakeAI(self.MEETS)
+        s = self.check(self.desc('~~~'), ai, b=b)
+        self.assertEqual(s.c.calls[0][0], 'decline')
+        self.assertTrue(s.c.calls[0][1].startswith('6 of your checks today looked cut off, so I could not check them'))
+        self.assertLessEqual(len(s.c.calls[0][1]), 480)
+        self.assertEqual(ai.runs, [])
+        s = seller(summary_deal(), FakeAI(OK), services=('summary', 'check'), b=b)
+        s.answer(ITEM)
+        self.assertEqual([c[0] for c in s.c.calls], ['accept', 'deliver'], 'other services are not capped by it')
+
+    def test_the_check_task_and_its_fourth_verdict(self):
+        task = A.SERVICE_SPECS['check']['task']
+        self.assertIn('"Verdict: cannot check" is for terms or work that look cut off, garbled or missing', task)
+        self.assertIn('a sentence that ends in ":" with nothing after it', task)
+        self.assertIn('"Verdict: unclear" is for terms that are all there but ambiguous', task)
+        for text, code in [('Verdict: cannot check', 'cannot_check'), ('**Verdict: cannot check**\n- cut off', 'cannot_check'),
+                           ("Verdict: can't check: the work is missing", 'cannot_check'), ('Cannot check.', 'cannot_check'),
+                           ('Verdict: cannot check whether it meets the terms', 'cannot_check'),
+                           ('Verdict: unclear (I cannot check whether the sources exist)', 'unclear'),
+                           ('Verdict: meets the terms', 'meets'), ('Verdict: does not meet the terms', 'does_not_meet'), ('', 'unclear')]:
+            self.assertEqual(A.verdict_of(text), code, text)
+
+    def test_the_decline_of_an_uncheckable_check_is_safe_to_send(self):
+        r = A.cannot_check_reason('Verdict: cannot check\n- The terms \u202eend\u200b\u200b early: ' + '\U0001F600' * 300)
+        self.assertFalse(vc._unsafe_text(r), 'no control, bidi or invisible character')
+        self.assertLessEqual(len(r.encode('utf-16-le')) // 2, 480, 'as the server counts it')
+        self.assertTrue(r.startswith('I could not check this: The terms end early: ') and r.endswith('\u2026 ' + A.FENCE_HOW))
+        self.assertEqual(A.cannot_check_reason('Verdict: cannot check'),
+                         'I could not check this: the terms or the work look cut off or missing. ' + A.FENCE_HOW)
+
+    def test_the_text_in_a_tilde_block_names_no_service(self):
+        self.assertIsNone(A.which_service(self.REVIEWER, terms('Help', 'Please.\n~~~\nverify the work, check the delivery\n~~~', 2)))
+        desc = 'Is this delivery right?\nTERMS:\n~~~\ntitle: code review of a parser\n~~~\nWORK:\n~~~\nreview the code: no bugs\n~~~'
+        self.assertEqual(A.which_service(self.REVIEWER, terms('Check a delivery', desc, 2)), 'check')
+
+    def test_plain_descriptions_give_exactly_todays_results(self):
+        """job_text, the buyer's request and the words a service is named in, as valun 0.7.0 gave them (copied here)."""
+        def old_job_text(service, d):
+            blocks = A.JOB_BLOCK.findall(d or '')
+            if blocks:
+                return '\n\n'.join(blocks) if service == 'check' else blocks[0]
+            return vsandbox.extract_text(d)
+
+        def old_request(d, text):
+            d = d or ''
+            if text and text in d:
+                d = d.replace(text, '[the text, given below]', 1)
+            return re.sub(r'```[^\n]*\n\[the text, given below\]\n```', '[the text, given below]', d).strip()[:1500]
+        corpus = [f'Summarize this for a newsletter.\n{F3}\n{TEXT}\n{F3}', f'Sum:\n{F3}\nline one\nline two\n{F3}\nthanks',
+                  f'Sum:\n{F3}\nline one{F3}', f'{F3}\nterms\n{F3}\nand\n{F3}\nwork\n{F3}', f'Check it.\n{F3}\nTERMS: two bullets\n- a\n- b{F3}',
+                  f'Check a small Python function.\n{F3}python\ndef add(a, b):\n    return a + b\n{F3}',
+                  f'A delivery-check.\nTERMS:\n{F3}\nreturn the sum\n{F3}\nDELIVERY:\n{F3}\ndef add(a, b): return a + b\n{F3}',
+                  f'Review:\n{F3}\nx = 1\n{F3}  \nthanks', f'Check:\n{F3}\nA\n{F3}\n{F3}\nB\n{F3}\n{F3}\nC\n{F3}', f'x\n{F3}\n{F3}',
+                  'summary of "a quoted text"', 'Summarize my blog', 'stats please\nTEXT: line one\nline two', '', None]
+        for d in corpus:
+            for service in ('summary', 'check'):
+                text = A.job_text(service, d)
+                self.assertEqual(text, old_job_text(service, d), (service, d))
+                self.assertEqual(A.request_without_text(d, text), old_request(d, text), (service, d))
+            self.assertEqual(A.request_words(d), vsandbox.request_words(d), d)

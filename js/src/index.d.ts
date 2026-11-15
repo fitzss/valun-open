@@ -1211,8 +1211,10 @@ export namespace measure {
   /** Distinct http(s) URLs, in order, without trailing punctuation or an unbalanced closing bracket. */
   function links(text: string | null | undefined): string[];
   function hostOf(url: string): string;
-  /** Numeric requirements written in the agreed service text ("300-500 words", "at least 3 cited sources"), outside ``` blocks. */
+  /** Numeric requirements written in the agreed service text ("300-500 words", "at least 3 cited sources"), outside fenced blocks (``` or ~~~). */
   function requirements(termsText: string | null | undefined): Requirements;
+  /** The text without what it quotes: each fenced block (``` or ~~~, as CommonMark reads them), then each ``` ... ``` left, a space instead. */
+  function unquoted(text: string | null | undefined): string;
   /** The word count of each bullet or numbered item (its marker left out), or of each non-empty line if there are none. */
   function itemWordCounts(text: string | null | undefined): number[];
   /** Python's ipaddress.ip_address(address).is_global. Throws TypeError for a string that is no IP address. */

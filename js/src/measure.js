@@ -8,6 +8,7 @@
 // were not checked. The regular expressions follow Python's semantics (its whitespace, re.IGNORECASE letters, Unicode
 // digits), so both implementations measure the same text the same way.
 
+import {without} from './fences.js';
 import {DIGIT, PyError, WS, ci, digitsInt, or, rstripChars, strip, truthy, typeName} from './py.js';
 
 const S = `[${WS}]`;
@@ -32,8 +33,8 @@ const PER_ITEM_SRC = `(?:${WB}(?:${ci('each')}|${ci('every')})(?:${S}+${ITEM_NAM
 const PER_ITEM = new RegExp(PER_ITEM_SRC, 'u');
 const PER_ITEM_ALL = new RegExp(PER_ITEM_SRC, 'gu');
 const STRICT = ['under', 'fewer than', 'less than'];
-// Text quoted in ``` blocks is the material to work on (or, for a check, the terms and work being checked), never the
-// terms of this deal: its numbers are not requirements.
+// Text quoted in fenced blocks (``` or ~~~, as fences.js reads them) and between ``` and ``` is the material to work
+// on (or, for a check, the terms and work being checked), never the terms of this deal: its numbers are not requirements.
 const QUOTED = /```[\s\S]*?```/gu;
 const ITEM = new RegExp(`^${S}*(?:[-*\u2022]|${DIGIT}+[.)])${S}+`, 'u');
 // str.splitlines() boundaries (a trailing empty piece is harmless: only marked or non-empty lines are counted).
@@ -79,9 +80,14 @@ export function hostOf(url) {
 
 const limit = (phrase, n) => (STRICT.includes(phrase.toLowerCase()) ? n - 1 : n);
 
-/** Numeric requirements found in the agreed service text (title, description, deliverable), outside ``` blocks. */
+/** The text without what it quotes: each fenced block (fences.js), then each ``` ... ``` left, a space instead. */
+export function unquoted(text) {
+  return without(text0(text)).replace(QUOTED, ' ');
+}
+
+/** Numeric requirements found in the agreed service text (title, description, deliverable), outside fenced blocks. */
 export function requirements(termsText) {
-  let t = text0(termsText).replace(QUOTED, ' ');
+  let t = unquoted(termsText);
   const req = {};
   let m = PER_ITEM.exec(t);
   if (m) {

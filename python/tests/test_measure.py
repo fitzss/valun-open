@@ -44,6 +44,17 @@ class Requirements(unittest.TestCase):
         self.assertEqual(measure.requirements('Check a delivery.\n```\nTerms: under 20 words, at least 3 links\nWork: x\n```\nverdict'), {})
         self.assertEqual(measure.requirements('300-500 words about this:\n```\nunder 20 words\n```'), {'min_words': 300, 'max_words': 500})
 
+    def test_text_quoted_in_tilde_or_longer_fences_holds_none_either(self):
+        # fix inbox #70: a check's terms that hold a ``` block are pasted in ~~~ or a longer fence; their numbers, the
+        # inner block's included, are not the check's terms
+        pasted = 'Terms: 300-500 words, at least 3 links\nSummarize:\n```\nunder 20 words\n```'
+        for fence in ('~~~', '````', '~~~~~'):
+            self.assertEqual(measure.requirements(f'Check a delivery.\n{fence}\n{pasted}\n{fence}\nverdict'), {}, fence)
+        self.assertEqual(measure.requirements('at most 99 words\n  ~~~\nat least 3 links\n  ~~~'), {'max_words': 99})
+        self.assertEqual(measure.requirements('at most 99 words\n~~~\nat least 3 links, never closed'), {'max_words': 99})
+        self.assertEqual(measure.requirements('a ```300-500 words``` b'), {}, 'an inline ``` quote, as before')
+        self.assertEqual(measure.unquoted('a\n~~~\nb\n~~~\nc ```d``` e'), 'a\n \nc   e')
+
 
 class Measure(unittest.TestCase):
     fake = staticmethod(lambda h: 'not_found' if h.endswith('.invalid') else 'public')

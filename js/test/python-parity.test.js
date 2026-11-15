@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import * as api from '../src/index.js';
+import * as fences from '../src/fences.js';
 import {FileStore} from '../src/file-store.js';
 import {PyError, int, isoAwareUs, repr, str, typeName} from '../src/py.js';
 import {FIX, PARITY as P} from './agent-world.js';
@@ -96,6 +97,18 @@ test('measure: word counts, links, hosts and numeric requirements identical to P
     assert.deepEqual(measure.requirements(text), req, show(text));
     assert.equal(JSON.stringify(measure.requirements(text)), JSON.stringify(req), 'key order');
   }
+});
+
+test('fences: fenced blocks, the text without them and unquoted() identical to Python (fix inbox #70)', () => {
+  assert.ok(P.fences.length > 30 && P.unquoted.length > 30);
+  for (const [text, want, rest] of P.fences) {
+    const got = fences.blocks(text).map(b => [b.content, b.closed, b.eol, text.slice(b.start, b.end)]);
+    assert.deepEqual(got, want, show(text));
+    assert.equal(fences.without(text), rest, show(text));
+  }
+  for (const [text, out] of P.unquoted) assert.equal(measure.unquoted(text), out, show(text));
+  assert.deepEqual(fences.blocks(null), []);
+  assert.throws(() => fences.blocks(5), e => e.name === 'TypeError' && e.message === "expected string or bytes-like object, got 'int'");
 });
 
 test('measure: measure() identical to Python, DNS answers from the same table (no network)', async () => {

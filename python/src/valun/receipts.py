@@ -2,9 +2,11 @@
 key, and, given the deal whose delivery was checked, bind the receipt to exactly that delivery. No network here: the
 caller fetches the deals (``valun verify-check`` does, as a party to both) or passes saved raw records.
 
-A check is an ordinary deal. The buyer pastes the agreed terms and the delivered work in ``` blocks; the reviewer
+A check is an ordinary deal. The buyer pastes the agreed terms and the delivered work in fenced blocks; the reviewer
 (house-reviewer, run by the Valun operator) delivers its verdict, its reasons and a JSON receipt at the end:
-{service: check, check_deal_id, verdict, checked_by, model, checked_text_sha256[, receipt_version 2, checked_blocks]}.
+{service: check, check_deal_id, verdict, checked_by, model, checked_text_sha256[, receipt_version 2 or 3, checked_blocks]}.
+The receipt's version says how the reviewer read the blocks: 3 (valun 0.7.1 and later, fix inbox #70) as valun.fences
+reads them, ``` or ~~~ fences closed by the same fence; 1 and 2 with ``` fences only (fences.LEGACY).
 The reviewer's delivery signature (statement deliver, over the check deal's terms hash and the SHA-256 of the whole
 delivery) covers the receipt.
 
@@ -17,6 +19,7 @@ import re
 
 from . import basis as vb
 from . import client as vc
+from . import fences
 
 # The reviewers' keys as published in each network's directory on 2026-11-13 (GET /pilot/v1/participants?all=1), so a
 # receipt can be checked against a key that does not come from the deal it is in. A key that changes (the operator
@@ -26,9 +29,14 @@ PINNED_REVIEWERS = {
     'valun-testnet-1': {'house-reviewer': '0232a50378919ffe83f06b2debf582fc6392a693d25bc7976329f0cf4776ef2e91'},
 }
 
-# The reviewer's own rule for the text it checks (ai_seller.job_text for a check): every ``` block of the check deal's
-# description, each without its final newline, joined by a blank line.
-JOB_BLOCK = re.compile(r'^```[^\n]*\n(.*?)\n?```[ \t]*$', re.S | re.M)
+# The reviewer's own rule for the text it checks (ai_seller.job_text for a check): every fenced block of the check deal's
+# description, each without its final newline, joined by a blank line. The blocks are read by the rule of the receipt's
+# version: RECEIPT_VERSION, the one the reviewer writes now, reads them with valun.fences; versions 1 and 2 (no
+# receipt_version, or 2) were written by reviewers that read ``` fences only (JOB_BLOCK, valun 0.5.2 to 0.7.0).
+RECEIPT_VERSION = 3
+_LEGACY_RULE = 'with ``` fences only, as valun 0.7.0 and earlier read them'
+RULES = {1: _LEGACY_RULE, 2: _LEGACY_RULE, 3: 'with ``` or ~~~ fences, each closed by the same fence (valun 0.7.1 and later)'}
+JOB_BLOCK = fences.LEGACY
 RECEIPT_BLOCK = re.compile(r'```json\n(.*?)\n```', re.S)
 
 PROVES = (
@@ -52,13 +60,19 @@ def _sha(s):
     return hashlib.sha256(s.encode('utf-8')).hexdigest()
 
 
-def checked_blocks(description):
-    """The ``` blocks the reviewer checks, as it reads them."""
-    return JOB_BLOCK.findall(description or '')
+def checked_blocks(description, receipt_version=RECEIPT_VERSION):
+    """The blocks the reviewer checks, as a reviewer that writes receipts of this version reads them (1, 2 or 3; None is
+    1, a receipt without receipt_version). ValueError for another version."""
+    v = 1 if receipt_version is None else receipt_version
+    if isinstance(v, bool) or not isinstance(v, int) or v not in RULES:
+        raise ValueError(f'receipt version {receipt_version!r} is not one this valun knows (1 to {RECEIPT_VERSION})')
+    if v < 3:
+        return fences.legacy_blocks(description)
+    return [b.content for b in fences.blocks(description)]
 
 
-def checked_text(description):
-    return '\n\n'.join(checked_blocks(description))
+def checked_text(description, receipt_version=RECEIPT_VERSION):
+    return '\n\n'.join(checked_blocks(description, receipt_version))
 
 
 def receipt_of(content):
@@ -133,9 +147,15 @@ def verify_check(check_deal, *, network, work_deal=None, pinned=None, reviewer='
     checks.append({'check': 'the receipt names this deal', 'ok': rec.get('check_deal_id') == check_deal.get('id'),
                    'detail': str(rec.get('check_deal_id')) if rec.get('check_deal_id') else 'no check_deal_id (a receipt from before valun 0.5.2)'})
     desc = ((terms.get('service') or {}).get('description')) or ''
-    blocks = checked_blocks(desc)
-    checks.append({'check': 'the receipt names the text in the signed terms', 'ok': rec.get('checked_text_sha256') == _sha(checked_text(desc)),
-                   'detail': f'{len(blocks)} ``` block(s) in the check deal\'s description'})
+    version = rec.get('receipt_version')
+    try:
+        blocks = checked_blocks(desc, version)
+    except ValueError as e:              # a receipt of a version this valun does not know: it cannot say what was checked
+        blocks = []
+        checks.append({'check': 'the receipt names the text in the signed terms', 'ok': False, 'detail': f'{e}; upgrade valun'})
+    else:
+        checks.append({'check': 'the receipt names the text in the signed terms', 'ok': rec.get('checked_text_sha256') == _sha('\n\n'.join(blocks)),
+                       'detail': f"{len(blocks)} fenced block(s) in the check deal's description, read {RULES[1 if version is None else version]}"})
     if isinstance(rec.get('checked_blocks'), list):
         ok = [b.get('sha256') for b in rec['checked_blocks'] if isinstance(b, dict)] == [_sha(b) for b in blocks]
         checks.append({'check': 'the receipt\'s block hashes match the signed terms', 'ok': ok, 'detail': f"{len(rec['checked_blocks'])} block hash(es)"})

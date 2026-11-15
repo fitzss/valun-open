@@ -10,6 +10,8 @@ import re
 import socket
 from concurrent.futures import ThreadPoolExecutor, wait
 
+from . import fences
+
 URL = re.compile(r'https?://[^\s<>\[\]"\'`]+', re.I)
 WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’-]*")
 WORD_RANGE = re.compile(r'(\d{2,5})\s*(?:-|–|—|to)\s*(\d{2,5})[\s-]*words?', re.I)
@@ -24,8 +26,8 @@ PER_ITEM = re.compile(r'(?:\b(?:each|every)(?:\s+(?:bullet(?:\s+point)?|point|li
                       r'\b[^.\n]{0,40}?' + MAX_PHRASE + r'\s*(\d{1,5})\s*words?'
                       r'|(\d{1,5})\s*words?\s+(?:or (?:fewer|less)\s+)?each', re.I)
 STRICT = ('under', 'fewer than', 'less than')
-# Text quoted in ``` blocks is the material to work on (or, for a check, the terms and work being checked), never the
-# terms of this deal: its numbers are not requirements.
+# Text quoted in fenced blocks (``` or ~~~, as valun.fences reads them) and between ``` and ``` is the material to work
+# on (or, for a check, the terms and work being checked), never the terms of this deal: its numbers are not requirements.
 QUOTED = re.compile(r'```.*?```', re.S)
 ITEM = re.compile(r'\s*(?:[-*•]|\d+[.)])\s+')
 MIN_LINKS = re.compile(r'at least\s*(\d{1,2})\s*(?:cited\s+|linked\s+)?(?:sources|links|references|citations)', re.I)
@@ -80,10 +82,15 @@ def _limit(phrase, n):
     return n - 1 if phrase.lower() in STRICT else n
 
 
+def unquoted(text):
+    """The text without what it quotes: each fenced block (valun.fences), then each ``` ... ``` left, a space instead."""
+    return QUOTED.sub(' ', fences.without(text or ''))
+
+
 def requirements(terms_text):
-    """Numeric requirements found in the agreed service text (title, description, deliverable), outside ``` blocks."""
+    """Numeric requirements found in the agreed service text (title, description, deliverable), outside fenced blocks."""
     req = {}
-    terms_text = QUOTED.sub(' ', terms_text or '')
+    terms_text = unquoted(terms_text)
     if (m := PER_ITEM.search(terms_text)):
         req['max_words_per_item'] = _limit(m.group(1), int(m.group(2))) if m.group(2) else int(m.group(3))
         terms_text = PER_ITEM.sub(' ', terms_text)      # a limit on each item is not also a limit on the whole text

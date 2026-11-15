@@ -142,11 +142,11 @@ class TestVerifyCheck(unittest.TestCase):
         s = AISeller.__new__(AISeller)
         s.handle = 'house-reviewer'
         content = s.deliverable('check', {'content': 'Verdict: meets the terms\n- fine', 'model': 'claude-opus-5-5'},
-                                job_text('check', w.desc), 'vd_check0000000003', blocks=JOB_BLOCK.findall(w.desc))
+                                job_text('check', w.desc), 'vd_check0000000003', blocks=R.checked_blocks(w.desc))
         d = deal('vd_check0000000003', w.buyer, w.reviewer, w.desc, content, title='check')
         r = R.verify_check(d, network=NET, work_deal=w.work, pinned=w.pinned)
         self.assertEqual(failed(r), [])
-        self.assertEqual(r['receipt']['receipt_version'], 2)
+        self.assertEqual(r['receipt']['receipt_version'], 3)
 
     def test_the_shipped_pins_are_well_formed(self):
         for net, table in R.PINNED_REVIEWERS.items():
@@ -184,6 +184,70 @@ class TestVerifyCheckCommand(unittest.TestCase):
         rc, r = self.run_cli(World(), '--network', 'valun-pilot-1')
         self.assertEqual((rc, r['ok'], r['network']), (1, False, 'valun-pilot-1'))
         self.assertIn('the seller is house-reviewer, by its pinned key', [c['check'] for c in r['checks'] if not c['ok']])
+
+
+class FencedReceipts(unittest.TestCase):
+    """Fix inbox #70: a receipt of version 3 names the blocks as valun.fences reads them (``` or ~~~ fences, each closed
+    by the same fence). Versions 1 and 2 were written by reviewers that read ``` fences only; they are checked by that
+    rule (fences.LEGACY), so the receipts already issued still verify, even where the two rules read a text differently."""
+    TERMS = 'title: summary\ndescription: Summarize in one sentence:\n```\nThe fox is quick.\n```\ndeliverable: one sentence'
+
+    def desc(self, w):
+        """The terms in ~~~, since they hold a ``` block (as skill.md now says), and the work in ```."""
+        return f'Check whether the work meets the terms.\nTERMS:\n~~~\n{self.TERMS}\n~~~\nWORK:\n```\n{w.work_content}```'
+
+    def detail(self, r, check='the receipt names the text in the signed terms'):
+        return next(c['detail'] for c in r['checks'] if c['check'] == check)
+
+    def test_the_two_rules_read_such_a_check_differently(self):
+        w = World()
+        d = self.desc(w)
+        self.assertEqual(R.checked_blocks(d), [self.TERMS, w.work_content[:-1]])
+        self.assertEqual(R.checked_blocks(d, 2), ['The fox is quick.', w.work_content[:-1]], 'valun 0.7.0 read only the ``` blocks')
+        self.assertEqual(R.checked_blocks(d, None), R.checked_blocks(d, 2), 'no receipt_version: version 1')
+        self.assertEqual(R.checked_blocks(w.desc), R.checked_blocks(w.desc, 2), 'plain ``` blocks: the same either way')
+
+    def test_a_saved_version_2_receipt_still_verifies(self):
+        w = World()
+        d = self.desc(w)
+        w.check = deal('vd_check0000000005', w.buyer, w.reviewer, d, receipt_content('vd_check0000000005', d), title='check')
+        r = R.verify_check(json.loads(json.dumps(w.check)), network=NET, work_deal=w.work, pinned=w.pinned)
+        self.assertEqual(failed(r), [])
+        self.assertEqual(self.detail(r), "2 fenced block(s) in the check deal's description, read with ``` fences only, as valun "
+                                         '0.7.0 and earlier read them')
+        rc, out = TestVerifyCheckCommand.run_cli(self, w)          # `valun verify-check --file`, from the saved record
+        self.assertEqual((rc, out['ok'], out['verdict']), (0, True, 'meets'))
+
+    def test_a_version_3_receipt_verifies_and_names_the_whole_terms(self):
+        from valun.ai_seller import AISeller, job_text
+        w = World()
+        d = self.desc(w)
+        s = AISeller.__new__(AISeller)
+        s.handle = 'house-reviewer'
+        content = s.deliverable('check', {'content': 'Verdict: meets the terms\n- fine', 'model': 'claude-opus-5-5'},
+                                job_text('check', d), 'vd_check0000000006', blocks=R.checked_blocks(d))
+        w.check = deal('vd_check0000000006', w.buyer, w.reviewer, d, content, title='check')
+        r = R.verify_check(json.loads(json.dumps(w.check)), network=NET, work_deal=w.work, pinned=w.pinned)
+        self.assertEqual(failed(r), [])
+        self.assertEqual(r['receipt']['receipt_version'], 3)
+        whole = f'{self.TERMS}\n\n{w.work_content[:-1]}'
+        self.assertEqual(r['receipt']['checked_text_sha256'], hashlib.sha256(whole.encode('utf-8')).hexdigest())
+        self.assertIn('with ``` or ~~~ fences, each closed by the same fence (valun 0.7.1 and later)', self.detail(r))
+        rc, out = TestVerifyCheckCommand.run_cli(self, w)
+        self.assertEqual((rc, out['ok']), (0, True))
+        # Read by the old rule, the same description names other text: the receipt's version keeps the two apart.
+        self.assertNotEqual(R.checked_text(d, 2), whole)
+
+    def test_a_receipt_of_a_version_this_valun_does_not_know_fails(self):
+        w = World()
+        content = receipt_content('vd_check0000000007', w.desc).replace('"receipt_version": 2', '"receipt_version": 4')
+        r = R.verify_check(deal('vd_check0000000007', w.buyer, w.reviewer, w.desc, content, title='check'), network=NET, pinned=w.pinned)
+        self.assertFalse(r['ok'])
+        self.assertIn('the receipt names the text in the signed terms', failed(r))
+        self.assertIn('upgrade valun', self.detail(r))
+        for bad in (4, 0, True, '3', 3.0, [3]):
+            with self.assertRaises(ValueError):
+                R.checked_blocks(w.desc, bad)
 
 
 if __name__ == '__main__':

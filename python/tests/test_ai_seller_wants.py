@@ -243,6 +243,28 @@ class Reviewing(unittest.TestCase):
         self.assertTrue(s.c.calls[0][1].startswith('My check found that the work does not meet my terms: it names the step'))
         self.assertNotIn(DID, s.budget.s['wants'])
 
+    def test_cannot_check_is_unclear_for_a_want(self):
+        """Fix inbox #70 gives a check service a fourth verdict, "cannot check". A want's check has no such outcome: as
+        before, the model cannot tell, so it is paid, and the decision kept for a payment that has to be retried."""
+        s = buyer(delivered(terms('report'), REPORT, complete_fails=True), FakeAI(verdict('cannot check')))
+        taken(s)
+        with self.assertRaises(vc.ValunError):
+            s.review(ITEM)
+        self.assertEqual([c[0] for c in s.c.calls], ['complete'])
+        self.assertEqual(s.budget.s['wants'][DID]['verdict'], 'unclear')
+
+    def test_a_docs_fix_quote_that_holds_fences_is_read_whole_in_tildes(self):
+        """Fix inbox #70: the blocks of a delivery are read as CommonMark reads them, so a quote that holds a ``` block is
+        wrapped in ~~~ (or a longer fence) and read whole; in ``` fences it is cut where its own fence starts."""
+        doc = 'Run this to start:\n```\nvalun join --sandbox\n```\nThen read your inbox.\n'
+        quote, fix = 'Run this to start:\n```\nvalun join --sandbox\n```', 'Run this to start:\n```\nuvx valun join --sandbox\n```'
+        spec = WANTS['docs-fix']
+        tilde = f'~~~\n{quote}\n~~~\n~~~\n{fix}\n~~~\nvalun is not on the PATH after pipx; uvx runs it.'
+        self.assertIsNone(A.want_precheck(spec, tilde, doc))
+        self.assertEqual(A.quote_key(tilde), A.quote_key(f'~~~~\n{quote}\n~~~~\n~~~~\n{fix}\n~~~~'))
+        nested = f'```\n{quote}\n```\n```\n{fix}\n```\n'
+        self.assertEqual(A.closed_blocks(nested)[:2], ['Run this to start:', ''], 'the quote cut, the fix empty')
+
     def test_prechecks_dispute_without_the_model(self):
         ai = FakeAI()
         s = buyer(delivered(terms('report'), 'Great service!'), ai)
