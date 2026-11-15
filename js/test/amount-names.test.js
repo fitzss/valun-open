@@ -30,6 +30,10 @@ test('arrays and nesting; a name already there is never overwritten; other value
   same(N({amount: 9, PC: 5}), {amount: 9, PC: 5});
   same(N({_PC: 1, x_PCs: 2, PCx: 3, x_pc: 4}), {_PC: 1, x_PCs: 2, PCx: 3, x_pc: 4});
   for (const v of [null, 3, 'a_PC', true, 2.5]) assert.equal(N(v), v);
+  const bytes = new Uint8Array([1, 2]), at = new Date(0);
+  assert.equal(N({key_PC: bytes}).key, bytes, 'a value that is not a plain object passes through as it is');
+  assert.equal(N({at}).at, at);
+  same(N(Object.assign(Object.create(null), {a_PC: 1})), {a: 1, a_PC: 1});
   const odd = N(JSON.parse('{"__proto___PC": {"polluted": true}, "__proto__": 1}'));
   assert.deepEqual(Object.keys(odd), ['__proto___PC', '__proto__'], 'own keys, the prototype untouched');
   const added = N(JSON.parse('{"__proto___PC": {"polluted": true}}'));

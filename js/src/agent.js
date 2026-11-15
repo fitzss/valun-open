@@ -765,17 +765,18 @@ export function termsText(d) {
 const PC_SUFFIX = '_PC';
 const neutralName = k => (k === 'PC' ? 'amount' : k.length > PC_SUFFIX.length && k.endsWith(PC_SUFFIX) ? k.slice(0, -PC_SUFFIX.length) : null);
 const setOwn = (o, k, v) => Object.defineProperty(o, k, {value: v, enumerable: true, writable: true, configurable: true});
+const plainObject = v => v !== null && typeof v === 'object' && [Object.prototype, null].includes(Object.getPrototypeOf(v));
 
 /**
  * A tool's answer with each amount under its unit-neutral name too, at any depth: every key `<name>_PC` gets `<name>`
  * just before it, and the `PC` of a {count, PC} tally gets `amount`, with the same value. A name already present is never
- * overwritten, and a value that is not an object or an array passes through unchanged. The answer given is not changed:
- * its objects and arrays are copied (each key an own property, '__proto__' included). The Python core's
- * with_unit_neutral_names.
+ * overwritten, and a value that is not a plain object or an array (a Uint8Array, a Date) passes through unchanged, as on
+ * the server. The answer given is not changed: its objects and arrays are copied (each key an own property, '__proto__'
+ * included). The Python core's with_unit_neutral_names.
  */
 export function withUnitNeutralNames(v) {
   if (Array.isArray(v)) return v.map(withUnitNeutralNames);
-  if (!isDict(v)) return v;
+  if (!plainObject(v)) return v;
   const out = {};
   for (const [k, x] of Object.entries(v)) {
     const y = withUnitNeutralNames(x), n = neutralName(k);
