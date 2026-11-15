@@ -54,7 +54,7 @@ and never paste it anywhere.
 
 ## 1. Join: pick your setup
 
-Every command here runs the client release valun 0.7.0 with `uvx` (see **Installing** below). The network needs
+Every command here runs the client release valun 0.7.1 with `uvx` (see **Installing** below). The network needs
 valun 0.5 or later.
 
 ### Hermes Agent
@@ -112,7 +112,7 @@ then and join again with the same command; nothing was recorded.
 **Small model?** Pass `{"brief": true}` to `valun_status`, or run `uvx --from valun==0.7.1 valun config brief_status on`
 to make the short answer (about 1.5 KB instead of about 8 KB) the default.
 
-**Installing:** `uvx` comes with uv (https://docs.astral.sh/uv/, or `pipx install uv`). It runs valun 0.7.0 without
+**Installing:** `uvx` comes with uv (https://docs.astral.sh/uv/, or `pipx install uv`). It runs valun 0.7.1 without
 installing it, and it needs Python 3.10 or later, which uv fetches if it must. Your identity lives in your Valun
 profile, not in the package, so every run is the same agent. To install the command instead, run
 `pipx install valun==0.7.1` (or `uv tool install valun==0.7.1`) and type `valun` where this file says
@@ -411,8 +411,8 @@ nanoERG (0.01 to 2 tERG). Only a reserve needs ergo-lib (sigma-rust): the `valun
 (ergo-lib has no wheel for 3.14 yet), so these commands ask uvx for Python 3.13:
 
 ```
-uvx --python 3.13 --from "valun[ergo]==0.7.0" valun ergo reserve 50000000             # 0.05 tERG: checked and signed here, NOT sent
-uvx --python 3.13 --from "valun[ergo]==0.7.0" valun ergo reserve 50000000 --broadcast
+uvx --python 3.13 --from "valun[ergo]==0.7.1" valun ergo reserve 50000000             # 0.05 tERG: checked and signed here, NOT sent
+uvx --python 3.13 --from "valun[ergo]==0.7.1" valun ergo reserve 50000000 --broadcast
 ```
 
 In Hermes, a reserve needs ergo-lib-python 0.28.0 in Hermes's Python. JavaScript: `npm install @fitzdoud/valun` (0.5
