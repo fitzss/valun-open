@@ -3,8 +3,9 @@
 check`), the owner publishes or hides it with its owner token (Client.set_public_card, `valun card publish|unpublish`),
 and valun_status shows the agent's room. Also fix inbox #58: a tool called without a required argument answers
 bad_arguments with a plain message, not internal_error; and fix inbox #60: the offer under review (valun_check_payer
-deal_id, Client.check_payer deal_id, `valun card check --deal`), counted once, and the summary of a new deal at the
-price of an offer the payer's outstanding already counts. The same over a recorded server, value for value in the
+deal_id, Client.check_payer deal_id, `valun card check --deal`), counted once, the summary of a new deal at the price
+of an offer the payer's outstanding already counts, and `valun card check`, which exits 0 only when the payee's own side
+of the step (payee_side) goes ahead too. The same over a recorded server, value for value in the
 JavaScript client: the 'check_payer:', 'card:', 'set_public_card:' and #58 scenarios of
 js/test/fixtures/generate_python_fixtures.py."""
 import contextlib
@@ -635,6 +636,41 @@ class CardCommands(Card):
             self.assertEqual((rc, out.strip()), (2, cli.CARD_USAGE), argv)
         self.assertEqual(len(self.world.log), n, 'nothing read for any of them')
         self.assertIn('[--deal vd_...]', cli.CARD_USAGE)
+
+    def test_check_exits_0_only_when_your_own_side_goes_ahead_too(self):
+        # Fix inbox #60: the server shows the payee itself its own side of the step (payee_side). The payer's accept is no
+        # go-ahead when the payee's own limits refuse the step (accepting the offer then answers mandate_exceeded) or its
+        # owner decides first, so the exit code is 1 then, as for the payer's own ask_owner or decline.
+        refused = {'verdict': 'decline', 'rule': 'max_accept_per_deal',
+                   'reasons': ['Your own limits refuse it (max_accept_per_deal): price 18 exceeds max_accept_per_deal 4.']}
+        held = {'verdict': 'ask_owner', 'rule': 'approve_above',
+                'reasons': ['Your own limits allow it.', 'Your owner approves each commitment above 10 PC: your acceptance waits for '
+                                                         'your owner before it binds.']}
+        allowed = {'verdict': 'accept', 'rule': None, 'reasons': ['Your own limits allow it.']}
+        offer = f'GET /pilot/v1/participants/{BOB}/check?amount=18&payee={ME}&deal={OFFER}'
+        new = f'GET /pilot/v1/participants/{BOB}/check?amount=18&payee={ME}'
+        for side, rc in ((refused, 1), (held, 1), (allowed, 0)):
+            self.world.routes[offer] = (200, verdict(deal_id=OFFER, payee_side=side))
+            self.world.routes[new] = (200, verdict(payee_side=side))
+            for argv in (('check', 'bob', '18', '--deal', OFFER), ('check', 'bob', '18')):
+                got, out = self.run_cli(*argv)
+                r = json.loads(out)
+                self.assertEqual((got, r['verdict'], r['payee_side']), (rc, 'accept', side), (argv, side['verdict']))
+        self.world.routes[offer] = (200, verdict(deal_id=OFFER, payee_side=refused))
+        self.assertEqual(json.loads(self.run_cli('check', 'bob', '18', '--deal', OFFER)[1])['summary'],
+                         SUMMARY_ACCEPT[:-1] + '. Your own side: ' + refused['reasons'][0], 'the summary says why')
+        # A payee_side this client cannot read as accept fails closed; with the payer's decline, its own accept is no help.
+        for side in ('accept', ['accept'], {}, {'verdict': 'Accept'}, {'verdict': None}, {'verdict': ['accept']},
+                     {'reasons': ['Your own limits allow it.']}, 0, False):
+            self.world.routes[offer] = (200, verdict(deal_id=OFFER, payee_side=side))
+            self.assertEqual(self.run_cli('check', 'bob', '18', '--deal', OFFER)[0], 1, side)
+        for v in ('decline', 'ask_owner', 'unknown'):
+            self.world.routes[offer] = (200, verdict(v, deal_id=OFFER, payee_side=allowed))
+            self.assertEqual(self.run_cli('check', 'bob', '18', '--deal', OFFER)[0], 1, v)
+        # A server that shows no payee_side (one from before #60): the payer's verdict alone decides, as in 0.7.0.
+        for extra in ({}, {'payee_side': None}):
+            self.world.routes[offer] = (200, verdict(deal_id=OFFER, **extra))
+            self.assertEqual(self.run_cli('check', 'bob', '18', '--deal', OFFER)[0], 0, extra)
 
     def test_usage(self):
         for argv in (('check', 'bob'), ('check',), ('bob', 'erin'), ('publish', 'now'), ('check', 'bob', '1', '2')):

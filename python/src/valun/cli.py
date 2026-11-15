@@ -1162,13 +1162,27 @@ def _public_card_of(answer):
     return None
 
 
+def _check_goes_ahead(out):
+    """`valun card check`'s exit 0: the step would go ahead on both of its sides, as the server then enforces it. The
+    payer's verdict is accept, and so is the payee's own side of the step (payee_side, fix inbox #60), which the server
+    shows only to the payee itself, as this check always is: decline there means the server refuses the payee's part of
+    the step (its own limits: mandate_exceeded; its own counter-offer still waiting for its owner: counter_pending),
+    ask_owner that the payee's owner decides first, as the payer's own ask_owner does. Without payee_side (absent or
+    null: a server from before #60, which does not check that side) the payer's verdict alone decides, as in 0.7.0; a
+    payee_side that is anything but an object with verdict accept fails closed."""
+    side = out.get('payee_side')
+    yours = side is None or (isinstance(side, dict) and side.get('verdict') == 'accept')
+    return out.get('verdict') == 'accept' and yours
+
+
 def cmd_card(args):
     """valun card [WHO] | check PAYER AMOUNT [--deal vd_...] | publish | unpublish: budget cards. A card of WHO (a handle
     or participant id), which needs no joined profile, or of this profile's own agent. `check` is valun_check_payer with
-    this profile's agent as the payee: it prints the tool's answer and exits 0 only for the verdict accept; --deal names
-    the offer under review (its deal_id, fix inbox #60: the deal whose offer you are deciding on, AMOUNT its price).
-    publish and unpublish are the OWNER's: they use the owner token once, in memory (from --owner-token-file or a hidden
-    prompt), never stored."""
+    this profile's agent as the payee: it prints the tool's answer and exits 0 only when the step would go ahead on both
+    sides (_check_goes_ahead: the verdict accept, and the payee's own side accept too where the server shows it);
+    --deal names the offer under review (its deal_id, fix inbox #60: the deal whose offer you are deciding on, AMOUNT its
+    price). publish and unpublish are the OWNER's: they use the owner token once, in memory (from --owner-token-file or a
+    hidden prompt), never stored."""
     words, store, name = list(args.words or []), _store(args), _profile(args)
     kind = words[0] if words and words[0] in CARD_WORDS else 'show'
     deal = getattr(args, 'deal', None)
@@ -1190,7 +1204,7 @@ def cmd_card(args):
         out = agent.call_safe('valun_check_payer', {'payer': words[1], 'amount': int(words[2]),
                                                     **({} if deal is None else {'deal_id': deal})})
         print(json.dumps(out, ensure_ascii=False, indent=1))
-        return 0 if out.get('verdict') == 'accept' else 1
+        return 0 if _check_goes_ahead(out) else 1
     c = vc.Client(store, _server(args, store))
     if kind == 'show':
         return _show_card(args, c, words[0] if words else None)
@@ -1721,8 +1735,10 @@ it has left, the guarantees that back it in public, and its record. Anyone can r
   valun card                       your agent's own card (or that it is not public)
   valun card WHO                   the card of WHO, a handle or participant id (no joined profile needed)
   valun card check PAYER AMOUNT    may PAYER owe you AMOUNT more? The verdict, as valun_check_payer gives it; exits 0
-                                   only for accept. Deciding on an offer PAYER made you? Add --deal vd_... (its deal
-                                   id) with AMOUNT its price: the check then counts that offer once
+                                   only for accept, and only if your own side of the step is accept too (payee_side:
+                                   your own limits allow it, and nothing waits for your owner). Deciding on an offer
+                                   PAYER made you? Add --deal vd_... (its deal id) with AMOUNT its price: the check
+                                   then counts that offer once
   valun card publish               OWNER: publish your agent's card (--owner-token-file FILE, else the token is asked)
   valun card unpublish             OWNER: hide it again
 

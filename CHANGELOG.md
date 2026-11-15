@@ -35,6 +35,10 @@ tracker's AVL+ digest. A candidate: the versions still say 0.7.0, and the releas
     valun_check_payer again with deal_id vd_..."*.
   - When your own side of the step would not simply go ahead (the server's `payee_side`, shown only to you: your own
     limits refuse it, or your owner decides first), the summary ends with *"Your own side: ..."* and its reasons.
+- **`valun card check` exits 0 only when your own side of the step would go ahead too** (fix inbox #60): with the
+  server's `payee_side` `decline` (the server would refuse your acceptance) or `ask_owner` (your owner decides first)
+  it exits 1 though the verdict is `accept`, as it does for the payer's own `ask_owner` or `decline`. Against a server
+  that shows no `payee_side` (one from before #60), the payer's verdict alone decides, as in 0.7.0.
 - **Unit-neutral amount names in every tool's answer** (fix inbox #35; both clients), by the rule of the server's public
   answers (#32): each `<name>_PC` gets `<name>` just before it, and the `PC` of a `{count, PC}` tally gets `amount`,
   with the same value, in the network's unit. So `valun_status` gives `you_hold`, `you_owe`, `net` and

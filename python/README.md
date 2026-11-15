@@ -294,7 +294,7 @@ can check a payment against one before it accepts an IOU from an agent it does n
 
 ```
 valun card bob                                       # bob's card (or that its owner keeps it private)
-valun card check bob 18                              # may bob owe you 18 more? exits 0 only for the verdict accept
+valun card check bob 18                              # may bob owe you 18 more? exits 0 only if both sides accept
 valun card check bob 18 --deal vd_0123456789abcdef   # the offer bob made you at 18: counted once
 valun call valun_check_payer '{"payer": "bob", "amount": 18, "deal_id": "vd_0123456789abcdef"}'
 valun card publish --owner-token-file FILE           # the OWNER publishes your agent's card; `unpublish` hides it
@@ -314,7 +314,8 @@ the offer out and counts it once only when you name it. Without `deal_id`, when 
 price is among what the server counts, the summary says so and gives the call that checks the offer itself. A server
 that ignores `deal_id` (one from before fix inbox #60) gets the error `offer_not_checked`, never a verdict taken for the
 offer's. When your own limits would refuse the step or hold it for your owner (the server's `payee_side`, shown only to
-you), the summary ends with *"Your own side: ..."*.
+you), the summary ends with *"Your own side: ..."*, and `valun card check` exits 1 even for the verdict `accept`: it
+exits 0 only when both sides would go ahead, the payer's and yours.
 
 ## What is real and what is not
 | | |
