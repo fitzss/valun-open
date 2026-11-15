@@ -175,14 +175,17 @@ class Answering(unittest.TestCase):
             self.assertIn(says, s.c.calls[0][1])
             self.assertEqual(ai.runs, [])
 
-    def test_paused_counter_budget_buyer_limit(self):
+    def test_paused_below_price_budget_buyer_limit(self):
         s = seller(summary_deal(), None)
         s.answer(ITEM)
         self.assertIn('starts soon', s.c.calls[0][1])
-        s = seller(summary_deal(price=1), FakeAI(OK))
+        ai = FakeAI(OK)
+        s = seller(summary_deal(price=1), ai)
         s.answer(ITEM)
         s.answer(ITEM)
-        self.assertEqual([c[0] for c in s.c.calls], ['counter', 'decline'])
+        self.assertEqual(s.c.calls, [('decline', 'My price for summary is 2 PC; send an offer at that price.')] * 2,
+                         'below the price: declined with it, never countered (fix inbox #78)')
+        self.assertEqual(ai.runs, [])
         ai = FakeAI(OK)
         s = seller(summary_deal(), ai, b=budget(monthly=0.05, daily=0.05))
         s.answer(ITEM)
@@ -194,6 +197,36 @@ class Answering(unittest.TestCase):
         s.answer(ITEM)
         self.assertIn('at most 2 jobs a day', s.c.calls[0][1])
         self.assertEqual(ai.runs, [])
+
+    def test_a_below_price_offer_never_becomes_a_deal_with_no_work(self):
+        """Fix inbox #78: the seller does the job before it accepts, so an offer below its price is declined with the
+        price, never countered at it. A counter the buyer accepted was agreed with no work done: the seller then had
+        nothing to deliver but a note asking for a dispute. Through step(), the server as it answers each move: the
+        buyer accepts a counter-offer at once (the payee then delivers), and a decline ends the deal."""
+        class Market(FakeValun):
+            status = 'open'
+
+            def counter(self, did, price=None, **kw):
+                super().counter(did, price, **kw)
+                self.status = 'agreed'
+
+            def decline(self, did, reason=''):
+                super().decline(did, reason)
+                self.status = 'declined'
+
+            def inbox(self):
+                return {'respond': [ITEM] if self.status == 'open' else [], 'deliver': [ITEM] if self.status == 'agreed' else []}
+
+        check = 'Check the delivery against its terms.\nTERMS:\n~~~\none sentence\n~~~\nWORK:\n~~~\nA sentence.\n~~~'
+        for service, deal in (('summary', summary_deal(price=1)), ('check', offer(terms('check', check, 1)))):
+            ai = FakeAI(OK)
+            s = seller(deal, ai, services=('summary', 'check'))
+            s.c, s.consents = Market(deal), lambda: None
+            for _ in range(3):
+                s.step()
+            self.assertEqual(s.c.calls, [('decline', f'My price for {service} is 2 PC; send an offer at that price.')], service)
+            self.assertEqual((s.c.status, ai.runs, s.budget.s['pending']), ('declined', [], {}), service)
+            self.assertEqual([json.loads(ln)['action'] for ln in s.log.getvalue().splitlines()], ['decline'], 'no deliver_none')
 
     def test_refusal_incomplete_and_api_errors(self):
         for r, says in [({**OK, 'content': None, 'refused': True, 'category': 'cyber'}, 'declined this request'),
@@ -386,15 +419,14 @@ class Testnet(unittest.TestCase):
         s.c.unit, s.c.scale, s.c.network = 'nanoERG', 1_000_000, 'valun-testnet-1'
         return s
 
-    def test_prices_counters_and_words_in_nanoerg(self):
+    def test_prices_declines_and_words_in_nanoerg(self):
         s = self._seller(summary_deal(price=1_000_000), FakeAI(OK))
         s.answer(ITEM)
-        s.answer(ITEM)
-        self.assertEqual(s.c.calls[0], ('counter', 2_000_000))
-        self.assertEqual(s.c.calls[1], ('decline', 'My price for summary is 2000000 nanoERG (0.002 tERG).'))
+        self.assertEqual(s.c.calls, [('decline', 'My price for summary is 2000000 nanoERG (0.002 tERG); send an offer at that price.')])
         s = self._seller(summary_deal(price=2), FakeAI(OK))
         s.answer(ITEM)
-        self.assertEqual(s.c.calls[0], ('counter', 2_000_000), 'a PC-sized offer is far below the price in nanoERG')
+        self.assertEqual(s.c.calls[0], ('decline', 'My price for summary is 2000000 nanoERG (0.002 tERG); send an offer at that '
+                                                   'price.'), 'a PC-sized offer is far below the price in nanoERG')
         s = self._seller(summary_deal(price=2_000_000), FakeAI(OK))
         s.answer(ITEM)
         self.assertIn('accept', [c[0] for c in s.c.calls])

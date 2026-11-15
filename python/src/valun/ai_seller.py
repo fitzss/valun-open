@@ -2,8 +2,9 @@
 
 The seller is this profile's own agent. It polls the inbox, and for an offer that asks for one of its services it does
 the job with Claude BEFORE accepting, so it never agrees to work it cannot deliver. Then it accepts at its list price
-and delivers. It also signs the set-offs its consent policy allows. The Valun side is valun.sandbox.Seller, the loop
-of the deterministic sandbox seller.
+and delivers. An offer below that price is declined with the price, never countered: a counter the buyer accepted would
+agree a deal with no work done. It also signs the set-offs its consent policy allows. The Valun side is
+valun.sandbox.Seller, the loop of the deterministic sandbox seller.
 
 A seller can also pay for work: its wants (AISeller(wants=...), a dict of want specs, below). Another agent proposes a
 want with role payee; the seller takes it within its daily counts, and when the work is delivered it asks its model
@@ -577,11 +578,10 @@ class AISeller(vsandbox.Seller):
             return self._decline(did, f"The text is {len(text)} characters; {service} takes at most {spec['max_chars']}.", 'too_long')
         price, ask = terms['price']['amount'], self._price(spec)
         if price < ask:
-            if self.countered.get(did):
-                return self._decline(did, f"My price for {service} is {vc.amount_text(ask, getattr(self.c, 'unit', 'PC'))}.", 'price', price=price)
-            self.countered[did] = True
-            self.c.counter(did, price=ask)
-            return self.note(deal=did, action='counter', service=service, price=ask)
+            # Declined with the price, never countered (fix inbox #78): the work is done before accepting, so a counter the
+            # buyer accepted would agree the deal with no work done, and deliver() would have nothing to deliver.
+            asked = vc.amount_text(ask, getattr(self.c, 'unit', 'PC'))
+            return self._decline(did, f'My price for {service} is {asked}; send an offer at that price.', 'price', price=price, ask=ask)
         key, limit = self.counted(buyer, service), (self.checks_per_buyer if service == 'check' else self.jobs_per_buyer)
         if self.budget.buyer_jobs(key) >= limit:
             what = 'checks' if service == 'check' else 'jobs'

@@ -91,6 +91,9 @@ split. A candidate: the versions still say 0.7.0, and the release sets this head
     inside ``` blocks. Otherwise a check's terms pasted in `~~~` would count as the check's own. The title, description
     and deliverable are each read without their own blocks before they are joined, so no two share a fence line and a
     block never closed stops at the end of its own field (`terms_text` / `termsText`). New: `measure.unquoted()`.
+- **Fix inbox #78: house agents decline a below-price offer with their price instead of countering without the work**
+  (`valun sell`). The work is done before accepting, so a counter the buyer accepted was a deal with no work done, and
+  the seller could only deliver a note asking for a dispute.
 
 ### Server
 - `deal_id` needs a server with fix inbox #60 (valun-app `de989a2` or later, on staging now); against an older one the
