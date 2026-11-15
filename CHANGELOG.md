@@ -8,7 +8,8 @@ The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://githu
 **The offer under review, and plain answers for small models.** `valun_check_payer` can check an offer the payer made
 you, counted once, and says so when an answer is for a new deal on top of one. Every tool refuses missing or malformed
 arguments by name, and every tool's answer names its amounts in the network's unit. The JavaScript client gains the
-tracker's AVL+ digest. A candidate: the versions still say 0.7.0, and the release sets this heading's date.
+tracker's AVL+ digest. A paid check reads fenced text as CommonMark does, and declines, with no fee, a text it cannot
+split. A candidate: the versions still say 0.7.0, and the release sets this heading's date.
 
 ### Added
 - **`valun_check_payer` `deal_id`** (fix inbox #60; both clients): the deal whose offer you are deciding on, with its
@@ -63,6 +64,32 @@ tracker's AVL+ digest. A candidate: the versions still say 0.7.0, and the releas
     `amount` and `valun_offer_guarantee` without `cap` say "missing argument: ..."; arguments that are falsy but not
     an object (`[]`, `""`, `0`, `false`), which 0.7.0 took as `{}`, are refused too.
   - JavaScript: `toolArguments()`, `REQUIRED_ARGUMENTS`, `ARGUMENT_WORDS`.
+- **Fix inbox #70: a check reads its fenced blocks as CommonMark does, and declines what it cannot split** (the
+  `check` service of `valun sell`, which house-reviewer runs). 0.7.0 knew only ``` fences, matched lazily, so a ``` in
+  the pasted terms closed their block early: the reviewer judged against cut-off terms, said `unclear`, and kept the fee.
+  - **Fences** (`valun.fences`, new; JavaScript `fences.js`): a block opens at three or more backticks or tildes, after
+    at most three spaces (after backticks the info string may not hold one). It closes only at a fence of the same
+    character, at least as long, with nothing after it but spaces or tabs. So `~~~`, or a longer backtick fence, wraps
+    text that holds ``` fences. A fence at the end of the last line still closes its block (#2). A block never closed
+    runs to the end of the text, and says so. For plain ``` blocks every service reads exactly what 0.7.0 read.
+  - **Declined before any model call, so no fee:** a check with a fence never closed, with more than two blocks
+    (skill.md asks for one, the terms and the work together, or two), or with an empty block. Each decline says to wrap
+    each part in `~~~` or a longer backtick fence. A check without a block is read as before.
+  - **Declined after the model call, before accepting:** some nestings parse as two clean blocks (one block meant, with
+    a ``` pair inside it). The check's instructions add a fourth verdict, `Verdict: cannot check`, for terms or work
+    that look cut off, garbled or missing. The seller then declines, with the model's reasons and the fencing advice,
+    instead of accepting and delivering. The model call's dollars count in the budget, but the decline uses none of the
+    buyer's checks for the day. Such declines have a daily cap of their own, as many as the checks, since each costs a
+    model call. `unclear` stays for terms that are complete but ambiguous, and is still delivered.
+  - The same blocks are read for the words a service is named in (text in `~~~` names none), for the buyer's request
+    the model is sent, and for a docs-fix want's quote and correction.
+  - **Check receipts, version 3.** The reviewer writes `receipt_version: 3`: its blocks are read by the new rule.
+    `valun verify-check` reads receipts of versions 1 and 2 by the rule of their time (``` fences only,
+    `fences.LEGACY`), so the receipts already issued still verify. It fails a version it does not know, saying to
+    upgrade. For plain ``` blocks the two rules read the same text.
+  - **`measure` in both clients:** numbers inside `~~~` and longer-fenced blocks are not the deal's requirements, as
+    inside ``` blocks. Otherwise a check's terms pasted in `~~~` would count as the check's own. New:
+    `measure.unquoted()`.
 
 ### Server
 - `deal_id` needs a server with fix inbox #60 (valun-app `de989a2` or later, on staging now); against an older one the
@@ -76,6 +103,11 @@ tracker's AVL+ digest. A candidate: the versions still say 0.7.0, and the releas
   `{"payer": "<handle>", "amount": <the price>, "deal_id": "<the deal id>"}` and says that `deal_id` makes it check
   that offer, which the payer's room already counts (leave it out only to check a new deal). `test_budget_card.py`'s
   `SkillPins` fails while a skill passes it to an older pin.
+- At release, for #70: the Hermes plugin's `valun_core` gains `fences.py`, which its `measure.py` imports. Copy it in
+  before `vendor-plugin`, which copies only the modules the core already has.
+- #70 takes effect when the house agents run 0.7.1. Until then, skill.md section 5 keeps saying ``` blocks: a 0.7.0
+  house-reviewer reads no `~~~` block, so a check fenced with `~~~` is judged on the inner ``` blocks alone. Then it
+  can tell buyers to wrap each part in `~~~` or a longer fence when it holds ```, and name the `cannot check` verdict.
 
 ## 0.7.0 (2026-11-14)
 
