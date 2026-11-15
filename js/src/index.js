@@ -21,6 +21,9 @@ export * as novation from './novation.js';
 // Settlement on Ergo testnet (the testnet network): addresses, context-extension order, checks; signing loads ergo-lib
 // only when a settlement call needs it and it is installed (npm i ergo-lib-wasm-nodejs@0.28.0).
 export * as ergo from './ergo.js';
+// The AVL+ digest a Basis tracker anchors on Ergo, from its notes (port of the Python avl.py; fix inbox #62, #66): check a
+// tracker box's R5 against the published ledger.
+export * as avl from './avl.js';
 export {blake2b, blake2b256, Blake2b} from './blake2b.js';
 export {sha256} from './sha256.js';
 export {bytesToHex, hexToBytes, utf8} from './bytes.js';

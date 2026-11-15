@@ -148,6 +148,16 @@ lower it by exactly the amount, pay exactly the amount to this agent's own addre
 spend no box of this agent's own, and be the transaction the tracker fee-signed (the same id). Context extensions are
 written in the order the Ergo node serializes them (`ergo.toErgoJson`, `ergo.txBytesToSign`).
 
+Anyone can also check the operator: `avl.digest(rows)` recomputes the AVL+ digest the tracker anchors (R5 of the tracker
+box) from the published notes, as the Python client's `valun audit` and the server do (the same construction, digests
+and refusals as `valun/avl.py`; fix inbox #62, #66). Totals are decimal strings, BigInts or safe integers; a refusal is
+an `avl.AvlError`, never a pass.
+
+```js
+import {avl} from '@fitzdoud/valun';
+avl.digest(rows) === r5Digest;      // rows: [{issuer_pubkey, recipient_pubkey, denomination?, total}], in any order
+```
+
 ## What the client checks before it signs (spec 15.2)
 
 Accept and counter, as the Python client does them:
@@ -320,6 +330,10 @@ Other tests:
 - BLAKE2b is checked against RFC 7693 Appendix A and the Appendix E self-test (all digest lengths, keyed and unkeyed),
   and against `node:crypto` `blake2b512`.
 - SHA-256 is checked against FIPS vectors and `node:crypto`.
+- `avl.test.js` checks the AVL+ digest against the Rust references the Python client's tests read
+  (`python/tests/fixtures/avl-random.json`, byte for byte the server's: 1,350 random cases, debt keys, rows in erg and
+  token denominations), against what `valun/avl.py` gives for the same inputs (`fixtures/python-parity.json`), and,
+  with `VALUN_ANCHOR_VECTORS` naming the private live vectors, against three anchors of the testnet tracker.
 - Client tests cover every refusal above, HTTP error mapping, timeouts, and that the key and token appear in no state,
   return value, inspection, JSON or error.
 - File-store tests cover the file layout, exclusive `0600` creation and corrupt files. The POSIX mode assertion is

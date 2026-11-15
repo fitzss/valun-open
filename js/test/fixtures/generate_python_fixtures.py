@@ -7,7 +7,8 @@ Writes next to this file:
   python-parity.json   outputs of measure.py, sandbox.py, records.py and agent.py helpers (and int()/repr()) for many
                        inputs, and the constants both clients must share (approval texts, labels, tool classes, ...);
                        since 0.4 also novation.py: every case of python/tests/test_novation.py CASES with its whole
-                       result, a few helpers, and the capability header and consent-policy helpers of client.py/agent.py
+                       result, a few helpers, and the capability header and consent-policy helpers of client.py/agent.py;
+                       since 0.7.1 also avl.py (fix inbox #66 item 4): digests, debt keys and refusals ("avl")
   agent-python.json    the Python ValunAgent (call_safe, is_commitment, prepare, describe_commitment, bind) run against
                        recorded server responses, with the requests it made (and the X-Valun-Features header of each)
                        and the exact messages it signed; since 0.4 also client_scenarios: Client methods of circulating
@@ -2222,6 +2223,7 @@ def parity():
         {'amount': 18, 'counted_offers': [{'deal_id': 'vd_' + '6a' * 8, 'amount': 18.5}, {'deal_id': 'vd_' + '6a' * 8, 'amount': False}]},
         {'amount': True, 'counted_offers': [{'deal_id': 'vd_' + '6a' * 8, 'amount': True}]}, {'amount': 18, 'counted_offers': 'vd_x'}]]
     P['records'] = records_table()
+    P['avl'] = avl_parity()
     P['novation_cases'] = novation_cases()
     P['novation_helpers'] = novation_helpers()
     P['circulation'] = client_helpers()
@@ -2242,6 +2244,55 @@ def parity():
              '\x85next', 5, -3, 2.5, -0.001, 1e-07, 123456.789, 1e+22, 0.1, True, False, None, [1, 'a', None], {'k': "v'", 'n': [True]}]
     P['repr'] = [[v, repr(v)] for v in reprs]
     return P
+
+
+def avl_parity():
+    """valun/avl.py (fix inbox #62, #66 item 4) for inputs JSON gives both languages alike: each digest or debt key, or
+    the refusal (code, extra, message). Totals are digit strings, floats or integers no larger than 2^53 - 1 in
+    magnitude: a JSON integer literal above it is an exact int in Python and a rounded Number in JavaScript, the one
+    input the two read differently (avl.py's docstring), so it is left out. Entries of insert_digest are hex here (bytes
+    and Uint8Array in each language)."""
+    from valun import avl
+
+    def out(fn):
+        try:
+            v = fn()
+            return {'value': v.hex() if isinstance(v, bytes) else v}
+        except avl.AvlError as e:
+            return {'raises': 'AvlError', 'code': e.code, 'extra': e.extra, 'message': str(e)}
+    issuer, recipient, token = '02' + 'aa' * 32, '03' + 'bb' * 32, 'token:' + 'cd' * 32
+
+    def note(**k):
+        r = {'issuer_pubkey': issuer, 'recipient_pubkey': recipient, 'denomination': 'erg', 'total': '5'}
+        r.update(k)
+        return {f: v for f, v in r.items() if v is not ...}
+    other = note(issuer_pubkey='03' + 'ee' * 32)
+    rows = [[], [note()], [note(), other], [other, note()], [note(denomination=...)], [note(denomination=token)],
+            [note(), note(denomination=token)], [note(issuer_pubkey=recipient, recipient_pubkey=issuer)]]
+    rows += [[note(total=t)] for t in ('0', '1', '9007199254740991', '9007199254740992', '9007199254740993', '18446744073709551615',
+                                       0, 1, 5.0, 1e3, -0.0, 9007199254740991, -9007199254740991, 2.0 ** 52)]
+    rows += [[note(total=t)] for t in ('18446744073709551616', '99999999999999999999', '100000000000000000000', '-1', '-0', '+1', ' 1',
+                                       '1 ', '01', '00', '1e6', '0x10', '1.5', '1_000', '', '١', '5\n', -1, 1.5, True, False,
+                                       None, ..., [], {}, [5], {'total': '5'})]
+    rows += [[note(issuer_pubkey=k)] for k in (issuer.upper(), issuer[:64], issuer + '00', '04' + issuer[2:], ' ' + issuer[1:], '',
+                                               None, ..., 2, [issuer])]
+    rows += [[note(), note(recipient_pubkey=k)] for k in (recipient.upper(), '00' + recipient[2:], None)]
+    rows += [[note(denomination=d)] for d in ('ERG', 'Erg', 'token:', 'token:' + 'CD' * 32, 'token:' + 'cd' * 31, 'token:0x' + 'cd' * 31,
+                                              'usd', '', None, 0, ['erg'])]
+    rows += [[note(), note(total='1')], [note(), note(denomination=...)], [note(denomination=token), other, note(denomination=token, total='7')],
+             [note(), None], [note(), 5], [note(), 'row'], [note(), []], [note(), note(), note()],
+             [dict(note(), issuer='vp_000000000000', timestamp=1, redeemed=1)]]
+    rows += [None, {}, 'rows', 5, {'rows': []}]
+    keys = [[issuer, recipient], [issuer, recipient, 'erg'], [issuer, recipient, token], [recipient, issuer], [issuer, issuer],
+            [issuer.upper(), recipient], [issuer, recipient, 'ERG'], [issuer, recipient, None], ['02', recipient], [issuer, 5]]
+    k1, k2 = '00' * 31 + '01', 'ff' * 31 + 'fe'
+    entries = [[], [{'key': k1, 'value': '0000000000000005'}], [{'key': k1, 'value': ''}, {'key': k2, 'value': 'ff'}],
+               [{'key': '07' * 32, 'value': '01'}, {'key': '07' * 32, 'value': '02'}], [{'key': '07' * 32, 'value': '02'}],
+               [{'key': '00' * 32, 'value': '05'}], [{'key': 'ff' * 32, 'value': '05'}], [{'key': k2, 'value': '05'}, {'key': '00' * 32, 'value': ''}]]
+    return {'digest': [[r, out(lambda r=r: avl.digest(r))] for r in rows],
+            'debt_key': [[k, out(lambda k=k: avl.debt_key(*k))] for k in keys],
+            'insert_digest': [[e, out(lambda e=e: avl.insert_digest([{'key': bytes.fromhex(x['key']), 'value': bytes.fromhex(x['value'])}
+                                                                     for x in e]))] for e in entries]}
 
 
 def constants():

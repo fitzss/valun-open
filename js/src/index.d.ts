@@ -921,6 +921,33 @@ export namespace ergo {
   function signRedemption(built: unknown, secretHex: string, options?: {randomBytes?: (n: number) => Uint8Array}): Record<string, unknown>;
 }
 
+/**
+ * The AVL+ digest a Basis tracker anchors on Ergo (fix inbox #62, #66 item 4; the Python client's avl.py, the server's
+ * lib/avl.mjs): the tree tracker v4.4 builds its notes into (ergo_avltree_rust 0.1.1: key the debt key, value the total
+ * as 8 big-endian bytes, one Insert per note in debt-key order), whose root label and height R5 of the tracker box
+ * commits. Pure: no I/O. Refused input throws AvlError (code invalid_field, extra {row}, {row, duplicate_of} or {entry}).
+ */
+export namespace avl {
+  /** A debt key's length: 32 bytes. */
+  const KEY_LENGTH: 32;
+  /** Input digest(), debtKey() or insertDigest() refuses; never a ValunError. */
+  class AvlError extends Error {
+    constructor(message: string, extra?: Record<string, number>);
+    readonly code: 'invalid_field';
+    readonly extra: Record<string, number>;
+  }
+  /** blake2b256(issuer || recipient || token id for token:<id>): 32 bytes. Keys are 33-byte compressed keys as lowercase hex. */
+  function debtKey(issuerHex: string, recipientHex: string, denomination?: string): Uint8Array;
+  /**
+   * The digest (66 lowercase hex: root label || height) the tracker anchors for these notes, sorted by debt key here;
+   * denomination 'erg' when absent; total a decimal string, a BigInt or a safe integer in [0, 2^64). Two rows with one
+   * debt key are refused, as are malformed keys, denominations and totals.
+   */
+  function digest(rows: ReadonlyArray<{issuer_pubkey: string; recipient_pubkey: string; denomination?: string; total: string | bigint | number}>): string;
+  /** The digest of an empty tree after one Insert per entry, in the order given (keys strictly between the sentinels). */
+  function insertDigest(entries: ReadonlyArray<{key: Uint8Array; value: Uint8Array}>): string;
+}
+
 export namespace basis {
   const P: bigint;
   const N: bigint;

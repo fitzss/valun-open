@@ -3,6 +3,7 @@
  "python": "3.14.7",
  "python_sources_sha256": {
   "agent.py": "45d3d5d1b4e1e8419cd82ae6f54304efb57dd0095c892679b5da09bec61ed211",
+  "avl.py": "f2ac55e537a29c2cfc7d847012b000f6c452907c788c9da6f92d968d9e03a35a",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
   "client.py": "35539ff8541630416fb0328c7ff077bfc41ed8f707f2da63473b99295481065a",
   "mcp_server.py": "0f2fb1970aabab765072667a83ac2da97cab759c4f37aaaff41261b3009860ea",
@@ -6509,6 +6510,1726 @@
    }
   }
  ],
+ "avl": {
+  "digest": [
+   [
+    [],
+    {
+     "value": "4ec61f485b98eb87153f7c57db4f5ecd75556fddbc403b41acf8441fde8e160900"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "value": "99d9418479a83aaab9d84bd7ac0cce192159ca61fbb5c38d5b6e9dfe795601d501"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     {
+      "issuer_pubkey": "03eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "value": "981d1ab9c07a2c13ba2162044e418ffde3dfdbaeb77ceaa08a6de7e8c128192502"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "03eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "value": "981d1ab9c07a2c13ba2162044e418ffde3dfdbaeb77ceaa08a6de7e8c128192502"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "total": "5"
+     }
+    ],
+    {
+     "value": "99d9418479a83aaab9d84bd7ac0cce192159ca61fbb5c38d5b6e9dfe795601d501"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "token:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "total": "5"
+     }
+    ],
+    {
+     "value": "e36e5913cfbfbcaaa0668d592e06017a873d65bb9f12a75f332443615daca29701"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "token:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "total": "5"
+     }
+    ],
+    {
+     "value": "b3e39e7473f89f597f1a4df8e082a08ce3c2e41aa2f8779ad6b1f5dee4b6a9cd02"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "recipient_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "value": "ca24689c7f9cfccfa88891e224d92551dac91c73c9957591eab1ac91a59526a601"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "0"
+     }
+    ],
+    {
+     "value": "9eed2beefcf09172c78b13a6c98bbc7ab9b194f4b76a4bf46f1e80afbbc8107b01"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "1"
+     }
+    ],
+    {
+     "value": "14d753f3670c5cec024a38ae8e2fbfd55a98ae97dcafa75cbfe74a6cd4378a7f01"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "9007199254740991"
+     }
+    ],
+    {
+     "value": "e95abeb4ea0c3ae25541eaadd561de7d584bfe85d571d50dce35f7e61b25d10301"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "9007199254740992"
+     }
+    ],
+    {
+     "value": "e02202718defbf2d6aadfaffa3b3fc1930ec8b155fe715caa532adbc8d6ee94501"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "9007199254740993"
+     }
+    ],
+    {
+     "value": "f37197231721294ed486504fc3387db5b6c3beb42613cd43c693f88cabf3f8ef01"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "18446744073709551615"
+     }
+    ],
+    {
+     "value": "001df8154ea7b537513af45f3c22e62246461a6dc6dfe8da55959854e8feaa7801"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": 0
+     }
+    ],
+    {
+     "value": "9eed2beefcf09172c78b13a6c98bbc7ab9b194f4b76a4bf46f1e80afbbc8107b01"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": 1
+     }
+    ],
+    {
+     "value": "14d753f3670c5cec024a38ae8e2fbfd55a98ae97dcafa75cbfe74a6cd4378a7f01"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": 5.0
+     }
+    ],
+    {
+     "value": "99d9418479a83aaab9d84bd7ac0cce192159ca61fbb5c38d5b6e9dfe795601d501"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": 1000.0
+     }
+    ],
+    {
+     "value": "f62b5b20a829a37d24aa9e52726618e75513a3bc08d9bb55f0a01ccb14dee91a01"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": -0.0
+     }
+    ],
+    {
+     "value": "9eed2beefcf09172c78b13a6c98bbc7ab9b194f4b76a4bf46f1e80afbbc8107b01"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": 9007199254740991
+     }
+    ],
+    {
+     "value": "e95abeb4ea0c3ae25541eaadd561de7d584bfe85d571d50dce35f7e61b25d10301"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": -9007199254740991
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be from 0 to 2^64 - 1 (a tracker total is a u64)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": 4503599627370496.0
+     }
+    ],
+    {
+     "value": "6ca004b70923ffaa62ea9bd3266a5311b6aa72fee8a5f6eeaf58a78ef5d2511501"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "18446744073709551616"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be from 0 to 2^64 - 1 (a tracker total is a u64)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "99999999999999999999"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be from 0 to 2^64 - 1 (a tracker total is a u64)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "100000000000000000000"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "-1"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "-0"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "+1"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": " 1"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "1 "
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "01"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "00"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "1e6"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "0x10"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "1.5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "1_000"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": ""
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "١"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5\n"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": -1
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be from 0 to 2^64 - 1 (a tracker total is a u64)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": 1.5
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": true
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": false
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": null
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": []
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": {}
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": [
+       5
+      ]
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": {
+       "total": "5"
+      }
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].total must be a whole number: a decimal string of digits, an int, or a float that is a safe integer (a float above 2^53 - 1 may already have been rounded: pass the digits the tracker wrote, as a string)"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].issuer_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].issuer_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].issuer_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "04aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].issuer_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": " 2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].issuer_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].issuer_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": null,
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].issuer_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     {
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].issuer_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": 2,
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].issuer_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": [
+       "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].issuer_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 1
+     },
+     "message": "rows[1].recipient_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "00bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 1
+     },
+     "message": "rows[1].recipient_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": null,
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 1
+     },
+     "message": "rows[1].recipient_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "ERG",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].denomination must be erg or token:<the token id, 64 lowercase hex characters>"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "Erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].denomination must be erg or token:<the token id, 64 lowercase hex characters>"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "token:",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].denomination must be erg or token:<the token id, 64 lowercase hex characters>"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "token:CDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCD",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].denomination must be erg or token:<the token id, 64 lowercase hex characters>"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "token:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].denomination must be erg or token:<the token id, 64 lowercase hex characters>"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "token:0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].denomination must be erg or token:<the token id, 64 lowercase hex characters>"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "usd",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].denomination must be erg or token:<the token id, 64 lowercase hex characters>"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].denomination must be erg or token:<the token id, 64 lowercase hex characters>"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": null,
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].denomination must be erg or token:<the token id, 64 lowercase hex characters>"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": 0,
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].denomination must be erg or token:<the token id, 64 lowercase hex characters>"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": [
+       "erg"
+      ],
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 0
+     },
+     "message": "rows[0].denomination must be erg or token:<the token id, 64 lowercase hex characters>"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "1"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 1,
+      "duplicate_of": 0
+     },
+     "message": "rows[1] has the debt key of rows[0]: a tracker holds one note per issuer, recipient and denomination"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 1,
+      "duplicate_of": 0
+     },
+     "message": "rows[1] has the debt key of rows[0]: a tracker holds one note per issuer, recipient and denomination"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "token:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "total": "5"
+     },
+     {
+      "issuer_pubkey": "03eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "token:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "total": "7"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 2,
+      "duplicate_of": 0
+     },
+     "message": "rows[2] has the debt key of rows[0]: a tracker holds one note per issuer, recipient and denomination"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     null
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 1
+     },
+     "message": "rows[1] must be a note {issuer_pubkey, recipient_pubkey, denomination, total}"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     5
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 1
+     },
+     "message": "rows[1] must be a note {issuer_pubkey, recipient_pubkey, denomination, total}"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     "row"
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 1
+     },
+     "message": "rows[1] must be a note {issuer_pubkey, recipient_pubkey, denomination, total}"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     []
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 1
+     },
+     "message": "rows[1].issuer_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     },
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "row": 1,
+      "duplicate_of": 0
+     },
+     "message": "rows[1] has the debt key of rows[0]: a tracker holds one note per issuer, recipient and denomination"
+    }
+   ],
+   [
+    [
+     {
+      "issuer_pubkey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recipient_pubkey": "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "denomination": "erg",
+      "total": "5",
+      "issuer": "vp_000000000000",
+      "timestamp": 1,
+      "redeemed": 1
+     }
+    ],
+    {
+     "value": "99d9418479a83aaab9d84bd7ac0cce192159ca61fbb5c38d5b6e9dfe795601d501"
+    }
+   ],
+   [
+    null,
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {},
+     "message": "rows must be an array of notes {issuer_pubkey, recipient_pubkey, denomination, total}"
+    }
+   ],
+   [
+    {},
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {},
+     "message": "rows must be an array of notes {issuer_pubkey, recipient_pubkey, denomination, total}"
+    }
+   ],
+   [
+    "rows",
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {},
+     "message": "rows must be an array of notes {issuer_pubkey, recipient_pubkey, denomination, total}"
+    }
+   ],
+   [
+    5,
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {},
+     "message": "rows must be an array of notes {issuer_pubkey, recipient_pubkey, denomination, total}"
+    }
+   ],
+   [
+    {
+     "rows": []
+    },
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {},
+     "message": "rows must be an array of notes {issuer_pubkey, recipient_pubkey, denomination, total}"
+    }
+   ]
+  ],
+  "debt_key": [
+   [
+    [
+     "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    {
+     "value": "851ca041d675abe0d19564c6728b271a3852a324cebd9ae6feffd3b5af8c3488"
+    }
+   ],
+   [
+    [
+     "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "erg"
+    ],
+    {
+     "value": "851ca041d675abe0d19564c6728b271a3852a324cebd9ae6feffd3b5af8c3488"
+    }
+   ],
+   [
+    [
+     "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "token:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+    ],
+    {
+     "value": "c4e4caf982bac238ab9e931e34342c5fda9d81c198efadda683478dcd18f6205"
+    }
+   ],
+   [
+    [
+     "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    {
+     "value": "4d2eeea3e08cb18d966ca7e80db228e436d2ed942531060435989845b1403c4e"
+    }
+   ],
+   [
+    [
+     "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    {
+     "value": "5cbcdc45dc3a43876639528573c198e427415a527828507b8fb8cd43584ec2c3"
+    }
+   ],
+   [
+    [
+     "02AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+     "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {},
+     "message": "issuer_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "ERG"
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {},
+     "message": "denomination must be erg or token:<the token id, 64 lowercase hex characters>"
+    }
+   ],
+   [
+    [
+     "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     null
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {},
+     "message": "denomination must be erg or token:<the token id, 64 lowercase hex characters>"
+    }
+   ],
+   [
+    [
+     "02",
+     "03bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {},
+     "message": "issuer_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ],
+   [
+    [
+     "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     5
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {},
+     "message": "recipient_pubkey must be a 33-byte compressed public key: 66 lowercase hex characters starting 02 or 03"
+    }
+   ]
+  ],
+  "insert_digest": [
+   [
+    [],
+    {
+     "value": "4ec61f485b98eb87153f7c57db4f5ecd75556fddbc403b41acf8441fde8e160900"
+    }
+   ],
+   [
+    [
+     {
+      "key": "0000000000000000000000000000000000000000000000000000000000000001",
+      "value": "0000000000000005"
+     }
+    ],
+    {
+     "value": "92fdf96db083d14181e1ffe060174f7f2a82ff9b445fa5df5cc4fbb043504a8c01"
+    }
+   ],
+   [
+    [
+     {
+      "key": "0000000000000000000000000000000000000000000000000000000000000001",
+      "value": ""
+     },
+     {
+      "key": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe",
+      "value": "ff"
+     }
+    ],
+    {
+     "value": "5bcfc2d425075c5b18be92bfae793e5c1a24ce828a68934865a763c1670328ea02"
+    }
+   ],
+   [
+    [
+     {
+      "key": "0707070707070707070707070707070707070707070707070707070707070707",
+      "value": "01"
+     },
+     {
+      "key": "0707070707070707070707070707070707070707070707070707070707070707",
+      "value": "02"
+     }
+    ],
+    {
+     "value": "1a60dd77ca1852ad676d03f5a8d9cf1c3b01c61f4d79deff1e005837686515bf01"
+    }
+   ],
+   [
+    [
+     {
+      "key": "0707070707070707070707070707070707070707070707070707070707070707",
+      "value": "02"
+     }
+    ],
+    {
+     "value": "1a60dd77ca1852ad676d03f5a8d9cf1c3b01c61f4d79deff1e005837686515bf01"
+    }
+   ],
+   [
+    [
+     {
+      "key": "0000000000000000000000000000000000000000000000000000000000000000",
+      "value": "05"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "entry": 0
+     },
+     "message": "entries[0].key must lie strictly between the sentinel keys 00..00 and ff..ff"
+    }
+   ],
+   [
+    [
+     {
+      "key": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "value": "05"
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "entry": 0
+     },
+     "message": "entries[0].key must lie strictly between the sentinel keys 00..00 and ff..ff"
+    }
+   ],
+   [
+    [
+     {
+      "key": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe",
+      "value": "05"
+     },
+     {
+      "key": "0000000000000000000000000000000000000000000000000000000000000000",
+      "value": ""
+     }
+    ],
+    {
+     "raises": "AvlError",
+     "code": "invalid_field",
+     "extra": {
+      "entry": 1
+     },
+     "message": "entries[1].key must lie strictly between the sentinel keys 00..00 and ff..ff"
+    }
+   ]
+  ]
+ },
  "novation_cases": [
   {
    "name": "payer: sign",
