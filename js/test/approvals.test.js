@@ -323,6 +323,22 @@ test('snapshot: the text shows computed values, not the server\'s claims; counte
   assert.deepEqual(p.args, {deal_id: 'vd_1', decision: 'accept', expected_deliverable_sha256: SHA, expected_terms_hash: T});
 });
 
+test('snapshot: the acceptance text measures what the deliverable asks, each field read without its own fenced blocks (fix inbox #70)', async () => {
+  // Joined with spaces first, a description that ends at its closing fence put the deliverable on that fence's line (the
+  // block never closed), and one that starts with a fence put the title on its opening line (the blocks paired wrongly).
+  const F3 = '`'.repeat(3);
+  const propose = {title: 'Summary of one article', description: `Summarize the text below.\n${F3}\nAgents pay each other with signed IOUs.\n${F3}`,
+    deliverable: 'markdown, 300-500 words'};
+  const inverted = {...propose, description: `${F3}\nHeadlines should be at most 10 words. Agents pay each other with signed IOUs.\n${F3}`};
+  const check = {title: 'check', description: `${F3}\ntitle: summary\ndeliverable: 300-500 words\n${F3}\n${F3}\nWORK: Agents pay each other.\n${F3}`,
+    deliverable: 'a verdict'};
+  const measured = async (service, content) => (await Agent(makeDeal(makeTerms({service}), content)).prepare(...REVIEW)).text;
+  assert.ok((await measured(propose, 'Agents pay with IOUs.')).includes('\n  measured: 300-500 words: 4 words (NOT met)\n'));
+  assert.ok((await measured(inverted, 'word '.repeat(350))).includes('\n  measured: 300-500 words: 350 words (met)\n'));
+  assert.ok((await measured(check, 'Verdict: meets the terms')).includes('\n  measured: 4 words, 0 links\n'),
+    "a check's verdict is not measured against the terms it checked");
+});
+
 test('snapshot: a new offer is signed for the participant shown; offer texts quote the description and cut long fields', async () => {
   let p = await Agent({}, null, PEOPLE).prepare('valun_propose', {counterparty: 'BOB ', role: 'payee', title: 't', description: 'd', deliverable: 'x', price: 4});
   assert.equal(p.args.counterparty, BOB_ID, 'not the name: it could resolve differently later');

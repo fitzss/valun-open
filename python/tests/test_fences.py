@@ -19,6 +19,9 @@ PLAIN = [
     f'Check whether the work meets the terms.\n{T}\nTERMS: five bullets\n{T}\n{T}\nThe parser.\n- a\n{T}',
     f'{T}text\nx\n{T}', f'a {T}inline{T} mention\n{T}\nreal\n{T}', f'Summarize this for a newsletter.\n{T}\nAgents.\n{T}',
     '', 'no fence here', 'summary of "a quoted text"', 'stats please\nTEXT: line one\nline two',
+    # closed at the end of a last line that ends in inline code: the code's closing backtick is the text's
+    f'Explain this line:\n{T}\nRun `make test`{T}', f'{T}\nterms: use `-v`{T}\n{T}\nwork: I used `-v`{T}', f'{T}\nuse ``x``{T}',
+    f'Check:\n{T}\nTERMS: one line\n{T}\n{T}\nRun the tests with `make test`{T}',
 ]
 
 
@@ -81,6 +84,14 @@ class Fences(unittest.TestCase):
                          [F.Block('line one\nline two', True, 5, len(f'Sum:\n{T}\nline one\nline two{T}'), True)])
         self.assertEqual(contents('~~~\nterms ~~~'), ['terms '])
         self.assertEqual(contents(f'````\nuse {T}\nmore````'), [f'use {T}\nmore'], 'a shorter run does not close it')
+        # There the fence is the line's last characters, as many as the opening fence has; any more before them are the
+        # text's (inline code's closing backtick), as valun 0.7.0 read them. The block still ends where the run ends.
+        text = f'Explain this line:\n{T}\nRun `make test`{T}'
+        self.assertEqual(F.blocks(text), [F.Block('Run `make test`', True, len('Explain this line:\n'), len(text), True)])
+        self.assertEqual(F.without(text), 'Explain this line:\n ')
+        self.assertEqual(contents('````\nx ``````'), ['x ``'])
+        self.assertEqual(contents('~~~\nthe end ~~~~~\n'), ['the end ~~'])
+        self.assertEqual(contents(f'{T}\nx\n`````'), ['x'], 'a fence on a line of its own takes the whole run')
 
     def test_offsets_and_without(self):
         text = f'Check:\n{T}\nterms\n{T}\nand\n~~~\nwork\n~~~\nthanks'

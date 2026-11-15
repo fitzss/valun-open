@@ -253,6 +253,18 @@ class Reviewing(unittest.TestCase):
         self.assertEqual([c[0] for c in s.c.calls], ['complete'])
         self.assertEqual(s.budget.s['wants'][DID]['verdict'], 'unclear')
 
+    def test_a_line_that_cannot_check_but_does_not_meet_is_disputed(self):
+        """A want's review reads its model's line for the three verdicts only, as before #70 gave a check service its
+        fourth: a line that says it cannot check something and that the work does not meet the terms is disputed, not
+        paid, however it is written in Markdown."""
+        for first in ('Verdict: cannot check the commands, and the report does not meet the terms',
+                      "Verdict: can't check it: does not meet the terms", '**Verdict**: cannot check; does not meet the terms',
+                      '**Verdict: cannot check, so it does not meet the terms**'):
+            s = buyer(delivered(terms('report'), REPORT), FakeAI({**verdict('x'), 'content': first + '\n- it names no step'}))
+            taken(s)
+            s.review(ITEM)
+            self.assertEqual([c[0] for c in s.c.calls], ['dispute'], first)
+
     def test_a_docs_fix_quote_that_holds_fences_is_read_whole_in_tildes(self):
         """Fix inbox #70: the blocks of a delivery are read as CommonMark reads them, so a quote that holds a ``` block is
         wrapped in ~~~ (or a longer fence) and read whole; in ``` fences it is cut where its own fence starts."""

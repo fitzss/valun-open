@@ -588,8 +588,36 @@ class FencedChecks(unittest.TestCase):
                            ("Verdict: can't check: the work is missing", 'cannot_check'), ('Cannot check.', 'cannot_check'),
                            ('Verdict: cannot check whether it meets the terms', 'cannot_check'),
                            ('Verdict: unclear (I cannot check whether the sources exist)', 'unclear'),
-                           ('Verdict: meets the terms', 'meets'), ('Verdict: does not meet the terms', 'does_not_meet'), ('', 'unclear')]:
+                           ('Verdict: meets the terms', 'meets'), ('Verdict: does not meet the terms', 'does_not_meet'), ('', 'unclear'),
+                           ("Verdict: doesn't meet the terms", 'does_not_meet'), ('Verdict: unclear', 'unclear')]:
             self.assertEqual(A.verdict_of(text), code, text)
+        # The line as a model writes it in Markdown (fix inbox #70, review): emphasis closed before the colon, the whole
+        # line quoted, a list marker, a curly apostrophe, a dash for the colon.
+        for text in self.CANNOT_LINES:
+            self.assertEqual(A.verdict_of(text), 'cannot_check', text)
+            self.assertEqual(A.verdict_of(text + '\n- the terms end with ":"'), 'cannot_check', text)
+        for text, code in [('**Verdict**: meets the terms', 'meets'), ('- Verdict: does not meet the terms', 'does_not_meet'),
+                           ('Verdict: doesn\u2019t meet the terms', 'does_not_meet'), ('"Verdict: unclear"', 'unclear'),
+                           ('- cannot check the sources, but meets the terms', 'cannot_check')]:
+            self.assertEqual(A.verdict_of(text), code, text)
+
+    CANNOT_LINES = ['**Verdict**: cannot check', '*Verdict*: cannot check', '__Verdict__: cannot check', '"Verdict: cannot check"',
+                    '- Verdict: cannot check', 'Verdict: can\u2019t check', 'Verdict \u2014 cannot check', 'Verdict - cannot check',
+                    '> **Verdict**: Cannot check.', '* Verdict: cannot check', '\u201cVerdict: cannot check\u201d',
+                    'Verdict \u2013 cannot check', 'Verdict: **cannot check**', '## Verdict: cannot check', '1. Verdict: cannot check']
+
+    def test_a_cannot_check_line_in_markdown_is_declined_too(self):
+        """However the model writes its "cannot check" line (CANNOT_LINES), the check is declined, not accepted and
+        delivered as unclear: nothing is kept, and none of the buyer's checks is used."""
+        lead = f'{F3}\nterms: Summarize:\n{F3}\n{self.SENTENCE}\n{F3}\nwork: {self.WORK}\n{F3}'
+        for line in self.CANNOT_LINES:
+            s = self.check(lead, FakeAI({**OK, 'content': f'{line}\n- The terms end with "Summarize:" and nothing after it.'}))
+            self.assertEqual([c[0] for c in s.c.calls], ['decline'], line)
+            self.assertEqual(s.c.calls[0][1], 'I could not check this: The terms end with "Summarize:" and nothing after it. '
+                                              + A.FENCE_HOW, line)
+            b = s.budget
+            self.assertEqual((b.s['pending'], b.buyer_jobs('my-seller|buyer-1|check'), b.buyer_jobs('my-seller|buyer-1|cannot-check')),
+                             ({}, 0, 1), line)
 
     def test_the_decline_of_an_uncheckable_check_is_safe_to_send(self):
         r = A.cannot_check_reason('Verdict: cannot check\n- The terms \u202eend\u200b\u200b early: ' + '\U0001F600' * 300)

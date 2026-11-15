@@ -1,11 +1,11 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "45d3d5d1b4e1e8419cd82ae6f54304efb57dd0095c892679b5da09bec61ed211",
+  "agent.py": "052b9abb762bc58f2cc0d747afff8972c875897f171d6ac0431894979052f2a2",
   "avl.py": "f2ac55e537a29c2cfc7d847012b000f6c452907c788c9da6f92d968d9e03a35a",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
   "client.py": "35539ff8541630416fb0328c7ff077bfc41ed8f707f2da63473b99295481065a",
-  "fences.py": "d947282881e5a64dab06985774e2dfbaf91da94aa77cd1319db3679abad7bfb0",
+  "fences.py": "5eff8f249101a89e0c7f90a1339ec1a874302bcc8ce387d7971e4c55c8b875bf",
   "mcp_server.py": "0f2fb1970aabab765072667a83ac2da97cab759c4f37aaaff41261b3009860ea",
   "measure.py": "17defc6922409ca1e35b6c6e825dacc43a153f87e2bc4f0aa6442f415813af46",
   "novation.py": "3579850c2307713ae538fddbd899dc75e017992c5d75069969e0a7140edfa741",

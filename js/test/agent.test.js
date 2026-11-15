@@ -4,7 +4,7 @@
 // agent-parity.test.js; prepare() and the records in records.test.js. Offline.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {Client, MemoryStore, TOOL_NAMES, ValunAgent, ValunError, measure, sandbox} from '../src/index.js';
+import {Client, MemoryStore, TOOL_NAMES, ValunAgent, ValunError, measure, sandbox, termsText} from '../src/index.js';
 import {FIX, ID, T0, posts, scenario, world} from './agent-world.js';
 
 const routesOf = name => scenario(name).routes;
@@ -62,6 +62,45 @@ test('deliver gate: a draft that misses the measured terms is not signed or sent
   const r3 = await w3.agent.callSafe('valun_deliver', {deal_id: dealId('deliver: send_anyway'), content: 'Too short: only a few words here.', send_anyway: true});
   assert.equal(r3.status, 'delivered');
   assert.deepEqual(posts(w3.fetch).map(c => c.key), [`POST /pilot/v1/deals/${dealId('deliver: send_anyway')}/deliver`]);
+});
+
+// Fix inbox #70, review: the measured requirements come from the title, description and deliverable, each read without
+// its own fenced blocks. Joined with spaces first, a description that ends at its closing fence (skill.md's valun_propose
+// example) put the deliverable on that fence's line: the block never closed, and '300-500 words' was read as quoted.
+const F3 = '`'.repeat(3);
+const PROPOSE = {title: 'Summary of one article', description: `Summarize the text below.\n${F3}\nAgents pay each other with signed IOUs.\n${F3}`,
+  deliverable: 'markdown, 300-500 words'};
+const INVERTED = {...PROPOSE, description: `${F3}\nHeadlines should be at most 10 words. Agents pay each other with signed IOUs.\n${F3}`};
+const CHECK = {title: 'check', description: `${F3}\ntitle: summary\ndeliverable: 300-500 words\n${F3}\n${F3}\nWORK: Agents pay each other.\n${F3}`,
+  deliverable: 'a verdict'};
+
+test('measured terms: each field is read without its own fenced blocks (fix inbox #70, review)', () => {
+  const req = service => measure.requirements(termsText({current: {terms: {service}}}));
+  assert.deepEqual(req(PROPOSE), {min_words: 300, max_words: 500}, "skill.md's valun_propose shape");
+  assert.deepEqual(req(INVERTED), {min_words: 300, max_words: 500}, 'never the quoted "at most 10 words"');
+  for (const fence of [F3, '~~~', '````']) {
+    assert.deepEqual(req(Object.fromEntries(Object.entries(CHECK).map(([k, v]) => [k, v.replaceAll(F3, fence)]))), {}, fence);
+  }
+  assert.deepEqual(req({title: 'Summary', description: `Summarize this:\n${F3}\nThe text asks for at least 300 words.`, deliverable: 'at most 50 words'}),
+    {max_words: 50}, 'a block never closed runs to the end of its own field');
+  assert.equal(termsText({current: {terms: {service: PROPOSE}}}), 'Summary of one article Summarize the text below.\n  markdown, 300-500 words');
+});
+
+test('deliver gate: a short draft is refused when the description ends at its closing fence or starts with a quoted limit', async () => {
+  for (const service of [PROPOSE, INVERTED]) {
+    const sent = [];
+    const payee = {
+      connected: true, participantId: ID.alice, complete() { throw new Error('must not be called'); },
+      async deal(id) { return {id, current: {terms: {service}}}; },
+      async deliver(id, content) { sent.push(content); return {id, status: 'delivered', delivery: {sha256: '0'.repeat(64)}}; },
+    };
+    const a = new ValunAgent(payee, {checkLinkHosts: false});
+    await assert.rejects(a.deliver({deal_id: 'vd_1', content: 'Agents pay with IOUs.'}),
+      e => e instanceof ValunError && e.code === 'draft_does_not_meet_terms' && /300-500 words: measured 4 words/.test(e.message));
+    assert.equal(sent.length, 0, 'nothing sent');
+    assert.equal((await a.deliver({deal_id: 'vd_1', content: 'word '.repeat(350)})).status, 'delivered');
+    assert.equal(sent.length, 1);
+  }
 });
 
 test('missing-text guard: an offer to a seller of exactly checkable work without the text is refused before signing', async () => {

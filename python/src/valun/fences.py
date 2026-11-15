@@ -8,14 +8,16 @@ early. Here, as in CommonMark:
   string may follow (after backticks it may not hold a backtick: such a line is inline code, not a fence);
 - it closes at the first later line that is a fence of the same character, at least as long, after at most three spaces
   and followed by nothing but spaces or tabs; or, as since valun 0.5.2 (fix inbox #2), at the end of a line that ends
-  with such a fence;
+  with such a fence: there the fence is the line's last characters, as many as the opening fence has, and any more of
+  that character before them are the line's own text (its inline code's closing backtick, say);
 - a block that is never closed runs to the end of the text, and says so (closed is False), so a caller can refuse it.
 
 So ~~~, or a longer backtick fence, wraps text that holds ``` fences. A block's content is its lines between the fences,
 without the final newline, each without up to as many leading spaces as its opening fence had. Lines end at "\\n" (a
 "\\r" just before it is allowed after a fence). For plain ``` blocks, the blocks are those of valun 0.7.0 (LEGACY).
 
-measure.py imports this module, so the Hermes plugin's core carries it too. JavaScript: js/src/fences.js, the same rules.
+measure.py and agent.py import this module, so the Hermes plugin's core carries it too. JavaScript: js/src/fences.js,
+the same rules.
 """
 import re
 from collections import namedtuple
@@ -72,7 +74,7 @@ def blocks(text):
             if run >= length:
                 closed, end = True, at[j] + stop
                 if before.strip(' ') or len(before) > 3:      # text before the fence: it closes the block's last line
-                    body.append(before)
+                    body.append(before + char * (run - length))   # (the run's characters before the fence are text)
                     eol = True
                 break
             body.append(lines[j])

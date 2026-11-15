@@ -907,6 +907,18 @@ class PayWith(Base):
         self.assertTrue(all(ord(ch) < 128 for ch in p['text']))
         self.assertNotIn('POST', [m for m, *_ in self.world.log])          # preparing signs and sends nothing
 
+    def test_the_pay_text_measures_what_the_deliverable_asks(self):
+        """Fix inbox #70, review: the PAY text measures the delivery against each field of the agreed service read on its
+        own, so a description that ends at its closing fence keeps the deliverable's requirement (va.service_text)."""
+        text = 'hello world'
+        d = self.world.add_deal(S_ID, M_ID, 'notary job', f'notary for this text:\n```\n{text}\n```',
+                                'The exact notary result as JSON, at least 300 words.', 2)
+        self.world.agree(d['id'], sign_text(self.world.keys[M_ID], vc.statement('accept', d['current']['terms_hash'])))
+        self.world.deliver(d['id'], sb.render('notary', sb.COMPUTE['notary'](text), text), 'notary result', M_ID)
+        p = self.agent.prepare('valun_review_delivery', {'deal_id': d['id'], 'decision': 'accept', 'pay_with': 'sandbox-exact'})
+        measured = next(ln for ln in p['text'].split('\n') if ln.startswith('  measured: '))
+        self.assertRegex(measured, r'^  measured: at least 300 words: \d+ words \(NOT met\); exact result: matches the agreed text$')
+
     def test_prepare_refuses_without_the_tracker_v32_contract(self):
         # tracker v3.2: the approval snapshot of a payment by transfer is made only for the contract the client signs
         # prior acknowledgments for (as Client.pay_by_transfer checks); nothing is read past GET /info, nothing signed
