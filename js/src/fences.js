@@ -4,11 +4,12 @@
 // string may follow (after backticks it may not hold a backtick: such a line is inline code, not a fence). It closes at
 // the first later line that is a fence of the same character, at least as long, after at most three spaces and followed
 // by nothing but spaces or tabs; or, as since valun 0.5.2 (fix inbox #2), at the end of a line that ends with such a
-// fence. A block that is never closed runs to the end of the text, and says so (closed: false). A block's content is its
-// lines between the fences, without the final newline, each without up to as many leading spaces as its opening fence
-// had. Lines end at "\n" (a "\r" just before it is allowed after a fence). The same blocks as the Python module; their
-// start and end are UTF-16 offsets here (code points in Python). The JavaScript client has no check service or receipts,
-// so it has no copy of Python's LEGACY rule.
+// fence: there the fence is the line's last characters, as many as the opening fence has, and any more of that
+// character before them are the line's own text. A block that is never closed runs to the end of the text, and says so
+// (closed: false). A block's content is its lines between the fences, without the final newline, each without up to as
+// many leading spaces as its opening fence had. Lines end at "\n" (a "\r" just before it is allowed after a fence). The
+// same blocks as the Python module; their start and end are UTF-16 offsets here (code points in Python). The JavaScript
+// client has no check service or receipts, so it has no copy of Python's LEGACY rule.
 
 import {PyError, typeName} from './py.js';
 
@@ -57,7 +58,7 @@ export function blocks(text) {
         closed = true;
         end = at[j] + stop;
         if (before.replace(/ /gu, '') !== '' || before.length > 3) {    // text before the fence: it closes the last line
-          body.push(before);
+          body.push(before + char.repeat(run - length));                // (the run's characters before the fence are text)
           eol = true;
         }
         break;

@@ -26,6 +26,7 @@
 import {verifyHex} from './basis.js';
 import {COUNTER_OFFER_HOURS, VALUE_SAFE_HEADER_ROLES, checkOfferHours, consentRoles} from './client.js';
 import {ValunError} from './errors.js';
+import {without} from './fences.js';
 import {measure} from './measure.js';
 import * as nv from './novation.js';
 import {NETWORK, UNIT, amountText, sha256Hex, termsHash} from './protocol.js';
@@ -751,10 +752,23 @@ function pageArg(a, k, dflt, what) {
   throw new ValunError('bad_arguments', `${k} must be a whole number (${what}), not ${got.length <= 40 ? got : got.slice(0, 37) + '...'}`);
 }
 
-/** The agreed (or current) service text: where numeric requirements such as '300-500 words' are written. */
+/**
+ * A service's title, description and deliverable as the client reads their numeric requirements (measure's
+ * requirements): each without its fenced blocks (fences.js), then joined by spaces. Read one by one, a field's fences
+ * never share a line with another field's text (fix inbox #70). Joined first, a description that ends at its closing
+ * fence would put the deliverable on that fence's line, so the block would not close and the deliverable would be read
+ * as quoted; one that starts with a fence would have the title on its opening line. The ``` ... ``` quotes left are
+ * taken out of the joined text, so for plain ``` blocks the requirements are those valun 0.7.0 read. (Python
+ * agent.service_text.)
+ */
+function serviceText(svc) {
+  return TEXT_FIELDS.map(k => without(str(or(get(svc, k), '')))).join(' ');
+}
+
+/** The agreed (or current) service text: where numeric requirements such as '300-500 words' are written (serviceText). */
 export function termsText(d) {
   const t = or(get(or(get(or(get(d, 'current'), {}), 'terms'), {}), 'service'), {});
-  return TEXT_FIELDS.map(k => str(or(get(t, k), ''))).join(' ');
+  return serviceText(t);
 }
 
 // Fix inbox #35 (the clients' half of #32): every tool's answer gives each amount a unit-neutral name, by the rule the
@@ -1771,7 +1785,7 @@ export class ValunAgent {
     const chk = snap.checked;
     const t = chk.terms, who = this.#who(chk), price = chk.price, svc = chk.service, dl = chk.delivery, content = chk.content;
     const u = get(snap, 'unit', UNIT);
-    const m = await measure(content, TEXT_FIELDS.map(k => str(or(get(svc, k), ''))).join(' '), {checkHosts: false});
+    const m = await measure(content, serviceText(svc), {checkHosts: false});
     const facts = m.checks_against_agreed_terms.map(x => `${x.requirement}: ${x.measured} (${x.met ? 'met' : 'NOT met'})`);
     let exact;
     try {
@@ -1807,7 +1821,7 @@ export class ValunAgent {
     const issuer = typeof get(iss, 'handle') === 'string' && iss.handle ? shown(iss.handle) : shown(iss.id);
     const x = tr.claim, y = tr.to_prior;
     const speed = get(tr.option, 'issuer_consents');
-    const m = await measure(content, TEXT_FIELDS.map(k => str(or(get(svc, k), ''))).join(' '), {checkHosts: false});
+    const m = await measure(content, serviceText(svc), {checkHosts: false});
     const facts = m.checks_against_agreed_terms.map(f => `${f.requirement}: ${f.measured} (${f.met ? 'met' : 'NOT met'})`);
     let exact;
     try {

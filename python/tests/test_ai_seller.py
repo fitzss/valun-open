@@ -175,14 +175,17 @@ class Answering(unittest.TestCase):
             self.assertIn(says, s.c.calls[0][1])
             self.assertEqual(ai.runs, [])
 
-    def test_paused_counter_budget_buyer_limit(self):
+    def test_paused_below_price_budget_buyer_limit(self):
         s = seller(summary_deal(), None)
         s.answer(ITEM)
         self.assertIn('starts soon', s.c.calls[0][1])
-        s = seller(summary_deal(price=1), FakeAI(OK))
+        ai = FakeAI(OK)
+        s = seller(summary_deal(price=1), ai)
         s.answer(ITEM)
         s.answer(ITEM)
-        self.assertEqual([c[0] for c in s.c.calls], ['counter', 'decline'])
+        self.assertEqual(s.c.calls, [('decline', 'My price for summary is 2 PC; send an offer at that price.')] * 2,
+                         'below the price: declined with it, never countered (fix inbox #78)')
+        self.assertEqual(ai.runs, [])
         ai = FakeAI(OK)
         s = seller(summary_deal(), ai, b=budget(monthly=0.05, daily=0.05))
         s.answer(ITEM)
@@ -194,6 +197,36 @@ class Answering(unittest.TestCase):
         s.answer(ITEM)
         self.assertIn('at most 2 jobs a day', s.c.calls[0][1])
         self.assertEqual(ai.runs, [])
+
+    def test_a_below_price_offer_never_becomes_a_deal_with_no_work(self):
+        """Fix inbox #78: the seller does the job before it accepts, so an offer below its price is declined with the
+        price, never countered at it. A counter the buyer accepted was agreed with no work done: the seller then had
+        nothing to deliver but a note asking for a dispute. Through step(), the server as it answers each move: the
+        buyer accepts a counter-offer at once (the payee then delivers), and a decline ends the deal."""
+        class Market(FakeValun):
+            status = 'open'
+
+            def counter(self, did, price=None, **kw):
+                super().counter(did, price, **kw)
+                self.status = 'agreed'
+
+            def decline(self, did, reason=''):
+                super().decline(did, reason)
+                self.status = 'declined'
+
+            def inbox(self):
+                return {'respond': [ITEM] if self.status == 'open' else [], 'deliver': [ITEM] if self.status == 'agreed' else []}
+
+        check = 'Check the delivery against its terms.\nTERMS:\n~~~\none sentence\n~~~\nWORK:\n~~~\nA sentence.\n~~~'
+        for service, deal in (('summary', summary_deal(price=1)), ('check', offer(terms('check', check, 1)))):
+            ai = FakeAI(OK)
+            s = seller(deal, ai, services=('summary', 'check'))
+            s.c, s.consents = Market(deal), lambda: None
+            for _ in range(3):
+                s.step()
+            self.assertEqual(s.c.calls, [('decline', f'My price for {service} is 2 PC; send an offer at that price.')], service)
+            self.assertEqual((s.c.status, ai.runs, s.budget.s['pending']), ('declined', [], {}), service)
+            self.assertEqual([json.loads(ln)['action'] for ln in s.log.getvalue().splitlines()], ['decline'], 'no deliver_none')
 
     def test_refusal_incomplete_and_api_errors(self):
         for r, says in [({**OK, 'content': None, 'refused': True, 'category': 'cyber'}, 'declined this request'),
@@ -386,15 +419,14 @@ class Testnet(unittest.TestCase):
         s.c.unit, s.c.scale, s.c.network = 'nanoERG', 1_000_000, 'valun-testnet-1'
         return s
 
-    def test_prices_counters_and_words_in_nanoerg(self):
+    def test_prices_declines_and_words_in_nanoerg(self):
         s = self._seller(summary_deal(price=1_000_000), FakeAI(OK))
         s.answer(ITEM)
-        s.answer(ITEM)
-        self.assertEqual(s.c.calls[0], ('counter', 2_000_000))
-        self.assertEqual(s.c.calls[1], ('decline', 'My price for summary is 2000000 nanoERG (0.002 tERG).'))
+        self.assertEqual(s.c.calls, [('decline', 'My price for summary is 2000000 nanoERG (0.002 tERG); send an offer at that price.')])
         s = self._seller(summary_deal(price=2), FakeAI(OK))
         s.answer(ITEM)
-        self.assertEqual(s.c.calls[0], ('counter', 2_000_000), 'a PC-sized offer is far below the price in nanoERG')
+        self.assertEqual(s.c.calls[0], ('decline', 'My price for summary is 2000000 nanoERG (0.002 tERG); send an offer at that '
+                                                   'price.'), 'a PC-sized offer is far below the price in nanoERG')
         s = self._seller(summary_deal(price=2_000_000), FakeAI(OK))
         s.answer(ITEM)
         self.assertIn('accept', [c[0] for c in s.c.calls])
@@ -588,8 +620,36 @@ class FencedChecks(unittest.TestCase):
                            ("Verdict: can't check: the work is missing", 'cannot_check'), ('Cannot check.', 'cannot_check'),
                            ('Verdict: cannot check whether it meets the terms', 'cannot_check'),
                            ('Verdict: unclear (I cannot check whether the sources exist)', 'unclear'),
-                           ('Verdict: meets the terms', 'meets'), ('Verdict: does not meet the terms', 'does_not_meet'), ('', 'unclear')]:
+                           ('Verdict: meets the terms', 'meets'), ('Verdict: does not meet the terms', 'does_not_meet'), ('', 'unclear'),
+                           ("Verdict: doesn't meet the terms", 'does_not_meet'), ('Verdict: unclear', 'unclear')]:
             self.assertEqual(A.verdict_of(text), code, text)
+        # The line as a model writes it in Markdown (fix inbox #70, review): emphasis closed before the colon, the whole
+        # line quoted, a list marker, a curly apostrophe, a dash for the colon.
+        for text in self.CANNOT_LINES:
+            self.assertEqual(A.verdict_of(text), 'cannot_check', text)
+            self.assertEqual(A.verdict_of(text + '\n- the terms end with ":"'), 'cannot_check', text)
+        for text, code in [('**Verdict**: meets the terms', 'meets'), ('- Verdict: does not meet the terms', 'does_not_meet'),
+                           ('Verdict: doesn\u2019t meet the terms', 'does_not_meet'), ('"Verdict: unclear"', 'unclear'),
+                           ('- cannot check the sources, but meets the terms', 'cannot_check')]:
+            self.assertEqual(A.verdict_of(text), code, text)
+
+    CANNOT_LINES = ['**Verdict**: cannot check', '*Verdict*: cannot check', '__Verdict__: cannot check', '"Verdict: cannot check"',
+                    '- Verdict: cannot check', 'Verdict: can\u2019t check', 'Verdict \u2014 cannot check', 'Verdict - cannot check',
+                    '> **Verdict**: Cannot check.', '* Verdict: cannot check', '\u201cVerdict: cannot check\u201d',
+                    'Verdict \u2013 cannot check', 'Verdict: **cannot check**', '## Verdict: cannot check', '1. Verdict: cannot check']
+
+    def test_a_cannot_check_line_in_markdown_is_declined_too(self):
+        """However the model writes its "cannot check" line (CANNOT_LINES), the check is declined, not accepted and
+        delivered as unclear: nothing is kept, and none of the buyer's checks is used."""
+        lead = f'{F3}\nterms: Summarize:\n{F3}\n{self.SENTENCE}\n{F3}\nwork: {self.WORK}\n{F3}'
+        for line in self.CANNOT_LINES:
+            s = self.check(lead, FakeAI({**OK, 'content': f'{line}\n- The terms end with "Summarize:" and nothing after it.'}))
+            self.assertEqual([c[0] for c in s.c.calls], ['decline'], line)
+            self.assertEqual(s.c.calls[0][1], 'I could not check this: The terms end with "Summarize:" and nothing after it. '
+                                              + A.FENCE_HOW, line)
+            b = s.budget
+            self.assertEqual((b.s['pending'], b.buyer_jobs('my-seller|buyer-1|check'), b.buyer_jobs('my-seller|buyer-1|cannot-check')),
+                             ({}, 0, 1), line)
 
     def test_the_decline_of_an_uncheckable_check_is_safe_to_send(self):
         r = A.cannot_check_reason('Verdict: cannot check\n- The terms \u202eend\u200b\u200b early: ' + '\U0001F600' * 300)

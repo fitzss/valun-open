@@ -445,6 +445,65 @@ class DeskAgent(ValunAgent):
         return C(self.store, server='http://valun.invalid')
 
 
+F3 = '`' * 3
+PROPOSE = {'title': 'Summary of one article', 'description': f'Summarize the text below.\n{F3}\nAgents pay each other with signed IOUs.\n{F3}',
+           'deliverable': 'markdown, 300-500 words'}
+
+
+class MeasuredTerms(unittest.TestCase):
+    """The numeric requirements a delivery is measured against (valun_deliver's gate, valun_deal's measured_by_your_client
+    and the ACCEPT and PAY approval texts) come from the title, description and deliverable, each read without its own
+    fenced blocks (va.service_text; fix inbox #70, review). Joined with spaces first, a description that ends at its
+    closing fence, as skill.md's valun_propose example does, put the deliverable on that fence's line: the block never
+    closed and the deliverable's '300-500 words' was read as quoted. One that starts with a fence put the title on its
+    opening line, so the blocks paired wrongly."""
+    INVERTED = dict(PROPOSE, description=f'{F3}\nHeadlines should be at most 10 words. Agents pay each other with signed IOUs.\n{F3}')
+    CHECK = {'title': 'check', 'description': f'{F3}\ntitle: summary\ndeliverable: 300-500 words\n{F3}\n{F3}\nWORK: Agents pay each other.\n{F3}',
+             'deliverable': 'a verdict'}
+
+    @staticmethod
+    def req(svc):
+        return va.measure.requirements(va.terms_text({'current': {'terms': {'service': svc}}}))
+
+    def test_each_field_is_read_on_its_own(self):
+        self.assertEqual(self.req(PROPOSE), {'min_words': 300, 'max_words': 500}, "skill.md's valun_propose shape")
+        self.assertEqual(self.req(self.INVERTED), {'min_words': 300, 'max_words': 500}, 'never the quoted "at most 10 words"')
+        for fence in (F3, '~~~', '````'):
+            check = {k: v.replace(F3, fence) for k, v in self.CHECK.items()}
+            self.assertEqual(self.req(check), {}, f'the terms a check pastes in {fence} are not its own')
+        self.assertEqual(self.req(dict(PROPOSE, description=PROPOSE['description'].replace('\n', '\r\n'))),
+                         {'min_words': 300, 'max_words': 500})
+        never_closed = {'title': 'Summary', 'description': f'Summarize this:\n{F3}\nThe text asks for at least 300 words.',
+                        'deliverable': 'at most 50 words'}
+        self.assertEqual(self.req(never_closed), {'max_words': 50}, 'a block never closed runs to the end of its own field')
+        self.assertEqual(va.service_text(PROPOSE), 'Summary of one article Summarize the text below.\n  markdown, 300-500 words')
+        self.assertEqual(va.terms_text({'current': {'terms': {'service': {'title': 'T', 'description': None, 'deliverable': 3}}}}), 'T  3')
+
+    def test_the_deliver_gate_refuses_a_draft_that_misses_the_deliverable(self):
+        class Payee(FakeClient):
+            def deliver(self, deal_id, content, title=''):
+                self.reads.append(('deliver', deal_id))
+                return {'id': deal_id, 'status': 'delivered', 'delivery': {'sha256': vc.sha256_hex(content)}}
+
+        for svc in (PROPOSE, self.INVERTED):
+            a = Agent()
+            a._fake = Payee(make_deal(make_terms(service=svc)))
+            with self.assertRaises(vc.ValunError) as e:
+                a.deliver({'deal_id': 'vd_1', 'content': 'Agents pay with IOUs.'})
+            self.assertEqual(e.exception.code, 'draft_does_not_meet_terms', svc)
+            self.assertIn('300-500 words: measured 4 words', str(e.exception))
+            self.assertNotIn(('deliver', 'vd_1'), a._fake.reads, 'nothing sent')
+            self.assertEqual(a.deliver({'deal_id': 'vd_1', 'content': 'word ' * 350})['status'], 'delivered', svc)
+
+    def test_the_acceptance_text_measures_what_the_deliverable_asks(self):
+        text = Agent(make_deal(make_terms(service=PROPOSE), content='Agents pay with IOUs.')).prepare(*REVIEW)['text']
+        self.assertIn('\n  measured: 300-500 words: 4 words (NOT met)\n', text)
+        text = Agent(make_deal(make_terms(service=self.INVERTED), content='word ' * 350)).prepare(*REVIEW)['text']
+        self.assertIn('\n  measured: 300-500 words: 350 words (met)\n', text)
+        text = Agent(make_deal(make_terms(service=self.CHECK), content='Verdict: meets the terms')).prepare(*REVIEW)['text']
+        self.assertIn('\n  measured: 4 words, 0 links\n', text, "a check's verdict is not measured against the terms it checked")
+
+
 class EndToEnd(unittest.TestCase):
     """With real signatures: what the owner approves is what the client signs, or nothing is signed."""
 

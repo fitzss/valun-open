@@ -133,6 +133,8 @@ test('agent helpers: recently_active, limits_body, loosens, terms_text and error
   for (const [args, out] of P.limits_body) assert.deepEqual(outcome(() => limitsBody(args)), out, show(args));
   for (const [cur, body, out] of P.loosens) assert.deepEqual(outcome(() => loosens(cur, body)), out, show([cur, body]));
   for (const [d, text] of P.terms_text) assert.equal(termsText(d), text, show(d));
+  assert.ok(P.terms_requirements.length >= 10, 'fix inbox #70 review: the requirements of each terms_text case');
+  for (const [d, req] of P.terms_requirements) assert.deepEqual(measure.requirements(termsText(d)), req, show(d));
   for (const [code, message, extra, out, outHint] of P.error_payload) {
     const e = new ValunError(code, message, 400, extra);
     assert.deepEqual(errorPayload(e), out, code);

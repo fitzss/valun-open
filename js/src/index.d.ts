@@ -1432,7 +1432,7 @@ export function quoteLine(label: string, fields: Record<string, unknown>): strin
 export function owes(role: string, who: string, price: number, unit?: string): string;
 /** Seen (or joined) within the last `hours` (default 24)? Times without a UTC offset do not count. */
 export function recentlyActive(lastSeen: unknown, hours?: number, joinedAt?: unknown, nowMs?: number): boolean;
-/** The current terms' title, description and deliverable, joined by spaces. */
+/** The current terms' title, description and deliverable, each without its fenced blocks, joined by spaces: the text whose numeric requirements are measured. */
 export function termsText(deal: unknown): string;
 
 /** One participant as valun_directory lists it: the directory's fields and its public position on the tracker. */

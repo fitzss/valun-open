@@ -1465,9 +1465,62 @@ def store_for(kind, extra):
     return Store(state, K[kind]['secret'], TOKEN)
 
 
-def run_scenarios():
+def late_scenarios():
+    """Scenarios recorded after all the others (main runs them last), so the deterministic signing nonces, and so the
+    signatures, of every earlier fixture stay as they were. Fix inbox #70, review: a delivery measured against each field
+    of the agreed service on its own, where a description ends at its closing fence (skill.md's valun_propose shape) or
+    starts with a quoted limit, through every place the client measures: valun_deliver's gate, valun_deal's
+    measured_by_your_client, and the ACCEPT and PAY approval texts."""
+    S = []
+
+    def add(name, tool, args, routes=None, store='alice', agent=None, state=None):
+        S.append({'name': name, 'tool': tool, 'args': args, 'routes': routes or {}, 'store': store, 'agent': agent or {},
+                  'state': state or {}})
+
+    get = lambda d: {f"GET /pilot/v1/deals/{d['id']}": {'body': d}}   # noqa: E731
+    post = lambda did, act, body, status=200: {f'POST /pilot/v1/deals/{did}/{act}': {'status': status, 'body': body}}   # noqa: E731
+    propose = ('Summary of one article', 'Summarize the text below.\n```\nAgents pay each other with signed IOUs.\n```', 'markdown, 300-500 words')
+    inverted = ('Summary of one article', '```\nHeadlines should be at most 10 words. Agents pay each other with signed IOUs.\n```',
+                'markdown, 300-500 words')
+    check = ('check', '```\ntitle: summary\ndeliverable: 300-500 words\n```\n```\nWORK: Agents pay each other.\n```', 'a verdict')
+    short, long = 'Agents pay with IOUs.', ' '.join(['word'] * 350)
+    # I deliver (bob pays): the gate refuses a short draft and sends one that meets the deliverable
+    for did, terms, what in (('vd_70a0000000000001', propose, 'its description ends at its closing fence'),
+                             ('vd_70a0000000000002', inverted, 'its description starts with a quoted limit')):
+        d = agreed(deal_view(make_terms(did, 'bob', 'bob', 'alice', *terms, 20), 'bob', your_role='payee'), 'alice')
+        add(f'deliver: the gate reads the deliverable when {what} (#70 review)', 'valun_deliver', {'deal_id': did, 'content': short}, get(d))
+        add(f'deliver: a draft that meets the deliverable when {what} (#70 review)', 'valun_deliver', {'deal_id': did, 'content': long},
+            {**get(d), **post(did, 'deliver', {'id': did, 'status': 'delivered', 'delivery': {'sha256': vc.sha256_hex(long)}})})
+    # I pay (bob delivers): what valun_deal measures, and the ACCEPT and PAY texts
+    a = agreed(deal_view(make_terms('vd_70a0000000000003', 'alice', 'alice', 'bob', *propose, 20), 'alice'), 'bob')
+    dp = delivered(a, short)
+    add('deal: a delivery measured when the description ends at its closing fence (#70 review)', 'valun_deal', {'deal_id': dp['id']}, get(dp))
+    dc = delivered(agreed(deal_view(make_terms('vd_70a0000000000004', 'alice', 'alice', 'bob', *check, 20), 'alice'), 'bob'),
+                   'Verdict: meets the terms')
+    add("deal: a check's verdict is not measured against the terms it pasted (#70 review)", 'valun_deal', {'deal_id': dc['id']}, get(dc))
+    issued = post(dp['id'], 'complete', {'id': dp['id'], 'status': 'note_issued', 'counterparty': {'handle': 'bob'},
+                                         'credit_note': {'state': 'issued', 'amount': 20, 'tracker_status': 'recorded',
+                                                         'tracker_note': {'amount_collected': 30, 'confirmation': 'local_only'}}})
+    add('review: accept, measured when the description ends at its closing fence (#70 review)', 'valun_review_delivery',
+        {'deal_id': dp['id'], 'decision': 'accept'},
+        {**get(dp), f"GET /pilot/v1/deals/{dp['id']}/credit-note-template": {'body': template(dp)}, **issued})
+    claim = (30, T0_MS - 900_000 + 1)
+    paid = dict(dp, status='paid_by_transfer', counterparty={'id': ID['bob'], 'handle': 'bob'},
+                payment={'route': 'transfer', 'transfer_id': 'vt_7070707070707070', 'state': 'applied',
+                         'issuer': {'id': ID['frank'], 'handle': 'frank'}, 'amount': 20})
+    add('review: pay with a held note, measured when the description ends at its closing fence (#70 review)', 'valun_review_delivery',
+        {'deal_id': dp['id'], 'decision': 'accept', 'pay_with': 'frank'},
+        {**get(dp), 'GET /pilot/v1/info': {'body': CIRC_INFO}, 'GET /pilot/v1/me': {'body': me_circ()},
+         f"GET /pilot/v1/deals/{dp['id']}/payment-options": {'body': payment_options(dp)},
+         f"GET /pilot/v1/deals/{dp['id']}/transfer-template?issuer={ID['frank']}": {'body': transfer_template(dp, claim=claim)},
+         **post(dp['id'], 'pay-by-transfer', paid)},
+        state={'pins': dict(PINS), 'consent_policy': dict(POLICY)})
+    return S
+
+
+def run_scenarios(make=None):
     out = []
-    for sc in scenarios():
+    for sc in (make or scenarios)():
         record = dict(sc)
         for what in ('call', 'is_commitment', 'prepare', 'describe', 'bind', 'describe_bound'):
             ROUTES.clear()
@@ -2066,8 +2119,11 @@ def parity():
         '  ```\n  two\n   three\n one\n  ```', '    ```\nx\n```', '\t```\nx\n```', '```\nx\n   ```', '```\nx\n    ```',
         '```\r\nA\r\n```\r\nB', '```\nA\u2028B\n```', '```\nA\x85B\r\n```', '```\nuse ``` here\nmore````', '````\nuse ```\nmore````',
         '~~~\nterms ~~~', 'a ```inline``` mention\n```\nreal\n```', '```\n\U0001F600 emoji\n```\n~~~\n\U0001F600\U0001F600\n~~~',
-        '```\nterms: Summarize:\n```\nS\n```\nwork: X\n```']
-    P['fences'] = [[t, [[b.content, b.closed, b.eol, t[b.start:b.end]] for b in vf.blocks(t)], vf.without(t)] for t in fence_texts]
+        '```\nterms: Summarize:\n```\nS\n```\nwork: X\n```',
+        # closed at the end of a last line that ends in inline code: the code's closing backtick is the text's (#70 review)
+        'Explain this line:\n```\nRun `make test````', '```\nterms: use `-v````\n```\nwork: I used `-v````', '```\nuse ``x`````',
+        '````\nx ``````', '~~~\nthe end ~~~~~\n']
+    P['fences'] =[[t, [[b.content, b.closed, b.eol, t[b.start:b.end]] for b in vf.blocks(t)], vf.without(t)] for t in fence_texts]
     P['unquoted'] = [[t, vm.unquoted(t)] for t in fence_texts + ['one ```a``` two ```b``` three', 'odd ``` fence']]
     P['item_word_counts'] = [[t, vm.item_word_counts(t)] for t in [
         '- one two three four\n- five six seven\n\nIn one sentence: gist', '1. alpha beta\n2) gamma', '* a\n\u2022 b c\n-d e',
@@ -2175,8 +2231,19 @@ def parity():
           ({'max_issue_per_deal': 10.5}, {'max_issue_per_deal': 5}), ({}, {'notes': 'goals only'}), ({'min_payer_coverage_pct': 50}, {'min_payer_coverage_pct': 60}),
           ([], {'notes': 'x'}), ([], {'max_issue_per_deal': 1}), ({}, [])]
     P['loosens'] = [[c, b, outcome(lambda c=c, b=b: va.loosens(c, b))] for c, b in lo]
+    # 0.7.1 (fix inbox #70, review): each field without its own fenced blocks, so none shares a fence line with another
+    svc = lambda t, d, v: {'current': {'terms': {'service': {'title': t, 'description': d, 'deliverable': v}}}}   # noqa: E731
     P['terms_text'] = [[d, va.terms_text(d)] for d in [{}, {'current': None}, {'current': {'terms': {'service': {'title': 'T', 'description': None, 'deliverable': 3}}}},
-                                                     {'current': {'terms': {}}}]]
+                                                     {'current': {'terms': {}}},
+                                                     svc('Summary of one article', 'Summarize the text below.\n```\nAgents pay each other with signed IOUs.\n```',
+                                                         'markdown, 300-500 words'),
+                                                     svc('Summary of one article', '```\nHeadlines should be at most 10 words.\n```', 'markdown, 300-500 words'),
+                                                     svc('check', '```\ntitle: summary\ndeliverable: 300-500 words\n```\n```\nWORK: x\n```', 'a verdict'),
+                                                     svc('check', '~~~\nterms: 300-500 words\n```\nS\n```\n~~~\n~~~\nwork\n~~~', 'a verdict'),
+                                                     svc('Summary', 'Summarize this:\n```\nThe text asks for at least 300 words.', 'at most 50 words'),
+                                                     svc('a ```x``` title', 'one ``` and\r\n```\r\nA\r\n```\r\n', 'odd ``` 300-500 words'),
+                                                     svc('Explain', 'Explain this line:\n```\nRun `make test````', 'at most 99 words')]]
+    P['terms_requirements'] = [[d, vm.requirements(text)] for d, text in P['terms_text']]
     errs = [('mandate_exceeded', 'too much', {'rule': 'max_issue_per_deal', 'mandate_version': 3, 'limit': 20}),
             ('offer_not_authorized', 'no longer allowed', {}), ('key_changed', 'k', {}), ('payee_no_key', 'k', {}),
             ('unauthorized', 'bad token', {}), ('not_connected', 'x', {}), ('not_configured', 'y', {}), ('owner_declined', 'no', {}),
@@ -2354,6 +2421,7 @@ def main():
     P = parity()
     scen = run_scenarios()
     client_scen = run_client_scenarios()
+    scen += run_scenarios(late_scenarios)    # last: the signatures of everything recorded before them stay the same
     hashes = source_hashes()                 # after everything ran: every module the reference imported is listed
     with open(os.path.join(TESTS, 'test_novation.py'), 'rb') as fh:     # the decision table novation_cases records
         tests_sha = {'test_novation.py': hashlib.sha256(fh.read().replace(b'\r\n', b'\n')).hexdigest()}

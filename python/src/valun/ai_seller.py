@@ -2,8 +2,9 @@
 
 The seller is this profile's own agent. It polls the inbox, and for an offer that asks for one of its services it does
 the job with Claude BEFORE accepting, so it never agrees to work it cannot deliver. Then it accepts at its list price
-and delivers. It also signs the set-offs its consent policy allows. The Valun side is valun.sandbox.Seller, the loop
-of the deterministic sandbox seller.
+and delivers. An offer below that price is declined with the price, never countered: a counter the buyer accepted would
+agree a deal with no work done. It also signs the set-offs its consent policy allows. The Valun side is
+valun.sandbox.Seller, the loop of the deterministic sandbox seller.
 
 A seller can also pay for work: its wants (AISeller(wants=...), a dict of want specs, below). Another agent proposes a
 want with role payee; the seller takes it within its daily counts, and when the work is delivered it asks its model
@@ -193,15 +194,20 @@ def now_utc():
     return datetime.now(timezone.utc)
 
 
-# What may come before a verdict on its line: Markdown emphasis, a heading or quote mark, and "Verdict:".
-VERDICT_LEAD = re.compile(r'[\s*_#>`]*(?:verdict\s*:?[\s*_`]*)?')
+# What may come before a verdict on its line: a list marker (-, *, +, a bullet or 1.), a quotation mark, Markdown
+# emphasis, a heading or quote mark, and "Verdict" (its emphasis may close before the colon: **Verdict**:) followed by
+# a colon or a dash.
+VERDICT_LEAD = re.compile(r'''(?:[\s*_#>`"'\u201c\u2018+\-\u2022]|\d+[.)])*'''
+                          r'''(?:verdict[\s*_`]*[:\u2013\u2014-]?[\s*_`"'\u201c\u2018]*)?''')
 
 
-def verdict_of(text):
+def verdict_of(text, cannot_check=True):
     """The verdict code of a check's text, from its first line: meets, does_not_meet, unclear, or cannot_check (the
-    terms or the work look cut off: a check service declines instead of delivering)."""
-    first = (text or '').strip().splitlines()[0].lower() if (text or '').strip() else ''
-    if first[VERDICT_LEAD.match(first).end():].startswith(('cannot check', "can't check", 'can not check')):
+    terms or the work look cut off: a check service declines instead of delivering). A curly apostrophe is read as a
+    straight one. With cannot_check=False, the three verdicts only, as before the fourth: a want's review has no such
+    outcome, so a first line that cannot check something but does not meet the terms stays does_not_meet there."""
+    first = (text or '').strip().splitlines()[0].lower().replace('\u2019', "'") if (text or '').strip() else ''
+    if cannot_check and first[VERDICT_LEAD.match(first).end():].startswith(('cannot check', "can't check", 'can not check')):
         return 'cannot_check'
     if 'does not meet' in first or "doesn't meet" in first:
         return 'does_not_meet'
@@ -572,11 +578,10 @@ class AISeller(vsandbox.Seller):
             return self._decline(did, f"The text is {len(text)} characters; {service} takes at most {spec['max_chars']}.", 'too_long')
         price, ask = terms['price']['amount'], self._price(spec)
         if price < ask:
-            if self.countered.get(did):
-                return self._decline(did, f"My price for {service} is {vc.amount_text(ask, getattr(self.c, 'unit', 'PC'))}.", 'price', price=price)
-            self.countered[did] = True
-            self.c.counter(did, price=ask)
-            return self.note(deal=did, action='counter', service=service, price=ask)
+            # Declined with the price, never countered (fix inbox #78): the work is done before accepting, so a counter the
+            # buyer accepted would agree the deal with no work done, and deliver() would have nothing to deliver.
+            asked = vc.amount_text(ask, getattr(self.c, 'unit', 'PC'))
+            return self._decline(did, f'My price for {service} is {asked}; send an offer at that price.', 'price', price=price, ask=ask)
         key, limit = self.counted(buyer, service), (self.checks_per_buyer if service == 'check' else self.jobs_per_buyer)
         if self.budget.buyer_jobs(key) >= limit:
             what = 'checks' if service == 'check' else 'jobs'
@@ -778,9 +783,8 @@ class AISeller(vsandbox.Seller):
         if r.get('refused'):
             return self.dispute_want(did, name, 'My model declined to read this delivery, so I cannot pay for it.', 'refused',
                                      cost=round(r['cost'], 5))
-        verdict = 'unclear' if r.get('incomplete') else verdict_of(r['content'])
-        if verdict == 'cannot_check':
-            verdict = 'unclear'                         # a want's check has no such outcome: the model cannot tell
+        # A want's check has no "cannot check": the model cannot tell (unclear), unless its line says it does not meet them.
+        verdict = 'unclear' if r.get('incomplete') else verdict_of(r['content'], cannot_check=False)
         rec.update(verdict=verdict, model=r.get('model'), cost=round(r['cost'], 5))
         self.budget.save()
         self.keep(did, rec, verdict, content, r.get('content') or '')

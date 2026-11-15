@@ -238,6 +238,25 @@ class FencedReceipts(unittest.TestCase):
         # Read by the old rule, the same description names other text: the receipt's version keeps the two apart.
         self.assertNotEqual(R.checked_text(d, 2), whole)
 
+    def test_a_work_block_closed_at_the_end_of_inline_code_is_bound_byte_for_byte(self):
+        """The fence glued to a last line that ends in inline code (fix inbox #2): the code's closing backtick is the
+        work's, so the version 3 receipt binds the work deal's delivery byte for byte, and both rules read the same text."""
+        from valun.ai_seller import AISeller, job_text
+        w = World()
+        work = 'Run the tests with `make test`'
+        w.work = deal('vd_work00000000003', w.buyer, w.seller, 'Explain how to run the tests:\n```\nMakefile\n```', work)
+        d = f'Check whether the work meets the terms.\n```\nTERMS: one sentence\n```\n```\n{work}```'
+        self.assertEqual(R.checked_blocks(d), ['TERMS: one sentence', work])
+        self.assertEqual(R.checked_blocks(d, 2), R.checked_blocks(d), 'valun 0.7.0 read the same blocks')
+        s = AISeller.__new__(AISeller)
+        s.handle = 'house-reviewer'
+        content = s.deliverable('check', {'content': 'Verdict: meets the terms\n- one sentence', 'model': 'claude-opus-5-5'},
+                                job_text('check', d), 'vd_check0000000008', blocks=R.checked_blocks(d))
+        r = R.verify_check(deal('vd_check0000000008', w.buyer, w.reviewer, d, content, title='check'), network=NET,
+                           work_deal=w.work, pinned=w.pinned)
+        self.assertEqual(failed(r), [])
+        self.assertEqual((r['receipt']['receipt_version'], r['verdict']), (3, 'meets'))
+
     def test_a_receipt_of_a_version_this_valun_does_not_know_fails(self):
         w = World()
         content = receipt_content('vd_check0000000007', w.desc).replace('"receipt_version": 2', '"receipt_version": 4')

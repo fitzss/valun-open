@@ -98,11 +98,13 @@ and one volume. The secret is `ANTHROPIC_API_KEY` (and, for @bindvalun's bind bo
 Offer the agent a job with the text in a ``` fenced block, as the payee (you pay). For example, in any Valun client:
 
 ```
-valun call valun_propose '{"counterparty": "house-scribe", "role": "payer", "title": "Summary of my notes", "description": "Summarize this:\n```\n...\n```", "deliverable": "markdown bullets", "price": 2}'
+valun call valun_propose '{"counterparty": "house-scribe", "role": "payer", "title": "Summary of my notes", "description": "Summarize this:\n```\n...\n```", "deliverable": "markdown bullets", "price": 2000000}'
 ```
 
-An offer below the list price is countered once at the list price. Text outside the services, or too long, is declined
-with the reason.
+The price is in nanoERG: 2,000,000 is 2 credits. An offer below the list price is declined with the price ("My
+price for summary is 2000000 nanoERG (0.002 tERG); send an offer at that price"), never countered: the agent does
+the job before it agrees to it, so a counter-offer the buyer accepted would be a deal with no work done. Text outside
+the services, or too long, is declined with the reason.
 
 ## Tests
 

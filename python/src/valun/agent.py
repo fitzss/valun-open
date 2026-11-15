@@ -28,6 +28,7 @@ from datetime import datetime, timedelta, timezone
 
 from . import basis as vb
 from . import client as vc
+from . import fences
 from . import measure
 from . import novation as nv
 from . import sandbox
@@ -692,10 +693,21 @@ def _page_arg(a, k, default, what):
     raise vc.ValunError('bad_arguments', f"{k} must be a whole number ({what}), not {got if len(got) <= 40 else got[:37] + '...'}")
 
 
+def service_text(svc):
+    """A service's title, description and deliverable as the client reads their numeric requirements
+    (measure.requirements): each without its fenced blocks (valun.fences), then joined by spaces. Read one by one, a
+    field's fences never share a line with another field's text (fix inbox #70). Joined first, a description that ends at
+    its closing fence would put the deliverable on that fence's line, so the block would not close and the deliverable
+    would be read as quoted; one that starts with a fence would have the title on its opening line. The ``` ... ```
+    quotes left are taken out of the joined text, so for plain ``` blocks the requirements are those valun 0.7.0 read."""
+    return ' '.join(fences.without(str(svc.get(k) or '')) for k in ('title', 'description', 'deliverable'))
+
+
 def terms_text(d):
-    """The agreed (or current) service text: where numeric requirements such as '300-500 words' are written."""
+    """The agreed (or current) service text: where numeric requirements such as '300-500 words' are written
+    (service_text)."""
     t = ((d.get('current') or {}).get('terms') or {}).get('service') or {}
-    return ' '.join(str(t.get(k) or '') for k in ('title', 'description', 'deliverable'))
+    return service_text(t)
 
 
 # Fix inbox #35 (the clients' half of #32): every tool's answer gives each amount a unit-neutral name, by the rule the
@@ -1562,7 +1574,7 @@ class ValunAgent:
         chk = snap['checked']
         t, who, price, svc, dl, content = chk['terms'], self._who(chk), chk['price'], chk['service'], chk['delivery'], chk['content']
         u = snap.get('unit', vc.UNIT)
-        m = measure.measure(content, ' '.join(str(svc.get(k) or '') for k in ('title', 'description', 'deliverable')), check_hosts=False)
+        m = measure.measure(content, service_text(svc), check_hosts=False)
         facts = [f"{x['requirement']}: {x['measured']} ({'met' if x['met'] else 'NOT met'})" for x in m['checks_against_agreed_terms']]
         try:
             exact = sandbox.check_delivery(t, content)
@@ -1594,7 +1606,7 @@ class ValunAgent:
         issuer = shown(iss['handle']) if isinstance(iss.get('handle'), str) and iss['handle'] else shown(iss['id'])
         x, y = tr['claim'], tr['to_prior']
         speed = tr['option'].get('issuer_consents')
-        m = measure.measure(content, ' '.join(str(svc.get(k) or '') for k in ('title', 'description', 'deliverable')), check_hosts=False)
+        m = measure.measure(content, service_text(svc), check_hosts=False)
         facts = [f"{x_['requirement']}: {x_['measured']} ({'met' if x_['met'] else 'NOT met'})" for x_ in m['checks_against_agreed_terms']]
         try:
             exact = sandbox.check_delivery(t, content)

@@ -110,8 +110,12 @@ cannot split. A candidate: the versions still say 0.7.0, and the release sets th
     `fences.LEGACY`), so the receipts already issued still verify. It fails a version it does not know, saying to
     upgrade. For plain ``` blocks the two rules read the same text.
   - **`measure` in both clients:** numbers inside `~~~` and longer-fenced blocks are not the deal's requirements, as
-    inside ``` blocks. Otherwise a check's terms pasted in `~~~` would count as the check's own. New:
-    `measure.unquoted()`.
+    inside ``` blocks. Otherwise a check's terms pasted in `~~~` would count as the check's own. The title, description
+    and deliverable are each read without their own blocks before they are joined, so no two share a fence line and a
+    block never closed stops at the end of its own field (`terms_text` / `termsText`). New: `measure.unquoted()`.
+- **Fix inbox #78: house agents decline a below-price offer with their price instead of countering without the work**
+  (`valun sell`). The work is done before accepting, so a counter the buyer accepted was a deal with no work done, and
+  the seller could only deliver a note asking for a dispute.
 
 ### Server
 - `deal_id` needs a server with fix inbox #60 (valun-app `de989a2` or later, on staging now); against an older one the
@@ -125,8 +129,8 @@ cannot split. A candidate: the versions still say 0.7.0, and the release sets th
   `{"payer": "<handle>", "amount": <the price>, "deal_id": "<the deal id>"}` and says that `deal_id` makes it check
   that offer, which the payer's room already counts (leave it out only to check a new deal). `test_budget_card.py`'s
   `SkillPins` fails while a skill passes it to an older pin.
-- At release, for #70: the Hermes plugin's `valun_core` gains `fences.py`, which its `measure.py` imports. Copy it in
-  before `vendor-plugin`, which copies only the modules the core already has.
+- At release, for #70: the Hermes plugin's `valun_core` gains `fences.py`, which its `measure.py` and `agent.py`
+  import. Copy it in before `vendor-plugin`, which copies only the modules the core already has.
 - #70 takes effect when the house agents run 0.7.1. Until then, skill.md section 5 keeps saying ``` blocks: a 0.7.0
   house-reviewer reads no `~~~` block, so a check fenced with `~~~` is judged on the inner ``` blocks alone. Then it
   can tell buyers to wrap each part in `~~~` or a longer fence when it holds ```, and name the `cannot check` verdict.
