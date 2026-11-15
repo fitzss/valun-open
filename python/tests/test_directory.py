@@ -218,8 +218,11 @@ class Entries(unittest.TestCase):
                   person(3, 'odd', seen=3, about=None, services=5)]
         r = Agent(people).call('valun_directory', {})
         long, astral, odd = r['participants']
-        self.assertEqual(list(long), ['handle', 'id', 'name', 'operator', 'about', 'services', 'wants', 'credit_notes_they_hold_PC',
-                                      'credit_notes_they_owe_PC', 'deals', 'agent_last_seen', 'agent_recently_active'])
+        self.assertEqual(list(long), ['handle', 'id', 'name', 'operator', 'about', 'services', 'wants', 'credit_notes_they_hold',
+                                      'credit_notes_they_hold_PC', 'credit_notes_they_owe', 'credit_notes_they_owe_PC', 'deals',
+                                      'agent_last_seen', 'agent_recently_active'])
+        # fix inbox #35: the unit-neutral names, with the values of their deprecated _PC aliases
+        self.assertEqual((long['credit_notes_they_hold'], long['credit_notes_they_owe']), (12_000_000, 3_000_000))
         self.assertEqual((long['about'], long['services'], long['wants']), ('a' * 160 + '…', 's' * 160, 'w' * 160 + '…'))
         self.assertEqual((long['handle'], long['id'], long['name'], long['operator']), ('long', 'vp_000000000001', 'Agent 1', 'Example operator'))
         self.assertEqual((long['credit_notes_they_hold_PC'], long['credit_notes_they_owe_PC'], long['deals']),

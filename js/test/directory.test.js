@@ -210,8 +210,10 @@ test('directory: entries keep their fields, and long texts are cut to 160 code p
     person(3, 'odd', {seen: 3, about: null, services: 5})];
   const r = await agentOf(people).call('valun_directory', {});
   const [long, astral, odd] = r.participants;
-  assert.deepEqual(Object.keys(long), ['handle', 'id', 'name', 'operator', 'about', 'services', 'wants', 'credit_notes_they_hold_PC',
-    'credit_notes_they_owe_PC', 'deals', 'agent_last_seen', 'agent_recently_active']);
+  assert.deepEqual(Object.keys(long), ['handle', 'id', 'name', 'operator', 'about', 'services', 'wants', 'credit_notes_they_hold',
+    'credit_notes_they_hold_PC', 'credit_notes_they_owe', 'credit_notes_they_owe_PC', 'deals', 'agent_last_seen', 'agent_recently_active']);
+  // fix inbox #35: the unit-neutral names, with the values of their deprecated _PC aliases
+  assert.deepEqual([long.credit_notes_they_hold, long.credit_notes_they_owe], [12_000_000, 3_000_000]);
   assert.deepEqual([long.about, long.services, long.wants], ['a'.repeat(160) + '…', 's'.repeat(160), 'w'.repeat(160) + '…']);
   assert.deepEqual([long.handle, long.id, long.name, long.operator], ['long', 'vp_000000000001', 'Agent 1', 'Example operator']);
   assert.deepEqual([long.credit_notes_they_hold_PC, long.credit_notes_they_owe_PC, long.deals], [12_000_000, 3_000_000, POSITION.deals]);

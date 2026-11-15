@@ -698,6 +698,38 @@ def terms_text(d):
     return ' '.join(str(t.get(k) or '') for k in ('title', 'description', 'deliverable'))
 
 
+# Fix inbox #35 (the clients' half of #32): every tool's answer gives each amount a unit-neutral name, by the rule the
+# server's public answers follow (valun-app lib/pilot/amount-names.mjs). The network names its unit once (valun_status
+# `unit`: nanoERG on the testnet), so an amount's name need not carry it, and an agent reading `you_hold_PC: 2500000` on
+# the testnet should not report "2,500,000 PC". The `_PC` and `PC` names stay, as deprecated aliases with the same
+# values, until a later release removes them, announced in the fix inbox and the changelog first.
+_PC_SUFFIX = '_PC'
+
+
+def _neutral_name(k):
+    if k == 'PC':
+        return 'amount'
+    return k[:-len(_PC_SUFFIX)] if isinstance(k, str) and len(k) > len(_PC_SUFFIX) and k.endswith(_PC_SUFFIX) else None
+
+
+def with_unit_neutral_names(v):
+    """A tool's answer with each amount under its unit-neutral name too, at any depth: every key `<name>_PC` gets
+    `<name>` just before it, and the `PC` of a {count, PC} tally gets `amount`, with the same value. A name already
+    present is never overwritten, and a value that is not an object or an array passes through unchanged (a tuple is an
+    array, as in JSON). The answer given is not changed: its objects and arrays are copied."""
+    if isinstance(v, (list, tuple)):
+        return [with_unit_neutral_names(x) for x in v]
+    if not isinstance(v, dict):
+        return v
+    out = {}
+    for k, x in v.items():
+        y, n = with_unit_neutral_names(x), _neutral_name(k)
+        if n and n not in v and n not in out:
+            out[n] = y
+        out[k] = y
+    return out
+
+
 def error_payload(e, setup_hint='run `valun join` (or `valun enroll`) in a terminal'):
     """A ValunError (or any exception) as a plain dict an agent can act on. Never includes secrets."""
     if isinstance(e, vc.ValunError):
@@ -819,19 +851,20 @@ class ValunAgent:
         a required one, before anything is read or signed). Before a tool that is not read-only, the client signs the
         consents its owner's policy allows (consents_if_due). With consents_on_reads, before valun_status and
         valun_inbox it signs the value-safe ones (consents_on_read), and when that run took place the result adds
-        consents_signed_now: one entry (SIGNED_NOW_KEYS) for each consent it signed ([]: none)."""
+        consents_signed_now: one entry (SIGNED_NOW_KEYS) for each consent it signed ([]: none). Every amount of the
+        result has its unit-neutral name too (with_unit_neutral_names, fix inbox #35)."""
         if name not in self.handlers:
             raise vc.ValunError('unknown_tool', f'no Valun tool called {name!r}')
         a = tool_arguments(name, args)
         if name not in READ_ONLY_TOOLS:
             self.consents_if_due()
-            return self.handlers[name](a)
+            return with_unit_neutral_names(self.handlers[name](a))
         report = self.consents_on_read() if name in CONSENTS_ON_READ_TOOLS else None
         out = self.handlers[name](a)
         if report is not None and isinstance(out, dict):
             out['consents_signed_now'] = [{k: e.get(k) for k in SIGNED_NOW_KEYS} for e in report.get('signed') or []
                                           if isinstance(e, dict)]
-        return out
+        return with_unit_neutral_names(out)
 
     def consents_if_due(self, now_ms=None):
         """Process consents (Client.process_consents: set-offs, transfers of my own debt, payments to me, regenerated

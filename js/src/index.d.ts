@@ -1336,6 +1336,12 @@ export const ARGUMENT_WORDS: Readonly<Record<string, string>>;
 export const ARGUMENT_WORDS_OF: Readonly<Record<string, Readonly<Record<string, string>>>>;
 /** The arguments each tool requires: its schema's `required`. */
 export const REQUIRED_ARGUMENTS: Readonly<Record<ToolName, readonly string[]>>;
+/**
+ * Fix inbox #35: a tool's answer with each amount under its unit-neutral name too, at any depth: every key `<name>_PC`
+ * gets `<name>` just before it, and the `PC` of a {count, PC} tally gets `amount`, with the same value; a name already
+ * present is never overwritten. The `_PC` and `PC` names are deprecated aliases. ValunAgent.call() gives every result so.
+ */
+export function withUnitNeutralNames<T>(value: T): T;
 /** processConsents() runs at most this often (60 000 ms). */
 export const CONSENTS_EVERY_MS: number;
 /** The local consent policy an invited (sandbox) join writes. */
@@ -1412,6 +1418,10 @@ export interface DirectoryEntry {
   services: string;
   /** The work it pays others for ('' when it lists none). */
   wants: string;
+  /** What it holds and owes on the tracker, in the network's unit (fix inbox #35: the unit-neutral names). */
+  credit_notes_they_hold: number | null;
+  credit_notes_they_owe: number | null;
+  /** Deprecated aliases of credit_notes_they_hold and credit_notes_they_owe, with the same values. */
   credit_notes_they_hold_PC: number | null;
   credit_notes_they_owe_PC: number | null;
   /** How many of its deals ended in each state, as GET /participants/{id} public_position.deals counts them. */

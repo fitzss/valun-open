@@ -2,7 +2,7 @@
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python": "3.14.7",
  "python_sources_sha256": {
-  "agent.py": "3725f33410c1fb34eaea824f4e522cda791b21c0f9218fa50cdd2dec24b6a512",
+  "agent.py": "45d3d5d1b4e1e8419cd82ae6f54304efb57dd0095c892679b5da09bec61ed211",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
   "client.py": "35539ff8541630416fb0328c7ff077bfc41ed8f707f2da63473b99295481065a",
   "mcp_server.py": "0f2fb1970aabab765072667a83ac2da97cab759c4f37aaaff41261b3009860ea",
@@ -365,7 +365,9 @@
     "mandate_version": 3,
     "approvals": "Before you sign an offer, counter-offer, acceptance or credit note, your owner is asked through this app and sees exactly what you would sign; if they decline, nothing is signed. The server also holds commitments priced above 25 PC for the owner console.",
     "position": {
+     "claims_held": 0,
      "claims_held_PC": 0,
+     "owes": 10,
      "owes_PC": 10,
      "outstanding": true
     },
@@ -473,7 +475,9 @@
     "mandate_version": 3,
     "approvals": "Commitments are signed without asking your owner first. The server also holds commitments priced above 25 PC for the owner console.",
     "position": {
+     "claims_held": 0,
      "claims_held_PC": 0,
+     "owes": 10,
      "owes_PC": 10,
      "outstanding": true
     },
@@ -612,7 +616,9 @@
     "mandate_version": 3,
     "approvals": "Commitments are signed without asking your owner first. The server also holds commitments priced above 25 PC for the owner console.",
     "position": {
+     "claims_held": 0,
      "claims_held_PC": 0,
+     "owes": 10,
      "owes_PC": 10,
      "outstanding": true
     },
@@ -900,7 +906,9 @@
     "mandate_version": 3,
     "approvals": "Every commitment you sign waits for your owner in the Valun owner console before it takes effect: offers, counter-offers and acceptances, and accepting a delivery (its credit note is issued only after your owner approves it). The server also holds commitments priced above 25 PC for the owner console.",
     "position": {
+     "claims_held": 0,
      "claims_held_PC": 0,
+     "owes": 10,
      "owes_PC": 10,
      "outstanding": true
     },
@@ -988,8 +996,11 @@
      "min_payer_coverage_pct": 0
     },
     "approvals": "Before you sign an offer, counter-offer, acceptance or credit note, your owner is asked through this app and sees exactly what you would sign; if they decline, nothing is signed. The server also holds commitments priced above 25 PC for the owner console.",
+    "you_hold": null,
     "you_hold_PC": null,
+    "you_owe": null,
     "you_owe_PC": null,
+    "net": null,
     "net_PC": null,
     "note": "PC are pilot credits with no monetary value: a credit note is an outstanding promise, and nothing is redeemed. This is the brief view; call valun_status with brief=false for your mandate, consent policy and honest labels."
    },
@@ -1064,8 +1075,11 @@
      "min_payer_coverage_pct": 0
     },
     "approvals": "Commitments are signed without asking your owner first. The server also holds commitments priced above 25 PC for the owner console.",
+    "you_hold": null,
     "you_hold_PC": null,
+    "you_owe": null,
     "you_owe_PC": null,
+    "net": null,
     "net_PC": null,
     "note": "PC are pilot credits with no monetary value: a credit note is an outstanding promise, and nothing is redeemed. This is the brief view; call valun_status with brief=false for your mandate, consent policy and honest labels."
    },
@@ -1162,7 +1176,9 @@
     "mandate_version": 3,
     "approvals": "Commitments are signed without asking your owner first. The server also holds commitments priced above 25 PC for the owner console.",
     "position": {
+     "claims_held": 0,
      "claims_held_PC": 0,
+     "owes": 10,
      "owes_PC": 10,
      "outstanding": true
     },
@@ -1476,7 +1492,9 @@
       "about": "Writes research briefs.",
       "services": "Research briefs, 300-500 words, with sources.",
       "wants": "",
+      "credit_notes_they_hold": 40,
       "credit_notes_they_hold_PC": 40,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 3,
@@ -1493,7 +1511,9 @@
       "about": "New: summaries.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 0,
       "credit_notes_they_hold_PC": 0,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 0,
@@ -1510,7 +1530,9 @@
       "about": "Research and briefs.",
       "services": "Market research",
       "wants": "",
+      "credit_notes_they_hold": 5,
       "credit_notes_they_hold_PC": 5,
+      "credit_notes_they_owe": 2,
       "credit_notes_they_owe_PC": 2,
       "deals": {
        "completed": 1,
@@ -1527,7 +1549,9 @@
       "about": "Deterministic test agent.",
       "services": "text-stats (3 PC): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. notary (2 PC): SHA-256 and byte length o…",
       "wants": "",
+      "credit_notes_they_hold": 12,
       "credit_notes_they_hold_PC": 12,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 6,
@@ -1611,7 +1635,9 @@
       "about": "Writes research briefs.",
       "services": "Research briefs, 300-500 words, with sources.",
       "wants": "",
+      "credit_notes_they_hold": 40,
       "credit_notes_they_hold_PC": 40,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 3,
@@ -1628,7 +1654,9 @@
       "about": "Research and briefs.",
       "services": "Market research",
       "wants": "",
+      "credit_notes_they_hold": 5,
       "credit_notes_they_hold_PC": 5,
+      "credit_notes_they_owe": 2,
       "credit_notes_they_owe_PC": 2,
       "deals": {
        "completed": 1,
@@ -2282,7 +2310,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 17,
       "credit_notes_they_hold_PC": 17,
+      "credit_notes_they_owe": 6,
       "credit_notes_they_owe_PC": 6,
       "deals": {
        "completed": 2,
@@ -2299,7 +2329,9 @@
       "about": "An agent.",
       "services": "Research briefs, 300-500 words",
       "wants": "",
+      "credit_notes_they_hold": 3,
       "credit_notes_they_hold_PC": 3,
+      "credit_notes_they_owe": 6,
       "credit_notes_they_owe_PC": 6,
       "deals": {
        "completed": 0,
@@ -2316,7 +2348,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 2,
       "credit_notes_they_hold_PC": 2,
+      "credit_notes_they_owe": 4,
       "credit_notes_they_owe_PC": 4,
       "deals": {
        "completed": 2,
@@ -2333,7 +2367,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 1,
       "credit_notes_they_hold_PC": 1,
+      "credit_notes_they_owe": 2,
       "credit_notes_they_owe_PC": 2,
       "deals": {
        "completed": 1,
@@ -2350,7 +2386,9 @@
       "about": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA…",
       "services": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
       "wants": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww…",
+      "credit_notes_they_hold": 11,
       "credit_notes_they_hold_PC": 11,
+      "credit_notes_they_owe": 1,
       "credit_notes_they_owe_PC": 1,
       "deals": {
        "completed": 2,
@@ -2367,7 +2405,9 @@
       "about": "Reads BRIEFS all day.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 5,
       "credit_notes_they_hold_PC": 5,
+      "credit_notes_they_owe": 3,
       "credit_notes_they_owe_PC": 3,
       "deals": {
        "completed": 2,
@@ -2384,7 +2424,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "A weekly brief",
+      "credit_notes_they_hold": 4,
       "credit_notes_they_hold_PC": 4,
+      "credit_notes_they_owe": 1,
       "credit_notes_they_owe_PC": 1,
       "deals": {
        "completed": 1,
@@ -2401,7 +2443,9 @@
       "about": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀…",
       "services": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé…",
       "wants": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中",
+      "credit_notes_they_hold": 12,
       "credit_notes_they_hold_PC": 12,
+      "credit_notes_they_owe": 3,
       "credit_notes_they_owe_PC": 3,
       "deals": {
        "completed": 0,
@@ -2418,7 +2462,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 14,
       "credit_notes_they_hold_PC": 14,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 2,
@@ -2435,7 +2481,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 13,
       "credit_notes_they_hold_PC": 13,
+      "credit_notes_they_owe": 5,
       "credit_notes_they_owe_PC": 5,
       "deals": {
        "completed": 1,
@@ -3037,7 +3085,9 @@
       "about": null,
       "services": 7,
       "wants": "",
+      "credit_notes_they_hold": 15,
       "credit_notes_they_hold_PC": 15,
+      "credit_notes_they_owe": 2,
       "credit_notes_they_owe_PC": 2,
       "deals": {
        "completed": 0,
@@ -3054,7 +3104,9 @@
       "about": "An agent.",
       "services": "Cheese fondue recipes",
       "wants": "",
+      "credit_notes_they_hold": 7,
       "credit_notes_they_hold_PC": 7,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 1,
@@ -3071,7 +3123,9 @@
       "about": "Ends in cheese",
       "services": "F is next",
       "wants": "",
+      "credit_notes_they_hold": 6,
       "credit_notes_they_hold_PC": 6,
+      "credit_notes_they_owe": 5,
       "credit_notes_they_owe_PC": 5,
       "deals": {
        "completed": 0,
@@ -3088,7 +3142,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 18,
       "credit_notes_they_hold_PC": 18,
+      "credit_notes_they_owe": 1,
       "credit_notes_they_owe_PC": 1,
       "deals": {
        "completed": 0,
@@ -3105,7 +3161,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 16,
       "credit_notes_they_hold_PC": 16,
+      "credit_notes_they_owe": 4,
       "credit_notes_they_owe_PC": 4,
       "deals": {
        "completed": 1,
@@ -3122,7 +3180,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 9,
       "credit_notes_they_hold_PC": 9,
+      "credit_notes_they_owe": 4,
       "credit_notes_they_owe_PC": 4,
       "deals": {
        "completed": 0,
@@ -3139,7 +3199,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 8,
       "credit_notes_they_hold_PC": 8,
+      "credit_notes_they_owe": 2,
       "credit_notes_they_owe_PC": 2,
       "deals": {
        "completed": 2,
@@ -3728,7 +3790,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 2,
       "credit_notes_they_hold_PC": 2,
+      "credit_notes_they_owe": 4,
       "credit_notes_they_owe_PC": 4,
       "deals": {
        "completed": 2,
@@ -3745,7 +3809,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 1,
       "credit_notes_they_hold_PC": 1,
+      "credit_notes_they_owe": 2,
       "credit_notes_they_owe_PC": 2,
       "deals": {
        "completed": 1,
@@ -3762,7 +3828,9 @@
       "about": "An agent.",
       "services": "Research briefs, 300-500 words",
       "wants": "",
+      "credit_notes_they_hold": 3,
       "credit_notes_they_hold_PC": 3,
+      "credit_notes_they_owe": 6,
       "credit_notes_they_owe_PC": 6,
       "deals": {
        "completed": 0,
@@ -3779,7 +3847,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "A weekly brief",
+      "credit_notes_they_hold": 4,
       "credit_notes_they_hold_PC": 4,
+      "credit_notes_they_owe": 1,
       "credit_notes_they_owe_PC": 1,
       "deals": {
        "completed": 1,
@@ -3796,7 +3866,9 @@
       "about": "Reads BRIEFS all day.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 5,
       "credit_notes_they_hold_PC": 5,
+      "credit_notes_they_owe": 3,
       "credit_notes_they_owe_PC": 3,
       "deals": {
        "completed": 2,
@@ -4377,7 +4449,9 @@
       "about": "An agent.",
       "services": "Research briefs, 300-500 words",
       "wants": "",
+      "credit_notes_they_hold": 3,
       "credit_notes_they_hold_PC": 3,
+      "credit_notes_they_owe": 6,
       "credit_notes_they_owe_PC": 6,
       "deals": {
        "completed": 0,
@@ -4394,7 +4468,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "A weekly brief",
+      "credit_notes_they_hold": 4,
       "credit_notes_they_hold_PC": 4,
+      "credit_notes_they_owe": 1,
       "credit_notes_they_owe_PC": 1,
       "deals": {
        "completed": 1,
@@ -4964,7 +5040,9 @@
       "about": "An agent.",
       "services": "Cheese fondue recipes",
       "wants": "",
+      "credit_notes_they_hold": 7,
       "credit_notes_they_hold_PC": 7,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 1,
@@ -4981,7 +5059,9 @@
       "about": "Ends in cheese",
       "services": "F is next",
       "wants": "",
+      "credit_notes_they_hold": 6,
       "credit_notes_they_hold_PC": 6,
+      "credit_notes_they_owe": 5,
       "credit_notes_they_owe_PC": 5,
       "deals": {
        "completed": 0,
@@ -5545,7 +5625,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 17,
       "credit_notes_they_hold_PC": 17,
+      "credit_notes_they_owe": 6,
       "credit_notes_they_owe_PC": 6,
       "deals": {
        "completed": 2,
@@ -5562,7 +5644,9 @@
       "about": "An agent.",
       "services": "Research briefs, 300-500 words",
       "wants": "",
+      "credit_notes_they_hold": 3,
       "credit_notes_they_hold_PC": 3,
+      "credit_notes_they_owe": 6,
       "credit_notes_they_owe_PC": 6,
       "deals": {
        "completed": 0,
@@ -5579,7 +5663,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 2,
       "credit_notes_they_hold_PC": 2,
+      "credit_notes_they_owe": 4,
       "credit_notes_they_owe_PC": 4,
       "deals": {
        "completed": 2,
@@ -5596,7 +5682,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 1,
       "credit_notes_they_hold_PC": 1,
+      "credit_notes_they_owe": 2,
       "credit_notes_they_owe_PC": 2,
       "deals": {
        "completed": 1,
@@ -5613,7 +5701,9 @@
       "about": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA…",
       "services": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
       "wants": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww…",
+      "credit_notes_they_hold": 11,
       "credit_notes_they_hold_PC": 11,
+      "credit_notes_they_owe": 1,
       "credit_notes_they_owe_PC": 1,
       "deals": {
        "completed": 2,
@@ -5630,7 +5720,9 @@
       "about": "Reads BRIEFS all day.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 5,
       "credit_notes_they_hold_PC": 5,
+      "credit_notes_they_owe": 3,
       "credit_notes_they_owe_PC": 3,
       "deals": {
        "completed": 2,
@@ -5647,7 +5739,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "A weekly brief",
+      "credit_notes_they_hold": 4,
       "credit_notes_they_hold_PC": 4,
+      "credit_notes_they_owe": 1,
       "credit_notes_they_owe_PC": 1,
       "deals": {
        "completed": 1,
@@ -5664,7 +5758,9 @@
       "about": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀…",
       "services": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé…",
       "wants": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中",
+      "credit_notes_they_hold": 12,
       "credit_notes_they_hold_PC": 12,
+      "credit_notes_they_owe": 3,
       "credit_notes_they_owe_PC": 3,
       "deals": {
        "completed": 0,
@@ -5681,7 +5777,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 14,
       "credit_notes_they_hold_PC": 14,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 2,
@@ -5698,7 +5796,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 13,
       "credit_notes_they_hold_PC": 13,
+      "credit_notes_they_owe": 5,
       "credit_notes_they_owe_PC": 5,
       "deals": {
        "completed": 1,
@@ -5715,7 +5815,9 @@
       "about": null,
       "services": 7,
       "wants": "",
+      "credit_notes_they_hold": 15,
       "credit_notes_they_hold_PC": 15,
+      "credit_notes_they_owe": 2,
       "credit_notes_they_owe_PC": 2,
       "deals": {
        "completed": 0,
@@ -5732,7 +5834,9 @@
       "about": "An agent.",
       "services": "Cheese fondue recipes",
       "wants": "",
+      "credit_notes_they_hold": 7,
       "credit_notes_they_hold_PC": 7,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 1,
@@ -5749,7 +5853,9 @@
       "about": "Ends in cheese",
       "services": "F is next",
       "wants": "",
+      "credit_notes_they_hold": 6,
       "credit_notes_they_hold_PC": 6,
+      "credit_notes_they_owe": 5,
       "credit_notes_they_owe_PC": 5,
       "deals": {
        "completed": 0,
@@ -5766,7 +5872,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 18,
       "credit_notes_they_hold_PC": 18,
+      "credit_notes_they_owe": 1,
       "credit_notes_they_owe_PC": 1,
       "deals": {
        "completed": 0,
@@ -5783,7 +5891,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 16,
       "credit_notes_they_hold_PC": 16,
+      "credit_notes_they_owe": 4,
       "credit_notes_they_owe_PC": 4,
       "deals": {
        "completed": 1,
@@ -5800,7 +5910,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 9,
       "credit_notes_they_hold_PC": 9,
+      "credit_notes_they_owe": 4,
       "credit_notes_they_owe_PC": 4,
       "deals": {
        "completed": 0,
@@ -5817,7 +5929,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 8,
       "credit_notes_they_hold_PC": 8,
+      "credit_notes_they_owe": 2,
       "credit_notes_they_owe_PC": 2,
       "deals": {
        "completed": 2,
@@ -6456,7 +6570,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 17,
       "credit_notes_they_hold_PC": 17,
+      "credit_notes_they_owe": 6,
       "credit_notes_they_owe_PC": 6,
       "deals": {
        "completed": 2,
@@ -7018,7 +7134,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 17,
       "credit_notes_they_hold_PC": 17,
+      "credit_notes_they_owe": 6,
       "credit_notes_they_owe_PC": 6,
       "deals": {
        "completed": 2,
@@ -7035,7 +7153,9 @@
       "about": "An agent.",
       "services": "Research briefs, 300-500 words",
       "wants": "",
+      "credit_notes_they_hold": 3,
       "credit_notes_they_hold_PC": 3,
+      "credit_notes_they_owe": 6,
       "credit_notes_they_owe_PC": 6,
       "deals": {
        "completed": 0,
@@ -7052,7 +7172,9 @@
       "about": "An agent.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 2,
       "credit_notes_they_hold_PC": 2,
+      "credit_notes_they_owe": 4,
       "credit_notes_they_owe_PC": 4,
       "deals": {
        "completed": 2,
@@ -7676,7 +7798,9 @@
       "about": "Writes research briefs.",
       "services": "Research briefs, 300-500 words, with sources.",
       "wants": "",
+      "credit_notes_they_hold": 40,
       "credit_notes_they_hold_PC": 40,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 3,
@@ -7693,7 +7817,9 @@
       "about": "New: summaries.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 0,
       "credit_notes_they_hold_PC": 0,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 0,
@@ -7710,7 +7836,9 @@
       "about": "Research and briefs.",
       "services": "Market research",
       "wants": "",
+      "credit_notes_they_hold": 5,
       "credit_notes_they_hold_PC": 5,
+      "credit_notes_they_owe": 2,
       "credit_notes_they_owe_PC": 2,
       "deals": {
        "completed": 1,
@@ -7727,7 +7855,9 @@
       "about": "Deterministic test agent.",
       "services": "text-stats (3 PC): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. notary (2 PC): SHA-256 and byte length o…",
       "wants": "",
+      "credit_notes_they_hold": 12,
       "credit_notes_they_hold_PC": 12,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 6,
@@ -11270,8 +11400,10 @@
     },
     "credit_note": {
      "state": "issued",
+     "amount": 20,
      "amount_PC": 20,
      "tracker_status": "recorded",
+     "tracker_cumulative_total": 30,
      "tracker_cumulative_total_PC": 30,
      "confirmation": "local_only",
      "verified_by_valun": true,
@@ -23297,6 +23429,7 @@
     "what_happened": "Credit note issued: the Basis tracker now records that you owe bob 30 PC in total (this deal added 20). Issuing a credit note creates an outstanding obligation (the payer owes the payee that many PC). Nothing is settled in the Valun pilot: there is no redemption, reserve or clearing yet.",
     "credit_note": {
      "state": "issued",
+     "amount": 20,
      "amount_PC": 20,
      "tracker_status": "recorded",
      "confirmation": "local_only",
@@ -23568,6 +23701,7 @@
     "what_happened": "You accepted the delivery and signed the credit note; your owner must approve before it is issued to the tracker.",
     "credit_note": {
      "state": "awaiting_owner",
+     "amount": 20,
      "amount_PC": 20,
      "tracker_status": null,
      "confirmation": null,
@@ -25434,6 +25568,7 @@
     "what_happened": "Credit note issued: the Basis tracker now records that you owe bob 30 PC in total (this deal added 20). Issuing a credit note creates an outstanding obligation (the payer owes the payee that many PC). Nothing is settled in the Valun pilot: there is no redemption, reserve or clearing yet.",
     "credit_note": {
      "state": "issued",
+     "amount": 20,
      "amount_PC": 20,
      "tracker_status": "recorded",
      "confirmation": "local_only",
@@ -25765,6 +25900,7 @@
     "what_happened": "Credit note issued: the Basis tracker now records that you owe bob 30 PC in total (this deal added 20). Issuing a credit note creates an outstanding obligation (the payer owes the payee that many PC). Nothing is settled in the Valun pilot: there is no redemption, reserve or clearing yet.",
     "credit_note": {
      "state": "issued",
+     "amount": 20,
      "amount_PC": 20,
      "tracker_status": "recorded",
      "confirmation": "local_only",
@@ -26649,6 +26785,7 @@
     "what_happened": "Credit note issued: the Basis tracker now records that you owe bob 30 PC in total (this deal added 20). Issuing a credit note creates an outstanding obligation (the payer owes the payee that many PC). Nothing is settled in the Valun pilot: there is no redemption, reserve or clearing yet.",
     "credit_note": {
      "state": "issued",
+     "amount": 20,
      "amount_PC": 20,
      "tracker_status": "recorded",
      "confirmation": "local_only",
@@ -28788,6 +28925,7 @@
     "what_happened": "Credit note issued: the Basis tracker now records that you owe bob 30 PC in total (this deal added 20). Issuing a credit note creates an outstanding obligation (the payer owes the payee that many PC). Nothing is settled in the Valun pilot: there is no redemption, reserve or clearing yet.",
     "credit_note": {
      "state": "issued",
+     "amount": 20,
      "amount_PC": 20,
      "tracker_status": "recorded",
      "confirmation": "local_only",
@@ -29492,6 +29630,7 @@
     "what_happened": "Credit note issued: the Basis tracker now records that you owe bob 30 PC in total (this deal added 20). Issuing a credit note creates an outstanding obligation (the payer owes the payee that many PC). Nothing is settled in the Valun pilot: there is no redemption, reserve or clearing yet.",
     "credit_note": {
      "state": "issued",
+     "amount": 20,
      "amount_PC": 20,
      "tracker_status": "recorded",
      "confirmation": "local_only",
@@ -36873,6 +37012,7 @@
     "what_happened": "Credit note issued: the Basis tracker now records that you owe bob 30 PC in total (this deal added 20). Issuing a credit note creates an outstanding obligation (the payer owes the payee that many PC). Nothing is settled in the Valun pilot: there is no redemption, reserve or clearing yet.",
     "credit_note": {
      "state": "issued",
+     "amount": 20,
      "amount_PC": 20,
      "tracker_status": "recorded",
      "confirmation": "local_only",
@@ -38577,6 +38717,7 @@
     "what_happened": "Credit note issued: the Basis tracker now records that you owe bob 30 PC in total (this deal added 20). not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.",
     "credit_note": {
      "state": "issued",
+     "amount": 20,
      "amount_PC": 20,
      "tracker_status": "recorded",
      "confirmation": "local_only",
@@ -38993,6 +39134,7 @@
     "what_happened": "Credit note issued: the Basis tracker now records that you owe bob 30 PC in total (this deal added 20). not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.",
     "credit_note": {
      "state": "issued",
+     "amount": 20,
      "amount_PC": 20,
      "tracker_status": "recorded",
      "confirmation": "local_only",
@@ -40591,15 +40733,20 @@
     },
     "summary": "You hold 30 PC of credit notes others issued to you and owe 10 PC (net 20 PC); set-offs have cleared 2 PC so far. You can spend 34 PC of notes you hold (frank, erin) with pay_with when you accept a delivery. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each. 2 consent(s) wait for your client.",
     "money_view": {
+     "you_hold": 30,
      "you_hold_PC": 30,
+     "you_owe": 10,
      "you_owe_PC": 10,
+     "net": 20,
      "net_PC": 20,
+     "cleared_so_far": 2,
      "cleared_so_far_PC": 2,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
     "notes_you_can_spend": [
      {
       "issuer": "frank",
+      "amount": 30,
       "amount_PC": 30,
       "checked_by_your_client": true,
       "issuer_consents": "auto",
@@ -40607,6 +40754,7 @@
      },
      {
       "issuer": "erin",
+      "amount": 4,
       "amount_PC": 4,
       "checked_by_your_client": false,
       "issuer_consents": "when_online",
@@ -40633,6 +40781,7 @@
        "decision": "signed",
        "code": null,
        "amount": 2,
+       "your_net_change": 0,
        "your_net_change_PC": 0
       },
       {
@@ -40641,6 +40790,7 @@
        "decision": "signed",
        "code": null,
        "amount": 3,
+       "your_net_change": 0,
        "your_net_change_PC": 0
       },
       {
@@ -40649,6 +40799,7 @@
        "decision": "signed",
        "code": null,
        "amount": 4,
+       "your_net_change": 0,
        "your_net_change_PC": 0
       },
       {
@@ -40657,6 +40808,7 @@
        "decision": "signed",
        "code": null,
        "amount": 5,
+       "your_net_change": 0,
        "your_net_change_PC": 0
       },
       {
@@ -40665,6 +40817,7 @@
        "decision": "signed",
        "code": null,
        "amount": 6,
+       "your_net_change": 0,
        "your_net_change_PC": 0
       }
      ]
@@ -40673,11 +40826,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -41086,15 +41241,20 @@
     },
     "summary": "You hold 30 PC of credit notes others issued to you and owe 10 PC (net 20 PC); set-offs have cleared 2 PC so far. You can spend 30 PC of notes you hold (frank) with pay_with when you accept a delivery. Your Valun client signs no consents by itself. 1 consent(s) wait for your client.",
     "money_view": {
+     "you_hold": 30,
      "you_hold_PC": 30,
+     "you_owe": 10,
      "you_owe_PC": 10,
+     "net": 20,
      "net_PC": 20,
+     "cleared_so_far": 2,
      "cleared_so_far_PC": 2,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
     "notes_you_can_spend": [
      {
       "issuer": "frank",
+      "amount": 30,
       "amount_PC": 30,
       "checked_by_your_client": false,
       "issuer_consents": null,
@@ -41111,11 +41271,13 @@
      "setoff": false,
      "as_issuer": false,
      "as_new_creditor": false,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": false,
       "as_issuer": false,
       "as_new_creditor": false,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -41478,15 +41640,20 @@
     },
     "summary": "You hold 30 PC of credit notes others issued to you and owe 10 PC (net 20 PC); set-offs have cleared 2 PC so far. You can spend 34 PC of notes you hold (frank, erin) with pay_with when you accept a delivery. Your Valun client signs no consents by itself. 2 consent(s) wait for your client.",
     "money_view": {
+     "you_hold": 30,
      "you_hold_PC": 30,
+     "you_owe": 10,
      "you_owe_PC": 10,
+     "net": 20,
      "net_PC": 20,
+     "cleared_so_far": 2,
      "cleared_so_far_PC": 2,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
     "notes_you_can_spend": [
      {
       "issuer": "frank",
+      "amount": 30,
       "amount_PC": 30,
       "checked_by_your_client": true,
       "issuer_consents": "auto",
@@ -41494,6 +41661,7 @@
      },
      {
       "issuer": "erin",
+      "amount": 4,
       "amount_PC": 4,
       "checked_by_your_client": false,
       "issuer_consents": "when_online",
@@ -41515,6 +41683,7 @@
      "setoff": false,
      "as_issuer": false,
      "as_new_creditor": false,
+     "max": null,
      "max_PC": null,
      "local_policy": {},
      "owner_mandate": {
@@ -41823,9 +41992,13 @@
     },
     "summary": "You hold 0 PC of credit notes others issued to you and owe 0 PC (net 0 PC); set-offs have cleared 0 PC so far. You hold no notes you can spend now. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
     "money_view": {
+     "you_hold": 0,
      "you_hold_PC": 0,
+     "you_owe": 0,
      "you_owe_PC": 0,
+     "net": 0,
      "net_PC": 0,
+     "cleared_so_far": 0,
      "cleared_so_far_PC": 0,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
@@ -41844,11 +42017,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -41872,16 +42047,22 @@
      "then": "The welcome job from sandbox-exact usually arrives within a minute of joining; call valun_status again.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       },
       "sandbox-mallory": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       }
      },
      "when_done": {
+      "you_hold": 3,
       "you_hold_PC": 3,
+      "you_owe": 0,
       "you_owe_PC": 0
      },
      "retry_after_seconds": 5
@@ -42195,9 +42376,13 @@
     },
     "summary": "You hold 0 PC of credit notes others issued to you and owe 0 PC (net 0 PC); set-offs have cleared 0 PC so far. You hold no notes you can spend now. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
     "money_view": {
+     "you_hold": 0,
      "you_hold_PC": 0,
+     "you_owe": 0,
      "you_owe_PC": 0,
+     "net": 0,
      "net_PC": 0,
+     "cleared_so_far": 0,
      "cleared_so_far_PC": 0,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
@@ -42216,11 +42401,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -42253,16 +42440,22 @@
      "then": "sandbox-exact checks it exactly and pays within a few seconds; call valun_status again.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       },
       "sandbox-mallory": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       }
      },
      "when_done": {
+      "you_hold": 3,
       "you_hold_PC": 3,
+      "you_owe": 0,
       "you_owe_PC": 0
      },
      "retry_after_seconds": 5
@@ -42601,15 +42794,20 @@
     },
     "summary": "You hold 3 PC of credit notes others issued to you and owe 0 PC (net 3 PC); set-offs have cleared 0 PC so far. You can spend 3 PC of notes you hold (sandbox-exact) with pay_with when you accept a delivery. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
     "money_view": {
+     "you_hold": 3,
      "you_hold_PC": 3,
+     "you_owe": 0,
      "you_owe_PC": 0,
+     "net": 3,
      "net_PC": 3,
+     "cleared_so_far": 0,
      "cleared_so_far_PC": 0,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
     "notes_you_can_spend": [
      {
       "issuer": "sandbox-exact",
+      "amount": 3,
       "amount_PC": 3,
       "checked_by_your_client": false,
       "issuer_consents": null,
@@ -42630,11 +42828,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -42673,16 +42873,22 @@
      "then": "sandbox-mallory answers within a few seconds; call valun_status again for the next step.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
+       "you_hold": 3,
        "you_hold_PC": 3,
+       "you_owe": 0,
        "you_owe_PC": 0
       },
       "sandbox-mallory": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       }
      },
      "when_done": {
+      "you_hold": 1,
       "you_hold_PC": 1,
+      "you_owe": 0,
       "you_owe_PC": 0
      },
      "retry_after_seconds": 5
@@ -42956,12 +43162,16 @@
      "min_payer_coverage_pct": 0
     },
     "approvals": "Commitments are signed without asking your owner first. The server also holds commitments priced above 25 PC for the owner console.",
+    "you_hold": 3,
     "you_hold_PC": 3,
+    "you_owe": 0,
     "you_owe_PC": 0,
+    "net": 3,
     "net_PC": 3,
     "notes_you_can_spend": [
      {
       "issuer": "sandbox-exact",
+      "amount": 3,
       "amount_PC": 3,
       "checked_by_your_client": false
      }
@@ -43375,17 +43585,22 @@
      "min_payer_coverage_pct": 0
     },
     "approvals": "Before you sign an offer, counter-offer, acceptance or credit note, your owner is asked through this app and sees exactly what you would sign; if they decline, nothing is signed. The server also holds commitments priced above 25 PC for the owner console.",
+    "you_hold": 30,
     "you_hold_PC": 30,
+    "you_owe": 10,
     "you_owe_PC": 10,
+    "net": 20,
     "net_PC": 20,
     "notes_you_can_spend": [
      {
       "issuer": "frank",
+      "amount": 30,
       "amount_PC": 30,
       "checked_by_your_client": true
      },
      {
       "issuer": "erin",
+      "amount": 4,
       "amount_PC": 4,
       "checked_by_your_client": false
      }
@@ -43907,15 +44122,20 @@
     },
     "summary": "You hold 3 PC of credit notes others issued to you and owe 0 PC (net 3 PC); set-offs have cleared 0 PC so far. You can spend 3 PC of notes you hold (sandbox-exact) with pay_with when you accept a delivery. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
     "money_view": {
+     "you_hold": 3,
      "you_hold_PC": 3,
+     "you_owe": 0,
      "you_owe_PC": 0,
+     "net": 3,
      "net_PC": 3,
+     "cleared_so_far": 0,
      "cleared_so_far_PC": 0,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
     "notes_you_can_spend": [
      {
       "issuer": "sandbox-exact",
+      "amount": 3,
       "amount_PC": 3,
       "checked_by_your_client": false,
       "issuer_consents": null,
@@ -43936,11 +44156,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -43975,16 +44197,22 @@
      "then": "Payment by transfer applies at once with the sandbox agents; call valun_status again.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
+       "you_hold": 3,
        "you_hold_PC": 3,
+       "you_owe": 0,
        "you_owe_PC": 0
       },
       "sandbox-mallory": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       }
      },
      "when_done": {
+      "you_hold": 0,
       "you_hold_PC": 0,
+      "you_owe": 1,
       "you_owe_PC": 1
      },
      "retry_after_seconds": 5
@@ -44424,15 +44652,20 @@
     },
     "summary": "You hold 3 PC of credit notes others issued to you and owe 0 PC (net 3 PC); set-offs have cleared 0 PC so far. You can spend 3 PC of notes you hold (sandbox-exact) with pay_with when you accept a delivery. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
     "money_view": {
+     "you_hold": 3,
      "you_hold_PC": 3,
+     "you_owe": 0,
      "you_owe_PC": 0,
+     "net": 3,
      "net_PC": 3,
+     "cleared_so_far": 0,
      "cleared_so_far_PC": 0,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
     "notes_you_can_spend": [
      {
       "issuer": "sandbox-exact",
+      "amount": 3,
       "amount_PC": 3,
       "checked_by_your_client": false,
       "issuer_consents": null,
@@ -44453,11 +44686,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -44491,16 +44726,22 @@
      "then": "After the dispute, call valun_status again: the next call buys again.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
+       "you_hold": 3,
        "you_hold_PC": 3,
+       "you_owe": 0,
        "you_owe_PC": 0
       },
       "sandbox-mallory": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       }
      },
      "when_done": {
+      "you_hold": 0,
       "you_hold_PC": 0,
+      "you_owe": 1,
       "you_owe_PC": 1
      },
      "retry_after_seconds": 5
@@ -44854,15 +45095,20 @@
     },
     "summary": "You hold 3 PC of credit notes others issued to you and owe 1 PC (net 3 PC); set-offs have cleared 0 PC so far. You can spend 3 PC of notes you hold (sandbox-exact) with pay_with when you accept a delivery. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
     "money_view": {
+     "you_hold": 3,
      "you_hold_PC": 3,
+     "you_owe": 1,
      "you_owe_PC": 1,
+     "net": 3,
      "net_PC": 3,
+     "cleared_so_far": 0,
      "cleared_so_far_PC": 0,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
     "notes_you_can_spend": [
      {
       "issuer": "sandbox-exact",
+      "amount": 3,
       "amount_PC": 3,
       "checked_by_your_client": false,
       "issuer_consents": null,
@@ -44883,11 +45129,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -44911,16 +45159,22 @@
      "then": "A set-off of the cycle is due: your Valun client signs it by itself at its next consent run (within about a minute). Call valun_status again.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
+       "you_hold": 3,
        "you_hold_PC": 3,
+       "you_owe": 1,
        "you_owe_PC": 1
       },
       "sandbox-mallory": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       }
      },
      "when_done": {
+      "you_hold": 0,
       "you_hold_PC": 0,
+      "you_owe": 1,
       "you_owe_PC": 1
      },
      "retry_after_seconds": 5
@@ -45265,15 +45519,20 @@
     },
     "summary": "You hold 3 PC of credit notes others issued to you and owe 0 PC (net 3 PC); set-offs have cleared 0 PC so far. You can spend 3 PC of notes you hold (sandbox-exact) with pay_with when you accept a delivery. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
     "money_view": {
+     "you_hold": 3,
      "you_hold_PC": 3,
+     "you_owe": 0,
      "you_owe_PC": 0,
+     "net": 3,
      "net_PC": 3,
+     "cleared_so_far": 0,
      "cleared_so_far_PC": 0,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
     "notes_you_can_spend": [
      {
       "issuer": "sandbox-exact",
+      "amount": 3,
       "amount_PC": 3,
       "checked_by_your_client": false,
       "issuer_consents": null,
@@ -45294,11 +45553,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -45322,11 +45583,15 @@
      "then": "Your owner must first approve deal vd_1313131313131313 in the owner console; then call valun_status again.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
+       "you_hold": 3,
        "you_hold_PC": 3,
+       "you_owe": 0,
        "you_owe_PC": 0
       },
       "sandbox-mallory": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       }
      },
@@ -45644,9 +45909,13 @@
     },
     "summary": "You hold 0 PC of credit notes others issued to you and owe 0 PC (net none PC); set-offs have cleared 0 PC so far. You hold no notes you can spend now. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
     "money_view": {
+     "you_hold": 0,
      "you_hold_PC": 0,
+     "you_owe": 0,
      "you_owe_PC": 0,
+     "net": null,
      "net_PC": null,
+     "cleared_so_far": 0,
      "cleared_so_far_PC": 0,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
@@ -45665,11 +45934,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -45703,16 +45974,22 @@
      "then": "Then deliver (or wait for the delivery); call valun_status again.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       },
       "sandbox-mallory": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       }
      },
      "when_done": {
+      "you_hold": 1,
       "you_hold_PC": 1,
+      "you_owe": 0,
       "you_owe_PC": 0
      },
      "retry_after_seconds": 5
@@ -46029,9 +46306,13 @@
     },
     "summary": "You hold 0 PC of credit notes others issued to you and owe 0 PC (net none PC); set-offs have cleared 2 PC so far. You hold no notes you can spend now. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
     "money_view": {
+     "you_hold": 0,
      "you_hold_PC": 0,
+     "you_owe": 0,
      "you_owe_PC": 0,
+     "net": null,
      "net_PC": null,
+     "cleared_so_far": 2,
      "cleared_so_far_PC": 2,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
@@ -46050,11 +46331,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -46078,11 +46361,15 @@
      "then": "The tour is complete: you earned 6 PC and spent 6 PC (4 by transfer, 2 with your own note), and set-offs cancelled 2 PC of your claims and 2 PC of your debts without changing your net position. You can keep trading with the sandbox agents.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       },
       "sandbox-mallory": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       }
      },
@@ -46396,9 +46683,13 @@
     },
     "summary": "You hold 0 PC of credit notes others issued to you and owe 0 PC (net none PC); set-offs have cleared 0 PC so far. You hold no notes you can spend now. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
     "money_view": {
+     "you_hold": 0,
      "you_hold_PC": 0,
+     "you_owe": 0,
      "you_owe_PC": 0,
+     "net": null,
      "net_PC": null,
+     "cleared_so_far": 0,
      "cleared_so_far_PC": 0,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
@@ -46417,11 +46708,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -46460,16 +46753,22 @@
      "then": "The tour is not complete: no set-off has cleared any of your claims or debts yet, and you hold no note to spend now. Earn sandbox-exact's note again; then pay sandbox-exact with your own note, and the 2-cycle that forms is cleared by a set-off. sandbox-exact answers within a few seconds; call valun_status again for the next step.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       },
       "sandbox-mallory": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       }
      },
      "when_done": {
+      "you_hold": 3,
       "you_hold_PC": 3,
+      "you_owe": 0,
       "you_owe_PC": 0
      },
      "retry_after_seconds": 5
@@ -46796,15 +47095,20 @@
     },
     "summary": "You hold 1 PC of credit notes others issued to you and owe 0 PC (net none PC); set-offs have cleared 3 PC so far. You can spend 1 PC of notes you hold (sandbox-mallory) with pay_with when you accept a delivery. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
     "money_view": {
+     "you_hold": 1,
      "you_hold_PC": 1,
+     "you_owe": 0,
      "you_owe_PC": 0,
+     "net": null,
      "net_PC": null,
+     "cleared_so_far": 3,
      "cleared_so_far_PC": 3,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
     "notes_you_can_spend": [
      {
       "issuer": "sandbox-mallory",
+      "amount": 1,
       "amount_PC": 1,
       "checked_by_your_client": false,
       "issuer_consents": null,
@@ -46825,11 +47129,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -46853,11 +47159,15 @@
      "then": "The tour is complete: set-offs cancelled 3 PC of your claims and 3 PC of your debts without changing your net position. You still hold 1 PC and owe 0 PC. You can keep trading with the sandbox agents.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       },
       "sandbox-mallory": {
+       "you_hold": 1,
        "you_hold_PC": 1,
+       "you_owe": 0,
        "you_owe_PC": 0
       }
      },
@@ -47183,9 +47493,13 @@
     },
     "summary": "You hold 0 PC of credit notes others issued to you and owe 0 PC (net 0 PC); set-offs have cleared 0 PC so far. You hold no notes you can spend now. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
     "money_view": {
+     "you_hold": 0,
      "you_hold_PC": 0,
+     "you_owe": 0,
      "you_owe_PC": 0,
+     "net": 0,
      "net_PC": 0,
+     "cleared_so_far": 0,
      "cleared_so_far_PC": 0,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
@@ -47204,11 +47518,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -47232,16 +47548,22 @@
      "then": "A deal of yours with a sandbox agent is being paid (its credit note is being recorded on the tracker); wait for it: call valun_status again in a few seconds.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       },
       "sandbox-mallory": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       }
      },
      "when_done": {
+      "you_hold": 3,
       "you_hold_PC": 3,
+      "you_owe": 0,
       "you_owe_PC": 0
      },
      "retry_after_seconds": 5
@@ -47594,15 +47916,20 @@
     },
     "summary": "You hold 4 PC of credit notes others issued to you and owe 0 PC (net 4 PC); set-offs have cleared 0 PC so far. You can spend 4 PC of notes you hold (sandbox-exact) with pay_with when you accept a delivery. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
     "money_view": {
+     "you_hold": 4,
      "you_hold_PC": 4,
+     "you_owe": 0,
      "you_owe_PC": 0,
+     "net": 4,
      "net_PC": 4,
+     "cleared_so_far": 0,
      "cleared_so_far_PC": 0,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
     "notes_you_can_spend": [
      {
       "issuer": "sandbox-exact",
+      "amount": 4,
       "amount_PC": 4,
       "checked_by_your_client": false,
       "issuer_consents": null,
@@ -47623,11 +47950,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -47666,16 +47995,22 @@
      "then": "sandbox-exact answers within a few seconds; call valun_status again for the next step.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
+       "you_hold": 4,
        "you_hold_PC": 4,
+       "you_owe": 0,
        "you_owe_PC": 0
       },
       "sandbox-mallory": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       }
      },
      "when_done": {
+      "you_hold": 0,
       "you_hold_PC": 0,
+      "you_owe": 1,
       "you_owe_PC": 1
      },
      "retry_after_seconds": 5
@@ -48002,9 +48337,13 @@
     },
     "summary": "You hold 0 PC of credit notes others issued to you and owe 0 PC (net 0 PC); set-offs have cleared 0 PC so far. You hold no notes you can spend now. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each.",
     "money_view": {
+     "you_hold": 0,
      "you_hold_PC": 0,
+     "you_owe": 0,
      "you_owe_PC": 0,
+     "net": 0,
      "net_PC": 0,
+     "cleared_so_far": 0,
      "cleared_so_far_PC": 0,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
@@ -48023,11 +48362,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -48066,16 +48407,22 @@
      "then": "The tour is not complete: no set-off has cleared any of your claims or debts yet, and you hold no note to spend now. Earn sandbox-exact's note again; then pay sandbox-exact with your own note, and the 2-cycle that forms is cleared by a set-off. sandbox-exact answers within a few seconds; call valun_status again for the next step.",
      "with_the_sandbox_agents": {
       "sandbox-exact": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       },
       "sandbox-mallory": {
+       "you_hold": 0,
        "you_hold_PC": 0,
+       "you_owe": 0,
        "you_owe_PC": 0
       }
      },
      "when_done": {
+      "you_hold": 3,
       "you_hold_PC": 3,
+      "you_owe": 0,
       "you_owe_PC": 0
      },
      "retry_after_seconds": 5
@@ -48462,6 +48809,7 @@
        "pay_with": "frank",
        "issuer_id": "vp_f0f0f0f0f0f0",
        "operator_run": false,
+       "spendable": 30,
        "spendable_PC": 30,
        "enough": true,
        "payee_accepts": true,
@@ -53414,15 +53762,20 @@
     },
     "summary": "You hold 30 PC of credit notes others issued to you and owe 10 PC (net 20 PC); set-offs have cleared 2 PC so far. You can spend 34 PC of notes you hold (frank, erin) with pay_with when you accept a delivery. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each. 2 consent(s) wait for your client.",
     "money_view": {
+     "you_hold": 30,
      "you_hold_PC": 30,
+     "you_owe": 10,
      "you_owe_PC": 10,
+     "net": 20,
      "net_PC": 20,
+     "cleared_so_far": 2,
      "cleared_so_far_PC": 2,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
     "notes_you_can_spend": [
      {
       "issuer": "frank",
+      "amount": 30,
       "amount_PC": 30,
       "checked_by_your_client": true,
       "issuer_consents": "auto",
@@ -53430,6 +53783,7 @@
      },
      {
       "issuer": "erin",
+      "amount": 4,
       "amount_PC": 4,
       "checked_by_your_client": false,
       "issuer_consents": "when_online",
@@ -53456,6 +53810,7 @@
        "decision": "signed",
        "code": null,
        "amount": 6,
+       "your_net_change": 0,
        "your_net_change_PC": 0
       }
      ]
@@ -53464,11 +53819,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -53491,7 +53848,9 @@
       "role": "member",
       "deal_id": null,
       "amount": 6,
+      "your_net_change": 0,
       "your_net_change_PC": 0,
+      "your_total_owed_change": -6,
       "your_total_owed_change_PC": -6,
       "state": "collecting"
      }
@@ -53966,7 +54325,9 @@
       "role": "member",
       "deal_id": null,
       "amount": 6,
+      "your_net_change": 0,
       "your_net_change_PC": 0,
+      "your_total_owed_change": -6,
       "your_total_owed_change_PC": -6,
       "state": "collecting"
      }
@@ -55482,7 +55843,9 @@
       "about": "Writes research briefs.",
       "services": "Research briefs, 300-500 words, with sources.",
       "wants": "",
+      "credit_notes_they_hold": 40,
       "credit_notes_they_hold_PC": 40,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 3,
@@ -55499,7 +55862,9 @@
       "about": "New: summaries.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 0,
       "credit_notes_they_hold_PC": 0,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 0,
@@ -55516,7 +55881,9 @@
       "about": "Research and briefs.",
       "services": "Market research",
       "wants": "",
+      "credit_notes_they_hold": 5,
       "credit_notes_they_hold_PC": 5,
+      "credit_notes_they_owe": 2,
       "credit_notes_they_owe_PC": 2,
       "deals": {
        "completed": 1,
@@ -55533,7 +55900,9 @@
       "about": "Deterministic test agent.",
       "services": "text-stats (3 PC): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. notary (2 PC): SHA-256 and byte length o…",
       "wants": "",
+      "credit_notes_they_hold": 12,
       "credit_notes_they_hold_PC": 12,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 6,
@@ -55912,15 +56281,20 @@
     },
     "summary": "You hold 30 PC of credit notes others issued to you and owe 10 PC (net 20 PC); set-offs have cleared 2 PC so far. You can spend 34 PC of notes you hold (frank, erin) with pay_with when you accept a delivery. Your Valun client signs no consents by itself. 2 consent(s) wait for your client.",
     "money_view": {
+     "you_hold": 30,
      "you_hold_PC": 30,
+     "you_owe": 10,
      "you_owe_PC": 10,
+     "net": 20,
      "net_PC": 20,
+     "cleared_so_far": 2,
      "cleared_so_far_PC": 2,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
     "notes_you_can_spend": [
      {
       "issuer": "frank",
+      "amount": 30,
       "amount_PC": 30,
       "checked_by_your_client": true,
       "issuer_consents": "auto",
@@ -55928,6 +56302,7 @@
      },
      {
       "issuer": "erin",
+      "amount": 4,
       "amount_PC": 4,
       "checked_by_your_client": false,
       "issuer_consents": "when_online",
@@ -55949,11 +56324,13 @@
      "setoff": false,
      "as_issuer": false,
      "as_new_creditor": false,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": false,
       "as_issuer": false,
       "as_new_creditor": false,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -56352,15 +56729,20 @@
     },
     "summary": "You hold 30 PC of credit notes others issued to you and owe 10 PC (net 20 PC); set-offs have cleared 2 PC so far. You can spend 34 PC of notes you hold (frank, erin) with pay_with when you accept a delivery. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each. 2 consent(s) wait for your client.",
     "money_view": {
+     "you_hold": 30,
      "you_hold_PC": 30,
+     "you_owe": 10,
      "you_owe_PC": 10,
+     "net": 20,
      "net_PC": 20,
+     "cleared_so_far": 2,
      "cleared_so_far_PC": 2,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
     "notes_you_can_spend": [
      {
       "issuer": "frank",
+      "amount": 30,
       "amount_PC": 30,
       "checked_by_your_client": true,
       "issuer_consents": "auto",
@@ -56368,6 +56750,7 @@
      },
      {
       "issuer": "erin",
+      "amount": 4,
       "amount_PC": 4,
       "checked_by_your_client": false,
       "issuer_consents": "when_online",
@@ -56393,11 +56776,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -56796,15 +57181,20 @@
     },
     "summary": "You hold 30 PC of credit notes others issued to you and owe 10 PC (net 20 PC); set-offs have cleared 2 PC so far. You can spend 34 PC of notes you hold (frank, erin) with pay_with when you accept a delivery. Your Valun client signs by itself: set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each; debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each; payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each. 2 consent(s) wait for your client.",
     "money_view": {
+     "you_hold": 30,
      "you_hold_PC": 30,
+     "you_owe": 10,
      "you_owe_PC": 10,
+     "net": 20,
      "net_PC": 20,
+     "cleared_so_far": 2,
      "cleared_so_far_PC": 2,
      "how_to_read": "hold: credit notes others issued to you that are still outstanding (what they owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note you hold moves it to the payee (hold falls by the price); a set-off cancels equal claims and debts around a cycle (hold and owe fall together, net does not change); cleared_so_far counts what set-offs cancelled. Nothing is redeemed and PC have no value."
     },
     "notes_you_can_spend": [
      {
       "issuer": "frank",
+      "amount": 30,
       "amount_PC": 30,
       "checked_by_your_client": true,
       "issuer_consents": "auto",
@@ -56812,6 +57202,7 @@
      },
      {
       "issuer": "erin",
+      "amount": 4,
       "amount_PC": 4,
       "checked_by_your_client": false,
       "issuer_consents": "when_online",
@@ -56837,11 +57228,13 @@
      "setoff": true,
      "as_issuer": true,
      "as_new_creditor": true,
+     "max": 50,
      "max_PC": 50,
      "local_policy": {
       "setoff": true,
       "as_issuer": true,
       "as_new_creditor": true,
+      "max": 50,
       "max_PC": 50,
       "accept_issuers": "any",
       "refuse_issuers": []
@@ -69329,7 +69722,9 @@
     "mandate_version": 3,
     "approvals": "Before you sign an offer, counter-offer, acceptance or credit note, your owner is asked through this app and sees exactly what you would sign; if they decline, nothing is signed. The server also holds commitments priced above 25 PC for the owner console.",
     "position": {
+     "claims_held": 0,
      "claims_held_PC": 0,
+     "owes": 10,
      "owes_PC": 10,
      "outstanding": true
     },
@@ -69474,8 +69869,11 @@
      "min_payer_coverage_pct": 0
     },
     "approvals": "Before you sign an offer, counter-offer, acceptance or credit note, your owner is asked through this app and sees exactly what you would sign; if they decline, nothing is signed. The server also holds commitments priced above 25 PC for the owner console.",
+    "you_hold": null,
     "you_hold_PC": null,
+    "you_owe": null,
     "you_owe_PC": null,
+    "net": null,
     "net_PC": null,
     "room": {
      "outstanding": 9,
@@ -69629,7 +70027,9 @@
     "mandate_version": 3,
     "approvals": "Commitments are signed without asking your owner first. The server also holds commitments priced above 25 PC for the owner console.",
     "position": {
+     "claims_held": 0,
      "claims_held_PC": 0,
+     "owes": 10,
      "owes_PC": 10,
      "outstanding": true
     },
@@ -70230,7 +70630,9 @@
     "mandate_version": 3,
     "approvals": "Commitments are signed without asking your owner first. The server also holds commitments priced above 25 PC for the owner console.",
     "position": {
+     "claims_held": 0,
      "claims_held_PC": 0,
+     "owes": 10,
      "owes_PC": 10,
      "outstanding": true
     },
@@ -70338,7 +70740,9 @@
     "mandate_version": 3,
     "approvals": "Commitments are signed without asking your owner first. The server also holds commitments priced above 25 PC for the owner console.",
     "position": {
+     "claims_held": 0,
      "claims_held_PC": 0,
+     "owes": 10,
      "owes_PC": 10,
      "outstanding": true
     },
@@ -70668,7 +71072,9 @@
       "about": "Writes research briefs.",
       "services": "Research briefs, 300-500 words, with sources.",
       "wants": "",
+      "credit_notes_they_hold": 40,
       "credit_notes_they_hold_PC": 40,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 3,
@@ -70685,7 +71091,9 @@
       "about": "New: summaries.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 0,
       "credit_notes_they_hold_PC": 0,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 0,
@@ -70702,7 +71110,9 @@
       "about": "Research and briefs.",
       "services": "Market research",
       "wants": "",
+      "credit_notes_they_hold": 5,
       "credit_notes_they_hold_PC": 5,
+      "credit_notes_they_owe": 2,
       "credit_notes_they_owe_PC": 2,
       "deals": {
        "completed": 1,
@@ -70719,7 +71129,9 @@
       "about": "Deterministic test agent.",
       "services": "text-stats (3 PC): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. notary (2 PC): SHA-256 and byte length o…",
       "wants": "",
+      "credit_notes_they_hold": 12,
       "credit_notes_they_hold_PC": 12,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 6,
@@ -70801,7 +71213,9 @@
       "about": "Writes research briefs.",
       "services": "Research briefs, 300-500 words, with sources.",
       "wants": "",
+      "credit_notes_they_hold": 40,
       "credit_notes_they_hold_PC": 40,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 3,
@@ -70818,7 +71232,9 @@
       "about": "New: summaries.",
       "services": "Summaries",
       "wants": "",
+      "credit_notes_they_hold": 0,
       "credit_notes_they_hold_PC": 0,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 0,
@@ -70835,7 +71251,9 @@
       "about": "Research and briefs.",
       "services": "Market research",
       "wants": "",
+      "credit_notes_they_hold": 5,
       "credit_notes_they_hold_PC": 5,
+      "credit_notes_they_owe": 2,
       "credit_notes_they_owe_PC": 2,
       "deals": {
        "completed": 1,
@@ -70852,7 +71270,9 @@
       "about": "Deterministic test agent.",
       "services": "text-stats (3 PC): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. notary (2 PC): SHA-256 and byte length o…",
       "wants": "",
+      "credit_notes_they_hold": 12,
       "credit_notes_they_hold_PC": 12,
+      "credit_notes_they_owe": 0,
       "credit_notes_they_owe_PC": 0,
       "deals": {
        "completed": 6,

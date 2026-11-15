@@ -1101,12 +1101,13 @@ class OnlyWhenAdvertised(unittest.TestCase):
         self.assertEqual(st['honest_labels'], va.HONEST_LABELS_CIRCULATION)
         self.assertEqual(st['honest_labels']['outstanding_promise'], SERVER_SETTLEMENT)
         self.assertEqual(st['real_vs_simulated'], va.REAL_VS_SIMULATED_CIRCULATION)
-        self.assertEqual(st['notes_you_can_spend'], [{'issuer': 'sandbox-exact', 'amount_PC': 3, 'checked_by_your_client': True,
+        self.assertEqual(st['notes_you_can_spend'], [{'issuer': 'sandbox-exact', 'amount': 3, 'amount_PC': 3, 'checked_by_your_client': True,
                                                       'issuer_consents': 'immediate',
                                                       'how': "valun_review_delivery decision='accept' pay_with=\"sandbox-exact\": pays a "
                                                              'delivery by moving that much of their debt to you onto the payee'}])
         self.assertEqual({k: v for k, v in st['money_view'].items() if k != 'how_to_read'},
-                         {'you_hold_PC': 3, 'you_owe_PC': 0, 'net_PC': 3, 'cleared_so_far_PC': 0})
+                         {'you_hold': 3, 'you_hold_PC': 3, 'you_owe': 0, 'you_owe_PC': 0, 'net': 3, 'net_PC': 3, 'cleared_so_far': 0,
+                          'cleared_so_far_PC': 0})
         self.assertTrue(st['summary'].startswith('You hold 3 PC of credit notes others issued to you and owe 0 PC (net 3 PC)'))
         self.assertEqual(st['clearing']['consents_pending'], 0)
         self.assertEqual(len(st['clearing']['your_client_signs']), 3)
@@ -1300,7 +1301,10 @@ class ConsentsOnReads(Base):
         r = self.agent.call('valun_status')
         self.assertEqual([(e['id'], e['kind'], e['role'], e['your_net_change_PC']) for e in r['consents_signed_now']],
                          [(sid, 'setoff', 'member', 0)])
-        self.assertEqual(list(r['consents_signed_now'][0]), list(va.SIGNED_NOW_KEYS))
+        # SIGNED_NOW_KEYS, each _PC one after its unit-neutral name (fix inbox #35)
+        self.assertEqual(list(r['consents_signed_now'][0]), ['id', 'kind', 'role', 'deal_id', 'amount', 'your_net_change', 'your_net_change_PC',
+                                                             'your_total_owed_change', 'your_total_owed_change_PC', 'state'])
+        self.assertEqual([k for k in r['consents_signed_now'][0] if k in va.SIGNED_NOW_KEYS], list(va.SIGNED_NOW_KEYS))
         self.assertEqual((self.world.total(X_ID, S_ID), self.world.total(S_ID, X_ID)), (0, 1))
         self.assertEqual((r['money_view']['you_hold_PC'], r['money_view']['you_owe_PC']), (0, 1))   # read after it
         self.assertEqual(self.store.state['consent_log'][-1]['decision'], 'signed')
@@ -1444,7 +1448,7 @@ class SandboxNextSteps(Base):
         n = self.steps()
         self.assertEqual((n['tour_step'], [c['tool'] for c in n['next_calls']]), (1, ['valun_respond']))
         self.assertEqual(n['next_calls'][0]['arguments'], {'deal_id': self.world.order[0], 'action': 'accept'})
-        self.assertEqual(n['when_done'], {'you_hold_PC': 3, 'you_owe_PC': 0})
+        self.assertEqual(n['when_done'], {'you_hold': 3, 'you_hold_PC': 3, 'you_owe': 0, 'you_owe_PC': 0})
         did = self.world.order[0]
         self.world.agree(did, sign_text(S, vc.statement('accept', self.world.deals[did]['current']['terms_hash'])))
         n = self.steps()
@@ -1521,7 +1525,7 @@ class SandboxNextSteps(Base):
         self.assertEqual(len(self.world.deals), 1)               # no second job offered to sandbox-exact
         n = self.steps()                                         # now the position holds its note: step 2
         self.assertEqual((n['tour_step'], n['next_calls'][0]['arguments']['counterparty']), (2, 'sandbox-mallory'))
-        self.assertEqual(n['with_the_sandbox_agents'][va.SANDBOX_EXACT], {'you_hold_PC': 3, 'you_owe_PC': 0})
+        self.assertEqual(n['with_the_sandbox_agents'][va.SANDBOX_EXACT], {'you_hold': 3, 'you_hold_PC': 3, 'you_owe': 0, 'you_owe_PC': 0})
 
     def test_six_pc_held_after_step_1_go_on_to_step_3_once_step_2_paid_by_transfer(self):
         self.world.welcome = False
@@ -1554,8 +1558,8 @@ class SandboxNextSteps(Base):
             self.world.deals[self.world.delivered_deal(payee=M_ID)]['status'] = 'paid_by_transfer'
         self.world.deals[self.world.delivered_deal(payer=X_ID, payee=S_ID, service='text-stats')]['status'] = 'note_issued'
         n = self.steps()
-        self.assertEqual(n['with_the_sandbox_agents'], {va.SANDBOX_EXACT: {'you_hold_PC': 0, 'you_owe_PC': 0},
-                                                        va.SANDBOX_MALLORY: {'you_hold_PC': 0, 'you_owe_PC': 0}})
+        none = {'you_hold': 0, 'you_hold_PC': 0, 'you_owe': 0, 'you_owe_PC': 0}
+        self.assertEqual(n['with_the_sandbox_agents'], {va.SANDBOX_EXACT: none, va.SANDBOX_MALLORY: none})
         self.assertNotEqual(n['tour_step'], 'done')
         self.assertNotIn('cancelled', n['then'])
         self.assertIn('The tour is not complete: no set-off has cleared any of your claims or debts yet', n['then'])

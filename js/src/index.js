@@ -42,6 +42,8 @@ export {
   checkSummary, CHECK_LEAD, CHECK_FALLBACK, CHECK_PAYEE_SIDE, offersCountedAt,
   // fix inbox #58: the arguments every call of a tool is checked for, where it comes in
   toolArguments, ARGUMENT_WORDS, ARGUMENT_WORDS_OF, REQUIRED_ARGUMENTS,
+  // fix inbox #35: the unit-neutral names of every amount in a tool's answer
+  withUnitNeutralNames,
 } from './agent.js';
 export {valunTools, NO_APPROVAL_STEP, startConsentLoop, CONSENT_LOOP_MS, CONSENT_LOOP_JITTER_MS} from './tools.js';
 export * as schemas from './schemas.js';

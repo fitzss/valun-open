@@ -757,6 +757,34 @@ export function termsText(d) {
   return TEXT_FIELDS.map(k => str(or(get(t, k), ''))).join(' ');
 }
 
+// Fix inbox #35 (the clients' half of #32): every tool's answer gives each amount a unit-neutral name, by the rule the
+// server's public answers follow (valun-app lib/pilot/amount-names.mjs). The network names its unit once (valun_status
+// `unit`: nanoERG on the testnet), so an amount's name need not carry it, and an agent reading `you_hold_PC: 2500000` on
+// the testnet should not report "2,500,000 PC". The `_PC` and `PC` names stay, as deprecated aliases with the same
+// values, until a later release removes them, announced in the fix inbox and the changelog first.
+const PC_SUFFIX = '_PC';
+const neutralName = k => (k === 'PC' ? 'amount' : k.length > PC_SUFFIX.length && k.endsWith(PC_SUFFIX) ? k.slice(0, -PC_SUFFIX.length) : null);
+const setOwn = (o, k, v) => Object.defineProperty(o, k, {value: v, enumerable: true, writable: true, configurable: true});
+
+/**
+ * A tool's answer with each amount under its unit-neutral name too, at any depth: every key `<name>_PC` gets `<name>`
+ * just before it, and the `PC` of a {count, PC} tally gets `amount`, with the same value. A name already present is never
+ * overwritten, and a value that is not an object or an array passes through unchanged. The answer given is not changed:
+ * its objects and arrays are copied (each key an own property, '__proto__' included). The Python core's
+ * with_unit_neutral_names.
+ */
+export function withUnitNeutralNames(v) {
+  if (Array.isArray(v)) return v.map(withUnitNeutralNames);
+  if (!isDict(v)) return v;
+  const out = {};
+  for (const [k, x] of Object.entries(v)) {
+    const y = withUnitNeutralNames(x), n = neutralName(k);
+    if (n !== null && !Object.hasOwn(v, n) && !Object.hasOwn(out, n)) setOwn(out, n, y);
+    setOwn(out, k, y);
+  }
+  return out;
+}
+
 function isValunError(e) {
   return e instanceof ValunError || (e instanceof Error && e.name === 'ValunError' && typeof e.code === 'string');
 }
@@ -961,7 +989,8 @@ export class ValunAgent {
    * lack a required one, before anything is read or signed). Before a tool that is not read-only, the client signs the
    * consents its owner's policy allows (consentsIfDue). With consentsOnReads, before valun_status and valun_inbox it signs
    * the value-safe ones (consentsOnRead), and when that run took place the result adds consents_signed_now: one entry
-   * (SIGNED_NOW_KEYS) for each consent it signed ([]: none).
+   * (SIGNED_NOW_KEYS) for each consent it signed ([]: none). Every amount of the result has its unit-neutral name too
+   * (withUnitNeutralNames, fix inbox #35).
    */
   async call(name, args = null) {
     if (typeof name !== 'string' || !Object.hasOwn(this.handlers, name)) {
@@ -974,7 +1003,7 @@ export class ValunAgent {
   async #call(name, a) {
     if (!READ_ONLY_TOOLS.includes(name)) {
       await this.#consentsIfDue();
-      return this.handlers[name](a);
+      return withUnitNeutralNames(await this.handlers[name](a));
     }
     const report = CONSENTS_ON_READ_TOOLS.includes(name) ? await this.#consentsOnRead() : null;
     const out = await this.handlers[name](a);
@@ -982,7 +1011,7 @@ export class ValunAgent {
       out.consents_signed_now = iterate(or(get(report, 'signed'), [])).filter(isDict)
         .map(e => Object.fromEntries(SIGNED_NOW_KEYS.map(k => [k, get(e, k)])));
     }
-    return out;
+    return withUnitNeutralNames(out);
   }
 
   /**
