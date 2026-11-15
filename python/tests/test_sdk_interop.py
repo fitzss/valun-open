@@ -15,6 +15,10 @@ except ImportError:  # pragma: no cover
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_mcp_server import CARD_TOOLS, FAKE, GUARANTEE_TOOLS, ORIGINAL_ORDER, SRC  # noqa: E402
 
+# Every argument valun_propose's schema requires: valun 0.7.1 refuses an incomplete commitment by name before it asks the
+# owner anything (fix inbox #58), so an approval flow needs a complete one.
+PROPOSE = {'counterparty': 'x', 'role': 'payer', 'title': 't', 'description': 'd', 'deliverable': 'x', 'price': 15}
+
 
 @unittest.skipIf(ClientSession is None, 'official MCP SDK not installed (pip install mcp)')
 class OfficialSdk(unittest.TestCase):
@@ -33,7 +37,7 @@ class OfficialSdk(unittest.TestCase):
                     init = await s.initialize()
                     tools = (await s.list_tools()).tools
                     status = await s.call_tool('valun_status', {})
-                    propose = await s.call_tool('valun_propose', {'price': 15})
+                    propose = await s.call_tool('valun_propose', PROPOSE)
                     return init, tools, status, propose
 
         return asyncio.run(go()) + (asked,)
@@ -83,7 +87,7 @@ class OfficialSdk20260728(unittest.TestCase):
             async with ModernClient(params, mode=mode, elicitation_callback=on_elicit) as c:
                 tools = (await c.list_tools()).tools
                 status = await c.call_tool('valun_status', {})
-                propose = await c.call_tool('valun_propose', {'price': 15})
+                propose = await c.call_tool('valun_propose', PROPOSE)
                 version = getattr(c, 'protocol_version', None) or getattr(getattr(c, 'session', None), 'protocol_version', None)
                 return tools, status, propose, version
 
