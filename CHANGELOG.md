@@ -26,6 +26,19 @@ tracker's AVL+ digest. A candidate: the versions still say 0.7.0, and the releas
   and `avl.AvlError`, the AVL+ digest a Basis tracker anchors on Ergo, recomputed from the published notes: the same
   construction, digests and refusals as the Python `valun/avl.py` and the server's `lib/avl.mjs`, tested against the
   same Rust references and against what `avl.py` gives for the same inputs.
+- **`valun audit` pins the tracker NFT** (fix inbox #66 item 1; Python). The NFT a server's `GET /pilot/v1/chain`
+  names is only its word: a tracker an operator made itself could commit exactly what the server publishes while the
+  reserves trust the real one, and a MATCH against it would prove nothing. The server must name the NFT this package
+  pins for the servers it knows (`valun.tech`, `valun-testnet.fly.dev`, `valun-staging.fly.dev`: the table of the
+  server-side `anchor-audit.mjs`) and the one your profile pinned, where each applies; any other is exit 2, naming the
+  NFT expected and the one named, before a box is read. For any other server a reserve at the Basis reserve contract
+  the audit pins must name the NFT (else exit 2), and a pass on the reserves alone warns you to pin it; read from a
+  node, such a server needs `--tracker-nft` (a node lists reserves only for a POST, and the audit sends GET only).
+  - `--tracker-nft ID` (`audit(..., tracker_nft=ID)`): the NFT you expect, which replaces every other pin.
+  - `--json` gives `tracker` {`nft`, `pin`, `pinned_by`, `reserves_naming_it`}. With `--mine`, a `--tracker-nft`
+    other than your profile's tracker lists no edge (problem `another_tracker`).
+  - The 41 recorded reads both auditors are held to (`python/tests/fixtures/audit-verdicts/xtool.json`) are a test:
+    each gives the exit code of the shared verdict table.
 
 ### Changed
 - **`valun_check_payer`'s summary** (fix inbox #60):

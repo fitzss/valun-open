@@ -1,7 +1,9 @@
 """`valun audit` and valun/audit.py (fix inbox #62, step 6b): the published ledger against the one unspent tracker-NFT box
 of a chain source the user names. Offline: a fake Valun server, explorer and node answer (synthetic keys, notes and
 boxes; no testnet data), and the command runs once over real HTTP on 127.0.0.1. The digest itself is held to the
-tracker's own crate in test_avl.py; here the boxes commit avl.digest of the notes they are meant to commit.
+tracker's own crate in test_avl.py; here the boxes commit avl.digest of the notes they are meant to commit. The World's
+audits pin its tracker NFT with --tracker-nft unless a test says otherwise; the pins themselves (a profile's, the
+table of known servers, the reserves) are test_audit_pin.py's.
   - MATCH from the committed snapshot (explorer and node), the box's age and the two windows; rows in any order;
   - MISMATCH: a total raised by 1, a dropped row, a fabricated row, a snapshot whose totals include a later write;
   - UNKNOWN, never a pass: malformed rows (a duplicate debt key, 2^64), a total written as a JSON number above
@@ -33,6 +35,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
@@ -43,6 +46,7 @@ from valun import audit as vaudit  # noqa: E402
 from valun import avl  # noqa: E402
 from valun import basis as vb  # noqa: E402
 from valun import cli  # noqa: E402
+from valun import ergo  # noqa: E402
 
 SERVER, EXPLORER, NODE = 'http://valun.invalid', 'http://explorer.invalid', 'http://node.invalid:9052'
 OPERATOR_NODE = 'http://203.0.113.9:9052'               # the node GET /chain names
@@ -51,6 +55,12 @@ BOX_ID, NEW_BOX_ID, TX_ID = 'b5' * 32, 'b6' * 32, 'e7' * 32
 HEIGHT, TIP = 645189, 645230
 T0 = 1794600000000
 TOKEN = 'token:' + 'ab' * 32
+OTHER_TRACKER = 'a7' * 32                               # a tracker some reserve at the contract trusts instead
+# The testnet's Basis reserve contract (public: every GET /pilot/v1/chain names it), whose address valun.audit pins by its
+# sha256: the World's reserve boxes are synthetic boxes at its ErgoTree.
+with open(os.path.join(HERE, 'fixtures', 'audit-verdicts', 'reserve-contract.json'), encoding='utf-8') as _f:
+    RESERVE_CONTRACT = json.load(_f)['address']
+RESERVE_TREE = ergo.address_to_tree(RESERVE_CONTRACT)
 
 
 def _keypair(name):
@@ -117,16 +127,35 @@ def digest_of(notes):
 class World:
     """A fake Valun server (GET /chain, /ledger/committed, /info, /ledger), an explorer and nodes. anchored: the notes
     the tracker box commits; published: the notes the server publishes (the same until a test changes them); boxes: the
-    unspent boxes the sources list. overrides: url -> [(status, body), ...] answered in turn (the last one repeats);
-    a body may be a callable. Every request is logged."""
+    unspent boxes the sources list; nft: the tracker NFT GET /chain names and those boxes hold; reserves: the unspent
+    boxes the explorer lists at the reserve contract GET /chain names (reserve_contract), which a node lists only for a
+    POST. overrides: url -> [(status, body), ...] answered in turn (the last one repeats); a body may be a callable.
+    Every request is logged."""
 
-    def __init__(self, server=SERVER, explorer=EXPLORER, node=NODE, committed=True, plain=False):
-        self.server, self.explorer, self.nodes = server, explorer, {node, OPERATOR_NODE}
+    def __init__(self, server=SERVER, explorer=EXPLORER, node=NODE, committed=True, plain=False, nft=NFT):
+        self.server, self.explorer, self.nodes, self.nft = server, explorer, {node, OPERATOR_NODE}, nft
         self.anchored = [n for n in anchored_notes() if not plain or (n['denomination'] == 'erg' and n['total'] < 2 ** 53)]
         self.published = copy.deepcopy(self.anchored)
         self.committed, self.anchored_now, self.consistent = committed, True, None
         self.boxes = [self.box()]
+        self.reserve_contract = RESERVE_CONTRACT
+        self.reserves = [self.reserve_box(nft, BOB), self.reserve_box(OTHER_TRACKER, CAROL)]
         self.node_network, self.overrides, self.log, self.sleeps = 'testnet', {}, [], []
+
+    def reserve_box(self, tracker, owner, n=0, tree=None, **kw):
+        """A Basis reserve box at the contract as the explorer lists it (owner key R4, empty redemption tree R5, the NFT
+        of the tracker it trusts R6, no refund R7); its address is the explorer's abbreviation of the long P2S address,
+        as the explorer gives it."""
+        box_id = hashlib.sha256(f'reserve {tracker} {owner} {n}'.encode()).hexdigest()
+        regs = {'R4': {'serializedValue': '07' + owner, 'sigmaType': 'SGroupElement', 'renderedValue': owner},
+                'R5': {'serializedValue': '64' + avl.digest([]) + '032000', 'sigmaType': 'SAvlTree', 'renderedValue': None},
+                'R6': {'serializedValue': '0e20' + tracker, 'sigmaType': 'Coll[SByte]', 'renderedValue': tracker},
+                'R7': {'serializedValue': '0500', 'sigmaType': 'SLong', 'renderedValue': '0'}}
+        return {'boxId': box_id, 'transactionId': hashlib.sha256(box_id.encode()).hexdigest(), 'blockId': '00' * 32,
+                'value': 50_000_000, 'index': 0, 'globalIndex': 2450000 + n, 'creationHeight': HEIGHT - 500,
+                'settlementHeight': HEIGHT - 499, 'ergoTree': tree or RESERVE_TREE, 'address': 'Ms7smJmdbakqfwNo',
+                'assets': [{'tokenId': box_id[::-1], 'index': 0, 'amount': 1, 'name': None, 'decimals': None, 'type': None}],
+                'additionalRegisters': regs, 'spentTransactionId': None, 'mainChain': True, **kw}
 
     def box(self, box_id=BOX_ID, **kw):
         """A box the sources list: tokens_before, assets listed before the NFT; nft_index, the index the explorer gives
@@ -140,9 +169,9 @@ class World:
     # ---------- the answers ----------
     def chain(self, box_id=None):
         d = digest_of(self.anchored)
-        return {'network': 'valun-testnet-1', 'name': 'ergo-testnet', 'on_chain': True, 'tracker_nft_id': NFT,
-                'tracker_address': '3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB', 'node': OPERATOR_NODE,
-                'explorer': 'https://testnet.ergoplatform.com',
+        return {'network': 'valun-testnet-1', 'name': 'ergo-testnet', 'on_chain': True, 'tracker_nft_id': self.nft,
+                'tracker_address': '3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB',
+                'reserve_contract': self.reserve_contract, 'node': OPERATOR_NODE, 'explorer': 'https://testnet.ergoplatform.com',
                 'anchoring': {'local_digest': d if self.anchored_now else 'ff' * 33, 'confirmed_digest': d,
                               'confirmed_box_id': box_id or BOX_ID,
                               'confirmed_height': HEIGHT, 'pending_tx_id': None, 'anchored': self.anchored_now,
@@ -173,10 +202,10 @@ class World:
     def explorer_box(self, b):
         r5 = b['r5'] if b['r5'] is not None else self.r5()
         regs = {'R4': {'serializedValue': '07' + ALICE, 'sigmaType': 'SGroupElement', 'renderedValue': ALICE},
-                'R6': {'serializedValue': '0e20' + NFT, 'sigmaType': 'Coll[SByte]', 'renderedValue': NFT}}
+                'R6': {'serializedValue': '0e20' + self.nft, 'sigmaType': 'Coll[SByte]', 'renderedValue': self.nft}}
         if r5 != 'absent':
             regs['R5'] = {'serializedValue': r5, 'sigmaType': None, 'renderedValue': None}
-        assets = b['tokens_before'] + ([{'tokenId': NFT, 'index': b['nft_index'], 'amount': b['amount'], 'name': None,
+        assets = b['tokens_before'] + ([{'tokenId': self.nft, 'index': b['nft_index'], 'amount': b['amount'], 'name': None,
                                          'decimals': None, 'type': None}] if b['amount'] else [])
         return {'boxId': b['box_id'], 'transactionId': TX_ID, 'blockId': '00' * 32, 'value': 10_000_000, 'index': 0,
                 'globalIndex': 2450832, 'creationHeight': b['creation_height'], 'settlementHeight': (b['creation_height'] or 0) + 1,
@@ -199,17 +228,21 @@ class World:
         if url == f'{s}/pilot/v1/ledger/committed':
             return (200, self.snapshot()) if self.committed else (401, {'error': 'unauthorized', 'message': 'missing or invalid token'})
         if url == f'{s}/pilot/v1/info':
-            return 200, {'network': 'valun-testnet-1', 'unit': 'nanoERG', 'denomination': 'erg', 'tracker_nft_id': NFT}
+            return 200, {'network': 'valun-testnet-1', 'unit': 'nanoERG', 'denomination': 'erg', 'tracker_nft_id': self.nft}
         if url == f'{s}/pilot/v1/ledger':
             return 200, self.ledger()
-        if url == f'{e}/api/v1/boxes/unspent/byTokenId/{NFT}?offset=0&limit=10':
+        if url == f'{e}/api/v1/boxes/unspent/byTokenId/{self.nft}?offset=0&limit=10':
             return 200, {'items': [self.explorer_box(b) for b in self.boxes], 'total': len(self.boxes)}
+        if url.startswith(f'{e}/api/v1/boxes/unspent/byAddress/{self.reserve_contract}?'):
+            q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+            offset, limit = int(q['offset']), int(q['limit'])
+            return 200, {'items': self.reserves[offset:offset + limit], 'total': len(self.reserves)}
         if url == f'{e}/api/v1/networkState':
             return 200, {'lastBlockId': '00' * 32, 'height': TIP, 'maxBoxGix': 1, 'maxTxGix': 1}
         for n in self.nodes:
             if url == f'{n}/info':
                 return 200, {'name': 'a test node', 'network': self.node_network, 'fullHeight': TIP, 'headersHeight': TIP}
-            if url == f'{n}/blockchain/box/unspent/byTokenId/{NFT}?offset=0&limit=10':
+            if url == f'{n}/blockchain/box/unspent/byTokenId/{self.nft}?offset=0&limit=10':
                 return 200, [self.node_box(b) for b in self.boxes]
         return 404, {'error': 'not_found', 'message': 'not found'}
 
@@ -233,6 +266,10 @@ class World:
         self.sleeps.append(s)
 
     def audit(self, source='explorer', **kw):
+        """The audit of this world, the tracker NFT pinned with --tracker-nft (tracker_nft) to the one GET /chain names
+        unless a test says otherwise (tracker_nft=None: no flag, so this profile's pin, TRACKER_NFTS or the reserves
+        decide), as anchor-audit.mjs's recorded runs pin it."""
+        kw.setdefault('tracker_nft', self.nft)
         src = vaudit.Explorer(self.explorer, get=self.get) if source == 'explorer' else vaudit.Node(source, get=self.get)
         return vaudit.audit(self.server, src, get=self.get, sleep=self.sleep, **kw)
 
@@ -863,23 +900,28 @@ class Mine(AuditCase):
 
     def test_a_server_on_another_tracker_than_the_pinned_one_is_unknown_before_any_box_is_read(self):
         w = World()
-        r = w.audit(profile_state=profile_state(pins={'tracker_nft_id': 'ee' * 32, 'denomination': 'erg'}), mine=True)
-        self.unknown(r, 'tracker_mismatch', 'ee' * 32)
+        r = w.audit(profile_state=profile_state(pins={'tracker_nft_id': 'ee' * 32, 'denomination': 'erg'}), mine=True,
+                    tracker_nft=None)
+        self.unknown(r, 'tracker_mismatch', f'names tracker NFT {NFT}, not {"ee" * 32}, the one this profile is pinned to')
         self.assertEqual(w.log, [f'{SERVER}/pilot/v1/chain'])
-        r = World().audit(profile_state=profile_state(pins={'tracker_nft_id': 'ee' * 32, 'denomination': 'erg'}))
-        self.assertEqual((r['verdict'], r['tracker_nft_pinned']), ('MATCH', False),
-                         "without --mine, the pins of a profile on another server are not used: any server can be audited")
+        r = World().audit(profile_state=profile_state(pins={'tracker_nft_id': 'ee' * 32, 'denomination': 'erg'}), tracker_nft=None)
+        self.assertEqual((r['verdict'], r['tracker_nft_pinned'], r['tracker']['reserves_naming_it']), ('MATCH', False, 1),
+                         'without --mine, the pins of a profile on another server are not used: any server can be audited, '
+                         'and this one, which this audit pins no NFT for, by what the reserves say')
 
     def test_the_profiles_own_server_must_name_the_pinned_tracker_with_or_without_mine(self):
         w = World()
-        r = w.audit(profile_state=profile_state(server=SERVER + '/', pins={'tracker_nft_id': 'ee' * 32, 'denomination': 'erg'}))
+        r = w.audit(profile_state=profile_state(server=SERVER + '/', pins={'tracker_nft_id': 'ee' * 32, 'denomination': 'erg'}),
+                    tracker_nft=None)
         self.unknown(r, 'tracker_mismatch', 'the notes it signs and verifies name that one')
         self.assertEqual(w.log, [f'{SERVER}/pilot/v1/chain'], 'nothing else is read')
-        r = World().audit(profile_state=profile_state(server=SERVER))
-        self.assertEqual((r['verdict'], r['tracker_nft_pinned']), ('MATCH', True))
-        r = World().audit(profile_state=profile_state(), mine=True)
+        r = World().audit(profile_state=profile_state(server=SERVER), tracker_nft=None)
+        self.assertEqual((r['verdict'], r['tracker_nft_pinned'], r['tracker']['pinned_by']), ('MATCH', True, 'profile'))
+        r = World().audit(profile_state=profile_state(), mine=True, tracker_nft=None)
         self.assertEqual((r['verdict'], r['tracker_nft_pinned']), ('MATCH', True), '--mine: the pin is checked on any server')
-        self.assertFalse(World().audit()['tracker_nft_pinned'], 'no profile: the NFT is the server\'s word')
+        r = World().audit(tracker_nft=None)
+        self.assertEqual((r['verdict'], r['tracker_nft_pinned'], r['tracker']['pinned_by']), ('MATCH', False, None),
+                         'no profile and a server this audit does not know: only the reserves name the NFT')
 
     def test_a_profile_without_a_pinned_tracker_and_denomination_compares_nothing_and_proves_nothing(self):
         for pins in (None, {'tracker_nft_id': NFT}):
@@ -1015,6 +1057,9 @@ class Command(unittest.TestCase):
         return path
 
     def test_match_exits_0_in_text_and_json(self):
+        """A server this audit pins no NFT for (the local one): the reserves at the pinned reserve contract are asked,
+        and the MATCH warns that the NFT is not pinned. A profile's pin, and --tracker-nft (which a node needs: it lists
+        no reserve for a GET), say how the NFT was pinned."""
         rc, text = self.run_cli('audit', '--explorer', self.chain, '--server', self.base)
         self.assertEqual(rc, 0, text)
         self.assertTrue(text.startswith(f'MATCH: the 10 notes {self.base} publishes are exactly what its tracker box'), text)
@@ -1022,15 +1067,27 @@ class Command(unittest.TestCase):
                       f'R5        {digest_of(self.world.anchored)}, read from the explorer {self.chain}',
                       'rows of GET /pilot/v1/ledger/committed', f'refused from height {HEIGHT + 1440}',
                       f'redemption without the tracker from height {HEIGHT + 2161}', 'It does not prove what is outstanding',
-                      f'tracker   NFT {NFT}, as GET /pilot/v1/chain names it\n'):
+                      f'tracker   NFT {NFT}, as GET /pilot/v1/chain names it; not pinned: 1 reserve box at the pinned reserve '
+                      'contract names it\n',
+                      f'warning: the tracker NFT {NFT} is not pinned for {self.base}: 1 reserve box at the pinned reserve '
+                      'contract names it, which an operator can arrange for a tracker of its own too; pin it with --tracker-nft'):
             self.assertIn(words, text)
         self.joined_profile()
         rc, text = self.run_cli('--profile', 'alice', 'audit', '--explorer', self.chain)
         self.assertEqual(rc, 0, text)
-        self.assertIn(f'tracker   NFT {NFT}, as GET /pilot/v1/chain names it, and the one this profile pinned', text)
+        self.assertIn(f'tracker   NFT {NFT}, as GET /pilot/v1/chain names it, and the one this profile pinned; 1 reserve box '
+                      'at the pinned reserve contract names it\n', text)
+        self.assertNotIn('warning', text)
         rc, text = self.run_cli('audit', '--node', self.chain + '/', '--server', self.base + '/', '--json')
         r = json.loads(text)
+        self.assertEqual((rc, r['verdict'], r['reason']), (2, 'UNKNOWN', 'tracker_not_pinned'))
+        self.assertIn('lists the boxes at the reserve contract only for a POST', r['message'])
+        rc, text = self.run_cli('audit', '--node', self.chain + '/', '--server', self.base + '/', '--json', '--tracker-nft', NFT)
+        r = json.loads(text)
         self.assertEqual((rc, r['verdict'], r['chain_source']['kind'], r['server']), (0, 'MATCH', 'node', self.base))
+        self.assertEqual(r['tracker'], {'nft': NFT, 'pin': NFT, 'pinned_by': 'you', 'reserves_naming_it': None})
+        rc, text = self.run_cli('audit', '--node', self.chain, '--server', self.base, '--tracker-nft', NFT)
+        self.assertIn(f'tracker   NFT {NFT}, as GET /pilot/v1/chain names it, and the one you pinned (--tracker-nft)\n', text)
 
     def test_get_only_no_token_and_nothing_written_even_with_a_joined_profile_and_mine(self):
         path = self.joined_profile()
@@ -1061,6 +1118,36 @@ class Command(unittest.TestCase):
         self.assertEqual((rc, r['mine']['participant']), (vaudit.EXIT_NOT_PROVEN, ME))
         self.assertNotIn(ALICE_S.hex(), text)
         self.assertNotIn('vpa_TEST-ONLY', text)
+
+    def test_tracker_nft_pins_the_nft_and_one_that_is_no_token_id_is_a_usage_error(self):
+        """--tracker-nft ID: the server must name that NFT, else nothing is compared (exit 2, naming both; only GET /chain
+        is read). One that is not a token id is a usage error, before anything is read. Without it, a server the table
+        knows (TRACKER_NFTS: here made to know this one) is held to its pin, which the flag overrides."""
+        argv = ('audit', '--explorer', self.chain, '--server', self.base)
+        for bad in (NFT.upper(), NFT[:-2], 'zz' * 32, ''):
+            rc, text = self.run_cli(*argv, '--tracker-nft', bad)
+            self.assertEqual(rc, vaudit.EXIT_USAGE, bad)
+            self.assertIn('--tracker-nft must be a token id: 64 lowercase hex characters', text)
+        self.assertEqual(_Handler.requests, [], 'nothing is read before the arguments are checked')
+        rc, text = self.run_cli(*argv, '--tracker-nft', 'ee' * 32)
+        self.assertEqual(rc, vaudit.EXIT_UNKNOWN, text)
+        self.assertTrue(text.startswith(f'UNKNOWN (tracker_mismatch): not checked, so nothing is proven. The server {self.base} '
+                                        f'names tracker NFT {NFT}, not {"ee" * 32}, the one you pinned (--tracker-nft)'), text)
+        self.assertEqual([r['path'] for r in _Handler.requests], ['/pilot/v1/chain'])
+        with mock.patch.dict(vaudit.TRACKER_NFTS, {self.base: 'ee' * 32}):
+            rc, text = self.run_cli(*argv)
+            self.assertEqual(rc, vaudit.EXIT_UNKNOWN, text)
+            self.assertIn(f'names tracker NFT {NFT}, not {"ee" * 32}, the one this audit pins for {self.base}', text)
+            self.assertIn(f'then pass --tracker-nft {NFT}', text)
+            rc, text = self.run_cli(*argv, '--tracker-nft', NFT, '--json')
+            r = json.loads(text)
+            self.assertEqual((rc, r['verdict'], r['tracker']['pinned_by']), (0, 'MATCH', 'you'), 'the flag overrides the table')
+            self.assertIn(f'this audit pins tracker {"ee" * 32} for {self.base}', r['warnings'][0])
+        with mock.patch.dict(vaudit.TRACKER_NFTS, {self.base: NFT}):
+            rc, text = self.run_cli(*argv)
+            self.assertEqual(rc, 0, text)
+            self.assertIn(f'names it, and the one this audit pins for {self.base}\n', text)
+            self.assertNotIn('warning', text)
 
     def test_mismatch_exits_1_and_unknown_exits_2(self):
         self.world.published[0]['total'] += 1
