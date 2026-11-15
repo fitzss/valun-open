@@ -3,14 +3,14 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
-## 0.7.1 (unreleased)
+## 0.7.1 (2026-11-15)
 
 **The offer under review, the operator checked, and plain answers for small models.** `valun_check_payer` can check an
 offer the payer made you, counted once, and says so when an answer is for a new deal on top of one. `valun audit` checks
 that the ledger a server publishes is what its tracker box on Ergo testnet commits. Every tool refuses missing or
 malformed arguments by name, and every tool's answer names its amounts in the network's unit. The JavaScript client
 gains the tracker's AVL+ digest. A paid check reads fenced text as CommonMark does, and declines, with no fee, a text it
-cannot split. A candidate: the versions still say 0.7.0, and the release sets this heading's date.
+cannot split.
 
 ### Added
 - **`valun audit`** (fix inbox #62; Python): checks the operator. It rebuilds the AVL+ digest the tracker anchors on
