@@ -1,0 +1,2111 @@
+{
+ "what": "Scripted reads of a Valun server and an Ergo explorer, the same bytes for both anchor auditors (scripts/ops/anchor-audit.mjs and valun audit), and the exit code each must give on them (docs/PILOT-API.md, \"Verdicts\"; fix inbox #66). Each url's answers are given in turn, the last repeating; any other url is a 404.",
+ "made_by": "test/fixtures/anchor-vectors/xtool: scenarios.py on the test World of valun-open 8a0e464 python/tests/test_audit.py (synthetic keys and boxes), verdicts by run_client.py at 8a0e464 and run_server_tool.mjs, packed by pack.mjs",
+ "bodies": [
+  "{\"network\": \"valun-testnet-1\", \"name\": \"ergo-testnet\", \"on_chain\": true, \"tracker_nft_id\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"tracker_address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"node\": \"http://203.0.113.9:9052\", \"explorer\": \"https://testnet.ergoplatform.com\", \"anchoring\": {\"local_digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"confirmed_digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"confirmed_box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"confirmed_height\": 645189, \"pending_tx_id\": null, \"anchored\": true, \"check_interval_seconds\": 300, \"state\": \"anchored\"}}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": true, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"3000000\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"network\": \"valun-testnet-1\", \"unit\": \"nanoERG\", \"denomination\": \"erg\", \"tracker_nft_id\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\"}",
+  "{\"unit\": \"nanoERG\", \"notes\": [{\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_b0b0b0b0b0b0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"total\": 3000000, \"redeemed\": 0, \"outstanding\": 3000000, \"timestamp\": 1794600000000, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_b0b0b0b0b0b0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 1500000, \"redeemed\": 0, \"outstanding\": 1500000, \"timestamp\": 1794600000001, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_c0c0c0c0c0c0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 2000000, \"redeemed\": 0, \"outstanding\": 2000000, \"timestamp\": 1794600000002, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_d0d0d0d0d0d0\", \"recipient_handle\": null, \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"total\": 700000, \"redeemed\": 0, \"outstanding\": 700000, \"timestamp\": 1794600000003, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_d0d0d0d0d0d0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"total\": 100, \"redeemed\": 0, \"outstanding\": 100, \"timestamp\": 1794600000004, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_d0d0d0d0d0d0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 50, \"redeemed\": 0, \"outstanding\": 50, \"timestamp\": 1794600000005, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_b0b0b0b0b0b0\", \"issuer_handle\": null, \"recipient\": \"vp_c0c0c0c0c0c0\", \"recipient_handle\": null, \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"total\": 900000, \"redeemed\": 0, \"outstanding\": 900000, \"timestamp\": 1794600000006, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_c0c0c0c0c0c0\", \"issuer_handle\": null, \"recipient\": \"vp_b0b0b0b0b0b0\", \"recipient_handle\": null, \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"total\": 0, \"redeemed\": 0, \"outstanding\": 0, \"timestamp\": 1794600000007, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_d0d0d0d0d0d0\", \"issuer_handle\": null, \"recipient\": \"vp_c0c0c0c0c0c0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"total\": 1152921504606846976, \"redeemed\": 0, \"outstanding\": 1152921504606846976, \"timestamp\": 1794600000008, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}], \"reconciliation\": []}",
+  "{\"items\": [{\"boxId\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"transactionId\": \"e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7\", \"blockId\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"value\": 10000000, \"index\": 0, \"globalIndex\": 2450832, \"creationHeight\": 645189, \"settlementHeight\": 645190, \"ergoTree\": \"0008cd02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"assets\": [{\"tokenId\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"index\": 0, \"amount\": 1, \"name\": null, \"decimals\": null, \"type\": null}], \"additionalRegisters\": {\"R4\": {\"serializedValue\": \"0702bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"sigmaType\": \"SGroupElement\", \"renderedValue\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\"}, \"R6\": {\"serializedValue\": \"0e20d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"sigmaType\": \"Coll[SByte]\", \"renderedValue\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\"}, \"R5\": {\"serializedValue\": \"6422921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704032000\", \"sigmaType\": null, \"renderedValue\": null}}, \"spentTransactionId\": null, \"mainChain\": true}], \"total\": 1}",
+  "{\"lastBlockId\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"height\": 645230, \"maxBoxGix\": 1, \"maxTxGix\": 1}",
+  "{\"network\": \"valun-testnet-1\", \"name\": \"ergo-testnet\", \"on_chain\": true, \"tracker_nft_id\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"tracker_address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"node\": \"http://203.0.113.9:9052\", \"explorer\": \"https://testnet.ergoplatform.com\", \"anchoring\": {\"local_digest\": \"557a6c9266cd82851ac9a05e2443f76646bf241a9c72790c64cfdaa4621fb45604\", \"confirmed_digest\": \"557a6c9266cd82851ac9a05e2443f76646bf241a9c72790c64cfdaa4621fb45604\", \"confirmed_box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"confirmed_height\": 645189, \"pending_tx_id\": null, \"anchored\": true, \"check_interval_seconds\": 300, \"state\": \"anchored\"}}",
+  "{\"error\": \"unauthorized\", \"message\": \"missing or invalid token\"}",
+  "{\"unit\": \"nanoERG\", \"notes\": [{\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_b0b0b0b0b0b0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"total\": 3000000, \"redeemed\": 0, \"outstanding\": 3000000, \"timestamp\": 1794600000000, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_b0b0b0b0b0b0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 1500000, \"redeemed\": 0, \"outstanding\": 1500000, \"timestamp\": 1794600000001, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_c0c0c0c0c0c0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 2000000, \"redeemed\": 0, \"outstanding\": 2000000, \"timestamp\": 1794600000002, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_d0d0d0d0d0d0\", \"recipient_handle\": null, \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"total\": 700000, \"redeemed\": 0, \"outstanding\": 700000, \"timestamp\": 1794600000003, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_d0d0d0d0d0d0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"total\": 100, \"redeemed\": 0, \"outstanding\": 100, \"timestamp\": 1794600000004, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_d0d0d0d0d0d0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 50, \"redeemed\": 0, \"outstanding\": 50, \"timestamp\": 1794600000005, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_b0b0b0b0b0b0\", \"issuer_handle\": null, \"recipient\": \"vp_c0c0c0c0c0c0\", \"recipient_handle\": null, \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"total\": 900000, \"redeemed\": 0, \"outstanding\": 900000, \"timestamp\": 1794600000006, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_c0c0c0c0c0c0\", \"issuer_handle\": null, \"recipient\": \"vp_b0b0b0b0b0b0\", \"recipient_handle\": null, \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"total\": 0, \"redeemed\": 0, \"outstanding\": 0, \"timestamp\": 1794600000007, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}], \"reconciliation\": []}",
+  "{\"items\": [{\"boxId\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"transactionId\": \"e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7\", \"blockId\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"value\": 10000000, \"index\": 0, \"globalIndex\": 2450832, \"creationHeight\": 645189, \"settlementHeight\": 645190, \"ergoTree\": \"0008cd02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"assets\": [{\"tokenId\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"index\": 0, \"amount\": 1, \"name\": null, \"decimals\": null, \"type\": null}], \"additionalRegisters\": {\"R4\": {\"serializedValue\": \"0702bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"sigmaType\": \"SGroupElement\", \"renderedValue\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\"}, \"R6\": {\"serializedValue\": \"0e20d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"sigmaType\": \"Coll[SByte]\", \"renderedValue\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\"}, \"R5\": {\"serializedValue\": \"64557a6c9266cd82851ac9a05e2443f76646bf241a9c72790c64cfdaa4621fb45604032000\", \"sigmaType\": null, \"renderedValue\": null}}, \"spentTransactionId\": null, \"mainChain\": true}], \"total\": 1}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": false, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"3000001\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"unit\": \"nanoERG\", \"notes\": [{\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_b0b0b0b0b0b0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"total\": 3000001, \"redeemed\": 0, \"outstanding\": 3000001, \"timestamp\": 1794600000000, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_b0b0b0b0b0b0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 1500000, \"redeemed\": 0, \"outstanding\": 1500000, \"timestamp\": 1794600000001, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_c0c0c0c0c0c0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 2000000, \"redeemed\": 0, \"outstanding\": 2000000, \"timestamp\": 1794600000002, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_d0d0d0d0d0d0\", \"recipient_handle\": null, \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"total\": 700000, \"redeemed\": 0, \"outstanding\": 700000, \"timestamp\": 1794600000003, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_d0d0d0d0d0d0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"total\": 100, \"redeemed\": 0, \"outstanding\": 100, \"timestamp\": 1794600000004, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_d0d0d0d0d0d0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 50, \"redeemed\": 0, \"outstanding\": 50, \"timestamp\": 1794600000005, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_b0b0b0b0b0b0\", \"issuer_handle\": null, \"recipient\": \"vp_c0c0c0c0c0c0\", \"recipient_handle\": null, \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"total\": 900000, \"redeemed\": 0, \"outstanding\": 900000, \"timestamp\": 1794600000006, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_c0c0c0c0c0c0\", \"issuer_handle\": null, \"recipient\": \"vp_b0b0b0b0b0b0\", \"recipient_handle\": null, \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"total\": 0, \"redeemed\": 0, \"outstanding\": 0, \"timestamp\": 1794600000007, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_d0d0d0d0d0d0\", \"issuer_handle\": null, \"recipient\": \"vp_c0c0c0c0c0c0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"total\": 1152921504606846976, \"redeemed\": 0, \"outstanding\": 1152921504606846976, \"timestamp\": 1794600000008, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}], \"reconciliation\": []}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": false, \"rows\": [{\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"unit\": \"nanoERG\", \"notes\": [{\"issuer\": \"vp_b0b0b0b0b0b0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 1500000, \"redeemed\": 0, \"outstanding\": 1500000, \"timestamp\": 1794600000000, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_c0c0c0c0c0c0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 2000000, \"redeemed\": 0, \"outstanding\": 2000000, \"timestamp\": 1794600000001, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_d0d0d0d0d0d0\", \"recipient_handle\": null, \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"total\": 700000, \"redeemed\": 0, \"outstanding\": 700000, \"timestamp\": 1794600000002, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_d0d0d0d0d0d0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"total\": 100, \"redeemed\": 0, \"outstanding\": 100, \"timestamp\": 1794600000003, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_d0d0d0d0d0d0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 50, \"redeemed\": 0, \"outstanding\": 50, \"timestamp\": 1794600000004, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_b0b0b0b0b0b0\", \"issuer_handle\": null, \"recipient\": \"vp_c0c0c0c0c0c0\", \"recipient_handle\": null, \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"total\": 900000, \"redeemed\": 0, \"outstanding\": 900000, \"timestamp\": 1794600000005, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_c0c0c0c0c0c0\", \"issuer_handle\": null, \"recipient\": \"vp_b0b0b0b0b0b0\", \"recipient_handle\": null, \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"total\": 0, \"redeemed\": 0, \"outstanding\": 0, \"timestamp\": 1794600000006, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_d0d0d0d0d0d0\", \"issuer_handle\": null, \"recipient\": \"vp_c0c0c0c0c0c0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"total\": 1152921504606846976, \"redeemed\": 0, \"outstanding\": 1152921504606846976, \"timestamp\": 1794600000007, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}], \"reconciliation\": []}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"digest\": \"e5ab4e5eea39538c278b9e913f24efe881c86fc72405bbf0af3765a392b5a90f04\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": false, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"3000001\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"unit\": \"nanoERG\", \"notes\": [{\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_b0b0b0b0b0b0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"total\": 3000001, \"redeemed\": 0, \"outstanding\": 3000001, \"timestamp\": 1794600000000, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_b0b0b0b0b0b0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 1500000, \"redeemed\": 0, \"outstanding\": 1500000, \"timestamp\": 1794600000001, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_c0c0c0c0c0c0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 2000000, \"redeemed\": 0, \"outstanding\": 2000000, \"timestamp\": 1794600000002, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_d0d0d0d0d0d0\", \"recipient_handle\": null, \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"total\": 700000, \"redeemed\": 0, \"outstanding\": 700000, \"timestamp\": 1794600000003, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_d0d0d0d0d0d0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"total\": 100, \"redeemed\": 0, \"outstanding\": 100, \"timestamp\": 1794600000004, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_d0d0d0d0d0d0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 50, \"redeemed\": 0, \"outstanding\": 50, \"timestamp\": 1794600000005, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_b0b0b0b0b0b0\", \"issuer_handle\": null, \"recipient\": \"vp_c0c0c0c0c0c0\", \"recipient_handle\": null, \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"total\": 900000, \"redeemed\": 0, \"outstanding\": 900000, \"timestamp\": 1794600000006, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_c0c0c0c0c0c0\", \"issuer_handle\": null, \"recipient\": \"vp_b0b0b0b0b0b0\", \"recipient_handle\": null, \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"total\": 0, \"redeemed\": 0, \"outstanding\": 0, \"timestamp\": 1794600000007, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}], \"reconciliation\": []}",
+  "{\"network\": \"valun-testnet-1\", \"name\": \"ergo-testnet\", \"on_chain\": true, \"tracker_nft_id\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"tracker_address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"node\": \"http://203.0.113.9:9052\", \"explorer\": \"https://testnet.ergoplatform.com\", \"anchoring\": {\"local_digest\": \"11d41c6b908be6d1b9fe80871a368860fc662b741e98389bb0835470cf3d6f5e04\", \"confirmed_digest\": \"11d41c6b908be6d1b9fe80871a368860fc662b741e98389bb0835470cf3d6f5e04\", \"confirmed_box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"confirmed_height\": 645189, \"pending_tx_id\": null, \"anchored\": true, \"check_interval_seconds\": 300, \"state\": \"anchored\"}}",
+  "{\"network\": \"valun-testnet-1\", \"name\": \"ergo-testnet\", \"on_chain\": true, \"tracker_nft_id\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"tracker_address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"node\": \"http://203.0.113.9:9052\", \"explorer\": \"https://testnet.ergoplatform.com\", \"anchoring\": {\"local_digest\": \"a0f7b1ba6b6af9270e596417563e0e0ab6396e2baf44e05a65e934cd2178bfa304\", \"confirmed_digest\": \"a0f7b1ba6b6af9270e596417563e0e0ab6396e2baf44e05a65e934cd2178bfa304\", \"confirmed_box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"confirmed_height\": 645189, \"pending_tx_id\": null, \"anchored\": true, \"check_interval_seconds\": 300, \"state\": \"anchored\"}}",
+  "{\"items\": [{\"boxId\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"transactionId\": \"e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7\", \"blockId\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"value\": 10000000, \"index\": 0, \"globalIndex\": 2450832, \"creationHeight\": 645189, \"settlementHeight\": 645190, \"ergoTree\": \"0008cd02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"assets\": [{\"tokenId\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"index\": 0, \"amount\": 1, \"name\": null, \"decimals\": null, \"type\": null}], \"additionalRegisters\": {\"R4\": {\"serializedValue\": \"0702bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"sigmaType\": \"SGroupElement\", \"renderedValue\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\"}, \"R6\": {\"serializedValue\": \"0e20d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"sigmaType\": \"Coll[SByte]\", \"renderedValue\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\"}, \"R5\": {\"serializedValue\": \"64a0f7b1ba6b6af9270e596417563e0e0ab6396e2baf44e05a65e934cd2178bfa304032000\", \"sigmaType\": null, \"renderedValue\": null}}, \"spentTransactionId\": null, \"mainChain\": true}], \"total\": 1}",
+  "{\"items\": [{\"boxId\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"transactionId\": \"e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7\", \"blockId\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"value\": 10000000, \"index\": 0, \"globalIndex\": 2450832, \"creationHeight\": 645189, \"settlementHeight\": 645190, \"ergoTree\": \"0008cd02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"assets\": [{\"tokenId\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"index\": 0, \"amount\": 1, \"name\": null, \"decimals\": null, \"type\": null}], \"additionalRegisters\": {\"R4\": {\"serializedValue\": \"0702bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"sigmaType\": \"SGroupElement\", \"renderedValue\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\"}, \"R6\": {\"serializedValue\": \"0e20d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"sigmaType\": \"Coll[SByte]\", \"renderedValue\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\"}, \"R5\": {\"serializedValue\": \"6422921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704031000\", \"sigmaType\": null, \"renderedValue\": null}}, \"spentTransactionId\": null, \"mainChain\": true}], \"total\": 1}",
+  "{\"items\": [{\"boxId\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"transactionId\": \"e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7\", \"blockId\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"value\": 10000000, \"index\": 0, \"globalIndex\": 2450832, \"creationHeight\": 645189, \"settlementHeight\": 645190, \"ergoTree\": \"0008cd02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"assets\": [{\"tokenId\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"index\": 0, \"amount\": 1, \"name\": null, \"decimals\": null, \"type\": null}], \"additionalRegisters\": {\"R4\": {\"serializedValue\": \"0702bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"sigmaType\": \"SGroupElement\", \"renderedValue\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\"}, \"R6\": {\"serializedValue\": \"0e20d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"sigmaType\": \"Coll[SByte]\", \"renderedValue\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\"}, \"R5\": {\"serializedValue\": \"6422921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d270403200108\", \"sigmaType\": null, \"renderedValue\": null}}, \"spentTransactionId\": null, \"mainChain\": true}], \"total\": 1}",
+  "{\"items\": [{\"boxId\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"transactionId\": \"e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7\", \"blockId\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"value\": 10000000, \"index\": 0, \"globalIndex\": 2450832, \"creationHeight\": 645189, \"settlementHeight\": 645190, \"ergoTree\": \"0008cd02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"assets\": [{\"tokenId\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"index\": 0, \"amount\": 1, \"name\": null, \"decimals\": null, \"type\": null}], \"additionalRegisters\": {\"R4\": {\"serializedValue\": \"0702bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"sigmaType\": \"SGroupElement\", \"renderedValue\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\"}, \"R6\": {\"serializedValue\": \"0e20d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"sigmaType\": \"Coll[SByte]\", \"renderedValue\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\"}, \"R5\": {\"serializedValue\": \"0e20d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"sigmaType\": null, \"renderedValue\": null}}, \"spentTransactionId\": null, \"mainChain\": true}], \"total\": 1}",
+  "{\"items\": [{\"boxId\": \"b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6\", \"transactionId\": \"e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7\", \"blockId\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"value\": 10000000, \"index\": 0, \"globalIndex\": 2450832, \"creationHeight\": 645189, \"settlementHeight\": 645190, \"ergoTree\": \"0008cd02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"assets\": [{\"tokenId\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"index\": 0, \"amount\": 1, \"name\": null, \"decimals\": null, \"type\": null}], \"additionalRegisters\": {\"R4\": {\"serializedValue\": \"0702bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"sigmaType\": \"SGroupElement\", \"renderedValue\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\"}, \"R6\": {\"serializedValue\": \"0e20d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"sigmaType\": \"Coll[SByte]\", \"renderedValue\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\"}, \"R5\": {\"serializedValue\": \"6422921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704032000\", \"sigmaType\": null, \"renderedValue\": null}}, \"spentTransactionId\": null, \"mainChain\": true}], \"total\": 1}",
+  "{\"network\": \"valun-testnet-1\", \"name\": \"ergo-testnet\", \"on_chain\": true, \"tracker_nft_id\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"tracker_address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"node\": \"http://203.0.113.9:9052\", \"explorer\": \"https://testnet.ergoplatform.com\", \"anchoring\": {\"local_digest\": \"b13420b40fc07288acfc99508e8510244fdc5707bb7bdfbac27a1c4baae8d44f04\", \"confirmed_digest\": \"b13420b40fc07288acfc99508e8510244fdc5707bb7bdfbac27a1c4baae8d44f04\", \"confirmed_box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"confirmed_height\": 645189, \"pending_tx_id\": null, \"anchored\": true, \"check_interval_seconds\": 300, \"state\": \"anchored\"}}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"digest\": \"b13420b40fc07288acfc99508e8510244fdc5707bb7bdfbac27a1c4baae8d44f04\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": false, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"3000000\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"items\": [{\"boxId\": \"b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6\", \"transactionId\": \"e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7\", \"blockId\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"value\": 10000000, \"index\": 0, \"globalIndex\": 2450832, \"creationHeight\": 645189, \"settlementHeight\": 645190, \"ergoTree\": \"0008cd02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"assets\": [{\"tokenId\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"index\": 0, \"amount\": 1, \"name\": null, \"decimals\": null, \"type\": null}], \"additionalRegisters\": {\"R4\": {\"serializedValue\": \"0702bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"sigmaType\": \"SGroupElement\", \"renderedValue\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\"}, \"R6\": {\"serializedValue\": \"0e20d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"sigmaType\": \"Coll[SByte]\", \"renderedValue\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\"}, \"R5\": {\"serializedValue\": \"64b13420b40fc07288acfc99508e8510244fdc5707bb7bdfbac27a1c4baae8d44f04032000\", \"sigmaType\": null, \"renderedValue\": null}}, \"spentTransactionId\": null, \"mainChain\": true}], \"total\": 1}",
+  "{\"network\": \"valun-testnet-1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": true, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"3000000\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/2\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": true, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"3000000\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"network\": \"valun-pilot-1\", \"construction\": \"basis-avl/1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": true, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"3000000\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": true, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": null, \"committed_total\": \"3000000\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": null, \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": null, \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": null, \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": null, \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": null, \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": null, \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": null, \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": null, \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": true, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"committed_total\": \"3000000\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": true, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"3000000\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": true, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"3000000\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/1\", \"height\": 645189, \"digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": true, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"3000000\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": true, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"3000000\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"abababababababababababababababababababababababababababababababab\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"items\": [{\"boxId\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"transactionId\": \"e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7\", \"blockId\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"value\": 10000000, \"index\": 0, \"globalIndex\": 2450832, \"creationHeight\": 645189, \"settlementHeight\": 645190, \"ergoTree\": \"0008cd02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"assets\": [{\"tokenId\": \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\", \"index\": 0, \"amount\": 5}, {\"tokenId\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"index\": 0, \"amount\": 1, \"name\": null, \"decimals\": null, \"type\": null}], \"additionalRegisters\": {\"R4\": {\"serializedValue\": \"0702bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"sigmaType\": \"SGroupElement\", \"renderedValue\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\"}, \"R6\": {\"serializedValue\": \"0e20d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"sigmaType\": \"Coll[SByte]\", \"renderedValue\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\"}, \"R5\": {\"serializedValue\": \"6422921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704032000\", \"sigmaType\": null, \"renderedValue\": null}}, \"spentTransactionId\": null, \"mainChain\": true}], \"total\": 1}",
+  "{}",
+  "{\"network\": \"valun-testnet-1\", \"name\": \"ergo-testnet\", \"on_chain\": true, \"tracker_nft_id\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"tracker_address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"node\": \"http://203.0.113.9:9052\", \"explorer\": \"https://testnet.ergoplatform.com\", \"anchoring\": {\"local_digest\": \"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\", \"confirmed_digest\": \"557a6c9266cd82851ac9a05e2443f76646bf241a9c72790c64cfdaa4621fb45604\", \"confirmed_box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"confirmed_height\": 645189, \"pending_tx_id\": null, \"anchored\": false, \"check_interval_seconds\": 300, \"state\": \"waiting\"}}",
+  "{\"network\": \"valun-testnet-1\", \"name\": \"ergo-testnet\", \"on_chain\": true, \"tracker_nft_id\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"tracker_address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"node\": \"http://203.0.113.9:9052\", \"explorer\": \"https://testnet.ergoplatform.com\", \"anchoring\": {\"local_digest\": \"557a6c9266cd82851ac9a05e2443f76646bf241a9c72790c64cfdaa4621fb45604\", \"confirmed_digest\": \"557a6c9266cd82851ac9a05e2443f76646bf241a9c72790c64cfdaa4621fb45604\", \"confirmed_box_id\": \"b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6\", \"confirmed_height\": 645189, \"pending_tx_id\": null, \"anchored\": true, \"check_interval_seconds\": 300, \"state\": \"anchored\"}}",
+  "{\"network\": \"valun-testnet-1\", \"name\": \"ergo-testnet\", \"on_chain\": true, \"tracker_nft_id\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"tracker_address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"node\": \"http://203.0.113.9:9052\", \"explorer\": \"https://testnet.ergoplatform.com\", \"anchoring\": {\"local_digest\": \"557a6c9266cd82851ac9a05e2443f76646bf241a9c72790c64cfdaa4621fb45604\", \"confirmed_digest\": \"557a6c9266cd82851ac9a05e2443f76646bf241a9c72790c64cfdaa4621fb45604\", \"confirmed_box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"confirmed_height\": 645189, \"pending_tx_id\": \"7777777777777777777777777777777777777777777777777777777777777777\", \"anchored\": true, \"check_interval_seconds\": 300, \"state\": \"anchored\"}}",
+  "{\"items\": [{\"boxId\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"transactionId\": \"e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7\", \"blockId\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"value\": 10000000, \"index\": 0, \"globalIndex\": 2450832, \"creationHeight\": 645189, \"settlementHeight\": 645190, \"ergoTree\": \"0008cd02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"assets\": [{\"tokenId\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"index\": 0, \"amount\": 1, \"name\": null, \"decimals\": null, \"type\": null}], \"additionalRegisters\": {\"R4\": {\"serializedValue\": \"0702bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"sigmaType\": \"SGroupElement\", \"renderedValue\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\"}, \"R6\": {\"serializedValue\": \"0e20d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"sigmaType\": \"Coll[SByte]\", \"renderedValue\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\"}, \"R5\": {\"serializedValue\": \"6422921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704032000\", \"sigmaType\": null, \"renderedValue\": null}}, \"spentTransactionId\": null, \"mainChain\": true}, {\"boxId\": \"b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6\", \"transactionId\": \"e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7\", \"blockId\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"value\": 10000000, \"index\": 0, \"globalIndex\": 2450832, \"creationHeight\": 645189, \"settlementHeight\": 645190, \"ergoTree\": \"0008cd02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"assets\": [{\"tokenId\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"index\": 0, \"amount\": 1, \"name\": null, \"decimals\": null, \"type\": null}], \"additionalRegisters\": {\"R4\": {\"serializedValue\": \"0702bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"sigmaType\": \"SGroupElement\", \"renderedValue\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\"}, \"R6\": {\"serializedValue\": \"0e20d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"sigmaType\": \"Coll[SByte]\", \"renderedValue\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\"}, \"R5\": {\"serializedValue\": \"6422921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704032000\", \"sigmaType\": null, \"renderedValue\": null}}, \"spentTransactionId\": null, \"mainChain\": true}], \"total\": 2}",
+  "{\"items\": [{\"boxId\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"transactionId\": \"e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7\", \"blockId\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"value\": 10000000, \"index\": 0, \"globalIndex\": 2450832, \"creationHeight\": 645189, \"settlementHeight\": 645190, \"ergoTree\": \"0008cd02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"address\": \"3WyfqR7EFnMFMsEcVikxmNmrb7bNrwNAbGgzBTSzBJfg1fHhMvVB\", \"assets\": [{\"tokenId\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"index\": 0, \"amount\": 1, \"name\": null, \"decimals\": null, \"type\": null}], \"additionalRegisters\": {\"R4\": {\"serializedValue\": \"0702bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"sigmaType\": \"SGroupElement\", \"renderedValue\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\"}, \"R6\": {\"serializedValue\": \"0e20d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\", \"sigmaType\": \"Coll[SByte]\", \"renderedValue\": \"d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1\"}, \"R5\": {\"serializedValue\": \"6422921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704032000\", \"sigmaType\": null, \"renderedValue\": null}}, \"spentTransactionId\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"mainChain\": true}], \"total\": 1}",
+  "{\"items\": [], \"total\": 0}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": false, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"3000000\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"7\"}]}",
+  "{\"unit\": \"nanoERG\", \"notes\": [{\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_b0b0b0b0b0b0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"total\": 3000000, \"redeemed\": 0, \"outstanding\": 3000000, \"timestamp\": 1794600000000, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_b0b0b0b0b0b0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 1500000, \"redeemed\": 0, \"outstanding\": 1500000, \"timestamp\": 1794600000001, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_c0c0c0c0c0c0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 2000000, \"redeemed\": 0, \"outstanding\": 2000000, \"timestamp\": 1794600000002, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_d0d0d0d0d0d0\", \"recipient_handle\": null, \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"total\": 700000, \"redeemed\": 0, \"outstanding\": 700000, \"timestamp\": 1794600000003, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_a1a1a1a1a1a1\", \"issuer_handle\": null, \"recipient\": \"vp_d0d0d0d0d0d0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"total\": 100, \"redeemed\": 0, \"outstanding\": 100, \"timestamp\": 1794600000004, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_d0d0d0d0d0d0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 50, \"redeemed\": 0, \"outstanding\": 50, \"timestamp\": 1794600000005, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_b0b0b0b0b0b0\", \"issuer_handle\": null, \"recipient\": \"vp_c0c0c0c0c0c0\", \"recipient_handle\": null, \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"total\": 900000, \"redeemed\": 0, \"outstanding\": 900000, \"timestamp\": 1794600000006, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_c0c0c0c0c0c0\", \"issuer_handle\": null, \"recipient\": \"vp_b0b0b0b0b0b0\", \"recipient_handle\": null, \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"total\": 0, \"redeemed\": 0, \"outstanding\": 0, \"timestamp\": 1794600000007, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_d0d0d0d0d0d0\", \"issuer_handle\": null, \"recipient\": \"vp_c0c0c0c0c0c0\", \"recipient_handle\": null, \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"total\": 1152921504606846976, \"redeemed\": 0, \"outstanding\": 1152921504606846976, \"timestamp\": 1794600000008, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}, {\"issuer\": \"vp_c0c0c0c0c0c0\", \"issuer_handle\": null, \"recipient\": \"vp_a1a1a1a1a1a1\", \"recipient_handle\": null, \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"total\": 7, \"redeemed\": 0, \"outstanding\": 7, \"timestamp\": 1794600000010, \"confirmation\": \"confirmed\", \"unit\": \"nanoERG\"}], \"reconciliation\": []}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": true, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"3000000\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": 1152921504606846976}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}",
+  "{\"error\": \"snapshot_moving\", \"message\": \"moved\", \"retry_after_ms\": 1200}",
+  "{\"error\": \"no_confirmed_box\", \"retry_after_ms\": 60000}",
+  "{\"error\": \"internal_error\"}",
+  "{\"network\": \"valun-testnet-1\", \"construction\": \"basis-avl/1\", \"box_id\": \"b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5\", \"height\": 645189, \"digest\": \"22921a4a30072a90a931b318c81fa5811e00d658996cfe102e59a44bf84e4d2704\", \"read_at\": \"2026-11-14T23:10:00.000Z\", \"consistent\": false, \"rows\": [{\"debt_key\": \"f8363b8af3ad5bb6c6bc4b723d2f39a950872dcf7bb52c17fcac9d4f319cd608\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"3000000\"}, {\"debt_key\": \"18777a1c68d10aa0213b4a3a020bfedcee0c13118b1612fadac375a32922f490\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"1500000\"}, {\"debt_key\": \"95c2e107c079b6b39858d6e306332b7c9091fd7f5e2d0abf22a0dd11bf91a4a6\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"2000000\"}, {\"debt_key\": \"500eb29196f8f128c350eaac197dcb6578b6792df90993d48886d4f2648f03b8\", \"issuer_pubkey\": \"020cea6d82563144dc5d26557e7bce6a5cc9d8a43cf989181c9932534ccf417238\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"700000\"}, {\"debt_key\": \"3e3b0c0b7af8d550b632425a68e9fade4bb8de192c06b9bc2b3ab1c0884ebcd4\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"denomination\": \"erg\", \"committed_total\": \"100\"}, {\"debt_key\": \"5889e3aff459cdfa3d3333a5a25c36cfa87e8e3365d104552fb043ba58e8f7f1\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"denomination\": \"erg\", \"committed_total\": \"50\"}, {\"debt_key\": \"24eb91f18c28c7893fcc21822dbb4f433223cb395ff6d32600537adeaafe3086\", \"issuer_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"900000\"}, {\"debt_key\": \"93da52267ebfe9e9189ea3da891dacc1caa45c653fd6e269f3dcc92d1af47b1f\", \"issuer_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"erg\", \"committed_total\": \"0\"}, {\"debt_key\": \"9ef3a8f76f9c89553d5b8c8e740726b799ecd466ef37970fdd20a8566b6f0e09\", \"issuer_pubkey\": \"02288736f08daedf50232f25df4e0c1ac24d6134d25fdaa19cd9f58b3029290fc6\", \"recipient_pubkey\": \"0228c6d77b21113a55b6f10a9b90cd5ba9cf5bd0b63b7c1ba3080de0a267cff32f\", \"denomination\": \"erg\", \"committed_total\": \"1152921504606846976\"}, {\"debt_key\": \"dc5ddc54c89666756ba570939dbb5479e1dbaf1a5b736c674ea40f2f63eb0758\", \"issuer_pubkey\": \"02bd76f4e78256fb253cf3940e518518c5a00ca468e2f20b76f68a16cbb8564214\", \"recipient_pubkey\": \"033033f38adaa69880af955f89df88217d31e3ccc4c207cb7ae462e63d31ef22b6\", \"denomination\": \"token:abababababababababababababababababababababababababababababababab\", \"committed_total\": \"5\"}]}"
+ ],
+ "scenarios": [
+  {
+   "name": "match: committed snapshot",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      1
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 0,
+   "client": {
+    "verdict": "MATCH",
+    "reason": null
+   }
+  },
+  {
+   "name": "match: older reads (/chain, /ledger, /chain)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      6
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      401,
+      7
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      8
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      9
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 0,
+   "client": {
+    "verdict": "MATCH",
+    "reason": null
+   }
+  },
+  {
+   "name": "committed: a total raised by 1 (rows give neither R5 nor the claimed digest)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      10
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      11
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 1,
+   "client": {
+    "verdict": "MISMATCH",
+    "reason": "records_disagree_with_chain"
+   }
+  },
+  {
+   "name": "committed: a dropped row",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      12
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      13
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 1,
+   "client": {
+    "verdict": "MISMATCH",
+    "reason": "records_disagree_with_chain"
+   }
+  },
+  {
+   "name": "committed: rows give the claimed digest, not R5 (same box)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      14
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      11
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 1,
+   "client": {
+    "verdict": "MISMATCH",
+    "reason": "records_disagree_with_chain"
+   }
+  },
+  {
+   "name": "older reads: rows give neither R5 nor the digest /chain names (a moved ledger, or a tamper)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      6
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      401,
+      7
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      15
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      9
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "ledger_moving"
+   }
+  },
+  {
+   "name": "older reads: rows give the digest /chain names, not R5",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      16
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      401,
+      7
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      15
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      9
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 1,
+   "client": {
+    "verdict": "MISMATCH",
+    "reason": "records_disagree_with_chain"
+   }
+  },
+  {
+   "name": "older reads: the tracker holds a token note GET /ledger does not list",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      17
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      401,
+      7
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      8
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      18
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "ledger_moving"
+   }
+  },
+  {
+   "name": "(a) R5 a tree of another construction: key length 16 (digest equal)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      1
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      19
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "not_an_avl_tree"
+   }
+  },
+  {
+   "name": "(a) R5 a tree of another construction: key length 16 (digest differs)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      10
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      11
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      19
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "not_an_avl_tree"
+   }
+  },
+  {
+   "name": "(a) R5 a tree of another construction: a fixed value length 8 (digest equal)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      1
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      20
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "not_an_avl_tree"
+   }
+  },
+  {
+   "name": "(a) R5 a tree of another construction: a fixed value length 8 (digest differs)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      10
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      11
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      20
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "not_an_avl_tree"
+   }
+  },
+  {
+   "name": "R5 not an AvlTree",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      1
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      21
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "not_an_avl_tree"
+   }
+  },
+  {
+   "name": "box ids differ, rows give the source box R5",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      1
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      22
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 0,
+   "client": {
+    "verdict": "MATCH",
+    "reason": null
+   }
+  },
+  {
+   "name": "(b) box ids differ, rows give neither the source R5 nor the named box digest",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      23
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      24
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      25
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "box_moved"
+   }
+  },
+  {
+   "name": "box ids differ, rows give the named box digest (a box the source does not have)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      23
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      1
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      25
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "box_moved"
+   }
+  },
+  {
+   "name": "(d) a snapshot that names no construction",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      26
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "unknown_construction"
+   }
+  },
+  {
+   "name": "a snapshot of another construction",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      27
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "unknown_construction"
+   }
+  },
+  {
+   "name": "(e) a snapshot of another network than /chain",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      28
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "server_inconsistent"
+   }
+  },
+  {
+   "name": "(f) committed rows whose denomination is null (erg notes)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      29
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 0,
+   "client": {
+    "verdict": "MATCH",
+    "reason": null
+   }
+  },
+  {
+   "name": "committed rows with no denomination (erg notes)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      30
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 0,
+   "client": {
+    "verdict": "MATCH",
+    "reason": null
+   }
+  },
+  {
+   "name": "a snapshot with no height",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      31
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "server_unreadable"
+   }
+  },
+  {
+   "name": "a snapshot with no digest",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      32
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "server_unreadable"
+   }
+  },
+  {
+   "name": "a snapshot with no box_id",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      33
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "server_unreadable"
+   }
+  },
+  {
+   "name": "a committed row whose debt_key is not its own",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      34
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "server_inconsistent"
+   }
+  },
+  {
+   "name": "the NFT not the first token (digest equal)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      1
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      35
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "nft_not_first"
+   }
+  },
+  {
+   "name": "the NFT not the first token (digest differs)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      10
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      11
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      35
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 1,
+   "client": {
+    "verdict": "MISMATCH",
+    "reason": "records_disagree_with_chain"
+   }
+  },
+  {
+   "name": "the source gives no height (MATCH otherwise)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      1
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      500,
+      36
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "source_unreadable"
+   }
+  },
+  {
+   "name": "the source gives no height (MISMATCH otherwise)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      10
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      11
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      500,
+      36
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "source_unreadable"
+   }
+  },
+  {
+   "name": "older reads: not anchored now",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      37
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      401,
+      7
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      8
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      9
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "not_anchored"
+   }
+  },
+  {
+   "name": "older reads: /chain moves around every ledger read",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      6
+     ],
+     [
+      200,
+      38
+     ],
+     [
+      200,
+      6
+     ],
+     [
+      200,
+      38
+     ],
+     [
+      200,
+      6
+     ],
+     [
+      200,
+      38
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      401,
+      7
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      8
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      9
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "ledger_moving"
+   }
+  },
+  {
+   "name": "older reads: an update in flight appears between the reads (pending_tx_id)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      6
+     ],
+     [
+      200,
+      39
+     ],
+     [
+      200,
+      6
+     ],
+     [
+      200,
+      39
+     ],
+     [
+      200,
+      6
+     ],
+     [
+      200,
+      39
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      401,
+      7
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      8
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      9
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "ledger_moving"
+   }
+  },
+  {
+   "name": "the source: two unspent boxes",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      1
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      40
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "source_inconsistent"
+   }
+  },
+  {
+   "name": "the source: a spent box",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      1
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      41
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "source_inconsistent"
+   }
+  },
+  {
+   "name": "the source: no box",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      1
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      42
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "no_tracker_box"
+   }
+  },
+  {
+   "name": "rows that cannot be digested (two with one debt key)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      43
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      44
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "rows_malformed"
+   }
+  },
+  {
+   "name": "a committed total written as a JSON number above 2^53 - 1 (exact)",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      45
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "inexact_total"
+   }
+  },
+  {
+   "name": "503 snapshot_moving, then the snapshot",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      503,
+      46
+     ],
+     [
+      200,
+      1
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 0,
+   "client": {
+    "verdict": "MATCH",
+    "reason": null
+   }
+  },
+  {
+   "name": "503 no_confirmed_box",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      503,
+      47
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "not_anchored"
+   }
+  },
+  {
+   "name": "GET /chain fails",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      500,
+      48
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      1
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 2,
+   "client": {
+    "verdict": "UNKNOWN",
+    "reason": "server_unreadable"
+   }
+  },
+  {
+   "name": "a snapshot that says consistent: false and gives R5",
+   "server": "http://valun.invalid",
+   "explorer": "http://explorer.invalid",
+   "nft": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "responses": {
+    "http://valun.invalid/pilot/v1/chain": [
+     [
+      200,
+      0
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger/committed": [
+     [
+      200,
+      49
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/info": [
+     [
+      200,
+      2
+     ]
+    ],
+    "http://valun.invalid/pilot/v1/ledger": [
+     [
+      200,
+      3
+     ]
+    ],
+    "http://explorer.invalid/api/v1/boxes/unspent/byTokenId/d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1?offset=0&limit=10": [
+     [
+      200,
+      4
+     ]
+    ],
+    "http://explorer.invalid/api/v1/networkState": [
+     [
+      200,
+      5
+     ]
+    ]
+   },
+   "exit": 0,
+   "client": {
+    "verdict": "MATCH",
+    "reason": null
+   }
+  }
+ ]
+}

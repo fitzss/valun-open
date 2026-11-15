@@ -4,12 +4,26 @@ source the user names: the public Ergo explorer or the user's own node, never a 
 sends GET requests and nothing else, sends no token, signs nothing and writes nothing (not even this profile's records).
 
 The check, as the server-side auditor makes it (valun-app scripts/ops/anchor-audit.mjs, fix inbox #62 step 5):
-  1. GET /pilot/v1/chain of the server: its network and the tracker's NFT id. That id is the server's word; where this
-     profile pinned a tracker (at its first read of the server's GET /info) and the audit is of the profile's own server,
-     or with --mine, the id must be the pinned one, or the audit is UNKNOWN (tracker_mismatch): the notes this profile
-     signs and verifies name that tracker. A chain source that is the node /chain itself names is used, with a warning:
-     the operator may run it. One at the server's own origin is refused (the command's usage error, as anchor-audit.mjs
-     refuses it): the server's word is what is checked.
+  1. GET /pilot/v1/chain of the server: its network and the tracker's NFT id. That id is the server's word, and a
+     tracker the operator made itself could commit whatever the server publishes (a decoy), while the reserves, and so
+     every redemption, trust the real one (fix inbox #66). So the NFT must be pinned (_pin_of):
+       - with --tracker-nft (tracker_nft), it must be that one, and nothing else is asked (anchor-audit.mjs
+         --tracker-nft);
+       - otherwise it must pass every pin that applies: this profile's (pinned at its first read of the server's GET
+         /info; it applies to the audit of the profile's own server, and with --mine: the notes this profile signs and
+         verifies name that tracker), and the one this audit ships for a server it knows (TRACKER_NFTS, by the server's
+         origin, the table anchor-audit.mjs pins). The pin is per server, not per network: staging and the testnet
+         both say valun-testnet-1, each with a tracker of its own.
+     Another NFT than a pin is UNKNOWN (tracker_mismatch, naming the NFT pinned and the one named), and nothing else is
+     read. Without --tracker-nft, for a server TRACKER_NFTS does not know, the reserves are asked too, as
+     anchor-audit.mjs asks them for a server it pins none for: the reserve contract GET /chain names must be the one
+     this audit pins (RESERVE_CONTRACT_SHA256), and at least one unspent box there, on the chain source, must name the
+     NFT in R6 (with an owner key in R4); else UNKNOWN (tracker_not_pinned). An operator can make such a reserve for a
+     decoy too, so with no other pin a pass is reported with a warning that asks for one. A node lists the boxes at an
+     address only for a POST, which this audit does not send: read from a node, a server TRACKER_NFTS does not know is
+     UNKNOWN (tracker_not_pinned) unless --tracker-nft names the NFT. A chain source that is the node /chain itself
+     names is used, with a warning: the operator may run it. One at the server's own origin is refused (the command's
+     usage error, as anchor-audit.mjs refuses it): the server's word is what is checked.
   2. The rows the server publishes for its confirmed tracker box: GET /pilot/v1/ledger/committed {network,
      construction, box_id, height, digest, rows [{issuer_pubkey, recipient_pubkey, denomination, committed_total,
      debt_key}], ...}. Its construction must be CONSTRUCTION (a snapshot that names none is refused too), its network
@@ -79,32 +93,38 @@ profile's pinned tracker and unit). The records are read as they are: the audit 
   not_anchored         the records confirm a state of the edge, and the published rows have none
 A profile without a pinned tracker and denomination (pins, set at its first read of the server's GET /info) has records
 that cannot be matched to the rows or verified: --mine then lists no edge and says so (problem no_pinned_tracker), and
-nothing of it is proven.
+nothing of it is proven. So does a profile pinned to another tracker than the one audited (problem another_tracker:
+--tracker-nft named another), whose records are of that other tracker's notes.
 
 Exit codes (EXIT_*), the same as anchor-audit.mjs's (EXIT), so that one watcher reads both:
   0  MATCH (with --mine: and every edge signed);
   1  MISMATCH, and nothing else;
   2  nothing was compared: UNKNOWN, whatever its reason, a usage error (argparse's, and the command's own: a profile it
-     cannot use, a URL, the server itself as the chain source, --mine without a joined profile) and a fault of the
-     command (UNKNOWN, reason fault). anchor-audit.mjs gives 2 for all of these too (INCONSISTENT, REFUSED, ERROR);
+     cannot use, a URL, a --tracker-nft that is not a token id, the server itself as the chain source, --mine without
+     a joined profile) and a fault of the command (UNKNOWN, reason fault). anchor-audit.mjs gives 2 for all of these
+     too (INCONSISTENT, REFUSED, ERROR);
   3  MATCH, and with --mine an edge not proven (anchor-audit.mjs has no --mine).
-On the same reads the two give the same verdict (anchor-audit.mjs at valun-app 887312c), but for the tracker NFT
-(below) and where this one leaves undecided what the script decides:
-  - R5 a tree of another construction (a key length other than 32, or a fixed value length): UNKNOWN here
-    (not_an_avl_tree), MISMATCH there;
-  - the server's box (box_id, or GET /chain confirmed_box_id) not the source's one unspent box, and rows that do not
-    give the source box's R5: UNKNOWN here (box_moved, read again first), MISMATCH there for rows that give neither
-    digest, and for rows that give the digest the server claims for a box the source does not have, that is no tracker
-    box, whose R5 is not that digest, or that the chain replaced long ago;
-  - rows of GET /ledger that give neither R5 nor the digest GET /chain names: UNKNOWN here (ledger_moving), MISMATCH
-    there;
-  - rows that give R5 of a box holding the NFT other than as its first token: UNKNOWN here (nft_not_first), MISMATCH
-    there;
-  - a total written as a JSON number above 2^53 - 1: UNKNOWN here (inexact_total); read as written there.
-The tracker NFT is checked against this profile's pin only (step 1), where anchor-audit.mjs pins it for the servers it
-knows (TRACKER_NFTS, --tracker-nft) and otherwise requires a reserve at the reserve contract it pins to name it (else
-its exit 2): without a pin, the NFT here is the server's word, and this audit compares where the script may not.
+The two give the same exit code on the 41 recorded reads of tests/fixtures/audit-verdicts/xtool.json, each read with
+its tracker NFT pinned: anchor-audit.mjs at valun-app 9748f39, which keeps them in its tests with the verdict table of
+its docs/PILOT-API.md ("Verdicts"), and this audit in test_audit_pin.py. Elsewhere they differ in these ways:
+  - a box the server names other than the source's one unspent tracker box, with rows that give the digest the server
+    claims for it: this audit does not look that box up, and is UNKNOWN (box_moved, after reading again), where
+    anchor-audit.mjs reads it on the source and gives a MISMATCH when R5 there is another digest (or no AvlTree), the
+    box holds no tracker NFT, or the source lacks it although its tracker box was created after the height claimed;
+  - the tracker NFT: both pin the same servers (TRACKER_NFTS, by origin), --tracker-nft overrides that pin in both,
+    and both ask the reserves for any other server; but this audit also holds the NFT to this profile's pin (step 1),
+    which anchor-audit.mjs has no notion of, and read from a node, a server TRACKER_NFTS does not know is UNKNOWN here
+    without --tracker-nft (this audit sends GET only), where anchor-audit.mjs asks the node for the reserves with a
+    POST that only reads;
+  - GET /pilot/v1/info: from a server without GET /ledger/committed, this audit reads the rows' denomination there and
+    is UNKNOWN when it cannot (server_unreadable), where anchor-audit.mjs takes erg and does not read it;
+  - reading again: this audit reads again (ATTEMPTS times, RETRY_S apart) when rows that do not give R5 are for another
+    box than the source's (box_moved) and when rows of GET /ledger give neither digest (ledger_moving), and may then
+    compare, where anchor-audit.mjs is 2 at once (its watcher's next run reads again); anchor-audit.mjs reads GET
+    /ledger/committed again on any 503 (waiting the server's retry_after_ms, 0.25 to 10 s), this audit only on 503
+    snapshot_moving (503 no_confirmed_box is UNKNOWN at once, not_anchored, and another 503 server_unreadable).
 """
+import hashlib
 import http.client
 import json
 import re
@@ -116,6 +136,7 @@ import urllib.request
 from . import __version__
 from . import avl
 from . import client as vc
+from . import ergo
 from . import records
 
 CONSTRUCTION = 'basis-avl/1'            # the tree avl.py builds: what GET /ledger/committed names as its construction
@@ -134,6 +155,22 @@ MAX_WAIT_S = 15.0
 SETTLE_S = 3.5
 MAX_ANSWER_BYTES = 64 * 1024 * 1024
 BOX_LIMIT = 10                          # boxes asked for: more than one is already inconsistent
+# The tracker NFT of each server this audit knows, as its GET /pilot/v1/chain named it on TRACKER_NFTS_READ: the table
+# of anchor-audit.mjs (TRACKER_NFTS), keyed as there by the server's origin (origin()). valun.tech is the testnet's Fly
+# app; staging runs a tracker of its own, and both say network valun-testnet-1, so the pin is per server, not per
+# network. A server that moves to a new tracker is audited with --tracker-nft until this table names it.
+TRACKER_NFTS = {
+    'https://valun.tech': 'dca981fc5d4842caf230e1b3a83cd3289663afc61b10b3f53678ccdefea5add2',
+    'https://valun-testnet.fly.dev': 'dca981fc5d4842caf230e1b3a83cd3289663afc61b10b3f53678ccdefea5add2',
+    'https://valun-staging.fly.dev': '170213cb89e5c0286d390a8cc0015de3c19688f77aa0dddbf3a3d235ea22d42d',
+}
+TRACKER_NFTS_READ = '2026-11-14'
+# The Basis reserve contract the testnet's GET /pilot/v1/chain names (reserve_contract), pinned by the sha256 of its
+# address as anchor-audit.mjs RESERVE_CONTRACT_SHA256 pins it (staging names the same one): for a server TRACKER_NFTS
+# does not know, a reserve box there must name the tracker NFT (step 1).
+RESERVE_CONTRACT_SHA256 = '19f9e7ccf9fcdb339d336448b382029abb650c0d1ace0d34b2e2f4778bd9f427'
+RESERVE_PAGE = 100                      # the boxes at the reserve contract asked for at a time, as anchor-audit.mjs
+RESERVE_LIST_MAX = 5000                 # and at most (anchor-audit.mjs RESERVE_LIST_MAX)
 # The module docstring: one code for every "nothing was compared", 2, as anchor-audit.mjs EXIT.INCONSISTENT,
 # EXIT.REFUSED and its faults (and as argparse exits on a usage error).
 EXIT_MATCH, EXIT_MISMATCH, EXIT_NOTHING_COMPARED, EXIT_NOT_PROVEN = 0, 1, 2, 3
@@ -152,6 +189,8 @@ DOES_NOT_PROVE = (
 _HEX64 = re.compile(r'[0-9a-f]{64}')
 _HEX66 = re.compile(r'[0-9a-f]{66}')
 _HEX = re.compile(r'(?:[0-9a-f]{2})+')
+_GROUP_ELEMENT = re.compile(r'070[23][0-9a-f]{64}')     # a GroupElement register: 0x07 || a compressed point
+_DIGITS = re.compile(r'0|[1-9][0-9]*')
 
 
 class ReadError(Exception):
@@ -266,6 +305,7 @@ def same_origin(a, b):
 class Explorer:
     """The Ergo explorer API v1: https://api-testnet.ergoplatform.com (the /api/v1 prefix is added when the URL has none)."""
     kind = 'explorer'
+    lists_by_address = True                 # with a GET: the reserves can be asked (step 1)
 
     def __init__(self, url, get=None):
         self.url = base_url(url, '--explorer')
@@ -282,6 +322,21 @@ class Explorer:
             raise _Unknown('source_inconsistent', 'the explorer did not answer {items, total} for the unspent boxes holding the tracker NFT')
         return page['items'], page.get('total') if _nat(page.get('total')) else None
 
+    def unspent_at(self, address):
+        """The unspent boxes at an address (the reserve contract), RESERVE_PAGE at a time and RESERVE_LIST_MAX at most, as
+        anchor-audit.mjs reads them: (the boxes listed, as listed; whether that is all of them)."""
+        listed, total = [], None
+        for offset in range(0, RESERVE_LIST_MAX, RESERVE_PAGE):
+            page = self._get(f'{self.api}/boxes/unspent/byAddress/{address}?offset={offset}&limit={RESERVE_PAGE}')
+            if not isinstance(page, dict) or not isinstance(page.get('items'), list):
+                raise _Unknown('source_inconsistent', 'the explorer did not answer {items, total} for the unspent boxes at the reserve contract')
+            if _nat(page.get('total')):
+                total = page['total']
+            listed += page['items']
+            if len(page['items']) < RESERVE_PAGE or (total is not None and offset + RESERVE_PAGE >= total):
+                return listed, True
+        return listed, False
+
     def height(self):
         ns = self._get(f'{self.api}/networkState')
         h = ns.get('height') if isinstance(ns, dict) else None
@@ -293,6 +348,9 @@ class Explorer:
 class Node:
     """An Ergo node's REST API with the blockchain index (extraIndex): a testnet node (GET /info network)."""
     kind = 'node'
+    # A node lists the boxes at an address only for a POST (/blockchain/box/unspent/byAddress), which this audit does not
+    # send: the reserves cannot be asked from it (step 1).
+    lists_by_address = False
 
     def __init__(self, url, get=None):
         self.url = base_url(url, '--node')
@@ -582,20 +640,196 @@ def _inexact(rows):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# The tracker NFT (step 1): which one the server must name.
+
+def origin(url):
+    """A URL's origin as a JavaScript URL gives it (anchor-audit.mjs keys TRACKER_NFTS by it): scheme://host[:port], the
+    scheme and host in lower case and a default port left out; None for anything that is not an http(s) URL."""
+    try:
+        p = urllib.parse.urlsplit(url.strip())
+        port = p.port
+    except (AttributeError, ValueError):
+        return None
+    scheme, host = p.scheme.lower(), p.hostname
+    if scheme not in ('http', 'https') or not host:
+        return None
+    host = f'[{host}]' if ':' in host else host
+    return f'{scheme}://{host}' + ('' if port in (None, {'http': 80, 'https': 443}[scheme]) else f':{port}')
+
+
+def tracker_nft_id(value):
+    """A tracker NFT id as --tracker-nft takes it: 64 lowercase hex characters, as GET /pilot/v1/chain writes one (and
+    as anchor-audit.mjs takes it); ValueError for anything else."""
+    if not (isinstance(value, str) and _HEX64.fullmatch(value)):
+        raise ValueError('--tracker-nft must be a token id: 64 lowercase hex characters, as GET /pilot/v1/chain names it')
+    return value
+
+
+def _profile_pin(server, state, mine):
+    """The tracker NFT this profile pinned, where its pin applies (step 1: the audit of its own server, or --mine)."""
+    pins = vc._pins_of(state)
+    return pins['tracker_nft_id'] if pins and (mine or same_place(server, state.get('server'))) else None
+
+
+def _pin_of(server, nft, state, mine, tracker_nft):
+    """Step 1, before anything else is read: the pins `nft` (the one GET /chain names) must hold to, as {pin, pinned_by,
+    ask_reserves, warnings, mismatch}. With tracker_nft (--tracker-nft) it is that one only, as anchor-audit.mjs takes
+    it. Otherwise it must hold to every pin that applies: this profile's first, then the one TRACKER_NFTS has for this
+    server; for a server TRACKER_NFTS does not know, the reserves are asked as well (ask_reserves: _reserves_naming), so
+    that no NFT anchor-audit.mjs would refuse passes here. pinned_by: who pinned `pin` ('you', 'profile', 'this audit';
+    None when no pin applies, and pin is None). mismatch: the UNKNOWN's message (tracker_mismatch) when `nft` is not a
+    pin, naming both; `pin` is then the one it is not."""
+    at, profile, known = origin(server), _profile_pin(server, state, mine), TRACKER_NFTS.get(origin(server))
+    out = {'pin': None, 'pinned_by': None, 'ask_reserves': False, 'warnings': [], 'mismatch': None}
+    if tracker_nft is not None:
+        out.update(pin=tracker_nft, pinned_by='you')
+        if nft != tracker_nft:
+            out['mismatch'] = f'the server {server} names tracker NFT {nft}, not {tracker_nft}, the one you pinned (--tracker-nft)'
+        if profile is not None and profile != tracker_nft:
+            out['warnings'].append(f'this profile is pinned to tracker {profile}, and you pinned {tracker_nft} '
+                                   '(--tracker-nft): the notes this profile signs and verifies name its own')
+        if known is not None and known != tracker_nft:
+            out['warnings'].append(f'this audit pins tracker {known} for {at} (its GET /pilot/v1/chain of '
+                                   f'{TRACKER_NFTS_READ}), and you pinned {tracker_nft} (--tracker-nft)')
+    elif profile is not None and nft != profile:
+        out.update(pin=profile, pinned_by='profile', mismatch=(
+            f'the server {server} names tracker NFT {nft}, not {profile}, the one this profile is pinned to: the notes it '
+            'signs and verifies name that one'))
+    elif known is not None and nft != known:
+        out.update(pin=known, pinned_by='this audit', mismatch=(
+            f'the server {server} names tracker NFT {nft}, not {known}, the one this audit pins for {at} (its GET '
+            f'/pilot/v1/chain of {TRACKER_NFTS_READ}): a tracker the operator made could commit whatever it publishes. If '
+            f'the operator moved to a new tracker, check that the reserves trust it, then pass --tracker-nft {nft}'))
+    else:
+        by = 'profile' if profile is not None else 'this audit' if known is not None else None
+        out.update(pin=nft if by else None, pinned_by=by, ask_reserves=known is None)
+    return out
+
+
+def _whole(v):
+    """A whole number as a source may write a box's value or a token amount: an int, or a decimal string of one."""
+    return _nat(v) or (isinstance(v, str) and _DIGITS.fullmatch(v) is not None)
+
+
+def _register(regs, name):
+    """A register's hex as the explorer ({serializedValue, ...}) or a node (the hex itself) gives it; None without it."""
+    v = regs.get(name)
+    return v if isinstance(v, str) else v.get('serializedValue') if isinstance(v, dict) else None
+
+
+def _coll_byte(value):
+    """A Coll[Byte] register (0x0e || its length, a VLQ || the bytes), lowercase hex: the bytes as hex; ValueError
+    otherwise (as anchor-audit.mjs decodeCollByte)."""
+    if not isinstance(value, str) or not _HEX.fullmatch(value):
+        raise ValueError('it is not lowercase hex')
+    b = bytes.fromhex(value)
+    if b[0] != 0x0e:
+        raise ValueError('it is not a Coll[Byte]')
+    n, i = _vlq(b, 1)
+    if i + n != len(b):
+        raise ValueError('its length is not that of its bytes')
+    return b[i:].hex()
+
+
+def _reserve_box(b, kind, tree, address):
+    """One box the source listed at the reserve contract, checked as anchor-audit.mjs checks it (normBox,
+    reserveListing): {box_id, tracker: the NFT of the tracker it trusts (R6), owner: its owner's key (R4)}, both None
+    when either register cannot be read. _Unknown(source_inconsistent) for a box that is no box, is not at the contract
+    (by its ErgoTree: the explorer's address of a long script is an abbreviation), or is spent."""
+    bad = lambda why: _Unknown('source_inconsistent', why)  # noqa: E731
+    if not isinstance(b, dict):
+        raise bad(f'the {kind} listed something that is not a box at the reserve contract')
+    box_id = b.get('boxId')
+    if not (isinstance(box_id, str) and _HEX64.fullmatch(box_id)):
+        raise bad(f'the {kind} listed a box at the reserve contract without a box id')
+    assets = b.get('assets') if isinstance(b.get('assets'), list) else []
+    if not _nat(b.get('creationHeight')) or not _whole(b.get('value')) \
+            or not all(isinstance(a, dict) and _whole(a.get('amount')) for a in assets):
+        raise bad(f'reserve box {box_id} has no creation height, or a value or token amount that is not a whole number')
+    if (b.get('ergoTree') != tree) if tree is not None else (b.get('address') != address):
+        raise bad(f'box {box_id}, listed at the reserve contract, is not at its address (another ErgoTree)')
+    if b.get('spentTransactionId'):
+        raise bad(f'reserve box {box_id}, listed as unspent, was spent (transaction {_short(b["spentTransactionId"], 80)})')
+    regs = b.get('additionalRegisters') if isinstance(b.get('additionalRegisters'), dict) else {}
+    owner = _register(regs, 'R4')
+    try:
+        tracker = _coll_byte(_register(regs, 'R6'))
+        if not (isinstance(owner, str) and _GROUP_ELEMENT.fullmatch(owner)):
+            raise ValueError('R4 is not a GroupElement')
+    except ValueError:
+        return {'box_id': box_id, 'tracker': None, 'owner': None}
+    return {'box_id': box_id, 'tracker': tracker, 'owner': owner[2:]}
+
+
+def _reserves_naming(source, chain, nft, server, pinned_by=None):
+    """Step 1 for a server TRACKER_NFTS does not know, as anchor-audit.mjs asks the reserves for a server it pins no NFT
+    for: the reserve contract GET /chain names must be the pinned one (RESERVE_CONTRACT_SHA256), and at least one
+    unspent box there, as the chain source lists them, must name the tracker NFT in R6 (with an owner key in R4).
+    Returns how many do; _Unknown otherwise (tracker_not_pinned, or the source's reasons). pinned_by: who else pinned
+    the NFT ('profile': this profile's pin, which is not enough, as it took the server's word at its first read)."""
+    at = origin(server) or server
+    why = (" (this profile's pin is not enough: it took the server's word at the profile's first read of it)"
+           if pinned_by == 'profile' else '')
+    address = chain.get('reserve_contract')
+    if not (isinstance(address, str) and address):
+        raise _Unknown('tracker_not_pinned', (
+            f'this audit pins no tracker NFT for {at}{why}, and GET /pilot/v1/chain names no reserve contract that could '
+            f'show a reserve trusting the tracker NFT {nft} it names: a tracker the operator made could commit whatever it '
+            'publishes; pin the tracker NFT you expect with --tracker-nft'))
+    if hashlib.sha256(address.encode('utf-8')).hexdigest() != RESERVE_CONTRACT_SHA256:
+        raise _Unknown('tracker_not_pinned', (
+            f"the tracker NFT {nft} and the reserve contract are both only the server's word (this audit pins no tracker "
+            f'NFT for {at}{why}, and the reserve contract GET /pilot/v1/chain names is not the one it pins): a tracker the '
+            'operator made could commit whatever it publishes; pin the tracker NFT you expect with --tracker-nft'))
+    if not source.lists_by_address:
+        raise _Unknown('tracker_not_pinned', (
+            f'this audit pins no tracker NFT for {at}{why}, so it asks the reserves whether they trust the tracker NFT '
+            f'{nft} the server names, and a {source.kind} lists the boxes at the reserve contract only for a POST, which '
+            'this audit does not send (GET only): pin the tracker NFT you expect with --tracker-nft, or name the explorer '
+            '(--explorer) to ask the reserves'))
+    try:
+        tree = ergo.address_to_tree(address)
+    except vc.ValunError:
+        tree = None                             # compared by the address the source gives, as anchor-audit.mjs does
+    try:
+        listed, complete = source.unspent_at(address)
+    except ReadError as e:
+        raise _Unknown('source_unreadable', f'the {source.kind} at {source.url} did not list the boxes at the reserve '
+                                            f'contract: {e}{_hint(source, e)}') from None
+    boxes = {x['box_id']: x for x in (_reserve_box(b, source.kind, tree, address) for b in listed)}
+    naming = sum(1 for x in boxes.values() if x['tracker'] == nft and x['owner'] is not None)
+    others = sum(1 for x in boxes.values() if x['tracker'] is not None and x['tracker'] != nft)
+    if not naming:
+        raise _Unknown('tracker_not_pinned', (
+            f'no reserve box at the pinned reserve contract names the tracker NFT {nft} the server gives'
+            + (f' ({others} name another)' if others else '')
+            + ('' if complete else f' among the first {len(boxes)} the {source.kind} lists') + why
+            + ': it may be a tracker the operator made to commit whatever it publishes, which no redemption trusts; pin '
+              'the tracker NFT you expect with --tracker-nft (a tracker with no reserve yet must be pinned)'))
+    return naming
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # The audit.
 
-def audit(server, source, *, profile_state=None, mine=False, get=None, sleep=None, attempts=ATTEMPTS):
+def audit(server, source, *, profile_state=None, mine=False, tracker_nft=None, get=None, sleep=None, attempts=ATTEMPTS):
     """Check that the rows `server` publishes are what the one unspent tracker-NFT box in `source` (an Explorer or a Node)
     commits (the module docstring). profile_state: a profile's state (its server and pins and, for mine, its
-    participant, key and records), read and never changed; tracker_nft_pinned says whether its pin confirmed the tracker
-    NFT. Returns the result as a JSON-ready dict: verdict MATCH, MISMATCH or UNKNOWN, reason
-    and message, the box, the rows' source, count and digest, what the server says, the height, the box's age and
-    windows, warnings, and with mine the edges (mine_report). exit_code(result) is the command's exit code. get(url)
-    reads the server (get_json by default) and sleep(seconds) waits between attempts and between the older reads of
-    step 2 (time.sleep)."""
+    participant, key and records), read and never changed. tracker_nft: the tracker NFT id the server must name
+    (--tracker-nft; tracker_nft_id() checks it, ValueError), which overrides every other pin (step 1). Returns the
+    result as a JSON-ready dict: verdict MATCH, MISMATCH or UNKNOWN, reason and message, the tracker {nft: the one GET
+    /chain names, pin: the one it must be (None when nothing pins it), pinned_by: 'you', 'profile', 'this audit' or
+    None, reserves_naming_it: how many reserves at the pinned reserve contract name it (None when they were not
+    asked)} and tracker_nft_pinned (whether a pin holds it), the box, the rows' source, count and digest, what the
+    server says, the height, the box's age and windows, warnings, and with mine the edges (mine_report).
+    exit_code(result) is the command's exit code. get(url) reads the server (get_json by default) and sleep(seconds)
+    waits between attempts and between the older reads of step 2 (time.sleep)."""
+    if tracker_nft is not None:
+        tracker_nft_id(tracker_nft)
     get, sleep = get or get_json, sleep or time.sleep
     out = {'verdict': None, 'reason': None, 'message': None, 'server': server, 'network': None, 'tracker_nft_id': None,
-           'tracker_nft_pinned': False, 'construction': CONSTRUCTION, 'chain_source': {'kind': source.kind, 'url': source.url, 'named_by_server': False},
+           'tracker_nft_pinned': False, 'tracker': None, 'construction': CONSTRUCTION,
+           'chain_source': {'kind': source.kind, 'url': source.url, 'named_by_server': False},
            'box': None, 'rows': None, 'server_says': None, 'height': None, 'box_age_blocks': None,
            'nettings_refused_from_height': None, 'tracker_less_redemption_from_height': None, 'attempts': 0, 'warnings': []}
     state = profile_state if isinstance(profile_state, dict) else {}
@@ -609,16 +843,22 @@ def audit(server, source, *, profile_state=None, mine=False, get=None, sleep=Non
             out['warnings'].append(f'the chain source {source.url} is the node the server itself names (GET /pilot/v1/chain '
                                    'node): the operator may run it, so this is not an independent check; name your own node '
                                    'or the public explorer')
-        pins = vc._pins_of(state)
-        if pins and (mine or same_place(server, state.get('server'))):
-            if pins.get('tracker_nft_id') != nft:
-                raise _Unknown('tracker_mismatch', f"{server} names tracker {nft}, and this profile is pinned to tracker "
-                                                   f"{pins.get('tracker_nft_id')}: the notes it signs and verifies name that one")
-            out['tracker_nft_pinned'] = True
+        pin = _pin_of(server, nft, state, mine, tracker_nft)
+        out['tracker'] = {'nft': nft, 'pin': pin['pin'], 'pinned_by': pin['pinned_by'], 'reserves_naming_it': None}
+        if pin['mismatch']:
+            raise _Unknown('tracker_mismatch', pin['mismatch'])
+        out['tracker_nft_pinned'] = pin['pinned_by'] is not None
+        out['warnings'] += pin['warnings']
         try:
             source.check()
         except ReadError as e:
             raise _Unknown('source_unreadable', f'the {source.kind} at {source.url} did not answer: {e}{_hint(source, e)}') from None
+        if pin['ask_reserves']:
+            n = out['tracker']['reserves_naming_it'] = _reserves_naming(source, chain, nft, server, pin['pinned_by'])
+            if pin['pinned_by'] is None:            # anchor-audit.mjs's warning: the reserves are no pin
+                out['warnings'].append(f"the tracker NFT {nft} is not pinned for {origin(server) or server}: {n} reserve "
+                                       f"box{'' if n == 1 else 'es'} at the pinned reserve contract name{'s' if n == 1 else ''} "
+                                       'it, which an operator can arrange for a tracker of its own too; pin it with --tracker-nft')
         for attempt in range(1, attempts + 1):
             out['attempts'] = attempt
             try:
@@ -726,7 +966,7 @@ def audit(server, source, *, profile_state=None, mine=False, get=None, sleep=Non
             notes = None
             out['warnings'].append(f'--mine: GET /pilot/v1/ledger could not be read, so only this agent\'s own key and the '
                                    f'keys this profile\'s records show are known: {e}')
-        out['mine'] = mine_report(state, snap['rows'], notes if isinstance(notes, list) else [])
+        out['mine'] = mine_report(state, snap['rows'], notes if isinstance(notes, list) else [], tracker_nft=nft)
     return out
 
 
@@ -757,13 +997,14 @@ def _pair_keys(pair):
     return (i, rc) if sep and _pubkey_ok(i) and _pubkey_ok(rc) else (None, None)
 
 
-def mine_report(state, rows, notes):
+def mine_report(state, rows, notes, tracker_nft=None):
     """This participant's edges in the anchored rows and in this profile's records (the module docstring): {participant,
     keys [{pubkey, known_from}], edges [...], proven, not_proven, all_proven}, and {problem, message} when nothing can
     be compared. state: the profile's state, read and never changed; rows: the rows the chain commits (an audit's MATCH:
     digested already, so each total is a str of digits, an int or a safe-integer float, and no two rows share a pair
-    and denomination); notes: GET /ledger's notes, which name each key's participant. known_from: this_agent (the
-    profile's key), ledger (GET /ledger names it as this participant's) or records (this profile signed with it)."""
+    and denomination); notes: GET /ledger's notes, which name each key's participant; tracker_nft: the tracker whose box
+    commits the rows (None: the pinned one). known_from: this_agent (the profile's key), ledger (GET /ledger names it as
+    this participant's) or records (this profile signed with it)."""
     pid, me, pins = state.get('participant_id'), state.get('pubkey'), vc._pins_of(state)
     keys, owner = {}, {}
     if _pubkey_ok(me):
@@ -794,6 +1035,12 @@ def mine_report(state, rows, notes):
                 'message': 'this profile has no pinned tracker and denomination yet (it pins them at its first read of the '
                            "server's GET /info, such as `valun call valun_status`), so its records can be neither matched "
                            'to the anchored rows nor verified: nothing of yours is proven'}
+    if tracker_nft is not None and pins['tracker_nft_id'] != tracker_nft:
+        return {'participant': pid, 'keys': key_list, 'edges': [], 'proven': 0, 'not_proven': 0, 'all_proven': False,
+                'problem': 'another_tracker',
+                'message': f"this profile is pinned to tracker {pins['tracker_nft_id']}, and these rows are what the box of "
+                           f'tracker {tracker_nft} commits (--tracker-nft): its records are of the other tracker\'s notes, so '
+                           'they are not compared with these rows: nothing of yours is proven'}
     denomination = pins['denomination']
     verify = vc.Client._note_verifier(pins['tracker_nft_id'], denomination)
     # Every row by (pair, denomination), whatever its keys, indexed once: the rows on a key of this participant are

@@ -17,7 +17,7 @@
                         budget cards: show one, check a payer against one (--deal: the offer you are deciding on); the
                         OWNER publishes or hides yours
   valun sandbox ...     deterministic sandbox agents: seller, buy, earn, tour
-  valun audit --explorer URL | --node URL [--mine] [--json]
+  valun audit --explorer URL | --node URL [--tracker-nft ID] [--mine] [--json]
                         check the operator: the published ledger against its tracker box on Ergo testnet (read only)
 Add --profile NAME to keep several identities apart. Secrets are never printed (the owner token is shown once at
 join, or written to --owner-token-file).
@@ -1309,8 +1309,9 @@ MINE_WORDS = {
 
 
 def cmd_audit(args):
-    """valun audit (--explorer URL | --node URL) [--server ORIGIN] [--json] [--mine]: check the operator (valun.audit, fix
-    inbox #62). Read only: GET requests, no token sent, nothing signed or written. Without --mine no profile is needed.
+    """valun audit (--explorer URL | --node URL) [--server ORIGIN] [--tracker-nft ID] [--json] [--mine]: check the
+    operator (valun.audit, fix inbox #62; the tracker NFT's pin, #66). Read only: GET requests, no token sent, nothing
+    signed or written. Without --mine no profile is needed.
     Exit codes: valun.audit.exit_code (0 MATCH, 1 MISMATCH, 2 nothing compared, 3 MATCH and an edge of --mine not
     proven), as anchor-audit.mjs's. Exit 1 means a comparison found a MISMATCH and nothing else: a usage error (a
     profile it cannot use among them) is 2, and so is a fault of this command (any exception: UNKNOWN, reason fault),
@@ -1342,6 +1343,7 @@ def _audit_command(args):
     try:
         server = vaudit.base_url(_server(args, store), '--server')
         source = vaudit.Explorer(args.explorer) if args.explorer is not None else vaudit.Node(args.node)
+        tracker_nft = vaudit.tracker_nft_id(args.tracker_nft) if args.tracker_nft is not None else None
     except ValueError as e:
         _print_encodable(str(e))
         return vaudit.EXIT_USAGE
@@ -1351,7 +1353,7 @@ def _audit_command(args):
                          'https://api-testnet.ergoplatform.com.')
         return vaudit.EXIT_USAGE
     state = {k: store.state[k] for k in AUDIT_STATE_KEYS if k in store.state}
-    r = vaudit.audit(server, source, profile_state=state, mine=args.mine)
+    r = vaudit.audit(server, source, profile_state=state, mine=args.mine, tracker_nft=tracker_nft)
     # ensure_ascii: the same JSON, and printable on any stdout.
     text = json.dumps(r, ensure_ascii=True, indent=1) if args.json else '\n'.join(_audit_lines(r, args.mine))
     code = vaudit.exit_code(r)
@@ -1392,8 +1394,7 @@ def _audit_lines(r, mine):
         lines.append(f"  R5        {box['digest']}, read from the {src['kind']} {t(src['url'], 120)}")
     if rows:
         lines.append(f"  rebuilt   {rows['digest']} from {rows['count']} rows of GET {rows['from']}")
-        lines.append(f"  tracker   NFT {r['tracker_nft_id']}, as GET /pilot/v1/chain names it"
-                     + (', and the one this profile pinned' if r.get('tracker_nft_pinned') else ''))
+        lines.append(f"  tracker   NFT {r['tracker_nft_id']}, as GET /pilot/v1/chain names it{_audit_pin_words(r)}")
     if box and r.get('nettings_refused_from_height') is not None:     # none for a box no redemption can use
         lines.append(f"  windows   nettings of anchored edges refused from height {r['nettings_refused_from_height']}; "
                      f"redemption without the tracker from height {r['tracker_less_redemption_from_height']}")
@@ -1430,6 +1431,22 @@ def _audit_lines(r, mine):
         lines.append(f"  {m['proven']} of {len(m['edges'])} edges proven (signed). Your records are read as they are: the audit "
                      'does not sync them.')
     return lines
+
+
+def _audit_pin_words(r):
+    """How the audit's tracker NFT was pinned, for its tracker line (valun.audit step 1)."""
+    tr = r.get('tracker') or {}
+    n = tr.get('reserves_naming_it')
+    reserves = (f"{n} reserve box{'' if n == 1 else 'es'} at the pinned reserve contract name{'s' if n == 1 else ''} it"
+                if isinstance(n, int) else None)
+    by = tr.get('pinned_by')
+    if by == 'you':
+        return ', and the one you pinned (--tracker-nft)'
+    if by == 'profile':
+        return ', and the one this profile pinned' + (f'; {reserves}' if reserves else '')
+    if by == 'this audit':
+        return f", and the one this audit pins for {_terminal_text(vaudit.origin(r['server']), 100)}"
+    return f'; not pinned: {reserves}' if reserves else ''
 
 
 def _audit_amount(n, denomination, unit):
@@ -1659,6 +1676,9 @@ def main(argv=None):
     aus.add_argument('--node', metavar='URL', help='your own Ergo testnet node (its REST API, with the blockchain index)')
     au.add_argument('--server', help="the Valun server to check (default: this profile's, else VALUN_SERVER, else "
                                      'https://valun.tech)')
+    au.add_argument('--tracker-nft', metavar='ID', help='the tracker NFT the server must name (64 lowercase hex '
+                                                        'characters), else nothing is compared; it replaces your '
+                                                        "profile's pin and the one this audit ships for the server")
     au.add_argument('--json', action='store_true', help='print the whole result as JSON')
     au.add_argument('--mine', action='store_true', help="also list this profile's edges with their anchored totals, and "
                                                         'whether your client holds and verifies the issuer signature of each')
@@ -1701,9 +1721,16 @@ written (not even your records).
   valun audit --explorer https://api-testnet.ergoplatform.com
   valun audit --node http://127.0.0.1:9052 --mine          your own node, and your own edges
   valun audit --explorer URL --server https://valun-staging.fly.dev --json
+  valun audit --explorer URL --server URL --tracker-nft ID  a server this audit does not know: the tracker you expect
 
 MATCH: the box commits exactly the published notes (each one's issuer key, recipient key and cumulative total). It does
 not prove what is outstanding, that an issuer can pay, that any deal was real, or who holds a key.
+The tracker NFT is the server's word, and a tracker an operator made itself could commit whatever the server
+publishes, so it is pinned: --tracker-nft ID, else your profile's pin (your own server, or --mine) and the one this
+audit ships for the servers it knows (valun.tech, valun-testnet.fly.dev, valun-staging.fly.dev); another NFT compares
+nothing (exit 2). For any other server, a reserve at the Basis reserve contract this audit pins must name the NFT (else
+exit 2; read from the explorer: a node lists reserves only for a POST, which this audit does not send), and since an
+operator can make such a reserve too, a warning asks you to pin it.
 --mine lists your participant's edges, as issuer and as recipient, on every key it has (this agent's, the others
 GET /ledger names as yours, and those your records show you signed with), with their anchored totals, and whether each
 is the state your records confirm with an issuer signature that verifies (signed). Your records are read as they are.

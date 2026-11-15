@@ -5,13 +5,22 @@ The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://githu
 
 ## 0.7.1 (unreleased)
 
-**The offer under review, and plain answers for small models.** `valun_check_payer` can check an offer the payer made
-you, counted once, and says so when an answer is for a new deal on top of one. Every tool refuses missing or malformed
-arguments by name, and every tool's answer names its amounts in the network's unit. The JavaScript client gains the
-tracker's AVL+ digest. A paid check reads fenced text as CommonMark does, and declines, with no fee, a text it cannot
-split. A candidate: the versions still say 0.7.0, and the release sets this heading's date.
+**The offer under review, the operator checked, and plain answers for small models.** `valun_check_payer` can check an
+offer the payer made you, counted once, and says so when an answer is for a new deal on top of one. `valun audit` checks
+that the ledger a server publishes is what its tracker box on Ergo testnet commits. Every tool refuses missing or
+malformed arguments by name, and every tool's answer names its amounts in the network's unit. The JavaScript client
+gains the tracker's AVL+ digest. A paid check reads fenced text as CommonMark does, and declines, with no fee, a text it
+cannot split. A candidate: the versions still say 0.7.0, and the release sets this heading's date.
 
 ### Added
+- **`valun audit`** (fix inbox #62; Python): checks the operator. It rebuilds the AVL+ digest the tracker anchors on
+  Ergo testnet from the ledger the server publishes (`valun.avl`: the construction `basis-avl/1`, digest for digest the
+  server's `lib/avl.mjs` and the tracker's own Rust code) and compares it with R5 of the one unspent box holding the
+  tracker NFT, read from an explorer or a node you name (`--explorer URL`, `--node URL`), never one the server names.
+  `MATCH` exits 0, `MISMATCH` 1, `UNKNOWN` 2 (never a pass); `--mine` also lists your own edges with their anchored
+  totals, and exits 3 when one is not the state your records confirm. GET requests only: no token, nothing signed.
+  `--json` prints it all. A MATCH proves the cumulative totals as anchored, not what is outstanding or that an issuer
+  can pay.
 - **`valun_check_payer` `deal_id`** (fix inbox #60; both clients): the deal whose offer you are deciding on, with its
   price as `amount`. The payer's room already counts its own open offers, so a check without `deal_id` answers for a
   new deal on top of that offer: the server leaves the offer out and counts it once only when the check names it
@@ -27,6 +36,19 @@ split. A candidate: the versions still say 0.7.0, and the release sets this head
   and `avl.AvlError`, the AVL+ digest a Basis tracker anchors on Ergo, recomputed from the published notes: the same
   construction, digests and refusals as the Python `valun/avl.py` and the server's `lib/avl.mjs`, tested against the
   same Rust references and against what `avl.py` gives for the same inputs.
+- **`valun audit` pins the tracker NFT** (fix inbox #66 item 1; Python). The NFT a server's `GET /pilot/v1/chain`
+  names is only its word: a tracker an operator made itself could commit exactly what the server publishes while the
+  reserves trust the real one, and a MATCH against it would prove nothing. The server must name the NFT this package
+  pins for the servers it knows (`valun.tech`, `valun-testnet.fly.dev`, `valun-staging.fly.dev`: the table of the
+  server-side `anchor-audit.mjs`) and the one your profile pinned, where each applies; any other is exit 2, naming the
+  NFT expected and the one named, before a box is read. For any other server a reserve at the Basis reserve contract
+  the audit pins must name the NFT (else exit 2), and a pass on the reserves alone warns you to pin it; read from a
+  node, such a server needs `--tracker-nft` (a node lists reserves only for a POST, and the audit sends GET only).
+  - `--tracker-nft ID` (`audit(..., tracker_nft=ID)`): the NFT you expect, which replaces every other pin.
+  - `--json` gives `tracker` {`nft`, `pin`, `pinned_by`, `reserves_naming_it`}. With `--mine`, a `--tracker-nft`
+    other than your profile's tracker lists no edge (problem `another_tracker`).
+  - The 41 recorded reads both auditors are held to (`python/tests/fixtures/audit-verdicts/xtool.json`) are a test:
+    each gives the exit code of the shared verdict table.
 
 ### Changed
 - **`valun_check_payer`'s summary** (fix inbox #60):
