@@ -31,8 +31,9 @@ export function kindOf(p) {
 }
 
 // The ledger's notes as edges between participants: one edge per (issuer, recipient) pair of participants (a
-// participant whose agent key changed can have several notes per pair), its amount the outstanding PC, with each
-// note's amount and timestamp. A note whose key no participant has is shown under the key (key:<pubkey>).
+// participant whose agent key changed can have several notes per pair), its amount what is outstanding, in the
+// network's unit, with each note's amount and timestamp. A note whose key no participant has is shown under the key
+// (key:<pubkey>).
 export function edgesOf(notes) {
   const m = new Map();
   for (const n of notes || []) {
@@ -90,7 +91,7 @@ function cyclesAmong(changes) {
 // The events that explain a poll's changes, in the order they happen (payments with new notes, debt transfers,
 // set-offs): {type: 'note', from, to, amount, first} | {type: 'transfer', issuer, from, to, amount} (the issuer's debt
 // moved from creditor `from` to creditor `to`) | {type: 'setoff', cycle: [participant ids], each, amount} (each edge of
-// the cycle went down by `each`; amount = the sum of the decreases, what the server's GET /clearing cleared_PC counts)
+// the cycle went down by `each`; amount = the sum of the decreases, what the server's GET /clearing `cleared` counts)
 // | {type: 'cleared' | 'reduced', from, to, amount} (a decrease no cycle or transfer explains).
 // Each event has `edges`, the keys of the edges it moved.
 export function explain(changes) {
@@ -155,6 +156,16 @@ export function tergText(n) {
 export function moneyText(n, unit = 'PC') {
   return unit === 'nanoERG' ? `${tergText(n)} tERG` : `${Number(n || 0).toLocaleString('en-US')} PC`;
 }
+
+// How big an amount is drawn: an edge's width and a node's size grow with what is owed, on a scale sized for the pilot's
+// PC. The testnet's amounts are nanoERG, each PC-sized amount times 1,000,000 (lib/pilot/units.mjs: its scale); drawn
+// as they are, every edge and node was at its largest. GET /info names no scale, so it goes by the unit.
+const SIZE_SCALE = {nanoERG: 1_000_000};
+const sized = (amount, unit) => (Number(amount) || 0) / (SIZE_SCALE[unit] ?? 1);
+// An edge's stroke width for what it carries (2 to 10).
+export function edgeWidth(amount, unit = 'PC') { return Math.min(10, 2 + 1.6 * Math.log2(1 + sized(amount, unit))); }
+// A participant's radius for what it owes and is owed in all (14 to 23).
+export function nodeRadius(total, unit = 'PC') { return 14 + Math.min(9, Math.sqrt(sized(total, unit)) * 1.4); }
 
 // The "On Ergo testnet" strip from GET /pilot/v1/chain and GET /pilot/v1/reserves (the testnet network, once on chain):
 // plain values for the page to draw, or null. Ids must be 64 hex; a link is kept only when it is the explorer's.
@@ -226,7 +237,8 @@ function start() {
   };
   const H = (tag, cls, text) => { const el = document.createElement(tag); if (cls) el.className = cls; if (text != null) el.textContent = text; return el; };
   const fmt = n => Number(n || 0).toLocaleString('en-US');
-  // Amounts in the network's unit (st.unit, from GET /pilot/v1/info): "3 PC" on the pilot, "0.003 tERG" on the testnet.
+  // Amounts in the network's unit (st.unit, from GET /pilot/v1/ledger or /info): "3 PC" on the pilot, "0.003 tERG" on
+  // the testnet.
   const money = n => moneyText(n, st.unit), num = n => (st.unit === 'nanoERG' ? tergText(n) : fmt(n));
   const clock = t => new Date(t).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit', second: '2-digit'});
 
@@ -258,8 +270,13 @@ function start() {
     if (info && Array.isArray(info.features) && info.features.includes('circulation/1')) st.clearingOk = true;
     const line = modeLine(info, status);
     if (line) $('meta').textContent = line;
-    if (info && typeof info.unit === 'string' && info.unit !== st.unit) { st.unit = info.unit; unitLabels(); }
+    setUnit(info?.unit);
     if (info?.network === 'valun-testnet-1' && info.tracker_on_chain) await refreshChain();
+  }
+
+  // The network's unit, from GET /info or GET /ledger (each names it, as `unit`), and its labels.
+  function setUnit(unit) {
+    if (typeof unit === 'string' && unit && unit !== st.unit) { st.unit = unit; unitLabels(); }
   }
 
   // The testnet network (the one network since 2026-11-13): its unit in the labels, and how to join it.
@@ -353,6 +370,9 @@ function start() {
   }
 
   function apply(ps, ledger, clearing) {
+    // The ledger names the unit of its own amounts: every amount this poll writes is in it, the first poll's too, which
+    // can come before /info (fix inbox #48: the first lines then said "PC" on the testnet, the retired pilot's unit).
+    setUnit(ledger.unit);
     const now = Date.now(), events = [];
     const next = new Map();
     for (const p of [...ps].sort((a, b) => String(a.joined_at).localeCompare(String(b.joined_at)))) {
@@ -426,6 +446,8 @@ function start() {
     a.href = `/loop/${id}`;
     li.querySelector('.ev-top')?.append(a);
   }
+  // GET /clearing and GET /loops name each amount by its unit-neutral name (`cleared`, `transferred`, a loop's `amount`;
+  // fix inbox #32), beside a deprecated _PC alias that a later release removes: the page reads the neutral names.
   async function recentLoops() {
     const list = await getJson('/pilot/v1/loops').then(r => r?.loops, () => null);
     if (!Array.isArray(list)) return;
@@ -433,7 +455,7 @@ function start() {
       if (typeof l?.id !== 'string' || st.loops.linked.has(l.id)) continue;
       st.loops.linked.add(l.id);
       const names = (l.members || []).map(m => m?.handle ?? '?');
-      const li = addFeed({type: 'loop', amount: l.amount_PC, text: `Loop closed: ${[...names, names[0]].join(' → ')}`}, Date.parse(l.applied_at) || Date.now(), true);
+      const li = addFeed({type: 'loop', amount: l.amount, text: `Loop closed: ${[...names, names[0]].join(' → ')}`}, Date.parse(l.applied_at) || Date.now(), true);
       cardLink(li, l.id);
     }
   }
@@ -449,12 +471,12 @@ function start() {
     st.pendingCatchUp = gap.t > 0 || gap.s > 0 ? gap : null;
     if (!prev) return;
     if (gap.t > 0 && prev.t > 0) {
-      const n = Math.min(gap.t, prev.t), pc = Math.max(0, (totals.transferred_PC - st.clearingBase.transferred_PC) - st.detected.transferPC);
+      const n = Math.min(gap.t, prev.t), pc = Math.max(0, (totals.transferred - st.clearingBase.transferred) - st.detected.transferPC);
       events.push({type: 'info', text: `${n} more debt transfer${n > 1 ? 's' : ''} applied${pc ? ` (${money(pc)})` : ''}.`, cls: 'transfer'});
       st.detected.transfers += n; st.detected.transferPC += pc;
     }
     if (gap.s > 0 && prev.s > 0) {
-      const n = Math.min(gap.s, prev.s), pc = Math.max(0, (totals.cleared_PC - st.clearingBase.cleared_PC) - st.detected.setoffPC);
+      const n = Math.min(gap.s, prev.s), pc = Math.max(0, (totals.cleared - st.clearingBase.cleared) - st.detected.setoffPC);
       events.push({type: 'info', text: `${n} more set-off${n > 1 ? 's' : ''} applied${pc ? ` (${money(pc)} cleared)` : ''}.`, cls: 'setoff'});
       st.detected.setoffs += n; st.detected.setoffPC += pc;
     }
@@ -526,12 +548,12 @@ function start() {
     if (e.type === 'transfer') {
       for (const k of e.edges) hl(k, 'transfer', now);
       ghost(e.edges[0], 'moved');
-      delta(e.edges[0], `−${e.amount}`, 'transfer'); delta(e.edges[1], `+${e.amount}`, 'transfer');
+      delta(e.edges[0], `−${money(e.amount)}`, 'transfer'); delta(e.edges[1], `+${money(e.amount)}`, 'transfer');
       for (const id of [e.issuer, e.from, e.to]) flash(id, 'transfer', now);
       token(e.from, e.to, money(e.amount));
     }
     if (e.type === 'setoff' || e.type === 'cleared') {
-      for (const k of e.edges) { hl(k, 'setoff', now); ghost(k, 'cleared'); delta(k, `−${e.each ?? e.amount}`, 'setoff'); }
+      for (const k of e.edges) { hl(k, 'setoff', now); ghost(k, 'cleared'); delta(k, `−${money(e.each ?? e.amount)}`, 'setoff'); }
       for (const id of e.cycle ?? [e.from, e.to]) flash(id, 'setoff', now);
     }
     if (e.type === 'reduced') { hl(e.edges[0], 'transfer', now); ghost(e.edges[0], 'reduced'); }
@@ -566,7 +588,7 @@ function start() {
     if (p?.kind === 'agent') return 30;
     let g = 0;
     for (const e of st.edges.values()) if (e.from === id || e.to === id) g += e.amount;
-    return 14 + Math.min(9, Math.sqrt(g) * 1.4);
+    return nodeRadius(g, st.unit);
   }
   function edgeGeom(e) {
     const a = posOf(e.from), b = posOf(e.to), dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
@@ -635,7 +657,7 @@ function start() {
     }
     for (const [id, v] of view.nodes) if (!st.participants.has(id)) { v.outer.remove(); view.nodes.delete(id); }
 
-    // edges: every edge with PC outstanding, and for a few seconds those a transfer or set-off just closed
+    // edges: every edge with something outstanding, and for a few seconds those a transfer or set-off just closed
     const shown = new Map();
     for (const e of st.edges.values()) if (e.amount > 0) shown.set(e.key, {e, ghost: null});
     for (const [k, g] of view.ghost) {
@@ -652,7 +674,7 @@ function start() {
         view.edges.set(k, v);
       }
       const g = edgeGeom(e), h = view.hl.get(k), cls = h && h.until > now ? h.cls : null;
-      const w = ghost ? 2 : Math.min(10, 2 + 1.6 * Math.log2(1 + e.amount));
+      const w = ghost ? 2 : edgeWidth(e.amount, st.unit);
       v.path.setAttribute('d', g.d);
       v.path.setAttribute('stroke-width', w.toFixed(1));
       v.path.setAttribute('class', `edge${cls ? ` hl-${cls}` : ''}${ghost ? ' ghost' : ''}`);
@@ -717,8 +739,8 @@ function start() {
     set('st-out', num(out), `on ${edges.length} credit note${edges.length === 1 ? '' : 's'}`);
     const t = st.clearing?.totals;
     if (t) {
-      set('st-clear', num(t.cleared_PC ?? 0), `in ${fmt(t.setoffs_applied ?? 0)} set-off${t.setoffs_applied === 1 ? '' : 's'}`);
-      set('st-move', num(t.transferred_PC ?? 0), `in ${fmt(t.transfers_applied ?? 0)} transfer${t.transfers_applied === 1 ? '' : 's'}`);
+      set('st-clear', num(t.cleared ?? 0), `in ${fmt(t.setoffs_applied ?? 0)} set-off${t.setoffs_applied === 1 ? '' : 's'}`);
+      set('st-move', num(t.transferred ?? 0), `in ${fmt(t.transfers_applied ?? 0)} transfer${t.transfers_applied === 1 ? '' : 's'}`);
     } else {
       const d = st.detected;
       set('st-clear', num(d.setoffPC), `${d.setoffs} set-off${d.setoffs === 1 ? '' : 's'} seen since this page opened`);

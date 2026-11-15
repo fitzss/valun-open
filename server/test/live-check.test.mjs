@@ -51,6 +51,24 @@ test('live-check: the testnet network runs tracker v4 with anchored netting (its
   assert.deepEqual(levels(L.evaluate(s, {expectMode: 'on'}), 'tracker pin'), ['ok']);
   s.status.basis.pin = PIN;
   assert.deepEqual(levels(L.evaluate(s, {expectMode: 'on'}), 'pin names tracker v4 (anchored netting)'), ['fail'], 'v3.2 on the testnet');
+  // A patch version, and a name that adds what the build fixes, pass; so does every build lib/basis.mjs names with
+  // anchored netting, as /api/status reports it (trackerPin, pinned). deploy.yml runs this check after each deploy.
+  s.status.basis.pin = 'Basis tracker v4.4.1 (anchored netting, keyspaces kept open): Valun fork commit 7c3c0db093f9292cc887e27860075599e8706a8e (branch tr-22-keep-keyspace on Basis upstream 43e2173), as the tracker reports itself';
+  assert.deepEqual(levels(L.evaluate(s, {expectMode: 'on'}), 'tracker pin'), ['ok'], s.status.basis.pin);
+  const {TRACKER_BUILDS, trackerPin} = await import(pathToFileURL(path.join(root, 'lib', 'basis.mjs')).href);
+  const anchored = Object.entries(TRACKER_BUILDS).filter(([, b]) => b.name.includes('(anchored netting'));
+  assert.ok(anchored.length >= 4, 'tracker v4.1 and later are named with anchored netting');
+  for (const [commit, b] of anchored) {
+    s.status.basis.pin = trackerPin({build: b.build, commit}, 'fallback', {pinned: true});
+    assert.deepEqual(levels(L.evaluate(s, {expectMode: 'on'}), 'tracker pin'), ['ok'], s.status.basis.pin);
+  }
+  // An unlisted build reports itself as tracker v3.2 (an unlisted build), and a v4 name without anchored netting fails.
+  for (const pin of [trackerPin({build: 'valun-circulating-credit/4', commit: '1'.repeat(40)}, 'fallback', {pinned: true}),
+    'Basis tracker v4: Valun fork commit 602565e3179b1656d4cf35a292006a6899ac5c61 (branch circulating-credit-v4 on Basis upstream 43e2173)',
+    'Basis tracker v4.4.1.2 (anchored netting): Valun fork commit 1111111', 'Basis tracker v4.5 (anchored netting) extra: Valun fork commit 1111111']) {
+    s.status.basis.pin = pin;
+    assert.deepEqual(levels(L.evaluate(s, {expectMode: 'on'}), 'pin names tracker v4 (anchored netting)'), ['fail'], pin);
+  }
   const p = healthy(); p.info.network = 'valun-pilot-1';
   p.status.basis.pin = 'Basis tracker v4.3 (anchored netting): Valun fork commit b84b2e7 (branch circulating-credit-v4)';
   assert.deepEqual(levels(L.evaluate(p, {expectMode: 'on'}), 'pin names tracker v3.2'), ['fail'], 'v4 on the pilot');

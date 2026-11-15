@@ -226,6 +226,6 @@ ul.labels { padding-left: 18px; font-size: 14px; } ul.labels li { margin: 5px 0;
   body.pilot .top, body.pilot .banner, body.pilot .tabs, body.pilot .offline { padding-left: 12px; padding-right: 12px; }
   body.pilot .kv { grid-template-columns: minmax(0, 1fr); gap: 0; }
   body.pilot .kv dt { margin-top: 6px; } body.pilot .kv dd { margin-bottom: 2px; }
-  .appr-price { margin-left: 0; }
+  .appr-price { margin-left: 0; white-space: normal; }   /* a testnet price, "4,000,000 nanoERG (0.004 tERG) – …", is wider than a phone */
 }
 /* ======================================= end of the pilot network section ========================================== */

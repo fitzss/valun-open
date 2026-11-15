@@ -158,13 +158,18 @@ export class GuaranteeBook {
   // the oldest debt first, so what is outstanding now is the newest debt; of it, the debt added after t (notes and
   // transfers in on the pair, on every key) came after the deal. So unpaid = min(P, max(0, owed now - added after t)).
   // A made-up deal after the named one adds debt after t and can never raise what the named one covers.
+  // Fails closed: when the journal cannot show every change on the pair since a deal's note (edgeEntries partial: the
+  // index has a gap, or a compaction dropped entries the deal predates), debt added after it may be missing from `after`,
+  // which would overstate what is unpaid; such a deal then counts 0 (it is not callable until the journal is whole).
   dealsUnpaid(g, ledger) {
     if (g.terms.covers !== COVERS_DEALS) return null;
     const owed = this.owedOnTracker(g, ledger), iq = this.P.s.participants[g.issuer], cq = this.P.s.participants[g.creditor];
     if (!iq || !cq) return 0;
     const edges = [];
     for (const i of this.P.keysOf(iq)) for (const r of this.P.keysOf(cq)) edges.push(edgeKey(i, r));
-    const entries = edges.flatMap(k => edgeEntries(this.P, k));
+    const lists = edges.map(k => edgeEntries(this.P, k));
+    if (lists.some(l => l.partial)) return 0;
+    const entries = lists.flat();
     let total = 0;
     for (const id of g.terms.deals) {
       const d = this.P.s.deals[id], n = d?.credit_note;
@@ -181,18 +186,62 @@ export class GuaranteeBook {
   // since are still subtracted, so such a guarantee may cover less of the backer's other debt to the creditor.
   owed(g, ledger) { return Math.max(0, this.owedOnTracker(g, ledger) - this.honorDebt(g)); }
   due(g) { return this.now() >= Date.parse(g.terms.due_at); }
+  // The deal mode's claims on its deals (fix inbox #19's rule, per deal): the calls on this guarantee and on every other
+  // deal-mode guarantee of the same debt that names any of the same deals. Several backers of one named deal pay what is
+  // unpaid of it once between them; without this, each paid the deal's price again whenever the pair carried other debt
+  // (dealsUnpaid reads the tracker, which no backer's payment changes). Conservative for partly overlapping lists: the
+  // other guarantee's calls count in full against this one's deals.
+  dealsClaimed(g) {
+    const mine = new Set(g.terms.deals || []);
+    return this.ofDebt(g).filter(x => x.terms.covers === COVERS_DEALS && (x.id === g.id || (x.terms.deals || []).some(id => mine.has(id))))
+      .reduce((a, x) => a + this.claimed(x), 0);
+  }
+  // Whether g backs the debt a deal adds (dealId: that deal; null for a new deal, which has no id a guarantee could name
+  // yet): one in the floating mode backs any debt of its issuer to its creditor, one in the deal mode (fix inbox #29) only
+  // the deals it names. The coverage rule (backingFor) and the check's cover (stepCover) count by it.
+  backsDeal(g, dealId) { return g.terms.covers !== COVERS_DEALS || (!!dealId && (g.terms.deals || []).includes(dealId)); }
+  // Whether g can still be called an hour after debtFrom (ms), when the debt it would cover can first arise (a deal's
+  // deliver_by; null when no such time is known, and then it can): review F6b, one callable for an hour must not cover a
+  // deal delivered in days. The coverage rule (backingFor) and the check's cover (stepCover) count by it.
+  lasts(g, debtFrom) { return debtFrom === null || Date.parse(g.terms.expires_at) >= debtFrom + GUARANTEE_LIMITS.min_call_window_hours * HOUR; }
+  // What the deal-mode guarantees of g's debt that name a deal can still pay toward it between them (fix inbox #63, #75):
+  // what is unpaid of the deal once its note is issued, at most its price (all of it, for a deal in its offer phase, the
+  // only kind the check names), less what calls on every deal-mode guarantee of the debt that names it claimed, whatever
+  // that guarantee's state. dealsClaimed's rule, so the same approximation: a call counts in full against every deal its
+  // guarantee names, so the calls of a guarantee that names several deals come off this one's room too, though they may
+  // have been for its other deals (the room may be less than its backers could pay, never more).
+  dealRoom(g, dealId, price) {
+    return Math.max(0, price - this.ofDebt(g).filter(x => x.terms.covers === COVERS_DEALS && (x.terms.deals || []).includes(dealId)).reduce((a, x) => a + this.claimed(x), 0));
+  }
+  // What each of `gs` (the active guarantees of one debt, as the check lists them) could pay the creditor for the debt a
+  // deal adds, at face value (fix inbox #75, the check's cover): a Map from guarantee id to amount. 0 for one that does
+  // not back the deal (backsDeal) or cannot still be called an hour after `debtFrom` (lasts: the deal's deliver_by, when
+  // known). One in the floating mode counts its cap less what its own calls claimed. The deal-mode guarantees of the deal
+  // share what it can still claim (dealRoom: between them they pay it once), oldest first (created_at, then id, as
+  // recoveredShares orders them), each up to its cap left: their shares add up to the room or to their caps left.
+  stepCover(gs, {dealId = null, price = 0, debtFrom = null} = {}) {
+    const open = g => Math.max(0, g.terms.cap.amount - this.claimed(g)), out = new Map(gs.map(g => [g.id, 0]));
+    const counts = gs.filter(g => g.state === 'active' && this.backsDeal(g, dealId) && this.lasts(g, debtFrom));
+    for (const g of counts) if (g.terms.covers !== COVERS_DEALS) out.set(g.id, open(g));
+    const shared = counts.filter(g => g.terms.covers === COVERS_DEALS).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+    let left = shared.length ? this.dealRoom(shared[0], dealId, price) : 0;
+    for (const g of shared) { const n = Math.min(open(g), left); out.set(g.id, n); left -= n; }
+    return out;
+  }
   // What the creditor can call now: nothing unless the guarantee is active, due, before its expiry and with no call
   // open; otherwise the cap left and the debt not yet claimed by the calls on every guarantee of it, whichever is smaller.
-  // The deal mode also: no more than what is unpaid of its deals (`unpaid`, dealsUnpaid) less its own calls.
+  // The deal mode also: no more than what is unpaid of its deals (`unpaid`, dealsUnpaid) less what the deal-mode
+  // guarantees of those deals claimed (dealsClaimed).
   callable(g, owed, unpaid = null) {
     if (g.state !== 'active' || !this.due(g) || this.now() >= Date.parse(g.terms.expires_at) || this.openCall(g) || owed === null) return 0;
-    const deals = g.terms.covers === COVERS_DEALS ? (unpaid ?? 0) - this.claimed(g) : Infinity;
+    const deals = g.terms.covers === COVERS_DEALS ? (unpaid ?? 0) - this.dealsClaimed(g) : Infinity;
     return Math.max(0, Math.min(g.terms.cap.amount - this.claimed(g), owed - this.debtClaimed(g), deals));
   }
   // An unhonored call can still be honored while the issuer owes at least everything claimed on the debt so far (this
   // call and the calls on the debt's other guarantees included); otherwise paying it would pay more than the issuer owes.
+  // In the deal mode, also while its deals' unpaid part is at least what the deal-mode guarantees of those deals claimed.
   honorable(g, c, owed, unpaid = null) {
-    return UNHONORED.has(c.state) && owed >= this.debtClaimed(g) && (g.terms.covers !== COVERS_DEALS || unpaid === null || unpaid >= this.claimed(g));
+    return UNHONORED.has(c.state) && owed >= this.debtClaimed(g) && (g.terms.covers !== COVERS_DEALS || unpaid === null || unpaid >= this.dealsClaimed(g));
   }
 
   // Lazy expiry (as deals are swept): an offer past offer_expires_at, an active guarantee past expires_at. Saves when
@@ -441,10 +490,11 @@ export class GuaranteeBook {
         const claimed = this.claimed(g), onDebt = this.debtClaimed(g);
         const others = this.ofDebt(g).filter(x => x.id !== g.id && this.claimed(x) > 0).map(x => ({guarantee_id: x.id, claimed: this.claimed(x)}));
         const via = others.length ? ` (${others.map(o => `${amt(o.claimed)} via ${o.guarantee_id}`).join(', ')}${claimed ? `, ${amt(claimed)} via this one` : ''})` : '';
-        const honorDebt = this.honorDebt(g);
-        throw new PilotError('exceeds_callable', `at most ${amt(callable)} can be called now: the cap left is ${amt(g.terms.cap.amount - claimed)}${unpaid !== null ? `, what is unpaid of the deals it backs is ${amt(unpaid)}` : ''}, and the issuer owes you ${amt(owed)} that this guarantee covers${honorDebt ? ` (on the tracker ${amt(owed + honorDebt)}, of which ${amt(honorDebt)} are its own payments to you as a backer, which a guarantee of its debts does not cover)` : ''}, of which earlier calls on this debt claimed ${amt(onDebt)}${via}`, 409,
+        const honorDebt = this.honorDebt(g), onDeals = unpaid !== null ? this.dealsClaimed(g) : null;
+        const dealsText = unpaid === null ? '' : `, what is unpaid of the deals it backs is ${amt(unpaid)}${onDeals ? `, of which calls on the guarantees of those deals claimed ${amt(onDeals)}` : ''}`;
+        throw new PilotError('exceeds_callable', `at most ${amt(callable)} can be called now: the cap left is ${amt(g.terms.cap.amount - claimed)}${dealsText}, and the issuer owes you ${amt(owed)} that this guarantee covers${honorDebt ? ` (on the tracker ${amt(owed + honorDebt)}, of which ${amt(honorDebt)} are its own payments to you as a backer, which a guarantee of its debts does not cover)` : ''}, of which earlier calls on this debt claimed ${amt(onDebt)}${via}`, 409,
           {callable, issuer_owes_creditor: owed, claimed, claimed_on_debt: onDebt, ...(others.length ? {claimed_by_other_guarantees: others} : {}), ...(honorDebt ? {issuer_honor_debt: honorDebt} : {}),
-            ...(unpaid !== null ? {deals_unpaid: unpaid} : {}), cap: g.terms.cap.amount});
+            ...(unpaid !== null ? {deals_unpaid: unpaid, claimed_on_deals: onDeals} : {}), cap: g.terms.cap.amount});
       }
       const now = this.now();
       const c = {id: callId, amount, signature, called_at: iso(now), honor_by: iso(now + g.terms.honor_within_hours * HOUR), state: 'open', owed_at_call: owed, claimed_before: this.claimed(g),
@@ -678,13 +728,13 @@ export class GuaranteeBook {
   // open cap and what its calls claimed count at it. Without it, at face value. What can still be called is limited by the
   // face amounts claimed (a call claims face value whatever the backer is worth).
   // debtFrom (ms): when the debt being covered can first arise (a deal's deliver_by); an active guarantee counts only if it
-  // can still be called an hour after that (review F6b: one callable for an hour must not cover a deal delivered in days).
-  // dealId: the deal being agreed; a guarantee in the deal mode (fix inbox #29) counts only for the deals it names.
+  // can still be called an hour after that (lasts; review F6b: one callable for an hour must not cover a deal delivered in
+  // days). dealId: the deal being agreed; a guarantee in the deal mode (fix inbox #29) counts only for the deals it names
+  // (backsDeal). The check's cover counts by both (stepCover).
   backingFor(C, issuerId, {debtAfter = null, ratio = () => 1, debtFrom = null, dealId = null} = {}) {
     const r = id => Math.max(0, Math.min(1, ratio(id)));
-    const all = this.list().filter(g => g.creditor === C.id && g.issuer === issuerId && (g.terms.covers !== COVERS_DEALS || (dealId && g.terms.deals.includes(dealId)))).map(g => this.sweep(g));
-    const lasts = g => debtFrom === null || Date.parse(g.terms.expires_at) >= debtFrom + GUARANTEE_LIMITS.min_call_window_hours * HOUR;
-    const parts = all.filter(g => g.state === 'active' && lasts(g)).map(g => ({id: g.id, open: Math.max(0, g.terms.cap.amount - this.claimed(g)), r: r(g.backer)})).filter(x => x.open > 0);
+    const all = this.list().filter(g => g.creditor === C.id && g.issuer === issuerId && this.backsDeal(g, dealId)).map(g => this.sweep(g));
+    const parts = all.filter(g => g.state === 'active' && this.lasts(g, debtFrom)).map(g => ({id: g.id, open: Math.max(0, g.terms.cap.amount - this.claimed(g)), r: r(g.backer)})).filter(x => x.open > 0);
     const openFace = parts.reduce((a, x) => a + x.open, 0), openValue = parts.reduce((a, x) => a + x.open * x.r, 0);
     const paidFace = all.reduce((a, g) => a + this.claimed(g), 0), paid = Math.floor(all.reduce((a, g) => a + this.claimed(g) * r(g.backer), 0) + 1e-9);
     if (debtAfter === null) return {amount: Math.floor(openValue + 1e-9), already_paid: paid, cover: Math.floor(openValue + 1e-9) + paid, ids: parts.map(x => x.id)};

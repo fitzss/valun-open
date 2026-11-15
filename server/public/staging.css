@@ -5,6 +5,5 @@
   font: 500 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 .valun-staging a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .valun-staging a:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
-/* The live network view (network.css) lays its body out as a grid, one row per part, with the graph's row the third:
-   the banner is one more part, on top, so the graph's row moves down one. */
-body:has(> .valun-staging) { grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+/* The live network view (network.css) lays its body out as a column in which only the stage grows, and counts no parts:
+   the banner is its first part there and needs no rule of its own (fix inbox #47). */

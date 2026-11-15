@@ -68,8 +68,12 @@ export function createHandler({service, mcp, cfg, publicDir, pilotRoutes = null,
     if (hits.size > 5000) for (const [k, v] of hits) if (!v.some(t => now - t < 600_000)) hits.delete(k);
     return w.length > 120;
   };
+  // The legacy synthetic desk (/api, /mcp) on a hosted deployment with no demo passphrase is read-only (fix inbox #64):
+  // its writes used server-held keys on the demo tracker the network's process depends on, open to anyone. Without a
+  // passphrase, writes are open only to a local or test deployment.
+  const writesClosed = cfg.deployment === 'hosted' && !cfg.writeToken;
   const tokenOk = got => {
-    if (!cfg.writeToken) return true;
+    if (!cfg.writeToken) return !writesClosed;
     const a = Buffer.from(String(got || '')), b = Buffer.from(cfg.writeToken);
     return a.length === b.length && crypto.timingSafeEqual(a, b);
   };
@@ -89,7 +93,7 @@ export function createHandler({service, mcp, cfg, publicDir, pilotRoutes = null,
       return send(res, e instanceof UserError ? 413 : 400, {jsonrpc: '2.0', id: null, error: {code: -32700, message: e instanceof UserError ? e.message : 'parse error'}});
     }
     const ip = clientIp(req);
-    const ctx = {writeAllowed: tokenOk(requestToken(req)), rateLimited: () => rateLimited(ip)};
+    const ctx = {writeAllowed: tokenOk(requestToken(req)), writesClosed, rateLimited: () => rateLimited(ip)};
     const msgs = Array.isArray(body) ? body : [body];
     const out = (await Promise.all(msgs.map(m => mcp.handle(m, ctx)))).filter(Boolean);
     if (!out.length) return send(res, 202, null);
@@ -122,6 +126,7 @@ export function createHandler({service, mcp, cfg, publicDir, pilotRoutes = null,
     if (pilotRoutes && p.startsWith('/pilot/v1/')) return pilotRoutes(req, res, url, send, clientIp);
     if (!p.startsWith('/api/')) return send(res, 404, {error: 'not found'});
     if (req.method === 'POST') {
+      if (writesClosed) return send(res, 403, {error: 'writes_closed', message: 'the synthetic demo desk is read-only on this hosted deployment (fix inbox #64); the Valun network is under /pilot/v1 (see /skill.md)'});
       if (!tokenOk(requestToken(req))) return send(res, 401, {error: 'this deployment requires the demo write token (x-valun-token)'});
       if (rateLimited(clientIp(req))) return send(res, 429, {error: 'too many changes from this address; try again in a few minutes'});
     }

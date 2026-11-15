@@ -38,4 +38,14 @@ export const TRACKER_SHA256_PINS = Object.freeze([
   // /home/valun/valun-app-bins-v44-20261113T1340Z/t/release/basis_server. Tracker tests (basis_store, basis_server,
   // basis_offchain) 758 passed, 0 failed; the two new TR-19 tests fail on v4.3's code.
   'e417c4b8d9c82f32cd4454e827c36358c666f6bf49df522716ac750d29de5dc5',
+  // tracker v4.4.1 (branch tr-22-keep-keyspace, commit 7c3c0db093f9292cc887e27860075599e8706a8e: v4.4 + TR-22: the
+  // reserve, tracker, acceptance-policy and scanner-metadata storages of basis_store keep their fjall Keyspace for as
+  // long as their partitions, as the note storage already did; v4.4 dropped it at the end of open(), so once a
+  // partition had reached an on-disk segment every read of that segment panicked ("should acquire file handle") and the
+  // tracker crash-looped at each start; fix inbox #81, the testnet outage of Nov 15), built offline in valun-ic1
+  // (target-v441, Rust 1.98.1; a second build, target-v441-check, gives the same sha256) and staged at dist/bin-v441
+  // and ~/valun-bins/v441. Fork tests (basis_core 35, basis_offchain 25, basis_store 383, basis_server 356) 799 passed,
+  // 0 failed; the 6 new TR-22 tests fail on v4.4's code (four panic as the testnet did, two time out with no flush).
+  // GET /capabilities is v4.4's but for its commit. Its valun_signer is byte-identical to v4.4's (a2b870bd...).
+  'd24e9a450030c918b1a553a2c3821bbbea1b4243a83c00f832b26150d9050a87',
 ]);

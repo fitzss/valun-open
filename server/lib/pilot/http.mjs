@@ -9,7 +9,7 @@ import {METRICS_CACHE_MS} from './clearing.mjs';
 import {loopsOf, loopOf, LOOP_ID_RE, renderLoopPage, renderLoopNotFound} from './loops.mjs';
 import {AnchorWatch, CHECK_INTERVAL_S, confirmedUpdates, creatingTx, dailyCap, loopAnchor, trackerBoxUpdates} from './anchors.mjs';
 import {AGENT_HANDLE_RE, agentPageShown, agentView, renderAgentPage, renderAgentNotFound} from './agents.mjs';
-import {assertCardPublic, budgetCard, cardPublic, checkPayer, findPayee, parseAmount, roomOf} from './card.mjs';
+import {assertCardPublic, budgetCard, cardPublic, checkPayer, dealUnderReview, findPayee, parseAmount, parseDeliverBy, parsePath, roomOf} from './card.mjs';
 import {withUnitNeutralNames as unitNeutral} from './amount-names.mjs';
 import {ENVIRONMENT} from '../environment.mjs';
 
@@ -263,18 +263,35 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       return sendCached(res, send, `participant:${x.id}`, async () => ({...pilot.directoryRecord(x), public_position: unitNeutral(await pilot.publicPosition(x))}));
     }
     // The budget card and its check (lib/pilot/card.mjs), once the agent's owner published it (mandate public_card);
-    // otherwise 404 card_not_public. Cached as the other public reads are: a check is keyed by its payee and amount, which
-    // are checked first (400 invalid_field, 404 not_found).
+    // otherwise 404 card_not_public. Cached as the other public reads are: a check is keyed by its payee, amount and path,
+    // which are checked first (400 invalid_field, 404 not_found).
     if (G && (m = /^\/participants\/(vp_[0-9a-f]{12})\/(card|check)$/.exec(p))) {
       const x = pilot.participant(m[1]);
       assertCardPublic(x);
       if (m[2] === 'card') return sendCached(res, send, `card:${x.id}`, () => budgetCard(pilot, x));
       const amount = parseAmount(url.searchParams.get('amount'), pilot.unit), payee = findPayee(pilot, url.searchParams.get('payee'), x);
-      // The payee's cover is its own business: shown only to a check sent with the payee's token (agent or owner), and
-      // such an answer is never cached; everyone else gets the cached public answer, with cover.covered null.
-      const asker = bearer(req) ? pilot.authenticate(bearer(req)) : null;
-      if (asker?.p?.id === payee.id) return send(res, 200, await checkPayer(pilot, x, {amount, payee, showCover: true}));
-      return sendCached(res, send, `check:${x.id}:${payee.id}:${amount}`, () => checkPayer(pilot, x, {amount, payee}));
+      // path=payer_proposes|payee_proposes: who would propose the new deal (the payer when not given); the payer's open-offer
+      // limit binds only when it proposes.
+      const path = parsePath(url.searchParams.get('path'));
+      // The payee's cover and its own side of the step (payee_side) are its own business: shown only to a check sent with
+      // the payee's token (agent or owner), and such an answer is never cached; everyone else gets the cached public
+      // answer, with cover.covered null and no payee_side. A check sent with the payee's agent token is a request of its
+      // agent: authenticate renews a self-serve agent on the open network first, as on every route, and the check
+      // answers on that state.
+      const asker = bearer(req) ? pilot.authenticate(bearer(req)) : null, ownCheck = asker?.p?.id === payee.id;
+      // Fix inbox #60: deal=vd_... names the offer the payee is deciding on, so the check counts it once, as accepting it
+      // does. It is the payee's business: answered only to a check sent with the payee's token, never cached. So is
+      // deliver_by=, the delivery time of a new deal the payee's own side counts guarantees for.
+      const dealRaw = url.searchParams.get('deal'), deliverRaw = url.searchParams.get('deliver_by');
+      if (dealRaw !== null) {
+        if (!ownCheck) throw new PilotError('not_payee', 'deal= is answered only to the payee: send the check with the payee\'s agent or owner token', 403);
+        if (path !== null || deliverRaw !== null) throw new PilotError('invalid_field', 'path and deliver_by are for a new deal: the deal named with deal= has its own proposer and deliver_by');
+        const deal = dealUnderReview(pilot, dealRaw, {payer: x, payee, amount});
+        return send(res, 200, await checkPayer(pilot, x, {amount, payee, showCover: true, deal}));
+      }
+      if (deliverRaw !== null && !ownCheck) throw new PilotError('not_payee', 'deliver_by= is answered only to the payee: send the check with the payee\'s agent or owner token', 403);
+      if (ownCheck) return send(res, 200, await checkPayer(pilot, x, {amount, payee, showCover: true, path, deliverBy: parseDeliverBy(pilot, deliverRaw)}));
+      return sendCached(res, send, `check:${x.id}:${payee.id}:${amount}:${path ?? ''}`, () => checkPayer(pilot, x, {amount, payee, path}));
     }
     // The reconciliation rows are v15's in every mode (SV-PRIV-1, owner decision 9): no per-edge journal columns here.
     if (G && p === '/ledger') return sendCached(res, send, 'ledger', async () => { const l = await pilot.ledger(); return {unit: pilot.unit, notes: l, reconciliation: await pilot.reconcile(l, {public: true})}; });

@@ -34,7 +34,10 @@ export const PILOT_TOKEN_ID = crypto.createHash('sha256').update('valun-pilot-cr
 export const PILOT_DENOMINATION = `token:${PILOT_TOKEN_ID}`;
 export const PRICE_CAP = pc(1000);        // per deal, network-wide sanity cap (1000 PC on the pilot)
 const LIMIT_MAX = pc(100000);             // the largest limit an owner or agent may set (100000 PC on the pilot)
-const MAX_OFFER_TTL_MS = 7 * 864e5, MAX_DELIVERY_MS = 30 * 864e5;
+// How far ahead a deal's offer_expires_at and deliver_by may be (validateTerms); the budget card's check takes a new
+// deal's deliver_by within the same bound (lib/pilot/card.mjs).
+const MAX_OFFER_TTL_MS = 7 * 864e5;
+export const MAX_DELIVERY_MS = 30 * 864e5;
 const ENROLL_TTL_MS = 30 * 60e3;
 // An agreed deal the payee has not delivered this long after deliver_by ends as expired_undelivered (OQ-8). A delivery
 // waiting for the payer's review never expires.
@@ -544,14 +547,29 @@ export class Pilot {
   // expiry with it, move to SANDBOX_DAYS from now; one that had ended (dormant) wakes up. A mandate expiry its owner set
   // earlier than the sandbox end stays as the owner set it. The mandate change is recorded as the operator's.
   renewSandbox(p) {
-    const now = this.now(), end = Date.parse(p.sandbox_expires_at);
-    if (Number.isFinite(end) && end - now >= SANDBOX_RENEW_WITHIN_DAYS * 864e5) return false;
-    const until = iso(now + SANDBOX_DAYS * 864e5), from = p.sandbox_expires_at;
-    const ownerEarlier = !!p.mandate?.expires_at && Number.isFinite(end) && Date.parse(p.mandate.expires_at) < end;
-    p.sandbox_expires_at = until;
-    if (ownerEarlier) this.save(); else this.setMandate(p, {expires_at: until}, {by: 'operator'});
-    this.store.audit({type: 'participant.sandbox_renewed', id: p.id, from, until, ...(ownerEarlier ? {mandate_expiry_kept: p.mandate.expires_at} : {})});
+    const r = this.sandboxRenewal(p);
+    if (!r) return false;
+    p.sandbox_expires_at = r.until;
+    if (r.ownerEarlier) this.save(); else this.setMandate(p, {expires_at: r.until}, {by: 'operator'});
+    this.store.audit({type: 'participant.sandbox_renewed', id: p.id, from: r.from, until: r.until, ...(r.ownerEarlier ? {mandate_expiry_kept: p.mandate.expires_at} : {})});
     return true;
+  }
+  // What renewSandbox does to p now, changing nothing: null when it renews nothing (SANDBOX_RENEW_WITHIN_DAYS or more of
+  // sandbox time left), else {from, until, ownerEarlier}: the sandbox time moves from `from` to `until`, and the mandate's
+  // expiry moves to `until` too unless its owner set it earlier than the sandbox end (ownerEarlier: it stays).
+  sandboxRenewal(p) {
+    const now = this.now(), end = Date.parse(p.sandbox_expires_at);
+    if (Number.isFinite(end) && end - now >= SANDBOX_RENEW_WITHIN_DAYS * 864e5) return null;
+    return {from: p.sandbox_expires_at, until: iso(now + SANDBOX_DAYS * 864e5),
+      ownerEarlier: !!p.mandate?.expires_at && Number.isFinite(end) && Date.parse(p.mandate.expires_at) < end};
+  }
+  // p as a request of its own agent finds it, for a read that answers for that request (the budget card's check,
+  // lib/pilot/card.mjs), changing nothing: authenticate renews a self-serve participant on the open network before
+  // anything else (renewSandbox), so this is a copy of p with the sandbox time and the mandate expiry that renewal gives,
+  // or p itself when its agent's request renews nothing (or it has no active agent to send one).
+  renewedView(p) {
+    const r = p?.sandbox_only && this.openNetwork && p.status === 'active' ? this.sandboxRenewal(p) : null;
+    return !r ? p : {...p, sandbox_expires_at: r.until, ...(r.ownerEarlier ? {} : {mandate: {...p.mandate, expires_at: r.until}})};
   }
   // What GET /info says about joining without an invite (null when this server does not offer it).
   selfServe() {
@@ -900,7 +918,7 @@ export class Pilot {
     }
     const mine = recent.filter(r => r.k === k);
     if (mine.length >= SANDBOX_JOINS_PER_HOUR_PER_ADDRESS) {
-      throw new PilotError('rate_limited', `at most ${SANDBOX_JOINS_PER_HOUR_PER_ADDRESS} sandbox joins per hour from one address (an IPv6 /48)`, 429,
+      throw new PilotError('rate_limited', `at most ${SANDBOX_JOINS_PER_HOUR_PER_ADDRESS} sandbox joins per hour from one address (an IPv4 address, or an IPv6 /48)`, 429,
         {retry_after_ms: retryAfter(mine)});
     }
     const slot = {k, at: iso(now)};
@@ -921,9 +939,16 @@ export class Pilot {
     const ids = [...(this.sandboxIds || [])];
     if (!ids.length) throw new PilotError('sandbox_unavailable', 'the sandbox agents are not running on this server', 503);
     // A cap for the whole server per day, on top of the hourly limits: many addresses cannot fill a small machine's state.
-    const since = this.now() - 864e5;
-    if (Object.values(this.s.participants).filter(x => x.sandbox_only && Date.parse(x.created_at) > since).length >= SANDBOX_JOINS_PER_DAY)
-      throw new PilotError('sandbox_full', `the sandbox takes at most ${SANDBOX_JOINS_PER_DAY} new participants a day; try again later`, 503);
+    // The day is a rolling 24 h window, not a calendar day (fix inbox #61): the refusal is a 429 like the hourly ones, and
+    // says when the next place frees (the oldest counted join leaves the window then).
+    const now = this.now(), since = now - 864e5;
+    const inWindow = Object.values(this.s.participants).filter(x => x.sandbox_only && Date.parse(x.created_at) > since);
+    if (inWindow.length >= SANDBOX_JOINS_PER_DAY) {
+      const oldest = Math.min(...inWindow.map(x => Date.parse(x.created_at)));
+      const ms = Math.max(1000, oldest + 864e5 - now), at = iso(now + ms);
+      throw new PilotError('sandbox_full', `the sandbox takes at most ${SANDBOX_JOINS_PER_DAY} new participants in any 24 hours (a rolling window, not a calendar day); the next place frees at ${at}, in ${Math.ceil(ms / 60e3)} min`, 429,
+        {retry_after_ms: ms, resets_at: at});
+    }
     // The address's slot is taken before the first await, so joins running at the same time count each other, and is
     // given back if the join is refused: only joins that happen count.
     const slot = addressKey == null ? null : this.takeSandboxJoinSlot(addressKey);
@@ -1189,10 +1214,13 @@ export class Pilot {
   // whose sandbox time has ended (dormant; circulating credit on, design §5.8, spec 18.15; null otherwise). `owed` is the
   // part on the tracker that counts, `total` everything that counts. checkMandate and the budget card (lib/pilot/card.mjs)
   // both count with it, so the card's room is the room the server enforces.
-  issueExposure(p, ledger, {excludeDealId = null, excludeGuaranteeId = null} = {}) {
+  // `views`: a Map from a participant id to that participant as a later step will find it (renewedView: renewed by its
+  // own agent's request), for a read that answers for that step; whether a recipient is dormant is read from its view
+  // when it has one. Without views, every participant as it is now.
+  issueExposure(p, ledger, {excludeDealId = null, excludeGuaranteeId = null, views = null} = {}) {
     const e = this.exposure(p, ledger, {asRole: 'payer', excludeDealId, excludeGuaranteeId});
     const dormant = this.circulating && this.sandboxIds?.has(p.id)
-      ? ledger.filter(l => l.issuer === p.id && this.dormant(this.s.participants[l.recipient])).reduce((a, l) => a + l.outstanding, 0) : null;
+      ? ledger.filter(l => l.issuer === p.id && this.dormant(views?.get(l.recipient) ?? this.s.participants[l.recipient])).reduce((a, l) => a + l.outstanding, 0) : null;
     return {e, dormant, owed: e.tracker - (dormant ?? 0), total: e.total - (dormant ?? 0)};
   }
   // What p holds and is owed as payee on every issuer together (the phase-2 max_claims_total, lib/pilot/policy.mjs): its
@@ -1224,7 +1252,9 @@ export class Pilot {
   // accepting commits the creditor to nothing). `excludeGuaranteeId`: the guarantee being checked, whose cap is `price`.
   // `ledger`: the tracker's notes as the caller already read them (Pilot.ledger), so a read that shows them beside the
   // check (the budget card's check) counts from the same notes; otherwise they are read here.
-  async checkMandate(p, role, counterpartyId, price, {excludeDealId = null, excludeGuaranteeId = null, guarantee = false, also = [], debtFrom = null, dealId = null, ledger: given = null} = {}) {
+  // `views` (a read that answers for a later step, the budget card's check): the participants as that step finds them,
+  // for issueExposure; p itself is then passed as the step finds it (renewedView). Actions never pass it.
+  async checkMandate(p, role, counterpartyId, price, {excludeDealId = null, excludeGuaranteeId = null, guarantee = false, also = [], debtFrom = null, dealId = null, ledger: given = null, views = null} = {}) {
     const m = this.effectiveLimits(p);                // owner mandate, tightened by any limits the agent recorded
     const fail = (rule, detail, from = null) => {
       // `source` keeps naming the limit set that applied (agent_limits | owner_mandate); `recorded_by` says who recorded an
@@ -1249,7 +1279,7 @@ export class Pilot {
       // A sandbox agent with circulating credit on (design §5.8, spec 18.15): what it owes sandbox participants whose
       // sandbox time has ended (dormant) does not count against its own max_issue_outstanding; the check reports it as
       // dormant_PC (owed_on_tracker is then the part that counts). Every other check is v15's.
-      const {e, dormant, owed, total} = this.issueExposure(p, ledger, {excludeDealId, excludeGuaranteeId});
+      const {e, dormant, owed, total} = this.issueExposure(p, ledger, {excludeDealId, excludeGuaranteeId, views});
       checks.push({rule: 'max_issue_outstanding', owed_on_tracker: owed, ...(dormant === null ? {} : {dormant_PC: dormant}), committed: e.committed, reserved: e.reserved,
         ...(e.guaranteed ? {guaranteed: e.guaranteed} : {}), this_deal: price, limit: m.max_issue_outstanding});
       if (total + price > m.max_issue_outstanding) fail('max_issue_outstanding', `issuing ${price} would bring this agent's outstanding credit to ${total + price}, above max_issue_outstanding ${m.max_issue_outstanding}`);
@@ -1518,6 +1548,17 @@ export class Pilot {
     return a;
   }
 
+  // The open network's limit on a self-serve participant's own offers (OPEN_NETWORK_MAX_OPEN_OFFERS): true when p may not
+  // propose another deal now, so propose() refuses it (429 too_many_open_offers). Its offers are the deals, swept first,
+  // that are open or waiting for its owner with its own version current. Only proposing counts: accepting an offer, or
+  // countering one, is never refused for it. The budget card's check (lib/pilot/card.mjs) answers with the same count.
+  atOpenOfferLimit(p) {
+    if (!this.openNetwork || !p?.sandbox_only) return false;
+    const mine = Object.values(this.s.deals).filter(x => (x.payer === p.id || x.payee === p.id)).map(x => this.sweep(x))
+      .filter(x => (x.status === 'open' || x.status === 'proposed_awaiting_owner') && this.current(x).by === p.id).length;
+    return mine >= OPEN_NETWORK_MAX_OPEN_OFFERS;
+  }
+
   propose(p, {terms, terms_hash: claimed, signature}) {
     return this.serial(async () => {
       const t = this.validateTerms(terms, p);
@@ -1528,12 +1569,8 @@ export class Pilot {
       await this.verifySig(p, statements.propose(h), signature, 'proposal');
       if (Object.hasOwn(this.s.deals, t.deal_id)) throw new PilotError('duplicate', 'that deal id already exists', 409);
       const role = t.payer.id === p.id ? 'payer' : 'payee', other = role === 'payer' ? t.payee.id : t.payer.id;
-      if (this.openNetwork && p.sandbox_only) {
-        const mine = Object.values(this.s.deals).filter(x => (x.payer === p.id || x.payee === p.id)).map(x => this.sweep(x))
-          .filter(x => (x.status === 'open' || x.status === 'proposed_awaiting_owner') && this.current(x).by === p.id).length;
-        if (mine >= OPEN_NETWORK_MAX_OPEN_OFFERS) throw new PilotError('too_many_open_offers',
-          `a self-serve participant has at most ${OPEN_NETWORK_MAX_OPEN_OFFERS} offers of its own open at once; withdraw one or wait for answers`, 429);
-      }
+      if (this.atOpenOfferLimit(p)) throw new PilotError('too_many_open_offers',
+        `a self-serve participant has at most ${OPEN_NETWORK_MAX_OPEN_OFFERS} offers of its own open at once; withdraw one or wait for answers`, 429);
       const chk = await this.checkMandate(p, role, other, t.price.amount, {debtFrom: Date.parse(t.deliver_by), dealId: t.deal_id});
       const v = {v: 1, by: p.id, terms: t, terms_hash: h, signature, created_at: iso(this.now()), state: chk.needsOwner ? 'awaiting_owner' : 'open', mandate_check: chk,
         offered_at: chk.needsOwner ? null : iso(this.now())};

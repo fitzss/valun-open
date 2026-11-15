@@ -55,8 +55,9 @@ export function evaluate(snap, {expectMode = null, limits = LIMITS} = {}) {
   const pin = status.basis?.pin ?? '';
   if (/\(binary not pinned\)\s*$/.test(pin)) add(mode === 'off' ? 'warn' : 'fail', 'tracker binary pinned', pin);
   // The tracker each network runs: the pilot's is tracker v3.2; the testnet's (valun-testnet-1) is tracker v4 with
-  // anchored netting (TR-15), which keeps the same contract (checked below).
-  else if (mode !== 'off' && !(info.network === 'valun-testnet-1' ? /^Basis tracker v4(\.\d+)? \(anchored netting\): / : /^Basis tracker v3\.2: /).test(pin)) {
+  // anchored netting (TR-15), which keeps the same contract (checked below): v4.x or v4.x.y, as lib/basis.mjs names it,
+  // a name that may add what the build fixes ("tracker v4.4.1 (anchored netting, keyspaces kept open)").
+  else if (mode !== 'off' && !(info.network === 'valun-testnet-1' ? /^Basis tracker v4(\.\d+){0,2} \(anchored netting(, [^)]+)?\): / : /^Basis tracker v3\.2: /).test(pin)) {
     add('fail', `tracker pin names ${info.network === 'valun-testnet-1' ? 'tracker v4 (anchored netting)' : 'tracker v3.2'}`, pin || 'no pin');
   }
   else add('ok', 'tracker pin', pin || 'none');

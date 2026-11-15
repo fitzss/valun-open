@@ -101,7 +101,7 @@ test('at most 12 sandbox joins per address per hour (guests at one venue share a
   // stranger-1 above came from the same address: the burst gets 11 x 201, then 429s
   assert.deepEqual(st, [...Array(11).fill(201), 429, 429], st.join(','));
   const r = await call(on, 'POST', '/join-sandbox', {handle: 'burst-x', operator: 'x'});
-  assert.equal(r.body?.message, 'at most 12 sandbox joins per hour from one address (an IPv6 /48)');
+  assert.equal(r.body?.message, 'at most 12 sandbox joins per hour from one address (an IPv4 address, or an IPv6 /48)');
 });
 
 test('a server-wide cap: at most 200 new sandbox participants a day, whatever the addresses', async () => {
@@ -109,7 +109,20 @@ test('a server-wide cap: at most 200 new sandbox participants a day, whatever th
   const p = new Pilot({store: new PilotStore(dir), basis, openSandbox: true});
   p.sandboxIds = new Set([...pilot.sandboxIds]);
   for (const id of p.sandboxIds) p.s.participants[id] = pilot.s.participants[id];       // the sandbox agents exist here too
-  const now = new Date().toISOString();
-  for (let i = 0; i < 200; i++) p.s.participants['vp_' + String(i).padStart(12, '0')] = {id: 'vp_' + String(i).padStart(12, '0'), handle: 'cap' + i, sandbox_only: true, created_at: now};
-  await assert.rejects(() => p.joinSandbox({handle: 'one-too-many', operator: 'x'}), e => e.code === 'sandbox_full' && e.status === 503);
+  const t0 = Date.now(), oldest = t0 - 3 * 3600e3;                     // the oldest counted join, 3 h ago
+  for (let i = 0; i < 200; i++) p.s.participants['vp_' + String(i).padStart(12, '0')] = {id: 'vp_' + String(i).padStart(12, '0'), handle: 'cap' + i, sandbox_only: true,
+    created_at: new Date(i === 0 ? oldest : t0).toISOString()};
+  // Fix inbox #61: a 429 like the hourly limits, saying when the next place frees (the window is a rolling 24 h).
+  await assert.rejects(() => p.joinSandbox({handle: 'one-too-many', operator: 'x'}), e => {
+    assert.deepEqual([e.code, e.status], ['sandbox_full', 429]);
+    const want = oldest + 864e5 - Date.now();
+    assert.ok(Math.abs(e.extra.retry_after_ms - want) < 5000, `retry_after_ms ${e.extra.retry_after_ms} is about ${want}`);
+    assert.ok(Math.abs(Date.parse(e.extra.resets_at) - (oldest + 864e5)) < 5000, 'resets_at is when the oldest counted join leaves the window');
+    assert.match(e.message, /^the sandbox takes at most 200 new participants in any 24 hours \(a rolling window, not a calendar day\); the next place frees at \d{4}-\d{2}-\d{2}T[\d:.]+Z, in \d+ min$/);
+    return true;
+  });
+  // Joins older than 24 h no longer count: the oldest one leaving frees one place.
+  p.s.participants['vp_' + '0'.repeat(12)].created_at = new Date(t0 - 25 * 3600e3).toISOString();
+  const j = await p.joinSandbox({handle: 'now-fits', operator: 'x'});
+  assert.equal(p.s.participants[j.participant_id].handle, 'now-fits');
 });

@@ -27,17 +27,22 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
+/* One screen, one column of parts: each part as tall as its content, and the stage (graph and feed) takes what is left.
+   Nothing counts the parts, so the "On Ergo testnet" strip (shown once /chain answers) and staging's banner
+   (public/staging.css) are parts like the others. Fix inbox #47: in a grid of four rows the strip was a fifth part that
+   moved every part after it down a row, and the stat cards, in the stage's flexible row, collapsed to a sliver. */
 body {
   background: var(--bg);
   color: var(--text);
   font: 400 var(--fs)/1.35 var(--sans);
   height: 100vh;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: 1.1vh;
   padding: 1.4vh 1.4vw 1.2vh;
   overflow: hidden;
 }
+body > * { flex: none; }
 a { color: var(--transfer); }
 b { font-weight: 650; }
 
@@ -72,7 +77,8 @@ b { font-weight: 650; }
 .chain .k { color: var(--text); font-weight: 600; }
 .chain .ok { color: var(--note); } .chain .wait { color: var(--warn); }
 .chain a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
-.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 1vh 1.1vw 1.1vh; min-width: 0; position: relative; overflow: hidden; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 1vh 1.1vw 1.1vh; min-width: 0; position: relative; overflow: hidden;
+  container-type: inline-size; }
 .stat::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--line); }
 .stat.s-setoff::before { background: var(--setoff); }
 .stat.s-transfer::before { background: var(--transfer); }
@@ -82,13 +88,17 @@ b { font-weight: 650; }
 .stat .k { font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
 .stat .v { font-size: clamp(28px, 5vh, 60px); font-weight: 700; line-height: 1.08; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; white-space: nowrap; }
 .stat .v .u { font-size: 0.42em; font-weight: 600; color: var(--muted); margin-left: 0.3em; letter-spacing: 0.02em; }
+/* An amount (a value with its unit) no larger than its card holds: exact to the nanoERG, a testnet amount
+   ("0.204645002 tERG") is far wider than a count. 12cqi (hundredths of the card's width; .stat is the container) fits
+   up to 12 characters, "12.345678901 tERG", at every size from a phone to 1920x1080. */
+.stat .v:has(.u) { font-size: min(clamp(28px, 5vh, 60px), 12cqi); }
 .stat .sub { font-size: 0.82em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .s-check .v { font-size: clamp(24px, 3.9vh, 48px); color: var(--note); }
 .bump { display: inline-block; animation: bump 1.1s ease-out; }
 @keyframes bump { 0% { transform: scale(1.18); color: #fff; text-shadow: 0 0 18px rgba(255, 255, 255, 0.6); } 100% { transform: scale(1); } }
 
 /* ---------- graph and feed ---------- */
-.stage { display: grid; grid-template-columns: minmax(0, 1fr) clamp(340px, 27vw, 560px); gap: 1vw; min-height: 0; }
+.stage { flex: 1 1 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(340px, 27vw, 560px); gap: 1vw; min-height: 0; }
 .graph-panel { position: relative; background: radial-gradient(ellipse at center, #0d0f14 0%, var(--panel) 62%); border: 1px solid var(--line); border-radius: 16px; min-height: 0; overflow: hidden;
   display: grid; grid-template-rows: minmax(0, 1fr) auto; }
 .graph-box { position: relative; min-height: 0; }
@@ -238,6 +248,11 @@ a.h:hover, a.h:focus-visible { text-decoration: underline; text-underline-offset
 @media (max-width: 900px) {
   body { height: auto; min-height: 100vh; overflow: auto; padding: 12px 16px; display: block; --fs: 15px; }
   .bar { flex-wrap: wrap; }
+  /* The "live" pill goes under the title when the line is too short for both (at 390 px it stuck out by 9 px and the
+     page scrolled sideways), and a long status is cut short rather than widen the page. */
+  .brand { flex-wrap: wrap; row-gap: 0.4em; max-width: 100%; }
+  .live { margin-left: 0; max-width: 100%; }
+  #live-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .meta { text-align: left; white-space: normal; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 10px 0; }
   .stat .v { font-size: 30px; }

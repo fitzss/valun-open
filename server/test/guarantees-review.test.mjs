@@ -559,3 +559,61 @@ test('#31: public vouches are listed only when the backer and the issuer both ch
   assert.throws(() => pilot.setProfile(A, {public_vouches: 'yes'}), e => e.code === 'invalid_field' && /true or false/.test(e.message));
   assert.deepEqual(pilot.setProfile(A, {public_vouches: false}).changed, [], 'no change, nothing saved');
 });
+
+// Deal-mode stacking (found by the lead's code review, 2026-11-14): several deal-mode guarantees naming one deal, on a
+// pair that also carries older debt. Before the fix each backer paid the deal's unpaid price again (dealsUnpaid reads
+// the tracker, which a backer's payment does not change, and the deal-mode bound counted only the guarantee's own
+// calls), so two backers of a 5 deal paid 10. Now they pay it once between them, as #19 made backers of one debt do.
+test('deal-mode stacking fixed: two backers of one named deal pay it once between them, even with older debt on the pair', async () => {
+  const w = await world(), {A, B, C, book, clock} = w;
+  const F = await w.person('fred');
+  await issue(w, w.E, F, 30, {ts: clock.t - 110e3});
+  C.mandate.accept_notes_from = [B.id, F.id];
+  await issue(w, A, C, 10, {ts: clock.t - 100e3});                     // older debt: alice owes charlie 10
+  const x = await dealNote(w, A, C, 5, {ts: clock.t - 20e3});           // deal X: 5 more, its note recorded
+  const g1 = await accept(w, await offer(w, {terms: dealTermsOf(w, {cap: 5, deals: [x], backer: B})}));
+  const g2 = await accept(w, await offer(w, {terms: dealTermsOf(w, {cap: 5, deals: [x], backer: F}), backer: F}));
+  assert.deepEqual([(await book.viewFor(C, g2.guarantee_id)).callable_now, (await book.viewFor(C, g1.guarantee_id)).callable_now], [5, 5], 'either backer could pay X');
+  const c1 = 'vgc_' + hex(8);
+  await call(w, g1, 5, {id: c1});
+  // While g1's call is open, g2 cannot also claim X.
+  assert.equal((await book.viewFor(C, g2.guarantee_id)).callable_now, 0);
+  clock.t += 5000;
+  await honor(w, g1, c1);
+  const v2 = await book.viewFor(C, g2.guarantee_id);
+  assert.deepEqual([v2.issuer_owes_creditor, v2.deals_unpaid, v2.callable_now], [15, 5, 0], 'alice still owes all 15, X is still unpaid by alice, but a backer paid it');
+  await assert.rejects(call(w, g2, 5), e => e.code === 'exceeds_callable' && e.extra.claimed_on_deals === 5 && e.extra.callable === 0
+    && /of which calls on the guarantees of those deals claimed 5 PC/.test(e.message));
+  assert.deepEqual([edgeTotal(w, B, C), edgeTotal(w, F, C)], [5, 0], 'X (5) was paid once by the backers, not twice');
+});
+
+test('deal-mode stacking fixed: guarantees naming different deals of one pair each still pay their own deal', async () => {
+  const w = await world(), {A, B, C, book, clock} = w;
+  const F = await w.person('fred');
+  await issue(w, w.E, F, 30, {ts: clock.t - 110e3});
+  C.mandate.accept_notes_from = [B.id, F.id];
+  const x = await dealNote(w, A, C, 3, {ts: clock.t - 30e3}), y = await dealNote(w, A, C, 4, {ts: clock.t - 20e3});
+  const gx = await accept(w, await offer(w, {terms: dealTermsOf(w, {cap: 3, deals: [x], backer: B})}));
+  const gy = await accept(w, await offer(w, {terms: dealTermsOf(w, {cap: 4, deals: [y], backer: F}), backer: F}));
+  const cx = 'vgc_' + hex(8);
+  await call(w, gx, 3, {id: cx}); clock.t += 5000; await honor(w, gx, cx);
+  assert.equal((await book.viewFor(C, gy.guarantee_id)).callable_now, 4, 'a backer of another deal is not held back');
+  const cy = 'vgc_' + hex(8);
+  await call(w, gy, 4, {id: cy}); clock.t += 5000; await honor(w, gy, cy, {B: F});
+  assert.deepEqual([edgeTotal(w, B, C), edgeTotal(w, F, C)], [3, 4]);
+});
+
+test('deal mode fails closed while the journal cannot show every change on the pair since the deal (an index gap): nothing is callable', async () => {
+  const w = await world(), {A, B, C, book, pilot} = w;
+  C.mandate.accept_notes_from = [B.id];
+  const x = await dealNote(w, A, C, 5);
+  const g = await accept(w, await offer(w, {terms: dealTermsOf(w, {cap: 5, deals: [x]})}));
+  assert.equal((await book.viewFor(C, g.guarantee_id)).callable_now, 5);
+  pilot.edgeIndexGap = {from: 1, to: 1};
+  try {
+    const v = await book.viewFor(C, g.guarantee_id);
+    assert.deepEqual([v.deals_unpaid, v.callable_now], [0, 0]);
+    await rejects(call(w, g, 1), 'exceeds_callable');
+  } finally { pilot.edgeIndexGap = null; }
+  assert.equal((await book.viewFor(C, g.guarantee_id)).callable_now, 5, 'callable again once the journal is whole');
+});

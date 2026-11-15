@@ -410,8 +410,10 @@ unchanged (`PILOT_PUBLIC_CACHE_MS`, default 3000; 0 turns it off), and they coun
   `sandbox_expires_at`, `counterparties` (`"any"` with the open network) and a `note`. `GET /info` says whether the
   server offers it: `self_serve {join, open_network, days, limits, max_open_offers?}`. At most 12 successful joins per address per hour (an IPv6 client counts by its /48; `429
   rate_limited`; 3 before the hackathon release), 40 an hour from all addresses together (`429 rate_limited` with
-  `retry_after_ms`, since 2026-11-14, fix inbox #21: one host's egress can rotate across many /48s) and 200 a day for
-  the whole server (`503 sandbox_full`); `503 sandbox_unavailable` while the sandbox agents are not running.
+  `retry_after_ms`, since 2026-11-14, fix inbox #21: one host's egress can rotate across many /48s) and 200 in any 24
+  hours for the whole server (`429 sandbox_full {retry_after_ms, resets_at}`, a rolling window, not a calendar day:
+  `resets_at` is when the oldest counted join leaves it; a 503 before fix inbox #61); `503 sandbox_unavailable` while the
+  sandbox agents are not running.
 - `POST /enroll {participant_id, code, pubkey, signature}` → `201 {participant_id, agent_token, network}` (the agent
   token once; the signature is the proof of possession over the enroll statement).
 
@@ -1445,6 +1447,8 @@ no signed format.
   - `room`: what counts against `max_issue_outstanding`, counted as the mandate check counts it (its notes on the
     tracker, agreed deals not paid yet, its own open offers, the open caps of the guarantees it gave), and what is left.
   - `backing`: the active guarantees of its IOUs, counted and summed (`remaining`: the cap less what calls claimed).
+    These totals are the face value of the open caps, what the backers signed for, not what they can pay: a payee's
+    own check counts each backer at its grounded worth instead (`payee_side`, below), and the agent page says so.
     `public` lists those both the agent and the backer made public (public vouches, fix inbox #31): `{guarantee_id,
     backer: {id, handle}, creditor: null, cap, remaining, expires_at}`. The creditor is never named.
   - `record`: the agent page's record. `card_hash`: sha256 of the canonical JSON of `{card, network, agent: <its id>,
@@ -1452,21 +1456,99 @@ no signed format.
     or null when it has none.
 - `GET /participants/{vp}/check?amount=N&payee=<id or handle>` runs the mandate check for the agent as the payer of
   `amount` to `payee`, as a dry run → `{verdict, reasons, rule, payer: {id, handle}, payee: {id, handle}, amount,
-  mandate: {version, expires_at}, room_left, approval_needed, cover: {covered, guarantees: [{guarantee_id, backer:
-  {id, handle} | null, remaining}]}, record, card_hash, checked_at, took_ms}`.
-  - `verdict`: `decline` when the payer has no active agent key (`rule: no_agent`), when the amount is above the
-    network's per-deal limit (`rule: network_limit`), or when the check refuses (`rule` is its `mandate_exceeded` rule:
-    `expires_at`, `counterparties`, `may_issue_credit`, `max_issue_per_deal` or `max_issue_outstanding`); `ask_owner` when the
-    commitment would wait for the payer's owner (the amount is above `approve_above`; `rule: approve_above`);
-    otherwise `accept`. `reasons` says why in plain sentences.
-  - `cover`: the active guarantees of the payer's IOUs to this payee and the sum of their remaining caps; a backer is
-    named only when the guarantee is public (fix inbox #31). A guarantee that names deals backs only those. The cover
-    is the payee's own business: it is shown only to a check sent with the payee's token (agent or owner), and such an
-    answer is never cached; anyone else gets `cover: {covered: null, guarantees: []}`.
+  mandate: {version, expires_at}, room_left, approval_needed, cover: {covered, for_other_deals, guarantees:
+  [{guarantee_id, backer: {id, handle} | null, remaining, for_this_deal}]}, record, card_hash, checked_at, took_ms}`.
+  The answer is the one the server gives at the step it is for, with the same rules in the same order
+  (`test/check-oracle.unit.test.mjs` runs the real actions on twin worlds against it): a new deal the payer proposes
+  (the default), a new deal the payee proposes (`path`), or an offer the payee is deciding on (`deal`).
+  - `verdict`: `decline` when the step is refused. Before the mandate, in the server's order: the payer has no active
+    agent key (`rule: no_agent`), the payee has none (`rule: payee_no_key`: no deal terms can name it, so a proposal
+    is `400 invalid_terms`), the amount is above the network's per-deal limit (`rule: network_limit`), and, only when
+    the payer proposes, a self-serve payer on the open network already has as many offers of its own open as it may
+    (10; `rule: too_many_open_offers`, the proposal's `429`). Then the mandate check (`rule` is its
+    `mandate_exceeded` rule: `expires_at`, `counterparties`, `may_issue_credit`, `max_issue_per_deal` or
+    `max_issue_outstanding`). `ask_owner` when the commitment would wait for the payer's owner before it binds (`rule:
+    approve_above`); otherwise `accept`. `reasons` says why in plain sentences.
+  - `path` (a new deal): who would propose it. `payer_proposes` (the default): the payer's proposal; `ask_owner` when
+    its owner approves the offer before it is made. `payee_proposes`: the payee proposes and the payer accepts; the
+    open-offer limit does not apply to accepting, and `ask_owner` is when its owner approves the acceptance. An answer
+    to a request that named `path` repeats it (`path`); one that did not is for the payer's proposal and has no `path`
+    key. Another value is `400 invalid_field`; with `deal`, `path` is `400 invalid_field` (the deal has its own
+    proposer). The public answer is cached per payee, amount and path.
+  - `payee_side`: in an answer to the payee's own token only (agent or owner; never cached, never shown to anyone
+    else), the payee's own limits on the same step, `{verdict, rule, reasons}` with the same verdicts: the mandate
+    check as the payee (its counterparty list and expiry, `may_accept_credit`, `min_price_as_payee`,
+    `max_accept_per_deal`, `max_accept_per_issuer`, `min_payer_coverage_pct` and, with circulating credit, the rules
+    of "Credit policy"), as accepting the deal, proposing it (`path=payee_proposes`, where the payee's own
+    open-offer limit comes first: `too_many_open_offers`) or an owner's decision on it checks it. Its coverage rule
+    counts the payer's reserve, its claims at what they are grounded on and each backer at its grounded worth, never
+    the face value `cover` and the card show. `rule: no_agent` when the payee has no active agent key, and with `deal`
+    `rule: counter_pending` when its own counter-offer on that deal waits for its owner (accepting is refused while it
+    waits: until the payee withdraws it or its owner rejects it; approved, the counter-offer replaces the offer, which
+    can then never be accepted). A guarantee counts for a deal only if it can still be called an hour after the deal's
+    `deliver_by`: for a new deal the payee may give it as `deliver_by=<ISO 8601 UTC>` (in the future, at most 30 days
+    ahead; `400 invalid_field` otherwise; `403 not_payee` without the payee's token), and without it every active
+    guarantee counts, with a reason saying when one this counts could end too soon. With `deal`, the deal's own
+    `deliver_by` counts (`deliver_by` is then `400 invalid_field`).
+  - `cover`: what the guarantees of the payer's IOUs to this payee could pay it for the step the check answers, at
+    face value (fix inbox #75). `guarantees` lists the active ones: `remaining` is the cap less what calls claimed,
+    and `for_this_deal` what the guarantee counts for this step. Those that count are the ones the payee's coverage
+    rule counts for the same step (`payee_side`), by the same tests. A guarantee that names deals
+    (`issuer_payment_for_deals`) backs only those, so it counts only for the offer named with `deal` when it names it,
+    and never for a new deal (a deal not made yet has no id to name). When the check knows the deal's `deliver_by`
+    (the offer's own with `deal`, or `deliver_by` for a new deal), a guarantee counts only if it can still be called
+    an hour after it: one that cannot counts 0, and its entry has `ends_too_soon: true` (without a `deliver_by`, every
+    one counts). A guarantee in the floating mode counts its `remaining`. The guarantees that name the offer share
+    what it can still claim, oldest first (in the order they were made), each up to its `remaining`: the offer's price
+    less what calls on every guarantee that names it claimed. Their backers pay a named deal once between them (fix
+    inbox #63), so they count it once. A call counts in full against every deal its guarantee names, so the calls of a
+    guarantee that names several deals come off this offer's share too: the share may be less than its backers could
+    pay, never more. `covered` sums `for_this_deal`; `for_other_deals` sums the `remaining` of the guarantees that
+    name only other deals (every one that names deals, for a new deal); `reasons` says both, and what ends too soon.
+    The coverage rule counts the same guarantees at each backer's grounded worth and no more than the debt with the
+    deal; `covered` is not capped by the debt. A backer is named only when the guarantee is public (fix inbox #31).
+    The cover is the payee's own business: it is shown only to a check sent with the payee's token (agent or owner),
+    and such an answer is never cached; anyone else gets
+    `cover: {covered: null, for_other_deals: null, guarantees: []}`.
   - `400 invalid_field` for a missing amount or one that is not a whole number of at least 1 (digits only), a missing
     payee, or the payer itself as payee; `404 not_found` for an unknown payee.
-- The agent page shows a "Budget card" section and its first line in the page description. `GET /me` gives `room`
-  for the agent itself, with or without a published card.
+  - **The offer under review (fix inbox #60).** Without `deal`, the answer is for a new deal of `amount` on top of
+    everything the payer has committed, its open offers included. A payee checking an offer it received adds
+    `&deal=<vd_…>`: the answer is then what the deal's next steps do for the payer (the side whose turn it is
+    accepting it, or the owners' decisions an acceptance waits for, as the server re-checks them): the check leaves
+    that deal out of the payer's outstanding before it adds `amount`, so the offer is counted once, and the answer
+    names it (`deal_id`; `room_left` stays the card's). `ask_owner` only when the payer's owner still has to decide
+    before the deal binds: when the payer accepts and the amount is above its `approve_above`; when the offer is the
+    payer's and its owner neither approved it nor confirmed it yet (an offer its owner approved is not held again,
+    even above `approve_above`); when an acceptance is waiting for the payer's owner. A counter-offer of the payer's
+    own on the deal that waits for its owner is private to the payer and not counted in the verdict: the answer is for
+    the deal once the payer's agent withdraws it (or its owner rejects it), as must happen before the payer accepts.
+    The figures in `reasons` count it as the card does: they start from the card's `room.outstanding` (with what a
+    dormant payee's renewal adds, below), add the deal's price for the room left with it when the card does not count
+    the deal yet (the payee's own offer), and take it off for the room with the deal left out when the card counts it
+    (the payer's offer, or an acceptance waiting for an owner), so they show nothing the card does not. One bit
+    remains: an `accept` whose figures say the deal does not fit tells the payee that such a counter-offer stands.
+    `deal` is answered only to a check sent with the payee's token (agent or owner; `403 not_payee` otherwise), never
+    cached. It must name a deal the payee can see, where this payer pays this payee, still in its offer phase (open,
+    waiting for its proposer's owner, or accepted and waiting for an owner), at exactly `amount` (its current price):
+    `400 invalid_field` (not a deal id, not these two, not its price), `404 not_found` (no such deal for this payee),
+    `409 wrong_state` (it ended, or it is agreed already: nothing is left to accept). Without `deal`, the payee's own
+    check lists the payer's open offers to it that its outstanding already counts (`counted_offers: [{deal_id,
+    amount}]`, newest first), with a reason saying to ask again with `deal=`.
+  - **Each side as the step finds it.** On the open network, any request of a self-serve participant's own agent
+    renews it before anything else: its sandbox time, and its mandate's expiry unless its owner set that earlier. So the
+    check renews a side where its own agent acts at the step: both sides for a new deal (one proposes, the other
+    accepts); with `deal`, the side whose turn it is to accept (the payee's own offer is accepted by the payer's agent);
+    nobody while an acceptance waits for an owner (an owner's token renews nothing). A side whose agent does not act is
+    checked as it is: an ended mandate there is `decline` (`rule: expires_at`), and the reason says the agent's next
+    request renews it (its owner cannot: a self-serve mandate ends at the sandbox end at the latest). A check sent with
+    the payee's agent token is a request of its agent too, so it renews the payee first. What a house sandbox agent owes
+    a participant whose sandbox time has ended does not count against its limit, and the card's room leaves it out; when
+    that participant is the payee and its agent acts at the step, the check counts it, as the server does from then on,
+    and a reason says so (`room_left` stays the card's).
+- The agent page shows a "Budget card" section and its first line in the page description; its backing is labelled as
+  the face value of the open guarantee caps, and the section says a payee's own check counts each backer at its
+  grounded worth. `GET /me` gives `room` for the agent itself, with or without a published card.
 
 ## Amount names (fix inbox #32)
 
@@ -1515,11 +1597,11 @@ Every error body is `{"error": <code>, "message": <text>, ...extra}`. By status:
   `call_lapsed {issuer_owes_creditor, claimed_on_debt}`, `already_honored`, `stale_amount`, `honor_in_progress
   {retry_after_ms}`, `guarantee_in_use {deals}`, `bound_note_required`, `creditor_no_key`; redemption: `reserve_busy
   {retry_after_ms, spending_tx?}`.
-- **413**: `too_large`. **429**: `rate_limited`; `too_many_open_offers` (the open network; also more than 10 guarantee
-  offers open from one backer).
+- **413**: `too_large`. **429**: `rate_limited`; `sandbox_full {retry_after_ms, resets_at}` (fix inbox #61); `too_many_open_offers` (the
+  open network; also more than 10 guarantee offers open from one backer).
 - **502**: `tracker_unavailable`, `signer_error`, or `{"error": "internal error"}` for anything unexpected.
 - **503**: `tracker_downgraded {retry_after_ms}` (release v16.1: every pilot write while the tracker reports no valid
   tracker v3.2 capabilities and the state holds circulating-credit history; nothing was sent or recorded; Operations),
-  `signer_unavailable` (nothing was recorded; try again), `sandbox_unavailable`, `sandbox_full`,
+  `signer_unavailable` (nothing was recorded; try again), `sandbox_unavailable`,
   `journal_unavailable`; `testnet_bootstrapping` (the Valun testnet network, `valun-testnet-1`, before its tracker is on
   chain: every write is refused until the tracker NFT is minted; `GET /info` says `tracker_on_chain`).

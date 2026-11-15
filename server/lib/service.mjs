@@ -25,7 +25,7 @@ export function createService({valun, basis, store, cfg, testnetLive}) {
       let health = false, state = null;
       try { health = await basis.health(); state = await basis.trackerState(); } catch { /* reported as unreachable */ }
       return {
-        deployment: cfg.deployment, writeTokenRequired: !!cfg.writeToken, modes: MODES,
+        deployment: cfg.deployment, writeTokenRequired: !!cfg.writeToken, writesClosed: cfg.deployment === 'hosted' && !cfg.writeToken, modes: MODES,
         basis: {pin: cfg.basisPin, trackerReachable: health, trackerNftId: basis.nft, trackerNftOnChain: false,
           localDigest: state?.local_digest ?? null, confirmedDigest: state?.confirmed_digest ?? null,
           note: 'The tracker NFT id here is random: no tracker box exists on any chain, so every note stays local_only and nothing is redeemable.'},

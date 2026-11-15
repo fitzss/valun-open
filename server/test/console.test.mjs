@@ -22,6 +22,7 @@ import path from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {STATUS_CLASS} from '../lib/pilot/status.mjs';
 import {termsHash} from '../lib/pilot/core.mjs';
+import {withUnitNeutralNames} from '../lib/pilot/amount-names.mjs';
 import {installPage, settle, text, findByText} from './console-dom.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -184,10 +185,11 @@ const info = circulation => ({network: 'valun-pilot-1', protocol: 'valun-deal/1'
   description: 'Valun pilot network', statements: {propose: 'h => `valun-pilot/propose/1\\n${h}`'}, participants: 3,
   ...(circulation ? {features: ['bound_notes/1', 'circulation/1'], novation: {transfer_ms: 999, setoff_ms: 998, bound_note_ms: 997, reserved_ms: [995, 996, 997, 998, 999], max_age_ms: 3600000,
     transfer_ttl_ms: 1200000, setoff_ttl_ms: 1800000, fallback_margin_ms: 60000}, circulation_statements: {pay: '(dealId, quoteDigest) => `valun-pilot/pay/1\\n${dealId}\\n${quoteDigest}`'}} : {})});
-const clearing = {as_of: PAST, unit: 'PC', tier: 'pure_credit', engine: {enabled: true, interval_ms: 600000, limits: {}, last_run: {at: PAST, reason: 'interval', eligible_edges: 3, excluded: {}}},
+// GET /clearing as the server answers it: each amount by its unit-neutral name and its deprecated _PC alias (fix inbox #32).
+const clearing = withUnitNeutralNames({as_of: PAST, unit: 'PC', tier: 'pure_credit', engine: {enabled: true, interval_ms: 600000, limits: {}, last_run: {at: PAST, reason: 'interval', eligible_edges: 3, excluded: {}}},
   graph_now: {participants_with_positions: 3, edges: 3, gross_PC: 7, net_floor_PC: 3, clearable_mtcs_PC: 2, clearable_within_limits_PC: 2, bound_gap: 1},
   totals: {setoffs_applied: 1, cleared_PC: 2, edges_closed: 1, transfers_applied: 1, transferred_PC: 3}, last_7_days: {issued_PC: 9, cleared_PC: 2, liquidity_saving_pct: 22.2, capacity_restored_PC: 2},
-  proposals: {collecting: 1, applied: 1, stale: 0, expired: 0, refused: 0, failed: 0, completion_rate_pct: 100, median_ms_to_apply: 900}, cycles_by_length: {2: 1}, sandbox: {dormant_PC: 0}};
+  proposals: {collecting: 1, applied: 1, stale: 0, expired: 0, refused: 0, failed: 0, completion_rate_pct: 100, median_ms_to_apply: 900}, cycles_by_length: {2: 1}, sandbox: {dormant_PC: 0}});
 
 // One page with circulation on or off; `extra(method, path, body)` answers first. `change(owner)` adjusts the owner view
 // first; routes.owner is that view (GET /owner and GET /deals/{vd} answer from it, as it is at each call).
@@ -476,6 +478,18 @@ test('the network tab: with circulation off it reads no GET /clearing and shows 
   assert.match(infoOn, /Engine\s*running/);
 });
 
+test('the clearing figures are read by their unit-neutral names, not the deprecated _PC aliases beside them (fix inbox #72)', async () => {
+  // The aliases carry another value here, so the figures show which name the page read.
+  const odd = JSON.parse(JSON.stringify(clearing), (k, v) => (k.endsWith('_PC') && typeof v === 'number' ? 4242 : v));
+  const page = await openConsole(serve({circulation: true, extra: (m, p) => (m === 'GET' && p === '/clearing' ? {status: 200, body: odd} : undefined)}), {hash: '#network'});
+  const figures = text(page.doc.querySelector('#info'));
+  assert.match(figures, /Debt outstanding now\s*7 PC gross over 3 notes; net floor 3 PC/);
+  assert.match(figures, /Applied so far\s*1 set-offs clearing 2 PC .*1 transfers moving 3 PC/);
+  assert.match(figures, /Last 7 days\s*9 PC issued, 2 PC cleared/);
+  assert.doesNotMatch(figures, /4,?242/);
+  assert.deepEqual(SRC.match(/\.\w+_PC\b/g), null, 'pilot.js reads no _PC name itself (amountOf falls back to one only where the server serves nothing else)');
+});
+
 test('an approval of a kind this page does not know offers neither Approve nor Reject (the server decides none: 409 unknown_approval_kind), and says why, even with its terms shown and their hash checked', async () => {
   const page = await openConsole(serve({circulation: true, change: o => { realHash(o); o.approvals[0].kind = 'some_future_kind'; }}));
   const appr = page.doc.querySelector('article.appr[data-kind=some_future_kind]');
@@ -533,4 +547,73 @@ test('a guarantee offer held for the owner (fix inbox #18, approval kind guarant
   // Terms that do not hash to the terms hash: Approve stays off.
   const bad = await openConsole(serve({circulation: true, change: o => { o.approvals = [ga(H('7'))]; }}));
   assert.equal(button(bad.doc.querySelector('article.appr[data-kind=guarantee_offer]'), 'Approve').disabled, true);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Fix inbox #72: the same views on the testnet (GET /info: unit nanoERG, its tracker on Ergo testnet). Every amount is in
+// nanoERG with its tERG, and what becomes of a credit note is the testnet's: it stays outstanding until its creditor
+// redeems it on Ergo testnet. Nothing says PC, pilot, "no chain" or "nothing is redeemed". (The page's own text, and
+// the console on a real testnet server: test/console-testnet.test.mjs.)
+const TESTNET_INFO = {network: 'valun-testnet-1', protocol: 'valun-deal/1', unit: 'nanoERG', denomination: 'erg', tracker_nft_id: H('d'), tracker_on_chain: true, experimental: true,
+  chain: {name: 'ergo-testnet', on_chain: true, tracker_nft_id: H('d'), explorer: 'https://testnet.ergoplatform.com'}, description: 'Valun testnet network: amounts are nanoERG on Ergo TESTNET.',
+  statements: info(true).statements, participants: 3, features: ['bound_notes/1', 'circulation/1', 'guarantees/1'], novation: info(true).novation,
+  circulation_statements: info(true).circulation_statements};
+// A fixture of the pilot's as the testnet serves it: every unit nanoERG, every network valun-testnet-1.
+const asTestnet = v => (Array.isArray(v) ? v.map(asTestnet) : v && typeof v === 'object'
+  ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === 'unit' && x === 'PC' ? 'nanoERG' : k === 'network' && x === 'valun-pilot-1' ? 'valun-testnet-1' : asTestnet(x)])) : v);
+// A deal whose credit note (carol's, to this participant) the tracker recorded, as the testnet's server serves it
+// (lib/pilot/core.mjs submitNote and liveNote); `redeemed`: its creditor redeemed all of it on Ergo testnet.
+function issuedDeal(id, {redeemed = false} = {}) {
+  const d = dealView(id, 'note_issued', {role: 'payee'});
+  d.credit_note = {state: 'recorded', amount: 3, prior_total: 0, issuer_pubkey: PAYEE.pubkey, recipient_pubkey: ME.pubkey, outstanding: !redeemed, settled: redeemed,
+    ...(redeemed ? {settled_how: "redeemed on Ergo testnet against the issuer's reserve", redeemed: 3} : {}), tracker_status: 200, recorded_at: PAST, confirmation: 'confirmed',
+    note: {total: 3, timestamp: T, signature: SIG('8'), message_hex: 'ab'.repeat(80)}, verified_by_valun: true, pair_changes_since: [],
+    tracker_note: {amount_collected: 3, amount_redeemed: redeemed ? 3 : 0, timestamp: T, signature: SIG('8'), confirmation: 'confirmed'},
+    proof: {key: H('a'), value: 'x', proof: 'ab'.repeat(40), tracker_state_digest: H('b')}};
+  d.history = [{at: PAST, by: 'basis-tracker', event: 'credit_note_recorded', amount: 3, cumulative_total: 3, confirmation: 'confirmed'}];
+  return d;
+}
+
+test('the testnet (fix inbox #72): every amount in nanoERG with its tERG; a credit note stays outstanding until its creditor redeems it on Ergo testnet; nothing says PC, pilot, no chain or "nothing is redeemed"', async () => {
+  const VD_ISSUED = 'vd_6666666666666666', VD_REDEEMED = 'vd_7777777777777777';
+  const pilotRoutes = serve({circulation: true, change: o => {
+    const issued = issuedDeal(VD_ISSUED);
+    delete issued.labels.settlement;           // the page's own words, when the server gives none
+    o.deals.push(issued, issuedDeal(VD_REDEEMED, {redeemed: true}));
+    o.position.settled_how = 'by set-off and by redemption on Ergo testnet';      // the testnet server's own words
+  }});
+  const routes = (m, p, b) => (m === 'GET' && p === '/info' ? {status: 200, body: TESTNET_INFO} : (r => r && {...r, body: asTestnet(r.body)})(pilotRoutes(m, p, b)));
+  const BAD = /\bPC\b|\bpilot\b|no blockchain|no chain|any chain|no reserve|not redeemable|local_only|simulated|nothing is redeemed/i;
+  // What the page says (its text, its tooltips and its title), sentence by sentence, without the protocol's own
+  // statement names (valun-pilot/propose/1, ...) and the API's paths.
+  const said = page => [text(page.doc.body), ...page.doc.body.all('*').map(e => e.getAttribute('title')).filter(Boolean), page.doc.title].join('\n')
+    .replace(/valun-pilot\/[a-z-]+\/\d/g, '').replace(/\/pilot\/v1\b/g, '').split(/\n|(?<=[.:;])\s+/);
+  const page = await openConsole(routes);
+  const con = page.doc.querySelector('#owner-console');
+  assert.equal(page.doc.title, '(2) Valun · testnet network (experimental)');
+  assert.match(text(con), /Spendable2 nanoERG \(0\.000000002 tERG\)of the notes you hold, now/);
+  assert.match(text(con), /Cleared1 nanoERG \(0\.000000001 tERG\)by set-off(?!;)/);
+  assert.match(text(con.querySelector('#clearing-card')), /What you owe changes by-1 nanoERG \(-0\.000000001 tERG\)/, "a consent's summary (only its _PC name is served there)");
+  assert.match(text(con.querySelector('#mandate-form')), /Max credit note per deal \(as payer\), nanoERG/);
+  assert.deepEqual(said(page).filter(l => BAD.test(l)), [], 'the owner console');
+  const views = {};
+  for (const id of [VD_ISSUED, VD_REDEEMED, VD_PAID, VD_DUE, VD_UNKNOWN, VD_HELD]) {
+    page.store.set('valun-pilot-owner-token', 'vpo_test-owner-token');
+    globalThis.location.hash = `#owner/deal/${id}`; page.hashchange(); await settle();
+    views[id] = text(page.doc.querySelector('#deal-view'));
+    assert.ok(page.doc.querySelector('#history-card'), `${id}: the deal view`);
+    assert.deepEqual(said(page).filter(l => BAD.test(l)), [], `${id}: nothing says PC or pilot`);
+  }
+  const issued = views[VD_ISSUED];
+  assert.match(issued, /Credit note issued, not settled: carol owes olivia \(you\) 3 nanoERG \(0\.000000003 tERG\) under this deal\. The payer-signed Basis note is held by the network's Basis tracker, which anchors its state on Ergo testnet\. It is an outstanding obligation: its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one\./);
+  assert.match(issued, /Not settled until redeemed: issuing a credit note creates an outstanding obligation\./);
+  assert.match(issued, /Settledno: not redeemed yet/);
+  assert.match(issued, /The tracker anchors its state on Ergo testnet: GET \/pilot\/v1\/chain shows the digest its tracker box commits now\./);
+  assert.match(issued, /Nothing further happens to this deal: the credit note stays outstanding until its creditor redeems it on Ergo testnet \(against the issuer's tERG reserve, if the issuer posted one\)\. With circulating credit the claim can also move to another creditor or be cleared by set-off\./);
+  const redeemed = views[VD_REDEEMED];
+  assert.match(redeemed, /Credit note issued and settled: carol owed olivia \(you\) 3 nanoERG \(0\.000000003 tERG\) under this deal, redeemed on Ergo testnet against the issuer's reserve\./);
+  assert.match(redeemed, /Settledyes: redeemed on Ergo testnet against the issuer's reserve/);
+  assert.match(redeemed, /Nothing further happens to this deal: its credit note is settled\./);
+  assert.match(views[VD_PAID], /Paid by transfer, not settled: sandbox-exact now owes carol 3 nanoERG \(0\.000000003 tERG\) that it owed olivia \(you\) before; olivia \(you\) issued no credit note for this deal\. It is an outstanding obligation; it may later move again or be cleared by set-off, and its creditor can redeem it on Ergo testnet/);
+  assert.match(views[VD_PAID], /the debt stays outstanding with its new creditor, who can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one\./);
 });

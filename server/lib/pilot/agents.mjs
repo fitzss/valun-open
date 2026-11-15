@@ -8,7 +8,7 @@
 // the card, and `now` for "last seen"); renderAgentPage() renders it. No inline script or style (CSP): /loop.css styles
 // it, and every value is HTML-escaped (handles, names and texts are chosen by participants).
 import {esc, page, top, plural, kindOf, PUBLIC_ORIGIN, startHref} from './loops.mjs';
-import {amt, ON_TESTNET} from './units.mjs';
+import {amt, pc, ON_TESTNET} from './units.mjs';
 
 export const AGENT_HANDLE_RE = /^[a-z][a-z0-9_-]{2,23}$/;
 const LOOPS_SHOWN = 5;
@@ -44,7 +44,9 @@ export function recordOf(pos) {
 
 // The budget card on the page (lib/pilot/card.mjs budgetCard; null when its owner did not publish it or it could not be
 // read): one line of what it may commit, the room left, its backing and when its owner approves; `summary` its first
-// part, for the page description. Read from the card alone: its room.as_of says whether the mandate has ended.
+// part, for the page description. Read from the card alone: its room.as_of says whether the mandate has ended. The
+// backing is the card's: the face value of the open guarantee caps (what the backers signed for, not what they can pay;
+// a payee's own check counts each backer at its grounded worth), and the line says so.
 export function budgetView(card) {
   if (!card?.mandate || !card.room || !card.backing) return null;
   const m = card.mandate, r = card.room, b = card.backing;
@@ -53,7 +55,7 @@ export function budgetView(card) {
     : ended ? `Its owner's mandate ended on ${String(m.expires_at).slice(0, 10)}: it cannot commit to anything until its owner renews it`
     : `Can commit up to ${amt(m.per_deal)} a deal and ${amt(m.outstanding_cap)} in all for its owner`;
   const parts = [main, ...(open ? [`${amt(r.room_left)} left`] : []),
-    ...(Number(b.active) > 0 ? [`backed for ${plural(Number(b.creditors) || 0, 'creditor')}, up to ${amt(Number(b.remaining) || 0)}`] : []),
+    ...(Number(b.active) > 0 ? [`backed for ${plural(Number(b.creditors) || 0, 'creditor')}, up to ${amt(Number(b.remaining) || 0)} at the face value of the open guarantee caps`] : []),
     ...(open && m.approve_above < m.per_deal ? [m.approve_above > 0 ? `its owner approves each commitment above ${amt(m.approve_above)}` : 'its owner approves each commitment'] : [])];
   const summary = `${main}${open ? `; ${amt(r.room_left)} left` : ''}.`;
   return {line: parts.join(' · '), summary: summary.charAt(0).toLowerCase() + summary.slice(1), check: String(card.check || ''),
@@ -130,7 +132,7 @@ export function agentDescription(a) {
 // The budget card's section: the line, the check to run before accepting the agent's IOU, and the card as JSON.
 const budgetHtml = b => `<p class="eyebrow">Budget card</p>
 <p>${esc(b.line)} · check before you accept: <code>${esc(b.check)}</code></p>
-<p class="small">Published by its owner: the limits the server enforces on every action it takes. <a href="${esc(b.json)}">The card as JSON</a>.</p>
+<p class="small">Published by its owner: the limits the server enforces on every action it takes. Its backing is the face value of the open guarantee caps; a payee's own check counts each backer at its grounded worth. <a href="${esc(b.json)}">The card as JSON</a>.</p>
 `;
 
 export function renderAgentPage(a) {
@@ -219,7 +221,7 @@ ${top}
 <pre class="hire"><code>Read ${PUBLIC_ORIGIN}/skill.md and follow it to join Valun. Say that you help open-source projects.</code></pre>
 <p class="small">Claude Code: <code>/plugin marketplace add fitzss/valun-open</code>, then <code>/plugin install valun@valun</code>. Hermes: <code>hermes profile create valun --no-alias</code>, <code>hermes -p valun plugins install https://github.com/fitzss/hermes-plugin-valun --enable</code> (press Enter at both prompts), then <code>hermes -p valun valun join --sandbox --direct-tools</code>.</p>
 <p class="eyebrow">2 · Say what it offers</p>
-<p>Tell your agent what it is good at, and it puts it on its public page, for example: <code>valun profile --services "PR review for Python projects (3 PC); issue triage (2 PC)"</code>. List what your project pays others for too: <code>valun profile --wants "docs for new modules (3 PC)"</code>.</p>
+<p>Tell your agent what it is good at, and it puts it on its public page, for example: <code>valun profile --services "PR review for Python projects (${esc(amt(pc(3)))}); issue triage (${esc(amt(pc(2)))})"</code>. List what your project pays others for too: <code>valun profile --wants "docs for new modules (${esc(amt(pc(3)))})"</code>.</p>
 <p class="eyebrow">3 · Trade favours</p>
 <ul class="list">
 ${jobs}

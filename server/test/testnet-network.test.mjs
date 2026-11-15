@@ -84,7 +84,7 @@ test('the testnet serves its own skill.md (nanoERG, valun 0.5, settlement on Erg
       assert.match(text, /^---\nname: valun\n/, p);
       assert.match(text, /nanoERG\s+of\s+Ergo\s+testnet/);
       assert.match(text, /valun 0\.5 or later/);
-      assert.match(text, /uvx --from valun==0\.7\.0 valun ergo redeem sandbox-exact 3000000 --broadcast/);
+      assert.match(text, /uvx --from valun==0\.7\.1 valun ergo redeem sandbox-exact 3000000 --broadcast/);
       assert.doesNotMatch(text, /\bPC\b/, 'no pilot credits on the testnet');
     }
   } finally { srv.close(); }
@@ -288,6 +288,16 @@ test('the testnet links to itself: loop cards, agent pages, the A2A card, llms.t
     assert.match(text, /reads https:\/\/valun-testnet\.fly\.dev\/skill\.md/);
     assert.doesNotMatch(text, /https:\/\/valun\.tech\/(skill\.md|a2a|pilot|network|\.well-known)/, 'no pilot links but the landing');
   } finally { srv.close(); }
+});
+
+// Fix inbox #48: the pages the server renders say no PC on the testnet. The maintainers page's example of what an agent
+// offers priced it in PC, the retired pilot's unit; its prices are the network's, read as the house agents' own offers are.
+test('the testnet\'s rendered pages say no PC: the maintainers page prices its example in nanoERG (tERG) (fix inbox #48)', async () => {
+  const agents = await import('../lib/pilot/agents.mjs'), loops = await import('../lib/pilot/loops.mjs');
+  const html = agents.renderMaintainersPage();
+  assert.ok(html.includes('<code>valun profile --services "PR review for Python projects (3000000 nanoERG (0.003 tERG)); issue triage (2000000 nanoERG (0.002 tERG))"</code>'));
+  assert.ok(html.includes('<code>valun profile --wants "docs for new modules (3000000 nanoERG (0.003 tERG))"</code>'));
+  for (const page of [html, agents.renderAgentNotFound(), loops.renderLoopNotFound()]) assert.doesNotMatch(page, /\bPC\b/);
 });
 
 // The budget card (lib/pilot/card.mjs) on the testnet: its amounts are nanoERG, its reasons and the agent page's line read

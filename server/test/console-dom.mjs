@@ -141,9 +141,10 @@ export class FormData {
   getAll(k) { return this.entries.filter(([n]) => n === k).map(([, v]) => v); }
 }
 
-// The page skeleton of public/pilot.html: every element pilot.js looks up by id or selector.
-export function makeDocument() {
-  const body = new Element('body');
+// The page skeleton of public/pilot.html: every element pilot.js looks up by id or selector. Or, given `page`, that body
+// itself (test/network-dom.mjs readBody of public/pilot.html: the page's own text, as the tests of fix inbox #72 read it).
+export function makeDocument(page = null) {
+  const body = page ?? new Element('body');
   const doc = {
     body, title: '', hidden: false, activeElement: null,
     createElement: t => new Element(t), createTextNode: t => new Text(t),
@@ -151,6 +152,7 @@ export function makeDocument() {
   };
   const E = (tag, attrs = {}, ...kids) => { const e = new Element(tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); e.append(...kids); return e; };
   const form = (id, ...inputs) => E('form', {id}, ...inputs, E('button', {type: 'submit'}, 'Submit'));
+  if (page) return doc;
   body.append(
     E('span', {id: 'conn'}), E('div', {id: 'offline', hidden: ''}),
     E('nav', {id: 'tabs'}, E('a', {href: '#network', 'data-tab': 'network'}), E('a', {href: '#join', 'data-tab': 'join'}), E('a', {href: '#owner', 'data-tab': 'owner'}, E('span', {id: 'pending-badge'}))),
@@ -165,9 +167,10 @@ export function makeDocument() {
 
 // Installs a fresh page (document, window, location, sessionStorage, FormData, Node) and a fake fetch serving
 // `routes(method, path, body, headers)` -> {status, body} | undefined (404). Returns the page and the request log.
-// setInterval is replaced by a recorder while pilot.js is imported, so its polling timers never run.
-export function installPage({routes, token = null, hash = ''}) {
-  const doc = makeDocument(), store = new Map(token ? [['valun-pilot-owner-token', token]] : []), calls = [], listeners = {};
+// setInterval is replaced by a recorder while pilot.js is imported, so its polling timers never run. `body`: the page's
+// own body (see makeDocument) instead of the skeleton.
+export function installPage({routes, token = null, hash = '', body = null}) {
+  const doc = makeDocument(body), store = new Map(token ? [['valun-pilot-owner-token', token]] : []), calls = [], listeners = {};
   Object.assign(globalThis, {document: doc, Node, Text, Element, FormData,
     window: {addEventListener: (t, f) => { (listeners[t] ??= []).push(f); }, scrollTo() {}},
     location: {hash, origin: 'http://console.test'},

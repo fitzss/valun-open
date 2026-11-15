@@ -116,6 +116,7 @@ export function createMcp({service, store}) {
     if (typeof args !== 'object' || Array.isArray(args)) return {error: {code: -32602, message: 'arguments must be an object'}};
     const fail = text => ({result: {content: [{type: 'text', text}], isError: true}});
     if (t.write) {
+      if (ctx.writesClosed) return fail('Changes are closed on this hosted deployment: the synthetic demo desk is read-only here (fix inbox #64). The Valun network is under /pilot/v1; see /skill.md. Read-only tools work.');
       if (!ctx.writeAllowed) return fail('This deployment requires the demo passphrase for changes. Configure your MCP client to send the header "x-valun-token: <passphrase>" (or "Authorization: Bearer <passphrase>"). Read-only tools work without it.');
       if (ctx.rateLimited?.()) return fail('Too many changes from this address; try again in a few minutes.');
     }

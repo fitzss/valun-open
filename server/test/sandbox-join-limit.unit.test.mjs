@@ -42,7 +42,7 @@ test('the 13th join within an hour from one address is refused, and a restart do
   let e = await refusal(join(p, A));
   assert.equal(e.code, 'rate_limited');
   assert.equal(e.status, 429);
-  assert.equal(e.message, 'at most 12 sandbox joins per hour from one address (an IPv6 /48)');
+  assert.equal(e.message, 'at most 12 sandbox joins per hour from one address (an IPv4 address, or an IPv6 /48)');
   // The oldest of the 12 stops counting an hour after it was made: 12 s have passed since.
   assert.equal(e.extra.retry_after_ms, 3600e3 - 12_000);
   // Another address is not affected.

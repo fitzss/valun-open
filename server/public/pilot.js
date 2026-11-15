@@ -1,4 +1,6 @@
-// Valun pilot network UI (/pilot). A separate page from the demo credit desk at /.
+// The Valun network's page and owner console (/pilot; the URL is the retired pilot's, kept for the links to it). It
+// describes the network the server runs, as GET /pilot/v1/info names it: its unit, and whether its tracker is on a
+// chain (the testnet: nanoERG on Ergo testnet; the retired pilot: PC, no chain).
 // Plain DOM. Every dynamic value is inserted as text (text nodes / textContent), never as HTML.
 // It talks only to /pilot/v1/* on this origin. The owner token is kept in memory, or (the owner's choice, on by default)
 // in sessionStorage for this tab. Never in localStorage, never in the address bar. sessionStorage is NOT simply "cleared
@@ -19,7 +21,20 @@ function el(tag, attrs = {}, ...kids) {
 
 // ---------------------------------------------------------------- formatting
 const NF = new Intl.NumberFormat('en-US');
-const pc = (n, unit = 'PC') => (n == null || Number.isNaN(Number(n))) ? '–' : `${NF.format(Number(n))} ${unit}`;
+// Whole nanoERG as tERG, exact (integer arithmetic): 5000000 -> "0.005" (as public/network.js shows it).
+function tergText(n) {
+  const v = BigInt(Math.trunc(Number(n) || 0)), neg = v < 0n, a = neg ? -v : v;
+  const frac = String(a % 1000000000n).padStart(9, '0').replace(/0+$/, '');
+  return `${neg ? '-' : ''}${(a / 1000000000n).toLocaleString('en-US')}${frac ? `.${frac}` : ''}`;
+}
+// An amount in the network's unit, as the agent and network pages show it: "3 PC" on the pilot, "5,000,000 nanoERG
+// (0.005 tERG)" on the testnet. The unit is the network's (netUnit) unless the answer names its own; an amount whose
+// unit is not known yet is a bare number, never PC.
+const amt = (n, unit = netUnit()) => {
+  if (n == null || Number.isNaN(Number(n))) return '–';
+  const s = NF.format(Number(n));
+  return unit === 'nanoERG' ? `${s} nanoERG (${tergText(n)} tERG)` : unit ? `${s} ${unit}` : s;
+};
 const short = (h, a = 10, b = 8) => { if (!h) return '–'; const s = String(h); return s.length <= a + b + 1 ? s : `${s.slice(0, a)}…${s.slice(-b)}`; };
 const when = iso => { if (!iso) return '–'; const d = new Date(iso); return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString(undefined, {dateStyle: 'medium', timeStyle: 'short'}); };
 const RTF = new Intl.RelativeTimeFormat('en', {numeric: 'auto'});
@@ -54,7 +69,7 @@ const SRC = {
   key: h => tag('signed', `signed by ${h}'s key`, 'A Basis Schnorr signature by this participant\'s own key. The Valun server verified it before recording the act; it never holds the key.'),
   valun: () => tag('valun', 'Valun server record', 'Written by the Valun server. Not signed by any participant key.'),
   owner: () => tag('owner', 'owner approval (server-attested, not key-signed)', 'Recorded by the Valun server under the owner token. Not signed with a key.'),
-  basis: () => tag('basis', 'Basis tracker (local, no chain)', 'Read from the pilot\'s Basis tracker. It has no blockchain connection: notes stay local_only.'),
+  basis: () => tag('basis', NET.trackerTag(), NET.trackerTitle()),
   none: () => tag('none', 'not in Basis', 'The Basis tracker holds nothing for this.'),
   browser: (t = 'checked in this browser') => tag('browser', t, 'Computed by this page in your browser, independently of the server.'),
   self: () => tag('self', 'self-declared, not verified by Valun', 'Typed in by the participant when joining. Valun checks only that it is present and not too long.'),
@@ -133,7 +148,7 @@ async function api(method, path, {body, token} = {}) {
   let j;
   try { j = text ? JSON.parse(text) : {}; } catch {
     setConn(false, `HTTP ${r.status} without a JSON answer`);
-    throw new ApiError(r.status, {error: 'bad_response', message: `HTTP ${r.status}: the answer was not JSON from the Valun pilot API (a proxy or gateway in between may be failing).`}, 'network');
+    throw new ApiError(r.status, {error: 'bad_response', message: `HTTP ${r.status}: the answer was not JSON from the Valun API (a proxy or gateway in between may be failing).`}, 'network');
   }
   setConn(true);
   if (!r.ok) throw new ApiError(r.status, j && typeof j === 'object' ? j : {error: String(j)});
@@ -163,6 +178,58 @@ const sess = {
   clear() { try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* storage unavailable */ } },
 };
 S.token = sess.get();
+
+// ---------------------------------------------------------------- the network this page serves
+// GET /info names it: its unit and its chain. Until /info answers, the unit another answer names (the owner view's
+// position, the ledger). Copy that differs by network: the retired pilot's (unit PC: synthetic credits on a tracker with
+// no chain) stays for a server that still runs it; the testnet's (nanoERG, its tracker anchored on Ergo testnet) for the
+// testnet; before the server answers, the page says only what is true of both (public/pilot.html).
+const netUnit = () => S.info?.unit ?? S.owner?.position?.unit ?? S.ledger?.unit ?? null;
+const NET = {
+  pilot: () => netUnit() === 'PC',
+  testnet: () => netUnit() === 'nanoERG' || S.info?.chain?.name === 'ergo-testnet',
+  // Whether the tracker is on its chain: as /info says; until /info answers, the testnet's is (it takes no write before).
+  onChain: () => (S.info ? !!S.info.tracker_on_chain : NET.testnet()),
+  name: () => (NET.pilot() ? 'pilot network' : NET.testnet() ? 'testnet network' : 'network'),
+  trackerTag: () => (NET.pilot() ? 'Basis tracker (local, no chain)' : NET.testnet() && NET.onChain() ? 'Basis tracker (on Ergo testnet)' : 'Basis tracker'),
+  trackerTitle: () => (NET.pilot() ? "Read from the pilot's Basis tracker. It has no blockchain connection: notes stay local_only."
+    : NET.testnet() && NET.onChain() ? "Read from the network's Basis tracker, which anchors its state on Ergo testnet (GET /pilot/v1/chain says when it last did)."
+      : "Read from the network's Basis tracker."),
+  // What a creditor can do with an issued note on the testnet, as the end of a sentence (the server's own words, deal
+  // labels.settlement).
+  redeem: "its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one",
+};
+// The unit a limit's label names.
+const unitLabel = () => netUnit() ?? "in the network's unit";
+// The parts of public/pilot.html that name the network: filled in from GET /info (and the title, with the pending count).
+function renderNetworkCopy() {
+  const i = S.info;
+  if (!i) return;
+  const pilot = NET.pilot(), testnet = NET.testnet(), chain = NET.onChain(), circ = circulationOn(), put = (sel, ...kids) => { const e = $(sel); if (e) e.replaceChildren(...kids); };
+  put('#net-name', NET.name());
+  put('#net-banner-title', `Valun ${NET.name()} (experimental).`);
+  put('#net-banner-unit', pilot ? 'PC are simulated pilot credits with no monetary value. No blockchain is connected.'
+    : testnet ? `Amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG): test coins with no monetary value. ${chain ? 'Its Basis tracker anchors its state on Ergo testnet.' : 'Its Basis tracker is not on Ergo testnet yet.'}`
+      : `Amounts are in ${i.unit}.`);
+  put('#net-what', `What the Valun ${NET.name()} is`);
+  put('#fact-network', ', ', el('code', {}, i.network));
+  put('#fact-unit', ...(pilot ? [el('b', {}, 'PC = pilot credits.'), ' Simulated units with no monetary value. Nothing backs them, and they cannot be redeemed: there is no chain and no reserve.']
+    : testnet ? [el('b', {}, 'Amounts are nanoERG of Ergo testnet.'), ' 1 tERG = 1,000,000,000 nanoERG. tERG are test coins with no monetary value. A creditor can redeem a credit note on Ergo testnet against its issuer\'s tERG reserve, if the issuer posted one.']
+      : [el('b', {}, `Amounts are in ${i.unit}.`)]));
+  put('#fact-payment', el('b', {}, 'Payment = a credit note.'), ' When a payer accepts a delivery, its agent signs a Basis note (a running IOU) to the payee. ',
+    ...(pilot ? ['A real Basis tracker records the note. The tracker has ', el('b', {}, 'no blockchain connection'), ', so every note stays ', el('code', {}, 'local_only'),
+      '. An issued note is an outstanding obligation: nothing in the pilot is settled (no redemption, reserve or clearing).']
+      : [`A Basis tracker records the note${testnet && chain ? ' and anchors its state on Ergo testnet' : ''}. An issued note is an outstanding obligation${testnet ? ' until its creditor redeems it' : ''}${circ ? '; with circulating credit it can also move to another creditor (debt transfer) or be cancelled in a cycle of debts (set-off)' : ''}.`]));
+  put('#deal-end', pilot ? 'It then stays outstanding: the pilot settles nothing.'
+    : testnet ? `It then stays outstanding until its creditor redeems it on Ergo testnet${circ ? ', unless it moves to another creditor or is cleared by set-off first' : ''}.` : 'It then stays outstanding.');
+  for (const t of document.querySelectorAll('[data-tracker-tag]')) { t.textContent = NET.trackerTag(); t.setAttribute('title', NET.trackerTitle()); }
+  put('#ledger-hint', `Read from the ${pilot ? "pilot's" : "network's"} Basis tracker. One running note per payer→payee pair: the payer owes, the payee holds the claim. `,
+    ...(pilot ? [el('code', {}, 'local_only'), ' means nothing is committed on any chain.']
+      : testnet ? [`${chain ? 'The tracker anchors its state on Ergo testnet. ' : ''}Redeemed: what the creditor redeemed against the issuer's tERG reserve.`] : []));
+  put('#net-footer-facts', `Valun ${NET.name()} `, el('code', {}, i.network), ' · experimental · ',
+    pilot ? 'PC have no monetary value · no blockchain connected' : testnet ? `nanoERG of Ergo testnet: test coins with no monetary value${chain ? ' · tracker anchored on Ergo testnet' : ''}` : `amounts in ${i.unit}`);
+  updateBadge();
+}
 const PEOPLE = new Map();
 const remember = p => { if (p && p.id) PEOPLE.set(p.id, p); };
 const handleOf = id => !id ? '–' : PEOPLE.get(id)?.handle ?? id;
@@ -201,13 +268,20 @@ const DEAL_STATUS = {
 };
 const statusLabel = s => (DEAL_STATUS[s] || [s])[0];
 // A deal's status as shown: a delivery accepted with a payment by transfer that waits for the payer's owner is not a
-// credit note waiting for it.
-const dealStatusLabel = d => d.status === 'completion_awaiting_owner' && d.payment?.method === 'transfer' && d.payment.state === 'awaiting_owner'
-  ? 'delivery accepted – payment by transfer awaiting owner approval' : statusLabel(d.status);
+// credit note waiting for it; on the testnet an issued credit note may since have been redeemed, in full or in part.
+const dealStatusLabel = d => (d.status === 'completion_awaiting_owner' && d.payment?.method === 'transfer' && d.payment.state === 'awaiting_owner'
+  ? 'delivery accepted – payment by transfer awaiting owner approval'
+  : ISSUED.includes(d.status) && noteOf(d)?.settled ? 'credit note issued and settled (redeemed)'
+    : ISSUED.includes(d.status) && partlyRedeemed(noteOf(d)) ? 'credit note issued (partly redeemed, the rest outstanding)' : statusLabel(d.status));
 const ISSUED = ['paid', 'note_issued'], RECORDING = ['paying', 'issuing_note'], NOTE_FAILED = ['payment_failed', 'note_failed'];
 // The deal's credit note. The first servers called it "payment"; since release v16 `payment` is the payment by transfer
 // ({method: 'transfer', ...}), which is not a credit note.
 const noteOf = d => d.credit_note ?? (d.payment && typeof d.payment === 'object' && d.payment.method === undefined ? d.payment : null);
+// A recorded credit note part of which its creditor redeemed on Ergo testnet, part still owed: {redeemed, left}, from
+// the server's live read of the tracker (credit_note.redeemed: this note's part of the pair's redemptions; lib/pilot/
+// core.mjs liveNote). Null when nothing, or all of it, is redeemed, or the server cannot tell this note's part.
+const partlyRedeemed = n => (n && !n.settled && Number(n.redeemed) > 0 && Number(n.amount) > Number(n.redeemed)
+  ? {redeemed: Number(n.redeemed), left: Number(n.amount) - Number(n.redeemed)} : null);
 const transferOf = d => (d.payment?.method === 'transfer' ? d.payment : null);
 // Transfer states (GET /transfers/{vt}): live ones hold both edges; unresolved ones wait for the payer's owner.
 const TRANSFER_STATE = {
@@ -236,7 +310,7 @@ async function loadNetwork() {
   const [info, dir, led] = await Promise.allSettled([api('GET', '/info'), api('GET', '/participants'), api('GET', '/ledger')]);
   const fail = (sel, e) => {
     if (e.kind === 'network' && S.loadedNet) return;            // keep what was shown; the banner says it is stale
-    $(sel).replaceChildren(el('div', {class: 'msg err'}, e.status === 404 ? 'The pilot network is not enabled on this server (the pilot API answered 404).' : errorView(e)));
+    $(sel).replaceChildren(el('div', {class: 'msg err'}, e.status === 404 ? 'The Valun network is not enabled on this server (its API answered 404).' : errorView(e)));
   };
   if (info.status === 'fulfilled') { S.info = info.value; renderInfo(); } else fail('#info', info.reason);
   if (dir.status === 'fulfilled') { setDir(dir.value); renderDirectory(); } else fail('#directory', dir.reason);
@@ -249,15 +323,18 @@ async function loadNetwork() {
 }
 
 function renderInfo() {
-  const i = S.info, offChain = i.tracker_on_chain === false;
-  const note = text => offChain ? el('div', {class: 'tiny'}, text) : null;
+  renderNetworkCopy();
+  const i = S.info, pilot = NET.pilot(), testnet = NET.testnet(), offChain = i.tracker_on_chain === false;
+  const note = text => pilot && offChain ? el('div', {class: 'tiny'}, text) : null;
   $('#info').replaceChildren(
     kv([
       ['Network', code(i.network)],
       ['Protocol', code(i.protocol)],
-      ['Unit', `${i.unit}: simulated pilot credits, no monetary value`],
+      ['Unit', pilot ? `${i.unit}: simulated pilot credits, no monetary value`
+        : testnet ? `${i.unit}: the smallest unit of tERG, Ergo testnet's coin (1 tERG = 1,000,000,000 nanoERG); test coins with no monetary value` : String(i.unit)],
       ['Experimental', i.experimental ? 'yes' : 'no'],
-      ['Tracker on a blockchain', i.tracker_on_chain ? 'yes' : 'no: notes stay local_only; nothing is committed on a chain and no reserve backs them'],
+      ['Tracker on a blockchain', i.tracker_on_chain ? (testnet ? 'yes: Ergo testnet; the tracker anchors its state there' : 'yes')
+        : pilot ? 'no: notes stay local_only; nothing is committed on a chain and no reserve backs them' : 'not yet'],
       ['Tracker NFT id', [code(i.tracker_nft_id), note('A random id chosen when the pilot tracker was set up. It names no NFT on any chain: the tracker has no chain connection.')]],
       ['Denomination', [code(i.denomination), note('A synthetic token id the pilot tracker serves to label PC. It exists on no chain.')]],
       ['Participants with an agent key', String(i.participants)],
@@ -276,21 +353,23 @@ function renderInfo() {
         ['Any new payment after a failed attempt', `its timestamp + the maximum age + ${NF.format(i.novation.fallback_margin_ms)} (a transfer through the same note on the same prior state: at once)`]])) : null,
     clearingFacts(S.clearing));
 }
-// GET /clearing (public, aggregates only: no participant ids, handles or keys).
+// GET /clearing (public, aggregates only: no participant ids, handles or keys). Its amounts by their unit-neutral names
+// (fix inbox #32), not the deprecated _PC aliases beside them.
 function clearingFacts(c) {
   if (!c) return null;
   if (c.error) return el('div', {class: 'tiny warn'}, `Clearing figures could not be read: ${c.error.message}`);
-  const g = c.graph_now || {}, t = c.totals || {}, w = c.last_7_days || {}, p = c.proposals || {}, u = c.unit || 'PC';
+  const g = c.graph_now || {}, t = c.totals || {}, w = c.last_7_days || {}, p = c.proposals || {}, u = c.unit || netUnit();
   return el('div', {class: 'mcheck'}, el('div', {class: 'stitle'}, 'Clearing: what set-offs and transfers did ', SRC.valun(), ' ', SRC.basis()),
     kv([
-      ['Debt outstanding now', `${pc(g.gross_PC, u)} gross over ${g.edges ?? 0} notes; net floor ${pc(g.net_floor_PC, u)} (what no clearing can remove)`],
-      ['Clearable now', `${g.clearable_mtcs_PC == null ? 'not measured' : pc(g.clearable_mtcs_PC, u)} in theory; ${pc(g.clearable_within_limits_PC, u)} within the engine's limits`],
-      ['Applied so far', `${t.setoffs_applied ?? 0} set-offs clearing ${pc(t.cleared_PC, u)} (summed over every edge they decreased; ${t.edges_closed ?? 0} notes closed); ${t.transfers_applied ?? 0} transfers moving ${pc(t.transferred_PC, u)}`],
-      ['Last 7 days', `${pc(w.issued_PC, u)} issued, ${pc(w.cleared_PC, u)} cleared${w.liquidity_saving_pct == null ? '' : ` (${w.liquidity_saving_pct}%)`}`],
+      ['Debt outstanding now', `${amt(g.gross, u)} gross over ${g.edges ?? 0} notes; net floor ${amt(g.net_floor, u)} (what no clearing can remove)`],
+      ['Clearable now', `${g.clearable_mtcs == null ? 'not measured' : amt(g.clearable_mtcs, u)} in theory; ${amt(g.clearable_within_limits, u)} within the engine's limits`],
+      ['Applied so far', `${t.setoffs_applied ?? 0} set-offs clearing ${amt(t.cleared, u)} (summed over every edge they decreased; ${t.edges_closed ?? 0} notes closed); ${t.transfers_applied ?? 0} transfers moving ${amt(t.transferred, u)}`],
+      ['Last 7 days', `${amt(w.issued, u)} issued, ${amt(w.cleared, u)} cleared${w.liquidity_saving_pct == null ? '' : ` (${w.liquidity_saving_pct}%)`}`],
       ['Set-off proposals', `${p.collecting ?? 0} collecting; last 7 days: ${p.applied ?? 0} applied, ${p.stale ?? 0} superseded, ${p.expired ?? 0} expired, ${p.refused ?? 0} refused, ${p.failed ?? 0} failed`],
       ['Engine', `${c.engine?.enabled ? 'running' : 'not running'}${c.engine?.last_run ? `; last batch ${whenRel(c.engine.last_run.at)}` : ''}`],
     ]),
-    el('p', {class: 'tiny'}, `As of ${when(c.as_of)}. A set-off cancels a cycle of debt: every member's net position stays the same. Nothing is redeemed and PC have no value.`));
+    el('p', {class: 'tiny'}, `As of ${when(c.as_of)}. A set-off cancels a cycle of debt: every member's net position stays the same. ${NET.pilot()
+      ? 'Nothing is redeemed and PC have no value.' : NET.testnet() ? 'A creditor can also redeem a note on Ergo testnet against its issuer\'s tERG reserve; tERG have no monetary value.' : ''}`.trim()));
 }
 
 function renderDirectory() {
@@ -327,9 +406,9 @@ function renderLedger() {
     thead(['payer (owes)', 'payee (holds the claim)', 'outstanding', 'note total', 'redeemed', 'confirmation', 'last note']),
     el('tbody', {}, ...L.notes.map(n => el('tr', {},
       el('td', {}, nm(n.issuer_handle, n.issuer_pubkey)), el('td', {}, nm(n.recipient_handle, n.recipient_pubkey)),
-      el('td', {}, el('b', {}, pc(n.outstanding, L.unit))), el('td', {}, pc(n.total, L.unit)), el('td', {}, pc(n.redeemed, L.unit)),
+      el('td', {}, el('b', {}, amt(n.outstanding, L.unit))), el('td', {}, amt(n.total, L.unit)), el('td', {}, amt(n.redeemed, L.unit)),
       el('td', {}, el('code', {class: 'mono'}, n.confirmation)), el('td', {class: 'tiny'}, when(msIso(n.timestamp))))))))
-    : el('p', {class: 'hint'}, 'The pilot tracker holds no notes yet.'));
+    : el('p', {class: 'hint'}, 'The tracker holds no notes yet.'));
   const R = L.reconciliation || [];
   // With circulating credit on, rows carry the edge journal's columns: what Valun expects is the issued notes plus what
   // transfers and set-offs did, and `exact` says whether the tracker's note is the very one Valun's last event left.
@@ -338,8 +417,8 @@ function renderLedger() {
   $('#reconcile').replaceChildren(R.length ? tableWrap(el('table', {class: 'tbl'}, thead(['payer → payee', 'tracker total', journal ? 'issued via Valun' : 'credit notes issued via Valun',
     ...(journal ? ['transfers in / out', 'set off', 'Valun expects', 'exact'] : []), 'result']),
     el('tbody', {}, ...R.map(r => { const [t, cls, w] = RECON[r.status] || [r.status, 'bad', '']; return el('tr', {},
-      el('td', {}, r.pair ?? `${r.issuer} → ${r.recipient}`), el('td', {}, pc(r.tracker_total, L.unit)), el('td', {}, pc(r.issued_via_valun ?? r.paid_via_valun, L.unit)),
-      ...(journal ? [el('td', {}, `${pc(r.transferred_in, L.unit)} / ${pc(r.transferred_out, L.unit)}`), el('td', {}, pc(r.set_off, L.unit)), el('td', {}, pc(r.expected_total, L.unit)),
+      el('td', {}, r.pair ?? `${r.issuer} → ${r.recipient}`), el('td', {}, amt(r.tracker_total, L.unit)), el('td', {}, amt(r.issued_via_valun ?? r.paid_via_valun, L.unit)),
+      ...(journal ? [el('td', {}, `${amt(r.transferred_in, L.unit)} / ${amt(r.transferred_out, L.unit)}`), el('td', {}, amt(r.set_off, L.unit)), el('td', {}, amt(r.expected_total, L.unit)),
         el('td', {title: 'the tracker\'s note (total, timestamp and signature) is the one Valun\'s last event on this edge left'}, r.exact ? 'yes' : el('span', {class: 'warn'}, 'no'))] : []),
       el('td', {}, el('b', {class: cls}, t), el('div', {class: 'tiny'}, why(r, w)))); }))))
     : el('p', {class: 'hint'}, 'Nothing to reconcile yet.'));
@@ -361,7 +440,7 @@ function renderJoinResult(r) {
         el('ul', {},
           el('li', {}, 'Keep it private, like a password. It opens the owner console: mandate, approvals, agent revocation.'),
           el('li', {}, el('b', {}, 'Do not give it to the agent.'), ' The agent receives its own agent token when it enrolls, and can act only within your mandate.'),
-          el('li', {}, 'There is no recovery route for a lost owner token in this pilot.')),
+          el('li', {}, 'There is no self-service recovery for a lost owner token.')),
         el('label', {class: 'check'}, keep, "Keep it for this tab's session (sessionStorage). Your browser may also save it in its profile and bring it back with the tab: click Forget token in the owner console when you finish."),
         el('div', {class: 'actions'}, el('button', {type: 'button', id: 'join-open-console', onclick: () => { useToken(r.owner_token, keep.checked); location.hash = '#owner'; }}, 'Open the owner console'))),
       el('section', {class: 'secret'},
@@ -449,7 +528,7 @@ const unresolvedPayments = o => (o?.deals || []).filter(d => d.your_role === 'pa
 function updateBadge() {
   const n = S.owner ? S.owner.approvals.filter(a => a.state === 'pending').length + unresolvedPayments(S.owner).length : 0, b = $('#pending-badge');
   b.textContent = n ? `${n} pending` : ''; b.hidden = !n;
-  document.title = `${n ? `(${n}) ` : ''}Valun · pilot network (experimental)`;
+  document.title = `${n ? `(${n}) ` : ''}Valun · ${NET.name()} (experimental)`;
 }
 function ownerBusy() {
   if (S.busy) return true;
@@ -524,7 +603,7 @@ function approvalsCard(pending, kept = {}) {
     flash ? el('div', {class: `msg ${flash.ok ? 'ok' : 'err'} flash`, role: 'status'}, flash.text) : null,
     pending.length
       ? el('p', {class: 'hint'}, `Your agent signed these, but your mandate says they need you (${'review_deliveries' in S.owner.mandate ? `a price above approve_above, or review_deliveries for credit notes${S.owner.credit_policy ? ' and payments by transfer' : ''}` : 'the price is above approve_above'}). None of them takes effect until you decide. Check the exact terms.`)
-      : el('p', {class: 'hint'}, `Nothing is waiting for you. Commitments priced above ${pc(S.owner.mandate.approve_above)} (approve_above) will appear here first.`),
+      : el('p', {class: 'hint'}, `Nothing is waiting for you. Commitments priced above ${amt(S.owner.mandate.approve_above)} (approve_above) will appear here first.`),
     ...pending.map(a => (a.kind === 'guarantee_offer' ? guaranteeApprovalItem : approvalItem)(a, kept[a.id] || {})));
 }
 
@@ -560,7 +639,7 @@ function termsKv(t, meId, extra = []) {
     ['Title', el('b', {}, t.service.title)],
     ['Description', el('div', {class: 'pre-wrap'}, t.service.description)],
     ['Deliverable', el('div', {class: 'pre-wrap'}, t.service.deliverable)],
-    ['Price', el('b', {}, pc(t.price.amount, t.price.unit))],
+    ['Price', el('b', {}, amt(t.price.amount, t.price.unit))],
     ['Payer (issues the credit note, owes it)', party(t.payer)],
     ['Payee (does the work, holds the claim)', party(t.payee)],
     ['Consideration', t.consideration === 'credit_note_on_delivery_accepted' ? 'a credit note from the payer when it accepts the delivery: an outstanding obligation, not a settlement (consideration: credit_note_on_delivery_accepted)'
@@ -581,7 +660,7 @@ function mandateCheck(a, t) {
   if (server && Array.isArray(server.checks)) {
     box.append(el('ul', {class: 'checks'}, ...server.checks.map(c => {
       if (c.rule === 'min_payer_coverage_pct') return el('li', {class: c.coverage_pct >= c.limit ? 'good' : 'bad'},
-        `min_payer_coverage_pct: the payer's claims on the tracker ${pc(c.payer_claims_on_tracker)} cover ${c.coverage_pct}% of what it would owe (on the tracker ${pc(c.payer_owes_on_tracker)} + agreed ${pc(c.payer_committed)} + this deal ${pc(c.this_deal)}); your minimum is ${c.limit}%`);
+        `min_payer_coverage_pct: the payer's claims on the tracker ${amt(c.payer_claims_on_tracker)} cover ${c.coverage_pct}% of what it would owe (on the tracker ${amt(c.payer_owes_on_tracker)} + agreed ${amt(c.payer_committed)} + this deal ${amt(c.this_deal)}); your minimum is ${c.limit}%`);
       // Circulating credit (release v16): the credit rules on the payer, as the issuer of the claim you would hold.
       if (c.rule === 'refuse_notes_from') return el('li', {class: c.issuer_listed ? 'bad' : 'good'}, `refuse_notes_from: the payer is ${c.issuer_listed ? '' : 'not '}on your list of issuers you refuse`);
       if (c.rule === 'accept_notes_from') return el('li', {class: 'good'}, `accept_notes_from: ${c.any ? 'notes of any issuer are accepted' : 'the issuer is on your list'}`);
@@ -589,12 +668,13 @@ function mandateCheck(a, t) {
         `accept_operator_issuers is off: the payer's notes are ${c.issuer_operator_run ? '' : 'not '}issued with keys the operator holds`);
       if (c.rule === 'max_claims_total') {
         const sum = (c.claims_on_tracker || 0) + (c.committed || 0) + (c.pending_in || 0) + (c.this_deal || 0);
-        return el('li', {class: sum <= c.limit ? 'good' : 'bad'}, `max_claims_total: your claims on the tracker ${pc(c.claims_on_tracker)} + agreed deals as payee ${pc(c.committed)} + being paid to you by transfer ${pc(c.pending_in)} + this deal ${pc(c.this_deal)} = ${pc(sum)} of ${pc(c.limit)}`);
+        return el('li', {class: sum <= c.limit ? 'good' : 'bad'}, `max_claims_total: your claims on the tracker ${amt(c.claims_on_tracker)} + agreed deals as payee ${amt(c.committed)} + being paid to you by transfer ${amt(c.pending_in)} + this deal ${amt(c.this_deal)} = ${amt(sum)} of ${amt(c.limit)}`);
       }
       if (c.rule === 'max_issuer_net_debt') return el('li', {class: c.issuer_net_debt <= c.limit ? 'good' : 'bad'},
-        `max_issuer_net_debt: the payer owes ${pc(c.issuer_owes_on_tracker)} on the tracker + agreed ${pc(c.issuer_committed)} + this deal ${pc(c.this_deal)}, less its own claims after a one-level haircut ${pc(c.issuer_adjusted_claims)}: net debt ${pc(c.issuer_net_debt)} of ${pc(c.limit)}`);
+        `max_issuer_net_debt: the payer owes ${amt(c.issuer_owes_on_tracker)} on the tracker + agreed ${amt(c.issuer_committed)} + this deal ${amt(c.this_deal)}, less its own claims after a one-level haircut ${amt(c.issuer_adjusted_claims)}: net debt ${amt(c.issuer_net_debt)} of ${amt(c.limit)}`);
       const base = c.owed_on_tracker ?? c.claim_on_tracker ?? 0, sum = base + (c.committed || 0) + (c.reserved || 0) + (c.pending_in || 0) + (c.this_deal || 0);
-      return el('li', {class: sum <= c.limit ? 'good' : 'bad'}, `${c.rule}: on the tracker ${pc(base)} + committed ${pc(c.committed)} + offered ${pc(c.reserved)}${c.pending_in ? ` + being paid by transfer ${pc(c.pending_in)}` : ''} + this deal ${pc(c.this_deal)} = ${pc(sum)} of ${pc(c.limit)}${c.dormant_PC ? ` (not counting ${pc(c.dormant_PC)} owed to sandbox participants whose sandbox time ended)` : ''}`);
+      const dormant = amountOf(c, 'dormant');      // an approval's check still names it only dormant_PC
+      return el('li', {class: sum <= c.limit ? 'good' : 'bad'}, `${c.rule}: on the tracker ${amt(base)} + committed ${amt(c.committed)} + offered ${amt(c.reserved)}${c.pending_in ? ` + being paid by transfer ${amt(c.pending_in)}` : ''} + this deal ${amt(c.this_deal)} = ${amt(sum)} of ${amt(c.limit)}${dormant ? ` (not counting ${amt(dormant)} owed to sandbox participants whose sandbox time ended)` : ''}`);
     })), el('p', {class: 'tiny'}, SRC.valun(), ` Numbers from the server's check when your agent acted (mandate version ${server.mandate_version ?? '?'}).`));
   }
   if (!t) { box.append(el('p', {class: 'hint'}, 'Not computed here: the terms are not available.')); return box; }
@@ -608,18 +688,18 @@ function mandateCheck(a, t) {
   ];
   if (role === 'payer') {
     items.push(li(m.may_issue_credit, `you issue the credit note in this deal: may_issue_credit is ${m.may_issue_credit ? 'on' : 'OFF'}`),
-      li(price <= m.max_issue_per_deal, `price ${pc(price)} ${price <= m.max_issue_per_deal ? 'within' : 'ABOVE'} max_issue_per_deal ${pc(m.max_issue_per_deal)}`),
-      li(pos.owes + price > m.max_issue_outstanding ? false : null, `max_issue_outstanding ${pc(m.max_issue_outstanding)}: you owe ${pc(pos.owes)} on the tracker now, ${pc(pos.owes + price)} with this deal, before agreed deals without a credit note yet and open offers are added`));
+      li(price <= m.max_issue_per_deal, `price ${amt(price)} ${price <= m.max_issue_per_deal ? 'within' : 'ABOVE'} max_issue_per_deal ${amt(m.max_issue_per_deal)}`),
+      li(pos.owes + price > m.max_issue_outstanding ? false : null, `max_issue_outstanding ${amt(m.max_issue_outstanding)}: you owe ${amt(pos.owes)} on the tracker now, ${amt(pos.owes + price)} with this deal, before agreed deals without a credit note yet and open offers are added`));
   } else {
     const claim = (pos.claims || []).filter(c => c.from === otherH).reduce((s, c) => s + c.amount, 0);
     const min = m.min_price_as_payee || 0;
     items.push(li(m.may_accept_credit, `you do the work for a credit note in this deal: may_accept_credit is ${m.may_accept_credit ? 'on' : 'OFF'}`),
-      'min_price_as_payee' in m ? li(price >= min, `price ${pc(price)} ${price >= min ? 'at or above' : 'BELOW'} min_price_as_payee ${pc(min)}`) : null,
+      'min_price_as_payee' in m ? li(price >= min, `price ${amt(price)} ${price >= min ? 'at or above' : 'BELOW'} min_price_as_payee ${amt(min)}`) : null,
       m.min_payer_coverage_pct > 0 ? li(null, `min_payer_coverage_pct ${m.min_payer_coverage_pct}%: the server checks that ${otherH}'s claims on the tracker cover at least that share of what it would owe`) : null,
-      li(price <= m.max_accept_per_deal, `price ${pc(price)} ${price <= m.max_accept_per_deal ? 'within' : 'ABOVE'} max_accept_per_deal ${pc(m.max_accept_per_deal)}`),
-      li(claim + price > m.max_accept_per_issuer ? false : null, `max_accept_per_issuer ${pc(m.max_accept_per_issuer)}: ${otherH} owes you ${pc(claim)} on the tracker now, ${pc(claim + price)} with this deal, before agreed deals without a credit note yet and open offers are added`));
+      li(price <= m.max_accept_per_deal, `price ${amt(price)} ${price <= m.max_accept_per_deal ? 'within' : 'ABOVE'} max_accept_per_deal ${amt(m.max_accept_per_deal)}`),
+      li(claim + price > m.max_accept_per_issuer ? false : null, `max_accept_per_issuer ${amt(m.max_accept_per_issuer)}: ${otherH} owes you ${amt(claim)} on the tracker now, ${amt(claim + price)} with this deal, before agreed deals without a credit note yet and open offers are added`));
   }
-  items.push(li(null, price > m.approve_above ? `approve_above ${pc(m.approve_above)}: the price is above it, so it waits for you` : `approve_above is now ${pc(m.approve_above)}, at or above this price, but this request was made under an earlier setting`));
+  items.push(li(null, price > m.approve_above ? `approve_above ${amt(m.approve_above)}: the price is above it, so it waits for you` : `approve_above is now ${amt(m.approve_above)}, at or above this price, but this request was made under an earlier setting`));
   box.append(el('ul', {class: 'checks'}, ...items), el('p', {class: 'tiny'}, SRC.browser('computed in this page'),
     ` From your mandate (version ${S.owner.mandate_version}) and your tracker position.${server ? '' : " This server version does not return its own check numbers for an approval."} When you approve, the server checks the hard limits again (including agreed deals without a credit note yet, and open offers) and refuses with mandate_exceeded if they would be exceeded.`));
   return box;
@@ -667,7 +747,7 @@ function approvalItem(a, kept = {}) {
   const agreed = x.issue || x.pay;
   return el('article', {class: 'appr', 'data-approval': a.id, 'data-deal': d.id, 'data-kind': a.kind},
     el('div', {class: 'appr-head'}, tag('owner', x.kindLabel), el('b', {class: 'appr-title'}, t ? t.service.title : 'terms not returned by the server'),
-      t ? el('span', {class: 'appr-price'}, pc(t.price.amount, t.price.unit), x.pay ? ` – you pay with ${x.transfer ? (x.transfer.issuer?.handle ?? handleOf(x.transfer.issuer?.id)) : 'another participant'}'s note`
+      t ? el('span', {class: 'appr-price'}, amt(t.price.amount, t.price.unit), x.pay ? ` – you pay with ${x.transfer ? (x.transfer.issuer?.handle ?? handleOf(x.transfer.issuer?.id)) : 'another participant'}'s note`
         : t.payer.id === me.id ? ' – you issue the credit note' : ' – you do the work') : null),
     el('div', {class: 'tiny'}, `asked ${whenRel(a.created_at)} · deal `, el('a', {href: `#owner/deal/${d.id}`}, d.id), ` · approval ${a.id}`),
     effectBox(x.effect),
@@ -709,14 +789,14 @@ function guaranteeApprovalItem(a, kept = {}) {
   return el('article', {class: 'appr', 'data-approval': a.id, 'data-guarantee': a.guarantee_id, 'data-kind': a.kind},
     el('div', {class: 'appr-head'}, tag('owner', 'guarantee offer'),
       el('b', {class: 'appr-title'}, t ? `Back what ${handleOf(t.issuer.id)} owes ${handleOf(t.creditor.id)}` : 'terms not returned by the server'),
-      t ? el('span', {class: 'appr-price'}, `up to ${pc(t.cap.amount, t.cap.unit)} – your agent pays a call with its own credit note`) : null),
+      t ? el('span', {class: 'appr-price'}, `up to ${amt(t.cap.amount, t.cap.unit)} – your agent pays a call with its own credit note`) : null),
     el('div', {class: 'tiny'}, `asked ${whenRel(a.created_at)} · guarantee ${a.guarantee_id} · approval ${a.id}`),
     a.effect ? el('div', {class: 'effect'}, el('p', {}, a.effect), el('p', {class: 'tiny'}, SRC.valun(), ' What approving does, as the server will apply it.')) : null,
     t ? kv([
       ['Backer (your agent)', party(t.backer)],
       ['Issuer (whose debt it covers)', party(t.issuer)],
       ['Creditor (who can call it)', party(t.creditor)],
-      ['Cap (the most your agent pays in all)', el('b', {}, pc(t.cap.amount, t.cap.unit))],
+      ['Cap (the most your agent pays in all)', el('b', {}, amt(t.cap.amount, t.cap.unit))],
       ['Covers', g?.covers ?? t.covers],
       ['Callable', `from ${whenRel(t.due_at)} until ${whenRel(t.expires_at)}`],
       ['Honored within', `${t.honor_within_hours} hours of a call`],
@@ -742,14 +822,14 @@ function issueNoteDetails(s) {
       el('pre', {class: 'deliverable', tabindex: 0}, dl.content)]
       : el('p', {class: 'warn'}, 'The server did not return the delivery.'),
     el('div', {class: 'stitle'}, 'The credit note your agent signed ', SRC.key(S.owner.participant.handle), ' ', SRC.none()),
-    n ? kv([['Amount for this deal', el('b', {}, pc(n.amount))], ['Running total for this key pair', `${pc(n.prior_total)} → ${pc(n.total)}`],
+    n ? kv([['Amount for this deal', el('b', {}, amt(n.amount))], ['Running total for this key pair', `${amt(n.prior_total)} → ${amt(n.total)}`],
       ['Issuer key (your agent)', keyFp(n.issuer_pubkey)], ['Recipient key (the payee)', keyFp(n.recipient_pubkey)],
       n.keys_as_agreed === false && ['Keys', el('span', {class: 'warn'}, 'An agent key changed after the deal was agreed, so the note is between the current keys.')],
       ['Signed note message (80 bytes)', el('details', {}, el('summary', {}, 'debt key ‖ running total ‖ timestamp ‖ tracker NFT id'), code(n.message_hex, 'small'))],
       ['Note signature', code(n.signature)], n.signed_at && ['Signed', whenRel(n.signed_at)],
       // A bound note (mode bound and above): signed with the pair's current total, so the tracker records it only
       // while that total is unchanged, and only until one hour after its timestamp.
-      n.bound && ['Bound note', `the tracker records it only while the pair's total is still ${pc(n.prior_total)}, and only until ${whenRel(n.expires_at)}`],
+      n.bound && ['Bound note', `the tracker records it only while the pair's total is still ${amt(n.prior_total)}, and only until ${whenRel(n.expires_at)}`],
       n.bound && ['Prior acknowledgment signature', code(n.prior_signature)]])
       : el('p', {class: 'warn'}, 'The server did not return the credit note.'),
     el('p', {class: 'tiny'}, "Valun holds the signed note until you decide: it is not in the Basis tracker, and the payee cannot see its signature yet. Approving issues it: you then owe that amount, as an outstanding obligation; nothing is settled."));
@@ -758,11 +838,11 @@ function issueNoteDetails(s) {
 // One edge of a transfer or set-off: issuer -> recipient, its note on the tracker before (an EdgeState: total, timestamp
 // and the issuer's signature), the new total the operation signs, and the change.
 const edgeName = e => `${e.issuer?.handle ?? handleOf(e.issuer?.id)} → ${e.recipient?.handle ?? handleOf(e.recipient?.id)}`;
-function edgeRows(edges, unit = 'PC') {
+function edgeRows(edges, unit = netUnit()) {
   return tableWrap(el('table', {class: 'tbl'}, thead(['edge (issuer owes recipient)', 'before', 'after', 'change', 'note on the tracker before']),
     el('tbody', {}, ...(edges || []).map(e => el('tr', {},
       el('td', {}, edgeName(e), e.your_role ? el('div', {class: 'tiny'}, `you: ${e.your_role}`) : null),
-      el('td', {}, pc(e.before?.total ?? 0, unit)), el('td', {}, el('b', {}, pc(e.new_total, unit))), el('td', {}, `${e.change > 0 ? '+' : ''}${NF.format(e.change ?? 0)}`),
+      el('td', {}, amt(e.before?.total ?? 0, unit)), el('td', {}, el('b', {}, amt(e.new_total, unit))), el('td', {}, `${e.change > 0 ? '+' : ''}${NF.format(e.change ?? 0)}`),
       el('td', {class: 'tiny'}, e.before ? [`timestamp ${e.before.timestamp} · signature `, code(short(e.before.signature, 8, 6))] : 'no note yet on this edge'))))));
 }
 // For a pay_by_transfer approval: the delivery the agent accepted and the transfer it signed (held by Valun: nobody else
@@ -777,7 +857,7 @@ function payByTransferDetails(s) {
       : el('p', {class: 'warn'}, 'The server did not return the delivery.'),
     el('div', {class: 'stitle'}, 'The payment by transfer your agent signed ', SRC.key(S.owner.participant.handle), ' ', SRC.none()),
     tr ? [kv([
-      ['Pays with', `${pc(tr.amount)} of what ${tr.issuer?.handle ?? handleOf(tr.issuer?.id)} owes you, moved to ${tr.payee?.handle ?? handleOf(tr.payee?.id)}`],
+      ['Pays with', `${amt(tr.amount)} of what ${tr.issuer?.handle ?? handleOf(tr.issuer?.id)} owes you, moved to ${tr.payee?.handle ?? handleOf(tr.payee?.id)}`],
       ['Transfer', `${tr.id} · ${TRANSFER_STATE[tr.state] ?? tr.state}`],
       ['Timestamp', `${tr.timestamp} (it ends in 999 ms: only a debt transfer can use it)`],
       ['Collects signatures until', whenRel(tr.expires_at)],
@@ -825,18 +905,18 @@ function outcomeText(r) {
     // transfer.state and transfer.result say what happened.
     const tr = r.transfer, A = tr?.issuer?.handle ?? 'the issuer', C = tr?.payee?.handle ?? other;
     if (a.state !== 'approved') return `Rejected (${a.id}). Nothing moved; deal ${d.id} is back to: ${statusLabel(d.status)}.`;
-    if (tr?.state === 'applied') return `Approved (${a.id}). The tracker applied the transfer: ${A} now owes ${C} ${pc(tr.amount)} more and you ${pc(tr.amount)} less; you issued no credit note. Outstanding, not settled.`;
+    if (tr?.state === 'applied') return `Approved (${a.id}). The tracker applied the transfer: ${A} now owes ${C} ${amt(tr.amount)} more and you ${amt(tr.amount)} less; you issued no credit note. Outstanding, not settled.`;
     if (tr?.state === 'collecting') return `Approved (${a.id}). The payment now waits for ${A}'s and ${C}'s signatures (until ${when(tr.expires_at)})${tr.regenerated_from ? '; it was made again after an edge changed' : ''}. Nothing has moved yet.`;
     if (tr?.state === 'applying') return `Approved (${a.id}). The transfer is being applied; the server decides its outcome by reading the tracker back.`;
     return `Approved (${a.id}), but the transfer did not apply (${tr?.result?.code ?? tr?.state ?? 'unknown'}): nothing moved, and deal ${d.id} is now: ${statusLabel(d.status)}.`;
   }
   if (a.kind === 'issue_note') {
     if (a.state !== 'approved') return `Rejected (${a.id}). No credit note reached the tracker; deal ${d.id} is back to: ${statusLabel(d.status)}.`;
-    if (ISSUED.includes(d.status) && t) return `Approved (${a.id}). The tracker recorded the credit note: ${handleOf(t.payer.id)} owes ${handleOf(t.payee.id)} ${pc(t.price.amount)} more (outstanding, not settled).`;
+    if (ISSUED.includes(d.status) && t) return `Approved (${a.id}). The tracker recorded the credit note: ${handleOf(t.payer.id)} owes ${handleOf(t.payee.id)} ${amt(t.price.amount)} more (outstanding, not settled).`;
     return `Approved (${a.id}). Deal ${d.id} is now: ${statusLabel(d.status)}.`;
   }
   if (a.state !== 'approved') return `Rejected (${a.id}). Deal ${d.id} is now: ${statusLabel(d.status)}.`;
-  if (d.status === 'agreed' && t) return `Approved (${a.id}). Deal ${d.id} is agreed: ${handleOf(t.payee.id)} delivers by ${when(t.deliver_by)}; on accepting the delivery, ${handleOf(t.payer.id)} issues a credit note for ${pc(t.price.amount)}.`;
+  if (d.status === 'agreed' && t) return `Approved (${a.id}). Deal ${d.id} is agreed: ${handleOf(t.payee.id)} delivers by ${when(t.deliver_by)}; on accepting the delivery, ${handleOf(t.payer.id)} issues a credit note for ${amt(t.price.amount)}.`;
   if (d.status === 'open') return `Approved (${a.id}). Deal ${d.id} is open: ${other} can now accept, counter or decline.`;
   return `Approved (${a.id}). Deal ${d.id} is now: ${statusLabel(d.status)}.`;
 }
@@ -879,7 +959,7 @@ function agentCard(o) {
           : 'none declared: its client does not sign consents by itself, so payments by transfer and set-offs that need its signature are not proposed to it'],
     ]),
     el('p', {class: 'hint'}, ag.enrolled
-      ? "The agent signs with its own key; by the pilot's design only its plugin holds it, and the server never receives it. Revoking stops that key and the agent token at once and cancels everything not yet agreed."
+      ? "The agent signs with its own key; by design only its plugin holds it, and the server never receives it. Revoking stops that key and the agent token at once and cancels everything not yet agreed."
       : "Give a valid enrollment code and the participant id to your agent's plugin. It generates its own key and enrolls, sending only the public key and a signed proof."),
     actions, confirm, out);
 }
@@ -925,7 +1005,7 @@ function openOffersBox(o) {
     el('div', {class: 'stitle'}, `Offers your agent made that the other side can still accept (${list.length}) `, SRC.valun()),
     list.length ? el('ul', {class: 'offer-list'}, ...list.map(d => {
       const t = d.current.terms, who = d.counterparty?.handle ?? 'the other side';
-      return el('li', {}, el('a', {href: `#owner/deal/${d.id}`}, t.service.title), ` · ${who} · ${pc(t.price.amount, t.price.unit)}, you ${d.your_role === 'payer' ? 'issue the credit note' : 'do the work'} · `,
+      return el('li', {}, el('a', {href: `#owner/deal/${d.id}`}, t.service.title), ` · ${who} · ${amt(t.price.amount, t.price.unit)}, you ${d.your_role === 'payer' ? 'issue the credit note' : 'do the work'} · `,
         d.status === 'open' ? `open until ${whenRel(t.offer_expires_at)}`
           : `${who} accepted it; the deal is agreed if ${who}'s owner approves before ${whenRel(t.offer_expires_at)}`);
     })) : el('p', {class: 'tiny'}, 'None right now.'));
@@ -933,7 +1013,7 @@ function openOffersBox(o) {
 
 // ---------------------------------------------------------------- position, deals, decided approvals
 function positionCard(pos, o = null) {
-  const stat = (label, n, sub) => el('div', {class: 'stat'}, el('div', {class: 'l'}, label), el('div', {class: 'n'}, pc(n, pos.unit)), el('div', {class: 'l'}, sub));
+  const stat = (label, n, sub) => el('div', {class: 'stat'}, el('div', {class: 'l'}, label), el('div', {class: 'n'}, amt(n, pos.unit)), el('div', {class: 'l'}, sub));
   const COUNT_LABEL = {credit_notes_issued: 'credit notes issued', paid: 'credit notes issued', open: 'open or awaiting an owner',
     agreed_note_not_issued: 'agreed, credit note not issued yet', agreed_unpaid: 'agreed, credit note not issued yet', disputed: 'disputed', declined: 'declined',
     expired_or_withdrawn: 'expired, withdrawn or rejected', paid_by_transfer: 'paid by transfer', payment_due: 'payment due (accepted, unpaid)'};
@@ -946,22 +1026,22 @@ function positionCard(pos, o = null) {
     when_online: 'by itself, when its agent is next online', unavailable: 'not: its client does not sign issuer consents'};
   return el('div', {class: 'card'}, el('h2', {}, 'Position ', SRC.basis()),
     circ ? [el('div', {class: 'posgrid'}, stat('Hold', pos.claims_held, 'others owe you'), stat('Owe', pos.owes, 'you owe others'), stat('Net', pos.net, 'hold minus owe')),
-      el('div', {class: 'posgrid'}, stat('Cleared', pos.cleared_by_setoff, 'by set-off only; nothing is redeemed'),
+      el('div', {class: 'posgrid'}, stat('Cleared', pos.cleared_by_setoff, NET.pilot() ? 'by set-off only; nothing is redeemed' : 'by set-off'),
         stat('Spendable', spendable, 'of the notes you hold, now'), stat('Gross', pos.gross, 'hold plus owe'))]
       : el('div', {class: 'posgrid'}, stat('Claims held', pos.claims_held, 'others owe you'), stat('You owe', pos.owes, 'notes your agent signed'), stat('Net', pos.net, 'claims minus owes')),
-    pos.claims?.length ? kv(pos.claims.map(c => [`${c.from ?? 'unknown'} owes you`, [pc(c.amount, pos.unit), opRun(c)]])) : null,
-    pos.debts?.length ? kv(pos.debts.map(c => [`you owe ${c.to ?? 'unknown'}`, [pc(c.amount, pos.unit), opRun(c)]])) : null,
-    el('p', {class: 'tiny'}, pos.meaning || 'These are outstanding credit notes, as the tracker records them. Nothing in the pilot is settled: there is no redemption, reserve or clearing.'),
-    pos.settled != null ? kv([['Settled', [pc(pos.settled, pos.unit), pos.settled_how ? el('span', {class: 'tiny'}, ` (${pos.settled_how})`) : null]]]) : null,
+    pos.claims?.length ? kv(pos.claims.map(c => [`${c.from ?? 'unknown'} owes you`, [amt(c.amount, pos.unit), opRun(c)]])) : null,
+    pos.debts?.length ? kv(pos.debts.map(c => [`you owe ${c.to ?? 'unknown'}`, [amt(c.amount, pos.unit), opRun(c)]])) : null,
+    el('p', {class: 'tiny'}, pos.meaning || 'These are outstanding credit notes, as the tracker records them.'),
+    pos.settled != null ? kv([['Settled', [amt(pos.settled, pos.unit), pos.settled_how ? el('span', {class: 'tiny'}, ` (${pos.settled_how})`) : null]]]) : null,
     circ ? kv([
-      ['Moved by transfer', `${pc(pos.transferred_in, pos.unit)} to you, ${pc(pos.transferred_out, pos.unit)} from you (your claims spent); ${pc(pos.novated_as_issuer, pos.unit)} of your own debt moved to another creditor`],
-      pos.frozen_claims ? ['Under earlier keys', `${pc(pos.frozen_claims, pos.unit)}: frozen (they still count; they cannot be spent or cleared)`] : null,
+      ['Moved by transfer', `${amt(pos.transferred_in, pos.unit)} to you, ${amt(pos.transferred_out, pos.unit)} from you (your claims spent); ${amt(pos.novated_as_issuer, pos.unit)} of your own debt moved to another creditor`],
+      pos.frozen_claims ? ['Under earlier keys', `${amt(pos.frozen_claims, pos.unit)}: frozen (they still count; they cannot be spent or cleared)`] : null,
       pos.pending && ['Under way', `${count(pos.pending.paying_by_transfer, 'payment by transfer', 'payments by transfer')} you make; ${count(pos.pending.consents_waiting_for_you, 'consent', 'consents')} waiting for your agent's client; ${pos.pending.consents_waiting_for_others} waiting for others`],
     ]) : null,
     pos.spendable_notes?.length ? [el('div', {class: 'stitle'}, 'Notes you hold that could pay a deal ', SRC.basis(), ' ', SRC.valun()),
       tableWrap(el('table', {class: 'tbl'}, thead(['issuer (owes you)', 'outstanding', 'held by a payment', 'spendable now', 'the issuer signs']),
         el('tbody', {}, ...pos.spendable_notes.map(n => el('tr', {}, el('td', {}, n.issuer_handle ?? handleOf(n.issuer_id), el('div', {class: 'tiny'}, keyFp(n.issuer_pubkey))),
-          el('td', {}, pc(n.outstanding, pos.unit)), el('td', {}, pc(n.reserved, pos.unit)), el('td', {}, el('b', {}, pc(n.spendable, pos.unit))),
+          el('td', {}, amt(n.outstanding, pos.unit)), el('td', {}, amt(n.reserved, pos.unit)), el('td', {}, el('b', {}, amt(n.spendable, pos.unit))),
           el('td', {class: 'tiny'}, SPEED[n.issuer_consents] ?? n.issuer_consents)))))),
       el('p', {class: 'tiny'}, 'Spendable: the part of a note that reconciles exactly with Valun\'s edge journal, under both parties\' current keys, and that no payment holds. Paying with it needs your owner\'s pay_with_held_notes and the payee\'s acceptance of that issuer.')] : null,
     el('div', {class: 'stitle'}, 'Deal counts ', SRC.valun()),
@@ -978,16 +1058,19 @@ function unresolvedCard(o) {
     el('h2', {}, 'Payment attempts only you can resolve ', el('span', {class: 'count on'}, String(list.length))),
     el('p', {class: 'hint'}, "Reading the tracker back could not tell whether these payments by transfer applied. No other payment of the deal starts until you resolve it, after confirming with the payee whether it was paid. Open the deal to resolve it."),
     el('ul', {class: 'offer-list'}, ...list.map(d => { const p = transferOf(d); return el('li', {}, el('a', {href: `#owner/deal/${d.id}`}, d.current?.terms?.service?.title ?? d.id),
-      ` · ${pc(p.amount)} to ${d.counterparty?.handle ?? 'the payee'} with ${p.issuer?.handle ?? handleOf(p.issuer?.id)}'s note · ${TRANSFER_STATE[p.state] ?? p.state}`); })));
+      ` · ${amt(p.amount)} to ${d.counterparty?.handle ?? 'the payee'} with ${p.issuer?.handle ?? handleOf(p.issuer?.id)}'s note · ${TRANSFER_STATE[p.state] ?? p.state}`); })));
 }
+// An amount of a summary by its unit-neutral name (fix inbox #32), or by the deprecated _PC alias where that is all the
+// server gives (a consent's and a set-off's summary: your_net_change_PC, your_total_owed_change_PC).
+const amountOf = (o, k) => o?.[k] ?? o?.[`${k}_PC`];
 // A consent item (GET /consents): what the participant's client would sign, on its own edges only.
 function consentItemView(c) {
   const ctx = c.context || {}, sum = c.summary || {};
   return el('article', {class: 'ver'},
     el('div', {class: 'stitle'}, `${c.kind === 'setoff' ? 'Set-off' : 'Payment by transfer'} ${c.id} · your role: ${(c.your_roles || []).join(', ')} · until ${whenRel(c.expires_at)}`),
-    kv([c.kind === 'transfer' && ['Payment', `${pc(ctx.amount)}: ${ctx.payer?.handle ?? '?'} pays ${ctx.payee?.handle ?? '?'} with ${ctx.issuer?.handle ?? '?'}'s debt${ctx.deal ? ` (deal ${ctx.deal.deal_id})` : ''}`],
-      c.kind === 'setoff' && ['Clears', `${pc(ctx.amount)} of your claims, and as much of your debts`],
-      ['Your net position changes by', pc(sum.your_net_change_PC)], ['What you owe changes by', pc(sum.your_total_owed_change_PC)]]),
+    kv([c.kind === 'transfer' && ['Payment', `${amt(ctx.amount)}: ${ctx.payer?.handle ?? '?'} pays ${ctx.payee?.handle ?? '?'} with ${ctx.issuer?.handle ?? '?'}'s debt${ctx.deal ? ` (deal ${ctx.deal.deal_id})` : ''}`],
+      c.kind === 'setoff' && ['Clears', `${amt(ctx.amount)} of your claims, and as much of your debts`],
+      ['Your net position changes by', amt(amountOf(sum, 'your_net_change'))], ['What you owe changes by', amt(amountOf(sum, 'your_total_owed_change'))]]),
     edgeRows((c.edges || []).map(e => ({...e, your_role: `${e.your_role}${e.signed_by_you?.length ? `, signed (${e.signed_by_you.join(', ')})` : `, to sign (${(e.slots || []).join(', ')})`}`}))));
 }
 const SLOT_LABEL = {issuer_from: "issuer, the payer's edge's new total", issuer_to: "issuer, the payee's edge's new total", from_recipient_prior: "payer, its edge's total before",
@@ -998,16 +1081,16 @@ function transferDetails(v) {
   return el('div', {class: 'mcheck'},
     kv([['Transfer', `${v.id} · attempt ${v.attempt}${v.regenerated_from ? ` (made again, replacing ${v.regenerated_from})` : ''}${v.regenerated_as ? ` (made again as ${v.regenerated_as})` : ''}`],
       ['State', TRANSFER_STATE[v.state] ?? v.state], ['Your role', (v.your_roles || []).join(', ')],
-      ['Parties', `${v.issuer?.handle} (issuer) · ${v.payer?.handle} (payer) · ${v.payee?.handle} (payee)`], ['Amount', pc(v.amount)],
+      ['Parties', `${v.issuer?.handle} (issuer) · ${v.payer?.handle} (payer) · ${v.payee?.handle} (payee)`], ['Amount', amt(v.amount)],
       ['Timestamp', `${v.timestamp} (${when(msIso(v.timestamp))})`], ['Created', whenRel(v.created_at)], ['Collects until', whenRel(v.expires_at)],
-      v.deal && ['Deal', `${v.deal.deal_id} · price ${pc(v.deal.price)} · quote ${short(v.deal.quote_digest)}`],
+      v.deal && ['Deal', `${v.deal.deal_id} · price ${amt(v.deal.price)} · quote ${short(v.deal.quote_digest)}`],
       v.result && ['Result', `${v.result.code}${v.result.tracker_status ? ` (tracker HTTP ${v.result.tracker_status})` : ''}${v.result.rule ? `, rule ${v.result.rule}` : ''}${v.result.by ? ` of the ${v.result.by}` : ''} · ${whenRel(v.result.at)}`],
       v.fallback_after && ['Any new payment from', whenRel(v.fallback_after)],
       v.resolution && ['Resolved by the payer\'s owner', `${v.resolution.outcome === 'applied' ? 'applied' : 'not applied'}, ${whenRel(v.resolution.at)}`],
       v.signatures_withheld && ['Signatures', el('span', {class: 'hint'}, v.signatures_withheld)]]),
     edgeRows(v.edges),
     sig.length ? [el('div', {class: 'stitle'}, 'Your receipt: the signatures on your edges ', SRC.basis()), kv(sig.map(([k, s]) => [SLOT_LABEL[k] ?? k, code(s)]))] : null,
-    after.length ? kv(after.map(([w, s]) => [`${w === 'from' ? "payer's" : "payee's"} edge as read back`, s ? `${pc(s.total)} at ${s.timestamp}${s.signature ? ` · ${short(s.signature, 8, 6)}` : s.signature_sha256 ? ` · signature sha256 ${short(s.signature_sha256)}` : ''}` : '–'])) : null,
+    after.length ? kv(after.map(([w, s]) => [`${w === 'from' ? "payer's" : "payee's"} edge as read back`, s ? `${amt(s.total)} at ${s.timestamp}${s.signature ? ` · ${short(s.signature, 8, 6)}` : s.signature_sha256 ? ` · signature sha256 ${short(s.signature_sha256)}` : ''}` : '–'])) : null,
     sha.length ? el('details', {}, el('summary', {}, 'sha256 of the signatures purged from the record'), kv(sha.map(([k, h]) => [SLOT_LABEL[k] ?? k, code(h)]))) : null);
 }
 // GET /setoffs/{vs}: the member's own edges; signatures once the tracker recorded the set-off.
@@ -1015,13 +1098,13 @@ function setoffDetails(v) {
   const sig = Object.entries(v.signatures || {}), after = Object.entries(v.tracker_after || {}), sha = Object.entries(v.signature_sha256 || {});
   return el('div', {class: 'mcheck'},
     kv([['Set-off', v.id], ['State', SETOFF_STATE[v.state] ?? v.state], ['Created', whenRel(v.created_at)], v.applied_at && ['Applied', whenRel(v.applied_at)],
-      ['Your net position changed by', pc(v.summary?.your_net_change_PC)], ['What you owe changed by', pc(v.summary?.your_total_owed_change_PC)],
+      ['Your net position changed by', amt(amountOf(v.summary, 'your_net_change'))], ['What you owe changed by', amt(amountOf(v.summary, 'your_total_owed_change'))],
       v.result && ['Result', `${v.result.code}${v.result.tracker_status ? ` (tracker HTTP ${v.result.tracker_status})` : ''} · ${whenRel(v.result.at)}`],
       v.signatures_withheld && ['Signatures', el('span', {class: 'hint'}, v.signatures_withheld)]]),
     edgeRows(v.edges),
     sig.length ? [el('div', {class: 'stitle'}, 'Your receipt: the signatures on your edges ', SRC.basis()),
       kv(sig.map(([edge, s]) => [`${short(edge, 8, 8)}`, el('div', {}, el('div', {}, 'issuer ', code(s.issuer)), el('div', {}, 'creditor ', code(s.recipient)))]))] : null,
-    after.length ? kv(after.map(([edge, s]) => [`${short(edge, 8, 8)} as read back`, s ? `${pc(s.total)} at ${s.timestamp}` : '–'])) : null,
+    after.length ? kv(after.map(([edge, s]) => [`${short(edge, 8, 8)} as read back`, s ? `${amt(s.total)} at ${s.timestamp}` : '–'])) : null,
     sha.length ? el('details', {}, el('summary', {}, 'sha256 of the signatures purged from the record'), kv(sha.map(([edge, h]) => [short(edge, 8, 8), `issuer ${short(h.issuer)} · creditor ${short(h.recipient)}`]))) : null);
 }
 // A receipt line: a transfer or set-off that ended in the last 24 hours, with its view on request.
@@ -1051,12 +1134,12 @@ function edgesBox() {
         since = page.next_seq;
       }
       const row = (e, dir) => el('tr', {}, el('td', {}, dir === 'in' ? `${e.issuer?.handle ?? short(e.issuer_pubkey)} owes you` : `you owe ${e.recipient?.handle ?? short(e.recipient_pubkey)}`),
-        el('td', {}, pc(e.total)), el('td', {}, e.exact ? 'yes' : el('span', {class: 'warn'}, 'no')), el('td', {}, e.bound_only ? 'yes' : 'no'), el('td', {}, pc(e.reserved)), el('td', {}, e.frozen ? 'frozen (earlier key)' : '–'));
+        el('td', {}, amt(e.total)), el('td', {}, e.exact ? 'yes' : el('span', {class: 'warn'}, 'no')), el('td', {}, e.bound_only ? 'yes' : 'no'), el('td', {}, amt(e.reserved)), el('td', {}, e.frozen ? 'frozen (earlier key)' : '–'));
       box.replaceChildren(tableWrap(el('table', {class: 'tbl'}, thead(['edge', 'total on the tracker', 'exact', 'bound notes only', 'held by a payment or set-off', 'key']),
         el('tbody', {}, ...(page?.incoming || []).map(e => row(e, 'in')), ...(page?.outgoing || []).map(e => row(e, 'out'))))),
         entries.length ? tableWrap(el('table', {class: 'tbl'}, thead(['journal seq', 'what', 'change', 'total after', 'when']),
           el('tbody', {}, ...entries.slice(-30).reverse().map(e => el('tr', {}, el('td', {class: 'mono'}, String(e.seq)),
-            el('td', {}, `${e.kind}${e.ref ? ` · ${e.ref}` : ''}`), el('td', {}, `${e.delta > 0 ? '+' : ''}${NF.format(e.delta)}`), el('td', {}, pc(e.total_after)), el('td', {class: 'tiny'}, when(e.at))))))) : el('p', {class: 'tiny'}, 'No journal entries yet.'),
+            el('td', {}, `${e.kind}${e.ref ? ` · ${e.ref}` : ''}`), el('td', {}, `${e.delta > 0 ? '+' : ''}${NF.format(e.delta)}`), el('td', {}, amt(e.total_after)), el('td', {class: 'tiny'}, when(e.at))))))) : el('p', {class: 'tiny'}, 'No journal entries yet.'),
         el('p', {class: 'tiny'}, "Exact: the tracker's note on the edge (total, timestamp and signature) is the one Valun's last event there left. Bound notes only: a transfer or set-off changed the edge, so the tracker takes only bound credit notes on it now."));
       showMsg(out, '');
     } catch (e) { showErr(out, e); } finally { btn.disabled = false; }
@@ -1100,7 +1183,7 @@ function dealsCard(deals) {
         const t = d.current?.terms, price = t?.price?.amount ?? d.versions.at(-1)?.price?.amount, last = displayHistory(d.history).at(-1);
         return el('tr', {},
           el('td', {}, el('a', {href: `#owner/deal/${d.id}`}, t?.service?.title ?? 'terms not visible to you yet'), el('div', {class: 'tiny mono'}, d.id)),
-          el('td', {}, d.counterparty?.handle ?? '–'), el('td', {}, d.your_role), el('td', {}, price != null ? pc(price) : '–'),
+          el('td', {}, d.counterparty?.handle ?? '–'), el('td', {}, d.your_role), el('td', {}, price != null ? amt(price) : '–'),
           el('td', {}, dealChip(d), ' ', overdueChip(d)), el('td', {class: 'tiny'}, last ? `${EVENT_SHORT[last.event] || last.event}, ${rel(last.at)}` : '–'));
       }))))
       : el('p', {class: 'hint'}, 'No deals yet. Your agent proposes and answers deals with its own key; they appear here.'));
@@ -1117,9 +1200,13 @@ function decidedCard(decided) {
 }
 
 // ---------------------------------------------------------------- mandate editor
-const NUM_FIELDS = [   // [name, label, explanation, optional: shown only when the server's mandate has the field]
+// The limits are amounts in the network's unit (whole nanoERG on the testnet: millions for a sandbox agent's 5,000,000 a
+// deal), except a percentage. The inputs have no maximum: the server checks each limit against the network's own bound
+// and says so (400 invalid_field). Fix inbox #72: a maximum of 100000, PC-sized, made every testnet limit an invalid
+// input, and its arrow keys and spinner set it to 100000.
+const NUM_FIELDS = [   // [name, label, explanation, optional: shown only when the server's mandate has the field, unit: '%' for a percentage]
   ['max_issue_per_deal', 'Max credit note per deal (as payer)', 'The largest price your agent may agree to owe in one deal.'],
-  ['max_issue_outstanding', 'Max you may owe in total', 'Cap on what you could owe: PC owed on the tracker + agreed deals whose credit note is not issued yet + your agent\'s open offers + the new deal.'],
+  ['max_issue_outstanding', 'Max you may owe in total', 'Cap on what you could owe: what you owe on the tracker + agreed deals whose credit note is not issued yet + your agent\'s open offers + the new deal.'],
   ['max_accept_per_deal', 'Max credit note per deal (as payee)', 'The largest price your agent may accept as a credit note for doing work in one deal.'],
   ['max_accept_per_issuer', 'Max claim on any one payer', 'Cap on what one payer could owe you: their notes to you on the tracker + agreed deals whose credit note is not issued yet + open offers + the new deal.'],
   ['min_price_as_payee', 'Min price to work for (min_price_as_payee)', 'Your agent may not commit you to do work in one deal for less than this. 0 = no minimum.', true],
@@ -1127,6 +1214,22 @@ const NUM_FIELDS = [   // [name, label, explanation, optional: shown only when t
   ['approve_above', 'Ask me above (approve_above)', 'A commitment (a proposal, counter-offer or acceptance) priced above this waits for your approval. 0 = every commitment waits for you.'],
 ];
 const numFields = m => NUM_FIELDS.filter(([name, , , optional]) => !optional || name in m);
+// A limit's input: a whole number, 0 or more, no maximum (the server checks it). An amount shows what it is in tERG
+// beside it on the testnet, as the owner types.
+function limitInput(name, value, unit, extra = {}) {
+  const input = el('input', {type: 'number', name, min: 0, step: 1, inputmode: 'numeric', value, ...extra});
+  if (unit !== 'nanoERG') return [input];
+  const shown = el('span', {class: 'explain amount-terg', 'data-for': name});
+  const show = () => { const raw = String(input.value ?? '').trim(); shown.textContent = /^\d+$/.test(raw) ? `= ${tergText(raw)} tERG` : ''; };
+  input.addEventListener('input', show); show();
+  return [input, shown];
+}
+// A limit field's whole-number check, its message naming the unit.
+function wholeLimit(k, raw, unit, {empty = false} = {}) {
+  if (/^\d+$/.test(raw) || (empty && raw === '')) return;
+  const what = unit === '%' ? 'a whole percentage' : unit ? `a whole number of ${unit}` : 'a whole number';
+  throw new Error(`${k}: enter ${what} (0 or more)${empty ? ', or leave it empty for no limit' : ''}.`);
+}
 const toLocalInput = iso => { const d = new Date(iso), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 
 // Circulating credit (server release v16, modes sandbox and on): the owner's credit policy, part of the mandate. The
@@ -1140,17 +1243,21 @@ const CIRC_BOOL = [
   ['accept_operator_issuers', 'Accept notes issued with operator-held keys (accept_operator_issuers)', 'Off: you take no claim on a participant the server runs (the sandbox agents), as payee of a deal or by transfer.'],
 ];
 const CIRC_NUM = [
-  ['max_claims_total', 'Max claims on all payers together (max_claims_total), PC', 'Cap on what you could hold and be owed in total: your claims on the tracker + agreed deals as payee + payments by transfer to you under way + the new one. Empty: no limit.'],
-  ['max_issuer_net_debt', 'Max net debt of a payer or issuer (max_issuer_net_debt), PC', "Refuses a claim on a participant whose debts, after counting its own claims at no more than their issuers' coverage, would exceed this. Empty: no check."],
+  ['max_claims_total', 'Max claims on all payers together (max_claims_total)', 'Cap on what you could hold and be owed in total: your claims on the tracker + agreed deals as payee + payments by transfer to you under way + the new one. Empty: no limit.'],
+  ['max_issuer_net_debt', 'Max net debt of a payer or issuer (max_issuer_net_debt)', "Refuses a claim on a participant whose debts, after counting its own claims at no more than their issuers' coverage, would exceed this. Empty: no check."],
 ];
 const PAY_WITH = [['never', 'never'], ['when_asked', 'when your agent is told to (pay_with)'], ['prefer', 'whenever a held note can pay']];
+// The owner's value of a mandate field as the server enforces it: the mandate's own, or, for a phase-2 credit-policy
+// field the mandate does not hold, the value the owner view's credit_policy names (a sandbox participant's
+// max_claims_total is the box's: 40,000,000 nanoERG on the testnet, 40 PC on the pilot; lib/pilot/policy.mjs
+// impliedPhase2). Undefined when neither holds it. The editor (circulationPolicy) and the agent-limits box read it.
+const ownerValue = (o, k) => (o.mandate?.[k] !== undefined ? o.mandate[k] : o.credit_policy?.[k]);
 function circulationPolicy(o) {
-  const m = o.mandate;
-  if (!circulationOn() || !o.credit_policy || !CIRC_FIELDS.every(k => k in m)) return null;
+  const m = o.mandate, cp = o.credit_policy;
+  if (!circulationOn() || !cp || !CIRC_FIELDS.every(k => k in m)) return null;
+  const phase2 = (k, dflt) => { const v = ownerValue(o, k); return v !== undefined ? v : dflt; };
   return {...Object.fromEntries(CIRC_FIELDS.map(k => [k, m[k]])),
-    max_claims_total: m.max_claims_total !== undefined ? m.max_claims_total : o.participant.sandbox_only ? 40 : null,
-    max_issuer_net_debt: m.max_issuer_net_debt !== undefined ? m.max_issuer_net_debt : null,
-    accept_operator_issuers: m.accept_operator_issuers !== undefined ? m.accept_operator_issuers : true};
+    max_claims_total: phase2('max_claims_total', null), max_issuer_net_debt: phase2('max_issuer_net_debt', null), accept_operator_issuers: phase2('accept_operator_issuers', true)};
 }
 function circulationFields(cp, others) {
   // Every id the owner's lists hold stays shown and ticked (participantBoxes), so an unchanged list is never sent.
@@ -1163,7 +1270,7 @@ function circulationFields(cp, others) {
         ...PAY_WITH.map(([v, l]) => el('option', {value: v, selected: cp.pay_with_held_notes === v}, l))),
         el('span', {class: 'explain'}, 'Whether your agent may pay a deal with part of a note it holds (a debt transfer), instead of issuing its own credit note.')),
       el('div', {}),
-      ...CIRC_NUM.map(([k, label, explain]) => el('label', {}, label, el('input', {type: 'number', name: `c_${k}`, min: 0, max: 100000, step: 1, inputmode: 'numeric', placeholder: 'no limit', value: cp[k] ?? ''}),
+      ...CIRC_NUM.map(([k, label, explain]) => el('label', {}, `${label}, ${unitLabel()}`, ...limitInput(`c_${k}`, cp[k] ?? '', netUnit(), {placeholder: 'no limit'}),
         el('span', {class: 'explain'}, explain)))),
     el('fieldset', {class: 'cps'}, el('legend', {}, 'Accept notes from (accept_notes_from)'),
       el('label', {class: 'check'}, el('input', {type: 'radio', name: 'anf_mode', value: 'any', checked: cp.accept_notes_from === 'any'}), 'any issuer'),
@@ -1182,7 +1289,7 @@ function readCirculation(form, cp, body) {
   if (pay !== cp.pay_with_held_notes) body.pay_with_held_notes = pay;
   for (const [k] of CIRC_NUM) {
     const raw = String(f.get(`c_${k}`) ?? '').trim();
-    if (raw !== '' && !/^\d+$/.test(raw)) throw new Error(`${k}: enter a whole number of PC (0 or more), or leave it empty for no limit.`);
+    wholeLimit(k, raw, netUnit(), {empty: true});
     const v = raw === '' ? null : Number(raw);
     if (v !== cp[k]) body[k] = v;
   }
@@ -1203,12 +1310,12 @@ function mandateCard(o) {
   const form = el('form', {class: 'form', id: 'mandate-form', novalidate: true, autocomplete: 'off'},
     field(el('textarea', {name: 'objective', maxlength: 1000, rows: 3}, m.objective || ''), 'Objective', 'What the agent is for, in your words. Your agent can read it; the server does not enforce it.'),
     el('div', {class: 'mandate-grid'},
-      checkField('may_issue_credit', 'May issue credit notes (may_issue_credit)', 'Your agent may commit you as payer: once you accept a delivery you owe PC (outstanding, not settled).'),
-      checkField('may_accept_credit', 'May work for credit (may_accept_credit)', 'Your agent may commit you as payee: you do the work and hold a claim in PC.'),
+      checkField('may_issue_credit', 'May issue credit notes (may_issue_credit)', 'Your agent may commit you as payer: once you accept a delivery you owe its price (an outstanding credit note).'),
+      checkField('may_accept_credit', 'May work for credit (may_accept_credit)', 'Your agent may commit you as payee: you do the work and hold a claim for its price.'),
       'review_deliveries' in m ? checkField('review_deliveries', 'Review deliveries (review_deliveries)', cp ? 'When your agent accepts a delivery, the credit note or payment by transfer it signs waits for your approval before it goes to the tracker.'
         : 'When your agent accepts a delivery, the credit note it signs waits for your approval before it goes to the tracker.') : null,
       'review_deliveries' in m ? el('div', {}) : null,
-      ...numFields(m).map(([name, label, explain, , unit = 'PC']) => field(el('input', {type: 'number', name, min: 0, max: 100000, step: 1, inputmode: 'numeric', value: m[name]}), `${label}, ${unit}`, explain))),
+      ...numFields(m).map(([name, label, explain, , unit = netUnit()]) => field(limitInput(name, m[name], unit), `${label}, ${unit === '%' ? '%' : unitLabel()}`, explain))),
     el('fieldset', {class: 'cps'}, el('legend', {}, 'Counterparties'),
       el('label', {class: 'check'}, el('input', {type: 'radio', name: 'cp_mode', value: 'any', checked: m.counterparties === 'any'}), 'any participant'),
       el('label', {class: 'check'}, el('input', {type: 'radio', name: 'cp_mode', value: 'list', checked: m.counterparties !== 'any'}), 'only those ticked here:'),
@@ -1257,7 +1364,7 @@ const LIMIT_LABEL = {max_issue_per_deal: 'Max credit note per deal (as payer)', 
   accept_transfers: 'Accept payment by transfer', pay_with_held_notes: 'Pay with notes you hold', accept_notes_from: 'Accept notes from', refuse_notes_from: 'Refuse notes from'};
 const CIRC_LIMITS = new Set(['max_claims_total', 'max_issuer_net_debt', 'accept_operator_issuers', 'auto_clear', 'novate_own_debt', 'accept_transfers', 'pay_with_held_notes',
   'accept_notes_from', 'refuse_notes_from']);
-// A limit's value as text: PC, a percentage, on/off, a list of participants, or no limit.
+// A limit's value as text: an amount in the network's unit, a percentage, on/off, a list of participants, or no limit.
 function limitText(k, v) {
   if (v === undefined) v = k === 'accept_operator_issuers' ? true : null;
   if (v === null) return 'no limit';
@@ -1265,7 +1372,7 @@ function limitText(k, v) {
   if (v === 'any') return 'any participant';
   if (Array.isArray(v)) return v.length ? v.map(handleOf).join(', ') : 'nobody';
   if (k === 'min_payer_coverage_pct') return `${v}%`;
-  return typeof v === 'number' ? pc(v) : String(v);
+  return typeof v === 'number' ? amt(v) : String(v);
 }
 function agentLimitsBox(o) {
   const a = o.agent_limits || {}, keys = Object.keys(LIMIT_LABEL).filter(k => a[k] != null), by = o.agent_limits_recorded_by || {};
@@ -1274,7 +1381,7 @@ function agentLimitsBox(o) {
   if (!keys.length && !a.notes) return el('div', {class: 'open-offers'}, head,
     el('p', {class: 'tiny'}, 'None yet. When you tell your agent your goals and limits in a conversation, it records them here. The server enforces them, and they can only be stricter than this mandate.'));
   return el('div', {class: 'open-offers'}, head,
-    keys.length ? kv(keys.map(k => [LIMIT_LABEL[k], `${val(k, a[k])} (your mandate: ${limitText(k, o.mandate[k])}${CIRC_LIMITS.has(k) && o.effective_limits && k in o.effective_limits ? `; in force: ${limitText(k, o.effective_limits[k])}` : ''})`])) : null,
+    keys.length ? kv(keys.map(k => [LIMIT_LABEL[k], `${val(k, a[k])} (your mandate: ${limitText(k, ownerValue(o, k))}${CIRC_LIMITS.has(k) && o.effective_limits && k in o.effective_limits ? `; in force: ${limitText(k, o.effective_limits[k])}` : ''})`])) : null,
     a.notes ? kv([['Your goals, as your agent recorded them', el('div', {class: 'pre-wrap'}, a.notes)]]) : null,
     el('p', {class: 'tiny'}, `Recorded ${a.set_at ? whenRel(a.set_at) : ''}. The server enforces the stricter of these and your mandate at every action. Your agent can only make limits stricter than your mandate, never looser.`));
 }
@@ -1295,9 +1402,9 @@ function readMandate(form, m, origExp) {
   const f = new FormData(form), E = form.elements, body = {objective: String(f.get('objective') || '')};
   body.may_issue_credit = E.may_issue_credit.checked; body.may_accept_credit = E.may_accept_credit.checked;
   if (E.review_deliveries) body.review_deliveries = E.review_deliveries.checked;   // only on servers whose mandate has it
-  for (const [k] of numFields(m)) {
+  for (const [k, , , , unit = netUnit()] of numFields(m)) {
     const raw = String(f.get(k) ?? '').trim();
-    if (!/^\d+$/.test(raw)) throw new Error(`${k}: enter a whole number of PC (0 or more).`);
+    wholeLimit(k, raw, unit);
     body[k] = Number(raw);
   }
   body.counterparties = f.get('cp_mode') === 'any' ? 'any' : f.getAll('cp').map(String);
@@ -1342,12 +1449,18 @@ function dealParties(d) {
 }
 const cap1 = s => s ? `${s[0].toUpperCase()}${s.slice(1)}` : s;
 function summaryText(d) {
-  const {t, payer, payee, H, P, APPROVAL} = dealParties(d), price = t ? pc(t.price.amount, t.price.unit) : 'the price';
+  const {t, payer, payee, H, P, APPROVAL} = dealParties(d), price = t ? amt(t.price.amount, t.price.unit) : 'the price';
   const tr = transferOf(d), A = tr ? (tr.issuer?.handle ?? handleOf(tr.issuer?.id)) : 'the issuer';
+  const n = noteOf(d), part = partlyRedeemed(n), unit = t?.price?.unit;
   switch (d.status) {
-    case 'paid': case 'note_issued': return `Credit note issued, not settled: ${H(payer)} owes ${H(payee)} ${price} under this deal. The payer-signed Basis note is held by the pilot tracker (local only, no chain, no reserve). It is an outstanding obligation; nothing in the pilot is settled.`;
+    case 'paid': case 'note_issued': return NET.pilot()
+      ? `Credit note issued, not settled: ${H(payer)} owes ${H(payee)} ${price} under this deal. The payer-signed Basis note is held by the pilot tracker (local only, no chain, no reserve). It is an outstanding obligation; nothing in the pilot is settled.`
+      : n?.settled ? `Credit note issued and settled: ${H(payer)} owed ${H(payee)} ${price} under this deal${n.settled_how ? `, ${n.settled_how}` : ''}.`
+        : part ? `Credit note issued, partly redeemed: ${H(payer)} still owes ${H(payee)} ${amt(part.left, unit)} of the ${price} under this deal; ${amt(part.redeemed, unit)} of it was redeemed on Ergo testnet. The rest is an outstanding obligation: ${NET.redeem}.`
+          : `Credit note issued, not settled: ${H(payer)} owes ${H(payee)} ${price} under this deal. The payer-signed Basis note is held by the network's Basis tracker${NET.testnet() && NET.onChain() ? ', which anchors its state on Ergo testnet' : ''}. It is an outstanding obligation${NET.testnet() ? `: ${NET.redeem}` : ''}.`;
     case 'paying_by_transfer': return `Paying by transfer: ${H(payer)} pays ${H(payee)} ${price} with ${A}'s debt to it: ${A} would owe ${H(payee)} ${price} more and ${H(payer)} ${price} less. It applies only once ${A} and ${H(payee)} have signed, and only while both notes on the tracker are exactly as signed. Nothing has moved yet.`;
-    case 'paid_by_transfer': return `Paid by transfer, not settled: ${A} now owes ${H(payee)} ${price} that it owed ${H(payer)} before; ${H(payer)} issued no credit note for this deal. It is an outstanding obligation (nothing is redeemed); it may later move again or be cleared by set-off.`;
+    case 'paid_by_transfer': return `Paid by transfer, not settled: ${A} now owes ${H(payee)} ${price} that it owed ${H(payer)} before; ${H(payer)} issued no credit note for this deal. ${NET.pilot()
+      ? 'It is an outstanding obligation (nothing is redeemed); it may later move again or be cleared by set-off.' : `It is an outstanding obligation; it may later move again or be cleared by set-off${NET.testnet() ? `, and ${NET.redeem}` : ''}.`}`;
     case 'payment_due': return UNRESOLVED.includes(tr?.state)
       ? `${H(payer)} accepted the delivery, but whether its payment by transfer applied cannot be told from the tracker. No other payment starts until ${P(payer)} owner resolves it (after confirming with ${H(payee)}). No dispute is possible any more.`
       : `${H(payer)} accepted the delivery, but its payment did not apply, so the payment is due: no dispute is possible any more, and ${P(payer)} agent pays it again, with its own credit note or by transfer.`;
@@ -1387,9 +1500,16 @@ function waitingText(d) {
   }
   if (RECORDING.includes(d.status)) return 'The credit note is being recorded in the tracker.';
   if (NOTE_FAILED.includes(d.status)) return circ ? `Waiting for ${P(payer)} agent to sign the credit note again, or to pay by transfer.` : `Waiting for ${P(payer)} agent to sign the credit note again.`;
-  if (ISSUED.includes(d.status)) return circ ? 'Nothing further happens to this deal: the credit note stays outstanding. With circulating credit the claim can move to another creditor or be cleared by set-off; nothing is redeemed.'
-    : 'Nothing further happens in the pilot: the credit note stays outstanding (no redemption, reserve or clearing).';
-  if (d.status === 'paid_by_transfer') return 'Nothing further happens to this deal: the debt stays outstanding with its new creditor (nothing is redeemed).';
+  if (NET.pilot()) {
+    if (ISSUED.includes(d.status)) return circ ? 'Nothing further happens to this deal: the credit note stays outstanding. With circulating credit the claim can move to another creditor or be cleared by set-off; nothing is redeemed.'
+      : 'Nothing further happens in the pilot: the credit note stays outstanding (no redemption, reserve or clearing).';
+    if (d.status === 'paid_by_transfer') return 'Nothing further happens to this deal: the debt stays outstanding with its new creditor (nothing is redeemed).';
+  }
+  const reserve = "against the issuer's tERG reserve, if the issuer posted one";
+  const part = partlyRedeemed(noteOf(d));
+  if (ISSUED.includes(d.status)) return noteOf(d)?.settled ? 'Nothing further happens to this deal: its credit note is settled.'
+    : `Nothing further happens to this deal: ${part ? `the rest of the credit note, ${amt(part.left, t?.price?.unit)},` : 'the credit note'} stays outstanding${NET.testnet() ? ` until its creditor redeems it on Ergo testnet (${reserve})` : ''}.${circ ? ' With circulating credit the claim can also move to another creditor or be cleared by set-off.' : ''}`;
+  if (d.status === 'paid_by_transfer') return `Nothing further happens to this deal: the debt stays outstanding with its new creditor${NET.testnet() ? `, who can redeem it on Ergo testnet ${reserve}` : ''}.`;
   return null;
 }
 
@@ -1406,9 +1526,9 @@ const EVENT_TITLE = {
   agreed: h => `Agreed on version ${h.version}: both signatures in place`,
   delivered: h => `Delivered${h.late ? ', after deliver_by (late)' : ''}`,
   delivery_accepted: () => 'Delivery accepted; the payer signed the credit note (a Basis note)',
-  credit_note_awaiting_owner: h => `Credit note for ${pc(h.amount)} held for the payer's owner to approve`,
-  payment_recorded: h => `Credit note issued: recorded by the Basis tracker; the running total for this key pair is now ${pc(h.total)} (${h.confirmation}). Outstanding, not settled${h.recovered ? '; finished by recovery after a restart' : ''}`,
-  credit_note_recorded: h => `Credit note issued: ${pc(h.amount)} recorded by the Basis tracker; the running total for this key pair is now ${pc(h.cumulative_total)} (${h.confirmation}). Outstanding, not settled${h.recovered ? '; finished by recovery after a restart' : ''}`,
+  credit_note_awaiting_owner: h => `Credit note for ${amt(h.amount)} held for the payer's owner to approve`,
+  payment_recorded: h => `Credit note issued: recorded by the Basis tracker; the running total for this key pair is now ${amt(h.total)} (${h.confirmation}). Outstanding, not settled${h.recovered ? '; finished by recovery after a restart' : ''}`,
+  credit_note_recorded: h => `Credit note issued: ${amt(h.amount)} recorded by the Basis tracker; the running total for this key pair is now ${amt(h.cumulative_total)} (${h.confirmation}). Outstanding, not settled${h.recovered ? '; finished by recovery after a restart' : ''}`,
   payment_failed: () => 'Credit note not recorded: the tracker does not hold it',
   credit_note_failed: () => 'Credit note not recorded: the tracker does not hold it',
   disputed: () => 'Delivery disputed by the payer',
@@ -1422,9 +1542,9 @@ const EVENT_TITLE = {
   cancelled: h => `Cancelled: ${handleOf(h.participant)}'s owner revoked the agent key these terms name`,
   credit_note_void: h => `Signed credit note voided before it reached the tracker: ${handleOf(h.participant)}'s agent key was revoked`,
   // Circulating credit: payment by debt transfer (the issuer's debt to the payer moves to the payee).
-  payment_by_transfer: h => `Delivery accepted; the payer's agent signed a payment by transfer: ${pc(h.amount)} of what ${handleOf(h.issuer)} owes the payer, moved to the payee`,
+  payment_by_transfer: h => `Delivery accepted; the payer's agent signed a payment by transfer: ${amt(h.amount)} of what ${handleOf(h.issuer)} owes the payer, moved to the payee`,
   payment_awaiting_owner: () => "Payment by transfer held for the payer's owner to approve; nobody else has signed it",
-  paid_by_transfer: h => `Paid by transfer: the Basis tracker applied it; ${pc(h.amount)} that the issuer owed the payer it now owes the payee. Outstanding, not settled${h.resolved_by_owner ? "; recorded as applied by the payer's owner" : ''}`,
+  paid_by_transfer: h => `Paid by transfer: the Basis tracker applied it; ${amt(h.amount)} that the issuer owed the payer it now owes the payee. Outstanding, not settled${h.resolved_by_owner ? "; recorded as applied by the payer's owner" : ''}`,
   payment_due: h => `The payment by transfer did not apply (${h.reason ?? 'not applied'}): nothing moved; the delivery stays accepted and the payment is due${h.fallback_after ? `; any new payment of the deal from ${when(h.fallback_after)}` : ''}`,
   payment_void: h => `Payment by transfer void before anyone else signed (${h.reason ?? 'void'}): nothing moved`,
   payment_outcome_unknown: h => `Reading the tracker back cannot tell whether the payment by transfer applied (${h.reason ?? 'unknown'}): no other payment starts until the payer's owner resolves it`,
@@ -1517,7 +1637,7 @@ function renderDeal(d) {
 
   const versionItems = d.versions.map(v => el('li', {class: 'ver'},
     el('div', {class: 'stitle'}, `Version ${v.version} by ${H(v.by)} · ${v.state.replace(/_/g, ' ')} `, SRC.key(handleOf(v.by))),
-    kv([['Price', pc(v.price?.amount, v.price?.unit)], ['Created', whenRel(v.created_at)], ['Terms hash', code(v.terms_hash)], ['Signature', code(v.signature)],
+    kv([['Price', amt(v.price?.amount, v.price?.unit)], ['Created', whenRel(v.created_at)], ['Terms hash', code(v.terms_hash)], ['Signature', code(v.signature)],
       ['Signed text', signedText(`valun-pilot/propose/1\n${v.terms_hash}`)]])));
   const a = d.acceptance, g = d.agreement, dc = d.decline;
   const versions = el('div', {class: 'card'}, el('h2', {}, 'Versions and signatures'),
@@ -1583,11 +1703,11 @@ function transferCard(d) {
   return el('div', {class: 'card', id: 'transfer-card'},
     el('h2', {}, 'Payment by transfer ', p.state === 'applied' ? SRC.basis() : [SRC.valun(), ' ', SRC.none()]),
     el('p', {class: UNRESOLVED.includes(p.state) ? 'bad' : ended ? 'warn' : 'hint'}, p.state === 'applied'
-      ? `The Basis tracker applied it: ${A} now owes the payee ${pc(p.amount)} that it owed the payer before. The payer issued no credit note for this deal.`
+      ? `The Basis tracker applied it: ${A} now owes the payee ${amt(p.amount)} that it owed the payer before. The payer issued no credit note for this deal.`
       : UNRESOLVED.includes(p.state) ? `Reading the tracker back could not tell whether this transfer applied (${p.state}). No other payment of this deal starts until the payer's owner resolves it.`
       : ended ? endedText(d)
-      : `${pc(p.amount)} of what ${A} owes the payer moves to the payee once ${A} and the payee have signed. Nothing has moved yet.`),
-    kv([['State', TRANSFER_STATE[p.state] ?? p.state], ['Transfer', code(p.transfer_id)], ['Paid with', `${pc(p.amount)} of ${A}'s note to the payer`],
+      : `${amt(p.amount)} of what ${A} owes the payer moves to the payee once ${A} and the payee have signed. Nothing has moved yet.`),
+    kv([['State', TRANSFER_STATE[p.state] ?? p.state], ['Transfer', code(p.transfer_id)], ['Paid with', `${amt(p.amount)} of ${A}'s note to the payer`],
       ['awaiting_owner', 'collecting'].includes(p.state) && ['Collects signatures until', whenRel(p.expires_at)],
       p.fallback_after && ['Any new payment from', whenRel(p.fallback_after)],
       p.signatures_withheld && ['Signatures', el('span', {class: 'hint'}, p.signatures_withheld)]]),
@@ -1617,7 +1737,7 @@ function resolveBox(d, p) {
   });
   return el('div', {class: 'confirm', id: 'resolve-box'},
     el('h3', {}, 'Resolve this payment attempt'),
-    el('p', {}, `Ask ${payee} first whether it was paid: whether its claim on ${A} rose by ${pc(p.amount)} with this transfer. Then say what happened. Nothing is signed: this is your decision, recorded by the server under your owner token.`),
+    el('p', {}, `Ask ${payee} first whether it was paid: whether its claim on ${A} rose by ${amt(p.amount)} with this transfer. Then say what happened. Nothing is signed: this is your decision, recorded by the server under your owner token.`),
     el('label', {class: 'check'}, applied, ` It applied: ${payee} was paid. The deal becomes paid by transfer.`),
     el('label', {class: 'check'}, notApplied, ' It did not apply. The deal stays payment due; another payment (the same note\'s included) can start one hour and a minute after the attempt\'s timestamp.'),
     el('label', {class: 'check'}, confirmed, ` I have confirmed this with ${payee}.`),
@@ -1631,29 +1751,44 @@ function paymentCard(d, payer, payee) {
   const cap = s => s ? `${s[0].toUpperCase()}${s.slice(1)}.` : '';
   if (!p) return el('div', {class: 'card', id: 'payment-card'}, el('h2', {}, 'Credit note evidence ', SRC.none()),
     el('p', {class: 'hint'}, `${cap(d.labels?.basis) || 'No credit note for this deal is in the Basis tracker.'} A credit note exists only after the payer accepts a delivery and the tracker holds the payer-signed note.`));
-  const tn = p.tracker_note, recorded = p.state === 'recorded';
+  const tn = p.tracker_note, recorded = p.state === 'recorded', part = partlyRedeemed(p), live = p.pair_now;
   const conf = tn?.confirmation ?? null;
+  // The tracker's status of the note (fix inbox #13: read live on the testnet). The pilot's tracker had no chain, so
+  // local_only was for good there; on the testnet it only means the next tracker box on Ergo testnet has not committed
+  // the note yet (GET /pilot/v1/chain says when it does), and whether a reserve backs it depends on its issuer.
+  const confMeans = {local_only: NET.pilot() ? ': not committed on any chain, no reserve behind it, not redeemable'
+    : NET.testnet() && NET.onChain() ? ': recorded by the tracker, not yet committed by its tracker box on Ergo testnet; it can be redeemed once the next tracker box is confirmed (GET /pilot/v1/chain says when)'
+      : ': recorded by the tracker, not committed on a chain yet',
+  pending: NET.testnet() && NET.onChain() ? ': in a tracker box posted on Ergo testnet, not confirmed yet; it can be redeemed once that box is confirmed' : ''}[conf] ?? '';
   return el('div', {class: 'card', id: 'payment-card'},
     el('h2', {}, 'Credit note evidence (issued is not settled) ', recorded ? SRC.basis() : [SRC.basis(), ' ', SRC.none()]),
-    recorded ? el('p', {class: 'hint'}, `${cap(d.labels?.settlement) || 'Not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing.'}`)
+    recorded ? el('p', {class: 'hint'}, `${cap(d.labels?.settlement) || (NET.pilot() ? 'Not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing.'
+      : 'Not settled until redeemed: issuing a credit note creates an outstanding obligation.')}`)
       : el('p', {class: p.state === 'failed' ? 'bad' : 'warn'}, p.state === 'failed' ? `The tracker did not record this credit note: ${p.error ?? 'no detail'}.` : `Credit note ${NOTE_STATE[p.state] ?? p.state}.`),
     kv([
       ['State', recorded ? el('b', {class: 'good'}, 'recorded: the tracker holds exactly the payer-signed note') : NOTE_STATE[p.state] ?? p.state],
-      p.outstanding != null && ['Outstanding', p.outstanding ? 'yes: the payer owes this amount' : 'no'],
-      p.settled != null && ['Settled', p.settled ? 'yes' : 'no: the pilot has no redemption, reserve or clearing'],
+      p.outstanding != null && ['Outstanding', !p.outstanding ? 'no'
+        : part ? `yes: the payer still owes ${amt(part.left, t?.price?.unit)} of ${amt(p.amount, t?.price?.unit)} (${amt(part.redeemed, t?.price?.unit)} redeemed)` : 'yes: the payer owes this amount'],
+      p.settled != null && ['Settled', p.settled ? `yes${p.settled_how ? `: ${p.settled_how}` : ''}`
+        : NET.pilot() ? 'no: the pilot has no redemption, reserve or clearing' : `no${p.settled_how ? `: ${p.settled_how}` : ': not redeemed yet'}`],
       p.owner_approval && ["Payer's owner approved it", [whenRel(p.owner_approval.at), ' ', SRC.owner()]],
       ['Tracker answer', p.tracker_status == null ? '–' : typeof p.tracker_status === 'number' ? `HTTP ${p.tracker_status}` : String(p.tracker_status)],
       p.error_code && ['Tracker code', code(p.error_code)],
-      p.note?.prior_signature !== undefined && ['Bound note', `signed with the pair's total before it (${pc(p.prior_total)}), so the tracker records it only while that total is unchanged and only until one hour after its timestamp`],
+      p.note?.prior_signature !== undefined && ['Bound note', `signed with the pair's total before it (${amt(p.prior_total)}), so the tracker records it only while that total is unchanged and only until one hour after its timestamp`],
       Array.isArray(p.pair_changes_since) && p.pair_changes_since.length && ['Since then on this pair', p.pair_changes_since.map(c => `${c.kind === 'setoff' ? 'set-off' : c.kind === 'transfer_out' ? 'moved to another creditor' : c.kind === 'transfer_in' ? 'moved in' : c.kind} ${c.delta > 0 ? '+' : ''}${NF.format(c.delta)} (${c.ref ?? `${c.count} before the journal checkpoint, in all`})`).join(' · ')],
-      ['Amount for this deal', p.amount != null ? el('b', {}, pc(p.amount)) : t ? el('b', {}, pc(t.price.amount, t.price.unit)) : '–'],
-      ['Running note total', `${handleOf(payer)} → ${handleOf(payee)}: ${pc(p.prior_total)} → ${pc(p.note?.total)} (a Basis note carries one running total per key pair)`],
+      ['Amount for this deal', p.amount != null ? el('b', {}, amt(p.amount)) : t ? el('b', {}, amt(t.price.amount, t.price.unit)) : '–'],
+      ['Running note total', `${handleOf(payer)} → ${handleOf(payee)}: ${amt(p.prior_total)} → ${amt(p.note?.total)} (a Basis note carries one running total per key pair)`],
       p.issuer_pubkey && ['Between keys', [keyFp(p.issuer_pubkey), ' → ', keyFp(p.recipient_pubkey)]],
       p.keys_as_agreed === false && ['Keys', el('span', {class: 'warn'}, 'an agent key changed after the deal was agreed, so the note is between the current keys')],
-      tn && ['Tracker holds', `${pc(tn.amount_collected)} in total, ${pc(tn.amount_redeemed)} redeemed`],
-      ['Confirmation', conf ? [el('code', {class: 'mono'}, conf), conf === 'local_only' ? ': not committed on any chain, no reserve behind it, not redeemable' : ''] : '–'],
+      // The tracker's figures for the key pair: read live on the testnet (pair_now), else as it held them when it recorded
+      // this note.
+      live ? ['Tracker holds now', `${amt(live.total, live.unit)} in total for this key pair, ${amt(live.redeemed, live.unit)} redeemed, ${amt(live.outstanding, live.unit)} outstanding`]
+        : tn && ['Tracker holds', `${amt(tn.amount_collected)} in total, ${amt(tn.amount_redeemed)} redeemed`],
+      ['Confirmation', conf ? [el('code', {class: 'mono'}, conf), confMeans] : '–'],
       ['Verified by Valun', p.verified_by_valun == null ? '–' : p.verified_by_valun ? 'yes: the server re-verified the payer\'s signature on the tracker\'s copy of the note' : el('b', {class: 'bad'}, 'no')],
-      ['Tracker state digest', [code(p.proof?.tracker_state_digest), p.proof ? el('div', {class: 'tiny'}, "The tracker's own state digest. It is not committed on any chain, so the key and proof below show only consistency with what this tracker itself reports.") : null]],
+      ['Tracker state digest', [code(p.proof?.tracker_state_digest), p.proof ? el('div', {class: 'tiny'}, NET.pilot() || !NET.onChain()
+        ? "The tracker's own state digest. It is not committed on any chain, so the key and proof below show only consistency with what this tracker itself reports."
+        : "The tracker's own state digest when it recorded the note. The tracker anchors its state on Ergo testnet: GET /pilot/v1/chain shows the digest its tracker box commits now.") : null]],
       p.proof && ['AVL tree key', code(p.proof.key)],
       p.proof?.proof && ['Membership proof', el('details', {}, el('summary', {}, `${NF.format(p.proof.proof.length / 2)} bytes`), code(p.proof.proof, 'small'))],
       ['Note signature', p.signature_withheld ? el('span', {class: 'hint'}, 'withheld from you until the Basis tracker records the note') : [code(p.note?.signature), ' ', SRC.key(handleOf(payer))]],
@@ -1707,7 +1842,7 @@ function route() {
   }
 }
 async function pollInfo() {
-  try { S.info = await api('GET', '/info'); if (currentRoute().tab === 'network') renderInfo(); } catch { /* the banner shows it */ }
+  try { S.info = await api('GET', '/info'); if (currentRoute().tab === 'network') renderInfo(); else renderNetworkCopy(); } catch { /* the banner shows it */ }
 }
 window.addEventListener('hashchange', route);
 $('#net-refresh').addEventListener('click', loadNetwork);
