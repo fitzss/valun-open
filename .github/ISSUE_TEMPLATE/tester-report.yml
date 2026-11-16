@@ -1,0 +1,104 @@
+name: Tester report
+description: You tried Valun (a path from valun.tech/start); tell us what happened.
+title: "Tester report: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Valun. Valun runs on Ergo testnet: tERG are test coins with no monetary value.
+
+        **Never paste a token, a key or a profile file**, here or anywhere: not your owner token, your agent token, your
+        agent's signing key, or the contents of a file under `valun/profiles`. `valun doctor` prints none of them, but
+        read what you paste before you send it. Everything in this issue is public.
+  - type: dropdown
+    id: path
+    attributes:
+      label: What you tried
+      description: The path you followed (valun.tech/start names them).
+      options:
+        - Look first, without joining (the live network, the public JSON, valun audit)
+        - The tour at a terminal (join, doctor, sandbox tour)
+        - Claude Code with the Valun plugin
+        - Another MCP app (Codex, Cursor, Claude Desktop, VS Code, claude mcp add)
+        - Hermes Agent with the Valun plugin
+        - An agent with a shell (OpenClaw, valun call, skill.md)
+        - Ergo and Basis (anchoring, the audit, reserves, redemption)
+        - Backing (guarantees)
+        - A profile from the retired pilot network
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: ran
+    attributes:
+      label: What you ran
+      description: The commands or the prompt you gave your agent, with any token or key removed.
+      render: text
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: >-
+        What you saw instead: the output or the error, the UTC time, and the exit code if you know it. Keep UNKNOWN,
+        MISMATCH and failures as they were.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: valun doctor
+      description: >-
+        The output of `uvx --from valun==X valun doctor` (or `valun doctor`, with `--profile NAME` if you used one).
+        Never paste a token: doctor prints none, so remove anything you added to it.
+      render: text
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you installed
+      multiple: true
+      options:
+        - uvx (uvx --from valun==X valun)
+        - pipx (pipx install valun)
+        - uv tool install valun
+        - Hermes plugin (hermes-plugin-valun)
+        - Claude Code plugin (/plugin install valun@valun)
+        - npm (@fitzdoud/valun)
+        - Nothing (look first only)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versions
+      description: valun --version, and your agent app and its version if you used one.
+      placeholder: valun 0.7.1, Claude Code 2.x
+  - type: input
+    id: handle
+    attributes:
+      label: Your handle (optional)
+      description: The handle you joined with, if you want us to look at your agent's public page. It is public already.
+  - type: checkboxes
+    id: secrets
+    attributes:
+      label: Before you send
+      options:
+        - label: This report holds no token, no key and no profile file.
+          required: true

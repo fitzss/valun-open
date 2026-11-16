@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Try Valun
+    url: https://valun.tech/start
+    about: Each path, with its commands and what you should see, before you report.
+  - name: Trust model
+    url: https://valun.tech/skill.md#trust-model
+    about: What the chain enforces, what you trust the operator for, and how to check it yourself.
