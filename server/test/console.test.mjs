@@ -248,6 +248,11 @@ test('circulation on: approvals, unresolved attempts, position, clearing panel a
   assert.match(all, /Spendable2 PC/);
   assert.match(all, /issued with keys the operator holds/);
   assert.match(all, /payment due \(accepted, unpaid\)2/);
+  // What set-offs cleared, never "settled"; the pilot redeems nothing, so no redemption row.
+  const position = con.querySelectorAll('.card').find(c => /^Position/.test(text(c.querySelector('h2'))));
+  assert.match(text(position), /Cleared by set-off1 PC of your debts cleared in loops, and as much of your claims(?! \()/);
+  assert.doesNotMatch(text(position), /settled|Redeemed on Ergo testnet/i);
+  assert.match(text(position), /These are outstanding IOUs \(credit notes\), as the tracker records them: one running total per pair\. A payment by transfer can move a claim to another creditor, and a set-off lowers every debt in a loop by the same amount\. Nothing is redeemed: the pilot has no reserve\./);
   // Clearing panel: consents read-only, receipts.
   const clr = con.querySelector('#clearing-card');
   assert.ok(clr, 'the clearing panel');
@@ -269,6 +274,13 @@ test('circulation on: approvals, unresolved attempts, position, clearing panel a
   for (const n of ['c_auto_clear', 'c_novate_own_debt', 'c_accept_transfers', 'c_accept_operator_issuers', 'c_pay_with_held_notes', 'c_max_claims_total', 'c_max_issuer_net_debt'])
     assert.ok(form.querySelector(`[name=${n}]`), `mandate field ${n}`);
   assert.ok(form.querySelector('[name=anf_mode]') && form.querySelector('[name=rnf]'), 'accept_notes_from and refuse_notes_from');
+  // A set-off lowers every debt in the loop by the smallest one, once every member signs; nothing is cancelled "at once"
+  // (lib/pilot/clearing.mjs, SETOFF_TTL_MS). Coverage counts what stands behind the payer, not its claims at face value
+  // (lib/pilot/grounding.mjs); the pilot has no reserve.
+  assert.match(text(form), /Your agent's client may sign set-offs by itself: once every member of a loop of debts signs, every debt in it falls by the same amount, the smallest one in it, and nobody's net position changes\./);
+  assert.doesNotMatch(text(con), /at once, and nobody|cancels a cycle|cycle of debts? (is )?cancelled/);
+  assert.match(text(form), /Your agent may accept a credit note only from a payer whose own claims and guarantees of its debt to you cover at least this percentage of everything it would owe, this deal included\. A claim or a guarantee counts only as far as an issuer you list under Accept notes from stands behind it; a payer you list there counts as covered\. It is still the payer's own promise/);
+  assert.doesNotMatch(text(form), /On the testnet a new self-serve agent/, "the testnet's default is not the pilot's");
   form.querySelector('[name=c_accept_transfers]').click();
   form.querySelector(`[name=anf][value=${ISS.id}]`).click();
   form.querySelector('[name=c_max_claims_total]').value = '30';
@@ -544,6 +556,8 @@ test('a guarantee offer held for the owner (fix inbox #18, approval kind guarant
   await settle();
   assert.deepEqual(posted, {decision: 'approve', note: ''});
   assert.match(text(page.doc.querySelector('#owner-console')), /Guarantee vg_aaaaaaaaaaaaaaaa is offered to sandbox-exact/);
+  // After an approval the agent learns of it only when it next checks.
+  assert.match(text(page.doc.querySelector('#approvals .flash')), /^Approved \(va_bbbbbbbbbbbb\)\. Guarantee vg_aaaaaaaaaaaaaaaa is offered to sandbox-exact, who can accept or decline it until .*\. Tell your agent: it carries on when it next checks\.$/);
   // Terms that do not hash to the terms hash: Approve stays off.
   const bad = await openConsole(serve({circulation: true, change: o => { o.approvals = [ga(H('7'))]; }}));
   assert.equal(button(bad.doc.querySelector('article.appr[data-kind=guarantee_offer]'), 'Approve').disabled, true);
@@ -580,7 +594,9 @@ test('the testnet (fix inbox #72): every amount in nanoERG with its tERG; a cred
     const issued = issuedDeal(VD_ISSUED);
     delete issued.labels.settlement;           // the page's own words, when the server gives none
     o.deals.push(issued, issuedDeal(VD_REDEEMED, {redeemed: true}));
-    o.position.settled_how = 'by set-off and by redemption on Ergo testnet';      // the testnet server's own words
+    // The testnet server's own words and fields (lib/pilot/core.mjs position): settled sums set-offs and redemptions.
+    Object.assign(o.position, {settled: 4, settled_how: 'by set-off and by redemption on Ergo testnet', redeemed_claims: 2, redeemed_debts: 1,
+      meaning: 'claims and debts are outstanding obligations ... settled counts both: cleared_by_setoff, redeemed_claims and redeemed_debts.'});
   }});
   const routes = (m, p, b) => (m === 'GET' && p === '/info' ? {status: 200, body: TESTNET_INFO} : (r => r && {...r, body: asTestnet(r.body)})(pilotRoutes(m, p, b)));
   const BAD = /\bPC\b|\bpilot\b|no blockchain|no chain|any chain|no reserve|not redeemable|local_only|simulated|nothing is redeemed/i;
@@ -590,9 +606,19 @@ test('the testnet (fix inbox #72): every amount in nanoERG with its tERG; a cred
     .replace(/valun-pilot\/[a-z-]+\/\d/g, '').replace(/\/pilot\/v1\b/g, '').split(/\n|(?<=[.:;])\s+/);
   const page = await openConsole(routes);
   const con = page.doc.querySelector('#owner-console');
-  assert.equal(page.doc.title, '(2) Valun · testnet network (experimental)');
+  assert.equal(page.doc.title, '(2) Valun owner console');
   assert.match(text(con), /Spendable2 nanoERG \(0\.000000002 tERG\)of the notes you hold, now/);
   assert.match(text(con), /Cleared1 nanoERG \(0\.000000001 tERG\)by set-off(?!;)/);
+  // Cleared by set-off and redeemed on Ergo testnet as two rows, never one "settled" sum, and the page's own words for
+  // what the figures are, not the server's notes on its fields.
+  const position = con.querySelectorAll('.card').find(c => /^Position/.test(text(c.querySelector('h2'))));
+  assert.match(text(position), /Cleared by set-off1 nanoERG \(0\.000000001 tERG\) of your debts cleared in loops, and as much of your claims \(each set-off is committed by the next tracker box on Ergo testnet, and is not final\)/);
+  assert.equal(position.querySelectorAll('a').find(a => text(a) === 'not final')?.getAttribute('href'), '/trust#netting');
+  assert.match(text(position), /Redeemed on Ergo testnet2 nanoERG \(0\.000000002 tERG\) of your claims, which you redeemed; 1 nanoERG \(0\.000000001 tERG\) of your debts, redeemed from your reserve/);
+  assert.match(text(position), /These are outstanding IOUs \(credit notes\), as the tracker records them: one running total per pair\. A payment by transfer can move a claim to another creditor, and a set-off lowers every debt in a loop by the same amount\. A claim is paid only when its creditor redeems it on Ergo testnet against its issuer's tERG reserve, if the issuer posted one\./);
+  assert.doesNotMatch(text(position), /settled/i, 'no "settled" in the position card');
+  // The testnet's default acceptance, where the console shows "Accept notes from".
+  assert.match(text(con.querySelector('#mandate-form')), /Whose debt you may be paid with by transfer\. Your counterparties list does not imply it: ticking none accepts no transfer\. On the testnet a new self-serve agent accepts any issuer's IOUs as payment by transfer, up to 0\.04 tERG per issuer\. Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way\. You can narrow whose IOUs your agent accepts here, with “only those ticked here”\./);
   assert.match(text(con.querySelector('#clearing-card')), /What you owe changes by-1 nanoERG \(-0\.000000001 tERG\)/, "a consent's summary (only its _PC name is served there)");
   assert.match(text(con.querySelector('#mandate-form')), /Max credit note per deal \(as payer\), nanoERG/);
   assert.deepEqual(said(page).filter(l => BAD.test(l)), [], 'the owner console');
@@ -616,4 +642,41 @@ test('the testnet (fix inbox #72): every amount in nanoERG with its tERG; a cred
   assert.match(redeemed, /Nothing further happens to this deal: its credit note is settled\./);
   assert.match(views[VD_PAID], /Paid by transfer, not settled: sandbox-exact now owes carol 3 nanoERG \(0\.000000003 tERG\) that it owed olivia \(you\) before; olivia \(you\) issued no credit note for this deal\. It is an outstanding obligation; it may later move again or be cleared by set-off, and its creditor can redeem it on Ergo testnet/);
   assert.match(views[VD_PAID], /the debt stays outstanding with its new creditor, who can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one\./);
+});
+
+// The review's finding on min_payer_coverage_pct: the server counts the payer's reserve, its claims at what stands
+// behind them (an IOU with nothing behind it counts 0) and the guarantees of its debt to you, and a payer the owner
+// lists under accept_notes_from is covered (lib/pilot/core.mjs checkMandate, lib/pilot/grounding.mjs). The approval's
+// check says so, with the server's figures, not "the payer's claims on the tracker cover".
+test('an acceptance waiting for its owner: the payer coverage check says what the server counted (reserve, claims at what stands behind them, guarantees), not the claims at face value', async () => {
+  const VD = 'vd_8888888888888888', VA = 'va_cccccccccccc';
+  const withAcceptance = (o, check) => {
+    const d = dealView(VD, 'open', {role: 'payee'});               // carol offers olivia a job: carol would owe her
+    Object.assign(d.current, {by: PAYEE.id});
+    o.deals.push(d);
+    o.mandate.min_payer_coverage_pct = 50;
+    const th = termsHash(d.current.terms);
+    o.approvals = [{id: VA, participant: ME.id, deal_id: VD, kind: 'accept', version: 1, terms_hash: th, created_at: PAST, state: 'pending',
+      subject: {terms: d.current.terms, terms_hash: th, offered_by: PAYEE.id, offer_signature: SIG('1'), signer_pubkey: ME.pubkey, statement: `valun-pilot/accept/1\n${th}`, signature: SIG('2')},
+      mandate_check: {mandate_version: 3, checks: [check]}, effect: {if_approved: 'The deal is agreed.', if_rejected: 'Nothing is agreed.'}, deal: d}];
+  };
+  const base = {rule: 'min_payer_coverage_pct', payer_claims_on_tracker: 5, payer_owes_on_tracker: 4, payer_committed: 0, this_deal: 3, limit: 50};
+  const page = await openConsole(serve({circulation: true, change: o => withAcceptance(o, {...base, payer_claims_grounded: 2, payer_reserve: 1, backing_for_you: 1, coverage_pct: 57})}));
+  const appr = page.doc.querySelector(`article.appr[data-approval=${VA}]`);
+  assert.ok(appr, 'the acceptance waiting for its owner');
+  assert.match(text(appr), /min_payer_coverage_pct: the payer's reserve \(1 PC\), claims on the tracker \(5 PC, of which 2 PC count\) and guarantees of its debt to you \(1 PC still callable\) cover 57% of what it would owe \(on the tracker 4 PC \+ agreed 0 PC \+ this deal 3 PC\); your minimum is 50%/);
+  assert.match(text(appr), /min_payer_coverage_pct 50%: the server checks that what stands behind carol \(its reserve, its claims at what backs them, and the guarantees of its debt to you\) covers at least that share of what it would owe/);
+  assert.doesNotMatch(text(appr), /the payer's claims on the tracker \d+ PC cover/);
+  // A payer the owner trusts is covered; its claims counted in full show no "of which".
+  const trusted = await openConsole(serve({circulation: true, change: o => withAcceptance(o, {...base, payer_claims_grounded: 5, payer_trusted_by_owner: true, coverage_pct: 125})}));
+  assert.match(text(trusted.doc.querySelector(`article.appr[data-approval=${VA}]`)),
+    /min_payer_coverage_pct: the payer's claims on the tracker \(5 PC\) cover 125% of what it would owe \(on the tracker 4 PC \+ agreed 0 PC \+ this deal 3 PC\); you list it under Accept notes from, so it counts as covered; your minimum is 50%/);
+  // What backers already paid counts too (guarantees.mjs backingFor: cover = paid + still callable, at most the debt): the
+  // line names both parts, and the guarantees' part once nothing more can be called (the redesign, round 2).
+  const paid = await openConsole(serve({circulation: true, change: o => withAcceptance(o, {...base, backing_for_you: 1, already_paid_by_backers: 2, coverage_pct: 114})}));
+  assert.match(text(paid.doc.querySelector(`article.appr[data-approval=${VA}]`)),
+    /min_payer_coverage_pct: the payer's claims on the tracker \(5 PC\) and guarantees of its debt to you \(1 PC still callable, 2 PC already paid by backers\) cover 114% of what it would owe/);
+  const spent = await openConsole(serve({circulation: true, change: o => withAcceptance(o, {...base, backing_for_you: 0, already_paid_by_backers: 2, coverage_pct: 100})}));
+  assert.match(text(spent.doc.querySelector(`article.appr[data-approval=${VA}]`)),
+    /min_payer_coverage_pct: the payer's claims on the tracker \(5 PC\) and guarantees of its debt to you \(2 PC already paid by backers\) cover 100% of what it would owe/);
 });

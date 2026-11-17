@@ -1,33 +1,53 @@
-// Valun live network (public/network.html, served at /network): a public, read-only view of the pilot network for a
-// big screen. Same origin only (CSP connect-src 'self'), no tokens, no libraries. It polls three public routes every
-// 10 s (GET /pilot/v1/participants, /pilot/v1/ledger, /pilot/v1/clearing), reads /pilot/v1/info and /api/status at
-// start and every 5 minutes (on the testnet network also /pilot/v1/chain and /pilot/v1/reserves, for the "On Ergo
-// testnet" strip), reads /pilot/v1/loops at start and after a set-off (to link it to its loop card), pauses
-// while the tab is hidden and doubles its interval (up to 60 s) after any error or 429:
-// every viewer behind one address shares the server's per-address read budget with the agents there.
+// Valun live network (public/network.html, served at /network): a public, read-only view of the testnet for people. Same
+// origin only (CSP connect-src 'self'), no tokens, no libraries, no inline style. What it reads:
+//   every 30 s   GET /pilot/v1/ledger (each pair's IOU, cumulative) and GET /pilot/v1/clearing (the network's totals);
+//   every 5 min  GET /pilot/v1/participants?all=1 (who is here: sooner when the ledger names someone it does not know),
+//                GET /pilot/v1/info (the unit, the timestamp codes), GET /pilot/v1/chain and /pilot/v1/reserves;
+//   and GET /pilot/v1/loops at start and when the totals count a new set-off.
+// It stops while the tab is hidden or while the visitor pauses it, and waits longer after an error or a 429 (up to 5
+// minutes): every viewer behind one address shares the server's per-address read budget with the agents there.
+//
+// What it shows: who is here, by who runs them (lib/pilot/loops.mjs whoRuns says the same, and a test holds them
+// equal); a picture of recent activity: the agents in the latest changes to the ledger beside the operator's own,
+// every label placed where it overlaps nothing and stays in the frame, the rest counted; the loops cleared; and the
+// same facts as tables. Motion marks only a real change and never runs under prefers-reduced-motion; a screen reader
+// hears only a loop that cleared, at most once a minute (the status line is not a live region).
 //
 // What changed between two polls is read from the tracker's notes (one per issuer -> recipient pair, cumulative): an
-// updated note has a new timestamp, and the timestamp's residue mod 1000 says how it was updated (GET /info novation:
-// 999 a debt transfer, whose two edges share the timestamp; 998 a set-off). explain() turns the changes into events:
-// debt transfers (an issuer's edge down, another edge of the same issuer up by as much), set-offs (a cycle of edges
-// down together), new credit notes (an edge up) and other decreases. The pure parts are exported for the tests
-// (test/network-page.test.mjs); the page starts only in a browser.
+// updated note has a new timestamp, and the timestamp's residue mod 1000 says how (GET /info novation: 999 a debt
+// transfer, whose two edges share the timestamp; 998 a set-off; 997 a deal's note). explain() turns the changes into
+// events. The pure parts are exported for the tests (test/network-page.test.mjs); the page starts only in a browser.
 
-export const POLL_MS = 10_000, MAX_POLL_MS = 60_000;
-const META_MS = 300_000, FRESH_MS = 180_000, FEED_MAX = 60, HL_MS = 8_000, GHOST_MS = 9_000;
-export const SANDBOX_AGENTS = Object.freeze(['sandbox-exact', 'sandbox-mallory']);
+import {SANDBOX_AGENTS, declaresTeam, whoRuns, groupOf, WHO_WORDS} from './who.js';
+
+export const POLL_MS = 30_000, MAX_POLL_MS = 300_000, SLOW_MS = 300_000;
+const ANNOUNCE_GAP_MS = 60_000, HOT_MS = 60_000, CHANGES_SHOWN = 15, LOOPS_SHOWN = 5, PEOPLE_GAP_MS = 60_000;
 const RES = {transfer: 999, setoff: 998};
-const KIND_WORDS = {agent: 'sandbox agent', sandbox: 'self-serve sandbox', invited: 'invited', operator: 'operator-run', unknown: 'unknown key'};
+const HANDLE_RE = /^[a-z][a-z0-9_-]{2,23}$/;
 
 // ---------- pure parts ----------
 
+// How a participant joined (lib/pilot/loops.mjs kindOf), kept for the record: the page says who runs it (whoRuns).
 export function kindOf(p) {
   if (p.placeholder) return 'unknown';
-  if (p.unlisted) return 'test';          // an operator test or demo agent, not running: dimmed, no page
+  if (p.unlisted) return 'test';          // an operator test or demo agent, not running: no page
   if (SANDBOX_AGENTS.includes(p.handle)) return 'agent';
   if (p.sandbox_only) return 'sandbox';
   if (p.operator_run) return 'operator';
   return 'invited';
+}
+
+// Who runs a participant: public/who.js (the same rule as lib/pilot/loops.mjs; a test holds them equal).
+export {SANDBOX_AGENTS, declaresTeam, whoRuns, groupOf, WHO_WORDS};
+
+// Who is here, by who runs them: every participant GET /participants?all=1 lists.
+export function classCounts(ps) {
+  const c = {all: 0, operator: 0, team: 0, other: 0};
+  for (const p of ps || []) {
+    if (!p || p.placeholder || typeof p.id !== 'string') continue;
+    c.all += 1; c[groupOf(p.who ?? whoRuns(p))] += 1;
+  }
+  return c;
 }
 
 // The ledger's notes as edges between participants: one edge per (issuer, recipient) pair of participants (a
@@ -39,10 +59,11 @@ export function edgesOf(notes) {
   for (const n of notes || []) {
     const from = n.issuer ?? `key:${n.issuer_pubkey}`, to = n.recipient ?? `key:${n.recipient_pubkey}`, key = `${from}>${to}`;
     let e = m.get(key);
-    if (!e) m.set(key, e = {key, from, to, amount: 0, notes: new Map()});
-    const amount = Number(n.outstanding ?? n.total) || 0;
+    if (!e) m.set(key, e = {key, from, to, amount: 0, notes: new Map(), ts: 0, from_handle: n.issuer_handle ?? null, to_handle: n.recipient_handle ?? null});
+    const amount = Number(n.outstanding ?? n.total) || 0, ts = Number(n.timestamp) || 0;
     e.amount += amount;
-    e.notes.set(`${n.issuer_pubkey}>${n.recipient_pubkey}`, {amount, ts: Number(n.timestamp) || 0});
+    e.ts = Math.max(e.ts, ts);
+    e.notes.set(`${n.issuer_pubkey}>${n.recipient_pubkey}`, {amount, ts});
   }
   return m;
 }
@@ -146,8 +167,8 @@ export function explain(changes) {
   return ev.map((e, i) => [e, i]).sort((a, b) => order[a[0].type] - order[b[0].type] || a[1] - b[1]).map(x => x[0]);
 }
 
-// An amount as people read it, in the network's unit (GET /pilot/v1/info unit): "3 PC" on the pilot; on the testnet
-// (nanoERG of Ergo testnet) in tERG, "0.003 tERG" (exact: whole nanoERG to tERG by integer arithmetic).
+// An amount exactly, in the network's unit (GET /pilot/v1/info unit): "3 PC" on the pilot; on the testnet (nanoERG of
+// Ergo testnet) in tERG, "0.003 tERG" (exact: whole nanoERG to tERG by integer arithmetic).
 export function tergText(n) {
   const v = BigInt(Math.trunc(Number(n) || 0)), neg = v < 0n, a = neg ? -v : v;
   const frac = String(a % 1000000000n).padStart(9, '0').replace(/0+$/, '');
@@ -156,49 +177,36 @@ export function tergText(n) {
 export function moneyText(n, unit = 'PC') {
   return unit === 'nanoERG' ? `${tergText(n)} tERG` : `${Number(n || 0).toLocaleString('en-US')} PC`;
 }
+// An amount as people read it (lib/pilot/loops.mjs terg on the testnet): tERG with at most 6 decimals, a total rounded
+// to 3 ("0.444 tERG": the exact figure is in the JSON); a true minus sign. On the pilot "3 PC".
+export function terg(n, {total = false, unit = 'nanoERG'} = {}) {
+  const v = Math.trunc(Number(n) || 0);
+  if (unit !== 'nanoERG') return `${v < 0 ? '−' : ''}${Math.abs(v).toLocaleString('en-US')} PC`;
+  const a = Math.abs(v), s = (total ? (a / 1e9).toFixed(3) : (Math.round(a / 1e3) / 1e6).toFixed(6)).replace(/0+$/, '').replace(/\.$/, '');
+  return `${v < 0 && s !== '0' ? '−' : ''}${s} tERG`;
+}
 
-// How big an amount is drawn: an edge's width and a node's size grow with what is owed, on a scale sized for the pilot's
-// PC. The testnet's amounts are nanoERG, each PC-sized amount times 1,000,000 (lib/pilot/units.mjs: its scale); drawn
-// as they are, every edge and node was at its largest. GET /info names no scale, so it goes by the unit.
-const SIZE_SCALE = {nanoERG: 1_000_000};
-const sized = (amount, unit) => (Number(amount) || 0) / (SIZE_SCALE[unit] ?? 1);
-// An edge's stroke width for what it carries (2 to 10).
-export function edgeWidth(amount, unit = 'PC') { return Math.min(10, 2 + 1.6 * Math.log2(1 + sized(amount, unit))); }
-// A participant's radius for what it owes and is owed in all (14 to 23).
-export function nodeRadius(total, unit = 'PC') { return 14 + Math.min(9, Math.sqrt(sized(total, unit)) * 1.4); }
-
-// The "On Ergo testnet" strip from GET /pilot/v1/chain and GET /pilot/v1/reserves (the testnet network, once on chain):
-// plain values for the page to draw, or null. Ids must be 64 hex; a link is kept only when it is the explorer's.
+// The "On Ergo testnet" facts from GET /pilot/v1/chain and GET /pilot/v1/reserves (the testnet network, once on chain):
+// plain values for the page to draw, or null. Ids must be 64 hex; a link is kept only when it is the explorer's. A
+// reserve backs only its own issuer's notes: `backs` is what it backs now, the smaller of its collateral and its
+// issuer's outstanding debt (GET /reserves total_debt_nanoerg).
 export function chainPanel(chain, reserves) {
   const hex = s => typeof s === 'string' && /^[0-9a-f]{64}$/.test(s);
   const explorer = u => (typeof u === 'string' && /^https:\/\/testnet\.ergoplatform\.com\/[A-Za-z0-9/._-]+$/.test(u) ? u : null);
   const a = chain && typeof chain.anchoring === 'object' ? chain.anchoring : null;
   if (!chain?.on_chain || !a) return null;
+  const cap = a.daily_cap && Number.isInteger(a.daily_cap.limit) ? {limit: a.daily_cap.limit, today: Number(a.daily_cap.signed_today) || 0, used_up: a.daily_cap.used_up === true
+    || (Number(a.daily_cap.signed_today) || 0) >= a.daily_cap.limit} : null;
   return {
     anchored: a.anchored === true, height: Number.isInteger(a.confirmed_height) ? a.confirmed_height : null,
-    pending: hex(a.pending_tx_id),
+    pending: hex(a.pending_tx_id), cap,
     links: {nft: explorer(chain.links?.tracker_nft), address: explorer(chain.links?.tracker_address)},
     reserves: (Array.isArray(reserves?.reserves) ? reserves.reserves : []).filter(r => hex(r?.box_id))
-      .map(r => ({handle: typeof r.handle === 'string' ? r.handle : null, nanoerg: Number.isInteger(r.collateral_nanoerg) ? r.collateral_nanoerg : 0})),
+      .map(r => {
+        const nanoerg = Number.isInteger(r.collateral_nanoerg) ? r.collateral_nanoerg : 0, debt = Number.isInteger(r.total_debt_nanoerg) ? r.total_debt_nanoerg : 0;
+        return {handle: typeof r.handle === 'string' ? r.handle : null, nanoerg, backs: Math.max(0, Math.min(nanoerg, debt))};
+      }),
   };
-}
-
-// The server's mode line from GET /pilot/v1/info and GET /api/status.
-export function modeLine(info, status) {
-  const parts = [];
-  if (info) {
-    const f = Array.isArray(info.features) ? info.features : [];
-    parts.push(f.includes('circulation/1')
-      ? (/sandbox participants only/.test(info.description || '') ? 'circulating credit: sandbox only' : 'circulating credit: on')
-      : f.includes('bound_notes/1') ? 'circulating credit: bound notes only' : 'circulating credit: off');
-  }
-  const pin = status?.basis?.pin;
-  if (typeof pin === 'string' && pin) {
-    const m = /Basis tracker v[\d.]+/.exec(pin);
-    parts.push(m ? m[0] : `Basis ${(pin.replace(/^Basis\s+/, '').split(/[\s:(]/)[0] || '').slice(0, 8)}`);
-  }
-  if (info?.network) parts.push(info.network);
-  return parts.join(' · ');
 }
 
 // The closed loop (GET /pilot/v1/loops) a set-off event shows: the newest loop not linked yet whose members are the
@@ -209,23 +217,114 @@ export function matchLoop(handles, loops, linked = new Set()) {
     && [...new Set((l.members || []).map(m => m?.handle))].sort().join('\n') === want) ?? null;
 }
 
+// The latest changes to the ledger: one row per pair (its newest note's timestamp, what it owes now), newest first, and
+// what the change was by the timestamp's residue: 'transfer' (an IOU passed on), 'setoff' (a loop cut it) or 'note'
+// (an IOU for a job).
+export function latestChanges(edges, residues = RES, n = CHANGES_SHOWN) {
+  return [...edges.values()].filter(e => e.ts > 0).sort((a, b) => b.ts - a.ts || (a.key < b.key ? -1 : 1)).slice(0, n)
+    .map(e => ({key: e.key, from: e.from, to: e.to, ts: e.ts, owed: e.amount,
+      kind: e.ts % 1000 === residues.transfer ? 'transfer' : e.ts % 1000 === residues.setoff ? 'setoff' : 'note'}));
+}
+
+// Which agents the picture draws: the ones the operator runs (always), then the members of the newest loop, then the
+// agents in the latest changes, newest first, up to `max`; everyone else is counted by who runs them. `people`: Map id ->
+// {id, handle, who, placeholder}; `changes`: latestChanges(..., many); `loops`: GET /loops, newest first.
+export function pickView(people, changes, loops, max) {
+  const core = [...people.values()].filter(p => !p.placeholder && groupOf(p.who) === 'operator')
+    .sort((a, b) => String(a.handle).localeCompare(String(b.handle))).map(p => p.id);
+  const seen = new Set(core), ring = [], byHandle = new Map([...people.values()].map(p => [p.handle, p.id]));
+  const add = id => { if (ring.length < max && id && !seen.has(id) && people.has(id) && !people.get(id).placeholder) { seen.add(id); ring.push(id); return true; } return false; };
+  for (const m of loops?.[0]?.members || []) add(byHandle.get(m?.handle));
+  let since = null;   // the oldest change that put an agent in the picture
+  for (const c of changes || []) { const a = add(c.from), b = add(c.to); if (a || b) since = c.ts; }
+  const hidden = {operator: 0, team: 0, other: 0};
+  for (const p of people.values()) if (!p.placeholder && !seen.has(p.id)) hidden[groupOf(p.who)] += 1;
+  return {core, ring, hidden, since};
+}
+
+// How many agents the picture can name in a frame of height H: two fans, each label a line of its own.
+export function ringCapacity(H, font) { return Math.max(2, 2 * Math.floor((H - 52) / (font + 10))); }
+
+// The ring's agents on two fans, left and right: agents that dealt with each other stay together (a component of the
+// pairs among them, largest first, each to the emptier side), and the sides are evened out.
+function splitSides(ids, edges) {
+  const set = new Set(ids), nb = new Map(ids.map(id => [id, new Set()])), rank = new Map(ids.map((id, i) => [id, i]));
+  for (const e of edges.values()) if (set.has(e.from) && set.has(e.to) && e.from !== e.to) { nb.get(e.from).add(e.to); nb.get(e.to).add(e.from); }
+  const comps = [], seen = new Set();
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    const comp = [], q = [id];
+    seen.add(id);
+    while (q.length) {
+      const x = q.shift(); comp.push(x);
+      for (const y of [...nb.get(x)].sort((a, b) => rank.get(a) - rank.get(b))) if (!seen.has(y)) { seen.add(y); q.push(y); }
+    }
+    comps.push(comp);
+  }
+  comps.sort((a, b) => b.length - a.length || rank.get(a[0]) - rank.get(b[0]));
+  const left = [], right = [];
+  for (const c of comps) (left.length <= right.length ? left : right).push(...c);
+  while (left.length - right.length > 1) right.push(left.pop());
+  while (right.length - left.length > 1) left.push(right.pop());
+  return [left, right];
+}
+
+// A handle cut to `n` characters ("basis-lab-mc-…"); a core agent's label may take two lines, split at a hyphen.
+const fit = (h, n) => (h.length <= n ? h : `${h.slice(0, Math.max(1, n - 1))}…`);
+function twoLines(h, n) {
+  if (h.length <= n) return [h];
+  let best = -1;
+  for (let i = 1; i < h.length - 1; i++) if (h[i] === '-' && Math.max(i + 1, h.length - i - 1) <= n && (best < 0 || Math.abs(h.length / 2 - i) < Math.abs(h.length / 2 - best))) best = i;
+  return best < 0 ? [fit(h, n)] : [h.slice(0, best + 1), h.slice(best + 1)];
+}
+
+// Where everything goes in a W x H frame: the operator's agents in a column at the centre, labelled below; the ring's
+// agents on two fans, labelled outwards, one line each, cut to the room they have. Each label's box is returned
+// ({x0, y0, x1, y1}) so a test can check that none overlaps another and that all stay inside the frame.
+export function layoutView(view, people, edges, {W, H, font = 12}) {
+  const cw = font * 0.6, m = 10, cx = W / 2, cy = H / 2, lh = font + 2;
+  const labelRoom = Math.max(84, Math.min(190, W * 0.22));
+  const yTop = m + font + 6, yBot = H - m - font - 2, span = Math.max(40, yBot - yTop);
+  const phi = (64 * Math.PI) / 180, ry = span / 2 / Math.sin(phi), rx = Math.max(52, cx - labelRoom - m - 12);
+  const nodes = [], handle = id => String(people.get(id)?.handle ?? id);
+  const [left, right] = splitSides(view.ring, edges);
+  for (const [ids, s] of [[left, -1], [right, 1]]) ids.forEach((id, i) => {
+    const y = yTop + ((i + 0.5) * span) / ids.length, t = Math.max(-1, Math.min(1, (y - cy) / ry));
+    const x = cx + s * rx * Math.sqrt(1 - t * t), lx = x + s * 11, room = s < 0 ? lx - m : W - m - lx;
+    const text = fit(handle(id), Math.max(4, Math.floor(room / cw)));
+    const w = text.length * cw;
+    nodes.push({id, x, y, side: s, anchor: s < 0 ? 'end' : 'start', lines: [{text, x: lx, y: y + font * 0.36}],
+      box: {x0: s < 0 ? lx - w : lx, y0: y - lh / 2, x1: s < 0 ? lx : lx + w, y1: y + lh / 2}});
+  });
+  const kc = view.core.length, gap = Math.max(font * 3.6, Math.min(92, span / (kc + 1.2)));
+  const half = Math.max(30, rx * 0.72 - 12), n = Math.max(6, Math.floor((2 * half) / cw));
+  view.core.forEach((id, j) => {
+    const y = cy + (j - (kc - 1) / 2) * gap, lines = twoLines(handle(id), n);
+    const w = Math.max(...lines.map(l => l.length)) * cw, top = y + 10;
+    nodes.push({id, x: cx, y, side: 0, core: true, anchor: 'middle', lines: lines.map((text, k) => ({text, x: cx, y: top + font * 0.8 + k * lh})),
+      box: {x0: cx - w / 2, y0: top, x1: cx + w / 2, y1: top + lines.length * lh}});
+  });
+  return {W, H, nodes, at: new Map(nodes.map(n => [n.id, n])), geom: {cx, cy, rx, ry, yTop, yBot}};
+}
+
+// An edge's path from a to b (quadratic): bowed towards the centre within a fan, through the middle across, to the side
+// in the centre column; `bend` sets a second edge of the same pair apart (the other way round).
+export function edgePath(a, b, {W, bend = 0, ra = 6, rb = 9}) {
+  const cx = W / 2, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+  let qx = mx, qy = my;
+  if (a.side === 0 && b.side === 0) qx = cx + (Math.abs(dy) * 0.35 + 18) * (bend >= 0 ? 1 : -1);
+  else if (a.side === b.side) qx = mx + (cx - mx) * Math.min(0.6, 0.15 + Math.abs(dy) / (2.5 * W));
+  qx += (-dy / len) * bend; qy += (dx / len) * bend;
+  const trim = (p, q, d) => { const ux = q.x - p.x, uy = q.y - p.y, l = Math.hypot(ux, uy) || 1; return {x: p.x + (ux / l) * d, y: p.y + (uy / l) * d}; };
+  const c = {x: qx, y: qy}, p0 = trim(a, c, ra), p2 = trim(b, c, rb), f = v => v.toFixed(1);
+  return `M${f(p0.x)},${f(p0.y)} Q${f(qx)},${f(qy)} ${f(p2.x)},${f(p2.y)}`;
+}
+// An edge's stroke for what it carries: 1 to 2.6 (a PC-sized amount is 1,000,000 nanoERG: lib/pilot/units.mjs).
+export function edgeWidth(amount, unit = 'nanoERG') { const v = (Number(amount) || 0) / (unit === 'nanoERG' ? 1_000_000 : 1); return Math.min(2.6, 1 + 0.4 * Math.log2(1 + Math.max(0, v))); }
+
 // ---------- the page ----------
 
 const SVGNS = 'http://www.w3.org/2000/svg';
-const RINGS = [{rx: 0.57, ry: 0.55, cap: 12, phase: 0}, {rx: 0.94, ry: 0.87, cap: 22, phase: 0.5}, {rx: 0.76, ry: 0.72, cap: 16, phase: 0.5}];
-const RING_ORDER = {sandbox: [0, 2, 1], other: [1, 2, 0]};
-
-function fillOrder(K) {      // slot indices 0..K-1 in van der Corput order: the first ones spread around the ring
-  const out = [], used = new Set();
-  for (let i = 0; out.length < K; i++) {
-    let f = 0, b = 0.5, n = i;
-    while (n) { if (n & 1) f += b; n >>= 1; b /= 2; }
-    let s = Math.round(f * K) % K;
-    while (used.has(s)) s = (s + 1) % K;
-    used.add(s); out.push(s);
-  }
-  return out;
-}
 
 function start() {
   const $ = id => document.getElementById(id);
@@ -236,22 +335,18 @@ function start() {
     return el;
   };
   const H = (tag, cls, text) => { const el = document.createElement(tag); if (cls) el.className = cls; if (text != null) el.textContent = text; return el; };
-  const fmt = n => Number(n || 0).toLocaleString('en-US');
-  // Amounts in the network's unit (st.unit, from GET /pilot/v1/ledger or /info): "3 PC" on the pilot, "0.003 tERG" on
-  // the testnet.
-  const money = n => moneyText(n, st.unit), num = n => (st.unit === 'nanoERG' ? tergText(n) : fmt(n));
-  const clock = t => new Date(t).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+  const fmt = n => Number(n || 0).toLocaleString('en-US'), many = (n, w) => `${fmt(n)} ${w}${Number(n) === 1 ? '' : 's'}`;
+  const reduce = () => typeof globalThis.matchMedia === 'function' && globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const utc = t => `${new Date(t).toISOString().slice(11, 16)} UTC`;
+  const ago = t => { const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 90 ? 'just now' : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} days ago`; };
 
   const st = {
-    participants: new Map(), edges: new Map(), slots: new Map(), ringUsed: RINGS.map(() => new Set()), orders: RINGS.map(r => fillOrder(r.cap)),
-    ready: false, fresh: new Map(), residues: {...RES},
-    clearing: null, clearingBase: null, clearingOk: true, detected: {setoffs: 0, setoffPC: 0, transfers: 0, transferPC: 0},
-    pendingCatchUp: null, recon: {streak: new Map(), warned: new Set(), bad: 0, rows: 0},
-    loops: {pending: [], linked: new Set(), timer: null, tries: 0},
-    interval: POLL_MS, timer: null, inflight: false, lastOk: 0, lastMeta: 0, lastError: null, nextAt: 0, unit: 'PC',
+    unit: 'nanoERG', network: 'valun-testnet-1', residues: {...RES}, people: new Map(), byHandle: new Map(), edges: new Map(), loops: [], clearing: null, chain: null,
+    recon: {streak: new Map(), bad: 0, rows: 0, ok: 0}, hot: new Map(), lastLoopId: null, lastAnnounce: 0, peopleAt: 0, slowAt: 0, loopsAt: 0,
+    interval: POLL_MS, timer: null, inflight: false, paused: false, lastOk: 0, error: null, ready: false, focus: null, sig: '',
   };
-  const view = {W: 1250, H: 800, nodes: new Map(), edges: new Map(), hl: new Map(), ghost: new Map(), flashNode: new Map()};
-  const svg = $('graph'), gRings = $('g-rings'), gEdges = $('g-edges'), gLabels = $('g-labels'), gNodes = $('g-nodes'), gFx = $('g-fx');
+  const svg = $('graph'), box = $('graph-box');
+  const amount = (n, o) => terg(n, {...o, unit: st.unit});
 
   // ----- data -----
   async function getJson(path) {
@@ -259,515 +354,370 @@ function start() {
     if (!r.ok) { const e = new Error(`${path}: HTTP ${r.status}`); e.status = r.status; throw e; }
     return r.json();
   }
-
-  async function refreshMeta() {
-    st.lastMeta = Date.now();
-    const [info, status] = await Promise.all([getJson('/pilot/v1/info').catch(() => null), getJson('/api/status').catch(() => null)]);
+  // Who is here: every participant, with who runs it (whoRuns). A note whose key no participant has is shown under its
+  // key until the next read names it.
+  function setPeople(ps) {
+    const next = new Map();
+    for (const p of Array.isArray(ps) ? ps : []) if (p && typeof p.id === 'string') next.set(p.id, {...p, who: whoRuns(p)});
+    st.people = next; st.peopleAt = Date.now();
+    st.byHandle = new Map([...next.values()].map(p => [p.handle, p.id]));
+  }
+  async function readSlow() {
+    st.slowAt = Date.now();
+    const [info, chain, res] = await Promise.all([getJson('/pilot/v1/info').catch(() => null), getJson('/pilot/v1/chain').catch(() => null), getJson('/pilot/v1/reserves').catch(() => null)]);
     if (info?.novation) {
       if (Number.isInteger(info.novation.transfer_ms)) st.residues.transfer = info.novation.transfer_ms;
       if (Number.isInteger(info.novation.setoff_ms)) st.residues.setoff = info.novation.setoff_ms;
     }
-    if (info && Array.isArray(info.features) && info.features.includes('circulation/1')) st.clearingOk = true;
-    const line = modeLine(info, status);
-    if (line) $('meta').textContent = line;
-    setUnit(info?.unit);
-    if (info?.network === 'valun-testnet-1' && info.tracker_on_chain) await refreshChain();
+    if (typeof info?.unit === 'string' && info.unit) st.unit = info.unit;
+    if (typeof info?.network === 'string' && info.network) st.network = info.network;
+    st.chain = chainPanel(chain, res);
+    drawChain();
   }
-
-  // The network's unit, from GET /info or GET /ledger (each names it, as `unit`), and its labels.
-  function setUnit(unit) {
-    if (typeof unit === 'string' && unit && unit !== st.unit) { st.unit = unit; unitLabels(); }
-  }
-
-  // The testnet network (the one network since 2026-11-13): its unit in the labels, and how to join it.
-  function unitLabels() {
-    if (st.unit !== 'nanoERG') return;
-    for (const u of document.querySelectorAll('.stats .u')) u.textContent = 'tERG';
-    $('graph').setAttribute('aria-label', 'Agents as points; an arrow from A to B means A owes B, in tERG (Ergo testnet coins)');
-    const li = document.querySelector('.legend .explain li');
-    if (li) li.replaceChildren(H('b', null, 'tERG'), ' are Ergo testnet coins with no money value: a note can be redeemed on '
-      + 'Ergo testnet against its issuer\'s reserve.');
-    const code = document.querySelector('.legend .join code');
-    if (code) code.textContent = 'uvx valun join --sandbox';
-  }
-
-  // The "On Ergo testnet" strip: the anchoring and the reserves (GET /chain, GET /reserves), every 5 minutes with /info.
-  async function refreshChain() {
-    const [chain, res] = await Promise.all([getJson('/pilot/v1/chain').catch(() => null), getJson('/pilot/v1/reserves').catch(() => null)]);
-    const c = chainPanel(chain, res), el = $('chain');
-    if (!el || !c) return;
-    const total = c.reserves.reduce((s, r) => s + r.nanoerg, 0);
-    el.replaceChildren(H('span', 'k', 'On Ergo testnet'),
-      H('span', c.anchored ? 'v ok' : 'v wait', c.anchored ? `anchored at height ${fmt(c.height)}` : c.pending ? 'anchoring now' : 'not anchored yet'),
-      H('span', 'v', `${c.reserves.length} reserve${c.reserves.length === 1 ? '' : 's'} backing notes: ${moneyText(total, 'nanoERG')}`),
-      ...c.reserves.map(r => H('span', 'r', `${r.handle || 'an agent'} ${moneyText(r.nanoerg, 'nanoERG')}`)));
-    for (const [href, text] of [[c.links.nft, 'tracker NFT'], [c.links.address, 'tracker on the explorer']]) {
-      if (!href) continue;
-      const a = H('a', 'x', text); a.href = href; a.rel = 'noopener noreferrer'; el.append(a);
-    }
-    el.hidden = false;
+  async function readLoops() {
+    st.loopsAt = Date.now();
+    const list = await getJson('/pilot/v1/loops').then(r => (Array.isArray(r?.loops) ? r.loops : null), () => null);
+    if (!list) return;
+    const newest = list[0]?.id ?? null;
+    if (st.ready && newest && newest !== st.lastLoopId) announceLoop(list[0]);
+    st.lastLoopId = newest; st.loops = list;
   }
 
   async function poll() {
-    if (st.inflight) return;
+    if (st.inflight || st.paused || document.hidden) return;
     st.inflight = true; clearTimeout(st.timer);
     try {
-      const [ps, ledger, clearing] = await Promise.all([
-        getJson('/pilot/v1/participants?all=1'), getJson('/pilot/v1/ledger'),
-        st.clearingOk ? getJson('/pilot/v1/clearing').catch(e => { if (e.status === 404) { st.clearingOk = false; return null; } throw e; }) : null]);
-      apply(Array.isArray(ps) ? ps : [], ledger && typeof ledger === 'object' ? ledger : {}, clearing);
-      st.lastOk = Date.now(); st.interval = POLL_MS; st.lastError = null;
+      const needPeople = !st.ready || Date.now() - st.peopleAt >= SLOW_MS;
+      const [ps, ledger, clearing] = await Promise.all([needPeople ? getJson('/pilot/v1/participants?all=1') : null, getJson('/pilot/v1/ledger'),
+        getJson('/pilot/v1/clearing').catch(e => { if (e.status === 404) return null; throw e; })]);
+      if (ps) setPeople(ps);
+      if (typeof ledger?.unit === 'string' && ledger.unit) st.unit = ledger.unit;
+      const edges = edgesOf(ledger?.notes);
+      // Someone new in the ledger: read who is here again (at most once a minute).
+      if (!ps && [...edges.values()].some(e => !st.people.has(e.from) || !st.people.has(e.to)) && Date.now() - st.peopleAt >= PEOPLE_GAP_MS)
+        setPeople(await getJson('/pilot/v1/participants?all=1'));
+      const setoffs = Number(clearing?.totals?.setoffs_applied), before = Number(st.clearing?.totals?.setoffs_applied);
+      if (!st.ready || (Number.isFinite(setoffs) && setoffs !== before) || Date.now() - st.loopsAt >= SLOW_MS) await readLoops();
+      if (st.ready) for (const e of explain(diffEdges(st.edges, edges, st.residues))) for (const k of e.edges) st.hot.set(k, {type: e.type, until: Date.now() + HOT_MS});
+      st.edges = edges; st.clearing = clearing ?? st.clearing;
+      reconcile(ledger?.reconciliation);
+      st.lastOk = Date.now(); st.interval = POLL_MS; st.error = null; st.ready = true;
     } catch (e) {
       st.interval = Math.min(MAX_POLL_MS, st.interval * 2);
-      st.lastError = e.status === 429 ? 'the server asks us to slow down' : 'cannot reach the server';
+      st.error = e.status === 429 ? 'The server asked us to slow down' : 'Can\'t reach the server';
     } finally { st.inflight = false; }
-    if (Date.now() - st.lastMeta >= META_MS) refreshMeta();
-    schedule(); tick();
+    if (st.ready && Date.now() - st.slowAt >= SLOW_MS) readSlow();
+    draw(); schedule();
   }
   function schedule() {
     clearTimeout(st.timer);
-    if (document.hidden) return;
-    st.nextAt = Date.now() + st.interval;
+    if (st.paused || document.hidden) return;
     st.timer = setTimeout(poll, st.interval);
   }
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { clearTimeout(st.timer); tick(); return; }
-    if (Date.now() - st.lastOk >= st.interval) poll(); else schedule();
+    if (document.hidden) { clearTimeout(st.timer); status(); return; }
+    if (!st.paused) { if (Date.now() - st.lastOk >= st.interval) poll(); else schedule(); }
+    status();
+  });
+  // One pattern on both live views (the home's too): the label says what the button does next; no aria-pressed, which
+  // with a changing label would be announced as a double state.
+  const pause = $('pause');
+  pause.hidden = false;
+  pause.addEventListener('click', () => {
+    st.paused = !st.paused;
+    pause.textContent = st.paused ? 'Resume updates' : 'Pause updates';
+    if (st.paused) clearTimeout(st.timer); else poll();
+    status();
   });
 
-  // ----- applying a poll -----
-  function slotFor(id, kind, handle) {
-    if (st.slots.has(id)) return;
-    if (kind === 'agent') { st.slots.set(id, {center: handle === 'sandbox-mallory' ? 1 : -1}); return; }
-    for (const ri of RING_ORDER[kind === 'sandbox' ? 'sandbox' : 'other']) {
-      const s = st.orders[ri].find(x => !st.ringUsed[ri].has(x));
-      if (s !== undefined) { st.ringUsed[ri].add(s); st.slots.set(id, {ring: ri, slot: s}); return; }
-    }
-    const n = st.slots.size;                 // every ring full: share the outer ring's slots
-    st.slots.set(id, {ring: 1, slot: n % RINGS[1].cap, extra: 1 + Math.floor(n / RINGS[1].cap)});
-  }
-
-  // At the first poll: the outer ring's participants in an order that puts those that trade with each other side by
-  // side (each next one a neighbour of the last placed, else of the most placed, else the best connected), spread
-  // evenly. Later arrivals take free slots (slotFor); nobody moves once placed.
-  function initialSlots(next, edges) {
-    const ring = 1, cap = RINGS[ring].cap;
-    const ids = [...next.values()].filter(p => p.kind !== 'agent' && p.kind !== 'sandbox').map(p => p.id);
-    if (!ids.length || ids.length > cap) return;
-    const set = new Set(ids), nb = new Map(ids.map(id => [id, new Set()]));
-    for (const e of edges.values()) if (set.has(e.from) && set.has(e.to) && e.from !== e.to) { nb.get(e.from).add(e.to); nb.get(e.to).add(e.from); }
-    const order = [], left = new Set(ids);
-    while (left.size) {
-      let best = null, score = -1;
-      const lastId = order[order.length - 1];
-      for (const id of left) {
-        const s = (lastId && nb.get(lastId).has(id) ? 1000 : 0) + order.filter(o => nb.get(o).has(id)).length * 10 + nb.get(id).size;
-        if (s > score) { score = s; best = id; }
-      }
-      order.push(best); left.delete(best);
-    }
-    order.forEach((id, i) => { const s = Math.round(i * cap / order.length) % cap; st.ringUsed[ring].add(s); st.slots.set(id, {ring, slot: s}); });
-  }
-
-  function apply(ps, ledger, clearing) {
-    // The ledger names the unit of its own amounts: every amount this poll writes is in it, the first poll's too, which
-    // can come before /info (fix inbox #48: the first lines then said "PC" on the testnet, the retired pilot's unit).
-    setUnit(ledger.unit);
-    const now = Date.now(), events = [];
-    const next = new Map();
-    for (const p of [...ps].sort((a, b) => String(a.joined_at).localeCompare(String(b.joined_at)))) {
-      if (!p || typeof p.id !== 'string') continue;
-      const kind = kindOf(p), dormant = !!p.sandbox_only && Date.parse(p.sandbox_expires_at) < now;
-      next.set(p.id, {...p, kind, inactive: p.status !== 'active' || dormant});
-      if (st.ready && !st.participants.has(p.id)) {
-        st.fresh.set(p.id, now + FRESH_MS);
-        events.push({type: 'join', id: p.id});
-      } else if (!st.ready && now - Date.parse(p.joined_at) < FRESH_MS) st.fresh.set(p.id, Date.parse(p.joined_at) + FRESH_MS);
-    }
-    const edges = edgesOf(ledger.notes);
-    for (const e of edges.values()) for (const id of [e.from, e.to]) if (!next.has(id))
-      next.set(id, {id, handle: `key ${id.slice(4, 12)}…`, placeholder: true, kind: 'unknown', inactive: false, joined_at: ''});
-    if (!st.ready) initialSlots(next, edges);
-    for (const [id, p] of next) slotFor(id, p.kind, p.handle);
-    const prevEdges = st.edges;
-    st.participants = next; st.edges = edges;
-
-    if (st.ready) {
-      for (const e of explain(diffEdges(prevEdges, edges, st.residues))) events.push(e);
-      for (const e of events) if (e.type === 'transfer') { st.detected.transfers++; st.detected.transferPC += e.amount; }
-        else if (e.type === 'setoff') { st.detected.setoffs++; st.detected.setoffPC += e.amount; }
-    }
-    if (clearing?.totals) {
-      st.clearing = clearing;
-      if (!st.clearingBase) st.clearingBase = {...clearing.totals};
-      else catchUp(clearing.totals, events);
-    }
-    reconcile(ledger.reconciliation, events);
-
-    if (!st.ready) {
-      st.ready = true;
-      const recent = [...next.values()].filter(p => !p.placeholder && now - Date.parse(p.joined_at) < 12 * 3600e3).slice(-6);
-      for (const p of recent) addFeed({type: 'join', id: p.id}, Date.parse(p.joined_at), true);
-      const out = [...edges.values()].reduce((a, e) => a + e.amount, 0), live = [...edges.values()].filter(e => e.amount > 0).length;
-      addFeed({type: 'info', text: `Watching the network: ${next.size} agents, ${live} credit notes, ${money(out)} outstanding.`}, now, true);
-      $('since').textContent = `since ${clock(now).slice(0, 5)}`;
-      recentLoops();
-    }
-    for (const e of events) {
-      const li = addFeed(e, now);
-      highlight(e, now, prevEdges);
-      if (e.type === 'setoff') st.loops.pending.push({li, handles: new Set(e.cycle.map(id => who(id).handle)), at: now});
-    }
-    if (st.loops.pending.length) linkLoopsSoon(1500);
-    render(now);
-  }
-
-  // ----- loop cards -----
-  // Each set-off event in the feed gets a link to its loop card (/loop/<id>) once GET /pilot/v1/loops lists it: read
-  // shortly after the event, and once more 8 s later for any still unmatched. At start the three newest loops are
-  // shown in the feed, muted.
-  function linkLoopsSoon(ms) {
-    if (st.loops.timer) return;
-    st.loops.timer = setTimeout(async () => {
-      st.loops.timer = null;
-      const list = await getJson('/pilot/v1/loops').then(r => r?.loops, () => null);
-      if (!Array.isArray(list)) return;
-      st.loops.pending = st.loops.pending.filter(x => {
-        const l = matchLoop(x.handles, list, st.loops.linked);
-        if (l) { st.loops.linked.add(l.id); cardLink(x.li, l.id); }
-        return !l && Date.now() - x.at < 20_000;
-      });
-      if (st.loops.pending.length) linkLoopsSoon(8000);
-    }, ms);
-  }
-  function cardLink(li, id) {
-    if (!li || !/^vs_[0-9a-f]{16}$/.test(id)) return;
-    const a = H('a', 'card-link', 'loop card →');
-    a.href = `/loop/${id}`;
-    li.querySelector('.ev-top')?.append(a);
-  }
-  // GET /clearing and GET /loops name each amount by its unit-neutral name (`cleared`, `transferred`, a loop's `amount`;
-  // fix inbox #32), beside a deprecated _PC alias that a later release removes: the page reads the neutral names.
-  async function recentLoops() {
-    const list = await getJson('/pilot/v1/loops').then(r => r?.loops, () => null);
-    if (!Array.isArray(list)) return;
-    for (const l of list.slice(0, 3).reverse()) {
-      if (typeof l?.id !== 'string' || st.loops.linked.has(l.id)) continue;
-      st.loops.linked.add(l.id);
-      const names = (l.members || []).map(m => m?.handle ?? '?');
-      const li = addFeed({type: 'loop', amount: l.amount, text: `Loop closed: ${[...names, names[0]].join(' → ')}`}, Date.parse(l.applied_at) || Date.now(), true);
-      cardLink(li, l.id);
-    }
-  }
-
-  // A debt transfer or set-off the server counted (GET /clearing totals) that the ledger's changes did not show (for
-  // example one whose edges were updated again before the next poll). The aggregates are cached for up to 10 s, so a
-  // difference is reported only once it has lasted two polls.
-  function catchUp(totals, events) {
-    const seenT = st.detected.transfers, seenS = st.detected.setoffs;
-    const srvT = (totals.transfers_applied ?? 0) - (st.clearingBase.transfers_applied ?? 0), srvS = (totals.setoffs_applied ?? 0) - (st.clearingBase.setoffs_applied ?? 0);
-    const gap = {t: srvT - seenT, s: srvS - seenS};
-    const prev = st.pendingCatchUp;
-    st.pendingCatchUp = gap.t > 0 || gap.s > 0 ? gap : null;
-    if (!prev) return;
-    if (gap.t > 0 && prev.t > 0) {
-      const n = Math.min(gap.t, prev.t), pc = Math.max(0, (totals.transferred - st.clearingBase.transferred) - st.detected.transferPC);
-      events.push({type: 'info', text: `${n} more debt transfer${n > 1 ? 's' : ''} applied${pc ? ` (${money(pc)})` : ''}.`, cls: 'transfer'});
-      st.detected.transfers += n; st.detected.transferPC += pc;
-    }
-    if (gap.s > 0 && prev.s > 0) {
-      const n = Math.min(gap.s, prev.s), pc = Math.max(0, (totals.cleared - st.clearingBase.cleared) - st.detected.setoffPC);
-      events.push({type: 'info', text: `${n} more set-off${n > 1 ? 's' : ''} applied${pc ? ` (${money(pc)} cleared)` : ''}.`, cls: 'setoff'});
-      st.detected.setoffs += n; st.detected.setoffPC += pc;
-    }
-    if (!(gap.t > 0 && prev.t > 0) && !(gap.s > 0 && prev.s > 0)) return;
-    st.pendingCatchUp = null;
-  }
-
-  // Reconciliation rows that are not `match`: shown once each, after they appear in two polls in a row (a row can
-  // differ for a moment while a novation is being recorded).
-  function reconcile(rows, events) {
-    const bad = new Map();
-    for (const r of Array.isArray(rows) ? rows : []) if (r && r.status !== 'match') {
-      const k = `${r.issuer ?? r.pair}>${r.recipient ?? ''}|${r.status}|${r.tracker_total}|${r.issued_via_valun}`;
-      bad.set(k, r);
-    }
+  // Rows of the ledger check that are not `match`: counted once they appear in two polls in a row (a row can differ for
+  // a moment while a change is being recorded).
+  function reconcile(rows) {
     const streak = new Map();
-    for (const [k, r] of bad) {
-      const n = (st.recon.streak.get(k) ?? 0) + 1;
-      streak.set(k, n);
-      if (n >= 2 && !st.recon.warned.has(k)) { st.recon.warned.add(k); events.push({type: 'warning', row: r}); }
+    for (const r of Array.isArray(rows) ? rows : []) if (r && r.status !== 'match') {
+      const k = `${r.issuer ?? r.pair}>${r.recipient ?? ''}|${r.status}`;
+      streak.set(k, (st.recon.streak.get(k) ?? 0) + 1);
     }
     st.recon.streak = streak;
     st.recon.rows = Array.isArray(rows) ? rows.length : 0;
     st.recon.bad = [...streak.values()].filter(n => n >= 2).length;
   }
 
-  // ----- feed -----
-  const who = id => st.participants.get(id) ?? {handle: String(id).slice(0, 14), kind: 'unknown'};
-  // An agent's name links to its public page (/agent/<handle>); a placeholder or unknown participant stays plain text.
-  const name = id => {
-    const p = who(id);
-    if (p.placeholder || p.kind === 'unknown' || p.kind === 'test' || !/^[a-z][a-z0-9_-]{2,23}$/.test(String(p.handle))) return H('b', `h k-${p.kind}`, p.handle);
-    const a = H('a', `h k-${p.kind}`, p.handle);
-    a.href = `/agent/${p.handle}`;
-    return a;
+  // ----- the screen reader hears a loop that cleared, at most once a minute; nothing else -----
+  function announceLoop(l) {
+    if (st.paused || Date.now() - st.lastAnnounce < ANNOUNCE_GAP_MS) return;
+    st.lastAnnounce = Date.now();
+    const names = (l.members || []).map(m => m?.handle ?? 'unknown');
+    $('announce').textContent = `A loop cleared: ${[...names, names[0]].join(' to ')}, ${amount(l.each ?? 0)} off each debt.`;
+  }
+
+  // ----- the status line: what it reads and when (not a live region) -----
+  function status() {
+    const el = $('state'), text = $('state-text');
+    let cls, s;
+    if (st.paused) { cls = 'paused'; s = `Paused · ${st.network}${st.lastOk ? ` · last read ${utc(st.lastOk)}` : ''}`; }
+    else if (st.error) { cls = 'err'; s = `${st.error} · trying again in ${Math.round(st.interval / 1000)} s`; }
+    else if (!st.lastOk) { cls = 'wait'; s = `Reading ${st.network}…`; }
+    else if (document.hidden) { cls = 'paused'; s = `Paused while the tab is hidden · ${st.network}`; }
+    else { cls = 'ok'; s = `Live · ${st.network} · read ${utc(st.lastOk)} · every ${Math.round(POLL_MS / 1000)} s`; }
+    el.className = `state ${cls}`; text.textContent = s;
+    // The picture says Live only while it is: drawn from a read that succeeded, and reading on.
+    $('graph-live').hidden = cls !== 'ok' || !st.ready;
+  }
+
+  // ----- drawing -----
+  const nameOf = id => st.people.get(id)?.handle ?? (String(id).startsWith('key:') ? `key ${String(id).slice(4, 12)}…` : String(id));
+  const whoOf = id => st.people.get(id)?.who ?? 'unknown';
+  const shape = who => H('span', `shape w-${groupOf(who) === 'operator' ? 'operator' : who === 'team' ? 'team' : who === 'unknown' ? 'unknown' : 'other'}`);
+  const agentEl = id => {
+    const h = nameOf(id), p = st.people.get(id);
+    if (!p || p.unlisted || !HANDLE_RE.test(h)) return H('span', 'h', h);
+    const a = H('a', 'h', h); a.href = `/agent/${h}`; return a;
   };
-  function addFeed(e, at, muted = false) {
-    const li = H('li', `ev ev-${e.cls ?? e.type}${muted ? ' muted' : ''}`);
-    const top = H('div', 'ev-top');
-    top.append(H('span', 'tag', {join: 'joined', note: 'payment', transfer: 'debt transfer', setoff: 'set-off', cleared: 'set-off',
-      reduced: 'debt reduced', warning: 'ledger check', loop: 'loop closed', info: muted ? 'watching' : 'network'}[e.type]), H('time', '', clock(at)));
-    if (e.amount) top.append(H('span', 'amt', `${e.type === 'note' ? '+' : ''}${money(e.amount)}`));
-    const txt = H('div', 'ev-txt');
-    const put = (...xs) => { for (const x of xs) txt.append(typeof x === 'string' ? document.createTextNode(x) : x); };
-    switch (e.type) {
-      case 'join': put(name(e.id), ` joined · ${KIND_WORDS[who(e.id).kind]}`); break;
-      case 'note': put(name(e.from), ' paid ', name(e.to), e.first ? ' with its first credit note' : ' with a new credit note'); break;
-      case 'transfer': put(name(e.issuer), '’s debt moved from ', name(e.from), ' to ', name(e.to), ` (${who(e.from).handle} paid with a note it held)`); break;
-      case 'setoff': put('A cycle of debts cancelled: ', ...e.cycle.flatMap(id => [name(id), ' → ']), name(e.cycle[0]), ` (${money(e.each)} off each debt)`); break;
-      case 'cleared': put(name(e.from), '’s debt to ', name(e.to), ' cleared by a set-off'); break;
-      case 'reduced': put(name(e.from), '’s debt to ', name(e.to), ' went down'); break;
-      case 'warning': put('Tracker and Valun differ on ', e.row.pair ? e.row.pair.slice(0, 20) : `${e.row.issuer} → ${e.row.recipient}`,
-        `: tracker ${money(e.row.tracker_total)}, Valun ${money(e.row.issued_via_valun)} (${e.row.status}).`); break;
-      default: put(e.text || '');
-    }
-    li.append(top, txt);
-    const list = $('feed');
-    list.prepend(li);
-    while (list.children.length > FEED_MAX) list.lastElementChild.remove();
-    return li;
-  }
 
-  // ----- highlights -----
-  function hl(key, cls, now) { view.hl.set(key, {cls, until: now + HL_MS}); }
-  function flash(id, cls, now) { view.flashNode.set(id, {cls, until: now + HL_MS}); }
-  function highlight(e, now, prevEdges) {
-    const ghost = (k, word) => { if (!(st.edges.get(k)?.amount > 0)) view.ghost.set(k, {until: now + GHOST_MS, word, from: (st.edges.get(k) ?? prevEdges.get(k))}); };
-    if (e.type === 'note') { hl(e.edges[0], 'note', now); delta(e.edges[0], `+${money(e.amount)}`, 'note'); flash(e.from, 'note', now); flash(e.to, 'note', now); }
-    if (e.type === 'transfer') {
-      for (const k of e.edges) hl(k, 'transfer', now);
-      ghost(e.edges[0], 'moved');
-      delta(e.edges[0], `−${money(e.amount)}`, 'transfer'); delta(e.edges[1], `+${money(e.amount)}`, 'transfer');
-      for (const id of [e.issuer, e.from, e.to]) flash(id, 'transfer', now);
-      token(e.from, e.to, money(e.amount));
-    }
-    if (e.type === 'setoff' || e.type === 'cleared') {
-      for (const k of e.edges) { hl(k, 'setoff', now); ghost(k, 'cleared'); delta(k, `−${money(e.each ?? e.amount)}`, 'setoff'); }
-      for (const id of e.cycle ?? [e.from, e.to]) flash(id, 'setoff', now);
-    }
-    if (e.type === 'reduced') { hl(e.edges[0], 'transfer', now); ghost(e.edges[0], 'reduced'); }
-    if (e.type === 'join') flash(e.id, 'join', now);
-    // the big-screen line at the bottom of the graph
-    if (e.type === 'join') toast('join', 'joined', [name(e.id), ` · ${KIND_WORDS[who(e.id).kind]}`]);
-    if (e.type === 'note') toast('note', 'payment', [name(e.from), ' paid ', name(e.to), ` ${money(e.amount)} with a credit note`]);
-    if (e.type === 'transfer') toast('transfer', 'debt transfer', [name(e.issuer), '’s debt moved ', name(e.from), ' → ', name(e.to), ` · ${money(e.amount)}`]);
-    if (e.type === 'setoff') toast('setoff', 'set-off', ['cycle cleared ', ...e.cycle.flatMap(id => [name(id), ' → ']), name(e.cycle[0]), ` · ${money(e.amount)}`]);
-  }
-  // At most two lines, newest on top; each stays 8 s.
-  function toast(cls, tag, parts) {
-    const box = $('toasts'), el = H('div', `toast t-${cls}`);
-    el.append(H('span', 'tag', tag));
-    for (const x of parts) el.append(typeof x === 'string' ? document.createTextNode(x) : x);
-    box.prepend(el);
-    while (box.children.length > 2) box.lastElementChild.remove();
-    setTimeout(() => el.remove(), 8000);
-  }
-
-  // ----- layout -----
-  function posOf(id) {
-    const s = st.slots.get(id), cx = view.W / 2, cy = view.H / 2;
-    if (!s) return {x: cx, y: cy};
-    if (s.center !== undefined) return {x: cx + s.center * Math.min(view.W * 0.1, 150), y: cy};
-    const r = RINGS[s.ring], a = -Math.PI / 2 + 2 * Math.PI * (s.slot + r.phase + (s.extra ? 0.5 * s.extra / (s.extra + 1) : 0)) / r.cap;
-    const grow = s.extra ? 1 + 0.04 * s.extra : 1;
-    return {x: cx + Math.cos(a) * r.rx * grow * (view.W / 2 - 60), y: cy + Math.sin(a) * r.ry * grow * (view.H / 2 - 50)};
-  }
-  function radiusOf(id) {
-    const p = st.participants.get(id);
-    if (p?.kind === 'agent') return 30;
-    let g = 0;
-    for (const e of st.edges.values()) if (e.from === id || e.to === id) g += e.amount;
-    return nodeRadius(g, st.unit);
-  }
-  function edgeGeom(e) {
-    const a = posOf(e.from), b = posOf(e.to), dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
-    const k = 0.16, c = {x: (a.x + b.x) / 2 - dy * k, y: (a.y + b.y) / 2 + dx * k};
-    const trim = (p, q, r) => { const ux = q.x - p.x, uy = q.y - p.y, l = Math.hypot(ux, uy) || 1; return {x: p.x + ux / l * r, y: p.y + uy / l * r}; };
-    const p0 = trim(a, c, radiusOf(e.from) + 3), p2 = trim(b, c, radiusOf(e.to) + 5);
-    const at = t => ({x: (1 - t) ** 2 * a.x + 2 * (1 - t) * t * c.x + t * t * b.x, y: (1 - t) ** 2 * a.y + 2 * (1 - t) * t * c.y + t * t * b.y});
-    return {d: `M${p0.x.toFixed(1)},${p0.y.toFixed(1)} Q${c.x.toFixed(1)},${c.y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`, mid: at(0.5), at, len};
-  }
-  // Where an edge's amount label goes: the first point along the curve (from the middle outwards) clear of every node,
-  // node label and amount label already placed; else the point with the fewest overlaps.
-  function labelSpot(g, placed, boxes) {
-    const hits = p => boxes.filter(b => Math.abs(p.x - b.x) < b.hw && Math.abs(p.y - b.y) < b.hh).length
-      + placed.filter(q => Math.abs(p.x - q.x) < 62 && Math.abs(p.y - q.y) < 28).length;
-    let best = null, fewest = Infinity;
-    for (const t of [0.5, 0.42, 0.58, 0.34, 0.66, 0.27, 0.73, 0.2, 0.8]) {
-      const p = g.at(t), n = hits(p);
-      if (n === 0) return p;
-      if (n < fewest) { fewest = n; best = p; }
-    }
-    return best ?? g.mid;
-  }
-  function nodeBoxes() {
-    const out = [];
-    for (const [id, p] of st.participants) {
-      const {x, y} = posOf(id), r = radiusOf(id), n = Math.min(20, String(p.handle ?? id).length);
-      out.push({x, y, hw: r + 34, hh: r + 16}, {x, y: y + r + 16, hw: n * 5.6 + 32, hh: 24});
-    }
-    return out;
-  }
-  function resize() {
-    const r = svg.getBoundingClientRect();
-    if (r.width < 10 || r.height < 10) return;
-    view.H = 800; view.W = Math.round(Math.max(900, Math.min(2200, 800 * r.width / r.height)));
-    svg.setAttribute('viewBox', `0 0 ${view.W} ${view.H}`);
-    gRings.replaceChildren();
-    for (const ri of [0, 1]) {
-      const rr = RINGS[ri];
-      S('ellipse', {class: 'ring', cx: view.W / 2, cy: view.H / 2, rx: rr.rx * (view.W / 2 - 60), ry: rr.ry * (view.H / 2 - 50)}, gRings);
-    }
-    render(Date.now());
-  }
-
-  // ----- rendering -----
-  function render(now) {
-    if (!st.ready) return;
-    // nodes
-    for (const [id, p] of st.participants) {
-      let v = view.nodes.get(id);
-      if (!v) {
-        const outer = S('g', {}, gNodes), inner = S('g', {class: 'node-in'}, outer);
-        v = {outer, inner, halo: S('circle', {class: 'halo', r: 10}, inner), dot: S('circle', {class: 'dot'}, inner),
-          label: S('text', {class: 'label', 'text-anchor': 'middle'}, inner), badge: S('text', {class: 'badge', 'text-anchor': 'middle'}, inner)};
-        if (view.nodes.size && st.fresh.has(id)) inner.classList.add('entering');
-        view.nodes.set(id, v);
+  function draw() {
+    status();
+    if (!st.ready) {
+      // Nothing read yet, and the read failed: the tables say so, not "Reading the ledger…" forever.
+      if (st.error) {
+        const msg = `The ledger can't be read right now; this page tries again in ${Math.round(st.interval / 1000)} s.`;
+        const tr = H('tr'), td = H('td', null, msg); td.setAttribute('colspan', '4'); tr.append(td);
+        $('changes-body').replaceChildren(tr);
+        $('loops').replaceChildren(H('li', 'small', msg));
       }
-      const {x, y} = posOf(id), r = radiusOf(id), fresh = (st.fresh.get(id) ?? 0) > now, fl = view.flashNode.get(id);
-      v.outer.setAttribute('transform', `translate(${x.toFixed(1)},${y.toFixed(1)})`);
-      v.outer.setAttribute('class', `node k-${p.kind}${p.inactive ? ' inactive' : ''}${fresh ? ' fresh' : ''}${fl && fl.until > now ? ` fl-${fl.cls}` : ''}`);
-      v.dot.setAttribute('r', r.toFixed(1)); v.halo.setAttribute('r', (r + 8).toFixed(1));
-      v.label.setAttribute('y', (r + 22).toFixed(1));
-      const h = String(p.handle ?? id);
-      v.label.textContent = h.length > 20 ? `${h.slice(0, 19)}…` : h;
-      v.badge.setAttribute('y', (-r - 12).toFixed(1));
-      v.badge.textContent = fresh ? 'joined just now' : p.kind === 'agent' ? 'sandbox agent' : '';
+      return;
     }
-    for (const [id, v] of view.nodes) if (!st.participants.has(id)) { v.outer.remove(); view.nodes.delete(id); }
+    counts(); graph(); loopsList(); changes(); openList(); totals(); drawChain();
+  }
 
-    // edges: every edge with something outstanding, and for a few seconds those a transfer or set-off just closed
-    const shown = new Map();
-    for (const e of st.edges.values()) if (e.amount > 0) shown.set(e.key, {e, ghost: null});
-    for (const [k, g] of view.ghost) {
-      if (g.until <= now) { view.ghost.delete(k); continue; }
-      if (!shown.has(k) && g.from) shown.set(k, {e: g.from, ghost: g.word});
-    }
-    const boxes = nodeBoxes(), placed = [];
-    for (const [k, {e, ghost}] of shown) {
-      if (!st.participants.has(e.from) || !st.participants.has(e.to)) continue;
-      let v = view.edges.get(k);
-      if (!v) {
-        const path = S('path', {class: 'edge'}, gEdges), lg = S('g', {class: 'elabel'}, gLabels);
-        v = {path, lg, rect: S('rect', {rx: 9, ry: 9}, lg), text: S('text', {'text-anchor': 'middle', 'dominant-baseline': 'central'}, lg)};
-        view.edges.set(k, v);
+  function counts() {
+    const c = classCounts([...st.people.values()]);
+    $('n-all').textContent = fmt(c.all); $('n-operator').textContent = fmt(c.operator); $('n-team').textContent = fmt(c.team); $('n-other').textContent = fmt(c.other);
+  }
+
+  // The picture: rebuilt when what it shows changes, or the frame's size.
+  function graph() {
+    const r = box.getBoundingClientRect(), W = Math.max(280, Math.round(r.width)), Hh = Math.max(300, Math.round(r.height));
+    const font = W < 520 ? 11 : 12, max = Math.min(W < 520 ? 12 : W < 760 ? 18 : 24, ringCapacity(Hh, font));
+    const all = latestChanges(st.edges, st.residues, 400);
+    const people = new Map(st.people);
+    for (const e of st.edges.values()) for (const id of [e.from, e.to]) if (!people.has(id)) people.set(id, {id, handle: nameOf(id), who: 'unknown', placeholder: true});
+    const view = pickView(people, all, st.loops, max);
+    const now = Date.now();
+    for (const [k, h] of st.hot) if (h.until <= now) st.hot.delete(k);
+    const sig = JSON.stringify([W, Hh, view, [...st.edges.values()].map(e => [e.key, e.amount]), st.loops[0]?.id, [...st.hot.keys()]]);
+    if (sig === st.sig) return;
+    st.sig = sig;
+    const keep = st.focus && svg.contains(document.activeElement) ? st.focus : null;
+    svg.setAttribute('viewBox', `0 0 ${W} ${Hh}`);
+    const L = layoutView(view, people, st.edges, {W, H: Hh, font});
+    const gG = $('g-guides'), gE = $('g-edges'), gL = $('g-loops'), gN = $('g-nodes');
+    for (const g of [gG, gE, gL, gN]) g.replaceChildren();
+    $('graph-empty').hidden = L.nodes.length > 0;
+    // guides: the column of the operator's agents and the two fans, as a scope's faint marks
+    const G = L.geom, f1 = v => v.toFixed(1);
+    S('line', {class: 'guide', x1: f1(G.cx), y1: f1(G.yTop - 4), x2: f1(G.cx), y2: f1(G.yBot + 4)}, gG);
+    for (const s of [-1, 1]) {
+      const pts = [];
+      for (let k = 0; k <= 24; k++) {
+        const y = G.yTop + ((G.yBot - G.yTop) * k) / 24, t = Math.max(-1, Math.min(1, (y - G.cy) / G.ry));
+        pts.push(`${f1(G.cx + s * G.rx * Math.sqrt(1 - t * t))},${f1(y)}`);
       }
-      const g = edgeGeom(e), h = view.hl.get(k), cls = h && h.until > now ? h.cls : null;
-      const w = ghost ? 2 : edgeWidth(e.amount, st.unit);
-      v.path.setAttribute('d', g.d);
-      v.path.setAttribute('stroke-width', w.toFixed(1));
-      v.path.setAttribute('class', `edge${cls ? ` hl-${cls}` : ''}${ghost ? ' ghost' : ''}`);
-      v.path.setAttribute('marker-end', `url(#arrow${cls ? `-${cls}` : ghost ? '-ghost' : ''})`);
-      const label = ghost ? ghost : money(e.amount), fs = 17, tw = label.length * fs * 0.6 + 16;
-      const m = labelSpot(g, placed, boxes);
-      placed.push(m); v.mid = m;
-      v.text.textContent = label;
-      v.text.setAttribute('x', m.x.toFixed(1)); v.text.setAttribute('y', m.y.toFixed(1));
-      v.rect.setAttribute('x', (m.x - tw / 2).toFixed(1)); v.rect.setAttribute('y', (m.y - 13).toFixed(1));
-      v.rect.setAttribute('width', tw.toFixed(1)); v.rect.setAttribute('height', 26);
-      v.lg.setAttribute('class', `elabel${cls ? ` hl-${cls}` : ''}${ghost ? ' ghost' : ''}`);
+      S('polyline', {class: 'guide', points: pts.join(' ')}, gG);
     }
-    for (const [k, v] of view.edges) if (!shown.has(k)) { v.path.remove(); v.lg.remove(); view.edges.delete(k); }
-    for (const [k, h] of view.hl) if (h.until <= now) view.hl.delete(k);
-    for (const [k, h] of view.flashNode) if (h.until <= now) view.flashNode.delete(k);
-    for (const [k, t] of st.fresh) if (t <= now) st.fresh.delete(k);
+    // edges: what is owed now between the agents drawn, from the one who owes to the one it owes
+    const drawn = [...st.edges.values()].filter(e => e.amount > 0 && L.at.has(e.from) && L.at.has(e.to) && e.from !== e.to);
+    const pair = new Set(drawn.map(e => e.key));
+    for (const e of drawn) {
+      const a = L.at.get(e.from), b = L.at.get(e.to), back = pair.has(`${e.to}>${e.from}`), hot = st.hot.get(e.key);
+      const p = S('path', {class: `edge${hot ? ` hot ${reduce() ? '' : 'flash'}` : ''}`, d: edgePath(a, b, {W, bend: back ? 9 : 0, ra: a.core ? 8 : 6, rb: b.core ? 11 : 9}),
+        'stroke-width': edgeWidth(e.amount, st.unit).toFixed(2), 'marker-end': `url(#${hot ? 'ah-hot' : 'ah'})`, 'data-from': e.from, 'data-to': e.to}, gE);
+      p.setAttribute('aria-hidden', 'true');
+    }
+    // the newest loop that cleared, through its members in order, in the rainbow (only a cleared loop has it); the older
+    // ones are in "Loops cleared" (almost every loop runs through the practice agents at the centre, so drawing many of
+    // them buried the arrows). In a narrow frame it is drawn fainter.
+    const newest = st.loops[0], ids = (newest?.members || []).map(m => st.byHandle.get(m?.handle));
+    if (ids.length >= 2 && ids.every(id => L.at.has(id))) {
+      const g = S('g', {class: `loop newest${W < 520 ? ' narrow' : ''}`, 'aria-hidden': 'true'}, gL);
+      ids.forEach((id, i) => {
+        const a = L.at.get(id), b = L.at.get(ids[(i + 1) % ids.length]);
+        S('path', {class: 'loop-arc', d: edgePath(a, b, {W, bend: -14, ra: 10, rb: 13}), 'marker-end': 'url(#ah-loop)'}, g);
+      });
+    }
+    // nodes: one tab stop for the picture; the arrow keys move from agent to agent (focus()), Enter opens its page
+    const order = [...L.nodes].sort((a, b) => (a.side - b.side) || (a.y - b.y));
+    const focusId = st.focus && L.at.has(st.focus) ? st.focus : order[0]?.id;
+    for (const n of order) {
+      const p = people.get(n.id), who = p?.who ?? 'unknown', h = nameOf(n.id), link = p && !p.placeholder && !p.unlisted && HANDLE_RE.test(h);
+      const g = S(link ? 'a' : 'g', {class: `node w-${groupOf(who) === 'operator' ? 'operator' : who}${n.core ? ' core' : ''}`, 'data-id': n.id}, gN);
+      if (link) {
+        g.setAttribute('href', `/agent/${h}`);
+        g.setAttribute('tabindex', n.id === focusId ? '0' : '-1');
+        g.setAttribute('aria-label', `${h}, ${WHO_WORDS[who] ?? 'agent'}: ${tieText(n.id)}`);
+      } else g.setAttribute('aria-hidden', 'true');
+      S('circle', {class: 'hit', cx: n.x.toFixed(1), cy: n.y.toFixed(1), r: 13}, g);
+      if (groupOf(who) === 'operator') S('rect', {class: 'glyph', x: (n.x - 6).toFixed(1), y: (n.y - 6).toFixed(1), width: 12, height: 12, transform: `rotate(45 ${n.x.toFixed(1)} ${n.y.toFixed(1)})`}, g);
+      else S('circle', {class: 'glyph', cx: n.x.toFixed(1), cy: n.y.toFixed(1), r: who === 'other' ? 5 : 4.5}, g);
+      const t = S('text', {class: 'label', 'text-anchor': n.anchor, 'aria-hidden': 'true', 'font-size': font}, g);
+      n.lines.forEach(l => { const ts = S('tspan', {x: l.x.toFixed(1), y: l.y.toFixed(1)}, t); ts.textContent = l.text; });
+    }
+    const sub = $('map-sub');
+    sub.textContent = `The ${fmt(view.ring.length)} agents in the latest changes to the ledger${view.since ? ` (since ${utc(view.since)})` : ''}, and the ${fmt(view.core.length)} the operator runs. Read from GET /pilot/v1/ledger.`;
+    const hid = view.hidden, parts = [[hid.team, 'team test agent'], [hid.other, 'other agent'], [hid.operator, 'operator-run agent']].filter(([k]) => k > 0);
+    $('quiet').textContent = parts.length ? `Not drawn: ${parts.map(([k, w]) => `${fmt(k)} ${w}${k === 1 ? '' : 's'}`).join(', ')} with no recent change. Every open IOU is in the tables below.` : '';
+    if (keep) gN.querySelector(`[data-id="${keep}"]`)?.focus({preventScroll: true});
+    if (st.focus) show(st.focus);
+  }
+  // What a node owes and is owed, across the whole ledger (not only what is drawn).
+  function tieText(id) {
+    let owes = 0, no = 0, owed = 0, nb = 0;
+    for (const e of st.edges.values()) if (e.amount > 0) { if (e.from === id) { owes += e.amount; no += 1; } if (e.to === id) { owed += e.amount; nb += 1; } }
+    const one = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+    return `${owes ? `owes ${amount(owes)} to ${one(no, 'agent')}` : 'owes nothing'}; ${owed ? `is owed ${amount(owed)} by ${one(nb, 'agent')}` : 'is owed nothing'}`;
+  }
+  // The detail line under the picture (for sight; the node's own name says the same to a screen reader). On a phone a
+  // tap follows the agent's link, so the hint says so (network.html carries the same words before the script runs).
+  const HINT = 'Hover over an agent, or tab to the picture and use the arrow keys, to see what it owes and is owed; tap one to open its page.';
+  function show(id) {
+    const el = $('detail');
+    if (!id || !st.people.has(id) && !String(id).startsWith('key:')) { el.replaceChildren(H('p', 'hint', HINT)); return; }
+    const who = whoOf(id), p = H('p', 'detail-line');
+    p.append(shape(who), H('span', 'h', nameOf(id)), H('span', 'who-words', WHO_WORDS[who] ?? 'agent'), H('span', 'ties', tieText(id)));
+    el.replaceChildren(p);
+    svg.classList.add('focusing');
+    for (const n of svg.querySelectorAll('.node')) n.classList.toggle('on', n.getAttribute('data-id') === id);
+    for (const e of svg.querySelectorAll('.edge')) e.classList.toggle('on', e.getAttribute('data-from') === id || e.getAttribute('data-to') === id);
+  }
+  function clear() {
+    svg.classList.remove('focusing');
+    for (const n of svg.querySelectorAll('.node')) n.classList.remove('on');
+    for (const e of svg.querySelectorAll('.edge')) e.classList.remove('on');
+    show(null);
+  }
+  const nodeOf = t => (t && typeof t.closest === 'function' ? t.closest('.node') : null);
+  svg.addEventListener('pointerover', ev => { const n = nodeOf(ev.target); if (n) show(n.getAttribute('data-id')); });
+  svg.addEventListener('pointerleave', () => { if (!st.focus) clear(); else show(st.focus); });
+  svg.addEventListener('focusin', ev => { const n = nodeOf(ev.target); if (n) { st.focus = n.getAttribute('data-id'); show(st.focus); } });
+  svg.addEventListener('focusout', () => { st.focus = null; clear(); });
+  svg.addEventListener('keydown', ev => {
+    const links = svg.querySelectorAll('a.node'), i = links.indexOf ? links.indexOf(document.activeElement) : [...links].indexOf(document.activeElement);
+    if (i < 0) return;
+    const to = {ArrowDown: i + 1, ArrowRight: i + 1, ArrowUp: i - 1, ArrowLeft: i - 1, Home: 0, End: links.length - 1}[ev.key];
+    if (to === undefined) return;
+    ev.preventDefault();
+    const next = links[(to + links.length) % links.length];
+    for (const l of links) l.setAttribute('tabindex', l === next ? '0' : '-1');
+    next.focus();
+  });
 
-    $('empty').hidden = st.participants.size > 0;
-    stats();
+  function loopsList() {
+    const ol = $('loops'), rows = st.loops.slice(0, LOOPS_SHOWN);
+    ol.replaceChildren(...rows.map(l => {
+      const li = H('li'), names = (l.members || []).map(m => m?.handle ?? 'unknown'), route = H('p', 'loop-route');
+      names.forEach((h, i) => {
+        const id = st.byHandle.get(h);
+        route.append(shape(id ? whoOf(id) : 'unknown'), H('span', 'h', h));
+        route.append(H('span', 'arr', i === names.length - 1 ? ` → ${names[0]}` : ' → '));
+      });
+      const groups = new Map();
+      for (const h of new Set(names)) { const id = st.byHandle.get(h), g = id ? groupOf(whoOf(id)) : 'other'; groups.set(g, (groups.get(g) ?? 0) + 1); }
+      const words = {operator: ['operator-run agent', 'operator-run agents'], team: ['team test agent', 'team test agents'], other: ['other agent', 'other agents']};
+      const who = [...groups].map(([g, n]) => `${n} ${words[g][n === 1 ? 0 : 1]}`).join(', ');
+      const t = Date.parse(l.applied_at), chain = l.on_chain ? (l.on_chain.anchored ? 'committed' : 'not committed yet') : '';
+      const meta = H('p', 'loop-meta', [`${amount(-(l.each ?? 0))} each`, Number.isFinite(t) ? ago(t) : '', chain].filter(Boolean).join(' · '));
+      const a = H('a', 'loop-card', 'Loop card'); a.href = `/loop/${l.id}`; a.setAttribute('aria-label', `Loop card: ${[...names, names[0]].join(' → ')}`);
+      const foot = H('p', 'loop-who'); foot.append(H('span', null, who), a);
+      li.append(route, meta, foot);
+      return li;
+    }));
+    if (!rows.length) ol.replaceChildren(H('li', 'small', 'No loop has cleared yet.'));
   }
 
-  // ----- effects (temporary, in #g-fx) -----
-  function delta(key, text, cls) {
-    const e = st.edges.get(key) ?? view.ghost.get(key)?.from;
-    if (!e || !st.participants.has(e.from) || !st.participants.has(e.to)) return;
-    const mid = view.edges.get(key)?.mid ?? edgeGeom(e).mid, t = S('text',{class: `delta d-${cls}`, x: mid.x.toFixed(1), y: (mid.y - 22).toFixed(1), 'text-anchor': 'middle'}, gFx);
-    t.textContent = text;
-    setTimeout(() => t.remove(), 3200);
+  const WHAT = {note: 'new IOU for a job', transfer: 'IOU passed on', setoff: 'cut by a loop'};
+  function changes() {
+    const body = $('changes-body'), rows = latestChanges(st.edges, st.residues, CHANGES_SHOWN);
+    body.replaceChildren(...rows.map(c => {
+      const tr = H('tr'), when = H('time', null, ago(c.ts)), who = H('td', 'pair');
+      when.setAttribute('datetime', new Date(c.ts).toISOString()); when.setAttribute('title', `${new Date(c.ts).toISOString().slice(0, 16).replace('T', ' ')} UTC`);
+      const td = H('td'); td.append(when);
+      who.append(shape(whoOf(c.from)), agentEl(c.from), H('span', 'arr', c.owed > 0 ? ' owes ' : ' owed '), shape(whoOf(c.to)), agentEl(c.to),
+        H('span', 'meta-sm', `${ago(c.ts)} · ${WHAT[c.kind]}`));   // on a phone, where the When and What columns are not shown
+      td.className = 'when';
+      tr.append(td, who, H('td', 'what', WHAT[c.kind]), H('td', 'num', amount(c.owed)));
+      return tr;
+    }));
+    if (!rows.length) { const tr = H('tr'), td = H('td', null, 'No IOU on the ledger yet.'); td.setAttribute('colspan', '4'); tr.append(td); body.replaceChildren(tr); }
   }
-  function token(fromId, toId, text) {
-    const a = posOf(fromId), b = posOf(toId), g = S('g', {class: 'token'}, gFx);
-    S('circle', {r: 11}, g);
-    const t = S('text', {y: -18, 'text-anchor': 'middle'}, g); t.textContent = text;
-    const t0 = performance.now(), dur = 1800, laps = 2;
-    const step = ts => {
-      const k = (ts - t0) / dur;
-      if (k >= laps || !g.isConnected) { g.remove(); return; }
-      const f = k % 1, ease = f < 0.5 ? 2 * f * f : 1 - 2 * (1 - f) * (1 - f);
-      g.setAttribute('transform', `translate(${(a.x + (b.x - a.x) * ease).toFixed(1)},${(a.y + (b.y - a.y) * ease).toFixed(1)})`);
-      requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-    setTimeout(() => g.remove(), dur * laps + 500);
+  // Every open IOU, largest first: drawn when the visitor opens the list.
+  const all = $('all-open');
+  all.addEventListener('toggle', () => openList());
+  function openList() {
+    const open = [...st.edges.values()].filter(e => e.amount > 0).sort((a, b) => b.amount - a.amount || (a.key < b.key ? -1 : 1));
+    $('open-count').textContent = fmt(open.length);
+    if (!all.open) return;
+    $('open-body').replaceChildren(...open.map(e => {
+      const tr = H('tr'), who = H('td', 'pair');
+      who.append(shape(whoOf(e.from)), agentEl(e.from), H('span', 'arr', ' owes '), shape(whoOf(e.to)), agentEl(e.to));
+      tr.append(who, H('td', 'num', amount(e.amount)));
+      return tr;
+    }));
   }
 
-  // ----- headline counters -----
-  const last = {};
-  function set(id, value, sub) {
-    const el = $(id);
-    if (last[id] !== undefined && last[id] !== value) { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
-    last[id] = value; el.textContent = value;
-    if (sub !== undefined) $(`${id}-sub`).textContent = sub;
-  }
-  function stats() {
-    const ps = [...st.participants.values()].filter(p => !p.placeholder);
-    const active = ps.filter(p => p.status === 'active');
-    const count = k => active.filter(p => p.kind === k).length;
-    const parts = [[count('sandbox'), 'self-serve'], [count('invited'), 'invited'], [count('agent') + count('operator'), 'operator-run']].filter(x => x[0]);
-    set('st-agents', fmt(active.length), parts.map(([n, w]) => `${n} ${w}`).join(' · ') || ' ');
-    const edges = [...st.edges.values()].filter(e => e.amount > 0), out = edges.reduce((a, e) => a + e.amount, 0);
-    set('st-out', num(out), `on ${edges.length} credit note${edges.length === 1 ? '' : 's'}`);
-    const t = st.clearing?.totals;
+  function totals() {
+    const open = [...st.edges.values()].filter(e => e.amount > 0), owed = open.reduce((s, e) => s + e.amount, 0);
+    const agents = new Set(open.flatMap(e => [e.from, e.to])).size, t = st.clearing?.totals;
+    $('t-out').textContent = amount(owed, {total: true}); $('t-out-sub').textContent = `${many(open.length, 'IOU')} between ${many(agents, 'agent')}`;
     if (t) {
-      set('st-clear', num(t.cleared ?? 0), `in ${fmt(t.setoffs_applied ?? 0)} set-off${t.setoffs_applied === 1 ? '' : 's'}`);
-      set('st-move', num(t.transferred ?? 0), `in ${fmt(t.transfers_applied ?? 0)} transfer${t.transfers_applied === 1 ? '' : 's'}`);
-    } else {
-      const d = st.detected;
-      set('st-clear', num(d.setoffPC), `${d.setoffs} set-off${d.setoffs === 1 ? '' : 's'} seen since this page opened`);
-      set('st-move', num(d.transferPC), `${d.transfers} transfer${d.transfers === 1 ? '' : 's'} seen since this page opened`);
+      $('t-clear').textContent = amount(t.cleared ?? 0, {total: true}); $('t-clear-sub').textContent = `in ${many(t.setoffs_applied ?? 0, 'loop')}`;
+      $('t-move').textContent = amount(t.transferred ?? 0, {total: true}); $('t-move-sub').textContent = `in ${many(t.transfers_applied ?? 0, 'transfer')}`;
     }
-    const c = $('st-check').closest('.stat');
-    c.classList.toggle('bad', st.recon.bad > 0);
-    set('st-check', st.recon.bad ? `${st.recon.bad} differ` : 'all match',
-      st.recon.bad ? 'tracker and Valun records differ' : `${st.recon.rows} edge${st.recon.rows === 1 ? '' : 's'}: Basis tracker = Valun records`);
+    const c = $('t-check');
+    c.textContent = st.recon.bad ? `${fmt(st.recon.bad)} differ` : `${fmt(st.recon.rows)} of ${fmt(st.recon.rows)} match`;
+    c.closest('div').classList.toggle('bad', st.recon.bad > 0);
+    $('t-check-sub').textContent = st.recon.bad ? 'the server\'s records and its tracker differ on these pairs' : 'pairs: the server\'s records agree with its tracker';
   }
 
-  // ----- connection line -----
-  function tick() {
-    const now = Date.now(), live = $('live'), text = $('live-text');
-    let s, cls;
-    if (document.hidden) { s = 'paused'; cls = 'paused'; }
-    else if (st.lastError) { s = `${st.lastError} · retrying in ${Math.max(0, Math.ceil((st.nextAt - now) / 1000))} s`; cls = 'err'; }
-    else if (!st.lastOk) { s = 'connecting…'; cls = 'wait'; }
-    else { const ago = Math.round((now - st.lastOk) / 1000); s = `live · updated ${ago < 2 ? 'just now' : `${ago} s ago`}`; cls = 'ok'; }
-    text.textContent = s; live.className = `live ${cls}`;
-    if (st.ready && (view.hl.size || view.ghost.size || view.flashNode.size || st.fresh.size)) render(now);
+  function drawChain() {
+    const c = st.chain, sec = $('chain'), ul = $('chain-list');
+    if (!c) return;
+    const items = [];
+    items.push(c.anchored ? `Anchored: the tracker box on chain commits the ledger as of block ${fmt(c.height)}.`
+      : c.pending ? 'Anchoring now: a tracker box is on its way to a block.'
+        : 'Not anchored yet: the next tracker box commits the latest changes, usually within 5 to 15 minutes; up to about 30 when Ergo testnet blocks are slow (as since Nov 16).');
+    if (c.cap) items.push(c.cap.used_up ? `Today's ${fmt(c.cap.limit)} tracker boxes are used up: nothing new is committed until 00:00 UTC.`
+      : `Today: ${fmt(c.cap.today)} of ${fmt(c.cap.limit)} tracker boxes. The cap resets at 00:00 UTC.`);
+    const held = c.reserves.reduce((s, r) => s + r.nanoerg, 0), backs = c.reserves.filter(r => r.backs > 0), backed = backs.reduce((s, r) => s + r.backs, 0);
+    const owed = [...st.edges.values()].reduce((s, e) => s + Math.max(0, e.amount), 0);
+    items.push(`${many(c.reserves.length, 'reserve')} ${c.reserves.length === 1 ? 'holds' : 'hold'} ${terg(held, {total: true})}. ${backs.length === 1 ? 'One backs' : backs.length ? `${fmt(backs.length)} back` : 'None backs'} IOUs owed now: ${terg(backed, {total: true})} of the ${terg(owed, {total: true})} owed. An IOU can be redeemed only against its own issuer's reserve.`);
+    ul.replaceChildren(...items.map(t => H('li', null, t)));
+    const links = H('li', 'links');
+    for (const [href, text] of [[c.links.nft, 'The tracker NFT'], [c.links.address, 'The tracker on the explorer']]) {
+      if (!href) continue;
+      const a = H('a', null, text); a.href = href; a.rel = 'noopener noreferrer'; links.append(a);
+    }
+    if (links.children.length) ul.append(links);
+    sec.hidden = false;
   }
 
-  new ResizeObserver(() => resize()).observe(svg);
-  resize();
-  setInterval(tick, 1000);
-  refreshMeta();
+  // Copy for the join command, as on /start and the home: the command exactly as written (its spans and its break point
+  // add nothing to the text), described by the command, and what happened said in the page's status line, which screen
+  // readers announce (a button's own text changing is not).
+  const copy = document.querySelector('.join button.copy');
+  if (copy && $('join-cmd')) {
+    copy.setAttribute('aria-describedby', 'join-cmd');
+    copy.addEventListener('click', async () => {
+      const say = $('announce');
+      try { await navigator.clipboard.writeText($('join-cmd').textContent); copy.textContent = 'Copied'; say.textContent = 'Copied.'; }
+      catch { copy.textContent = 'Select and copy'; say.textContent = 'Copy failed: select the text and copy it.'; }
+      const said = say.textContent;     // cleared after, so the next Copy is announced again; a loop said meanwhile stays
+      setTimeout(() => { copy.textContent = 'Copy'; if (say.textContent === said) say.textContent = ''; }, 2000);
+    });
+  }
+
+  new ResizeObserver(() => { if (st.ready) graph(); }).observe(box);
+  status();
+  readSlow();
   poll();
 }
 

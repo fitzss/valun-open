@@ -91,6 +91,47 @@ export class BasisError extends Error {
   get publicMessage() { return PUBLIC_MESSAGES[this.code] ?? PUBLIC_MESSAGES.tracker_unavailable; }
 }
 
+// The tracker writes a u64 as a JSON number, and JSON.parse reads one above 2^53 - 1 as the nearest double
+// (9007199254740993 as 9007199254740992) with no error; no String() or BigInt() of that Number gives the digits back.
+// exactAmounts(text) parses a tracker answer with every field named in EXACT_AMOUNTS, at any depth, as the decimal string
+// the tracker wrote: the number's source text (JSON.parse source text access, which Node 22, the oldest package.json
+// allows, has). A runtime without it, or such an amount written as anything but plain digits, is refused (BasisError),
+// never read as a rounded Number. Other numbers (timestamps, heights) are read as JSON.parse reads them. EXACT_AMOUNTS
+// are the u64 amounts of a note in GET /notes (basis_server SerializableIouNoteWithAge and NoteConfirmationSummary, the
+// same in tracker v4.4).
+const EXACT_AMOUNTS = new Set(['amount_collected', 'amount_redeemed', 'confirmed_total_debt', 'pending_total_debt', 'redeemable_amount']);
+export function exactAmounts(text) {
+  return JSON.parse(text, (key, value, context) => {
+    if (!EXACT_AMOUNTS.has(key) || typeof value !== 'number') return value;
+    const digits = context?.source;
+    if (typeof digits !== 'string') throw new BasisError(`tracker amount ${key}: this runtime's JSON.parse gives no source text, so it cannot be read exactly`);
+    if (!/^(0|[1-9][0-9]*)$/.test(digits)) throw new BasisError(`tracker amount ${key} is not a whole number in plain digits: ${digits.slice(0, 40)}`);
+    return digits;
+  });
+}
+
+// Whether a tracker answers now (Basis.health: GET / names the Basis Tracker), for the network's health check (GET
+// /pilot/v1/health) and for whether the legacy desk can answer (server.mjs, fix inbox #64). The returned function reads
+// the tracker at most once per cacheMs whatever the rate it is called at: a read in flight is shared by every call that
+// arrives meanwhile, and its answer is kept for cacheMs from when it came. No answer within timeoutMs, an error, or
+// anything but true counts as false. `now` is the clock (tests pass their own).
+export function trackerProbe(basis, {cacheMs = 2000, timeoutMs = 3000, now = () => Date.now()} = {}) {
+  let last = null;   // {at, done, value: Promise<boolean>}
+  return () => {
+    const t = now();
+    if (last && (!last.done || (t >= last.at && t - last.at < cacheMs))) return last.value;
+    const entry = {at: t, done: false, value: null};
+    entry.value = new Promise(resolve => {
+      // The deadline is kept here too, for a health() that does not honour timeoutMs.
+      const timer = setTimeout(() => resolve(false), timeoutMs);
+      timer.unref?.();
+      Promise.resolve().then(() => basis.health({timeoutMs})).then(v => v === true, () => false).then(v => { clearTimeout(timer); resolve(v); });
+    }).then(v => { entry.done = true; entry.at = now(); return v; });
+    last = entry;
+    return entry.value;
+  };
+}
+
 export function makeSignerRunner({mode = 'direct', signerPath, wslExe = 'C:/Windows/System32/wsl.exe', distro = 'valun-ic1', user = 'valun', timeoutMs = 15000}) {
   if (!signerPath) throw Error('signerPath required');
   return (args, stdin = '') => new Promise((resolve, reject) => {
@@ -129,10 +170,12 @@ export class Basis {
     this.capsRead = null;   // the capabilities() read, kept per instance
   }
 
-  async api(method, path, body) {
+  // timeoutMs: how long a request may take before it counts as unreachable (10 s unless a caller asks for less: a health
+  // check must answer within its own deadline).
+  async api(method, path, body, {timeoutMs = 10000} = {}) {
     let r;
     try {
-      r = await this.fetch(this.url + path, {method, headers: {'content-type': 'application/json'}, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(10000)});
+      r = await this.fetch(this.url + path, {method, headers: {'content-type': 'application/json'}, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(timeoutMs)});
     } catch (e) { throw new BasisError(`tracker unreachable: ${e.cause?.code || e.name}`); }
     const text = await r.text();
     let j = null;
@@ -140,8 +183,8 @@ export class Basis {
     return {status: r.status, json: j, text};
   }
 
-  async health() {
-    const r = await this.api('GET', '/');
+  async health({timeoutMs} = {}) {
+    const r = await this.api('GET', '/', undefined, {timeoutMs});
     return r.status === 200 && /Basis Tracker/.test(r.text);
   }
 
@@ -179,10 +222,12 @@ export class Basis {
     if (r.status === 404 || /not found/i.test(r.json?.error || '')) return null;
     throw new BasisError(`note read failed: ${r.json?.error || r.status}`, {status: r.status});
   }
-  async allNotes() {
+  // Every note the tracker holds, in every denomination. Its amounts are Numbers, exact up to 2^53 - 1; with exact: true
+  // they are the decimal strings the tracker wrote (exactAmounts), as a digest of the notes (lib/avl.mjs) needs them.
+  async allNotes({exact = false} = {}) {
     const r = await this.api('GET', '/notes');
     if (r.status !== 200 || !r.json?.success) throw new BasisError(`notes read failed: ${r.json?.error || r.status}`);
-    return r.json.data || [];
+    return (exact ? exactAmounts(r.text).data : r.json.data) || [];
   }
   async trackerState() {
     const r = await this.api('GET', '/tracker/state');

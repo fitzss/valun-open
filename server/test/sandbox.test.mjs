@@ -17,13 +17,15 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {Basis, makeSignerRunner} from '../lib/basis.mjs';
-import {Pilot, PilotStore, PilotError, PILOT_TOKEN_ID, PILOT_DENOMINATION, termsHash, statements, circulationStatements, NETWORK, PROTOCOL} from '../lib/pilot/core.mjs';
+import {Pilot, PilotStore, PilotError, PILOT_TOKEN_ID, PILOT_DENOMINATION, termsHash, statements, circulationStatements, guaranteeStatements, NETWORK, PROTOCOL} from '../lib/pilot/core.mjs';
+import {GUARANTEE_PROTOCOL, COVERS, COVERS_DEALS} from '../lib/pilot/guarantees.mjs';
 import {validateCaps} from '../lib/pilot/caps.mjs';
 import {TRACKER_SHA256_PINS} from '../lib/pilot/pins.mjs';
 import {quoteDigest} from '../lib/pilot/novation.mjs';
 import {createPilotRoutes} from '../lib/pilot/http.mjs';
 import {createHandler} from '../lib/http.mjs';
-import {Sandbox, textStats, notary, extractText, malloryIsWrong, COMPUTE, render, corrupt, mandateFor, checkDelivery, parseNoteMessage, WELCOME, STRANGER_EARN_CAP, WELCOME_PER_TICK} from '../lib/pilot/sandbox.mjs';
+import {Sandbox, textStats, notary, extractText, malloryIsWrong, COMPUTE, render, corrupt, mandateFor, checkDelivery, parseNoteMessage, WELCOME, STRANGER_EARN_CAP, WELCOME_PER_TICK,
+  GUARANTEES_PER_BACKER_PER_DAY} from '../lib/pilot/sandbox.mjs';
 import {startTracker, runner, signerPath, capabilities, trackerSha256} from './tracker-harness.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -1067,4 +1069,87 @@ test('mode sandbox: the agents buy only from sandbox participants; an invited pa
     await untilOn(S, await offerOn(S, {payer: X, payee: S, price: 3, service: job('text-stats', 'a sandbox seller in mode sandbox')}), ['agreed']);
   } finally { p.circulation = 'on'; }
   assert.equal(p.mode, 'on');
+});
+
+// ---------- fix inbox #84: sandbox-exact as the creditor of guarantees ----------
+// A newcomer alone could not see an IOU backed: no always-on agent answered guarantee offers. sandbox-exact accepts those
+// naming it as the creditor (it only gains a promise), so a newcomer's own two agents, the issuer and the backer, back an
+// IOU with it. P offers a guarantee as backer, signed as a 0.4 client signs it; `deals` makes it one of the deal mode.
+async function offerGuaranteeOn(P, {issuer, creditor, cap = 2, deals = null}) {
+  const now = Date.now();
+  const t = {protocol: GUARANTEE_PROTOCOL, network: NETWORK, tracker_nft_id: tracker.nft, denomination: PILOT_DENOMINATION, guarantee_id: 'vg_' + rnd(8), nonce: rnd(16),
+    backer: {id: P.id, pubkey: P.pubkey}, issuer: {id: issuer.id, pubkey: issuer.pubkey}, creditor: {id: creditor.id, pubkey: creditor.pubkey},
+    cap: {amount: cap, unit: 'PC'}, covers: deals ? COVERS_DEALS : COVERS, ...(deals ? {deals} : {}), due_at: new Date(now).toISOString(),
+    expires_at: new Date(now + 72 * H).toISOString(), honor_within_hours: 24, offer_expires_at: new Date(now + 2 * H).toISOString(), note: ''};
+  const h = termsHash(t);
+  return ok(await callOn('POST', '/guarantees', {terms: t, terms_hash: h, signature: await signAs(P, guaranteeStatements.offer(h))}, P.agent), 201).guarantee_id;
+}
+const guaranteeOn = async (P, id) => ok(await callOn('GET', `/guarantees/${id}`, null, P.agent));
+const guaranteeUntil = (P, id, states) => waitForCond(async () => { const v = await guaranteeOn(P, id); return states.includes(v.state) && v; }, `guarantee ${id} to be ${states.join(' or ')}`);
+// Accepted by sandbox-exact, which signed its acceptance over the terms hash with its own key.
+async function acceptedBy(P, X, id) {
+  const v = await guaranteeUntil(P, id, ['active', 'declined']);
+  assert.equal(v.state, 'active', `${id}: ${JSON.stringify(v.decline)}`);
+  assert.equal(v.acceptance.by, X.id);
+  assert.ok(await basis.verify(X.pubkey, hex(guaranteeStatements.accept(v.terms_hash)), v.acceptance.signature), 'the acceptance is signed by sandbox-exact');
+  return v;
+}
+async function guaranteeDeclinedBy(P, X, id, why) {
+  const v = await guaranteeUntil(P, id, ['declined', 'active']);
+  assert.equal(v.state, 'declined', id);
+  assert.match(v.decline.reason, why);
+  assert.ok(await basis.verify(X.pubkey, hex(guaranteeStatements.decline(v.terms_hash, v.decline.reason)), v.decline.signature), 'the reason is signed by sandbox-exact');
+}
+// P pays deal id with its own bound note, as a 0.4 client: it checks the template and rebuilds both messages (the note M
+// and the prior acknowledgment PA of the prior note, (0, 0) for none) before it signs them.
+async function payOwnNoteOn(P, id) {
+  const tpl = ok(await callOn('GET', `/deals/${id}/credit-note-template?prior=1&bound=1`, null, P.agent));
+  assert.deepEqual([tpl.timestamp % 1000, tpl.issuer_pubkey, tpl.total], [997, P.pubkey, tpl.prior_total + tpl.price]);
+  const priorTs = tpl.prior_note ? tpl.prior_note.timestamp : 0, ack = await paMsg(P.pubkey, tpl.recipient_pubkey, tpl.prior_total, priorTs, tpl.timestamp);
+  assert.equal(tpl.prior_message_hex, ack, 'the template\'s acknowledgment is PA of the state it shows');
+  const note = await basis.signHex(P.pubkey, await noteMsg(P.pubkey, tpl.recipient_pubkey, tpl.total, tpl.timestamp), P.secret);
+  return ok(await callOn('POST', `/deals/${id}/complete`, {terms_hash: tpl.terms_hash, deliverable_sha256: tpl.deliverable_sha256,
+    signature: await signAs(P, statements.complete(tpl.terms_hash, tpl.deliverable_sha256)),
+    credit_note: {total: tpl.total, timestamp: tpl.timestamp, signature: note, prior_total: tpl.prior_total, prior_timestamp: priorTs, prior_signature: await basis.signHex(P.pubkey, ack, P.secret)}}, P.agent));
+}
+
+test('mode on: fix inbox #84: sandbox-exact accepts guarantee offers naming it as the creditor (floating, or naming deals it is paid in) and signs the acceptance, so a newcomer\'s two agents see an IOU backed; terms no longer valid for it, or a fourth offer from one backer in 24 hours, are declined with a signed reason; sandbox-mallory does not answer', async t => {
+  if (!onLive(t)) return;
+  const p = on.pilot, sb = on.sandbox, X = agentOn('sandbox-exact'), M = agentOn('sandbox-mallory'), open = p.openNetwork;
+  p.openNetwork = true;                     // as on the testnet (PILOT_OPEN_NETWORK=1): a newcomer's two agents may name each other
+  try {
+    const I = await stranger('sbx-g-issuer'), B = await stranger('sbx-g-backer');
+    // Floating: B backs what I owes sandbox-exact, up to 2 PC; then I buys a job from sandbox-exact and pays with its own IOU.
+    const g1 = await acceptedBy(B, X, await offerGuaranteeOn(B, {issuer: I, creditor: X}));
+    const job1 = await offerOn(I, {payer: I, payee: X, price: 2, service: job('notary', 'paid with an IOU a guarantee backs')});
+    assert.equal((await untilOn(I, job1, ['delivered', 'declined'])).status, 'delivered');
+    assert.equal((await payOwnNoteOn(I, job1)).status, 'note_issued', 'sandbox-exact takes the IOU as it takes any (no coverage rule)');
+    const backed = await guaranteeOn(I, g1.guarantee_id);
+    assert.deepEqual([backed.your_role, backed.state, backed.creditor.id, backed.issuer_owes_creditor, backed.callable_now, backed.remaining_cap], ['issuer', 'active', X.id, 2, 2, 2],
+      'the issuer sees its IOU to sandbox-exact backed by its own other agent');
+    // The deal mode: a guarantee naming a deal in which I pays sandbox-exact.
+    const job2 = await offerOn(I, {payer: I, payee: X, price: 2, service: job('notary', 'a deal a guarantee names')});
+    assert.ok(['agreed', 'delivered'].includes((await untilOn(I, job2, ['agreed', 'delivered', 'declined'])).status));
+    assert.deepEqual((await acceptedBy(B, X, await offerGuaranteeOn(B, {issuer: I, creditor: X, deals: [job2]}))).deals, [job2]);
+    // Terms no longer valid for it: the deal they name ended (sandbox-exact declined it) before it answered the offer.
+    await stopLoop(sb);
+    try {
+      const job3 = await offerOn(I, {payer: I, payee: X, price: 2, service: {title: 'Write a poem', description: 'A poem about credit.', deliverable: 'A poem.'}});
+      const g3 = await offerGuaranteeOn(B, {issuer: I, creditor: X, deals: [job3]});
+      for (let i = 0; i < 5 && (await guaranteeOn(B, g3)).state === 'offered'; i++) await sb.tick();
+      assert.equal((await viewOn(I, job3)).status, 'declined');
+      await guaranteeDeclinedBy(B, X, g3, new RegExp(`^I cannot accept this guarantee: deal ${job3} has ended \\(declined\\), so it would cover nothing there\\. Offer a new one\\.$`));
+    } finally { await sb.start(); }
+    // At most 3 from one backer in 24 hours (the declined one does not count): the fourth is declined; another backer's is not.
+    assert.equal(GUARANTEES_PER_BACKER_PER_DAY, 3);
+    await acceptedBy(B, X, await offerGuaranteeOn(B, {issuer: I, creditor: X}));
+    await guaranteeDeclinedBy(B, X, await offerGuaranteeOn(B, {issuer: I, creditor: X}), /^Limit reached: I accept at most 3 guarantees from one backer in 24 hours\. Offer again tomorrow\.$/);
+    const B2 = await stranger('sbx-g-backer-2');
+    await acceptedBy(B2, X, await offerGuaranteeOn(B2, {issuer: I, creditor: X, cap: 1}));
+    // sandbox-mallory leaves an offer naming it as the creditor alone.
+    const gm = await offerGuaranteeOn(B2, {issuer: I, creditor: M});
+    await sleep(1500);                                                                          // many ticks later
+    assert.equal((await guaranteeOn(B2, gm)).state, 'offered');
+    assert.equal(p.s.participants[X.id].mandate.min_payer_coverage_pct, 0, 'sandbox-exact still takes IOUs without a coverage rule');
+  } finally { p.openNetwork = open; }
 });

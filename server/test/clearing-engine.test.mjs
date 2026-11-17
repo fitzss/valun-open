@@ -298,6 +298,55 @@ test('planProposals: cooldowns (an edge set after an expiry or a failure, a memb
   assert.equal(planProposals(g, cycles, {now: T0, limits: {...LIMITS, max_cycle_length: 2}}).length, 2, 'longer cycles are left out');
 });
 
+test('kept: server-only cycles leave an edge\'s kept PC; cycles with a client member may use it all', async () => {
+  // The sandbox tours (Sandbox.tourHolds): only an edge between two server-run members keeps any, and a cycle whose
+  // members are all server-run leaves it on the edge, whatever else the plan takes.
+  // 0 = sandbox-exact X and 1 = sandbox-mallory M (server-run); 2 = a stranger S at its tour's step 4 (M>S 3, S>X 1);
+  // X>M `xm` (4), of which `kept` are kept for open tours; M>X 2 (left by earlier tours' step 5).
+  const XM = `${key(0)}>${key(1)}`, MX = `${key(1)}>${key(0)}`, MS = `${key(1)}>${key(2)}`, SX = `${key(2)}>${key(0)}`;
+  const server = {server: [0, 1]};
+  const edgesOf = (kept, xm) => [[0, 1, xm, {kept}], [1, 0, 2], [1, 2, 3], [2, 0, 1]];
+  const tour = (kept, xm = 4) => eligibleGraph(snapshotOf(3, edgesOf(kept, xm), server));
+  const keptOf = (gr, ...ks) => ks.map(k => gr.edges.get(k).kept);
+  const g = tour(4);
+  assert.deepEqual(keptOf(g, XM, MX, MS, SX), [4, 0, 0, 0]);
+  assert.equal(tour(9).edges.get(XM).kept, 4, 'at most what is available');
+  const reserved = eligibleGraph(snapshotOf(2, [[0, 1, 4, {kept: 3, reserved: 2}], [1, 0, 2]], server)).edges.get(XM);
+  assert.deepEqual([reserved.available, reserved.kept], [2, 2], 'what live set-offs reserve is not available to keep');
+  for (const bad of [-1, 1.5, '2', null, undefined]) assert.equal(tour(bad).edges.get(XM).kept, 0, `kept ${bad}`);
+  const client = eligibleGraph(snapshotOf(3, [[1, 2, 3, {kept: 2}]], server));
+  assert.equal(client.edges.get(MS).kept, 0, 'a client edge keeps nothing');
+  // The cycles' amounts: the server-only 2-cycle X>M>X takes only what is not kept; the 3-cycle M>S>X>M all of X>M.
+  const byLength = gr => Object.fromEntries(boundedCycles(gr).cycles.map(c => [c.length, c.amount]));
+  assert.deepEqual([byLength(g), byLength(tour(3)), byLength(tour(0))], [{2: 0, 3: 1}, {2: 1, 3: 1}, {2: 2, 3: 1}]);
+  const through = k => [cycleThrough(g, k).length, cycleThrough(g, k).amount];
+  assert.deepEqual(through(XM), [2, 0], 'the widest cycle through X>M is the server-only one, at 0 PC');
+  assert.deepEqual(through(MS), [3, 1]);
+  // The plan (selection and packaging): decreases by edge.
+  const decreases = p => Object.fromEntries(p.edges.map(e => [e.edge, e.decrease]));
+  const plan = gr => planProposals(gr, boundedCycles(gr).cycles, {now: T0}).map(decreases);
+  assert.deepEqual(plan(g), [{[XM]: 1, [MS]: 1, [SX]: 1}], 'all of X>M kept: only the 3-cycle');
+  assert.deepEqual(plan(tour(0)), [{[XM]: 3, [MX]: 2, [MS]: 1, [SX]: 1}],
+    'nothing kept: the 2-cycle (2 PC) and the 3-cycle in one package');
+  assert.deepEqual(plan(tour(3, 6)), [{[XM]: 3, [MX]: 2, [MS]: 1, [SX]: 1}],
+    '3 of 6 kept: the 2-cycle takes 2, the 3-cycle 1, and X>M keeps 3');
+  assert.deepEqual(plan(tour(3)), [{[XM]: 1, [MS]: 1, [SX]: 1}],
+    '3 of 4 kept: once the 3-cycle took 1, nothing above the 3 kept is left for the 2-cycle');
+  for (const [kept, xm] of [[4, 4], [3, 4], [3, 6], [1, 5]]) {
+    const gr = tour(kept, xm), chosen = selectCycles(gr, boundedCycles(gr).cycles);
+    const serverOnly = chosen.filter(c => c.client_members === 0).reduce((a, c) => a + c.amount, 0);
+    assert.ok(xm - serverOnly >= kept, `${kept} of ${xm} kept: the server-only cycles leave them`);
+  }
+  // The trigger: a tour's step 2 raises X>M; no server-only set-off is proposed while all of it is kept, and one takes
+  // only what is not kept.
+  const all = stubPilot(snapshotOf(2, [[0, 1, 2, {kept: 2}], [1, 0, 2]], server));
+  assert.deepEqual(await new Clearing({pilot: all.pilot}).afterChange([XM]), []);
+  assert.equal(all.created.length, 0);
+  const some = stubPilot(snapshotOf(2, [[0, 1, 3, {kept: 2}], [1, 0, 2]], server));
+  await new Clearing({pilot: some.pilot}).afterChange([XM]);
+  assert.deepEqual(some.created.map(x => decreases(x.pkg)), [{[XM]: 1, [MX]: 1}], 'only the 1 PC not kept');
+});
+
 test('setoffOutcome decides from the edges\' classes, and trackerSetoffBody sends exactly the tracker\'s fields', () => {
   assert.equal(setoffOutcome(['new', 'new', 'applied_moved']), 'applied');
   assert.equal(setoffOutcome(['prior', 'prior']), 'prior');

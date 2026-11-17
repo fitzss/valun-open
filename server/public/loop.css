@@ -1,78 +1,128 @@
-/* A loop card (/loop/<id>, rendered by lib/pilot/loops.mjs): one dark theme, from 360px up. Fonts are self-hosted
-   (public/fonts, SIL OFL): the CSP allows no external font. */
-@font-face { font-family: "Jost"; font-style: normal; font-weight: 100 900; font-display: swap; src: url("/fonts/jost-latin.woff2") format("woff2"); }
-@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/jetbrains-mono-latin-400.woff2") format("woff2"); }
+/* The pages the server renders (lib/pilot/loops.mjs, lib/pilot/agents.mjs): a loop card (/loop/<id>), an agent page
+   (/agent/<handle>), the maintainers page and their 404s. They load /site.css first (tokens, navigation, footer, buttons,
+   labels, tables); this file holds only what is theirs. Shapes say who runs an agent, with words beside them: a diamond
+   (operator-run), a hollow circle (a team test agent, by its operator field), a filled circle (anyone else). */
 
-:root {
-  --space: #050608;
-  --line: #eef0f4;
-  --dust: #8a909c;
-  --rule: #1b1e26;
-  --rainbow: linear-gradient(90deg, #ff5a5f, #ffc145, #3ddc97, #4f7cff, #9b5cff);
-  --sans: "Jost", "Futura", "Century Gothic", "Avenir Next", "Segoe UI", system-ui, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
-  color-scheme: dark;
-}
+.card { padding-top: 1.6rem; padding-bottom: 1rem; }
+.card > *, .loop-body > *, .agent-head > * { max-width: 46rem; }
+.card h2 { font-size: 1.3rem; font-weight: 400; letter-spacing: 0; margin: 0 0 0.7rem; }
+.card h3 { font: 400 0.75rem/1.4 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dust); margin: 0 0 0.6rem; }
+.card section { border-top: 1px solid var(--rule); padding: 1.8rem 0 0.6rem; }
+.h { font-family: var(--mono); font-weight: 400; overflow-wrap: anywhere; }
+a.h { text-decoration-color: var(--rule-strong); }
+.arr { color: var(--dust); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.more { color: var(--dust); margin: -0.4rem 0 1rem; overflow-wrap: anywhere; }
+.offers { overflow-wrap: anywhere; }
+.provenance { color: var(--dust); font-size: 0.88rem; margin: 0 0 0.5rem; overflow-wrap: anywhere; }
+.provenance a { color: var(--dust); }
+.provenance code { color: var(--line); }
+.cta { margin: 2rem 0 1.6rem; }
+pre.hire { background: var(--panel); border: 1px solid var(--rule); border-radius: 2px; padding: 0.9rem 1rem; margin: 0 0 0.8rem; white-space: pre-wrap;
+  overflow-wrap: anywhere; font-size: 0.9rem; line-height: 1.6; }
 
-* { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; background: var(--space); }
-body { margin: 0; background: var(--space); color: var(--line); font: 300 17px/1.6 var(--sans); overflow-x: hidden; }
-a { color: var(--line); text-decoration-color: var(--dust); text-decoration-thickness: 1px; text-underline-offset: 3px; }
-a:hover { text-decoration-color: var(--line); }
-:focus-visible { outline: 1.5px solid var(--line); outline-offset: 3px; }
-code { font-family: var(--mono); font-weight: 400; font-size: 0.9em; overflow-wrap: anywhere; }
+/* a live record: what it is, the network, when the server read it, the record */
+.live-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.9rem; font: 400 0.8rem/1.5 var(--mono); color: var(--dust); margin: 0 0 1.4rem; }
+.live-line a { color: var(--dust); }
 
-.card { max-width: 760px; margin: 0 auto; padding: 22px 16px 40px; }
-.top { padding-bottom: 2.4rem; }
-.brand { display: inline-flex; align-items: center; gap: 0.75rem; color: var(--line); text-decoration: none; }
-.mark { width: 24px; height: 24px; display: block; flex: none; }
-.wordmark { font-weight: 300; font-size: 0.95rem; letter-spacing: 0.5em; text-transform: uppercase; margin-right: -0.5em; }
-.eyebrow { font: 400 0.72rem/1.4 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dust); margin: 0 0 1rem; }
-h1 { font-weight: 300; font-size: clamp(1.6rem, 6vw, 2.6rem); line-height: 1.25; margin: 0 0 1rem; overflow-wrap: anywhere; }
-.route .h, .route-sm .h { font-family: var(--mono); font-weight: 400; font-size: 0.82em; display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
-.route .arr { color: var(--dust); }
-.more { margin: 0 0 1rem; color: var(--dust); font-size: 0.92rem; overflow-wrap: anywhere; }
+/* the route as a heading: handles in mono, each kept whole on a line when it fits */
+h1.route { font-size: clamp(1.7rem, 5.4vw, 2.6rem); line-height: 1.25; overflow-wrap: anywhere; }
+h1.route .h, .route-sm .h { font-size: 0.82em; display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
 .route-sm .arr { color: var(--dust); }
 
-.rings { display: grid; gap: 8px; justify-items: center; margin: 0.4rem 0 1rem; }
-.ring { width: 100%; max-width: 460px; height: auto; }
+/* who runs an agent: a shape and its words */
+.shape { display: inline-block; width: 11px; height: 11px; flex: none; margin-right: 0.55rem; vertical-align: -1px; border: 1.5px solid var(--line); border-radius: 50%; }
+.shape.w-practice, .shape.w-house, .shape.w-operator { border-color: var(--work); border-radius: 0; transform: rotate(45deg) scale(0.86); }
+.shape.w-team { border-color: var(--dust); }
+.shape.w-other { background: var(--line); }
+
+/* ---------- the loop card ---------- */
+.loop-head .eyebrow { margin-bottom: 0.8rem; }
+.rings { margin: 0.4rem 0 1.6rem; display: grid; gap: 0.6rem; justify-items: center; }
+.rings figcaption { font-size: 0.86rem; color: var(--dust); max-width: 26rem; text-align: center; }
+.ring { width: 100%; max-width: 440px; height: auto; display: block; }
 .ring .halo { fill: none; stroke: var(--rule); stroke-width: 1; }
-.ring .arc { fill: none; stroke: var(--line); stroke-width: 1.2; stroke-linecap: round; }
-.ring .ah { fill: none; stroke: var(--line); stroke-width: 1.4; }
-.ring .node circle { fill: var(--space); stroke: var(--line); stroke-width: 1.6; }
-.ring .node text { fill: var(--line); font: 400 13px var(--mono); }
-.ring .mid { fill: var(--space); font: 400 22px var(--sans); }
+.ring .arc { fill: none; stroke: var(--line); stroke-width: 1.4; stroke-linecap: round; }
+.ring .ah { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-linejoin: round; }
+.ring .node circle, .ring .node rect { fill: var(--space); stroke: var(--line); stroke-width: 1.6; }
+.ring .node.w-practice rect, .ring .node.w-house rect, .ring .node.w-operator rect { stroke: var(--work); }
+.ring .node.w-team circle { stroke: var(--dust); }
+.ring .node.w-other circle { fill: var(--line); }
+.ring .node text { fill: var(--line); font: 400 14px var(--mono); paint-order: stroke; stroke: var(--space); stroke-width: 5px; stroke-linejoin: round; }
+.ring .mid { fill: var(--line); font: 300 24px var(--sans); }
+.ring .mid-u { fill: var(--dust); font: 400 12px var(--mono); letter-spacing: 0.04em; }
 
-.lede { margin: 0 0 1.2rem; font-size: 1.12rem; max-width: 34em; }
-.bar { height: 2px; width: 100%; max-width: 220px; background: var(--rainbow); margin: 0 0 1.6rem; }
-.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 2rem; padding: 1rem 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 18px; margin: 0 0 1.4rem; padding: 1rem 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
 .facts div { min-width: 0; }
-.facts dt { font: 400 0.68rem/1.4 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dust); margin-bottom: 0.3rem; }
-.facts dd { margin: 0; font: 400 0.95rem/1.4 var(--mono); overflow-wrap: anywhere; }
+.facts dt { font: 400 0.75rem/1.4 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--dust); margin-bottom: 0.3rem; }
+.facts dd { margin: 0; font: 400 0.98rem/1.4 var(--mono); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 
-.cta { display: flex; flex-wrap: wrap; gap: 0.8rem; margin: 0 0 2rem; }
-.btn { display: inline-block; padding: 0.7em 1.3em; border: 1px solid var(--dust); border-radius: 2px; color: var(--line); text-decoration: none;
-  font-weight: 400; font-size: 0.98rem; letter-spacing: 0.02em; }
-.btn:hover { border-color: var(--line); }
-.btn.primary { background: var(--line); border-color: var(--line); color: var(--space); }
-.btn.primary:hover { background: #ffffff; }
+table.changed { font-size: 0.92rem; }
+table.changed caption .unit { text-transform: none; letter-spacing: 0; }   /* tERG keeps its case in the uppercase caption */
+table.changed th[scope="row"] { font-weight: 400; }
+table.changed th[scope="row"] a.h { overflow-wrap: normal; word-break: normal; }
+table.changed td.num { white-space: nowrap; }
+table.changed thead th.num { white-space: normal; }   /* the headers wrap, so the four columns fit a phone */
+.debts { list-style: none; margin: 0 0 1.2rem; padding: 0; }
+.debts li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--rule); font-size: 0.95rem; }
+.debts .num { margin-left: auto; color: var(--line); }
+.who-list { list-style: none; margin: 0 0 1rem; padding: 0; }
+.who-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; padding: 0.7rem 0; border-bottom: 1px solid var(--rule); }
+.who-list .shape { align-self: center; margin-right: 0; }
+.who-list .who-line { flex-basis: 100%; color: var(--dust); font-size: 0.95rem; padding-left: calc(11px + 0.6rem); }
+.chain .note { color: var(--line); }
+.not-public { margin-top: 1.6rem; }
 
-.honest { color: var(--dust); font-size: 0.88rem; border-top: 1px solid var(--rule); padding-top: 1.2rem; }
-.honest p { margin: 0 0 0.5rem; }
-.honest a { color: var(--dust); }
-.honest code { color: var(--line); }
-
-@media (max-width: 480px) {
-  body { font-size: 16px; }
-  .facts { grid-template-columns: minmax(0, 1fr); gap: 10px; }
-  .wordmark { letter-spacing: 0.4em; margin-right: -0.4em; }
+@media (min-width: 960px) {
+  /* the ring stays beside the story while it is read */
+  .loop { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 440px); column-gap: 56px; align-items: start; }
+  .loop > .loop-head, .loop > .facts, .loop > .loop-body { grid-column: 1; }
+  .loop > .rings { grid-column: 2; grid-row: 1 / span 3; position: sticky; top: 24px; margin-top: 0.6rem; }
 }
 
-/* agent pages (/agent/<handle>, lib/pilot/agents.mjs) */
-.offers { margin: 0 0 1.4rem; overflow-wrap: anywhere; }
-.list { list-style: none; padding: 0; margin: 0 0 2rem; }
-.list li { padding: 0.55rem 0; border-bottom: 1px solid var(--rule); font-size: 0.95rem; overflow-wrap: anywhere; }
-.list .h { font-family: var(--mono); font-weight: 400; font-size: 0.85em; }
-.list .arr { color: var(--dust); }
-pre.hire { background: #0b0d12; border: 1px solid var(--rule); border-radius: 2px; padding: 0.9rem 1rem; margin: 0 0 0.8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
-.small { color: var(--dust); font-size: 0.9rem; margin: 0 0 1.6rem; }
+/* ---------- the agent page ---------- */
+.who-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0 0 0.9rem; }
+.who-top .shape { margin-right: 0.1rem; }
+.who-name { font: 400 0.78rem/1.3 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--line); }
+.who-note { color: var(--line); }
+.agent .facts { grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: none; border: 0; padding: 0.2rem 0 0.4rem; margin-bottom: 0.6rem; }
+.agent > section { max-width: 46rem; }
+.agent > section:has(.facts) { max-width: 56rem; }
+.ties { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.2rem 2rem; }
+.ties-list { list-style: none; margin: 0 0 0.8rem; padding: 0; }
+/* a row: the counterparty, a bar to scale (the larger amount of both sides is the full track), the amount */
+.ties-list li { display: grid; grid-template-columns: minmax(0, auto) minmax(2.5rem, 1fr) auto; align-items: center; column-gap: 0.8rem; padding: 0.5rem 0;
+  border-bottom: 1px solid var(--rule); font-size: 0.95rem; }
+.ties-list .h { min-width: 0; overflow-wrap: normal; word-break: break-all; }
+.ties-list .num { color: var(--line); }
+.tie-bar { width: 100%; height: 6px; display: block; }
+.tie-bar rect { fill: var(--dust); opacity: 0.55; }
+.rows { list-style: none; margin: 0 0 1rem; padding: 0; }
+.rows li { padding: 0.6rem 0; border-bottom: 1px solid var(--rule); overflow-wrap: anywhere; }
+@media (min-width: 640px) { .ties { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+@media (max-width: 720px) {
+  .agent .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+  .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .card section { padding-top: 1.4rem; }
+  table.changed th, table.changed td { padding-right: 0.5rem; }   /* the four columns fit from 320 px */
+}
+.loop-body > section:first-child { border-top: 0; padding-top: 0.8rem; }
+
+/* Forced colours (Windows High Contrast): the UA recolours HTML but not SVG fill and stroke, and it drops a shape's
+   background, so the ring is drawn in the system colours and a filled circle stays filled (not the team's hollow one). */
+@media (forced-colors: active) {
+  .shape { border-color: CanvasText; }
+  .shape.w-other { forced-color-adjust: none; background: CanvasText; border-color: CanvasText; }
+  .tag.live::before { forced-color-adjust: none; }   /* the Live record dot (site.css) keeps its colour */
+  .ring .halo { stroke: GrayText; }
+  .ring .arc, .ring .ah { stroke: CanvasText; }
+  .ring .node circle, .ring .node rect, .ring .node.w-practice rect, .ring .node.w-house rect, .ring .node.w-operator rect,
+    .ring .node.w-team circle { fill: Canvas; stroke: CanvasText; }
+  .ring .node.w-other circle { fill: CanvasText; }
+  .ring .node text { fill: CanvasText; stroke: Canvas; }
+  .ring .mid, .ring .mid-u { fill: CanvasText; }
+  .tie-bar rect { fill: CanvasText; }
+}

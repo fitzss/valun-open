@@ -28,7 +28,18 @@
 //   - the tick also signs consents still waiting for them (normally the core has signed them already; an item with
 //     nothing left to sign is not work and never uses up the tick), reviews deliveries and sends welcome jobs, and
 //     poke() runs a tick about 200 ms after a change to one of their deals;
-//   - in mode sandbox they buy only from sandbox participants, and tell any other seller so.
+//   - in mode sandbox they buy only from sandbox participants, and tell any other seller so;
+//   - sandbox-exact accepts guarantee offers that name it as the creditor (fix inbox #84), so a newcomer alone can see
+//     an IOU backed: its own two agents as the issuer and the backer, sandbox-exact the creditor. A creditor only gains a
+//     promise, and accepting commits it to nothing, so it accepts each offer whose terms are valid for it (as a client's
+//     verify_guarantee checks them; in the deal mode, deals not ended in which the issuer pays it) within its own mandate
+//     (the core's accept checks it as payee toward the backer), at most 3 from one backer in 24 hours (as it buys at most
+//     3 jobs from one stranger), and declines the rest with a signed reason. It never calls, releases or offers one, and
+//     what it accepts as payment is unchanged: no coverage rule. sandbox-mallory does not answer guarantee offers.
+//   - they keep the debt an open tour needs (tourHolds): what a tour's step 2 moved from sandbox-exact's debt to the
+//     stranger onto sandbox-mallory stays there until that stranger's 3-cycle has cleared (step 4), or for at most
+//     TOUR_HOLD_MS. A set-off of the two agents alone leaves it (the clearing engine's server-only cycles, through
+//     pilot.keptForClients), and sandbox-mallory pays others with sandbox-exact's notes only above it.
 // With circulating credit off (modes off and bound) they behave exactly as before: payee only, the v15 mandate, and the
 // server signer signs nothing.
 import crypto from 'node:crypto';
@@ -37,6 +48,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
 import {statements, circulationStatements, termsHash, NETWORK, PROTOCOL} from './core.mjs';
+import {GUARANTEE_PROTOCOL, COVERS, COVERS_DEALS, DEAD_DEAL, guaranteeStatements} from './guarantees.mjs';
 import {statusClass} from './status.mjs';
 import {BOUND_NOTE_MS, SETOFF_MS, TRANSFER_MS, PRIOR_ACK} from './caps.mjs';
 import {classifyEdge, quoteDigest, MAX_AGE_MS} from './novation.mjs';
@@ -45,10 +57,12 @@ export const SERVICES = {
   'text-stats': {price: pc(3), keywords: ['text-stats', 'text stats', 'text statistics', 'word count']},
   notary: {price: pc(2), keywords: ['notary', 'notar', 'sha-256', 'sha256']},
 };
-const SERVICES_TEXT = `text-stats (${amt(pc(3))}): exact word/character/line counts, unique words, SHA-256 and the 10 most frequent words of your text. `
-  + `notary (${amt(pc(2))}): SHA-256 and byte length of your text. ` + 'Put the text in a ``` block, after TEXT: at the end, or as the only '
-  + 'quoted string in the description. Deterministic: you can check every number yourself; the delivery echoes the exact text '
-  + 'processed. I only do the work (payee).';
+// The agents' public offer (their services). It fits the 300 characters a profile holds on every network (the testnet's
+// prices are the longest), so it ends on a whole sentence: the text it replaces was cut mid-word ("...the only quoted
+// stri") on every agent page. ensure() updates a record that joined with an earlier text.
+export const SERVICES_TEXT = `text-stats (${amt(pc(3))}): word, character and line counts, unique words, SHA-256, the 10 most frequent words. `
+  + `notary (${amt(pc(2))}): SHA-256 and byte length. ` + 'Put the text in a ``` block, after TEXT:, or as the only quoted string. '
+  + 'Deterministic: check every number.';
 // payWithHeldNotes: the agent's pay_with_held_notes with circulating credit on.
 export const AGENTS = {
   'sandbox-exact': {display_name: 'Sandbox: exact results, always on', wrongOnPurpose: false, payWithHeldNotes: 'never',
@@ -84,6 +98,16 @@ const PERMANENT_REFUSALS = new Set(['mandate_exceeded', 'offer_not_authorized', 
 const refusalReason = e => e.code === 'offer_not_authorized'
   ? 'I cannot accept this offer: the server says it is no longer within your mandate (your owner changed your limits, or other commitments used them up). Make a new offer once it is.'
   : `I cannot accept this offer: accepting it would exceed my own mandate${typeof e.extra?.rule === 'string' ? ` (${e.extra.rule})` : ''}. Offer less, or try again later.`;
+// Guarantees (fix inbox #84): the agent that answers offers naming it as the creditor, how many it accepts from one
+// backer in 24 hours, and the refusals of the core's accept that trying again does not change (its own mandate, the
+// backer's, a party's key changed since the offer): it declines the offer then, with a signed reason.
+const GUARANTEE_CREDITOR = 'sandbox-exact';
+export const GUARANTEES_PER_BACKER_PER_DAY = 3;
+const GUARANTEE_REFUSALS = new Set(['mandate_exceeded', 'offer_not_authorized', 'key_changed']);
+const guaranteeRefusalReason = e => (e.code === 'offer_not_authorized'
+  ? 'I cannot accept this guarantee: the server says it is no longer within your mandate (your owner changed your limits, or other commitments used them up). Offer a new one once it is.'
+  : e.code === 'key_changed' ? 'I cannot accept this guarantee: a party\'s registered agent key is no longer the one its terms name. Offer a new one with the current keys.'
+    : `I cannot accept this guarantee: accepting it would exceed my own mandate${typeof e.extra?.rule === 'string' ? ` (${e.extra.rule})` : ''}. Offer a smaller cap, or try again later.`);
 // The decline of a seller the agents do not buy from: with circulating credit off, the v15 text; in mode sandbox, a
 // participant who is not in the sandbox (the agents buy only from sandbox participants there).
 const NOT_BUYING = 'I only sell (I do the work); I do not buy. ';
@@ -105,6 +129,9 @@ export const WELCOME = Object.freeze({title: 'Welcome job: text-stats', price: p
 const welcomeDescription = handle => `Your first paid job in the Valun sandbox: compute the exact text-stats of the text in the block below and deliver the result as JSON. sandbox-exact checks it exactly and pays you ${amt(WELCOME.price)} with a credit note.\n\`\`\`\n${WELCOME.text(handle)}\n\`\`\``;
 // poke(): a tick this long after a change to an agent's deal (or an enrollment), so the agents react within about 200 ms.
 const POKE_MS = 200;
+// How long the agents keep the debt a tour's step 2 moved onto sandbox-mallory for that tour's 3-cycle (tourHolds),
+// counted from the transfer: a tour stopped before step 4 can be run again within this time.
+export const TOUR_HOLD_MS = 24 * 3600e3;
 // The server signer signs only these: bound notes and their prior acknowledgments (997), set-off slots (998) and
 // transfer slots (999), for a timestamp at most the tracker's maximum age old and at most SIGN_AHEAD_MS ahead. A prior
 // acknowledgment is tracker v3.2's PA (parsePriorAckMessage), every other one an 80-byte note message.
@@ -286,6 +313,11 @@ export class Sandbox {
       const drifted = m && Object.entries(target).some(([k, v]) => JSON.stringify(m[k]) !== JSON.stringify(v));
       if (x && (!m?.expires_at || drifted || Date.parse(m.expires_at) - Date.now() < 7 * 864e5))
         p.setMandate(x, {...target, expires_at: new Date(Date.now() + MANDATE_DAYS * 864e5).toISOString()}, {by: 'operator'});
+      // Its public offer as this build words it: a record that joined with an earlier text is updated once (setProfile
+      // saves and audits only a real change). A refusal is logged; it never stops the agents.
+      if (x && x.services !== SERVICES_TEXT) {
+        try { p.setProfile(x, {services: SERVICES_TEXT}, {by: 'operator'}); } catch (e) { this.log(`sandbox: ${handle}'s services not updated: ${e.message}`); }
+      }
     }
     this.mandateMode = circulating;
   }
@@ -479,10 +511,55 @@ export class Sandbox {
     const ids = this.agentIds();
     return (await p.ledger()).some(l => l.issuer === d.payee && ids.has(l.recipient) && l.recipient !== d.payer && l.outstanding > 0);
   }
+  // What the agents keep for open tours, as a Map edge key -> PC: only sandbox-exact's edge to sandbox-mallory (X>M).
+  // A tour's step 2 pays M with X's note, which moves that much of X's debt from the stranger S onto M (X>M rises), and
+  // its step 4 clears the 3-cycle M>S>X>M through it. But every tour leaves M>X 1 PC higher (step 5), so once M>X was
+  // 2 PC (two tours in a row, or fewer with tours at once), the server's own set-off of X>M against M>X, made as soon
+  // as the next tour's step 2 raised X>M, took the whole leg, and that tour's step 4 waited for a set-off that could
+  // never be proposed (until its deadline); M paying another seller with X's notes could take it as well. So what a
+  // self-serve sandbox participant that is still active and in its sandbox time moved onto M this way, less what M
+  // moved back onto it (M paid it with X's notes), counted in the order applied, within TOUR_HOLD_MS and since the last
+  // set-off with that participant as a member that lowered X>M (its 3-cycle), is kept on X>M. The sum is left there by
+  // every set-off of the two agents alone (the clearing engine reads it through pilot.keptForClients) and by M's
+  // payments with X's notes (payByHeldNote: except what its payee keeps); a cycle with a client member, such as the
+  // 3-cycle, may use all of X>M. `except`: a participant whose part is left out.
+  tourHolds({except = null} = {}) {
+    const p = this.pilot, out = new Map();
+    const x = this.participant('sandbox-exact'), m = this.participant('sandbox-mallory');
+    if (!p.circulating || !x?.pubkey || !m?.pubkey) return out;
+    const k = `${x.pubkey}>${m.pubkey}`, now = p.now(), ids = this.agentIds(), cleared = new Map(), moves = [];
+    const recent = at => now - at <= TOUR_HOLD_MS;
+    for (const o of Object.values(p.s.setoffs || {})) {
+      const at = Date.parse(o.applied_at);
+      if (o.state !== 'applied' || !recent(at) || !o.edges.some(e => e.edge === k)) continue;
+      for (const id of o.members) if (!ids.has(id) && !(cleared.get(id) >= at)) cleared.set(id, at);
+    }
+    for (const t of Object.values(p.s.transfers || {})) {
+      if (t.state !== 'applied' || t.issuer?.id !== x.id) continue;
+      const onto = t.payee?.id === m.id && t.to_edge?.edge === k;           // the stranger paid M with X's note
+      const back = t.payer?.id === m.id && t.from_edge?.edge === k;         // M paid the stranger with X's note
+      const sid = onto ? t.payer?.id : back ? t.payee?.id : null, at = Date.parse(t.applied_at);
+      if (!sid || ids.has(sid) || !recent(at) || cleared.get(sid) >= at) continue;
+      moves.push({sid, at, amount: onto ? t.amount : -t.amount});
+    }
+    const held = new Map();
+    for (const {sid, amount} of moves.sort((a, b) => a.at - b.at)) {
+      held.set(sid, Math.max(0, (held.get(sid) ?? 0) + amount));
+    }
+    let kept = 0;
+    for (const [sid, v] of held) {
+      const s = p.s.participants[sid];
+      if (sid !== except && v > 0 && s?.sandbox_only && s.status === 'active' && !p.dormant(s)) kept += v;
+    }
+    if (kept > 0) out.set(k, kept);
+    return out;
+  }
   // sandbox-mallory (pay_with_held_notes prefer): a note of another sandbox agent it holds, when payment options say it
   // covers the price, can be spent now (no reason against it), the payee accepts that issuer and is present (its client
-  // signs as creditor at once, or the server does). Never again for a deal whose payee refused such a payment. The payer
-  // slots are signed by the server signer (op 'pay:<deal>:<T>:<X>:<Y>'). Returns the pay-by-transfer answer, or null.
+  // signs as creditor at once, or the server does), and what it holds beyond what the agents keep for open tours
+  // (tourHolds; the payee's own part may go back to it) covers the price too. Never again for a deal whose payee
+  // refused such a payment. The payer slots are signed by the server signer (op 'pay:<deal>:<T>:<X>:<Y>'). Returns the
+  // pay-by-transfer answer, or null.
   // Rule R1 for the server signer: every message it signs is rebuilt here (p.messageHex: its prior slot PA(A,B,X,p_AB,T)
   // of tracker v3.2, its new slots M) from values checked against the deal and the participants (the issuer it picked,
   // its own key, the payee's key, the price, T and the prior states), never taken from the template; the template's
@@ -491,9 +568,13 @@ export class Sandbox {
     const p = this.pilot;
     if (p.effectiveLimits(x).pay_with_held_notes !== 'prefer' || !p.circulationFor(x)) return null;
     if (p.transfersOf(d).some(t => t.state === 'refused')) return null;
-    const opts = await p.paymentOptions(x, d.id), ids = this.agentIds();
+    const opts = await p.paymentOptions(x, d.id), ids = this.agentIds(), kept = this.tourHolds({except: d.payee});
+    const beyondKept = h => {
+      const k = kept.get(`${h.issuer.pubkey}>${x.pubkey}`) ?? 0;
+      return k === 0 || h.spendable - k >= opts.price;
+    };
     const pick = opts.held_notes.find(h => ids.has(h.issuer.id) && h.issuer.id !== x.id && h.enough && h.payee_accepts && h.why_not === null
-      && (h.payee_consents === 'auto' || h.payee_consents === 'immediate'));
+      && (h.payee_consents === 'auto' || h.payee_consents === 'immediate') && beyondKept(h));
     if (!pick) return null;
     const tpl = await p.transferTemplate(x, d.id, pick.issuer.id), terms = d.agreement.terms, issuer = p.s.participants[pick.issuer.id], payee = p.s.participants[d.payee];
     const A = issuer?.pubkey, B = x.pubkey, C = payee?.pubkey, T = tpl.timestamp, a = terms.price.amount;
@@ -671,11 +752,66 @@ export class Sandbox {
     this.log(`sandbox: ${handle} sent the welcome job ${id} to ${q.handle}`);
   }
 
+  // ---------- circulating credit: guarantees, as the creditor (fix inbox #84; sandbox-exact only) ----------
+  // Why guarantee g is not valid for agent x as its creditor, as a clause after "I cannot accept this guarantee: "; null
+  // when it is. The checks of a client's verify_guarantee before it signs (valun-open client.py): the terms hash to
+  // terms_hash, are valun-guarantee/1 for this network, its tracker and unit, and name x with its current key as the
+  // creditor; they cover what the issuer owes x (no deals named) or, in the deal mode, 1 to 10 deals, each still one, not
+  // ended, in which the issuer pays x (the server's rule when the offer was made; a deal may have ended since).
+  guaranteeProblem(x, g) {
+    const p = this.pilot, t = g.terms ?? {}, issuer = p.s.participants[g.issuer]?.handle ?? g.issuer;
+    if (termsHash(t) !== g.terms_hash) return 'its terms do not hash to its terms_hash';
+    if (t.protocol !== GUARANTEE_PROTOCOL || t.network !== NETWORK || t.tracker_nft_id !== p.basis.nft || t.denomination !== p.basis.denomination || t.cap?.unit !== p.unit)
+      return `its terms are not ${GUARANTEE_PROTOCOL} for this network, its tracker and its unit`;
+    if (t.creditor?.id !== x.id || t.creditor?.pubkey !== x.pubkey) return 'its terms do not name me, with my current key, as the creditor';
+    if (t.covers === COVERS) return t.deals === undefined ? null : `it names deals but does not cover ${COVERS_DEALS}`;
+    if (t.covers !== COVERS_DEALS) return `it covers neither ${COVERS} nor ${COVERS_DEALS}`;
+    if (!Array.isArray(t.deals) || !t.deals.length) return 'it covers deals but names none';
+    for (const id of t.deals) {
+      const d = typeof id === 'string' && Object.hasOwn(p.s.deals, id) ? p.sweep(p.s.deals[id]) : null;
+      if (!d || d.payer !== g.issuer || d.payee !== x.id) return `${typeof id === 'string' ? id.slice(0, 40) : 'a deal it names'} is not a deal in which ${issuer} pays me`;
+      if (DEAD_DEAL.has(d.status)) return `deal ${d.id} has ended (${d.status}), so it would cover nothing there`;
+    }
+    return null;
+  }
+  // Guarantees agent x accepted from backer `backerId` in the last 24 hours.
+  guaranteesToday(x, backerId) {
+    const since = this.now() - 864e5;
+    return Object.values(this.pilot.s.guarantees || {}).filter(g => g.creditor === x.id && g.backer === backerId && g.acceptance?.by === x.id && Date.parse(g.acceptance.at) > since).length;
+  }
+  // An offer naming agent x as the creditor (inbox guarantees.to_answer): accepted, its acceptance signed with x's key,
+  // when guaranteeProblem finds nothing, x accepted fewer than GUARANTEES_PER_BACKER_PER_DAY from its backer in the last
+  // 24 hours and the core's accept allows it (x's own mandate as payee toward the backer, the backer's still); otherwise
+  // declined with a signed reason. One that is no longer an offer to x (withdrawn, expired) is NOTHING.
+  async guarantee(handle, x, item) {
+    const p = this.pilot, book = p.guarantees, g = book?.all()[item.guarantee_id];
+    if (!g || g.creditor !== x.id || book.sweep(g).state !== 'offered') return NOTHING;
+    const h = g.terms_hash, who = id => p.s.participants[id]?.handle ?? id;
+    const decline = reason => this.sign(handle, guaranteeStatements.decline(h, reason)).then(signature => book.decline(x, g.id, {terms_hash: h, signature, reason}));
+    const problem = this.guaranteeProblem(x, g);
+    if (problem) {
+      this.log(`sandbox: ${handle} declines guarantee ${g.id}: ${problem}`);
+      return decline(`I cannot accept this guarantee: ${problem}. Offer a new one.`);
+    }
+    if (this.guaranteesToday(x, g.backer) >= GUARANTEES_PER_BACKER_PER_DAY)
+      return decline(`Limit reached: I accept at most ${GUARANTEES_PER_BACKER_PER_DAY} guarantees from one backer in 24 hours. Offer again tomorrow.`);
+    const signature = await this.sign(handle, guaranteeStatements.accept(h));
+    try { await book.accept(x, g.id, {terms_hash: h, signature}); }
+    catch (e) {
+      if (e?.code === 'not_open') return NOTHING;                     // it ended meanwhile (withdrawn, expired)
+      if (!GUARANTEE_REFUSALS.has(e?.code)) throw e;
+      this.log(`sandbox: ${handle} declines guarantee ${g.id}: acceptance refused (${e.code})`);
+      return decline(guaranteeRefusalReason(e));
+    }
+    this.log(`sandbox: ${handle} accepted guarantee ${g.id}: ${who(g.backer)} backs what ${who(g.issuer)} owes it, up to ${amt(g.terms.cap.amount)}`);
+  }
+
   // ---------- the loop ----------
   // What agent x has to do, in tick order, as [method, item, key] (key: what the backoff is kept by). With circulating
   // credit on: consents it still has to sign (normally the core has signed them already, and they are not listed),
-  // deliveries to review (as payer), then offers to answer, deliveries to make, and (sandbox-exact) welcome jobs to
-  // send. Otherwise only the offers and the deliveries, as before.
+  // deliveries to review (as payer), then offers to answer, deliveries to make, (sandbox-exact) welcome jobs to send and,
+  // last, (sandbox-exact) guarantee offers naming it as the creditor. Otherwise only the offers and the deliveries, as
+  // before.
   itemsFor(handle, x) {
     const p = this.pilot, box = p.inbox(x), circulating = p.circulating, out = [];
     if (circulating) {
@@ -685,6 +821,7 @@ export class Sandbox {
     for (const i of box.respond ?? []) out.push(['answer', i, i.deal_id]);
     for (const i of box.deliver ?? []) out.push(['deliver', i, i.deal_id]);
     if (circulating && handle === WELCOME_FROM) for (const q of this.welcomeTargets()) out.push(['welcome', q, `welcome:${q.id}`]);
+    if (circulating && handle === GUARANTEE_CREDITOR) for (const i of box.guarantees?.to_answer ?? []) out.push(['guarantee', i, `guarantee:${i.guarantee_id}`]);
     return out;
   }
 
@@ -739,12 +876,12 @@ export class Sandbox {
       if (this.again) { this.again = false; this.poke(); }
     }
   }
-  // Circulating credit: a change to a deal of one of the agents, or an enrollment of a sandbox participant (its welcome
-  // job), asks for a tick (poke).
+  // Circulating credit: a change to a deal of one of the agents, to a guarantee naming one as the creditor (an offer it
+  // may answer), or an enrollment of a sandbox participant (its welcome job), asks for a tick (poke).
   changed(c) {
     if (!this.running || !this.pilot.circulating) return;
     const ids = this.agentIds();
-    if (c?.deal ? ids.has(c.deal.payer) || ids.has(c.deal.payee) : !!c?.participant?.sandbox_only) this.poke();
+    if (c?.deal ? ids.has(c.deal.payer) || ids.has(c.deal.payee) : c?.guarantee ? ids.has(c.guarantee.creditor) : !!c?.participant?.sandbox_only) this.poke();
   }
   // A tick POKE_MS from now (one per burst of changes); nothing while the loop is stopped or circulating credit is off.
   poke() {
@@ -757,8 +894,10 @@ export class Sandbox {
     await this.ensure();
     // Self-serve sandbox participants (Pilot.joinSandbox) may deal only with these.
     this.pilot.sandboxIds = new Set(Object.keys(AGENTS).map(h => this.keys[h]?.id).filter(Boolean));
-    // The server signer for these agents (signs only with circulating credit on), and the changes that poke the loop.
+    // The server signer for these agents (signs only with circulating credit on), what they keep for open tours (the
+    // clearing engine reads it), and the changes that poke the loop.
     this.pilot.serverSigner = this.signer;
+    this.pilot.keptForClients = () => this.tourHolds();
     this.pilot.changeListeners?.add(this.onChange);
     if (!this.records) this.log(`sandbox: ${RECORDS_FILE} cannot be read; the server signs nothing for the sandbox agents until it can`);
     this.running = true;
@@ -768,7 +907,8 @@ export class Sandbox {
     this.renew.unref?.();
     return this;
   }
-  // Stops the loop (the server signer stays: the core still signs for the agents at apply time).
+  // Stops the loop (the server signer stays: the core still signs for the agents at apply time; so does what they keep
+  // for open tours).
   stop() {
     this.running = false;
     clearInterval(this.timer); clearInterval(this.renew);

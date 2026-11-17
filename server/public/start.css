@@ -1,0 +1,226 @@
+/* Try Valun (public/start.html, served at /start): the first-use page. public/site.css comes first and gives the
+   tokens, the type, the header and footer, buttons, labels (.tag), notes, command blocks (.cmd, .copy, .expect), lists,
+   tables and disclosures; this file adds what only this page has: the path chooser, the four paths drawn as routes of
+   numbered steps, the live anchoring line, and lists of disclosures for what to do when something fails. One dark
+   theme, from 320px up; no external resource; nothing moves by itself. */
+
+/* the opening: a title, one sentence, and the way to ask for help */
+.start .intro { padding: 2.2rem 0 1.2rem; }
+.start .intro h1 { margin: 0 0 1rem; font-size: clamp(2.3rem, 7.6vw, 3.9rem); line-height: 1.04; letter-spacing: -0.02em; max-width: 12em; }
+.start .intro .lede { margin: 0 0 0.4rem; max-width: 35em; }
+.stuck { margin: 0; }
+.stuck a { display: inline-flex; align-items: center; min-height: 44px; font: 400 0.84rem/1.3 var(--mono); color: var(--dust); text-decoration-color: var(--rule-strong); }
+.stuck a:hover { color: var(--line); }
+
+/* the chooser beside the paths (wide screens), or above them */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.rail { padding: 0.6rem 0 1.2rem; }
+.rail h2 { margin: 0 0 0.7rem; font: 400 0.98rem/1.4 var(--sans); letter-spacing: 0; color: var(--dust); }
+.chooser { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+.chooser li { border-bottom: 1px solid var(--rule); }
+/* a path: its name, what it is, what it needs; the bar on its left is the route it starts (thicker when chosen) */
+.chooser a { position: relative; display: block; padding: 0.72rem 0.8rem 0.78rem 1.15rem; color: var(--line); text-decoration: none; }
+.chooser a::before { content: ""; position: absolute; left: 0; top: 0.8rem; bottom: 0.8rem; width: 1px; background: var(--rule-strong); }
+.chooser a:hover::before { background: var(--dust); }
+.chooser a[aria-selected="true"] { background: var(--panel); }
+.chooser a[aria-selected="true"]::before { top: 0; bottom: 0; width: 3px; background: var(--line); }
+.chooser .t { display: block; font-size: 1.1rem; font-weight: 400; line-height: 1.3; }
+.chooser .d { display: block; margin-top: 0.15rem; color: var(--dust); font-size: 0.9rem; line-height: 1.45; }
+.chooser .n { display: none; }
+/* the rest of the page, listed under the chooser on wide screens */
+.more { display: none; }
+
+/* a path */
+.path { padding: 1.4rem 0 2.6rem; }
+.path[hidden] { display: none; }
+.path:focus-visible { outline-offset: 8px; }
+.path > h2 { margin: 0 0 0.8rem; font-size: clamp(1.9rem, 5.4vw, 2.7rem); line-height: 1.08; letter-spacing: -0.015em; }
+.path-lede { max-width: 38em; font-size: 1.08rem; }
+.path h3 { margin: 2.2rem 0 0.9rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-size: 1.2rem; }
+.path h4 { margin: 0.1rem 0 0.6rem; font-size: 1.08rem; font-weight: 500; letter-spacing: 0; }
+
+/* before you start: what you need, approve, keep, and make public */
+.facts { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.facts > div { min-width: 0; padding: 0.85rem 0 0.95rem; border-bottom: 1px solid var(--rule); }
+.facts > div:first-child { padding-top: 0.15rem; }
+.facts dt { margin: 0 0 0.3rem; font: 400 0.8rem/1.4 var(--mono); color: var(--dust); }
+.facts dd { margin: 0; font-size: 0.97rem; line-height: 1.58; }
+
+/* the steps: a route of numbered nodes joined by a line, like the mark's triangle */
+.steps { list-style: none; margin: 0; padding: 0; counter-reset: step; max-width: 46em; }
+.steps > li { counter-increment: step; position: relative; min-width: 0; padding: 0 0 1.9rem 2.7rem; }
+.steps > li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 1.75rem; height: 1.75rem; box-sizing: border-box;
+  border: 1px solid var(--line); border-radius: 50%; background: var(--space); color: var(--line); font: 400 0.78rem/1.65rem var(--mono); text-align: center; }
+.steps > li::after { content: ""; position: absolute; left: 0.875rem; top: 2.05rem; bottom: 0.3rem; width: 1px; background: var(--rule-strong); }
+.steps > li:last-child { padding-bottom: 0.4rem; }
+.steps > li:last-child::after { display: none; }
+.steps .cmd { margin-top: 0.4rem; }
+
+/* what you should see: the readout under a command */
+.seen { margin: 0 0 1.3rem; padding: 0.15rem 0 0.2rem 0.95rem; border-left: 1px solid var(--rule-strong); }
+.seen p { margin: 0; }
+.seen .expect-k { margin: 0 0 0.25rem; font: 400 0.76rem/1.4 var(--mono); color: var(--line); }
+.cmd + .seen { margin-top: -0.3rem; }
+/* what you should see, mode by mode */
+.seen .dots { margin: 0.45rem 0 0; }
+.seen .dots li:last-child { margin-bottom: 0; }
+
+/* Every disclosure on this page shows its state with a chevron (site.css draws summaries as flex rows, without the
+   browser's marker): pointing right while closed, down while open. It adds no text. */
+.start summary { list-style: none; }
+.start summary::-webkit-details-marker { display: none; }
+.start summary::before { content: ""; flex: none; align-self: flex-start; width: 0.45rem; height: 0.45rem; margin: 0.5em 0.6rem 0 0.15rem;
+  border-right: 1.5px solid var(--dust); border-bottom: 1.5px solid var(--dust); transform: rotate(-45deg); transition: transform .15s; }
+.start details[open] > summary::before { transform: rotate(45deg); }
+.start summary:hover::before { border-color: var(--line); }
+.start summary { align-items: flex-start; line-height: 1.45; }
+.tb { padding: 0 0 0.6rem 1.35rem; max-width: 46em; }
+.tb > p { margin: 0 0 0.7rem; }
+
+/* A command block inside a list item is not inline code: site.css's "li code" frame and padding would draw on its
+   lines. Inline code in a summary, a table header or a step title reads as it does in a paragraph. */
+.start .cmd pre code { border: 0; padding: 0; border-radius: 0; font-size: inherit; overflow-wrap: normal; }
+.start summary code, .start th code, .start h4 code { font-size: 0.86em; color: var(--line); border: 1px solid var(--rule); padding: 0.05em 0.4em;
+  border-radius: 3px; overflow-wrap: anywhere; }
+
+/* the ways to connect an app, each with its evidence */
+.hosts { margin: 0 0 1.2rem; }
+.hosts details { padding: 0.15rem 0; max-width: 46em; }
+.hosts details[open] { padding-bottom: 0.9rem; }
+.hosts details > :not(summary) { margin-left: 1.35rem; }
+.hosts summary { flex-wrap: wrap; row-gap: 0.1rem; }
+.hosts summary .h { flex: 1 1 0%; min-width: 0; font-weight: 400; }
+.hosts summary .ev { flex-basis: 100%; padding-left: 1.35rem; font: 400 0.75rem/1.45 var(--mono); color: var(--dust); }
+/* what the one-line route will do, read before pasting it */
+.hosts .note { margin: 0.4rem 0 1rem 1.35rem; }
+
+/* an alternative inside a step, folded */
+.alt { margin: 0.2rem 0 0.4rem; }
+.alt details, details.alt { border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+details.alt > :not(summary) { margin-left: 1.35rem; }
+
+/* checks: what to look at, and where */
+.checks { list-style: none; margin: 0; padding: 0; max-width: 46em; }
+.checks > li { padding: 0.7rem 0 0.75rem; border-bottom: 1px solid var(--rule); }
+.checks > li:first-child { padding-top: 0.15rem; }
+.checks strong { font-weight: 500; }
+.checks .cmd { margin: 0.5rem 0 0.4rem; }
+.checks .small { margin: 0; }
+
+/* what to do when it fails: one line each, opened when it is yours */
+.trouble, .issues, .refs { max-width: 46em; }
+.trouble summary, .issues summary { font-weight: 400; }
+.trouble .tb, .issues .tb { color: var(--dust); font-size: 0.95rem; }
+.trouble .tb code, .issues .tb code, .issues summary code, .trouble summary code { color: var(--line); }
+.trouble .tb .cmd { margin-bottom: 0.9rem; }
+
+/* the tour's five steps; the two that cancel a loop carry the rainbow, which on this site means a loop that cleared */
+.tour { margin: 0.4rem 0 1.2rem; padding: 0 0 0 1.25rem; max-width: 44em; }
+.tour li { margin: 0 0 0.45rem; padding-left: 0.2rem; }
+.tour li::marker { font: 400 0.82rem var(--mono); color: var(--dust); }
+.clears { background-image: var(--rainbow); background-size: 100% 2px; background-position: 0 100%; background-repeat: no-repeat; padding-bottom: 3px; }
+
+/* the public records */
+.records { list-style: none; margin: 0 0 0.9rem; padding: 0; max-width: 44em; }
+.records li { padding: 0.32rem 0; border-bottom: 1px solid var(--rule); }
+.records li:first-child { border-top: 1px solid var(--rule); }
+.records a { font-family: var(--mono); font-size: 0.9rem; }
+
+/* anchoring right now: live from /pilot/v1/chain (start.js), or where to read it */
+.live-now { max-width: 46em; margin: 0.3rem 0 1.4rem; padding: 0.85rem 1rem 0.95rem; border: 1px solid var(--rule); background: var(--panel); }
+.live-now p { margin: 0 0 0.35rem; font-size: 0.95rem; }
+.live-now .live-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; color: var(--line); font-weight: 400; }
+.live-now .live-when { margin: 0.55rem 0 0; font: 400 0.76rem/1.45 var(--mono); color: var(--dust); }
+.live-now .reread { margin-top: 0.7rem; }
+.live-now .reread[hidden] { display: none; }
+
+/* notes inside a path and after it */
+.path .note, .shared .note { max-width: 46em; }
+.shared .note { margin-top: 2rem; }
+.note .dots li { margin-bottom: 0.55rem; }
+.note .btn { margin-top: 0.4rem; }
+
+/* plain bulleted lists */
+.dots { margin: 0 0 1rem; padding: 0 0 0 1.15rem; max-width: 44em; }
+.dots li { margin: 0 0 0.45rem; }
+.dots li::marker { color: var(--dust); }
+
+/* the shared sections after the paths */
+.section-lede { max-width: 38em; font-size: 1.05rem; }
+.shared h3 { margin: 1.8rem 0 0.7rem; font-size: 1.15rem; }
+/* Backing's four acts, one under another at every width: their commands hold words that never break (a token file named
+   for a handle, a JSON argument), which a half column cut off. */
+.acts { display: grid; grid-template-columns: minmax(0, 1fr); }
+.act { min-width: 0; }
+.act > p { margin-bottom: 0.7rem; }
+.act .alt { margin: 0.2rem 0 0.4rem; }
+.fold { margin-top: 0.4rem; }
+.fold[open] > summary { margin-bottom: 0.4rem; }
+.compat caption { caption-side: top; }
+.compat th[scope="row"] { width: 36%; font-weight: 400; }
+.compat td { color: var(--dust); }
+.issues { margin-bottom: 1.2rem; }
+.k { margin: 0 0 0.35rem; font: 400 0.76rem/1.4 var(--mono); color: var(--dust); }
+.two { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.4rem 2.4rem; max-width: 60em; }
+.two > div { min-width: 0; }
+.pairs { margin: 0; max-width: 46em; }
+.pairs > div { padding: 0.8rem 0 0.9rem; border-bottom: 1px solid var(--rule); }
+.pairs > div:first-child { padding-top: 0.2rem; }
+.pairs > div:last-child { border-bottom: 0; }
+.pairs dt { margin: 0 0 0.3rem; font-weight: 500; }
+.pairs dd { margin: 0; }
+.pairs dd .dots { margin: 0.6rem 0; }
+.trouble-all dd { color: var(--dust); font-size: 0.95rem; }
+.trouble-all dd code { color: var(--line); }
+.limits th[scope="row"] { width: 9.5em; font: 400 0.8rem/1.6 var(--mono); color: var(--dust); }
+.refs summary { font-size: 1.12rem; font-weight: 400; }
+.refs .tb { padding-top: 0.3rem; }
+
+/* where to report */
+.report .cta { margin: 1.2rem 0 1.6rem; }
+.report .two { margin-bottom: 0.6rem; }
+
+/* the line start.js writes when Copy has copied (or not): read by screen readers, not shown */
+.vh { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0);
+  clip-path: inset(50%); white-space: nowrap; }
+
+@media (min-width: 720px) {
+  .chooser .n { display: block; margin-top: 0.4rem; font: 400 0.75rem/1.45 var(--mono); color: var(--dust); }
+  .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 2.2rem; }
+  .facts > div:nth-child(2) { padding-top: 0.15rem; }
+  .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 720px) and (max-width: 1059px) {
+  .chooser { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.6rem; }
+}
+@media (min-width: 1060px) {
+  .start .intro { padding: 3rem 0 1.6rem; }
+  .layout { grid-template-columns: 17rem minmax(0, 1fr); column-gap: 3.6rem; }
+  .rail { padding-top: 1.55rem; }
+  .more { display: block; list-style: none; margin: 1.6rem 0 0; padding: 0; }
+  .more li { margin: 0; }
+  .more a { display: inline-flex; align-items: center; min-height: 32px; color: var(--dust); font-size: 0.9rem; text-decoration: none; }
+  .more a:hover { color: var(--line); text-decoration: underline; text-decoration-color: var(--dust); }
+}
+/* the chooser stays in sight while you read, where the screen is tall enough to hold it */
+@media (min-width: 1060px) and (min-height: 720px) {
+  .rail { position: sticky; top: 0; }
+}
+/* Forced colours (Windows contrast themes) turn backgrounds into Canvas, which would hide the bar that marks the chosen
+   path: the bars keep system colours, the chosen one Highlight. */
+@media (forced-colors: active) {
+  .chooser a::before { forced-color-adjust: none; background: GrayText; }
+  .chooser a:hover::before { background: CanvasText; }
+  .chooser a[aria-selected="true"]::before { background: Highlight; }
+}
+@media (max-width: 480px) {
+  .start .intro { padding-top: 1.4rem; }
+  .start .intro .lede { font-size: 1.05rem; }
+  .shared { padding: 2.2rem 0 1.6rem; }
+  .path { padding-bottom: 1.6rem; }
+  .chooser a { padding-top: 0.62rem; padding-bottom: 0.66rem; }
+  .steps > li { padding-left: 2.3rem; }
+  .compat { font-size: 0.9rem; }
+  .compat th[scope="row"] { width: 40%; }
+  .limits th[scope="row"] { width: 7.2em; }
+}

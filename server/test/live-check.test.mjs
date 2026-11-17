@@ -155,6 +155,20 @@ test('live-check: ALARM, fail closed and OOM lines fail; other error lines warn;
   assert.equal(p.some(x => /VmRSS|logs/.test(x.name)), false);
 });
 
+test('live-check: anchor.inconsistent (the tracker\'s records of its box disagree with it) is a WARN of its own, never a FAIL (fix inbox #62)', async t => {
+  const L = await load(t); if (!L) return;
+  const s = healthy();
+  s.fly.logs.lines.push('2026-11-15T02:01:39Z app[x] ord [info]Pilot: anchor.inconsistent: tracker box f80c0c12 (height 1010): the rows give digest 6e62 under basis-avl/1, not e63e, the digest the tracker says its confirmed box commits: the tracker\'s records of what that box commits disagree with it; the tracker builds no redemption until its records agree with the box');
+  s.fly.logs.lines.push('app[x] ord [info]Pilot: anchor.inconsistent: tracker box 0a0b (height 1011): the rows cannot be digested as the tracker digests its notes (rows[3] Error: x)');
+  const r = L.evaluate(s);
+  assert.deepEqual([levels(r, 'ALARM'), levels(r, 'anchor.inconsistent'), levels(r, 'errors in the recent logs'), worst(r)], [['ok'], ['warn'], [], 'warn']);
+  assert.match(r.find(x => x.name.includes('anchor.inconsistent')).detail, /^2; e\.g\. 2026-11-15T02:01:39Z/);
+  assert.deepEqual(levels(L.evaluate(healthy()), 'anchor.inconsistent'), [], 'no line, no check line');
+  // an ALARM line still fails, whatever else the logs hold
+  s.fly.logs.lines.push('app[1] [warn]Pilot: ALARM: the pilot tracker reports no capabilities');
+  assert.deepEqual(levels(L.evaluate(s), 'ALARM'), ['fail']);
+});
+
 test('live-check: pilot writes refused (MIG-1, release v16.1: GET /pilot/v1/info writes_refused) fail, with the reason and the fix; none in a healthy answer', async t => {
   const L = await load(t); if (!L) return;
   assert.deepEqual(levels(L.evaluate(healthy(), {expectMode: 'on'}), 'refused'), []);
@@ -168,4 +182,64 @@ test('live-check: an unreachable server fails at once', async t => {
   const L = await load(t); if (!L) return;
   const r = L.evaluate({status: {error: 'fetch failed'}, info: {error: 'fetch failed'}});
   assert.deepEqual(r.map(x => x.level), ['fail', 'fail']);
+  // The same with the health read gathered (it got no answer either: no route seen, so as before).
+  assert.deepEqual(L.evaluate({health: {error: 'fetch failed'}, status: {error: 'fetch failed'}, info: {error: 'fetch failed'}}).map(x => x.level), ['fail', 'fail']);
+});
+
+// Fix inbox #64: the network's own health (GET /pilot/v1/health) and its tracker's pin; the legacy desk optional.
+const V44 = 'Basis tracker v4.4 (anchored netting): Valun fork commit 321f09ba33a4358eb9af7058f9478cc46ca57e8f (branch circulating-credit-v4 on Basis upstream 43e2173), as the tracker reports itself';
+const withHealth = (pin = PIN) => ({...healthy(), health: {ok: true, network: 'valun-pilot-1', tracker: {reachable: true, pin}}});
+
+test('live-check: a server with GET /pilot/v1/health: it must answer; the pin is the network tracker\'s; a desk that does not answer is only a warning', async t => {
+  const L = await load(t); if (!L) return;
+  const s = withHealth();
+  const r = L.evaluate(s, {expectMode: 'on'});
+  assert.equal(worst(r), 'ok', JSON.stringify(r, null, 1));
+  assert.deepEqual(levels(r, 'GET /pilot/v1/health'), ['ok']);
+  // The desk down (503 desk_unavailable, or no answer): a warning, and every other check still runs.
+  for (const status of [{error: 'HTTP 503', code: 503}, {error: 'fetch failed'}, undefined]) {
+    const d = withHealth(); d.status = status;
+    const rd = L.evaluate(d, {expectMode: 'on'});
+    assert.deepEqual(levels(rd, 'GET /api/status'), ['warn'], JSON.stringify(status));
+    assert.equal(worst(rd), 'warn');
+    assert.deepEqual([levels(rd, 'tracker pin'), levels(rd, 'contract'), levels(rd, 'reconciliation'), levels(rd, 'VmRSS')], [['ok'], ['ok'], ['ok'], ['ok']]);
+  }
+  // The pin read is the network's (GET /pilot/v1/health), not the desk's.
+  const p = withHealth(`${PIN} (binary not pinned)`);
+  assert.deepEqual(levels(L.evaluate(p), 'pinned'), ['fail'], 'the network tracker is not pinned, whatever the desk says');
+  const n = withHealth(V44); n.info.network = 'valun-testnet-1'; n.status.basis.pin = PIN;
+  assert.deepEqual(levels(L.evaluate(n, {expectMode: 'on'}), 'tracker pin'), ['ok'], 'the testnet\'s tracker v4.4, read from the network');
+  const none = withHealth(null);
+  assert.deepEqual(levels(L.evaluate(none), 'pin names tracker v3.2'), ['fail'], 'no capabilities on the network tracker, circulation on');
+});
+
+test('live-check: GET /pilot/v1/health 503 (the network\'s tracker does not answer) fails at once; a server from before the route (401 there) is read as before', async t => {
+  const L = await load(t); if (!L) return;
+  const s = withHealth(); s.health = {error: 'HTTP 503', code: 503};
+  const r = L.evaluate(s);
+  assert.deepEqual(r.map(x => [x.level, x.name]), [['fail', 'GET /pilot/v1/health (the network\'s tracker answers)']]);
+  // Today's testnet answers an unknown pilot route 401: the pin from /api/status, which must answer.
+  const old = {...healthy(), health: {error: 'HTTP 401', code: 401}};
+  const ro = L.evaluate(old, {expectMode: 'on'});
+  assert.equal(worst(ro), 'ok');
+  assert.deepEqual(levels(ro, 'GET /pilot/v1/health'), [], 'no health line for a server without the route');
+  old.status = {error: 'HTTP 502', code: 502};
+  assert.deepEqual(L.evaluate(old).map(x => [x.level, x.name]), [['fail', 'GET /api/status']]);
+});
+
+test('live-check --fly: with the trackers\' folders (fix inbox #64) the network\'s tracker must run and the demo tracker\'s absence is a warning; without them, both must run as before', async t => {
+  const L = await load(t); if (!L) return;
+  const s = healthy(); s.fly.mem.tracker_dirs = ['/data/tracker', '/data/pilot/tracker'];
+  const r = L.evaluate(s);
+  assert.deepEqual(levels(r, 'the network\'s tracker are running'), ['ok']);
+  assert.deepEqual(levels(r, 'demo tracker'), []);
+  assert.deepEqual(levels(r, 'both trackers'), []);
+  const d = healthy(); d.fly.mem.trackers_kb = [13740]; d.fly.mem.tracker_dirs = ['/data/pilot/tracker'];
+  const rd = L.evaluate(d);
+  assert.deepEqual([levels(rd, 'the network\'s tracker are running'), levels(rd, 'demo tracker')], [['ok'], ['warn']]);
+  assert.match(rd.find(x => x.name.includes('demo tracker')).detail, /503 desk_unavailable until a restart/);
+  const p = healthy(); p.fly.mem.trackers_kb = [13024]; p.fly.mem.tracker_dirs = ['/data/tracker'];
+  assert.deepEqual(levels(L.evaluate(p), 'the network\'s tracker are running'), ['fail']);
+  const a = healthy(); a.fly.mem.app_kb = 0; a.fly.mem.tracker_dirs = ['/data/tracker', '/data/pilot/tracker'];
+  assert.deepEqual(levels(L.evaluate(a), 'the network\'s tracker are running'), ['fail'], 'no app');
 });

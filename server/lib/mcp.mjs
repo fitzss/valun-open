@@ -160,3 +160,14 @@ export function createMcp({service, store}) {
   }
   return {handle, tools: listed};
 }
+
+// The answer to msg when the desk cannot run it (lib/http.mjs: the legacy desk unavailable beside the network, fix
+// inbox #64), with no desk needed. Exactly the messages handle() answers get one, with the id handle() would give, and
+// the JSON-RPC error {code: -32000 (a server error), message, data: {error}}. Notifications and a client's responses
+// get none (null), as from handle(): a notifications/ method with an id included.
+export function unavailableReply(msg, {error, message}) {
+  const valid = !!msg && typeof msg === 'object' && msg.jsonrpc === '2.0' && typeof msg.method === 'string';
+  if (valid && (!('id' in msg) || msg.method.startsWith('notifications/'))) return null;   // a notification
+  if (!valid && msg && (msg.result !== undefined || msg.error !== undefined)) return null;   // a client's response
+  return {jsonrpc: '2.0', id: valid ? msg.id : msg?.id ?? null, error: {code: -32000, message, data: {error}}};
+}

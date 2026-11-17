@@ -11,7 +11,8 @@
 //
 // Notation: a node is a participant's current public key; an edge 'I>R' (I owes R) has `available` PC that may be
 // cleared (outstanding less what live novations reserve). A cycle I1>I2, I2>I3, ..., Ik>I1 lowered by its smallest
-// available amount d changes no node's net position; its score is d x k, the gross debt it removes.
+// available amount d changes no node's net position; its score is d x k, the gross debt it removes. An edge between two
+// members the server runs may keep part of what is available for cycles with a member it does not run (`kept`).
 import crypto from 'node:crypto';
 import {pc, ON_TESTNET} from './units.mjs';
 import {SETOFF_TTL_MS} from './caps.mjs';
@@ -58,12 +59,16 @@ const cmpStr = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 //    reconciled (its reconciliation row is match and exact), reserved (PC reserved by live set-offs), exclusive (held by a
 //    live transfer, or by a live set-off with a client signer), busy (a deal on the pair is issuing_note or
 //    completion_awaiting_owner, a set-off on it is being applied, or an earlier payment attempt of a deal not yet paid
-//    would change it: Pilot.paymentAttemptHolds, decision D-1)}]}
+//    would change it: Pilot.paymentAttemptHolds, decision D-1), kept (PC of an edge between two server-run members
+//    kept for cycles with a client member: Pilot.keptForClients; absent is 0)}]}
 // An edge is eligible when both keys are current keys, both participants are clearing members, its reconciliation row
 // is match and exact, it is not held exclusively or busy, and available = outstanding - reserved >= 1; in mode sandbox
 // both participants are sandbox participants. Returns {nodes: Map key -> {key, id, server_run, present}, edges: Map
-// edge -> {key, from, to, available, total, timestamp, signature, server_only}, out: Map key -> [edge keys],
+// edge -> {key, from, to, available, total, timestamp, signature, server_only, kept}, out: Map key -> [edge keys],
 // eligible_edges, excluded: {reason: count}} (counts only; edges with nothing outstanding are not counted).
+// kept (at most available; 0 unless the edge is server-only): a cycle whose members are all server-run (a server-only
+// cycle) leaves that much on the edge; a cycle with a client member may use all of it. The sandbox agents keep the debt
+// that an open tour's 3-cycle needs this way (lib/pilot/sandbox.mjs tourHolds).
 export const EXCLUSION_REASONS = Object.freeze(['not_current_key', 'not_member', 'sandbox_only', 'not_reconciled', 'busy', 'reserved']);
 export function eligibleGraph(snapshot) {
   const byKey = new Map();
@@ -78,8 +83,10 @@ export function eligibleGraph(snapshot) {
         : e.exclusive || e.outstanding - (e.reserved ?? 0) < 1 ? 'reserved' : null;
     if (why) { excluded[why] += 1; continue; }
     const k = e.edge ?? edgeKeyOf(e.issuer_pubkey, e.recipient_pubkey), from = node(a), to = node(b);
-    edges.set(k, {key: k, from: from.key, to: to.key, available: e.outstanding - (e.reserved ?? 0), total: e.total, timestamp: e.timestamp ?? 0,
-      signature: e.signature ?? null, server_only: from.server_run && to.server_run});
+    const available = e.outstanding - (e.reserved ?? 0), serverOnly = from.server_run && to.server_run;
+    const kept = serverOnly && Number.isSafeInteger(e.kept) && e.kept > 0 ? Math.min(e.kept, available) : 0;
+    edges.set(k, {key: k, from: from.key, to: to.key, available, total: e.total, timestamp: e.timestamp ?? 0,
+      signature: e.signature ?? null, server_only: serverOnly, kept});
     if (!out.has(from.key)) out.set(from.key, []);
     out.get(from.key).push(k);
   }
@@ -98,14 +105,20 @@ export function presentGraph(graph) {
   return {...graph, nodes, edges, out};
 }
 
+// What a cycle with `clientMembers` members the server does not run may take from edge `e` when `left` PC of it are
+// left: all of it, unless every member is server-run (a server-only cycle), which leaves the edge's kept PC.
+const usable = (e, left, clientMembers) => left - (clientMembers === 0 ? e?.kept ?? 0 : 0);
 // The cycle record every search returns: {edges (keys, in cycle order), nodes (keys; nodes[i] is edges[i]'s issuer),
-// length, amount (the smallest available amount), min_timestamp (the oldest edge note), client_members (members not
-// run by the server), set (the sorted edge keys, for ties), set_id (edgeSetId)}.
+// length, amount (the smallest available amount; for a server-only cycle, less what each edge keeps), min_timestamp
+// (the oldest edge note), client_members (members not run by the server), set (the sorted edge keys, for ties), set_id
+// (edgeSetId)}.
 function cycleOf(graph, keys) {
   const es = keys.map(k => graph.edges.get(k));
-  const nodes = es.map(e => e.from);
-  return {edges: [...keys], nodes, length: keys.length, amount: Math.min(...es.map(e => e.available)), min_timestamp: Math.min(...es.map(e => e.timestamp ?? 0)),
-    client_members: nodes.filter(n => !graph.nodes.get(n)?.server_run).length, set: [...keys].sort().join(','), set_id: edgeSetId(keys)};
+  const nodes = es.map(e => e.from), clientMembers = nodes.filter(n => !graph.nodes.get(n)?.server_run).length;
+  const amount = Math.min(...es.map(e => usable(e, e.available, clientMembers)));
+  const minTs = Math.min(...es.map(e => e.timestamp ?? 0));
+  return {edges: [...keys], nodes, length: keys.length, amount, min_timestamp: minTs, client_members: clientMembers,
+    set: [...keys].sort().join(','), set_id: edgeSetId(keys)};
 }
 
 // The node order of a run: sorted by sha256(run_id + key), so the bounded search starts from other nodes in every run
@@ -118,7 +131,8 @@ export function runOrder(runId, keys) {
 // its issuer (at most maxLen - 1 more edges), then the edge itself. Among equally wide paths the shortest wins, then
 // the smaller edge key at each step. null when there is none. The search is a max-min dynamic programme over walks of
 // exactly k edges (k = 1..maxLen-1); a walk that repeats a node is cut back to a simple path, which is never narrower
-// and is shorter, so the result is a simple cycle of the widest possible bottleneck.
+// and is shorter, so the result is a simple cycle of the widest possible bottleneck. (The width is the available
+// amounts'; a server-only cycle's amount is then less what its edges keep, as cycleOf gives it.)
 export function cycleThrough(graph, key, {maxLen = MAX_CYCLE_LENGTH} = {}) {
   const e0 = graph.edges.get(key);
   if (!e0 || maxLen < 2) return null;
@@ -195,12 +209,13 @@ export function compareCycles(a, b) {
 }
 
 // (e) Greedy selection with residual subtraction: repeatedly take the best-ranked cycle at its residual amount (the
-// smallest residual on its edges), subtract that amount from each of its edges, and go on; a cycle whose residual fell
-// is ranked again at its new amount (lazy re-evaluation: residuals only fall). `residual`: Map edge -> PC (default:
-// the graph's available amounts; it is changed). Returns the chosen cycles with their amounts, best first.
+// smallest residual on its edges; a server-only cycle leaves each edge's kept PC), subtract that amount from each of
+// its edges, and go on; a cycle whose residual fell is ranked again at its new amount (lazy re-evaluation: residuals
+// only fall). `residual`: Map edge -> PC (default: the graph's available amounts; it is changed). Returns the chosen
+// cycles with their amounts, best first.
 export function selectCycles(graph, cycles, {residual = null, limit = Infinity} = {}) {
   const res = residual ?? new Map([...graph.edges].map(([k, e]) => [k, e.available]));
-  const amountOf = c => Math.min(...c.edges.map(k => res.get(k) ?? 0));
+  const amountOf = c => Math.min(...c.edges.map(k => usable(graph.edges.get(k), res.get(k) ?? 0, c.client_members)));
   const queue = cycles.map(c => ({...c, amount: amountOf(c)})).filter(c => c.amount >= 1).sort(compareCycles);
   const insert = c => {
     let lo = 0, hi = queue.length;

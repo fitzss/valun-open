@@ -23,18 +23,23 @@
 // reserves: Map id -> what that participant holds in reserves (in the network's unit).
 // trusted: Set of ids worth their full face (r = 1).
 // extraOwes: Map id -> contingent debts to add to owes (a backer's open guarantee caps).
+// heldLess: Map 'issuer>recipient' -> what of that debt is held for the backers who paid the recipient for it (fix inbox
+// #107): left out of the recipient's claims, taken from its rows in order; the issuer still owes it.
 export const MAX_ROUNDS = 200;
 export const EPSILON = 1e-12;
 
-export function grounded({rows = [], reserves = new Map(), trusted = new Set(), extraOwes = new Map(), maxRounds = MAX_ROUNDS} = {}) {
-  const owes = new Map(), held = new Map();
+export function grounded({rows = [], reserves = new Map(), trusted = new Set(), extraOwes = new Map(), heldLess = new Map(), maxRounds = MAX_ROUNDS} = {}) {
+  const owes = new Map(), held = new Map(), less = new Map(heldLess);
   const add = (m, k, v) => m.set(k, (m.get(k) ?? 0) + v);
   for (const l of rows) {
     if (!l || !l.issuer || !l.recipient || l.issuer === l.recipient || !(l.outstanding > 0)) continue;
     add(owes, l.issuer, l.outstanding);
     if (l.claim === false) continue;                 // a debt that counts as no one's claim (an edge that does not reconcile)
+    const k = `${l.issuer}>${l.recipient}`, h = Math.min(l.outstanding, Math.max(0, less.get(k) ?? 0));
+    if (h) less.set(k, less.get(k) - h);
+    if (l.outstanding - h <= 0) continue;
     if (!held.has(l.recipient)) held.set(l.recipient, new Map());
-    add(held.get(l.recipient), l.issuer, l.outstanding);
+    add(held.get(l.recipient), l.issuer, l.outstanding - h);
   }
   for (const [k, v] of extraOwes) if (v > 0) add(owes, k, v);
   const ids = new Set([...owes.keys(), ...held.keys(), ...reserves.keys(), ...trusted]);

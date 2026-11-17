@@ -2,7 +2,10 @@
 # Container entrypoint. Two separate Basis trackers, both on the container's loopback only (never published):
 #   demo  tracker 127.0.0.1:${BASIS_PORT:-3048}  data /data/tracker        (public demo, ERG-denominated, synthetic)
 #   pilot tracker 127.0.0.1:${PILOT_BASIS_PORT:-3058}  data /data/pilot/tracker  (valun-pilot-1, PC token, synthetic)
-# then the Valun app on $PORT. If any process exits, the container exits so the platform restarts it.
+# then the Valun app on $PORT. If the app, the pilot tracker or the wallet adapter exits, the container exits so the
+# platform restarts it. The demo tracker serves only the legacy synthetic desk (/api, /mcp), which is optional beside
+# the network (fix inbox #64): if it exits, everything else keeps running, the desk answers 503 desk_unavailable, and
+# the next restart starts it again.
 # VALUN_ROOT / VALUN_DATA default to the container layout; they are overridable for a rehearsal outside Docker.
 set -euo pipefail
 ROOT=${VALUN_ROOT:-/opt/valun}; DATA=${VALUN_DATA:-/data}
@@ -75,8 +78,11 @@ else
     "$ROOT/run-tracker.sh" "$DATA/pilot/tracker" "$ROOT/bin/basis_server" > "$DATA/pilot/tracker/stdout.log" 2>&1 &
   PILOT_TRACKER=$!
 fi
-for i in $(seq 1 80); do [ -s "$DATA/tracker/tracker-nft-id" ] && { [ -s "$DATA/pilot/tracker/tracker-nft-id" ] || [ -s "$DATA/pilot/tracker/tracker-nft-id-onchain" ]; } && break; sleep 0.25; done
-export BASIS_TRACKER_NFT_ID="$(cat "$DATA/tracker/tracker-nft-id")"
+# The trackers' ids (at most 20 s): the pilot tracker's, and the demo tracker's while that tracker runs. Without the
+# demo tracker's id the app runs the network without the desk (fix inbox #64).
+for i in $(seq 1 80); do { [ -s "$DATA/tracker/tracker-nft-id" ] || ! kill -0 $TRACKER 2>/dev/null; } && { [ -s "$DATA/pilot/tracker/tracker-nft-id" ] || [ -s "$DATA/pilot/tracker/tracker-nft-id-onchain" ]; } && break; sleep 0.25; done
+BASIS_TRACKER_NFT_ID=""; [ -s "$DATA/tracker/tracker-nft-id" ] && BASIS_TRACKER_NFT_ID="$(cat "$DATA/tracker/tracker-nft-id")"
+export BASIS_TRACKER_NFT_ID
 if [ -s "$DATA/pilot/tracker/tracker-nft-id-onchain" ]; then export PILOT_TRACKER_NFT_ID="$(cat "$DATA/pilot/tracker/tracker-nft-id-onchain")"
 else export PILOT_TRACKER_NFT_ID="$(cat "$DATA/pilot/tracker/tracker-nft-id")"; fi
 export PILOT_TRACKER_URL="http://127.0.0.1:${PILOT_BASIS_PORT:-3058}" PILOT_DATA_DIR="$DATA/pilot"
@@ -90,7 +96,10 @@ stop() {
   exit 0
 }
 trap stop TERM INT
-wait -n $TRACKER $PILOT_TRACKER $APP $SHIM
+# Not the demo tracker: it may stop without stopping the network (fix inbox #64); it is stopped with the rest below.
+# `|| true`: under set -e a process that exited with a failure would otherwise end this script at once, before the
+# others are stopped.
+wait -n $PILOT_TRACKER $APP $SHIM || true
 echo "a process exited; stopping" >&2
 kill $TRACKER $PILOT_TRACKER $APP $SHIM 2>/dev/null || true
 exit 1

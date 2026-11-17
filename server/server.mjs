@@ -3,7 +3,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {Basis, makeSignerRunner, describeCapabilities, trackerPin} from './lib/basis.mjs';
+import {Basis, makeSignerRunner, describeCapabilities, trackerPin, trackerProbe} from './lib/basis.mjs';
 import {Store} from './lib/store.mjs';
 import {Valun} from './lib/valun.mjs';
 import {createTestnetReader} from './lib/testnet.mjs';
@@ -44,13 +44,29 @@ if (!cfg.trackerNftId) {
   const f = path.join(cfg.dataDir, 'tracker-nft-id');
   if (fs.existsSync(f)) cfg.trackerNftId = fs.readFileSync(f, 'utf8').trim();
 }
-if (!/^[0-9a-f]{64}$/.test(cfg.trackerNftId)) { console.error('BASIS_TRACKER_NFT_ID (or data/tracker-nft-id) must be the tracker\'s 32-byte id'); process.exit(1); }
-
-const store = new Store(cfg.dataDir);
-const basis = new Basis({trackerUrl: cfg.trackerUrl, trackerNftId: cfg.trackerNftId, runSigner: makeSignerRunner({mode: cfg.runner, signerPath: cfg.signer})});
-const valun = new Valun({store, basis});
-const service = createService({valun, basis, store, cfg, testnetLive: createTestnetReader()});
-const mcp = createMcp({service, store});
+// The legacy synthetic desk (/api, /mcp: lib/service.mjs and lib/mcp.mjs, server-held keys on the demo tracker at
+// BASIS_TRACKER_URL). Alone (no pilot tracker configured) it is the whole app and keeps its old behaviour: without its
+// tracker's id or its tracker the process does not start. Beside the network it is optional (fix inbox #64): the network
+// starts without waiting for it and keeps serving whatever happens to it, and /api and /mcp answer 503 desk_unavailable
+// (lib/http.mjs; /mcp in JSON-RPC) while the desk has no tracker id, while it starts (after a request has waited for
+// that up to DESK_START_WAIT_MS), after its start-up failed (until a restart) and while its demo tracker does not
+// answer (deskAvailable below).
+const withNetwork = !!env.PILOT_TRACKER_URL;
+let store = null, basis = null, valun = null, service = null, mcp = null;
+if (/^[0-9a-f]{64}$/.test(cfg.trackerNftId)) {
+  try {
+    store = new Store(cfg.dataDir);
+    basis = new Basis({trackerUrl: cfg.trackerUrl, trackerNftId: cfg.trackerNftId, runSigner: makeSignerRunner({mode: cfg.runner, signerPath: cfg.signer})});
+    valun = new Valun({store, basis});
+    service = createService({valun, basis, store, cfg, testnetLive: createTestnetReader()});
+    mcp = createMcp({service, store});
+  } catch (e) {
+    if (!withNetwork) throw e;
+    store = basis = valun = service = mcp = null;
+    console.error(`Desk: not set up (${e.message}): /api and /mcp answer 503 desk_unavailable; the network runs without the desk`);
+  }
+} else if (!withNetwork) { console.error('BASIS_TRACKER_NFT_ID (or data/tracker-nft-id) must be the tracker\'s 32-byte id'); process.exit(1); }
+else console.log('Desk: no demo tracker id (BASIS_TRACKER_NFT_ID or data/tracker-nft-id): /api and /mcp answer 503 desk_unavailable; the network runs without the desk');
 
 // Pilot network (valun-pilot-1, or valun-testnet-1 with PILOT_NETWORK: lib/pilot/units.mjs): enabled when a second,
 // pilot-only Basis tracker is configured.
@@ -66,6 +82,12 @@ if (pilotCfg.trackerUrl) {
   pilot = new Pilot({store: new PilotStore(pilotCfg.dataDir), basis: pilotBasis, openSandbox: env.PILOT_OPEN_SANDBOX === '1',   // self-serve sandbox join: off unless PILOT_OPEN_SANDBOX=1
     openNetwork: env.PILOT_OPEN_NETWORK === '1',   // self-serve participants deal with anyone (core.mjs OPEN_NETWORK_MAX_OPEN_OFFERS): off unless 1
     circulation: env.PILOT_CIRCULATION || 'off', trackerSha256: env.PILOT_TRACKER_SHA256 || null});
+  // The house agents (PILOT_HOUSE_AGENTS: participant ids, comma-separated): agents the operator runs on a machine of its
+  // own (valun-open examples/ai-seller) and whose keys it holds. Their public records say so (house_agent), so the pages
+  // call them operator-run. An id is this server's own: no one can claim it by taking a handle.
+  const houseIds = (env.PILOT_HOUSE_AGENTS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (houseIds.some(id => !/^vp_[0-9a-f]{12}$/.test(id))) { console.error('PILOT_HOUSE_AGENTS must be participant ids (vp_ and 12 hex digits), comma-separated'); process.exit(1); }
+  pilot.houseIds = new Set(houseIds);
   // The Valun testnet network (PILOT_NETWORK=valun-testnet-1): where its tracker is anchored on Ergo testnet. on_chain
   // only once the tracker's NFT was minted (the launcher sets PILOT_TRACKER_ON_CHAIN=1 then).
   if (ON_TESTNET) pilot.chain = {name: 'ergo-testnet', on_chain: env.PILOT_TRACKER_ON_CHAIN === '1', tracker_nft_id: pilotCfg.nftId,
@@ -80,7 +102,36 @@ if (pilotCfg.trackerUrl) {
 }
 // The A2A front door (read-only: directory, how to join, recent loops) exists with the pilot.
 const a2a = pilot ? createA2A({pilot}) : null;
-const server = http.createServer(createHandler({service, mcp, cfg, publicDir: path.join(here, 'public'), pilotRoutes, a2a}));
+// Beside the network, whether the desk can answer now (lib/http.mjs): its state is 'ready' (startDesk below finished)
+// and its demo tracker answers (trackerProbe: read at most once per 2 s, whatever the request rate). The desk's state
+// is 'off' (no tracker id), 'starting', 'ready' or 'failed' (until a restart). It starts beside the network's own
+// start-up (main below), so it is normally ready before the server listens. A desk request that comes while it still
+// starts (the request that wakes a stopped machine, say) waits for the start-up (deskStartup), at most
+// DESK_START_WAIT_MS, and is answered as the start-up left the desk: 503 only when the start-up failed or still runs at
+// that bound. When the tracker stops or starts answering again, the first desk request that sees it logs one line.
+const DESK_START_WAIT_MS = 3000;
+let deskState = valun ? 'starting' : 'off', deskAnswering = true, deskStartup = null;
+const deskTracker = basis ? trackerProbe(basis) : null;
+// Resolves once p has settled or ms have passed, whichever is first; the timer never keeps the process alive.
+const settledWithin = (p, ms) => new Promise(resolve => {
+  const timer = setTimeout(resolve, ms);
+  timer.unref();
+  const done = () => { clearTimeout(timer); resolve(); };
+  p.then(done, done);
+});
+async function deskAvailable() {
+  if (deskState === 'starting' && deskStartup) await settledWithin(deskStartup, DESK_START_WAIT_MS);
+  if (deskState !== 'ready') return false;
+  const ok = await deskTracker();
+  if (ok !== deskAnswering) {
+    deskAnswering = ok;
+    console.log(ok ? `Desk: its demo tracker at ${cfg.trackerUrl} answers again: /api and /mcp are back`
+      : `Desk: its demo tracker at ${cfg.trackerUrl} does not answer: /api and /mcp answer 503 desk_unavailable; the network is not affected`);
+  }
+  return ok;
+}
+const server = http.createServer(createHandler({service, mcp, cfg, publicDir: path.join(here, 'public'), pilotRoutes, a2a, deskAvailable: pilot ? deskAvailable : null}));
+const listen = () => server.listen(cfg.port, cfg.host, () => console.log(`Valun (${cfg.deployment}) on http://${cfg.host}:${cfg.port} - tracker ${cfg.trackerUrl} - MCP at /mcp${pilot ? ` - ${NETWORK} ${pilot.basis.url} (${pilot.basis.denomination.slice(0, 18)}…)` : ''}`));
 // The clearing engine, once, when the effective mode is sandbox or on (at startup, or when MIG-1's refusal lifts).
 async function startClearing() {
   if (!pilot || !pilot.circulating || pilot.clearing) return;
@@ -89,13 +140,29 @@ async function startClearing() {
   console.log('Pilot: clearing engine running');
 }
 
-async function main() {
+// The desk's start-up: its demo tracker answers (within 30 s), the tracker source /api/status names, the submissions an
+// interruption left, and once the synthetic demo world. Alone, the desk starts before the server listens and a failure
+// stops the process, as before; beside the network it starts with the network's own start-up, which does not wait for
+// it, and a failure leaves only the desk unavailable (main below).
+async function startDesk() {
   for (let i = 0; i < 60 && !(await basis.health().catch(() => false)); i++) await new Promise(r => setTimeout(r, 500));
   if (!(await basis.health().catch(() => false))) throw Error(`Basis tracker not reachable at ${cfg.trackerUrl}`);
   // A tracker that reports its build (tracker v3) is named by its own commit, as its own report, with '(binary not
   // pinned)' unless the launcher's sha256 of the basis_server it runs (PILOT_TRACKER_SHA256) is in lib/pilot/pins.mjs;
   // any other tracker keeps the text above.
   if (!env.BASIS_PIN) cfg.basisPin = trackerPin(await basis.capabilities().catch(() => null), cfg.basisPin, {pinned: TRACKER_SHA256_PINS.includes(env.PILOT_TRACKER_SHA256)});
+  const recovered = await valun.recover();
+  if (recovered.length) console.log(`Recovered interrupted submissions: ${recovered.map(r => `${r.id}=${r.status}`).join(', ')}`);
+  if (cfg.seed && !store.state.seededAt) { console.log('Seeding (or finishing) the synthetic demo world...'); await seed(valun); }
+}
+
+async function main() {
+  // Alone, the desk is the whole app: it starts before the server listens, and a failure stops the process, as before.
+  if (!pilot) { await startDesk(); deskState = 'ready'; }
+  // Beside the network the desk starts now, beside the network's start-up below, which never waits for it; nothing it
+  // does stops the network (fix inbox #64). The two start-ups use separate trackers, states and data folders.
+  if (pilot && valun) deskStartup = startDesk().then(() => { deskState = 'ready'; },
+    e => { deskState = 'failed'; console.error(`Desk: not started (${e.message}): /api and /mcp answer 503 desk_unavailable until a restart; the network runs without the desk`); });
   if (pilot) {
     for (let i = 0; i < 60 && !(await pilot.basis.health().catch(() => false)); i++) await new Promise(r => setTimeout(r, 500));
     if (!(await pilot.basis.health().catch(() => false))) throw Error(`pilot tracker not reachable at ${pilotCfg.trackerUrl}`);
@@ -144,10 +211,8 @@ async function main() {
     // incremental search after every increase, proposals on consent polls. Its timers do not keep the process alive.
     await startClearing();
   }
-  const recovered = await valun.recover();
-  if (recovered.length) console.log(`Recovered interrupted submissions: ${recovered.map(r => `${r.id}=${r.status}`).join(', ')}`);
-  if (cfg.seed && !store.state.seededAt) { console.log('Seeding (or finishing) the synthetic demo world...'); await seed(valun); }
-  server.listen(cfg.port, cfg.host, () => console.log(`Valun (${cfg.deployment}) on http://${cfg.host}:${cfg.port} - tracker ${cfg.trackerUrl} - MCP at /mcp${pilot ? ` - ${NETWORK} ${pilot.basis.url} (${pilot.basis.denomination.slice(0, 18)}…)` : ''}`));
+  // The server serves from here.
+  listen();
 }
 // Graceful stop (Fly sends SIGINT when it stops an idle machine): finish in-flight requests, then exit.
 // The entrypoint stops the tracker only after this process has exited.

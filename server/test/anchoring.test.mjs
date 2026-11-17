@@ -1,8 +1,8 @@
 // Fix inbox #13, #14 and the loop pages' explorer links, on the testnet network (its own process): the tracker's
-// anchoring state (anchored, waiting for the next update, an update in flight, overdue), which tracker-box update made a
-// loop's netting final (from the wallet adapter's spend ledger), a deal's note as the tracker holds it now (confirmed,
-// redeemed), the position's redemptions, the wait hints of deal views, and a redemption refused for a note not anchored
-// yet (it says how long that lasts, and it uses up no build).
+// anchoring state (anchored, waiting for the next update, an update in flight, overdue), which tracker-box update
+// committed a loop's netting (from the wallet adapter's spend ledger), a deal's note as the tracker holds it now
+// (confirmed, redeemed), the position's redemptions, the wait hints of deal views, and a redemption refused for a note
+// not anchored yet (it says how long that lasts, and it uses up no build).
 process.env.PILOT_NETWORK = 'valun-testnet-1';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -46,13 +46,13 @@ test('the spend ledger gives the tracker-box updates; a dropped one (its box spe
   assert.deepEqual(anchors.confirmedUpdates(rows, {}, H('2')).map(r => r.tx_id), [H('1'), H('2')], 'up to the confirmed box the node names');
 });
 
-test('a loop is final in the first confirmed update signed after it; one signed just after it counts only while anchored', () => {
+test('a loop is committed in the first confirmed update signed after it; one signed just after it counts only while anchored', () => {
   const rows = anchors.trackerBoxUpdates(ledgerFile(LEDGER));
   const anchored = {local_digest: 'd', confirmed_digest: 'd', pending_tx_id: null};
   const changed = {local_digest: 'e', confirmed_digest: 'd', pending_tx_id: null};
-  // the three set-offs of the live netting run (applied about 15:00, final in the update of 15:03:46)
+  // the three set-offs of the live netting run (applied about 15:00, committed in the update of 15:03:46)
   assert.equal(anchors.loopAnchor('2026-11-12T15:00:10.000Z', rows, changed).tx_id, H('2'));
-  assert.equal(anchors.loopAnchor('2026-11-12T22:30:00.000Z', rows, changed), null, 'no update since: not final yet');
+  assert.equal(anchors.loopAnchor('2026-11-12T22:30:00.000Z', rows, changed), null, 'no update since: not committed yet');
   assert.equal(anchors.loopAnchor('garbage', rows, anchored), null);
   // within the guard: the next update counts only if it is the last confirmed one and the state is anchored now
   const near = new Date(Date.parse('2026-11-12T22:27:46.503Z') - 5_000).toISOString();
@@ -185,14 +185,27 @@ test('the testnet position counts redemptions as settled, in the testnet\'s word
   const rows = [{recipient: 'vp_me', issuer: 'vp_x', issuer_handle: 'sandbox-exact', outstanding: 0, redeemed: 3_000_000},
     {recipient: 'vp_y', issuer: 'vp_me', recipient_handle: 'house-scribe', outstanding: 2_000_000, redeemed: 0}];
   const self = {ledger: async () => rows, dealsFor: () => [], sweep: d => d, circulating: true, unit: 'nanoERG', s: {edges: {}},
-    keysOf: () => new Set(['pk']), isPastKey: () => false, operatorRun: () => false, serverRun: () => false};
+    keysOf: () => new Set(['pk']), isPastKey: () => false, operatorRun: () => false, serverRun: () => false, heldForBackers: () => 0};
   const pos = await core.Pilot.prototype.position.call(self, {id: 'vp_me'});
   assert.equal(pos.redeemed_claims, 3_000_000);
   assert.equal(pos.redeemed_debts, 0);
   assert.equal(pos.settled, 3_000_000);
-  assert.equal(pos.settled_how, 'by set-off and by redemption on Ergo testnet');
-  assert.doesNotMatch(pos.meaning, /pilot|Nothing is redeemed|there is no reserve/);
-  assert.match(pos.meaning, /redeems it on Ergo testnet/);
+  // settled keeps its name and its sum; its words keep a set-off (cleared, committed, not final) apart from a redemption.
+  assert.equal(pos.settled_how, 'cleared in loops, committed but not final, and redeemed on Ergo testnet');
+  assert.doesNotMatch(pos.meaning, /pilot|Nothing is redeemed|there is no reserve|also settled|settled counts both/);
+  assert.match(pos.meaning, /A claim is settled only when its creditor redeems it on Ergo testnet/);
+  assert.ok(pos.meaning.includes('The field settled adds the two kinds, so read them apart: cleared_by_setoff (cleared in loops), redeemed_claims'));
+});
+
+// Every deal on the testnet carries labels.settlement, which agents read and relay: a netting is committed, never final
+// (fix inbox #85, #100: 0360f51 fixed /info, /chain and /loops; this label still said "stays final"). No server text,
+// and no README line, says a netting stays final.
+test('the deal\'s settlement label says a netting is committed, and committed only as long as the tracker key never commits an earlier total again', () => {
+  assert.ok(core.CIRCULATION_SETTLEMENT_TESTNET.includes('a netting is committed once a tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again.'));
+  assert.doesNotMatch(core.CIRCULATION_SETTLEMENT_TESTNET, /\bfinal\b/);
+  const root = path.resolve(import.meta.dirname, '..');
+  for (const f of [...fs.readdirSync(path.join(root, 'lib', 'pilot')).filter(x => x.endsWith('.mjs')).map(x => path.join('lib', 'pilot', x)), path.join('lib', 'a2a.mjs'), 'README.md'])
+    assert.doesNotMatch(fs.readFileSync(path.join(root, f), 'utf8'), /stays final|\bis final once\b|nettings? (?:are|is) final/, f);
 });
 
 test('deal views say how long to wait for the other side (fix inbox #8)', () => {
@@ -212,14 +225,134 @@ test('deal views say how long to wait for the other side (fix inbox #8)', () => 
   assert.equal(hint({status: 'paying_by_transfer', payer: 'vp_me', payee: 'vp_a'}, ['wait_for_consents']), 10);
 });
 
+// fix inbox #62: the confirmed box's age and its two windows, and the anchored text that says what holds while the box
+// is fresh.
+test('the box\'s windows: novations refused from its height + 1440, tracker-less redemption from + 2161; its age from the node', () => {
+  const caps = fs.readFileSync(new URL('../lib/pilot/caps.mjs', import.meta.url), 'utf8');
+  assert.match(caps, /ANCHORED_NETTING = Object\.freeze\(\{version: 1, authorization_floor: true, fresh_blocks: 1440, keepalive_blocks: 720\}\)/, 'the tracker\'s fresh_blocks');
+  assert.equal(anchors.TRACKER_LESS_AFTER_BLOCKS, 2160, 'the reserve contract: HEIGHT - creation height > 3 * 720');
+  assert.deepEqual(anchors.boxWindows(645189, 645300), {node_height: 645300, box_age_blocks: 111, novations_refused_from_height: 646629, tracker_less_redemption_from_height: 647350});
+  assert.deepEqual(anchors.boxWindows(645189, 645189), {node_height: 645189, box_age_blocks: 0, novations_refused_from_height: 646629, tracker_less_redemption_from_height: 647350});
+  assert.deepEqual(anchors.boxWindows(645189, 645100), {node_height: 645100, box_age_blocks: null, novations_refused_from_height: 646629, tracker_less_redemption_from_height: 647350},
+    'a node behind the box cannot tell its age');
+  assert.deepEqual(anchors.boxWindows(645189, null), {node_height: null, box_age_blocks: null, novations_refused_from_height: 646629, tracker_less_redemption_from_height: 647350});
+  for (const h of [null, undefined, 0, -5, 1.5, '645189', 2 ** 53]) {
+    assert.deepEqual(anchors.boxWindows(h, 645300), {node_height: 645300, box_age_blocks: null, novations_refused_from_height: null, tracker_less_redemption_from_height: null}, String(h));
+  }
+});
+
+test('the node\'s height: GET /info fullHeight, kept 20 s per node, a failed read 5 s; null for anything but a positive whole number', async () => {
+  const asked = [];
+  let answer = () => ({ok: true, json: async () => ({fullHeight: 645300, headersHeight: 645301})});
+  const fetchFn = async url => { asked.push(url); return answer(); };
+  const node = 'http://node-a.invalid', t0 = 1_000_000, at = t => ({fetchFn, clock: () => t});
+  assert.equal(await anchors.nodeHeight(`${node}/`, at(t0)), 645300);
+  assert.deepEqual(asked, [`${node}/info`]);
+  assert.equal(await anchors.nodeHeight(`${node}/`, at(t0 + anchors.NODE_HEIGHT_KEEP_MS - 1)), 645300);
+  assert.equal(asked.length, 1, 'kept');
+  answer = () => ({ok: true, json: async () => ({fullHeight: 645301})});
+  assert.equal(await anchors.nodeHeight(`${node}/`, at(t0 + anchors.NODE_HEIGHT_KEEP_MS)), 645301, 'read again once 20 s old');
+  for (const [i, bad] of [() => ({ok: false, json: async () => ({})}), () => ({ok: true, json: async () => ({fullHeight: 0})}),
+    () => ({ok: true, json: async () => ({fullHeight: '645300'})}), () => ({ok: true, json: async () => { throw new SyntaxError('not JSON'); }}),
+    () => { throw new TypeError('fetch failed'); }].entries()) {
+    answer = bad;
+    const other = `http://node-b${i}.invalid`, n = asked.length;
+    assert.equal(await anchors.nodeHeight(other, at(t0)), null, `answer ${i}`);
+    answer = () => ({ok: true, json: async () => ({fullHeight: 7})});
+    assert.equal(await anchors.nodeHeight(other, at(t0 + anchors.NODE_HEIGHT_FAILED_KEEP_MS - 1)), null, `answer ${i}: the failure is kept 5 s`);
+    assert.equal(asked.length, n + 1, `answer ${i}: one read`);
+    assert.equal(await anchors.nodeHeight(other, at(t0 + anchors.NODE_HEIGHT_FAILED_KEEP_MS)), 7, `answer ${i}: read again after 5 s`);
+  }
+  const before = asked.length;
+  for (const bad of [null, undefined, '', 'node', 'ftp://node', 5]) assert.equal(await anchors.nodeHeight(bad, {fetchFn}), null, String(bad));
+  assert.equal(asked.length, before, 'no node, no read');
+});
+
+test('the node\'s height: a read that hangs is kept from when it ends, and the readers meanwhile share it (a hung node costs one wait per 5 s)', async () => {
+  // A clock the read itself moves on: the node takes the whole timeout to fail, as a node that accepts and never
+  // answers does. Kept from when the read began, the failure would be read again 1 s after it ended.
+  let t = 2_000_000, asked = 0;
+  const hang = async () => { asked++; t += 4000; throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); };
+  const node = 'http://node-hung.invalid', opts = {fetchFn: hang, clock: () => t};
+  assert.equal(await anchors.nodeHeight(node, opts), null);
+  t += anchors.NODE_HEIGHT_FAILED_KEEP_MS - 1000;
+  assert.equal(await anchors.nodeHeight(node, opts), null);
+  assert.equal(asked, 1, '4 s after the read ended (8 s after it began): kept');
+  t += 1000;
+  assert.equal(await anchors.nodeHeight(node, opts), null);
+  assert.equal(asked, 2, 'read again 5 s after it ended');
+  // Real time, a node that accepts the connection and never answers: 25 readers at once make one request and share its
+  // wait; a read right after it ended is kept.
+  let requests = 0;
+  const hung = http.createServer(() => { requests++; });
+  await new Promise(r => hung.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${hung.address().port}`;
+  try {
+    const t0 = Date.now();
+    const all = await Promise.all(Array.from({length: 25}, () => anchors.nodeHeight(url, {timeoutMs: 300})));
+    assert.deepEqual([[...new Set(all)], requests], [[null], 1], 'one request for 25 readers');
+    assert.ok(Date.now() - t0 >= 250, 'they waited for that one read');
+    const t1 = Date.now();
+    assert.equal(await anchors.nodeHeight(url, {timeoutMs: 300}), null);
+    assert.ok(Date.now() - t1 < 200, 'kept: no second wait');
+    assert.equal(requests, 1);
+  } finally { hung.closeAllConnections?.(); hung.close(); }
+});
+
+test('the anchored text says what holds while the box is fresh, names the fields that say how old it is, and the tracker\'s other refusals of a novation', () => {
+  const s = new anchors.AnchorWatch().state({local_digest: 'a', confirmed_digest: 'a'});
+  assert.equal(s.state, 'anchored');
+  assert.equal(s.what_this_means, "The tracker box on Ergo testnet commits the tracker's current state: every note recorded so far can be redeemed against its issuer's tERG reserve (if the issuer posted one), and every netting so far is committed (it stays committed only as long as the tracker key never commits an earlier total again: see skill.md, Trust model). The tracker builds a redemption only while its records of what the box commits agree with the box. A set-off or debt transfer that lowers an edge with an on-chain total needs the box fresh, younger than 1440 blocks (box_age_blocks): the tracker refreshes an unchanged box every 720 blocks to keep it so, and refuses such a novation from novations_refused_from_height until the next box. It may refuse one sooner: when it has not observed its box on chain for 2 hours (it observes it on each update check in which it can read the box and the node and no update is waiting to confirm), and when the novation would lower the edge below a total it signed a redemption for. From tracker_less_redemption_from_height (2161 blocks after the box was made) the reserve contract lets a holder redeem without the tracker's signature.");
+  assert.equal(anchors.ANCHORED_MEANS, s.what_this_means);
+  assert.doesNotMatch(s.what_this_means, /are accepted/, 'never a promise that the tracker accepts a novation');
+  // the tracker v4.4 value the text states (basis_store ANCHOR_OBSERVATION_MAX_AGE_MS; GET /capabilities
+  // anchored_netting.observation_max_age_ms)
+  assert.equal(anchors.TRACKER_OBSERVATION_MAX_AGE_MS, 7_200_000);
+});
+
+test('GET /chain: the box\'s age from the node (its fullHeight less the confirmed height) and the two windows; without the node, the windows alone', async () => {
+  const node = http.createServer((req, res) => {
+    if (req.url !== '/info') { res.writeHead(404).end(); return; }
+    res.writeHead(200, {'content-type': 'application/json'}).end(JSON.stringify({network: 'testnet', fullHeight: 645300, headersHeight: 645300}));
+  });
+  await new Promise(r => node.listen(0, '127.0.0.1', r));
+  const nodeUrl = `http://127.0.0.1:${node.address().port}`;
+  const st = {local_digest: 'd', confirmed_digest: 'd', confirmed_box_id: H('c'), confirmed_height: 645189, pending_tx_id: null};
+  const {srv, call} = await server({trackerState: async () => st, node: nodeUrl});
+  try {
+    const a = (await call('GET', '/pilot/v1/chain')).body.anchoring;
+    assert.deepEqual([a.confirmed_height, a.node_height, a.box_age_blocks, a.novations_refused_from_height, a.tracker_less_redemption_from_height], [645189, 645300, 111, 646629, 647350]);
+    assert.equal(a.box_age_blocks, a.node_height - a.confirmed_height);
+    assert.equal(a.state, 'anchored');
+    assert.equal(a.what_this_means, anchors.ANCHORED_MEANS);
+  } finally { srv.close(); node.close(); }
+  // the node unreachable (nothing listens on port 9): no height and no age, the windows from the box's height all the same
+  const s3 = await server({trackerState: async () => st, node: 'http://127.0.0.1:9'});
+  try {
+    const a = (await s3.call('GET', '/pilot/v1/chain')).body.anchoring;
+    assert.deepEqual([a.node_height, a.box_age_blocks, a.novations_refused_from_height, a.tracker_less_redemption_from_height], [null, null, 646629, 647350]);
+    assert.equal(a.state, 'anchored', 'the anchoring itself is read as before');
+  } finally { s3.srv.close(); }
+  // no confirmed height yet: every field null, and the node is not asked
+  let asked = 0;
+  const probe = http.createServer((req, res) => { asked++; res.writeHead(200).end('{"fullHeight": 1}'); });
+  await new Promise(r => probe.listen(0, '127.0.0.1', r));
+  const s4 = await server({trackerState: async () => ({...st, confirmed_height: null}), node: `http://127.0.0.1:${probe.address().port}`});
+  try {
+    const a = (await s4.call('GET', '/pilot/v1/chain')).body.anchoring;
+    assert.deepEqual([a.node_height, a.box_age_blocks, a.novations_refused_from_height, a.tracker_less_redemption_from_height], [null, null, null, null]);
+    assert.equal(asked, 0);
+  } finally { s4.srv.close(); probe.close(); }
+});
+
 // The routes, with a fake tracker client and a spend ledger on disk.
-async function server({trackerState, redemptionBuild, setoffs = {}, spendLedger = null}) {
+async function server({trackerState, redemptionBuild, setoffs = {}, spendLedger = null, node = undefined}) {
   const PKA = '02' + 'a1'.repeat(32), PKB = '03' + 'b2'.repeat(32);
   const participants = {vp_aaaaaaaaaaaa: {id: 'vp_aaaaaaaaaaaa', handle: 'issuer-a', pubkey: PKA}, vp_bbbbbbbbbbbb: {id: 'vp_bbbbbbbbbbbb', handle: 'holder-b', pubkey: PKB}};
   const basis = {denomination: 'erg', nft: 'ab'.repeat(32), trackerState,
     note: async () => ({amount_collected: 3_000_000, amount_redeemed: 0, timestamp: 1_700_000_000_123, signature: 'aa'.repeat(65)}),
     redemptionBuild};
-  const pilot = {chain: {name: 'ergo-testnet', on_chain: true, tracker_nft_id: 'ab'.repeat(32), explorer: 'https://testnet.ergoplatform.com', spend_ledger: spendLedger},
+  const pilot = {chain: {name: 'ergo-testnet', on_chain: true, tracker_nft_id: 'ab'.repeat(32), explorer: 'https://testnet.ergoplatform.com', spend_ledger: spendLedger, ...(node === undefined ? {} : {node})},
     s: {participants, setoffs}, openSandbox: true, unit: 'nanoERG', mode: 'off', basis, store: {audit: () => {}}, selfServe: () => null,
     setoff: id => setoffs[id] ?? null, publicParticipant: x => ({handle: x.handle}),
     byPubkey: pk => Object.values(participants).find(x => x.pubkey === pk) || null,
@@ -246,7 +379,7 @@ async function server({trackerState, redemptionBuild, setoffs = {}, spendLedger 
   return {srv, call};
 }
 
-test('loops on the testnet link the tracker-box update that made them final; GET /chain names the last update', async () => {
+test('loops on the testnet link the tracker-box update that committed them; GET /chain names the last update', async () => {
   const id = 'vs_0123456789abcdef';
   const setoffs = {[id]: {id, state: 'applied', applied_at: '2026-11-12T15:00:10.000Z', amount: 2_000_000, members: ['vp_aaaaaaaaaaaa', 'vp_bbbbbbbbbbbb']}};
   const {srv, call} = await server({trackerState: async () => ({local_digest: 'e', confirmed_digest: 'd', confirmed_box_id: H('c'), confirmed_height: 640110, pending_tx_id: null}),
@@ -255,15 +388,21 @@ test('loops on the testnet link the tracker-box update that made them final; GET
     const one = await call('GET', `/pilot/v1/loops/${id}`);
     assert.equal(one.status, 200);
     assert.deepEqual(one.body.on_chain, {anchored: true, tx_id: H('2'), explorer_url: `https://testnet.ergoplatform.com/en/transactions/${H('2')}`,
-      signed_at: '2026-11-12T15:03:46.369Z', what_this_means: 'Final on Ergo testnet: this tracker-box update is the first that commits the set-off.'});
+      signed_at: '2026-11-12T15:03:46.369Z', what_this_means: 'Committed on Ergo testnet by the first tracker-box update signed after the set-off (matched by time; valun audit checks only the current box). It stays committed only as long as the tracker key never commits an earlier total again: see skill.md, Trust model.'});
     const all = await call('GET', '/pilot/v1/loops');
     assert.equal(all.body.loops[0].on_chain.tx_id, H('2'));
     const page = await call('GET', `/loop/${id}`);
     assert.equal(page.status, 200);
     assert.ok(page.text.includes(`<a href="https://testnet.ergoplatform.com/en/transactions/${H('2')}">tx ${H('2').slice(0, 12)}…</a>`));
-    assert.ok(page.text.includes('Final on Ergo testnet'));
-    assert.ok(page.text.includes('2000000 nanoERG (0.002 tERG)'), 'amounts in the testnet unit');
+    assert.ok(page.text.includes('<strong>Committed on Ergo testnet</strong> by the next tracker box'), 'said in the past tense once a box committed it');
+    assert.ok(page.text.includes('<dd>0.002 tERG</dd>'), 'amounts as people read them, in tERG');
     assert.doesNotMatch(page.text, /pilot network|credits have no/);
+    // What a commitment guarantees, on the card itself (fix inbox #85, #100): committed, not final, with its condition,
+    // who holds the key, and the Trust model.
+    assert.ok(page.text.includes("Nobody's net position changed, the work stays done, and no coins moved."));
+    assert.ok(page.text.includes('Committed, not final: a netting the tracker commits stays committed as long as the tracker key never commits an earlier total again. The operator holds that key, and nothing on chain stops it.'));
+    assert.ok(page.text.includes('<a href="/trust#netting">How netting is committed</a>') && page.text.includes('<a href="/trust">Trust model</a>'));
+    assert.doesNotMatch(page.text, /\bis final\b|\bare final\b|stays final|debt is gone/);
     const chain = await call('GET', '/pilot/v1/chain');
     assert.equal(chain.body.anchoring.state, 'waiting_for_next_update');
     assert.deepEqual(chain.body.anchoring.last_update, {tx_id: H('5'), signed_at: '2026-11-12T22:27:46.503Z', explorer_url: `https://testnet.ergoplatform.com/en/transactions/${H('5')}`});
@@ -274,9 +413,51 @@ test('loops on the testnet link the tracker-box update that made them final; GET
   try {
     const one = await s2.call('GET', `/pilot/v1/loops/${id}`);
     assert.equal(one.body.on_chain.anchored, false);
-    assert.match(one.body.on_chain.what_this_means, /^Not final on chain yet: the next tracker box commits it/);
-    assert.ok((await s2.call('GET', `/loop/${id}`)).text.includes('not final yet: the next tracker box commits it'));
+    // Not committed yet: the next box commits it, usually in minutes, up to about 30 while Ergo testnet blocks are slow, and
+    // not before 00:00 UTC once the day's boxes ran out; the loop API and the card say the same (the redesign, round 2).
+    assert.equal(one.body.on_chain.what_this_means, `Not committed on chain yet: the next tracker box commits it, usually within minutes, up to about 30 when Ergo testnet blocks are slow, and once the day's 50 boxes are used up, not before 00:00 UTC (the tracker checks every ${anchors.CHECK_INTERVAL_S} seconds; GET /pilot/v1/chain shows its anchoring).`);
+    const card = (await s2.call('GET', `/loop/${id}`)).text;
+    assert.ok(card.includes('<strong>Not committed on Ergo testnet yet.</strong> The next tracker box commits it, usually within minutes, up to about 30 when Ergo testnet blocks are slow.'));
+    assert.ok(card.includes('The tracker posts at most 50 boxes a UTC day: on a busy day they run out, and nothing is committed until 00:00 UTC'));
+    assert.doesNotMatch(card + one.body.on_chain.what_this_means, /\bfinal yet\b|within 8 minutes|few minutes|two minutes/);
   } finally { s2.srv.close(); }
+});
+
+// Fix inbox #85, #100: a netting revokes nothing on chain, so no anchoring state may call nettings final without the
+// Trust model's condition. 103b25f qualified the anchored state only; the in-flight, waiting and daily-cap states still
+// said "the nettings ... are final" (GET /chain, also printed by `valun ergo chain`).
+test('every anchoring state that speaks of nettings says committed, and committed only as long as the tracker key never commits an earlier total again', () => {
+  let now = 1_000_000;
+  const w = new anchors.AnchorWatch({now: () => now});
+  const day = new Date(now).toISOString().slice(0, 10);
+  const states = {
+    anchored: w.state({local_digest: 'a', confirmed_digest: 'a'}),
+    update_in_flight: w.state({local_digest: 'b', confirmed_digest: 'a', pending_tx_id: H('1')}),
+    waiting_for_next_update: w.state({local_digest: 'b', confirmed_digest: 'a', pending_tx_id: null}),
+    daily_cap_reached: w.state({local_digest: 'b', confirmed_digest: 'a', pending_tx_id: null}, {limit: 50, signed_today: 50, used_up: true, resets_at: `${day}T23:59:59.000Z`}),
+  };
+  now += (anchors.CHECK_INTERVAL_S + anchors.OVERDUE_GRACE_S) * 1000 + 1;
+  states.overdue = w.state({local_digest: 'c', confirmed_digest: 'a', pending_tx_id: null});
+  states.unknown = w.state(null);
+  assert.equal(anchors.NETTING_FINALITY, 'it stays committed only as long as the tracker key never commits an earlier total again: see skill.md, Trust model');
+  for (const [name, s] of Object.entries(states)) {
+    assert.equal(s.state, name);
+    assert.doesNotMatch(s.what_this_means, /\bare final\b|\bis final\b|\bfinal once\b|nettings? (?:before|since) (?:it|then) (?:are|is) final/, `${name}: never "final" alone`);
+    if (/netting/.test(s.what_this_means) && name !== 'overdue')
+      assert.ok(s.what_this_means.includes(`committed (${anchors.NETTING_FINALITY})`), `${name}: committed, with the Trust model's condition`);
+  }
+  assert.match(states.overdue.what_this_means, /the nettings since then are not committed on chain/);
+  assert.deepEqual(Object.keys(states).filter(k => /netting/.test(states[k].what_this_means)).sort(),
+    ['anchored', 'daily_cap_reached', 'overdue', 'update_in_flight', 'waiting_for_next_update']);
+  // The loop views use the same condition (lib/pilot/http.mjs loopOnChain; the card's footer), and say how the box is
+  // matched to the loop: by time, as the card does.
+  const src = fs.readFileSync(new URL('../lib/pilot/http.mjs', import.meta.url), 'utf8');
+  assert.match(src, /by the first tracker-box update signed after the set-off \(matched by time; valun audit checks only the current box\)\. It stays committed only as long as the tracker key never commits an earlier total again: see skill\.md, Trust model\./);
+  // How long a box waits for a block: one wording in every state that names the wait, with no date and none of the old
+  // promises (the redesign, round 2).
+  assert.equal(anchors.BLOCK_WAIT, 'usually within minutes, up to about 30 when Ergo testnet blocks are slow');
+  for (const name of ['update_in_flight', 'waiting_for_next_update', 'daily_cap_reached']) assert.ok(states[name].what_this_means.includes(`once a block includes ${name === 'update_in_flight' ? 'it' : 'that box'} (${anchors.BLOCK_WAIT})`), name);
+  for (const s of Object.values(states)) assert.doesNotMatch(s.what_this_means, /few minutes|two minutes|normally within|\bNov\b/);
 });
 
 test('a redemption of a note not anchored yet: the refusal says how long that lasts, and it uses up no build', async () => {
@@ -302,7 +483,7 @@ test('a redemption of a note not anchored yet: the refusal says how long that la
 
 test('loop words on the testnet: amounts in tERG, the chain named, never the pilot', () => {
   const loop = loops.loopOf({id: 'vs_0123456789abcdef', state: 'applied', amount: 2_000_000, members: []}, {}, x => x);
-  assert.match(loops.loopDescription(loop), /cancelled 2000000 nanoERG \(0\.002 tERG\) of IOUs/);
+  assert.match(loops.loopDescription(loop), /cancelled 0\.002 tERG of IOUs in one set-off\. No coins moved\./);
   assert.match(loops.loopDescription(loop), /anchors its state on Ergo testnet/);
   assert.doesNotMatch(loops.loopDescription(loop), /pilot|credits/);
 });

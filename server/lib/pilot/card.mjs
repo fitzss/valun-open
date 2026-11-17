@@ -1,8 +1,10 @@
 // The budget card: what an agent may commit for its owner, the room left, who backs it and its record, so anyone can
 // check a payer before taking its IOU. Its owner publishes it (mandate public_card, Pilot.setMandate); until then both
-// routes answer 404 card_not_public. Public, no token, under the per-address read budget like every GET:
+// routes answer 404 card_not_public, but for the payee's own check (fix inbox #87: its own side of the step only).
+// Public, no token, under the per-address read budget like every GET:
 //   GET /pilot/v1/participants/{vp}/card                               budgetCard
 //   GET /pilot/v1/participants/{vp}/check?amount=N&payee=<id|handle>   checkPayer: Pilot.checkMandate as the payer, a dry run
+//                                                                      (and as the payee, for the payee's own check)
 // The card shows what the server enforces: the mandate as Pilot.effectiveLimits gives it (the owner's mandate, tightened
 // by limits the agent recorded), and the room as checkMandate counts it for max_issue_outstanding (Pilot.issueExposure).
 // Its backing totals are the face value of the open guarantee caps; a payee's own check counts each backer at its
@@ -23,6 +25,9 @@
 // The cover a payee holds on the payer's IOUs, and its own limits on the step (payee_side), are the payee's own business:
 // the check shows them only when it is sent with the payee's token (agent or owner); otherwise `cover.covered` and
 // `cover.for_other_deals` are null, there is no payee_side, and the check is cached as any public read.
+// Fix inbox #87: the server goes ahead with the step only when both sides do, so the payee's own check gives one verdict
+// for the step, from both sides (`verdict`; each side's own in payer_side and payee_side). Every other answer has the
+// payer's side only, and says the payee's own limits were not checked.
 import {PilotError, PRICE_CAP, MAX_DELIVERY_MS, OPEN_NETWORK_MAX_OPEN_OFFERS, canonical, sha256} from './core.mjs';
 import {NETWORK, PUBLIC_ORIGIN, amt} from './units.mjs';
 import {AGENT_HANDLE_RE, agentPageShown, recordOf} from './agents.mjs';
@@ -144,9 +149,11 @@ export function parseDeliverBy(pilot, raw) {
 // counts its remaining cap; the deal-mode guarantees of the deal under review share what it can still claim, oldest
 // first (GuaranteeBook.dealRoom: its price less what calls on its deal-mode guarantees claimed). covered sums
 // for_this_deal; for_other_deals sums the remaining caps of the deal-mode guarantees that do not name the deal (every
-// one, for a new deal). The coverage rule counts them at their backers' grounded worth and no more than the debt with the
-// deal (payee_side); covered is face value. A backer is named only when the guarantee is public under fix inbox #31;
-// otherwise backer is null.
+// one, for a new deal). The coverage rule counts each guarantee's for_this_deal too (backingFor runs stepCover, fix
+// inbox #79), at its backer's grounded worth and no more than the debt with the deal (payee_side); covered is face
+// value. A backer is named only when the guarantee is public under fix inbox #31;
+// otherwise backer is null. Its reasons are the payee's: checkPayer gives them in payee_side (fix inbox #87), and the
+// cover itself, only with the payer's card.
 export function coverFor(pilot, p, payee, {deal = null, deliverBy = null} = {}) {
   const book = pilot.guarantees, id = deal?.id ?? null, price = deal ? pilot.current(deal).terms.price.amount : 0;
   const at = deal ? Date.parse(pilot.current(deal).terms.deliver_by) : deliverBy, debtFrom = Number.isFinite(at) ? at : null;
@@ -164,6 +171,9 @@ export function coverFor(pilot, p, payee, {deal = null, deliverBy = null} = {}) 
 }
 // The cover in plain words, for the payee (fix inbox #75): what backs the step for it and by whom (covered), what backs
 // only other deals (for_other_deals: a guarantee that names deals never backs a new one), and what ends too soon to count.
+// Fix inbox #87: they are among the reasons of the payee's own side (payee_side), not the step's. valun 0.7.0 and 0.7.1
+// add "backed for you up to <covered>" to an accept or ask_owner themselves, after the step's reasons; with this text
+// there too, their summary said it twice.
 function coverWords({covered, for_other_deals: other}, {deal, by, others, soon}) {
   const what = deal ? 'this deal' : 'a new deal', one = (n, a, b) => (n === 1 ? a : b);
   const head = covered > 0 ? `Backed for you up to ${amt(covered)} by ${listed(by)}${other ? `; another ${amt(other)} backs only ${deal ? 'other deals' : 'particular deals, not a new one'}` : ''}.`
@@ -329,13 +339,17 @@ function deliverByMatters(pilot, p, payee) {
 // The payee's coverage rule (min_payer_coverage_pct) counts the payer's reserve, its claims at what they are grounded on
 // and each backer at its grounded worth (Pilot.groundedFor, fix inbox #20), never the face value the card and `cover`
 // show. A payee with no active agent key: decline, rule no_agent. {verdict, rule, reasons}, as for the payer.
-async function payeeSideOf(pilot, p, payee, amount, {ledger, deal, step, deliverBy}) {
+// `cover`: the cover's reasons (coverFor), the payee's own, given after its side's verdict and before what its owner does
+// and the deliver_by hint (fix inbox #87). Its verdict and rule need nothing of the payer's card; its words show the
+// payer's figures, so for a payer whose card is not published checkPayer gives only the verdict and rule
+// (unpublishedSide).
+async function payeeSideOf(pilot, p, payee, amount, {ledger, deal, step, deliverBy, cover = []}) {
   const side = (verdict, rule, reasons) => ({verdict, rule, reasons});
-  if (payee.status !== 'active' || !payee.pubkey) return side('decline', 'no_agent', ['You have no active agent key: you cannot accept or offer anything until your owner connects an agent.']);
+  if (payee.status !== 'active' || !payee.pubkey) return side('decline', 'no_agent', ['You have no active agent key: you cannot accept or offer anything until your owner connects an agent.', ...cover]);
   if (deal?.status === 'open' && pilot.current(deal).by === p.id && deal.pending_counter?.by === payee.id)
-    return side('decline', 'counter_pending', ['Your own counter-offer on this deal waits for your owner: you cannot accept this offer while it does. Withdraw it, or wait for your owner to reject it; if your owner approves it, your counter-offer replaces this offer.']);
+    return side('decline', 'counter_pending', ['Your own counter-offer on this deal waits for your owner: you cannot accept this offer while it does. Withdraw it, or wait for your owner to reject it; if your owner approves it, your counter-offer replaces this offer.', ...cover]);
   if (step === 'payee_proposes' && pilot.atOpenOfferLimit(payee))
-    return side('decline', 'too_many_open_offers', [`You are a self-serve agent with as many offers of your own open as you may have at once (${OPEN_NETWORK_MAX_OPEN_OFFERS}): you cannot propose a new deal until one of them is answered, withdrawn or expires.`]);
+    return side('decline', 'too_many_open_offers', [`You are a self-serve agent with as many offers of your own open as you may have at once (${OPEN_NETWORK_MAX_OPEN_OFFERS}): you cannot propose a new deal until one of them is answered, withdrawn or expires.`, ...cover]);
   const ends = !deal && deliverBy === null ? deliverByMatters(pilot, p, payee) : null;
   const hint = ends === null ? [] : [`A guarantee counts here only if it can still be called an hour after the deal's deliver_by, and one this counts ends ${iso(ends)}: give deliver_by= (the deal's) for the exact answer, or check the offer with deal= once you have it.`];
   const Q = atStep(pilot, deal, payee), until = pilot.effectiveLimits(payee).expires_at;
@@ -347,19 +361,46 @@ async function payeeSideOf(pilot, p, payee, amount, {ledger, deal, step, deliver
     if (e?.code !== 'mandate_exceeded') throw e;
     // An ended self-serve mandate where the payee's agent does not act at the step: its next request renews it.
     if (e.extra?.rule === 'expires_at' && renewsOnRequest(pilot, payee))
-      return side('decline', 'expires_at', [`Your own limits refuse it (expires_at): your mandate ended at ${until} with your sandbox time, and your agent does not act at this step. You are a self-serve agent: any request your agent sends renews both (a check sent with your agent's token does too).`, ...hint]);
-    return side('decline', e.extra?.rule ?? null, [`Your own limits refuse it (${e.extra?.rule}): ${unlabelled(e.message)}`, ...hint]);
+      return side('decline', 'expires_at', [`Your own limits refuse it (expires_at): your mandate ended at ${until} with your sandbox time, and your agent does not act at this step. You are a self-serve agent: any request your agent sends renews both (a check sent with your agent's token does too).`, ...cover, ...hint]);
+    return side('decline', e.extra?.rule ?? null, [`Your own limits refuse it (${e.extra?.rule}): ${unlabelled(e.message)}`, ...cover, ...hint]);
   }
   const waits = deal ? ownerDecides(pilot, deal, payee, chk) : !!chk.needsOwner;
   const cov = chk.checks.find(c => c.rule === 'min_payer_coverage_pct');
   return side(waits ? 'ask_owner' : 'accept', waits ? 'approve_above' : null, ['Your own limits allow it.',
     ...(Q !== payee && mandateEnded(pilot, payee) ? [`Your mandate ended at ${until} with your sandbox time, and your agent's own request at this step renews both.`] : []),
     ...(cov ? [`${p.handle}'s IOUs to you would be covered ${cov.coverage_pct}%, and your owner requires ${cov.limit}%${pilot.circulating ? ' (its claims and each backer counted at their grounded worth)' : ''}.`] : []),
-    ...ownerWords(pilot, payee, {deal, chk, waits, you: true, proposing: step === 'payee_proposes'}), ...hint]);
+    ...cover, ...ownerWords(pilot, payee, {deal, chk, waits, you: true, proposing: step === 'payee_proposes'}), ...hint]);
 }
 
-// GET /participants/{vp}/check: would the payer's agent be allowed to commit `amount` to `payee` now? Pilot.checkMandate
-// as the payer, a dry run over the same tracker read as the card's numbers, at the step the server would decide it:
+// The refusals of the deal's terms (Pilot.validateTerms: no terms name a party without an active agent key, nor a price
+// above the network's limit). They come before either side's mandate: no deal can be made at all.
+const TERMS_RULES = new Set(['no_agent', 'payee_no_key', 'network_limit']);
+// Fix inbox #87: what an answer without the payee's own side says of it (the public answer, and one for another payee).
+export const PAYEE_NOT_CHECKED = "The payee's own limits were not checked: the server enforces them too, and only a check sent with the payee's own token (agent or owner) answers for them (payee_side).";
+// Fix inbox #87: why the payer's side is not checked, for the payee's own check of a payer whose owner has not published
+// its card.
+export const PAYER_NOT_PUBLISHED = 'Its owner has not published its budget card, so its own limits cannot be checked here (the server still enforces them): decide from its public record, or ask your owner.';
+// The answer's cover when it is not shown: null is "not shown", never 0.
+const coverNotShown = () => ({covered: null, for_other_deals: null, guarantees: []});
+// Fix inbox #87 (review): the payee's own side of the step for a payer whose owner has not published its card: its
+// verdict and rule, in words that give no figure. The payer chose not to publish its room, and what the payee's own limits
+// count of it (its committed deals, the coverage they leave it, payer_committed and the like) would show it; so would
+// the cover and the record beside them, which the answer leaves out too. The refusals that read nothing of the payer (no
+// active agent key, the payee's own counter-offer, its open-offer limit) keep their words; the coverage bar named is the
+// payee's own owner's. A payee still learns, as by proposing, whether the payer's figures pass its bar at this amount.
+const READS_NO_PAYER = new Set(['no_agent', 'counter_pending', 'too_many_open_offers']);
+function unpublishedSide(pilot, payee, {verdict, rule, reasons}) {
+  const words = verdict === 'accept' ? 'Your own limits allow it.'
+    : verdict === 'ask_owner' ? 'Your own limits allow it once your owner approves.'
+      : READS_NO_PAYER.has(rule) ? reasons[0]
+        : rule === 'min_payer_coverage_pct' ? `Your owner's coverage bar (min_payer_coverage_pct, ${pilot.effectiveLimits(payee).min_payer_coverage_pct}%) refuses this payer's IOU for this amount; it has published no budget card, so its own figures are not shown.`
+          : `Your own limits refuse it (${rule}); this payer has published no budget card, so the check shows no figures.`;
+  return {verdict, rule, reasons: [words]};
+}
+
+// The payer's side of the step (payer_side): would the payer's agent be allowed to commit `amount` to `payee` now?
+// Pilot.checkMandate as the payer, a dry run over the same tracker read as the card's numbers (`card`), at the step the
+// server would decide it:
 //   decline    the step is refused: `rule` is checkMandate's rule (mandate_exceeded), or one of the refusals that come
 //              before the mandate, in the order the server gives them: the payer has no active agent key (no_agent: it
 //              cannot sign anything), the payee has none (payee_no_key: no terms can name it, Pilot.validateTerms), the
@@ -368,7 +409,7 @@ async function payeeSideOf(pilot, p, payee, amount, {ledger, deal, step, deliver
 //              Pilot.atOpenOfferLimit);
 //   ask_owner  it passes, and the commitment waits for the payer's owner before it binds; `rule` is approve_above;
 //   accept     it passes and nothing waits for the payer's owner; `rule` is null.
-// The step:
+// The step (`step`: payer_proposes, payee_proposes, or deal):
 //   - a new deal (no `deal`), as `path` says: payer_proposes (the default: Pilot.propose by the payer, ask_owner when its
 //     needsOwner holds the offer for its owner) or payee_proposes (the payee proposes and the payer accepts, Pilot.accept:
 //     the open-offer limit does not apply, ask_owner when its needsOwner holds the acceptance);
@@ -383,19 +424,11 @@ async function payeeSideOf(pilot, p, payee, amount, {ledger, deal, step, deliver
 //     fit tells the payee that such a counter-offer stands.
 // Each side as the step finds it (atStep): the payer renewed where its own agent acts (it proposes, or accepts), the
 // payee likewise, and the payer's outstanding counts what it owes the payee as the payee's renewal leaves it (views).
-// `amount` and `payee` as parseAmount and findPayee return them; `path` and `deliverBy` as parsePath and parseDeliverBy
-// return them (null: not given; `path` is echoed only when given). `showCover` only when the payee itself asks: the
-// answer then has its cover, its own side of the step (payee_side, payeeSideOf), and, without `deal`, the payer's open
-// offers to it that its outstanding already counts (counted_offers), so a payee checking one of them can name it.
-export async function checkPayer(pilot, p, {amount, payee, showCover = false, deal = null, path = null, deliverBy = null}) {
-  const started = performance.now();
-  assertCardPublic(p);
-  if (deal && (path !== null || deliverBy !== null)) throw new PilotError('invalid_field', 'path and deliver_by are for a new deal: the deal named with deal= has its own proposer and deliver_by');
-  const ledger = await pilot.ledger();
-  const card = await budgetCard(pilot, p, {ledger}), {mandate} = card;
+// Returns the side ({verdict, rule, reasons}), the payer as the step finds it (P) and the room (stepRoom), for stepOrder.
+async function payerSideOf(pilot, p, payee, amount, {ledger, card, deal, step}) {
+  const {mandate} = card;
   const P = atStep(pilot, deal, p), views = new Map([[payee.id, atStep(pilot, deal, payee)]]);
   const room = stepRoom(pilot, p, ledger, {card, deal, amount, views});
-  const step = deal ? 'deal' : path ?? 'payer_proposes';
   let refusal = null, chk = null;
   const refuse = rule => new PilotError('mandate_exceeded', rule, 403, {rule});
   if (p.status !== 'active' || !p.pubkey) refusal = refuse('no_agent');
@@ -407,10 +440,6 @@ export async function checkPayer(pilot, p, {amount, payee, showCover = false, de
     catch (e) { if (e?.code !== 'mandate_exceeded') throw e; refusal = e; }
   }
   const needsOwner = !refusal && (deal ? ownerDecides(pilot, deal, p, chk) : !!chk.needsOwner);
-  const verdict = refusal ? 'decline' : needsOwner ? 'ask_owner' : 'accept';
-  const {cover, reasons: coverReasons} = showCover ? coverFor(pilot, p, payee, {deal, deliverBy}) : {cover: {covered: null, for_other_deals: null, guarantees: []}, reasons: []};
-  const counted = showCover && !deal ? countedOffers(pilot, p, payee) : [];
-  const payeeSide = showCover ? await payeeSideOf(pilot, p, payee, amount, {ledger, deal, step, deliverBy}) : null;
   // What the payee's renewal at the step adds to the card's outstanding, when the room is what decides.
   const woken = room.woken > 0 && (!refusal || refusal.extra?.rule === 'max_issue_outstanding')
     ? [`What it owes ${payee.handle} on the tracker (${amt(room.woken)}) counts here, though its card leaves it out: ${payee.handle}'s sandbox time has ended (a sandbox agent's debt to a participant whose time has ended does not count against its limit), and ${payee.handle}'s own agent acts at this step, which renews it.`] : [];
@@ -419,13 +448,114 @@ export async function checkPayer(pilot, p, {amount, payee, showCover = false, de
       : `Within its budget: up to ${amt(mandate.per_deal)} a deal, ${amt(room.room_left)} of ${amt(mandate.outstanding_cap)} left.`,
     ...woken,
     ...(P !== p && mandateEnded(pilot, p) ? [`Its mandate ended at ${mandate.expires_at} with its sandbox time: it is a self-serve agent, and its agent's own request at this step renews both.`] : []),
-    ...ownerWords(pilot, p, {deal, chk, waits: needsOwner}),
-    ...coverReasons];
-  if (counted.length) reasons.push(`Its open ${counted.length === 1 ? 'offer' : 'offers'} to you (${counted.map(o => `${o.deal_id}: ${amt(o.amount)}`).join(', ')}) ${counted.length === 1 ? 'is' : 'are'} already counted in its outstanding: this answer is for a new deal on top. To check an offer you received, ask again with deal=<its id>.`);
-  return {verdict, reasons, rule: refusal ? refusal.extra?.rule ?? null : needsOwner ? 'approve_above' : null,
+    ...ownerWords(pilot, p, {deal, chk, waits: needsOwner})];
+  const verdict = refusal ? 'decline' : needsOwner ? 'ask_owner' : 'accept';
+  return {side: {verdict, rule: refusal ? refusal.extra?.rule ?? null : needsOwner ? 'approve_above' : null, reasons}, P, room};
+}
+
+// Fix inbox #87: the order in which the step checks the two sides, so the step's refusal is the first one it meets:
+//   - a new deal the payer proposes: the payer at its proposal (Pilot.propose), then the payee at its acceptance, then
+//     the payer again (Pilot.accept re-checks the proposer, proposerStillAuthorized). `late`: the payer's refusal comes
+//     only at that re-check (what it owes a dormant payee counts once the payee's agent acts), so the payee's comes first;
+//   - a new deal the payee proposes: the payee, then the payer;
+//   - the offer under review: an open offer is accepted by the side whose version is not the current one, which is
+//     checked first, then the proposer is re-checked; an offer waiting for its proposer's owner (only the payee sees one:
+//     its own) is the proposer's first, then the other side accepts it; an acceptance waiting for owners is decided by
+//     the acceptor's owner first while its approval is pending, else by the proposer's (its confirmation), and
+//     Pilot.decideApproval checks its own side before the other.
+function stepOrder(pilot, deal, p, step, {late = false} = {}) {
+  if (!deal) return step === 'payee_proposes' || late ? ['payee', 'payer'] : ['payer', 'payee'];
+  const v = pilot.current(deal), acc = deal.acceptance, sideOf = id => (id === p.id ? 'payer' : 'payee');
+  const first = deal.status === 'open' ? (v.by === p.id ? 'payee' : 'payer')
+    : deal.status === 'accepted_awaiting_owner' && acc?.approval_id && !acc.owner_approval ? sideOf(acc.by) : sideOf(v.by);
+  return first === 'payer' ? ['payer', 'payee'] : ['payee', 'payer'];
+}
+
+// Fix inbox #87: the step's one verdict from its two sides (P the payer's, Q the payee's), as the server enforces it: it
+// goes ahead only when both do. decline when either side declines (`rule`: the first refusal in the step's `order`; a
+// refusal of the terms before either side's); else unknown when the payer's side was not checked (its card is not
+// published); else ask_owner when an owner on either side decides before it binds (rule approve_above); else accept.
+function combined(P, Q, order) {
+  if (P.verdict === 'decline' || Q.verdict === 'decline') {
+    const first = P.verdict === 'decline' && TERMS_RULES.has(P.rule) ? P : order.map(s => (s === 'payer' ? P : Q)).find(x => x.verdict === 'decline');
+    return {verdict: 'decline', rule: first.rule};
+  }
+  if (P.verdict === 'unknown') return {verdict: 'unknown', rule: null};
+  return P.verdict === 'ask_owner' || Q.verdict === 'ask_owner' ? {verdict: 'ask_owner', rule: 'approve_above'} : {verdict: 'accept', rule: null};
+}
+
+// Fix inbox #87: the step's verdict in a few words, the first of its reasons: each side's verdict (its side, the payer's;
+// your side, the payee's), the one whose verdict is the step's first. Each side's own reasons stay with that side
+// (payer_side, payee_side), so a client that shows them too repeats nothing, but for one case: valun 0.7.0 and 0.7.1 add
+// the payee side's reasons to a summary when that side is decline or ask_owner, and their own "backed for you up to
+// <covered>" to an accept or ask_owner, so when the payee's own owner decides they name the cover twice (0.7.2 drops its
+// own).
+function bothSides(P, Q, verdict) {
+  if (P.verdict === 'decline' && TERMS_RULES.has(P.rule)) return `No deal can be made (${P.rule}): the server refuses its terms before it checks either side's limits.`;
+  if (P.verdict === Q.verdict) {
+    if (P.verdict === 'accept') return 'Both sides allow it.';
+    if (P.verdict === 'ask_owner') return 'Both sides allow it once their owners approve.';
+    if (P.verdict === 'decline') return `Both sides refuse it: its side (${P.rule}) and yours (${Q.rule}).`;
+  }
+  const said = (x, whose) => (x.verdict === 'decline' ? `refuses it (${x.rule})` : x.verdict === 'ask_owner' ? `allows it once ${whose} owner approves`
+    : x.verdict === 'unknown' ? 'was not checked' : 'allows it');
+  const its = `its side ${said(P, 'its')}`, yours = `your side ${said(Q, 'your')}`, [a, b] = P.verdict === verdict ? [its, yours] : [yours, its];
+  return `${a.charAt(0).toUpperCase()}${a.slice(1)}; ${b}.`;
+}
+
+// For the payee's own check of a new deal: the payer's open offers to it that its outstanding counts (countedOffers).
+const countedWords = counted => (counted.length ? [`Its open ${counted.length === 1 ? 'offer' : 'offers'} to you (${counted.map(o => `${o.deal_id}: ${amt(o.amount)}`).join(', ')}) ${counted.length === 1 ? 'is' : 'are'} already counted in its outstanding: this answer is for a new deal on top. To check an offer you received, ask again with deal=<its id>.`] : []);
+
+// GET /participants/{vp}/check. `amount` and `payee` as parseAmount and findPayee return them; `path` and `deliverBy` as
+// parsePath and parseDeliverBy return them (null: not given; `path` is echoed only when given).
+// Every answer has the payer's side (payer_side: payerSideOf's {verdict, rule, reasons}). `showCover` only when the
+// payee itself asks (its token): the answer then also has its cover, its own side of the step (payee_side: payeeSideOf,
+// the cover's reasons among its own), and, without `deal`, the payer's open offers to it that its outstanding already
+// counts (counted_offers), so a payee checking one of them can name it. Its verdict is the step's (fix inbox #87), from
+// both sides, as the server enforces them (combined, in the step's order, stepOrder):
+//   decline    either side declines; `rule` is the first refusal the step meets;
+//   ask_owner  neither declines, and an owner on either side decides before it binds (rule approve_above);
+//   accept     both sides go ahead (rule null);
+//   unknown    the payer's side was not checked (its owner has not published its card), and the payee's side does not
+//              decline (rule null).
+// Its reasons: both sides in a few words (bothSides), the payer's side's reasons, the counted offers'. A payer whose card
+// is not published is answered only to the payee itself (404 card_not_public otherwise), with no figure of the payer's:
+// its side is unknown (payer_side null, a reason saying why), mandate, room_left, card_hash and record are null, the
+// cover is not shown, there are no counted offers, and payee_side is its verdict and rule in figure-free words
+// (unpublishedSide).
+// Without `showCover` the answer is the payer's side, the same for everyone: its verdict, rule and reasons, and a reason
+// saying the payee's own limits were not checked (PAYEE_NOT_CHECKED). approval_needed: the verdict is ask_owner.
+export async function checkPayer(pilot, p, {amount, payee, showCover = false, deal = null, path = null, deliverBy = null}) {
+  const started = performance.now();
+  if (!showCover) assertCardPublic(p);
+  if (deal && (path !== null || deliverBy !== null)) throw new PilotError('invalid_field', 'path and deliver_by are for a new deal: the deal named with deal= has its own proposer and deliver_by');
+  const ledger = await pilot.ledger();
+  const step = deal ? 'deal' : path ?? 'payer_proposes';
+  const card = cardPublic(p) ? await budgetCard(pilot, p, {ledger}) : null;
+  const payer = card ? await payerSideOf(pilot, p, payee, amount, {ledger, card, deal, step}) : null;
+  const P = payer?.side ?? {verdict: 'unknown', rule: null, reasons: [PAYER_NOT_PUBLISHED]};
+  // The payee's own figures are shown with the payer's card only (fix inbox #87 review: without it they would show the
+  // payer's private room).
+  const figures = showCover && !!card;
+  const {cover, reasons: coverReasons} = figures ? coverFor(pilot, p, payee, {deal, deliverBy}) : {cover: coverNotShown(), reasons: []};
+  const counted = figures && !deal ? countedOffers(pilot, p, payee) : [];
+  const own = showCover ? await payeeSideOf(pilot, p, payee, amount, {ledger, deal, step, deliverBy, cover: coverReasons}) : null;
+  const Q = own && (card ? own : unpublishedSide(pilot, payee, own));
+  let top = {verdict: P.verdict, rule: P.rule, reasons: [...P.reasons, PAYEE_NOT_CHECKED]};
+  if (Q) {
+    // Both sides refuse a new deal the payer proposes: the payer's refusal may come only at its re-check, once the
+    // payee's agent accepts, when what it owes a dormant payee counts (room.woken). Its proposal, checked as the payee is
+    // before its agent acts (no views), says which comes first.
+    const late = step === 'payer_proposes' && P.verdict === 'decline' && Q.verdict === 'decline' && P.rule === 'max_issue_outstanding' && payer.room.woken > 0
+      && await pilot.checkMandate(payer.P, 'payer', payee.id, amount, {ledger}).then(() => true, e => { if (e?.code !== 'mandate_exceeded') throw e; return false; });
+    const both = combined(P, Q, stepOrder(pilot, deal, p, step, {late}));
+    top = {...both, reasons: [bothSides(P, Q, both.verdict), ...P.reasons, ...countedWords(counted)]};
+  }
+  return {verdict: top.verdict, reasons: top.reasons, rule: top.rule,
     payer: {id: p.id, handle: p.handle}, payee: {id: payee.id, handle: payee.handle}, amount,
-    mandate: {version: mandate.version, expires_at: mandate.expires_at}, room_left: card.room.room_left, approval_needed: verdict === 'ask_owner',
-    cover, record: card.record, card_hash: card.card_hash, checked_at: iso(pilot.now()), took_ms: Math.round(performance.now() - started),
+    mandate: card ? {version: card.mandate.version, expires_at: card.mandate.expires_at} : null, room_left: card ? card.room.room_left : null,
+    approval_needed: top.verdict === 'ask_owner', cover, record: card ? card.record : null,
+    card_hash: card ? card.card_hash : null, checked_at: iso(pilot.now()), took_ms: Math.round(performance.now() - started),
     ...(deal ? {deal_id: deal.id} : {}), ...(counted.length ? {counted_offers: counted} : {}), ...(path !== null ? {path} : {}),
-    ...(payeeSide ? {payee_side: payeeSide} : {})};
+    payer_side: card ? P : null, ...(Q ? {payee_side: Q} : {})};
 }

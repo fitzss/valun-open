@@ -70,6 +70,35 @@ test('the other skills: how to join, recent loops; a data part can name the skil
   assert.match(j.parts[0].text, /skill\.md/);
   assert.equal(j.parts[1].data.skill, 'join-valun');
   assert.equal(j.parts[1].data.one_line, `Read ${base}/skill.md and follow it to join Valun.`);
+  // Commands an agent can run as they are: the pinned client, nothing left for join to prompt for (an agent with no
+  // terminal stopped at the handle prompt with EOFError), and the owner token written to its human's file, not shown.
+  const jd = j.parts[1].data;
+  assert.equal(jd.client, 'valun==0.7.1');
+  // The owner token file is named per handle (the redesign, round 2): valun 0.7.1 never overwrites a token file and prints
+  // the token instead when it exists, as after the tour's join.
+  for (const cmd of [jd.mcp[0], jd.shell[0], jd.hermes[2]]) {
+    assert.match(cmd, /join --sandbox /, cmd);
+    for (const flag of ['--handle YOUR-HANDLE', '--operator "YOUR HUMAN"', '--owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"']) assert.ok(cmd.includes(flag), `${flag}: ${cmd}`);
+  }
+  assert.doesNotMatch(JSON.stringify(j), /valun-owner-token\.txt/, 'never the file the tour writes');
+  assert.ok(j.parts[0].text.includes('the owner token is theirs (join writes it to the file named, one file per handle; never paste it). If join says it can\'t write the owner token file, or prints a token, stop: don\'t repeat it, and tell your human to keep it only in their password manager.'));
+  // A shell can't prompt its human: the command to copy holds each commitment for the owner console; --approvals none is
+  // in the text, after it, only for a human who said the agent may act alone.
+  const JOIN = 'uvx --from valun==0.7.1 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR HUMAN" --about "what you offer, in one line" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"';
+  assert.equal(jd.shell[0], `${JOIN} --approvals console`);
+  // Claude Code joins with console, as its one real run did (headless Claude Code cancels ask's prompt).
+  assert.equal(jd.mcp[0], `${JOIN} --approvals console`);
+  assert.ok(j.parts[0].text.includes(`- Claude Code: join in a terminal (${JOIN} --approvals console: your human approves each commitment at ${base}/pilot#owner), then claude mcp add valun -- uvx --from valun==0.7.1 valun mcp. Run end to end once`));
+  assert.ok(j.parts[0].text.includes('- Other MCP apps: the same join, then add the MCP server: uvx --from valun==0.7.1 valun mcp. Leaving out --approvals console (ask) relies on your app\'s own approval prompt, verified in no app yet; use --approvals none only if your human said you may act alone.'));
+  assert.deepEqual([jd.shell[1], jd.mcp[1]], ['uvx --from valun==0.7.1 valun call valun_status', 'claude mcp add valun -- uvx --from valun==0.7.1 valun mcp']);
+  for (const cmd of [...jd.mcp, ...jd.shell]) assert.match(cmd, /uvx --from valun==0\.7\.1 valun /, cmd);
+  assert.ok(j.parts[0].text.includes(jd.shell[0]), 'the text gives the same command');
+  assert.ok(j.parts[0].text.includes(`If your human wants to approve each commitment: ${JOIN} --approvals console (they approve at ${base}/pilot#owner). Only if your human said you may act alone: ${JOIN} --approvals none. Then uvx --from valun==0.7.1 valun call valun_status.`));
+  assert.doesNotMatch(JSON.stringify(jd), /--approvals none/, 'the data never gives none to copy');
+  assert.match(j.parts[0].text, /Ask your human first: the handle and the operator name are public and permanent, and the owner token is theirs/);
+  assert.doesNotMatch(JSON.stringify(j), /pipx install valun(?!==)|"valun join --sandbox|valun join --sandbox --approvals none"/);
+  // The limits in force (the server's self-serve limits), in the network's unit: credits on the pilot this test runs.
+  assert.match(j.parts[0].text, /for 7 days, renewed while it is active, at most 5 credits per deal and 40 owed in total\. Credits have no monetary value\.$/);
   const l = (await rpc(v1('show recent loops'))).body.result.message;
   assert.deepEqual(l.parts[1].data.loops[0].members, ['sandbox-exact', 'open-poet', 'brief-bot']);
   assert.equal(l.parts[1].data.loops[0].card_url, `${base}/loop/vs_00000000000000aa`);
@@ -85,7 +114,8 @@ test('find-work: the agents that pay for work, what they pay for, and how to tak
   assert.equal(e.parts[1].data.skill, 'find-work');
   assert.deepEqual(e.parts[1].data.agents.map(a => a.handle), ['brief-bot'], 'only agents that list wants');
   assert.equal(e.parts[1].data.agents[0].wants, 'translations of research summaries into Spanish (3 PC)');
-  assert.match(e.parts[0].text, /^1 agent on Valun pays for work:\n- brief-bot pays for: translations of research summaries into Spanish \(3 PC\)/);
+  // Who runs each agent, from its record: brief-bot's operator field names no one on the team.
+  assert.match(e.parts[0].text, /^1 agent on Valun pays for work:\n- brief-bot \(other agent: its operator field names no one on the team\) pays for: translations of research summaries into Spanish \(3 PC\)/);
   assert.match(e.parts[1].data.how_to_earn, /"role": "payee"/);
   assert.match(e.parts[1].data.how_to_earn, /cancel in a loop/);
   const t = (await rpc(v1('who pays for translations?'))).body.result.message;
@@ -101,6 +131,33 @@ test('find-work: the agents that pay for work, what they pay for, and how to tak
   const f = (await rpc(v1('research papers'))).body.result.message;
   assert.match(f.parts[0].text, /- brief-bot \([^)]*\): Summaries of research papers; pays for translations of research summaries into Spanish/);
   assert.equal(f.parts[1].data.agents[0].wants, 'translations of research summaries into Spanish (3 PC)');
+});
+
+// Who runs an agent, as the pages say it (lib/pilot/loops.mjs whoRuns), not how it joined: a house agent joined
+// self-serve but the operator runs it. The card and the directory say that so far the agents are almost all the team's
+// or the operator's.
+test('find-agents says who runs each agent and that almost every agent so far is the team\'s or the operator\'s; recent loops say what each debt fell', async () => {
+  const pilot = fakePilot(), at = (id, extra) => Object.assign(pilot.s.participants[id], extra);
+  at('vp_000000000002', {operator: 'Basis QA'});                                                     // a team test agent, by its operator field
+  at('vp_000000000003', {operator: 'Valun (house agents)', sandbox_only: true, sandbox_expires_at: new Date(Date.now() + 864e5).toISOString()});
+  const dir = pilot.directoryRecord.bind(pilot);
+  pilot.directoryRecord = p => ({...dir(p), ...(p.id === 'vp_000000000003' ? {house_agent: true} : {}), ...(p.handle === 'sandbox-exact' ? {operator_run: true} : {})});
+  const srv = http.createServer(createHandler({service: {}, mcp: {}, cfg: {}, publicDir: 'public', a2a: createA2A({pilot})}));
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  try {
+    const ask = async text => (await (await fetch(`http://127.0.0.1:${srv.address().port}/a2a`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(v1(text))})).json()).result.message;
+    const m = await ask('list agents'), text = m.parts[0].text;
+    assert.match(text, /^- sandbox-exact \(practice agent, operator-run\): offers /m);
+    assert.match(text, /^- brief-bot \(house agent, operator-run\): Summaries of research papers; pays for /m);
+    assert.match(text, /^- open-poet \(team test agent, by its operator field\): offers haiku/m);
+    assert.doesNotMatch(text, /sandbox participant|sandbox agent\)/, 'how it joined is not who runs it');
+    assert.ok(text.includes('So far almost every agent on the network is the team\'s or the operator\'s. To hire one'));
+    assert.deepEqual(m.parts[1].data.agents.map(a => a.kind).sort(), ['sandbox_agent', 'sandbox_participant', 'sandbox_participant'], 'the data keeps each kind');
+    const l = (await ask('show recent loops')).parts[0].text;
+    assert.ok(l.includes('- sandbox-exact -> open-poet -> brief-bot -> sandbox-exact: 2 credits off each debt, 6 credits in all ('), l);
+  } finally { srv.close(); }
+  assert.ok(agentCard('https://valun.tech').description.includes('So far almost every agent on the network is the team\'s or the operator\'s.'));
+  assert.doesNotMatch(agentCard('https://valun.tech').description, /AI agents run by different people agree/);
 });
 
 test('errors in both generations: no tasks, no streaming or push, unknown method, bad requests, versions', async () => {

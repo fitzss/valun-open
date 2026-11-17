@@ -24,6 +24,9 @@ import {evidenceOf, evidenceTotals} from './evidence.mjs';
 // and uses them only inside functions, so the import cycle is safe (as with novation.mjs).
 import {GuaranteeBook, guaranteeStatements} from './guarantees.mjs';
 import {grounded} from './grounding.mjs';
+// The committed snapshot (fix inbox #62): pure helpers, no import of this module.
+import {CONSTRUCTION, SNAPSHOT_RETRIES, SNAPSHOT_PAUSE_MS, SNAPSHOT_RETRY_AFTER_MS, NO_BOX_RETRY_AFTER_MS, settleRead, committedRows, selfCheck,
+  committedMeaning} from './committed.mjs';
 export {guaranteeStatements};
 
 export {NETWORK} from './units.mjs';
@@ -49,6 +52,9 @@ const CAPS_REREAD_MS = 60e3;           // reservedResidues: a tracker that named
 // While another deal on the same key pair is issuing_note (its note may already be on the tracker, unconfirmed), a new
 // note on that pair is refused with 409 pair_busy and this retry time; recovery runs every 60 s (server.mjs).
 const PAIR_BUSY_RETRY_MS = 60000;
+// After a redemption is submitted, how long an honor of the same debt waits for the tracker's note to show it (fix inbox
+// #107; as http.mjs RESERVE_SPEND_HOLD_MS holds the reserve).
+const REDEMPTION_SUBMIT_HOLD_MS = 180e3;
 // The approval kinds this server decides. Any other kind (state from a newer release, or damaged) is refused before
 // anything changes; it used to fall through to the confirm_offer code, so rejecting it withdrew the deal.
 // pay_by_transfer (circulating credit): a payment by debt transfer held for the payer's owner (review_deliveries).
@@ -153,7 +159,7 @@ const CIRCULATION_SETTLEMENT = 'not settled: a credit note is an outstanding obl
 // The same labels on the Valun testnet network (valun-testnet-1), where a note can be redeemed on Ergo testnet and
 // netting is anchored there (tracker v4.1).
 const TESTNET_REDEMPTION = 'Its creditor can redeem it on Ergo testnet against the issuer\'s tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.';
-const CIRCULATION_SETTLEMENT_TESTNET = `not settled until redeemed: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes); a netting is final once a tracker box on Ergo testnet commits it. ${TESTNET_REDEMPTION}`;
+export const CIRCULATION_SETTLEMENT_TESTNET = `not settled until redeemed: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes); a netting is committed once a tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. ${TESTNET_REDEMPTION}`;
 const SETTLEMENT_TESTNET = `not settled until redeemed: issuing a credit note creates an outstanding obligation. ${TESTNET_REDEMPTION}`;
 // The last words of the join-sandbox note: what the amounts are.
 const UNITS_NOTE = ON_TESTNET ? 'Amounts are nanoERG of Ergo testnet: test coins with no monetary value.' : 'Synthetic units.';
@@ -303,12 +309,19 @@ export class Pilot {
     circulation = 'off', trackerCaps = undefined, trackerSha256 = null, trackerPins = TRACKER_SHA256_PINS, log = m => console.warn(m)}) {
     this.store = store; this.basis = basis; this.unit = unitLabel; this.now = now;
     this.openSandbox = openSandbox; this.sandboxIds = new Set();   // filled by the Sandbox when it starts
+    // What the sandbox agents keep on their edges for open tours: a function that returns a Map edge key -> PC, set by
+    // the Sandbox when it starts (Sandbox.tourHolds; read through keptOnEdges).
+    this.keptForClients = null;
     this.openNetwork = !!openNetwork;   // self-serve participants may deal with anyone (OPEN_NETWORK_MAX_OPEN_OFFERS)
+    // The house agents (server.mjs: PILOT_HOUSE_AGENTS, participant ids): agents the operator runs on a machine of its
+    // own, whose keys it holds though the server does not sign for them. Only their public records change (house_agent).
+    this.houseIds = new Set();
     this.lock = Promise.resolve();
     this.log = log; this.modeLogged = new Set(); this.edgeLogQueue = [];
     // Functions called after a change others may react to (the Sandbox's poke): {deal, event} after every deal event,
-    // {participant, event: 'enrolled'} after an enrollment. Called with the lock held, so a listener only schedules
-    // work; what it throws is ignored.
+    // {guarantee, event} after every guarantee event, {participant, event: 'enrolled'} after an enrollment, these three
+    // with the lock held; and {event: 'anchor.inconsistent', box_id, ...} when a committed snapshot fails its check
+    // (anchorInconsistent, a read: without the lock). A listener only schedules work; what it throws is ignored.
     this.changeListeners = new Set();
     this.circulationConfig = {circulation, trackerCaps, trackerSha256, trackerPins};
     this.guarantees = new GuaranteeBook(this);   // fix inbox #18: s.guarantees, made on the first offer
@@ -868,12 +881,15 @@ export class Pilot {
 
   // ---------- views ----------
   // With circulating credit on (modes sandbox and on), a participant the server runs (the sandbox agents) is labelled
-  // operator_run: the operator holds its keys (spec 3, 18.15). In other modes the record is v15's.
+  // operator_run: the operator holds its keys (spec 3, 18.15). In other modes the record is v15's. A house agent (the
+  // operator runs it elsewhere and holds its key; this server names it by id: houseIds) is labelled house_agent, in every
+  // mode: a label only, nothing it may do changes (its notes are not operator_run: the server does not sign them).
   publicParticipant(p) {
     return {id: p.id, handle: p.handle, display_name: p.display_name, operator: p.operator, about: p.about, services: p.services,
       ...(p.wants ? {wants: p.wants} : {}), ...(p.public_vouches ? {public_vouches: true} : {}), pubkey: p.pubkey, status: p.status, joined_at: p.created_at, agent_last_seen: p.last_seen_agent,
       ...(p.sandbox_only ? {sandbox_only: true, sandbox_expires_at: p.sandbox_expires_at} : {}),
-      ...(this.serverRun(p) && this.circulating ? {operator_run: true} : {})};
+      ...(this.serverRun(p) && this.circulating ? {operator_run: true} : {}),
+      ...(this.houseIds?.has(p.id) ? {house_agent: true} : {})};
   }
   // The directory's record of a participant (GET /participants, GET /participants/{vp}, agent pages, the A2A front door):
   // the public record, where an agent the server runs (the sandbox agents) is always on, so its agent_last_seen is now,
@@ -1023,7 +1039,14 @@ export class Pilot {
     const edges = this.s.edges || {};
     const rows = ledger.filter(l => l.issuer && l.recipient).map(l => ({issuer: l.issuer, recipient: l.recipient, outstanding: l.outstanding,
       claim: l.total === (edges[edgeKey(l.issuer_pubkey, l.recipient_pubkey)]?.expected_total ?? 0)}));
-    return grounded({rows, reserves: await this.reservesById(), trusted: this.trustedBy(C), extraOwes});
+    // Fix inbox #107: what backers paid a creditor for an issuer's debt is not the creditor's claim (it still counts as
+    // the issuer's debt).
+    const heldLess = new Map();
+    for (const l of rows) {
+      const k = `${l.issuer}>${l.recipient}`;
+      if (!heldLess.has(k)) heldLess.set(k, this.heldForBackers(l.issuer, l.recipient));
+    }
+    return grounded({rows, reserves: await this.reservesById(), trusted: this.trustedBy(C), extraOwes, heldLess});
   }
 
   // The tracker's notes in the pilot denomination (a tracker may also hold notes in other denominations).
@@ -1041,6 +1064,58 @@ export class Pilot {
       TRACKER_NOTE.set(row, n);            // the row's note (its signature) for reconcile(); never part of the row itself
       return row;
     });
+  }
+  // The committed snapshot (fix inbox #62; lib/pilot/committed.mjs says what it is): the notes the tracker's confirmed
+  // box on Ergo testnet commits, each at the total that box commits, in every denomination, from one settled read: GET
+  // /tracker/state, GET /notes (exact amounts, no denomination filter), GET /tracker/state again. A read that is not
+  // settled (settleRead: the anchoring moved under it, or notes are pending under an update not in flight and the read
+  // before it did not find the same ones) is read again (after a pause), at most `retries` more times, then 503
+  // snapshot_moving {retry_after_ms}; no confirmed box: 503 no_confirmed_box {retry_after_ms}; a tracker read that fails,
+  // or that does not say whether a note is committed: BasisError. Its check (consistent) is served as it comes out: a
+  // false is recorded (anchorInconsistent) and never turned into a true or an error.
+  // Reads only: it never takes the lock (serial), never saves, and leaves ledger(), trackerNotes() and every sum built on
+  // them as they are.
+  async committedSnapshot({retries = SNAPSHOT_RETRIES, pauseMs = SNAPSHOT_PAUSE_MS} = {}) {
+    let held = null;
+    for (let attempt = 0; ; attempt++) {
+      const before = await this.basis.trackerState();
+      if (!before?.confirmed_box_id || !before?.confirmed_digest) {
+        throw new PilotError('no_confirmed_box', 'the tracker names no confirmed tracker box yet: it has not read its box on Ergo testnet since it started (it does at its next update check); try again in a minute', 503,
+          {retry_after_ms: NO_BOX_RETRY_AFTER_MS});
+      }
+      const notes = await this.basis.allNotes({exact: true});
+      const after = await this.basis.trackerState();
+      const read = settleRead(before, notes, after, held);
+      if (read.settled) {
+        const rows = committedRows(notes), check = selfCheck(rows, after.confirmed_digest, {notes, st: after});
+        const snapshot = {network: NETWORK, construction: CONSTRUCTION, box_id: after.confirmed_box_id, height: after.confirmed_height ?? null, digest: after.confirmed_digest,
+          read_at: iso(this.now()), consistent: check.consistent, ...(check.consistent ? {} : {rebuilt_digest: check.rebuilt_digest, inconsistency: check.inconsistency}),
+          what_this_means: committedMeaning(check.consistent), rows};
+        if (!check.consistent) this.anchorInconsistent(snapshot);
+        return snapshot;
+      }
+      held = read.held;
+      if (attempt >= retries) {
+        throw new PilotError('snapshot_moving', `the tracker's anchoring moved, or a tracker box update was being promoted in its records, while its notes were read, ${attempt + 1} times in a row; try again in a few seconds`, 503,
+          {retry_after_ms: SNAPSHOT_RETRY_AFTER_MS});
+      }
+      if (pauseMs > 0) await pause(pauseMs * (attempt + 1));
+    }
+  }
+  // An inconsistent committed snapshot, recorded once per box, digest and outcome (reading the same box again adds
+  // nothing): an anchor.inconsistent audit line, an anchor.inconsistent change event (notifyChange, called here outside
+  // the lock) and a log line. The line is no ALARM: scripts/live-check.mjs WARNs on it, since tracker v4.4's promotion
+  // and mark races (lib/pilot/committed.mjs) cause it until the next box, and a public read decides when it is written.
+  // A failed audit write does not stop the snapshot from being served; it is tried again at the next read.
+  anchorInconsistent(s) {
+    const seen = (this.anchorInconsistencies ??= new Set()), key = `${s.box_id}|${s.digest}|${s.rebuilt_digest}|${s.inconsistency}`;
+    if (seen.has(key)) return;
+    const e = {box_id: s.box_id, height: s.height, digest: s.digest, rebuilt_digest: s.rebuilt_digest, rows: s.rows.length, read_at: s.read_at, inconsistency: s.inconsistency};
+    let audited = true;
+    try { this.store.audit({type: 'anchor.inconsistent', ...e}); } catch { audited = false; }
+    if (audited) { seen.add(key); if (seen.size > 64) seen.delete(seen.values().next().value); }
+    this.notifyChange({event: 'anchor.inconsistent', ...e});
+    this.log?.(`Pilot: anchor.inconsistent: tracker box ${s.box_id} (height ${s.height}): ${s.inconsistency}; the tracker builds no redemption until its records agree with the box${audited ? '' : ' (the audit line could not be written)'}`);
   }
   // Whether the tracker's note on an edge is exactly the state Valun's last event there left (total, timestamp and the
   // issuer's signature): design §5.6 `exact`.
@@ -1097,6 +1172,13 @@ export class Pilot {
     ledger ??= await this.ledger();
     const owed = ledger.filter(l => l.recipient === p.id), owes = ledger.filter(l => l.issuer === p.id);
     const sum = xs => xs.reduce((a, l) => a + l.outstanding, 0);
+    // Fix inbox #107: what backers paid this participant for an issuer's debt is held for them, not its claim (the
+    // tracker still records it, and the issuer still owes it). Per issuer, taken from its rows in order.
+    const heldLeft = new Map();
+    for (const l of owed) if (l.issuer && !heldLeft.has(l.issuer)) heldLeft.set(l.issuer, this.heldForBackers(l.issuer, p.id));
+    const heldRow = new Map(owed.map(l => { const h = Math.min(l.outstanding, heldLeft.get(l.issuer) ?? 0); if (h) heldLeft.set(l.issuer, heldLeft.get(l.issuer) - h); return [l, h]; }));
+    const held = [...heldRow.values()].reduce((a, h) => a + h, 0), claimsHeld = sum(owed) - held;
+    const heldField = held ? {held_for_backers: held} : {};
     const deals = this.dealsFor(p).map(d => this.sweep(d));          // counts use current statuses, not unswept ones (OQ-7)
     const buckets = bucketCounts(deals);                             // by STATUS_CLASS[status].bucket (lib/pilot/status.mjs)
     const backing = BACKING;
@@ -1104,8 +1186,9 @@ export class Pilot {
     // participant redeemed, and its debts redeemed from its reserve.
     const redeemedOf = xs => xs.reduce((a, l) => a + (Number(l.redeemed) || 0), 0);
     const redeemed = ON_TESTNET ? {redeemed_claims: redeemedOf(owed), redeemed_debts: redeemedOf(owes)} : null;
-    if (!this.circulating) return {participant_id: p.id, unit: this.unit, claims_held: sum(owed), owes: sum(owes), net: sum(owed) - sum(owes),
-      claims: owed.map(l => ({from: l.issuer_handle, amount: l.outstanding})), debts: owes.map(l => ({to: l.recipient_handle, amount: l.outstanding})),
+    if (!this.circulating) return {participant_id: p.id, unit: this.unit, claims_held: claimsHeld, owes: sum(owes), net: claimsHeld - sum(owes), ...heldField,
+      claims: owed.map(l => ({from: l.issuer_handle, amount: l.outstanding - heldRow.get(l), ...(heldRow.get(l) ? {held_for_backers: heldRow.get(l)} : {})})),
+      debts: owes.map(l => ({to: l.recipient_handle, amount: l.outstanding})),
       deals: Object.fromEntries(POSITION_BUCKETS.map(b => [b, buckets[b]])),
       settled: redeemed ? redeemed.redeemed_claims + redeemed.redeemed_debts : 0, ...(redeemed ?? {}), backing,
       meaning: ON_TESTNET
@@ -1120,14 +1203,15 @@ export class Pilot {
       if (keys.has(i)) { journal.setoff += e.setoff_PC; journal.novated += e.transferred_out_PC; }
     }
     const frozen = owed.filter(l => this.isPastKey(l.issuer_pubkey) || this.isPastKey(l.recipient_pubkey));
-    return {participant_id: p.id, unit: this.unit, claims_held: sum(owed), owes: sum(owes), net: sum(owed) - sum(owes),
+    return {participant_id: p.id, unit: this.unit, claims_held: claimsHeld, owes: sum(owes), net: claimsHeld - sum(owes), ...heldField,
       gross: sum(owed) + sum(owes), cleared_by_setoff: journal.setoff, transferred_in: journal.in, transferred_out: journal.out, novated_as_issuer: journal.novated,
       ...(own ? {spendable_notes: this.spendableNotes(p, ledger)} : {}),
       frozen_claims: sum(frozen),
       ...(own ? {pending: this.pendingOf(p)} : {}),
       // Notes a participant the server runs issued (the sandbox agents) carry operator_run and the label of spec 16.1:
       // the claims on it, and its own debts (its credit history).
-      claims: owed.map(l => ({from: l.issuer_handle, amount: l.outstanding, issuer_id: l.issuer, issuer_pubkey: l.issuer_pubkey, recipient_pubkey: l.recipient_pubkey,
+      claims: owed.map(l => ({from: l.issuer_handle, amount: l.outstanding - heldRow.get(l), ...(heldRow.get(l) ? {held_for_backers: heldRow.get(l)} : {}),
+        issuer_id: l.issuer, issuer_pubkey: l.issuer_pubkey, recipient_pubkey: l.recipient_pubkey,
         ...(this.operatorRun(l.issuer) ? OPERATOR_RUN_NOTE : {})})),
       debts: owes.map(l => ({to: l.recipient_handle, amount: l.outstanding, recipient_id: l.recipient, recipient_pubkey: l.recipient_pubkey, issuer_pubkey: l.issuer_pubkey,
         ...(this.serverRun(p) ? OPERATOR_RUN_NOTE : {})})),
@@ -1136,8 +1220,10 @@ export class Pilot {
       deals: {...Object.fromEntries(POSITION_BUCKETS.map(b => [b, buckets[b]])), paid_by_transfer: buckets.paid_by_transfer, payment_due: deals.filter(d => d.status === 'payment_due').length,
         notes_issued_as_payer: deals.filter(d => d.status === 'note_issued' && d.payer === p.id).length, notes_received: deals.filter(d => d.status === 'note_issued' && d.payee === p.id).length},
       ...(redeemed
-        ? {settled: journal.setoff + redeemed.redeemed_claims + redeemed.redeemed_debts, settled_how: 'by set-off and by redemption on Ergo testnet', ...redeemed, backing,
-          meaning: 'claims and debts are outstanding obligations recorded by the Valun testnet Basis tracker, which anchors its state on Ergo testnet (cumulative per pair). Some may have moved between creditors (transfer) or been cancelled in cycles (set-off); a claim is also settled when its creditor redeems it on Ergo testnet against its issuer\'s tERG reserve (GET /reserves). settled counts both: cleared_by_setoff, redeemed_claims (the claims you redeemed) and redeemed_debts (your debts redeemed from your reserve). tERG are test coins with no monetary value.'}
+        // settled keeps its name and sum for the clients; its words keep the two apart: a set-off clears a debt (committed,
+        // not final: the Trust model), a redemption pays it.
+        ? {settled: journal.setoff + redeemed.redeemed_claims + redeemed.redeemed_debts, settled_how: 'cleared in loops, committed but not final, and redeemed on Ergo testnet', ...redeemed, backing,
+          meaning: 'claims and debts are outstanding obligations recorded by the Valun testnet Basis tracker, which anchors its state on Ergo testnet (cumulative per pair). Some may have moved between creditors (transfer) or been cancelled in cycles (set-off: cleared, and committed once a tracker box commits it, not final). A claim is settled only when its creditor redeems it on Ergo testnet against its issuer\'s tERG reserve (GET /reserves). The field settled adds the two kinds, so read them apart: cleared_by_setoff (cleared in loops), redeemed_claims (the claims you redeemed) and redeemed_debts (your debts redeemed from your reserve). tERG are test coins with no monetary value.'}
         : {settled: journal.setoff, settled_how: 'by set-off only; nothing is redeemed', backing,
           meaning: 'claims and debts are outstanding obligations recorded by the pilot Basis tracker (cumulative per pair). Some may have moved between creditors (transfer) or been cancelled in cycles (set-off); settled counts only set-off. Nothing is redeemed; there is no reserve.'})};
   }
@@ -1318,9 +1404,11 @@ export class Pilot {
         const claims = circ ? gv.claimsValue(payer.id) : face, reserve = circ ? gv.reserve(payer.id) : 0;
         const trusted = circ && payer.id !== p.id && this.trustedBy(p).has(payer.id);
         // Backing counts only for the payer's debt to this agent, and only as far as backers pay or could still be
-        // called for it (fix inbox #19): what they paid already, then the open caps, at most that debt with this deal.
+        // called for it (fix inbox #19): what they paid already, then what each guarantee could pay for this deal, at
+        // most that debt with this deal. A floating guarantee counts its open cap; the ones that name this deal share
+        // its price, as the check's cover counts them (GuaranteeBook.stepCover, fix inbox #79).
         const back = this.guarantees ? this.guarantees.backingFor(p, payer.id, {debtAfter: e.tracker + e.committed + price, ratio: circ ? id => gv.ratio(id) : () => 1,
-          debtFrom: Number.isFinite(deliverBy) ? deliverBy : null, dealId: dealId ?? excludeDealId}) : {amount: 0, already_paid: 0, cover: 0, ids: []};
+          debtFrom: Number.isFinite(deliverBy) ? deliverBy : null, dealId: dealId ?? excludeDealId, price}) : {amount: 0, already_paid: 0, cover: 0, ids: []};
         const owes = pe.tracker + pe.committed + (pe.guaranteed ?? 0) + price, raw = Math.floor((reserve + claims + back.cover) * 100 / owes), pct = trusted ? Math.max(100, raw) : raw;
         checks.push({rule: barRule, payer_claims_on_tracker: face, ...(circ ? {payer_claims_grounded: claims} : {}), ...(reserve ? {payer_reserve: reserve} : {}),
           ...(trusted ? {payer_trusted_by_owner: true} : {}),
@@ -2506,12 +2594,56 @@ export class Pilot {
   // total less what live transfers reserve on it, and 0 unless that edge reconciles exactly (its tracker total is the
   // journal's expected total and its note the one Valun's last event left), both keys are current, A can sign as issuer,
   // and no live transfer holds the edge (`exceptTransfer`: other than that one, the transfer being decided).
-  spendableNote(B, A, note, {exceptTransfer = null} = {}) {
+  spendableNote(B, A, note, {exceptTransfer = null, lessHeld = true} = {}) {
     if (!note || !A?.pubkey || !B?.pubkey || A.status !== 'active' || B.status !== 'active' || note.issuer_pubkey !== A.pubkey || note.recipient_pubkey !== B.pubkey) return 0;
     const k = edgeKey(A.pubkey, B.pubkey), e = this.s.edges[k], total = Number(note.amount_collected);
     if (!e || e.expected_total !== total || !this.exactEdge(k, note) || !this.consentCapable(A, 'issuer')) return 0;
     if (this.transfersOnEdge(k, exceptTransfer).length) return 0;
-    return Math.max(0, total - Number(note.amount_redeemed ?? 0));         // nothing else reserves it: no live transfer holds it
+    // Less what backers paid B for A's debt (fix inbox #107): B was paid for that much once already.
+    return Math.max(0, total - Number(note.amount_redeemed ?? 0) - (lessHeld ? this.heldForBackers(A.id, B.id) : 0));   // no live transfer holds it
+  }
+  // Why B cannot spend `a` of A's note `note` (an insufficient_claim refusal's text): the hold for backers when it is the
+  // cause (fix inbox #107), else reconciliation.
+  cannotSpendWhy(B, A, note, a, prefix = '') {
+    const held = this.heldForBackers(A.id, B.id);
+    if (held && this.spendableNote(B, A, note, {lessHeld: false}) >= a)
+      return `${amt(a)} of ${A.handle}'s note to you cannot be spent: ${amt(held)} of it is held: backers already paid you that much for ${A.handle}'s debt (guarantee calls they honored), so you are not paid twice; you can spend at most ${amt(this.spendableNote(B, A, note))}`;
+    return `${amt(a)} of ${A.handle}'s note to you cannot be spent now (${prefix}it must reconcile exactly with Valun's journal)`;
+  }
+  // Fix inbox #107: what backers paid creditor C for issuer A's debt (GuaranteeBook.paidOnPair: honored calls, and honors
+  // being recorded). That much of A's IOU to C is held for the backers: C may not spend it (a payment by transfer), set it
+  // off or redeem it, or it would be paid twice for one debt. The tracker still records A's debt to C (it moves no note
+  // without its issuer's signature), so A still owes it; moving it to the backers (subrogation) is not built yet.
+  heldForBackers(issuerId, creditorId) {
+    return this.guarantees && issuerId && creditorId && issuerId !== creditorId ? this.guarantees.paidOnPair(issuerId, creditorId) : 0;
+  }
+  // Fix inbox #107: redemptions built of an issuer's note to a creditor (POST /redemption/build) that may still be spent.
+  // A built redemption, signed by its creditor, stays valid on chain while the tracker box it reads is unspent, whoever
+  // broadcasts it, so it counts until that box moves (or cannot be read: fail closed), and for REDEMPTION_SUBMIT_HOLD_MS
+  // after its submit, until the tracker's note shows it. GuaranteeBook.assertDebtFree keeps an honor of that debt waiting.
+  noteRedemptionBuild({tx_id, issuer_id, creditor_id, tracker_box_id = null}) {
+    if (!tx_id) return;
+    (this.redemptionBuilds ??= new Map()).set(tx_id, {issuer_id, creditor_id, tracker_box_id, at: this.now(), submitted_at: null});
+  }
+  redemptionSubmitted(tx_id) { const b = this.redemptionBuilds?.get(tx_id); if (b) b.submitted_at = this.now(); }
+  endRedemptionBuild(tx_id) { this.redemptionBuilds?.delete(tx_id); }
+  async redemptionInFlight(issuerId, creditorId) {
+    const mine = [...(this.redemptionBuilds ?? new Map())].filter(([, b]) => b.issuer_id === issuerId && b.creditor_id === creditorId);
+    if (!mine.length) return null;
+    let box;
+    try { box = (await this.basis.trackerState())?.confirmed_box_id ?? undefined; } catch { box = undefined; }
+    for (const [id, b] of mine) {
+      if (b.submitted_at !== null) {
+        if (this.now() - b.submitted_at < REDEMPTION_SUBMIT_HOLD_MS) return {tx_id: id, retry_after_ms: Math.max(1000, b.submitted_at + REDEMPTION_SUBMIT_HOLD_MS - this.now())};
+      } else if (box === undefined || !b.tracker_box_id || b.tracker_box_id === box) return {tx_id: id, retry_after_ms: PAIR_BUSY_RETRY_MS};
+      this.redemptionBuilds.delete(id);       // spent and recorded, or its tracker box moved: it can no longer be spent
+    }
+    return null;
+  }
+  // The same for an edge 'issuer_pubkey>recipient_pubkey' (every key of the pair: an edge on a past key holds it too).
+  heldForBackersOnEdge(k) {
+    const [i, r] = String(k).split('>'), A = this.byPubkey(i), C = this.byPubkey(r);
+    return A && C ? this.heldForBackers(A.id, C.id) : 0;
   }
   async roleCheck(t, role, {ledger = null} = {}) {
     const A = this.s.participants[t.issuer.id], B = this.s.participants[t.payer.id], C = this.s.participants[t.payee.id];
@@ -2825,8 +2957,11 @@ export class Pilot {
       // issued or held for an owner on either edge, which this used to miss): a live transfer, a set-off being applied.
       const busy = x => { try { this.assertTransferEdgeFree(x); return false; } catch (e) { if (e instanceof PilotError && e.code === 'edge_busy') return true; throw e; } };
       if (!why && (busy(k) || busy(edgeKey(A.pubkey, C.pubkey)))) why = 'edge_busy';
-      if (!why && spendable < price) why = spendable === 0 && l.outstanding > 0 && !this.transfersOnEdge(k).length ? 'not_reconciled' : 'insufficient_claim';
+      const heldForBackers = this.heldForBackers(A.id, B.id);       // fix inbox #107
+      if (!why && spendable < price) why = heldForBackers && this.spendableNote(B, A, note, {lessHeld: false}) >= price ? 'held_for_backers'
+        : spendable === 0 && l.outstanding > 0 && !this.transfersOnEdge(k).length ? 'not_reconciled' : 'insufficient_claim';
       held.push({issuer: {id: A.id, handle: A.handle, pubkey: l.issuer_pubkey, operator_run: this.serverRun(A)}, held: l.outstanding, reserved: this.transferReserved(k),
+        ...(heldForBackers ? {held_for_backers: heldForBackers} : {}),
         spendable, enough: spendable >= price, payee_accepts: payeeAccepts, issuer_consents: this.consentSpeed(A, 'issuer'), payee_consents: this.consentSpeed(C, 'creditor'), why_not: why});
     }
     const open = this.transfersOf(d).filter(t => !LIVE_TRANSFER.has(t.state) && t.state !== 'applied' && this.now() <= t.fallback_after).at(-1) ?? null;
@@ -2853,7 +2988,7 @@ export class Pilot {
     const ledger = await this.ledger();
     await this.receivingTransferCheck(C, A, a, {ledger, dealId: d.id});
     this.assertTransferEdgeFree(fromEdge); this.assertTransferEdgeFree(toEdge);
-    if (this.spendableNote(B, A, fromNote) < a) throw new PilotError('insufficient_claim', `${amt(a)} of ${A.handle}'s note to you cannot be spent now (held ${from.total}; it must reconcile exactly with Valun's journal)`, 409);
+    if (this.spendableNote(B, A, fromNote) < a) throw new PilotError('insufficient_claim', this.cannotSpendWhy(B, A, fromNote, a, `held ${from.total}; `), 409);
     // T is later than both edges' notes and (decision D-2 b) than every live set-off's timestamp on them, so that a
     // set-off applied between this template and the post leaves both edges at timestamps before T.
     const r = novationTimestamp({now: this.now(), residue: TRANSFER_MS, after: this.transferAfter(fromEdge, toEdge, from, to, d)});
@@ -2929,7 +3064,7 @@ export class Pilot {
       const ledger = await this.ledger();
       await this.receivingTransferCheck(C, A, a, {ledger, dealId: d.id});
       this.assertTransferEdgeFree(fromEdge); this.assertTransferEdgeFree(toEdge);
-      if (this.spendableNote(B, A, fromNote) < a) throw new PilotError('insufficient_claim', `${amt(a)} of ${A.handle}'s note to you cannot be spent now (it must reconcile exactly with Valun's journal)`, 409);
+      if (this.spendableNote(B, A, fromNote) < a) throw new PilotError('insufficient_claim', this.cannotSpendWhy(B, A, fromNote, a), 409);
       const held = !!B.mandate.review_deliveries;
       const serverSigned = held ? {} : await this.serverSignatures(t, ['issuer', 'payee']);
       // Everything checked: record it.
@@ -3252,6 +3387,16 @@ export class Pilot {
         if (e instanceof BasisError) return this.stillApplying(t, null);
         throw e;
       }
+    }
+    // Fix inbox #107: never into what is held for backers, whenever the transfer was created (a backer may have paid the
+    // payer for the issuer's debt since), on a recovery resubmit too. GuaranteeBook.assertDebtFree keeps an honor waiting
+    // while this transfer is live; this is the second guard.
+    const heldNow = this.heldForBackers(t.issuer.id, t.payer.id);
+    if (heldNow) {
+      let fromNote;
+      try { fromNote = await this.basis.note(t.issuer.pubkey, t.payer.pubkey); } catch (e) { if (e instanceof BasisError) return this.stillApplying(t, null); throw e; }
+      const room = Number(fromNote?.amount_collected ?? 0) - Number(fromNote?.amount_redeemed ?? 0) - heldNow;
+      if (room < t.amount) return this.endTransfer(t, 'failed', 'held_for_backers');
     }
     if (this.writeRefusal()) return t;              // MIG-1: nothing is sent; left applying for recovery (a backstop)
     let r = null;
@@ -3720,11 +3865,13 @@ export class Pilot {
   // the pilot denomination, with its reconciliation (match and exact with the journal), the PC live set-offs reserve on
   // it, whether a live transfer or a set-off with a client signer holds it exclusively, and whether it is busy (a deal
   // on the pair issuing_note or holding a note for its owner, a set-off on it being applied, or an earlier payment
-  // attempt of a deal not yet paid that would change it: paymentAttemptHolds, decision D-1). Reads the tracker once
-  // (unless `ledger` is given); changes nothing but lazy expiry.
+  // attempt of a deal not yet paid that would change it: paymentAttemptHolds, decision D-1), and what the sandbox
+  // agents keep on it for open tours (kept: keptOnEdges). Reads the tracker once (unless `ledger` is given); changes
+  // nothing but lazy expiry.
   async clearingSnapshot({ledger = null} = {}) {
     ledger ??= await this.ledger();
     const now = this.now(), participants = {}, live = new Map(), moving = new Set(), held = new Set(), attempts = this.paymentAttemptHolds();
+    const kept = this.keptOnEdges();
     for (const p of Object.values(this.s.participants)) {
       const active = p.status === 'active' && !!p.pubkey;
       participants[p.id] = {id: p.id, pubkey: active ? p.pubkey : null, member: active && this.clearingParticipantCheck(p) === null, sandbox: this.inSandbox(p),
@@ -3742,10 +3889,21 @@ export class Pilot {
       const k = edgeKey(l.issuer_pubkey, l.recipient_pubkey), note = TRACKER_NOTE.get(l), j = this.s.edges[k], on = live.get(k) ?? [];
       return {edge: k, issuer_pubkey: l.issuer_pubkey, recipient_pubkey: l.recipient_pubkey, issuer: l.issuer, recipient: l.recipient, total: l.total, outstanding: l.outstanding,
         timestamp: l.timestamp, signature: note?.signature ?? null, reconciled: !!j && j.expected_total === l.total && this.exactEdge(k, note),
-        reserved: on.reduce((a, x) => a + x.e.decrease, 0), exclusive: moving.has(k) || on.some(x => !x.e.server_only),
-        busy: held.has(k) || on.some(x => x.o.state === 'applying') || attempts.has(k)};
+        // What live set-offs reserve, and what is held for the backers who paid the recipient for this debt (fix inbox
+        // #107): neither may be cleared.
+        reserved: on.reduce((a, x) => a + x.e.decrease, 0) + Math.min(l.outstanding, this.heldForBackers(l.issuer, l.recipient)),
+        exclusive: moving.has(k) || on.some(x => !x.e.server_only),
+        busy: held.has(k) || on.some(x => x.o.state === 'applying') || attempts.has(k), kept: kept.get(k) ?? 0};
     });
     return {mode: this.mode, now, participants, edges};
+  }
+  // PC of edges between two server-run members kept for cycles with a client member, as a Map edge key -> PC (empty
+  // without the sandbox agents): what they keep for open tours (keptForClients, Sandbox.tourHolds). A set-off whose
+  // members are all server-run leaves it on the edge: the engine's plan (clearing.mjs kept), createSetoff and, at apply
+  // time, refreshSetoff.
+  keptOnEdges() {
+    const m = typeof this.keptForClients === 'function' ? this.keptForClients() : null;
+    return m instanceof Map ? m : new Map();
   }
   // What the engine's plan reads (clearing.mjs planProposals): the cooldowns, how many live set-offs each member the
   // server does not run is in, and in all; and (SV-DOS-1) the members the server does not run that have not signed a
@@ -3774,9 +3932,10 @@ export class Pilot {
   // set-off on it being applied, or an earlier payment attempt of a deal not yet paid that would change it:
   // paymentAttemptHolds, decision D-1); then every edge, read again from the tracker, is exactly as the
   // engine saw it, reconciles exactly with the journal and still has its decrease available after what other set-offs
-  // reserve. Client edges get their ts_e now (none 1.5 s back yet: {skipped: 'timestamp_ahead', retry_after_ms}); a
-  // tracker without per-edge timestamps gets one for every edge. A proposal with no client slot (every member is
-  // server-run) is applied at once. Returns the record.
+  // reserve, and a proposal whose members are all server-run leaves on each edge what the sandbox agents keep there for
+  // open tours (keptOnEdges; {skipped: 'kept_for_clients'}). Client edges get their ts_e now (none 1.5 s back yet:
+  // {skipped: 'timestamp_ahead', retry_after_ms}); a tracker without per-edge timestamps gets one for every edge. A
+  // proposal with no client slot (every member is server-run) is applied at once. Returns the record.
   async createSetoff(pkg, {source = 'batch', runId = null, limits = CLEARING_LIMITS} = {}) {
     const skip = (why, extra = {}) => ({skipped: why, ...extra});
     if (this.writeRefusal()) return skip('tracker_downgraded');          // MIG-1
@@ -3814,11 +3973,14 @@ export class Pilot {
     }
     let notes;
     try { notes = await Promise.all(rows.map(r => this.basis.note(r.ik, r.rk))); } catch (e) { if (e instanceof BasisError) return skip('tracker_unavailable'); throw e; }
+    const kept = rows.every(r => r.serverOnly) ? this.keptOnEdges() : new Map();
     for (const [i, r] of rows.entries()) {
       const n = notes[i], st = edgeState(n), j = this.s.edges[r.k];
       if (!st || (r.seen && !sameState(st, r.seen))) return skip('edge_changed');
       if (!j || j.expected_total !== st.total || !this.exactEdge(r.k, n)) return skip('not_reconciled');
-      if (st.total - Number(n.amount_redeemed ?? 0) - this.setoffReserved(r.k) < r.d) return skip('insufficient');
+      const room = st.total - Number(n.amount_redeemed ?? 0) - this.setoffReserved(r.k) - this.heldForBackersOnEdge(r.k);   // #107
+      if (room < r.d) return skip('insufficient');
+      if (room - r.d < (kept.get(r.k) ?? 0)) return skip('kept_for_clients');
       r.before = st;
     }
     // ts_e: the largest timestamp ending in 998 ms at least 1.5 s back, after the edge's note and after every earlier
@@ -4026,10 +4188,17 @@ export class Pilot {
     const end = (code) => { if (o.state === 'collecting') this.endSetoff(o, 'superseded', code); return {status: 'ended'}; };
     // An edge taken at a new state must still reconcile exactly with the journal (as at creation).
     const exact = (k, n, st) => { const j = this.s.edges[k]; return !!j && j.expected_total === st.total && this.exactEdge(k, n); };
+    // A set-off of server-run members alone still leaves what the sandbox agents keep for open tours (as createSetoff).
+    const kept = o.edges.every(e => e.server_only) ? this.keptOnEdges() : new Map();
     for (const [i, e] of o.edges.entries()) {
       const n = notes[i], st = edgeState(n), room = st ? st.total - Number(n.amount_redeemed ?? 0) : 0;
+      // Never into what is held for backers (fix inbox #107), every edge, an unchanged one too: a backer may have paid
+      // the recipient for this debt after the set-off was created, and that changes no edge of it.
+      if (st && room - this.heldForBackersOnEdge(e.edge) < e.decrease) return end('insufficient');
       if (e.server_only && perEdge) {
         if (!st || room < e.decrease) return end('insufficient');
+        const left = room - this.setoffReserved(e.edge, o.id) - e.decrease;
+        if (left < (kept.get(e.edge) ?? 0)) return end('kept_for_clients');
         if (!sameState(st, e.before) && !exact(e.edge, n, st)) return end('not_reconciled');
         // After every set-off timestamp on the edge, this set-off's own earlier one included (one operation per (edge,
         // timestamp): after an apply_deferred revert its server-run parties never sign a second message there).
@@ -4189,6 +4358,11 @@ export class Pilot {
     if (!this.setoffKeysCurrent(o)) return this.endSetoff(o, 'failed', 'key_revoked');
     const blocked = this.setoffPaymentBlock(o);
     if (blocked) return this.endSetoff(o, 'failed', blocked);
+    // Fix inbox #107: never into what is held for backers, as refreshSetoff checks before an apply.
+    for (const [i, e] of o.edges.entries()) {
+      const st = states[i], room = st ? st.total - Number(notes[i]?.amount_redeemed ?? 0) : 0;
+      if (st && room - this.heldForBackersOnEdge(e.edge) < e.decrease) return this.endSetoff(o, 'failed', 'insufficient');
+    }
     return this.submitSetoff(o);
   }
 
@@ -4241,7 +4415,8 @@ export class Pilot {
         last_run: last ? {at: last.at, reason: last.reason, eligible_edges: last.eligible_edges, excluded: last.excluded} : null}});
   }
   // GET /admin/clearing (loopback admin): the engine, its recent runs, the live and recently ended set-offs (ids,
-  // members, edges and which slots are signed; never a signature), the active cooldowns and the last refusals.
+  // members, edges and which slots are signed; never a signature), the active cooldowns, what the sandbox agents keep
+  // for open tours (kept_for_clients: edge -> PC) and the last refusals.
   clearingDiagnostics() {
     const now = this.now(), live = [], ended = [];
     for (const o of Object.values(this.s.setoffs || {})) (LIVE_SETOFF.has(this.sweepSetoff(o).state) ? live : ended).push(o);
@@ -4253,7 +4428,8 @@ export class Pilot {
     return {mode: this.mode, engine: eng ? {...eng.engineInfo(), started: eng.started, last_batch_at: eng.lastBatchAt === null ? null : iso(eng.lastBatchAt)} : null,
       runs: c.runs, live: live.map(brief), recent: ended.sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1)).slice(0, 20).map(brief),
       cooldowns: Object.fromEntries(Object.entries(c.cooldowns).filter(([, v]) => Number(v?.until) > now).map(([k, v]) => [k, {...v, until: iso(v.until)}])),
-      expiry_streaks: c.expiry_streaks ?? {}, refusals: c.refusals.slice(-20)};
+      expiry_streaks: c.expiry_streaks ?? {}, kept_for_clients: Object.fromEntries(this.keptOnEdges()),
+      refusals: c.refusals.slice(-20)};
   }
 
   // ---------- views for parties ----------
@@ -4647,7 +4823,9 @@ export class Pilot {
       if (l.recipient_pubkey !== p.pubkey || !(l.outstanding > 0)) continue;
       const A = this.byPubkey(l.issuer_pubkey);
       if (!A || A.id === p.id) continue;
+      const hb = this.heldForBackers(A.id, p.id);                   // fix inbox #107
       out.push({issuer_id: A.id, issuer_handle: A.handle, issuer_pubkey: l.issuer_pubkey, outstanding: l.outstanding, reserved: this.transferReserved(edgeKey(l.issuer_pubkey, l.recipient_pubkey)),
+        ...(hb ? {held_for_backers: hb} : {}),
         spendable: this.spendableNote(p, A, TRACKER_NOTE.get(l)), issuer_consents: this.consentSpeed(A, 'issuer')});
     }
     return out;

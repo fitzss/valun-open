@@ -101,9 +101,10 @@ test('staging: every HTML page opens with the banner, which links to https://val
     const at = open.index + open[0].length;
     assert.equal(text(p.body), `${page.slice(0, at)}\n${BANNER}${page.slice(at)}`, `${named(p)}: the page with the banner right after <body>`);
   });
-  // Every HTML file of public/ is among the pages checked (a new one is added to test/fixtures/staging-pages.mjs).
-  const checked = new Set(pages.map(p => p.file).filter(Boolean));
-  for (const f of fs.readdirSync(path.join(root, 'public')).filter(f => f.endsWith('.html'))) assert.ok(checked.has(f), `public/${f}`);
+  // Every HTML file of public/ is among the pages checked (a new one is added to test/fixtures/staging-pages.mjs), but
+  // for story-fragment.html: no route serves it, it is the markup of home.html's <section id="how"> (test/story.test.mjs).
+  const checked = new Set(pages.map(p => p.file).filter(Boolean)), PARTS = new Set(['story-fragment.html']);
+  for (const f of fs.readdirSync(path.join(root, 'public')).filter(f => f.endsWith('.html') && !PARTS.has(f))) assert.ok(checked.has(f), `public/${f}`);
   // The banner's stylesheet, from 'self' as the CSP wants, served on staging; in the flow, so it covers nothing.
   const css = fs.readFileSync(path.join(root, 'public', 'staging.css'));
   assert.equal(runs.staging.css.status, 200);

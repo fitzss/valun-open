@@ -39,13 +39,56 @@ test('the page keeps the CSP and says what it cannot show: its own files only, t
   const html = pub('memory.html'), js = pub('memory.js');
   for (const m of html.matchAll(/<script\b[^>]*>/g)) assert.match(m[0], /\ssrc="\/memory\.js"/, 'every script is the page\'s own file');
   assert.doesNotMatch(html, /<style\b|\sstyle=|\son[a-z]+=/i, 'no inline style or event handler');
-  assert.deepEqual([...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(m => m[1]), ['/home.css', '/memory.css']);
+  assert.deepEqual([...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(m => m[1]), ['/site.css', '/memory.css']);
   assert.doesNotMatch(js, /innerHTML|outerHTML|insertAdjacentHTML|eval\(|authorization|bearer|x-valun|localStorage|sessionStorage/i);
   assert.deepEqual([...js.matchAll(/getJson\('([^']+)'\)/g)].map(m => m[1]).sort(), ['/evidence-attacks.json', '/pilot/v1/evidence']);
   // The honest parts are on the page, not only in the report.
   for (const s of ['A hypothesis, tested in public', 'What the record cannot show', 'Who is independent.', 'That accepting is repaying.', 'None of the rules is built into Valun',
-    'built: guarantees', 'not a score', 'Most of this is our own test agents']) assert.ok(html.includes(s), s);
+    'built: guarantees', 'not a score', 'So far almost all of this comes from our own test agents', 'not adoption']) assert.ok(html.includes(s), s);
   assert.doesNotMatch(html, /nobody else|no agent can|guarantee[sd]? (your|repayment)/i);
+  // Backing as it is since the hold (fix inbox #107): a promise, not collateral; once a backer pays, the same amount of
+  // the issuer's IOU is held, and the debt does not move to the backer. The trust model is a page of its own (/trust).
+  for (const s of ['not locked collateral', 'the same amount of the issuer\'s IOU is held, so the creditor isn\'t paid twice', 'The backer doesn\'t take over the claim',
+    'nothing moves that debt to the backer yet', 'href="/trust#backing"', 'href="/trust"'])
+    assert.ok(html.includes(s), s);
+  assert.doesNotMatch(html, /the issuer's own IOU stays as it is|held for the backer|held from the creditor/);
+  // A set-off is cleared, a redemption redeemed, and the record shows the two apart: never "repaid", "settled" or
+  // "discharged" for a loop that cleared, in the cards and in the hero's triangle too. Acceptance by transfer is mostly
+  // automatic, and much of it the operator's practice agents' (lib/pilot/sandbox.mjs: they accept any issuer's notes;
+  // on valun.tech on Nov 17 sandbox-exact took all 0.02 tERG of sandbox-mallory's IOUs passed on, and sandbox-mallory takes
+  // sandbox-exact's in every tour): the lead's D3b.
+  for (const s of ['<h3 class="card-k">Cleared or redeemed</h3>', 'cleared in loops (committed, not final)', 'href="/trust#netting"',
+    "Most of these were automatic, by policy: much of the transfer acceptance so far was the operator's practice agents', which accept any issuer's IOUs, as a new self-serve agent does by default. A setting, not a judgement.",
+    '(delivered, cleared or redeemed, accepted)', 'Cleared or redeemed, by the debtor?', '>CLEARED OR</text>', '>REDEEMED</text>',
+    'A debt cleared or redeemed says something about the debtor.', 'with every debt cleared or redeemed'])
+    assert.ok(html.includes(s), s);
+  assert.doesNotMatch(html, /<h3 class="card-k">Repaid|discharged|cancelled in loops or redeemed|>REPAID<|Repaid by the debtor|With the default policy/);
+  assert.doesNotMatch(js, /cleared or repaid/);
+  // A live line says it is reading until it has read (never "Live" before any read).
+  assert.match(html, /<span class="live" id="live">Reading…<\/span>/);
+});
+
+// The shared parts of every public page (public/site.css): the skip link, the navigation with this page marked, one h1
+// and an h2 for each section, and the footer. Amounts in tERG; credits only where the attacks report counts in them, said
+// once; the rainbow is for a loop that cleared, so this page has none.
+test('the page wears the site\'s navigation and footer, names its sections with h2, and speaks tERG', () => {
+  const html = pub('memory.html'), css = pub('memory.css');
+  assert.match(html, /<body>\n<a class="skip" href="#main">Skip to content<\/a>\n<header class="top"><a class="brand" href="\/" aria-label="Valun home">/);
+  const nav = /<nav aria-label="Main"><ul>([\s\S]*?)<\/ul><\/nav>/.exec(html)?.[1] ?? '';
+  assert.deepEqual([...nav.matchAll(/<a href="([^"]+)"([^>]*)>([^<]+)<\/a>/g)].map(m => [m[1], m[3], m[2].includes('aria-current="page"')]),
+    [['/start', 'Start', false], ['/network', 'Network', false], ['/trust', 'Trust', false], ['/memory', 'Memory', true], ['https://github.com/fitzss/valun-open', 'GitHub', false]]);
+  assert.match(html, /<main id="main">/);
+  const foot = /<footer class="foot">([\s\S]*?)<\/footer>/.exec(html)?.[1] ?? '';
+  assert.ok(foot.includes('Ergo testnet · test coins only, with no monetary value'));
+  assert.deepEqual([...foot.matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map(m => [m[1], m[2]]),
+    [['/trust', 'Trust'], ['/start#report', 'Report a problem'], ['/skill.md', 'skill.md'], ['/llms.txt', 'llms.txt'], ['https://github.com/fitzss/valun-open', 'GitHub']]);
+  assert.equal((html.match(/<h1\b/g) || []).length, 1);
+  for (const id of ['record', 'limits', 'attacks', 'next', 'backing']) assert.match(html, new RegExp(`<section class="mem-sec" id="${id}" aria-labelledby="${id}-h">\\s*<h2 id="${id}-h">`), id);
+  assert.doesNotMatch(html, /<p class="eyebrow" id=/, 'no section named by an eyebrow alone');
+  const words = html.replace(/<[^>]+>/g, ' ');
+  assert.equal((words.match(/\bcredits\b/g) || []).length, 1, 'the unit "credits" only in the line that explains the report\'s unit');
+  assert.ok(words.includes('The report counts in credits, the retired pilot\'s unit: 1 credit = 1,000,000 nanoERG = 0.001 tERG'));
+  assert.doesNotMatch(html + css, /--rainbow|class="settle"/);
 });
 
 test('the attacks report is current with the evidence code (scripts/evidence-attacks.mjs --check)', () => {
@@ -75,7 +118,9 @@ async function render(evidence, n) {
   Object.assign(globalThis, {document: doc, Node, Text, Element});
   const realInterval = globalThis.setInterval;
   globalThis.setInterval = (f, ms) => { timers.push(ms); return 0; };
-  globalThis.fetch = async p => (p === '/pilot/v1/evidence' ? {ok: true, json: async () => evidence} : p === '/evidence-attacks.json' ? {ok: true, json: async () => JSON.parse(pub('evidence-attacks.json'))} : {ok: false, status: 404});
+  // evidence null: the evidence read fails (429, as a busy server answers).
+  globalThis.fetch = async p => (p === '/pilot/v1/evidence' ? (evidence ? {ok: true, json: async () => evidence} : {ok: false, status: 429})
+    : p === '/evidence-attacks.json' ? {ok: true, json: async () => JSON.parse(pub('evidence-attacks.json'))} : {ok: false, status: 404});
   try { await import(pathToFileURL(path.join(root, 'public', 'memory.js')).href + `?n=${n}`); await settle(); } finally { globalThis.setInterval = realInterval; }
   return {doc, timers, $: id => doc.getElementById(id)};
 }
@@ -88,7 +133,7 @@ test('memory.js renders the three kinds, the groups and the attacks table, as te
   assert.equal(text($('del-n')), '5');
   assert.equal(text($('del-d')), '10 credits · 1 disputed · 0 not delivered');
   assert.equal(text($('rep-pct')), '80%');
-  assert.equal(text($('rep-d')), '4 of 5 credits, cancelled in loops · 1 credit outstanding · 1 accepted and unpaid');
+  assert.equal(text($('rep-d')), '4 credits cleared in loops (committed, not final), of 5 credits owed · 1 credit outstanding · 1 accepted and unpaid');
   assert.equal(text($('acc-n')), '2');
   assert.equal(text($('acc-d')), '1 time, someone took an IOU from a party it never dealt with');
   assert.match(text($('groups')), /^4 participants with exchanges, in 2 groups \(the largest has 4\)\. 1 group has no invited or operator-run member: what a staged circle looks like/);
@@ -111,5 +156,28 @@ test('on the testnet the amounts are tERG', async () => {
   assert.equal(text($('del-d')), '0.01 tERG · 1 disputed · 0 not delivered');
   assert.equal(text($('acc-n')), '0.002');
   assert.equal(text(doc.querySelector('.c-acc .card-u')), 'tERG of IOUs taken by transfer');
-  assert.equal(text($('rep-d')), '0.004 of 0.005 tERG, cancelled in loops or redeemed on chain · 0.001 tERG outstanding · 1 accepted and unpaid');
+  // Cleared and redeemed apart (D2 of the review of 24bec43), each as tERG.
+  assert.equal(text($('rep-d')), '0.003 tERG cleared in loops (committed, not final), 0.001 tERG redeemed, of 0.005 tERG owed · 0.001 tERG outstanding · 1 accepted and unpaid');
+  // The attacks report counts in credits; on the testnet the table and the callout say tERG (1 credit = 0.001 tERG).
+  const cells = $('atk-body').childNodes.flatMap(tr => tr.childNodes.slice(1).map(text));
+  assert.ok(cells.includes('takes 0.04 tERG') && cells.every(c => c === 'refuses' || /^takes \d+(\.\d+)? tERG$/.test(c)), JSON.stringify(cells));
+  assert.match(text($('earned')), /about 0\.72 tERG a day to each identity's limit, for nothing\. So Valun grants no credit from evidence/);
+});
+
+// Totals round to 3 decimals, as the site rounds them (/network: "0.451 tERG"); a redemption of nothing says 0.
+test('on the testnet the totals round to 3 decimals, as on the other pages', async () => {
+  const tn = {...TOTALS, unit: 'nanoERG', delivery: {...TOTALS.delivery, accepted: {count: 5, PC: 452_600_000}},
+    repayment: {...TOTALS.repayment, owed_ever_PC: 903_200_000, settled: {by_setoff_PC: 380_823_000, by_redemption_PC: 0}, outstanding_PC: 450_616_002}};
+  const {$} = await render(tn, 3);
+  assert.equal(text($('del-d')), '0.453 tERG · 1 disputed · 0 not delivered');
+  assert.equal(text($('rep-d')), '0.381 tERG cleared in loops (committed, not final), 0 tERG redeemed, of 0.903 tERG owed · 0.451 tERG outstanding · 1 accepted and unpaid');
+});
+
+// A failed evidence read (a 429, a network error) leaves the unit unknown: the attacks table still says tERG, never a
+// bare number a reader could take for tERG, and the live line says the read failed.
+test('when the evidence read fails, the attacks table still says tERG and the live line says so', async () => {
+  const {$} = await render(null, 4);
+  assert.equal(text($('live')), 'Not reachable just now');
+  const cells = $('atk-body').childNodes.flatMap(tr => tr.childNodes.slice(1).map(text));
+  assert.ok(cells.length && cells.every(c => c === 'refuses' || /^takes \d+(\.\d+)? tERG$/.test(c)), JSON.stringify(cells));
 });

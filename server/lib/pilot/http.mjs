@@ -6,12 +6,14 @@ import {ipKey} from '../ipkey.mjs';
 import {toErgoJson} from '../ergo-json.mjs';
 import {featuresFor, NOVATION_INFO} from './caps.mjs';
 import {METRICS_CACHE_MS} from './clearing.mjs';
-import {loopsOf, loopOf, LOOP_ID_RE, renderLoopPage, renderLoopNotFound} from './loops.mjs';
-import {AnchorWatch, CHECK_INTERVAL_S, confirmedUpdates, creatingTx, dailyCap, loopAnchor, trackerBoxUpdates} from './anchors.mjs';
+import {loopsOf, loopOf, memberRecords, LOOP_ID_RE, renderLoopPage, renderLoopNotFound} from './loops.mjs';
+import {AnchorWatch, BLOCK_WAIT, CHECK_INTERVAL_S, DAILY_TRACKER_SIGNATURES, boxWindows, confirmedUpdates, creatingTx, dailyCap, loopAnchor, nodeHeight, trackerBoxUpdates} from './anchors.mjs';
 import {AGENT_HANDLE_RE, agentPageShown, agentView, renderAgentPage, renderAgentNotFound} from './agents.mjs';
 import {assertCardPublic, budgetCard, cardPublic, checkPayer, dealUnderReview, findPayee, parseAmount, parseDeliverBy, parsePath, roomOf} from './card.mjs';
 import {withUnitNeutralNames as unitNeutral} from './amount-names.mjs';
 import {ENVIRONMENT} from '../environment.mjs';
+import {trackerPin, trackerProbe} from '../basis.mjs';
+import {TRACKER_SHA256_TR20} from './pins.mjs';
 
 // The source text of each statement template, as /info publishes it (OQ-18).
 const sources = o => Object.fromEntries(Object.entries(o).map(([k, f]) => [k, f.toString().replace(/\s+/g, ' ')]));
@@ -24,7 +26,7 @@ const INFO_PREFIX = ON_TESTNET
   ? 'Valun testnet network: independently controlled agents propose, negotiate and accept service-for-credit deals. Amounts are nanoERG on Ergo TESTNET: test coins with no monetary value. When a payer accepts a delivery it issues a credit note: a payer-signed Basis note recorded by a Basis tracker that anchors its state on Ergo testnet.'
   : 'Valun pilot network: independently controlled agents propose, negotiate and accept service-for-credit deals. PC (pilot credits) are simulated units with no monetary value. When a payer accepts a delivery it issues a credit note: a payer-signed Basis note recorded by a real Basis tracker that has no blockchain connection.';
 const INFO_SETTLEMENT = ON_TESTNET
-  ? 'an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes), also on an edge whose total the tracker box on Ergo testnet commits: never below a total the tracker signed for a redemption, and only while that tracker box is fresh. A change is final once the next tracker box on Ergo testnet commits it. A creditor can redeem a note on Ergo testnet against its issuer\'s tERG reserve, if the issuer posted one; tERG have no monetary value.'
+  ? 'an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes), also on an edge whose total the tracker box on Ergo testnet commits: never below a total the tracker signed for a redemption, and only while that tracker box is fresh. A change is committed once the next tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. A creditor can redeem a note on Ergo testnet against its issuer\'s tERG reserve, if the issuer posted one; tERG have no monetary value.'
   : 'not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.';
 export const INFO_DESCRIPTIONS = Object.freeze({
   off: ON_TESTNET ? `${INFO_PREFIX} An issued note is an outstanding obligation. A creditor can redeem it on Ergo testnet against its issuer's tERG reserve, if the issuer posted one; tERG have no monetary value. Debt transfers and set-offs (netting) are not on for this network yet: they come once netting is anchored on chain.` : `${INFO_PREFIX} An issued note is an outstanding obligation; nothing in the pilot is settled (no redemption, reserve or clearing).`,
@@ -44,20 +46,35 @@ export const REDEMPTION_MIN_NANOERG = 1_000_000, REDEMPTION_BUILDS_PER_DAY = 6, 
 // the reserve's new box (RESERVE_SPEND_HOLD_MS). Another build meanwhile: 409 reserve_busy {retry_after_ms, spending_tx}.
 export const RESERVE_BUILD_HOLD_MS = 120e3, RESERVE_SPEND_HOLD_MS = 180e3;
 export const IP_READS_PER_MINUTE = 1800;           // per client address (venue Wi-Fi); each token keeps its own reads-per-minute limit
-// Burst protection: the public reads (GET /info, /participants, /participants/<id>, /ledger, /loops, /loops/<id> and the
-// loop card) are computed at most once per PUBLIC_CACHE_MS while the pilot state is unchanged (Pilot.generation, bumped
-// by every save), so many viewers do not multiply tracker reads. Nothing authenticated or per-caller is cached. The
-// hosted server turns it on (server.mjs: PILOT_PUBLIC_CACHE_MS, default PUBLIC_CACHE_MS); off unless cfg.publicCacheMs
-// is set, so a read right after a change made around the pilot (a test writing to the tracker) is never stale.
+// Burst protection: the public reads (GET /info, /participants, /participants/<id>, /ledger, /ledger/committed, /loops,
+// /loops/<id> and the loop card) are computed at most once per PUBLIC_CACHE_MS while the pilot state is unchanged
+// (Pilot.generation, bumped by every save), so many viewers do not multiply tracker reads. Nothing authenticated or
+// per-caller is cached. The hosted server turns it on (server.mjs: PILOT_PUBLIC_CACHE_MS, default PUBLIC_CACHE_MS); off
+// unless cfg.publicCacheMs is set, so a read right after a change made around the pilot (a test writing to the tracker)
+// is never stale.
 export const PUBLIC_CACHE_MS = 3000;
+// GET /ledger/committed (fix inbox #62): a committed snapshot is read once per confirmed tracker box and kept while the
+// tracker's state names that box and digest, for at most this long (then read again, so the server's check follows
+// any repair the tracker makes to its records of the same box).
+export const COMMITTED_KEEP_MS = 60_000;
 // The commit this server runs (GET /info `build`), as its deploy sets VALUN_BUILD_SHA (scripts/ops, the CI deploys):
 // staging and the testnet say which code they run, so a promotion can check it moves what staging tested. Absent
 // unless set to a full commit id.
 export const BUILD_SHA = /^[0-9a-f]{40}$/.test(process.env.VALUN_BUILD_SHA || '') ? process.env.VALUN_BUILD_SHA : null;
+// GET /health (fix inbox #64): the pilot tracker is read at most once per HEALTH_PROBE_MS, however often the route is
+// asked, and an answer that takes longer than HEALTH_TIMEOUT_MS counts as none (so a caller that waits 5 s gets one).
+export const HEALTH_PROBE_MS = 2000, HEALTH_TIMEOUT_MS = 3000;
 const PUBLIC_CACHE_MAX = 500;
 const HTML = 'text/html; charset=utf-8';
 
 const infoDescription = mode => INFO_DESCRIPTIONS[mode === 'sandbox' || mode === 'on' ? mode : 'off'];
+// The chain as the public answers show it (GET /info `chain`, GET /chain; fix inbox #88): never the server's own files
+// (spend_ledger, the wallet adapter's ledger: a path on its volume), and the node it reads named for what it is. Clients
+// read `node` as a URL (valun-open's client takes it as its default node; valun audit and anchor-audit warn when it is
+// their chain source), so it stays one, with `node_note` beside it.
+export const NODE_NOTE = 'The Ergo testnet node this server reads the chain from, named so you know where its chain reads come from, not as a node to trust: to check what this server says, read the chain from your own node or an explorer.';
+export const publicChain = chain => Object.fromEntries(Object.entries(chain).filter(([k]) => k !== 'spend_ledger')
+  .flatMap(([k, v]) => (k === 'node' && v ? [[k, v], ['node_note', NODE_NOTE]] : [[k, v]])));
 // GET /info `writes_refused` (MIG-1, release v16.1): {code: 'tracker_downgraded', since, reason, fix} while the server
 // refuses every pilot write because its tracker reports no valid tracker v3.2 capabilities and the state holds
 // circulating-credit history; nothing (the key absent) otherwise.
@@ -67,6 +84,56 @@ const writesRefused = pilot => {
   return r ? {writes_refused: {code: r.code, since: r.since, reason: r.reason, fix: WRITES_REFUSED_FIX}} : {};
 };
 
+// GET /reserves (fix inbox #83). The tracker's own total_debt is a placeholder it never maintains (0 for every reserve;
+// its ratio is then infinite, which it writes as null), so the rows read as owing nothing. The figures are read from the
+// tracker's notes instead (Pilot.ledger, the rows of GET /ledger), for what THIS reserve backs: its contract pays only
+// notes signed with its own key (it checks the note's issuer key against the owner key in R4). total_debt_nanoerg is the
+// outstanding amount of those notes, total - redeemed, at least 0 a note (the tracker's outstanding_debt;
+// scripts/ops/anchor-audit.mjs's "owed" per issuer key), and the ratio is collateral / that, rounded down to 4 decimals
+// as the anchor audit's cover. What the owner owes under its other keys (keys of the same participant, before or after
+// this one) is debt_under_other_keys_nanoerg, present when not 0 and not in the ratio: the owner's public_position.owes
+// counts every key, so it is the sum of the two. A figure that cannot be computed is null with why_null, never 0. A
+// token reserve (reserve_token_id) holds its collateral in that token's units and backs notes in that token, which this
+// network's notes are not: no figure in nanoERG. `ledger` is null when the tracker's notes could not be read;
+// participantOf(pubkey) is the participant holding a key (Pilot.byPubkey).
+export const RESERVES_MEANING = 'total_debt_nanoerg is what this reserve backs: the outstanding amount of the notes signed with its own key (total minus redeemed, at least 0 a note; the tracker\'s own counters as GET /ledger shows them, notes not yet anchored on chain included), the only notes its contract pays. collateralization_ratio is collateral_nanoerg / total_debt_nanoerg, rounded down to 4 decimals: the reserve box\'s value over that debt, not what creditors could take (the tracker leaves 1000000 nanoERG in a reserve; a pending refund lets the owner take it all). debt_under_other_keys_nanoerg, when present, is what the owner owes under its other keys, which this reserve cannot pay: it is not counted in the ratio. The owner\'s public_position.owes counts every key it has had, so it is total_debt_nanoerg plus debt_under_other_keys_nanoerg (the same as total_debt_nanoerg for an owner with one key). A figure that cannot be computed, and the ratio when nothing is owed, is null, never 0: why_null says why. No amount redeemed from the reserve is given: its box holds only the digest of its redemption tree; what was redeemed shows as the value its box lost along the lineage of its NFT on chain, and per note as redeemed on GET /ledger.';
+const wholeOf = v => ((typeof v === 'number' || (typeof v === 'string' && /^\d+$/.test(v))) && Number.isSafeInteger(Number(v)) && Number(v) >= 0 ? Number(v) : null);
+// The outstanding amount of ledger rows, at least 0 a note; null when a row has no whole total or redeemed amount, or the
+// sum is above what a JavaScript number counts exactly.
+const outstandingOf = rows => {
+  if (rows.some(l => wholeOf(l.total) === null || wholeOf(l.redeemed) === null)) return null;
+  const s = rows.reduce((a, l) => a + Math.max(0, l.total - l.redeemed), 0);
+  return Number.isSafeInteger(s) ? s : null;
+};
+export function reserveRows(list, ledger, participantOf) {
+  return list.map(r => {
+    const owner = typeof r?.owner_pubkey === 'string' && r.owner_pubkey ? r.owner_pubkey : null, who = owner ? participantOf(owner) : null;
+    const name = who?.handle ?? 'the owner', token = typeof r?.reserve_token_id === 'string' && r.reserve_token_id !== '' ? r.reserve_token_id : null;
+    const amount = wholeOf(r?.collateral_amount), collateral = token ? null : amount;
+    // The owner's other keys: the participant's current and earlier keys but this reserve's own.
+    const otherKeys = who ? [who.pubkey, ...(who.past_pubkeys || []).map(k => k?.pubkey)].filter(k => typeof k === 'string' && k && k !== owner) : [];
+    let debt = null, other = 0, debtWhy = null, otherWhy = null;
+    if (token) debtWhy = 'a token reserve (reserve_token_id): its collateral is in units of that token, not nanoERG, and it backs notes in that token, which this network\'s notes are not, so no figure in nanoERG is computed for it';
+    else if (!owner) debtWhy = 'the tracker names no owner key for this reserve, so whose notes it backs is unknown';
+    else if (!ledger) { debtWhy = 'the tracker\'s notes could not be read just now, so what this reserve backs is unknown (not 0); try again'; if (otherKeys.length) other = null; }
+    else {
+      debt = outstandingOf(ledger.filter(l => l.issuer_pubkey === owner));
+      if (debt === null) debtWhy = 'a note signed with this reserve\'s key has no whole total or redeemed amount on the tracker (or they add up past 2^53 - 1), so what the reserve backs is unknown';
+      if (who) {
+        other = outstandingOf(ledger.filter(l => l.issuer === who.id && l.issuer_pubkey !== owner));
+        if (other === null) otherWhy = `a note ${name} issued under another key has no whole total or redeemed amount on the tracker (or they add up past 2^53 - 1), so what it owes under its other keys is unknown`;
+      }
+    }
+    const ratio = collateral !== null && debt > 0 ? Number(BigInt(collateral) * 10000n / BigInt(debt)) / 10000 : null;
+    const why = token ? debtWhy : [collateral === null ? 'the tracker gives no whole collateral amount for this reserve' : null, debtWhy,
+      debt === 0 ? `nothing is owed on the notes signed with this reserve's key (${name} has none outstanding on this tracker), so there is no collateralization ratio` : null,
+      otherWhy].filter(Boolean).join('; ');
+    return {box_id: r?.box_id ?? null, owner_pubkey: owner, handle: who?.handle ?? null, collateral_nanoerg: collateral, ...(token && amount !== null ? {collateral_token_units: amount} : {}),
+      total_debt_nanoerg: debt, collateralization_ratio: ratio, ...(other !== 0 ? {debt_under_other_keys_nanoerg: other} : {}), ...(why ? {why_null: why} : {}),
+      last_updated_height: r?.last_updated_height ?? null, refund_initiation_height: r?.refund_initiation_height ?? null, reserve_token_id: r?.reserve_token_id ?? null};
+  });
+}
+
 export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
   const hits = new Map(), perMinute = cfg.pilotRateLimitPerMinute ?? 90, readsPerMinute = cfg.pilotReadLimitPerMinute ?? perMinute * 4;
   const redemptionBuilds = new Map();             // agent id -> times of its redemption builds in the last 24 hours
@@ -74,12 +141,14 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
   // The tracker's anchoring (lib/pilot/anchors.mjs): since when its state has gone unanchored with no update in flight,
   // observed once a minute on the testnet (and on every GET /chain), so GET /chain can tell a normal wait from a fault.
   const anchorWatch = new AnchorWatch();
+  // Whether the pilot tracker answers GET / now, for GET /health (trackerProbe, lib/basis.mjs).
+  const trackerAnswers = trackerProbe(pilot.basis, {cacheMs: HEALTH_PROBE_MS, timeoutMs: HEALTH_TIMEOUT_MS});
   if (ON_TESTNET && pilot.chain?.on_chain && typeof pilot.basis?.trackerState === 'function') {
     const poll = setInterval(() => { pilot.basis.trackerState().then(st => anchorWatch.observe(st), () => {}); }, 60_000);
     poll.unref?.();
   }
-  // What the loop views need to say where a netting became final: the tracker's state, the tracker-box updates the wallet
-  // adapter signed, and which of them are confirmed (the node names the transaction of the confirmed box).
+  // What the loop views need to say where a netting was committed: the tracker's state, the tracker-box updates the
+  // wallet adapter signed, and which of them are confirmed (the node names the transaction of the confirmed box).
   const anchoring = async () => {
     const st = await pilot.basis.trackerState().catch(() => null);
     const rows = trackerBoxUpdates(pilot.chain?.spend_ledger);
@@ -87,13 +156,36 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     return {st, confirmed: confirmedUpdates(rows, st, tx)};
   };
   const explorerTx = id => `${pilot.chain.explorer}/en/transactions/${id}`;
+  // Which update committed a loop is the server's reading of the times (loopAnchor: the first one signed after the
+  // set-off), and valun audit checks only the current box: the loop card (lib/pilot/loops.mjs chainSection) says both,
+  // and so does this text.
   const loopOnChain = (loop, a) => {
     const u = loopAnchor(loop.applied_at, a.confirmed, a.st);
     return u ? {anchored: true, tx_id: u.tx_id, explorer_url: explorerTx(u.tx_id), signed_at: new Date(u.t).toISOString(),
-      what_this_means: 'Final on Ergo testnet: this tracker-box update is the first that commits the set-off.'}
-      : {anchored: false, what_this_means: `Not final on chain yet: the next tracker box commits it (the tracker checks every ${CHECK_INTERVAL_S} seconds; GET /pilot/v1/chain shows its anchoring).`};
+      what_this_means: 'Committed on Ergo testnet by the first tracker-box update signed after the set-off (matched by time; valun audit checks only the current box). It stays committed only as long as the tracker key never commits an earlier total again: see skill.md, Trust model.'}
+      : {anchored: false, what_this_means: `Not committed on chain yet: the next tracker box commits it, ${BLOCK_WAIT}, and once the day's ${DAILY_TRACKER_SIGNATURES} boxes are used up, not before 00:00 UTC (the tracker checks every ${CHECK_INTERVAL_S} seconds; GET /pilot/v1/chain shows its anchoring).`};
   };
   const onChain = () => ON_TESTNET && !!pilot.chain?.on_chain;
+  // GET /ledger/committed: the committed snapshot of the box the tracker's state names now (Pilot.committedSnapshot).
+  // Every request reads GET /tracker/state; the snapshot kept for that box and digest is served while younger than
+  // COMMITTED_KEEP_MS, else it is read again (requests that see the same box meanwhile share one read). A failed read is
+  // not kept. Reads only: never the lock (serial).
+  // Whether GET /ledger/committed is served (fix inbox #65): only on a tracker build with TR-20, unless cfg says.
+  const committedPublic = () => typeof cfg.committedRoute === 'boolean' ? cfg.committedRoute : TRACKER_SHA256_TR20.includes(pilot.trackerSha256);
+  let committedKept = null, committedReading = null;
+  const committedNow = async () => {
+    const st = await pilot.basis.trackerState(), t = Date.now();
+    const box = st?.confirmed_box_id ?? null, digest = st?.confirmed_digest ?? null;
+    const same = e => !!e && box !== null && e.box_id === box && e.digest === digest;
+    if (same(committedKept) && t >= committedKept.at && t - committedKept.at < COMMITTED_KEEP_MS) return committedKept.snapshot;
+    if (!same(committedReading)) {
+      const entry = {box_id: box, digest, value: pilot.committedSnapshot()};
+      committedReading = entry;
+      entry.value.then(s => { committedKept = {box_id: s.box_id, digest: s.digest, at: Date.now(), snapshot: s}; }, () => {})
+        .finally(() => { if (committedReading === entry) committedReading = null; });
+    }
+    return committedReading.value;
+  };
   // Built redemptions by transaction id, for their submit (30 minutes, the tracker's own expiry): what the tracker's
   // POST /redemption/submit still takes besides the transactions (issuer, recipient, amounts; the tracker reads them
   // from its own build entry and ignores these, but its request shape requires them).
@@ -203,7 +295,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         ...(ENVIRONMENT ? {environment: ENVIRONMENT} : {}),
         protocol: PROTOCOL, unit: pilot.unit, denomination: pilot.basis.denomination, tracker_nft_id: pilot.basis.nft,
         tracker_on_chain: !!pilot.chain?.on_chain, experimental: true,
-        ...(pilot.chain ? {chain: pilot.chain} : {}),
+        ...(pilot.chain ? {chain: publicChain(pilot.chain)} : {}),
         ...(BUILD_SHA ? {build: BUILD_SHA} : {}),
         description: infoDescription(mode),
         statements: sources(statements),
@@ -218,6 +310,19 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         ...(pilot.selfServe?.() ? {self_serve: pilot.selfServe()} : {}),
       };
     });
+    // The network's own health (fix inbox #64), for the live check (scripts/live-check.mjs, at every deploy and
+    // promotion) and operators; the platform's check is GET /info, which reads no tracker (fly.testnet.toml). 200 {ok:
+    // true} while the pilot tracker answers, 503 {ok: false} while it does not. It never asks the legacy desk (/api,
+    // /mcp), which is optional beside the network. tracker.pin names the network's tracker as /api/status names the
+    // desk's (trackerPin: the build and commit its capabilities report, ' (binary not pinned)' unless the running
+    // binary's sha256 is pinned; null without capabilities). Not in the public read cache: the tracker read has its own
+    // (HEALTH_PROBE_MS). Writes refused by MIG-1 do not make it 503: such a server still serves, and GET /info says why
+    // (writes_refused).
+    if (G && p === '/health') {
+      const reachable = await trackerAnswers();
+      const pin = trackerPin(pilot.trackerCaps, null, {pinned: (pilot.trackerPins ?? []).includes(pilot.trackerSha256)});
+      return send(res, reachable ? 200 : 503, {ok: reachable, network: NETWORK, tracker: {reachable, pin}});
+    }
     // ---------- Ergo testnet (valun-testnet-1, once on chain): the chain view and the reserves, public ----------
     // GET /chain: the tracker's anchoring (its local digest, the digest its tracker box commits on testnet, that box and
     // height, an update in flight) and where to look on the explorer. GET /reserves: every Basis reserve the tracker
@@ -226,31 +331,44 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       if (!pilot.chain?.on_chain) throw new PilotError('testnet_bootstrapping', 'the Valun testnet tracker is not on chain yet', 503);
       if (p === '/chain') return sendCached(res, send, 'chain', async () => {
         const st = await pilot.basis.trackerState().catch(() => null);
-        const ex = pilot.chain.explorer, {spend_ledger: _ledger, ...chain} = pilot.chain;
+        const ex = pilot.chain.explorer, chain = publicChain(pilot.chain);
         // fix inbox #14: the anchoring's state (anchored, waiting for the next update, an update in flight, overdue) and
         // what it means for redeeming, the updater's interval, and the last tracker-box update the server knows of.
         const last = st ? confirmedUpdates(trackerBoxUpdates(pilot.chain.spend_ledger), st).at(-1) : null;
         // The owner's daily cap on tracker boxes: once used up, the state says so (daily_cap_reached), not "overdue".
         const cap = pilot.chain.spend_ledger ? dailyCap(pilot.chain.spend_ledger) : null;
+        // fix inbox #62: the confirmed box's age (the node's height, read only when the box's height is known) and the
+        // heights from which the tracker refuses novations on edges with an on-chain total and the reserve contract
+        // takes a redemption without the tracker's signature (lib/pilot/anchors.mjs boxWindows).
+        const h = st?.confirmed_height, age = st ? boxWindows(h, Number.isSafeInteger(h) && h > 0 ? await nodeHeight(pilot.chain.node) : null) : null;
         return {network: NETWORK, ...chain, anchoring: st && {local_digest: st.local_digest, confirmed_digest: st.confirmed_digest ?? null,
-          confirmed_box_id: st.confirmed_box_id ?? null, confirmed_height: st.confirmed_height ?? null, pending_tx_id: st.pending_tx_id ?? null,
+          confirmed_box_id: st.confirmed_box_id ?? null, confirmed_height: st.confirmed_height ?? null, ...age, pending_tx_id: st.pending_tx_id ?? null,
           anchored: !!st.confirmed_digest && st.confirmed_digest === st.local_digest, check_interval_seconds: CHECK_INTERVAL_S,
           ...(cap ? {daily_cap: {limit: cap.limit, signed_today: cap.signed_today, resets_at: cap.resets_at}} : {}),
           ...anchorWatch.state(st, cap),
           ...(last ? {last_update: {tx_id: last.tx_id, signed_at: new Date(last.t).toISOString(), explorer_url: explorerTx(last.tx_id)}} : {})},
           links: {tracker_nft: `${ex}/en/token/${pilot.chain.tracker_nft_id}`, tracker_address: pilot.chain.tracker_address && `${ex}/en/addresses/${pilot.chain.tracker_address}`}};
       });
+      // Each reserve's debt and ratio from the tracker's notes, never the tracker's own total_debt placeholder (reserveRows,
+      // fix inbox #83); a notes read that fails leaves them null with why_null.
       return sendCached(res, send, 'reserves', async () => {
-        const list = await pilot.basis.reserves();
-        const rows = (Array.isArray(list) ? list : []).map(r => {
-          const owner = typeof r.owner_pubkey === 'string' ? r.owner_pubkey : null, who = owner ? pilot.byPubkey(owner) : null;
-          return {box_id: r.box_id ?? null, owner_pubkey: owner, handle: who?.handle ?? null, collateral_nanoerg: Number(r.collateral_amount ?? 0),
-            total_debt_nanoerg: Number(r.total_debt ?? 0), collateralization_ratio: r.collateralization_ratio ?? null,
-            last_updated_height: r.last_updated_height ?? null, refund_initiation_height: r.refund_initiation_height ?? null,
-            reserve_token_id: r.reserve_token_id ?? null};
-        });
-        return {network: NETWORK, unit: pilot.unit, reserve_contract: pilot.chain.reserve_contract, reserves: rows};
+        const list = await pilot.basis.reserves(), ledger = await pilot.ledger().catch(() => null);
+        return {network: NETWORK, unit: pilot.unit, reserve_contract: pilot.chain.reserve_contract, meaning: RESERVES_MEANING,
+          reserves: reserveRows(Array.isArray(list) ? list : [], ledger, pk => pilot.byPubkey(pk))};
       });
+    }
+    // GET /ledger/committed (fix inbox #62): what the tracker's confirmed box on Ergo testnet commits, every note at the
+    // total that box commits (lib/pilot/committed.mjs), with the server's own check of them against the box's digest
+    // (consistent; a false is served). Public, on the testnet once its tracker is on chain. The current box only: it takes
+    // no parameters (any is 400 invalid_field), so it never serves an earlier box or a filtered view, and the server
+    // keeps no earlier snapshot (no per-anchor history: owner decision 9, SV-PRIV-1). Burst-cached as the other public
+    // reads, on top of committedNow's one read per box. Served only while the tracker binary has TR-20 (pins.mjs
+    // TRACKER_SHA256_TR20; cfg.committedRoute true or false overrides it, for tests): on tracker v4.4.1 the route is
+    // left out, and answers as any unknown route does, so `valun audit` checks GET /ledger against the box instead.
+    if (ON_TESTNET && G && p === '/ledger/committed' && committedPublic()) {
+      if (!pilot.chain?.on_chain) throw new PilotError('testnet_bootstrapping', 'the Valun testnet tracker is not on chain yet', 503);
+      if (url.search) throw new PilotError('invalid_field', 'GET /ledger/committed takes no parameters: it serves the snapshot of the current tracker box only, never an earlier box');
+      return sendCached(res, send, 'ledger-committed', committedNow);
     }
     // The directory leaves out participants the operator unlisted (test or demo agents that are not running); ?all=1 lists
     // every participant (the network view draws every edge), each unlisted one with unlisted: true.
@@ -264,10 +382,12 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     }
     // The budget card and its check (lib/pilot/card.mjs), once the agent's owner published it (mandate public_card);
     // otherwise 404 card_not_public. Cached as the other public reads are: a check is keyed by its payee, amount and path,
-    // which are checked first (400 invalid_field, 404 not_found).
+    // which are checked first (400 invalid_field, 404 not_found). Fix inbox #87: the payee's own check (its token) is
+    // answered for a payer whose card is not published too, for the payee's own side of the step (its payer side is
+    // unknown); any other check of such a payer is 404 card_not_public, a request with no token before anything else.
     if (G && (m = /^\/participants\/(vp_[0-9a-f]{12})\/(card|check)$/.exec(p))) {
       const x = pilot.participant(m[1]);
-      assertCardPublic(x);
+      if (m[2] === 'card' || !bearer(req)) assertCardPublic(x);
       if (m[2] === 'card') return sendCached(res, send, `card:${x.id}`, () => budgetCard(pilot, x));
       const amount = parseAmount(url.searchParams.get('amount'), pilot.unit), payee = findPayee(pilot, url.searchParams.get('payee'), x);
       // path=payer_proposes|payee_proposes: who would propose the new deal (the payer when not given); the payer's open-offer
@@ -279,6 +399,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       // agent: authenticate renews a self-serve agent on the open network first, as on every route, and the check
       // answers on that state.
       const asker = bearer(req) ? pilot.authenticate(bearer(req)) : null, ownCheck = asker?.p?.id === payee.id;
+      if (!ownCheck) assertCardPublic(x);
       // Fix inbox #60: deal=vd_... names the offer the payee is deciding on, so the check counts it once, as accepting it
       // does. It is the payee's business: answered only to a check sent with the payee's token, never cached. So is
       // deliver_by=, the delivery time of a new deal the payee's own side counts guarantees for.
@@ -297,8 +418,8 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     if (G && p === '/ledger') return sendCached(res, send, 'ledger', async () => { const l = await pilot.ledger(); return {unit: pilot.unit, notes: l, reconciliation: await pilot.reconcile(l, {public: true})}; });
     // Closed loops (applied set-offs; lib/pilot/loops.mjs): public handles and amounts only, newest first. In every mode
     // (with circulation off there are none).
-    // On the testnet each loop also says where its netting became final on chain (on_chain: the tracker-box update and
-    // its explorer link, or that it is not final yet).
+    // On the testnet each loop also says where its netting was committed on chain (on_chain: the tracker-box update and
+    // its explorer link, or that it is not committed yet).
     if (G && p === '/loops') return sendCached(res, send, 'loops', async () => {
       const loops = loopsOf(pilot.s.setoffs, pilot.s.participants, publicOf);
       if (!onChain()) return unitNeutral({unit: pilot.unit, network: NETWORK, loops});
@@ -396,8 +517,10 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         try {
           const note = await relay(() => pilot.basis.note(X.pubkey, me.pubkey));
           if (!note) throw new PilotError('no_note', `you hold no note of ${X.handle}`, 409);
-          const outstanding = Number(note.amount_collected) - Number(note.amount_redeemed || 0);
-          if (amount > outstanding) throw new PilotError('insufficient_claim', `you can redeem at most ${outstanding} nanoERG of ${X.handle}'s note`, 409);
+          // Less what backers paid you for X's debt (fix inbox #107): that much is held for them, not yours to redeem.
+          const held = typeof pilot.heldForBackers === 'function' ? pilot.heldForBackers(X.id, me.id) : 0;
+          const outstanding = Math.max(0, Number(note.amount_collected) - Number(note.amount_redeemed || 0) - held);
+          if (amount > outstanding) throw new PilotError('insufficient_claim', `you can redeem at most ${outstanding} nanoERG of ${X.handle}'s note${held ? `: ${held} nanoERG of it is held: backers already paid you that much for ${X.handle}'s debt (guarantee calls they honored), so you are not paid twice` : ''}`, 409);
           built = await relay(() => pilot.basis.redemptionBuild({issuer_pubkey: X.pubkey, recipient_pubkey: me.pubkey, amount,
             timestamp: Number(note.timestamp), issuer_signature: note.signature, denomination: 'erg'})).catch(e => {
             // A note recorded after the tracker's last box (fix inbox #14): say how long that normally lasts and where to look.
@@ -419,19 +542,52 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         builds.push(now); redemptionBuilds.set(me.id, builds);
         pilot.store.audit({type: 'redemption.built', issuer: X.id, recipient: me.id, amount});
         for (const [k, v] of builtRedemptions) if (now - v.at > 30 * 60e3) builtRedemptions.delete(k);
-        if (typeof built?.partial_tx?.id === 'string') builtRedemptions.set(built.partial_tx.id, {at: now, recipient: me.id,
-          issuer_pubkey: X.pubkey, redeemed_amount: amount, new_already_redeemed: Number(built.new_already_redeemed ?? 0)});
+        if (typeof built?.partial_tx?.id === 'string') {
+          builtRedemptions.set(built.partial_tx.id, {at: now, recipient: me.id,
+            issuer_pubkey: X.pubkey, redeemed_amount: amount, new_already_redeemed: Number(built.new_already_redeemed ?? 0)});
+          // Fix inbox #107: an honor of a guarantee of this debt waits while this build may still be spent (it reads the
+          // tracker box confirmed now; read after the build, so a newer box only makes the wait longer).
+          if (typeof pilot.noteRedemptionBuild === 'function') {
+            const box = await pilot.basis.trackerState().then(s => s?.confirmed_box_id ?? null, () => null);
+            pilot.noteRedemptionBuild({tx_id: built.partial_tx.id, issuer_id: X.id, creditor_id: me.id, tracker_box_id: box});
+          }
+        }
         // Written with toErgoJson: the transactions' context extensions in the tracker's (Scala's) order, which the
         // client signs over and echoes back to /redemption/submit.
         return send(res, 200, toErgoJson({issuer: {id: X.id, handle: X.handle, pubkey: X.pubkey}, amount, ...built}));
       }
       const rec = typeof body?.signed_tx?.id === 'string' ? builtRedemptions.get(body.signed_tx.id) : undefined;
       if (rec && rec.recipient !== me.id) throw new PilotError('not_found', 'no redemption of yours was built with this transaction', 404);
+      // Fix inbox #107: a redemption built before a backer paid you for this debt is checked again: it may not take what
+      // is now held for the backers.
+      if (rec && typeof pilot.heldForBackers === 'function') {
+        const X = typeof pilot.byPubkey === 'function' ? pilot.byPubkey(rec.issuer_pubkey) : null, held = X ? pilot.heldForBackers(X.id, me.id) : 0;
+        if (held) {
+          const n = await relay(() => pilot.basis.note(rec.issuer_pubkey, me.pubkey));
+          const room = Math.max(0, Number(n?.amount_collected ?? 0) - Number(n?.amount_redeemed ?? 0) - held);
+          if (rec.redeemed_amount > room) {
+            builtRedemptions.delete(body.signed_tx.id);
+            throw new PilotError('insufficient_claim', `this redemption takes ${rec.redeemed_amount} nanoERG of ${X.handle}'s note, but you can redeem at most ${room} now: ${held} nanoERG of it is held: backers already paid you that much for ${X.handle}'s debt since it was built (guarantee calls they honored). Nothing was submitted.`, 409);
+          }
+        }
+      }
       const out = await relay(() => pilot.basis.redemptionSubmit({signed_tx: body?.signed_tx, unsigned_tx: body?.unsigned_tx,
         issuer_pubkey: rec?.issuer_pubkey ?? '', recipient_pubkey: me.pubkey, redeemed_amount: rec?.redeemed_amount ?? 0,
-        new_already_redeemed: rec?.new_already_redeemed ?? 0}));
+        new_already_redeemed: rec?.new_already_redeemed ?? 0})).catch(e => {
+        // A box the redemption spends moved between its build and its broadcast (a tracker box update or another
+        // redemption on the reserve), and the node refused the transaction as a double spend (fix inbox #123): nothing
+        // was spent. Busy, as just after a spend (#26), with how long until the tracker follows the new box; the build
+        // is dropped, and its holder may build again.
+        if (e?.code === 'tracker_refused' && /double spend/i.test(e.message)) {
+          if (rec) builtRedemptions.delete(body.signed_tx.id);
+          throw new PilotError('reserve_busy', `a box this redemption spends (the reserve's or the tracker's) changed between its build and its broadcast, and the Ergo node refused it as a double spend: nothing was spent. Build the redemption again once the tracker follows the new box, ${BLOCK_WAIT} (GET /pilot/v1/chain shows its anchoring)`, 409,
+            {retry_after_ms: RESERVE_SPEND_HOLD_MS, cause: 'box_moved'});
+        }
+        throw e;
+      });
       if (rec) {
         builtRedemptions.delete(body.signed_tx.id);
+        if (typeof pilot.redemptionSubmitted === 'function') pilot.redemptionSubmitted(body.signed_tx.id);
         // Submitted: the reserve stays held until the spend is about confirmed and the tracker follows its new box.
         if (rec.issuer_pubkey) {
           reserveHolds.set(rec.issuer_pubkey, {building: false, until: Date.now() + RESERVE_SPEND_HOLD_MS, tx_id: out?.tx_id ?? null, holder: me.id});
@@ -568,7 +724,9 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     if (!o || o.state !== 'applied') return send(res, 404, renderLoopNotFound(), HTML);
     const r = await cachedRead(`loop-page:${o.id}`, async () => {
       const loop = loopOf(o, pilot.s.participants, publicOf);
-      return {status: 200, body: renderLoopPage(onChain() ? {...loop, on_chain: loopOnChain(loop, await anchoring())} : loop)};
+      // The card says who runs each member (memberRecords: their public records) and when it was read.
+      const view = {records: memberRecords(o, pilot.s.participants, publicOf), now: Date.now()};
+      return {status: 200, body: renderLoopPage(onChain() ? {...loop, on_chain: loopOnChain(loop, await anchoring())} : loop, view)};
     });
     return send(res, r.status, r.body, HTML);
   };

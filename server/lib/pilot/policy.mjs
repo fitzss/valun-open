@@ -124,11 +124,16 @@ export function cents(x, dir) {
 export function issuerNetDebt(pilot, X, ledger, {excludeDealId = null, excludeGuaranteeId = null, delta = 0} = {}) {
   const edges = pilot.s.edges || {}, owes = new Map(), claims = new Map(), held = new Map();
   const add = (m, id, v) => m.set(id, (m.get(id) ?? 0) + v);
+  // Fix inbox #107: what backers paid a recipient for an issuer's debt is not the recipient's claim (it stays the issuer's
+  // debt), taken from that pair's rows in order.
+  const less = new Map(), heldOf = (i, r) => { const k = `${i}>${r}`; if (!less.has(k)) less.set(k, typeof pilot.heldForBackers === 'function' && i && r ? pilot.heldForBackers(i, r) : 0); return k; };
   for (const l of ledger) {
     if (l.issuer) add(owes, l.issuer, l.outstanding);
     if (!l.recipient || l.total !== (edges[edgeKey(l.issuer_pubkey, l.recipient_pubkey)]?.expected_total ?? 0)) continue;
-    add(claims, l.recipient, l.outstanding);
-    if (l.recipient === X.id && l.issuer && l.issuer !== X.id) add(held, l.issuer, l.outstanding);
+    const k = heldOf(l.issuer, l.recipient), h = Math.min(l.outstanding, less.get(k));
+    if (h) less.set(k, less.get(k) - h);
+    add(claims, l.recipient, l.outstanding - h);
+    if (l.recipient === X.id && l.issuer && l.issuer !== X.id) add(held, l.issuer, l.outstanding - h);
   }
   const ex = pilot.exposure(X, ledger, {asRole: 'payer', excludeDealId, excludeGuaranteeId}), committed = ex.committed + (ex.guaranteed ?? 0), own = owes.get(X.id) ?? 0;
   const r = haircutNetDebt({owes: own, committed, delta, issuers: [...held].map(([I, h]) => ({held: h, claims: claims.get(I) ?? 0, owes: owes.get(I) ?? 0}))});

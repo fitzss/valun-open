@@ -1,6 +1,7 @@
 // The budget card's check equals enforcement (C8): an oracle over worlds built as JSON. For each case, the check's answer
-// (GET /participants/{payer}/check through its route: {verdict, rule} for the payer, and payee_side for the payee) is
-// compared with what the server's real actions do at the decision point, run on twins of the world:
+// (GET /participants/{payer}/check through its route: payer_side for the payer, payee_side for the payee, and since fix
+// inbox #87 the step's one {verdict, rule} from both) is compared with what the server's real actions do at the decision
+// point, run on twins of the world:
 //   - a new deal the payer proposes (path payer_proposes, the default): Pilot.propose by the payer, then the payee's
 //     Pilot.accept, then every owner decision the deal waits for (Pilot.decideApproval, approve), until it is agreed or a
 //     step is refused;
@@ -9,7 +10,12 @@
 //     decision of the owner it waits for.
 // The answer predicts the first refusal, in the order the action checks the two sides (the side and its rule), or the
 // agreement and whose owners were asked. Three twins per case: the world as it is, and one per side with the other side's
-// limits lifted, so that each side's own verdict is compared whatever the other side would say.
+// limits lifted, so that each side's own verdict is compared whatever the other side would say. The step's verdict is
+// compared with the world as it is: decline with the first refusal's rule, ask_owner when it is agreed once owners
+// approve, accept when it is agreed with no owner asked (fix inbox #87). Every case is asked again of the same world with
+// the payer's card not published: the payee's own check gives the same payee_side verdict and rule, in words with no
+// figure of the payer's (nor its card, room, cover or record), the payer's side unknown, and the step declined exactly
+// when the payee's side declines; anyone else's check is 404 card_not_public.
 // Every step on a twin is preceded by its request's authentication, as the routes do it (Pilot.authenticate with the
 // actor's agent token, or its owner's token for an owner's decision): an agent's own request renews a self-serve
 // participant on the open network first. The twins start from the state the check answered on (the live pilot's after
@@ -28,6 +34,11 @@
 // the first C8 commit: the payer's private counter-offer priced by the payee's answer, counter_pending's words, dormant
 // self-serve payees and payers checked as they are where their agent's request renews them, and a house sandbox agent's
 // debt to a dormant payee left out where the payee's agent acts.
+// Fix inbox #79: the coverage rule counts a deal's own guarantees as the check's cover does (their share of its price).
+// Every case with guarantees compares the rule's figures at its step with the check's cover; worlds stack guarantees on
+// the offer under review, and its payee's step is driven again under the rule as it was before, so the oracle reaches
+// payees whose bar sits between the two figures (the check and the real steps agree there: mostly they refuse an offer
+// the rule before took).
 // ORACLE_WORLDS=n worlds per seed (12 seeds; 75 by default, about 200 cases a seed).
 // Run: node --test test/check-oracle.unit.test.mjs
 import {test, after} from 'node:test';
@@ -36,8 +47,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {isDeepStrictEqual} from 'node:util';
 import {Pilot, PilotStore, PilotError, PILOT_DENOMINATION, DEFAULT_MANDATE, PROTOCOL, OPEN_NETWORK_MAX_OPEN_OFFERS, NETWORK, statements, termsHash} from '../lib/pilot/core.mjs';
 import {createPilotRoutes} from '../lib/pilot/http.mjs';
+import {PAYEE_NOT_CHECKED, PAYER_NOT_PUBLISHED} from '../lib/pilot/card.mjs';
 import {UNIT} from '../lib/pilot/units.mjs';
 import {statusClass} from '../lib/pilot/status.mjs';
 
@@ -295,6 +308,23 @@ function world(seed, {dormancy = false} = {}) {
     if (keyed(B) && r.chance(0.3)) w.guarantee(B, E, D, r.int(1, 8));          // B backs E's debt to D: its open cap counts against B's outstanding
     if (keyed(B) && keyed(C) && r.chance(0.2)) w.guarantee(B, D, C, r.int(1, 6));   // B backs D's debt to C: what C may come to hold on B
   }
+  // Fix inbox #79 (drawn last, so every other world is as it was): two or three guarantees naming the offer under
+  // review, caps from its price up, most callable past its deliver_by; more debt on the pair (agreed deals between B
+  // and C); C's bar drawn again, its owner mostly trusting their backers. What they count for the offer (its price
+  // once, oldest first) and what the coverage rule counted before (each open cap, held only by B's whole debt to C) are
+  // far apart, so C's bar often sits between the two (runCase drives C's step under both rules).
+  const offer = review && statusClass(review.status)?.offer_phase && Date.parse(review.versions.at(-1).terms.offer_expires_at) > t ? review : null;
+  if (circ && offer && r.chance(0.5)) {
+    const v = offer.versions.at(-1), price = v.terms.price.amount, due = Date.parse(v.terms.deliver_by), backers = [];
+    for (let i = r.int(1, 2); i > 0; i--) w.deal(B, C, r.pick([B, C]), r.int(2, 5), 'agreed');
+    for (let i = r.int(2, 3); i > 0; i--) {
+      const K = r.pick([G, G, H, D]);
+      backers.push(K.id);
+      w.guarantee(K, B, C, r.int(price, 2 * price + 2), {covers: 'issuer_payment_for_deals', deals: [offer.id], expires: due + (r.chance(0.85) ? r.pick([2 * HOUR, DAY, 5 * DAY]) : 0)});
+    }
+    if (r.chance(0.75)) C.mandate.accept_notes_from = [...new Set(backers)];
+    C.mandate.min_payer_coverage_pct = r.pick([10, 15, 20, 25, 30, 40]);
+  }
   return {...w.done(B, C, review), states: {payer: bState, payee: cState}};
 }
 
@@ -347,6 +377,27 @@ function twin(W, lifted = null, base = W.state) {
   assert.equal(Object.getPrototypeOf(pilot), Pilot.prototype);
   assert.ok(pilot.changeListeners.size === 0 && pilot.clearing === undefined && pilot.serverSigner === undefined);
   return {pilot, store};
+}
+// Fix inbox #79: a twin whose coverage rule counts as it did before: every active guarantee that backs the deal and
+// can still be called an hour after its deliver_by counted its whole open cap (its cap less what its own calls
+// claimed), the deal-mode ones of the deal included, and only the debt with the deal held their sum. All else is the
+// server's own.
+function ruleBefore79(tw) {
+  const book = tw.pilot.guarantees;
+  book.stepCover = (gs, {dealId = null, debtFrom = null} = {}) => new Map(gs.map(g => [g.id,
+    g.state === 'active' && book.backsDeal(g, dealId) && book.lasts(g, debtFrom) ? Math.max(0, g.terms.cap.amount - book.claimed(g)) : 0]));
+  return tw;
+}
+// Fix inbox #79: the coverage rule's entry (min_payer_coverage_pct: the guarantees it counts, backing_for_you) for the
+// step a case is about, with that step's deal id and deliver_by, on a twin of the state the check answered on whose
+// payee's limits are lifted but for a bar of 1%, so that the rule runs and shows its figures; null when even that
+// refuses (the payer is covered 0%).
+async function coverageAtStep(W, S, c) {
+  const {pilot} = twin(W, W.payee, S), C = pilot.s.participants[W.payee], d = c.kind === 'deal' ? pilot.s.deals[c.id] : null;
+  C.mandate.min_payer_coverage_pct = 1;
+  const at = d ? {excludeDealId: d.id, dealId: d.id, debtFrom: Date.parse(pilot.current(d).terms.deliver_by)} : {dealId: c.dealId, debtFrom: c.due};
+  try { return (await pilot.checkMandate(C, 'payee', W.payer, c.amount, at)).checks.find(x => x.rule === 'min_payer_coverage_pct'); }
+  catch (e) { if (e instanceof PilotError && e.code === 'mandate_exceeded' && e.extra.rule === 'min_payer_coverage_pct') return null; throw e; }
 }
 
 // The check, through its route as a client sends it (the payee's token, or none).
@@ -437,6 +488,10 @@ function expected(order, P, Q) {
 const expectedSide = (X, s, P) => (PRE.has(P.rule) ? {outcome: 'refused', side: 'terms', rule: P.rule}
   : X.verdict === 'decline' ? {outcome: 'refused', side: s, rule: X.rule} : {outcome: 'agreed', asked: X.verdict === 'ask_owner' ? [s] : []});
 const sideOnly = (res, s) => (res.outcome === 'agreed' ? {...res, asked: res.asked.filter(x => x === s)} : res);
+// Fix inbox #87: the step's one verdict, as the real steps give it: refused is decline with its rule; agreed is ask_owner
+// when an owner was asked, else accept.
+const stepVerdict = res => (res.outcome === 'refused' ? {verdict: 'decline', rule: res.rule}
+  : res.outcome === 'agreed' ? (res.asked.length ? {verdict: 'ask_owner', rule: 'approve_above'} : {verdict: 'accept', rule: null}) : {verdict: null, rule: res});
 
 // The payer's counter-offer on the payee's offer, waiting for the payer's owner, is the payer's alone (Pilot.view): the
 // payee's answer on that offer (A, asked with `token` on state S) must be what it is in a world where the same amount is
@@ -452,10 +507,10 @@ async function counterPrivate(W, S, c, token, A) {
     versions: [{v: 1, by: W.payer, terms, terms_hash: termsHash(terms), signature: v.signature, created_at: v.created_at, state: 'open', mandate_check: {checks: []}, offered_at: v.created_at}]};
   const W2 = {...W, state: S2}, A2 = (await ask(routesFor(livePilot(W2)), W2, `amount=${c.amount}&payee=${W.payee}&deal=${c.id}`, token)).body;
   const seen = x => ({verdict: x.verdict, rule: x.rule, reasons: x.reasons, room_left: x.room_left, approval_needed: x.approval_needed, mandate: x.mandate, cover: x.cover,
-    record: x.record, card_hash: x.card_hash, payee_side: x.payee_side, deal_id: x.deal_id});
+    record: x.record, card_hash: x.card_hash, payer_side: x.payer_side, payee_side: x.payee_side, deal_id: x.deal_id});
   const where = `the payer's private counter: ${JSON.stringify(c)} ${JSON.stringify(A)} vs the same amount reserved elsewhere ${JSON.stringify(A2)}`;
-  if (A2.verdict === A.verdict) { assert.deepEqual(seen(A), seen(A2), where); return 'same'; }
-  assert.deepEqual([A.verdict !== 'decline', A2.verdict, A2.rule], [true, 'decline', 'max_issue_outstanding'], where);
+  if (A2.payer_side.verdict === A.payer_side.verdict) { assert.deepEqual(seen(A), seen(A2), where); return 'same'; }
+  assert.deepEqual([A.payer_side.verdict !== 'decline', A2.payer_side.verdict, A2.payer_side.rule], [true, 'decline', 'max_issue_outstanding'], where);
   return 'one bit';
 }
 
@@ -476,15 +531,19 @@ async function runCase(W, live, c) {
     return {answer: null};
   }
   assert.equal(mine.status, 200, where);
-  const A = mine.body, P = {verdict: A.verdict, rule: A.rule}, Q = A.payee_side;
-  assert.ok(Q && ['accept', 'ask_owner', 'decline'].includes(Q.verdict) && Array.isArray(Q.reasons) && Q.reasons.length > 0, where);
+  const A = mine.body, P = A.payer_side, Q = A.payee_side;
+  for (const X of [P, Q]) assert.ok(X && ['accept', 'ask_owner', 'decline'].includes(X.verdict) && Array.isArray(X.reasons) && X.reasons.length > 0, where);
   assert.equal(A.approval_needed, A.verdict === 'ask_owner', where);
   assert.equal('path' in A, c.kind === 'new' && !!c.explicit, where);
+  // The step's reasons: both sides in a few words, then the payer's side's own; the payee's own stay in payee_side.
+  assert.deepEqual(A.reasons.slice(1, 1 + P.reasons.length), P.reasons, where);
+  assert.ok(!A.reasons.some(x => Q.reasons.includes(x)), where);
   if (c.kind === 'new') {
-    // The public answer: the payer's verdict is the same for everyone; the payee's side and cover are not in it.
+    // The public answer: the payer's side, the same for everyone, saying the payee's own limits were not checked; the
+    // payee's side and cover are not in it.
     const pub = await ask(routes, W, q);
     assert.equal(pub.status, 200, where);
-    assert.deepEqual([pub.body.verdict, pub.body.rule, pub.body.reasons], [A.verdict, A.rule, A.reasons.filter(x => !/^Backed for you|^Nothing backs|^(A guarantee|Guarantees) with|^Its open offers? to you/.test(x))], where);
+    assert.deepEqual([pub.body.verdict, pub.body.rule, pub.body.payer_side, pub.body.reasons], [P.verdict, P.rule, P, [...P.reasons, PAYEE_NOT_CHECKED]], where);
     assert.ok(!('payee_side' in pub.body) && !('counted_offers' in pub.body) && pub.body.cover.covered === null && pub.body.cover.for_other_deals === null, where);
   }
   const start = () => (c.kind === 'deal' ? {deal: c.id} : {by: c.path === 'payer_proposes' ? W.payer : W.payee, terms: newTerms(W, c, c.path === 'payer_proposes' ? W.payer : W.payee)});
@@ -501,17 +560,64 @@ async function runCase(W, live, c) {
   // before that is refused (counter_pending). The twins show both, and the answer gives away no more than one bit of it.
   const payerCounter = c.kind === 'deal' && S.deals[c.id].pending_counter?.by === W.payer;
   let privacy = null;
+  // The step the answer is for: the world as it is, or, with the payer's own counter-offer pending, once its agent
+  // withdraws it (as it must before it accepts).
+  let step = full;
   if (payerCounter) {
     assert.deepEqual(full, {outcome: 'refused', side: 'payer', rule: 'counter_pending'}, `the world as it is: ${where}`);
     assert.deepEqual(payerSide, {outcome: 'refused', side: 'payer', rule: 'counter_pending'}, `the payer's side: ${where}`);
-    assert.deepEqual(await drive(twin(W, null, S), W, {deal: c.id, withdraw: W.payer}), expected(order, P, Q), `withdrawn first: ${where}`);
+    step = await drive(twin(W, null, S), W, {deal: c.id, withdraw: W.payer});
+    assert.deepEqual(step, expected(order, P, Q), `withdrawn first: ${where}`);
     privacy = await counterPrivate(W, S, c, token, A);
   } else {
     assert.deepEqual(full, expected(order, P, Q), `the world as it is: ${where}`);
     assert.deepEqual(sideOnly(payerSide, 'payer'), expectedSide(P, 'payer', P), `the payer's side, the payee's limits lifted: ${where}`);
   }
   assert.deepEqual(sideOnly(payeeSide, 'payee'), expectedSide(Q, 'payee', P), `the payee's side, the payer's limits lifted: ${where}`);
-  return {answer: A, full, payerSide, payeeSide, payerCounter, privacy, order};
+  // Fix inbox #79: the coverage rule at the step counts the guarantees the check's cover counts, each as the cover
+  // does: the same ones (for_this_deal above 0), and no more in all than covered (it counts them at their backers'
+  // grounded worth, and no more than the debt with the deal).
+  let coverage = null;
+  if (A.cover.guarantees.length) {
+    const rule = await coverageAtStep(W, S, c);
+    coverage = rule ? 'compared' : 'refused at 1%';
+    if (rule) assert.deepEqual([rule.guarantees ?? [], (rule.backing_for_you ?? 0) <= A.cover.covered], [A.cover.guarantees.filter(g => g.for_this_deal > 0).map(g => g.guarantee_id), true],
+      `fix inbox #79, the coverage rule at the step ${JSON.stringify(rule)}: ${where}`);
+  }
+  // Fix inbox #79: for an offer that guarantees name, the payee's step again under the rule as it was before. Where the
+  // two differ, the payee's bar sits between the two figures, and only the payee's coverage verdict differs: one of
+  // the two refuses for it, the other does not. Mostly the rule now refuses where the rule before took the offer (it
+  // counted those guarantees' open caps). The other way: where the debt with the deal held the sum, the rule before
+  // scaled it by the worth of every open cap, those that add nothing for the offer included, so a worthless backer's
+  // cap could dilute a sound backer's share; the rule now counts that share at its own backer's worth.
+  let before79 = null;
+  if (c.kind === 'deal' && Object.values(S.guarantees ?? {}).some(g => g.issuer === W.payer && g.creditor === W.payee && (g.terms.deals ?? []).includes(c.id))) {
+    before79 = await drive(ruleBefore79(twin(W, W.payer, S)), W, start());
+    const coverageRefusal = x => x.outcome === 'refused' && x.side === 'payee' && x.rule === 'min_payer_coverage_pct';
+    if (!isDeepStrictEqual(before79, payeeSide))
+      assert.deepEqual([coverageRefusal(payeeSide), coverageRefusal(before79)].sort(), [false, true], `fix inbox #79, the rule before: ${JSON.stringify(before79)}: ${where}`);
+  }
+  // Fix inbox #87: the step's one verdict is what the real steps do, both sides together.
+  assert.deepEqual({verdict: A.verdict, rule: A.rule}, stepVerdict(step), `the step's verdict: ${where}`);
+  // Fix inbox #87: the same world, its payer's card not published. The payee's own check answers for its own side (the
+  // same as above), the payer's side unknown, and the step declined exactly when the payee's side declines (the real step
+  // is then refused); anyone else's check is 404 card_not_public.
+  const W0 = {...W, state: clone(W.state)};
+  W0.state.participants[W.payer].mandate.public_card = false;
+  const routes0 = routesFor(livePilot(W0)), unpub = await ask(routes0, W0, c.kind === 'new' ? `${q}&deliver_by=${encodeURIComponent(iso(c.due))}` : q, token);
+  const where0 = `the card not published: ${JSON.stringify(unpub.body)} ${where}`, U = unpub.body;
+  assert.equal(unpub.status, 200, where0);
+  assert.deepEqual([U.payee_side.verdict, U.payee_side.rule, U.payee_side.reasons.length], [Q.verdict, Q.rule, 1], where0);
+  assert.deepEqual([U.verdict, U.rule, U.approval_needed], Q.verdict === 'decline' ? ['decline', Q.rule, false] : ['unknown', null, false], where0);
+  assert.equal(U.reasons.at(-1), PAYER_NOT_PUBLISHED, where0);
+  // None of the payer's figures (the review of #87): nothing of its card or room, no cover or record, and words with no
+  // number but the payee's own coverage bar and the open-offer limit.
+  assert.deepEqual([U.payer_side, U.mandate, U.room_left, U.card_hash, U.record, U.cover, 'counted_offers' in U, U.deal_id],
+    [null, null, null, null, null, {covered: null, for_other_deals: null, guarantees: []}, false, A.deal_id], where0);
+  assert.doesNotMatch([...U.reasons, ...U.payee_side.reasons].join(' ').replace(/\(min_payer_coverage_pct, \d+%\)/, '').replace(`(${OPEN_NETWORK_MAX_OPEN_OFFERS})`, ''), /\d/, where0);
+  if (U.verdict === 'decline') assert.equal(full.outcome, 'refused', where0);
+  if (c.kind === 'new') for (const t of [null, W.tokens[W.payer].agent]) assert.deepEqual([(await ask(routes0, W0, q, t)).body.error], ['card_not_public'], where0);
+  return {answer: A, full, payerSide, payeeSide, payerCounter, privacy, order, unpublished: U, coverage, before79};
 }
 
 // The cases of a world: a new deal on each path (the default path asked as such or by name), at a drawn amount, deliver_by
@@ -544,10 +650,18 @@ async function oracle(seeds, {dormancy = false, tally = () => {}} = {}) {
       cases += 1;
       if (!got.answer) { count('deal: refused (ended or agreed)'); continue; }
       const kind = c.kind === 'deal' ? `deal ${W.state.deals[c.id].status}` : c.path;
-      count(`${kind}: payer ${got.answer.verdict}${got.answer.rule ? ` ${got.answer.rule}` : ''}`);
+      count(`${kind}: payer ${got.answer.payer_side.verdict}${got.answer.payer_side.rule ? ` ${got.answer.payer_side.rule}` : ''}`);
       count(`${kind}: payee ${got.answer.payee_side.verdict}${got.answer.payee_side.rule ? ` ${got.answer.payee_side.rule}` : ''}`);
+      count(`${kind}: step ${got.answer.verdict}`);
+      count(`step ${got.answer.verdict}`);
+      count(`no card: step ${got.unpublished.verdict}`);
+      // Where the payee's own side changes the answer from the payer's (the top-level verdict before fix inbox #87).
+      if (got.answer.verdict !== got.answer.payer_side.verdict) count(`payer side ${got.answer.payer_side.verdict}, step ${got.answer.verdict}`);
       count(`outcome ${got.full.outcome}${got.full.side ? ` ${got.full.side} ${got.full.rule}` : ` asked [${got.full.asked}]`}`);
       if (got.payerCounter) count(`deal: the payer's own counter pending (${got.privacy})`);
+      if (got.coverage) count(`#79 coverage rule at the step: ${got.coverage}`);
+      if (got.before79) count(`#79 ${isDeepStrictEqual(got.before79, got.payeeSide) ? 'the same under the rule before'
+        : got.payeeSide.outcome === 'refused' ? 'between the figures, refused: the rule before took it' : 'between the figures, taken: the rule before refused it'}: ${kind}`);
       tally(W, c, got, count);
     }
   }
@@ -565,7 +679,10 @@ test(`the oracle: on ${SEEDS.length} seeds x ${WORLDS} random worlds, the check'
     'deal open: payer accept', 'deal open: payer ask_owner', 'deal open: payer decline', 'deal proposed_awaiting_owner: payee ask_owner',
     'deal accepted_awaiting_owner: payer ask_owner', 'deal accepted_awaiting_owner: payer accept', 'deal accepted_awaiting_owner: payee accept',
     'deal: refused (ended or agreed)', 'deal: the payer\'s own counter pending', 'outcome agreed asked [payee,payer]', 'outcome agreed asked []',
-    'outcome refused payer', 'outcome refused payee', 'outcome refused terms payee_no_key', 'outcome refused terms network_limit'])
+    'outcome refused payer', 'outcome refused payee', 'outcome refused terms payee_no_key', 'outcome refused terms network_limit',
+    'payer_proposes: step ask_owner', 'payee_proposes: step decline', 'deal open: step accept', 'deal accepted_awaiting_owner: step ask_owner',
+    'step accept', 'step ask_owner', 'step decline', 'no card: step unknown', 'no card: step decline',
+    '#79 coverage rule at the step: compared', '#79 the same under the rule before', '#79 between the figures, refused: the rule before took it'])
     assert.ok(has(k), `no case reached "${k}" (saw ${JSON.stringify(Object.fromEntries([...seen].sort()))})`);
   assert.ok(cases >= SEEDS.length * WORLDS * 2, `${cases} cases`);
 });
@@ -577,10 +694,10 @@ test(`the oracle: on ${SEEDS.length} seeds x ${WORLDS} random worlds, the check'
 // acceptance of the payee's proposal), and stays left out otherwise, as it does for a dormant participant that never acts.
 test(`the oracle's dormancy family: on ${DORMANCY_SEEDS.length} seeds x ${WORLDS} worlds on the open network, self-serve sides in every renewal state and house sandbox agent payers, the check is what the real steps do`, async () => {
   const tally = (W, c, got, count) => {
-    const A = got.answer, Q = A.payee_side, B = W.state.participants[W.payer], C = W.state.participants[W.payee], {payer: bs, payee: cs} = W.states;
-    count(`B ${bs}: payer ${A.verdict}${A.rule ? ` ${A.rule}` : ''}`);
+    const A = got.answer, P = A.payer_side, Q = A.payee_side, B = W.state.participants[W.payer], C = W.state.participants[W.payee], {payer: bs, payee: cs} = W.states;
+    count(`B ${bs}: payer ${P.verdict}${P.rule ? ` ${P.rule}` : ''}`);
     count(`C ${cs}: payee ${Q.verdict}${Q.rule ? ` ${Q.rule}` : ''}`);
-    if (A.reasons.some(x => / counts here, though its card leaves it out: /.test(x))) count(`woken: payer ${A.verdict}${A.rule ? ` ${A.rule}` : ''}`);
+    if (P.reasons.some(x => / counts here, though its card leaves it out: /.test(x))) count(`woken: payer ${P.verdict}${P.rule ? ` ${P.rule}` : ''}`);
     const owed = W.notes.filter(n => n.issuer_pubkey === B.pubkey && n.recipient_pubkey === C.pubkey).reduce((a, n) => a + Number(n.amount_collected) - Number(n.amount_redeemed), 0);
     if (bs === 'house' && /^dormant/.test(cs) && owed > 0 && W.mode === 'on') {
       const acts = c.kind === 'new' || (W.state.deals[c.id].status !== 'accepted_awaiting_owner' && W.state.deals[c.id].versions.at(-1).by !== C.id);
@@ -620,7 +737,7 @@ test('regression 1 (fix inbox #60): the payee checks an offer the payer\'s outst
   assert.deepEqual(await drive(twin(W), W, {by: W.payer, terms: newTerms(W, c, W.payer)}), {outcome: 'refused', side: 'payer', rule: 'max_issue_outstanding'});
   // The offer itself, named with deal=: counted once, accept; the real acceptance agrees (at 68f09c0: decline).
   const got = await runCase(W, live, {kind: 'deal', id: offer.id, amount: 4});
-  assert.deepEqual([got.answer.verdict, got.answer.rule, got.answer.payee_side.verdict], ['accept', null, 'accept']);
+  assert.deepEqual([got.answer.verdict, got.answer.rule, got.answer.payer_side.verdict, got.answer.payee_side.verdict], ['accept', null, 'accept', 'accept']);
   assert.deepEqual(got.full, {outcome: 'agreed', asked: []});
 });
 
@@ -664,7 +781,7 @@ test('regression 3: a self-serve payer with as many offers open as it may (open 
   });
   const proposes = await runCase(W, live, {kind: 'new', path: 'payer_proposes', amount: 1, due: T + 2 * DAY, exp: T + DAY, dealId: 'vd_' + '3'.repeat(16), nonce: 'ef'.repeat(16)});
   assert.deepEqual([proposes.answer.verdict, proposes.answer.rule], ['decline', 'too_many_open_offers']);
-  assert.match(proposes.answer.reasons[0], /^It is a self-serve agent with as many offers of its own open as it may have at once \(10\): it cannot propose a new deal until one of them is answered, withdrawn or expires\. It may still accept an offer you make it \(path=payee_proposes\)\.$/);
+  assert.match(proposes.answer.payer_side.reasons[0], /^It is a self-serve agent with as many offers of its own open as it may have at once \(10\): it cannot propose a new deal until one of them is answered, withdrawn or expires\. It may still accept an offer you make it \(path=payee_proposes\)\.$/);
   assert.deepEqual(proposes.full, {outcome: 'refused', side: 'payer', rule: 'too_many_open_offers'});
   const tw = twin(W);
   await assert.rejects(tw.pilot.propose(tw.pilot.s.participants[W.payer], {terms: newTerms(W, {amount: 1, due: T + 2 * DAY, exp: T + DAY, dealId: 'vd_' + '4'.repeat(16), nonce: 'ef'.repeat(16)}, W.payer), signature: SIG}),
@@ -680,7 +797,8 @@ test('regression 4: a payee with no active agent key: no terms can name it, so t
     return w.done(B, C);
   });
   const got = await runCase(W, live, {kind: 'new', path: 'payer_proposes', amount: 2, due: T + 2 * DAY, exp: T + DAY, dealId: 'vd_' + '6'.repeat(16), nonce: '01'.repeat(16)});
-  assert.deepEqual([got.answer.verdict, got.answer.rule, got.answer.reasons], ['decline', 'payee_no_key', ['c-payee has no active agent key: no deal can name it until its owner connects an agent.']]);
+  assert.deepEqual([got.answer.verdict, got.answer.rule, got.answer.payer_side.reasons], ['decline', 'payee_no_key', ['c-payee has no active agent key: no deal can name it until its owner connects an agent.']]);
+  assert.equal(got.answer.reasons[0], "No deal can be made (payee_no_key): the server refuses its terms before it checks either side's limits.");
   assert.deepEqual([got.answer.payee_side.verdict, got.answer.payee_side.rule], ['decline', 'no_agent']);
   assert.deepEqual(got.full, {outcome: 'refused', side: 'terms', rule: 'payee_no_key'});
   const tw = twin(W);
@@ -710,9 +828,9 @@ test('an offer under review says whose owner it waits for, in each state: an acc
     });
     const got = await runCase(W, live, {kind: 'deal', id: W.review, amount: 4});
     const label = `${by} proposed, ${JSON.stringify(holds)}`;
-    assert.deepEqual([got.answer.verdict, got.answer.payee_side.verdict], [pv, qv], label);
-    if (pr) assert.ok(got.answer.reasons.includes(pr), `${label}: ${JSON.stringify(got.answer.reasons)}`);
-    else assert.ok(!got.answer.reasons.some(x => /waits for/.test(x) && !/nothing waits for/.test(x)), `${label}: ${JSON.stringify(got.answer.reasons)}`);
+    assert.deepEqual([got.answer.payer_side.verdict, got.answer.payee_side.verdict, got.answer.verdict], [pv, qv, 'ask_owner'], label);
+    if (pr) assert.ok(got.answer.payer_side.reasons.includes(pr), `${label}: ${JSON.stringify(got.answer.payer_side.reasons)}`);
+    else assert.ok(!got.answer.payer_side.reasons.some(x => /waits for/.test(x) && !/nothing waits for/.test(x)), `${label}: ${JSON.stringify(got.answer.payer_side.reasons)}`);
     if (qr) assert.ok(got.answer.payee_side.reasons.includes(qr), `${label}: ${JSON.stringify(got.answer.payee_side.reasons)}`);
     assert.deepEqual(got.full, {outcome: 'agreed', asked}, label);
   }
@@ -764,14 +882,14 @@ test('review: the payee\'s answer on its own offer shows nothing of the payer\'s
     let {W, live} = make(100, 4, counter);
     let got = await runCase(W, live, {kind: 'deal', id: W.review, amount: 4});
     const left = 90 - (counter ?? 0);
-    assert.deepEqual([got.answer.verdict, got.answer.room_left, got.answer.reasons[0]],
+    assert.deepEqual([got.answer.payer_side.verdict, got.answer.room_left, got.answer.payer_side.reasons[0]],
       ['accept', left, `Within its budget: up to 20 PC a deal; deal ${W.review} is counted once, and ${left - 4} PC of 100 PC is left with it.`]);
     // ... and the whole answer is the one where the same amount is reserved elsewhere (runCase, counterPrivate).
     assert.equal(got.privacy, counter ? 'same' : null);
     // It does not (cap 20, price 12): the room with the deal left out is the card's room_left, whatever the counter is.
     ({W, live} = make(20, 12, counter));
     got = await runCase(W, live, {kind: 'deal', id: W.review, amount: 12});
-    assert.deepEqual([got.answer.verdict, got.answer.rule, got.answer.reasons[0]],
+    assert.deepEqual([got.answer.payer_side.verdict, got.answer.payer_side.rule, got.answer.payer_side.reasons[0]],
       ['decline', 'max_issue_outstanding', `Over its budget: leaving this deal out it has ${10 - (counter ?? 0)} PC of 20 PC left, less than 12 PC.`]);
     assert.equal(got.privacy, counter ? 'same' : null);
   }
@@ -779,7 +897,7 @@ test('review: the payee\'s answer on its own offer shows nothing of the payer\'s
   // is for the deal once the counter is withdrawn, which fits; every figure counts the counter, as the card does.
   const {W, live} = make(20, 4, 8);
   const got = await runCase(W, live, {kind: 'deal', id: W.review, amount: 4});
-  assert.deepEqual([got.answer.verdict, got.answer.room_left, got.answer.reasons[0]],
+  assert.deepEqual([got.answer.payer_side.verdict, got.answer.room_left, got.answer.payer_side.reasons[0]],
     ['accept', 2, `Within its budget: up to 20 PC a deal; deal ${W.review} is counted once, and 0 PC of 20 PC is left with it.`]);
   assert.equal(got.privacy, 'one bit');
   assert.deepEqual(got.full, {outcome: 'refused', side: 'payer', rule: 'counter_pending'});   // B's agent must withdraw it first (runCase: then it agrees)
@@ -828,7 +946,7 @@ test('review: a dormant self-serve payee: its side as its agent\'s request finds
   // C's own offer: the payer's agent accepts it, and C's side is re-checked as it is, so refused until C's agent is seen.
   const {W, live} = build();
   let got = await runCase(W, live, {kind: 'deal', id: W.review, amount: 3, ownerToken: true});
-  assert.deepEqual([got.answer.verdict, got.answer.payee_side.verdict, got.full], ['accept', 'decline', {outcome: 'refused', side: 'payee', rule: 'expires_at'}]);
+  assert.deepEqual([got.answer.verdict, got.answer.rule, got.answer.payer_side.verdict, got.answer.payee_side.verdict, got.full], ['decline', 'expires_at', 'accept', 'decline', {outcome: 'refused', side: 'payee', rule: 'expires_at'}]);
   assert.equal(got.answer.payee_side.reasons[0], `Your own limits refuse it (expires_at): your mandate ended at ${iso(T - DAY)} with your sandbox time, and your agent does not act at this step. You are a self-serve agent: any request your agent sends renews both (a check sent with your agent's token does too).`);
   // A request of C's agent renews it (here the check itself, sent with C's agent token): then the payer's acceptance agrees.
   got = await runCase(W, live, {kind: 'deal', id: W.review, amount: 3});
@@ -854,22 +972,24 @@ test('review: a house sandbox agent payer owing a dormant payee: the check count
     // The payee's owner token, and the public answer (runCase): C's 15 counts, D's 12 does not; the real steps agree.
     let {W, live} = build();
     let got = await runCase(W, live, {...c, path, explicit: path !== 'payer_proposes', ownerToken: true});
-    assert.deepEqual([got.answer.verdict, got.answer.rule, got.answer.room_left, got.answer.reasons], ['decline', 'max_issue_outstanding', 20, ['Over its budget: it has 5 PC of 20 PC left, less than 10 PC.', woken]], path);
+    assert.deepEqual([got.answer.verdict, got.answer.rule, got.answer.room_left, got.answer.payer_side.reasons], ['decline', 'max_issue_outstanding', 20, ['Over its budget: it has 5 PC of 20 PC left, less than 10 PC.', woken]], path);
     assert.deepEqual(got.full, {outcome: 'refused', side: 'payer', rule: 'max_issue_outstanding'}, path);
     // The agent's token renews C before the check (a request of its agent): the card counts the 15 then, and so does the check.
     ({W, live} = build());
     got = await runCase(W, live, {...c, path, explicit: path !== 'payer_proposes'});
-    assert.deepEqual([got.answer.verdict, got.answer.rule, got.answer.room_left, got.answer.reasons], ['decline', 'max_issue_outstanding', 5, ['Over its budget: it has 5 PC of 20 PC left, less than 10 PC.']], path);
+    assert.deepEqual([got.answer.verdict, got.answer.rule, got.answer.room_left, got.answer.payer_side.reasons], ['decline', 'max_issue_outstanding', 5, ['Over its budget: it has 5 PC of 20 PC left, less than 10 PC.']], path);
     assert.deepEqual(got.full, {outcome: 'refused', side: 'payer', rule: 'max_issue_outstanding'}, path);
   }
   // Both sides refuse a deal S proposes (C takes at most 5 a deal): S's proposal passes, so C's refusal comes first.
   let {W, live} = build({max_accept_per_deal: 5});
   let got = await runCase(W, live, {...c, ownerToken: true});
   assert.deepEqual([got.answer.verdict, got.answer.payee_side.rule, got.order, got.full], ['decline', 'max_accept_per_deal', ['payee', 'payer'], {outcome: 'refused', side: 'payee', rule: 'max_accept_per_deal'}]);
+  // The step's rule is the payee's, the first refusal (fix inbox #87); the payer's own refusal is in payer_side.
+  assert.deepEqual([got.answer.rule, got.answer.payer_side.rule, got.answer.reasons[0]], ['max_accept_per_deal', 'max_issue_outstanding', 'Both sides refuse it: its side (max_issue_outstanding) and yours (max_accept_per_deal).']);
   // C's own offer, which S's agent accepts: C's agent does not act, so the debt stays left out, and C's side is refused as it is.
   ({W, live} = build());
   got = await runCase(W, live, {kind: 'deal', id: W.review, amount: 4, ownerToken: true});
-  assert.deepEqual([got.answer.verdict, got.answer.reasons[0], got.answer.payee_side.rule], ['accept', `Within its budget: up to 20 PC a deal; deal ${W.review} is counted once, and 16 PC of 20 PC is left with it.`, 'expires_at']);
+  assert.deepEqual([got.answer.verdict, got.answer.rule, got.answer.payer_side.verdict, got.answer.payer_side.reasons[0], got.answer.payee_side.rule], ['decline', 'expires_at', 'accept', `Within its budget: up to 20 PC a deal; deal ${W.review} is counted once, and 16 PC of 20 PC is left with it.`, 'expires_at']);
   assert.deepEqual(got.full, {outcome: 'refused', side: 'payee', rule: 'expires_at'});
 });
 
@@ -887,7 +1007,7 @@ test('review: off the open network a dormant self-serve payee is not renewed by 
   });
   for (const ownerToken of [true, false]) {
     const got = await runCase(W, live, {kind: 'new', path: 'payer_proposes', amount: 4, due: T + 2 * DAY, exp: T + DAY, dealId: 'vd_' + 'd'.repeat(16), nonce: 'ab'.repeat(16), ownerToken});
-    assert.deepEqual([got.answer.verdict, got.answer.reasons[0], got.answer.payee_side.rule], ['accept', 'Within its budget: up to 20 PC a deal, 20 PC of 20 PC left.', 'expires_at']);
+    assert.deepEqual([got.answer.verdict, got.answer.rule, got.answer.payer_side.verdict, got.answer.payer_side.reasons[0], got.answer.payee_side.rule], ['decline', 'expires_at', 'accept', 'Within its budget: up to 20 PC a deal, 20 PC of 20 PC left.', 'expires_at']);
     assert.equal(got.answer.payee_side.reasons[0], `Your own limits refuse it (expires_at): the mandate expired at ${iso(T - DAY)}; the owner must renew it.`);
     assert.deepEqual(got.full, {outcome: 'refused', side: 'payee', rule: 'expires_at'});
   }
@@ -904,15 +1024,57 @@ test('review: a dormant self-serve payer: accept where its agent acts (it propos
   });
   let got = await runCase(W, live, {kind: 'new', path: 'payer_proposes', amount: 2, due: T + 2 * DAY, exp: T + DAY, dealId: 'vd_' + 'c'.repeat(16), nonce: 'ef'.repeat(16)});
   assert.deepEqual([got.answer.verdict, got.answer.rule, got.full], ['accept', null, {outcome: 'agreed', asked: []}]);
-  assert.ok(got.answer.reasons.includes(`Its mandate ended at ${iso(T - DAY)} with its sandbox time: it is a self-serve agent, and its agent's own request at this step renews both.`), JSON.stringify(got.answer.reasons));
+  assert.ok(got.answer.payer_side.reasons.includes(`Its mandate ended at ${iso(T - DAY)} with its sandbox time: it is a self-serve agent, and its agent's own request at this step renews both.`), JSON.stringify(got.answer.payer_side.reasons));
   got = await runCase(W, live, {kind: 'deal', id: W.review, amount: 3});
-  assert.deepEqual([got.answer.verdict, got.answer.rule, got.answer.reasons[0]], ['decline', 'expires_at',
+  assert.deepEqual([got.answer.verdict, got.answer.rule, got.answer.payer_side.reasons[0]], ['decline', 'expires_at',
     `Its mandate ended at ${iso(T - DAY)} with its sandbox time: it is a self-serve agent, and the next request its agent sends renews both; until then it cannot commit to anything.`]);
   assert.deepEqual(got.full, {outcome: 'refused', side: 'payer', rule: 'expires_at'});
   // B's agent sends any request (Pilot.authenticate, as every route does): it is renewed, and the check and the acceptance agree.
   live.authenticate(W.tokens[W.payer].agent);
   got = await runCase(W, live, {kind: 'deal', id: W.review, amount: 3});
   assert.deepEqual([got.answer.verdict, got.full], ['accept', {outcome: 'agreed', asked: []}]);
+});
+
+// ---------- fix inbox #79 ----------
+// #79's shape as the oracle runs it: B owes C 10 already and offers it 1 (or C offers B 1: `by`), and guarantees that
+// name only that offer back it, by backers C's owner trusts (face value); C's bar is 15%. Two guarantees of 1, or one
+// of 3, cover 9% of the 11 B would owe (the offer's price once, by the first in order), so the check and the real
+// steps refuse it: at C's acceptance of B's offer, and at B's acceptance of C's own (C's side checked again). The rule
+// before counted 2 (18%) or 3 (27%) and took it. One guarantee at the price is refused under both rules (the control);
+// a floating guarantee of 3 counts as it did (27%); with two of the offer's on top it is 4 (36%) under a bar of 40,
+// where the rule before counted 5 (45%). The other way: an offer of 5 backed by a trusted backer's guarantee of 5 and,
+// after it, an untrusted one of 20 whose backer has nothing behind it (worth 0). The trusted one pays the offer: 5 of
+// the 15 B would owe, 33%. The rule before scaled the 15 its debt cap allowed by the worth of both caps (5 of 25): 3,
+// 20%.
+test('fix inbox #79: guarantees stacked on an offer, or one above its price, count its price once: the check and the real steps refuse it at 15% where the rule before took it; the control and a floating guarantee as before', async () => {
+  const make = ({caps = [], floating = 0, bar = 15, by = 'payer', price = 1, trustH = true}) => fixed({}, w => {
+    const B = w.person('b-payer'), G = w.person('g-backer'), H = w.person('h-backer'), K = w.person('k-backer');
+    const C = w.person('c-payee', {min_payer_coverage_pct: bar, accept_notes_from: trustH ? [G.id, H.id, K.id] : [G.id, K.id]});
+    w.owe(B, C, 10, {reconciled: true});
+    const d = w.deal(B, C, by === 'payer' ? B : C, price, 'open', {exp: T + DAY, due: T + 2 * DAY});
+    caps.forEach((cap, i) => { w.guarantee([G, H][i], B, C, cap, {covers: 'issuer_payment_for_deals', deals: [d.id]}).created_at = iso(T - DAY - (2 - i) * 1000); });   // G's first
+    if (floating) w.guarantee(K, B, C, floating);
+    const W = w.done(B, C, d);
+    for (const n of W.notes) n.amount_redeemed = '0';                        // B owes C all 10
+    return W;
+  });
+  const refused = {outcome: 'refused', side: 'payee', rule: 'min_payer_coverage_pct'}, agreed = {outcome: 'agreed', asked: []};
+  for (const [label, opts, pct, now, before] of [
+    ['two guarantees of 1', {caps: [1, 1]}, 9, refused, agreed],
+    ['one guarantee of 3', {caps: [3]}, 9, refused, agreed],
+    ['two guarantees of 1, on C\'s own offer', {caps: [1, 1], by: 'payee'}, 9, refused, agreed],
+    ['one guarantee of 1, the price (the control)', {caps: [1]}, 9, refused, refused],
+    ['a floating guarantee of 3', {floating: 3}, 27, agreed, agreed],
+    ['a floating guarantee of 3 and two of the offer\'s, under a bar of 40', {caps: [1, 1], floating: 3, bar: 40}, 36, refused, agreed],
+    ['a trusted guarantee of the price (5), then a worthless one of 20, under a bar of 30', {caps: [5, 20], price: 5, bar: 30, trustH: false}, 33, agreed, refused]]) {
+    const price = opts.price ?? 1, {W, live} = make(opts), got = await runCase(W, live, {kind: 'deal', id: W.review, amount: price});
+    const A = got.answer, words = A.payee_side.reasons.join(' ');
+    assert.deepEqual([A.payee_side.verdict, A.payee_side.rule, A.verdict, got.full, got.payeeSide], now === refused
+      ? ['decline', 'min_payer_coverage_pct', 'decline', refused, refused] : ['accept', null, 'accept', agreed, agreed], label);
+    assert.ok(now === refused ? words.includes(`cover ${pct}% of what it would owe with this deal (${10 + price} PC)`) : words.includes(`would be covered ${pct}%`), `${label}: ${words}`);
+    assert.equal(A.cover.covered, (opts.caps ? price : 0) + (opts.floating ?? 0), label);
+    assert.deepEqual([got.coverage, got.before79], ['compared', opts.caps ? before : null], label);
+  }
 });
 
 test('isolation: 1,000 twin runs and their checks leave the live pilot as it was (state sha256, files, listeners); the live pilot verifies no assumed signature; a twin reaches no tracker', async () => {

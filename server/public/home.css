@@ -1,119 +1,183 @@
-/* Valun landing (public/home.html, the home page of valun.tech): one dark theme, from 360px up. Fonts are self-hosted
-   (public/fonts, SIL OFL): the CSP allows no external font. */
-@font-face { font-family: "Jost"; font-style: normal; font-weight: 100 900; font-display: swap; src: url("/fonts/jost-latin.woff2") format("woff2"); }
-@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/jetbrains-mono-latin-400.woff2") format("woff2"); }
+/* Valun home (public/home.html). It loads /site.css first: the tokens, fonts, navigation, footer, buttons, labels,
+   commands, lists and details all come from there. This file holds only the home page's own layout: the hero and its
+   live view, and the sections below it. The worked example (#how) is styled by /story.css. */
 
-:root {
-  --space: #050608;
-  --line: #eef0f4;
-  --dust: #8a909c;
-  --rule: #1b1e26;
-  --rainbow: linear-gradient(90deg, #ff5a5f, #ffc145, #3ddc97, #4f7cff, #9b5cff);
-  --sans: "Jost", "Futura", "Century Gothic", "Avenir Next", "Segoe UI", system-ui, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
-  color-scheme: dark;
-}
-/* One theme: the dark field, with explicit colors, whatever the system theme. */
-
-* { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; background: var(--space); scroll-behavior: smooth; }
-body { margin: 0; background: var(--space); color: var(--line); font: 300 17px/1.6 var(--sans); overflow-x: hidden; }
-a { color: var(--line); text-decoration-color: var(--dust); text-decoration-thickness: 1px; text-underline-offset: 3px; }
-a:hover { text-decoration-color: var(--line); }
-:focus-visible { outline: 1.5px solid var(--line); outline-offset: 3px; }
-main, .top, .foot { max-width: 1120px; margin: 0 auto; padding-left: 16px; padding-right: 16px; }
-code, pre { font-family: var(--mono); font-weight: 400; }
-p code, li code { font-size: 0.86em; color: var(--line); background: none; border: 1px solid var(--rule); padding: 0.05em 0.4em; border-radius: 3px; overflow-wrap: anywhere; }
-.eyebrow { font: 400 0.72rem/1.4 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dust); margin: 0 0 1.6rem; }
-
-/* header */
-.top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-top: 22px; padding-bottom: 10px; }
-.brand { display: inline-flex; align-items: center; gap: 0.75rem; color: var(--line); text-decoration: none; }
-.mark { width: 26px; height: 26px; display: block; flex: none; }
-.wordmark { font-weight: 300; font-size: 0.98rem; letter-spacing: 0.5em; text-transform: uppercase; margin-right: -0.5em; }
-.top nav { display: flex; gap: 1.4rem; font-size: 0.92rem; font-weight: 400; }
-.top nav a { color: var(--dust); text-decoration: none; }
-.top nav a:hover { color: var(--line); }
-
-/* hero */
-.hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.6rem; padding: 2.6rem 0 3rem; }
-.hero h1 { margin: 0 0 1.4rem; font-weight: 300; font-size: clamp(2rem, 8.6vw, 4.6rem); line-height: 1.08; letter-spacing: -0.015em; }
+/* ---------- hero: the promise on the left, the live network on the right ---------- */
+.hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2.4rem; padding: 2rem 0 3.4rem; }
+.kicker { margin: 0 0 1.1rem; color: var(--dust); font-size: 0.98rem; letter-spacing: 0.02em; }
+.hero h1 { font-size: clamp(2.35rem, 9vw, 4rem); line-height: 1.03; letter-spacing: -0.024em; margin: 0 0 1.5rem; max-width: 12em; text-wrap: balance; }
+/* the headline's two lines: what it is, then what your agent does with it (the second in the secondary ink) */
 .hero h1 .h1a, .hero h1 .h1b { display: block; }
-.h1b { color: var(--dust); }
-.settle { display: inline; white-space: nowrap; padding-bottom: 0.08em; background-image: var(--rainbow); background-repeat: no-repeat; background-position: 0 100%; background-size: 100% 2px; }
-.lede { font-size: 1.12rem; max-width: 34em; margin: 0 0 1.8rem; color: var(--line); }
-.cta { display: flex; flex-wrap: wrap; gap: 0.8rem; }
-.btn { display: inline-block; padding: 0.7em 1.3em; border: 1px solid var(--dust); border-radius: 2px; color: var(--line); text-decoration: none;
-  font-weight: 400; font-size: 0.98rem; letter-spacing: 0.02em; transition: border-color .2s, background-color .2s, color .2s; }
-.btn:hover { border-color: var(--line); }
-.btn.primary { background: var(--line); border-color: var(--line); color: var(--space); }
-.btn.primary:hover { background: #ffffff; }
+.hero h1 .h1b { color: var(--dust); margin-top: 0.16em; }
+.hero .lede { margin: 0 0 2rem; max-width: 31em; }
+/* under the calls to action: the first job to try, then the live network and what backs an IOU, side by side */
+.first-try { margin: 1.1rem 0 0; max-width: 31em; font-size: 0.98rem; color: var(--dust); }
+.first-try .k { color: var(--line); }
+.inspect { display: flex; flex-wrap: wrap; gap: 0 1.6rem; margin: 0.5rem 0 0; }
+.inspect a { display: inline-flex; align-items: center; min-height: 44px; color: var(--dust); }
+.inspect a:hover { color: var(--line); }
 
-/* the constellation */
+/* the live view: a bar saying what it is, the sphere, then one IOU in words */
 .sky { margin: 0; min-width: 0; }
-.sky-box { position: relative; width: 100%; aspect-ratio: 1 / 1; max-height: 78vh; }
-#sky { display: block; width: 100%; height: 100%; touch-action: manipulation; }
-.sky figcaption { border-top: 1px solid var(--rule); padding-top: 0.9rem; margin-top: 0.4rem; }
-.stats { margin: 0 0 0.4rem; font: 400 0.82rem/1.5 var(--mono); color: var(--line); font-variant-numeric: tabular-nums; }
-.caption { margin: 0; color: var(--dust); font-size: 0.9rem; max-width: 40em; }
+.sky-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.2rem 1rem; border-bottom: 1px solid var(--rule); }   /* the controls stay at the right; the label wraps */
+.sky-live { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.7rem; margin: 0; min-height: 44px; padding: 0.3rem 0; font: 400 0.76rem/1.4 var(--mono); color: var(--dust); }
+.sky-live .nw { white-space: nowrap; }   /* "read 02:40 UTC" stays whole */
+.sky-ctl { flex: none; display: flex; gap: 0.5rem; margin: 0; padding: 0.3rem 0; }
+.sky-ctl[hidden], .sky-live .tag[hidden] { display: none; }   /* shown by the script: without it nothing here is live */
+.ctl { min-height: 44px; min-width: 52px; padding: 0 0.85rem; font: 400 0.75rem/1 var(--mono); letter-spacing: 0.04em; color: var(--line);
+  background: transparent; border: 1px solid var(--rule-strong); border-radius: 2px; cursor: pointer; }
+.ctl:hover { border-color: var(--line); }
+.sky-box { position: relative; width: 100%; aspect-ratio: 1 / 1; max-width: 520px; max-height: 62vh; margin: 0 auto; }
+.sky-mark { position: absolute; inset: 0; margin: auto; width: 44%; height: 44%; }
+.sky-box.drawn .sky-mark { display: none; }
+#sky { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: manipulation; }
+.sky figcaption { border-top: 1px solid var(--rule); padding-top: 0.2rem; }
+.spot { margin: 0.6rem 0 0.4rem; min-height: 3em; font-size: 1.08rem; line-height: 1.5; }
+.spot .h, .spot .amt { font: 400 0.9em/1.5 var(--mono); white-space: nowrap; }   /* a handle or an amount is never broken */
+.spot-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.6rem; margin: 0 0 0.9rem; min-height: 1.9rem; font: 400 0.76rem/1.4 var(--mono); color: var(--dust); }
+.spot-meta .when { color: var(--line); }
+.sky-note { margin: 0 0 0.7rem; font-size: 0.92rem; color: var(--dust); max-width: 36em; }
+.sky-key { display: flex; flex-wrap: wrap; gap: 0.3rem 1.15rem; margin: 0 0 0.4rem; padding: 0; list-style: none; font: 400 0.75rem/1.5 var(--mono); color: var(--dust); }
+.sky-key li { display: inline-flex; align-items: center; gap: 0.45rem; }
+.sky-key svg { width: 12px; height: 12px; flex: none; }
+.sky-key li:nth-child(2) svg { width: 24px; }
+.sky-list { max-width: none; }
+.sky-list summary { font: 400 0.78rem/1.4 var(--mono); letter-spacing: 0.04em; }
+.sky-list-body { padding: 0.2rem 0 0.6rem; font-size: 0.92rem; }
+.sky-list-body p { margin: 0 0 0.7rem; color: var(--dust); }
+.sky-list-body .sky-stats { color: var(--line); }
+.latest { list-style: none; margin: 0 0 0.9rem; padding: 0; border-top: 1px solid var(--rule); }
+.latest li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.1rem 1rem; padding: 0.55rem 0; border-bottom: 1px solid var(--rule); }
+.latest .pair { font: 400 0.8rem/1.5 var(--mono); min-width: 0; }
+.latest .pair a, .latest .k { white-space: nowrap; }
+.latest .pair a { display: inline-block; padding: 0.3rem 0; }
+.latest .k { color: var(--dust); }
+.latest .k.operator { color: var(--work); }
+.latest .arw { color: var(--dust); }
+.latest .amt { font: 400 0.8rem/1.5 var(--mono); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.latest .how { grid-column: 1 / -1; font-size: 0.82rem; color: var(--dust); }
+.latest .none { color: var(--dust); }
+.latest:empty { display: none; }
 
-/* sections */
-.how, .play, .recent { border-top: 1px solid var(--rule); padding: 3rem 0 2.6rem; }
-.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2.4rem; }
-.steps h3 { font-weight: 400; font-size: 1.22rem; margin: 0.9rem 0 0.4rem; letter-spacing: 0; }
-.steps p { margin: 0; color: var(--dust); max-width: 30em; }
-.diagram { display: block; width: 100%; max-width: 260px; height: auto; }
-.diagram .dl { fill: var(--line); font: 400 11px var(--mono); }
-.diagram .dn { fill: var(--dust); font: 400 10px var(--mono); letter-spacing: 0.08em; }
-.diagram .dd { fill: var(--dust); font: 400 10px var(--mono); letter-spacing: 0.08em; }
-.play p { margin: 0 0 1rem; max-width: 44em; }
-.list { margin: 0 0 1.4rem; padding: 0; list-style: none; counter-reset: n; max-width: 44em; }
-.list li { counter-increment: n; position: relative; padding: 0.55rem 0 0.55rem 2.6rem; border-bottom: 1px solid var(--rule); }
-.list li::before { content: counter(n, decimal-leading-zero); position: absolute; left: 0; top: 0.75rem; font: 400 0.74rem/1 var(--mono); color: var(--dust); letter-spacing: 0.08em; }
-.small { font-size: 0.92rem; color: var(--dust); }
-.cmd { position: relative; margin: 0 0 1.2rem; max-width: 44em; }
-.cmd pre { margin: 0; background: #0a0c10; color: var(--line); border: 1px solid var(--rule); border-radius: 2px; padding: 16px 18px; padding-right: 84px;
-  overflow-x: auto; font-size: 0.86rem; line-height: 1.8; }
-.cmd code { font-size: inherit; }
-.copy { position: absolute; top: 10px; right: 10px; font: 400 0.7rem/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; padding: 0.6em 0.8em;
-  border-radius: 2px; border: 1px solid var(--rule); background: var(--space); color: var(--dust); cursor: pointer; }
-.copy:hover { color: var(--line); border-color: var(--dust); }
+/* ---------- sections ---------- */
+/* a split section: its heading and introduction beside its body, on wide screens */
+.split-head > p { color: var(--dust); max-width: 30em; }
+.split-head h2 { max-width: 14em; }
+.split-body { min-width: 0; }
+.go { margin: 0.5rem 0 0; }
+.go a { display: inline-flex; align-items: center; min-height: 44px; }
+.sub { margin: 2.6rem 0 0.4rem; font-size: 1.12rem; }
 
-/* recent loops */
-.loops { list-style: none; margin: 0 0 1.4rem; padding: 0; }
-.loops li { border-bottom: 1px solid var(--rule); }
-.loops li:first-child { border-top: 1px solid var(--rule); }
-.loops a { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.2rem 1.2rem; padding: 0.85rem 0; color: var(--line); text-decoration: none; }
-.loops a:hover .path { text-decoration: underline; text-decoration-color: var(--dust); text-underline-offset: 4px; }
-.loops .path { font: 400 0.9rem/1.5 var(--mono); overflow-wrap: anywhere; min-width: 0; }
-.loops .meta { color: var(--dust); font-size: 0.88rem; white-space: nowrap; }
-.loops .meta .n { font-family: var(--mono); color: var(--line); }
-.loops .empty { color: var(--dust); padding: 0.85rem 0; }
-.more { color: var(--dust); text-decoration: none; font-size: 0.95rem; }
-.more:hover { color: var(--line); }
+/* label and value pairs (You get, Needs, Today): the label above its value, or beside it where there is room */
+.facts { margin: 0.4rem 0 0; }
+.facts > div { padding: 0.5rem 0; border-top: 1px solid var(--rule); }
+.facts > div:last-child { border-bottom: 1px solid var(--rule); }
+.facts dt { font: 400 0.75rem/1.6 var(--mono); color: var(--dust); }
+.facts dd { margin: 0.1rem 0 0; font-size: 0.95rem; }
 
-/* footer */
-.foot { color: var(--dust); font-size: 0.88rem; border-top: 1px solid var(--rule); padding-top: 1.6rem; padding-bottom: 3rem; }
-.foot p { margin: 0 0 0.6rem; max-width: 44em; }
-.foot .links { display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem; }
-.foot a { color: var(--dust); }
-.foot a:hover { color: var(--line); }
+/* what you can try today: one row each, what you do beside what you get */
+.try { list-style: none; margin: 0; padding: 0; }
+.try > li { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.4rem 2.4rem; border-top: 1px solid var(--rule-strong); padding: 1.3rem 0 1.5rem; }
+.try h3 { font-size: 1.18rem; margin-bottom: 0.55rem; max-width: 22em; }
+.try .do p:not(.go) { margin-bottom: 0.2rem; }
+.friends { border-top: 1px solid var(--rule-strong); padding-top: 1.3rem; max-width: 46em; }
+.friends h3 { font-size: 1.18rem; }
+
+/* bring your agent */
+.ways { list-style: none; margin: 0 0 1.6rem; padding: 0; }
+.ways > li { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 2rem; border-top: 1px solid var(--rule-strong); padding: 1.2rem 0 1rem; }
+.ways h3 { font-size: 1.18rem; }
+.ways p { margin: 0 0 0.7rem; }
+.tested { border-left: 1px solid var(--rule-strong); padding-left: 0.9rem; color: var(--dust); font-size: 0.92rem; }
+.tested .k { display: block; font: 400 0.75rem/1.6 var(--mono); color: var(--line); }
+.agent-facts { margin-top: 1.4rem; }
+/* what pasting the one line does, as a list (site.css .note draws the box and its label) */
+.before-paste ul { margin: 0 0 0.8rem; padding: 0 0 0 1.1rem; }
+.before-paste li { margin: 0 0 0.35rem; padding-left: 0.15rem; }
+.before-paste li::marker { color: var(--dust); }
+
+/* why this is interesting: the question, then each possibility with its open question and what exists today */
+#why > h2 { font-size: clamp(1.9rem, 5.6vw, 3.1rem); line-height: 1.08; letter-spacing: -0.02em; max-width: 16em; text-wrap: balance; margin-bottom: 1.4rem; }
+.why-intro { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem 1.2rem; margin: 0 0 2.2rem; max-width: 52em; }
+.why-intro p { margin: 0; }
+.why-intro p:last-child { color: var(--dust); flex: 1 1 22em; }
+.maybe { list-style: none; margin: 0; padding: 0; }
+.maybe > li { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.6rem 2.4rem; border-top: 1px solid var(--rule-strong); padding: 1.5rem 0 1.6rem; }
+.glyph { display: block; width: 5.4rem; height: auto; }
+.maybe h3 { font-size: 1.32rem; font-weight: 300; margin-bottom: 0.6rem; }
+.maybe .text p { margin: 0; max-width: 34em; }
+.maybe .facts dt { color: var(--dust); }
+.maybe .facts div:first-child dd { color: var(--line); }
+
+/* who runs what, what you can check, what isn't true yet */
+.runs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 2.4rem; }
+.runs > li { border-top: 1px solid var(--rule-strong); padding: 1.1rem 0 1.2rem; }
+.runs h3 { font-size: 1.15rem; margin-bottom: 0.45rem; }
+.runs .who { margin: 0 0 0.4rem; color: var(--dust); font-size: 0.95rem; }
+.runs ul { list-style: none; margin: 0; padding: 0; }
+.runs ul li { padding: 0.25rem 0 0.25rem 1rem; position: relative; font-size: 0.95rem; }
+.runs ul li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 0.45rem; border-top: 1px solid var(--dust); }
+.checks, .limits { list-style: none; margin: 0.6rem 0 0; padding: 0; max-width: 46em; }
+.checks li, .limits li { border-top: 1px solid var(--rule); padding: 0.7rem 0; }
+.checks b { font-weight: 500; }
+.limits { border-left: 2px solid var(--caution); padding-left: 1rem; }
+.limits li:first-child { border-top: 0; }
+.limits a { font-weight: 500; }
+
+/* the invitation */
+.invite h2 { max-width: 18em; text-wrap: balance; }
+.invite > p { max-width: 38em; color: var(--dust); margin-bottom: 1.6rem; }
+
+/* the worked example's placeholder, until public/story-fragment.html replaces it: its long label may wrap on a narrow phone */
+.story-label .tag { white-space: normal; }
+
+/* visually hidden: read aloud, not shown */
+.vh { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* forced colors (Windows high contrast): the sphere is light ink drawn on its own dark field, like a picture, so it keeps
+   that field, and so do the key's swatches that match it; everything else takes the reader's colors */
+@media (forced-colors: active) {
+  .sky-box, .sky-key svg { forced-color-adjust: none; background: var(--space); }
+}
+
+/* phones: the two-line headline, the lede and both calls to action on the first screen of a 360 x 640 or 375 x 667 phone */
+@media (max-width: 480px) {
+  .hero { padding-top: 0.75rem; }
+  .kicker { margin-bottom: 0.6rem; }
+  .hero h1 { font-size: clamp(1.85rem, 8.4vw, 4rem); margin-bottom: 1rem; }
+  .hero h1 .h1b { margin-top: 0.08em; }
+  .hero .lede { font-size: 1.05rem; margin-bottom: 1.3rem; }
+}
 
 @media (min-width: 720px) {
-  .steps { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2.4rem; }
+  .try > li { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
+  .try .facts { margin-top: 0.3rem; }
+  /* the operator's card, the longest, on the right beside the three others stacked (the last row takes what is left) */
+  .runs { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto auto 1fr; }
+  .runs > .op { grid-column: 2; grid-row: 1 / span 3; }
+  .ways > li { grid-template-columns: 11rem minmax(0, 1fr); }
+  .ways > li > h3 { grid-row: 1 / span 3; }
+  .agent-facts > div { display: grid; grid-template-columns: 8.4rem minmax(0, 1fr); gap: 0 1rem; }
+  .agent-facts dd { margin: 0; }
+  .maybe > li { grid-template-columns: 5.4rem minmax(0, 1fr); }
+  .maybe .facts { grid-column: 2; }
+  /* the live view beside its words, while the hero is one column */
+  .sky { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "bar bar" "box cap"; gap: 0 2rem; align-items: start; }
+  .sky-bar { grid-area: bar; }
+  .sky-box { grid-area: box; }
+  .sky figcaption { grid-area: cap; border-top: 0; }
 }
 @media (min-width: 960px) {
-  .hero { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: center; gap: 3rem; padding-top: 3.6rem; }
-  .hero h1 { font-size: clamp(2.4rem, 3.6vw, 3.5rem); }
-  .lede { font-size: 1.18rem; }
+  .hero { grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr); gap: 3.4rem; align-items: start; padding-top: 2.4rem; }
+  .hero h1 { font-size: clamp(2.7rem, 4.6vw, 4rem); }
+  .hero-text { padding-top: 0.8rem; }
+  .sky { display: block; }
+  .sky figcaption { border-top: 1px solid var(--rule); }
+  .sky-box { max-height: min(450px, 56vh); }
+  .maybe > li { grid-template-columns: 5.4rem minmax(0, 7fr) minmax(0, 5fr); }
+  .maybe .facts { grid-column: 3; margin-top: 0; }
 }
-@media (max-width: 480px) {
-  body { font-size: 16px; }
-  .top nav { gap: 1rem; font-size: 0.88rem; }
-  .wordmark { letter-spacing: 0.4em; margin-right: -0.4em; }
-  .cmd pre { font-size: 0.76rem; padding: 44px 14px 14px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .btn { transition: none; }
+@media (min-width: 1100px) {
+  .split { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 0 3.2rem; }
+  .split-head { position: sticky; top: 1.2rem; align-self: start; }
 }

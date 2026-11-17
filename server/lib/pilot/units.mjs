@@ -30,12 +30,12 @@ export const PUBLIC_ORIGIN = override || NETWORKS[NETWORK].origin;
 // A default or bound written in PC-sized amounts, in this network's unit.
 export const pc = n => n * SCALE;
 
+// Whole nanoERG as tERG: 3000000 -> "0.003".
+export const tergOf = n => (Number(n) / 1e9).toFixed(9).replace(/0+$/, '').replace(/\.$/, '');
 // An amount as people read it: "3 PC" on the pilot; "3000000 nanoERG (0.003 tERG)" on the testnet.
 export function amt(n) {
   if (UNIT !== 'nanoERG') return `${n} ${UNIT}`;
-  const v = Number(n);
-  const terg = (v / 1e9).toFixed(9).replace(/0+$/, '').replace(/\.$/, '');
-  return `${n} nanoERG (${terg} tERG)`;
+  return `${n} nanoERG (${tergOf(n)} tERG)`;
 }
 
 // The honest one-line labels that differ by network.

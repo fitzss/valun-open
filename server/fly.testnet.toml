@@ -20,6 +20,9 @@ swap_size_mb = 256
   VALUN_PUBLIC_ORIGIN = "https://valun.tech"
   PILOT_OPEN_SANDBOX = "1"
   PILOT_OPEN_NETWORK = "1"
+  # The house agents the operator runs on its valun-house machine (house-scribe, house-reviewer), by participant id on
+  # this network: their public records say house_agent, so pages call them operator-run (a label; nothing else changes).
+  PILOT_HOUSE_AGENTS = "vp_6dc99db9c420,vp_c27abea3f831"
   # Circulating credit (debt transfers, set-offs) with anchored netting: it takes effect only once the tracker is on
   # chain with tracker v4 TR-15's anchored-netting capability and its binary is pinned (lib/pilot/caps.mjs, pins.mjs);
   # otherwise the server runs as off and says why (GET /info).
@@ -45,12 +48,16 @@ swap_size_mb = 256
     soft_limit = 40
     hard_limit = 60
 
+  # The network's own process answers: GET /pilot/v1/info. Never the legacy desk's /api/status, which is optional beside
+  # the network (fix inbox #64). /pilot/v1/info reads no tracker, and every image has it, so a rollback to an older image
+  # keeps a passing check. The network's tracker is checked by GET /pilot/v1/health, which the live check requires at
+  # every deploy and promotion.
   [[http_service.checks]]
     grace_period = "30s"
     interval = "30s"
     timeout = "5s"
     method = "GET"
-    path = "/api/status"
+    path = "/pilot/v1/info"
 
 [[mounts]]
   source = "valun_testnet_data"

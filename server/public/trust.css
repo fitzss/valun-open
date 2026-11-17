@@ -1,0 +1,122 @@
+/* /trust (public/trust.html, built by scripts/build-trust.mjs from skill.md's Trust model). On top of /site.css: its
+   tokens and components are used as they are. The page reads like an instrument's datasheet: one column of text at a
+   reading measure, an index beside it, hairlines between parts, and colour only where it means something (the
+   operator's amber, the caution of a limit, the green of live data), never as the only signal. */
+
+/* the head: the title and what the page is, the life of an IOU, and a live reading of the chain (beside the title from
+   960px; on a phone after the steps, as the page reads) */
+.trust-head { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2rem; padding: 2.4rem 0 2.6rem; }
+.trust-head h1 { margin: 0 0 1.1rem; }
+.trust-head .lede { margin: 0 0 1.1rem; }
+.source { margin: 0; max-width: 36em; color: var(--dust); font-size: 0.92rem; }
+
+/* "Read the chain yourself": a reading, like an instrument's. The script adds the live rows; without it, the two reads. */
+.now { border: 1px solid var(--rule); border-radius: 2px; padding: 1.15rem 1.25rem 1.1rem; align-self: start; min-width: 0; }
+.now-h { font: 400 1.08rem/1.3 var(--sans); letter-spacing: 0; margin: 0 0 0.75rem; }
+.now-what { margin: 0; color: var(--dust); font-size: 0.9rem; }
+.now-what a, .now-dl a { color: var(--line); }
+.now-read:not(:empty) { margin: 0 0 0.9rem; border-bottom: 1px solid var(--rule); }
+.now-live { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; margin: 0 0 0.3rem; color: var(--dust); font-size: 0.86rem; }
+.now-dl { margin: 0; font: 400 0.82rem/1.5 var(--mono); }
+.now-dl > div { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: 0.15rem 1rem; padding: 0.55rem 0; border-top: 1px solid var(--rule); }
+.now-dl dt { color: var(--dust); }
+.now-dl dd { margin: 0; color: var(--line); overflow-wrap: anywhere; }
+.now-fail, .now-wait { margin: 0 0 0.9rem; color: var(--dust); font-size: 0.9rem; }
+/* the copy buttons' status line (public/trust.js): heard by a screen reader, not shown */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* the life of an IOU: five numbered steps on one line, joined like the points of a circuit; the operator's step in its
+   amber. From 960px a row, below that a column. */
+.path { min-width: 0; }
+.path-h { font: 300 1.45rem/1.25 var(--sans); letter-spacing: -0.005em; margin: 0 0 1.4rem; }
+.steps { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+.steps > li { position: relative; counter-increment: step; padding: 0.1rem 0 1.3rem 2.9rem; max-width: 34em; color: var(--dust); font-size: 0.95rem; }
+.steps > li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 1.75rem; height: 1.75rem; display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: 50%; background: var(--space); color: var(--line); font: 400 0.75rem/1 var(--mono); z-index: 1; }
+.steps > li::after { content: ""; position: absolute; left: 0.875rem; top: 1.75rem; bottom: 0; width: 1px; background: var(--rule-strong); }
+.steps > li:last-child::after { display: none; }
+.steps > li > strong:first-child { display: block; color: var(--line); font-weight: 400; font-size: 1.08rem; margin-bottom: 0.15rem; }
+.steps > li:nth-child(2)::before { border-color: var(--work); color: var(--work); }
+.steps > li:nth-child(2) > strong:first-child { color: var(--work); }
+.steps code { white-space: nowrap; }
+
+/* the index and the text */
+.trust-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; border-top: 1px solid var(--rule); }
+.toc { padding: 1.2rem 0 1.4rem; border-bottom: 1px solid var(--rule); }
+.toc-h { margin: 0 0 0.5rem; font: 400 0.75rem/1.4 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--dust); }
+.toc ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1rem; }
+.toc a { display: flex; align-items: center; min-height: 44px; color: var(--dust); text-decoration: none; font-size: 0.95rem; line-height: 1.25; }
+.toc a:hover { color: var(--line); }
+.doc { min-width: 0; }
+
+.part { padding: 2.6rem 0 1.6rem; border-top: 1px solid var(--rule); }
+.toc + .doc .part:first-child, .doc .part:first-child { border-top: 0; }
+.part-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 1rem; margin: 0 0 1.1rem; }
+.part-head h2 { margin: 0; }
+.anchor { display: inline-flex; align-items: center; min-height: 44px; font: 400 0.76rem/1 var(--mono); color: var(--dust); text-decoration: none; }
+.anchor:hover { color: var(--line); text-decoration: underline; text-underline-offset: 4px; }
+.doc p, .doc ul, .doc ol { max-width: var(--measure); }
+.doc p { margin: 0 0 1.1rem; }
+.doc strong { color: var(--line); }
+.doc ul, .doc ol { margin: 0 0 1.3rem; padding-left: 1.2rem; }
+.doc li { margin: 0 0 0.45rem; }
+.doc li::marker { color: var(--dust); }
+.doc li > ul { margin: 0.5rem 0 0.8rem; }
+.doc li > p { margin: 0 0 0.6rem; }
+.doc .cmd { margin: 0.2rem 0 1.2rem; }
+.doc .cmd pre:focus-visible { outline-offset: 2px; }
+/* a long code span that wraps keeps its frame on each line; a word of code with a hyphen (a flag, a handle) stays whole */
+.doc p code, .doc li code { -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.nw { white-space: nowrap; }
+
+/* who runs what: a datasheet, one row a party, its name in the margin from 720px. The operator's row (the second, as
+   skill.md lists them; test/trust-page.test.mjs keeps that order) wears the amber of what the operator runs. */
+.part-who-runs-what > ul { list-style: none; padding: 0; margin: 0.4rem 0 1.4rem; max-width: none; border-top: 1px solid var(--rule); }
+.part-who-runs-what > ul > li { position: relative; margin: 0; padding: 1rem 0 0.9rem; border-bottom: 1px solid var(--rule); }
+.part-who-runs-what > ul > li > strong:first-child,
+.part-who-runs-what > ul > li > p:first-child > strong:first-child { display: block; margin-bottom: 0.25rem; font: 400 1.15rem/1.3 var(--sans); }
+.part-who-runs-what > ul > li:nth-child(2) > p:first-child > strong:first-child,
+.part-who-runs-what > ul > li:nth-child(2) > strong:first-child { color: var(--work); }
+.part-who-runs-what > ul > li > ul { list-style: none; padding: 0; margin: 0.2rem 0 0.8rem; }
+.part-who-runs-what > ul > li > ul > li { position: relative; padding-left: 1.2rem; margin: 0 0 0.4rem; }
+.part-who-runs-what > ul > li > ul > li::before { content: ""; position: absolute; left: 0; top: 0.8em; width: 0.6rem; height: 1px; background: var(--dust); }
+.part-who-runs-what > ul + p { color: var(--dust); }
+.part-who-runs-what > ul + p strong { color: var(--line); }
+.part-who-runs-what code { white-space: nowrap; }   /* handles and flags stay whole */
+
+/* the limits: each one a line of its own, marked as a caution (in words: the heading says what they are) */
+.part-limits > ul { list-style: none; padding: 0; border-top: 1px solid var(--rule); }
+.part-limits > ul > li { position: relative; margin: 0; padding: 0.75rem 0 0.75rem 1.4rem; border-bottom: 1px solid var(--rule); }
+.part-limits > ul > li::before { content: ""; position: absolute; left: 0; top: 1.45rem; width: 0.7rem; height: 2px; background: var(--caution); }
+.part-limits a { color: var(--dust); }
+.part-limits a:hover { color: var(--line); }
+
+@media (min-width: 720px) {
+  .part-who-runs-what > ul > li { padding: 1.1rem 0 1rem 10.5rem; min-height: 3.6rem; }
+  .part-who-runs-what > ul > li > strong:first-child,
+  .part-who-runs-what > ul > li > p:first-child > strong:first-child { position: absolute; left: 0; top: 1.05rem; width: 9.5rem; margin: 0; }
+}
+@media (min-width: 960px) {
+  .trust-head { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); grid-template-areas: "text now" "path path"; gap: 2.8rem 4rem;
+    padding: 3.2rem 0 3rem; align-items: start; }
+  .head-text { grid-area: text; align-self: stretch; display: flex; flex-direction: column; }
+  .head-text .source { margin-top: auto; padding-top: 0.9rem; border-top: 1px solid var(--rule); }
+  .now { grid-area: now; }
+  .path { grid-area: path; }
+  .steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0 1.6rem; }
+  .steps > li { padding: 2.75rem 0 0; max-width: none; }
+  .steps > li::after { left: 1.75rem; right: -1.6rem; top: 0.875rem; bottom: auto; width: auto; height: 1px; }
+  .trust-body { grid-template-columns: 12.5rem minmax(0, 1fr); gap: 3.5rem; }
+  .toc { position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding: 2.6rem 0 2rem; border-bottom: 0; }
+  .toc ol { display: block; border-left: 1px solid var(--rule); }
+  .toc a { padding: 0.3rem 0 0.3rem 1rem; margin-left: -1px; border-left: 1px solid transparent; }
+  .toc a:hover { border-left-color: var(--dust); }
+  .doc .part:first-child { padding-top: 2.6rem; }
+}
+@media (max-width: 480px) {
+  .now { padding: 1rem 1rem 0.5rem; }
+  .now-dl > div { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
+}
+@media print {
+  .toc, .now, .copy, .skip { display: none; }
+}

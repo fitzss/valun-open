@@ -7,6 +7,9 @@
 //   - the check's verdicts (accept, ask_owner, decline for per-deal, outstanding and expiry), each the answer the server
 //     gives the payer's agent when it proposes the same deal; the check is a dry run; its errors;
 //   - the cover, with backers named only when public;
+//   - fix inbox #87: the payee's own check gives the step's one verdict from both sides (payer_side, payee_side), the
+//     cover's words among the payee's own; what a valun 0.7.1 client's summary and `valun card check` make of it; and the
+//     payee's own check of a payer without a published card (its own side only);
 //   - the agent page's section and description, escaped; GET /me room.
 // Run: node --test test/budget-card.unit.test.mjs
 import {test, after} from 'node:test';
@@ -20,7 +23,7 @@ import {Pilot, PilotStore, PILOT_DENOMINATION, DEFAULT_MANDATE, PRICE_CAP, SANDB
 import {createPilotRoutes} from '../lib/pilot/http.mjs';
 import {createHandler} from '../lib/http.mjs';
 import {agentView, agentDescription, renderAgentPage} from '../lib/pilot/agents.mjs';
-import {budgetCard, checkPayer, findPayee, parseAmount, CARD_VERSION} from '../lib/pilot/card.mjs';
+import {budgetCard, checkPayer, findPayee, parseAmount, CARD_VERSION, PAYEE_NOT_CHECKED, PAYER_NOT_PUBLISHED} from '../lib/pilot/card.mjs';
 import {appendEntries} from '../lib/pilot/journal.mjs';
 import {NETWORK} from '../lib/pilot/units.mjs';
 
@@ -239,6 +242,9 @@ test('the verdicts, each the answer the server gives when the payer\'s agent pro
   const check = async (payer, amount, payee = bob) => {
     const r = await call('GET', `/pilot/v1/participants/${payer.id}/check?amount=${amount}&payee=${payee.handle}`);
     assert.equal(r.status, 200, r.text);
+    // Fix inbox #87: the public answer is the payer's side, and says the payee's own limits were not checked.
+    assert.deepEqual(r.body.payer_side, {verdict: r.body.verdict, rule: r.body.rule, reasons: r.body.reasons.slice(0, -1)});
+    assert.deepEqual([r.body.reasons.at(-1), 'payee_side' in r.body], [PAYEE_NOT_CHECKED, false]);
     return r.body;
   };
   const published = (handle, mandate = {}) => { const p = person(handle, mandate); pilot.setMandate(p, {public_card: true}); return p; };
@@ -251,9 +257,9 @@ test('the verdicts, each the answer the server gives when the payer\'s agent pro
   const ann = published('ann-payer');
   owe(ann, bob, 9);
   let c = await check(ann, 5);
-  assert.deepEqual(Object.keys(c), ['verdict', 'reasons', 'rule', 'payer', 'payee', 'amount', 'mandate', 'room_left', 'approval_needed', 'cover', 'record', 'card_hash', 'checked_at', 'took_ms']);
+  assert.deepEqual(Object.keys(c), ['verdict', 'reasons', 'rule', 'payer', 'payee', 'amount', 'mandate', 'room_left', 'approval_needed', 'cover', 'record', 'card_hash', 'checked_at', 'took_ms', 'payer_side']);
   assert.deepEqual([c.verdict, c.rule, c.approval_needed, c.amount, c.room_left], ['accept', null, false, 5, 31]);
-  assert.deepEqual(c.reasons, ['Within its budget: up to 5 PC a deal, 31 PC of 40 PC left.']);
+  assert.deepEqual(c.payer_side.reasons, ['Within its budget: up to 5 PC a deal, 31 PC of 40 PC left.']);
   assert.deepEqual([c.payer, c.payee], [{id: ann.id, handle: 'ann-payer'}, {id: bob.id, handle: 'bob-payee'}]);
   assert.deepEqual(c.mandate, {version: 2, expires_at: ann.mandate.expires_at});
   assert.deepEqual(c.cover, {covered: null, for_other_deals: null, guarantees: []}, 'no token: the payee\'s cover is not shown');
@@ -266,7 +272,7 @@ test('the verdicts, each the answer the server gives when the payer\'s agent pro
   const ben = published('ben-payer', {approve_above: 2});
   c = await check(ben, 3);
   assert.deepEqual([c.verdict, c.rule, c.approval_needed], ['ask_owner', 'approve_above', true]);
-  assert.deepEqual(c.reasons, ['Within its budget: up to 5 PC a deal, 40 PC of 40 PC left.', 'Its owner approves each commitment above 2 PC: this one waits for the owner before it binds.']);
+  assert.deepEqual(c.payer_side.reasons, ['Within its budget: up to 5 PC a deal, 40 PC of 40 PC left.', 'Its owner approves each commitment above 2 PC: this one waits for the owner before it binds.']);
   assert.equal((await check(ben, 2)).verdict, 'accept', 'at approve_above itself nothing waits');
   assert.equal(await server(ben, 3), 'proposed_awaiting_owner');
   const cal = published('cal-payer', {approve_above: 0});
@@ -277,7 +283,7 @@ test('the verdicts, each the answer the server gives when the payer\'s agent pro
   // decline: over the per-deal limit (the stricter agent limit counts).
   const dee = published('dee-payer');
   c = await check(dee, 6);
-  assert.deepEqual([c.verdict, c.rule, c.approval_needed, c.reasons], ['decline', 'max_issue_per_deal', false, ['Over its limit per deal: 6 PC is more than the 5 PC a deal its owner allows.']]);
+  assert.deepEqual([c.verdict, c.rule, c.approval_needed, c.payer_side.reasons], ['decline', 'max_issue_per_deal', false, ['Over its limit per deal: 6 PC is more than the 5 PC a deal its owner allows.']]);
   assert.equal(await server(dee, 6), 'refused:max_issue_per_deal');
   pilot.setAgentLimits(dee, {max_issue_per_deal: 3});
   assert.deepEqual([(await check(dee, 4)).verdict, (await check(dee, 4)).rule], ['decline', 'max_issue_per_deal']);
@@ -287,20 +293,20 @@ test('the verdicts, each the answer the server gives when the payer\'s agent pro
   const eli = published('eli-payer');
   owe(eli, bob, 37);
   c = await check(eli, 4);
-  assert.deepEqual([c.verdict, c.rule, c.room_left, c.reasons], ['decline', 'max_issue_outstanding', 3, ['Over its budget: it has 3 PC of 40 PC left, less than 4 PC.']]);
+  assert.deepEqual([c.verdict, c.rule, c.room_left, c.payer_side.reasons], ['decline', 'max_issue_outstanding', 3, ['Over its budget: it has 3 PC of 40 PC left, less than 4 PC.']]);
   assert.equal(await server(eli, 4), 'refused:max_issue_outstanding');
   assert.equal((await check(eli, 3)).verdict, 'accept');
 
   // decline: the mandate has expired.
   const fay = published('fay-payer', {expires_at: iso(clock.t - 60e3)});
   c = await check(fay, 1);
-  assert.deepEqual([c.verdict, c.rule, c.reasons], ['decline', 'expires_at', [`Its owner's mandate ended at ${fay.mandate.expires_at}: it cannot commit to anything until its owner renews it.`]]);
+  assert.deepEqual([c.verdict, c.rule, c.payer_side.reasons], ['decline', 'expires_at', [`Its owner's mandate ended at ${fay.mandate.expires_at}: it cannot commit to anything until its owner renews it.`]]);
   assert.equal(await server(fay, 1), 'refused:expires_at');
 
   // decline: the payee is not on the owner's counterparty list.
   const gus = published('gus-payer', {counterparties: [ann.id]});
   c = await check(gus, 1);
-  assert.deepEqual([c.verdict, c.rule, c.reasons], ['decline', 'counterparties', ['Its owner has not listed bob-payee among the agents it may deal with.']]);
+  assert.deepEqual([c.verdict, c.rule, c.payer_side.reasons], ['decline', 'counterparties', ['Its owner has not listed bob-payee among the agents it may deal with.']]);
   assert.equal(await server(gus, 1), 'refused:counterparties');
 });
 
@@ -319,30 +325,33 @@ test('the check is a dry run: the state, the audit log and the cache generation 
 test('the cover, as the payee sees it: the active guarantees of the payer\'s IOUs to this payee, their remaining caps; a backer is named only when the guarantee is public (fix inbox #31)', async () => {
   const w = shared(), {pilot, amy, bob, eve, cy, dan, g1, g2, g3} = w;
   pilot.setMandate(amy, {public_card: true});
+  // Fix inbox #87: the cover's words are the payee's own side's, never the step's reasons (valun 0.7.1 adds its own).
+  const coverOf = c => { assert.ok(!c.reasons.some(x => /Backed for you|Nothing backs/.test(x)), JSON.stringify(c.reasons)); return c.payee_side.reasons.filter(x => /^Backed for you|^Nothing backs|^(A guarantee|Guarantees) with/.test(x)); };
   let c = await checkPayer(pilot, amy, {amount: 2, payee: bob, showCover: true});
   assert.equal(c.verdict, 'accept');
+  assert.deepEqual(c.reasons, ['Both sides allow it.', 'Within its budget: up to 5 PC a deal, 25 PC of 40 PC left.']);
+  assert.deepEqual(c.payee_side, {verdict: 'accept', rule: null, reasons: ['Your own limits allow it.', 'Backed for you up to 4 PC by @cy-backer and a backer not named here.']});
   assert.deepEqual(c.cover, {covered: 4, for_other_deals: 0, guarantees: [{guarantee_id: g1.id, backer: {id: cy.id, handle: 'cy-backer'}, remaining: 3, for_this_deal: 3},
     {guarantee_id: g2.id, backer: null, remaining: 1, for_this_deal: 1}]});
-  assert.equal(c.reasons[1], 'Backed for you up to 4 PC by @cy-backer and a backer not named here.');
   c = await checkPayer(pilot, amy, {amount: 2, payee: eve, showCover: true});
   assert.deepEqual(c.cover, {covered: 4, for_other_deals: 0, guarantees: [{guarantee_id: g3.id, backer: {id: cy.id, handle: 'cy-backer'}, remaining: 4, for_this_deal: 4}]});
-  assert.equal(c.reasons[1], 'Backed for you up to 4 PC by @cy-backer.');
+  assert.deepEqual(coverOf(c), ['Backed for you up to 4 PC by @cy-backer.']);
   // Public needs both sides: without the issuer's choice the backer is not named.
   pilot.setProfile(amy, {public_vouches: false});
   c = await checkPayer(pilot, amy, {amount: 2, payee: bob, showCover: true});
   assert.deepEqual(c.cover.guarantees.map(g => g.backer), [null, null]);
-  assert.equal(c.reasons[1], 'Backed for you up to 4 PC by 2 backers not named here.');
+  assert.deepEqual(coverOf(c), ['Backed for you up to 4 PC by 2 backers not named here.']);
   assert.deepEqual((await budgetCard(pilot, amy)).backing.public, [], 'nor listed on the card');
   // Nobody backs her IOUs to dan: no cover, no backing reason.
   c = await checkPayer(pilot, amy, {amount: 2, payee: dan, showCover: true});
-  assert.deepEqual([c.cover, c.reasons.length], [{covered: 0, for_other_deals: 0, guarantees: []}, 1]);
+  assert.deepEqual([c.cover, coverOf(c)], [{covered: 0, for_other_deals: 0, guarantees: []}, []]);
   // A guarantee in the deal mode backs only the deals it names, never a new deal (fix inbox #75): it counts nothing here,
   // and the reason says what it backs instead.
   const d = w.deal(amy, dan, 'agreed', 2);
   const gd = w.guarantee(cy, amy, dan, 2, {covers: 'issuer_payment_for_deals', deals: [d.id]});
   c = await checkPayer(pilot, amy, {amount: 1, payee: dan, showCover: true});
   assert.deepEqual(c.cover, {covered: 0, for_other_deals: 2, guarantees: [{guarantee_id: gd.id, backer: null, remaining: 2, for_this_deal: 0}]});
-  assert.equal(c.reasons[1], 'Nothing backs a new deal for you: a guarantee with 2 PC left backs only particular deals.');
+  assert.deepEqual(coverOf(c), ['Nothing backs a new deal for you: a guarantee with 2 PC left backs only particular deals.']);
 });
 
 test('the cover is the payee\'s own business: shown only to a check sent with the payee\'s token (agent or owner), never cached for anyone else', async () => {
@@ -351,11 +360,12 @@ test('the cover is the payee\'s own business: shown only to a check sent with th
   const call = await serve(pilot), url = `/pilot/v1/participants/${amy.id}/check?amount=2&payee=${bob.handle}`;
   const anon = (await call('GET', url)).body;
   assert.deepEqual(anon.cover, {covered: null, for_other_deals: null, guarantees: []});
-  assert.equal(anon.reasons.some(r => /Backed for you/.test(r)), false);
+  assert.deepEqual([anon.reasons.some(r => /Backed for you/.test(r)), 'payee_side' in anon], [false, false]);
   for (const tok of [tokens.get(bob.id).agent, tokens.get(bob.id).owner]) {
     const mine = (await call('GET', url, {token: tok})).body;
     assert.equal(mine.cover.covered, 4, 'the payee sees its cover');
-    assert.match(mine.reasons[1], /^Backed for you up to 4 PC by @cy-backer/);
+    assert.match(mine.payee_side.reasons.at(-1), /^Backed for you up to 4 PC by @cy-backer/);
+    assert.equal(mine.reasons.some(r => /Backed for you/.test(r)), false, "the step's reasons leave the cover to the payee's side (fix inbox #87)");
   }
   // Another participant's token is no better than none, and the payee's answer did not reach the cache.
   assert.deepEqual((await call('GET', url, {token: tokens.get(eve.id).agent})).body.cover, {covered: null, for_other_deals: null, guarantees: []});
@@ -388,7 +398,7 @@ test('fix inbox #75: for a new deal only the floating guarantees count (the acce
   assert.equal(c.verdict, 'accept');
   assert.deepEqual(c.cover, {covered: M, for_other_deals: 2 * M, guarantees: [{guarantee_id: g1.id, backer: null, remaining: M, for_this_deal: M},
     {guarantee_id: g2.id, backer: null, remaining: M, for_this_deal: 0}, {guarantee_id: g3.id, backer: null, remaining: M, for_this_deal: 0}]});
-  assert.deepEqual(c.reasons.filter(r => /^Backed for you|^Nothing backs/.test(r)),
+  assert.deepEqual(c.payee_side.reasons.filter(r => /^Backed for you|^Nothing backs/.test(r)),
     ['Backed for you up to 1000000 PC by a backer not named here; another 2000000 PC backs only particular deals, not a new one.']);
   // The payee's coverage rule counts the same guarantees for this step (GuaranteeBook.backsDeal), at grounded worth.
   const rule = (await pilot.checkMandate(seller, 'payee', acc.id, 5)).checks.find(x => x.rule === 'min_payer_coverage_pct');
@@ -418,7 +428,7 @@ test('fix inbox #75: deal= counts the deal-mode guarantees of the deal under rev
   const gW = guarantee(k4, pat, sam, 10, {...DM, deals: [W.id], ...made(5)});              // a cap above W's price
   const entry = (g, remaining, forThis) => ({guarantee_id: g.id, backer: null, remaining, for_this_deal: forThis});
   const call = await serve(pilot), base = `/pilot/v1/participants/${pat.id}/check?payee=${sam.handle}`, asSam = {token: tokens.get(sam.id).agent};
-  const coverReasons = r => r.reasons.filter(x => /^Backed for you|^Nothing backs|^(A guarantee|Guarantees) with/.test(x));
+  const coverReasons = r => [...r.reasons, ...(r.payee_side?.reasons ?? [])].filter(x => /^Backed for you|^Nothing backs|^(A guarantee|Guarantees) with/.test(x));
   const ruleIds = async (amount, d) => (await pilot.checkMandate(sam, 'payee', pat.id, amount, d ? {excludeDealId: d.id, dealId: d.id} : {})).checks.find(x => x.rule === 'min_payer_coverage_pct').guarantees;
   // Y can still claim 4: its price (6) less gZY's call (2, for Z, but it counts against every deal gZY names). gZY, the
   // older of Y's two, takes it all; gY counts 0. Between them they count Y once.
@@ -427,8 +437,9 @@ test('fix inbox #75: deal= counts the deal-mode guarantees of the deal under rev
   assert.deepEqual([r.body.verdict, r.body.deal_id], ['accept', Y.id]);
   assert.deepEqual(r.body.cover, {covered: 9, for_other_deals: 14, guarantees: [entry(g1, 5, 5), entry(gX, 4, 0), entry(gZY, 4, 4), entry(gY, 6, 0), entry(gW, 10, 0)]});
   assert.deepEqual(coverReasons(r.body), ['Backed for you up to 9 PC by 2 backers not named here; another 14 PC backs only other deals.']);
-  // The coverage rule counts the same guarantees for accepting Y (it caps their sum by the debt with Y).
-  assert.deepEqual(await ruleIds(6, Y), [g1.id, gZY.id, gY.id]);
+  // The coverage rule counts the same guarantees for accepting Y, each as the cover does (fix inbox #79: not gY, whose
+  // share of Y is 0), and caps their sum by the debt with Y.
+  assert.deepEqual(await ruleIds(6, Y), [g1.id, gZY.id]);
   // W: gW counts W's price (3), not its cap (10).
   r = await call('GET', `${base}&amount=3&deal=${W.id}`, asSam);
   assert.deepEqual(r.body.cover, {covered: 8, for_other_deals: 14, guarantees: [entry(g1, 5, 5), entry(gX, 4, 0), entry(gZY, 4, 0), entry(gY, 6, 0), entry(gW, 10, 3)]});
@@ -467,9 +478,81 @@ test('fix inbox #75: two fresh deal-mode guarantees of one offer, each with a ca
   assert.equal(r.status, 200, r.text);
   assert.deepEqual(r.body.cover, {covered: 5, for_other_deals: 0, guarantees: [{guarantee_id: gb.id, backer: null, remaining: 5, for_this_deal: 5},
     {guarantee_id: gf.id, backer: null, remaining: 5, for_this_deal: 0}]});
-  assert.deepEqual(r.body.reasons.filter(x => /^Backed for you/.test(x)), ['Backed for you up to 5 PC by a backer not named here.']);
+  assert.deepEqual(r.body.payee_side.reasons.filter(x => /^Backed for you/.test(x)), ['Backed for you up to 5 PC by a backer not named here.']);
+  // The coverage rule counts Y's price once too, by the older (fix inbox #79): 5 of the 15 ali would owe with Y.
+  // Before, it counted both caps (10: 66%), held only by ali's whole debt to cha.
   const rule = (await pilot.checkMandate(cha, 'payee', ali.id, 5, {excludeDealId: Y.id, dealId: Y.id})).checks.find(x => x.rule === 'min_payer_coverage_pct');
-  assert.deepEqual(rule.guarantees, [gb.id, gf.id], 'the coverage rule counts both for accepting Y');
+  assert.deepEqual([rule.guarantees, rule.backing_for_you, rule.coverage_pct], [[gb.id], 5, 33], 'the coverage rule counts Y once for accepting it');
+});
+
+// Fix inbox #79: the coverage rule (min_payer_coverage_pct) counts a deal's own guarantees as the check's cover does
+// (GuaranteeBook.stepCover): they share the deal's price, less what calls on them claimed, oldest first, each up to
+// its cap left. Before, each counted its whole open cap, held only by the payer's whole debt to the payee, older debt
+// they do not back included. #79's shape, in PC-sized amounts (x1,000,000 on the testnet): ali owes cha 10 already
+// and offers it Y at 1; guarantees that name only Y back it, and cha's owner trusts their backers, so each counts at
+// face value. Coverage is 1 of the 11 ali would owe with Y: 9%. Before, two guarantees of 1 counted 2 (18%), and one
+// of 3 counted 3 (27%). `floating`: caps of guarantees of ali's IOUs to cha in the floating mode (they count as
+// before).
+async function shape79({caps = [], floating = [], older = 10, bar}) {
+  const w = world(), {pilot, person, owe, deal, guarantee, tokens, clock} = w, DM = {covers: 'issuer_payment_for_deals'};
+  const ali = person('ali-payer'), cha = person('cha-seller', {min_payer_coverage_pct: bar});
+  const backers = [...caps, ...floating].map((_, i) => person(`k${i}-backer`));
+  cha.mandate.accept_notes_from = backers.map(b => b.id);
+  pilot.setMandate(ali, {public_card: true});
+  if (older) owe(ali, cha, older);
+  const Y = deal(ali, cha, 'open', 1), v = Y.versions[0];
+  const made = i => ({acceptedAt: clock.t - (backers.length - i) * 1000});           // oldest first, in this order
+  const gs = caps.map((cap, i) => guarantee(backers[i], ali, cha, cap, {...DM, deals: [Y.id], ...made(i)}));
+  const fl = floating.map((cap, j) => guarantee(backers[caps.length + j], ali, cha, cap, made(caps.length + j)));
+  const call = await serve(pilot);
+  return {pilot, ali, cha, Y, gs, fl,
+    // The coverage rule as cha's acceptance runs it (Pilot.accept: the deal's id and deliver_by): its entry, or the
+    // refusal.
+    rule: () => pilot.checkMandate(cha, 'payee', ali.id, 1, {dealId: Y.id, debtFrom: Date.parse(v.terms.deliver_by)})
+      .then(c => c.checks.find(x => x.rule === 'min_payer_coverage_pct'), e => e),
+    // cha's own check of the offer (deal=), and the step itself: cha's agent accepts Y (the deal's status, or the
+    // refusal).
+    check: async () => (await call('GET', `/pilot/v1/participants/${ali.id}/check?payee=${cha.handle}&amount=1&deal=${Y.id}`, {token: tokens.get(cha.id).agent})).body,
+    step: () => pilot.accept(cha, Y.id, {terms_hash: v.terms_hash, signature: '02' + hex(64)}).then(() => pilot.s.deals[Y.id].status, e => e)};
+}
+const SHAPES_79 = [['two guarantees of 1', {caps: [1, 1]}], ['one guarantee of 3', {caps: [3]}], ['one guarantee of 1, the price (the control)', {caps: [1]}]];
+
+test('fix inbox #79: two deal-mode guarantees of one offer, or one with a cap above its price, count its price once in the coverage rule, as in the check\'s cover: 9%, not 18% or 27%', async () => {
+  for (const [label, opts, pct] of [...SHAPES_79.map(([l, o]) => [l, o, 9]), ['two guarantees of 1, no older debt', {caps: [1, 1], older: 0}, 100]]) {
+    const {gs, rule, check} = await shape79({...opts, bar: 1});
+    const cov = await rule(), c = await check();
+    assert.deepEqual([cov.backing_for_you, cov.already_paid_by_backers, cov.coverage_pct, cov.guarantees], [1, 0, pct, [gs[0].id]], label);
+    assert.deepEqual([c.cover.covered, c.cover.guarantees.map(g => g.for_this_deal)], [1, gs.map((g, i) => (i ? 0 : 1))], label);
+    assert.ok(c.payee_side.reasons.includes(`ali-payer's IOUs to you would be covered ${pct}%, and your owner requires 1% (its claims and each backer counted at their grounded worth).`),
+      `${label}: ${JSON.stringify(c.payee_side.reasons)}`);
+  }
+});
+
+test('fix inbox #79: a 15% bar refuses #79\'s shapes on the payee\'s own check (deal=) and at the step (Pilot.accept); the control as before; floating guarantees count as before', async () => {
+  for (const [label, opts] of SHAPES_79) {
+    const {pilot, Y, check, step} = await shape79({...opts, bar: 15});
+    const c = await check();
+    assert.deepEqual([c.verdict, c.rule, c.payer_side.verdict, c.payee_side.verdict, c.payee_side.rule], ['decline', 'min_payer_coverage_pct', 'accept', 'decline', 'min_payer_coverage_pct'], label);
+    assert.match(c.payee_side.reasons[0], /^Your own limits refuse it \(min_payer_coverage_pct\): .* could still be called for \(1 PC\) cover 9% of what it would owe with this deal \(11 PC\); this agent's owner requires at least 15% for a payer\.$/, label);
+    assert.equal(c.cover.covered, 1, label);
+    const e = await step();
+    assert.deepEqual([e.code, e.extra?.rule, pilot.s.deals[Y.id].status], ['mandate_exceeded', 'min_payer_coverage_pct', 'open'], label);
+    assert.match(e.message, /could still be called for \(1 PC\) cover 9% of what it would owe with this deal \(11 PC\)/, label);
+  }
+  // At 9%, the figure each has, the check and the step take every one of them.
+  for (const [label, opts] of SHAPES_79) {
+    const {check, step} = await shape79({...opts, bar: 9});
+    assert.deepEqual([(await check()).verdict, await step()], ['accept', 'agreed'], label);
+  }
+  // A floating guarantee backs all of ali's IOUs to cha: it counts its cap (3) up to ali's debt to cha with Y (11),
+  // 27%. With a stack of two of Y's on top, the floating 3 and Y's price once: 4 of 11, 36%, under a bar of 40
+  // (before: 45%).
+  const floating = await shape79({floating: [3], bar: 15});
+  assert.deepEqual([(await floating.rule()).backing_for_you, (await floating.rule()).coverage_pct, (await floating.check()).cover.covered], [3, 27, 3]);
+  assert.deepEqual([(await floating.check()).verdict, await floating.step()], ['accept', 'agreed']);
+  const both = await shape79({caps: [1, 1], floating: [3], bar: 40});
+  assert.deepEqual([(await both.check()).cover.covered, (await both.check()).payee_side.rule, (await both.step()).extra?.rule], [4, 'min_payer_coverage_pct', 'min_payer_coverage_pct']);
+  assert.match((await both.step()).message, /could still be called for \(4 PC\) cover 36% of what it would owe with this deal \(11 PC\)/);
 });
 
 // Fix inbox #75: when the check knows the deal's deliver_by (the deal's own with deal=, or deliver_by= for a new deal),
@@ -489,7 +572,7 @@ test('fix inbox #75: with a known deliver_by, a guarantee that cannot still be c
   const dLong = guarantee(k3, pat, sam, 4, {...DM, deals: [Y.id], acceptedAt: clock.t - 1000});
   const call = await serve(pilot), asSam = {token: tokens.get(sam.id).agent}, base = `/pilot/v1/participants/${pat.id}/check?payee=${sam.handle}&amount=4`;
   const entry = (g, remaining, forThis, soon = false) => ({guarantee_id: g.id, backer: null, remaining, for_this_deal: forThis, ...(soon ? {ends_too_soon: true} : {})});
-  const coverReasons = r => r.reasons.filter(x => /^Backed for you|^Nothing backs|^(A guarantee|Guarantees) with/.test(x));
+  const coverReasons = r => [...r.reasons, ...(r.payee_side?.reasons ?? [])].filter(x => /^Backed for you|^Nothing backs|^(A guarantee|Guarantees) with/.test(x));
   const ruleIds = async opts => (await pilot.checkMandate(sam, 'payee', pat.id, 4, opts)).checks.find(x => x.rule === 'min_payer_coverage_pct').guarantees;
   const why = t => `one counts for a deal only if it can still be called an hour after the deal's deliver_by (${iso(t)}).`;
   // deal=Y: short ends a day before Y's deliver_by, dShort half an hour after it; dLong takes Y's room.
@@ -525,7 +608,7 @@ test('two refusals come before the mandate, as the server gives them to a propos
   pilot.setMandate(keyless, {public_card: true});
   let c = await checkPayer(pilot, keyless, {amount: 1, payee: bob});
   assert.deepEqual([c.verdict, c.rule, c.approval_needed], ['decline', 'no_agent', false]);
-  assert.deepEqual(c.reasons, ['It has no active agent key: it cannot commit to anything until its owner connects an agent.']);
+  assert.deepEqual(c.payer_side.reasons, ['It has no active agent key: it cannot commit to anything until its owner connects an agent.']);
   const big = person('big-payer', {max_issue_per_deal: PRICE_CAP + 10, max_issue_outstanding: 2 * PRICE_CAP});
   pilot.setMandate(big, {public_card: true});
   c = await checkPayer(pilot, big, {amount: PRICE_CAP + 1, payee: bob});
@@ -561,12 +644,13 @@ test('the agent page: a "Budget card" section and the budget line in its descrip
   assert.doesNotMatch(r.text, /Budget card/);
   pilot.setMandate(amy, {public_card: true, approve_above: 2});
   r = await call('GET', '/agent/amy-payer');
-  assert.ok(r.text.includes('<p class="eyebrow">Budget card</p>'));
+  assert.ok(r.text.includes('<h2 id="budget-h">Budget card</h2>'), 'a section with its own heading');
   assert.ok(r.text.includes(`<p>Can commit up to 5 PC a deal and 40 PC in all for its owner · 25 PC left · backed for 2 creditors, up to 8 PC at the face value of the open guarantee caps · its owner approves each commitment above 2 PC · check before you accept: <code>https://valun.tech/pilot/v1/participants/${amy.id}/check?amount={amount}&amp;payee={payee}</code></p>`));
   // The backing totals are labelled as what they are (C8): the face value of the open caps, not what the backers can pay.
-  assert.ok(r.text.includes('<p class="small">Published by its owner: the limits the server enforces on every action it takes. Its backing is the face value of the open guarantee caps; a payee\'s own check counts each backer at its grounded worth. '));
+  // The card is the server's statement: its owner published it but does not sign it, and no tracker box commits it.
+  assert.ok(r.text.includes('<p class="small">Its owner chose to publish it. It is the server\'s statement of the limits the server enforces on every action the agent takes: its owner doesn\'t sign it, and it isn\'t tied to the tracker box (<a href="/trust#not-proven">not proven yet</a>). Its backing is the face value of the open guarantee caps; a payee\'s own check counts each backer at its grounded worth. '));
   assert.ok(r.text.includes(`<a href="/pilot/v1/participants/${amy.id}/card">The card as JSON</a>`));
-  assert.match(r.text, /<meta name="description" content="amy-payer is an AI agent on Valun, where agents work for each other and pay with signed promises\. Budget card: can commit up to 5 PC a deal and 40 PC in all for its owner; 25 PC left\.">/);
+  assert.match(r.text, /<meta name="description" content="amy-payer is an agent on Valun, where agents work for each other and pay with signed promises\. Budget card: can commit up to 5 PC a deal and 40 PC in all for its owner; 25 PC left\.">/);
   // The page's own parts, pure: every value is escaped, the line says when the owner has not allowed IOUs or the mandate ended.
   const now = w.clock.t, pub = {id: 'vp_1', handle: 'x-agent', joined_at: iso(now), agent_last_seen: null};
   const hostile = {agent: {id: '"><img src=x onerror=alert(1)>'}, check: 'https://valun.tech/c?amount=1&payee=<script>alert(1)</script>',
@@ -604,7 +688,7 @@ test('with circulation off the card and the check work the same (no guarantees t
   const card = await budgetCard(pilot, amy);
   assert.deepEqual([card.room.outstanding, card.room.room_left, card.backing], [7, 33, {active: 0, creditors: 0, total_cap: 0, remaining: 0, public: []}]);
   const c = await checkPayer(pilot, amy, {amount: 5, payee: bob});
-  assert.deepEqual([c.verdict, c.reasons], ['accept', ['Within its budget: up to 5 PC a deal, 33 PC of 40 PC left.']]);
+  assert.deepEqual([c.verdict, c.reasons], ['accept', ['Within its budget: up to 5 PC a deal, 33 PC of 40 PC left.', PAYEE_NOT_CHECKED]]);
 });
 
 // Fix inbox #60: a payee checking the offer it received (Basis's repro: 1 agreed + this 1 = the cap exactly). Without
@@ -645,7 +729,7 @@ test('fix inbox #60: deal= checks the offer the payee is deciding on, counted on
   r = await call('GET', url(`&deal=${d2}`), as(tia));
   assert.equal(r.status, 200, r.text);
   assert.deepEqual([r.body.verdict, r.body.rule, r.body.approval_needed, r.body.room_left, r.body.deal_id], ['accept', null, false, 0, d2]);
-  assert.equal(r.body.reasons[0], `Within its budget: up to 5 PC a deal; deal ${d2} is counted once, and 0 PC of 10 PC is left with it.`);
+  assert.deepEqual(r.body.reasons, ['Both sides allow it.', `Within its budget: up to 5 PC a deal; deal ${d2} is counted once, and 0 PC of 10 PC is left with it.`]);
   assert.equal('counted_offers' in r.body, false);
   // The owner's token is the payee too.
   assert.equal((await call('GET', url(`&deal=${d2}`), {token: tokens.get(tia.id).owner})).body.verdict, 'accept');
@@ -660,7 +744,7 @@ test('fix inbox #60: deal= checks the offer the payee is deciding on, counted on
   pilot.setMandate(pat, {max_issue_outstanding: 12});
   r = await call('GET', `/pilot/v1/participants/${pat.id}/check?amount=3&payee=${bob.handle}&deal=${d4}`, as(bob));
   assert.deepEqual([r.body.verdict, r.body.rule, r.body.deal_id], ['decline', 'max_issue_outstanding', d4]);
-  assert.equal(r.body.reasons[0], 'Over its budget: leaving this deal out it has 2 PC of 12 PC left, less than 3 PC.');
+  assert.deepEqual(r.body.reasons, ['Its side refuses it (max_issue_outstanding); your side allows it.', 'Over its budget: leaving this deal out it has 2 PC of 12 PC left, less than 3 PC.']);
   await assert.rejects(pilot.accept(bob, d4, {terms_hash: termsHashOf(d4), signature: '02' + 'ef'.repeat(64)}), e => e.code === 'offer_not_authorized');
   void clock;
 });
@@ -719,7 +803,7 @@ test('C8: path= (payer_proposes, the default, or payee_proposes): the self-serve
     assert.deepEqual([byDefault.verdict, byDefault.rule, 'path' in byDefault], ['decline', 'too_many_open_offers', false]);
     assert.equal(byDefault.reasons[0], 'It is a self-serve agent with as many offers of its own open as it may have at once (10): it cannot propose a new deal until one of them is answered, withdrawn or expires. It may still accept an offer you make it (path=payee_proposes).');
     assert.deepEqual([proposing.verdict, proposing.rule, proposing.path], ['decline', 'too_many_open_offers', 'payer_proposes']);
-    assert.deepEqual([accepting.verdict, accepting.rule, accepting.path, accepting.reasons], ['accept', null, 'payee_proposes', ['Within its budget: up to 5 PC a deal, 30 PC of 40 PC left.']]);
+    assert.deepEqual([accepting.verdict, accepting.rule, accepting.path, accepting.payer_side.reasons], ['accept', null, 'payee_proposes', ['Within its budget: up to 5 PC a deal, 30 PC of 40 PC left.']]);
   }
   for (const bad of ['payee', 'PAYER_PROPOSES', '']) assert.deepEqual([(await get(`&path=${bad}`)).status, (await get(`&path=${bad}`)).body.error], [400, 'invalid_field'], bad);
   // The server agrees: bob proposes, and sbx (at its limit) accepts.
@@ -741,9 +825,11 @@ test('C8: payee_side is the payee\'s own: its agent and owner tokens get it, the
   const call = await serve(pilot), url = amount => `/pilot/v1/participants/${amy.id}/check?amount=${amount}&payee=${bob.handle}`;
   for (const tok of [tokens.get(bob.id).agent, tokens.get(bob.id).owner]) {
     const r = (await call('GET', url(3), {token: tok})).body;
-    assert.deepEqual([r.verdict, r.payee_side.verdict, r.payee_side.rule], ['accept', 'decline', 'max_accept_per_issuer']);
+    // Fix inbox #87: the step's verdict is its refusal; the payer's own accept stays in payer_side.
+    assert.deepEqual([r.verdict, r.rule, r.approval_needed, r.payer_side.verdict, r.payee_side.verdict, r.payee_side.rule], ['decline', 'max_accept_per_issuer', false, 'accept', 'decline', 'max_accept_per_issuer']);
+    assert.deepEqual(r.reasons, ['Your side refuses it (max_accept_per_issuer); its side allows it.', 'Within its budget: up to 5 PC a deal, 25 PC of 40 PC left.']);
     assert.match(r.payee_side.reasons[0], /^Your own limits refuse it \(max_accept_per_issuer\): accepting 3 more from amy-payer would bring exposure to 15, above max_accept_per_issuer 14\.$/);
-    assert.deepEqual((await call('GET', url(2), {token: tok})).body.payee_side, {verdict: 'accept', rule: null, reasons: ['Your own limits allow it.']});
+    assert.deepEqual((await call('GET', url(2), {token: tok})).body.payee_side, {verdict: 'accept', rule: null, reasons: ['Your own limits allow it.', 'Backed for you up to 4 PC by @cy-backer and a backer not named here.']});
   }
   for (const opts of [{}, {token: tokens.get(eve.id).agent}, {token: tokens.get(amy.id).agent}]) {
     const r = (await call('GET', url(3), opts)).body;
@@ -751,6 +837,211 @@ test('C8: payee_side is the payee\'s own: its agent and owner tokens get it, the
   }
   // deliver_by= is the payee's business too.
   assert.deepEqual([(await call('GET', `${url(3)}&deliver_by=${iso(w.clock.t + DAY)}`)).status], [403]);
+});
+
+// What a valun 0.7.1 client makes of a check (valun-open v0.7.1: python/src/valun/agent.py check_summary, which the JS
+// client's checkSummary copies, and cli.py _check_goes_ahead, `valun card check`'s exit code), ported as they are: the
+// summary valun_check_payer puts first, and the exit code. 0.7.1 adds "backed for you up to <covered>" to an accept or
+// ask_owner itself, and the payee side's reasons after "Your own side:" when that side is decline or ask_owner.
+const LEAD_071 = {accept: 'Accept', ask_owner: "Ask the payer's owner", decline: 'Decline'};
+const FALLBACK_071 = {accept: "its owner's budget card allows this IOU", ask_owner: "the payer's owner approves an IOU this size before it binds", decline: "its owner's budget card does not allow this IOU"};
+const SIDE_071 = {decline: 'your own limits refuse it', ask_owner: 'your owner approves it before it binds'};
+const parts071 = rs => (Array.isArray(rs) ? rs : []).filter(r => typeof r === 'string').map(r => r.split(/\s+/).filter(Boolean).join(' ').replace(/[ .;,]+$/, '')).filter(Boolean);
+function summary071(v) {
+  const verdict = typeof v.verdict === 'string' ? v.verdict : null;
+  let parts = parts071(v.reasons);
+  if (!parts.length) parts = [FALLBACK_071[verdict] ?? 'the server gave no verdict this client knows'];
+  const covered = v.cover && typeof v.cover === 'object' ? v.cover.covered : null;
+  if ((verdict === 'accept' || verdict === 'ask_owner') && Number.isInteger(covered) && covered > 0) parts.push(`backed for you up to ${covered}`);
+  const lead = Object.hasOwn(LEAD_071, verdict ?? '') ? LEAD_071[verdict] : 'Unknown';
+  const offers = 'deal_id' in v || !Number.isInteger(v.amount) || !Array.isArray(v.counted_offers) ? []
+    : v.counted_offers.filter(o => o && /^vd_[0-9a-f]{16}$/.test(o.deal_id) && o.amount === v.amount).map(o => o.deal_id);
+  let out = offers.length === 1 ? `${lead}, for a new deal on top of the offer you received at this price (${offers[0]}, already counted): ${parts.join(', ')}. To check that offer itself, call valun_check_payer again with deal_id ${offers[0]}.`
+    : offers.length ? `${lead}, for a new deal on top of the ${offers.length} offers you received at this price (${offers.join(', ')}, already counted): ${parts.join(', ')}. To check one of them, call valun_check_payer again with its deal_id.`
+      : `${lead}: ${parts.join(', ')}.`;
+  const side = v.payee_side && typeof v.payee_side === 'object' ? v.payee_side : {};
+  if (typeof side.verdict === 'string' && Object.hasOwn(SIDE_071, side.verdict)) out += ` Your own side: ${(parts071(side.reasons).length ? parts071(side.reasons) : [SIDE_071[side.verdict]]).join(', ')}.`;
+  return out;
+}
+const exit071 = v => (v.verdict === 'accept' && (v.payee_side == null || (typeof v.payee_side === 'object' && v.payee_side.verdict === 'accept')) ? 0 : 1);
+const timesIn = (re, s) => (s.match(new RegExp(re.source, 'gi')) ?? []).length;
+
+// Fix inbox #87: the payee's own check gives the step's one verdict, from both sides, as the server enforces them (it goes
+// ahead only when both do). The repro: a payee whose owner requires 100% coverage, a payer with a card and nothing held.
+// At 89832cc the top-level verdict was the payer's accept, with payee_side decline beside it: a model reading `verdict`
+// took an IOU its owner's rule refuses. Backed, the summary 0.7.1 builds said "Backed for you up to ..." twice.
+test('fix inbox #87: the payee\'s own check gives the step\'s verdict from both sides; the repro (100% coverage required, a payer with nothing held) declines, backed it accepts; 0.7.1\'s summary leads with it and names the cover once', async () => {
+  const w = world(), {pilot, person, guarantee, tokens} = w;
+  const px = person('px-payer'), py = person('py-payee', {min_payer_coverage_pct: 100}), bk = person('bk-backer'), tk = person('tk-backer');
+  pilot.setMandate(px, {public_card: true});
+  const call = await serve(pilot), url = `/pilot/v1/participants/${px.id}/check?amount=2&payee=${py.handle}`;
+  const mine = async (u = url) => { const r = await call('GET', u, {token: tokens.get(py.id).agent}); assert.equal(r.status, 200, r.text); return r.body; };
+  // px proposes, py accepts: what the server does. A refused acceptance leaves the offer open: px withdraws it, so the
+  // next check finds px's room as before.
+  const realStep = async () => {
+    const d = await w.propose(px, py, 2);
+    const got = await pilot.accept(py, d.id, {terms_hash: d.current.terms_hash, signature: '02' + hex(64)}).then(x => x.status, e => `refused:${e.extra?.rule ?? e.code}`);
+    if (got !== 'agreed') await pilot.withdraw(px, d.id, {terms_hash: d.current.terms_hash, signature: '02' + hex(64)});
+    return got;
+  };
+  const within = 'Within its budget: up to 5 PC a deal, 40 PC of 40 PC left.';
+  // 1. Nothing behind px: py's own side refuses it, so the step is refused, whatever px's card allows.
+  let c = await mine();
+  assert.deepEqual([c.verdict, c.rule, c.approval_needed, c.payer_side.verdict, c.payee_side.verdict, c.payee_side.rule], ['decline', 'min_payer_coverage_pct', false, 'accept', 'decline', 'min_payer_coverage_pct']);
+  assert.deepEqual(c.reasons, ['Your side refuses it (min_payer_coverage_pct); its side allows it.', within]);
+  assert.deepEqual(c.payer_side, {verdict: 'accept', rule: null, reasons: [within]});
+  assert.match(c.payee_side.reasons[0], /^Your own limits refuse it \(min_payer_coverage_pct\): px-payer's claims on the tracker \(0 PC, of which 0 PC count: .*\) cover 0% of what it would owe with this deal \(2 PC\)/);
+  let s = summary071(c);
+  assert.ok(s.startsWith('Decline: Your side refuses it (min_payer_coverage_pct); its side allows it, Within its budget'), s);
+  assert.equal(timesIn(/Your own limits refuse it \(min_payer_coverage_pct\)/, s), 1, s);
+  assert.equal(exit071(c), 1);
+  assert.equal(await realStep(), 'refused:min_payer_coverage_pct');
+  // Anyone else gets px's side only, which says py's own limits were not checked.
+  const pub = (await call('GET', url)).body;
+  assert.deepEqual([pub.verdict, pub.rule, pub.reasons, pub.payer_side, 'payee_side' in pub], ['accept', null, [within, PAYEE_NOT_CHECKED], c.payer_side, false]);
+  // 2. Backed by a backer with nothing behind it: the coverage rule counts it at its grounded worth (0), so py's side still
+  // refuses; the cover is said once, among py's own reasons.
+  const gbk = guarantee(bk, px, py, 2);
+  c = await mine();
+  assert.deepEqual([c.verdict, c.rule, c.cover.covered], ['decline', 'min_payer_coverage_pct', 2]);
+  assert.deepEqual(c.reasons, ['Your side refuses it (min_payer_coverage_pct); its side allows it.', within]);
+  assert.ok(c.payee_side.reasons.includes('Backed for you up to 2 PC by a backer not named here.'), JSON.stringify(c.payee_side.reasons));
+  s = summary071(c);
+  assert.equal(timesIn(/backed for you/, s), 1, s);
+  assert.equal(exit071(c), 1);
+  // 3. That guarantee ends; one py's owner trusts backs px instead (accept_notes_from: counted at face value): both sides
+  // allow it, and the step agrees.
+  gbk.state = 'expired';
+  pilot.setMandate(py, {accept_notes_from: [tk.id]});
+  guarantee(tk, px, py, 2);
+  c = await mine(`${url}&deliver_by=${iso(w.clock.t + 2 * DAY)}`);
+  assert.deepEqual([c.verdict, c.rule, c.approval_needed, c.payer_side.verdict, c.payee_side.verdict, c.cover.covered], ['accept', null, false, 'accept', 'accept', 2]);
+  assert.deepEqual(c.reasons, ['Both sides allow it.', within]);
+  assert.deepEqual(c.payee_side.reasons, ['Your own limits allow it.', "px-payer's IOUs to you would be covered 100%, and your owner requires 100% (its claims and each backer counted at their grounded worth).",
+    'Backed for you up to 2 PC by a backer not named here.']);
+  s = summary071(c);
+  assert.equal(s, 'Accept: Both sides allow it, Within its budget: up to 5 PC a deal, 40 PC of 40 PC left, backed for you up to 2.');
+  assert.equal(exit071(c), 0);
+  assert.equal(await realStep(), 'agreed');
+});
+
+// Fix inbox #87: ask_owner when an owner on either side decides first and neither declines (the payee's own owner too);
+// when both sides decline, the step's rule is its first refusal: the proposer's, checked first.
+test('fix inbox #87: ask_owner when either side\'s owner decides first; both sides refusing, the rule is the first refusal the step meets (the payer proposing, or the payee)', async () => {
+  const w = world(), {pilot, person, tokens, clock} = w;
+  const pa = person('pa-payer'), pq = person('pq-payee', {approve_above: 0}), pr = person('pr-payee', {max_accept_per_deal: 3});
+  pilot.setMandate(pa, {public_card: true});
+  const call = await serve(pilot), as = p => ({token: tokens.get(p.id).agent});
+  const check = async (payee, q) => (await call('GET', `/pilot/v1/participants/${pa.id}/check?payee=${payee.handle}&${q}`, as(payee))).body;
+  // pq's owner approves every commitment itself: the step waits for pq's owner, not pa's.
+  let c = await check(pq, 'amount=2');
+  assert.deepEqual([c.verdict, c.rule, c.approval_needed, c.payer_side.verdict, c.payee_side.verdict], ['ask_owner', 'approve_above', true, 'accept', 'ask_owner']);
+  assert.equal(c.reasons[0], 'Your side allows it once your owner approves; its side allows it.');
+  assert.ok(summary071(c).startsWith("Ask the payer's owner: Your side allows it once your owner approves"), 'valun 0.7.1 names the payer\'s owner for any ask_owner; the first reason says whose');
+  assert.equal(exit071(c), 1);
+  const d = await w.propose(pa, pq, 2);
+  assert.equal((await pilot.accept(pq, d.id, {terms_hash: d.current.terms_hash, signature: '02' + hex(64)})).status, 'accepted_awaiting_owner');
+  // pr takes at most 3 a deal, pa may commit 5: at 6 both refuse. pa's proposal is checked first; pr's when pr proposes.
+  c = await check(pr, 'amount=6');
+  assert.deepEqual([c.verdict, c.rule, c.payer_side.rule, c.payee_side.rule], ['decline', 'max_issue_per_deal', 'max_issue_per_deal', 'max_accept_per_deal']);
+  assert.equal(c.reasons[0], 'Both sides refuse it: its side (max_issue_per_deal) and yours (max_accept_per_deal).');
+  await assert.rejects(w.propose(pa, pr, 6), e => e.code === 'mandate_exceeded' && e.extra.rule === 'max_issue_per_deal');
+  c = await check(pr, 'amount=6&path=payee_proposes');
+  assert.deepEqual([c.verdict, c.rule, c.path], ['decline', 'max_accept_per_deal', 'payee_proposes']);
+  const t = {protocol: PROTOCOL, network: NETWORK, tracker_nft_id: '0'.repeat(64), denomination: PILOT_DENOMINATION, deal_id: 'vd_' + hex(8), version: 1, prior_terms_hash: null, nonce: hex(16),
+    proposer: pr.id, payer: {id: pa.id, pubkey: pa.pubkey}, payee: {id: pr.id, pubkey: pr.pubkey}, service: {title: 'a job', description: 'synthetic', deliverable: 'text'},
+    price: {amount: 6, unit: 'PC'}, consideration: 'credit_note_on_delivery_accepted', offer_expires_at: iso(clock.t + DAY), deliver_by: iso(clock.t + 2 * DAY)};
+  await assert.rejects(pilot.propose(pr, {terms: t, signature: '02' + hex(64)}), e => e.code === 'mandate_exceeded' && e.extra.rule === 'max_accept_per_deal');
+});
+
+// Fix inbox #87: a payer whose owner has not published its card. The server enforces the payee's own limits at the step
+// all the same, so the payee's own check answers for them: its side, the payer's unknown, and the step declined when the
+// payee's side declines, else unknown. Nothing of the payer's card is shown (mandate, room, card hash, counted offers);
+// its record is public. Anyone else's check is 404 card_not_public, a request with no token before anything else is read.
+// At 89832cc every check of such a payer was 404, and valun 0.7.1 answered verdict unknown with no payee_side.
+test('fix inbox #87: a payer without a published card: the payee\'s own check answers for its own side (decline when it declines, else unknown); everyone else\'s is 404 card_not_public', async () => {
+  const w = world(), {pilot, person, owe, deal, guarantee, tokens} = w;
+  const pz = person('pz-payer'), py = person('py-payee', {min_payer_coverage_pct: 100}), pw = person('pw-payee'), bk = person('bk-backer');
+  owe(pz, pw, 3);
+  const call = await serve(pilot), url = (payee, q = 'amount=2') => `/pilot/v1/participants/${pz.id}/check?payee=${payee.handle}&${q}`;
+  const notPublic = r => assert.deepEqual([r.status, r.body.error], [404, 'card_not_public'], r.text);
+  // py requires full coverage: its own side refuses, so the step is refused (the server agrees), whatever pz's limits.
+  guarantee(bk, pz, py, 1);
+  let r = await call('GET', url(py), {token: tokens.get(py.id).agent});
+  assert.equal(r.status, 200, r.text);
+  let c = r.body;
+  assert.deepEqual([c.verdict, c.rule, c.approval_needed, c.payer_side], ['decline', 'min_payer_coverage_pct', false, null]);
+  assert.deepEqual(c.payee_side, {verdict: 'decline', rule: 'min_payer_coverage_pct',
+    reasons: ["Your owner's coverage bar (min_payer_coverage_pct, 100%) refuses this payer's IOU for this amount; it has published no budget card, so its own figures are not shown."]});
+  assert.deepEqual(c.reasons, ['Your side refuses it (min_payer_coverage_pct); its side was not checked.', PAYER_NOT_PUBLISHED]);
+  // Nothing of pz's card or room, nor the cover and record beside them (the payee's own figures on pz, review of #87).
+  assert.deepEqual([c.mandate, c.room_left, c.card_hash, c.record, c.cover], [null, null, null, null, {covered: null, for_other_deals: null, guarantees: []}]);
+  assert.equal(exit071(c), 1);
+  assert.ok(summary071(c).startsWith('Decline: Your side refuses it (min_payer_coverage_pct); its side was not checked, Its owner has not published its budget card'), summary071(c));
+  const d = await w.propose(pz, py, 2);
+  await assert.rejects(pilot.accept(py, d.id, {terms_hash: d.current.terms_hash, signature: '02' + hex(64)}), e => e.code === 'mandate_exceeded' && e.extra.rule === 'min_payer_coverage_pct');
+  // pw has no such rule: its side allows it, and pz's is unknown, so the step is unknown. No counted offers: they speak
+  // of pz's outstanding. Its owner's token is the payee too.
+  deal(pz, pw, 'open', 2);
+  for (const tok of [tokens.get(pw.id).agent, tokens.get(pw.id).owner]) {
+    c = (await call('GET', url(pw), {token: tok})).body;
+    assert.deepEqual([c.verdict, c.rule, c.payer_side, c.payee_side, 'counted_offers' in c], ['unknown', null, null, {verdict: 'accept', rule: null, reasons: ['Your own limits allow it.']}, false]);
+    assert.deepEqual(c.reasons, ['Its side was not checked; your side allows it.', PAYER_NOT_PUBLISHED]);
+    assert.equal(summary071(c), `Unknown: Its side was not checked; your side allows it, ${PAYER_NOT_PUBLISHED.replace(/\.$/, '')}.`);
+    assert.equal(exit071(c), 1);
+  }
+  // The offer under review, named with deal=, as for a payer with a card.
+  const offer = deal(pz, pw, 'open', 3);
+  c = (await call('GET', url(pw, `amount=3&deal=${offer.id}`), {token: tokens.get(pw.id).agent})).body;
+  assert.deepEqual([c.verdict, c.deal_id, c.payee_side.verdict], ['unknown', offer.id, 'accept']);
+  // Anyone else: 404 card_not_public. Without a token nothing else is read first (an amount that is no number is not
+  // looked at); with a token that is not the payee's, after the query is (400 for a bad one), as for a card that is public.
+  for (const opts of [{}, {token: tokens.get(pz.id).agent}, {token: tokens.get(py.id).agent}, {token: 'vpa_' + hex(16)}]) notPublic(await call('GET', url(pw), opts));
+  notPublic(await call('GET', url(pw, 'amount=abc')));
+  assert.equal((await call('GET', url(pw, 'amount=abc'), {token: tokens.get(pw.id).agent})).status, 400);
+  notPublic(await call('GET', url(pw, `amount=3&deal=${offer.id}`), {token: tokens.get(py.id).agent}));
+  notPublic(await call('GET', `/pilot/v1/participants/${pz.id}/card`, {token: tokens.get(pw.id).agent}));
+});
+
+// Fix inbox #87, review: a payer that has not published its card has not published its room. The payee's own check of it
+// gives its own side's verdict and rule only. None of the payer's figures that the payee's limits count is shown: its
+// committed total (agreed deals not paid yet), what it would owe with the deal, the coverage that leaves, its open offers,
+// nor the cover and record beside them. The same check with the card shows them, so the test sees what it hides.
+test('fix inbox #87: the payee\'s own check of a payer without a card shows none of the payer\'s figures (committed total, what it would owe, coverage %), which the same check with the card shows', async () => {
+  const w = world(), {pilot, person, deal, owe, guarantee, tokens} = w;
+  const pz = person('pz-payer', {max_issue_per_deal: 900, max_issue_outstanding: 9000});
+  const py = person('py-payee', {min_payer_coverage_pct: 100, max_accept_per_deal: 900, max_accept_per_issuer: 9000});
+  const ot = person('ot-other'), bk = person('bk-backer');
+  deal(pz, ot, 'agreed', 777);                                             // committed, not paid yet: pz's own business
+  deal(pz, ot, 'open', 333);                                               // its open offer to another
+  owe(ot, pz, 4141);                                                       // a claim pz holds, which counts 0 (nothing grounds it)
+  guarantee(bk, pz, py, 5959);                                             // a guarantee of pz's IOUs to py
+  const call = await serve(pilot), url = `/pilot/v1/participants/${pz.id}/check?amount=2&payee=${py.handle}`, as = {token: tokens.get(py.id).agent};
+  const data = body => JSON.stringify({...body, checked_at: null, took_ms: null});   // the answer's figures, not its time
+  // With the card: py's coverage rule counts 777 committed + 2 = 779 owed, 0% covered, and the card's room is shown.
+  pilot.setMandate(pz, {public_card: true});
+  const shown = (await call('GET', url, as)).body;
+  assert.deepEqual([shown.verdict, shown.rule, shown.payer_side.verdict, shown.room_left, shown.cover.covered], ['decline', 'min_payer_coverage_pct', 'accept', 7890, 5959]);
+  assert.match(shown.payee_side.reasons[0], /^Your own limits refuse it \(min_payer_coverage_pct\): pz-payer's claims on the tracker .* cover 0% of what it would owe with this deal \(779 PC\)/);
+  assert.equal(shown.record.holds, 4141);
+  for (const n of [779, 4141, 7890, 5959]) assert.match(data(shown), new RegExp(`\\b${n}\\b`), `with the card, ${n} is shown`);
+  // Without it: the verdict and rule, in words with no figure but py's own owner's bar.
+  pilot.setMandate(pz, {public_card: false});
+  const c = (await call('GET', url, as)).body;
+  assert.deepEqual([c.verdict, c.rule, c.payer_side, c.payee_side.verdict, c.payee_side.rule], ['decline', 'min_payer_coverage_pct', null, 'decline', 'min_payer_coverage_pct']);
+  for (const n of [777, 779, 333, 1110, 4141, 7890, 5959]) assert.doesNotMatch(data(c), new RegExp(`\\b${n}\\b`), `${n} is not shown`);
+  assert.deepEqual(data(c).match(/\d+%/g), ['100%'], "no coverage %: only py's own bar");
+  assert.doesNotMatch(data(c), /payer_committed|payer_claims|payer_owes|backing_for_you|would owe|claims on the tracker|covered \d|counted_offers/);
+  assert.deepEqual([c.mandate, c.room_left, c.card_hash, c.record, c.cover], [null, null, null, null, {covered: null, for_other_deals: null, guarantees: []}]);
+  // Every reason is figure-free, whatever py's own side says: refused on another rule, allowed, or held for its owner.
+  for (const [mandate, expected] of [[{max_accept_per_deal: 1}, ['decline', 'max_accept_per_deal', 'Your own limits refuse it (max_accept_per_deal); this payer has published no budget card, so the check shows no figures.']],
+    [{max_accept_per_deal: 900, min_payer_coverage_pct: 0}, ['accept', null, 'Your own limits allow it.']],
+    [{approve_above: 1}, ['ask_owner', 'approve_above', 'Your own limits allow it once your owner approves.']]]) {
+    pilot.setMandate(py, mandate);
+    const x = (await call('GET', url, as)).body;
+    assert.deepEqual([x.payee_side.verdict, x.payee_side.rule, x.payee_side.reasons], [expected[0], expected[1], [expected[2]]], JSON.stringify(mandate));
+    assert.doesNotMatch([...x.reasons, ...x.payee_side.reasons].join(' '), /\d/, JSON.stringify(mandate));
+  }
 });
 
 // C8: the check reads a side as its own agent's request finds it (Pilot.renewedView), so the view must be exactly what

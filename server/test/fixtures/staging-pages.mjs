@@ -14,7 +14,7 @@ import {ENVIRONMENT} from '../../lib/environment.mjs';
 import {createHandler} from '../../lib/http.mjs';
 import {createPilotRoutes} from '../../lib/pilot/http.mjs';
 import {ON_TESTNET} from '../../lib/pilot/units.mjs';
-import {loopOf, loopsOf, renderLoopPage, renderLoopNotFound} from '../../lib/pilot/loops.mjs';
+import {loopOf, loopsOf, memberRecords, renderLoopPage, renderLoopNotFound} from '../../lib/pilot/loops.mjs';
 import {agentView, renderAgentPage, renderAgentNotFound, renderMaintainersPage} from '../../lib/pilot/agents.mjs';
 import {fakePilot} from './a2a-pilot.mjs';
 
@@ -43,15 +43,18 @@ const get = (server, route, host = '127.0.0.1') => new Promise((resolve, reject)
 const PAGES = [
   {route: '/', file: 'index.html'}, {route: '/pilot', file: 'pilot.html'}, {route: '/pilot/', file: 'pilot.html'},
   {route: '/network', file: 'network.html'}, {route: '/home', file: 'home.html'}, {route: '/memory', file: 'memory.html'},
+  {route: '/start', file: 'start.html'}, {route: '/trust', file: 'trust.html'}, {route: '/trust/', file: 'trust.html'},
   {route: '/', host: 'valun.tech', file: 'home.html'},
   {route: '/maintainers', render: renderMaintainersPage},
   {route: '/loop/vs_0000000000000001', bare: true, render: renderLoopNotFound},
   {route: '/agent/nobody', bare: true, render: renderAgentNotFound},
-  {route: `/loop/${LOOP}`, render: () => renderLoopPage(loopOf(pilot.setoff(LOOP), pilot.s.participants, publicOf))},
+  // As lib/pilot/http.mjs renders it: who runs each member (their public records) and when it was read.
+  {route: `/loop/${LOOP}`, render: now => renderLoopPage(loopOf(pilot.setoff(LOOP), pilot.s.participants, publicOf),
+    {records: memberRecords(pilot.setoff(LOOP), pilot.s.participants, publicOf), now})},
   {route: '/loop/vs_0000000000000001', render: renderLoopNotFound},
   // The fixture's pilot has no publicPosition: the page shows without the record, as when it cannot be read.
-  {route: '/agent/open-poet', render: () => renderAgentPage(agentView(pilot.directoryRecord(poet), null,
-    loopsOf(pilot.s.setoffs, pilot.s.participants, publicOf), {now: Date.now(), dormant: false}))},
+  {route: '/agent/open-poet', render: now => renderAgentPage(agentView(pilot.directoryRecord(poet), null,
+    loopsOf(pilot.s.setoffs, pilot.s.participants, publicOf), {now, dormant: false}))},
   {route: '/agent/nobody', render: renderAgentNotFound},
 ];
 
@@ -59,8 +62,15 @@ const out = {environment: ENVIRONMENT, pages: []};
 try {
   out.info = JSON.parse((await get(withPilot, '/pilot/v1/info')).body);
   for (const p of PAGES) {
-    const r = await get(p.bare ? bare : withPilot, p.route, p.host);
-    const page = p.file ? fs.readFileSync(path.join(publicDir, p.file)) : Buffer.from(p.render(), 'utf8');
+    // A rendered page says when it was read, to the minute: read it again if a minute turned between the two renders.
+    let r, page;
+    for (let tries = 0; tries < 3; tries++) {
+      const minute = Math.floor(Date.now() / 60_000);
+      r = await get(p.bare ? bare : withPilot, p.route, p.host);
+      const now = Date.now();
+      page = p.file ? fs.readFileSync(path.join(publicDir, p.file)) : Buffer.from(p.render(now), 'utf8');
+      if (Math.floor(now / 60_000) === minute) break;
+    }
     out.pages.push({route: p.route, host: p.host ?? null, file: p.file ?? null, pilot: !p.bare, status: r.status, type: r.type, csp: r.csp,
       body: r.body.toString('base64'), page: page.toString('base64')});
   }

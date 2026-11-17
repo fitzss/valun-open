@@ -502,9 +502,12 @@ test('#29: the named deals are checked at the offer, and coverage counts a deal-
   await assert.rejects(offer(w, {terms: dealTermsOf(w, {cap: 3, deals: []})}), e => e.code === 'invalid_terms' && /1 to 10 different deal ids/.test(e.message));
   await assert.rejects(offer(w, {terms: {...terms(w, {cap: 3}), deals: [real]}}), e => e.code === 'invalid_terms' && /deals is only for covers/.test(e.message));
   const g = await accept(w, await offer(w, {terms: dealTermsOf(w, {cap: 5, deals: [real]})}));
+  // A bar of 1%, to read the rule's entry: the guarantee counts for a step of 2 on the deal it names at most those 2,
+  // its share of what the step adds (fix inbox #79; before, its whole cap of 5, which charlie's bar of 100% took).
+  C.mandate.min_payer_coverage_pct = 1;
   const forReal = (await pilot.checkMandate(C, 'payee', A.id, 2, {dealId: real}).catch(e => e)), forOther = await pilot.checkMandate(C, 'payee', A.id, 2, {dealId: 'vd_' + '0'.repeat(16)}).catch(e => e);
   const backing = x => x.checks?.find(c => c.rule === 'min_payer_coverage_pct')?.guarantees ?? [];
-  assert.deepEqual(backing(forReal), [g.guarantee_id], 'counted for the deal it names');
+  assert.deepEqual([backing(forReal), forReal.checks?.find(c => c.rule === 'min_payer_coverage_pct')?.backing_for_you], [[g.guarantee_id], 2], 'counted for the deal it names');
   assert.ok(forOther instanceof Error || backing(forOther).length === 0, 'not for another deal');
 });
 
@@ -601,6 +604,41 @@ test('deal-mode stacking fixed: guarantees naming different deals of one pair ea
   const cy = 'vgc_' + hex(8);
   await call(w, gy, 4, {id: cy}); clock.t += 5000; await honor(w, gy, cy, {B: F});
   assert.deepEqual([edgeTotal(w, B, C), edgeTotal(w, F, C)], [3, 4]);
+});
+
+// Fix inbox #79, with real offers, acceptances and signatures: the coverage rule counts a deal's own guarantees as the
+// check's cover does, its price once between them, oldest first. Alice owes charlie 10 and offers him a job at 1; bob
+// and fred each back only that offer, up to 1 (charlie's owner trusts both): 1 of the 11 alice would owe, 9%, so a bar
+// of 15% refuses the offer (before, both caps counted: 18%, and it was taken). So does one guarantee of 3 (before:
+// 27%). At 9% charlie takes it, by bob's guarantee alone: fred's counted nothing for it, so it does not hold the deal
+// and can be released; bob's cannot until the deal is paid or ended (review F6).
+test('#79: two guarantees of one offer, or one above its price, count its price once: a bar of 15% refuses the acceptance; the one that counted holds the deal', async () => {
+  for (const caps of [[1, 1], [3]]) {
+    const w = await world(), {pilot, A, B, C, book, clock} = w, F = await w.person('fred');
+    await issue(w, w.E, F, 30, {ts: clock.t - 110e3});
+    C.mandate.accept_notes_from = [B.id, F.id];
+    await issue(w, A, C, 10, {ts: clock.t - 100e3});                     // older debt: alice owes charlie 10
+    const t = dealTerms(w, A, C, 1), h = termsHash(t);
+    await pilot.propose(A, {terms: t, terms_hash: h, signature: await signText(A, statements.propose(h))});
+    const gs = [];
+    for (const [i, cap] of caps.entries()) {
+      const K = [B, F][i];
+      gs.push(await accept(w, await offer(w, {terms: dealTermsOf(w, {cap, deals: [t.deal_id], window: 6 * HOUR, backer: K}), backer: K})));
+      clock.t += 1000;                                                    // bob's is the older
+    }
+    const acceptY = async () => pilot.accept(C, t.deal_id, {terms_hash: h, signature: await signText(C, statements.accept(h))});
+    C.mandate.min_payer_coverage_pct = 15;
+    await assert.rejects(acceptY(), e => e.code === 'mandate_exceeded' && e.extra.rule === 'min_payer_coverage_pct'
+      && /could still be called for \(1 PC\) cover 9% of what it would owe with this deal \(11 PC\)/.test(e.message));
+    assert.equal(pilot.s.deals[t.deal_id].status, 'open', `${caps}: nothing changed`);
+    C.mandate.min_payer_coverage_pct = 9;
+    await acceptY();
+    const d = pilot.s.deals[t.deal_id], cov = d.acceptance.mandate_check.checks.find(x => x.rule === 'min_payer_coverage_pct');
+    assert.deepEqual([d.status, cov.backing_for_you, cov.coverage_pct, cov.guarantees], ['agreed', 1, 9, [gs[0].guarantee_id]], `${caps}`);
+    const release = async g => book.release(C, g.guarantee_id, {terms_hash: g.terms_hash, signature: await signText(C, guaranteeStatements.release(g.terms_hash))});
+    await assert.rejects(release(gs[0]), e => e.code === 'guarantee_in_use' && e.extra.deals.includes(t.deal_id));
+    if (gs[1]) assert.equal((await release(gs[1])).state, 'released', 'fred\'s counted nothing for the deal');
+  }
 });
 
 test('deal mode fails closed while the journal cannot show every change on the pair since the deal (an index gap): nothing is callable', async () => {

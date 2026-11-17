@@ -38,6 +38,48 @@ test('PC-sized defaults and prices are scaled: mandates, sandbox prices, the wel
   assert.ok(sandbox.WELCOME.price <= sandbox.mandateFor('sandbox-exact', true).approve_above);
 });
 
+// The practice agents' offer was longer than the 300 characters a profile holds and was cut mid-word on their pages
+// ("...or as the only quoted stri"). It fits now, with the testnet's prices (the longest), and ends on a sentence; a
+// record that joined with the earlier text is updated once at start, by the operator, and not again.
+test('the practice agents\' offer fits a profile and ends on a sentence; a stored older text is updated once at start', async () => {
+  assert.ok(sandbox.SERVICES_TEXT.length <= 300, `${sandbox.SERVICES_TEXT.length} characters`);
+  assert.match(sandbox.SERVICES_TEXT, /^text-stats \(3000000 nanoERG \(0\.003 tERG\)\): .*notary \(2000000 nanoERG \(0\.002 tERG\)\): .*Put the text in a ``` block, after TEXT:, or as the only quoted string\. Deterministic: check every number\.$/);
+  const fs = await import('node:fs'), os = await import('node:os'), pathMod = await import('node:path');
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'valun-testnet-sandbox-'));
+  try {
+    const pilot = new core.Pilot({store: new core.PilotStore(dir), basis: {nft: '0'.repeat(64), denomination: 'erg', allNotes: async () => [], note: async () => null}, log: () => {}});
+    const keys = {}, cut = `${sandbox.SERVICES_TEXT.slice(0, 280)} stri`;
+    for (const [i, handle] of ['sandbox-exact', 'sandbox-mallory'].entries()) {
+      const id = `vp_00000000000${i}`;
+      pilot.s.participants[id] = {id, handle, display_name: handle, operator: 'Valun operator (sandbox agent run by the server, no AI)', about: '', services: cut, status: 'active',
+        created_at: new Date().toISOString(), mandate: {...core.DEFAULT_MANDATE}, mandate_version: 1, pubkey: '02' + 'ab'.repeat(32), past_pubkeys: []};
+      keys[handle] = {id, pubkey: '02' + 'ab'.repeat(32), secret: 'cd'.repeat(32)};
+    }
+    fs.writeFileSync(pathMod.join(dir, 'sandbox-keys.json'), JSON.stringify(keys));
+    const agents = new sandbox.Sandbox(pilot, {dataDir: dir});
+    await agents.ensure();
+    for (const p of Object.values(pilot.s.participants)) assert.deepEqual([p.services, p.profile_changed_by], [sandbox.SERVICES_TEXT, 'operator'], p.handle);
+    const once = JSON.stringify(pilot.s.participants);
+    await agents.ensure();
+    assert.equal(JSON.stringify(pilot.s.participants), once, 'and not again');
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});
+
+// What the server tells agents about a guarantee (GET /info guarantees.means, and every guarantee view's
+// what_this_means) and how its evidence reads (public_position.evidence reads_as). Since fix inbox #107 the part a backer
+// paid is held, so the issuer's IOU does not "stay as it is", and nothing gives the backer the claim; a set-off clears a
+// debt (committed, not final), it does not settle it; and on the testnet holding an IOU is often a default, not a choice.
+test('the server\'s words on the testnet: a paid guarantee holds that much of the IOU and gives the backer no claim; evidence says cleared, not settled', async () => {
+  const {GUARANTEE_INFO} = await import('../lib/pilot/guarantees.mjs');
+  const {EVIDENCE_READS_AS} = await import('../lib/pilot/evidence.mjs');
+  assert.ok(GUARANTEE_INFO.means.includes("Once a backer pays, the same amount of the issuer's IOU is held, so the creditor isn't paid twice: the creditor can't spend, set off or redeem that part (held_for_backers). The backer doesn't take over the claim (no subrogation yet)"));
+  assert.ok(GUARANTEE_INFO.means.includes('redeemable on Ergo testnet against the backer\'s tERG reserve if it posted one'));
+  assert.doesNotMatch(GUARANTEE_INFO.means, /stays as it is|belongs to the backer|held for the backer|held from the creditor/);
+  assert.equal(EVIDENCE_READS_AS.repayment, 'What it owed as an issuer, and how much of that was cleared in loops (by set-off: committed, not final) or redeemed against its reserve on Ergo testnet, kept apart under settled (by_setoff, by_redemption). A set-off among participants one operator runs can be staged: it shows debts cleared inside that group, not that it can pay anyone else.');
+  assert.ok(EVIDENCE_READS_AS.acceptance.includes('on the testnet a new self-serve agent accepts any issuer\'s IOUs as payment by transfer by default, and its client signs that consent by itself'));
+  assert.doesNotMatch(JSON.stringify(EVIDENCE_READS_AS), /\bsettlement\b|was settled|chose to hold/);
+});
+
 test('/info describes the testnet honestly; before the bootstrap every write is refused with 503', async () => {
   assert.match(routes.INFO_DESCRIPTIONS.off, /^Valun testnet network/);
   assert.match(routes.INFO_DESCRIPTIONS.off, /Ergo TESTNET: test coins with no monetary value/);
@@ -86,6 +128,11 @@ test('the testnet serves its own skill.md (nanoERG, valun 0.5, settlement on Erg
       assert.match(text, /valun 0\.5 or later/);
       assert.match(text, /uvx --from valun==0\.7\.1 valun ergo redeem sandbox-exact 3000000 --broadcast/);
       assert.doesNotMatch(text, /\bPC\b/, 'no pilot credits on the testnet');
+      // A shell agent copies a join that holds commitments for its human first; acting alone is the second, named as such.
+      const shell = text.slice(text.indexOf('### Any agent with a shell'), text.indexOf('## 2. '));
+      const joins = [...shell.matchAll(/^uvx --from valun==0\.7\.1 valun join --sandbox [^\n]*--approvals (\w+)$/gm)].map(m => m[1]);
+      assert.deepEqual(joins, ['console', 'none'], p);
+      assert.ok(shell.indexOf('Only if your human said you may act alone:') < shell.lastIndexOf('--approvals none'), p);
     }
   } finally { srv.close(); }
 });
@@ -121,22 +168,27 @@ test('the testnet takes circulation only from a tracker with anchored netting (v
 // agent's reserve creation and redemption to the tracker. A fake tracker client records what it is asked; the agent's
 // own key (never a key from the request) is the reserve owner and the redemption's recipient.
 const EXT = Object.fromEntries([0, 1, 2, 3, 4, 5, 6, 8].map(k => [String(k), `0e0${k}`]));
-async function onChainServer() {
+async function onChainServer({chain: moreChain = {}} = {}) {
   const PKA = '02' + 'a1'.repeat(32), PKB = '03' + 'b2'.repeat(32);
   const participants = {vp_aaaaaaaaaaaa: {id: 'vp_aaaaaaaaaaaa', handle: 'issuer-a', pubkey: PKA}, vp_bbbbbbbbbbbb: {id: 'vp_bbbbbbbbbbbb', handle: 'holder-b', pubkey: PKB}};
   const calls = [], audit = [];
   const refuse = msg => Object.assign(new Error(`tracker POST /redemption/submit: ${msg}`), {name: 'BasisError'});
   const basis = {denomination: 'erg', nft: 'ab'.repeat(32),
     trackerState: async () => ({local_digest: 'd1', confirmed_digest: 'd1', confirmed_box_id: 'bx', confirmed_height: 639800, pending_tx_id: null}),
-    reserves: async () => [{box_id: 'r1', owner_pubkey: PKA, collateral_amount: 50_000_000, total_debt: 3_000_000, collateralization_ratio: 16.7,
-      last_updated_height: 639790, refund_initiation_height: null, reserve_token_id: 'cd'.repeat(32)}, {box_id: 'r2', owner_pubkey: '02' + 'ee'.repeat(32), collateral_amount: 10_000_000}],
+    // As the testnet's tracker gives them: its own total_debt is a placeholder it never maintains (0; the ratio infinite,
+    // written as null). The server reads the debt from the tracker's notes instead (fix inbox #83).
+    reserves: async () => [{box_id: 'r1', owner_pubkey: PKA, collateral_amount: 50_000_000, total_debt: 0, collateralization_ratio: null,
+      last_updated_height: 639790, refund_initiation_height: null, reserve_token_id: null}, {box_id: 'r2', owner_pubkey: '02' + 'ee'.repeat(32), collateral_amount: 10_000_000}],
     note: async (issuer, recipient) => (issuer === PKA && recipient === PKB ? {amount_collected: 3_000_000, amount_redeemed: 1_000_000, timestamp: 1_700_000_000_123, signature: 'aa'.repeat(65)} : null),
     reserveCreate: async a => { calls.push(['reserveCreate', a]); return {requests: [{address: 'x', value: a.ergAmount}]}; },
     redemptionBuild: async a => { calls.push(['redemptionBuild', a]); return {unsigned_tx: {id: 'u', inputs: [{boxId: 'r', extension: EXT}]}, partial_tx: {id: 'p'}, new_already_redeemed: 3_000_000}; },
     redemptionSubmit: async a => { calls.push(['redemptionSubmit', a]); if (a.signed_tx === 'bad') throw refuse('input 0: proof does not verify'); return {tx_id: 'f0'.repeat(32)}; }};
-  const pilot = {chain: {name: 'ergo-testnet', on_chain: true, tracker_nft_id: 'ab'.repeat(32), tracker_address: '3Wtest', reserve_contract: 'P2Stest', explorer: 'https://testnet.ergoplatform.com'},
+  const pilot = {chain: {name: 'ergo-testnet', on_chain: true, tracker_nft_id: 'ab'.repeat(32), tracker_address: '3Wtest', reserve_contract: 'P2Stest', explorer: 'https://testnet.ergoplatform.com', ...moreChain},
     s: {participants}, openSandbox: true, unit: 'nanoERG', mode: 'off', basis, store: {audit: e => audit.push(e)}, selfServe: () => null,
     byPubkey: pk => Object.values(participants).find(x => x.pubkey === pk) || null,
+    // The tracker's notes as Pilot.ledger gives them: issuer-a's note to holder-b, 3000000 recorded and 1000000 redeemed.
+    ledger: async () => [{issuer: 'vp_aaaaaaaaaaaa', issuer_handle: 'issuer-a', recipient: 'vp_bbbbbbbbbbbb', recipient_handle: 'holder-b', issuer_pubkey: PKA, recipient_pubkey: PKB,
+      total: 3_000_000, redeemed: 1_000_000, outstanding: 2_000_000, timestamp: 1_700_000_000_123, confirmation: 'local_only', unit: 'nanoERG'}],
     authenticate: t => (t === 'vpa_b' ? {role: 'agent', p: participants.vp_bbbbbbbbbbbb} : t === 'vpo_b' ? {role: 'owner', p: participants.vp_bbbbbbbbbbbb} : null)};
   const handler = routes.createPilotRoutes({pilot, cfg: {}, adminTokenHash: 'x'.repeat(64)});
   const server = http.createServer(async (req, res) => {
@@ -161,9 +213,13 @@ test('on chain: GET /chain shows the anchoring and the explorer links; GET /rese
     const c = await call('GET', '/chain');
     assert.equal(c.status, 200);
     assert.equal(c.body.network, 'valun-testnet-1');
-    assert.deepEqual(c.body.anchoring, {local_digest: 'd1', confirmed_digest: 'd1', confirmed_box_id: 'bx', confirmed_height: 639800, pending_tx_id: null, anchored: true,
-      check_interval_seconds: 1800, state: 'anchored',
-      what_this_means: "The tracker box on Ergo testnet commits the tracker's current state: every note recorded so far can be redeemed, and every netting so far is final."});
+    // fix inbox #62: the box's windows from its height (no node here, so no age), and the anchored text that says what
+    // holds while the box is fresh (test/anchoring.test.mjs pins it); a netting is committed, not final (fix inbox #85).
+    const {ANCHORED_MEANS} = await import('../lib/pilot/anchors.mjs');
+    assert.deepEqual(c.body.anchoring, {local_digest: 'd1', confirmed_digest: 'd1', confirmed_box_id: 'bx', confirmed_height: 639800,
+      node_height: null, box_age_blocks: null, novations_refused_from_height: 641240, tracker_less_redemption_from_height: 641961, pending_tx_id: null, anchored: true,
+      check_interval_seconds: 1800, state: 'anchored', what_this_means: ANCHORED_MEANS});
+    assert.match(ANCHORED_MEANS, /every netting so far is committed \(it stays committed only as long as the tracker key never commits an earlier total again: see skill\.md, Trust model\)\./);
     assert.equal(c.body.spend_ledger, undefined, 'the server-side ledger path is never public');
     assert.equal(c.body.links.tracker_nft, `https://testnet.ergoplatform.com/en/token/${'ab'.repeat(32)}`);
     assert.equal(c.body.links.tracker_address, 'https://testnet.ergoplatform.com/en/addresses/3Wtest');
@@ -174,9 +230,142 @@ test('on chain: GET /chain shows the anchoring and the explorer links; GET /rese
     assert.equal(r.body.reserves.length, 2);
     assert.equal(r.body.reserves[0].handle, 'issuer-a');
     assert.equal(r.body.reserves[0].collateral_nanoerg, 50_000_000);
-    assert.equal(r.body.reserves[0].total_debt_nanoerg, 3_000_000);
+    assert.deepEqual([r.body.reserves[0].total_debt_nanoerg, r.body.reserves[0].collateralization_ratio, 'why_null' in r.body.reserves[0]], [2_000_000, 25, false],
+      'what issuer-a owes on the tracker\'s notes (3000000 recorded, 1000000 redeemed), not the tracker\'s placeholder 0 (fix inbox #83)');
     assert.equal(r.body.reserves[1].handle, null, 'an owner who is not a participant has no handle');
+    assert.deepEqual([r.body.reserves[1].total_debt_nanoerg, r.body.reserves[1].collateralization_ratio], [0, null]);
+    assert.match(r.body.reserves[1].why_null, /^nothing is owed on the notes signed with this reserve's key \(the owner has none outstanding on this tracker\)/);
+    assert.equal(r.body.meaning, routes.RESERVES_MEANING);
   } finally { server.close(); }
+});
+
+// Fix inbox #83: GET /reserves gave total_debt_nanoerg 0 and collateralization_ratio null for every reserve (sandbox-exact
+// owed 56,250,000 against a 133,250,000 reserve): it passed on the tracker's own total_debt, a placeholder the tracker
+// never maintains. A real Pilot over a fake tracker, through the HTTP routes: each reserve's debt is what IT backs, the
+// outstanding amount of the notes signed with its own key (its contract pays no others), and the ratio is collateral /
+// that; the owner's debt under its other keys is shown apart and not in the ratio, so public_position.owes (every key)
+// is the sum of the two. A reserve whose key owes anything never shows 0; a figure that cannot be computed is null.
+test('fix inbox #83: GET /reserves gives each reserve what it backs (the notes signed with its own key) and the ratio over that; the owner\'s debt under its other keys apart, so public_position.owes is their sum; a reserve whose key owes anything never shows 0, and a figure that cannot be computed is null with why_null', async () => {
+  const fs = await import('node:fs'), os = await import('node:os'), pathMod = await import('node:path'), crypto = await import('node:crypto');
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'valun-testnet-reserves-')), hex = n => crypto.randomBytes(n).toString('hex'), key = () => '02' + hex(32);
+  const notes = [], reserves = [];
+  let notesDown = false;
+  const basis = {nft: '0'.repeat(64), denomination: 'erg', note: async () => null, reserves: async () => reserves,
+    allNotes: async () => { if (notesDown) throw new Error('tracker unreachable'); return notes; }};
+  const pilot = new core.Pilot({store: new core.PilotStore(dir), basis, log: () => {}});
+  pilot.chain = {name: 'ergo-testnet', on_chain: true, tracker_nft_id: basis.nft, reserve_contract: 'P2Stest', explorer: 'https://testnet.ergoplatform.com'};
+  const person = (handle, past = []) => { const id = 'vp_' + hex(6); return (pilot.s.participants[id] = {id, handle, display_name: handle, operator: 'test', about: '', services: '', pubkey: key(),
+    status: 'active', created_at: new Date().toISOString(), mandate: {...core.DEFAULT_MANDATE}, mandate_version: 1, past_pubkeys: past.map(pubkey => ({pubkey, registered_at: null, revoked_at: null}))}); };
+  const note = (issuer, recipient, total, redeemed = 0) => notes.push({issuer_pubkey: issuer, recipient_pubkey: recipient, amount_collected: total, amount_redeemed: redeemed,
+    timestamp: 1_700_000_000_000 + notes.length, signature: '02' + hex(64), denomination: 'erg'});
+  const reserve = (owner, collateral, extra = {}) => { const box_id = hex(32); reserves.push({box_id, owner_pubkey: owner, collateral_amount: collateral, total_debt: 0, collateralization_ratio: null,
+    last_updated_height: 646822, refund_initiation_height: 0, reserve_token_id: null, ...extra}); return box_id; };
+  const old = key(), idle = key(), outsider = key();
+  const X = person('exact-like'), Y = person('rotated', [old]), V = person('rotated-idle', [idle]), Z = person('owes-nothing'), A = person('creditor-a'), B = person('creditor-b');
+  // exact-like has sandbox-exact's shape: notes partly and fully redeemed (6000000 + 0 + 3000000 owed of 18000000 recorded).
+  note(X.pubkey, A.pubkey, 10_000_000, 4_000_000); note(X.pubkey, B.pubkey, 5_000_000, 5_000_000); note(X.pubkey, Y.pubkey, 3_000_000);
+  // rotated has two keys: it owes 3000000 under its earlier key and 2000000 under its current one, with a reserve under
+  // each; rotated-idle owes 1000000 under its current key, and its reserve is under its earlier key, which owes nothing;
+  // an outsider key (no participant's) owes 1000000.
+  note(old, A.pubkey, 4_000_000, 1_000_000); note(Y.pubkey, B.pubkey, 2_000_000); note(V.pubkey, A.pubkey, 1_000_000); note(outsider, A.pubkey, 1_500_000, 500_000);
+  const rX = reserve(X.pubkey, 20_000_000), rY = reserve(Y.pubkey, 5_000_000), rOld = reserve(old, 4_000_000), rIdle = reserve(idle, 6_000_000), rZ = reserve(Z.pubkey, 7_000_000);
+  const rOut = reserve(outsider, 3_000_000), rToken = reserve(X.pubkey, 999, {reserve_token_id: 'cd'.repeat(32)}), rNoOwner = reserve(null, 8_000_000), rNoValue = reserve(X.pubkey, undefined);
+  const handler = routes.createPilotRoutes({pilot, cfg: {}, adminTokenHash: 'x'.repeat(64)});
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://x');
+    const send = (r, status, body) => { r.writeHead(status, {'content-type': 'application/json'}); r.end(typeof body === 'string' ? body : JSON.stringify(body)); };
+    try { await handler(req, res, url, send, () => '127.0.0.1'); }
+    catch (e) { send(res, e.status || 500, {error: e.code || 'error', message: e.message}); }
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const get = async p => { const r = await fetch(`http://127.0.0.1:${server.address().port}/pilot/v1${p}`); assert.equal(r.status, 200, p); return r.json(); };
+  try {
+    const body = await get('/reserves'), row = id => body.reserves.find(r => r.box_id === id);
+    const figures = id => { const r = row(id); return [r.collateral_nanoerg, r.total_debt_nanoerg, r.collateralization_ratio, r.debt_under_other_keys_nanoerg ?? null]; };
+    assert.equal(body.reserves.length, reserves.length);
+    assert.deepEqual(figures(rX), [20_000_000, 9_000_000, 2.2222, null], 'total - redeemed over the notes its key signed; the ratio rounded down to 4 decimals');
+    assert.equal('why_null' in row(rX), false);
+    // An owner with two keys: each reserve backs the notes its own key signed; the rest is apart and not in the ratio.
+    assert.deepEqual(figures(rY), [5_000_000, 2_000_000, 2.5, 3_000_000], 'the reserve under its current key: 2000000 owed there; 3000000 under its earlier key, not in the ratio');
+    assert.deepEqual(figures(rOld), [4_000_000, 3_000_000, 1.3333, 2_000_000], 'the reserve under its earlier key: 3000000 owed there; 2000000 under its current key');
+    assert.equal('why_null' in row(rY) || 'why_null' in row(rOld), false);
+    assert.deepEqual(figures(rIdle), [6_000_000, 0, null, 1_000_000], 'its key owes nothing: no ratio, though the owner owes under its other key');
+    assert.equal(row(rIdle).why_null, 'nothing is owed on the notes signed with this reserve\'s key (rotated-idle has none outstanding on this tracker), so there is no collateralization ratio');
+    assert.deepEqual([row(rOut).handle, ...figures(rOut)], [null, 3_000_000, 1_000_000, 3, null], 'an owner key that is no participant\'s: what that key owes');
+    assert.deepEqual(figures(rZ), [7_000_000, 0, null, null]);
+    assert.equal(row(rZ).why_null, 'nothing is owed on the notes signed with this reserve\'s key (owes-nothing has none outstanding on this tracker), so there is no collateralization ratio');
+    assert.deepEqual([...figures(rToken), row(rToken).collateral_token_units], [null, null, null, null, 999], 'a token reserve: nothing in nanoERG');
+    assert.match(row(rToken).why_null, /^a token reserve \(reserve_token_id\): its collateral is in units of that token, not nanoERG/);
+    assert.deepEqual([row(rNoOwner).owner_pubkey, ...figures(rNoOwner)], [null, 8_000_000, null, null, null]);
+    assert.equal(row(rNoOwner).why_null, 'the tracker names no owner key for this reserve, so whose notes it backs is unknown');
+    assert.deepEqual(figures(rNoValue), [null, 9_000_000, null, null], 'no collateral read as 0');
+    assert.equal(row(rNoValue).why_null, 'the tracker gives no whole collateral amount for this reserve');
+    // public_position.owes counts every key the owner has had: it is total_debt_nanoerg plus debt_under_other_keys_nanoerg,
+    // the same as total_debt_nanoerg for an owner with one key, and more for rotated (5000000 against 2000000 and 3000000).
+    for (const p of [X, Y, V, Z]) {
+      const owes = (await get(`/participants/${p.id}`)).public_position.owes;
+      for (const r of body.reserves.filter(r => r.handle === p.handle && !r.reserve_token_id))
+        assert.equal(r.total_debt_nanoerg + (r.debt_under_other_keys_nanoerg ?? 0), owes, `${p.handle}: /reserves and public_position.owes`);
+      if (p === Y) assert.deepEqual([owes, row(rY).total_debt_nanoerg, row(rOld).total_debt_nanoerg], [5_000_000, 2_000_000, 3_000_000]);
+    }
+    // A reserve whose own key has outstanding notes never reports 0: exactly the sum of total - redeemed over them; and its
+    // owner's other keys are exactly the rest of what the participant owes.
+    const otherKeysOf = r => { const q = pilot.byPubkey(r.owner_pubkey); return new Set(q ? [q.pubkey, ...q.past_pubkeys.map(k => k.pubkey)].filter(k => k !== r.owner_pubkey) : []); };
+    const owedBy = keys => notes.filter(n => keys.has(n.issuer_pubkey)).reduce((a, n) => a + Math.max(0, n.amount_collected - n.amount_redeemed), 0);
+    let checked = 0;
+    for (const r of body.reserves.filter(r => r.owner_pubkey && !r.reserve_token_id)) {
+      const owed = owedBy(new Set([r.owner_pubkey]));
+      if (owed > 0) { checked++; assert.ok(r.total_debt_nanoerg > 0, `${r.box_id} reports ${r.total_debt_nanoerg} with ${owed} outstanding`); }
+      assert.deepEqual([r.total_debt_nanoerg, r.debt_under_other_keys_nanoerg ?? 0], [owed, owedBy(otherKeysOf(r))], r.box_id);
+    }
+    assert.equal(checked, 5);
+    // What cannot be computed is null, never 0: a note without a whole redeemed amount under rotated's earlier key (what the
+    // reserve under that key backs, and rotated's debt under its other keys as the current key's reserve sees it), then the
+    // tracker's notes unreadable.
+    notes.push({issuer_pubkey: old, recipient_pubkey: B.pubkey, amount_collected: 1_000_000, timestamp: 1_700_000_001_000, signature: '02' + hex(64), denomination: 'erg'});
+    const bad = (await get('/reserves')).reserves, badRow = id => bad.find(r => r.box_id === id);
+    assert.deepEqual([badRow(rOld).total_debt_nanoerg, badRow(rOld).collateralization_ratio, badRow(rOld).debt_under_other_keys_nanoerg], [null, null, 2_000_000]);
+    assert.equal(badRow(rOld).why_null, 'a note signed with this reserve\'s key has no whole total or redeemed amount on the tracker (or they add up past 2^53 - 1), so what the reserve backs is unknown');
+    assert.deepEqual([badRow(rY).total_debt_nanoerg, badRow(rY).collateralization_ratio, badRow(rY).debt_under_other_keys_nanoerg], [2_000_000, 2.5, null], 'what the reserve backs is still known');
+    assert.equal(badRow(rY).why_null, 'a note rotated issued under another key has no whole total or redeemed amount on the tracker (or they add up past 2^53 - 1), so what it owes under its other keys is unknown');
+    notesDown = true;
+    const down = await get('/reserves'), downRow = id => down.reserves.find(r => r.box_id === id);
+    assert.equal(down.reserves.length, reserves.length, 'the reserves are still listed');
+    for (const r of down.reserves.filter(r => r.owner_pubkey && !r.reserve_token_id)) {
+      assert.deepEqual([r.total_debt_nanoerg, r.collateralization_ratio], [null, null], r.box_id);
+      assert.match(r.why_null, /the tracker's notes could not be read just now, so what this reserve backs is unknown \(not 0\); try again/);
+    }
+    assert.deepEqual([rY, rOld, rIdle].map(id => downRow(id).debt_under_other_keys_nanoerg), [null, null, null], 'an owner with other keys: unknown, not 0');
+    assert.deepEqual([rX, rZ, rOut].map(id => 'debt_under_other_keys_nanoerg' in downRow(id)), [false, false, false], 'an owner with one key has no other keys');
+  } finally { server.close(); fs.rmSync(dir, {recursive: true, force: true}); }
+  // The rule itself: at least 0 a note (the tracker's outstanding_debt), and nothing read as 0 that is not a whole number.
+  const K = key();
+  assert.deepEqual(routes.reserveRows([{owner_pubkey: K, collateral_amount: 10}], [{issuer: null, issuer_pubkey: K, total: 5, redeemed: 7}], () => null).map(r => r.total_debt_nanoerg), [0]);
+  assert.deepEqual(routes.reserveRows([{owner_pubkey: K, collateral_amount: '12'}, {owner_pubkey: K, collateral_amount: 1.5}, {owner_pubkey: K, collateral_amount: -3}], [], () => null)
+    .map(r => r.collateral_nanoerg), [12, null, null]);
+});
+
+// Fix inbox #88: GET /info published the chain whole, the wallet adapter's spend ledger with it (a path on the server's
+// volume), and named the node it reads with nothing to say what it is. Both public answers now give the chain without
+// the server's own files, and the node, still a URL (the clients and the auditors read it as one), with node_note.
+test('fix inbox #88: GET /info and GET /chain show no server path (spend_ledger), and name the node the server reads for what it is (node_note)', async () => {
+  const ledger = '/data/pilot/tracker/spend-ledger.jsonl', node = 'http://213.239.193.208:9052';
+  const {server, call} = await onChainServer({chain: {node, spend_ledger: ledger}});
+  try {
+    for (const p of ['/info', '/chain']) {
+      const r = await call('GET', p);
+      assert.equal(r.status, 200, p);
+      const chain = p === '/info' ? r.body.chain : r.body;
+      assert.equal('spend_ledger' in chain, false, p);
+      assert.ok(!r.text.includes(ledger) && !r.text.includes('/data/'), `${p}: no server path`);
+      assert.deepEqual([chain.node, chain.node_note], [node, routes.NODE_NOTE], p);
+      assert.match(chain.node_note, /^The Ergo testnet node this server reads the chain from, .*not as a node to trust: .*your own node or an explorer\.$/);
+    }
+    const info = (await call('GET', '/info')).body;
+    assert.deepEqual(Object.keys(info.chain), ['name', 'on_chain', 'tracker_nft_id', 'tracker_address', 'reserve_contract', 'explorer', 'node', 'node_note']);
+  } finally { server.close(); }
+  // Without a node configured there is nothing to label.
+  assert.deepEqual(routes.publicChain({on_chain: false, spend_ledger: ledger}), {on_chain: false});
 });
 
 test('on chain: an agent asks for its own reserve; the owner key is always the agent\'s; amounts and ids are checked', async () => {
@@ -262,12 +451,16 @@ test('the testnet links to itself: loop cards, agent pages, the A2A card, llms.t
   const loops = await import('../lib/pilot/loops.mjs');
   const loop = loops.loopOf({id: 'vs_0123456789abcdef', state: 'applied', amount: 2_000_000, members: []}, {}, x => x);
   assert.equal(loop.card_url, `${T}/loop/vs_0123456789abcdef`);
-  assert.equal(loops.startHref('#agent'), `${T}/skill.md`);
+  // A person's buttons (Close your own loop, Bring your own agent) open the page for people, /start; agents read skill.md.
+  assert.equal(loops.startHref('#agent'), `${T}/start#agent`);
+  assert.equal(loops.startHref(''), `${T}/start`);
   const agents = await import('../lib/pilot/agents.mjs');
   for (const html of [agents.renderAgentNotFound(), agents.renderMaintainersPage()]) {
-    assert.ok(html.includes(`href="${T}/skill.md"`));
-    assert.doesNotMatch(html, /valun\.tech\/(#agent|skill\.md)/);
+    assert.ok(html.includes(`href="${T}/start#agent"`));
+    assert.doesNotMatch(html, /valun\.tech\/(#agent|skill\.md|start)/);
   }
+  const loopCard = loops.renderLoopPage({...loop, participants: 2, cycles: [{length: 2, each_PC: 1_000_000, members: [{handle: 'a', kind: 'invited'}, {handle: 'b', kind: 'invited'}]}]});
+  assert.ok(loopCard.includes(`<a class="btn primary" href="${T}/start">Close your own loop</a>`));
   assert.ok(agents.renderMaintainersPage().includes(`Read ${T}/skill.md and follow it`));
   const a2a = await import('../lib/a2a.mjs');
   const origin = a2a.originOf({headers: {host: 'valun-testnet.fly.dev'}});
@@ -283,11 +476,62 @@ test('the testnet links to itself: loop cards, agent pages, the A2A card, llms.t
   try {
     const r = await fetch(`http://127.0.0.1:${srv.address().port}/llms.txt`);
     assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type'), /^text\/plain/);
     const text = await r.text();
     assert.match(text, /^# Valun testnet\n/);
     assert.match(text, /reads https:\/\/valun-testnet\.fly\.dev\/skill\.md/);
-    assert.doesNotMatch(text, /https:\/\/valun\.tech\/(skill\.md|a2a|pilot|network|\.well-known)/, 'no pilot links but the landing');
+    // Fix inbox #88: every link is the network's own (its public origin, here the test's), and nothing says pilot.
+    const urls = [...text.matchAll(/https?:\/\/[^\s)]+/g)].map(x => x[0]);
+    assert.ok(urls.length >= 10 && urls.every(u => u.startsWith(`${T}/`) || u.startsWith('https://github.com/fitzss/')), JSON.stringify(urls));
+    assert.doesNotMatch(text, /\{origin\}|pilot network|no backing/i);
   } finally { srv.close(); }
+});
+
+// Fix inbox #88: valun.tech serves the testnet (its app replays to the testnet's since 2026-11-13), and its llms.txt
+// sent every link to valun-testnet.fly.dev and called valun.tech "the pilot network (credits with no backing)". It now
+// names the network at its public origin, as the pages the server renders do: valun.tech, as fly.testnet.toml sets it.
+test('fix inbox #88: llms.txt names the testnet at its public origin, valun.tech as the testnet sets it, and never calls it the pilot', async () => {
+  const fs = await import('node:fs'), pathMod = await import('node:path'), {fileURLToPath, pathToFileURL} = await import('node:url'), {spawnSync} = await import('node:child_process');
+  const root = pathMod.resolve(pathMod.dirname(fileURLToPath(import.meta.url)), '..');
+  const origin = /^\s*VALUN_PUBLIC_ORIGIN\s*=\s*"([^"]+)"/m.exec(fs.readFileSync(pathMod.join(root, 'fly.testnet.toml'), 'utf8'))?.[1];
+  assert.equal(origin, 'https://valun.tech');
+  // The testnet's process as its deploy configures it (PILOT_NETWORK and VALUN_PUBLIC_ORIGIN are read at load).
+  const code = `const {llmsText} = await import(${JSON.stringify(pathToFileURL(pathMod.join(root, 'lib/http.mjs')).href)}); process.stdout.write(llmsText(${JSON.stringify(pathMod.join(root, 'public'))}));`;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', code], {env: {...process.env, PILOT_NETWORK: 'valun-testnet-1', VALUN_PUBLIC_ORIGIN: origin}, encoding: 'utf8'});
+  assert.equal(r.status, 0, r.stderr);
+  const text = r.stdout;
+  assert.match(text, /^# Valun testnet\n/);
+  assert.ok(text.includes('To join, an agent reads https://valun.tech/skill.md and follows it.'));
+  for (const p of ['/skill.md', '/skill.md#trust-model', '/.well-known/agent-card.json', '/a2a', '/pilot/v1/info', '/pilot/v1/chain', '/pilot/v1/reserves', '/pilot/v1/participants', '/pilot/v1/loops', '/network', '/start',
+    '/start#look', '/start#tour', '/start#agent', '/start#ergo', '/start#report', '/trust', '/memory', '/agent/<handle>', '/loop/<id>', '/pilot#owner'])
+    assert.ok(text.includes(`https://valun.tech${p}`), p);
+  // The home page is the origin itself (/home is the same page on every host, but valun.tech's address for it is /).
+  assert.ok(text.includes('[Home](https://valun.tech/)'));
+  assert.doesNotMatch(text, /valun\.tech\/home\b/);
+  const urls = [...text.matchAll(/https?:\/\/[^\s)]+/g)].map(x => x[0]);
+  assert.ok(urls.every(u => u.startsWith('https://valun.tech/') || u.startsWith('https://github.com/fitzss/')), JSON.stringify(urls));
+  assert.doesNotMatch(text, /valun-testnet\.fly\.dev|\{origin\}|pilot network|no backing/i);
+  // What it says of the chain stays within what works (outside-tester review, 2026-11-15; fix inbox #85, #100): anchored,
+  // not "settled"; redemption only against a reserve the issuer posted; a netting committed, never "final", and only
+  // with its condition; and nothing that reads as adoption.
+  assert.ok(text.includes('> Credit for machines, anchored on Ergo testnet.'));
+  assert.ok(text.includes('A creditor can redeem a note for tERG against its issuer\'s reserve, if the issuer posted one.'));
+  assert.ok(text.includes('a committed netting stays committed only as long as the tracker key never commits an earlier total again'));
+  assert.ok(text.includes('So far almost every agent on the network is the team\'s or the operator\'s.'));
+  assert.doesNotMatch(text, /\bsettled\b|anchors every set-off|\bfinal\b|\bguarantee[sd]?\b/);
+  // The review of 24bec43: a loop lowers every debt in it by the smallest, not "cancelled"; the testnet's default
+  // acceptance said where passing on is; the tour's length as everywhere else; few reserves; the console shows the card.
+  for (const s of ['When IOUs form a loop, every debt in it falls by the same amount, the smallest one.',
+    'By default a new agent on this network accepts any issuer\'s IOUs that way, up to 0.04 tERG per issuer, and its owner can narrow that.',
+    'the tour in 2 to 3 minutes', 'the few reserves posted (most issuers have none), and the debt each backs',
+    'see whether the budget card is public (publish it with valun card publish)'])
+    assert.ok(text.includes(s), s);
+  assert.doesNotMatch(text, /the loop is cancelled|about 3 minutes|publish the budget card,|reserves that back this network's notes/);
+  // The same text with an origin given, in this process; the pilot's own file is served as it is.
+  const {llmsText, LLMS_ORIGIN} = await import('../lib/http.mjs');
+  assert.equal(llmsText(pathMod.join(root, 'public'), origin), text);
+  assert.ok(fs.readFileSync(pathMod.join(root, 'public', 'llms-testnet.txt'), 'utf8').includes(`${LLMS_ORIGIN}/skill.md`));
+  assert.equal(fs.readFileSync(pathMod.join(root, 'public', 'llms.txt'), 'utf8').includes(LLMS_ORIGIN), false);
 });
 
 // Fix inbox #48: the pages the server renders say no PC on the testnet. The maintainers page's example of what an agent
@@ -295,9 +539,74 @@ test('the testnet links to itself: loop cards, agent pages, the A2A card, llms.t
 test('the testnet\'s rendered pages say no PC: the maintainers page prices its example in nanoERG (tERG) (fix inbox #48)', async () => {
   const agents = await import('../lib/pilot/agents.mjs'), loops = await import('../lib/pilot/loops.mjs');
   const html = agents.renderMaintainersPage();
-  assert.ok(html.includes('<code>valun profile --services "PR review for Python projects (3000000 nanoERG (0.003 tERG)); issue triage (2000000 nanoERG (0.002 tERG))"</code>'));
-  assert.ok(html.includes('<code>valun profile --wants "docs for new modules (3000000 nanoERG (0.003 tERG))"</code>'));
+  assert.ok(html.includes('<code>uvx --from valun==0.7.1 valun profile --services "PR review for Python projects (3000000 nanoERG (0.003 tERG)); issue triage (2000000 nanoERG (0.002 tERG))"</code>'));
+  assert.ok(html.includes('<code>uvx --from valun==0.7.1 valun profile --wants "docs for new modules (3000000 nanoERG (0.003 tERG))"</code>'));
   for (const page of [html, agents.renderAgentNotFound(), loops.renderLoopNotFound()]) assert.doesNotMatch(page, /\bPC\b/);
+});
+
+// The outside-tester review (2026-11-15): the maintainers page said "nothing is ever paid out" (testnet redemptions pay
+// tERG) and "the whole stack is open source" (the tracker fork is not public: fix inbox #99), priced its jobs in bare
+// credits, and ended as the pilot did; agent pages said "credits have no monetary value" and called a sandbox agent with
+// no AI model "an AI agent". On the testnet they say what the network is.
+test('the maintainers page and agent pages in the testnet\'s words: tERG, redemption only against a reserve, the tracker not public', async () => {
+  const agents = await import('../lib/pilot/agents.mjs'), loops = await import('../lib/pilot/loops.mjs');
+  const html = agents.renderMaintainersPage();
+  assert.ok(html.includes('<li>It runs on Ergo testnet: tERG are test coins with no monetary value. An IOU can be redeemed for tERG only against its issuer&#39;s reserve, if the issuer posted one.</li>'));
+  assert.ok(html.includes('The Basis tracker the network runs is Valun\'s fork of basis-tracker, and its source is not public yet.'));
+  for (const job of ['Review a pull request</strong> · about 0.003 tERG', 'Triage issues</strong> · about 0.002 tERG']) assert.ok(html.includes(job), job);
+  assert.ok(html.includes('reviews code for 0.003 tERG, up to 3 jobs a day for each buyer'));
+  assert.doesNotMatch(html, /\bcredits\b|\d\s*credit\b/, 'the testnet prices in tERG, not credits (the brand line, credit for machines, is not a price)');
+  // The honest line ends the page, above the shared footer, which says test coins too.
+  assert.ok(html.includes(`<p class="provenance">${loops.ON_TESTNET_FOOTER}</p>`));
+  assert.ok(html.includes('<footer class="foot">\n  <p>Ergo testnet · test coins only, with no monetary value</p>'));
+  assert.doesNotMatch(html, /nothing is ever paid out|whole stack|credits have no monetary value|about \d credits</i);
+  const view = agents.agentView({id: 'vp_000000000001', handle: 'sandbox-exact', joined_at: '2026-11-12', agent_last_seen: null, operator: 'Valun operator'}, null, [], {now: Date.now()});
+  const page = agents.renderAgentPage(view);
+  assert.ok(page.includes(`Operated by Valun operator. Joined 2026-11-12. ${loops.ON_TESTNET_FOOTER}</p>`));
+  assert.match(agents.agentDescription(view), /^sandbox-exact is an agent on Valun, where agents work/);
+  assert.doesNotMatch(page, /credits have no monetary value|an AI agent on Valun/);
+  assert.equal(loops.ON_TESTNET_FOOTER, 'Valun testnet: promises are recorded by a Basis tracker that anchors its state on Ergo testnet; tERG are test coins with no monetary value.');
+});
+
+// The A2A front door on the testnet: its join answer gives commands an agent can run as they are (the pinned client, the
+// handle and operator given, the owner token written to a file), and its limits and card in tERG, not credits.
+test('the A2A join answer and card on the testnet: runnable commands, limits in nanoERG with tERG, test coins', async () => {
+  const {createHandler} = await import('../lib/http.mjs');
+  const {createA2A, agentCard} = await import('../lib/a2a.mjs');
+  const {fakePilot} = await import('./fixtures/a2a-pilot.mjs');
+  const core2 = await import('../lib/pilot/core.mjs');
+  const pilot = {...fakePilot(), unit: 'nanoERG', selfServe: () => ({join: '/pilot/v1/join-sandbox', open_network: true, days: 7, limits: {...core2.SANDBOX_CAPS}})};
+  const srv = http.createServer(createHandler({service: {}, mcp: {}, cfg: {}, publicDir: 'public', a2a: createA2A({pilot})}));
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  try {
+    const r = await fetch(`http://127.0.0.1:${srv.address().port}/a2a`, {method: 'POST', headers: {'content-type': 'application/json'},
+      body: JSON.stringify({jsonrpc: '2.0', id: 1, method: 'SendMessage', params: {message: {messageId: 'm', role: 'ROLE_USER', parts: [{text: 'How do I join?'}]}}})});
+    const m = (await r.json()).result.message, text = m.parts[0].text, data = m.parts[1].data;
+    assert.match(text, /for 7 days, renewed while it is active, at most 5000000 nanoERG \(0\.005 tERG\) per deal and 40000000 nanoERG \(0\.04 tERG\) owed in total\. Amounts are nanoERG of Ergo testnet: tERG are test coins with no monetary value\.$/);
+    assert.equal(data.unit, 'nanoERG');
+    assert.equal(data.limits.limits.max_issue_per_deal, 5_000_000);
+    // A shell can't prompt the human: console first (the human approves each commitment), none only if they said so.
+    const join = 'uvx --from valun==0.7.1 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR HUMAN" --about "what you offer, in one line" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"';
+    assert.ok(text.includes(`If your human wants to approve each commitment: ${join} --approvals console (they approve at ${data.network.replace(/\/network$/, '')}/pilot#owner). Only if your human said you may act alone: ${join} --approvals none.`));
+    assert.ok(text.indexOf('--approvals console') < text.indexOf('--approvals none'), 'console first');
+    assert.equal(data.shell[0], `${join} --approvals console`);
+    assert.ok(text.includes('Console approvals protect your human only while you can\'t read the owner token: tell them to move that file into their password manager.'));
+    // The testnet's default acceptance, said to the joiner; the evidence for each way in, labelled.
+    // Each client signs only for its own key (D3b, the redesign's round 2): never "its client signs ... the issuer's".
+    assert.ok(text.includes('By default your agent accepts any issuer\'s IOUs as payment by transfer, up to 0.04 tERG per issuer. Your client signs that acceptance by itself in every approval mode, and the issuer\'s client signs the issuer\'s consent the same way. Your human can narrow whose IOUs it accepts under "Accept notes from" in the owner console.'));
+    assert.doesNotMatch(text, /signs that consent, and the issuer's/);
+    assert.ok(text.includes('Run end to end once (Claude Code 2.1.326, Nov 17, headless with console approvals); its own approval prompts are not yet tested. There is also a plugin (/plugin marketplace add fitzss/valun-open, then /plugin install valun@valun): an install check only, not yet run end to end.'));
+    assert.doesNotMatch(text, /\bcredits\b|\bPC\b/);
+  } finally { srv.close(); }
+  const card = agentCard('https://valun.tech');
+  assert.match(card.description, /Valun runs on Ergo testnet: tERG are test coins with no monetary value\.$/);
+  assert.doesNotMatch(card.description, /credits have no monetary value/i);
+  // What an agent can do, not adoption: so far the network is the team's and the operator's; and the testnet's default
+  // acceptance, in the words the site uses.
+  assert.ok(card.description.includes('On Valun, an AI agent can agree jobs with agents other people run and pay with signed IOUs'));
+  assert.doesNotMatch(card.description, /AI agents run by different people agree/);
+  assert.ok(card.description.includes('So far almost every agent on the network is the team\'s or the operator\'s.'));
+  assert.ok(card.description.includes('On the testnet a new self-serve agent accepts any issuer\'s IOUs as payment by transfer, up to 0.04 tERG per issuer. Its client signs that acceptance by itself in every approval mode, and the issuer\'s client signs the issuer\'s consent the same way. Its owner can narrow whose IOUs it accepts under "Accept notes from" in the owner console.'));
 });
 
 // The budget card (lib/pilot/card.mjs) on the testnet: its amounts are nanoERG, its reasons and the agent page's line read
@@ -321,13 +630,21 @@ test('the budget card on the testnet: nanoERG amounts, reasons and the page line
     assert.equal(card.check, `https://valun-testnet.fly.dev/pilot/v1/participants/${amy.id}/check?amount={amount}&payee={payee}`);
     assert.equal(card.page, 'https://valun-testnet.fly.dev/agent/amy-payer');
     const c = await checkPayer(pilot, amy, {amount: 3_000_000, payee: bob});
-    assert.deepEqual([c.verdict, c.reasons], ['accept', ['Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 31000000 nanoERG (0.031 tERG) of 40000000 nanoERG (0.04 tERG) left.']]);
+    assert.deepEqual([c.verdict, c.payer_side.reasons], ['accept', ['Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 31000000 nanoERG (0.031 tERG) of 40000000 nanoERG (0.04 tERG) left.']]);
     const d = await checkPayer(pilot, amy, {amount: 6_000_000, payee: bob});
-    assert.deepEqual(d.reasons, ['Over its limit per deal: 6000000 nanoERG (0.006 tERG) is more than the 5000000 nanoERG (0.005 tERG) a deal its owner allows.']);
+    assert.deepEqual(d.payer_side.reasons, ['Over its limit per deal: 6000000 nanoERG (0.006 tERG) is more than the 5000000 nanoERG (0.005 tERG) a deal its owner allows.']);
+    // Fix inbox #87's shape on the testnet: bob's owner requires full coverage, amy holds nothing: bob's own check gives
+    // the step's verdict, decline, though amy's own side allows it.
+    pilot.setMandate(bob, {min_payer_coverage_pct: 100});
+    const own = await checkPayer(pilot, amy, {amount: 2_000_000, payee: bob, showCover: true});
+    assert.deepEqual([own.verdict, own.rule, own.payer_side.verdict, own.payee_side.verdict, own.payee_side.rule], ['decline', 'min_payer_coverage_pct', 'accept', 'decline', 'min_payer_coverage_pct']);
+    assert.deepEqual(own.reasons, ['Your side refuses it (min_payer_coverage_pct); its side allows it.', 'Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 31000000 nanoERG (0.031 tERG) of 40000000 nanoERG (0.04 tERG) left.']);
+    assert.match(own.payee_side.reasons[0], /^Your own limits refuse it \(min_payer_coverage_pct\): amy-payer's claims on the tracker \(0 nanoERG \(0 tERG\)\) cover 0% of what it would owe with this deal \(11000000 nanoERG \(0\.011 tERG\)\)/);
+    // The page says it as people read it, in tERG; the card (JSON) and the check keep nanoERG.
     const view = agents.agentView({id: amy.id, handle: amy.handle, joined_at: amy.created_at, agent_last_seen: null}, null, [], {now, card});
-    assert.equal(view.budget.line, 'Can commit up to 5000000 nanoERG (0.005 tERG) a deal and 40000000 nanoERG (0.04 tERG) in all for its owner · 31000000 nanoERG (0.031 tERG) left');
+    assert.equal(view.budget.line, 'Can commit up to 0.005 tERG a deal and 0.04 tERG in all for its owner · 0.031 tERG left');
     const description = agents.agentDescription(view);
-    assert.ok(description.length <= 300 && description.endsWith('Budget card: can commit up to 5000000 nanoERG (0.005 tERG) a deal and 40000000 nanoERG (0.04 tERG) in all for its owner; 31000000 nanoERG (0.031 tERG) left.'), description);
-    for (const text of [JSON.stringify(card), JSON.stringify(c), JSON.stringify(d), agents.renderAgentPage(view)]) assert.doesNotMatch(text, /\bPC\b|_PC"/);
+    assert.ok(description.length <= 300 && description.endsWith('Budget card: can commit up to 0.005 tERG a deal and 0.04 tERG in all for its owner; 0.031 tERG left.'), description);
+    for (const text of [JSON.stringify(card), JSON.stringify(c), JSON.stringify(d), JSON.stringify(own), agents.renderAgentPage(view)]) assert.doesNotMatch(text, /\bPC\b|_PC"/);
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });

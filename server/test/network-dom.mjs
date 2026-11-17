@@ -4,7 +4,14 @@
 // it in a context of its own (node:vm), with a fake fetch and timers that never fire, so a test decides when each read
 // answers; and the rules of a stylesheet. Not a browser: no layout and no cascade.
 import vm from 'node:vm';
+import fs from 'node:fs';
 import {Node, Text, Element as BaseElement} from './console-dom.mjs';
+
+// A page's local module imports (`import {...} from './who.js';`), inlined from public/ so the page runs as one script;
+// a re-export (`export {...};`) is dropped. Only flat, side-effect-free modules of public/ are imported this way.
+export const inlineLocalImports = js => js
+  .replace(/^import \{[^}]*\} from '\.\/([a-z0-9-]+\.js)';$/gm, (m, f) => fs.readFileSync(new URL(`../public/${f}`, import.meta.url), 'utf8'))
+  .replace(/^export \{[^}]*\};$/gm, '');
 
 export class Element extends BaseElement {
   appendChild(n) { this.append(n); return n; }
@@ -47,16 +54,17 @@ export function readBody(html) {
 // own: `fetch(path)` answers its reads; its timers and animation frames never fire (one poll, no repeats). The page sets
 // its next poll after each one, so unlike memory.js (test/memory-page.test.mjs) it does not run on this process's own
 // globals and timers. `setTimeout`: the page's, for a test that runs the next poll itself (it records what the page
-// sets; nothing fires by itself). Returns the page's document.
-export function runNetworkPage(js, body, fetch, {setTimeout = null} = {}) {
+// sets; nothing fires by itself). `globals`: more of the page's globals (navigator, for a test of its Copy buttons).
+// Returns the page's document.
+export function runNetworkPage(js, body, fetch, {setTimeout = null, globals = {}} = {}) {
   const never = () => 0;
   const document = {body, hidden: false, getElementById: id => body.all('*').find(e => e.id === id) ?? null,
     createElement: t => new Element(t), createElementNS: (ns, t) => new Element(t), createTextNode: t => new Text(t),
     querySelector: s => body.querySelector(s), querySelectorAll: s => body.querySelectorAll(s), addEventListener() {}};
   const context = vm.createContext({document, window: {}, fetch, console, performance, setTimeout: setTimeout ?? never, setInterval: never,
-    clearTimeout: never, clearInterval: never, requestAnimationFrame: never, ResizeObserver: class { observe() {} }});
-  // The module's exports are plain declarations in a script (it imports nothing).
-  vm.runInContext(js.replace(/^export /gm, ''), context, {filename: 'public/network.js'});
+    clearTimeout: never, clearInterval: never, requestAnimationFrame: never, ResizeObserver: class { observe() {} }, ...globals});
+  // The module's exports are plain declarations in a script; its local imports (public/who.js) are inlined first.
+  vm.runInContext(inlineLocalImports(js).replace(/^export /gm, ''), context, {filename: 'public/network.js'});
   return document;
 }
 

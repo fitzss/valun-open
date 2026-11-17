@@ -1,4 +1,5 @@
-// The Valun network's page and owner console (/pilot; the URL is the retired pilot's, kept for the links to it). It
+// The Valun owner console (/pilot#owner, the address the clients print; /pilot opens it too), with the network's facts
+// (#network) and joining with an invite (#join) beside it. The URL is the retired pilot's, kept for the links to it. It
 // describes the network the server runs, as GET /pilot/v1/info names it: its unit, and whether its tracker is on a
 // chain (the testnet: nanoERG on Ergo testnet; the retired pilot: PC, no chain).
 // Plain DOM. Every dynamic value is inserted as text (text nodes / textContent), never as HTML.
@@ -121,9 +122,9 @@ const CONN = {ok: null, since: null};
 function setConn(ok, detail = '') {
   if (CONN.ok !== ok) CONN.since = new Date();
   CONN.ok = ok;
-  const pill = $('#conn');
+  const pill = $('#conn'), said = ok ? 'server connected' : 'server unreachable';
   pill.className = `conn ${ok ? 'ok' : 'bad'}`;
-  pill.textContent = ok ? 'server connected' : 'server unreachable';
+  if (pill.textContent !== said) pill.textContent = said;   // a live region: it speaks when the state changes, not at every read
   pill.title = ok ? `last answer at ${new Date().toLocaleTimeString()}` : detail;
   const off = $('#offline');
   if (ok) { off.hidden = true; off.replaceChildren(); return; }
@@ -168,7 +169,8 @@ function showMsg(target, content, kind = '') { target.className = `msg ${kind}`.
 const showErr = (target, e, opts) => showMsg(target, errorView(e, opts), 'err');
 
 // ---------------------------------------------------------------- state
-const S = {info: null, dir: [], dirLoaded: false, ledger: null, token: null, owner: null, ownerAt: null, mandateDirty: false, flash: null, mandateFlash: null, busy: false, loadedNet: false, oneTime: null};
+const S = {info: null, dir: [], dirLoaded: false, ledger: null, token: null, owner: null, ownerAt: null, mandateDirty: false, flash: null, mandateFlash: null, busy: false, loadedNet: false, oneTime: null,
+  signIn: null};       // a sign-in waiting for the owner view: where the page was ({y}), for a refused token
 const TOKEN_KEY = 'valun-pilot-owner-token';
 // sessionStorage only: per tab. The browser may also write it into its profile on disk (to restore tabs), so "Forget
 // token" (sess.clear) is what removes it; closing the tab is not enough.
@@ -216,18 +218,19 @@ function renderNetworkCopy() {
   put('#fact-unit', ...(pilot ? [el('b', {}, 'PC = pilot credits.'), ' Simulated units with no monetary value. Nothing backs them, and they cannot be redeemed: there is no chain and no reserve.']
     : testnet ? [el('b', {}, 'Amounts are nanoERG of Ergo testnet.'), ' 1 tERG = 1,000,000,000 nanoERG. tERG are test coins with no monetary value. A creditor can redeem a credit note on Ergo testnet against its issuer\'s tERG reserve, if the issuer posted one.']
       : [el('b', {}, `Amounts are in ${i.unit}.`)]));
-  put('#fact-payment', el('b', {}, 'Payment = a credit note.'), ' When a payer accepts a delivery, its agent signs a Basis note (a running IOU) to the payee. ',
+  put('#fact-payment', el('b', {}, 'Payment is a credit note: a debt the payer owes.'), ' When a payer accepts a delivery, its agent signs a Basis note (a running IOU) to the payee. ',
     ...(pilot ? ['A real Basis tracker records the note. The tracker has ', el('b', {}, 'no blockchain connection'), ', so every note stays ', el('code', {}, 'local_only'),
       '. An issued note is an outstanding obligation: nothing in the pilot is settled (no redemption, reserve or clearing).']
-      : [`A Basis tracker records the note${testnet && chain ? ' and anchors its state on Ergo testnet' : ''}. An issued note is an outstanding obligation${testnet ? ' until its creditor redeems it' : ''}${circ ? '; with circulating credit it can also move to another creditor (debt transfer) or be cancelled in a cycle of debts (set-off)' : ''}.`]));
+      : [`A Basis tracker records the note${testnet && chain ? ' and anchors its state on Ergo testnet' : ''}. An issued note is an outstanding obligation${testnet ? ' until its creditor redeems it' : ''}${circ ? '; with circulating credit it can also move to another creditor (debt transfer), or be lowered by a set-off when debts form a loop (every debt in the loop falls by the same amount)' : ''}.`]));
   put('#deal-end', pilot ? 'It then stays outstanding: the pilot settles nothing.'
     : testnet ? `It then stays outstanding until its creditor redeems it on Ergo testnet${circ ? ', unless it moves to another creditor or is cleared by set-off first' : ''}.` : 'It then stays outstanding.');
   for (const t of document.querySelectorAll('[data-tracker-tag]')) { t.textContent = NET.trackerTag(); t.setAttribute('title', NET.trackerTitle()); }
   put('#ledger-hint', `Read from the ${pilot ? "pilot's" : "network's"} Basis tracker. One running note per payer→payee pair: the payer owes, the payee holds the claim. `,
     ...(pilot ? [el('code', {}, 'local_only'), ' means nothing is committed on any chain.']
       : testnet ? [`${chain ? 'The tracker anchors its state on Ergo testnet. ' : ''}Redeemed: what the creditor redeemed against the issuer's tERG reserve.`] : []));
-  put('#net-footer-facts', `Valun ${NET.name()} `, el('code', {}, i.network), ' · experimental · ',
-    pilot ? 'PC have no monetary value · no blockchain connected' : testnet ? `nanoERG of Ergo testnet: test coins with no monetary value${chain ? ' · tracker anchored on Ergo testnet' : ''}` : `amounts in ${i.unit}`);
+  // The footer's line: the one every public page shows on the testnet (public/pilot.html); another network's own.
+  put('#net-footer-facts', ...(testnet ? ['Ergo testnet · test coins only, with no monetary value']
+    : [`Valun ${NET.name()} `, el('code', {}, i.network), ' · experimental · ', pilot ? 'PC have no monetary value · no blockchain connected' : `amounts in ${i.unit}`]));
   updateBadge();
 }
 const PEOPLE = new Map();
@@ -339,7 +342,7 @@ function renderInfo() {
       ['Denomination', [code(i.denomination), note('A synthetic token id the pilot tracker serves to label PC. It exists on no chain.')]],
       ['Participants with an agent key', String(i.participants)],
       Array.isArray(i.features) && ['Features', [el('code', {class: 'mono'}, i.features.join(', ')), el('div', {class: 'tiny'}, i.features.includes('circulation/1')
-        ? 'Circulating credit is on: a payer may pay with a note it holds (debt transfer), and cycles of debt are cancelled by set-off. Every party signs what changes its own notes.'
+        ? 'Circulating credit is on: a payer may pay with a note it holds (debt transfer), and in a loop of debts a set-off lowers every debt by the same amount, the smallest one in it. Every party signs what changes its own notes.'
         : 'Bound notes: each credit note is signed together with the pair\'s current total, so the tracker records it only while that total is unchanged.')]],
     ]),
     el('p', {class: 'quote'}, i.description),
@@ -368,7 +371,7 @@ function clearingFacts(c) {
       ['Set-off proposals', `${p.collecting ?? 0} collecting; last 7 days: ${p.applied ?? 0} applied, ${p.stale ?? 0} superseded, ${p.expired ?? 0} expired, ${p.refused ?? 0} refused, ${p.failed ?? 0} failed`],
       ['Engine', `${c.engine?.enabled ? 'running' : 'not running'}${c.engine?.last_run ? `; last batch ${whenRel(c.engine.last_run.at)}` : ''}`],
     ]),
-    el('p', {class: 'tiny'}, `As of ${when(c.as_of)}. A set-off cancels a cycle of debt: every member's net position stays the same. ${NET.pilot()
+    el('p', {class: 'tiny'}, `As of ${when(c.as_of)}. A set-off lowers every debt in a loop by the same amount: every member's net position stays the same. ${NET.pilot()
       ? 'Nothing is redeemed and PC have no value.' : NET.testnet() ? 'A creditor can also redeem a note on Ergo testnet against its issuer\'s tERG reserve; tERG have no monetary value.' : ''}`.trim()));
 }
 
@@ -475,29 +478,70 @@ $('#join-form').addEventListener('submit', async ev => {
 });
 
 // ================================================================= owner console
+// The owner tab's layout (public/pilot.css): signed out, the guide at its top (public/pilot.html #owner-guide) is open
+// beside the sign-in form; signed in, it folds to its heading, one click from open again (S.guideOpen: the owner's
+// choice, kept while signed in).
+// The deal view (`guide` false) leaves the guide out.
+function ownerLayout(signedIn, {guide = true} = {}) {
+  const tab = $('#tab-owner'), body = $('#guide-body'), toggle = $('#guide-toggle'), box = $('#owner-guide');
+  tab.classList.toggle('signed-in', signedIn); tab.classList.toggle('signed-out', !signedIn);
+  if (box) box.hidden = !guide;
+  const jump = $('#to-signin');          // narrow screens show the form below the guide: one step down to it
+  if (jump) jump.hidden = signedIn;
+  if (!body || !toggle) return;
+  const open = !signedIn || !!S.guideOpen;
+  body.hidden = !open; toggle.hidden = !signedIn;
+  toggle.setAttribute('aria-expanded', String(open)); toggle.textContent = open ? 'Hide the guide' : 'Show the guide';
+}
+// The token field says when the last token was refused (aria-invalid, and described by the reason too) until it is typed
+// in again.
+function markToken(invalid) {
+  const f = $('#owner-token');
+  if (!f) return;
+  if (invalid) f.setAttribute('aria-invalid', 'true'); else f.removeAttribute('aria-invalid');
+  f.setAttribute('aria-describedby', invalid ? 'login-msg token-where token-never' : 'token-where token-never');
+}
+// A token the server refused: the form says why, and the field takes focus. A sign-in moved the page (while the owner
+// view is read, the form is hidden and the guide folded, so the page grows shorter): it goes back to where it was, the
+// form and its message in view as before. A refusal nobody just asked for (a token kept in this tab, or one replaced
+// elsewhere) brings the form into view.
+function refuseToken(message) {
+  showMsg($('#login-msg'), message, 'err'); markToken(true);
+  const back = S.signIn; S.signIn = null;
+  if (back) window.scrollTo?.({top: back.y, behavior: 'instant'});
+  else $('#owner-login')?.scrollIntoView?.({block: 'start'});
+  $('#owner-token')?.focus({preventScroll: true});
+}
 function showLogin(message = '') {
   $('#owner-console').hidden = true; $('#deal-view').hidden = true; $('#owner-login').hidden = false;
-  if (message) showMsg($('#login-msg'), message, 'err');
+  S.guideOpen = false; ownerLayout(false);
+  if (message) refuseToken(message); else markToken(false);
 }
 $('#login-form').addEventListener('submit', ev => {
   ev.preventDefault();
   const f = new FormData(ev.target), tok = String(f.get('token') || '').trim(), out = $('#login-msg');
-  if (/^vpa_/.test(tok)) { showMsg(out, 'That is an agent token (vpa_…). The owner console needs the owner token (vpo_…) you received when you joined. Keep the two apart.', 'err'); return; }
-  if (!/^vpo_/.test(tok)) { showMsg(out, 'Owner tokens start with vpo_.', 'err'); return; }
+  // Not an owner token: refused here, before anything is sent; the page has not moved, and the field keeps focus.
+  const wrong = /^vpa_/.test(tok) ? 'That is an agent token (vpa_…). The owner console needs the owner token (vpo_…) you received when you joined. Keep the two apart.'
+    : !/^vpo_/.test(tok) ? 'Owner tokens start with vpo_.' : null;
+  if (wrong) { showMsg(out, wrong, 'err'); markToken(true); $('#owner-token')?.focus({preventScroll: true}); return; }
+  S.signIn = {y: window.scrollY ?? 0};      // where the page was, for a refusal (refuseToken)
   useToken(tok, f.get('keep') === 'on');
-  ev.target.reset(); showMsg(out, '');
+  ev.target.reset(); showMsg(out, ''); markToken(false);
   route();
 });
+$('#owner-token')?.addEventListener('input', () => markToken(false));
 
 async function showConsole() {
   $('#deal-view').hidden = true;
   if (!S.token) { showLogin(); return; }
-  $('#owner-login').hidden = true; $('#owner-console').hidden = false;
-  if (S.owner) renderConsole(); else $('#owner-console').replaceChildren(el('div', {class: 'card'}, el('p', {class: 'hint'}, 'Loading the owner console…')));
+  $('#owner-login').hidden = true; $('#owner-console').hidden = false; ownerLayout(true);
+  if (S.owner) renderConsole();
+  else $('#owner-console').replaceChildren(el('div', {class: 'card loading', role: 'status'}, el('p', {class: 'hint'}, 'Loading your console…')));
   await loadOwner();
 }
 async function loadOwner({quiet = false} = {}) {
   if (!S.token) return;
+  const signIn = S.signIn;              // a sign-in just now, which this read answers
   try {
     const [o, dir] = await Promise.all([api('GET', '/owner', {token: S.token}), api('GET', '/participants').catch(() => null),
       S.info ? null : pollInfo()]);
@@ -514,11 +558,17 @@ async function loadOwner({quiet = false} = {}) {
     if (ot && (ag.enrolled || !ag.enrollment_pending || ag.enrollment_expires_at !== ot.expires_at || !(Date.parse(ot.expires_at) > Date.now()))) clearOneTime();
     updateBadge();
     if (currentView() === 'console') renderConsole();
+    // Signed in: the form that held focus is gone, so focus goes to the console's first heading (its agent's name).
+    if (signIn && S.signIn === signIn) { S.signIn = null; if (currentView() === 'console') $('#owner-console h2')?.focus(); }
   } catch (e) {
-    if (e.status === 401) { forgetToken(); if (currentRoute().tab === 'owner') showLogin('That owner token is not valid on this server (HTTP 401). It has been removed from this tab.'); return; }
+    if (e.status === 401) { forgetToken(); if (currentRoute().tab === 'owner') showLogin('That owner token is not valid on this server (HTTP 401). It has been removed from this tab.'); S.signIn = null; return; }
+    if (signIn && S.signIn === signIn) S.signIn = null;
     if (e.kind === 'network' && S.owner) return;               // keep the last data; the banner says it may be stale
-    if (!quiet && currentView() === 'console') $('#owner-console').replaceChildren(el('div', {class: 'card'}, el('h2', {}, 'Owner console'), el('div', {class: 'msg err'}, errorView(e)),
-      el('div', {class: 'actions'}, el('button', {type: 'button', class: 'secondary', onclick: () => loadOwner()}, 'Try again'), el('button', {type: 'button', class: 'secondary', onclick: signOut}, 'Use another token'))));
+    if (!quiet && currentView() === 'console') $('#owner-console').replaceChildren(el('div', {class: 'card load-error'}, el('h2', {}, 'Your console could not be loaded'),
+      el('p', {class: 'hint'}, `${e.kind === 'network' ? 'The Valun server did not answer.' : 'The Valun server answered with an error.'} Nothing was changed.`),
+      el('div', {class: 'msg err', role: 'alert'}, errorView(e)),
+      el('div', {class: 'actions'}, el('button', {type: 'button', class: 'secondary', onclick: () => loadOwner()}, 'Try again'), el('button', {type: 'button', class: 'secondary', onclick: signOut}, 'Use another token')),
+      el('p', {class: 'tiny'}, 'If it keeps failing, ', el('a', {href: '/start#report'}, 'report a problem'), ' with the error above.')));
   }
 }
 function signOut() { forgetToken(); route(); }
@@ -528,7 +578,7 @@ const unresolvedPayments = o => (o?.deals || []).filter(d => d.your_role === 'pa
 function updateBadge() {
   const n = S.owner ? S.owner.approvals.filter(a => a.state === 'pending').length + unresolvedPayments(S.owner).length : 0, b = $('#pending-badge');
   b.textContent = n ? `${n} pending` : ''; b.hidden = !n;
-  document.title = `${n ? `(${n}) ` : ''}Valun · ${NET.name()} (experimental)`;
+  document.title = `${n ? `(${n}) ` : ''}Valun owner console`;
 }
 function ownerBusy() {
   if (S.busy) return true;
@@ -566,16 +616,15 @@ function identityBar(o) {
   yes.addEventListener('click', () => rotateOwnerToken(yes, out));
   const nt = S.newOwnerToken;
   return el('div', {class: 'card idbar'},
-    el('div', {class: 'idmain'}, el('h2', {}, me.display_name || me.handle),
+    el('div', {class: 'idmain'}, el('h2', {tabindex: '-1'}, me.display_name || me.handle),      // focus lands here after a sign-in
       el('div', {class: 'tiny'}, `${me.handle} · ${me.id} · operated by ${me.operator}`)),
     el('div', {class: 'actions'}, el('span', {class: 'tiny'}, `updated ${S.ownerAt.toLocaleTimeString()}`),
       el('button', {type: 'button', class: 'secondary btn-small', onclick: () => { S.consentsUnavailable = false; loadOwner(); }}, 'Refresh'),
       el('button', {type: 'button', class: 'secondary btn-small', onclick: () => { confirm.hidden = false; }}, 'New owner token…'),
       el('button', {type: 'button', class: 'secondary btn-small', onclick: signOut}, 'Forget token')),
-    el('p', {class: 'hint'}, 'You set what your agent may do and decide the commitments it brings to you. You cannot sign deal acts here: your agent signs them with its own key. ',
-      kept ? "Owner token kept for this tab's session (sessionStorage). Your browser may also save it in its profile on disk and bring it back if the tab is restored, even after the browser closes: click Forget token when you finish, especially on a shared computer."
-        : 'Owner token kept in memory only (gone on reload).',
-      o.owner_token_rotated_at ? ` Owner token last replaced ${whenRel(o.owner_token_rotated_at)}.` : ''),
+    el('p', {class: 'hint'}, kept ? "Your owner token is kept for this tab's session (sessionStorage). Your browser may also save it on disk and restore it with the tab, even after the browser closes: click Forget token when you finish, above all on a shared computer."
+        : 'Your owner token is kept in memory only: it is gone when you reload.',
+      o.owner_token_rotated_at ? ` Owner token last replaced ${whenRel(o.owner_token_rotated_at)}${o.owner_token_rotated_by === 'operator' ? ' by the operator' : ''}.` : ''),
     confirm, out,
     nt ? el('div', {class: 'card once'}, el('h2', {}, 'Your new owner token'),
       el('p', {class: 'warnline'}, 'Shown once: the server keeps only a hash. Store it now; the previous owner token no longer works.'),
@@ -603,9 +652,16 @@ function approvalsCard(pending, kept = {}) {
     flash ? el('div', {class: `msg ${flash.ok ? 'ok' : 'err'} flash`, role: 'status'}, flash.text) : null,
     pending.length
       ? el('p', {class: 'hint'}, `Your agent signed these, but your mandate says they need you (${'review_deliveries' in S.owner.mandate ? `a price above approve_above, or review_deliveries for credit notes${S.owner.credit_policy ? ' and payments by transfer' : ''}` : 'the price is above approve_above'}). None of them takes effect until you decide. Check the exact terms.`)
-      : el('p', {class: 'hint'}, `Nothing is waiting for you. Commitments priced above ${amt(S.owner.mandate.approve_above)} (approve_above) will appear here first.`),
+      : el('p', {class: 'hint empty'}, nothingWaiting(S.owner.mandate)),
     ...pending.map(a => (a.kind === 'guarantee_offer' ? guaranteeApprovalItem : approvalItem)(a, kept[a.id] || {})));
 }
+// The empty list says what would wait here, by the owner's mandate: an offer, acceptance or guarantee for more than
+// approve_above (0: every one; a guarantee by its cap), and with review_deliveries every delivery the agent accepts,
+// with the payment it signs for it (a credit note, or a payment by transfer).
+const nothingWaiting = m => `Nothing is waiting for you. ${m.approve_above > 0
+  ? `An offer, acceptance or guarantee your agent signs for more than ${amt(m.approve_above)} (approve_above) waits here before it takes effect`
+  : 'Every offer, acceptance and guarantee your agent signs waits here before it takes effect (approve_above is 0)'}${m.review_deliveries
+  ? ', and so does every delivery it accepts, with the payment it signs for it (review_deliveries).' : '.'}`;
 
 // What exactly is being approved. The server returns it with each approval: `subject` (the exact terms or credit note,
 // the agent's signature, the text it signed, the server's mandate check) and `effect` (what approving and rejecting do).
@@ -659,8 +715,20 @@ function mandateCheck(a, t) {
   const server = a.mandate_check || null;   // the server's own check numbers from when the agent acted
   if (server && Array.isArray(server.checks)) {
     box.append(el('ul', {class: 'checks'}, ...server.checks.map(c => {
-      if (c.rule === 'min_payer_coverage_pct') return el('li', {class: c.coverage_pct >= c.limit ? 'good' : 'bad'},
-        `min_payer_coverage_pct: the payer's claims on the tracker ${amt(c.payer_claims_on_tracker)} cover ${c.coverage_pct}% of what it would owe (on the tracker ${amt(c.payer_owes_on_tracker)} + agreed ${amt(c.payer_committed)} + this deal ${amt(c.this_deal)}); your minimum is ${c.limit}%`);
+      // What counts (lib/pilot/core.mjs checkMandate): the payer's reserve, its claims at what stands behind them (with
+      // circulating credit, payer_claims_grounded) and the guarantees of its debt to you; a payer you trust is covered.
+      if (c.rule === 'min_payer_coverage_pct' || c.rule === 'min_backer_coverage_pct') {
+        const grounded = c.payer_claims_grounded != null && c.payer_claims_grounded !== c.payer_claims_on_tracker ? `, of which ${amt(c.payer_claims_grounded)} count` : '';
+        // The guarantees' part is what backers already paid toward the debt and what can still be called (guarantees.mjs
+        // backingFor: the cover the percentage counts), each shown when it is not 0.
+        const backed = [c.backing_for_you ? `${amt(c.backing_for_you)} still callable` : null,
+          c.already_paid_by_backers ? `${amt(c.already_paid_by_backers)} already paid by backers` : null].filter(Boolean);
+        const parts = [c.payer_reserve ? `reserve (${amt(c.payer_reserve)})` : null, `claims on the tracker (${amt(c.payer_claims_on_tracker)}${grounded})`,
+          backed.length ? `guarantees of its debt to you (${backed.join(', ')})` : null].filter(Boolean);
+        const listed = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
+        return el('li', {class: c.coverage_pct >= c.limit ? 'good' : 'bad'},
+          `${c.rule}: the ${c.rule === 'min_backer_coverage_pct' ? 'backer' : 'payer'}'s ${listed} cover ${c.coverage_pct}% of what it would owe (on the tracker ${amt(c.payer_owes_on_tracker)} + agreed ${amt(c.payer_committed)}${c.payer_guaranteed ? ` + its guarantees ${amt(c.payer_guaranteed)}` : ''} + this deal ${amt(c.this_deal)})${c.payer_trusted_by_owner ? '; you list it under Accept notes from, so it counts as covered' : ''}; your minimum is ${c.limit}%`);
+      }
       // Circulating credit (release v16): the credit rules on the payer, as the issuer of the claim you would hold.
       if (c.rule === 'refuse_notes_from') return el('li', {class: c.issuer_listed ? 'bad' : 'good'}, `refuse_notes_from: the payer is ${c.issuer_listed ? '' : 'not '}on your list of issuers you refuse`);
       if (c.rule === 'accept_notes_from') return el('li', {class: 'good'}, `accept_notes_from: ${c.any ? 'notes of any issuer are accepted' : 'the issuer is on your list'}`);
@@ -695,7 +763,8 @@ function mandateCheck(a, t) {
     const min = m.min_price_as_payee || 0;
     items.push(li(m.may_accept_credit, `you do the work for a credit note in this deal: may_accept_credit is ${m.may_accept_credit ? 'on' : 'OFF'}`),
       'min_price_as_payee' in m ? li(price >= min, `price ${amt(price)} ${price >= min ? 'at or above' : 'BELOW'} min_price_as_payee ${amt(min)}`) : null,
-      m.min_payer_coverage_pct > 0 ? li(null, `min_payer_coverage_pct ${m.min_payer_coverage_pct}%: the server checks that ${otherH}'s claims on the tracker cover at least that share of what it would owe`) : null,
+      m.min_payer_coverage_pct > 0 ? li(null, `min_payer_coverage_pct ${m.min_payer_coverage_pct}%: the server checks that ${circulationOn()
+        ? `what stands behind ${otherH} (its reserve, its claims at what backs them, and the guarantees of its debt to you) covers` : `${otherH}'s claims on the tracker cover`} at least that share of what it would owe`) : null,
       li(price <= m.max_accept_per_deal, `price ${amt(price)} ${price <= m.max_accept_per_deal ? 'within' : 'ABOVE'} max_accept_per_deal ${amt(m.max_accept_per_deal)}`),
       li(claim + price > m.max_accept_per_issuer ? false : null, `max_accept_per_issuer ${amt(m.max_accept_per_issuer)}: ${otherH} owes you ${amt(claim)} on the tracker now, ${amt(claim + price)} with this deal, before agreed deals without a credit note yet and open offers are added`));
   }
@@ -893,7 +962,14 @@ async function decide(a, decision, noteInput, out, buttons, reenable) {
     reenable();
   }
 }
+// What the owner's decision did, as the server answered it. After an approval the agent learns of it only when it next
+// checks (nothing tells it), so the owner is asked to tell it.
+const TELL_AGENT = 'Tell your agent: it carries on when it next checks.';
 function outcomeText(r) {
+  const said = decisionText(r);
+  return r.approval?.state === 'approved' ? `${said} ${TELL_AGENT}` : said;
+}
+function decisionText(r) {
   if (r.approval?.kind === 'guarantee_offer') {
     const a = r.approval, g = r.guarantee;
     if (a.state !== 'approved') return `Rejected (${a.id}). Guarantee ${a.guarantee_id} was not offered.`;
@@ -1012,6 +1088,28 @@ function openOffersBox(o) {
 }
 
 // ---------------------------------------------------------------- position, deals, decided approvals
+// What the position's figures are, in this page's words: a set-off clears debts in a loop and never settles them; only a
+// redemption pays a claim. The server's position.meaning documents its API fields (its `settled` sums
+// set-offs and redemptions), so it is not shown here.
+function positionMeaning(pos) {
+  const circ = pos.gross !== undefined, testnet = NET.testnet();
+  return ['These are outstanding IOUs (credit notes), as the tracker records them: one running total per pair.',
+    circ ? 'A payment by transfer can move a claim to another creditor, and a set-off lowers every debt in a loop by the same amount.' : null,
+    testnet ? "A claim is paid only when its creditor redeems it on Ergo testnet against its issuer's tERG reserve, if the issuer posted one."
+      : NET.pilot() ? 'Nothing is redeemed: the pilot has no reserve.' : null].filter(Boolean).join(' ');
+}
+// What set-offs cleared and what was redeemed on Ergo testnet: two rows, never summed as "settled".
+// cleared_by_setoff counts one side: a set-off lowers as much of the participant's claims as of its debts.
+function clearedAndRedeemed(pos) {
+  const u = pos.unit, onChain = NET.testnet() && NET.onChain();
+  return [
+    pos.cleared_by_setoff !== undefined && ['Cleared by set-off', [`${amt(pos.cleared_by_setoff, u)} of your debts cleared in loops, and as much of your claims`,
+      onChain ? [' (each set-off is committed by the next tracker box on Ergo testnet, and is ', el('a', {href: '/trust#netting'}, 'not final'), ')'] : '']],
+    (pos.redeemed_claims !== undefined || pos.redeemed_debts !== undefined) && ['Redeemed on Ergo testnet',
+      `${amt(pos.redeemed_claims ?? 0, u)} of your claims, which you redeemed; ${amt(pos.redeemed_debts ?? 0, u)} of your debts, redeemed from your reserve`],
+  ];
+}
+const kvOrNone = rows => (rows.some(Boolean) ? kv(rows) : null);
 function positionCard(pos, o = null) {
   const stat = (label, n, sub) => el('div', {class: 'stat'}, el('div', {class: 'l'}, label), el('div', {class: 'n'}, amt(n, pos.unit)), el('div', {class: 'l'}, sub));
   const COUNT_LABEL = {credit_notes_issued: 'credit notes issued', paid: 'credit notes issued', open: 'open or awaiting an owner',
@@ -1031,13 +1129,12 @@ function positionCard(pos, o = null) {
       : el('div', {class: 'posgrid'}, stat('Claims held', pos.claims_held, 'others owe you'), stat('You owe', pos.owes, 'notes your agent signed'), stat('Net', pos.net, 'claims minus owes')),
     pos.claims?.length ? kv(pos.claims.map(c => [`${c.from ?? 'unknown'} owes you`, [amt(c.amount, pos.unit), opRun(c)]])) : null,
     pos.debts?.length ? kv(pos.debts.map(c => [`you owe ${c.to ?? 'unknown'}`, [amt(c.amount, pos.unit), opRun(c)]])) : null,
-    el('p', {class: 'tiny'}, pos.meaning || 'These are outstanding credit notes, as the tracker records them.'),
-    pos.settled != null ? kv([['Settled', [amt(pos.settled, pos.unit), pos.settled_how ? el('span', {class: 'tiny'}, ` (${pos.settled_how})`) : null]]]) : null,
-    circ ? kv([
+    el('p', {class: 'tiny'}, positionMeaning(pos)),
+    kvOrNone([...clearedAndRedeemed(pos), ...(circ ? [
       ['Moved by transfer', `${amt(pos.transferred_in, pos.unit)} to you, ${amt(pos.transferred_out, pos.unit)} from you (your claims spent); ${amt(pos.novated_as_issuer, pos.unit)} of your own debt moved to another creditor`],
       pos.frozen_claims ? ['Under earlier keys', `${amt(pos.frozen_claims, pos.unit)}: frozen (they still count; they cannot be spent or cleared)`] : null,
       pos.pending && ['Under way', `${count(pos.pending.paying_by_transfer, 'payment by transfer', 'payments by transfer')} you make; ${count(pos.pending.consents_waiting_for_you, 'consent', 'consents')} waiting for your agent's client; ${pos.pending.consents_waiting_for_others} waiting for others`],
-    ]) : null,
+    ] : [])]),
     pos.spendable_notes?.length ? [el('div', {class: 'stitle'}, 'Notes you hold that could pay a deal ', SRC.basis(), ' ', SRC.valun()),
       tableWrap(el('table', {class: 'tbl'}, thead(['issuer (owes you)', 'outstanding', 'held by a payment', 'spendable now', 'the issuer signs']),
         el('tbody', {}, ...pos.spendable_notes.map(n => el('tr', {}, el('td', {}, n.issuer_handle ?? handleOf(n.issuer_id), el('div', {class: 'tiny'}, keyFp(n.issuer_pubkey))),
@@ -1186,7 +1283,8 @@ function dealsCard(deals) {
           el('td', {}, d.counterparty?.handle ?? '–'), el('td', {}, d.your_role), el('td', {}, price != null ? amt(price) : '–'),
           el('td', {}, dealChip(d), ' ', overdueChip(d)), el('td', {class: 'tiny'}, last ? `${EVENT_SHORT[last.event] || last.event}, ${rel(last.at)}` : '–'));
       }))))
-      : el('p', {class: 'hint'}, 'No deals yet. Your agent proposes and answers deals with its own key; they appear here.'));
+      : el('p', {class: 'hint empty'}, 'No deals yet. Your agent proposes and answers deals with its own key, and each one appears here. For a first one, see ',
+        el('a', {href: '/start#agent'}, 'Start'), '.'));
 }
 function decidedCard(decided) {
   if (!decided.length) return null;
@@ -1204,13 +1302,23 @@ function decidedCard(decided) {
 // deal), except a percentage. The inputs have no maximum: the server checks each limit against the network's own bound
 // and says so (400 invalid_field). Fix inbox #72: a maximum of 100000, PC-sized, made every testnet limit an invalid
 // input, and its arrow keys and spinner set it to 100000.
-const NUM_FIELDS = [   // [name, label, explanation, optional: shown only when the server's mandate has the field, unit: '%' for a percentage]
+// min_payer_coverage_pct as the server counts it (lib/pilot/core.mjs checkMandate, lib/pilot/grounding.mjs): with
+// circulating credit, what is grounded (the payer's reserve, its claims and the guarantees of its debt to you at what
+// stands behind them; a payer the owner lists under accept_notes_from counts as covered); without it, its claims at face
+// value.
+const coverageExplain = () => {
+  const keep = " It is still the payer's own promise: nothing it holds is transferred to you. 0 = no check; 100 = fully covered.", t = NET.testnet();
+  return circulationOn()
+    ? `Your agent may accept a credit note only from a payer whose own ${t ? 'tERG reserve, ' : ''}claims and guarantees of its debt to you cover at least this percentage of everything it would owe, this deal included. A claim or a guarantee counts only as far as ${t ? 'a reserve on Ergo testnet, or an issuer you list under Accept notes from, stands' : 'an issuer you list under Accept notes from stands'} behind it; a payer you list there counts as covered.${keep}`
+    : `Your agent may accept a credit note only from a payer whose own claims on the tracker, at face value, cover at least this percentage of everything it would owe, this deal included.${keep}`;
+};
+const NUM_FIELDS = [   // [name, label, explanation (or a function that writes it), optional: shown only when the server's mandate has the field, unit: '%' for a percentage]
   ['max_issue_per_deal', 'Max credit note per deal (as payer)', 'The largest price your agent may agree to owe in one deal.'],
   ['max_issue_outstanding', 'Max you may owe in total', 'Cap on what you could owe: what you owe on the tracker + agreed deals whose credit note is not issued yet + your agent\'s open offers + the new deal.'],
   ['max_accept_per_deal', 'Max credit note per deal (as payee)', 'The largest price your agent may accept as a credit note for doing work in one deal.'],
   ['max_accept_per_issuer', 'Max claim on any one payer', 'Cap on what one payer could owe you: their notes to you on the tracker + agreed deals whose credit note is not issued yet + open offers + the new deal.'],
   ['min_price_as_payee', 'Min price to work for (min_price_as_payee)', 'Your agent may not commit you to do work in one deal for less than this. 0 = no minimum.', true],
-  ['min_payer_coverage_pct', 'Min payer coverage (min_payer_coverage_pct)', "Your agent may accept a credit note only from a payer whose own claims on the tracker cover at least this percentage of everything it would owe, this deal included. It is still the payer's own promise: nothing it holds is transferred to you. 0 = no check; 100 = fully covered.", true, '%'],
+  ['min_payer_coverage_pct', 'Min payer coverage (min_payer_coverage_pct)', coverageExplain, true, '%'],
   ['approve_above', 'Ask me above (approve_above)', 'A commitment (a proposal, counter-offer or acceptance) priced above this waits for your approval. 0 = every commitment waits for you.'],
 ];
 const numFields = m => NUM_FIELDS.filter(([name, , , optional]) => !optional || name in m);
@@ -1237,7 +1345,7 @@ const toLocalInput = iso => { const d = new Date(iso), p = n => String(n).padSta
 // true; max_claims_total 40 for a sandbox participant). Only fields the owner changes are sent.
 const CIRC_FIELDS = ['auto_clear', 'novate_own_debt', 'accept_transfers', 'accept_notes_from', 'refuse_notes_from', 'pay_with_held_notes'];
 const CIRC_BOOL = [
-  ['auto_clear', 'Clear by set-off (auto_clear)', "Your agent's client may sign set-offs by itself: a cycle of debts is cancelled at once, and nobody's net position changes."],
+  ['auto_clear', 'Clear by set-off (auto_clear)', "Your agent's client may sign set-offs by itself: once every member of a loop of debts signs, every debt in it falls by the same amount, the smallest one in it, and nobody's net position changes."],
   ['novate_own_debt', 'Let your debt move (novate_own_debt)', "Your agent's client may sign, as issuer, a payment by transfer that moves part of your debt from one creditor to another: what you owe in total does not change."],
   ['accept_transfers', 'Accept payment by transfer (accept_transfers)', "You may be paid with another participant's debt (its note moves to you), only from the issuers allowed below and within your limits."],
   ['accept_operator_issuers', 'Accept notes issued with operator-held keys (accept_operator_issuers)', 'Off: you take no claim on a participant the server runs (the sandbox agents), as payee of a deal or by transfer.'],
@@ -1276,7 +1384,11 @@ function circulationFields(cp, others) {
       el('label', {class: 'check'}, el('input', {type: 'radio', name: 'anf_mode', value: 'any', checked: cp.accept_notes_from === 'any'}), 'any issuer'),
       el('label', {class: 'check'}, el('input', {type: 'radio', name: 'anf_mode', value: 'list', checked: cp.accept_notes_from !== 'any'}), 'only those ticked here:'),
       el('div', {class: 'cplist'}, listed('anf', cp.accept_notes_from)),
-      el('span', {class: 'explain'}, 'Whose debt you may be paid with by transfer. Your counterparties list does not imply it: ticking none accepts no transfer.')),
+      // The testnet's default for a self-serve joiner (lib/pilot/core.mjs joinSandbox, SANDBOX_CIRCULATION 'any' within
+      // SANDBOX_CAPS; valun 0.7.1's SANDBOX_CONSENT_POLICY signs as_new_creditor and as_issuer in every approval mode, each
+      // client for its own key only).
+      el('span', {class: 'explain'}, 'Whose debt you may be paid with by transfer. Your counterparties list does not imply it: ticking none accepts no transfer.',
+        NET.testnet() ? " On the testnet a new self-serve agent accepts any issuer's IOUs as payment by transfer, up to 0.04 tERG per issuer. Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way. You can narrow whose IOUs your agent accepts here, with “only those ticked here”." : '')),
     el('fieldset', {class: 'cps'}, el('legend', {}, 'Refuse notes from (refuse_notes_from)'),
       el('div', {class: 'cplist'}, listed('rnf', cp.refuse_notes_from)),
       el('span', {class: 'explain'}, 'You take no claim on these participants at all: not as payee of a deal with them, not by transfer.'))];
@@ -1308,14 +1420,16 @@ function mandateCard(o) {
   const field = (input, label, explain) => el('label', {}, label, input, el('span', {class: 'explain'}, explain));
   const checkField = (name, label, explain) => el('div', {class: 'field'}, el('label', {class: 'check'}, el('input', {type: 'checkbox', name, checked: !!m[name]}), label), el('span', {class: 'explain'}, explain));
   const form = el('form', {class: 'form', id: 'mandate-form', novalidate: true, autocomplete: 'off'},
-    field(el('textarea', {name: 'objective', maxlength: 1000, rows: 3}, m.objective || ''), 'Objective', 'What the agent is for, in your words. Your agent can read it; the server does not enforce it.'),
+    field(el('textarea', {name: 'objective', maxlength: 1000, rows: 3}, m.objective || ''), 'Objective', `What the agent is for, in your words. Your agent can read it; the server does not enforce it.${typeof o.public_card !== 'boolean' ? ''
+      : o.public_card ? ' Your budget card is public, so anyone can read it there.' : ' If you publish your budget card, anyone can read it there.'}`),
     el('div', {class: 'mandate-grid'},
       checkField('may_issue_credit', 'May issue credit notes (may_issue_credit)', 'Your agent may commit you as payer: once you accept a delivery you owe its price (an outstanding credit note).'),
       checkField('may_accept_credit', 'May work for credit (may_accept_credit)', 'Your agent may commit you as payee: you do the work and hold a claim for its price.'),
       'review_deliveries' in m ? checkField('review_deliveries', 'Review deliveries (review_deliveries)', cp ? 'When your agent accepts a delivery, the credit note or payment by transfer it signs waits for your approval before it goes to the tracker.'
         : 'When your agent accepts a delivery, the credit note it signs waits for your approval before it goes to the tracker.') : null,
       'review_deliveries' in m ? el('div', {}) : null,
-      ...numFields(m).map(([name, label, explain, , unit = netUnit()]) => field(limitInput(name, m[name], unit), `${label}, ${unit === '%' ? '%' : unitLabel()}`, explain))),
+      ...numFields(m).map(([name, label, explain, , unit = netUnit()]) => field(limitInput(name, m[name], unit), `${label}, ${unit === '%' ? '%' : unitLabel()}`,
+        typeof explain === 'function' ? explain() : explain))),
     el('fieldset', {class: 'cps'}, el('legend', {}, 'Counterparties'),
       el('label', {class: 'check'}, el('input', {type: 'radio', name: 'cp_mode', value: 'any', checked: m.counterparties === 'any'}), 'any participant'),
       el('label', {class: 'check'}, el('input', {type: 'radio', name: 'cp_mode', value: 'list', checked: m.counterparties !== 'any'}), 'only those ticked here:'),
@@ -1346,13 +1460,35 @@ function mandateCard(o) {
   if (S.mandateFlash) { showMsg(out, S.mandateFlash, 'ok'); S.mandateFlash = null; }
   return el('div', {class: 'card', id: 'mandate-card'},
     el('div', {class: 'dtitle'}, el('h2', {}, `Mandate (version ${o.mandate_version}) `, SRC.valun()), el('span', {class: 'tiny'},
-      o.mandate_changed_by === 'operator' ? `last changed by the network operator at your request${o.mandate_changed_at ? `, ${when(o.mandate_changed_at)}` : ''}; enforced by the server` : 'set by you, enforced by the server')),
+      o.mandate_changed_by === 'operator' ? `last changed by the network operator${o.mandate_changed_at ? `, ${when(o.mandate_changed_at)}` : ''}; enforced by the server` : 'set by you, enforced by the server')),
+    // The server records its own routine changes as the operator's too (lib/pilot/core.mjs joinSandbox, renewSandbox), and
+    // keeps only the last change (mandate_changed_by, mandate_changed_at), not what changed.
+    o.mandate_changed_by === 'operator' ? el('p', {class: 'hint', id: 'mandate-by-operator'}, '“The network operator” here also covers routine changes the server makes: the limits a self-serve join starts with, and each renewal of the expiry while your agent is active. It keeps only the last change, not a history of what changed, so check the values below.') : null,
     el('p', {class: 'hint'}, 'What your agent may do without asking you. The limits are hard: the server refuses an agent action that would break them, and nothing is recorded. They are checked again when you approve.'),
     el('p', {class: 'hint'}, el('b', {}, 'Changes apply at once. '),
       "Offers your agent already made stay open until they expire or your agent withdraws them, but when the other side accepts one, the server checks your mandate again as it is then: an offer that no longer fits is refused, and one priced above your approve_above waits for you here. Revoking your agent cancels them."),
     openOffersBox(o),
     agentLimitsBox(o),
+    budgetCardBox(o),
     form);
+}
+// The budget card (lib/pilot/card.mjs): whether the owner published it (GET /owner public_card) and what it shows anyone.
+// The client publishes and hides it (`valun card publish|unpublish`); this page only shows which it is. A server
+// without budget cards sends no public_card: nothing is shown.
+function budgetCardBox(o) {
+  if (typeof o.public_card !== 'boolean') return null;
+  const me = o.participant, shows = "your agent's limits per deal and in all, the room it has left, the objective below, its backing and its record";
+  // The command reads the owner token from the file join wrote, as every command on the site does (the redesign, round
+  // 2: never type the token into a command; paste it only into this console's sign-in). valun 0.7.1 would also ask for
+  // it, hidden, without the option (cli.py _owner_token); this page does not suggest that, as it would be pasted there.
+  const cmd = word => [el('code', {}, `valun card ${word}`), ' with ', el('code', {}, '--owner-token-file'), ' and the file that holds your owner token (the one join wrote).'];
+  return el('div', {class: 'budget-box', id: 'budget-card'},
+    el('div', {class: 'stitle'}, `Budget card: ${o.public_card ? 'public' : 'not public'} `, SRC.valun()),
+    el('p', {class: 'tiny'}, ...(o.public_card
+      ? ['Anyone can read it', me.status === 'active' ? [' on ', el('a', {href: `/agent/${encodeURIComponent(me.handle)}`}, "your agent's page")] : '',
+        ` and check a payer against it: ${shows}. To hide it, run `, cmd('unpublish')]
+      : [`Your agent's limits per deal and in all are not public. Publishing the card lets other agents check your agent before they take its IOU: it shows ${shows}. To publish it, run `,
+        cmd('publish')])));
 }
 // Limits the agent recorded from what the owner told it (conversation): server-enforced, only ever stricter than the mandate.
 const LIMIT_LABEL = {max_issue_per_deal: 'Max credit note per deal (as payer)', max_issue_outstanding: 'Max you may owe in total',
@@ -1422,7 +1558,7 @@ function readMandate(form, m, origExp) {
 // ================================================================= deal view (owner)
 async function showDeal(id) {
   if (!S.token) { showLogin(); return; }
-  $('#owner-login').hidden = true; $('#owner-console').hidden = true;
+  $('#owner-login').hidden = true; $('#owner-console').hidden = true; ownerLayout(true, {guide: false});
   const box = $('#deal-view'); box.hidden = false;
   box.replaceChildren(backLink(), el('div', {class: 'card'}, el('p', {class: 'hint'}, 'Loading the deal…')));
   try {
@@ -1552,7 +1688,7 @@ const EVENT_TITLE = {
   payment_attempt_resolved: h => `The payer's owner resolved payment attempt ${h.transfer_id}: ${h.outcome === 'applied' ? 'applied' : 'not applied'}${h.fallback_after ? `; any new payment of the deal from ${when(h.fallback_after)}` : ''}`,
   transfer_created: () => 'Payment by transfer created', transfer_applied: () => 'Payment by transfer applied by the Basis tracker',
   transfer_failed: () => 'Payment by transfer failed: nothing moved', transfer_expired: () => 'Payment by transfer expired: nothing moved',
-  setoff_applied: () => 'Set-off applied by the Basis tracker: a cycle of debt cancelled; no net position changed',
+  setoff_applied: () => 'Set-off applied by the Basis tracker: every debt in a loop fell by the same amount; no net position changed',
 };
 // Deals recorded before 2026-11-05 logged "agreed" just before the event that caused it (the acceptance, or the owner's
 // approval of an acceptance), at the same moment. Show the cause first. Nothing else is reordered.
@@ -1604,7 +1740,7 @@ const ENDED = ['declined', 'withdrawn', 'expired', 'rejected_by_owner', 'cancell
 function termsTitle(d, cur, P) {
   if (d.agreement) return `Agreed terms (version ${d.agreement.version}) `;
   if (!cur) return 'Terms ';
-  if (cur.state === 'awaiting_owner') return `Proposal (version ${cur.version}) – waiting for ${P(cur.by)} owner, not offered yet `;
+  if (cur.state === 'awaiting_owner') return `Proposal (version ${cur.version}) – waiting for ${cur.by === d.you ? 'your approval' : `${P(cur.by)} owner`}, not offered yet `;
   if (ENDED.includes(d.status)) return neverOffered(d, cur) ? `Proposal never offered (version ${cur.version}) – ${statusLabel(d.status)} ` : `Last offer (version ${cur.version}) – ${statusLabel(d.status)} `;
   return `Current offer (version ${cur.version}) `;
 }
@@ -1823,9 +1959,11 @@ function labelsCard(d) {
 }
 
 // ================================================================= routing, polling
+// The page opens on the owner console: /pilot#owner is the address the clients print, and /pilot (no hash) or a hash
+// that names no view opens it too.
 function currentRoute() {
-  const [tab = 'network', sub = '', id = ''] = (location.hash.slice(1) || 'network').split('/');
-  return {tab: ['network', 'join', 'owner'].includes(tab) ? tab : 'network', sub, id};
+  const [tab = 'owner', sub = '', id = ''] = (location.hash.slice(1) || 'owner').split('/');
+  return {tab: ['network', 'join', 'owner'].includes(tab) ? tab : 'owner', sub, id};
 }
 function currentView() { const r = currentRoute(); return r.tab !== 'owner' ? r.tab : r.sub === 'deal' ? 'deal' : 'console'; }
 let lastTab = null;
@@ -1845,8 +1983,22 @@ async function pollInfo() {
   try { S.info = await api('GET', '/info'); if (currentRoute().tab === 'network') renderInfo(); else renderNetworkCopy(); } catch { /* the banner shows it */ }
 }
 window.addEventListener('hashchange', route);
+// The skip link (public/site.css .skip) moves focus to <main> without changing the address: this page's hash names its
+// views, so following #main would open the default view instead of staying on the one shown.
+$('.skip')?.addEventListener('click', ev => { ev.preventDefault(); $('#main')?.focus(); });
+$('#guide-toggle')?.addEventListener('click', () => { S.guideOpen = !!$('#guide-body')?.hidden; ownerLayout(true); });
+// "Sign in" at the top of the guide (narrow screens) goes to the form below it: focus on the token field, with the
+// form's heading in view. Its href is the console's own view, so the address stays a route of this page.
+$('#to-signin')?.addEventListener('click', ev => {
+  ev.preventDefault();
+  $('#owner-login')?.scrollIntoView?.({block: 'start'});
+  $('#owner-token')?.focus({preventScroll: true});
+});
 $('#net-refresh').addEventListener('click', loadNetwork);
 setInterval(() => { if (!document.hidden) pollInfo(); }, 20000);
 setInterval(() => { if (!document.hidden && currentView() === 'console' && S.token && !ownerBusy()) loadOwner({quiet: true}); }, 30000);
+// From here on the views are shown one at a time (public/pilot.css body.js). Without this script the page shows only
+// what needs none: the guide at the top of the owner console, and why the console itself cannot open.
+document.body.classList.add('js');
 route();
 if (currentRoute().tab !== 'network') pollInfo();

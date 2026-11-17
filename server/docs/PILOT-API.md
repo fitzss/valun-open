@@ -1,4 +1,15 @@
-# Valun pilot network — design and API (v1)
+# Valun network: design and API (v1)
+
+**The live network is the testnet, `valun-testnet-1`, at https://valun.tech** (since 2026-11-13, when the pilot,
+`valun-pilot-1`, was retired). Its amounts are nanoERG of Ergo testnet (1 tERG = 10^9 nanoERG; tERG are test coins with
+no monetary value): a default or bound written below in PC is, on the testnet, that many times 1,000,000 nanoERG
+(`lib/pilot/units.mjs`). Its tracker is tracker v4.4.1, Valun's fork of basis-tracker, whose source is not public yet
+(fix inbox #99). The tracker anchors its state on Ergo testnet, an issuer may post a tERG reserve, and a creditor
+redeems a note against its issuer's reserve, if the issuer posted one: "Settlement on Ergo testnet" under Endpoints,
+and "Anchored netting" there for set-offs and transfers of committed totals. What the chain enforces and what you trust
+the operator for is the Trust model, https://valun.tech/skill.md#trust-model. The rest of this document was written for
+the pilot: where it says that nothing is redeemed and that there is no reserve or chain, it describes the pilot. The
+API's base path, `/pilot/v1`, keeps the pilot's name on both networks.
 
 Network id: `valun-pilot-1`. Separate from the public demo (`/api/*`, `/mcp`): own Basis tracker process (own tracker
 NFT id, own data directory), own store, own credentials. Unit: **PC (pilot credit)**, an integer count with no monetary
@@ -47,7 +58,9 @@ Owner approvals are **server-attested** (recorded under the owner token, not sig
 - **Owner-only**: mandate changes, approvals (with their full subject), agent key revocation, earlier keys, the
   resolution of a payment attempt of unknown outcome (circulating credit).
 - **Never on the server**: signing keys (participants' keys; the sandbox agents' keys are the operator's, on the data
-  volume, and their records say so: `operator_run`).
+  volume, and their records say so: `operator_run`). The house agents' keys are the operator's too, on a machine of its
+  own: the server names them by participant id (`PILOT_HOUSE_AGENTS`) and their public records say `house_agent: true`
+  (a label only: the server does not sign for them, so they are not `operator_run`).
 - **Circulating credit** (modes `sandbox` and `on`): a payment by transfer is visible to its issuer, payer and payee and
   their owners (each party sees only the edges it is party to; the issuer never sees the deal); a set-off only to its
   members, each seeing only its own edges; anyone else gets the same `404` as for an unknown id. No response carries a
@@ -376,13 +389,16 @@ as sent, including leading and trailing whitespace.
 All under `/pilot/v1`. Request bodies are JSON objects of at most 65,536 bytes (`413 too_large`, `400 bad_json`). Errors
 are `{"error": <code>, "message": <text>, ...extra}` (the codes are listed under "Error codes" at the end).
 
-**Public**: `GET /info`, `GET /participants` (the directory: since 2026-11-12 it leaves out participants the operator
+**Public**: `GET /info`, `GET /health` (the network's own health: `200` while its tracker answers, `503` while it does
+not; see "Operations"), `GET /participants` (the directory: since 2026-11-12 it leaves out participants the operator
 unlisted, test or demo agents that are not running; `?all=1` lists every participant, each unlisted one with
 `unlisted: true`; the agents the server runs show `agent_last_seen` as now, since they are always on),
 `GET /participants/{vp}` (the participant and its `public_position`),
 `GET /participants/{vp}/card` and `GET /participants/{vp}/check?amount=N&payee=<id or handle>` (the agent's budget
 card and its check, once its owner published the card: see "Budget card"),
-`GET /ledger` (the tracker's notes in the pilot denomination and their reconciliation), `GET /clearing` (circulating
+`GET /ledger` (the tracker's notes in the pilot denomination and their reconciliation), `GET /ledger/committed` (the
+testnet only, from tracker v4.5.1 (TR-20): what its tracker box on Ergo testnet commits, see "Settlement on Ergo
+testnet"; on tracker v4.4.1 it is not served and answers 401), `GET /clearing` (circulating
 credit only: aggregates), `GET /evidence` (circulating credit only: the record's evidence as network totals, see
 "Published"), `GET /loops` and `GET /loops/{vs}` (closed loops: the most recent 50 applied set-offs, newest
 first, `{unit, network, loops: [{id, applied_at, cycle_length, amount_PC, each_PC, participants, members: [{handle, kind}],
@@ -448,14 +464,86 @@ tokens cannot sign deal acts.
 its tracker is on chain, else `503 testnet_bootstrapping`; on the pilot these routes do not exist). The unit is the
 nanoERG (1 tERG = 10^9 nanoERG; tERG are test coins with no monetary value), and a participant's Ergo address is the
 P2PK address of its Valun key, so its own client signs its own Ergo transactions; the server never holds an agent's key.
-- `GET /chain` (public): `{network, name, on_chain, tracker_nft_id, tracker_address, reserve_contract, node, explorer,
-  anchoring: {local_digest, confirmed_digest, confirmed_box_id, confirmed_height, pending_tx_id, anchored}, links}`:
-  the digest of the tracker's note tree, the digest its tracker box on testnet commits (`anchored` when they are the
-  same), and the explorer links (`anchoring` is `null` while the tracker cannot be read).
-- `GET /reserves` (public): `{network, unit, reserve_contract, reserves: [{box_id, owner_pubkey, handle,
-  collateral_nanoerg, total_debt_nanoerg, collateralization_ratio, last_updated_height, refund_initiation_height,
-  reserve_token_id}]}`: every Basis reserve the tracker scans for its tracker NFT; `handle` is the owner's when the owner
-  key is a participant's, else `null`.
+- `GET /chain` (public): `{network, name, on_chain, tracker_nft_id, tracker_address, reserve_contract, node, node_note,
+  explorer, anchoring: {local_digest, confirmed_digest, confirmed_box_id, confirmed_height, node_height, box_age_blocks,
+  novations_refused_from_height, tracker_less_redemption_from_height, pending_tx_id, anchored, state, what_this_means,
+  ...}, links}`: the digest of the tracker's note tree, the digest its tracker box on testnet commits (`anchored` when
+  they are the same), and the explorer links (`anchoring` is `null` while the tracker cannot be read). `node` is the
+  Ergo testnet node this server reads the chain from, and `node_note` says so (fix inbox #88): it is named so a reader
+  knows where the server's chain reads come from, not as a node to trust; to check the server, read the chain from your
+  own node or an explorer. `GET /info` has the same `chain` (`name` to `explorer`). Neither shows the server's own
+  files. It also says how old the confirmed box is (fix inbox #62): `confirmed_height` is the box's
+  creation height; `node_height` the node's height (`GET /info` `fullHeight` of the node `node` names, read at most
+  every 20 s, so it may be a block behind; a read that fails, or gets no answer within 4 s, is not retried for 5 s after
+  it ends, and the requests meanwhile share one read); `box_age_blocks` = `node_height` - `confirmed_height`;
+  `novations_refused_from_height` = `confirmed_height` + 1440, from which the tracker refuses a set-off or debt
+  transfer that lowers an edge with an on-chain total, until a newer box (the tracker counts the age from its own last
+  read of the node plus a block per 2 minutes since, rounded up, so it may refuse a block early; it refreshes an
+  unchanged box at 720 blocks, so this takes 720 blocks without one); and `tracker_less_redemption_from_height` =
+  `confirmed_height` + 2161, from which the reserve contract takes a redemption without the tracker's signature
+  (`HEIGHT - creation height > 2160`). `node_height` and `box_age_blocks` are `null` when the node cannot be read (or is
+  behind the box), and all four are `null` while the tracker names no confirmed height. The `anchored` state's
+  `what_this_means` says what holds while the box is fresh, and that the tracker may refuse such a novation sooner: when
+  it has not observed its box on chain for 2 hours (tracker v4.4 `ANCHOR_UNOBSERVED`; it observes the box on each
+  update check in which it can read the box and the node and no update is waiting to confirm), and below a total it
+  signed a redemption for (the authorization floor).
+- `GET /ledger/committed` (fix inbox #62): served on the testnet only while its tracker has TR-20 (tracker v4.5.1;
+  fix inbox #65). On tracker v4.4.1 it is not served and answers 401, as any route the testnet does not have, so
+  `valun audit` reads `GET /ledger` instead: v4.4's promotion race leaves the tracker's records of what a box commits
+  one write behind it now and then, and an audit of them would say MISMATCH on an honest server. The committed
+  snapshot, what the confirmed tracker box commits: `{network, construction, box_id, height, digest, read_at,
+  consistent, what_this_means, rows: [{debt_key, issuer_pubkey, recipient_pubkey, denomination, committed_total}]}`.
+  `rows` are every note the tracker records as committed by that box (its `confirmed_total_debt` is not null), in every
+  denomination, each at the total the box commits (a decimal string: a u64 may pass 2^53), in ascending `debt_key`
+  order; zero totals are rows, a note no box committed yet is not, and a note changed since the box is a row at its
+  committed total, not its live one (the totals `GET /ledger` shows). `box_id`, `height` (its creation height) and
+  `digest` are the confirmed box as the tracker names it; `construction` is `basis-avl/1` ("Committed ledger" below),
+  under which the rows give `digest`. Check `digest` against R5 of the one unspent box holding `tracker_nft_id` on a
+  chain source of your own; the server checks the rows against `digest` itself: `consistent` is that check, served as it
+  comes out. `false` (with `rebuilt_digest`, the rows' own digest or `null` when they cannot be digested, and
+  `inconsistency`, why) means the tracker's records of what its box commits disagree with the box; until they agree
+  again (normally at its next box) the tracker refuses every redemption build, for every note (it checks its records
+  against the box before it builds one). Tracker v4.4 gets there by two races ("Committed ledger" below): on an honest
+  server, `consistent: false` during or right after a box update is that known race (fix inbox #65), which is why the
+  testnet serves this route only from tracker v4.5.1, whose TR-20 fixes it (an update mined late, or a restart during
+  one, can still leave a window: fix inbox #68); the flag is the server's own word, which an auditor cannot tell from a
+  server that serves other rows and says `consistent: false`. Wait for the tracker's next box (`GET /chain` `anchoring`)
+  and read again. `inconsistency` says so, and names the update when the notes still marked for it, at the totals
+  marked, give `digest` (the promotion race); `what_this_means` says what to do. The server records it as an
+  `anchor.inconsistent` audit line, change event and log line, each saying the same (once per box and outcome; the log
+  line is no `ALARM`: `scripts/live-check.mjs` WARNs on it) and serves the rows as the tracker records them. The current
+  box only: the route takes no parameters (any is `400 invalid_field`) and the server keeps no earlier snapshot (no
+  per-anchor history, owner decision 9). The tracker is read state, notes, state. A read is read again when the
+  confirmed box, its digest or height, or the update in flight changed during it, and when notes in it are pending under
+  an update other than the one in flight unless the read before it found the same ones (a promotion to a box clears them
+  within one tracker command, while marks the tracker left on a note, which tracker v4.4 does, stay the same); 3 times
+  at most, 250, 500 and 750 ms apart, then `503 snapshot_moving {retry_after_ms: 5000}`; `503 no_confirmed_box
+  {retry_after_ms: 60000}` while the tracker names no confirmed box (after a restart, until its updater reads the box).
+  A snapshot is read once per confirmed box and digest and kept at most 60 s. Not on the pilot network.
+- `GET /reserves` (public): `{network, unit, reserve_contract, meaning, reserves: [{box_id, owner_pubkey, handle,
+  collateral_nanoerg, total_debt_nanoerg, collateralization_ratio, debt_under_other_keys_nanoerg?, why_null?,
+  last_updated_height, refund_initiation_height, reserve_token_id}]}`: every Basis reserve the tracker scans for its
+  tracker NFT; `handle` is the owner's when the owner key is a participant's, else `null`. The debt is not the
+  tracker's own `total_debt`, a placeholder it never maintains (fix inbox #83: it is 0 for every reserve, which read as
+  "nothing owed"). The figures are what **this reserve** backs: the reserve contract pays only notes signed with the
+  reserve's own key (it checks the note's issuer key against the owner key in R4). `total_debt_nanoerg` is the
+  outstanding amount of those notes, total minus redeemed, at least 0 a note: the tracker's own counters as
+  `GET /ledger` shows them, notes not yet anchored on chain included (`scripts/ops/anchor-audit.mjs` prints the same
+  figure as "owed" per issuer key, over the rows the chain commits). `collateralization_ratio` is
+  `collateral_nanoerg / total_debt_nanoerg` rounded down to 4 decimals: the box's value over that debt, not what
+  creditors could take (the tracker leaves 1000000 nanoERG in a reserve, and a pending refund,
+  `refund_initiation_height` not 0, lets the owner take it all). `debt_under_other_keys_nanoerg` (present when not 0) is
+  what the owner owes under its other keys (a participant's earlier or later keys), which this reserve cannot pay: it
+  is not counted in the ratio. So `/reserves` and the owner's `public_position.owes` differ for an owner with more than
+  one key: `owes` counts every key the participant has had, and is `total_debt_nanoerg` plus
+  `debt_under_other_keys_nanoerg` (for an owner with one key the two are the same). A figure that cannot be computed is
+  `null`, never 0, and so is the ratio when nothing is owed on the reserve's key; `why_null` says why: nothing is owed
+  there, the tracker's notes could not be read, the tracker names no owner key or no whole collateral amount, a note
+  has no whole total or redeemed amount, or the reserve holds a token (`reserve_token_id`: its collateral is in that
+  token's units, given as `collateral_token_units`, and it backs notes in that token, which this network's notes are
+  not). No amount redeemed from a reserve is given: on chain its box holds only the digest of its redemption tree (R5);
+  what was redeemed shows as the value its box lost along its NFT's lineage on chain, and per note as `redeemed` on
+  `GET /ledger`. `meaning` says the same in one paragraph.
 - `POST /reserves/create {erg_amount, nft_id}` (agent token): the tracker's payment request for a reserve owned by
   **the agent's own key** (any owner key in the body is ignored): the Basis reserve contract, R4 the agent's key, R5 the
   empty redemption tree, R6 the tracker NFT. `erg_amount` is whole nanoERG from 10000000 (0.01 tERG) to 2000000000 (2
@@ -478,8 +566,9 @@ P2PK address of its Valun key, so its own client signs its own Ergo transactions
   checks and broadcasts: `{tx_id, ..., explorer}`. A refusal by the tracker is `409 tracker_refused` with the
   tracker's reason. Recorded as `redemption.built` and `redemption.submitted` audit lines.
 - **Anchored netting** (circulating credit on the testnet, `PILOT_CIRCULATION=on`): debt transfers and set-offs run as
-  on the pilot, also on edges whose totals a tracker box on Ergo testnet commits. The testnet's tracker is tracker v4.1
-  (TR-15) with `[server] anchored_netting`; the server takes circulation only from a tracker whose `GET /capabilities`
+  on the pilot, also on edges whose totals a tracker box on Ergo testnet commits. The testnet's tracker is tracker
+  v4.4.1 (anchored netting since v4.1, TR-15; TR-22 since v4.4.1) with `[server] anchored_netting`; the server takes
+  circulation only from a tracker whose `GET /capabilities`
   has `pure_credit: false` and `anchored_netting {version: 1, authorization_floor: true, fresh_blocks: 1440,
   keepalive_blocks: 720}` and whose binary is pinned (else it runs as off and `GET /info` says why). The tracker's two
   rules: (1) before it signs any redemption authorization (a tracker signature on a note message, as
@@ -487,7 +576,7 @@ P2PK address of its Valun key, so its own client signs its own Ergo transactions
   edge below it; (2) it lowers an edge with an on-chain total only while the tracker box on chain is younger than 1440
   blocks (the reserve contract lets a creditor redeem without the tracker's signature once the tracker box is older
   than 2160), and it refreshes an unchanged tracker box at 720 blocks. A refused novation is `409 onchain_scope` from
-  the tracker, with its reason. A netting is final once the next tracker box commits it (`GET /chain`: `anchored`);
+  the tracker, with its reason. A netting is committed once the next tracker box commits it (`GET /chain`: `anchored`), and stays committed only as long as the tracker key never commits an earlier total again (skill.md, Trust model);
   until then the chain still holds the earlier totals of every edge at once.
 
 **Operator** (on the host, at an owner's request; recorded as `by: operator` and shown in that owner's console):
@@ -992,7 +1081,7 @@ balance, every change is a decrease and its policy allows it (`auto_clear`).
 - **When**: after every increase (a credit note recorded, an incoming transfer applied; at most 2 proposals, of cycles
   whose members are server-run or present), on an agent's consent poll (cycles through it), and a batch search every 10
   minutes while the server runs, at startup and on `POST /admin/clearing/run`. Cycles whose members are all server-run
-  apply at once.
+  apply at once, and leave on each edge what the sandbox agents keep there for open tours (Sandbox circulation).
 - **Limits**: at most 3 collecting proposals per client participant and 50 overall; a client member that has not
   signed a set-off since its last expiry left unsigned (one that never signed included) is in at most 1, and proposals
   with such a member are at most 40 of the 50, so members that never sign cannot hold the whole cap (SV-DOS-1;
@@ -1009,7 +1098,8 @@ balance, every change is a decrease and its policy allows it (`auto_clear`).
 - **States**: `collecting`, `applying`, `applied`, `failed`, `expired`, `refused`, `superseded`, `void_key_revoked`,
   `inconsistent` (an alarm for the operator; counted as failed in `GET /clearing`). Supersession codes:
   `insufficient`, `not_reconciled`, `edge_changed` (a tracker without per-edge timestamps), `timestamp_ahead`,
-  `held_note`, `payment_attempt`. Failure codes: `mandate_changed {rule}`, `circulation_off`, `not_balanced`,
+  `held_note`, `payment_attempt`, `kept_for_clients` (a set-off of server-run members alone would take what is kept
+  for open tours). Failure codes: `mandate_changed {rule}`, `circulation_off`, `not_balanced`,
   `edge_changed` (the read-back shows the edge moved without it), the tracker's code after a 4xx with nothing changed,
   `novation_expired`, `key_revoked`, `held_note`, `payment_attempt`.
 - **`GET /setoffs/{vs}`** (its members, agent or owner token): `{id, kind: 'setoff', state, your_roles, created_at,
@@ -1026,8 +1116,9 @@ balance, every change is a decrease and its policy allows it (`auto_clear`).
 - **Admin** (loopback, admin token): `POST /admin/clearing/run` → the run record `{id, at, reason, eligible_edges,
   excluded {not_current_key, not_member, sandbox_only, not_reconciled, busy, reserved}, cycles_found, expansions,
   truncated, proposed, applied_now, skipped, setoffs}`, or `409 clearing_not_running`; `GET /admin/clearing` →
-  `{mode, engine, runs, live, recent, cooldowns, expiry_streaks, refusals}` with ids, members, edges and which slots
-  are signed, never a signature. `node scripts/pilot-admin.mjs clearing run|status [--json]`.
+  `{mode, engine, runs, live, recent, cooldowns, expiry_streaks, kept_for_clients, refusals}` with ids, members, edges
+  and which slots are signed, never a signature (`kept_for_clients`: edge → PC the sandbox agents keep for open tours).
+  `node scripts/pilot-admin.mjs clearing run|status [--json]`.
 
 ### Edges, the edge journal, reconciliation
 
@@ -1118,10 +1209,30 @@ write-ahead record `sandbox-records.json` keeps sha256 values only, mode 0600 on
   would exceed 20 PC; in mode `sandbox` only from sandbox participants (others get a signed decline saying so);
 - both check every delivery they bought exactly and dispute a wrong one, naming the first field that differs;
 - `sandbox-exact` pays with its own bound note; `sandbox-mallory` pays with the other agent's note it holds when one
-  covers the price and the payee accepts that issuer and is present, else with its own bound note, and never pays by
-  transfer again on a deal whose payee refused one;
+  covers the price (beyond what the agents keep for open tours, next item) and the payee accepts that issuer and is
+  present, else with its own bound note, and never pays by transfer again on a deal whose payee refused one;
+- they **keep the debt an open tour needs**: a tour's step 2 pays `sandbox-mallory` with `sandbox-exact`'s note, which
+  moves that much of `sandbox-exact`'s debt onto `sandbox-mallory`, and its step 4 clears the 3-cycle
+  `sandbox-mallory` → stranger → `sandbox-exact` → `sandbox-mallory` through it. What an active `sandbox_only`
+  participant in its sandbox time moved there this way (less what `sandbox-mallory` paid it back with `sandbox-exact`'s
+  notes) is kept until a set-off with that participant lowers that edge, for at most 24 hours. A set-off of the two
+  agents alone leaves the sum on the edge (`kept_for_clients`), and so do `sandbox-mallory`'s payments with
+  `sandbox-exact`'s notes to anyone but that participant; a cycle with a member the server does not run may use all of
+  it. Without this, the agents' own set-off of their debts to each other took that leg as soon as `sandbox-mallory`
+  owed `sandbox-exact` 2 PC (two tours' step 5 leave that), and the next tour's step 4 waited for a 3-cycle that could
+  not form;
+- `sandbox-exact` accepts **guarantee offers that name it as the creditor** (fix inbox #84), so a newcomer alone can see
+  an IOU backed: its own two agents as the issuer and the backer, `sandbox-exact` the creditor. A creditor only gains a
+  promise, and accepting commits it to nothing, so it accepts each offer whose terms are valid for it: they hash to
+  `terms_hash`, are `valun-guarantee/1` for this network, its tracker and its unit, name it with its current key, and
+  cover what the issuer owes it or, in the deal mode, deals not ended in which the issuer pays it (the server's rule
+  when the offer is made, checked again: a named deal that has ended since gets a decline). It accepts at most 3 from
+  one backer in 24 hours, and its own mandate applies (the core's accept checks it as payee toward the backer, for
+  example a cap above its `max_accept_per_deal`); the rest are declined with a signed reason. It never calls, releases
+  or offers a guarantee, and what it accepts as payment is unchanged (no coverage rule). `sandbox-mallory` does not
+  answer guarantee offers;
 - a tick does at most 8 successful actions and 32 attempts; a failing item backs off (10 s doubling, at most 1 hour);
-  `poke()` reacts about 200 ms after a change to one of their deals.
+  `poke()` reacts about 200 ms after a change to one of their deals, or to a guarantee naming one of them as creditor.
 
 **Capacity limits** (liveness only; nothing of value moves): `sandbox-exact`'s `max_issue_outstanding` (1000 PC) also
 counts its committed and reserved deals. A purchase that is agreed but never delivered stays committed until its
@@ -1130,7 +1241,11 @@ welcome job that is never delivered holds 3 PC for about 9 days (48 hours + 7 da
 PC of agreed, undelivered purchases, or about 333 accepted, undelivered welcome jobs (under two days of the 200-a-day
 self-serve join cap), would stop `sandbox-exact` buying and sending welcome jobs until those deals end. The bounds in
 force are the 3 welcome jobs a tick, the room check above, the 20 PC earn cap, 3 purchases per stranger a day, and the
-join caps; bounding `deliver_by` on purchases is an open owner decision (Operations, "Open owner decisions").
+join caps; bounding `deliver_by` on purchases is an open owner decision (Operations, "Open owner decisions"). Each
+completed tour leaves `sandbox-mallory` owing `sandbox-exact` 1 PC more (in the tour it sells a 2 PC job and buys a 3
+PC one, and set-offs change no net position). That debt counts against `sandbox-mallory`'s `max_issue_outstanding`
+(1000 PC), so after about 1000 completed tours with no other trade to lower it, `sandbox-mallory` would decline the
+tour's step 4 until it falls.
 
 ### Guarantees (modes `sandbox` and `on`; fix inbox #18)
 
@@ -1138,7 +1253,9 @@ A guarantee is a backer's signed promise to pay one creditor, up to a cap, what 
 the tracker, if the creditor calls after `due_at` and before `expires_at`. It is listed in `GET /info` as the feature
 `guarantees/1`, with `guarantees` (the protocol, what it covers, the bounds) and `guarantee_statements`. The routes
 exist only for participants circulating credit is on for (in mode `sandbox`: sandbox participants); the three parties
-must all be such participants. Code: `lib/pilot/guarantees.mjs`; tests: `test/guarantees.test.mjs`.
+must all be such participants. Code: `lib/pilot/guarantees.mjs`; tests: `test/guarantees.test.mjs`. Backing needs three
+agents (the issuer, the backer and the creditor); `sandbox-exact` accepts offers that name it as the creditor (Sandbox
+circulation, above), so a newcomer's own two agents can be the other two.
 
 Terms (`valun-guarantee/1`), every field required:
 
@@ -1223,8 +1340,24 @@ The rules:
   issuer's note and the backer's. `debt.recovered_for_backers = max(0, debt.honored_by_all_backers -
   issuer_owes_creditor)`: what the creditor has recovered from the issuer beyond the part the backers did not pay,
   which belongs to them; `recovered_for_backer` is this guarantee's share, in proportion to what each backer paid. It is
-  shown, not enforced: nothing returns it to the backer, and on Ergo testnet the creditor can still redeem the issuer's
-  note against the issuer's reserve.
+  shown, not enforced: nothing returns it to the backer.
+- **Held for backers (fix inbox #107).** What backers paid the creditor for the issuer's debt (honored calls, and honors
+  being recorded, over every guarantee of the pair) is held for them: the creditor was paid for that part once already.
+  The server lets the creditor spend only the issuer's note less it: `spendable` in its payment options and
+  `spendable_notes`, so no payment by transfer uses it; the clearing engine counts it as reserved, so no set-off lowers
+  the edge into it (checked again when a set-off applies, and when one is recovered); `POST /redemption/build` refuses
+  it, and `POST /redemption/submit` checks a redemption built before the honor again (`insufficient_claim`, saying how
+  much is held for the backers). The creditor's position leaves it out of `claims_held` and of the claim's
+  `amount`, and shows it as `held_for_backers`; its grounded claims (the coverage rule, the check) leave it out too. The
+  issuer's debt is unchanged: the tracker still records it and the issuer still owes it. An open call holds nothing:
+  if the creditor collects from the issuer first, the call lapses. So an honor (its note template and its recording)
+  waits, `409 pair_busy` with `retry_after_ms`, while the creditor is collecting the same debt another way: a payment by
+  transfer of the issuer's note to it (collecting, awaiting its owner or applying), a set-off of it being applied, or a
+  redemption of it built and not yet spent (until the tracker box it reads moves, and 3 minutes after its submit). Then
+  either the debt fell and the call lapses, or the honor goes ahead. A transfer or set-off that reaches the tracker
+  after an honor is checked again and ends failed (`held_for_backers`, `insufficient`). In the payment options a note
+  short only because of the hold has `why_not: held_for_backers` and shows `held_for_backers`, as `spendable_notes`
+  does. Moving the held debt to the backer (subrogation) is not built yet.
 - **What a guarantee does not cover.** Only IOUs the issuer signed. An issuer that takes a delivery and then disputes
   it, or never reviews it, owes nothing on the tracker, so there is nothing to call.
 - **Limits.** The backer's offer is checked as a deal it pays the creditor (`may_issue_credit`, the cap within
@@ -1238,6 +1371,11 @@ The rules:
   backers pay or could still be called for on the payer's debt to it, at most that debt with the deal
   (`backing_for_you`, `already_paid_by_backers`, `guarantees` in the check), at what each backer can pay (grounded, as
   above; a backer the owner trusts in full), and only guarantees still callable an hour after the deal's `deliver_by`.
+  Each guarantee counts what the payee's own check shows as its `for_this_deal` (fix inbox #79): a floating one its cap
+  left; the ones that name the deal share its price, less what calls on them claimed, oldest first. Two guarantees of
+  one offer, or one with a cap above its price, count its price once. Before, each counted its whole cap left, held
+  only by the payer's whole debt to the creditor, older debt they do not back included. `guarantees` lists those that
+  count something for the deal, and only they hold it once agreed (`guarantee_in_use` below).
   So an owner can require "backed or refused" with that rule alone.
   - `min_backer_coverage_pct` (fix inbox #24; circulation modes; null by default) sets a separate bar for a backer when
     this agent accepts its guarantee; unset, a backer is held to `min_payer_coverage_pct`.
@@ -1333,6 +1471,31 @@ MiB (release v16.1; see "The journal's checkpoint").
   tracker reports itself` (the branch circulating-credit-v3.2; a v3.1 or v3 tracker is named the same way, on its
   branch circulating-credit-v3), followed by ` (binary not pinned)` when the launcher's `PILOT_TRACKER_SHA256` is not one of
   `lib/pilot/pins.mjs` (a binary can report any commit; circulating credit stays off on it). `BASIS_PIN` overrides it.
+- **The health check, and the legacy desk beside the network** (fix inbox #64).
+  - *`GET /pilot/v1/health`* is the network's own health: `200 {ok: true, network, tracker: {reachable: true, pin}}`
+    while the pilot tracker answers `GET /`, `503 {ok: false, network, tracker: {reachable: false, pin}}` while it does
+    not. The tracker is read at most once per 2 s whatever the request rate, and no answer within 3 s counts as none.
+    `tracker.pin` names the network's tracker as `/api/status` names the demo tracker (the same text; `null` without
+    capabilities). `scripts/live-check.mjs`, which runs at every deploy and promotion, requires it, takes the pin from
+    it, and only warns when `/api/status` does not answer. A server without the route answers `401` there, and is
+    checked from `/api/status` as before. Writes refused under MIG-1 do not make it `503`: such a server still serves,
+    and `GET /info` says why.
+  - *The platform's health check* (fly.testnet.toml, fly.staging.toml, fly.toml) is `GET /pilot/v1/info`, no longer
+    the desk's `/api/status`. It reads no tracker, so a slow tracker cannot fail it, and every image has it, so a
+    rollback to an older image keeps a passing check.
+  - *The legacy synthetic desk* (`/api`, `/mcp`: server-held keys on the demo tracker; read-only on a hosted deployment
+    without `VALUN_WRITE_TOKEN`, where its writes answer `403 writes_closed`) is optional beside the network. The
+    network starts without waiting for the demo tracker, and without its id the network runs with no desk. The desk
+    starts beside the network's own start-up, so it is normally ready when the server listens, and a desk request
+    that comes while it still starts waits for it, at most 3 s. While it has no tracker id, while it starts (past those
+    3 s), after its start-up failed (until a restart) and while the demo tracker does not answer, nothing reaches the
+    desk: every `/api/*` request answers `503 desk_unavailable` before anything else, and `POST /mcp` answers `503` in
+    JSON-RPC, each request the error `{code: -32000, message, data: {error: "desk_unavailable"}}` with its own id (a
+    notification none). The first desk request that sees the demo tracker stop or start answering logs one `Desk:`
+    line. The entrypoint no longer stops the container when the demo tracker exits, only when the app, the pilot
+    tracker or the wallet adapter does; the next restart starts the demo tracker again.
+  - *Without a pilot tracker* (`PILOT_TRACKER_URL` unset) the desk is the whole app and behaves as before: it needs its
+    tracker's id and its tracker to start, and `/api/status` reports `trackerReachable`.
 - **Tests.** `npm test` runs every `test/*.test.mjs` except the opt-in ones (`scripts/run-tests.mjs`), against throwaway
   trackers in WSL; `VALUN_BINS=<bins>` picks the binaries (the tests that need tracker v3.2 skip, with a reason, on
   others). `npm test` is **not available inside the Docker image**: the Dockerfile does not copy
@@ -1434,8 +1597,9 @@ MiB (release v16.1; see "The journal's checkpoint").
 An agent's budget card says what it may commit for its owner, the room left, who backs it and its record, so anyone can
 check a payer before taking its IOU, and get the answer the server will enforce (lib/pilot/card.mjs). Its owner
 publishes it with `PUT /owner/mandate {"public_card": true}` (see "Mandate"); until then, and after `false`, both
-routes answer `404 card_not_public`. Both are public (no token), count against the per-address read budget and change
-no signed format.
+routes answer `404 card_not_public`, but for the payee's own check, which still answers for the payee's own side of the
+step (fix inbox #87, below). Both are public (no token), count against the per-address read budget and change no signed
+format.
 
 - `GET /participants/{vp}/card` → `{card: 1, network, unit, agent: {id, handle, display_name, operator}, mandate:
   {version, expires_at, may_issue_credit, per_deal, outstanding_cap, approve_above, counterparties: "any" | {listed},
@@ -1455,20 +1619,42 @@ no signed format.
     mandate}`, so it changes with the mandate's version. `check`: the check's URL template. `page`: the agent page,
     or null when it has none.
 - `GET /participants/{vp}/check?amount=N&payee=<id or handle>` runs the mandate check for the agent as the payer of
-  `amount` to `payee`, as a dry run → `{verdict, reasons, rule, payer: {id, handle}, payee: {id, handle}, amount,
-  mandate: {version, expires_at}, room_left, approval_needed, cover: {covered, for_other_deals, guarantees:
-  [{guarantee_id, backer: {id, handle} | null, remaining, for_this_deal}]}, record, card_hash, checked_at, took_ms}`.
+  `amount` to `payee`, as a dry run, and for the payee's own check the payee's too → `{verdict, reasons, rule, payer:
+  {id, handle}, payee: {id, handle}, amount, mandate: {version, expires_at}, room_left, approval_needed, cover:
+  {covered, for_other_deals, guarantees: [{guarantee_id, backer: {id, handle} | null, remaining, for_this_deal}]},
+  record, card_hash, checked_at, took_ms, payer_side: {verdict, rule, reasons}}`, and `payee_side` in the payee's own
+  answer.
   The answer is the one the server gives at the step it is for, with the same rules in the same order
   (`test/check-oracle.unit.test.mjs` runs the real actions on twin worlds against it): a new deal the payer proposes
   (the default), a new deal the payee proposes (`path`), or an offer the payee is deciding on (`deal`).
-  - `verdict`: `decline` when the step is refused. Before the mandate, in the server's order: the payer has no active
-    agent key (`rule: no_agent`), the payee has none (`rule: payee_no_key`: no deal terms can name it, so a proposal
-    is `400 invalid_terms`), the amount is above the network's per-deal limit (`rule: network_limit`), and, only when
-    the payer proposes, a self-serve payer on the open network already has as many offers of its own open as it may
-    (10; `rule: too_many_open_offers`, the proposal's `429`). Then the mandate check (`rule` is its
-    `mandate_exceeded` rule: `expires_at`, `counterparties`, `may_issue_credit`, `max_issue_per_deal` or
-    `max_issue_outstanding`). `ask_owner` when the commitment would wait for the payer's owner before it binds (`rule:
-    approve_above`); otherwise `accept`. `reasons` says why in plain sentences.
+  - `verdict`, `rule` and `reasons`: the step's answer (fix inbox #87). In the payee's own answer (its token, agent or
+    owner), one verdict from both sides, as the server enforces them: it goes ahead only when both do. `decline` when
+    either side declines; `rule` is then the first refusal the step meets: one of the terms first (`no_agent`,
+    `payee_no_key`, `network_limit`), then the sides in the order the step checks them (a new deal: its proposer
+    first, the payer by default, but the payee when the payer's refusal comes only at its re-check once the payee's
+    agent accepts, below; the offer under review: the side that accepts it, then the proposer; an acceptance waiting
+    for owners: the side whose owner decides first). `ask_owner` when neither side declines and an owner on
+    either side decides before it binds (`rule: approve_above`); `accept` when both go ahead (`rule: null`); `unknown`
+    when the payer's owner has not published its card and the payee's side does not decline (below). `reasons` give
+    both sides' verdicts in a few words first ("Your side refuses it (min_payer_coverage_pct); its side allows it.",
+    "Both sides allow it."), then the payer's side's reasons, then the counted offers' (below); the payee's own
+    reasons are in `payee_side` only. Every other answer (no token, or another participant's) is the payer's side, the
+    same for everyone: `verdict` and `rule` are `payer_side`'s, and `reasons` are its reasons and then "The payee's
+    own limits were not checked: …". `approval_needed` is `verdict` being `ask_owner`. Clients of valun 0.7.1 read
+    `verdict`, `reasons`, `cover.covered`, `counted_offers` and `payee_side`: their summary leads with the step's
+    verdict, and `valun card check` exits 0 only when it is `accept`, as before; they name any `ask_owner` "Ask the
+    payer's owner", and the first reason then says whose owner decides.
+  - `payer_side`: the payer's own side of the step, `{verdict, rule, reasons}`, in every answer but the payee's own
+    check of a payer without a published card (null there, below). `decline` when the payer's side refuses it.
+    Before the mandate, in the server's order: the payer has no active agent key (`rule:
+    no_agent`), the payee has none (`rule: payee_no_key`: no deal terms can name it, so a proposal is `400
+    invalid_terms`), the amount is above the network's per-deal limit (`rule: network_limit`), and, only when the payer
+    proposes, a self-serve payer on the open network already has as many offers of its own open as it may (10; `rule:
+    too_many_open_offers`, the proposal's `429`). Then the mandate check (`rule` is its `mandate_exceeded` rule:
+    `expires_at`, `counterparties`, `may_issue_credit`, `max_issue_per_deal` or `max_issue_outstanding`). `ask_owner`
+    when the commitment would wait for the payer's owner before it binds (`rule: approve_above`); otherwise `accept`.
+    `reasons` says why in plain sentences. Until fix inbox #87 this was the answer's `verdict`, `rule` and `reasons`,
+    for the payee's own check too.
   - `path` (a new deal): who would propose it. `payer_proposes` (the default): the payer's proposal; `ask_owner` when
     its owner approves the offer before it is made. `payee_proposes`: the payee proposes and the payer accepts; the
     open-offer limit does not apply to accepting, and `ask_owner` is when its owner approves the acceptance. An answer
@@ -1489,7 +1675,19 @@ no signed format.
     `deliver_by`: for a new deal the payee may give it as `deliver_by=<ISO 8601 UTC>` (in the future, at most 30 days
     ahead; `400 invalid_field` otherwise; `403 not_payee` without the payee's token), and without it every active
     guarantee counts, with a reason saying when one this counts could end too soon. With `deal`, the deal's own
-    `deliver_by` counts (`deliver_by` is then `400 invalid_field`).
+    `deliver_by` counts (`deliver_by` is then `400 invalid_field`). Its `reasons` include the cover's (below).
+  - **A payer without a published card (fix inbox #87).** The server enforces the payee's own limits at the step all
+    the same, so the payee's own check still answers, for its own side only: `verdict` is `decline` with the payee
+    side's `rule` when that side declines, else `unknown`, and `reasons` say that the payer's side was not checked
+    ("Its owner has not published its budget card, …"). Such a payer has not published its room, so the answer shows
+    none of its figures: `payee_side` is the payee side's `verdict` and `rule` with one sentence that gives no figure
+    (for the coverage rule, "Your owner's coverage bar (min_payer_coverage_pct, N%) refuses this payer's IOU for this
+    amount; …", N the payee's own bar), never the committed total, what the payer would owe, the coverage that leaves
+    or its open offers; `payer_side`, `mandate`, `room_left`, `card_hash` and `record` are null, `cover` is not shown
+    (`covered: null`), and there is no `counted_offers`. A payee still learns whether the payer passes its own bar at
+    that amount, as it does by proposing. `deal`, `path` and `deliver_by` work as for a published card. Anyone else's
+    check of such a payer is `404 card_not_public`, a request with no token before anything else is read (with a token
+    that is not the payee's, after the query is checked: `400 invalid_field` and `404 not_found` first).
   - `cover`: what the guarantees of the payer's IOUs to this payee could pay it for the step the check answers, at
     face value (fix inbox #75). `guarantees` lists the active ones: `remaining` is the cap less what calls claimed,
     and `for_this_deal` what the guarantee counts for this step. Those that count are the ones the payee's coverage
@@ -1504,9 +1702,14 @@ no signed format.
     inbox #63), so they count it once. A call counts in full against every deal its guarantee names, so the calls of a
     guarantee that names several deals come off this offer's share too: the share may be less than its backers could
     pay, never more. `covered` sums `for_this_deal`; `for_other_deals` sums the `remaining` of the guarantees that
-    name only other deals (every one that names deals, for a new deal); `reasons` says both, and what ends too soon.
-    The coverage rule counts the same guarantees at each backer's grounded worth and no more than the debt with the
-    deal; `covered` is not capped by the debt. A backer is named only when the guarantee is public (fix inbox #31).
+    name only other deals (every one that names deals, for a new deal); `payee_side`'s `reasons` say both, and what
+    ends too soon. They are not among the step's `reasons` (fix inbox #87): valun 0.7.0 and 0.7.1 add "backed for you
+    up to <covered>" to the summary of an `accept` or `ask_owner` themselves, after the step's reasons, so a sentence
+    there too said it twice. They still name it twice in one case: an `ask_owner` that the payee's own owner decides,
+    whose `payee_side` reasons they add too (valun 0.7.2 drops its own sentence).
+    The coverage rule counts each guarantee's `for_this_deal` too (fix inbox #79), at its backer's grounded worth and
+    no more than the debt with the deal; `covered` is not capped by the debt. A backer is named only when the guarantee
+    is public (fix inbox #31).
     The cover is the payee's own business: it is shown only to a check sent with the payee's token (agent or owner),
     and such an answer is never cached; anyone else gets
     `cover: {covered: null, for_other_deals: null, guarantees: []}`.
@@ -1550,6 +1753,127 @@ no signed format.
   the face value of the open guarantee caps, and the section says a payee's own check counts each backer at its
   grounded worth. `GET /me` gives `room` for the agent itself, with or without a published card.
 
+## Committed ledger (fix inbox #62; served from tracker v4.5.1)
+
+Anyone can check the operator: the digest R5 of the testnet's tracker box commits is a function of the notes it
+commits, and `GET /ledger/committed` publishes those notes. Rebuild the digest from its rows under the construction
+below and compare it with R5 of the one unspent box holding the tracker NFT, read from a chain source you choose (the
+public explorer or your own node; not `GET /chain`, which is the operator's word). `lib/avl.mjs` is the server's
+implementation (pure JavaScript, no imports).
+
+**Construction `basis-avl/1`** (the tree tracker v4.4 builds its notes into, TR-19). A change to any line below is a
+new construction id, with new vectors.
+- **Key**: the note's debt key, `blake2b256(issuer_pubkey || recipient_pubkey || token_id)`: the two 33-byte compressed
+  public keys, then, for a denomination `token:<id>`, the 32-byte token id (nothing for `erg`). BLAKE2b with a 32-byte
+  digest (not the first 32 bytes of BLAKE2b-512).
+- **Value**: the committed total (`committed_total`) as a u64, 8 bytes big-endian.
+- **Rows**: every note with a committed total, in every denomination; a total of 0 is a leaf.
+- **Order**: inserted in ascending unsigned byte order of the keys (lowercase hex sorts the same). The order changes the
+  digest: the rows' timestamp order (upstream Basis 43e2173's) gives another.
+- **Tree**: an empty `BatchAVLProver` of ergo_avltree_rust 0.1.1 (key length 32, no fixed value length; its empty tree
+  is one sentinel leaf), one `Insert` per row.
+- **Digest**: the root's label (32 bytes) || the tree's height (1 byte), 66 lowercase hex characters. The box's R5 holds
+  it as an AvlTree constant: `64 || digest || 03 || 20 || 00` (flags insert and update, key length 32, no value length).
+
+**Vectors.** The empty tree: `4ec61f485b98eb87153f7c57db4f5ecd75556fddbc403b41acf8441fde8e160900`.
+`test/fixtures/avl-random.json` has 1,350 trees of 0 to 600 entries (totals 0, around 2^53 and 2^63, and up to 2^64 - 1;
+four denominations), with the digests ergo_avltree_rust computed. Three live anchors of the testnet's tracker (Ergo
+testnet, read on 2026-11-14; their rows are kept with the server's tests and not published), each the one unspent box
+holding the tracker NFT:
+
+| height | box id | rows | R5 digest |
+|---|---|---|---|
+| 644995 | `37c96fe8bc6acc7103fd31c0e4c61487bd9a133dae1c9a1711d87b0e78502366` | 250 | `da212e4773a6894d0cd2131551ae58e315943282f27400efd5fbb23e1e2d772808` |
+| 645135 | `857f963800cd350824e19e68407febd8ae3044a2b1cc535cb3451c8dc959043f` | 251 | `0d60d54d9871d4ecfc1d9eb1dbaf69a2eef75730b92425b24b6ab00104fe7aa508` |
+| 645189 | `5784957596ab07122d952e24a43e6edf3d83c668595c130922ec5ad20c5974c3` | 251 | `237616c865b69edef051b6b1edc3adf4072bf4d602cc174561fbc74fe8ec64e708` |
+
+The 250 rows of 644995 inserted in their timestamp order give
+`be6c8c55a438cb145a344bb42e1b2b81a5b946f7742bda3dfd3c2c3e09a41c3809` instead, which `basis-avl/1` must never give.
+
+**What a match shows**: at its creation height the box committed exactly these (debt key, total) pairs. With an issuer
+signature over a total of your own, it shows the chain committed that the issuer owes that total. It does not show
+what is outstanding (redemptions are recorded in each reserve's own box), that an issuer can pay, that a deal was
+real, who holds a key (handles are not anchored), or that a mandate was kept. Compare `box_id` first: the tracker
+names a new box only once it sees the update confirmed (it checks every 30 s), so for a moment after an update the
+chain's box is newer than the snapshot's (read again), and a source that is behind shows an older one. Rows that
+rebuild `digest` while R5 of the same box on your source is another digest mean the tracker names a digest the chain
+does not hold; a `consistent: false` snapshot is the tracker's records disagreeing with its own box, which the server
+reports and does not hide.
+
+**Verdicts** (fix inbox #66). An auditor of this ledger gives one of these for a set of reads: 0 MATCH; 1 MISMATCH, and
+nothing else; 2 nothing was compared, never a pass (`valun audit`, the Python client, calls it UNKNOWN; a usage error
+and a fault of the tool are 2 too); 3 only from `valun audit --mine`: a MATCH with an edge of your own it cannot prove.
+A MISMATCH always means that the server says a box commits these rows, or this digest, and that box on your source
+does not: its R5 is another digest, or it is no tracker box (it holds no tracker NFT, or it is not on the chain at all
+although your source holds a later tracker box). Read in this order; the first line that applies decides:
+
+| the reads | verdict |
+|---|---|
+| no usable answer: `GET /chain` fails or names no tracker NFT, or one other than the NFT pinned (by you, or by the auditor for a server it knows; for a server it pins none for, the operator's auditor needs a reserve at the reserve contract it pins to name the NFT); the source lists no unspent box holding the NFT, two, a spent one, one that does not hold it, or gives no height; R5 is no AvlTree | 2 |
+| R5 is a tree of another construction (a key length other than 32, or a fixed value length), whatever its digest | 2 |
+| the rows cannot be compared: a snapshot naming no construction or another one, of another network than `GET /chain`, without its box, height or digest, or with a row whose `debt_key` is not its own; rows that cannot be digested (two with one debt key, a total outside u64); a total written as a JSON number above 2^53 - 1, on either route (a JavaScript server may have rounded it before writing it; `committed_total` is a decimal string) | 2 |
+| no settled state: `503 snapshot_moving` past the retries, `503 no_confirmed_box`; without this route, `GET /chain` not anchored, naming no confirmed box, or moving around `GET /ledger` | 2 |
+| the rows give R5, and the NFT is the box's first token (the reserve contract reads a tracker's identity as `tokens(0)`) | 0 MATCH (also when the server names another box, its digest is not R5, or it says `consistent: false`: each a warning) |
+| the rows give R5, and the box holds the NFT later than first: no redemption can use it | 2 |
+| the server's box is the chain's box: rows of `GET /ledger/committed` that do not give R5 | 1 MISMATCH |
+| the same, without this route: rows of `GET /ledger` that give the digest `GET /chain` names as anchored, which is not R5 | 1 MISMATCH |
+| rows of `GET /ledger` that give neither (not the state the server calls anchored: a cache longer than the auditor waits, or a note `/ledger` does not list) | 2 |
+| the server names another box: rows that give neither R5 nor the digest it claims for its box (the chain moved during the audit, or the source lags; a snapshot that says `consistent: true` then contradicts itself, and the operator's auditor says so) | 2 |
+| the server names another box, the rows give the digest it claims for it, and on your source that box has another R5 (or no AvlTree), holds no tracker NFT, or is missing although the tracker box your source holds was created after the height claimed for it (a tracker box made before that one is one of its ancestors, which your source has) | 1 MISMATCH (the operator's auditor looks the box up; `valun audit` does not yet, and says 2) |
+| the server names another box, the rows give its claimed digest, and that box is not on your source (yet; or, with no later tracker box there, at all: a lagging box index may still lack it), is of another construction, holds the NFT later than first, or is a tracker box the chain replaced (whose R5 does commit the rows: the server is behind) | 2 |
+
+During or right after a box update, a MISMATCH whose snapshot says `consistent: false` while its `digest` is R5 is
+what tracker v4.4's known race gives (below; fix inbox #65), and also what a server gives that serves other rows and
+says `consistent: false`: no audit can tell the two apart. Wait for the tracker's next box and run the audit again:
+the race ends with its box. The operator's auditor marks such a run `tracker_race`, and its watcher counts it apart
+(RACE), not as a MISMATCH, unless one of its runs had MATCHed that box (once the tracker has promoted a box, the race
+may let its records come to agree with it, never the other way), which fails the watch. A RACE still proves nothing, so
+a watch whose runs keep showing it fails like one that compares nothing.
+
+`valun audit` and the operator's auditor give the same exit code on 41 recorded reads, kept with each tool's tests
+with the code each must give (`test/fixtures/anchor-vectors/xtool.json` here, and byte for byte the same file in
+valun-open's `python/tests/fixtures/audit-verdicts/`, from valun 0.7.1). Elsewhere they differ in five ways:
+- **a box the server names** other than the chain's, with rows that give the digest the server claims for it: the
+  client does not look the box up, and says 2 where the operator's auditor gives the MISMATCH of the table;
+- **the tracker NFT**: from valun 0.7.1 both pin the same servers, take `--tracker-nft`, and for any other server
+  require a reserve at the reserve contract they pin to name the NFT (else 2). The client also holds the NFT to the
+  pin its profile took at its first call, and, reading from a node, gives 2 for a server neither pins (a node lists
+  reserves only for a POST, and the client sends GET requests only), where the operator's auditor asks the node.
+  Before 0.7.1 the client took the server's word unless its profile pinned the NFT, so on a decoy tracker it could
+  say MATCH where the operator's auditor says 2;
+- **a 503 from `GET /ledger/committed`** (`snapshot_moving`, or `no_confirmed_box`, which a tracker sends after a
+  restart until its next box): the operator's auditor reads again, up to 3 times, and may then decide; the client
+  says 2 at once;
+- **`GET /pilot/v1/info`**: without the committed route, the client reads it for the rows' denomination and says 2
+  when it cannot, while the operator's auditor takes `erg` and does not read it;
+- **reading again**: when rows that do not give R5 are for another box than the chain's, or rows of `GET /ledger`
+  give neither digest, the client reads again (3 times, 5 s apart) before it says 2, and may then compare; the
+  operator's auditor says 2 at once (its watcher's next run reads again).
+
+**When the records disagree** (`consistent: false`). Tracker v4.4, as upstream Basis, gets its records of a box wrong
+in two ways. Each lasts until its next box (unless that update races too), or until an update check finds the box's
+digest equal to its live digest (it then rewrites every committed total to the live one):
+- **The promotion race.** When a box confirms, the tracker promotes only the notes still pending for it. A note written
+  again while the update that carries it was in flight (raised by a note, lowered by a set-off or a debt transfer)
+  keeps the earlier box's total, although the box commits the total marked for it, and keeps its marks
+  (`pending_tx_id`, `pending_total_debt`). Any write to such a note during the whole flight does it: a block or two,
+  one confirmation more and the tracker's 30 s poll, so minutes per update. `inconsistency` names the update when the
+  notes still marked for it, at the totals marked, give `digest`.
+- **The mark race.** The tracker marks the notes an update carries at their live totals of the moment it marks them,
+  after the update was signed and sent, so a write in between leaves a confirmed total the box never committed. The
+  records show no trace of it.
+
+Meanwhile the tracker refuses every redemption build (it checks its committed tree against the box first), and once
+the daily cap of tracker boxes is used up the next box, and the repair, can be hours away. On tracker v4.4.1 this route
+is not served for that reason; from tracker v4.5.1 (TR-20, fix inbox #65) an honest operator can still show
+`consistent: false` during or right after a box update in the narrower windows of fix inbox #68 (an update mined late,
+a restart during one), and an auditor cannot tell it from an operator that serves other rows and says
+`consistent: false`. Wait for
+the tracker's next box (`GET /chain` `anchoring`; usually within minutes, up to about 30 when Ergo testnet blocks are slow, after 00:00 UTC once the day's
+boxes are used up) and check again. Neither race changes `digest`, which stays R5 of the box: what the server cannot
+explain away is rows that give `digest` while the chain's R5 of the same box is another digest, or a `digest` that is
+not R5.
+
 ## Amount names (fix inbox #32)
 
 Every amount is a whole number in the network's unit, which each answer names once in `unit` (`nanoERG` on the
@@ -1569,7 +1893,8 @@ and `GET /owner`. The budget card and its check (since 2026-11-14) use unit-neut
 Every error body is `{"error": <code>, "message": <text>, ...extra}`. By status:
 
 - **400**: `bad_json`; `invalid_field` (a field's value; with circulation also the policy fields, a malformed issuer
-  id, `signatures` not exactly the caller's slots, a resolve note or outcome, `since`); `invalid_terms`;
+  id, `signatures` not exactly the caller's slots, a resolve note or outcome, `since`; any query parameter of `GET
+  /ledger/committed`); `invalid_terms`;
   `hash_mismatch` (+`canonical`); `self_edge` (pay with a note you issued); `pay_with_is_payee` (pay the payee with its
   own note).
 - **401**: `unauthorized`.
@@ -1604,4 +1929,7 @@ Every error body is `{"error": <code>, "message": <text>, ...extra}`. By status:
   tracker v3.2 capabilities and the state holds circulating-credit history; nothing was sent or recorded; Operations),
   `signer_unavailable` (nothing was recorded; try again), `sandbox_unavailable`,
   `journal_unavailable`; `testnet_bootstrapping` (the Valun testnet network, `valun-testnet-1`, before its tracker is on
-  chain: every write is refused until the tracker NFT is minted; `GET /info` says `tracker_on_chain`).
+  chain: every write is refused until the tracker NFT is minted; `GET /info` says `tracker_on_chain`); `GET
+  /ledger/committed`: `snapshot_moving {retry_after_ms}` (4 reads in a row were not settled: the tracker's anchoring
+  moved, or a box update was being promoted in its records) and `no_confirmed_box {retry_after_ms}` (the tracker names
+  no confirmed box yet).

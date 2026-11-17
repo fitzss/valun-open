@@ -3,8 +3,8 @@
 // kept apart and never blended into one number:
 //   delivery    did it deliver work that its buyers accepted? Evidence about it as a seller, as good as its buyers are
 //               independent and careful: Valun does not judge the work.
-//   repayment   what did it owe as an issuer, and how much of that was settled (by set-off, or by redemption on the
-//               testnet)? And accepted work it has not paid for. Evidence about it as a debtor.
+//   repayment   what did it owe as an issuer, and how much of that was cleared by set-off or (on the testnet) redeemed,
+//               the two kept apart? And accepted work it has not paid for. Evidence about it as a debtor.
 //   acceptance  who chose to hold its IOU, from it directly or as a payment from someone else? That is others' willingness
 //               to take its risk, not repayment.
 // Each kind lists its counterparties by kind (lib/pilot/loops.mjs kindOf: invited agents joined by an invitation the
@@ -30,10 +30,15 @@ export const PAID = Object.freeze(new Set(['note_issued', 'paid_by_transfer']));
 export const UNPAID_ACCEPTED = Object.freeze(new Set(['payment_due', 'note_failed']));
 export const KINDS = Object.freeze(['invited', 'operator_run', 'sandbox_agent', 'sandbox_participant']);
 
+// repayment: a set-off clears a debt and a redemption pays it, so settled keeps them apart (by_setoff, by_redemption) and
+// the words never call a set-off settled (a netting stays committed only as long as the tracker key never commits an
+// earlier total again: the Trust model). acceptance: on the testnet a self-serve agent accepts any issuer's IOUs by default
+// (core.mjs SANDBOX_CIRCULATION on the open network, within max_accept_per_issuer), and its client signs that consent
+// itself (valun 0.7.1 SANDBOX_CONSENT_POLICY), so holding an IOU is often a setting, not a judgement.
 export const EVIDENCE_READS_AS = Object.freeze({
   delivery: 'Deliveries its buyers accepted. Evidence about it as a seller, as good as those buyers are independent and careful; Valun does not judge the work.',
-  repayment: 'What it owed as an issuer, and how much of that was settled. A set-off among participants one operator runs can be staged: it shows settlement inside that group, not that it can pay anyone else.',
-  acceptance: 'Participants who chose to hold its IOU. That is a willingness to take its risk, not repayment; some agents accept every IOU by policy.',
+  repayment: `What it owed as an issuer, and how much of that was cleared in loops (by set-off${ON_TESTNET ? ': committed, not final) or redeemed against its reserve on Ergo testnet, kept apart under settled (by_setoff, by_redemption' : ''}). A set-off among participants one operator runs can be staged: it shows debts cleared inside that group, not that it can pay anyone else.`,
+  acceptance: `Participants that have held its IOU, from it directly or as a payment from someone else. That is not repayment, and not always a judgement: ${ON_TESTNET ? 'on the testnet a new self-serve agent accepts any issuer\'s IOUs as payment by transfer by default, and its client signs that consent by itself' : 'some agents accept every IOU by policy'}.`,
   circle: 'Everyone it completed a deal or took a transfer with, and whether that group deals with anyone outside it. A staged circle is a closed group; so is a real new one, and a single outside deal opens either.',
   backing: "Guarantees it gave, was backed by, or holds: a backer's signed promise to pay a creditor, up to a cap, what an issuer still owes it after a due time, if the creditor calls. Calls honored, late or overdue are evidence about it as a backer. Being backed shows that someone took responsibility for part of its debt, not that it repays.",
   overall: 'Evidence to weigh, not a score. Valun grants no credit from it: each owner sets its own limits, and each holder decides whose IOU it takes.',

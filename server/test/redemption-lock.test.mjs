@@ -8,7 +8,7 @@ import http from 'node:http';
 
 const routes = await import('../lib/pilot/http.mjs');
 
-async function server({redemptionBuild, redemptionSubmit = async () => ({tx_id: 'ab'.repeat(32)})}) {
+async function server({redemptionBuild, redemptionSubmit = async () => ({tx_id: 'ab'.repeat(32)}), heldForBackers = null}) {
   const PKA = '02' + 'a1'.repeat(32), PKB = '03' + 'b2'.repeat(32), PKC = '03' + 'c3'.repeat(32);
   const participants = {vp_aaaaaaaaaaaa: {id: 'vp_aaaaaaaaaaaa', handle: 'issuer-a', pubkey: PKA}, vp_bbbbbbbbbbbb: {id: 'vp_bbbbbbbbbbbb', handle: 'holder-b', pubkey: PKB},
     vp_cccccccccccc: {id: 'vp_cccccccccccc', handle: 'holder-c', pubkey: PKC}};
@@ -17,7 +17,8 @@ async function server({redemptionBuild, redemptionSubmit = async () => ({tx_id: 
   const pilot = {chain: {name: 'ergo-testnet', on_chain: true, tracker_nft_id: 'ab'.repeat(32), explorer: 'https://testnet.ergoplatform.com'},
     s: {participants, setoffs: {}}, openSandbox: true, unit: 'nanoERG', mode: 'off', basis, store: {audit: () => {}}, selfServe: () => null,
     setoff: () => null, publicParticipant: x => ({handle: x.handle}), byPubkey: pk => Object.values(participants).find(x => x.pubkey === pk) || null,
-    authenticate: t => (t === 'vpa_b' ? {role: 'agent', p: participants.vp_bbbbbbbbbbbb} : t === 'vpa_c' ? {role: 'agent', p: participants.vp_cccccccccccc} : null)};
+    authenticate: t => (t === 'vpa_b' ? {role: 'agent', p: participants.vp_bbbbbbbbbbbb} : t === 'vpa_c' ? {role: 'agent', p: participants.vp_cccccccccccc} : null),
+    ...(heldForBackers ? {heldForBackers} : {})};
   const handler = routes.createPilotRoutes({pilot, cfg: {}, adminTokenHash: 'x'.repeat(64)});
   const srv = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -87,3 +88,51 @@ test('#26: the tracker\'s "no unspent reserve" just after a spend is reserve_bus
     assert.ok(r.body.retry_after_ms >= 30000);
   } finally { srv.close(); }
 });
+
+test('fix inbox #123: a broadcast the node refuses as a double spend (the box moved since the build) is reserve_busy with retry_after_ms, not a raw tracker_refused', async () => {
+  const redemptionBuild = async () => ({unsigned_tx: {id: 'u1', inputs: []}, partial_tx: {id: 'p1'}, new_already_redeemed: 1_000_000});
+  const redemptionSubmit = async () => {
+    throw Object.assign(new Error('tracker POST /redemption/submit: broadcast failed: broadcast rejected HTTP 400 Bad Request: the Ergo node answered 400 to POST /transactions: {"error":400,"reason":"bad.request","detail":"Double spending attempt"}'), {name: 'BasisError'});
+  };
+  const {srv, call} = await server({redemptionBuild, redemptionSubmit});
+  try {
+    assert.equal((await call('POST', '/pilot/v1/redemption/build', {issuer: 'issuer-a', amount: 1_000_000}, 'vpa_b')).status, 200);
+    const sub = await call('POST', '/pilot/v1/redemption/submit', {signed_tx: {id: 'p1'}, unsigned_tx: {id: 'u1'}}, 'vpa_b');
+    assert.deepEqual([sub.status, sub.body.error, sub.body.cause, sub.body.retry_after_ms], [409, 'reserve_busy', 'box_moved', 180000]);
+    assert.match(sub.body.message, /nothing was spent/);
+    // The holder may build again at once (its own build was dropped); the dropped build cannot be submitted again.
+    assert.equal((await call('POST', '/pilot/v1/redemption/build', {issuer: 'issuer-a', amount: 1_000_000}, 'vpa_b')).status, 200);
+    // Any other refusal is relayed as before.
+  } finally { srv.close(); }
+});
+
+test(`fix inbox #107: a creditor cannot redeem the part of an issuer's note that backers paid it for`, async () => {
+  const redemptionBuild = async () => ({unsigned_tx: {id: 'u1', inputs: []}, partial_tx: {id: 'p1'}, new_already_redeemed: 1_000_000});
+  // holder-b holds 9,000,000 of issuer-a's note (the stub tracker's note); backers paid it 7,000,000 for that debt.
+  const heldForBackers = (issuerId, creditorId) => (issuerId === 'vp_aaaaaaaaaaaa' && creditorId === 'vp_bbbbbbbbbbbb' ? 7_000_000 : 0);
+  const {srv, call} = await server({redemptionBuild, heldForBackers});
+  try {
+    const over = await call('POST', '/pilot/v1/redemption/build', {issuer: 'issuer-a', amount: 3_000_000}, 'vpa_b');
+    assert.deepEqual([over.status, over.body.error], [409, 'insufficient_claim']);
+    assert.match(over.body.message, /at most 2000000 nanoERG of issuer-a's note: 7000000 nanoERG of it is held: backers already paid you that much/);
+    assert.equal((await call('POST', '/pilot/v1/redemption/build', {issuer: 'issuer-a', amount: 2_000_000}, 'vpa_b')).status, 200, 'what is left is redeemable');
+  } finally { srv.close(); }
+});
+
+test('fix inbox #107: a redemption built before a backer paid for that debt is refused at submit, and nothing is sent', async () => {
+  let held = 0;
+  const submitted = [];
+  const redemptionBuild = async b => ({unsigned_tx: {id: 'u1', inputs: []}, partial_tx: {id: 'p1'}, new_already_redeemed: b.amount});
+  const redemptionSubmit = async b => { submitted.push(b); return {tx_id: 'cd'.repeat(32)}; };
+  const heldForBackers = (i, c) => (i === 'vp_aaaaaaaaaaaa' && c === 'vp_bbbbbbbbbbbb' ? held : 0);
+  const {srv, call} = await server({redemptionBuild, redemptionSubmit, heldForBackers});
+  try {
+    assert.equal((await call('POST', '/pilot/v1/redemption/build', {issuer: 'issuer-a', amount: 9_000_000}, 'vpa_b')).status, 200);
+    held = 9_000_000;                                           // a backer now honors holder-b's call for that debt
+    const s = await call('POST', '/pilot/v1/redemption/submit', {signed_tx: {id: 'p1'}, unsigned_tx: {id: 'u1'}}, 'vpa_b');
+    assert.deepEqual([s.status, s.body.error], [409, 'insufficient_claim']);
+    assert.match(s.body.message, /held: backers already paid you that much/);
+    assert.equal(submitted.length, 0, 'nothing reached the tracker');
+  } finally { srv.close(); }
+});
+

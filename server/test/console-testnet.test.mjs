@@ -155,15 +155,17 @@ test('the testnet: every tab and the deal view name the testnet and its unit; no
   const page = await openPage({base: w.base, token: w.owner, hash: '#network'});
   const $ = s => page.doc.querySelector(s);
   await until(() => text($('#info')).includes('Debt outstanding now') && $('#ledger table'), 'the network tab, with the clearing figures (GET /clearing comes after GET /info)');
-  assert.equal(page.doc.title, 'Valun · testnet network (experimental)');
-  assert.deepEqual($('.brand').children.map(e => e.textContent), ['Valun', 'testnet network', 'experimental']);
-  assert.equal(text($('.banner')), 'Valun testnet network (experimental). AI agents make service-for-credit deals with each other and pay with credit notes that a Basis tracker records. '
+  assert.equal(page.doc.title, 'Valun owner console');
+  assert.equal(text($('.netline .netname')), 'Valun testnet network', 'the console head names the network');
+  assert.equal(text($('.banner')), 'Valun testnet network (experimental). Agents agree jobs and pay each other with signed IOUs (credit notes, in this console), which a Basis tracker records. '
     + 'Amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG): test coins with no monetary value. Its Basis tracker anchors its state on Ergo testnet.');
   assert.equal(text($('#net-what')), 'What the Valun testnet network is');
   const facts = text($('.facts-list'));
   assert.match(facts, /^Experimental\. A test network, valun-testnet-1, where AI agents make service-for-credit deals with each other\./);
   assert.match(facts, /Amounts are nanoERG of Ergo testnet\. 1 tERG = 1,000,000,000 nanoERG\. tERG are test coins with no monetary value\. A creditor can redeem a credit note on Ergo testnet against its issuer's tERG reserve, if the issuer posted one\./);
   assert.match(facts, /A Basis tracker records the note and anchors its state on Ergo testnet\. An issued note is an outstanding obligation until its creditor redeems it; with circulating credit it can also move/);
+  assert.match(facts, /Payment is a credit note: a debt the payer owes\./);
+  assert.match(facts, /or be lowered by a set-off when debts form a loop \(every debt in the loop falls by the same amount\)\./);
   assert.match(text($('#deal-end')), /^It then stays outstanding until its creditor redeems it on Ergo testnet/);
   assert.match(text($('#info')), /UnitnanoERG: the smallest unit of tERG, Ergo testnet's coin \(1 tERG = 1,000,000,000 nanoERG\); test coins with no monetary value/);
   assert.match(text($('#info')), /Tracker on a blockchainyes: Ergo testnet; the tracker anchors its state there/);
@@ -171,20 +173,34 @@ test('the testnet: every tab and the deal view name the testnet and its unit; no
   assert.deepEqual(page.doc.body.querySelectorAll('[data-tracker-tag]').map(t => [t.textContent, t.getAttribute('title')]),
     Array(2).fill(['Basis tracker (on Ergo testnet)', "Read from the network's Basis tracker, which anchors its state on Ergo testnet (GET /pilot/v1/chain says when it last did)."]));
   assert.match(text($('#ledger')), /carol-research\s*olivia-ops\s*3,000,000 nanoERG \(0\.003 tERG\)/);
-  assert.equal(text($('footer')), 'Valun testnet network valun-testnet-1 · experimental · nanoERG of Ergo testnet: test coins with no monetary value · tracker anchored on Ergo testnet · Valun home · live network');
+  assert.equal(text($('footer p')), 'Ergo testnet · test coins only, with no monetary value', 'the footer every public page shows');
+  assert.deepEqual($('footer').querySelectorAll('a').map(a => [text(a), a.getAttribute('href')]), [['Trust', '/trust'], ['Report a problem', '/start#report'],
+    ['skill.md', '/skill.md'], ['llms.txt', '/llms.txt'], ['GitHub', 'https://github.com/fitzss/valun-open']]);
   assert.deepEqual(offending(page), [], 'the network tab, and the join tab\'s text, say nothing of the pilot');
 
   // The owner console.
   globalThis.location.hash = '#owner'; page.hashchange();
   await until(() => $('#mandate-form'), 'the owner console');
   const con = $('#owner-console'), appr = con.querySelector('article.appr');
-  assert.equal(page.doc.title, '(1) Valun · testnet network (experimental)');
+  assert.equal(page.doc.title, '(1) Valun owner console');
   assert.match(text(appr), /new proposal\s*Review the budget card docs\s*4,000,000 nanoERG \(0\.004 tERG\) – you issue the credit note/);
   assert.match(text(appr), /max_issue_outstanding: on the tracker 2,000,000 nanoERG \(0\.002 tERG\) \+ committed 0 nanoERG \(0 tERG\) \+ offered 0 nanoERG \(0 tERG\) \+ this deal 4,000,000 nanoERG \(0\.004 tERG\) = 6,000,000 nanoERG \(0\.006 tERG\) of 40,000,000 nanoERG \(0\.04 tERG\)/,
     "the server's mandate check, in nanoERG");
   assert.match(text(appr), /price 4,000,000 nanoERG \(0\.004 tERG\) within max_issue_per_deal 5,000,000 nanoERG \(0\.005 tERG\)/, 'the check computed in the page');
   assert.match(text(con), /Hold3,000,000 nanoERG \(0\.003 tERG\)others owe you/);
   assert.match(text(con), /Cleared0 nanoERG \(0 tERG\)by set-off(?!;)/, 'cleared by set-off, without "nothing is redeemed"');
+  // The real server's position: cleared and redeemed as two rows; its `settled` sum, `settled_how` and `meaning` (which
+  // says "settled counts both") are not shown.
+  const position = con.querySelectorAll('.card').find(c => /^Position/.test(text(c.querySelector('h2'))));
+  assert.match(text(position), /Cleared by set-off0 nanoERG \(0 tERG\) of your debts cleared in loops, and as much of your claims \(each set-off is committed by the next tracker box on Ergo testnet, and is not final\)/);
+  assert.match(text(position), /Redeemed on Ergo testnet0 nanoERG \(0 tERG\) of your claims, which you redeemed; 0 nanoERG \(0 tERG\) of your debts, redeemed from your reserve/);
+  assert.doesNotMatch(text(position), /settled/i);
+  // The testnet's default acceptance where "Accept notes from" is, and what payer coverage counts there.
+  const form = text(con.querySelector('#mandate-form'));
+  // Each client signs only for its own key (D3b, the redesign's round 2).
+  assert.match(form, /On the testnet a new self-serve agent accepts any issuer's IOUs as payment by transfer, up to 0\.04 tERG per issuer\. Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way\. You can narrow whose IOUs your agent accepts here, with “only those ticked here”\./);
+  assert.doesNotMatch(form, /signs that consent, and the issuer's/);
+  assert.match(form, /Your agent may accept a credit note only from a payer whose own tERG reserve, claims and guarantees of its debt to you cover at least this percentage of everything it would owe, this deal included\. A claim or a guarantee counts only as far as a reserve on Ergo testnet, or an issuer you list under Accept notes from, stands behind it; a payer you list there counts as covered\./);
   assert.deepEqual(offending(page), [], 'the owner console says nothing of the pilot');
 
   // The deal view of the proposal waiting for her.
@@ -192,6 +208,28 @@ test('the testnet: every tab and the deal view name the testnet and its unit; no
   await until(() => $('#history-card'), 'the deal view');
   assert.match(text($('#deal-view')), /Version 1 by olivia-ops \(you\) · awaiting owner .*Price4,000,000 nanoERG \(0\.004 tERG\)/);
   assert.deepEqual(offending(page), [], 'the deal view says nothing of the pilot');
+});
+
+// The site redesign's review: the agent learns of its owner's decision only when it next checks, so after an approval the console
+// tells the owner to tell it; a rejection says only what it did.
+test('the testnet: approving what waits says what it did, then "Tell your agent: it carries on when it next checks."; rejecting says only what it did', async () => {
+  for (const decision of ['Approve', 'Reject']) {
+    const w = await world();
+    const page = await openPage({base: w.base, token: w.owner, hash: '#owner'});
+    await until(() => page.doc.querySelector('article.appr'), `${decision}: the proposal waiting for its owner`);
+    const button = page.doc.querySelector('article.appr').querySelectorAll('button').find(b => b.textContent === decision);
+    assert.equal(button.disabled, false, `${decision} is on`);
+    button.click();
+    await until(() => page.doc.querySelector('#approvals .flash'), `${decision}: the outcome`);
+    const said = text(page.doc.querySelector('#approvals .flash')), [a] = Object.values(w.pilot.s.approvals).filter(x => x.deal_id === w.deal);
+    if (decision === 'Approve') {
+      assert.equal(said, `Approved (${a.id}). Deal ${w.deal} is open: erin-review can now accept, counter or decline. Tell your agent: it carries on when it next checks.`);
+      assert.equal(w.pilot.s.deals[w.deal].status, 'open', 'the server offered it');
+    } else {
+      assert.equal(said, `Rejected (${a.id}). Deal ${w.deal} is now: rejected by owner.`);
+      assert.doesNotMatch(said, /Tell your agent/);
+    }
+  }
 });
 
 test('the testnet: the limits editor saves 5,000,000 a deal and 40,000,000 in all; no maximum on its inputs; labels and errors name nanoERG (fix inbox #72)', async () => {
@@ -310,19 +348,23 @@ test('on a server that still runs the retired pilot (unit PC, no chain) the page
   const page = await openPage({hash: '#network', routes});
   const $ = s => page.doc.querySelector(s);
   await until(() => text($('#info')).includes('valun-pilot-1'), 'the network tab');
-  assert.equal(page.doc.title, 'Valun · pilot network (experimental)');
+  assert.equal(page.doc.title, 'Valun owner console');
+  assert.equal(text($('.netline .netname')), 'Valun pilot network');
   assert.match(text($('.banner')), /^Valun pilot network \(experimental\)\. .* PC are simulated pilot credits with no monetary value\. No blockchain is connected\.$/);
   assert.match(text($('.facts-list')), /PC = pilot credits\. Simulated units with no monetary value\./);
   assert.match(text($('.facts-list')), /The tracker has no blockchain connection, so every note stays local_only\./);
   assert.match(text($('#info')), /UnitPC: simulated pilot credits, no monetary value/);
   assert.equal($('[data-tracker-tag]').textContent, 'Basis tracker (local, no chain)');
-  assert.equal(text($('footer')), 'Valun pilot network valun-pilot-1 · experimental · PC have no monetary value · no blockchain connected · Valun home · live network');
+  assert.equal(text($('footer p')), 'Valun pilot network valun-pilot-1 · experimental · PC have no monetary value · no blockchain connected');
 });
 
+// The one exception: the footer's line, the same on every public page of valun.tech, names Ergo testnet (the one network
+// it serves); on another network pilot.js writes that network's own.
 test('before the server answers, the page says only what is true of every network: no unit, no chain, no pilot (fix inbox #72)', () => {
   const body = readBody(fs.readFileSync(path.join(root, 'public', 'pilot.html'), 'utf8'));
   const html = fs.readFileSync(path.join(root, 'public', 'pilot.html'), 'utf8');
-  assert.equal(/<title>([^<]*)<\/title>/.exec(html)[1], 'Valun · network (experimental)');
+  assert.equal(/<title>([^<]*)<\/title>/.exec(html)[1], 'Valun owner console');
+  assert.equal(text(body.querySelector('#net-footer-facts')), 'Ergo testnet · test coins only, with no monetary value');
   const all = text(body);
   for (const re of [/\bPC\b/, /\bpilot\b/i, /blockchain/i, /no chain/i, /local_only/, /valun-pilot-1/, /demo credit desk/i]) assert.doesNotMatch(all, re);
   for (const id of ['net-name', 'net-banner-title', 'net-banner-unit', 'net-what', 'fact-network', 'fact-unit', 'fact-payment', 'deal-end', 'ledger-hint', 'net-footer-facts'])

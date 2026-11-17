@@ -1,0 +1,218 @@
+/* The worked example on the home page: public/story-fragment.html, the markup of home.html's <section id="how">, and
+   public/story.js, which turns its five stacked steps into a stepper. Built on site.css (tokens, .tag, .note, .btn,
+   table.plain, .list); its own classes start with story- (states with is-). One visual grammar, the same in every picture:
+   - a solid light arrow from the agent that owes to the agent owed;
+   - a dashed amber arrow (--work) from the agent that did the work to its client;
+   - an IOU drawn as a ticket with its issuer's name, beside the agent that holds it;
+   - the rainbow only for the loop that cleared.
+   Pictures say everything in words too (labels, the step's text and its table): never by color or motion alone.
+   SVG text is set in viewBox units, 360 wide: on phones the picture takes the frame's padding too, so it is 326px wide
+   or more from a 360px screen up and 14 units are 12.5px or more (13.8px at 390px). */
+
+/* ---- the section's opening ---- */
+.story-lede { font-size: 1.12rem; max-width: 36em; margin: 0 0 2.2rem; }
+
+/* ---- the two frames: dashed for the example (made-up agents), solid for the real records ---- */
+.story, .story-real { position: relative; border: 1px dashed var(--rule-strong); border-radius: 3px; padding: 30px 14px 22px; margin: 0 0 2.6rem; }
+.story-real { border-style: solid; margin-bottom: 0.6rem; }
+/* the frame's label sits on its top edge, like a legend on a fieldset */
+.story-label { position: absolute; top: 0; left: 10px; transform: translateY(-50%); margin: 0; padding: 0 6px; background: var(--space); max-width: calc(100% - 20px); }
+.story-label .tag { white-space: normal; background: var(--space); }
+@media (min-width: 720px) {
+  .story, .story-real { padding: 36px 28px 28px; }
+  .story-label { left: 22px; }
+}
+
+/* ---- the key ---- */
+.story-key { list-style: none; margin: 0 0 1.6rem; padding: 0 0 1.1rem; border-bottom: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 0.5rem 1.6rem;
+  font-size: 0.9rem; line-height: 1.4; color: var(--dust); }
+.story-key li { display: flex; align-items: center; gap: 0.55rem; min-height: 24px; }
+.story-swatch { width: 44px; height: 16px; flex: none; overflow: visible; }
+.story-sw-owes { fill: none; stroke: var(--line); stroke-width: 1.6; }
+.story-sw-work { fill: none; stroke: var(--work); stroke-width: 1.4; stroke-dasharray: 5 4; }
+.story-sw-head { fill: var(--line); }
+.story-sw-head.is-work { fill: var(--work); }
+.story-sw-ticket { fill: var(--panel); stroke: var(--line); stroke-width: 1.2; }
+.story-sw-perf { stroke: var(--rule-strong); stroke-width: 1; stroke-dasharray: 2 2; }
+.story-sw-ring { fill: none; stroke-width: 1.6; }
+.story-key .story-unit { font: 400 0.8rem/1.4 var(--mono); color: var(--dust); }
+
+/* ---- the step list: a table of contents without JS, the stepper's buttons with it ---- */
+.story-track { list-style: none; margin: 0 0 2rem; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0 10px; position: relative; }
+.story-track::before { content: ""; position: absolute; left: 22px; right: 22px; top: 22px; border-top: 1px solid var(--rule-strong); }   /* the line the steps sit on */
+.story-track a, .story-track button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; min-height: 44px;
+  margin: 0; padding: 0 0 4px; border: 0; background: none; color: var(--dust); font: 400 0.9rem/1.3 var(--sans); text-align: center; text-decoration: none; cursor: pointer; }
+.story-track .story-n { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--rule-strong); background: var(--space);
+  color: var(--line); font: 400 0.86rem/1 var(--mono); transition: background-color .2s, border-color .2s, color .2s; }
+.story-track a:hover .story-n, .story-track button:hover .story-n { border-color: var(--line); }
+.story-track a:hover, .story-track button:hover { color: var(--line); }
+.story-track [aria-current="step"] { color: var(--line); }
+.story-track [aria-current="step"] .story-n { background: var(--line); border-color: var(--line); color: var(--space); }
+.story-track [aria-current="step"] .story-track-t { text-decoration: underline; text-decoration-color: var(--dust); text-underline-offset: 5px; }
+.story-track :focus-visible { outline: none; }
+.story-track :focus-visible .story-n { outline: 2px solid var(--line); outline-offset: 3px; }
+@media (max-width: 719px) {
+  /* phones: the numbers only; each step's own heading names it (the titles stay in the buttons' names) */
+  .story-track-t { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+  .story-track { max-width: 320px; }
+}
+
+/* ---- a step ---- */
+.story-steps { list-style: none; margin: 0; padding: 0; }
+.story-step { margin: 0 0 2.6rem; padding: 0 0 2.6rem; border-bottom: 1px solid var(--rule); }
+.story-step:last-child { margin-bottom: 0; padding-bottom: 0.4rem; border-bottom: 0; }
+.story-step-title { display: flex; align-items: baseline; gap: 0.7rem; margin: 0 0 1rem; font-size: 1.35rem; font-weight: 300; }
+.story-step-title .story-n { flex: none; font: 400 0.8rem/1 var(--mono); color: var(--dust); letter-spacing: 0.08em; border: 1px solid var(--rule-strong);
+  border-radius: 50%; width: 28px; height: 28px; display: inline-grid; place-items: center; transform: translateY(-3px); }
+.story-fig { margin: 0 0 1.2rem; }
+.story-svg { display: block; width: 100%; max-width: 480px; height: auto; margin: 0 auto; overflow: visible; }
+@media (max-width: 719px) { .story-fig { margin-left: -12px; margin-right: -12px; } }   /* phones: the picture takes the frame's padding too */
+.story-text > p { margin: 0 0 0.9rem; max-width: 36em; }
+.story-text .note { margin: 0.2rem 0 1.2rem; }
+.story-text .table-wrap, .story-more .table-wrap { margin: 1.2rem 0 0.4rem; }
+.story-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* the tables: before and after, numbers in the mono face */
+.story-table { max-width: 30em; }
+.story-table th[scope="row"] { font-weight: 400; font-family: var(--mono); font-size: 0.9rem; }
+.story-table td.num { font-size: 0.95rem; color: var(--dust); }
+.story-table tr.is-changed td.num:last-child { color: var(--line); }
+.story-nets td.num { color: var(--line); }
+.story-why { display: block; font-size: 0.78rem; color: var(--dust); white-space: nowrap; }
+
+/* step 5: what changes and what doesn't, then when it is committed */
+.story-changes { margin: 0 0 1rem; display: grid; gap: 0.6rem; max-width: 36em; }
+.story-changes > div { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.1rem; border-left: 2px solid var(--rule-strong); padding: 0.1rem 0 0.1rem 0.9rem; }
+.story-changes dt { font: 400 0.75rem/1.4 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--dust); }
+.story-changes dd { margin: 0; }
+.story-commit { font-size: 0.92rem; color: var(--dust); }
+.story-commit a { color: var(--line); }
+
+/* ---- the pictures ---- */
+.story-svg text { font-family: var(--mono); font-size: 14px; fill: var(--line); }
+.story-svg .story-name { font: 400 17px var(--sans); fill: var(--line); }
+.story-agent circle { fill: var(--space); stroke: var(--line); stroke-width: 1.6; }
+.story-agent.is-idle circle { stroke: var(--rule-strong); }
+.story-agent.is-idle .story-name { fill: var(--dust); }
+/* labels keep a dark halo, so a line passing behind them never cuts a letter */
+.story-svg .story-lab, .story-svg .story-lab-work, .story-svg .story-was, .story-svg .story-note, .story-svg .story-net, .story-svg .story-pass-t {
+  paint-order: stroke; stroke: var(--space); stroke-width: 5px; stroke-linejoin: round; }
+.story-owes path { fill: none; stroke: var(--line); stroke-width: 1.6; }
+.story-owes.is-faint path { stroke: var(--rule-strong); stroke-width: 1.4; }
+.story-owes.is-faint .story-lab { fill: var(--dust); }
+.story-svg .story-was { fill: var(--dust); }
+.story-work path { fill: none; stroke: var(--work); stroke-width: 1.4; stroke-dasharray: 5 4; }
+.story-svg .story-lab-work { fill: var(--work); font-family: var(--sans); font-size: 15px; }
+.story-head path { fill: var(--line); }
+.story-head.is-faint path { fill: var(--rule-strong); }
+.story-head.is-work path { fill: var(--work); }
+.story-head.is-pass path { fill: var(--dust); }
+.story-ticket path { fill: var(--panel); stroke: var(--line); stroke-width: 1.2; }
+.story-ticket .story-perf { stroke: var(--rule-strong); stroke-width: 1; stroke-dasharray: 2 2; }
+.story-ticket.is-spent path { fill: var(--space); stroke: var(--rule-strong); stroke-dasharray: 3 3; }
+.story-svg .story-ticket.is-spent text { fill: var(--dust); }
+.story-pass path { fill: none; stroke: var(--dust); stroke-width: 1.3; stroke-dasharray: 1 4; stroke-linecap: round; }
+.story-svg .story-pass-t, .story-svg .story-note { fill: var(--dust); font-family: var(--sans); font-size: 15px; }
+.story-deal line { stroke: var(--rule-strong); stroke-width: 1; }
+.story-deal rect { fill: var(--panel); stroke: var(--rule-strong); stroke-width: 1; }
+.story-svg .story-deal-s { fill: var(--dust); }
+.story-svg .story-net { fill: var(--line); }
+.story-ring { fill: none; stroke-width: 2; }
+.story-svg .story-ring-t { font-size: 19px; }
+.story-svg .story-ring-s { fill: var(--dust); }
+
+/* ---- asides: two questions the story raises ---- */
+.story-asides { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.4rem 2.6rem; margin: 2.4rem 0 0; padding: 1.8rem 0 0; border-top: 1px solid var(--rule); }
+.story-aside h3 { font-size: 1.12rem; margin: 0 0 0.5rem; }
+.story-aside p { margin: 0; font-size: 0.98rem; max-width: 34em; }
+@media (min-width: 720px) { .story-asides { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ---- the real records ---- */
+.story-real h3 { font-size: 1.35rem; font-weight: 300; margin: 0 0 0.8rem; }
+.story-real-lede { max-width: 40em; }
+/* who played each part: the part, then the agent and who runs it, then what it is */
+.story-cast { list-style: none; margin: 0 0 1.6rem; padding: 0; border-top: 1px solid var(--rule); max-width: 46em; }
+.story-cast li { display: grid; grid-template-columns: 6.4em minmax(0, 1fr); gap: 0.25rem 0.8rem; align-items: baseline; padding: 0.65rem 0; border-bottom: 1px solid var(--rule); }
+.story-part { grid-row: span 2; font: 400 0.78rem/1.6 var(--mono); color: var(--dust); }
+.story-who { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.6rem; }
+.story-cast code { font-size: 0.92rem; }
+.story-what { color: var(--dust); font-size: 0.92rem; }
+.story-events { max-width: 46em; }
+.story-events a { overflow-wrap: anywhere; }
+.story-real .small { max-width: 46em; margin: 1.2rem 0 0; }
+@media (min-width: 1000px) {
+  /* wide screens: who took part on the left, what happened on the right */
+  .story-real { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); column-gap: 52px; align-items: start;
+    grid-template-rows: auto auto 1fr auto; grid-template-areas: "title events" "lede events" "cast events" "foot foot"; }
+  .story-real > h3 { grid-area: title; }
+  .story-real-lede { grid-area: lede; }
+  .story-cast { grid-area: cast; margin-bottom: 0; }
+  .story-events { grid-area: events; margin: 0; }
+  .story-real .small { grid-area: foot; }
+}
+
+/* ---- the stepper (story.js): one step at a time ---- */
+/* Previous and Next right under the step list, above every step, where they stay as the steps' heights change; a second
+   pair at the foot of the step for narrow or short screens, where a step can be taller than the screen */
+.story-pager { display: flex; flex-wrap: wrap; gap: 0.8rem; margin: -0.6rem 0 1.8rem; }
+.story-pager.is-end { margin: 1.8rem 0 0; }
+.story-pager .btn[aria-disabled="true"] { color: var(--dust); border-color: var(--rule); cursor: default; }
+.story.is-stepper .story-step { margin: 0; padding: 0; border-bottom: 0; }
+.story-step[hidden] { display: none; }   /* the grid below must not bring a hidden step back */
+/* a step fits beside its picture and on the screen: the pair above is enough. On a short wide screen (a 1280 x 720
+   laptop, 1024 x 600) steps 3 and 5 are taller than the screen, so the pair at the foot stays there. */
+@media (min-width: 900px) and (min-height: 820px) {
+  .story-pager.is-end { display: none; }
+}
+@media (min-width: 900px) {
+  /* the picture on the left, the step's words on the right; step 5's net positions sit under its picture */
+  .story-step { display: grid; grid-template-columns: minmax(0, 11fr) minmax(0, 12fr); grid-template-areas: "fig title" "fig text" "more text";
+    grid-template-rows: auto auto 1fr; column-gap: 44px; align-items: start; }
+  .story-step-title { grid-area: title; }
+  .story-fig { grid-area: fig; margin: 0; }
+  .story-text { grid-area: text; }
+  .story-more { grid-area: more; margin-top: 1.4rem; }
+}
+
+/* ---- motion: only when the reader moves to a step (story.js adds is-entering), and only without reduced motion. It
+   shows what the step changed, in its order: the work first, then the IOU it was paid with. Every picture reads the
+   same with no motion at all. ---- */
+@media (prefers-reduced-motion: no-preference) {
+  .story-step.is-entering { animation: story-in .2s ease-out; }
+  .story-step.is-entering .is-new { animation: story-in .45s ease-out both; }
+  .story-step.is-entering [data-at="1"] { animation-delay: .4s; }
+  .story-step.is-entering [data-at="2"] { animation-delay: .95s; }
+  /* step 3: Bo's IOU fades to an outline, the dotted arrow appears, and the IOU arrives at Cy along it */
+  .story-step.is-entering .is-arriving { animation: story-arrive .55s .8s ease-out both; }
+  .story-step.is-entering .is-dimmed > path, .story-step.is-entering .is-dimmed > line { animation: story-dim .7s .45s ease-out both; }
+  .story-step.is-entering .is-dimmed text { animation: story-dim-text .7s .45s ease-out both; }
+  .story-step.is-entering .story-head.is-faint path { animation: story-dim-head .7s .45s ease-out both; }
+  .story-step.is-entering .story-ring { stroke-dasharray: 1; animation: story-draw 1s .1s ease-out both; }
+}
+/* ---- forced colors (Windows high contrast): a page's colors are forced, an SVG's fills and strokes are not, so the
+   pictures take the system's colors here (text and strokes CanvasText, fills and label halos Canvas, what is faint or
+   used up GrayText); the rainbow ring keeps its own colors, as a picture would ---- */
+@media (forced-colors: active) {
+  .story-svg text, .story-svg .story-name, .story-svg .story-lab-work, .story-svg .story-was, .story-svg .story-pass-t,
+  .story-svg .story-note, .story-svg .story-deal-s, .story-svg .story-net, .story-svg .story-ring-s { fill: CanvasText; }
+  .story-agent.is-idle .story-name, .story-owes.is-faint .story-lab, .story-svg .story-ticket.is-spent text { fill: GrayText; }
+  .story-svg .story-lab, .story-svg .story-lab-work, .story-svg .story-was, .story-svg .story-note, .story-svg .story-net,
+  .story-svg .story-pass-t { stroke: Canvas; }
+  .story-agent circle, .story-ticket path, .story-ticket.is-spent path, .story-deal rect, .story-sw-ticket { fill: Canvas; }
+  .story-agent circle, .story-owes path, .story-work path, .story-pass path, .story-ticket path, .story-deal rect, .story-deal line,
+  .story-sw-owes, .story-sw-work, .story-sw-ticket { stroke: CanvasText; }
+  .story-agent.is-idle circle, .story-owes.is-faint path, .story-ticket.is-spent path, .story-ticket .story-perf, .story-sw-perf { stroke: GrayText; }
+  .story-head path, .story-head.is-work path, .story-head.is-pass path, .story-sw-head, .story-sw-head.is-work { fill: CanvasText; }
+  .story-head.is-faint path { fill: GrayText; }
+  .story-ring, .story-sw-ring { forced-color-adjust: none; }
+  /* the current step's number: its filled circle is a background, which forced colours drop (below 720px, where the
+     step list shows numbers only, all five looked alike) */
+  .story-track [aria-current="step"] .story-n { forced-color-adjust: none; background: Highlight; border-color: Highlight; color: HighlightText; }
+}
+
+@keyframes story-in { from { opacity: 0; } }
+@keyframes story-arrive { from { opacity: 0; transform: translate(12px, -30px); } }
+@keyframes story-dim { from { stroke: var(--line); } }
+@keyframes story-dim-text { from { fill: var(--line); } }
+@keyframes story-dim-head { from { fill: var(--line); } }
+@keyframes story-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }

@@ -49,3 +49,14 @@ export const TRACKER_SHA256_PINS = Object.freeze([
   // GET /capabilities is v4.4's but for its commit. Its valun_signer is byte-identical to v4.4's (a2b870bd...).
   'd24e9a450030c918b1a553a2c3821bbbea1b4243a83c00f832b26150d9050a87',
 ]);
+
+// The tracker builds with TR-20 (fix inbox #65): a tracker box update's marks are the totals its digest was computed
+// from, so the tracker's records of what a box commits agree with the box. GET /pilot/v1/ledger/committed is public only
+// while the tracker runs one of these (lib/pilot/http.mjs): on an earlier build, tracker v4.4's promotion race leaves
+// those records one write behind the box now and then, and `valun audit` of them says MISMATCH on an honest server. The
+// route reads this list alone (http.mjs committedPublic): list only a build whose TR-20 was checked, and pin it in
+// TRACKER_SHA256_PINS too, since the testnet runs circulating credit only on a pinned binary.
+export const TRACKER_SHA256_TR20 = Object.freeze([
+  // tracker v4.5.1 (TR-20 + TR-22, commit 722ed65f6e4f23770f9fcdd1a830f159a5c6edc8; branch feat/tracker-v451 pins it)
+  '71027ab40420a33045439bd1c8cd2fa01a1816ad64732a0268bcf07d57f4172b',
+]);

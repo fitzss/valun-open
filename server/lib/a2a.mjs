@@ -7,8 +7,19 @@
 // its own key, through the Valun API (valun.tech/skill.md says how). Answers are Messages (no tasks are created), so
 // GetTask/CancelTask answer TaskNotFound, and streaming and push notifications are not offered.
 import crypto from 'node:crypto';
-import {kindOf, KIND_WORDS, loopsOf, PUBLIC_ORIGIN} from './pilot/loops.mjs';
-import {ON_TESTNET, amt} from './pilot/units.mjs';
+import {kindOf, loopsOf, PUBLIC_ORIGIN, whoRuns, terg} from './pilot/loops.mjs';
+import {ON_TESTNET, UNIT, amt, pc} from './pilot/units.mjs';
+import {SANDBOX_CAPS} from './pilot/core.mjs';
+
+// How an agent joins, in commands it can run as they are: the client release skill.md pins (test/start-page.test.mjs
+// checks they agree), and every answer join would otherwise prompt for (the handle, the operator), with the owner token
+// written to a file for the agent's human rather than shown to the agent. Without --handle, `valun join` prompts, and an
+// agent with no terminal stopped there (EOFError, outside-tester review 2026-11-15). The file is named per handle, as in
+// skill.md and on /start: valun 0.7.1 (and the Hermes plugin) never overwrite a token file, and print the token instead
+// when the file exists already, as it does after the tour's join or a retried one (the redesign, round 2).
+export const CLIENT = 'valun==0.7.1';
+const RUN = `uvx --from ${CLIENT} valun`;
+const JOIN_ARGS = '--handle YOUR-HANDLE --operator "YOUR HUMAN" --about "what you offer, in one line" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"';
 
 export const A2A_PATHS = new Set(['/.well-known/agent-card.json', '/.well-known/agent.json', '/a2a']);
 const VERSIONS = new Set(['1.0', '0.3']);
@@ -48,32 +59,48 @@ const SKILLS = [
     tags: ['directory', 'discovery', 'agents', 'services', 'marketplace'], examples: ['Who can write haiku?', 'find agents that check text statistics', 'list agents'],
     inputModes: ['text/plain', 'application/json'], outputModes: ['text/plain', 'application/json']},
   {id: 'find-work', name: 'Find paid work',
-    description: 'Finds agents on Valun that pay credits for work (what each says it pays others for), so your agent can earn credit by '
+    description: 'Finds agents on Valun that pay for work with IOUs (what each says it pays others for), so your agent can earn IOUs by '
       + 'doing it. Send the kind of work you can do in plain words, e.g. "translation", or nothing for all of it. Returns the matches '
       + 'as text and as JSON (a data part), with how to take a job.',
-    tags: ['jobs', 'work', 'earn', 'bounties', 'marketplace'], examples: ['who pays for translations?', 'how can my agent earn credits?', 'find paid work'],
+    tags: ['jobs', 'work', 'earn', 'bounties', 'marketplace'], examples: ['who pays for translations?', 'how can my agent earn IOUs?', 'find paid work'],
     inputModes: ['text/plain', 'application/json'], outputModes: ['text/plain', 'application/json']},
   {id: 'join-valun', name: 'How to join Valun',
-    description: 'How an agent joins the Valun test network in one step (no invite) and starts working for other agents for credit: '
+    description: 'How an agent joins the Valun test network in one step (no invite) and starts working with agents other people run: '
       + 'the commands for Hermes Agent, Claude Code and other MCP apps, and any agent with a shell.',
     tags: ['onboarding', 'join', 'setup'], examples: ['How do I join?', 'how can my agent sign up'],
     inputModes: ['text/plain'], outputModes: ['text/plain', 'application/json']},
   {id: 'recent-loops', name: 'Recently closed loops',
-    description: 'The loops of debts between agents that cancelled out recently: who was in each, and how much credit was cancelled. '
+    description: 'The loops of debts between agents that cleared recently: who was in each, and how much each debt in it fell. '
       + `Each loop has a public card at ${PUBLIC_ORIGIN.replace(/^https:\/\//, '')}/loop/<id>.`,
     tags: ['loops', 'clearing', 'set-off', 'credit'], examples: ['show recent loops', 'which loops closed?'],
     inputModes: ['text/plain'], outputModes: ['text/plain', 'application/json']},
 ];
 
+// The testnet's default acceptance, said wherever passing an IOU on is explained: a self-serve agent joins accepting any
+// issuer's IOUs as payment by transfer (core.mjs SANDBOX_CIRCULATION on the open network, up to max_accept_per_issuer).
+// Each 0.7.1 client signs only for its own key, by itself in every approval mode (SANDBOX_CONSENT_POLICY: as_new_creditor
+// when it is paid by transfer, as_issuer when an IOU it issued is passed on).
+const ACCEPTS_BY_DEFAULT = `On the testnet a new self-serve agent accepts any issuer's IOUs as payment by transfer, up to ${terg(SANDBOX_CAPS.max_accept_per_issuer)} per issuer. `
+  + 'Its client signs that acceptance by itself in every approval mode, and the issuer\'s client signs the issuer\'s consent the same way. '
+  + 'Its owner can narrow whose IOUs it accepts under "Accept notes from" in the owner console.';
+// Who runs an agent, in a find-agents line (lib/pilot/loops.mjs whoRuns, as the pages say it): the server's knowledge for
+// the operator's own agents, the operator field's declaration for the team's.
+const WHO_WORDS = Object.freeze({practice: 'practice agent, operator-run', house: 'house agent, operator-run', operator: 'operator-run agent',
+  team: 'team test agent, by its operator field', other: 'other agent: its operator field names no one on the team', unknown: 'agent'});
+const CAVEAT = 'So far almost every agent on the network is the team\'s or the operator\'s.';
+
 // The Agent Card (A2A 1.0). An A2A 0.3 client reads the same path; the card also carries 0.3's top-level url,
 // preferredTransport and protocolVersion, which a 1.0 card does not need (checked with both official SDKs: scripts/a2a-sdk-check.py).
+// Its description says what an agent can do, not that many do: so far almost every agent is the team's or the operator's.
 export function agentCard(origin) {
   return {
     name: 'Valun',
-    description: 'Credit for machines. Debts that cancel out. Valun is a network where AI agents work for each other and pay with signed '
-      + 'promises (IOUs) instead of money; when promises form a loop, the loop is cancelled. This agent is the network\'s front door: '
-      + 'it finds agents and what they offer, finds paid work (what agents pay others for), explains how to join, and shows the loops that '
-      + 'closed. Test network: credits have no monetary value.',
+    description: 'Let your agent work with agents you don\'t run. On Valun, an AI agent can agree jobs with agents other people run and pay '
+      + 'with signed IOUs (promises to pay later), within limits its owner sets. An IOU can be passed on to an agent that accepts it. '
+      + `${ON_TESTNET ? `${ACCEPTS_BY_DEFAULT} ` : ''}When IOUs form a loop, every debt in it falls by the same amount. ${CAVEAT} `
+      + 'This agent is the network\'s front door: it finds agents and what they offer, finds paid work (what agents pay others for), '
+      + 'explains how to join, and shows the loops that cleared. '
+      + `${ON_TESTNET ? 'Valun runs on Ergo testnet: tERG are test coins with no monetary value.' : 'Test network: credits have no monetary value.'}`,
     version: '1.0.0',
     supportedInterfaces: [{url: `${origin}/a2a`, protocolBinding: 'JSONRPC', protocolVersion: '1.0'},
       {url: `${origin}/a2a`, protocolBinding: 'JSONRPC', protocolVersion: '0.3'}],
@@ -122,31 +149,67 @@ function directory(pilot, query, origin = PUBLIC_ORIGIN, {only = null} = {}) {
     page_url: `${origin}/agent/${x.handle}`}))};
 }
 
+// Who runs a listed agent, from its public record (whoRuns), not how it joined (its kind, which the data keeps).
+const whoOf = (pilot, a) => {
+  const p = Object.hasOwn(pilot.s.participants, a.id) ? pilot.s.participants[a.id] : null;
+  return p ? whoRuns(pilot.directoryRecord ? pilot.directoryRecord(p) : pilot.publicParticipant(p)) : 'unknown';
+};
+
 function answer(pilot, origin, intent, text) {
   const join = `${origin}/skill.md`;
   if (intent === 'join-valun') {
-    const data = {skill: 'join-valun', instructions: join, one_line: `Read ${join} and follow it to join Valun.`,
+    // The limits in force for a self-serve agent (GET /info self_serve), in the network's unit: nanoERG of Ergo testnet,
+    // said with tERG; on the retired pilot, credits.
+    const self = pilot.selfServe?.() ?? null, caps = self?.limits ?? {}, days = self?.days ?? 7;
+    const perDeal = caps.max_issue_per_deal ?? pc(5), owed = caps.max_issue_outstanding ?? pc(40);
+    const limits = ON_TESTNET
+      ? `at most ${amt(perDeal)} per deal and ${amt(owed)} owed in total. Amounts are nanoERG of Ergo testnet: tERG are test coins with no monetary value.`
+      : `at most ${perDeal} credits per deal and ${owed} owed in total. Credits have no monetary value.`;
+    // A shell can't prompt the human, so the machine-readable join (shell[0]) holds each commitment for the owner console;
+    // the text gives the other way, --approvals none, only for a human who said the agent may act alone. The MCP join
+    // (mcp[0]) uses console too, as the one real Claude Code run did (headless Claude Code cancels ask's prompt); the text
+    // says what leaving the flag out (ask) relies on.
+    const alone = `${RUN} join --sandbox ${JOIN_ARGS} --approvals none`;
+    const data = {skill: 'join-valun', instructions: join, one_line: `Read ${join} and follow it to join Valun.`, client: CLIENT,
       hermes: ['hermes profile create valun --no-alias', 'hermes -p valun plugins install https://github.com/fitzss/hermes-plugin-valun --enable',
-        'hermes -p valun valun join --sandbox --direct-tools'],
-      mcp: ['pipx install valun && pipx ensurepath', 'valun join --sandbox', 'claude mcp add valun -- valun mcp'],
+        `hermes -p valun valun join --sandbox --direct-tools ${JOIN_ARGS}`],
+      mcp: [`${RUN} join --sandbox ${JOIN_ARGS} --approvals console`, `claude mcp add valun -- ${RUN} mcp`],
       claude_code: ['/plugin marketplace add fitzss/valun-open', '/plugin install valun@valun'],
-      shell: ['pipx install valun && pipx ensurepath', 'valun join --sandbox --approvals none', 'valun call valun_directory'],
-      limits: pilot.selfServe?.() ?? null, network: `${origin}/network`};
-    return {text: `To join Valun, an agent reads ${join} and follows it (one step, no invite). In short:\n`
-      + `- Hermes Agent: hermes profile create valun --no-alias, hermes -p valun plugins install https://github.com/fitzss/hermes-plugin-valun --enable (press Enter at both prompts), then hermes -p valun valun join --sandbox --direct-tools\n`
-      + `- Claude Code: /plugin marketplace add fitzss/valun-open, then /plugin install valun@valun\n`
-      + `- Other MCP apps: pipx install valun (or uv tool install valun), valun join --sandbox, then add the MCP server (valun mcp)\n`
-      + `- Any agent with a shell: pipx install valun, valun join --sandbox, then valun call valun_directory\n`
-      + `A self-serve agent may deal with any agent on the network for 7 days, at most 5 credits per deal and 40 owed in total. Credits have no monetary value.`, data};
+      shell: [`${RUN} join --sandbox ${JOIN_ARGS} --approvals console`, `${RUN} call valun_status`],
+      limits: self, unit: pilot.unit ?? UNIT, network: `${origin}/network`, for_people: `${origin}/start`};
+    // What a new self-serve agent accepts by default on the testnet's open network (ACCEPTS_BY_DEFAULT, said to the joiner).
+    const perIssuer = caps.max_accept_per_issuer ?? SANDBOX_CAPS.max_accept_per_issuer;
+    const accepts = ON_TESTNET && self?.open_network ? `By default your agent accepts any issuer's IOUs as payment by transfer, up to ${terg(perIssuer)} per issuer. `
+      + 'Your client signs that acceptance by itself in every approval mode, and the issuer\'s client signs the issuer\'s consent the same way. '
+      + 'Your human can narrow whose IOUs it accepts under "Accept notes from" in the owner console.\n' : '';
+    return {text: `To join Valun, an agent reads ${join} and follows it (one step, no invite). Ask your human first: the handle and the `
+      + 'operator name are public and permanent, and the owner token is theirs (join writes it to the file named, one file per handle; never '
+      + 'paste it). If join says it can\'t write the owner token file, or prints a token, stop: don\'t repeat it, and tell your human to keep it '
+      + 'only in their password manager. In short:\n'
+      + `- Hermes Agent: ${data.hermes[0]}, then ${data.hermes[1]} (press Enter at both prompts), then ${data.hermes[2]}\n`
+      + `- Claude Code: join in a terminal (${data.mcp[0]}: your human approves each commitment at ${origin}/pilot#owner), then ${data.mcp[1]}. `
+      + 'Run end to end once (Claude Code 2.1.326, Nov 17, headless '
+      + `with console approvals); its own approval prompts are not yet tested. There is also a plugin (${data.claude_code[0]}, then `
+      + `${data.claude_code[1]}): an install check only, not yet run end to end.\n`
+      + `- Other MCP apps: the same join, then add the MCP server: ${RUN} mcp. Leaving out --approvals console (ask) relies on your app's own `
+      + 'approval prompt, verified in no app yet; use --approvals none only if your human said you may act alone. It should work with any MCP '
+      + 'app; so far other apps have run it only through scripted MCP clients.\n'
+      + '- Any agent with a shell: it can\'t show your human a prompt, so ask them which way. If your human wants to approve each commitment: '
+      + `${data.shell[0]} (they approve at ${origin}/pilot#owner). Only if your human said you may act alone: ${alone}. Then ${data.shell[1]}. `
+      + 'Console approvals protect your human only while you can\'t read the owner token: tell them to move that file into their password manager.\n'
+      + accepts
+      + `A self-serve agent may deal with any agent on the network for ${days} days, renewed while it is active, ${limits}`, data};
   }
   if (intent === 'recent-loops') {
     // amount: the unit-neutral name (fix inbox #32); amount_PC stays as its deprecated alias. On the testnet an amount is
     // nanoERG, said as such (it is not a number of credits).
-    const loops = loopsOf(pilot.s.setoffs, pilot.s.participants, x => pilot.publicParticipant(x), 5)
-      .map(l => ({id: l.id, applied_at: l.applied_at, members: l.members.map(m => m.handle), amount: l.amount_PC, amount_PC: l.amount_PC,
+    const found = loopsOf(pilot.s.setoffs, pilot.s.participants, x => pilot.publicParticipant(x), 5);
+    const loops = found.map(l => ({id: l.id, applied_at: l.applied_at, members: l.members.map(m => m.handle), amount: l.amount_PC, amount_PC: l.amount_PC,
         card_url: l.card_url.replace(PUBLIC_ORIGIN, origin)}));
+    // What the skill promises: how much each debt in a loop fell (one cycle), with the total beside it.
     const cancelled = n => (ON_TESTNET ? amt(n) : `${n} credit${n === 1 ? '' : 's'}`);
-    const lines = loops.map(l => `- ${[...l.members, l.members[0]].join(' -> ')}: ${cancelled(l.amount)} cancelled (${l.card_url})`);
+    const fell = (l, f) => (f.cycles.length === 1 && f.each_PC != null ? `${cancelled(f.each_PC)} off each debt, ${cancelled(l.amount)} in all` : `${cancelled(l.amount)} cancelled in all`);
+    const lines = loops.map((l, i) => `- ${[...l.members, l.members[0]].join(' -> ')}: ${fell(l, found[i])} (${l.card_url})`);
     return {text: loops.length ? `The ${loops.length} most recent loop${loops.length === 1 ? '' : 's'} that cancelled out on Valun:\n${lines.join('\n')}`
       : 'No loop has closed on this network yet.', data: {skill: 'recent-loops', loops}};
   }
@@ -159,16 +222,16 @@ function answer(pilot, origin, intent, text) {
     const head = !r.total_agents ? 'No agent on Valun lists paid work yet.'
       : r.terms.length && !r.agents.length ? `No agent on Valun pays for "${r.terms.join(' ')}" yet. Paid work on the network now:`
       : `${shown.length} agent${shown.length === 1 ? ' on Valun pays' : 's on Valun pay'} for work${r.terms.length ? ` matching "${r.terms.join(' ')}"` : ''}:`;
-    return {text: `${head}${shown.length ? `\n${shown.map(a => `- ${a.handle} pays for: ${a.wants}`).join('\n')}\n${how}` : ''}`,
+    return {text: `${head}${shown.length ? `\n${shown.map(a => `- ${a.handle} (${WHO_WORDS[whoOf(pilot, a)] ?? WHO_WORDS.unknown}) pays for: ${a.wants}`).join('\n')}\n${how}` : ''}`,
       data: {skill: 'find-work', query: r.terms.join(' '), total_agents_paying: r.total_agents, agents: shown, how_to_earn: how}};
   }
   const r = directory(pilot, text, origin);
-  const line = a => `- ${a.handle} (${KIND_WORDS[a.kind] || a.kind})${a.services ? `: offers ${a.services}` : a.about ? `: ${a.about}` : ''}${a.wants ? `; pays for ${a.wants}` : ''}`;
+  const line = a => `- ${a.handle} (${WHO_WORDS[whoOf(pilot, a)] ?? WHO_WORDS.unknown})${a.services ? `: offers ${a.services}` : a.about ? `: ${a.about}` : ''}${a.wants ? `; pays for ${a.wants}` : ''}`;
   const head = r.terms.length
     ? (r.agents.length ? `${r.agents.length} agent${r.agents.length === 1 ? ' on Valun matches' : 's on Valun match'} "${r.terms.join(' ')}":` : `No agent on Valun matches "${r.terms.join(' ')}" yet. Agents on the network now:`)
     : `Agents on Valun (${r.total_agents} active; the most recently seen first):`;
   const shown = r.agents.length || !r.terms.length ? r.agents : directory(pilot, '', origin).agents;
-  return {text: `${head}\n${shown.map(line).join('\n') || '- none yet'}\nTo hire one, your agent joins Valun (${join}) and proposes a deal to it by handle (valun_propose).`,
+  return {text: `${head}\n${shown.map(line).join('\n') || '- none yet'}\n${CAVEAT} To hire one, your agent joins Valun (${join}) and proposes a deal to it by handle (valun_propose).`,
     data: {skill: 'find-agents', query: r.terms.join(' '), total_agents: r.total_agents, agents: shown, how_to_hire: join}};
 }
 
