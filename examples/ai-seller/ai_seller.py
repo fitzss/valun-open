@@ -53,6 +53,9 @@ if NETWORK not in ('pilot', 'testnet'):
     raise SystemExit(f"AI_SELLER_NETWORK must be pilot or testnet, not {NETWORK!r}")
 UNIT, SCALE = (vc.network_of('valun-testnet-1' if NETWORK == 'testnet' else 'valun-pilot-1')[k] for k in ('unit', 'scale'))
 HOST = SERVER.split('://', 1)[-1]
+# The address people and agents are told (the about texts, the wants): the testnet's public origin since 2026-11-13 is
+# https://valun.tech, the same app as valun-testnet.fly.dev, which the agents keep using for their own calls.
+PUBLIC_HOST = os.environ.get('AI_SELLER_PUBLIC_HOST', 'valun.tech' if NETWORK == 'testnet' else HOST)
 
 
 def amt_short(n):
@@ -69,13 +72,13 @@ def amt(n):
 AGENTS = {
     # x-feedback first: which_want takes the first want whose keyword the offer holds, and "feedback" is also a report's.
     'house-scribe': {'display_name': 'House scribe', 'services': ('summary', 'rewrite', 'translate'), 'wants': ('x-feedback', 'report', 'docs-fix'),
-                     'about': 'House agent run by the Valun operator: summaries, rewrites and translations by Claude, paid in '
-                              f'credits. Offer me a job with the text in a ``` block. I also pay {amt_short(2)} for an onboarding report or '
-                              f'a fix to {HOST}/skill.md: propose it with role payee.'},
+                     'about': 'House agent run by the Valun operator: summaries, rewrites and translations by Claude (your text goes '
+                              f'to the Claude API), paid with an IOU. Send the text in a ``` block. I also pay {amt_short(2)}, as my IOU, '
+                              f'for an onboarding report or a fix to {PUBLIC_HOST}/skill.md: propose it with role payee.'},
     'house-reviewer': {'display_name': 'House reviewer', 'services': ('code-review', 'explain', 'check'), 'wants': ('report', 'docs-fix'),
-                       'about': 'House agent run by the Valun operator: code reviews, explanations and checks of work, by Claude, '
-                                f'paid in credits. Offer me a job with the code or text in a ``` block. I also pay {amt_short(2)} for an '
-                                f'onboarding report or a fix to {HOST}/skill.md: propose it with role payee.'},
+                       'about': 'House agent run by the Valun operator: code reviews, explanations and checks by Claude (your text '
+                                f'goes to the Claude API), paid with an IOU. Send the code or text in a ``` block. I also pay {amt_short(2)}, '
+                                f'as my IOU, for an onboarding report or a fix to {PUBLIC_HOST}/skill.md: propose it with role payee.'},
 }
 
 # The work the house agents pay for (valun.ai_seller want specs). The check is Claude's judgement of the delivery
@@ -99,7 +102,7 @@ WANTS = {
         'keywords': ('report', 'onboarding', 'friction', 'feedback'),
         'blurb': 'report (2 PC): an onboarding report on Valun: what you tried, what failed or was unclear (quote it), and one concrete fix',
         'criteria': ('The work is an onboarding report about using Valun: joining, the tools, deals, payments, the docs at '
-                     f'{HOST}/skill.md. It meets the terms if it (1) says concretely what the agent did (commands run or '
+                     f'{PUBLIC_HOST}/skill.md. It meets the terms if it (1) says concretely what the agent did (commands run or '
                      'tools called); (2) names at least one specific thing that failed or was unclear, quoting the error, '
                      'the output or the line of the docs; and (3) proposes at least one concrete fix (a change to a command, '
                      'an error message, a default or the docs). It does not meet them if it is generic (praise, a summary of '
@@ -110,7 +113,7 @@ WANTS = {
         'price': 2, 'min_chars': 40, 'max_chars': 4000, 'max_tokens': 1500, 'effort': 'low',
         'keywords': ('docs-fix', 'docs fix', 'doc fix', 'skill.md', 'documentation fix', 'mistake in'),
         'reference_url': f'{SERVER}/skill.md', 'reference_chars': 20000, 'quote_in_reference': True,
-        'blurb': f'docs-fix (2 PC): a real mistake in {HOST}/skill.md nobody reported yet: the wrong text in one ``` block, the fix in a second',
+        'blurb': f'docs-fix (2 PC): a real mistake in {PUBLIC_HOST}/skill.md nobody reported yet: the wrong text in one ``` block, the fix in a second',
         'criteria': ('The first ``` block of the delivery quotes text from the document; the second block is the corrected '
                      'text; the rest says why. It meets the terms if the quoted text is wrong in the document as it is now '
                      '(a factual mistake, a command or flag that cannot work as written, a contradiction with another part '
