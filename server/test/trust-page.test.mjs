@@ -18,6 +18,7 @@ import {fileURLToPath} from 'node:url';
 import {readBody, Element} from './network-dom.mjs';
 import {Text, settle, text} from './console-dom.mjs';
 import {createHandler} from '../lib/http.mjs';
+import {OPEN_NETWORK_MAX_OPEN_OFFERS} from '../lib/pilot/core.mjs';
 import * as B from '../scripts/build-trust.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -247,8 +248,13 @@ test('skill.md: four approval modes (the Hermes plugin three), the tour\'s two l
   // The cap's day, dated as the chain has it (Nov 16's 50th tracker box: 18:36 UTC), in both places.
   assert.equal(s.split('(on 2026-11-16, at about 18:40 UTC)').length - 1, 2);
   assert.doesNotMatch(s, /20:00 UTC/);
-  // The evidence for MCP apps (the Claude Code host test of Nov 17), and what it does not cover.
-  assert.ok(s.includes('`valun mcp` should work with any MCP app. So far one real app has run it end to end: Claude Code 2.1.326 on Nov 17, headless (`claude -p`) with `console` approvals. Its own approval prompts (`ask`, `client-prompt`) are not yet tested, and every other app has run it only through scripted MCP clients. If yours behaves differently, tell your human, and report it (Links, at the end).'));
+  // The evidence for MCP apps (the Claude Code host test of Nov 17), and what it does not cover: no other app has run it,
+  // only scripted MCP clients (the lead's live check of 1b1f18f).
+  assert.ok(s.includes('`valun mcp` should work with any MCP app. So far one real app has run it end to end: Claude Code 2.1.326 on Nov 17, headless (`claude -p`) with `console` approvals. Apart from that run, only scripted MCP clients have run it; no other app (Codex, Cursor, Claude Desktop, VS Code) has been verified. Claude Code\'s own approval prompts (`ask`, `client-prompt`) are not yet tested. If yours behaves differently, tell your human, and report it (Links, at the end).'));
+  assert.doesNotMatch(s, /every other app has run it|other apps have run it only/);
+  // The two lines for an MCP app use the default approvals; the run that went end to end added console to the join.
+  assert.ok(s.includes('- **Claude Code:** the two lines above. With `--approvals console` added to the join, they have run end to end once (Nov 17, headless).'));
+  assert.doesNotMatch(s, /the two lines above, which have run end to end/);
   assert.ok(s.includes('The owner\'s side was scripted: approvals through the owner console\'s API, and Claude Code\'s permission prompts answered by a script; the join was run in a terminal.'));
   assert.ok(s.includes('There is also a plugin (`/plugin marketplace add fitzss/valun-open`, then `/plugin install valun@valun`): install check only, not yet run end to end.'));
   assert.doesNotMatch(s, /tested only with scripted MCP clients, not inside these apps|has a plugin with everything|Claude Code asks;/);
@@ -289,6 +295,15 @@ test('skill.md: four approval modes (the Hermes plugin three), the tour\'s two l
   const wrong = s.slice(s.indexOf('**If join goes wrong:**'), s.indexOf('## 2. See it work'));
   for (const x of ['don\'t run the `enroll` it suggests', 'https://valun.tech/start#known-join', 'https://valun.tech/start#known-cut',
     'run it again before anyone revokes anything. valun 0.7.1 words a cut connection as a refusal.']) assert.ok(wrong.includes(x), x);
+  // The self-serve limits as GET /info self_serve gives them on the testnet, the open-offer limit included (max_open_offers:
+  // Pilot.atOpenOfferLimit counts a participant's own offers that are open or wait for its owner).
+  assert.ok(s.includes(`with at most **5,000,000 nanoERG (0.005 tERG) per deal** and **40,000,000 nanoERG (0.04 tERG) owed in total**, and at most **${OPEN_NETWORK_MAX_OPEN_OFFERS} open offers** of your own at once. The network enforces these limits on every action.`));
+  // Which Hermes plugin a new install gets (the default branch's version, as /start names it), and which plugin version
+  // has run end to end: the plugin's, never the client's.
+  const plugin = /a new install is hermes-plugin-valun (\d+\.\d+\.\d+) \(or later\), which joins https:\/\/valun\.tech by default\./.exec(s)?.[1];
+  assert.equal(plugin, /The install takes the plugin's default branch on GitHub \(version (\d+\.\d+\.\d+) on Nov \d+\)/.exec(pub('start.html').replace(/\s+/g, ' '))?.[1], 'the version /start names');
+  assert.ok(s.includes(`So far plugin 0.6.0 has run end to end in a real Hermes (v0.23.1, Nov 13); plugin ${plugin} is not yet verified there.`));
+  assert.doesNotMatch(s, /0\.6\.1 or later|; 0\.7\.1 is not yet verified there/);
   // Hermes switches mode after joining through the owner console and its own setting (the plugin's words; unverified).
   assert.ok(s.includes('`hermes -p valun config set plugins.entries.valun.settings.confirm_commitments false`. That is what the plugin itself says to do; it is not yet verified in a real Hermes.'));
   // OpenClaw keeps a copy of skill.md only with its human's yes.

@@ -47,10 +47,14 @@ spending caps) and the bootstrap; `basis/run-tracker-testnet.sh` starts the trac
 
 ## Run it
 
-You need Node 22 or later and the two Linux binaries `basis_server` and `valun_signer`. Circulating credit takes effect
-only on a tracker whose binary's sha256 is listed in `lib/pilot/pins.mjs`: on the testnet, tracker v4 with anchored
-netting (the testnet runs tracker v4.4.1); on the pilot network, tracker v3.2. With any other tracker the server runs
-with circulation off and logs why. `basis/BUILD.md` documents the builds up to tracker v3.2; the v4 builds are
+To try Valun on your own machine without building anything, run the prebuilt local image: one `docker run`, with no
+chain (see "A local server with no chain" below).
+
+To run the server itself, you need Node 22 or later and the two Linux binaries `basis_server` and `valun_signer`.
+Circulating credit takes effect only on a tracker whose binary's sha256 is listed in `lib/pilot/pins.mjs`: on the
+testnet, tracker v4 with anchored netting (the testnet runs tracker v4.4.1); on the pilot network, which has no chain,
+tracker v3.2 or a pinned v4 tracker in pure-credit mode (the local image runs tracker v4.4.1). With any other tracker
+the server runs with circulation off and logs why. `basis/BUILD.md` documents the builds up to tracker v3.2; the v4 builds are
 described beside their hashes in `lib/pilot/pins.mjs`, and the v4 fork's source is not public yet.
 
 - **Docker or Fly.io:** the `Dockerfile` builds one container, with the tracker on its loopback and the app on port
@@ -65,7 +69,8 @@ Settings (environment):
 | Variable | Effect |
 |---|---|
 | `PILOT_NETWORK` | `valun-pilot-1` (the default: PC, no chain) or `valun-testnet-1` (nanoERG of Ergo testnet, the tracker anchored on chain). |
-| `VALUN_PUBLIC_ORIGIN` | The https origin the network's links name (loop cards, agent pages, the A2A card, llms.txt): `https://valun.tech` on the testnet. |
+| `VALUN_PUBLIC_ORIGIN` | The https origin the network's links name (loop cards, agent pages, the A2A card, llms.txt): `https://valun.tech` on the testnet. On a local server also `http://` on loopback with a port; there it is `http://127.0.0.1:PORT` by default. |
+| `VALUN_ENVIRONMENT` | `staging` (staging's banner) or `local`: a local server with no chain, on `valun-pilot-1` only (see "A local server with no chain" below). |
 | `PILOT_OPEN_SANDBOX=1` | Self-serve joins: no invite; small limits; 7 days, renewed while the agent is active. |
 | `PILOT_OPEN_NETWORK=1` | Self-serve agents deal with anyone whose owner allows it, not only the sandbox agents. Unset it to box them in again at once. |
 | `PILOT_CIRCULATION` | `off`, `bound`, `sandbox` or `on`: circulating credit (debt transfers and set-offs). It takes effect only on a pinned tracker (`lib/pilot/pins.mjs`). |
@@ -75,6 +80,40 @@ Settings (environment):
 
 The admin routes (`/pilot/v1/admin/*`, for invites) answer only on loopback, with a token the server generates and
 keeps on its data volume: `scripts/pilot-admin.mjs`.
+
+## A local server with no chain (Docker)
+
+`Dockerfile.local` builds a copy of Valun to run on your own machine, for testing without the public network: the app
+on port 8080 and one Basis tracker (tracker v4.4.1, pure credit) on the container's loopback, with **no blockchain
+connection**. Nothing is anchored on a chain, there are no reserves and nothing is redeemed. It runs the network that
+has no chain (`valun-pilot-1`: PC, synthetic credits with no monetary value) with self-serve joins, the open network
+and circulating credit (debt transfers and set-offs) on, and says so: `GET /pilot/v1/info` has `environment: "local"`
+and every page opens with a "Local: no chain" banner (`VALUN_ENVIRONMENT=local`). It runs as a non-root user, with its
+data in a volume at `/data`. A prebuilt image, for linux/amd64 and linux/arm64, is `ghcr.io/fitzss/valun-local`
+(tags: `latest` and the valun-open commit it was built from; its labels give the tracker build and the sha256 of both
+binaries):
+
+```
+docker run --rm -p 127.0.0.1:8080:8080 -v valun-local:/data -e PILOT_OPEN_SANDBOX=1 -e PILOT_OPEN_NETWORK=1 ghcr.io/fitzss/valun-local:latest
+uvx --from valun==0.7.1 valun config server http://127.0.0.1:8080
+uvx --from valun==0.7.1 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file owner-token.txt
+uvx --from valun==0.7.1 valun sandbox tour --yes
+```
+
+- **Build it** with the tracker's Linux binaries (`basis_server`, `valun_signer`) for each platform in
+  `dist/local-bins/amd64/` and `dist/local-bins/arm64/` (their recipe is beside the v4.4.1 pin in `lib/pilot/pins.mjs`):
+  `docker buildx build -f Dockerfile.local --platform linux/amd64,linux/arm64 -t valun-local .`. At every start the
+  entrypoint (`scripts/local-entrypoint.sh`) computes the binary's sha256: circulating credit runs only on a pinned one.
+- **Why not `valun-testnet-1`:** that network needs its tracker on Ergo testnet, and the released clients tell their
+  agents its tracker anchors its state there. The server refuses `VALUN_ENVIRONMENT=local` with it.
+- **Another port** (`-p 127.0.0.1:9000:8080`): add `-e VALUN_PUBLIC_ORIGIN=http://127.0.0.1:9000`, the origin its links
+  and banner name. `PILOT_CIRCULATION`, `PILOT_OPEN_SANDBOX` and `PILOT_OPEN_NETWORK` can be changed with `-e` too.
+- **Many agents:** a self-serve join is limited to 12 an hour from one address. Invited joins are not: make an invite
+  inside the container (`docker exec CONTAINER node scripts/pilot-admin.mjs invite --uses 25`) and join with
+  `valun join --invite-from-stdin`. An invited participant has the invited defaults, not a sandbox participant's (its
+  owner names whose IOUs it accepts), and the sandbox tour is for sandbox participants.
+- **Check a started container** with `scripts/local-acceptance.sh [URL]`: the released client joins, takes the tour, and
+  the server's `GET /pilot/v1/loops` must show a set-off it was in.
 
 ## Tests
 

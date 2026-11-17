@@ -16,6 +16,13 @@ before(async () => {
   pilot.s.participants.vp_000000000003.about = 'Summaries <script>alert(1)</script> & "quotes"';
   pilot.publicPosition = async x => {
     if (x.handle === 'brief-bot') throw new Error('tracker down');
+    // Fix inbox #141: sandbox-exact is owed by hidden-test, an agent the operator unlisted, and owes not-enrolled, which
+    // never enrolled an agent (neither has a page), and is owed by open-poet (which has one); hidden-test vouched for it,
+    // and it vouched for open-poet.
+    if (x.handle === 'sandbox-exact') return {claims_held: 9, owes: 1, cleared_by_setoff: 0, deals: {credit_notes_issued: 2},
+      claims: [{from: 'hidden-test', amount: 5}, {from: 'open-poet', amount: 4}], debts: [{to: 'not-enrolled', amount: 1}],
+      evidence: {backing: {public_vouches: {received: {count: 1, shown: [{guarantee_id: 'vg_1', backer: 'hidden-test', issuer: 'sandbox-exact'}]},
+        given: {count: 1, shown: [{guarantee_id: 'vg_2', backer: 'sandbox-exact', issuer: 'open-poet'}]}}}}};
     // deals as the testnet splits them (fix inbox #18): paid with a note 2 times and once by a transfer; it paid 3 times
     // with its own note and once with a note it held (credit_history)
     return {claims_held: 7, owes: 2, cleared_by_setoff: 4, deals: {credit_notes_issued: 5, disputed: 1, notes_received: 2, notes_issued_as_payer: 3},
@@ -85,6 +92,31 @@ test('an agent that pays for work: its page says what it pays for and how to ear
   assert.doesNotMatch(o.text, /What it pays for|Get paid by it/, 'nothing about paid work for an agent that lists none');
 });
 
+// Fix inbox #141: house-scribe's and house-reviewer's pages linked tn-newcomer-4, an agent the operator unlisted, whose
+// /agent/ page is a 404. A counterparty or a vouch is linked only to a page the server shows.
+test('fix inbox #141: a counterparty or a vouch with no page of its own (unlisted, never enrolled) is named, not linked; every agent link answers 200', async () => {
+  const r = await get('/agent/sandbox-exact');
+  assert.equal(r.status, 200);
+  for (const h of ['hidden-test', 'not-enrolled']) assert.equal((await get(`/agent/${h}`)).status, 404, `${h}: no page`);
+  const at = r.text.indexOf('<h2 id="ties-h">'), ties = r.text.slice(at, r.text.indexOf('</section>', at));
+  assert.match(ties, /<h3>It owes<\/h3>\n<ul class="ties-list">\n {2}<li><span class="h">not-enrolled<\/span><svg class="tie-bar"/);
+  assert.match(ties, /<h3>It is owed by<\/h3>\n<ul class="ties-list">\n {2}<li><span class="h">hidden-test<\/span><svg class="tie-bar"[^>]*><rect width="100" height="6"\/><\/svg><span class="num">5 PC<\/span><\/li>/);
+  assert.match(ties, /<li><a class="h" href="\/agent\/open-poet">open-poet<\/a><svg class="tie-bar"[^>]*><rect width="80" height="6"\/><\/svg><span class="num">4 PC<\/span><\/li>/, 'an agent with a page is linked');
+  assert.ok(r.text.includes('<li><strong>Vouches.</strong> Vouched for by <span class="h">hidden-test</span>; vouches for <a href="/agent/open-poet"><span class="h">open-poet</span></a>. Public because both agents chose it; who held the IOUs is not shown.</li>'));
+  // #141's acceptance: every link to an agent page on it answers 200.
+  const linked = [...new Set([...r.text.matchAll(/href="\/agent\/([^"]+)"/g)].map(m => m[1]))];
+  assert.deepEqual(linked, ['open-poet']);
+  for (const h of linked) assert.equal((await get(`/agent/${h}`)).status, 200, h);
+});
+
+test('the 404 page says what is true of every handle it answers: no public page (an unlisted participant does exist)', async () => {
+  const r = await get('/agent/hidden-test');
+  assert.equal(r.status, 404);
+  assert.ok(r.text.includes('<p class="lede">No agent on this server has a public page with this handle. Handles are lowercase, 3 to 24 characters.</p>'));
+  assert.ok(r.text.includes('<meta name="description" content="No agent on this server has a public page with this handle.">'));
+  assert.doesNotMatch(r.text, /No agent has this handle/);
+});
+
 test('participant-chosen text is escaped; the page shows without a record when the tracker cannot be read', async () => {
   const r = await get('/agent/brief-bot');
   assert.equal(r.status, 200);
@@ -139,20 +171,41 @@ test('the counterparties beyond the first 8 are counted ("and 3 more"); the budg
   assert.doesNotMatch(html, /Published by its owner/);
 });
 
-test('public vouches on the page (fix inbox #31): who vouched for it and whom it vouched for, as links; none without them', () => {
+test('public vouches on the page (fix inbox #31): who vouched for it and whom it vouched for, as links to the pages shown; none without them', () => {
   const now = Date.parse('2026-11-13T12:00:00Z');
   const pub = {id: 'vp_1', handle: 'basis-x-tr-amy', joined_at: '2026-11-13', agent_last_seen: null};
   const backing = {given: {accepted: 1}, backed_as_issuer: {accepted: 1, backers: 1},
     public_vouches: {received: {count: 1, shown: [{guarantee_id: 'vg_1', backer: 'basis-x-tr-ari', issuer: 'basis-x-tr-amy', cap: 2000000}]},
       given: {count: 2, shown: [{guarantee_id: 'vg_2', backer: 'basis-x-tr-amy', issuer: 'newcomer-one'}, {guarantee_id: 'vg_3', backer: 'basis-x-tr-amy', issuer: '<script>'}]}}};
-  const v = agentView(pub, {evidence: {backing}}, [], {now});
-  assert.deepEqual(v.vouches, {by: ['basis-x-tr-ari'], of: ['newcomer-one'], more_by: 0, more_of: 0}, 'a name that is not a handle is left out');
+  const pages = new Set(['basis-x-tr-ari', 'newcomer-one']);
+  const v = agentView(pub, {evidence: {backing}}, [], {now, pages});
+  assert.deepEqual(v.vouches, {by: [{handle: 'basis-x-tr-ari', page: true}], of: [{handle: 'newcomer-one', page: true}], more_by: 0, more_of: 0}, 'a name that is not a handle is left out');
   const html = renderAgentPage(v);
   assert.ok(html.includes('<li><strong>Vouches.</strong> Vouched for by <a href="/agent/basis-x-tr-ari"><span class="h">basis-x-tr-ari</span></a>; vouches for <a href="/agent/newcomer-one"><span class="h">newcomer-one</span></a>. Public because both agents chose it; who held the IOUs is not shown.</li>'));
   assert.doesNotMatch(html, /<script>/);
+  // Fix inbox #141: a vouch whose agent has no page (unlisted) is named, not linked; with no pages known, none is linked.
+  const hidden = renderAgentPage(agentView(pub, {evidence: {backing}}, [], {now, pages: new Set(['newcomer-one'])}));
+  assert.ok(hidden.includes('Vouched for by <span class="h">basis-x-tr-ari</span>; vouches for <a href="/agent/newcomer-one"><span class="h">newcomer-one</span></a>.'));
+  assert.doesNotMatch(renderAgentPage(agentView(pub, {evidence: {backing}}, [], {now})), /href="\/agent\//);
   const none = agentView(pub, {evidence: {backing: {given: {accepted: 1}}}}, [], {now});
   assert.equal(none.vouches, null);
   assert.doesNotMatch(renderAgentPage(none), /Vouches\./);
+});
+
+test('pageHandles: the handles whose page the server shows, as agentPageShown says: not unlisted, with an agent now or before', async () => {
+  const {pageHandles} = await import('../lib/pilot/agents.mjs');
+  const P = (handle, extra) => ({handle, status: 'active', ...extra});
+  const all = {a: P('active-one'), b: P('hidden-one', {unlisted: true}), c: P('waiting-one', {status: 'awaiting_agent'}),
+    d: P('rekeyed-one', {status: 'awaiting_agent', past_pubkeys: [{pubkey: '02ab'}]}), e: P('hidden-rekeyed', {status: 'awaiting_agent', past_pubkeys: [{pubkey: '02cd'}], unlisted: true})};
+  assert.deepEqual([...pageHandles(all)].sort(), ['active-one', 'rekeyed-one']);
+  assert.deepEqual([...pageHandles(Object.values(all))].sort(), ['active-one', 'rekeyed-one'], 'a list too');
+  assert.equal(pageHandles(null).size, 0);
+  // The ties say which counterparty has one.
+  const v = agentView({id: 'vp_1', handle: 'some-one', joined_at: '2026-11-13', agent_last_seen: null},
+    {claims_held: 3, owes: 1, claims: [{from: 'active-one', amount: 2}, {from: 'hidden-one', amount: 1}], debts: [{to: 'rekeyed-one', amount: 1}], deals: {credit_notes_issued: 0}}, [],
+    {now: Date.parse('2026-11-17T12:00:00Z'), pages: pageHandles(all)});
+  assert.deepEqual(v.ties.owed.map(t => [t.handle, t.page]), [['active-one', true], ['hidden-one', false]]);
+  assert.deepEqual(v.ties.owes.map(t => [t.handle, t.page]), [['rekeyed-one', true]]);
 });
 
 test('the maintainers page: its Open Graph tags, the line to paste, the jobs, the honest notes, no script', async () => {

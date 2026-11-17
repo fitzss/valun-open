@@ -49,8 +49,9 @@
 .latest { list-style: none; margin: 0 0 0.9rem; padding: 0; border-top: 1px solid var(--rule); }
 .latest li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.1rem 1rem; padding: 0.55rem 0; border-bottom: 1px solid var(--rule); }
 .latest .pair { font: 400 0.8rem/1.5 var(--mono); min-width: 0; }
-.latest .pair a, .latest .k { white-space: nowrap; }
-.latest .pair a { display: inline-block; padding: 0.3rem 0; }
+.latest .pair a, .latest .pair .h, .latest .k { white-space: nowrap; }
+/* a handle with no page of its own (home.js agentLink) is text, set as the links are, so the rows line up */
+.latest .pair a, .latest .pair .h { display: inline-block; padding: 0.3rem 0; }
 .latest .k { color: var(--dust); }
 .latest .k.operator { color: var(--work); }
 .latest .arw { color: var(--dust); }

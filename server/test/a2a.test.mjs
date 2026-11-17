@@ -4,6 +4,7 @@
 // scripts/a2a-sdk-check.py drives the same endpoint with the official a2a-sdk clients (1.x and 0.3).
 import {test, before, after} from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import http from 'node:http';
 import {createHandler} from '../lib/http.mjs';
 import {createA2A, agentCard} from '../lib/a2a.mjs';
@@ -86,10 +87,13 @@ test('the other skills: how to join, recent loops; a data part can name the skil
   // in the text, after it, only for a human who said the agent may act alone.
   const JOIN = 'uvx --from valun==0.7.1 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR HUMAN" --about "what you offer, in one line" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"';
   assert.equal(jd.shell[0], `${JOIN} --approvals console`);
-  // Claude Code joins with console, as its one real run did (headless Claude Code cancels ask's prompt).
-  assert.equal(jd.mcp[0], `${JOIN} --approvals console`);
-  assert.ok(j.parts[0].text.includes(`- Claude Code: join in a terminal (${JOIN} --approvals console: your human approves each commitment at ${base}/pilot#owner), then claude mcp add valun -- uvx --from valun==0.7.1 valun mcp. Run end to end once`));
-  assert.ok(j.parts[0].text.includes('- Other MCP apps: the same join, then add the MCP server: uvx --from valun==0.7.1 valun mcp. Leaving out --approvals console (ask) relies on your app\'s own approval prompt, verified in no app yet; use --approvals none only if your human said you may act alone.'));
+  // An MCP app's join is skill.md's, with no --approvals flag (ask, the default), and the text says when to add console,
+  // as skill.md does; the one real Claude Code run (headless, which cancels ask's prompt) added it, and says so.
+  assert.equal(jd.mcp[0], JOIN);
+  assert.ok(j.parts[0].text.includes(`- Claude Code: join in a terminal (${JOIN}), then claude mcp add valun -- uvx --from valun==0.7.1 valun mcp. That join uses the default approvals, ask, which works only in an app that shows approval prompts (verified in no app yet). If your human chose otherwise, add --approvals console or --approvals none to it (none only if they said you may act alone). If they want to approve each commitment and your app can't show approval prompts (run headless, such as claude -p), or you don't know whether it can, add --approvals console: each commitment then waits for your human at ${base}/pilot#owner. With --approvals console added to the join, these two lines have run end to end once (Claude Code 2.1.326, Nov 17, headless); Claude Code's own approval prompts are not yet tested.`));
+  // The evidence for other apps, as it is: only scripted MCP clients, and no other app verified (the lead's live check).
+  assert.ok(j.parts[0].text.includes('- Other MCP apps: the same join, then add the MCP server: uvx --from valun==0.7.1 valun mcp. It should work with any MCP app. Apart from the Claude Code run, only scripted MCP clients have run it; no other app (Codex, Cursor, Claude Desktop, VS Code) has been verified.'));
+  assert.doesNotMatch(j.parts[0].text, /other apps have run it only through scripted MCP clients|every other app has run it/);
   assert.deepEqual([jd.shell[1], jd.mcp[1]], ['uvx --from valun==0.7.1 valun call valun_status', 'claude mcp add valun -- uvx --from valun==0.7.1 valun mcp']);
   for (const cmd of [...jd.mcp, ...jd.shell]) assert.match(cmd, /uvx --from valun==0\.7\.1 valun /, cmd);
   assert.ok(j.parts[0].text.includes(jd.shell[0]), 'the text gives the same command');
@@ -107,6 +111,19 @@ test('the other skills: how to join, recent loops; a data part can name the skil
   const none = (await rpc(v1('quantum chemistry simulations'))).body.result.message;
   assert.match(none.parts[0].text, /No agent on Valun matches/);
   assert.equal(none.parts[1].data.agents.length, 3);
+});
+
+// One MCP join everywhere (the lead's live check of 1b1f18f): the answer's two MCP commands are skill.md's two lines for an
+// MCP app, word for word (test/start-page.test.mjs holds /start's to the same lines), so an agent that compares the
+// surfaces gets one first command. None names --approvals: the text adds console where skill.md does.
+test('join-valun: the MCP commands are skill.md\'s two lines for an MCP app, with no --approvals flag', async () => {
+  const jd = (await rpc(v1('How do I join?'))).body.result.message.parts[1].data;
+  const skill = fs.readFileSync(new URL('../public/skill-testnet.md', import.meta.url), 'utf8');
+  const section = skill.slice(skill.indexOf('### Claude Code, Codex, Cursor, Claude Desktop, or any MCP app'), skill.indexOf('### Any agent with a shell'));
+  const fence = /```\n([\s\S]*?)\n```/.exec(section)?.[1].split('\n');
+  assert.equal(fence?.length, 2, 'skill.md gives an MCP app two lines: the join, then claude mcp add');
+  assert.deepEqual(jd.mcp, fence);
+  for (const l of jd.mcp) assert.doesNotMatch(l, /--approvals/, l);
 });
 
 test('find-work: the agents that pay for work, what they pay for, and how to take a job', async () => {

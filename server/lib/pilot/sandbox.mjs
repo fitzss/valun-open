@@ -2,7 +2,7 @@
 //
 // sandbox-exact    sells text-stats (3 PC) and notary (2 PC) jobs; its results are always exact.
 // sandbox-mallory  sells the same jobs but is WRONG ON PURPOSE in about half of its deliveries (chosen by the deal id),
-//                  so anyone can test whether their agent or client really verifies work before issuing a credit note.
+//                  so anyone can test whether their agent or client really verifies work before issuing an IOU.
 //
 // They are ordinary participants: own keys (kept on the server's data volume), own mandates, signed statements, the
 // same Pilot methods an HTTP client goes through. Labelled as run by the Valun operator. The loop runs in-process, so
@@ -63,12 +63,14 @@ export const SERVICES = {
 export const SERVICES_TEXT = `text-stats (${amt(pc(3))}): word, character and line counts, unique words, SHA-256, the 10 most frequent words. `
   + `notary (${amt(pc(2))}): SHA-256 and byte length. ` + 'Put the text in a ``` block, after TEXT:, or as the only quoted string. '
   + 'Deterministic: check every number.';
-// payWithHeldNotes: the agent's pay_with_held_notes with circulating credit on.
+// payWithHeldNotes: the agent's pay_with_held_notes with circulating credit on. `about`: its public about, which ensure()
+// keeps as this build words it (mallory's said "before issuing a credit note" until the redesign's live check; the site
+// calls a credit note an IOU).
 export const AGENTS = {
   'sandbox-exact': {display_name: 'Sandbox: exact results, always on', wrongOnPurpose: false, payWithHeldNotes: 'never',
     about: 'A deterministic test agent run inside the Valun server: no AI model, always on. Its results are exact, so you can verify every delivery yourself.'},
   'sandbox-mallory': {display_name: 'Sandbox Mallory: wrong on purpose', wrongOnPurpose: true, payWithHeldNotes: 'prefer',
-    about: 'A deterministic test agent that is WRONG ON PURPOSE in about half of its deliveries. Use it to test that your agent verifies work and disputes wrong deliveries before issuing a credit note.'},
+    about: 'A deterministic test agent that is WRONG ON PURPOSE in about half of its deliveries. Use it to test that your agent verifies work and disputes wrong deliveries before issuing an IOU (credit note).'},
 };
 const OPERATOR = 'Valun operator (sandbox agent run by the server, no AI)';
 const MANDATE = {objective: 'Sell exactly checkable text jobs to anyone testing Valun.', may_issue_credit: false, may_accept_credit: true,
@@ -313,10 +315,12 @@ export class Sandbox {
       const drifted = m && Object.entries(target).some(([k, v]) => JSON.stringify(m[k]) !== JSON.stringify(v));
       if (x && (!m?.expires_at || drifted || Date.parse(m.expires_at) - Date.now() < 7 * 864e5))
         p.setMandate(x, {...target, expires_at: new Date(Date.now() + MANDATE_DAYS * 864e5).toISOString()}, {by: 'operator'});
-      // Its public offer as this build words it: a record that joined with an earlier text is updated once (setProfile
-      // saves and audits only a real change). A refusal is logged; it never stops the agents.
-      if (x && x.services !== SERVICES_TEXT) {
-        try { p.setProfile(x, {services: SERVICES_TEXT}, {by: 'operator'}); } catch (e) { this.log(`sandbox: ${handle}'s services not updated: ${e.message}`); }
+      // Its public about and offer as this build words them: a record that joined with an earlier text is updated once
+      // (setProfile saves and audits only a real change, and only the fields that differ are sent). A refusal is logged;
+      // it never stops the agents.
+      const stale = x ? Object.fromEntries(Object.entries({about: a.about, services: SERVICES_TEXT}).filter(([k, v]) => x[k] !== v)) : {};
+      if (Object.keys(stale).length) {
+        try { p.setProfile(x, stale, {by: 'operator'}); } catch (e) { this.log(`sandbox: ${handle}'s ${Object.keys(stale).join(' and ')} not updated: ${e.message}`); }
       }
     }
     this.mandateMode = circulating;

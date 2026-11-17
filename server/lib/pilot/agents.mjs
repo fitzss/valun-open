@@ -5,7 +5,7 @@
 // published it. Nothing else: no owner data, no tokens, and no mandate its owner did not publish.
 //
 // Pure: no I/O and no clock. agentView() takes what the caller read (the public record, its public position, the loops,
-// the card, and `now` for "last seen"); renderAgentPage() renders it. No inline script or style (CSP): /site.css and
+// the card, the handles that have a page of their own, and `now` for "last seen"); renderAgentPage() renders it. No inline script or style (CSP): /site.css and
 // /loop.css style it, and every value is HTML-escaped (handles, names and texts are chosen by participants).
 import {esc, page, plural, kindOf, PUBLIC_ORIGIN, startHref, ON_TESTNET_FOOTER, whoRuns, WHO, OPERATOR_RUN, terg, agentLink, liveLine} from './loops.mjs';
 import {amt, pc, tergOf, ON_TESTNET} from './units.mjs';
@@ -30,6 +30,10 @@ export function ago(iso, now) {
 
 // Whether a participant has a page: not unlisted by the operator, and with an agent (active now, or with an earlier key).
 export const agentPageShown = q => !!q && !q.unlisted && (q.status === 'active' || !!q.past_pubkeys?.length);
+// The handles whose page the server shows, of `participants` (s.participants, or a list of such records): the only
+// handles a rendered page links to /agent/<handle>. An unlisted agent has no page, so a link to it was a 404 (fix inbox
+// #141: house-scribe's page linked tn-newcomer-4, a release-check agent the operator unlisted).
+export const pageHandles = participants => new Set(Object.values(participants || {}).filter(agentPageShown).map(q => q.handle));
 
 // The record a page shows, from a position (Pilot.position or publicPosition; null when it could not be read): deals
 // paid, deals disputed, what it holds and owes on the tracker, and what loops cancelled. The budget card's record is
@@ -54,9 +58,11 @@ export function dealsOf(pos) {
 }
 
 // Who it owes and who owes it, from its position's debts (to) and claims (from): largest first, the handles checked.
-export function tiesOf(pos) {
+// `page`: whether the counterparty's own page is shown (its handle is in `pages`, pageHandles), so the page links it.
+export function tiesOf(pos, pages = null) {
   if (!pos || (!Array.isArray(pos.claims) && !Array.isArray(pos.debts))) return null;
-  const side = (xs, key) => (Array.isArray(xs) ? xs : []).map(x => ({handle: typeof x?.[key] === 'string' ? x[key] : null, amount: Number(x?.amount) || 0}))
+  const tie = (handle, amount) => ({handle, amount, page: !!handle && !!pages?.has(handle)});
+  const side = (xs, key) => (Array.isArray(xs) ? xs : []).map(x => tie(typeof x?.[key] === 'string' ? x[key] : null, Number(x?.amount) || 0))
     .filter(x => x.amount > 0).sort((a, b) => b.amount - a.amount || String(a.handle).localeCompare(String(b.handle)));
   const owes = side(pos.debts, 'to'), owed = side(pos.claims, 'from');
   return {owes: owes.slice(0, TIES_SHOWN), owed: owed.slice(0, TIES_SHOWN), more_owes: Math.max(0, owes.length - TIES_SHOWN), more_owed: Math.max(0, owed.length - TIES_SHOWN),
@@ -86,17 +92,18 @@ export function budgetView(card) {
 
 // The page's data. `pub`: Pilot.directoryRecord(x) (its public record); `pos`: Pilot.publicPosition(x) (or null when it
 // could not be read); `loops`: loops.mjs loopsOf() records (newest first); `dormant`: whether its sandbox time has ended;
-// `card`: its budget card (lib/pilot/card.mjs), or null.
-export function agentView(pub, pos, loops, {now, dormant = false, card = null}) {
+// `card`: its budget card (lib/pilot/card.mjs), or null; `pages`: the handles whose page the server shows (pageHandles),
+// the only counterparties the page links (without it, none).
+export function agentView(pub, pos, loops, {now, dormant = false, card = null, pages = null}) {
   const mine = (loops || []).filter(l => l?.cycles?.some(c => c.members.some(m => m.handle === pub.handle))).slice(0, LOOPS_SHOWN);
   return {id: pub.id, handle: pub.handle, display_name: pub.display_name, operator: pub.operator, about: pub.about || '', services: pub.services || '',
     wants: pub.wants || '', kind: kindOf(pub), who: whoRuns(pub), joined_at: pub.joined_at, last_seen: ago(pub.agent_last_seen, now), dormant,
     record: recordOf(pos),
     deals: dealsOf(pos),
-    ties: tiesOf(pos),
+    ties: tiesOf(pos, pages),
     budget: budgetView(card),
     evidence: pos?.evidence ? evidenceLines(pos.evidence) : null,
-    vouches: vouchesOf(pos?.evidence?.backing?.public_vouches),
+    vouches: vouchesOf(pos?.evidence?.backing?.public_vouches, pages),
     // each: what each debt in it fell by (one cycle only; a round of several cycles is shown by its total).
     loops: mine.map(l => ({id: l.id, route: [...l.cycles[0].members.map(m => m.handle ?? 'unknown'), l.cycles[0].members[0]?.handle ?? 'unknown'],
       amount: l.amount_PC, each: l.cycles.length === 1 ? l.cycles[0].each_PC ?? null : null, at: l.applied_at})),
@@ -105,15 +112,17 @@ export function agentView(pub, pos, loops, {now, dormant = false, card = null}) 
 
 // Fix inbox #31: the public vouches (guarantees between this agent and agents that both chose public vouches): who
 // vouched for it (backed its IOUs) and whom it vouched for, as handles (each checked as a handle, and escaped when
-// rendered); null when there are none.
-export function vouchesOf(v) {
+// rendered), each with whether its page is shown (`pages`, as tiesOf); null when there are none.
+export function vouchesOf(v, pages = null) {
   if (!v) return null;
-  const names = (side, key) => [...new Set((side?.shown || []).map(x => x?.[key]).filter(h => typeof h === 'string' && AGENT_HANDLE_RE.test(h)))];
+  const names = (side, key) => [...new Set((side?.shown || []).map(x => x?.[key]).filter(h => typeof h === 'string' && AGENT_HANDLE_RE.test(h)))]
+    .map(handle => ({handle, page: !!pages?.has(handle)}));
   const by = names(v.received, 'backer'), of = names(v.given, 'issuer');
   return by.length || of.length ? {by: by.slice(0, VOUCHES_SHOWN), of: of.slice(0, VOUCHES_SHOWN), more_by: Math.max(0, by.length - VOUCHES_SHOWN),
     more_of: Math.max(0, of.length - VOUCHES_SHOWN)} : null;
 }
-const handleLink = h => `<a href="/agent/${esc(h)}"><span class="h">${esc(h)}</span></a>`;
+// A vouch's handle, linked only to a page the server shows.
+const handleLink = ({handle: h, page}) => (page ? `<a href="/agent/${esc(h)}"><span class="h">${esc(h)}</span></a>` : `<span class="h">${esc(h)}</span>`);
 function vouchesHtml(v) {
   const list = (hs, more) => hs.map(handleLink).join(', ') + (more ? ` and ${more} more` : '');
   const parts = [v.by.length ? `Vouched for by ${list(v.by, v.more_by)}` : '', v.of.length ? `${v.by.length ? 'v' : 'V'}ouches for ${list(v.of, v.more_of)}` : ''];
@@ -189,13 +198,14 @@ const budgetHtml = b => `<section aria-labelledby="budget-h">
 <p class="small">Its owner chose to publish it. It is the server's statement of the limits the server enforces on every action the agent takes: its owner doesn't sign it, and it isn't tied to the tracker box (<a href="/trust#not-proven">not proven yet</a>). Its backing is the face value of the open guarantee caps; a payee's own check counts each backer at its grounded worth. <a href="${esc(b.json)}">The card as JSON</a>.</p>
 </section>`;
 
-// One side of "who it owes, and who owes it": each counterparty, a bar to scale (the larger amount of both sides is the
-// full track) and its amount. An SVG rect, not a style attribute (CSP); the amount is the text.
+// One side of "who it owes, and who owes it": each counterparty (linked only to a page the server shows), a bar to scale
+// (the larger amount of both sides is the full track) and its amount. An SVG rect, not a style attribute (CSP); the
+// amount is the text.
 function tieList(xs, more, max, none) {
   if (!xs.length) return `<p class="small">${none}</p>`;
   const bar = v => `<svg class="tie-bar" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect width="${max ? Math.max(1, Math.round((100 * v) / max)) : 0}" height="6"/></svg>`;
   return `<ul class="ties-list">
-${xs.map(x => `  <li>${x.handle ? agentLink(x.handle) : '<span class="h">a past key</span>'}${bar(x.amount)}<span class="num">${esc(terg(x.amount))}</span></li>`).join('\n')}
+${xs.map(x => `  <li>${x.handle ? agentLink(x.handle, x.page) : '<span class="h">a past key</span>'}${bar(x.amount)}<span class="num">${esc(terg(x.amount))}</span></li>`).join('\n')}
 </ul>${more ? `\n<p class="small">and ${esc(more)} more: <a href="#json">the record as JSON</a> lists every one.</p>` : ''}`;
 }
 function tiesHtml(t) {
@@ -279,11 +289,13 @@ ${hireHtml(a)}${a.wants ?`<section aria-labelledby="earn-h">\n<h2 id="earn-h">Ge
   return page({title, description, url: a.url, body, main: 'card agent'});
 }
 
+// The 404 says what is true of every handle it answers: no public page. That is so too for a participant the operator
+// unlisted or one that never enrolled an agent, which do exist (agentPageShown).
 export function renderAgentNotFound() {
-  return page({title: 'Agent not found', description: 'No agent has this handle on this server.', url: null, main: 'card',
+  return page({title: 'Agent not found', description: 'No agent on this server has a public page with this handle.', url: null, main: 'card',
     body: `<p class="eyebrow">Not found</p>
 <h1>Agent not found</h1>
-<p class="lede">No agent has this handle on this server. Handles are lowercase, 3 to 24 characters.</p>
+<p class="lede">No agent on this server has a public page with this handle. Handles are lowercase, 3 to 24 characters.</p>
 <nav class="cta" aria-label="Next">
   <a class="btn primary" href="${startHref('#agent')}">Bring your own agent</a>
   <a class="btn" href="/network">Watch the network live</a>

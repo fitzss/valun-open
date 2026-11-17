@@ -26,6 +26,8 @@ LOOP.cycles = [{length: 3, each_PC: 1_000_000, members: LOOP.members}];
 const RECORDS = new Map([['sandbox-mallory', {handle: 'sandbox-mallory', operator: 'Valun operator (sandbox agent run by the server, no AI)', operator_run: true}],
   ['claude-live-1', {handle: 'claude-live-1', operator: 'Claude live check', sandbox_only: true}],
   ['sandbox-exact', {handle: 'sandbox-exact', operator: 'Valun operator (sandbox agent run by the server, no AI)', operator_run: true}]]);
+// The members whose agent page the server shows (lib/pilot/agents.mjs pageHandles): all three, as on valun.tech.
+const PAGES = new Set(RECORDS.keys());
 const NOW = Date.parse('2026-11-17T01:12:00Z');
 
 test('the ring: an arrow from each member to the one it owed, the centre in tERG in light type, who runs each by its shape, a frame that fits', () => {
@@ -48,7 +50,7 @@ test('the ring: an arrow from each member to the one it owed, the centre in tERG
 });
 
 test('the card: what changed and what didn\'t, who runs each member, committed not final, what is not public, live and labelled', () => {
-  const html = loops.renderLoopPage(LOOP, {records: RECORDS, now: NOW});
+  const html = loops.renderLoopPage(LOOP, {records: RECORDS, now: NOW, pages: PAGES});
   assert.ok(html.includes('<p class="lede">3 agents\' IOUs formed a loop. Each agent signed once, and every debt in the loop fell by 0.001 tERG: 0.003 tERG of debt cancelled in all. Nobody\'s net position changed, the work stays done, and no coins moved.</p>'));
   assert.ok(html.includes('<p class="live-line"><span class="tag live">Live record</span> <span>valun-testnet-1</span> <span>read 01:12 UTC</span> <a href="/pilot/v1/loops/vs_4f8d53475c9e591a">the record as JSON</a></p>'));
   // What changed: each debt in the loop, by the same amount.
@@ -107,7 +109,7 @@ test('who runs a member comes from the server\'s records: a house agent by its r
   const two = {...LOOP, id: 'vs_00000000000000b2', cycle_length: 2, amount_PC: 4_000_000, each_PC: 2_000_000, participants: 2, on_chain: {anchored: false},
     members: [member('house-scribe', 'sandbox_participant'), member('ada-persona', 'sandbox_participant')]};
   two.cycles = [{length: 2, each_PC: 2_000_000, members: two.members}];
-  const html = rec => loops.renderLoopPage(two, {records: new Map(rec), now: NOW});
+  const html = rec => loops.renderLoopPage(two, {records: new Map(rec), now: NOW, pages: new Set(['house-scribe', 'ada-persona'])});
   const house = html([['house-scribe', {handle: 'house-scribe', operator: 'Valun (house agents)', house_agent: true}], ['ada-persona', {handle: 'ada-persona', operator: 'Ada Lovelace'}]]);
   assert.match(house, /<g class="node w-house"><rect/);
   assert.ok(house.includes('<span class="who-line">House agent. The operator runs it on a machine of its own and holds its key. Its work is real, done with Claude.</span>'));
@@ -120,6 +122,23 @@ test('who runs a member comes from the server\'s records: a house agent by its r
   const bare = loops.renderLoopPage(LOOP);
   assert.deepEqual([...bare.matchAll(/<g class="node w-(\w+)">/g)].map(m => m[1]), ['practice', 'unknown', 'practice']);
   assert.doesNotMatch(bare, /team test agent/);
+});
+
+// Fix inbox #141: a link to an agent the operator unlisted was a 404. The card links a member only to a page the server
+// shows; any other member is named as text, everywhere on the card, and a card rendered without knowing links none.
+test('fix inbox #141: a member with no page of its own is named, not linked, in the debts, the totals and who was in it', () => {
+  const hidden = loops.renderLoopPage(LOOP, {records: RECORDS, now: NOW, pages: new Set(['sandbox-mallory', 'sandbox-exact'])});
+  assert.doesNotMatch(hidden, /href="\/agent\/claude-live-1"/);
+  assert.ok(hidden.includes('<li><a class="h" href="/agent/sandbox-mallory">sandbox-mallory</a> <span class="arr">owed</span> <span class="h">claude-live-1</span> <span class="num">−0.001 tERG</span></li>'));
+  assert.ok(hidden.includes('<li><span class="h">claude-live-1</span> <span class="arr">owed</span> <a class="h" href="/agent/sandbox-exact">sandbox-exact</a> <span class="num">−0.001 tERG</span></li>'));
+  assert.ok(hidden.includes('<tr><th scope="row"><span class="h">claude-live-1</span></th><td class="num">−0.001</td>'));
+  assert.ok(hidden.includes('<li><span class="shape w-team" aria-hidden="true"></span><span class="h">claude-live-1</span> <span class="tag team">team test agent</span>'));
+  assert.deepEqual([...new Set([...hidden.matchAll(/href="\/agent\/([^"]+)"/g)].map(m => m[1]))].sort(), ['sandbox-exact', 'sandbox-mallory']);
+  assert.doesNotMatch(loops.renderLoopPage(LOOP, {records: RECORDS, now: NOW}), /href="\/agent\//, 'no pages known: no member linked');
+  // A name that is not a handle stays text, whatever the pages say.
+  assert.equal(loops.agentLink('<b>x</b>', true), '<span class="h">&lt;b&gt;x&lt;/b&gt;</span>');
+  assert.equal(loops.agentLink('ana-tester', true), '<a class="h" href="/agent/ana-tester">ana-tester</a>');
+  assert.equal(loops.agentLink('ana-tester'), '<span class="h">ana-tester</span>');
 });
 
 test('memberRecords: the public records of a set-off\'s members, by handle; whoRuns and the amounts are the same on /network', () => {

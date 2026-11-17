@@ -242,6 +242,19 @@ export function pickView(people, changes, loops, max) {
   return {core, ring, hidden, since};
 }
 
+// When the picture's window starts (pickView's since), as people read it: '20:10 UTC' on the reader's UTC day, and with
+// the date on any other ('Nov 16, 20:10 UTC'; 'Dec 31, 2025, 23:50 UTC' in another year). The time alone read as later
+// today once it was the day before's (the redesign's live check, at 14:54 UTC: "since 20:10 UTC"). '' for no time.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export function sinceText(t, now = Date.now()) {
+  const d = new Date(t), n = new Date(now);
+  if (!Number.isFinite(d.getTime())) return '';
+  const hm = `${d.toISOString().slice(11, 16)} UTC`;
+  if (Number.isFinite(n.getTime()) && d.toISOString().slice(0, 10) === n.toISOString().slice(0, 10)) return hm;
+  const year = Number.isFinite(n.getTime()) && d.getUTCFullYear() === n.getUTCFullYear() ? '' : `, ${d.getUTCFullYear()}`;
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}${year}, ${hm}`;
+}
+
 // How many agents the picture can name in a frame of height H: two fans, each label a line of its own.
 export function ringCapacity(H, font) { return Math.max(2, 2 * Math.floor((H - 52) / (font + 10))); }
 
@@ -505,7 +518,9 @@ function start() {
     const view = pickView(people, all, st.loops, max);
     const now = Date.now();
     for (const [k, h] of st.hot) if (h.until <= now) st.hot.delete(k);
-    const sig = JSON.stringify([W, Hh, view, [...st.edges.values()].map(e => [e.key, e.amount]), st.loops[0]?.id, [...st.hot.keys()]]);
+    // The subtitle's "since" is in the signature: past 00:00 UTC it gains its date, with nothing else changed.
+    const since = view.since ? sinceText(view.since, now) : '';
+    const sig = JSON.stringify([W, Hh, view, since, [...st.edges.values()].map(e => [e.key, e.amount]), st.loops[0]?.id, [...st.hot.keys()]]);
     if (sig === st.sig) return;
     st.sig = sig;
     const keep = st.focus && svg.contains(document.activeElement) ? st.focus : null;
@@ -563,7 +578,7 @@ function start() {
       n.lines.forEach(l => { const ts = S('tspan', {x: l.x.toFixed(1), y: l.y.toFixed(1)}, t); ts.textContent = l.text; });
     }
     const sub = $('map-sub');
-    sub.textContent = `The ${fmt(view.ring.length)} agents in the latest changes to the ledger${view.since ? ` (since ${utc(view.since)})` : ''}, and the ${fmt(view.core.length)} the operator runs. Read from GET /pilot/v1/ledger.`;
+    sub.textContent = `The ${fmt(view.ring.length)} agents in the latest changes to the ledger${since ? ` (since ${since})` : ''}, and the ${fmt(view.core.length)} the operator runs. Read from GET /pilot/v1/ledger.`;
     const hid = view.hidden, parts = [[hid.team, 'team test agent'], [hid.other, 'other agent'], [hid.operator, 'operator-run agent']].filter(([k]) => k > 0);
     $('quiet').textContent = parts.length ? `Not drawn: ${parts.map(([k, w]) => `${fmt(k)} ${w}${k === 1 ? '' : 's'}`).join(', ')} with no recent change. Every open IOU is in the tables below.` : '';
     if (keep) gN.querySelector(`[data-id="${keep}"]`)?.focus({preventScroll: true});

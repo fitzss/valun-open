@@ -40,28 +40,37 @@ test('PC-sized defaults and prices are scaled: mandates, sandbox prices, the wel
 
 // The practice agents' offer was longer than the 300 characters a profile holds and was cut mid-word on their pages
 // ("...or as the only quoted stri"). It fits now, with the testnet's prices (the longest), and ends on a sentence; a
-// record that joined with the earlier text is updated once at start, by the operator, and not again.
-test('the practice agents\' offer fits a profile and ends on a sentence; a stored older text is updated once at start', async () => {
+// record that joined with the earlier text is updated once at start, by the operator, and not again. So is mallory's
+// about, which said "before issuing a credit note" (the redesign's live check, 2026-11-17: the site says IOU).
+const MALLORY_ABOUT_BEFORE = 'A deterministic test agent that is WRONG ON PURPOSE in about half of its deliveries. Use it to test that your agent verifies work and disputes wrong deliveries before issuing a credit note.';
+test('the practice agents\' offer fits a profile and ends on a sentence; a stored older offer, and mallory\'s older about, are updated once at start', async () => {
   assert.ok(sandbox.SERVICES_TEXT.length <= 300, `${sandbox.SERVICES_TEXT.length} characters`);
   assert.match(sandbox.SERVICES_TEXT, /^text-stats \(3000000 nanoERG \(0\.003 tERG\)\): .*notary \(2000000 nanoERG \(0\.002 tERG\)\): .*Put the text in a ``` block, after TEXT:, or as the only quoted string\. Deterministic: check every number\.$/);
+  assert.equal(sandbox.AGENTS['sandbox-mallory'].about, 'A deterministic test agent that is WRONG ON PURPOSE in about half of its deliveries. Use it to test that your agent verifies work and disputes wrong deliveries before issuing an IOU (credit note).');
+  for (const a of Object.values(sandbox.AGENTS)) assert.ok(a.about.length <= 300 && !/\bcredit note\b(?! *\))/.test(a.about), a.about);
   const fs = await import('node:fs'), os = await import('node:os'), pathMod = await import('node:path');
   const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'valun-testnet-sandbox-'));
   try {
     const pilot = new core.Pilot({store: new core.PilotStore(dir), basis: {nft: '0'.repeat(64), denomination: 'erg', allNotes: async () => [], note: async () => null}, log: () => {}});
     const keys = {}, cut = `${sandbox.SERVICES_TEXT.slice(0, 280)} stri`;
+    // As valun.tech's records were on Nov 17: both offers cut; mallory's about the older text, sandbox-exact's as this build words it.
     for (const [i, handle] of ['sandbox-exact', 'sandbox-mallory'].entries()) {
-      const id = `vp_00000000000${i}`;
-      pilot.s.participants[id] = {id, handle, display_name: handle, operator: 'Valun operator (sandbox agent run by the server, no AI)', about: '', services: cut, status: 'active',
+      const id = `vp_00000000000${i}`, about = handle === 'sandbox-mallory' ? MALLORY_ABOUT_BEFORE : sandbox.AGENTS[handle].about;
+      pilot.s.participants[id] = {id, handle, display_name: handle, operator: 'Valun operator (sandbox agent run by the server, no AI)', about, services: cut, status: 'active',
         created_at: new Date().toISOString(), mandate: {...core.DEFAULT_MANDATE}, mandate_version: 1, pubkey: '02' + 'ab'.repeat(32), past_pubkeys: []};
       keys[handle] = {id, pubkey: '02' + 'ab'.repeat(32), secret: 'cd'.repeat(32)};
     }
     fs.writeFileSync(pathMod.join(dir, 'sandbox-keys.json'), JSON.stringify(keys));
     const agents = new sandbox.Sandbox(pilot, {dataDir: dir});
     await agents.ensure();
-    for (const p of Object.values(pilot.s.participants)) assert.deepEqual([p.services, p.profile_changed_by], [sandbox.SERVICES_TEXT, 'operator'], p.handle);
+    for (const p of Object.values(pilot.s.participants)) assert.deepEqual([p.about, p.services, p.profile_changed_by], [sandbox.AGENTS[p.handle].about, sandbox.SERVICES_TEXT, 'operator'], p.handle);
+    // One profile change each, of only the fields that differed.
+    const changes = () => fs.readFileSync(pathMod.join(dir, 'pilot-audit.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)).filter(e => e.type === 'profile.updated');
+    assert.deepEqual(changes().map(e => [e.id, e.by, e.fields]), [['vp_000000000000', 'operator', ['services']], ['vp_000000000001', 'operator', ['about', 'services']]]);
     const once = JSON.stringify(pilot.s.participants);
     await agents.ensure();
     assert.equal(JSON.stringify(pilot.s.participants), once, 'and not again');
+    assert.equal(changes().length, 2, 'no change recorded the second time');
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });
 
@@ -85,6 +94,12 @@ test('/info describes the testnet honestly; before the bootstrap every write is 
   assert.match(routes.INFO_DESCRIPTIONS.off, /Ergo TESTNET: test coins with no monetary value/);
   assert.match(routes.INFO_DESCRIPTIONS.off, /netting\) are not on for this network yet/);
   assert.doesNotMatch(routes.INFO_DESCRIPTIONS.off, /PC \(pilot credits\)/);
+  // Who the agents are so far, in the site's words (the redesign's live check, 2026-11-17: the server called them
+  // "independently controlled", which /start lists as a known issue of valun 0.7.1's MCP server), in every mode.
+  for (const [mode, text] of Object.entries(routes.INFO_DESCRIPTIONS)) {
+    assert.ok(text.startsWith("Valun testnet network: agents, each holding its own key, propose, negotiate and accept deals paid with IOUs (credit notes). So far almost every agent is the team's or the operator's. Amounts are nanoERG on Ergo TESTNET: test coins with no monetary value. When a payer accepts a delivery it issues an IOU: a payer-signed Basis note recorded by a Basis tracker that anchors its state on Ergo testnet. "), mode);
+    assert.doesNotMatch(text, /independent|service-for-credit|issues a credit note|\bfinal\b/, mode);
+  }
   const pilot = {chain: {on_chain: false}, s: {participants: {}}, openSandbox: true, unit: 'nanoERG', mode: 'off',
     basis: {denomination: 'erg', nft: 'ab'.repeat(32)}, selfServe: () => null, authenticate: () => null};
   const handler = routes.createPilotRoutes({pilot, cfg: {}, adminTokenHash: 'x'.repeat(64)});
@@ -204,11 +219,11 @@ async function onChainServer({chain: moreChain = {}} = {}) {
     const text = await r.text();
     return {status: r.status, body: JSON.parse(text), text};
   };
-  return {server, call, calls, audit, PKA, PKB};
+  return {server, call, calls, audit, PKA, PKB, base};
 }
 
 test('on chain: GET /chain shows the anchoring and the explorer links; GET /reserves names the owners who are participants', async () => {
-  const {server, call} = await onChainServer();
+  const {server, call, base} = await onChainServer();
   try {
     const c = await call('GET', '/chain');
     assert.equal(c.status, 200);
@@ -236,6 +251,11 @@ test('on chain: GET /chain shows the anchoring and the explorer links; GET /rese
     assert.deepEqual([r.body.reserves[1].total_debt_nanoerg, r.body.reserves[1].collateralization_ratio], [0, null]);
     assert.match(r.body.reserves[1].why_null, /^nothing is owed on the notes signed with this reserve's key \(the owner has none outstanding on this tracker\)/);
     assert.equal(r.body.meaning, routes.RESERVES_MEANING);
+    // Fix inbox #142: a HEAD is answered as the GET, with no body (`curl -sI .../pilot/v1/chain` said 401).
+    for (const p of ['/chain', '/reserves']) {
+      const h = await fetch(base + p, {method: 'HEAD'});
+      assert.deepEqual([h.status, (await h.arrayBuffer()).byteLength], [200, 0], `HEAD ${p}`);
+    }
   } finally { server.close(); }
 });
 
@@ -575,14 +595,17 @@ test('the A2A join answer and card on the testnet: runnable commands, limits in 
   const {createA2A, agentCard} = await import('../lib/a2a.mjs');
   const {fakePilot} = await import('./fixtures/a2a-pilot.mjs');
   const core2 = await import('../lib/pilot/core.mjs');
-  const pilot = {...fakePilot(), unit: 'nanoERG', selfServe: () => ({join: '/pilot/v1/join-sandbox', open_network: true, days: 7, limits: {...core2.SANDBOX_CAPS}})};
+  const pilot = {...fakePilot(), unit: 'nanoERG', selfServe: () => ({join: '/pilot/v1/join-sandbox', open_network: true, days: 7, limits: {...core2.SANDBOX_CAPS},
+    max_open_offers: core2.OPEN_NETWORK_MAX_OPEN_OFFERS, renews_while_active: true})};
   const srv = http.createServer(createHandler({service: {}, mcp: {}, cfg: {}, publicDir: 'public', a2a: createA2A({pilot})}));
   await new Promise(r => srv.listen(0, '127.0.0.1', r));
   try {
     const r = await fetch(`http://127.0.0.1:${srv.address().port}/a2a`, {method: 'POST', headers: {'content-type': 'application/json'},
       body: JSON.stringify({jsonrpc: '2.0', id: 1, method: 'SendMessage', params: {message: {messageId: 'm', role: 'ROLE_USER', parts: [{text: 'How do I join?'}]}}})});
     const m = (await r.json()).result.message, text = m.parts[0].text, data = m.parts[1].data;
-    assert.match(text, /for 7 days, renewed while it is active, at most 5000000 nanoERG \(0\.005 tERG\) per deal and 40000000 nanoERG \(0\.04 tERG\) owed in total\. Amounts are nanoERG of Ergo testnet: tERG are test coins with no monetary value\.$/);
+    // The limits GET /info self_serve gives (Pilot.selfServe), the open-offer limit included, as skill.md says them.
+    assert.match(text, /for 7 days, renewed while it is active, at most 5000000 nanoERG \(0\.005 tERG\) per deal and 40000000 nanoERG \(0\.04 tERG\) owed in total, and at most 10 open offers of its own at once\. Amounts are nanoERG of Ergo testnet: tERG are test coins with no monetary value\.$/);
+    assert.equal(data.limits.max_open_offers, 10);
     assert.equal(data.unit, 'nanoERG');
     assert.equal(data.limits.limits.max_issue_per_deal, 5_000_000);
     // A shell can't prompt the human: console first (the human approves each commitment), none only if they said so.
@@ -595,7 +618,10 @@ test('the A2A join answer and card on the testnet: runnable commands, limits in 
     // Each client signs only for its own key (D3b, the redesign's round 2): never "its client signs ... the issuer's".
     assert.ok(text.includes('By default your agent accepts any issuer\'s IOUs as payment by transfer, up to 0.04 tERG per issuer. Your client signs that acceptance by itself in every approval mode, and the issuer\'s client signs the issuer\'s consent the same way. Your human can narrow whose IOUs it accepts under "Accept notes from" in the owner console.'));
     assert.doesNotMatch(text, /signs that consent, and the issuer's/);
-    assert.ok(text.includes('Run end to end once (Claude Code 2.1.326, Nov 17, headless with console approvals); its own approval prompts are not yet tested. There is also a plugin (/plugin marketplace add fitzss/valun-open, then /plugin install valun@valun): an install check only, not yet run end to end.'));
+    assert.ok(text.includes('With --approvals console added to the join, these two lines have run end to end once (Claude Code 2.1.326, Nov 17, headless); Claude Code\'s own approval prompts are not yet tested. There is also a plugin (/plugin marketplace add fitzss/valun-open, then /plugin install valun@valun): an install check only, not yet run end to end.'));
+    // One MCP join everywhere: skill.md's, with no --approvals flag; console is added only as the text says.
+    assert.equal(data.mcp[0], join);
+    assert.ok(text.includes('Apart from the Claude Code run, only scripted MCP clients have run it; no other app (Codex, Cursor, Claude Desktop, VS Code) has been verified.'));
     assert.doesNotMatch(text, /\bcredits\b|\bPC\b/);
   } finally { srv.close(); }
   const card = agentCard('https://valun.tech');

@@ -45,8 +45,8 @@ test('the page keeps the CSP: no inline script, style or handler; only its own f
   for (const m of html.matchAll(/<script\b[^>]*>/g)) assert.match(m[0], /\ssrc="\/network\.js"/, 'every script is the page\'s own file');
   assert.doesNotMatch(html, /<style\b|\sstyle=|\son[a-z]+=/i, 'no inline style or event handler');
   assert.deepEqual([...html.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map(m => m[1]), ['/site.css', '/network.css'], 'the shared base, then its own');
-  assert.deepEqual([...html.matchAll(/(?:src|href)="(https?:[^"]+)"/g)].map(m => m[1]), ['https://github.com/fitzss/valun-open', 'https://github.com/fitzss/valun-open'],
-    'no external URL but the shared navigation\'s and footer\'s GitHub links');
+  assert.deepEqual([...html.matchAll(/(?:src|href)="(https?:[^"]+)"/g)].map(m => m[1]), ['https://valun.tech/network', 'https://github.com/fitzss/valun-open', 'https://github.com/fitzss/valun-open'],
+    'no external URL but its own canonical URL and the shared navigation\'s and footer\'s GitHub links');
   const reads = [...js.matchAll(/getJson\('([^']+)'\)/g)].map(m => m[1]).sort();
   assert.deepEqual([...new Set(reads)], ['/pilot/v1/chain', '/pilot/v1/clearing', '/pilot/v1/info', '/pilot/v1/ledger', '/pilot/v1/loops', '/pilot/v1/participants?all=1', '/pilot/v1/reserves']);
   assert.match(html, /<a class="brand" href="\/" aria-label="Valun home"><svg class="mark" viewBox="0 0 100 100" aria-hidden="true">/, 'the mark and the wordmark');
@@ -55,6 +55,27 @@ test('the page keeps the CSP: no inline script, style or handler; only its own f
   assert.match(js, /a\.href = `\/agent\/\$\{h\}`/, 'agents link to their pages');
   assert.doesNotMatch(js, /authorization|bearer|x-valun|localStorage|innerHTML|eval\(|\.style\b|setAttribute\('style'/i, 'no token, no markup from text, no inline style');
   assert.match(js, /credentials: 'omit'/);
+});
+
+// The redesign's live check (2026-11-17): a shared link to /network previewed no card. Its head carries the Open Graph and
+// Twitter tags and the canonical link the other public pages carry (as memory.html's), with its own title and description.
+test('the head: a canonical link, and Open Graph and Twitter tags with the page\'s own title and description and the site\'s card', () => {
+  const html = pub('network.html'), head = html.slice(0, html.indexOf('</head>'));
+  const meta = (attr, name) => (new RegExp(`<meta ${attr}="${name}" content="([^"]*)">`).exec(head) || [])[1] ?? null;
+  const title = /<title>([^<]+)<\/title>/.exec(head)[1], description = meta('name', 'description');
+  assert.equal(title, 'Valun live network');
+  assert.match(head, /<link rel="canonical" href="https:\/\/valun\.tech\/network">/);
+  assert.deepEqual([meta('property', 'og:type'), meta('property', 'og:site_name'), meta('property', 'og:url')], ['website', 'Valun', 'https://valun.tech/network']);
+  for (const [attr, name] of [['property', 'og:title'], ['name', 'twitter:title']]) assert.equal(meta(attr, name), title, name);
+  for (const [attr, name] of [['property', 'og:description'], ['name', 'twitter:description']]) assert.equal(meta(attr, name), description, name);
+  assert.equal(meta('name', 'twitter:card'), 'summary_large_image');
+  // The site's card, as every other public page names it (memory.html's tags, word for word).
+  const memory = pub('memory.html');
+  for (const name of ['og:image', 'og:image:width', 'og:image:height', 'og:image:alt']) {
+    assert.ok(meta('property', name), name);
+    assert.ok(memory.includes(`<meta property="${name}" content="${meta('property', name)}">`), `${name}: as on /memory`);
+  }
+  assert.equal(meta('property', 'og:image'), 'https://valun.tech/og.png');
 });
 
 // ---------- change detection ----------
@@ -366,6 +387,30 @@ test('the picture at every width: the operator\'s agents and the latest changes 
   assert.deepEqual(v.ring.slice(0, 2).map(id => people.get(id).handle), ['persona-3-xxx', 'basis-x-v0c']);
   assert.equal(v.since, changes.find(c => [c.from, c.to].includes(v.ring.at(-1))).ts);
   assert.deepEqual([1_000_000, 3_000_000, 15_000_000, 10 ** 12].map(a => edgeWidth(a).toFixed(2)), ['1.40', '1.80', '2.60', '2.60'], 'thin lines, a little wider for more');
+});
+
+// The picture's window, as the subtitle says it. At 14:54 UTC on Nov 17 the live page said "since 20:10 UTC", which read
+// as later that day: it was the day before's (the redesign's live check). On another UTC day it names the date.
+test('the picture\'s "since": the time alone on the reader\'s UTC day, with the date on any other; the subtitle under the picture says it', async () => {
+  const at = Date.parse('2026-11-16T20:10:30.998Z');
+  assert.equal(net.sinceText(at, Date.parse('2026-11-16T23:59:59Z')), '20:10 UTC', 'the same UTC day');
+  assert.equal(net.sinceText(at, Date.parse('2026-11-17T14:54:00Z')), 'Nov 16, 20:10 UTC', 'an earlier UTC day');
+  assert.equal(net.sinceText(Date.parse('2026-11-01T09:05:00Z'), Date.parse('2026-11-17T14:54:00Z')), 'Nov 1, 09:05 UTC');
+  assert.equal(net.sinceText(Date.parse('2025-12-31T23:50:00Z'), Date.parse('2026-01-01T00:05:00Z')), 'Dec 31, 2025, 23:50 UTC', 'another year');
+  assert.equal(net.sinceText(NaN, Date.now()), '');
+  // On the page, at a fixed clock (the testnet's reads without the loops: the latest changes put bob and ann in the
+  // picture, the older from 07:45 UTC on Jan 15, 2027).
+  const at0745 = '2027-01-15T07:45:00.998Z';
+  assert.equal(new Date(1_799_999_100_998).toISOString(), at0745);
+  const sub = async clock => {
+    const fixed = class extends Date { constructor(...a) { super(...(a.length ? a : [clock])); } static now() { return clock; } };
+    const body = readBody(pub('network.html'));
+    runNetworkPage(pub('network.js'), body, reads({...TESTNET, '/pilot/v1/loops': {...TESTNET['/pilot/v1/loops'], loops: []}}), {globals: {Date: fixed}});
+    await settle();
+    return byId(body)('map-sub').textContent;
+  };
+  assert.equal(await sub(Date.parse('2027-01-15T12:00:00Z')), 'The 2 agents in the latest changes to the ledger (since 07:45 UTC), and the 2 the operator runs. Read from GET /pilot/v1/ledger.');
+  assert.equal(await sub(Date.parse('2027-01-16T09:00:00Z')), 'The 2 agents in the latest changes to the ledger (since Jan 15, 07:45 UTC), and the 2 the operator runs. Read from GET /pilot/v1/ledger.');
 });
 
 test('the picture on the page: links to each agent\'s page with who runs it and what it owes; one tab stop and the arrow keys; the newest loop in the rainbow', async () => {

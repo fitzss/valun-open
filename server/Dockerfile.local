@@ -1,0 +1,45 @@
+# A LOCAL Valun server, for testing on your own machine (fix inbox #143): the Valun app on 0.0.0.0:8080 and ONE Basis
+# tracker (tracker v4.4.1, pure credit) on the container's loopback, with NO blockchain connection: nothing is anchored
+# on a chain, there are no reserves and nothing is redeemed. It runs the network that has no chain (valun-pilot-1: PC,
+# synthetic credits with no monetary value) in local mode (VALUN_ENVIRONMENT=local: GET /pilot/v1/info and every page
+# say "local: no chain"), with self-serve joins, the open network and circulating credit (debt transfers and set-offs)
+# on, as the testnet has them. Circulating credit takes effect only on a pinned tracker (lib/pilot/pins.mjs): the
+# entrypoint (scripts/local-entrypoint.sh) computes the sha256 of the basis_server it runs at every start, and the
+# server checks it against the pins, so a binary that is not tracker v4.4.1's runs with circulation off.
+#
+# Build context: this folder, with the tracker's Linux binaries for each platform in dist/local-bins/<arch>/
+# (basis_server and valun_signer; <arch> is amd64 or arm64, as buildx sets TARGETARCH). Their build recipe is beside
+# the v4.4.1 pin in lib/pilot/pins.mjs; Dockerfile.local.dockerignore admits only what this file copies.
+#   docker buildx build -f Dockerfile.local --platform linux/amd64,linux/arm64 -t valun-local .
+# Run it, with its data in a named volume, then point a client at it:
+#   docker run --rm -p 127.0.0.1:8080:8080 -v valun-local:/data valun-local
+#   valun config server http://127.0.0.1:8080 && valun join --sandbox ... && valun sandbox tour --yes
+# Published on another port (-p 127.0.0.1:9000:8080)? Add -e VALUN_PUBLIC_ORIGIN=http://127.0.0.1:9000, the origin
+# its links and banner name. scripts/local-acceptance.sh checks a started container.
+# The binaries need glibc >= 2.38, hence Debian trixie.
+FROM node:24-trixie-slim
+ARG TARGETARCH
+
+RUN groupadd --system --gid 10001 valun \
+ && useradd --system --uid 10001 --gid valun --home-dir /data --shell /usr/sbin/nologin valun \
+ && mkdir -p /opt/valun/bin /opt/valun/app/scripts /data && chown valun:valun /data
+
+COPY --chmod=0755 dist/local-bins/${TARGETARCH}/basis_server dist/local-bins/${TARGETARCH}/valun_signer /opt/valun/bin/
+COPY --chmod=0755 basis/run-tracker.sh scripts/local-entrypoint.sh /opt/valun/
+COPY package.json server.mjs /opt/valun/app/
+COPY lib /opt/valun/app/lib
+COPY public /opt/valun/app/public
+# Invites and the clearing engine, from inside the container: docker exec CONTAINER node scripts/pilot-admin.mjs invite --uses 25
+COPY scripts/pilot-admin.mjs /opt/valun/app/scripts/
+
+WORKDIR /opt/valun/app
+# The entrypoint enforces the network (valun-pilot-1, no chain) and the local mode; the rest can be changed with -e.
+# PILOT_DATA_DIR and PORT are here for docker exec (scripts/pilot-admin.mjs reads them).
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 VALUN_ENVIRONMENT=local PILOT_NETWORK=valun-pilot-1 \
+    PILOT_OPEN_SANDBOX=1 PILOT_OPEN_NETWORK=1 PILOT_CIRCULATION=on PILOT_DATA_DIR=/data/pilot
+USER 10001:10001
+VOLUME /data
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 8080) + '/pilot/v1/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+ENTRYPOINT ["/opt/valun/local-entrypoint.sh"]

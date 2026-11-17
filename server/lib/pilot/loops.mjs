@@ -1,5 +1,6 @@
 import {amt, ON_TESTNET, PUBLIC_ORIGIN, UNIT, NETWORK} from './units.mjs';
 import {BLOCK_WAIT, DAILY_TRACKER_SIGNATURES} from './anchors.mjs';
+import {LOCAL} from '../environment.mjs';
 // Public loops ("Close the Loop"): the applied set-offs as public records, for GET /pilot/v1/loops, GET
 // /pilot/v1/loops/<id> and the server-rendered loop card at /loop/<id>.
 //
@@ -10,15 +11,16 @@ import {BLOCK_WAIT, DAILY_TRACKER_SIGNATURES} from './anchors.mjs';
 // that expired or was refused is never public (who refused stays private, design 4.9).
 //
 // Pure: no I/O and no clock. The caller passes the pilot state it reads (s.setoffs, s.participants), and the card its
-// time of reading.
+// time of reading and the handles that have a page of their own.
 
 export const LOOPS_MAX = 50;
 export const LOOP_ID_RE = /^vs_[0-9a-f]{16}$/;
 export {PUBLIC_ORIGIN};
 // Where a person starts: valun.tech's landing on the pilot; on the testnet its page for people, /start (the paths, what
 // to install and what to expect; "#agent" is its bring-your-agent path), where the buttons of loop cards and agent pages
-// once opened skill.md, a file for agents.
-export const startHref = anchor => ON_TESTNET ? `${PUBLIC_ORIGIN}/start${anchor}` : `https://valun.tech/${anchor}`;
+// once opened skill.md, a file for agents. A local server's own /start (lib/environment.mjs LOCAL), so its pages never
+// send a person to the public network's records.
+export const startHref = anchor => ON_TESTNET || LOCAL ? `${PUBLIC_ORIGIN}/start${anchor}` : `https://valun.tech/${anchor}`;
 // The honest line the testnet's rendered pages end with (loop cards, agent pages, the maintainers page), above the
 // shared footer.
 export const ON_TESTNET_FOOTER = 'Valun testnet: promises are recorded by a Basis tracker that anchors its state on Ergo testnet; tERG are test coins with no monetary value.';
@@ -166,8 +168,11 @@ export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;',
 export const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const handleOf = m => m.handle ?? 'unknown';
 const HANDLE_RE = /^[a-z][a-z0-9_-]{2,23}$/;
-// A handle as a link to its agent page (a name that is not a handle stays text).
-export const agentLink = h => (HANDLE_RE.test(String(h)) ? `<a class="h" href="/agent/${esc(h)}">${esc(h)}</a>` : `<span class="h">${esc(h ?? 'unknown')}</span>`);
+// A handle as a link to its agent page, only when `shown`: the server shows that page (lib/pilot/agents.mjs
+// pageHandles). An agent the operator unlisted has none, and the link to it was a 404 (fix inbox #141). Otherwise, and
+// for a name that is not a handle, the handle as text, as /network shows it (public/network.js agentEl). A page that
+// does not know links nothing.
+export const agentLink = (h, shown = false) => (shown && HANDLE_RE.test(String(h)) ? `<a class="h" href="/agent/${esc(h)}">${esc(h)}</a>` : `<span class="h">${esc(h ?? 'unknown')}</span>`);
 
 export function loopTitle(loop) {
   const c = loop.cycles[0], names = c.members.map(handleOf);
@@ -312,8 +317,8 @@ ${what}
 
 // What changed, and what didn't, for each member: in each cycle it owed the next member `each` less and was owed `each`
 // less by the one before, so its net position (what it is owed minus what it owes) stayed the same (the tracker's
-// per-key balance rule: lib/pilot/clearing.mjs).
-function changedTable(loop) {
+// per-key balance rule: lib/pilot/clearing.mjs). `link`: a member's handle, linked only to a page the server shows.
+function changedTable(loop, link) {
   const rows = new Map(), debts = [];
   for (const c of loop.cycles) {
     if (c.each_PC == null) return '';
@@ -331,14 +336,14 @@ function changedTable(loop) {
 <h2 id="changed-h">What changed, and what didn't</h2>
 <p><strong>What changed:</strong> ${single ? `every debt in the loop fell by ${esc(ON_TESTNET ? terg(loop.cycles[0].each_PC) : amt(loop.cycles[0].each_PC))}, the smallest one in it.` : 'every debt in each loop fell by the smallest one in it.'}</p>
 <ul class="debts">
-${debts.map(([a, b, v]) => `  <li>${agentLink(handleOf(a))} <span class="arr">owed</span> ${agentLink(handleOf(b))} <span class="num">${esc(signed(-v))}</span></li>`).join('\n')}
+${debts.map(([a, b, v]) => `  <li>${link(handleOf(a))} <span class="arr">owed</span> ${link(handleOf(b))} <span class="num">${esc(signed(-v))}</span></li>`).join('\n')}
 </ul>
 <p><strong>What didn't:</strong> each member's net position, what it is owed minus what it owes. Each is owed exactly as much less as it owes.</p>
 <div class="table-wrap"><table class="plain changed">
 <caption>How each member's totals changed (in <span class="unit">${esc(unit)}</span>)</caption>
 <thead><tr><th scope="col">Agent</th><th scope="col" class="num">What it owes</th><th scope="col" class="num">What it is owed</th><th scope="col">Net position</th></tr></thead>
 <tbody>
-${[...rows.values()].map(r => `<tr><th scope="row">${agentLink(handleOf(r.m))}</th><td class="num">${num(r.owes)}</td><td class="num">${num(r.owed)}</td><td>unchanged</td></tr>`).join('\n')}
+${[...rows.values()].map(r => `<tr><th scope="row">${link(handleOf(r.m))}</th><td class="num">${num(r.owes)}</td><td class="num">${num(r.owed)}</td><td>unchanged</td></tr>`).join('\n')}
 </tbody>
 </table></div>
 <p>The work behind these IOUs stays done, the record keeps every IOU and this loop, and no coins moved.</p>
@@ -346,7 +351,7 @@ ${[...rows.values()].map(r => `<tr><th scope="row">${agentLink(handleOf(r.m))}</
 }
 
 // Who runs each member, in words: the shapes of the ring explained.
-function membersList(loop, whoOf) {
+function membersList(loop, whoOf, link) {
   const seen = new Map();
   for (const c of loop.cycles) for (const m of c.members) if (!seen.has(handleOf(m))) seen.set(handleOf(m), m);
   return `<section aria-labelledby="who-h">
@@ -355,7 +360,7 @@ function membersList(loop, whoOf) {
 ${[...seen.values()].map(m => {
     const w = whoOf(m), words = WHO[w] ?? WHO.unknown;
     const tag = OPERATOR_RUN.has(w) ? `<span class="tag operator">${esc(words.tag)}</span>` : w === 'team' ? `<span class="tag team">${esc(words.tag)}</span>` : '';
-    return `  <li><span class="shape w-${esc(w)}" aria-hidden="true"></span>${agentLink(handleOf(m))} ${tag} <span class="who-line">${esc(OPERATOR_RUN.has(w) ? `${words.name[0].toUpperCase()}${words.name.slice(1)}. ${words.line}` : words.line)}</span></li>`;
+    return `  <li><span class="shape w-${esc(w)}" aria-hidden="true"></span>${link(handleOf(m))} ${tag} <span class="who-line">${esc(OPERATOR_RUN.has(w) ? `${words.name[0].toUpperCase()}${words.name.slice(1)}. ${words.line}` : words.line)}</span></li>`;
   }).join('\n')}
 </ul>
 <p class="small">A diamond is an agent the operator runs, a hollow circle one of the team's test agents (by its operator field), a filled circle anyone else. So far almost all agents are our own test and practice agents: they show the mechanics working, not adoption.</p>
@@ -363,10 +368,13 @@ ${[...seen.values()].map(m => {
 }
 
 // `records`: the members' public records by handle (memberRecords), for who runs each; `now`: when the server read the
-// loop. Without records a member is labelled by its kind only (a sandbox agent the server runs, or nothing).
-export function renderLoopPage(loop, {records = null, now = null} = {}) {
+// loop; `pages`: the handles whose agent page the server shows (lib/pilot/agents.mjs pageHandles), the only members
+// linked to one. Without records a member is labelled by its kind only (a sandbox agent the server runs, or nothing);
+// without pages no member is linked.
+export function renderLoopPage(loop, {records = null, now = null, pages = null} = {}) {
   const title = loopTitle(loop), description = loopDescription(loop), url = `${PUBLIC_ORIGIN}/loop/${loop.id}`;
   const whoOf = m => (records?.get(m.handle) ? whoRuns(records.get(m.handle)) : m.kind === 'sandbox_agent' ? 'practice' : m.kind === 'operator_run' ? 'operator' : 'unknown');
+  const link = h => agentLink(h, !!pages?.has(h));
   const when = loop.applied_at ? new Date(loop.applied_at) : null, at = when && !Number.isNaN(+when) ? +when : null;
   const whenText = at ? `${new Date(at).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'unknown';
   const more = loop.cycles.length > 1 ? `\n<p class="more">and ${esc(plural(loop.cycles.length - 1, 'more loop'))} in the same round: ${loop.cycles.slice(1).map(c => `<span class="route-sm">${route(c)}</span>`).join('; ')}</p>` : '';
@@ -388,8 +396,8 @@ ${loop.cycles.map((c, k) => ringSvg(c, k, whoOf)).join('\n')}
   <div><dt>Closed</dt><dd>${esc(whenText)}</dd></div>
 </dl>
 <div class="loop-body">
-${changedTable(loop)}
-${membersList(loop, whoOf)}
+${changedTable(loop, link)}
+${membersList(loop, whoOf, link)}
 ${chainSection(loop, at)}
 <p class="small not-public">Not public, so not shown: which job each IOU paid for. A deal's record is private to its two parties and the operator.</p>
 ${ctas}

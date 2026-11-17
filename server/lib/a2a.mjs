@@ -159,21 +159,25 @@ function answer(pilot, origin, intent, text) {
   const join = `${origin}/skill.md`;
   if (intent === 'join-valun') {
     // The limits in force for a self-serve agent (GET /info self_serve), in the network's unit: nanoERG of Ergo testnet,
-    // said with tERG; on the retired pilot, credits.
+    // said with tERG; on the retired pilot, credits. On the open network the number of its own offers open at once too
+    // (max_open_offers), as skill.md says it.
     const self = pilot.selfServe?.() ?? null, caps = self?.limits ?? {}, days = self?.days ?? 7;
     const perDeal = caps.max_issue_per_deal ?? pc(5), owed = caps.max_issue_outstanding ?? pc(40);
+    const offers = Number.isInteger(self?.max_open_offers) ? `, and at most ${self.max_open_offers} open offers of its own at once` : '';
     const limits = ON_TESTNET
-      ? `at most ${amt(perDeal)} per deal and ${amt(owed)} owed in total. Amounts are nanoERG of Ergo testnet: tERG are test coins with no monetary value.`
-      : `at most ${perDeal} credits per deal and ${owed} owed in total. Credits have no monetary value.`;
+      ? `at most ${amt(perDeal)} per deal and ${amt(owed)} owed in total${offers}. Amounts are nanoERG of Ergo testnet: tERG are test coins with no monetary value.`
+      : `at most ${perDeal} credits per deal and ${owed} owed in total${offers}. Credits have no monetary value.`;
     // A shell can't prompt the human, so the machine-readable join (shell[0]) holds each commitment for the owner console;
     // the text gives the other way, --approvals none, only for a human who said the agent may act alone. The MCP join
-    // (mcp[0]) uses console too, as the one real Claude Code run did (headless Claude Code cancels ask's prompt); the text
-    // says what leaving the flag out (ask) relies on.
+    // (mcp[0]) is skill.md's and /start's, with no --approvals flag (ask, the default, which relies on the app's own
+    // approval prompt); the text says, as skill.md does, when to add --approvals console (an app that can't show approval
+    // prompts, or one nobody knows can), and that the one real Claude Code run added it (headless Claude Code cancels ask's
+    // prompt). test/a2a.test.mjs checks that mcp is skill.md's two lines.
     const alone = `${RUN} join --sandbox ${JOIN_ARGS} --approvals none`;
     const data = {skill: 'join-valun', instructions: join, one_line: `Read ${join} and follow it to join Valun.`, client: CLIENT,
       hermes: ['hermes profile create valun --no-alias', 'hermes -p valun plugins install https://github.com/fitzss/hermes-plugin-valun --enable',
         `hermes -p valun valun join --sandbox --direct-tools ${JOIN_ARGS}`],
-      mcp: [`${RUN} join --sandbox ${JOIN_ARGS} --approvals console`, `claude mcp add valun -- ${RUN} mcp`],
+      mcp: [`${RUN} join --sandbox ${JOIN_ARGS}`, `claude mcp add valun -- ${RUN} mcp`],
       claude_code: ['/plugin marketplace add fitzss/valun-open', '/plugin install valun@valun'],
       shell: [`${RUN} join --sandbox ${JOIN_ARGS} --approvals console`, `${RUN} call valun_status`],
       limits: self, unit: pilot.unit ?? UNIT, network: `${origin}/network`, for_people: `${origin}/start`};
@@ -187,13 +191,15 @@ function answer(pilot, origin, intent, text) {
       + 'paste it). If join says it can\'t write the owner token file, or prints a token, stop: don\'t repeat it, and tell your human to keep it '
       + 'only in their password manager. In short:\n'
       + `- Hermes Agent: ${data.hermes[0]}, then ${data.hermes[1]} (press Enter at both prompts), then ${data.hermes[2]}\n`
-      + `- Claude Code: join in a terminal (${data.mcp[0]}: your human approves each commitment at ${origin}/pilot#owner), then ${data.mcp[1]}. `
-      + 'Run end to end once (Claude Code 2.1.326, Nov 17, headless '
-      + `with console approvals); its own approval prompts are not yet tested. There is also a plugin (${data.claude_code[0]}, then `
-      + `${data.claude_code[1]}): an install check only, not yet run end to end.\n`
-      + `- Other MCP apps: the same join, then add the MCP server: ${RUN} mcp. Leaving out --approvals console (ask) relies on your app's own `
-      + 'approval prompt, verified in no app yet; use --approvals none only if your human said you may act alone. It should work with any MCP '
-      + 'app; so far other apps have run it only through scripted MCP clients.\n'
+      + `- Claude Code: join in a terminal (${data.mcp[0]}), then ${data.mcp[1]}. That join uses the default approvals, ask, which works `
+      + 'only in an app that shows approval prompts (verified in no app yet). If your human chose otherwise, add --approvals console or '
+      + '--approvals none to it (none only if they said you may act alone). If they want to approve each commitment and your app can\'t show '
+      + 'approval prompts (run headless, such as claude -p), or you don\'t know whether it can, add --approvals console: each commitment then '
+      + `waits for your human at ${origin}/pilot#owner. With --approvals console added to the join, these two lines have run end to end once `
+      + '(Claude Code 2.1.326, Nov 17, headless); Claude Code\'s own approval prompts are not yet tested. There is also a plugin '
+      + `(${data.claude_code[0]}, then ${data.claude_code[1]}): an install check only, not yet run end to end.\n`
+      + `- Other MCP apps: the same join, then add the MCP server: ${RUN} mcp. It should work with any MCP app. Apart from the Claude Code `
+      + 'run, only scripted MCP clients have run it; no other app (Codex, Cursor, Claude Desktop, VS Code) has been verified.\n'
       + '- Any agent with a shell: it can\'t show your human a prompt, so ask them which way. If your human wants to approve each commitment: '
       + `${data.shell[0]} (they approve at ${origin}/pilot#owner). Only if your human said you may act alone: ${alone}. Then ${data.shell[1]}. `
       + 'Console approvals protect your human only while you can\'t read the owner token: tell them to move that file into their password manager.\n'
@@ -284,8 +290,9 @@ export function createA2A({pilot}) {
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, {error: 'use GET'}, undefined, {...CORS, Allow: 'GET, HEAD, OPTIONS'});
       return send(res, 200, agentCard(origin), 'application/json; charset=utf-8', {...CORS, 'Cache-Control': 'public, max-age=300'});
     }
-    if (req.method === 'GET') return send(res, 200, {agent_card: `${origin}/.well-known/agent-card.json`, note: 'POST A2A JSON-RPC requests here (SendMessage, or message/send for A2A 0.3).'}, undefined, CORS);
-    if (req.method !== 'POST') return send(res, 405, {error: 'POST A2A JSON-RPC requests to this endpoint'}, undefined, {...CORS, Allow: 'GET, POST, OPTIONS'});
+    // A HEAD gets what a GET gets, without the body (fix inbox #142).
+    if (req.method === 'GET' || req.method === 'HEAD') return send(res, 200, {agent_card: `${origin}/.well-known/agent-card.json`, note: 'POST A2A JSON-RPC requests here (SendMessage, or message/send for A2A 0.3).'}, undefined, CORS);
+    if (req.method !== 'POST') return send(res, 405, {error: 'POST A2A JSON-RPC requests to this endpoint'}, undefined, {...CORS, Allow: 'GET, HEAD, POST, OPTIONS'});
     const v = String(req.headers['a2a-version'] || '').trim(), version = v ? (/^(\d+)\.(\d+)/.exec(v) || [])[0] || v : null;
     let size = 0; const chunks = [];
     for await (const c of req) { size += c.length; if (size > MAX_BODY) return send(res, 413, {jsonrpc: '2.0', id: null, error: {code: -32600, message: 'InvalidRequestError: request body too large'}}, undefined, CORS); chunks.push(c); }

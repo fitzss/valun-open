@@ -8,10 +8,10 @@ import {featuresFor, NOVATION_INFO} from './caps.mjs';
 import {METRICS_CACHE_MS} from './clearing.mjs';
 import {loopsOf, loopOf, memberRecords, LOOP_ID_RE, renderLoopPage, renderLoopNotFound} from './loops.mjs';
 import {AnchorWatch, BLOCK_WAIT, CHECK_INTERVAL_S, DAILY_TRACKER_SIGNATURES, boxWindows, confirmedUpdates, creatingTx, dailyCap, loopAnchor, nodeHeight, trackerBoxUpdates} from './anchors.mjs';
-import {AGENT_HANDLE_RE, agentPageShown, agentView, renderAgentPage, renderAgentNotFound} from './agents.mjs';
+import {AGENT_HANDLE_RE, agentPageShown, agentView, pageHandles, renderAgentPage, renderAgentNotFound} from './agents.mjs';
 import {assertCardPublic, budgetCard, cardPublic, checkPayer, dealUnderReview, findPayee, parseAmount, parseDeliverBy, parsePath, roomOf} from './card.mjs';
 import {withUnitNeutralNames as unitNeutral} from './amount-names.mjs';
-import {ENVIRONMENT} from '../environment.mjs';
+import {ENVIRONMENT, LOCAL, LOCAL_NOTE} from '../environment.mjs';
 import {trackerPin, trackerProbe} from '../basis.mjs';
 import {TRACKER_SHA256_TR20} from './pins.mjs';
 
@@ -21,9 +21,11 @@ const sources = o => Object.fromEntries(Object.entries(o).map(([k, f]) => [k, f.
 // GET /info `description`. Modes off and bound: v15's text, word for word (nothing moves or clears a note there).
 // Modes sandbox and on (OQ-49): set-offs do clear obligations and notes move between creditors, so the text ends with
 // the wording of the deal's settlement label with circulating credit on (core.mjs CIRCULATION_SETTLEMENT, spec 16.1),
-// and in mode sandbox it also says whom circulating credit is on for.
+// and in mode sandbox it also says whom circulating credit is on for. The testnet's says who the agents are so far (the
+// redesign's live check, 2026-11-17: it called them "independently controlled", which /start lists as a known issue of
+// valun 0.7.1's MCP server), and calls a credit note an IOU, as the site does; the retired pilot's stays v15's.
 const INFO_PREFIX = ON_TESTNET
-  ? 'Valun testnet network: independently controlled agents propose, negotiate and accept service-for-credit deals. Amounts are nanoERG on Ergo TESTNET: test coins with no monetary value. When a payer accepts a delivery it issues a credit note: a payer-signed Basis note recorded by a Basis tracker that anchors its state on Ergo testnet.'
+  ? 'Valun testnet network: agents, each holding its own key, propose, negotiate and accept deals paid with IOUs (credit notes). So far almost every agent is the team\'s or the operator\'s. Amounts are nanoERG on Ergo TESTNET: test coins with no monetary value. When a payer accepts a delivery it issues an IOU: a payer-signed Basis note recorded by a Basis tracker that anchors its state on Ergo testnet.'
   : 'Valun pilot network: independently controlled agents propose, negotiate and accept service-for-credit deals. PC (pilot credits) are simulated units with no monetary value. When a payer accepts a delivery it issues a credit note: a payer-signed Basis note recorded by a real Basis tracker that has no blockchain connection.';
 const INFO_SETTLEMENT = ON_TESTNET
   ? 'an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes), also on an edge whose total the tracker box on Ergo testnet commits: never below a total the tracker signed for a redemption, and only while that tracker box is fresh. A change is committed once the next tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. A creditor can redeem a note on Ergo testnet against its issuer\'s tERG reserve, if the issuer posted one; tERG have no monetary value.'
@@ -232,6 +234,10 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     return w.length > max;
   };
   const bearer = req => (/^Bearer\s+(\S+)$/i.exec(req.headers.authorization || '') || [])[1] || null;
+  // A HEAD sent with a token where the token would be checked (fix inbox #142): 405, never authenticated. `allow`: the
+  // methods that take the token there. A HEAD gets no body, so the status and Allow say it; the body says it too.
+  const HEAD_REFUSED = 'HEAD is answered only on the public reads, as GET: a request with a token is authenticated, which a HEAD never is. Send it as GET, or with the method its route takes.';
+  const headRefused = (res, send, allow) => send(res, 405, {error: 'method_not_allowed', message: HEAD_REFUSED}, undefined, {Allow: allow});
 
   async function readJson(req) {
     let size = 0; const chunks = [];
@@ -246,12 +252,19 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
   async function handle(req, res, url, send, clientIp) {
     const p = url.pathname.slice('/pilot/v1'.length) || '/';
     const G = req.method === 'GET', P = req.method === 'POST', U = req.method === 'PUT';
+    // HEAD (fix inbox #142): the public reads below answer it as GET (R: a read), with the GET's status and headers and
+    // no body (Node sends none to a HEAD; lib/http.mjs). Nowhere else: a HEAD is never authenticated, since
+    // authenticate writes (it records the agent as seen and renews a self-serve agent's sandbox time). A HEAD with a
+    // token where one would be authenticated is refused (headRefused); one without a token gets what a GET without one
+    // gets (authenticate(null) changes nothing: 401).
+    const H = req.method === 'HEAD', R = G || H;
     let m;
     const ip = clientIp(req);
-    if (!G && limited(`ip:${ip}`)) throw new PilotError('rate_limited', 'too many requests; slow down', 429);
+    if (!R && limited(`ip:${ip}`)) throw new PilotError('rate_limited', 'too many requests; slow down', 429);
     // Every read counts against a per-IP read budget, whatever Authorization header it carries: public routes are
-    // served before authentication, so a made-up bearer token must not skip it (F2, OQ-30).
-    if (G && limited(`ipr:${ip}`, ipReadsPerMinute)) throw new PilotError('rate_limited', 'too many requests; slow down', 429);
+    // served before authentication, so a made-up bearer token must not skip it (F2, OQ-30). A HEAD counts as the read
+    // it is answered as.
+    if (R && limited(`ipr:${ip}`, ipReadsPerMinute)) throw new PilotError('rate_limited', 'too many requests; slow down', 429);
 
     // ---------- admin: loopback only (e.g. `fly ssh console`), never via the proxy, with the volume-held admin token ----------
     if (p.startsWith('/admin/')) {
@@ -284,15 +297,17 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       throw new PilotError('not_found', 'not found', 404);
     }
 
-    // ---------- public ----------
+    // ---------- public (GET, and HEAD as GET: R) ----------
     // With circulating credit effectively on (mode bound and above; lib/pilot/caps.mjs) /info also lists the features,
     // the novation constants and the circulation statements. In mode off it is exactly as before.
-    if (G && p === '/info') return sendCached(res, send, 'info', () => {
+    if (R && p === '/info') return sendCached(res, send, 'info', () => {
       const mode = pilot.mode;
       return {
         network: NETWORK,
-        // Staging says so (fix inbox #41; lib/environment.mjs), next to the network it copies; absent anywhere else.
+        // Staging says so (fix inbox #41; lib/environment.mjs), next to the network it copies; absent anywhere else. So
+        // does a local server (fix inbox #143), with what that means: no chain.
         ...(ENVIRONMENT ? {environment: ENVIRONMENT} : {}),
+        ...(LOCAL ? {environment_note: LOCAL_NOTE} : {}),
         protocol: PROTOCOL, unit: pilot.unit, denomination: pilot.basis.denomination, tracker_nft_id: pilot.basis.nft,
         tracker_on_chain: !!pilot.chain?.on_chain, experimental: true,
         ...(pilot.chain ? {chain: publicChain(pilot.chain)} : {}),
@@ -318,16 +333,19 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     // binary's sha256 is pinned; null without capabilities). Not in the public read cache: the tracker read has its own
     // (HEALTH_PROBE_MS). Writes refused by MIG-1 do not make it 503: such a server still serves, and GET /info says why
     // (writes_refused).
-    if (G && p === '/health') {
+    if (R && p === '/health') {
       const reachable = await trackerAnswers();
       const pin = trackerPin(pilot.trackerCaps, null, {pinned: (pilot.trackerPins ?? []).includes(pilot.trackerSha256)});
       return send(res, reachable ? 200 : 503, {ok: reachable, network: NETWORK, tracker: {reachable, pin}});
     }
+    // A local server (fix inbox #143) has no chain: its chain reads say so, instead of falling through to a 401.
+    if (LOCAL && R && (p === '/chain' || p === '/reserves' || p === '/ledger/committed'))
+      throw new PilotError('no_chain', `${LOCAL_NOTE} There is no chain view, no reserve and no committed ledger here.`, 404);
     // ---------- Ergo testnet (valun-testnet-1, once on chain): the chain view and the reserves, public ----------
     // GET /chain: the tracker's anchoring (its local digest, the digest its tracker box commits on testnet, that box and
     // height, an update in flight) and where to look on the explorer. GET /reserves: every Basis reserve the tracker
     // scans for this tracker's NFT, each with its owner's handle when the owner is a participant.
-    if (ON_TESTNET && G && (p === '/chain' || p === '/reserves')) {
+    if (ON_TESTNET && R && (p === '/chain' || p === '/reserves')) {
       if (!pilot.chain?.on_chain) throw new PilotError('testnet_bootstrapping', 'the Valun testnet tracker is not on chain yet', 503);
       if (p === '/chain') return sendCached(res, send, 'chain', async () => {
         const st = await pilot.basis.trackerState().catch(() => null);
@@ -365,18 +383,18 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     // reads, on top of committedNow's one read per box. Served only while the tracker binary has TR-20 (pins.mjs
     // TRACKER_SHA256_TR20; cfg.committedRoute true or false overrides it, for tests): on tracker v4.4.1 the route is
     // left out, and answers as any unknown route does, so `valun audit` checks GET /ledger against the box instead.
-    if (ON_TESTNET && G && p === '/ledger/committed' && committedPublic()) {
+    if (ON_TESTNET && R && p === '/ledger/committed' && committedPublic()) {
       if (!pilot.chain?.on_chain) throw new PilotError('testnet_bootstrapping', 'the Valun testnet tracker is not on chain yet', 503);
       if (url.search) throw new PilotError('invalid_field', 'GET /ledger/committed takes no parameters: it serves the snapshot of the current tracker box only, never an earlier box');
       return sendCached(res, send, 'ledger-committed', committedNow);
     }
     // The directory leaves out participants the operator unlisted (test or demo agents that are not running); ?all=1 lists
     // every participant (the network view draws every edge), each unlisted one with unlisted: true.
-    if (G && p === '/participants') {
+    if (R && p === '/participants') {
       const all = url.searchParams.get('all') === '1';
       return sendCached(res, send, all ? 'participants:all' : 'participants', () => Object.values(pilot.s.participants).filter(x => all || !x.unlisted).map(x => pilot.directoryRecord(x)));
     }
-    if (G && (m = /^\/participants\/(vp_[0-9a-f]{12})$/.exec(p))) {
+    if (R && (m = /^\/participants\/(vp_[0-9a-f]{12})$/.exec(p))) {
       const x = pilot.participant(m[1]);
       return sendCached(res, send, `participant:${x.id}`, async () => ({...pilot.directoryRecord(x), public_position: unitNeutral(await pilot.publicPosition(x))}));
     }
@@ -385,7 +403,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     // which are checked first (400 invalid_field, 404 not_found). Fix inbox #87: the payee's own check (its token) is
     // answered for a payer whose card is not published too, for the payee's own side of the step (its payer side is
     // unknown); any other check of such a payer is 404 card_not_public, a request with no token before anything else.
-    if (G && (m = /^\/participants\/(vp_[0-9a-f]{12})\/(card|check)$/.exec(p))) {
+    if (R && (m = /^\/participants\/(vp_[0-9a-f]{12})\/(card|check)$/.exec(p))) {
       const x = pilot.participant(m[1]);
       if (m[2] === 'card' || !bearer(req)) assertCardPublic(x);
       if (m[2] === 'card') return sendCached(res, send, `card:${x.id}`, () => budgetCard(pilot, x));
@@ -397,7 +415,8 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       // the payee's token (agent or owner), and such an answer is never cached; everyone else gets the cached public
       // answer, with cover.covered null and no payee_side. A check sent with the payee's agent token is a request of its
       // agent: authenticate renews a self-serve agent on the open network first, as on every route, and the check
-      // answers on that state.
+      // answers on that state. So a HEAD sent with a token is refused here, never authenticated.
+      if (H && bearer(req)) return headRefused(res, send, 'GET');
       const asker = bearer(req) ? pilot.authenticate(bearer(req)) : null, ownCheck = asker?.p?.id === payee.id;
       if (!ownCheck) assertCardPublic(x);
       // Fix inbox #60: deal=vd_... names the offer the payee is deciding on, so the check counts it once, as accepting it
@@ -415,18 +434,18 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       return sendCached(res, send, `check:${x.id}:${payee.id}:${amount}:${path ?? ''}`, () => checkPayer(pilot, x, {amount, payee, path}));
     }
     // The reconciliation rows are v15's in every mode (SV-PRIV-1, owner decision 9): no per-edge journal columns here.
-    if (G && p === '/ledger') return sendCached(res, send, 'ledger', async () => { const l = await pilot.ledger(); return {unit: pilot.unit, notes: l, reconciliation: await pilot.reconcile(l, {public: true})}; });
+    if (R && p === '/ledger') return sendCached(res, send, 'ledger', async () => { const l = await pilot.ledger(); return {unit: pilot.unit, notes: l, reconciliation: await pilot.reconcile(l, {public: true})}; });
     // Closed loops (applied set-offs; lib/pilot/loops.mjs): public handles and amounts only, newest first. In every mode
     // (with circulation off there are none).
     // On the testnet each loop also says where its netting was committed on chain (on_chain: the tracker-box update and
     // its explorer link, or that it is not committed yet).
-    if (G && p === '/loops') return sendCached(res, send, 'loops', async () => {
+    if (R && p === '/loops') return sendCached(res, send, 'loops', async () => {
       const loops = loopsOf(pilot.s.setoffs, pilot.s.participants, publicOf);
       if (!onChain()) return unitNeutral({unit: pilot.unit, network: NETWORK, loops});
       const a = await anchoring();
       return unitNeutral({unit: pilot.unit, network: NETWORK, loops: loops.map(l => ({...l, on_chain: loopOnChain(l, a)}))});
     });
-    if (G && (m = /^\/loops\/([^/]+)$/.exec(p))) {
+    if (R && (m = /^\/loops\/([^/]+)$/.exec(p))) {
       const o = LOOP_ID_RE.test(m[1]) ? pilot.setoff(m[1]) : null;
       if (!o || o.state !== 'applied') throw new PilotError('not_found', 'unknown loop', 404);
       return sendCached(res, send, `loop:${o.id}`, async () => {
@@ -437,12 +456,12 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     // The record's evidence, as network totals (lib/pilot/evidence.mjs): delivery, repayment and acceptance kept apart, and
     // the groups participants form by completed exchanges. Aggregates only (no ids, handles or keys); circulation modes
     // sandbox and on (in other modes the route does not exist).
-    if (G && p === '/evidence' && pilot.circulating) return sendCached(res, send, 'evidence', async () => unitNeutral(await pilot.publicEvidence()));
+    if (R && p === '/evidence' && pilot.circulating) return sendCached(res, send, 'evidence', async () => unitNeutral(await pilot.publicEvidence()));
     // The clearing engine's public aggregates (circulation modes sandbox and on; no participant ids, handles or keys).
     // In other modes the route does not exist (it falls through, as any unknown route does).
     // Single-flight: requests that arrive while the aggregates are being computed share that computation (the cache holds
     // its promise); one that fails is dropped, so the next request computes them again.
-    if (G && p === '/clearing' && pilot.circulating) {
+    if (R && p === '/clearing' && pilot.circulating) {
       const t = Date.now();
       if (!clearingCache || t - clearingCache.at >= METRICS_CACHE_MS || t < clearingCache.at) {
         const entry = {at: t, value: Promise.resolve().then(() => pilot.publicClearing()).then(unitNeutral)};
@@ -463,8 +482,11 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     if (P && p === '/enroll') return send(res, 201, await pilot.enroll(await readJson(req)));
 
     // ---------- authenticated ----------
+    // A HEAD is never authenticated (authenticate writes): with a token it is refused here, before anything reads the
+    // token; without one it gets the 401 a GET without one gets.
+    if (H && bearer(req)) return headRefused(res, send, 'GET, POST, PUT');
     // X-Valun-Features: the consent roles an agent's client signs by itself (kept only with circulation on).
-    const who = pilot.authenticate(bearer(req), {features: req.headers['x-valun-features']});
+    const who = H ? null : pilot.authenticate(bearer(req), {features: req.headers['x-valun-features']});
     if (!who) throw new PilotError('unauthorized', 'missing or invalid token (Authorization: Bearer vpa_… for an agent, vpo_… for an owner)', 401);
     // Writes and reads have separate budgets per token: polling an inbox must not use up the budget for acting.
     if (limited(`tok:${who.p.id}:${who.role}:${G ? 'r' : 'w'}`, G ? readsPerMinute : perMinute)) throw new PilotError('rate_limited', 'too many requests; slow down', 429);
@@ -724,8 +746,9 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     if (!o || o.state !== 'applied') return send(res, 404, renderLoopNotFound(), HTML);
     const r = await cachedRead(`loop-page:${o.id}`, async () => {
       const loop = loopOf(o, pilot.s.participants, publicOf);
-      // The card says who runs each member (memberRecords: their public records) and when it was read.
-      const view = {records: memberRecords(o, pilot.s.participants, publicOf), now: Date.now()};
+      // The card says who runs each member (memberRecords: their public records) and when it was read, and links a
+      // member only to a page this server shows (pageHandles: not an unlisted one's; fix inbox #141).
+      const view = {records: memberRecords(o, pilot.s.participants, publicOf), now: Date.now(), pages: pageHandles(pilot.s.participants)};
       return {status: 200, body: renderLoopPage(onChain() ? {...loop, on_chain: loopOnChain(loop, await anchoring())} : loop, view)};
     });
     return send(res, r.status, r.body, HTML);
@@ -744,7 +767,9 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       try { pos = await pilot.publicPosition(x); } catch { pos = null; }   // the page still shows, without the record
       if (cardPublic(x)) { try { card = await budgetCard(pilot, x); } catch { card = null; } }   // and without the card
       const loops = loopsOf(pilot.s.setoffs, pilot.s.participants, publicOf);
-      return {status: 200, body: renderAgentPage(agentView(pilot.directoryRecord(x), pos, loops, {now: Date.now(), dormant: !!pilot.dormant?.(x), card}))};
+      // A counterparty or a vouch is linked only to a page this server shows (pageHandles; fix inbox #141).
+      return {status: 200, body: renderAgentPage(agentView(pilot.directoryRecord(x), pos, loops, {now: Date.now(), dormant: !!pilot.dormant?.(x), card,
+        pages: pageHandles(pilot.s.participants)}))};
     });
     return send(res, r.status, r.body, HTML);
   };

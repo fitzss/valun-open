@@ -178,6 +178,27 @@ test('/loop/<id>: a server-rendered card with Open Graph and Twitter tags', asyn
   assert.equal((await rawGet(`/loop/${L3}`, 'valun.tech', 'HEAD')).status, 200);
 });
 
+// Fix inbox #141: the card links a member only to a page the server shows. Once the operator unlists ana (PUT
+// /admin/participants/{vp}/listing), its page is a 404 and the card names it as text; listed again, it is linked again.
+test('fix inbox #141: /loop/<id> links a member only to a page the server shows: not one the operator unlisted', async () => {
+  const ana = pilot.s.participants[P.S.id];
+  assert.match((await get(`/loop/${L3}`)).text, /<a class="h" href="\/agent\/ana">ana<\/a>/);
+  pilot.setListed(ana, false);
+  try {
+    const r = await get(`/loop/${L3}`);
+    assert.equal(r.status, 200);
+    assert.equal((await get('/agent/ana')).status, 404, 'unlisted: no page');
+    assert.doesNotMatch(r.text, /href="\/agent\/ana"/);
+    assert.ok(r.text.includes('<li><a class="h" href="/agent/sandbox-mallory">sandbox-mallory</a> <span class="arr">owed</span> <span class="h">ana</span> <span class="num">'));
+    assert.match(r.text, /<tr><th scope="row"><span class="h">ana<\/span><\/th>/);
+    // #141's acceptance: every link to an agent page on it answers 200.
+    const linked = [...new Set([...r.text.matchAll(/href="\/agent\/([^"]+)"/g)].map(m => m[1]))].sort();
+    assert.deepEqual(linked, ['sandbox-exact', 'sandbox-mallory']);
+    for (const h of linked) assert.equal((await get(`/agent/${h}`)).status, 200, h);
+  } finally { pilot.setListed(ana, true); }
+  assert.match((await get(`/loop/${L3}`)).text, /<a class="h" href="\/agent\/ana">ana<\/a>/, 'listed again: linked again');
+});
+
 test('/loop/<id> escapes hostile handles everywhere (title, meta tags, SVG, facts)', async () => {
   const r = await get(`/loop/${LH}`);
   assert.equal(r.status, 200);
@@ -365,9 +386,10 @@ test('the landing claims no more than the evidence: test agents, how far each wa
     'By default Hermes asks you in the conversation before each commitment, through its own approval gate, so never run it with --yolo.',
     'Tested so far End to end in a real Hermes (v0.23.1) with plugin 0.6.0, on Nov 13, by our QA bot. The current plugin, 0.7.1, is not yet verified in a real Hermes.',
     // a shell agent: console or none, its human's choice (the lead's D10); the scripted runs with their dates and builds
-    // (d11e6b4 for the newcomer run, 17:24-17:43 UTC; 09875a4 on the testnet from 20:00 UTC)
+    // (d11e6b4 for the newcomer run, 17:24-17:43 UTC; the QA bot's daily sweeps on Nov 16, 10:54 UTC, on 103b25f and on
+    // Nov 17, 10:46 UTC, on 09875a4: 1b1f18f reached the testnet at about 14:44 UTC, after them)
     'A shell agent can\'t show you a prompt: it joins with console (you approve each commitment in the owner console) or none (it acts alone within the limits), and it asks you which.',
-    "Tested so far The valun command (0.7.1) is run by scripts: our QA bot daily (build 09875a4 since Nov 16, 20:00 UTC), and a Claude session acting as a newcomer on a clean profile (Nov 16, build d11e6b4). No AI agent has yet been recorded following this line from start to finish. An AI agent of the team's (muse) used the valun command and the JS library end to end on Nov 16-17, a redemption included, after join and connection failures (known issues)."])
+    "Tested so far The valun command (0.7.1) is run by scripts: our QA bot daily (Nov 16-17, builds 103b25f and 09875a4), and a Claude session acting as a newcomer on a clean profile (Nov 16, build d11e6b4). No AI agent has yet been recorded following this line from start to finish. An AI agent of the team's (muse) used the valun command and the JS library end to end on Nov 16-17, a redemption included, after join and connection failures (known issues)."])
     assert.ok(text.includes(s), s);
   assert.doesNotMatch(text, /the current build/, 'every label names its build');
   // Before you paste the one line: what following skill.md does (the lead's D9), skill.md first and live; approving in

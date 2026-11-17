@@ -388,6 +388,14 @@ test('every command is pinned, gives what join would ask for, and keeps the owne
   assert.match(text('backing'), /card check needs a joined profile\. To see a full verdict, publish your first agent's card \(above\), then check it from your second profile: uvx --from valun==\S+ valun --profile backer card check YOUR-HANDLE 3000000\./);
   assert.match(text('backing'), /The second line shows the guarantee and asks Approve this commitment\? \[y\/N\]: type y\. With nobody at the terminal it signs nothing\./);
   assert.match(blocks['cmd-console'], /config approvals console --owner-token-file "\$HOME\/valun-owner-token-YOUR-HANDLE\.txt"$/);
+  // One MCP join everywhere (the lead's live check of 1b1f18f): the two lines for an MCP app are skill.md's, with the
+  // placeholders a person fills in (test/a2a.test.mjs holds the A2A answer to skill.md's too). Neither names --approvals:
+  // the note under them says when to add console.
+  const skill = pub('skill-testnet.md');
+  const mcpPart = skill.slice(skill.indexOf('### Claude Code, Codex, Cursor, Claude Desktop, or any MCP app'), skill.indexOf('### Any agent with a shell'));
+  const forPerson = s => s.replace('--operator "YOUR HUMAN"', '--operator "YOUR NAME"').replace('--about "what you offer, in one line"', '--about "what it offers, in one line"');
+  assert.equal(blocks['cmd-mcp'], forPerson(/```\n([\s\S]*?)\n```/.exec(mcpPart)[1]));
+  assert.doesNotMatch(blocks['cmd-mcp'], /--approvals/);
   assert.equal(blocks['cmd-skill'], 'Read https://valun.tech/skill.md and follow it to join Valun.');
   assert.deepEqual(blocks['cmd-redeem'].split('\n').map(l => l.replace(/^uvx --from valun==\S+ valun /, '')),
     ['sandbox earn', 'ergo chain', 'ergo redeem sandbox-exact 3000000', 'ergo redeem sandbox-exact 3000000 --broadcast']);
@@ -516,7 +524,7 @@ test('what it claims stays within what works: redemption, netting, backing, the 
   // The evidence for each way to connect, word for word (the site's copy rules), and the label each host carries.
   const rows = [...part('compat').matchAll(/<tr><th scope="row">([\s\S]*?)<\/th><td>([\s\S]*?)<\/td><\/tr>/g)].map(m => [words(m[1]).trim(), words(m[2]).trim()]);
   assert.deepEqual(rows, [
-    ['valun CLI 0.7.1', "Scripted: our QA bot daily (build 09875a4 since Nov 16, 20:00 UTC), and a Claude session acting as a newcomer on a clean profile (Nov 16, build d11e6b4); and an AI agent of the team's (muse) used it end to end on Nov 16-17: the tour, real jobs (a code review it acted on) and a redemption, after the join and connection failures in Known issues"],
+    ['valun CLI 0.7.1', "Scripted: our QA bot daily (Nov 16-17, builds 103b25f and 09875a4), and a Claude session acting as a newcomer on a clean profile (Nov 16, build d11e6b4); and an AI agent of the team's (muse) used it end to end on Nov 16-17: the tour, real jobs (a code review it acted on) and a redemption, after the join and connection failures in Known issues"],
     ['valun mcp (MCP server)', 'Scripted MCP clients against the live testnet (Nov 16), and the Claude Code run below'],
     ['Claude Code, with claude mcp add', "One complete exchange in Claude Code 2.1.326 on Nov 17 (build 09875a4): the join in a terminal (CLI), claude mcp add, then a summary hired from house-scribe and paid with the agent's IOU. Run headless (claude -p) with console approvals; the owner's side was scripted (approvals through the owner console's API, and Claude Code's permission prompts answered by a script). Claude Code's own approval prompts are not yet verified"],
     ['Hermes plugin', 'End to end in a real Hermes (v0.23.1) with plugin 0.6.0, Nov 13 (our QA bot). 0.7.1 is not yet verified in a real Hermes'],
@@ -525,6 +533,9 @@ test('what it claims stays within what works: redemption, netting, backing, the 
     ['The one-line prompt (skill.md), any agent', "Never verified end to end; the commands it runs are the CLI's, scripted"],
     ['Python / JS libraries', "Scripted use plus CI. The JS library was also used end to end by an AI agent of the team's (muse, Nov 16-17), on the same profile file as the Python client. No third-party app"]]);
   assert.match(text('compat'), /Valun should work with any MCP app\. Of MCP apps, only Claude Code has run it end to end \(headless, with console approvals, Nov 17\), and Hermes has run it end to end with its own plugin \(plugin 0\.6\.0, Nov 13\)\. The rest of the evidence is scripted clients\./);
+  // A scripted run is dated, with the builds it ran on, as a closed range: never "since" a build, which reads as the build
+  // live now (the lead's live check of 1b1f18f; the QA bot's daily sweeps of Nov 16 and 17 ran on 103b25f and 09875a4).
+  assert.doesNotMatch(all, /since Nov 16, 20:00 UTC|build 09875a4 since/);
   // The label each way to connect carries where you choose it (the lead's decision D6 for the MCP apps).
   assert.deepEqual([...part('agent').matchAll(/<span class="ev">([^<]+)<\/span>/g)].map(m => m[1].replace(/\s+/g, ' ')),
     ['Not yet verified end to end', 'Run end to end once in Claude Code (headless, console approvals)', 'Run end to end with plugin 0.6.0; 0.7.1 not yet verified']);
@@ -564,10 +575,12 @@ test('the known issues of the client release, in one place: each with what to do
   assert.ok(known.includes('The same message also offers client-prompt. Choose that only if your app confirms each tool call itself (Claude Code asks for each Valun tool call unless the tool has been allowed; with Valun that is not yet tested); otherwise nobody is asked. Use console or none instead.'));
   assert.doesNotMatch(all, /\(Claude Code does\)/);
   // An answer read to its last byte counts as complete: the server sends each answer's length (lib/http.mjs), in the
-  // release this page ships with, so the sentence carries no date.
-  assert.ok(known.includes("The server also sends each answer's length, so an answer read to its last byte counts as complete."));
+  // release this page ships with, so the sentence carries no date. It arrives only when the client doesn't ask for
+  // compression: valun.tech's edge compresses for a client that does (Node's fetch, which the JS client uses, asks for br)
+  // and sends that answer chunked, without Content-Length (the lead's live check of 1b1f18f); Python's urllib asks for none.
+  assert.ok(known.includes("The server also sends each answer's length when the client doesn't ask for compression (the Python client doesn't), so an answer read to its last byte counts as complete. Answers to a client that asks for compression, such as Node's fetch, come compressed and in chunks instead."));
   assert.match(src('lib/http.mjs'), /'Content-Length': Buffer\.byteLength\(payload\)/);
-  assert.doesNotMatch(all, /Since Nov 17 the server/);
+  assert.doesNotMatch(all, /Since Nov 17 the server|sends each answer's length, so/);
   // A join retried after a cut names a new token file through its new handle (the lead's decision D12b).
   assert.ok(known.includes('join again with another handle (the commands here then name a new token file; the first join may have written one, and that token opens the first agent)'));
   assert.match(known, /An approval prompt that was dismissed, or never shown, is reported as "your owner did not approve" \(owner_answer cancel\)\. Nothing was signed\. If no one is at the app, use console\./);

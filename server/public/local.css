@@ -1,0 +1,11 @@
+/* A local server's banner (lib/environment.mjs; fix inbox #143): one line at the very top of every page of a copy of
+   Valun running on someone's own machine with no chain, saying so, where the public network is, and how to point a
+   client at this server. Linked by the banner and served on a local server only. In the flow, so it covers nothing;
+   dark text on light blue, readable on the light pages and on the dark ones. */
+.valun-local { margin: 0; padding: 6px 16px; background: #bfe3ff; color: #111317; text-align: center; overflow-wrap: anywhere;
+  font: 500 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.valun-local a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.valun-local a:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.valun-local code { font: 500 13px/1.45 ui-monospace, "JetBrains Mono", monospace; overflow-wrap: anywhere; }
+/* The live network view (network.css) lays its body out as a column in which only the stage grows, and counts no parts:
+   the banner is its first part there and needs no rule of its own (fix inbox #47). */

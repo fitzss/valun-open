@@ -205,6 +205,28 @@ test('the live view on the page: one IOU at a time in words, with who runs each;
   assert.deepEqual(pending(), [home.SPOT_MS, home.REFRESH_MS]);
 });
 
+// Fix inbox #141: the list linked every handle, and an agent the operator unlisted has no page (its link was a 404). A
+// handle is linked only when the directory lists it and the operator has not unlisted it; otherwise, and for a handle
+// the last directory read did not name, it is text, as on /network.
+test('the latest list links only agents that have a page: an unlisted one, or one the directory has not named yet, is named as text', async () => {
+  assert.deepEqual([...home.pageHandles(READS['/pilot/v1/participants?all=1'])].sort(), ['ana-tester', 'basis-x-1', 'house-scribe', 'sandbox-exact', 'sandbox-mallory']);
+  assert.deepEqual([...home.pageHandles({participants: [{handle: 'ok-one'}, {handle: 'Not A Handle'}, {handle: 'gone-one', unlisted: true}, null]})], ['ok-one']);
+  assert.equal(home.pageHandles(null).size, 0);
+  const notes = [...READS['/pilot/v1/ledger'].notes,
+    {issuer_handle: 'tn-hidden', recipient_handle: 'house-scribe', outstanding: 5_000_000, timestamp: (S - 20) * 1000 + 997},
+    {issuer_handle: 'brand-new-1', recipient_handle: 'sandbox-exact', outstanding: 2_000_000, timestamp: (S - 10) * 1000 + 997}];
+  const {$} = openPage({reads: {...READS, '/pilot/v1/ledger': {unit: 'nanoERG', notes}}});
+  await settle();
+  const rows = $('latest').children;
+  assert.deepEqual(rows.slice(0, 2).map(li => li.querySelector('.pair').textContent),
+    ['brand-new-1 →  owes sandbox-exact operator-run', 'tn-hidden team test →  owes house-scribe operator-run']);
+  assert.deepEqual(rows.slice(0, 3).map(li => [li.querySelectorAll('.pair a').map(a => a.href), li.querySelectorAll('.pair .h').map(s => s.textContent)]), [
+    [['/agent/sandbox-exact'], ['brand-new-1']],
+    [['/agent/house-scribe'], ['tn-hidden']],
+    [['/agent/sandbox-exact', '/agent/house-scribe'], []]]);
+  assert.ok(rows.every(li => li.querySelectorAll('a').every(a => !/tn-hidden|brand-new-1/.test(a.href))), 'no link to an agent without a page');
+});
+
 test('Pause stops the spotlight and the reads; Resume starts them again; the spotlight moves on by itself; the directory is read at most once in 5 minutes', async () => {
   const {$, pending, run, fetched} = openPage();
   await settle();

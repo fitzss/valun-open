@@ -48,6 +48,14 @@ export const TRACKER_SHA256_PINS = Object.freeze([
   // 0 failed; the 6 new TR-22 tests fail on v4.4's code (four panic as the testnet did, two time out with no flush).
   // GET /capabilities is v4.4's but for its commit. Its valun_signer is byte-identical to v4.4's (a2b870bd...).
   'd24e9a450030c918b1a553a2c3821bbbea1b4243a83c00f832b26150d9050a87',
+  // tracker v4.4.1 for linux/arm64 (fix inbox #143, the local image): the same tag (commit 7c3c0db), Rust 1.98.1, local
+  // Cargo edit and gcc/glibc/binutils versions as the amd64 build above, built natively on GitHub's ubuntu-24.04-arm
+  // runners by the tracker fork's workflow (fitzss/valun-tracker, branch ci, .github/workflows/tracker.yml), whose amd64
+  // job reproduces the pin above byte for byte. Three runs on fresh VMs gave byte-identical binaries (runs 44118998350,
+  // 44120721332 and 44128668982); the third ran the fork's tests on each arch (basis_core, basis_offchain, basis_store,
+  // basis_server): 799 passed, 0 failed, 9 ignored on arm64, as on amd64. Its valun_signer is d76caed9... (amd64's
+  // a2b870bd...).
+  'e02071fee6608995e5fc250aeccc4bcb658708f27e0d852e5e154b3882cd5aed',
 ]);
 
 // The tracker builds with TR-20 (fix inbox #65): a tracker box update's marks are the totals its digest was computed

@@ -70,6 +70,15 @@ export function spherePoint(handle) {
   return {x: r * Math.cos(th), y, z: r * Math.sin(th)};
 }
 const participantList = p => (Array.isArray(p) ? p : Array.isArray(p?.participants) ? p.participants : null);
+const HANDLE_RE = /^[a-z][a-z0-9_-]{2,23}$/;
+
+// The handles the live list links to their agent pages (/agent/<handle>): those the directory lists, but the ones the
+// operator unlisted, which have no page (lib/pilot/agents.mjs agentPageShown: a link to one was a 404).
+// A handle the last directory read did not name is not linked either, as on /network (public/network.js agentEl). Every
+// handle the list shows is in the ledger, so it has had a key: for those, listed is the server's whole rule.
+export function pageHandles(participants) {
+  return new Set((participantList(participants) || []).filter(p => p && !p.unlisted && typeof p.handle === 'string' && HANDLE_RE.test(p.handle)).map(p => p.handle));
+}
 
 // Who runs an agent, as far as the public record says: 'operator' (the operator's four, or flagged operator_run),
 // 'team' (one of our own test agents, by its name, or unlisted), or null (no label: almost all of those are ours too, but
@@ -330,8 +339,9 @@ function start() {
   const pause = $('sky-pause'), next = $('sky-next'), ctl = $('sky-ctl'), tag = $('sky-tag');
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   const motion = () => !reduced?.matches;
-  // st: what was read and what is shown. kinds: handle -> 'operator' | 'team' | null.
-  const st = {data: {}, people: null, peopleAt: 0, m: null, kinds: new Map(), latest: [], spot: 0, unit: null, readAt: 0, failures: 0,
+  // st: what was read and what is shown. kinds: handle -> 'operator' | 'team' | null; pages: the handles linked to their
+  // agent pages (pageHandles of the last directory read).
+  const st = {data: {}, people: null, peopleAt: 0, pages: new Set(), m: null, kinds: new Map(), latest: [], spot: 0, unit: null, readAt: 0, failures: 0,
     paused: false, held: false, onScreen: true, hover: null, fresh: new Map(), seen: null};
   let angle = 0.7, target = 0.7, last = 0, raf = 0, w = 0, h = 0, positions = new Map(), readTimer = 0, spotTimer = 0, reading = false;
 
@@ -366,7 +376,11 @@ function start() {
   // ---- the words under the picture ----
   const tagFor = kind => el('span', `tag ${kind}`, KIND_WORDS[kind]);
   const kindOfHandle = handle => (st.kinds.has(handle) ? st.kinds.get(handle) : kindOf(handle));
-  function agentLink(handle) { const a = el('a', null, handle); a.href = `/agent/${encodeURIComponent(handle)}`; return a; }
+  // A handle, linked to its agent page only when the server shows one (st.pages); otherwise named as text.
+  function agentLink(handle) {
+    if (!st.pages.has(handle)) return el('span', 'h', handle);
+    const a = el('a', null, handle); a.href = `/agent/${encodeURIComponent(handle)}`; return a;
+  }
   function renderRead() {
     // The time of the last read that answered; after it, a failed read says so (what is shown is that read's).
     const t = $('sky-read'), l = readLabel(st);
@@ -464,7 +478,7 @@ function start() {
       const people = !st.people || Date.now() - st.peopleAt >= PEOPLE_MS;
       const [participants, ledger, loops, clearing] = await Promise.all([people ? getJson('/pilot/v1/participants?all=1').catch(() => null) : null,
         getJson('/pilot/v1/ledger').catch(() => null), getJson('/pilot/v1/loops').catch(() => null), getJson('/pilot/v1/clearing').catch(() => null)]);
-      if (participants) { st.people = participants; st.peopleAt = Date.now(); }
+      if (participants) { st.people = participants; st.peopleAt = Date.now(); st.pages = pageHandles(participants); }
       if (participants || ledger || loops || clearing) { st.failures = 0; st.readAt = Date.now(); } else st.failures += 1;
       st.data = {participants: st.people, ledger: ledger ?? st.data.ledger ?? null, loops: loops ?? st.data.loops ?? null, clearing: clearing ?? st.data.clearing ?? null};
       st.unit = st.data.ledger?.unit ?? st.data.loops?.unit ?? st.data.clearing?.unit ?? null;

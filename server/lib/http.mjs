@@ -9,10 +9,25 @@ import {renderAgentNotFound, renderMaintainersPage} from './pilot/agents.mjs';
 import {A2A_PATHS} from './a2a.mjs';
 import {ON_TESTNET, PUBLIC_ORIGIN} from './pilot/units.mjs';
 import {ipKey} from './ipkey.mjs';
-import {STAGING, withStagingBanner} from './environment.mjs';
+import {LOCAL, STAGING, STAGING_BANNER, localBanner, withBanner} from './environment.mjs';
 
 const SKILL_FILE = ON_TESTNET ? 'skill-testnet.md' : 'skill.md';
 const LLMS_FILE = ON_TESTNET ? 'llms-testnet.txt' : 'llms.txt';
+// The banner every HTML page opens with (lib/environment.mjs): staging's, a local server's (naming this server), or none.
+const BANNER = STAGING ? STAGING_BANNER : LOCAL ? localBanner(PUBLIC_ORIGIN) : null;
+// A local server (fix inbox #143): skill.md (also /agents.md) and llms.txt begin with how to point a client at it, since
+// their commands otherwise reach the client's default server, the public network. skill.md keeps its front matter first
+// (skill loaders read it there); in llms.txt the note follows the title. Elsewhere the files are served as they are.
+export const localPreface = origin => `> **A local Valun server, with no chain.** This file is served by a copy of Valun running at ${origin}, `
+  + 'not by the public network: its tracker has no blockchain connection, so nothing here is anchored on a chain or '
+  + 'redeemable, and its credits have no monetary value.\n'
+  + `> Point your Valun client at this server before anything below: \`valun config server ${origin}\` (or add \`--server ${origin}\` `
+  + 'to `valun join`). Without that, the commands below reach the public network at https://valun.tech, which the links below name too.\n';
+export function withLocalPreface(file, origin) {
+  const text = String(file), front = /^---\r?\n[\s\S]*?\r?\n---\r?\n/.exec(text);
+  const at = front ? front[0].length : text.indexOf('\n') + 1 || text.length;
+  return `${text.slice(0, at)}\n${localPreface(origin)}${text.slice(at)}`;
+}
 // /llms.txt (fix inbox #88): the testnet's names its links by the network's public origin, as the pages the server
 // renders do (PUBLIC_ORIGIN: https://valun.tech on the testnet, which valun.tech serves since 2026-11-13; staging's own
 // host on staging). Its file writes that origin as LLMS_ORIGIN; the pilot's has its own links and no such mark.
@@ -43,9 +58,11 @@ const STATIC = new Map([['/', 'index.html'], ['/app.js', 'app.js'], ['/styles.cs
   // Self-hosted fonts (the CSP allows no external font); their OFL license texts are in public/fonts.
   ['/fonts/jost-latin.woff2', 'fonts/jost-latin.woff2'], ['/fonts/jetbrains-mono-latin-400.woff2', 'fonts/jetbrains-mono-latin-400.woff2'],
   // Staging's banner (lib/environment.mjs) brings its own stylesheet: served on staging only, so nothing changes elsewhere.
-  ...(STAGING ? [['/staging.css', 'staging.css']] : [])]);
+  // So does a local server's, served there only.
+  ...(STAGING ? [['/staging.css', 'staging.css']] : []), ...(LOCAL ? [['/local.css', 'local.css']] : [])]);
 // The public domain's home page is the Close the Loop landing (public/home.html, also at /home on every host); the desk
-// console stays at / on valun-desk.fly.dev and every other host.
+// console stays at / on valun-desk.fly.dev and every other host. A local server runs no desk (fix inbox #143): its / is
+// the landing too, on any host.
 const HOME_HOSTS = new Set(['valun.tech', 'www.valun.tech']);
 const HTML = 'text/html; charset=utf-8';
 const TYPES = {'.md': 'text/markdown; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.json': 'application/json; charset=utf-8'};
@@ -66,8 +83,9 @@ export const DESK_UNAVAILABLE = Object.freeze({error: 'desk_unavailable',
 export function createHandler({service, mcp, cfg, publicDir, pilotRoutes = null, a2a = null, deskAvailable = null}) {
   const send = (res, status, body, type = 'application/json; charset=utf-8', extra = {}) => {
     // Every HTML page leaves through here, the files of public/ and the rendered ones alike (the pilot's routes are
-    // handed this send): on staging each opens with the banner (lib/environment.mjs); elsewhere it goes as it is.
-    if (type.startsWith('text/html')) body = withStagingBanner(body);
+    // handed this send): on staging and on a local server each opens with its banner (lib/environment.mjs); elsewhere
+    // it goes as it is.
+    if (type.startsWith('text/html')) body = withBanner(body, BANNER);
     const payload = body == null ? '' : typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body, null, 1);
     // Every answer says its length (Content-Length; none on a 204 or 304, which have no body). writeHead before end()
     // made Node frame each body as chunked, so a client could read every byte of an answer and still fail on the
@@ -139,8 +157,13 @@ export function createHandler({service, mcp, cfg, publicDir, pilotRoutes = null,
 
   async function route(req, res) {
     const url = new URL(req.url, 'http://x'), p = url.pathname;
+    // A HEAD is answered as a GET on the pages and files served here, /llms.txt, the A2A front door's reads and the
+    // network's public reads (fix inbox #142): the same status and headers, Content-Length included (send() counts the
+    // body the GET would get), and no body, which Node leaves out of an answer to HEAD. Uptime monitors, link checkers and
+    // `curl -I` see what a GET sees. A HEAD never reaches a write: the pilot's routes answer it only on their public reads,
+    // and never authenticate it (lib/pilot/http.mjs). The legacy desk's /api answers GET only, as before.
     const GH = req.method === 'GET' || req.method === 'HEAD';
-    if (p === '/' && GH && HOME_HOSTS.has(String(req.headers.host || '').toLowerCase().replace(/:\d+$/, ''))) {
+    if (p === '/' && GH && (LOCAL || HOME_HOSTS.has(String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '')))) {
       return send(res, 200, fs.readFileSync(path.join(publicDir, 'home.html')), HTML);
     }
     // A loop card (lib/pilot/loops.mjs): server-rendered with its Open Graph tags, for link previews.
@@ -158,8 +181,11 @@ export function createHandler({service, mcp, cfg, publicDir, pilotRoutes = null,
     }
     // The A2A front door (lib/a2a.mjs): the Agent Card and the JSON-RPC endpoint, with their own CORS and rate limit.
     if (a2a && A2A_PATHS.has(p)) return a2a(req, res, p, send, clientIp);
-    if (req.method === 'GET' && p === '/llms.txt') return send(res, 200, llmsText(publicDir), TYPES['.txt']);
-    if (req.method === 'GET' && STATIC.has(p)) { const f = STATIC.get(p); return send(res, 200, fs.readFileSync(path.join(publicDir, f)), TYPES[path.extname(f)]); }
+    if (GH && p === '/llms.txt') return send(res, 200, LOCAL ? withLocalPreface(llmsText(publicDir), PUBLIC_ORIGIN) : llmsText(publicDir), TYPES['.txt']);
+    if (GH && STATIC.has(p)) {
+      const f = STATIC.get(p), file = fs.readFileSync(path.join(publicDir, f));
+      return send(res, 200, LOCAL && f === SKILL_FILE ? withLocalPreface(file, PUBLIC_ORIGIN) : file, TYPES[path.extname(f)]);
+    }
     if (p === '/mcp') return mcpEndpoint(req, res);
     if (pilotRoutes && p.startsWith('/pilot/v1/')) {
       const cors = publicRead(req);
@@ -192,11 +218,12 @@ export function createHandler({service, mcp, cfg, publicDir, pilotRoutes = null,
   // Fix inbox #106: a public read of the network (a GET under /pilot/v1/ with no token) may be read from any origin, its
   // error answers too (a 404, a 429, a 503 with retry_after_ms): a profile page or a badge on another site needs no
   // proxy. A request that carries a token never gets the header, and a script on another origin cannot add one without
-  // a preflight, which this server never grants. null: no CORS header.
+  // a preflight, which this server never grants. A HEAD gets the headers its GET gets (fix inbox #142). null: no CORS
+  // header.
   function publicRead(req) {
     let p = '';
     try { p = new URL(req.url, 'http://x').pathname; } catch { return null; }
-    return req.method === 'GET' && !req.headers.authorization && p.startsWith('/pilot/v1/') ? {'Access-Control-Allow-Origin': '*'} : null;
+    return (req.method === 'GET' || req.method === 'HEAD') && !req.headers.authorization && p.startsWith('/pilot/v1/') ? {'Access-Control-Allow-Origin': '*'} : null;
   }
 
   return async (req, res) => {
