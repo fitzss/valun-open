@@ -47,8 +47,8 @@ spending caps) and the bootstrap; `basis/run-tracker-testnet.sh` starts the trac
 
 ## Run it
 
-To try Valun on your own machine without building anything, run the prebuilt local image: one `docker run`, with no
-chain (see "A local server with no chain" below).
+A prebuilt local image, to try Valun on your own machine with one `docker run` and no chain, is being prepared. It
+isn't public yet (see "A local server with no chain" below).
 
 To run the server itself, you need Node 22 or later and the two Linux binaries `basis_server` and `valun_signer`.
 Circulating credit takes effect only on a tracker whose binary's sha256 is listed in `lib/pilot/pins.mjs`: on the
@@ -91,7 +91,11 @@ and circulating credit (debt transfers and set-offs) on, and says so: `GET /pilo
 and every page opens with a "Local: no chain" banner (`VALUN_ENVIRONMENT=local`). It runs as a non-root user, with its
 data in a volume at `/data`. A prebuilt image, for linux/amd64 and linux/arm64, is `ghcr.io/fitzss/valun-local`
 (tags: `latest` and the valun-open commit it was built from; its labels give the tracker build and the sha256 of both
-binaries):
+binaries).
+
+**Status:** the package is private while its first public version is prepared (fix inbox #143). Until it is public,
+pulling it fails: the registry asks for authentication (`unauthorized`). Building the image yourself needs the
+tracker's Linux binaries, and their source isn't public yet either (fix inbox #99). Once the image is public:
 
 ```
 docker run --rm -p 127.0.0.1:8080:8080 -v valun-local:/data -e PILOT_OPEN_SANDBOX=1 -e PILOT_OPEN_NETWORK=1 ghcr.io/fitzss/valun-local:latest
