@@ -1,12 +1,12 @@
 // Pilot HTTP routes (/pilot/v1/*). Per-participant bearer tokens; no global passphrase. See docs/PILOT-API.md.
-import {PilotError, NETWORK, PROTOCOL, statements, circulationStatements, guaranteeStatements, sha256} from './core.mjs';
+import {PilotError, NETWORK, PROTOCOL, statements, circulationStatements, guaranteeStatements, sha256, SETTLED_HOW_TESTNET, settledHowTestnet} from './core.mjs';
 import {GUARANTEE_INFO} from './guarantees.mjs';
-import {ON_TESTNET} from './units.mjs';
+import {ON_TESTNET, PUBLIC_ORIGIN} from './units.mjs';
 import {ipKey} from '../ipkey.mjs';
 import {toErgoJson} from '../ergo-json.mjs';
 import {featuresFor, NOVATION_INFO} from './caps.mjs';
 import {METRICS_CACHE_MS} from './clearing.mjs';
-import {loopsOf, loopOf, memberRecords, LOOP_ID_RE, renderLoopPage, renderLoopNotFound} from './loops.mjs';
+import {loopsOf, loopsBefore, loopOf, memberRecords, LOOP_ID_RE, renderLoopPage, renderLoopNotFound} from './loops.mjs';
 import {AnchorWatch, BLOCK_WAIT, CHECK_INTERVAL_S, DAILY_TRACKER_SIGNATURES, boxWindows, confirmedUpdates, creatingTx, dailyCap, loopAnchor, nodeHeight, trackerBoxUpdates} from './anchors.mjs';
 import {AGENT_HANDLE_RE, agentPageShown, agentView, pageHandles, renderAgentPage, renderAgentNotFound} from './agents.mjs';
 import {assertCardPublic, budgetCard, cardPublic, checkPayer, dealUnderReview, findPayee, parseAmount, parseDeliverBy, parsePath, roomOf} from './card.mjs';
@@ -14,6 +14,8 @@ import {withUnitNeutralNames as unitNeutral} from './amount-names.mjs';
 import {ENVIRONMENT, LOCAL, LOCAL_NOTE} from '../environment.mjs';
 import {trackerPin, trackerProbe} from '../basis.mjs';
 import {TRACKER_SHA256_TR20} from './pins.mjs';
+import {slidingWindow} from '../rate-window.mjs';
+import {A2A_PER_MINUTE, BODY_MAX_BYTES, IP_READS_PER_MINUTE, LIMIT_SETTINGS, WRITES_PER_MINUTE, limitSetting} from './limits.mjs';
 
 // The source text of each statement template, as /info publishes it (OQ-18).
 const sources = o => Object.fromEntries(Object.entries(o).map(([k, f]) => [k, f.toString().replace(/\s+/g, ' ')]));
@@ -47,7 +49,9 @@ export const REDEMPTION_MIN_NANOERG = 1_000_000, REDEMPTION_BUILDS_PER_DAY = 6, 
 // build until the holder submits (RESERVE_BUILD_HOLD_MS), then until the spend is about confirmed and the tracker follows
 // the reserve's new box (RESERVE_SPEND_HOLD_MS). Another build meanwhile: 409 reserve_busy {retry_after_ms, spending_tx}.
 export const RESERVE_BUILD_HOLD_MS = 120e3, RESERVE_SPEND_HOLD_MS = 180e3;
-export const IP_READS_PER_MINUTE = 1800;           // per client address (venue Wi-Fi); each token keeps its own reads-per-minute limit
+// The reads per client address (venue Wi-Fi), 1800 a minute; each token keeps its own reads-per-minute limit
+// (lib/pilot/limits.mjs, with the other budgets).
+export {IP_READS_PER_MINUTE};
 // Burst protection: the public reads (GET /info, /participants, /participants/<id>, /ledger, /ledger/committed, /loops,
 // /loops/<id> and the loop card) are computed at most once per PUBLIC_CACHE_MS while the pilot state is unchanged
 // (Pilot.generation, bumped by every save), so many viewers do not multiply tracker reads. Nothing authenticated or
@@ -70,6 +74,12 @@ const PUBLIC_CACHE_MAX = 500;
 const HTML = 'text/html; charset=utf-8';
 
 const infoDescription = mode => INFO_DESCRIPTIONS[mode === 'sandbox' || mode === 'on' ? mode : 'off'];
+// GET /info `circulation` on a local server: the mode in effect (off, bound, sandbox or on), the one PILOT_CIRCULATION
+// asks for, and why they differ when they do (Pilot.circulationStatus: an unpinned tracker binary, say).
+const circulationOf = pilot => {
+  const mode = pilot.mode, st = typeof pilot.circulationStatus === 'function' ? pilot.circulationStatus() : null;
+  return {mode, requested: st?.requested ?? mode, ...(st && st.requested !== mode && st.reason ? {reason: st.reason} : {})};
+};
 // The chain as the public answers show it (GET /info `chain`, GET /chain; fix inbox #88): never the server's own files
 // (spend_ledger, the wallet adapter's ledger: a path on its volume), and the node it reads named for what it is. Clients
 // read `node` as a URL (valun-open's client takes it as its default node; valun audit and anchor-audit warn when it is
@@ -85,6 +95,16 @@ const writesRefused = pilot => {
   const r = pilot.writeRefusal?.() ?? null;
   return r ? {writes_refused: {code: r.code, since: r.since, reason: r.reason, fix: WRITES_REFUSED_FIX}} : {};
 };
+
+// The directory's order (GET /participants, with ?all=1 too): first the agents the server runs (the sandbox agents,
+// operator_run), then the house agents (house_agent), then everyone else, each group in the order the participants
+// joined. The always-on agents a newcomer can hire first came first only by insertion order (the newcomer run of
+// Nov 18, finding 6), and on ?all=1 five unlisted test agents sat ahead of the house agents. A stable sort, so the
+// rest stay in join order as before.
+export function directoryOrder(pilot, list) {
+  const rank = x => (pilot.serverRun?.(x) || pilot.sandboxIds?.has(x.id) ? 0 : pilot.houseIds?.has(x.id) ? 1 : 2);
+  return list.map((x, i) => [rank(x), i, x]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(e => e[2]);
+}
 
 // GET /reserves (fix inbox #83). The tracker's own total_debt is a placeholder it never maintains (0 for every reserve;
 // its ratio is then infinite, which it writes as null), so the rows read as owing nothing. The figures are read from the
@@ -136,8 +156,75 @@ export function reserveRows(list, ledger, participantOf) {
   });
 }
 
+// A refusal by one of the per-minute budgets: 429 rate_limited with retry_after_ms, how long until the budget takes a
+// request again (lib/rate-window.mjs; the local-readiness audit of Nov 18, MR-4: it said only "slow down", while the
+// join caps' refusals said how long). The same everywhere since then. A local server's message also says which budget
+// refused ({kind: 'writes' | 'reads', per: 'address' | 'token', max}) and how whoever runs it changes that budget
+// (lib/pilot/limits.mjs): every client on the machine shares one address there. Elsewhere the message is as it was.
+const RATE_LIMITED = 'too many requests; slow down';
+const localBudgetMessage = ({kind, per, max}) => `too many ${kind} ${per === 'address' ? 'from this address' : 'with this token'}: at most ${max} a minute `
+  + (per === 'address' ? 'from one address, which every agent and client behind it shares (through a port Docker publishes, every client on this machine comes from one address)' : 'per token')
+  + `. Wait retry_after_ms before sending again (refused requests count too), or start this server with a higher ${limitSetting(`${kind}_per_minute`, `per_${per}`)} (docs/LOCAL.md, "Many agents")`;
+export const rateLimited = (ms, budget = null) => new PilotError('rate_limited', LOCAL && budget ? localBudgetMessage(budget) : RATE_LIMITED, 429, {retry_after_ms: ms});
+// A per-day count of an agent's requests (the redemption builds and attempts): 0 while `times` (in order, the last 24
+// hours) holds fewer than `max`, else how long until enough of them have left the 24 hours (at least 1000 ms).
+const dayWait = (times, max, now) => (times.length < max ? 0 : Math.max(1000, times[times.length - max] + 864e5 - now));
+
+// A local server takes a write (any request but GET and HEAD) only from its own clients (the local-readiness audit of Nov
+// 18, IMG-13). Publishing on 127.0.0.1 keeps out other machines, not the web pages a browser on this one opens: /pilot/v1
+// read any Content-Type and checked no Host, so a page of any site could send a simple text/plain POST to
+// http://127.0.0.1:8080/pilot/v1/join-sandbox (no preflight) and make participants, using up the machine's joins, and a
+// page that a DNS name rebound to this server could act on its answers too. So a local server refuses, before anything
+// else (no budget is spent, no body is read), a write:
+//   - whose Host is not its own origin's (PUBLIC_ORIGIN) or a loopback name, 127.0.0.1, localhost or [::1], with any
+//     port (a rebound name): 403 host_not_allowed;
+//   - with an Origin that is not one of those (a page of another site; 'null' too): 403 cross_origin. Its own pages send
+//     theirs, and valun, the JS client and scripts send none;
+//   - with a body that is not sent as application/json, which a page of another site cannot send without a preflight this
+//     server never grants: 415 json_required. Every client sends its bodies so (valun 0.7.1's client.py and the Hermes
+//     plugin always, the JS client and the owner console with every body), and a write with no body needs none.
+// Elsewhere writes are taken as before.
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+const hostOf = s => { try { const u = new URL(s); return u.username || u.password ? null : u; } catch { return null; } };
+const OWN = hostOf(PUBLIC_ORIGIN);
+const ownHost = h => { const u = typeof h === 'string' && h.length <= 300 ? hostOf(`http://${h}`) : null; return !!u && u.pathname === '/' && !u.search && !u.hash && (LOOPBACK_HOSTS.has(u.hostname) || u.host === OWN?.host); };
+const ownOrigin = o => { const u = typeof o === 'string' && o.length <= 300 ? hostOf(o) : null; return !!u && /^https?:$/.test(u.protocol) && (LOOPBACK_HOSTS.has(u.hostname) || u.origin === OWN?.origin); };
+const shown = v => JSON.stringify(String(v).slice(0, 100));
+export function localWriteRefusal(req) {
+  const host = req.headers.host, origin = req.headers.origin;
+  if (!ownHost(host)) return new PilotError('host_not_allowed', `this local server takes writes only for its own origin, ${PUBLIC_ORIGIN}, or a loopback name (127.0.0.1, localhost `
+    + `or [::1], any port), and this one was sent for ${host === undefined ? 'no host' : shown(host)}. From this machine, use one of those; from another container, run it in `
+    + 'this server\'s network namespace (docker run --network container:CONTAINER ...), where 127.0.0.1 is this server. Nothing was done.', 403);
+  if (origin !== undefined && !ownOrigin(origin)) return new PilotError('cross_origin', `a page of another site (Origin ${shown(origin)}) cannot write to this local server: `
+    + `only its own pages, at ${PUBLIC_ORIGIN} or a loopback name, and clients that send no Origin (valun, scripts) can. Nothing was done.`, 403);
+  const body = Number(req.headers['content-length'] || 0) > 0 || req.headers['transfer-encoding'] !== undefined;
+  const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+  if (body && type !== 'application/json') return new PilotError('json_required', 'a write to this local server sends its body as JSON, with Content-Type: '
+    + `application/json; this one was sent as ${type ? shown(type) : 'no type'}. Nothing was done.`, 415);
+  return null;
+}
+
+// A local server's refusals of an admin call (IMG-6): how admin runs there, with scripts/pilot-admin.mjs inside the
+// container, which reads the admin token from the data folder and calls this server on its own loopback.
+const ADMIN_EXEC = 'docker exec CONTAINER node scripts/pilot-admin.mjs invite --uses 25 --code-only (or invites, clearing status --json, clearing run; '
+  + 'CONTAINER is the name docker ps shows, or the one docker run --name gave it)';
+export const LOCAL_ADMIN_LOOPBACK = 'Admin routes answer only on this server\'s own loopback, inside its container, with the admin token in its data '
+  + `folder (/data/pilot/admin-token in the local image), never through the published port. Run them with docker exec: ${ADMIN_EXEC}. Nothing was done.`;
+export const LOCAL_ADMIN_TOKEN = 'Admin routes need the admin token from this server\'s data folder (/data/pilot/admin-token in the local image) in the '
+  + `X-Valun-Admin header. scripts/pilot-admin.mjs reads it and sends it: ${ADMIN_EXEC}. Nothing was done.`;
+
+// GET /info `limits` on a local server: the limits it runs with, which its settings may have changed (lib/pilot/limits.mjs),
+// and what they mean there. The hosted servers run the defaults, in docs/PILOT-API.md, and their /info is as it was.
+export const LOCAL_LIMITS_NOTE = 'The limits this server runs with. sandbox_joins: self-serve joins (join-sandbox) per hour from one address, '
+  + 'per hour from all addresses and in any 24 hours (an invited join counts in none). writes_per_minute and reads_per_minute: requests per '
+  + 'minute from one client address, whatever token they carry, and per token. Every client that reaches this server through a port Docker '
+  + 'publishes on this machine comes from one address, so all of its agents share the per-address budgets. Over a limit: 429 rate_limited '
+  + '(sandbox_full for the 24 hours) with retry_after_ms, how long until it takes a request again; refused requests count too. Whoever runs '
+  + `this server sets them with ${LIMIT_SETTINGS.map(s => s[0]).join(', ')} (docs/LOCAL.md, "Many agents"). A self-serve agent's own limits `
+  + 'per deal and owed are self_serve.limits.';
+
 export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
-  const hits = new Map(), perMinute = cfg.pilotRateLimitPerMinute ?? 90, readsPerMinute = cfg.pilotReadLimitPerMinute ?? perMinute * 4;
+  const perMinute = cfg.pilotRateLimitPerMinute ?? WRITES_PER_MINUTE, readsPerMinute = cfg.pilotReadLimitPerMinute ?? perMinute * 4;
   const redemptionBuilds = new Map();             // agent id -> times of its redemption builds in the last 24 hours
   const redemptionAttempts = new Map();           // agent id -> times of its build requests (refused ones too)
   // The tracker's anchoring (lib/pilot/anchors.mjs): since when its state has gone unanchored with no update in flight,
@@ -168,6 +255,37 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       : {anchored: false, what_this_means: `Not committed on chain yet: the next tracker box commits it, ${BLOCK_WAIT}, and once the day's ${DAILY_TRACKER_SIGNATURES} boxes are used up, not before 00:00 UTC (the tracker checks every ${CHECK_INTERVAL_S} seconds; GET /pilot/v1/chain shows its anchoring).`};
   };
   const onChain = () => ON_TESTNET && !!pilot.chain?.on_chain;
+  // How many of a participant's nettings are committed yet, each read as its loop card reads it (loopAnchor, as
+  // loopOnChain does, on one anchoring read): {loops, behind}, loops the applied set-offs it was in, behind how many of
+  // them no confirmed tracker box commits yet, null when that is not known (off chain, no netting, the tracker's state
+  // unread). The loops a box has not committed are the newest: a box that commits a loop commits every earlier one (it
+  // was signed after both; boxes are minutes apart, LOOP_GUARD_MS 15 s), so the count goes from the newest down to the
+  // first committed one. The agent page and the position's settled_how say it so (the readiness assessment of Nov 18:
+  // they said "committed" while the loop card said "Not committed on Ergo testnet yet"; the review of gap/first-use: a
+  // tour's two loops both wait for the next box). It never fails a read.
+  const nettingOf = async p => {
+    const unknown = {loops: 0, behind: null};
+    if (!onChain() || !p || typeof pilot.basis?.trackerState !== 'function') return unknown;
+    try {
+      const at = o => o.applied_at ?? o.updated_at ?? null;
+      const mine = Object.values(pilot.s.setoffs || {}).filter(o => o?.state === 'applied' && LOOP_ID_RE.test(String(o.id))
+        && ((o.members || []).includes(p.id) || (o.edges || []).some(e => e?.issuer?.id === p.id || e?.recipient?.id === p.id))
+        && Number.isFinite(Date.parse(at(o)))).sort((x, y) => Date.parse(at(y)) - Date.parse(at(x)));
+      if (!mine.length) return unknown;
+      const a = await anchoring();
+      if (!a.st) return {...unknown, loops: mine.length};
+      let behind = 0;
+      while (behind < mine.length && !loopAnchor(at(mine[behind]), a.confirmed, a.st)) behind++;
+      return {loops: mine.length, behind};
+    } catch { return unknown; }
+  };
+  // A position as the routes serve it: its settled_how says "committed" only of the nettings a box has committed
+  // (nettingOf, settledHowTestnet).
+  const settledNow = async (p, pos) => {
+    if (pos?.settled_how !== SETTLED_HOW_TESTNET.committed) return pos;
+    const n = await nettingOf(p);
+    return n.behind > 0 ? {...pos, settled_how: settledHowTestnet(n)} : pos;
+  };
   // GET /ledger/committed: the committed snapshot of the box the tracker's state names now (Pilot.committedSnapshot).
   // Every request reads GET /tracker/state; the snapshot kept for that box and digest is served while younger than
   // COMMITTED_KEEP_MS, else it is read again (requests that see the same box meanwhile share one read). A failed read is
@@ -200,7 +318,17 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
   // per-address read budget is larger than one token's (each token keeps readsPerMinute).
   const ipReadsPerMinute = cfg.pilotIpReadLimitPerMinute
     ?? (cfg.pilotReadLimitPerMinute != null || cfg.pilotRateLimitPerMinute != null ? readsPerMinute : Math.max(readsPerMinute, IP_READS_PER_MINUTE));
-  let calls = 0;
+  // The writes per client address: as many as one token's unless cfg says (a local server's settings; tests).
+  const ipWritesPerMinute = cfg.pilotIpWriteLimitPerMinute ?? perMinute;
+  // Every budget's requests in the last minute, by key: ip:<address> (writes), ipr:<address> (reads), tok:<id>:<role>:w|r.
+  // A request over its budget: limited(key, max) gives how long until the key takes one again (0 within it).
+  const budgets = slidingWindow();
+  const limited = (key, max = perMinute) => budgets(key, max);
+  // GET /info `limits` on a local server: these budgets and the Pilot's join caps as they are in force, shaped as
+  // lib/pilot/limits.mjs DEFAULT_LIMITS, with the A2A front door's and the body cap, which no setting changes.
+  const localLimits = () => ({sandbox_joins: {...pilot.joinLimits}, writes_per_minute: {per_address: ipWritesPerMinute, per_token: perMinute},
+    reads_per_minute: {per_address: ipReadsPerMinute, per_token: readsPerMinute}, a2a_requests_per_minute: {per_address: A2A_PER_MINUTE},
+    request_body_max_bytes: BODY_MAX_BYTES, note: LOCAL_LIMITS_NOTE});
   // GET /clearing is computed at most once per 10 s (METRICS_CACHE_MS: it reads the tracker and runs the engine's measures).
   let clearingCache = null;
   // The public read cache: key -> {at, gen, value: Promise<{status, body}>} (body a string, sent as it is). Single-flight:
@@ -227,12 +355,6 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     return send(res, r.status, r.body);
   };
   const publicOf = x => pilot.publicParticipant(x);
-  const limited = (key, max = perMinute) => {
-    const now = Date.now(), w = (hits.get(key) || []).filter(t => now - t < 60_000);
-    w.push(now); hits.set(key, w);
-    if (++calls % 1000 === 0) for (const [k, v] of hits) if (!v.length || now - v[v.length - 1] >= 60_000) hits.delete(k);   // prune idle keys
-    return w.length > max;
-  };
   const bearer = req => (/^Bearer\s+(\S+)$/i.exec(req.headers.authorization || '') || [])[1] || null;
   // A HEAD sent with a token where the token would be checked (fix inbox #142): 405, never authenticated. `allow`: the
   // methods that take the token there. A HEAD gets no body, so the status and Allow say it; the body says it too.
@@ -241,7 +363,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
 
   async function readJson(req) {
     let size = 0; const chunks = [];
-    for await (const c of req) { size += c.length; if (size > 65_536) throw new PilotError('too_large', 'request body too large', 413); chunks.push(c); }
+    for await (const c of req) { size += c.length; if (size > BODY_MAX_BYTES) throw new PilotError('too_large', 'request body too large', 413); chunks.push(c); }
     if (!chunks.length) return {};
     let v;
     try { v = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new PilotError('bad_json', 'body must be JSON'); }
@@ -258,19 +380,28 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     // token where one would be authenticated is refused (headRefused); one without a token gets what a GET without one
     // gets (authenticate(null) changes nothing: 401).
     const H = req.method === 'HEAD', R = G || H;
-    let m;
+    let m, wait;
+    // A local server's writes come from its own clients (localWriteRefusal), checked before any budget is spent.
+    const refused = LOCAL && !R ? localWriteRefusal(req) : null;
+    if (refused) throw refused;
     const ip = clientIp(req);
-    if (!R && limited(`ip:${ip}`)) throw new PilotError('rate_limited', 'too many requests; slow down', 429);
+    if (!R && (wait = limited(`ip:${ip}`, ipWritesPerMinute))) throw rateLimited(wait, {kind: 'writes', per: 'address', max: ipWritesPerMinute});
     // Every read counts against a per-IP read budget, whatever Authorization header it carries: public routes are
     // served before authentication, so a made-up bearer token must not skip it (F2, OQ-30). A HEAD counts as the read
     // it is answered as.
-    if (R && limited(`ipr:${ip}`, ipReadsPerMinute)) throw new PilotError('rate_limited', 'too many requests; slow down', 429);
+    if (R && (wait = limited(`ipr:${ip}`, ipReadsPerMinute))) throw rateLimited(wait, {kind: 'reads', per: 'address', max: ipReadsPerMinute});
 
     // ---------- admin: loopback only (e.g. `fly ssh console`), never via the proxy, with the volume-held admin token ----------
     if (p.startsWith('/admin/')) {
       const loopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
       const proxied = req.headers['fly-client-ip'] || req.headers['x-forwarded-for'] || req.headers['fly-forwarded-port'];
       const tok = req.headers['x-valun-admin'] ? sha256(String(req.headers['x-valun-admin'])) : null;
+      // A local server (the local-readiness audit of Nov 18, IMG-6): from anywhere but its own loopback (a harness on the
+      // host reaches it through the published port, from the bridge's address), or through a proxy, and without the
+      // admin token, a 403 that says how admin runs there: docker exec, inside the container. It said 404 not_found, as
+      // an unknown route does. Elsewhere such a call is 404 as before: a hosted server names no admin route.
+      if (LOCAL && adminTokenHash && (!loopback || proxied)) throw new PilotError('admin_loopback_only', LOCAL_ADMIN_LOOPBACK, 403);
+      if (LOCAL && adminTokenHash && tok !== adminTokenHash) throw new PilotError('admin_token_required', LOCAL_ADMIN_TOKEN, 403);
       if (!adminTokenHash || !loopback || proxied || tok !== adminTokenHash) throw new PilotError('not_found', 'not found', 404);
       if (P && p === '/admin/invites') { const b = await readJson(req); return send(res, 201, pilot.createInvite({note: b.note, maxUses: b.max_uses ?? 1, ttlDays: b.ttl_days ?? 14})); }
       if (G && p === '/admin/invites') return send(res, 200, Object.values(pilot.s.invites).map(({code_hash, ...i}) => i));
@@ -323,6 +454,10 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         // /info, so it shows at most PUBLIC_CACHE_MS after the refusal starts or ends.
         ...writesRefused(pilot),
         ...(pilot.selfServe?.() ? {self_serve: pilot.selfServe()} : {}),
+        // A local server (fix inbox #145; the local-readiness audit of Nov 18, IMG-2, MR-12): the limits it runs with
+        // (localLimits) and the circulation mode in effect, which no other field names (modes sandbox and on differ
+        // only in the description), with the one asked for when the server runs another, and why. Elsewhere absent.
+        ...(LOCAL ? {limits: localLimits(), circulation: circulationOf(pilot)} : {}),
       };
     });
     // The network's own health (fix inbox #64), for the live check (scripts/live-check.mjs, at every deploy and
@@ -333,9 +468,11 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     // binary's sha256 is pinned; null without capabilities). Not in the public read cache: the tracker read has its own
     // (HEALTH_PROBE_MS). Writes refused by MIG-1 do not make it 503: such a server still serves, and GET /info says why
     // (writes_refused).
+    // On the network with no chain (a local server's), a pure-credit tracker is named as running pure credit, not by
+    // its build's anchored netting (fix inbox #146; lib/basis.mjs trackerPin).
     if (R && p === '/health') {
       const reachable = await trackerAnswers();
-      const pin = trackerPin(pilot.trackerCaps, null, {pinned: (pilot.trackerPins ?? []).includes(pilot.trackerSha256)});
+      const pin = trackerPin(pilot.trackerCaps, null, {pinned: (pilot.trackerPins ?? []).includes(pilot.trackerSha256), pureCreditNamed: !ON_TESTNET});
       return send(res, reachable ? 200 : 503, {ok: reachable, network: NETWORK, tracker: {reachable, pin}});
     }
     // A local server (fix inbox #143) has no chain: its chain reads say so, instead of falling through to a 401.
@@ -363,7 +500,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
           confirmed_box_id: st.confirmed_box_id ?? null, confirmed_height: st.confirmed_height ?? null, ...age, pending_tx_id: st.pending_tx_id ?? null,
           anchored: !!st.confirmed_digest && st.confirmed_digest === st.local_digest, check_interval_seconds: CHECK_INTERVAL_S,
           ...(cap ? {daily_cap: {limit: cap.limit, signed_today: cap.signed_today, resets_at: cap.resets_at}} : {}),
-          ...anchorWatch.state(st, cap),
+          ...anchorWatch.state(st, cap, last?.t ?? null),
           ...(last ? {last_update: {tx_id: last.tx_id, signed_at: new Date(last.t).toISOString(), explorer_url: explorerTx(last.tx_id)}} : {})},
           links: {tracker_nft: `${ex}/en/token/${pilot.chain.tracker_nft_id}`, tracker_address: pilot.chain.tracker_address && `${ex}/en/addresses/${pilot.chain.tracker_address}`}};
       });
@@ -389,14 +526,21 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       return sendCached(res, send, 'ledger-committed', committedNow);
     }
     // The directory leaves out participants the operator unlisted (test or demo agents that are not running); ?all=1 lists
-    // every participant (the network view draws every edge), each unlisted one with unlisted: true.
+    // every participant (the network view draws every edge), each unlisted one with unlisted: true. ?q=NAME (fix inbox
+    // #131) lists only those a join with that handle would meet (Pilot.holdersOf: the handle or display name, compared as
+    // join compares names), unlisted ones included: how a newcomer whose join answer was lost sees what that join made.
+    if (R && p === '/participants' && url.searchParams.has('q')) {
+      const q = url.searchParams.get('q');
+      if (q.length > 64) throw new PilotError('invalid_field', 'q: a handle or display name, at most 64 characters');
+      return send(res, 200, pilot.holdersOf(q).map(x => pilot.directoryRecord(x)));
+    }
     if (R && p === '/participants') {
       const all = url.searchParams.get('all') === '1';
-      return sendCached(res, send, all ? 'participants:all' : 'participants', () => Object.values(pilot.s.participants).filter(x => all || !x.unlisted).map(x => pilot.directoryRecord(x)));
+      return sendCached(res, send, all ? 'participants:all' : 'participants', () => directoryOrder(pilot, Object.values(pilot.s.participants).filter(x => all || !x.unlisted)).map(x => pilot.directoryRecord(x)));
     }
     if (R && (m = /^\/participants\/(vp_[0-9a-f]{12})$/.exec(p))) {
       const x = pilot.participant(m[1]);
-      return sendCached(res, send, `participant:${x.id}`, async () => ({...pilot.directoryRecord(x), public_position: unitNeutral(await pilot.publicPosition(x))}));
+      return sendCached(res, send, `participant:${x.id}`, async () => ({...pilot.directoryRecord(x), public_position: unitNeutral(await settledNow(x, await pilot.publicPosition(x)))}));
     }
     // The budget card and its check (lib/pilot/card.mjs), once the agent's owner published it (mandate public_card);
     // otherwise 404 card_not_public. Cached as the other public reads are: a check is keyed by its payee, amount and path,
@@ -439,6 +583,19 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     // (with circulation off there are none).
     // On the testnet each loop also says where its netting was committed on chain (on_chain: the tracker-box update and
     // its explorer link, or that it is not committed yet).
+    // Paged (the local-readiness audit, MR-12: past the newest LOOPS_MAX a run's set-offs could be read only one by one,
+    // by id): ?before=<a loop's id> lists the ones after it, as many, with `before` and next_before (the id of the next
+    // page, null after the oldest). Without it, the answer is as it was.
+    if (R && p === '/loops' && url.searchParams.has('before')) {
+      const before = url.searchParams.get('before');
+      if (!LOOP_ID_RE.test(before)) throw new PilotError('invalid_field', 'before: the id of a loop (vs_ and 16 hex digits), the last one of the page before');
+      if (!loopsBefore(pilot.s.setoffs, pilot.s.participants, publicOf, before)) throw new PilotError('not_found', 'unknown loop', 404);
+      return sendCached(res, send, `loops:before:${before}`, async () => {
+        const {loops, next_before} = loopsBefore(pilot.s.setoffs, pilot.s.participants, publicOf, before);
+        const a = onChain() ? await anchoring() : null;
+        return unitNeutral({unit: pilot.unit, network: NETWORK, loops: a ? loops.map(l => ({...l, on_chain: loopOnChain(l, a)})) : loops, before, next_before});
+      });
+    }
     if (R && p === '/loops') return sendCached(res, send, 'loops', async () => {
       const loops = loopsOf(pilot.s.setoffs, pilot.s.participants, publicOf);
       if (!onChain()) return unitNeutral({unit: pilot.unit, network: NETWORK, loops});
@@ -489,7 +646,8 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     const who = H ? null : pilot.authenticate(bearer(req), {features: req.headers['x-valun-features']});
     if (!who) throw new PilotError('unauthorized', 'missing or invalid token (Authorization: Bearer vpa_… for an agent, vpo_… for an owner)', 401);
     // Writes and reads have separate budgets per token: polling an inbox must not use up the budget for acting.
-    if (limited(`tok:${who.p.id}:${who.role}:${G ? 'r' : 'w'}`, G ? readsPerMinute : perMinute)) throw new PilotError('rate_limited', 'too many requests; slow down', 429);
+    if ((wait = limited(`tok:${who.p.id}:${who.role}:${G ? 'r' : 'w'}`, G ? readsPerMinute : perMinute)))
+      throw rateLimited(wait, {kind: G ? 'reads' : 'writes', per: 'token', max: G ? readsPerMinute : perMinute});
     const me = who.p;
 
     // Limits recorded from the owner's instructions (agent or owner); always within the owner's mandate.
@@ -524,10 +682,11 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         // (only it can cost the tracker a fee): one the tracker refuses, as for a note its box does not commit yet, counts
         // only towards REDEMPTION_ATTEMPTS_PER_DAY.
         if (!Number.isSafeInteger(amount) || amount < REDEMPTION_MIN_NANOERG) throw new PilotError('invalid_field', `amount: whole nanoERG to redeem, at least ${REDEMPTION_MIN_NANOERG} (the miner fee the tracker pays)`);
+        // Over either, retry_after_ms says when the next one is taken (dayWait), as every rate_limited answer does.
         const now = Date.now(), builds = (redemptionBuilds.get(me.id) || []).filter(t => now - t < 864e5);
-        if (builds.length >= REDEMPTION_BUILDS_PER_DAY) throw new PilotError('rate_limited', `at most ${REDEMPTION_BUILDS_PER_DAY} redemption builds a day per agent`, 429);
+        if ((wait = dayWait(builds, REDEMPTION_BUILDS_PER_DAY, now))) throw new PilotError('rate_limited', `at most ${REDEMPTION_BUILDS_PER_DAY} redemption builds a day per agent`, 429, {retry_after_ms: wait});
         const tries = (redemptionAttempts.get(me.id) || []).filter(t => now - t < 864e5);
-        if (tries.length >= REDEMPTION_ATTEMPTS_PER_DAY) throw new PilotError('rate_limited', `at most ${REDEMPTION_ATTEMPTS_PER_DAY} redemption requests a day per agent`, 429);
+        if ((wait = dayWait(tries, REDEMPTION_ATTEMPTS_PER_DAY, now))) throw new PilotError('rate_limited', `at most ${REDEMPTION_ATTEMPTS_PER_DAY} redemption requests a day per agent`, 429, {retry_after_ms: wait});
         tries.push(now); redemptionAttempts.set(me.id, tries);
         // The reserve's hold is taken before anything is awaited, so two requests at once cannot both build.
         // A holder may build again to replace its own build not yet submitted (its client lost it); nobody else may.
@@ -631,7 +790,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       const ledger = await pilot.ledger();
       return send(res, 200, {role: who.role, participant: pilot.publicParticipant(me), mandate: me.mandate, mandate_version: me.mandate_version, public_card: cardPublic(me),
         agent_limits: me.agent_limits || {}, agent_limits_recorded_by: me.agent_limits_recorded_by || {}, effective_limits: pilot.effectiveLimits(me), mandate_changed_by: me.mandate_changed_by || 'owner',
-        position: unitNeutral(await pilot.position(me, ledger, {own: true})), room: roomOf(pilot, me, ledger), network: NETWORK, unit: pilot.unit,
+        position: unitNeutral(await settledNow(me, await pilot.position(me, ledger, {own: true}))), room: roomOf(pilot, me, ledger), network: NETWORK, unit: pilot.unit,
         authority: who.role === 'agent'
           ? 'agent token: may read this participant\'s deals and act within the owner\'s mandate; commitments above approve_above wait for the owner'
           : 'owner token: may change the mandate, decide approvals, revoke the agent and rotate this owner token',
@@ -718,7 +877,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
         past_keys: me.past_pubkeys || [],
         approvals: await Promise.all(Object.values(pilot.s.approvals).filter(a => a.participant === me.id).reverse().map(a => pilot.servedApprovalView(a, me))),
         deals: (await Promise.all(pilot.dealsFor(me).map(d => pilot.dealView(d, me)))).reverse(),
-        inbox: pilot.inbox(me), position: unitNeutral(await pilot.position(me, null, {own: true})), ...circulationKeys()});
+        inbox: pilot.inbox(me), position: unitNeutral(await settledNow(me, await pilot.position(me, null, {own: true}))), ...circulationKeys()});
       if (U && p === '/owner/mandate') return send(res, 200, pilot.setMandate(me, await readJson(req)));
       if (P && (m = /^\/owner\/approvals\/(va_[0-9a-f]{12})$/.exec(p))) return send(res, 200, await pilot.decideApproval(me, m[1], await readJson(req)));
       // Circulating credit (decision D-2 d; modes sandbox and on, else the same 404 as any unknown route): the payer's
@@ -741,7 +900,8 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
   // The loop card (GET /loop/<id>, lib/http.mjs): server-rendered HTML of an applied set-off, cached as the public reads
   // are and counted against the same per-address read budget. An unknown id is a 404 page (not cached).
   handle.loopPage = async (req, res, id, send, clientIp) => {
-    if (limited(`ipr:${clientIp(req)}`, ipReadsPerMinute)) throw new PilotError('rate_limited', 'too many requests; slow down', 429);
+    const wait = limited(`ipr:${clientIp(req)}`, ipReadsPerMinute);
+    if (wait) throw rateLimited(wait, {kind: 'reads', per: 'address', max: ipReadsPerMinute});
     const o = LOOP_ID_RE.test(id) ? pilot.setoff(id) : null;
     if (!o || o.state !== 'applied') return send(res, 404, renderLoopNotFound(), HTML);
     const r = await cachedRead(`loop-page:${o.id}`, async () => {
@@ -758,7 +918,8 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
   // the public reads are and counted against the same per-address read budget. A handle no participant with an agent
   // (active now, or with an earlier key) has is a 404 page (not cached).
   handle.agentPage = async (req, res, name, send, clientIp) => {
-    if (limited(`ipr:${clientIp(req)}`, ipReadsPerMinute)) throw new PilotError('rate_limited', 'too many requests; slow down', 429);
+    const wait = limited(`ipr:${clientIp(req)}`, ipReadsPerMinute);
+    if (wait) throw rateLimited(wait, {kind: 'reads', per: 'address', max: ipReadsPerMinute});
     const h = String(name || '').toLowerCase();
     const x = AGENT_HANDLE_RE.test(h) ? Object.values(pilot.s.participants).find(q => q.handle === h && agentPageShown(q)) : null;
     if (!x) return send(res, 404, renderAgentNotFound(), HTML);
@@ -767,9 +928,10 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       try { pos = await pilot.publicPosition(x); } catch { pos = null; }   // the page still shows, without the record
       if (cardPublic(x)) { try { card = await budgetCard(pilot, x); } catch { card = null; } }   // and without the card
       const loops = loopsOf(pilot.s.setoffs, pilot.s.participants, publicOf);
-      // A counterparty or a vouch is linked only to a page this server shows (pageHandles; fix inbox #141).
+      // A counterparty or a vouch is linked only to a page this server shows (pageHandles; fix inbox #141). Its loops
+      // are cleared, and committed once a tracker box commits them, as their cards say (nettingOf).
       return {status: 200, body: renderAgentPage(agentView(pilot.directoryRecord(x), pos, loops, {now: Date.now(), dormant: !!pilot.dormant?.(x), card,
-        pages: pageHandles(pilot.s.participants)}))};
+        pages: pageHandles(pilot.s.participants), netting: await nettingOf(x)}))};
     });
     return send(res, r.status, r.body, HTML);
   };

@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
 import {createHandler} from '../lib/http.mjs';
-import {createA2A, agentCard} from '../lib/a2a.mjs';
+import {createA2A, agentCard, LOST_JOIN, LOST_JOIN_071} from '../lib/a2a.mjs';
 import {fakePilot} from './fixtures/a2a-pilot.mjs';
 
 let server, base;
@@ -74,7 +74,7 @@ test('the other skills: how to join, recent loops; a data part can name the skil
   // Commands an agent can run as they are: the pinned client, nothing left for join to prompt for (an agent with no
   // terminal stopped at the handle prompt with EOFError), and the owner token written to its human's file, not shown.
   const jd = j.parts[1].data;
-  assert.equal(jd.client, 'valun==0.7.1');
+  assert.equal(jd.client, 'valun==0.7.2');
   // The owner token file is named per handle (the redesign, round 2): valun 0.7.1 never overwrites a token file and prints
   // the token instead when it exists, as after the tour's join.
   for (const cmd of [jd.mcp[0], jd.shell[0], jd.hermes[2]]) {
@@ -82,25 +82,48 @@ test('the other skills: how to join, recent loops; a data part can name the skil
     for (const flag of ['--handle YOUR-HANDLE', '--operator "YOUR HUMAN"', '--owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"']) assert.ok(cmd.includes(flag), `${flag}: ${cmd}`);
   }
   assert.doesNotMatch(JSON.stringify(j), /valun-owner-token\.txt/, 'never the file the tour writes');
-  assert.ok(j.parts[0].text.includes('the owner token is theirs (join writes it to the file named, one file per handle; never paste it). If join says it can\'t write the owner token file, or prints a token, stop: don\'t repeat it, and tell your human to keep it only in their password manager.'));
+  // valun 0.7.2 refuses a token file that exists, or a folder that can't take one, before anything is sent, and never
+  // prints the token on stdout; the Hermes plugin's own join still prints it when its file exists already.
+  assert.ok(j.parts[0].text.includes('the owner token is theirs (join writes it to the file named, one file per handle; never paste it). If join says "Nothing was sent" (the token file exists already, or its folder can\'t take a new file), join again with a new token file name. If it shows a token (valun only at a terminal, when no file could be written; the Hermes plugin\'s join whenever its file exists already), stop: don\'t repeat it, and tell your human to keep it only in their password manager.'));
   // A shell can't prompt its human: the command to copy holds each commitment for the owner console; --approvals none is
   // in the text, after it, only for a human who said the agent may act alone.
-  const JOIN = 'uvx --from valun==0.7.1 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR HUMAN" --about "what you offer, in one line" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"';
+  const JOIN = 'uvx --from valun==0.7.2 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR HUMAN" --about "what you offer, in one line" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"';
   assert.equal(jd.shell[0], `${JOIN} --approvals console`);
-  // An MCP app's join is skill.md's, with no --approvals flag (ask, the default), and the text says when to add console,
-  // as skill.md does; the one real Claude Code run (headless, which cancels ask's prompt) added it, and says so.
-  assert.equal(jd.mcp[0], JOIN);
-  assert.ok(j.parts[0].text.includes(`- Claude Code: join in a terminal (${JOIN}), then claude mcp add valun -- uvx --from valun==0.7.1 valun mcp. That join uses the default approvals, ask, which works only in an app that shows approval prompts (verified in no app yet). If your human chose otherwise, add --approvals console or --approvals none to it (none only if they said you may act alone). If they want to approve each commitment and your app can't show approval prompts (run headless, such as claude -p), or you don't know whether it can, add --approvals console: each commitment then waits for your human at ${base}/pilot#owner. With --approvals console added to the join, these two lines have run end to end once (Claude Code 2.1.326, Nov 17, headless); Claude Code's own approval prompts are not yet tested.`));
+  // Claude Code joins with console, as the one real run did, end to end (headless Claude Code cancels ask's prompt, and ask
+  // has been verified in no app); the text says what leaving the flag out (ask) relies on, and when none is for.
+  assert.equal(jd.mcp[0], `${JOIN} --approvals console`);
+  assert.ok(j.parts[0].text.includes(`- Claude Code: join in a terminal (${JOIN} --approvals console: your offers, acceptances, guarantee offers and IOUs then wait for your human at ${base}/pilot#owner; honoring a guarantee call and the consents never do), then claude mcp add valun -- uvx --from valun==0.7.2 valun mcp. These two lines have run end to end once (Claude Code 2.1.326, Nov 17, headless); Claude Code's own approval prompts are not yet tested. claude mcp add adds the server only for the folder it runs in (Claude Code's default scope, local); claude mcp add --scope user valun -- uvx --from valun==0.7.2 valun mcp adds it for every folder. Console is also what a --sandbox join of valun 0.7.2 uses without --approvals. Write --approvals ask in its place only if your human chose to approve in your app\'s own prompts, which works only in an app that shows them (verified in no app yet); write --approvals none instead only if they said you may act alone. There is also a plugin (/plugin marketplace add fitzss/valun-open, then /plugin install valun@valun): an install check only, not yet run end to end.`));
+  assert.doesNotMatch(j.parts[0].text, /That join uses the default approvals/, 'the line to copy is not the default');
   // The evidence for other apps, as it is: only scripted MCP clients, and no other app verified (the lead's live check).
-  assert.ok(j.parts[0].text.includes('- Other MCP apps: the same join, then add the MCP server: uvx --from valun==0.7.1 valun mcp. It should work with any MCP app. Apart from the Claude Code run, only scripted MCP clients have run it; no other app (Codex, Cursor, Claude Desktop, VS Code) has been verified.'));
+  assert.ok(j.parts[0].text.includes('- Other MCP apps: the same join, then add the MCP server: uvx --from valun==0.7.2 valun mcp. It should work with any MCP app. Apart from the Claude Code run, only scripted MCP clients have run it; no other app (Codex, Cursor, Claude Desktop, VS Code) has been verified.'));
   assert.doesNotMatch(j.parts[0].text, /other apps have run it only through scripted MCP clients|every other app has run it/);
-  assert.deepEqual([jd.shell[1], jd.mcp[1]], ['uvx --from valun==0.7.1 valun call valun_status', 'claude mcp add valun -- uvx --from valun==0.7.1 valun mcp']);
-  for (const cmd of [...jd.mcp, ...jd.shell]) assert.match(cmd, /uvx --from valun==0\.7\.1 valun /, cmd);
+  assert.deepEqual([jd.shell[1], jd.mcp[1]], ['uvx --from valun==0.7.2 valun call valun_status', 'claude mcp add valun -- uvx --from valun==0.7.2 valun mcp']);
+  for (const cmd of [...jd.mcp, ...jd.shell]) assert.match(cmd, /uvx --from valun==0\.7\.2 valun /, cmd);
   assert.ok(j.parts[0].text.includes(jd.shell[0]), 'the text gives the same command');
-  assert.ok(j.parts[0].text.includes(`If your human wants to approve each commitment: ${JOIN} --approvals console (they approve at ${base}/pilot#owner). Only if your human said you may act alone: ${JOIN} --approvals none. Then uvx --from valun==0.7.1 valun call valun_status.`));
+  assert.ok(j.parts[0].text.includes(`If your human wants to approve what you sign (console approvals, the first tester's default): ${JOIN} --approvals console (they approve at ${base}/pilot#owner). Only if your human said you may act alone: ${JOIN} --approvals none. Then uvx --from valun==0.7.2 valun call valun_status.`));
   assert.doesNotMatch(JSON.stringify(jd), /--approvals none/, 'the data never gives none to copy');
   assert.match(j.parts[0].text, /Ask your human first: the handle and the operator name are public and permanent, and the owner token is theirs/);
   assert.doesNotMatch(JSON.stringify(j), /pipx install valun(?!==)|"valun join --sandbox|valun join --sandbox --approvals none"/);
+  // A join that stops halfway: valun 0.7.2 keeps the agent's key and prints the command that finishes it (cli.py
+  // _join_unanswered, _enroll_and_settle), which is run as printed; the Hermes plugin's own join stops as 0.7.1's did
+  // (the readiness assessment of Nov 18): never revoke or run the enroll it suggests; another handle and a new token
+  // file name, and the same handle only after a handle_taken that gives a time: after "could not be stored" the key is
+  // usually registered and the handle taken for good (the review of gap/first-use). skill.md says each under its join
+  // commands (test/trust-page.test.mjs holds them to the same words), /start#known-join in detail.
+  assert.equal(jd.if_join_stops, `${LOST_JOIN} In Hermes, whose plugin joins with its own code, as valun 0.7.1 did: ${LOST_JOIN_071} Details: ${base}/start#known-join`);
+  assert.ok(LOST_JOIN.startsWith('If join stops before it finishes (a cut connection, a timeout, an answer lost on the way), it says so, keeps your key in your profile, says what the server may hold now, and prints the command to run next'));
+  assert.ok(LOST_JOIN.includes('Run that command as printed, and nothing else. If it answers handle_taken with a time (held_until), run it again after that time'));
+  assert.ok(LOST_JOIN.endsWith('Never revoke anything yourself: where join says to revoke your agent, that is your human\'s step, in the owner console.'));
+  assert.ok(LOST_JOIN_071.startsWith('If join stops with a Python traceback or a timeout, or says the key could not be stored or registered: don\'t revoke anything, and don\'t run the enroll it suggests.'));
+  assert.ok(LOST_JOIN_071.includes('Ask your human for another handle, and join again with it and a new token file name. Only if the same join, run again, answers handle_taken with a time (held_until) may your human choose that handle again'));
+  assert.ok(LOST_JOIN_071.endsWith('After "could not be stored", the server has usually registered your key, which valun didn\'t save here, so that handle stays taken.'));
+  assert.ok(j.parts[0].text.includes(`\n${jd.if_join_stops}\n`), 'in the text, on a line of its own');
+  // A shell agent runs no valun mcp: the two commands that keep its client signing, as skill.md gives them under its
+  // shell join (the readiness assessment of Nov 18).
+  assert.deepEqual(jd.keep_signing, ['uvx --from valun==0.7.2 valun call valun_inbox', 'uvx --from valun==0.7.2 valun clearing watch']);
+  const skillText = fs.readFileSync(new URL('../public/skill-testnet.md', import.meta.url), 'utf8').replace(/\s+/g, ' ');
+  for (const cmd of jd.keep_signing) assert.ok(skillText.includes(`\`${cmd}\``), cmd);
+  assert.ok(j.parts[0].text.includes(`From a shell, nothing signs in the background (that is valun mcp, in an MCP app): run ${jd.keep_signing[0]} regularly (it signs set-offs and payments to you), or keep ${jd.keep_signing[1]} running (it also signs transfers of your own debt).\n`));
   // The limits in force (the server's self-serve limits), in the network's unit: credits on the pilot this test runs.
   assert.match(j.parts[0].text, /for 7 days, renewed while it is active, at most 5 credits per deal and 40 owed in total\. Credits have no monetary value\.$/);
   const l = (await rpc(v1('show recent loops'))).body.result.message;
@@ -113,17 +136,20 @@ test('the other skills: how to join, recent loops; a data part can name the skil
   assert.equal(none.parts[1].data.agents.length, 3);
 });
 
-// One MCP join everywhere (the lead's live check of 1b1f18f): the answer's two MCP commands are skill.md's two lines for an
-// MCP app, word for word (test/start-page.test.mjs holds /start's to the same lines), so an agent that compares the
-// surfaces gets one first command. None names --approvals: the text adds console where skill.md does.
-test('join-valun: the MCP commands are skill.md\'s two lines for an MCP app, with no --approvals flag', async () => {
+// The answer's two MCP commands are skill.md's two lines for an MCP app (test/start-page.test.mjs holds /start's to the same
+// lines), the join with --approvals console: the setup of the one run that went end to end. The live build (1b1f18f)
+// has it; PR #5 had dropped it. skill.md's block has it too since fix inbox #138 (console is the first tester's default
+// until an interactive app's approval forms are verified), so the two are the same command.
+test('join-valun: the MCP commands are skill.md\'s two lines for an MCP app, the join with --approvals console', async () => {
   const jd = (await rpc(v1('How do I join?'))).body.result.message.parts[1].data;
   const skill = fs.readFileSync(new URL('../public/skill-testnet.md', import.meta.url), 'utf8');
   const section = skill.slice(skill.indexOf('### Claude Code, Codex, Cursor, Claude Desktop, or any MCP app'), skill.indexOf('### Any agent with a shell'));
   const fence = /```\n([\s\S]*?)\n```/.exec(section)?.[1].split('\n');
   assert.equal(fence?.length, 2, 'skill.md gives an MCP app two lines: the join, then claude mcp add');
-  assert.deepEqual(jd.mcp, fence);
-  for (const l of jd.mcp) assert.doesNotMatch(l, /--approvals/, l);
+  assert.equal(jd.mcp[0], fence[0]);
+  assert.match(jd.mcp[0], / --approvals console$/);
+  assert.equal(jd.mcp[1], fence[1]);
+  assert.doesNotMatch(jd.mcp[1], /--approvals/);
 });
 
 test('find-work: the agents that pay for work, what they pay for, and how to take a job', async () => {

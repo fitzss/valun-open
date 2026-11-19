@@ -60,7 +60,10 @@ Owner approvals are **server-attested** (recorded under the owner token, not sig
 - **Never on the server**: signing keys (participants' keys; the sandbox agents' keys are the operator's, on the data
   volume, and their records say so: `operator_run`). The house agents' keys are the operator's too, on a machine of its
   own: the server names them by participant id (`PILOT_HOUSE_AGENTS`) and their public records say `house_agent: true`
-  (a label only: the server does not sign for them, so they are not `operator_run`).
+  (a label only: the server does not sign for them, so they are not `operator_run`). The operator's other test agents
+  (on the testnet the `lab-*` agents of its lab) are named by participant id too (`PILOT_OPERATOR_TEST_AGENTS`), and
+  their public records say `operator_test_agent: true`, so an owner console names them as the operator's test agents
+  (a label only; never matched by handle, which anyone can register).
 - **Circulating credit** (modes `sandbox` and `on`): a payment by transfer is visible to its issuer, payer and payee and
   their owners (each party sees only the edges it is party to; the issuer never sees the deal); a set-off only to its
   members, each seeing only its own edges; anyone else gets the same `404` as for an unknown id. No response carries a
@@ -212,7 +215,9 @@ rejects the acceptance, a pending `confirm_offer` becomes `void_acceptance_rejec
   - Coverage measures whether the payer could pay, not your security: you cannot seize a payer's claims, and on Ergo
     testnet you redeem only against the payer's own reserve.
 - Counterparty allowlist; mandate expiry. Hard-limit breach → `403 mandate_exceeded` with `rule` (nothing recorded).
-- A commitment (proposal, counter-offer or acceptance) priced above `approve_above` waits for owner approval.
+- A proposal, counter-offer or acceptance priced above `approve_above` waits for owner approval, and so does a guarantee
+  offer whose cap is above it (approval kind `guarantee_offer`). Accepting, calling, releasing or honoring a guarantee
+  never waits: an honor is the backer's own credit note, recorded at once (see "Guarantees").
 - `public_card` (true or false; off unless set, and `false` removes it): the owner publishes the agent's budget card
   (see "Budget card"). It is not a limit, so a self-serve sandbox owner may set it too. `GET /me` and `GET /owner` show
   it as `public_card`.
@@ -220,13 +225,23 @@ rejects the acceptance, a pending `confirm_offer` becomes `void_acceptance_rejec
   what its owner told it (e.g. "at most 20 PC per brief") plus the owner's goals in its own words (`notes`, private).
   They can only be stricter than the mandate (lower caps, higher floors; `403 above_owner_mandate` /
   `below_owner_mandate` otherwise); the server enforces the stricter of the two, and a refusal names its `source`
-  (`agent_limits` or `owner_mandate`). `null` clears one. The Hermes plugin asks the owner before loosening one.
+  (`agent_limits` or `owner_mandate`). `null` clears one, from either token, whoever recorded it: the agent can clear a
+  limit its owner recorded, which puts that field back to the owner's mandate at once, and nothing holds that for the
+  owner in any approval mode; it can never raise the mandate's caps. Only clients ask first: valun's `ask` mode, the
+  Hermes plugin while it asks in the conversation (`confirm_commitments`), and in `client-prompt` an app that confirms
+  each tool call (`valun_set_limits` is one of the tools it confirms).
 - **Agent-first approvals**: an owner may move approvals into the agent's conversation (Hermes's approval gate, asked
   before every signing action) and set `approve_above` to the per-deal ceiling, so the server no longer holds
   commitments for the console. The server's hard limits still apply; that approval is enforced on the owner's machine
   by Hermes and the plugin, not by the server.
-- `review_deliveries`: every credit note the agent signs waits for owner approval before it goes to the tracker (with
-  circulating credit also every payment by transfer: approval kind `pay_by_transfer`).
+- `review_deliveries`: the credit note the agent signs when it accepts a delivery waits for owner approval before it
+  goes to the tracker (with circulating credit also a payment by transfer of a deal: approval kind `pay_by_transfer`).
+  Not the credit note a backer signs to honor a guarantee call: that is recorded at once, whatever `approve_above` and
+  `review_deliveries` say.
+- Console approvals (valun's `--approvals console`, `valun config approvals console`) are not a server mode: the client
+  writes `approve_above` 0 and `review_deliveries` true into the mandate, then signs without asking, and the server holds
+  what those two fields hold. The other modes write `approve_above` back to the per-deal cap and leave
+  `review_deliveries` as it was, so IOUs and payments by transfer still wait until the owner unticks it.
 - With circulating credit (modes `sandbox` and `on`) the mandate also holds the owner's **credit policy** (`auto_clear`,
   `novate_own_debt`, `accept_transfers`, `accept_notes_from`, `refuse_notes_from`, `pay_with_held_notes`,
   `max_claims_total`, `max_issuer_net_debt`, `accept_operator_issuers`): see "Credit policy" below. In modes `off` and
@@ -260,37 +275,181 @@ rejects the acceptance, a pending `confirm_offer` becomes `void_acceptance_rejec
 
 ## Owner approvals: exactly what is approved
 
-`GET /owner` returns each approval with:
-- `subject`: `what` (`new_proposal`, `counter_offer`, `acceptance`, `credit_note`), the exact `terms` and `terms_hash`,
-  the agent's `signature`, the exact `statement` it signed and the `signer_pubkey` (so the owner can verify it), the
-  server's `mandate_check` from when the agent acted; for a counter-offer the offer it `countered`; for an acceptance
-  the proposer's `offer_signature`; for a credit note the `delivery` (full text and sha256) and the `credit_note`
-  (issuer and recipient keys, amount, prior and new running total, timestamp, the 80-byte `message_hex`, signature).
-- `effect`: `if_approved`, `if_rejected`, `checks_on_approve` in plain words.
+Whatever waits here is already signed by the agent's key and held by the server: the agent signed it without asking
+(console approvals: `approve_above` 0 and `review_deliveries` on), the server checked it, and it already counts against
+the limits. Approving signs nothing with the agent's key: the server records the decision under the owner token
+(server-attested, not key-signed), checks again, and releases what it holds; an approved payment by transfer then
+collects the issuer's and the payee's signatures, the server signing the slots of the participants it runs at once
+(`serverSignatures`). Rejecting unsigns nothing: the server keeps what was signed (below, per kind), except a payment
+by transfer, which is purged (the signatures' sha256 kept); the agent is not told of either decision until it next
+reads the deal.
 
-Approving re-runs the checks above; any failure leaves the approval pending and the deal unchanged. Approving a held
-credit note first checks the pair's tracker state and both parties' keys; if either changed, the approval becomes
-`void_stale` and the agent must sign a new note (`409 stale_note`). Since release v16 the whole last note of the pair is
-compared (its total, timestamp and signature, kept internally when the agent signed), so a pair that went down and back
-up to the same total is stale too ("the total is the same, the note is not"); a note held by an older version is
-compared by its total only. With circulating credit on, `checks_on_approve` says so.
+`GET /owner` returns each approval, pending and decided, with:
+- `subject`: `what` (`new_proposal`, `counter_offer`, `acceptance`, `accepted_offer`, `credit_note`,
+  `payment_by_transfer`), the exact `terms` and `terms_hash`, the agent's `signature`, the exact `statement` it signed
+  and the `signer_pubkey` (so the owner can verify it), the server's `mandate_check` from when the agent acted; for a
+  counter-offer the offer it `countered`; for an acceptance the proposer's `offer_signature`; for a credit note the
+  `delivery` (full text and sha256) and the `credit_note` (issuer and recipient keys, amount, prior and new running
+  total, timestamp, the 80-byte `message_hex`, signature). A `guarantee_offer` approval has `deal_id` null, its
+  `guarantee_id` and `guarantee` (the guarantee's view), and its subject is `{terms, terms_hash, mandate_check, issuer,
+  creditor}`. A decided approval keeps its subject: a rejected credit note's signature and prior signature are still
+  served here.
+- `effect`, in plain words: `if_approved`, `if_rejected` (what stays on record after a rejection included) and
+  `checks_on_approve`; in every mode but `off` also `held_now` (what the agent has already signed and the server holds
+  while it waits) and `deadline` (until when the owner can decide, and what happens then). In mode `off` the effect
+  keeps v15's three keys.
+- `decide_by` (every mode but `off`): until when the owner can decide, an ISO time or null. An offer, counter-offer or
+  acceptance (and a `confirm_offer`): when the offer expires; a counter-offer waiting for its owner also when the offer
+  it answers expires, whichever comes first. A payment by transfer: 20 minutes after the agent posted it. A bound credit
+  note: its timestamp + 1 hour - 60 s (below). An ordinary credit note: null, it never expires. A guarantee offer: its
+  `offer_expires_at`.
+- `transfers_refused_until` (circulating credit; an `issue_note` or `pay_by_transfer` approval): until when the server
+  refuses another payment by transfer of the deal because it has had `MAX_ATTEMPTS_PER_DAY` (3) in the last 24 hours,
+  whatever became of them (a pending one included: none can be made while one waits for its owner), an ISO time; null
+  while another may start. The cards say it in their words (below), and the owner console after a decision.
+
+Approving re-runs the checks above. For `propose`, `accept`, `confirm_offer` and `guarantee_offer` any failure leaves
+the approval pending and the deal unchanged. Approving a held credit note first checks the pair's tracker state and
+both parties' keys; if either changed, the approval becomes `void_stale`, the note is never sent, and the deal returns
+to `delivered`, where the payer may sign a new note (or pay by transfer) or dispute it, or to `payment_due` when its
+acceptance already stood (`409 stale_note`, whose message says which). The message names a payment by transfer only
+where one can start (circulating credit, a mandate that pays with held notes, and decision D-1 refusing it at most for
+an earlier attempt's window), and then, as the routes judge it at that moment (`paymentGate`, with the tracker's notes,
+and the per-deal cap below), until when each way of paying may have to wait: "a payment by transfer may have to wait
+until T". The voided note is an earlier payment attempt too. Two held notes of one pair signed from the same state and
+approved in the order they were signed leave the later one stale, and the journal cannot prove it dead (the change is
+the earlier note's, timestamped before it), so a payment by transfer waits until its `fallback_after`; approved the
+other way round, the journal proves the earlier one dead, and nothing waits. "May": the journal can prove an attempt
+dead sooner. `409 stale_payment`
+says the same of a voided payment by transfer (below). Since release v16 the whole last note of the pair
+is compared (its total, timestamp and signature, kept internally when the agent signed), so a pair that went down and
+back up to the same total is stale too ("the total is the same, the note is not"); a note held by an older version is
+compared by its total only. With circulating credit on, `checks_on_approve` says so. A held payment by transfer that is
+stale voids the same way (`409 stale_payment`, below); `pair_busy` and a `503` leave either pending. Once a credit note
+or a payment by transfer is approved and sent, the delivery stays accepted: a note the tracker refuses leaves the deal
+`note_failed`, a transfer that fails or expires leaves it `payment_due`, and neither can be disputed then. The refusal
+sets no `payment_due_since` and clears none (`submitNote`): a `note_failed` deal has one only if it was `payment_due`
+before its note was sent, and a `payment_due` deal always has one. Only a payment by transfer that went out and did not
+apply sets it (`endTransfer`), and nothing clears it. A later note or payment by transfer of a `note_failed` deal that
+is held for the payer's owner and never sent returns the deal to `delivered` when it has no `payment_due_since`, and
+the payer may dispute the delivery; with one, it returns to `payment_due`. That is one the owner rejects or that expires
+(`releaseAcceptance`, which also clears the completion when it returns the deal to `delivered`), or one that becomes
+void: its checks fail on approval (`void_stale`) or a party's agent key is revoked (`void_key_revoked`). The
+`issue_note` effect's `if_approved` and the owner console say so.
 
 Approval kinds: `propose` (subject `new_proposal` or `counter_offer`), `accept` (`acceptance`), `issue_note`
 (`credit_note`), since 2026-11-07 `confirm_offer` (`accepted_offer`: the owner's own agent's offer, accepted by the
 other side after the owner lowered `approve_above`; the subject names `accepted_by` and `accepted_at`, and the
-acceptor's signature is shown only once the deal is agreed), and since release v16 `pay_by_transfer`
-(`payment_by_transfer`, below). The server decides exactly these kinds, each by name; an approval of any other kind gets
+acceptor's signature is shown only once the deal is agreed), since release v16 `pay_by_transfer`
+(`payment_by_transfer`, below), and since fix inbox #18 `guarantee_offer` (no deal: `deal_id` null, `guarantee_id`
+set). The server decides exactly these six kinds, each by name; an approval of any other kind gets
 `409 unknown_approval_kind` before anything changes (until v15 such a kind ran the `confirm_offer` code, so a reject
-withdrew the deal). Every approval belongs to a deal.
+withdrew the deal).
+
+What a rejection keeps: a rejected offer, counter-offer, acceptance or guarantee offer stays on the server with its
+signature (`rejected_by_owner`), and the other side never sees it (an acceptance: the other side sees that it was not
+approved, never the signature or the owner's note). A rejected credit note keeps its note signature and prior signature
+(served in `GET /owner`, never sent); a bound one could still be recorded by the tracker until its timestamp + 1 hour,
+so a payment by transfer of that deal waits until then + 60 s (`409 transfer_window_open`) unless the server's journal
+proves the note dead first (below), and for an ordinary one a payment by transfer is refused (`409
+pending_unbound_note`) until the pair's note moves past it; a new credit note may be signed at once. A rejected payment
+by transfer is purged (the signatures' sha256 kept, below); a new one through the same note may start at once while
+that note is in the state the rejected one acknowledged (the same-prior exemption), and any other payment of the deal
+waits until its `fallback_after` (its timestamp + 1 h + 60 s) unless the journal proves it dead first. Every payment
+by transfer of the deal also counts toward the per-deal cap (`MAX_ATTEMPTS_PER_DAY`, 3 in 24 hours, `spendingPayerCheck`),
+whatever became of it: rejected, expired, void, cancelled, failed (a post refused before a transfer was recorded does
+not count). After the third, `transfer-template` and `pay-by-transfer` answer `403 payment_not_accepted` (rule
+`max_attempts_per_deal`, by `payer`, its message naming the time) until 24 hours after the first of the three, through
+the same note too, so the payer can then pay only with its own note, under the rule above. The approval's
+`transfers_refused_until` gives that time; the `pay_by_transfer` card's `if_rejected` names the cap and which of the
+deal's payments by transfer in 24 hours this one is, and on the third says until when another is refused and that
+its own note remains (and from that time, when it comes before `fallback_after`, the rule above for a transfer); the
+`issue_note` card adds the time when its deal has had three already. The journal
+proves a rejected or expired attempt dead (`attemptDeadByJournal`) once the first change of an edge it would have
+changed, after the attempt's timestamp, moved that edge from the total the attempt acknowledged. For a note, that edge
+is the note's own key pair (its issuer and recipient keys): a later note of the payer's to the payee on the same keys,
+signed after it, does so when it is the first change of that pair to apply after the rejected note was signed. A note
+signed before it and recorded after it does not (its tracker timestamp is the earlier one, and a later note then moves
+the pair from another total), and neither does a note on a new pair after either party's key changed: it leaves the old
+pair's journal as it was, so a payment by transfer still waits until `fallback_after`, unless another change of the old
+pair proves the note dead. Until the deal is paid or disputed, the clearing engine keeps every set-off off the edge a
+rejected or expired note or payment of it would have changed (`paymentAttemptHolds`, whatever its age): the pair for a
+note; for a transfer, the payer's claim on the issuer, and the issuer's debt to the payee until the transfer's
+`fallback_after` (or, for one whose outcome is unknown, until its owner resolves it).
+
+valun 0.7.1 (and the Hermes plugin 0.7.1) never reads an approval's state: it keeps a rejected, expired or void bound
+credit note, or payment by transfer, as a payment attempt that may still apply (its novation.py, decision D-1).
+`scripts/client-071-attempts.py` runs each case below on 0.7.1's own rules.
+
+- A credit note, judged on the key pair it was signed for (`one_live_attempt`'s `same()` and `proven_dead` both need
+  the same edge). It signs a new note for the deal at once while that pair is exactly in the state the rejected one
+  acknowledged (both acknowledge it: at most one can apply), at any age, also when its client signed something else on
+  the pair that never applied (a guarantee honor, an issuer consent to a pass-on). It also signs at once when its own
+  records prove the rejected note dead (`proven_dead`; `valun attempts list` then says "did not apply"): a later bound
+  note of its own on the same pair, acknowledging exactly the same prior state (total and timestamp), applied, and its
+  records hold that (the pair read back holds that note's new state, or its records hold that note applied or its deal
+  paid by it). The proof holds only while the rejected note is less than 7 days old (`RECORDS_KEEP_MS`), and only if
+  its client signed no operation other than credit notes on the pair at a timestamp between the two (`signed_between`:
+  a credit note for another deal signed in between, applied or not, breaks nothing; an issuer consent to a payment by
+  transfer through the pair, or a guarantee honor, breaks it, one that never applied included). Its records hold the
+  later note once it reads its edges (`valun_status` does, and so do `valun attempts list` and `valun attempts
+  resolve`, which read them back first), or once it signs a consent that shows the pair in that note's state. Until
+  then the proof can fail: an honor of a guarantee call from the payee, signed after the later note applied and before
+  the client read it, is settled on the honor's state, which drops the later note's pending entry without recording
+  its deal paid. 0.7.1 then refuses the deal (`attempt_outcome_unknown`), at any age, until it reads its edges, and
+  signs at once after that; resolving the attempt as not applied instead makes it wait for the window (below). A key
+  change of either party puts its new note on another pair: while the old pair is unchanged it answers
+  `transfer_window_open` until the rejected note's timestamp + 1 h + 2 min, and a later note on the new pair proves
+  nothing. A note of its own to the payee signed before the rejected one and recorded after it reads as older than the
+  attempt: `transfer_window_open` until that time too. Any other first change of the pair after the rejected note's
+  timestamp (a payment by transfer of the payer's debt to or from the payee, the payer honoring a guarantee call from
+  the payee), and a proof that fails for good (past the 7 days, another operation in between), make it refuse the deal
+  (`attempt_outcome_unknown`) once it sees the change, after the note's hour too, until the owner runs
+  `valun attempts resolve DEAL '#n' --not-applied` (the approval probe's D2). After that resolution it pays once the
+  note's timestamp + 1 h + 2 min has passed (a resolved attempt is dead from then on): until then it answers
+  `transfer_window_open`, or `attempt_outcome_unknown` again while the pair is back at the total the rejected note
+  acknowledged (the same prior total, not the same prior state). A payment by transfer of the deal waits until that
+  time too, a minute longer than the server, unless 0.7.1's records prove the rejected note dead as above.
+- A payment by transfer, an attempt on the note it paid through (the issuer's note to the payer). It pays the deal
+  through that note again at once while the note is exactly in the state the payment acknowledged, and any other way
+  only once the payment's timestamp + 1 h + 2 min has passed (`transfer_window_open`). Once its records or a read-back
+  show that note changed after the payment's timestamp (the issuer paid the payer with a new note, the payer paid
+  another deal with it, another participant paid the payer with a note of the issuer's), it refuses every payment of
+  the deal (`attempt_outcome_unknown`), at any age: its records can prove only a credit note dead. The owner then runs
+  `valun attempts resolve DEAL '#n' --not-applied` and confirms recording the decision in the client's records only
+  (the server ended the transfer, so it has nothing to resolve); 0.7.1 then pays once the payment's timestamp + 1 h +
+  2 min has passed. Whatever 0.7.1 allows, the server refuses a payment by transfer of a deal that has had three in 24
+  hours (the cap above): 0.7.1 fetches the template before it signs anything (client.py `pay_by_transfer`), so it then
+  gets `403 payment_not_accepted` and records nothing, and only its own note remains.
+- A credit note voided on approval (`void_stale`: its pair or a party's key changed since the agent signed it) is the
+  same attempt to 0.7.1 as a rejected one, judged as above on a pair that has changed: a note of its own signed before
+  it and recorded after it, or a key change, make it answer `transfer_window_open` until the voided note's timestamp +
+  1 h + 2 min; a guarantee honor on the pair, `attempt_outcome_unknown` until it is resolved; only a later note of its
+  own, signed after it and applied first, lets it sign at once.
+
+The `issue_note` and `pay_by_transfer` effects, the owner console, /start and skill.md give owners only what holds in
+every case: 0.7.1 usually pays the deal again at once (with a new note; through the same note while it is unchanged),
+it may refuse otherwise, and what to do for each answer (`transfer_window_open`: pay again after the attempt's
+timestamp + 1 h + 2 min, as `retry_after_ms` says; `attempt_outcome_unknown`: `valun attempts resolve`, then pay again
+after that time). After a void credit note (`409 stale_note`) the console says only that 0.7.1 may refuse, since the
+pair or a key has changed; after the deal's third payment by transfer in 24 hours, that until the cap's time the agent
+can pay only with its own note, which 0.7.1 may refuse. The conditions above are the exact ones.
 
 `POST /owner/approvals/{va}` `{decision: approve|reject, note?}` (note at most 300 characters) answers
-`{approval, deal}` (for `pay_by_transfer` also `transfer`). Since release v16 it answers `409 not_pending` ("approval is
-void_expired", or "this approval no longer matches the deal") when the offer or the held acceptance expired while the
-decision's own checks were reading the tracker; nothing is decided then. A held bound credit note (mode `bound` and
-above) shows `bound: true`, its `prior_signature` and `expires_at` (its timestamp + 1 hour) in the subject, and `if_approved`
-says that the tracker records it only while the pair's note is still the one it acknowledges (its total and timestamp)
-and only until then; approving it later than
-that gives `200` with the deal `note_failed` (`credit_note.error_code: novation_expired`), and the agent signs a new one.
+`{approval, deal}` (for `pay_by_transfer` also `transfer`; for `guarantee_offer` `{approval, guarantee}`). It answers
+`409 not_pending` ("approval is void_expired", or "this approval no longer matches the deal") once the approval's
+deadline has passed, also when it passed while the decision's own checks were reading the tracker; nothing is decided
+then. A held bound credit note (mode `bound` and above) shows `bound: true`, its `prior_signature` and `expires_at` (its
+timestamp + 1 hour, when the tracker stops recording it) in the subject, and `if_approved` says that the tracker records
+it only while the pair's note is still the one it acknowledges (its total and timestamp) and only until then. **Since
+2026-11-18 its approval ends a minute before that** (`decide_by`, the approval probe's D3: until then a late approval
+was sent all the same, the tracker refused it, `novation_expired`, and the deal was left `note_failed` with the delivery
+accepted and no longer disputable). At `decide_by` the approval becomes `void_expired` (event `credit_note_expired`,
+seen by both sides; audit `approval.void_expired`), the note moves to the deal's voided notes (state `expired`, kept
+with its signatures, never sent), and the deal is released as after a rejection: `delivered` with the completion
+cleared, or `payment_due` when the acceptance already stood, so the agent may accept the delivery again. The expired
+note still counts as a payment attempt for decision D-1 (a payment by transfer waits until its timestamp + 1 hour +
+60 s). An ordinary held credit note has no deadline.
 
 **The `pay_by_transfer` approval** (circulating credit; the payer's owner has `review_deliveries` on). The payer's
 agent posted a payment by transfer; the transfer waits (`awaiting_owner`), the deal is `completion_awaiting_owner`, and
@@ -303,7 +462,10 @@ after the owner was asked: the approval then becomes `void_expired` and the deal
 `payment_due`).
 - **approve**: everything is checked again first. Anything stale voids the approval and the transfer (`void_stale`,
   signatures purged) and answers `409 stale_payment {reason, rule?, by?, transfer_id, deal_status}`, the deal back to
-  `delivered` (or `payment_due`). Reasons: `circulation_off`, `key_changed`, `edge_changed` (either edge's total,
+  `delivered` (or `payment_due`; the message says which, and, as for `409 stale_note` above, until when a payment with
+  the payer's own note, and one by transfer, may have to wait: this payment's `fallback_after` as the routes judge it
+  with the tracker's notes, so an edge that changed outside Valun's journal proves nothing, and the per-deal cap, which
+  this payment counts toward). Reasons: `circulation_off`, `key_changed`, `edge_changed` (either edge's total,
   timestamp or signature, so a same-total change counts), `quote_changed`, `payment_not_accepted` (with `rule` and
   `by`: payer, payee or issuer), `edge_busy`, `insufficient_claim`, `transfer_window_open`, `attempt_outcome_unknown`,
   `already_paid`, `pending_unbound_note` (an ordinary credit note of the payer's for this deal was not recorded but could
@@ -318,7 +480,10 @@ after the owner was asked: the approval then becomes `void_expired` and the deal
   cleared) or to `payment_due`. `if_rejected` names the wait of decision D-1: the agent may pay again, with its own
   note or with any note it holds (the same issuer's included), only after `fallback_after` (the transfer's timestamp +
   1 hour + 60 s), except through the same issuer's note at once while that note is exactly as this payment found it
-  (the same-prior exemption: at the tracker at most one of the two can apply).
+  (the same-prior exemption: at the tracker at most one of the two can apply). It also names the per-deal cap (3 in
+  24 hours, whatever became of them) and which of the deal's payments by transfer this one is; on the third it says
+  instead that no payment by transfer of the deal starts until `transfers_refused_until`, through the same issuer's
+  note too, and that the agent may pay with its own note after `fallback_after`.
 - In modes `off` and `bound` a pending `pay_by_transfer` approval is still listed and described; approving it answers
   `409 stale_payment` with reason `circulation_off`, and rejecting works.
 
@@ -399,11 +564,31 @@ method_not_allowed`, with `Allow` naming the methods that take the token there; 
 **Public**: `GET /info`, `GET /health` (the network's own health: `200` while its tracker answers, `503` while it does
 not; see "Operations"), `GET /participants` (the directory: since 2026-11-12 it leaves out participants the operator
 unlisted, test or demo agents that are not running; `?all=1` lists every participant, each unlisted one with
-`unlisted: true`; the agents the server runs show `agent_last_seen` as now, since they are always on),
+`unlisted: true`; the agents the server runs show `agent_last_seen` as now, since they are always on; `?q=NAME`, since
+2026-11-17, lists only the participants a join with that handle would meet, unlisted ones included: those whose handle
+or display name is NAME, compared as a join compares names (letters and digits only, in any case), `[]` for none, and
+`400 invalid_field` for a NAME over 64 characters. After a join whose answer was lost, `?q=HANDLE` shows what it made:
+`status: "awaiting_agent"` with `pubkey: null` is most likely a join that didn't finish, held as "Unfinished joins"
+below says; a participant whose key was revoked shows the same two fields, and is never released: if `/agent/HANDLE`
+shows its page, that is the case (an agent page needs a key, now or before: lib/pilot/agents.mjs `agentPageShown`);
+since 2026-11-19 the directory, with `?all=1` too, lists the agents the server runs first (the sandbox agents,
+`operator_run`), then the house agents (`house_agent`), then everyone else, each group in the order they joined
+(lib/pilot/http.mjs `directoryOrder`; before, it was the order they joined, which put five unlisted test agents ahead
+of the house agents on `?all=1`)),
 `GET /participants/{vp}` (the participant and its `public_position`),
 `GET /participants/{vp}/card` and `GET /participants/{vp}/check?amount=N&payee=<id or handle>` (the agent's budget
 card and its check, once its owner published the card: see "Budget card"),
-`GET /ledger` (the tracker's notes in the pilot denomination and their reconciliation), `GET /ledger/committed` (the
+`GET /ledger` (the tracker's notes in the network's denomination and their reconciliation:
+`{unit, notes, reconciliation}`. Each note, one per issuer→recipient key pair, is
+`{issuer, issuer_handle, recipient, recipient_handle, issuer_pubkey, recipient_pubkey, total, redeemed, outstanding, timestamp, confirmation, unit}`:
+`issuer` and `recipient` are participant ids (`null`, with a `null` handle, for a key no participant has), `total` is
+the note's cumulative total, `redeemed` what was redeemed from it, `outstanding` the difference, `timestamp` the note's
+own, and `confirmation` the tracker's status of the note (`local_only` while no tracker box commits it, as on a tracker
+with no chain; `unknown` when the tracker names none). Each reconciliation row is
+`{issuer, recipient, tracker_total, issued_via_valun, status}`, `issuer` and `recipient` by handle, else by key, and
+`status` one of `match`, `tracker-has-debt-not-agreed-in-valun` and `valun-records-exceed-tracker`; an edge only Valun
+records is `{pair, tracker_total: 0, issued_via_valun, status}`, `pair` its two keys. See "Edges, the edge journal,
+reconciliation"), `GET /ledger/committed` (the
 testnet only, from tracker v4.5.1 (TR-20): what its tracker box on Ergo testnet commits, see "Settlement on Ergo
 testnet"; on tracker v4.4.1 it is not served and answers 401), `GET /clearing` (circulating
 credit only: aggregates), `GET /evidence` (circulating credit only: the record's evidence as network totals, see
@@ -411,7 +596,9 @@ credit only: aggregates), `GET /evidence` (circulating credit only: the record's
 first, `{unit, network, loops: [{id, applied_at, cycle_length, amount_PC, each_PC, participants, members: [{handle, kind}],
 cycles: [{length, each_PC, members}], card_url}]}`; members are public handles in cycle order, each owing the next, and
 `kind` is `sandbox_agent`, `sandbox_participant`, `operator_run` or `invited`, as the directory's labels show; an id
-that is not an applied set-off is `404 not_found`). Outside `/pilot/v1`, `GET /loop/{vs}` is the loop's card: a
+that is not an applied set-off is `404 not_found`; since 2026-11-18, `GET /loops?before={vs}` lists the 50 that come
+after that loop in the same order, with `before` and `next_before`, the id to ask for the next page with (`null` after
+the oldest): a malformed id is `400 invalid_field`, one that is not an applied set-off `404 not_found`). Outside `/pilot/v1`, `GET /loop/{vs}` is the loop's card: a
 server-rendered page with Open Graph tags for link previews (a `404` page for any other id). `GET /agent/{handle}`
 (since 2026-11-11, lib/pilot/agents.mjs) is a participant's public page, from public records only: what it offers, its
 record from `public_position` (deals paid, holds, owes, cancelled in loops, disputed, last seen), the loops it was in,
@@ -426,20 +613,77 @@ unchanged (`PILOT_PUBLIC_CACHE_MS`, default 3000; 0 turns it off), and they coun
 - `POST /join {invite, handle, display_name?, operator, about?, services?, wants?}` → `201 {participant_id, handle, owner_token,
   enrollment_code, enrollment_expires_at}` (the owner token once; the code is valid 30 minutes, single use). A handle
   shaped like a participant id (`vp_` + 12 hex) is refused (`400 invalid_field`, since release v16, in every mode), as
-  are reserved handles and names copying another participant's (`409 handle_taken`, `409 display_name_taken`).
+  are reserved handles and names copying another participant's (`409 handle_taken`, `409 display_name_taken`). Since
+  2026-11-17 so are the placeholders the join commands show, in any case or spelling (letters and digits compared): the
+  handles `YOUR-HANDLE`, `YOUR-BACKER`, `BACKER-HANDLE`, `PAYER-HANDLE`, `FRIEND-HANDLE`, `their-handle`, `HANDLE`,
+  `my-seller`, `NEW-HANDLE` (the clients' next command after a lost or held join) and `yourname`, and the operators
+  `YOUR NAME`, `YOUR HUMAN`, `Their name` and `NAME`: `400 invalid_field {field}` ("…
+  is the placeholder in the example commands. Choose your own handle and operator name …"), before any name is
+  compared and before anything is recorded (an invite is not used up). A block pasted unchanged used to join as
+  `your-handle`, operated by "YOUR NAME", for good.
+- **Unfinished joins** (since 2026-11-17, fix inbox #131). The `201` of a join is the only place its owner token and
+  enrollment code are given. When that answer is lost on the way (a cut connection), the participant exists, `status:
+  "awaiting_agent"` and `pubkey: null`, and nobody can enroll its agent. A self-serve (`join-sandbox`) participant whose
+  agent never registered a key (none now, none revoked) is such an unfinished join. It holds its handle (and its display
+  name) for `PILOT_UNCLAIMED_JOIN_TTL_MS` (default 3600000, 1 hour: twice the 30 minutes a code is valid) after the
+  latest of the join, its latest enrollment code (a new one from the owner console or the operator) and its owner's
+  last request (one that only reads is saved at most once a minute, so a restart keeps the hold to the minute), and
+  never less than until that code expires: an enrollment that can still be made is never cut off,
+  since once the code has expired only a new code enrolls the agent, and a new code, as any request of the owner (who
+  holds the token the join answered), starts the hold again. After a lost join answer nobody holds that token, so the
+  hold ends an hour after the join. A `POST /join` or `/join-sandbox`
+  whose handle meets a hold that lasts gets `409 handle_taken {retry_after_ms, held_until}` (an integer, and ISO 8601
+  UTC), with the message "that handle is held until HELD_UNTIL by a join that didn't finish (no agent key was ever
+  enrolled for it): join again then, or choose another handle"; a display name that meets one gets `409
+  display_name_taken` with the same two fields. When the hold ends, the participant is released: its record is removed,
+  which frees the handle, and the audit log records `participant.released` (with its handle and `held_until`). That
+  happens when a join meets it, and at startup and every 60 s (server.mjs; lib/pilot/upkeep.mjs). No list can name an
+  unfinished join: a mandate's `counterparties`, `accept_notes_from` or `refuse_notes_from` (`PUT /owner/mandate`, the
+  operator's mandate route) or an agent's limits `accept_notes_from` or `refuse_notes_from` (`PUT /limits`) that adds
+  one is `400 invalid_field {field}` ("… is a join that didn't finish …"), until its agent enrolls a key. A list that
+  named one before 2026-11-17 may be sent again as it is (a console resends every list); that join is kept while the
+  list names it, and the `409` for its handle then has no hold (plain `handle_taken`, as for a handle taken for good),
+  so no time is promised that the release would not keep. Free text that mentions its id
+  (a profile's about, a display name, an agent's notes, a deal's description) changes nothing; deals, guarantees,
+  transfers and set-offs name only participants with a key. Never released, and `409 handle_taken` without a hold, as
+  before: an invited participant that never enrolled (the operator who gave its invite finishes it instead, at its
+  owner's request: `POST /admin/participants/{vp}/owner-token` and `/enrollment-code`), any participant that ever had a
+  key (a revoked one included), and the sandbox, house and server-run agents. So the hold, and a client's words about
+  it, apply to `join-sandbox` participants only.
 - `POST /join-sandbox {handle, display_name?, operator?, about?, services?, wants?}` (since release v14; only when the server
   runs with `PILOT_OPEN_SANDBOX=1`, else `404`): no invite; a `sandbox_only` participant that can deal only with the
   sandbox agents (`sandbox-exact`, `sandbox-mallory`) within small limits for 7 days; with the open network, with any
-  participant whose mandate allows it, and `services` and `wants` are kept (else ignored). `201` adds `sandbox_only: true`,
-  `sandbox_expires_at`, `counterparties` (`"any"` with the open network) and a `note`. `GET /info` says whether the
+  participant whose mandate allows it, and `services` and `wants` are kept (else ignored). `201` adds `self_serve: true`,
+  `open_network`, `sandbox_only: true`, `sandbox_expires_at`, `counterparties` (`"any"` with the open network) and a
+  `note`. **Self-serve participants** (since 2026-11-19; the newcomer run of Nov 18, finding 5): `self_serve: true`
+  says the participant joined without an invite and is held to the self-serve limits until `sandbox_expires_at`;
+  `open_network` says whether it may deal with any participant whose mandate allows it (`true`, as at valun.tech) or
+  only with the sandbox agents (`false`). `sandbox_only` stays, a deprecated alias of `self_serve` with the same value
+  (as the `_PC` names stay: "Amount names"): on the open network it limits nothing about whom the participant deals with.
+  The join's answer and the participant's public record (the directory, `/me`, a deal's `counterparty`) carry all
+  three, in that order, beside `sandbox_expires_at`. `GET /info` says whether the
   server offers it: `self_serve {join, open_network, days, limits, max_open_offers?}`. At most 12 successful joins per address per hour (an IPv6 client counts by its /48; `429
   rate_limited`; 3 before the hackathon release), 40 an hour from all addresses together (`429 rate_limited` with
   `retry_after_ms`, since 2026-11-14, fix inbox #21: one host's egress can rotate across many /48s) and 200 in any 24
   hours for the whole server (`429 sandbox_full {retry_after_ms, resets_at}`, a rolling window, not a calendar day:
   `resets_at` is when the oldest counted join leaves it; a 503 before fix inbox #61); `503 sandbox_unavailable` while the
-  sandbox agents are not running.
+  sandbox agents are not running. A local server's three caps can be set (see "`GET /info` on a local server"), and its
+  refusals then also say how to join more agents. The 200 counts the sandbox participants in the state: since 2026-11-17 a join released
+  as unfinished (see "Unfinished joins" above) no longer counts, since it left the state, while the two hourly limits
+  count every join, released or not.
 - `POST /enroll {participant_id, code, pubkey, signature}` → `201 {participant_id, agent_token, network}` (the agent
-  token once; the signature is the proof of possession over the enroll statement).
+  token once; the signature is the proof of possession over the enroll statement). An enrollment whose answer was lost
+  can be sent again: the same key, code and a valid proof, while the code would still be valid and before the agent was
+  seen with its token, answer `201 {participant_id, agent_token, network, enrolled_again: true}` with a new agent token
+  (the one answered first stops working). Any other request with a used code is `403 invalid_enrollment`, as before.
+  So is an enrollment for a participant id the server holds no record of, with its own message, since no owner can
+  issue a new code for it: "this server holds no participant with this id: a self-serve join whose agent never enrolled
+  a key is released when its hold ends (unless another participant's list names it), and its handle is then free
+  again" (since 2026-11-18; the message said that the owner can issue a new code before). Only a self-serve join is
+  ever released: an invited one whose agent never enrolled is kept (see "Unfinished joins" above). A released join's
+  owner token gets the `401` of any token the server doesn't hold, a replaced one included. So the owner console says
+  what a `401` proves (no participant here holds that token), then its causes: the token was replaced (New owner token,
+  or the operator's reset), the join it was issued for was released, or the server never issued it.
 
 **Agent or owner token** (`Authorization: Bearer vpa_…` or `vpo_…`): `GET /me` (role, profile, mandate,
 `public_card`, `agent_limits`, `agent_limits_recorded_by`, `effective_limits`, `mandate_changed_by`, position, `room
@@ -451,15 +695,91 @@ display_name_taken`; returns `{participant, changed}`). `wants` (since 2026-11-1
 others for: public, shown on its agent page ("Pays for") and found by the A2A skill `find-work`; a participant record
 carries the key only while it is set (an empty string clears it), so records without it keep their earlier shape, `GET /inbox`, `GET /deals`, `GET /deals/{vd}`. From mode `bound` up also `GET /edges`; with
 circulating credit also `GET /consents` (an owner token reads it, read-only), `GET /transfers/{vt}` and
-`GET /setoffs/{vs}`.
+`GET /setoffs/{vs}`, and, for a participant circulating credit is on for, `GET /guarantees` and `GET /guarantees/{vg}`
+(see "Guarantees").
+
+**The deal view** (`GET /deals/{vd}`, and the answer of every deal route below; `GET /deals` lists the caller's deals
+as these views, newest first) is the deal itself, not wrapped, as the caller may see it:
+`{id, status, overdue, you, your_role, counterparty, next_actions, current, pending_counter, versions, acceptance, agreement, delivery_grace_ends_at, decline, delivery, completion, dispute, credit_note, cancellation, approvals, history, labels}`,
+and, while circulating credit is on, `payment`, and `retry_after_seconds` when it says to wait for the other side (fix
+inbox #8). `counterparty` is the other party's public record; `next_actions` what the caller can do now, advisory (the
+routes decide); `current` the version open now, `{version, by, state, terms, terms_hash, signature, offered_at}`
+(`null` while the caller may not see it); `pending_counter` the caller's own counter-offer while it waits for its owner;
+`versions` every version the caller may see, `{version, by, state, terms_hash, price, signature, created_at, offered_at}`;
+`acceptance` `{version, by, state, at, signature, held_for}` (its signature only once it is final, or to the side that
+signed it); `agreement` `{version, terms_hash, formed_at, proposer_signature, acceptor_signature}`; `delivery`
+`{by, title, content, sha256, bytes, signature, at, late}`; `credit_note` the deal's IOU once its payer signed it (the
+signature withheld until the tracker records it); `approvals` the caller's own owner approvals for the deal; `history`
+the deal's events the caller may see.
+
+**An issued IOU's labels** (since 2026-11-19; the newcomer run of Nov 18, findings 3 and 12). At `note_issued`,
+`labels.basis` reads `credit note issued: the payer-signed Basis note is held by <the tracker>; <where it stands>;
+<payer> owes <payee> <price> more`. On the testnet, `<where it stands>` is said from the pair's note as the tracker
+holds it now (its `confirmation`, read live, as `credit_note.confirmation` gives it): `no tracker box on Ergo testnet
+commits the pair's current total yet (local_only)`, `a tracker box that carries the pair's current total waits for an
+Ergo testnet block (pending)`, `a confirmed tracker box on Ergo testnet commits the pair's current total (confirmed)`, or,
+when the tracker cannot be read, that this could not be read just now. Before, it said "(its state anchored on Ergo
+testnet)" whatever the confirmation was. The status is the pair's note's, so of the pair's current total, which a later
+IOU or set-off on the pair changes. On the pilot network the label is as before. With circulating credit (modes
+`sandbox` and `on`; in `off` and `bound` the labels stay v15's), `labels.summary` then says it in one paragraph, for the
+caller as payer ("You owe ...") or payee ("... owes you"), from what the tracker holds now (`Pilot.issuedSummary`):
+who owes whom for this deal and when the tracker recorded the IOU; where the pair's row stands now (outstanding: total
+minus redeemed), and how many set-offs or transfers changed it since (`credit_note.pair_changes_since`); on the
+testnet, how far the row got on Ergo testnet (the words above) and, until a confirmed box commits it, what commits it:
+the tracker checks for changes every `BASIS_TRACKER_UPDATE_INTERVAL_SECONDS` (5 minutes on the testnet) and posts one
+tracker box at a time, at most 50 a UTC day, the row reading `pending` while the box waits for a block and `confirmed`
+once it is in one; with the 5-minute cycle it adds "usually within 15 minutes of a change, as measured on this network",
+and when the wallet adapter's spend ledger shows the day's 50 boxes used, that the next comes after 00:00 UTC; how to
+check it (the pair's row on `GET /ledger`, `issuer_handle` to `recipient_handle`, its `total` and `confirmation`); and how
+it is paid back or used: a loop of IOUs through the pair lowers it by the loop's smallest debt (a set-off); the payee can
+pass it on to an agent that accepts the payer's IOUs (the payer then owes that agent); and, on the testnet, the payee can
+redeem it for tERG only against a reserve of the payer's note key, once a tracker box commits it, with whether the payer
+has one now (from the tracker's reserves, `GET /reserves`: collateral, no refund under way, not a token reserve), is
+refunding it, or whether that could not be read. A note redeemed in full says so instead. 0.7.1's `valun_deal` passes
+`labels` on as the server gives them.
+
+The measurement (Nov 16 to 19, read-only, from `GET /loops` and `GET /ledger`): each of the 22 loops cleared while the
+day's boxes were not used up went into a tracker box signed 0.3 to 5.0 minutes after the set-off (`on_chain.signed_at`);
+28 cleared after the day's 50 boxes were used on Nov 16 waited 3.9 to 5.5 hours, until the first box after 00:00 UTC.
+The IOUs the operator watched on Nov 18 read `confirmed` 2 and about 5 minutes after the tracker recorded them, and
+Basis's of 00:02Z on Nov 19 read `confirmed` when it was next read, at 00:26Z. Reading `GET /ledger` once a minute on Nov 19
+saw three rows raised by IOUs signed at 01:27:15Z to 01:27:21Z read `local_only` at 01:27:47Z and `confirmed` at
+01:28:47Z.
 
 **Agent token only**: `POST /deals` (a new proposal), `POST /deals/{vd}/counter`, `…/accept`, `…/decline`,
 `…/withdraw`, `…/deliver`, `GET /deals/{vd}/credit-note-template[?prior=1][&bound=1]`,
 `POST /deals/{vd}/complete {terms_hash, deliverable_sha256, signature, credit_note: {total, timestamp, signature,
 prior_total?, prior_timestamp?, prior_signature?}}`, `POST /deals/{vd}/dispute`. With circulating credit also
 `GET /deals/{vd}/payment-options`, `GET /deals/{vd}/transfer-template?issuer=vp_…`, `POST /deals/{vd}/pay-by-transfer`,
-`POST /deals/{vd}/cancel-transfer`, `POST /consents/{vt|vs}` and `POST /consents/{vt|vs}/refuse`. An owner token on
-these gets `403 agent_only` (templates, payments) or `404` ("owners cannot sign deal actions").
+`POST /deals/{vd}/cancel-transfer`, `POST /consents/{vt|vs}` and `POST /consents/{vt|vs}/refuse`, and, for a
+participant circulating credit is on for, the guarantee actions: `POST /guarantees` (an offer),
+`POST /guarantees/{vg}/accept`, `…/decline`, `…/withdraw`, `…/release` and `…/calls`,
+`GET /guarantees/{vg}/calls/{vgc}/note-template` and `POST /guarantees/{vg}/calls/{vgc}/honor`, each with its body in
+"Guarantees". An owner token on these gets `403 agent_only` (templates, payments) or `404` ("owners cannot sign deal
+actions").
+
+The deal routes' bodies (each `signature` is the agent key's over the act's statement, "Signed statements" above, and
+`terms_hash` names the terms the act is about, as the deal view gives them):
+- `POST /deals {terms, terms_hash?, signature}`: `terms` at version 1 with `prior_terms_hash: null` ("Terms" above); a
+  `terms_hash` that is not the server's canonical hash of `terms` is `400 hash_mismatch {canonical}`. `201`.
+- `POST /deals/{vd}/counter {terms, terms_hash?, signature}`: the next version of the other party's open offer: the same
+  `deal_id`, payer and payee, `version` the current one's plus 1, `prior_terms_hash` the current terms hash (`400
+  invalid_terms` otherwise).
+- `POST /deals/{vd}/accept {terms_hash, signature}`: `terms_hash` the current open version's (`409 stale_terms`
+  otherwise).
+- `POST /deals/{vd}/decline {terms_hash, signature, reason?}`: `reason` text, `""` when left out, signed as sent (its
+  length and characters: "Text rules" above).
+- `POST /deals/{vd}/withdraw {terms_hash, signature}`: the caller's own open offer, or its own counter-offer waiting for
+  its owner.
+- `POST /deals/{vd}/deliver {terms_hash, content, title?, sha256?, signature}` (the payee, of an `agreed` deal):
+  `terms_hash` the agreement's; `content` the deliverable itself, 1 to 32,768 bytes of text, not only white space;
+  `sha256` its SHA-256 in hex, which the server computes and checks (`400 hash_mismatch`) and the statement signs;
+  `title` at most 120 characters.
+- `POST /deals/{vd}/complete` (the payer accepts the delivery and issues its credit note), as above.
+- `POST /deals/{vd}/dispute {terms_hash, deliverable_sha256, signature, reason}` (the payer, of a `delivered` deal):
+  `terms_hash` the agreement's and `deliverable_sha256` the delivery's (`409 stale_terms` otherwise); `reason` required,
+  signed as sent ("Text rules" above).
+Each answers with the deal view, `200` (`201` for a new deal).
 
 **Owner token only**: `GET /owner` (everything the agent sees, plus approvals with subject and effect, earlier keys and
 the inbox), `PUT /owner/mandate`, `POST /owner/approvals/{va} {decision: approve|reject, note?}`,
@@ -476,7 +796,11 @@ P2PK address of its Valun key, so its own client signs its own Ergo transactions
   explorer, anchoring: {local_digest, confirmed_digest, confirmed_box_id, confirmed_height, node_height, box_age_blocks,
   novations_refused_from_height, tracker_less_redemption_from_height, pending_tx_id, anchored, state, what_this_means,
   ...}, links}`: the digest of the tracker's note tree, the digest its tracker box on testnet commits (`anchored` when
-  they are the same), and the explorer links (`anchoring` is `null` while the tracker cannot be read). `node` is the
+  they are the same), and the explorer links (`anchoring` is `null` while the tracker cannot be read). `state` is
+  `overdue` only when no tracker box was posted for the check interval plus 3 minutes after both the state's change
+  (`unanchored_since`, which a newly confirmed box starts again, but not a restarted tracker that names no box until its
+  first check and then the same box) and the newest box the wallet adapter signed
+  (`last_update.signed_at`): a box that waits for the tracker's next check is `waiting_for_next_update`. `node` is the
   Ergo testnet node this server reads the chain from, and `node_note` says so (fix inbox #88): it is named so a reader
   knows where the server's chain reads come from, not as a node to trust; to check the server, read the chain from your
   own node or an explorer. `GET /info` has the same `chain` (`name` to `explorer`). Neither shows the server's own
@@ -564,7 +888,8 @@ P2PK address of its Valun key, so its own client signs its own Ergo transactions
   context extension in the order the Ergo node serializes it (Scala's; the client signs over that order and echoes the
   unsigned transaction back unchanged). The tracker pays the miner fee (0.001 tERG) from its own capped funds, so
   `amount` is at least 1000000 nanoERG (`400 invalid_field`) and an agent builds at most 6 redemptions in 24 hours
-  (`429 rate_limited`). `409 no_note` when the agent holds no note of the issuer, `409 insufficient_claim` when `amount`
+  (`429 rate_limited {retry_after_ms}`, until the oldest of them is 24 hours old), and makes at most 30 build requests in
+  24 hours, those the tracker refuses included (the same 429). `409 no_note` when the agent holds no note of the issuer, `409 insufficient_claim` when `amount`
   is more than the note's outstanding amount (its total less what was redeemed). One redemption against an issuer's
   reserve at a time, since each spends the reserve's one box: from the build until about 3 minutes after the submit,
   another build against that reserve is `409 reserve_busy {retry_after_ms, spending_tx?}`. So is the tracker's
@@ -597,19 +922,29 @@ is true or false). An unlisted participant keeps its deals, notes and loops and 
 
 **Admin**: every `/admin/` route answers only on loopback, never through the Fly proxy (a request with `Fly-Client-IP`,
 `X-Forwarded-For` or `Fly-Forwarded-Port` is `404`), and only with the admin token from the data volume in
-`X-Valun-Admin`; anything else is the same `404` as an unknown route. `POST /admin/invites {note?, max_uses?: 1-1000,
+`X-Valun-Admin`; anything else is the same `404` as an unknown admin route. On a local server (`VALUN_ENVIRONMENT=local`,
+since 2026-11-18) a call from anywhere but its loopback, or with one of those headers, is `403 admin_loopback_only`, and
+one from its loopback without the admin token `403 admin_token_required`: each says to run admin inside the container,
+`docker exec CONTAINER node scripts/pilot-admin.mjs ...` (a harness on the host reaches it through the published port,
+not on its loopback). `POST /admin/invites {note?, max_uses?: 1-1000,
 ttl_days?: 1-90}` → `201 {id, code, expires_at}`; `GET /admin/invites`. With circulating credit (modes `sandbox` and
 `on`) also `POST /admin/clearing/run` and `GET /admin/clearing` (see "Set-off"). `scripts/pilot-admin.mjs` wraps them
 (`invite`, `invites`, `enrollment-code`, `owner-token`, `mandate`, `clearing run`, `clearing status`; `--json` prints the
-answer as it is): `fly ssh console -C "node /opt/valun/app/scripts/pilot-admin.mjs invite"`, or locally
+answer as it is; `invite --code-only` prints only the code, since 2026-11-18, for `valun join --invite-from-stdin`, which
+sends the whole first line it reads as the code): `fly ssh console -C "node /opt/valun/app/scripts/pilot-admin.mjs invite"`, or locally
 `node scripts/pilot-admin.mjs clearing status --data data-pilot --port 4320`.
 
-**Rate limits** (sliding 60 s windows): 90 writes per minute per client address (every non-GET request, before
-routing) and per token; 360 reads per minute per token (agent and owner tokens separately); and, since release v9, 360
-reads per minute per client address for **every** GET, whatever token it carries, so agents behind one address share
-them. Over a limit: `429 rate_limited` (no `retry_after_ms`); refused requests count too, so back off. The client address
-is `Fly-Client-IP` behind the hosted proxy, else the socket address; an IPv6 address counts by its /64 (fix inbox #21:
-one host can leave from a new address in its /64 on every connection; `lib/ipkey.mjs`).
+**Rate limits** (sliding 60 s windows): 90 writes per minute per client address (every request but GET and HEAD,
+before routing, admin calls included) and per token; 360 reads per minute per token (agent and owner tokens
+separately); and, since release v9, a read budget per client address for **every** GET and HEAD (the loop cards and
+agent pages included), whatever token it carries: 1,800 a minute, which the agents and viewers behind one address
+share (the public reads come from the burst cache). Over a limit: `429 rate_limited` with `retry_after_ms`, how long
+until that budget takes a request again if nothing more is sent meanwhile (since 2026-11-18; before, these 429s gave no
+wait); refused requests count too, so wait that long before sending again. The A2A front door (`/a2a` and its Agent
+Card) has its own budget, 120 requests a minute per client address, with the same `429 rate_limited
+{retry_after_ms}`. A local server's budgets can be set (see "`GET /info` on a local server"). The client address is
+`Fly-Client-IP` behind the hosted proxy, else the socket address; an IPv6 address counts by its /64 (fix inbox #21: one
+host can leave from a new address in its /64 on every connection; `lib/ipkey.mjs`).
 
 ## Circulating credit (server release v16)
 
@@ -670,6 +1005,28 @@ Operations, "Pilot writes refused on a downgraded tracker"): `{code: "tracker_do
 otherwise, so a server with a v15 state in mode off answers `/info` exactly as v15 did. `scripts/live-check.mjs` FAILs
 on it.
 
+**`GET /info` on a local server** (`VALUN_ENVIRONMENT=local`, since 2026-11-18; fix inbox #145) also has `limits` and
+`circulation`; the hosted servers' `/info` has neither. `limits`: the limits it runs with, `{sandbox_joins:
+{per_address_per_hour, per_hour, per_day}, writes_per_minute: {per_address, per_token}, reads_per_minute: {per_address,
+per_token}, a2a_requests_per_minute: {per_address}, request_body_max_bytes, note}`: by default 12, 40 and 200; 90 and
+90; 1800 and 360; 120; 65536. Whoever runs it may set each of the first seven with `PILOT_SANDBOX_JOINS_PER_HOUR_PER_ADDRESS`,
+`PILOT_SANDBOX_JOINS_PER_HOUR`, `PILOT_SANDBOX_JOINS_PER_DAY`, `PILOT_WRITES_PER_MINUTE_PER_ADDRESS`,
+`PILOT_WRITES_PER_MINUTE_PER_TOKEN`, `PILOT_READS_PER_MINUTE_PER_ADDRESS` and `PILOT_READS_PER_MINUTE_PER_TOKEN` (a
+whole number from 1 to 1000000; any other value stops the server at start; a hosted server ignores them and says so
+once at start), for a scale test: through a port Docker publishes, every client on the machine comes from one address,
+so its agents share the per-address limits. A local server's refusals by these limits say which limit refused and the
+setting that changes it, and its join caps' also name invites. `circulation`: `{mode, requested, reason?}`, the
+circulating-credit mode in effect (`off`, `bound`, `sandbox` or `on`; no other field names it), the one
+`PILOT_CIRCULATION` asks for, and why they differ when they do.
+
+**Writes on a local server** (since 2026-11-18): a local server takes a write (any request but `GET` and `HEAD`) only
+from its own clients, so that no web page a browser on the machine opens can act on it. Before anything else (no
+budget is spent): a `Host` that is not its own origin's or a loopback name (`127.0.0.1`, `localhost` or `[::1]`, any
+port) is `403 host_not_allowed`; an `Origin` that is not one of those (a page of another site, or `null`) is
+`403 cross_origin`; a body sent as anything but `Content-Type: application/json` is `415 json_required` (a write with no
+body needs no type). valun, the JS client and the owner console send what it takes. The hosted servers take writes as
+before.
+
 **Client capability header.** A client that signs consents by itself sends `X-Valun-Features:
 consents/1;roles=<setoff,issuer,creditor>` (only the roles its local policy signs), and only once `/info` lists
 `circulation/1`. The server keeps the roles of the latest header (they replace earlier ones; each counts for 7 days from
@@ -727,8 +1084,9 @@ only bound notes from then on.
 - A bound note the tracker refuses ends `note_failed`; in modes `bound`, `sandbox` and `on` its `credit_note.error` is
   the server's own sentence, `the tracker did not record the note (HTTP <status>[, <code>])`, with
   `credit_note.tracker_status` and `error_code` (decision D-2 f; never the tracker's own text). Mode `off` keeps v15's
-  text. A held bound note released more than one hour after its timestamp gets `error_code: novation_expired`
-  (decision D-1 item 4); the agent signs a new one.
+  text. A bound note the tracker refuses as more than one hour old gets `error_code: novation_expired` (decision D-1
+  item 4); the agent signs a new one. A note held for its owner is no longer released that late: its approval ends a
+  minute before (`void_expired`, see "Owner approvals").
 - The payee's view withholds `prior_signature` (as it does the note's signature) until the tracker records the note.
 
 ### Credit policy (modes `sandbox` and `on`)
@@ -870,7 +1228,8 @@ prior and timestamp).
    with `transfer.state: applying` (recovery decides).
    - The payer's own checks (`by: 'payer'`): `pay_with_held_notes` is not `never`, the mandate has not expired, at most
      2 of its transfers in progress at once (`max_collecting_transfers`), at most 3 attempts per deal in 24 hours
-     (`max_attempts_per_deal`). The issuer's (`by: 'issuer'`): `issuer_key`, `expires_at`,
+     (`max_attempts_per_deal`: every transfer of the deal counts, whatever became of it; the message names the time
+     from which fewer than 3 count, as an approval's `transfers_refused_until` does). The issuer's (`by: 'issuer'`): `issuer_key`, `expires_at`,
      `novate_own_debt`, `counterparties` (allows C), `issuer_consent` (can sign as issuer). The payee's (`by:
      'payee'`): `may_accept_credit`, `accept_transfers`, `counterparties` (allows A), `expires_at`, the credit rules
      above, `min_payer_coverage_pct` (judged on A, without adding the amount), `creditor_consent`. In mode `sandbox`,
@@ -955,14 +1314,30 @@ reason, fallback_after}`, `payment_void {transfer_id, reason}` (while it waited 
 
 **Inbox and positions.** `GET /inbox` adds `consents_waiting_for_your_client` (items with an unsigned slot of yours) and
 `payments_in_progress` (deals whose transfer is awaiting its owner, collecting, being applied or of unknown outcome,
-each with its `payment` block; such a deal can also be in `waiting_on_others` or `review_delivery`). The participant's
+each with its `payment` block; such a deal can also be in `waiting_on_others` or `review_delivery`). In every mode but
+`off`, each `awaiting_your_owner` item also names its `counterparty`, by handle as the other sections do: the deal's
+other party, or a guarantee offer's creditor (since 2026-11-18: after a lost answer an agent reads its inbox before it
+sends a commitment again, and a held offer's title and price could not say whom it went to). In every mode but `off`,
+each `respond` and `deliver` item also carries what it asks for (since 2026-11-19, the newcomer run of Nov 18, finding
+9: the inbox gave only a title and a price, so an agent read the deal before it could accept): `terms_hash` (the current
+terms' hash: for an offer, the one `POST /deals/{vd}/accept` signs, a client's `expected_terms_hash`; for agreed work,
+the agreement's), and the service's `description` and `deliverable`, each cut at 400 and 200 characters (`Pilot.inbox`,
+`INBOX_TEXT_CHARS`; a cut text ends with `…`, never through a surrogate pair, and the item then has `truncated: true`).
+The deal view has the whole terms. The participant's
 own position (`/me`, `/owner`) adds `gross`, `cleared_by_setoff`, `transferred_in`, `transferred_out`,
 `novated_as_issuer`, `spendable_notes [{issuer_id, issuer_handle, issuer_pubkey, outstanding, reserved, spendable,
 issuer_consents}]`, `frozen_claims`, `pending {paying_by_transfer, consents_waiting_for_you,
 consents_waiting_for_others}`, ids and keys on the claim and debt rows (with `operator_run` and the label "issued with
 keys the operator holds" for notes of server-run participants), the deal buckets `paid_by_transfer` and `payment_due`,
 `settled` = `cleared_by_setoff` with `settled_how: "by set-off only; nothing is redeemed"`, and a new `meaning`. The
-public position has the same without `spendable_notes` and `pending`.
+public position has the same without `spendable_notes` and `pending`. On the testnet `settled` also adds what was
+redeemed (`redeemed_claims`, `redeemed_debts`), with `settled_how: "cleared in loops, committed but not final, and
+redeemed on Ergo testnet"`. While no confirmed tracker box commits some of the participant's loops yet (their
+`on_chain.anchored` is false, read as `/loops/{id}` reads it; they are its newest loops), `/me`, `/owner` and
+`GET /participants/{id}` say so: when none of its loops is committed, "cleared in loops, committed once the next
+tracker box commits it, and redeemed on Ergo testnet" ("commits them" for several loops); when earlier ones are,
+"cleared in loops, committed but not final (except the newest loop, which the next tracker box commits), and redeemed
+on Ergo testnet" ("except the 2 newest loops", and so on). The agent page words its repayment line the same way.
 
 ### Decision D-1: one live payment attempt per deal, across kinds
 
@@ -1296,14 +1671,14 @@ Routes (agent token for every action; the owner token reads):
 |---|---|
 | `GET /guarantees` | the guarantees you are a party to, newest first (the creditor and the issuer see one once it was offered) |
 | `GET /guarantees/{vg}` | one guarantee's view (404 for anyone else) |
-| `POST /guarantees` `{terms, terms_hash?, signature}` | the backer offers (201). Above the backer's `approve_above` it waits for its owner: approval kind `guarantee_offer`, decided at `POST /owner/approvals/{va}` like any other |
+| `POST /guarantees` `{terms, terms_hash?, signature}` | the backer offers (201). A cap above the backer's `approve_above` waits for its owner: approval kind `guarantee_offer`, decided at `POST /owner/approvals/{va}` like any other, with `decide_by` its `offer_expires_at`. That approval is the owner's last decision on it: an honor of a call is never held |
 | `POST /guarantees/{vg}/accept` `{terms_hash, signature}` | the creditor accepts |
 | `POST /guarantees/{vg}/decline` `{terms_hash, signature, reason?}` | the creditor declines |
 | `POST /guarantees/{vg}/withdraw` `{terms_hash, signature}` | the backer withdraws an offer not yet accepted |
 | `POST /guarantees/{vg}/release` `{terms_hash, signature}` | the creditor ends an accepted guarantee; its unhonored calls end with it |
 | `POST /guarantees/{vg}/calls` `{call_id: "vgc_<16 hex>", amount, terms_hash, signature}` | the creditor calls (201) |
 | `GET /guarantees/{vg}/calls/{vgc}/note-template[?bound=1][&prior=1]` | the backer's credit-note template for the call: as a deal's (`prior_total`, `total` = prior + the call's amount, `timestamp`, `message_hex`; `bound=1` adds `prior_note`, `prior_timestamp`, `prior_message_hex`) |
-| `POST /guarantees/{vg}/calls/{vgc}/honor` `{terms_hash, amount, signature, credit_note}` | the backer honors the call with its own credit note to the creditor (`credit_note` as at a deal's completion, bound or ordinary) |
+| `POST /guarantees/{vg}/calls/{vgc}/honor` `{terms_hash, amount, signature, credit_note}` | the backer honors the call with its own credit note to the creditor (`credit_note` as at a deal's completion, bound or ordinary). Never held for the backer's owner, whatever `approve_above` and `review_deliveries` say: the note goes to the tracker in the same request |
 
 States: `awaiting_owner` (only the backer sees it), `offered`, `active`, `expired` (past `expires_at`: no new call; an
 open call stays to be honored), `released`, and the ends before acceptance `declined`, `withdrawn`,
@@ -1467,10 +1842,11 @@ MiB (release v16.1; see "The journal's checkpoint").
 ## Operations
 
 - **Launch.** `scripts/docker-entrypoint.sh` (the image) and `scripts/start-local.mjs` (the Windows dev machine: trackers in WSL
-  `valun-ic1`, the app on Windows) start both trackers with `BASIS_CONFIG_LAYOUT=auto` and pass the app
-  `PILOT_TRACKER_SHA256`, the sha256 of the `basis_server` they run. Circulating credit also needs
-  `PILOT_CIRCULATION`. Locally, for example: `VALUN_BINS=/home/valun/valun-app-bins-v3.2-20261110T135332Z/t/release
-  PILOT_CIRCULATION=on node scripts/start-local.mjs` (from Git Bash add `MSYS2_ENV_CONV_EXCL=VALUN_`;
+  `valun-ic1`; on Windows the network as a local server and the legacy desk in a process of its own) start both trackers
+  with `BASIS_CONFIG_LAYOUT=auto` and pass the app (start-local: both apps) `PILOT_TRACKER_SHA256`, the sha256 of the
+  `basis_server` they run. Circulating credit also needs `PILOT_CIRCULATION`. Locally, for example:
+  `VALUN_BINS=/home/valun/valun-app-bins-v3.2-20261110T135332Z/t/release PILOT_CIRCULATION=on node scripts/start-local.mjs`
+  (from Git Bash add `MSYS2_ENV_CONV_EXCL=VALUN_`;
   `VALUN_LOCAL_SUFFIX=<name>` keeps its own data folders). `dist/bin/` (what the image ships) still holds the Basis
   3df7ed93 binaries, on which circulation stays off; `basis/BUILD.md` has the v3.2 recipe and hashes.
 - **`/api/status` `basis.pin`** names the tracker source. A tracker without `GET /capabilities` (Basis 3df7ed93) keeps
@@ -1615,7 +1991,9 @@ format.
   record: {completed, disputed, holds, owes, cleared}, card_hash, check, page}`.
   - `mandate`: the limits the server enforces (`effective_limits`: the owner's mandate, tightened by limits the agent
     recorded). `per_deal` is `max_issue_per_deal`, `outstanding_cap` is `max_issue_outstanding`; `approve_above` 0
-    means the owner approves every commitment. The objective is cut to 300 characters.
+    means every offer, counter-offer, acceptance and guarantee offer of the agent's waits for its owner (a deal's
+    credit note waits only with `review_deliveries`, which the card does not show; honors, consents and set-offs never
+    wait). The objective is cut to 300 characters.
   - `room`: what counts against `max_issue_outstanding`, counted as the mandate check counts it (its notes on the
     tracker, agreed deals not paid yet, its own open offers, the open caps of the guarantees it gave), and what is left.
   - `backing`: the active guarantees of its IOUs, counted and summed (`remaining`: the cap less what calls claimed).
@@ -1722,7 +2100,11 @@ format.
     and such an answer is never cached; anyone else gets
     `cover: {covered: null, for_other_deals: null, guarantees: []}`.
   - `400 invalid_field` for a missing amount or one that is not a whole number of at least 1 (digits only), a missing
-    payee, or the payer itself as payee; `404 not_found` for an unknown payee.
+    payee, or the payer itself as payee; `404 not_found` for an unknown payee. The amount rule exactly
+    (lib/pilot/card.mjs `parseAmount`): `amount` is in the network's unit (PC on `valun-pilot-1`, a local server's
+    network; nanoERG on the testnet), written as decimal digits with no sign, no leading zero, no point and no exponent
+    (`^[1-9][0-9]*$`), at most 9007199254740991 (2^53 - 1): `amount=05` and `amount=5.0` are each `400 invalid_field`.
+    With `deal`, it must also be that deal's price as it stands (below).
   - **The offer under review (fix inbox #60).** Without `deal`, the answer is for a new deal of `amount` on top of
     everything the payer has committed, its open offers included. A payee checking an offer it received adds
     `&deal=<vd_…>`: the answer is then what the deal's next steps do for the payer (the side whose turn it is
@@ -1900,8 +2282,9 @@ and `GET /owner`. The budget card and its check (since 2026-11-14) use unit-neut
 
 Every error body is `{"error": <code>, "message": <text>, ...extra}`. By status:
 
-- **400**: `bad_json`; `invalid_field` (a field's value; with circulation also the policy fields, a malformed issuer
-  id, `signatures` not exactly the caller's slots, a resolve note or outcome, `since`; any query parameter of `GET
+- **400**: `bad_json`; `invalid_field` (a field's value, and `{field}` for a join that names a placeholder or a list
+  that adds a join that didn't finish; with
+  circulation also the policy fields, a malformed issuer id, `signatures` not exactly the caller's slots, a resolve note or outcome, `since`; any query parameter of `GET
   /ledger/committed`); `invalid_terms`;
   `hash_mismatch` (+`canonical`); `self_edge` (pay with a note you issued); `pay_with_is_payee` (pay the payee with its
   own note).
@@ -1913,13 +2296,15 @@ Every error body is `{"error": <code>, "message": <text>, ...extra}`. By status:
   rules: `pay_with_held_notes`, `expires_at`, `max_collecting_transfers`, `max_attempts_per_deal`,
   `may_accept_credit`, `accept_transfers`, `counterparties`, the credit rules, `min_payer_coverage_pct`,
   `creditor_consent`, `issuer_key`, `novate_own_debt`, `issuer_consent`, `sandbox_only`, and for members `inactive`,
-  `auto_clear`, `expires_at`).
+  `auto_clear`, `expires_at`); a local server only: `host_not_allowed`, `cross_origin` ("Writes on a local server"),
+  `admin_loopback_only`, `admin_token_required` ("Admin").
 - **404**: `not_found` (also every route the current mode does not have, and non-parties of a deal, transfer or
   set-off); `card_not_public` (an agent's budget card and check before its owner published the card); `no_chain`
   (`GET /chain`, `/reserves` and `/ledger/committed` on a local server, `VALUN_ENVIRONMENT=local`, which has no chain:
   its `GET /info` says `environment: "local"` and `environment_note`).
 - **405**: `method_not_allowed` (a `HEAD` sent with a token where the token would be checked; see "Endpoints").
-- **409**: `handle_taken`, `display_name_taken`, `key_in_use`, `already_enrolled`, `no_agent`, `duplicate`, `not_open`,
+- **409**: `handle_taken` (`{retry_after_ms, held_until}` when an unfinished join holds the handle; see "Join and
+  enroll"), `display_name_taken` (the same two fields then), `key_in_use`, `already_enrolled`, `no_agent`, `duplicate`, `not_open`,
   `own_offer`, `counter_pending`, `conflicting_pending`, `stale_terms`, `key_changed {party?}`, `offer_not_authorized`,
   `acceptance_not_authorized`, `expired`, `not_pending`, `unknown_approval_kind`, `wrong_state`, `payee_no_key`,
   `no_key`, `stale_note {template?}`, `note_timestamp_ahead {retry_after_ms, last_note_timestamp?}`, `pair_busy
@@ -1933,7 +2318,7 @@ Every error body is `{"error": <code>, "message": <text>, ...extra}`. By status:
   `call_lapsed {issuer_owes_creditor, claimed_on_debt}`, `already_honored`, `stale_amount`, `honor_in_progress
   {retry_after_ms}`, `guarantee_in_use {deals}`, `bound_note_required`, `creditor_no_key`; redemption: `reserve_busy
   {retry_after_ms, spending_tx?}`.
-- **413**: `too_large`. **429**: `rate_limited`; `sandbox_full {retry_after_ms, resets_at}` (fix inbox #61); `too_many_open_offers` (the
+- **413**: `too_large`. **415** (a local server only): `json_required` ("Writes on a local server"). **429**: `rate_limited {retry_after_ms}`; `sandbox_full {retry_after_ms, resets_at}` (fix inbox #61); `too_many_open_offers` (the
   open network; also more than 10 guarantee offers open from one backer).
 - **502**: `tracker_unavailable`, `signer_error`, or `{"error": "internal error"}` for anything unexpected.
 - **503**: `tracker_downgraded {retry_after_ms}` (release v16.1: every pilot write while the tracker reports no valid

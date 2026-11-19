@@ -36,6 +36,16 @@ const override = process.env.VALUN_PUBLIC_ORIGIN;
 if (override !== undefined && !(/^https:\/\/[a-z0-9.-]+$/.test(override) || (LOCAL && LOCAL_ORIGIN_RE.test(override))))
   throw new Error(`VALUN_PUBLIC_ORIGIN must be an https origin with no path${LOCAL ? ', or http://127.0.0.1, http://localhost or http://[::1] with a port' : ''}, not '${override}'`);
 const localOrigin = () => `http://127.0.0.1:${/^\d{1,5}$/.test(process.env.PORT ?? '') ? process.env.PORT : '4320'}`;
+// Never the public network's own hosts, or a public service's, on a local server (fix inbox #155): it writes its origin
+// into every join and --server its skill.md, llms.txt, banner and A2A answer give, so VALUN_PUBLIC_ORIGIN=https://valun.tech
+// (the testnet's value of this setting, easy to copy) made a local server send its agents' joins to the public testnet,
+// in a profile named local (the local-readiness audit, FB-13). Refused there: valun.tech and every name under it, Fly's
+// app hosts (*.fly.dev: the testnet's, staging's, and the retired desk's, which replays to the testnet) and the Ergo
+// explorer's (*.ergoplatform.com). Elsewhere nothing changes: the testnet's own origin is https://valun.tech.
+const PUBLIC_HOST_RE = /^(?:[a-z0-9-]+\.)*(?:valun\.tech|fly\.dev|ergoplatform\.com)\.?$/;
+if (LOCAL && override !== undefined && PUBLIC_HOST_RE.test(override.replace(/^https:\/\//, '')))
+  throw new Error(`VALUN_PUBLIC_ORIGIN=${override} names the public network or a public service, not this local server: its agents would be sent `
+    + `there (every join its skill.md gives names it with --server). Give this server's own origin, ${localOrigin()} by default`);
 export const PUBLIC_ORIGIN = override || (LOCAL ? localOrigin() : NETWORKS[NETWORK].origin);
 
 // A default or bound written in PC-sized amounts, in this network's unit.
@@ -53,4 +63,7 @@ export function amt(n) {
 export const BACKING = ON_TESTNET
   ? 'Ergo TESTNET: the tracker anchors its state on testnet; an issuer may back its notes with a tERG reserve on testnet; tERG are test coins with no monetary value'
   : 'none: the pilot tracker has no chain and no reserves; PC are simulated units';
-export const TRACKER_PLACE = ON_TESTNET ? 'the testnet tracker (its state anchored on Ergo testnet)' : 'the pilot tracker (local, no chain)';
+// Where a note is held. On the testnet, whether a tracker box on Ergo testnet commits it is said apart, from the note's
+// own confirmation (Pilot.view, labels.basis): "its state anchored on Ergo testnet" stood beside confirmation local_only
+// (the newcomer run of Nov 18, finding 12).
+export const TRACKER_PLACE = ON_TESTNET ? 'the testnet tracker' : 'the pilot tracker (local, no chain)';

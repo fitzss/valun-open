@@ -6,33 +6,30 @@ import {UserError} from './valun.mjs';
 import {PROTOCOL_VERSIONS, unavailableReply} from './mcp.mjs';
 import {renderLoopNotFound} from './pilot/loops.mjs';
 import {renderAgentNotFound, renderMaintainersPage} from './pilot/agents.mjs';
-import {A2A_PATHS} from './a2a.mjs';
+import {A2A_PATHS, LOCAL_MCP} from './a2a.mjs';
 import {ON_TESTNET, PUBLIC_ORIGIN} from './pilot/units.mjs';
 import {ipKey} from './ipkey.mjs';
+import {STAGING_DOCS, stagingPage} from './staging-docs.mjs';
+import {LOCAL_FILES, localPage} from './local-pages.mjs';
 import {LOCAL, STAGING, STAGING_BANNER, localBanner, withBanner} from './environment.mjs';
 
-const SKILL_FILE = ON_TESTNET ? 'skill-testnet.md' : 'skill.md';
-const LLMS_FILE = ON_TESTNET ? 'llms-testnet.txt' : 'llms.txt';
+// The files for agents: /skill.md (also /agents.md) and /llms.txt. The testnet network (valun-testnet-1) serves its own
+// (public/skill-testnet.md, public/llms-testnet.txt). A local server (VALUN_ENVIRONMENT=local, the local image; fix inbox
+// #150) serves its own too, public/skill-local.md and public/llms-local.txt: its network is valun-pilot-1 in PC with no
+// chain, and every command there runs in a client profile of its own and names this server, since the client's default
+// server is the public network. scripts/build-local-docs.mjs renders them from scripts/local-docs/ and the shared parts
+// of skill-testnet.md (test/local-agent-docs.test.mjs fails when they are stale). Elsewhere, the retired pilot's.
+const SKILL_FILE = LOCAL ? 'skill-local.md' : ON_TESTNET ? 'skill-testnet.md' : 'skill.md';
+const LLMS_FILE = LOCAL ? 'llms-local.txt' : ON_TESTNET ? 'llms-testnet.txt' : 'llms.txt';
 // The banner every HTML page opens with (lib/environment.mjs): staging's, a local server's (naming this server), or none.
 const BANNER = STAGING ? STAGING_BANNER : LOCAL ? localBanner(PUBLIC_ORIGIN) : null;
-// A local server (fix inbox #143): skill.md (also /agents.md) and llms.txt begin with how to point a client at it, since
-// their commands otherwise reach the client's default server, the public network. skill.md keeps its front matter first
-// (skill loaders read it there); in llms.txt the note follows the title. Elsewhere the files are served as they are.
-export const localPreface = origin => `> **A local Valun server, with no chain.** This file is served by a copy of Valun running at ${origin}, `
-  + 'not by the public network: its tracker has no blockchain connection, so nothing here is anchored on a chain or '
-  + 'redeemable, and its credits have no monetary value.\n'
-  + `> Point your Valun client at this server before anything below: \`valun config server ${origin}\` (or add \`--server ${origin}\` `
-  + 'to `valun join`). Without that, the commands below reach the public network at https://valun.tech, which the links below name too.\n';
-export function withLocalPreface(file, origin) {
-  const text = String(file), front = /^---\r?\n[\s\S]*?\r?\n---\r?\n/.exec(text);
-  const at = front ? front[0].length : text.indexOf('\n') + 1 || text.length;
-  return `${text.slice(0, at)}\n${localPreface(origin)}${text.slice(at)}`;
-}
 // /llms.txt (fix inbox #88): the testnet's names its links by the network's public origin, as the pages the server
 // renders do (PUBLIC_ORIGIN: https://valun.tech on the testnet, which valun.tech serves since 2026-11-13; staging's own
-// host on staging). Its file writes that origin as LLMS_ORIGIN; the pilot's has its own links and no such mark.
+// host on staging). Its file writes that origin as LLMS_ORIGIN; the pilot's has its own links and no such mark. A local
+// server's skill-local.md and llms-local.txt write it the same way: they name this server's origin, and only that.
 export const LLMS_ORIGIN = '{origin}';
 export const llmsText = (publicDir, origin = PUBLIC_ORIGIN) => fs.readFileSync(path.join(publicDir, LLMS_FILE), 'utf8').replaceAll(LLMS_ORIGIN, origin);
+const skillText = (file, origin = PUBLIC_ORIGIN) => (LOCAL ? String(file).replaceAll(LLMS_ORIGIN, origin) : file);
 const STATIC = new Map([['/', 'index.html'], ['/app.js', 'app.js'], ['/styles.css', 'styles.css'],
   // The owner console (/pilot#owner, on the site's base: site.css, then pilot.css) and the network's other views.
   ['/pilot', 'pilot.html'], ['/pilot/', 'pilot.html'], ['/pilot.js', 'pilot.js'], ['/pilot.css', 'pilot.css'],
@@ -53,13 +50,17 @@ const STATIC = new Map([['/', 'index.html'], ['/app.js', 'app.js'], ['/styles.cs
   // For agents: the one-file onboarding any agent can follow ("Read valun.tech/skill.md and follow it"), the same file
   // at /agents.md; the llms.txt index of what is here is served apart (llmsText).
   // The testnet network (valun-testnet-1) serves its own (public/skill-testnet.md: nanoERG, settlement on Ergo testnet;
-  // public/llms-testnet.txt: the testnet's own links).
+  // public/llms-testnet.txt: the testnet's own links), and so does a local server (public/skill-local.md; SKILL_FILE).
   ['/skill.md', SKILL_FILE], ['/agents.md', SKILL_FILE],
   // Self-hosted fonts (the CSP allows no external font); their OFL license texts are in public/fonts.
   ['/fonts/jost-latin.woff2', 'fonts/jost-latin.woff2'], ['/fonts/jetbrains-mono-latin-400.woff2', 'fonts/jetbrains-mono-latin-400.woff2'],
   // Staging's banner (lib/environment.mjs) brings its own stylesheet: served on staging only, so nothing changes elsewhere.
   // So does a local server's, served there only.
-  ...(STAGING ? [['/staging.css', 'staging.css']] : []), ...(LOCAL ? [['/local.css', 'local.css']] : [])]);
+  ...(STAGING ? [['/staging.css', 'staging.css']] : []), ...(LOCAL ? [['/local.css', 'local.css']] : []),
+  // A local server's /start is its own (public/start-local.html, scripts/build-local-docs.mjs; fix inbox #155, FB-2): how
+  // to use this server, every command in the profile local and naming it. These entries come last, so they replace the
+  // public network's /start above there; elsewhere there are none.
+  ...(LOCAL ? [['/start', 'start-local.html'], ['/start/', 'start-local.html']] : [])]);
 // The public domain's home page is the Close the Loop landing (public/home.html, also at /home on every host); the desk
 // console stays at / on valun-desk.fly.dev and every other host. A local server runs no desk (fix inbox #143): its / is
 // the landing too, on any host.
@@ -74,17 +75,36 @@ const SEC_HEADERS = {
 // (fix inbox #64; deskAvailable below).
 export const DESK_UNAVAILABLE = Object.freeze({error: 'desk_unavailable',
   message: 'the synthetic demo desk is unavailable: its demo tracker is starting, stopped or not answering (fix inbox #64); the Valun network is under /pilot/v1 (see /skill.md)'});
+// A local server (VALUN_ENVIRONMENT=local; fix inbox #151) never builds the desk (server.mjs), so it has no MCP endpoint
+// and no /api: every request to /mcp answers 404 with the MCP server an agent runs instead, on its own machine in the
+// client profile it joined with (lib/a2a.mjs LOCAL_MCP), and /api/* 404 with where the network is. Before, both answered
+// 503 desk_unavailable ("its demo tracker is starting, stopped or not answering (fix inbox #64)"), though nothing ever
+// starts a desk there, and the start line said "MCP at /mcp" (the local-readiness audit, SRV-12).
+export const LOCAL_NO_MCP = Object.freeze({error: 'no_mcp_endpoint', message: 'this local server has no MCP endpoint: an agent runs Valun\'s MCP '
+  + `server on its own machine, in the client profile it joined this server with: ${LOCAL_MCP} (how to join: ${PUBLIC_ORIGIN}/skill.md)`});
+export const LOCAL_NO_DESK = Object.freeze({error: 'not_found', message: 'this local server runs no demo desk (/api): the Valun network is under '
+  + `/pilot/v1, and agents start at ${PUBLIC_ORIGIN}/skill.md`});
 
 // deskAvailable (server.mjs, fix inbox #64): beside the network the legacy synthetic desk (/api, /mcp) is optional, and
 // this says whether it can answer now. While it says no, nothing reaches the service or the MCP tools: every /api/*
 // request answers 503 desk_unavailable before anything else is checked, and a POST to /mcp that passes the transport's
 // own checks answers 503 in JSON-RPC (mcpEndpoint). null (the desk alone, and the tests): no such check, every desk
 // request is handled as before.
+// The server's own pages as staging serves them (lib/staging-docs.mjs stagingPage): the HTML files of public/ (the
+// landing included) and the maintainers page, whose every word is the server's. On staging each join written out on
+// them names staging's server, and their agent prompts read staging's skill.md; elsewhere they go as they are. Never a
+// page that shows what a participant wrote: an agent page, a loop card (the review of PR #9, code 1: an agent's own
+// about, services or display name that quoted a join or the prompt was served rewritten).
+// A local server (lib/local-pages.mjs, fix inbox #155: FB-2, the page half of FB-7) serves each of them its own way,
+// by `name` (its file in public/, or 'maintainers'): every command in the profile local and naming this server, the
+// prompts reading this server's skill.md, its canonical and og tags naming it, and what needs the chain marked.
+const ownPage = (html, name) => (STAGING ? stagingPage(html, PUBLIC_ORIGIN) : LOCAL ? localPage(name, html, PUBLIC_ORIGIN) : html);
 export function createHandler({service, mcp, cfg, publicDir, pilotRoutes = null, a2a = null, deskAvailable = null}) {
   const send = (res, status, body, type = 'application/json; charset=utf-8', extra = {}) => {
     // Every HTML page leaves through here, the files of public/ and the rendered ones alike (the pilot's routes are
     // handed this send): on staging and on a local server each opens with its banner (lib/environment.mjs); elsewhere
-    // it goes as it is.
+    // it goes as it is. What staging changes in the server's own pages is ownPage's, never here: a rendered page can
+    // show what a participant wrote (an agent page's profile, a loop card's members), which goes out as written.
     if (type.startsWith('text/html')) body = withBanner(body, BANNER);
     const payload = body == null ? '' : typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body, null, 1);
     // Every answer says its length (Content-Length; none on a 204 or 304, which have no body). writeHead before end()
@@ -164,7 +184,7 @@ export function createHandler({service, mcp, cfg, publicDir, pilotRoutes = null,
     // and never authenticate it (lib/pilot/http.mjs). The legacy desk's /api answers GET only, as before.
     const GH = req.method === 'GET' || req.method === 'HEAD';
     if (p === '/' && GH && (LOCAL || HOME_HOSTS.has(String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '')))) {
-      return send(res, 200, fs.readFileSync(path.join(publicDir, 'home.html')), HTML);
+      return send(res, 200, ownPage(fs.readFileSync(path.join(publicDir, 'home.html')), 'home.html'), HTML);
     }
     // A loop card (lib/pilot/loops.mjs): server-rendered with its Open Graph tags, for link previews.
     let lm;
@@ -173,19 +193,31 @@ export function createHandler({service, mcp, cfg, publicDir, pilotRoutes = null,
       return send(res, 404, renderLoopNotFound(), HTML);
     }
     // The open-source maintainers page (lib/pilot/agents.mjs), static text in the shell of the loop cards.
-    if (GH && p === '/maintainers') return send(res, 200, renderMaintainersPage(), HTML);
+    if (GH && p === '/maintainers') return send(res, 200, ownPage(renderMaintainersPage(), 'maintainers'), HTML);
     // An agent's public page (lib/pilot/agents.mjs), server-rendered with its Open Graph tags, for sharing.
     if (GH && (lm = /^\/agent\/([^/]{1,64})$/.exec(p))) {
       if (pilotRoutes?.agentPage) return pilotRoutes.agentPage(req, res, lm[1], send, clientIp);
       return send(res, 404, renderAgentNotFound(), HTML);
     }
+    // Staging only (lib/staging-docs.mjs): skill.md (also /agents.md), its joins included, names staging's origin and opens
+    // with how to keep a client on staging (the pages' own changes are ownPage's: stagingPage). Everywhere else they are
+    // served below, as they are.
+    if (STAGING && GH && Object.hasOwn(STAGING_DOCS, p)) {
+      const f = STATIC.get(p);
+      return send(res, 200, STAGING_DOCS[p](fs.readFileSync(path.join(publicDir, f)), PUBLIC_ORIGIN), TYPES[path.extname(f)]);
+    }
     // The A2A front door (lib/a2a.mjs): the Agent Card and the JSON-RPC endpoint, with their own CORS and rate limit.
     if (a2a && A2A_PATHS.has(p)) return a2a(req, res, p, send, clientIp);
-    if (GH && p === '/llms.txt') return send(res, 200, LOCAL ? withLocalPreface(llmsText(publicDir), PUBLIC_ORIGIN) : llmsText(publicDir), TYPES['.txt']);
+    if (GH && p === '/llms.txt') return send(res, 200, llmsText(publicDir), TYPES['.txt']);
     if (GH && STATIC.has(p)) {
-      const f = STATIC.get(p), file = fs.readFileSync(path.join(publicDir, f));
-      return send(res, 200, LOCAL && f === SKILL_FILE ? withLocalPreface(file, PUBLIC_ORIGIN) : file, TYPES[path.extname(f)]);
+      const f = STATIC.get(p), file = fs.readFileSync(path.join(publicDir, f)), type = TYPES[path.extname(f)];
+      // A local server's owner console script names the commands it shows in the profile local, with this server
+      // (lib/local-pages.mjs); every other file goes as it is, there as everywhere.
+      return send(res, 200, f === SKILL_FILE ? skillText(file) : type === HTML ? ownPage(file, f)
+        : LOCAL && LOCAL_FILES.has(f) ? localPage(f, file, PUBLIC_ORIGIN) : file, type);
     }
+    // A local server has neither (LOCAL_NO_MCP, LOCAL_NO_DESK): nothing reaches the desk's service or MCP tools there.
+    if (LOCAL && (p === '/mcp' || p.startsWith('/api/'))) return send(res, 404, p === '/mcp' ? LOCAL_NO_MCP : LOCAL_NO_DESK);
     if (p === '/mcp') return mcpEndpoint(req, res);
     if (pilotRoutes && p.startsWith('/pilot/v1/')) {
       const cors = publicRead(req);

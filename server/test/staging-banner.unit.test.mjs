@@ -86,7 +86,23 @@ test('staging: GET /pilot/v1/info says environment: "staging", next to the netwo
   assert.deepEqual(rest, runs.testnet.info);
 });
 
-test('staging: every HTML page opens with the banner, which links to https://valun.tech; nothing else changes', () => {
+// What staging changes on a page besides the banner (lib/staging-docs.mjs; test/staging-docs.unit.test.mjs says why),
+// written out here: on the server's own pages (the files of public/ and the maintainers page) every join names staging's
+// server (as the A2A answer's do: after --sandbox, and after the Hermes join's --direct-tools); /start's and /home's
+// one-line agent prompt read staging's skill.md; /start's lost-join check looks the handle up in staging's directory;
+// /network's join command names its server too. A page that shows what a participant wrote (an agent page, a loop card)
+// is served as written (the review of PR #9, code 1: /agent/quote-bot quotes a join and the prompt).
+function stagingOwn(p, origin) {
+  if (!p.file && p.route !== '/maintainers') return text(p.page);
+  let page = text(p.page).replace(/join --sandbox( --direct-tools)?/g, (m) => `${m} --server ${origin}`);
+  const prompt = 'Read https://valun.tech/skill.md and follow it to join Valun.';
+  if (p.file === 'start.html' || p.file === 'home.html') page = page.replace(prompt, `Read ${origin}/skill.md and follow it to join Valun.`);
+  if (p.file === 'start.html') page = page.replace('https://valun.tech/<wbr>pilot/<wbr>v1/<wbr>participants?q=YOUR-HANDLE', `${origin}/<wbr>pilot/<wbr>v1/<wbr>participants?q=YOUR-HANDLE`);
+  if (p.file === 'network.html') page = page.replace('<span>valun join</span> <span>--sandbox</span>', `<span>valun join</span> <span>--sandbox</span> <span>--server ${origin}</span>`);
+  return page;
+}
+
+test('staging: every HTML page opens with the banner, which links to https://valun.tech; nothing else changes but its joins, /start\'s and /home\'s prompts and /start\'s lost-join check', () => {
   assert.ok(!BANNER.includes('\n'), 'one line');
   assert.ok(BANNER.includes('<a href="https://valun.tech">https://valun.tech</a>'), 'the link to the network');
   assert.doesNotMatch(BANNER, /<style\b|<script\b|\sstyle=|\son[a-z]+=|javascript:/i, 'no inline style or script (the CSP allows none)');
@@ -96,14 +112,20 @@ test('staging: every HTML page opens with the banner, which links to https://val
     const t = runs.testnet.pages[i];
     assert.match(p.type, /^text\/html/, named(p));
     assert.deepEqual([p.status, p.type, p.csp], [t.status, t.type, t.csp], `${named(p)}: the testnet's status and headers`);
-    const page = text(p.page), open = /<body\b[^>]*>/i.exec(page);
+    // Its joins name staging's server; /start's and /home's prompts read staging's own skill.md (stagingOwn); an agent
+    // page that quotes them keeps its participant's words.
+    const own = stagingOwn(p, runs.staging.origin);
+    if (['start.html', 'home.html', 'network.html'].includes(p.file) || p.route === '/maintainers') assert.notEqual(own, text(p.page), `${named(p)}: staging changes it`);
+    if (p.route === '/agent/quote-bot') assert.match(own, /valun join --sandbox --handle you\. Read https:\/\/valun\.tech\/skill\.md and follow it to join Valun\./, `${named(p)}: as written`);
+    const page = own, open = /<body\b[^>]*>/i.exec(page);
     assert.ok(open, `${named(p)}: has a <body> tag`);
     const at = open.index + open[0].length;
     assert.equal(text(p.body), `${page.slice(0, at)}\n${BANNER}${page.slice(at)}`, `${named(p)}: the page with the banner right after <body>`);
   });
   // Every HTML file of public/ is among the pages checked (a new one is added to test/fixtures/staging-pages.mjs), but
   // for story-fragment.html: no route serves it, it is the markup of home.html's <section id="how"> (test/story.test.mjs).
-  const checked = new Set(pages.map(p => p.file).filter(Boolean)), PARTS = new Set(['story-fragment.html']);
+  // And for start-local.html, a local server's /start (lib/http.mjs serves it there only: test/local-pages.unit.test.mjs).
+  const checked = new Set(pages.map(p => p.file).filter(Boolean)), PARTS = new Set(['story-fragment.html', 'start-local.html']);
   for (const f of fs.readdirSync(path.join(root, 'public')).filter(f => f.endsWith('.html') && !PARTS.has(f))) assert.ok(checked.has(f), `public/${f}`);
   // The banner's stylesheet, from 'self' as the CSP wants, served on staging; in the flow, so it covers nothing.
   const css = fs.readFileSync(path.join(root, 'public', 'staging.css'));

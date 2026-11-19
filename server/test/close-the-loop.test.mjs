@@ -13,7 +13,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {Pilot, PilotStore, PILOT_DENOMINATION} from '../lib/pilot/core.mjs';
 import {createPilotRoutes, PUBLIC_CACHE_MS} from '../lib/pilot/http.mjs';
 import {createHandler} from '../lib/http.mjs';
-import {loopOf, loopsOf, kindOf, esc, LOOPS_MAX} from '../lib/pilot/loops.mjs';
+import {loopOf, loopsOf, loopsBefore, kindOf, esc, LOOPS_MAX} from '../lib/pilot/loops.mjs';
 import {readBody, runNetworkPage} from './network-dom.mjs';
 import {settle} from './console-dom.mjs';
 
@@ -138,6 +138,48 @@ test('loopOf and loopsOf: the pure parts', () => {
   const gone = loopOf(setoff('vs_00000000000000b0', [P.X, {id: 'vp_ffffffffffff', pubkey: '03' + 'f'.repeat(64)}], 1, '2026-11-11T00:00:00Z'), pilot.s.participants, pub);
   assert.deepEqual(gone.members, [{handle: 'sandbox-exact', kind: 'sandbox_agent'}, {handle: null, kind: 'unknown'}]);
   assert.equal(esc(HOSTILE), '&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;&amp;&#39;&quot;');
+  // Paging (the local-readiness audit, MR-12): after the last of the newest LOOPS_MAX, the 7 older ones, and nothing
+  // after the oldest; an id that is no applied loop pages nowhere.
+  const id = i => `vs_${String(i).padStart(16, '0')}`;
+  const older = loopsBefore(many, pilot.s.participants, pub, list.at(-1).id);
+  assert.deepEqual(older.loops.map(l => l.id), [6, 5, 4, 3, 2, 1, 0].map(id));
+  assert.equal(older.next_before, null);
+  assert.deepEqual(older.loops[0], loopOf(many[id(6)], pilot.s.participants, pub), 'each loop as the list gives it');
+  const two = loopsBefore(many, pilot.s.participants, pub, id(LOOPS_MAX + 6), 2);
+  assert.deepEqual([two.loops.map(l => l.id), two.next_before], [[id(LOOPS_MAX + 5), id(LOOPS_MAX + 4)], id(LOOPS_MAX + 4)]);
+  assert.deepEqual(loopsBefore(many, pilot.s.participants, pub, id(0)), {loops: [], next_before: null});
+  assert.equal(loopsBefore(many, pilot.s.participants, pub, 'vs_ffffffffffffffff'), null);
+});
+
+test('GET /pilot/v1/loops?before=<id>: the loops after that one, as many as a page holds, with next_before; a bad id 400, an unknown one 404; without it, as before', async () => {
+  // More loops than a page: LOOPS_MAX + 3 on a server of their own.
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'valun-loops-paged-'));
+  const p2 = new Pilot({store: new PilotStore(d), basis: {denomination: PILOT_DENOMINATION, nft: '0'.repeat(64), url: 'stub', allNotes: async () => []}, log: () => {}});
+  for (const p of Object.values(P)) p2.s.participants[p.id] = {...p, ...SECRET, status: 'active', created_at: '2026-11-11T10:00:00.000Z', operator: 'op', services: ''};
+  p2.s.setoffs = {};
+  const id = i => `vs_${String(i).padStart(16, '0')}`;
+  for (let i = 0; i < LOOPS_MAX + 3; i++) p2.s.setoffs[id(i)] = setoff(id(i), [P.X, P.M], 1, new Date(Date.UTC(2026, 10, 1, 0, i)).toISOString());
+  const s2 = http.createServer(createHandler({service: {}, mcp: {}, cfg: {}, publicDir: path.join(root, 'public'),
+    pilotRoutes: createPilotRoutes({pilot: p2, cfg: {pilotRateLimitPerMinute: 100000, publicCacheMs: PUBLIC_CACHE_MS}})}));
+  await new Promise(r => s2.listen(0, '127.0.0.1', r));
+  const at = `http://127.0.0.1:${s2.address().port}/pilot/v1/loops`, json = async u => { const r = await fetch(u); return {status: r.status, body: await r.json()}; };
+  try {
+    const first = await json(at);
+    assert.deepEqual(Object.keys(first.body).sort(), ['loops', 'network', 'unit'], 'without before: the answer as it was');
+    assert.equal(first.body.loops.length, LOOPS_MAX);
+    const next = await json(`${at}?before=${first.body.loops.at(-1).id}`);
+    assert.equal(next.status, 200);
+    assert.deepEqual(Object.keys(next.body), ['unit', 'network', 'loops', 'before', 'next_before']);
+    assert.deepEqual(next.body.loops.map(l => l.id), [id(2), id(1), id(0)]);
+    assert.deepEqual([next.body.before, next.body.next_before], [first.body.loops.at(-1).id, null]);
+    assert.deepEqual(next.body.loops[0], (await json(`${at}/${id(2)}`)).body, 'each loop as GET /loops/<id> gives it');
+    const mid = await json(`${at}?before=${id(LOOPS_MAX + 2)}`);
+    assert.deepEqual([mid.body.loops.length, mid.body.next_before], [LOOPS_MAX, id(2)], 'a full page, and the id of the next');
+    for (const [q, status, error] of [['', 400, 'invalid_field'], ['vs_x', 400, 'invalid_field'], [id(999), 404, 'not_found']]) {
+      const r = await json(`${at}?before=${q}`);
+      assert.deepEqual([r.status, r.body.error], [status, error], JSON.stringify(q));
+    }
+  } finally { s2.close(); fs.rmSync(d, {recursive: true, force: true}); }
 });
 
 // ---------- the loop card ----------
@@ -374,22 +416,27 @@ test('the landing claims no more than the evidence: test agents, how far each wa
   assert.ok(text.includes("Each person's client has to be running when the loop closes, so it can sign: valun mcp or the Hermes plugin does this, and a shell agent keeps valun clearing watch running, or checks its inbox, until the loop clears."));
   assert.doesNotMatch(text, /invite code|with an invite|an organizer/i);
   // Bring your agent: one released client, no invite, and how far each way was tested (the compatibility evidence).
-  assert.ok(text.includes('Three ways in, all on the same released client, valun==0.7.1. No invite is needed.'));
+  assert.ok(text.includes('Three ways in, all on the same released client, valun==0.7.2. No invite is needed.'));
   // The Claude Code run as its evidence has it (the team's record of the Nov 17 run): the join in a terminal,
   // the owner's side scripted, ask cancelled and client-prompt refused by headless Claude Code, its own prompts untested.
   for (const s of ["Tested so far One complete exchange in Claude Code 2.1.326, on Nov 17 (build 09875a4): the join in a terminal (CLI), claude mcp add, then a summary bought from house-scribe and paid with the agent's IOU. It ran headless (claude -p) with console approvals, and the owner's side was scripted: approvals through the owner console's API, and Claude Code's permission prompts answered by a script.",
     "In that run Claude Code cancelled ask's form and refused client-prompt; other headless setups haven't been tested, so choose console or none on purpose. Claude Code's own approval prompts, in the interactive app, are not tested yet. Scripted MCP clients too (Nov 16). Other MCP apps: not tested yet, so tell us how it goes.",
     'The Claude Code plugin has had an install check only (plugin 0.4.1, Nov 11).',
-    // ask is a form the app may or may not show a person (valun 0.7.1 mcp_server.py: elicitation; approval_unavailable)
-    "In the default mode, ask, valun mcp sends an approval form through your app before each commitment (MCP elicitation); if the form is cancelled or can't be shown, nothing is signed. Whether a person sees it depends on the app: no interactive app has been verified yet.",
+    // The join holds each commitment for the owner console (fix inbox #138: console is the first tester's default until
+    // an interactive app's approval forms are verified). ask is a form the app may or may not show a person (valun 0.7.1
+    // mcp_server.py: elicitation; approval_unavailable)
+    // What console holds, never "each commitment" (the approval semantics of 2026-11-17: honors, guarantee acts and
+    // consents never wait), and where it is said in full (/start#approve).
+    "You join once in a terminal, with console approvals, then add the local server, valun mcp, to your app. With console, the first tester's default, what your agent signs (its offers, acceptances, guarantee offers and the IOU at each delivery) waits for you at valun.tech/pilot#owner (what you approve).",
+    "If your app shows MCP approval forms (elicitation), you can join with ask instead: valun mcp then sends a form through your app before each commitment, and if the form is cancelled or can't be shown, nothing is signed. Whether a person sees it depends on the app: no interactive app has been verified yet.",
     // Hermes asks through its own approval gate (hermes-plugin-valun 0.7.1: never run with --yolo)
     'By default Hermes asks you in the conversation before each commitment, through its own approval gate, so never run it with --yolo.',
     'Tested so far End to end in a real Hermes (v0.23.1) with plugin 0.6.0, on Nov 13, by our QA bot. The current plugin, 0.7.1, is not yet verified in a real Hermes.',
     // a shell agent: console or none, its human's choice (the lead's D10); the scripted runs with their dates and builds
     // (d11e6b4 for the newcomer run, 17:24-17:43 UTC; the QA bot's daily sweeps on Nov 16, 10:54 UTC, on 103b25f and on
     // Nov 17, 10:46 UTC, on 09875a4: 1b1f18f reached the testnet at about 14:44 UTC, after them)
-    'A shell agent can\'t show you a prompt: it joins with console (you approve each commitment in the owner console) or none (it acts alone within the limits), and it asks you which.',
-    "Tested so far The valun command (0.7.1) is run by scripts: our QA bot daily (Nov 16-17, builds 103b25f and 09875a4), and a Claude session acting as a newcomer on a clean profile (Nov 16, build d11e6b4). No AI agent has yet been recorded following this line from start to finish. An AI agent of the team's (muse) used the valun command and the JS library end to end on Nov 16-17, a redemption included, after join and connection failures (known issues)."])
+    'A shell agent can\'t show you a prompt: it joins with console (you approve what it signs, its offers, acceptances, guarantee offers and the IOU at each delivery, in the owner console) or none (it acts alone within the limits), and it asks you which.',
+    "Tested so far The valun command is run by scripts: 0.7.1 by our QA bot daily (Nov 16-17, builds 103b25f and 09875a4), and by a Claude session acting as a newcomer on a clean profile (Nov 16, build d11e6b4); 0.7.2, the release this line runs, as a release candidate by the team on staging (Nov 17-18), not yet by our QA bot. No AI agent has yet been recorded following this line from start to finish. An AI agent of the team's (muse) used the valun command and the JS library end to end on Nov 16-17, a redemption included, after join and connection failures (known issues)."])
     assert.ok(text.includes(s), s);
   assert.doesNotMatch(text, /the current build/, 'every label names its build');
   // Before you paste the one line: what following skill.md does (the lead's D9), skill.md first and live; approving in
@@ -398,8 +445,8 @@ test('the landing claims no more than the evidence: test agents, how far each wa
   // and OpenClaw's saved copy of skill.md (skill.md section 1).
   const before = homeWords(/<div class="note before-paste">[\s\S]*?<\/div>/.exec(home)[0]);
   for (const s of ['Before you paste it', 'Read /skill.md first. It is served live, so it can change.',
-    'Your agent will ask you for a handle and your name (both public and permanent), one line about what it offers, and whether you approve each commitment (in your app or in the owner console) or let it act alone.',
-    'It runs valun 0.7.1 from PyPI with uvx, and may offer to install uv.',
+    'Your agent will ask you for a handle and your name (both public and permanent), one line about what it offers, and whether you approve what it signs (in the owner console, the first tester\'s default, or in your app) or let it act alone.',
+    'It runs valun 0.7.2 from PyPI with uvx, and may offer to install uv.',
     'It makes its key, stored unencrypted in your Valun profile folder, and writes your owner token to a new file named for its handle, ~/valun-owner-token-YOUR-HANDLE.txt: move that file into your password manager.',
     "If join can't write it, join prints the token instead; your agent should stop, not repeat it, and tell you to keep it only in your password manager.",
     "In an MCP app it adds the valun server to the app's config and asks you to restart.",
@@ -410,12 +457,14 @@ test('the landing claims no more than the evidence: test agents, how far each wa
   assert.doesNotMatch(text, /\bsupported\b|\bworks with\b|\btested (?:with|in) (?:Claude|Codex|Cursor|Hermes|OpenClaw)/i);
   // Approvals and limits as the client and the server have them: four modes, limits the server enforces in every mode.
   // Never "your owner is always asked": some steps are signed without asking in every mode (/start lists them).
-  assert.ok(text.includes('You choose the mode: ask (the default), client-prompt, console or none. Some steps are signed without asking in every mode, such as deliveries, disputes and loop sign-offs within local caps (the full list).'));
+  // Console first (Fitz's decision of 2026-11-18), with ask named as valun's own default.
+  assert.ok(text.includes("You choose the mode: console (the first tester's default: your agent's offers, acceptances, guarantee offers and the IOU at each delivery wait for you in the owner console), ask (valun's own default), client-prompt or none (what you approve). Some steps are signed without asking in every mode, such as deliveries, disputes and loop sign-offs within local caps (the full list)."));
+  assert.ok(home.includes('<a href="/start#approve">what you approve</a>'));
   assert.ok(home.includes('<a href="/start#credentials">the full list</a>'));
   // the testnet's default acceptance (test/home-page.test.mjs checks its number against the server's; each client signs
   // only for its own key: the lead's D3b), and that a console hold is the operator's server's (lib/pilot/core.mjs: the
   // signed note is held, not submitted)
-  assert.ok(text.includes("Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way. Its owner can narrow whose IOUs it accepts under 'Accept notes from' in the owner console. With console, your agent has already signed what waits: the operator's server holds it until you approve, so that hold is the operator's word, not the chain's."));
+  assert.ok(text.includes("Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way. Its owner can narrow whose IOUs it accepts under 'Accept notes from' in the owner console. With console, your agent has already signed what waits: the operator's server holds it until you approve. If you reject it, a held offer, acceptance, guarantee offer or IOU is kept, unsent, and a payment by transfer is deleted, all but its signatures' hashes. That hold is the operator's word, not the chain's. Honoring a guarantee call never waits: it is your agent's own IOU, recorded at once."));
   assert.ok(text.includes('The server enforces them in every mode: at most 0.005 tERG per deal and 0.04 tERG owed in all, 10 open offers, for 7 days, renewed while your agent is active.'));
   assert.ok(text.includes("Made on your machine, and it stays there, unencrypted in the client's profile file. Only its public key reaches the server, so the operator can't sign for your agent."));
   assert.doesNotMatch(text, /always asked|owner is always/i);
@@ -431,7 +480,7 @@ test('the landing claims no more than the evidence: test agents, how far each wa
     'Runs the tracker and holds its key, which signs every tracker box and every redemption, so it can refuse one.',
     'Runs four agents: the practice agents sandbox-exact and sandbox-mallory (no AI) and the house agents house-scribe and house-reviewer (Claude).',
     // it writes what agents follow, and only the PyPI release is fixed
-    "Writes skill.md, which agents follow as instructions, and publishes the clients and plugins. valun==0.7.1 on PyPI can't change; skill.md and the plugins' latest versions can.",
+    "Writes skill.md, which agents follow as instructions, and publishes the clients and plugins. valun==0.7.2 on PyPI can't change; skill.md and the plugins' latest versions can.",
     // the admin mandate route sets any field, past the self-serve box (lib/pilot/core.mjs setMandate, by 'operator'), and
     // renewSandbox records each renewal as the operator's; only the last change is kept
     "Can change any part of an agent's mandate, including what waits for the owner (approve_above) and whose IOUs it accepts, beyond the self-serve limits. The owner console shows the last change as by: operator; routine renewals of the expiry are shown the same way, and no history is kept.",
@@ -449,7 +498,7 @@ test('the landing claims no more than the evidence: test agents, how far each wa
   assert.ok(text.includes("Backing is a promise, not collateral. A backer that honors a call pays with its own IOU. Once a backer pays, the same amount of the issuer's IOU is held, so the creditor isn't paid twice. The backer doesn't take over the claim."));
   assert.doesNotMatch(text, /held from the creditor|held for the backer/i);
   assert.ok(text.includes('A backer that honors a call pays with its own IOU; nothing is locked up.'));
-  assert.ok(text.includes('The documented 0.7.1 client stays within the server\'s checks; a hand-built client with an earlier redemption build (a dry run is enough) can go around them.'));
+  assert.ok(text.includes('The documented 0.7.2 client stays within the server\'s checks; a hand-built client with an earlier redemption build (a dry run is enough) can go around them.'));
   assert.ok(text.includes('holds the debt until it is cleared in a loop, passed on, or redeemed if the agent posted a reserve.'));
   assert.ok(text.includes('Now a stranger that trusts the backer, or sees a reserve behind it, can say yes.'));
   assert.ok(text.includes('Almost every agent so far is ours.'));
@@ -483,7 +532,14 @@ test('the landing in testnet units: the counts, the spotlight and the list in tE
   assert.equal(tergRounded(0), '0');
   assert.equal(tergRounded(-2_000_000), '-0.002');
   assert.deepEqual(money(3_000_000, undefined), {n: '–', u: 'tERG'}, 'no unit named: no number');
-  assert.deepEqual(money(3, 'PC'), {n: '–', u: 'tERG'}, 'the retired pilot\'s unit: no number, never "credits"');
+  // PC, the unit a local server's reads name (valun-pilot-1, no chain): whole PC, never "credits" and never "– tERG",
+  // which the landing said there (fix inbox #146). Only a read that names PC gives PC; the testnet's name nanoERG.
+  assert.deepEqual(money(3, 'PC'), {n: '3', u: 'PC'});
+  assert.deepEqual(money(1234, 'PC', 4), {n: '1,234', u: 'PC'});
+  assert.deepEqual(money(null, 'PC'), {n: '–', u: 'PC'});
+  assert.deepEqual(money(3, 'credits'), {n: '–', u: 'tERG'}, 'another unit: no number');
+  assert.equal(statsLine(stats({participants: [{handle: 'a'}], ledger: {unit: 'PC', notes: []}, clearing: {unit: 'PC', totals: {setoffs_applied: 2, cleared: 5}}})),
+    '1 agent and 0 open IOUs now. 2 loops cleared so far, cutting 5 PC of IOUs in all.');
   assert.deepEqual(money(null, 'nanoERG'), {n: '–', u: 'tERG'});
   const clearing = {unit: 'nanoERG', totals: {setoffs_applied: 47, cleared: 104_475_000, cleared_PC: 104_475_000}};
   // what the loops cut (clearing totals.cleared: the sum of the applied set-offs), not what is outstanding

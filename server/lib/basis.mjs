@@ -55,12 +55,17 @@ export const TRACKER_BUILDS = Object.freeze({
   '24675ec1c0f374f29101812caf2fc87ab48468c9': Object.freeze({name: 'tracker v3.1', build: 'valun-circulating-credit/3'}),
   '08f889931906beff6c2b69346965f400d740aa4a': Object.freeze({name: 'tracker v3', build: 'valun-circulating-credit/3'}),
 });
-export function trackerPin(caps, fallback, {pinned = false} = {}) {
+// `pureCreditNamed` (GET /pilot/v1/health on the network with no chain, valun-pilot-1, a local server's; fix inbox
+// #146): a tracker that reports pure credit anchors nothing, so its build's "anchored netting" is named as the mode it
+// runs in, "tracker v4.4.1 (pure credit, keyspaces kept open)", and scripts/live-check.mjs accepts that name there; it
+// was named as anchoring on a server with no chain. Without it (/api/status, the testnet) the build's name as before.
+export function trackerPin(caps, fallback, {pinned = false, pureCreditNamed = false} = {}) {
   const commit = typeof caps?.commit === 'string' && /^[0-9a-f]{40}$/.test(caps.commit) ? caps.commit : null;
   const line = caps && typeof caps.build === 'string' && Object.hasOwn(BUILD_LINES, caps.build) ? BUILD_LINES[caps.build] : null;
   if (!line || !commit) return fallback;
   const known = Object.hasOwn(TRACKER_BUILDS, commit) && TRACKER_BUILDS[commit].build === caps.build ? TRACKER_BUILDS[commit] : null;
-  return `Basis ${known ? known.name : line.unlisted}: Valun fork commit ${commit} (branch ${known?.branch ?? line.branch} on ${known?.base ?? 'Basis 6a6ebfe + caa2e86 + a00233d'}), as the tracker reports itself${pinned ? '' : ' (binary not pinned)'}`;
+  const name = known && pureCreditNamed && caps.pure_credit === true ? known.name.replace('(anchored netting', '(pure credit') : known?.name;
+  return `Basis ${known ? name : line.unlisted}: Valun fork commit ${commit} (branch ${known?.branch ?? line.branch} on ${known?.base ?? 'Basis 6a6ebfe + caa2e86 + a00233d'}), as the tracker reports itself${pinned ? '' : ' (binary not pinned)'}`;
 }
 
 // One line for the server log describing what a tracker's capabilities say (null: no capabilities, or none read).

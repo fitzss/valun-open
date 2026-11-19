@@ -298,7 +298,13 @@ test('an offer above approve_above waits for the backer\'s owner (approval kind 
   const a = Object.values(pilot.s.approvals).find(x => x.guarantee_id === g.guarantee_id);
   const served = await pilot.servedApprovalView(a, B);
   assert.deepEqual([served.deal, served.guarantee.guarantee_id, served.subject.terms.cap.amount], [null, g.guarantee_id, 5]);
-  assert.match(served.effect, /counts against your agent's max_issue_outstanding/);
+  // The effect in the deal approvals' shape (the approval texts of 2026-11-18): what is held now, and that approving is
+  // the owner's last say: a call is paid with the backer's own IOU, never held for its owner.
+  assert.deepEqual(Object.keys(served.effect), ['held_now', 'if_approved', 'if_rejected', 'deadline', 'checks_on_approve']);
+  assert.match(served.effect.held_now, /already counts against your agent's total-owed limit \(max_issue_outstanding\) while it waits/);
+  assert.match(served.effect.if_approved, /This is your last decision on it\. .* That IOU is never held for you: with console approvals your agent's client signs it without asking you, and the server records it at once\./);
+  assert.match(served.effect.if_rejected, /Valun keeps your agent's signed offer on record\./);
+  assert.equal(served.decide_by, served.subject.terms.offer_expires_at);
   const r = await pilot.decideApproval(B, a.id, {decision: 'approve', note: 'fine'});
   assert.deepEqual([r.approval.state, r.guarantee.state], ['approved', 'offered']);
   assert.equal((await book.viewFor(C, g.guarantee_id)).state, 'offered');

@@ -366,7 +366,11 @@ test('circulation on: approving a payment by transfer that went stale (409 stale
   assert.ok(calls.slice(post + 1).some(c => c.method === 'GET' && c.path === '/owner'), 'then the console reloads the owner view');
   const flash = page.doc.querySelector('#approvals .flash');
   assert.ok(flash, 'a message above the approvals');
-  assert.equal(text(flash), `Your decision on va_aaaaaaaaaaaa was not applied: ${STALE} (HTTP 409, stale_payment). The console below shows the server's current state.`);
+  // The server's words, then, as after a rejection (the payment is void: the review of PR #9, code 2-1), that nothing
+  // tells the agent and what valun 0.7.1 does then (pilot.js payTrap; test/console-cards.test.mjs has its whole text).
+  assert.ok(text(flash).startsWith(`Your decision on va_aaaaaaaaaaaa was not applied: ${STALE} (HTTP 409, stale_payment). Your agent isn't told: tell it. valun 0.7.1 keeps counting that payment as one that may still apply. It usually pays this deal again through ${ISS.handle}'s IOU at once while that IOU is unchanged;`), text(flash));
+  assert.ok(text(flash).endsWith(" The console below shows the server's current state."), text(flash));
+  assert.deepEqual(flash.querySelectorAll('code').map(text), [`valun attempts resolve ${VD_HELD} '#n' --not-applied`, 'valun attempts list']);
   assert.equal(page.doc.querySelector('article.appr[data-kind=pay_by_transfer]'), null, 'the void approval is no longer shown as pending');
   assert.match(text(page.doc.querySelector('#owner-console')), /Decided and void approvals \(1\)/);
 });

@@ -8,12 +8,14 @@ process.env.PILOT_NETWORK = 'valun-testnet-1';
 process.env.VALUN_PUBLIC_ORIGIN = 'https://valun.tech';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const loops = await import('../lib/pilot/loops.mjs');
 const agents = await import('../lib/pilot/agents.mjs');
+const core = await import('../lib/pilot/core.mjs');
 const net = await import(pathToFileURL(path.join(root, 'public', 'network.js')).href);
 
 const TX = 'f2a146cf387f7c95a9d95b6c772e04069ae34c6a5cd994d29d6feaf5981fe455';
@@ -185,8 +187,34 @@ test('the agent page on the testnet: cleared in loops and redeemed, apart, never
   assert.ok(html.includes('<li><strong>Cleared or redeemed.</strong> 0.002 tERG of the 0.004 tERG it owed cleared in loops (committed, not final), 0 tERG redeemed, with 1 creditor (1 practice agent); 0.002 tERG outstanding; 0 accepted jobs unpaid.</li>'));
   assert.doesNotMatch(html, /Repaid|\bsettled\b|\brepaid\b/i);
   assert.ok(html.includes('</a> · 0.001 tERG off each debt (0.003 tERG in all)</li>'), 'the loop by what each debt fell, as the loop card says');
+  // While no confirmed box commits some of its loops (the readiness assessment of Nov 18: the page said "committed, not
+  // final" while that loop's card said "Not committed on Ergo testnet yet"), the page says so, of all of them or of the
+  // newest (the review of gap/first-use: a tour's two loops both wait for the next box); the server reads each as its
+  // card does (lib/pilot/http.mjs nettingOf; test/anchoring.test.mjs over HTTP), and settled_how says the same.
+  const behind = netting => /<li><strong>Cleared or redeemed\.<\/strong> ([^<]*)<\/li>/.exec(agents.renderAgentPage(agents.agentView(pub, pos, [LOOP], {now: NOW, netting})))[1];
+  const said = {
+    'committed once the next tracker box commits it': [{loops: 1, behind: 1}],
+    'committed once the next tracker box commits them': [{loops: 2, behind: 2}, {loops: 3, behind: 3}],
+    'committed, not final, except the newest loop, which the next tracker box commits': [{loops: 2, behind: 1}, {loops: 5, behind: 1}],
+    'committed, not final, except the 2 newest loops, which the next tracker box commits': [{loops: 3, behind: 2}],
+    'committed, not final': [null, {loops: 2, behind: 0}, {loops: 0, behind: null}, {loops: 3, behind: null}]};
+  for (const [words, nettings] of Object.entries(said)) for (const n of nettings) {
+    assert.ok(behind(n).startsWith(`0.002 tERG of the 0.004 tERG it owed cleared in loops (${words}), 0 tERG redeemed`), JSON.stringify(n));
+    assert.equal(agents.clearedWords(n), words);
+    // settled_how: the same, in its own words ("committed but not final" once a box committed them).
+    const how = core.settledHowTestnet(n);
+    assert.equal(how, words === 'committed, not final' ? core.SETTLED_HOW_TESTNET.committed
+      : `cleared in loops, ${words.replace('committed, not final, except', 'committed but not final (except').replace(/which the next tracker box commits$/, 'which the next tracker box commits)')}, and redeemed on Ergo testnet`);
+  }
   // The maintainers page on the testnet: the join command is on /start, and every price is in tERG.
   const m = agents.renderMaintainersPage();
   assert.ok(m.includes('Claude Code: join in a terminal (<a href="https://valun.tech/start#agent">the command</a>)'));
-  assert.ok(m.includes('<code>uvx --from valun==0.7.1 valun profile --wants "docs for new modules (3000000 nanoERG (0.003 tERG))"</code>'));
+  assert.ok(m.includes('<code>uvx --from valun==0.7.2 valun profile --wants "docs for new modules (3000000 nanoERG (0.003 tERG))"</code>'));
+  // The page's own join command (Hermes) has what to do when join stops halfway, as every join command on /start and
+  // in skill.md has (the review of gap/first-use): never revoke or run the enroll 0.7.1 suggests; the rest on /start.
+  const hermes = m.indexOf('hermes -p valun valun join --sandbox');
+  assert.ok(hermes > 0);
+  assert.ok(m.slice(hermes).includes('</code>. If join stops with a Python traceback or a timeout, or says the agent\'s key could not be stored or registered: don\'t revoke anything, and don\'t run the <code>enroll</code> it suggests (<a href="https://valun.tech/start#known-join">what to do then</a>).'));
+  assert.equal((m.match(/\bjoin --sandbox\b/g) || []).length, 1, 'the one join command it gives');
+  assert.match(fs.readFileSync(path.join(root, 'public', 'start.html'), 'utf8'), /<details id="known-join">/);
 });

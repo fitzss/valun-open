@@ -141,11 +141,14 @@ test('the testnet serves its own skill.md (nanoERG, valun 0.5, settlement on Erg
       assert.match(text, /^---\nname: valun\n/, p);
       assert.match(text, /nanoERG\s+of\s+Ergo\s+testnet/);
       assert.match(text, /valun 0\.5 or later/);
-      assert.match(text, /uvx --from valun==0\.7\.1 valun ergo redeem sandbox-exact 3000000 --broadcast/);
-      assert.doesNotMatch(text, /\bPC\b/, 'no pilot credits on the testnet');
+      assert.match(text, /uvx --from valun==0\.7\.2 valun ergo redeem sandbox-exact 3000000 --broadcast/);
+      // No PC: valun 0.7.2 names nanoERG with tERG in clearing run, clearing watch, status and policy show (its CHANGELOG:
+      // "Amounts in the network's unit, never PC"), where skill.md had to say that 0.7.1's called nanoERG amounts PC, so
+      // an agent never reads "3000000 PC" as 3,000,000 of the retired pilot's credits.
+      assert.doesNotMatch(text.replace(/\s+/g, ' '), /\bPC\b/, 'no pilot credits on the testnet');
       // A shell agent copies a join that holds commitments for its human first; acting alone is the second, named as such.
       const shell = text.slice(text.indexOf('### Any agent with a shell'), text.indexOf('## 2. '));
-      const joins = [...shell.matchAll(/^uvx --from valun==0\.7\.1 valun join --sandbox [^\n]*--approvals (\w+)$/gm)].map(m => m[1]);
+      const joins = [...shell.matchAll(/^uvx --from valun==0\.7\.2 valun join --sandbox [^\n]*--approvals (\w+)$/gm)].map(m => m[1]);
       assert.deepEqual(joins, ['console', 'none'], p);
       assert.ok(shell.indexOf('Only if your human said you may act alone:') < shell.lastIndexOf('--approvals none'), p);
     }
@@ -210,7 +213,8 @@ async function onChainServer({chain: moreChain = {}} = {}) {
     const url = new URL(req.url, 'http://x');
     const send = (r, status, body) => { r.writeHead(status, {'content-type': 'application/json'}); r.end(typeof body === 'string' ? body : JSON.stringify(body)); };
     try { await handler(req, res, url, send, () => '127.0.0.1'); }
-    catch (e) { send(res, e.status || 500, {error: e.code || 'error', message: e.message}); }
+    // A refusal's own fields (retry_after_ms, ...) too, as lib/http.mjs answers it.
+    catch (e) { send(res, e.status || 500, {error: e.code || 'error', message: e.message, ...(e.extra || {})}); }
   });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}/pilot/v1`;
@@ -459,6 +463,10 @@ test('on chain: a redemption is built only for a note the agent holds and within
     assert.equal(last.status, 429);
     assert.equal(last.body.error, 'rate_limited');
     assert.match(last.body.message, /redemption builds a day per agent/);
+    // With how long until the next build is taken: once the first of these builds is 24 hours old (the local-readiness
+    // audit of Nov 18, MR-4: every rate_limited answer says how long; this one said nothing). Made within seconds.
+    assert.ok(Number.isInteger(last.body.retry_after_ms) && last.body.retry_after_ms > 864e5 - 600e3 && last.body.retry_after_ms <= 864e5,
+      `retry_after_ms ${last.body.retry_after_ms}`);
   } finally { s2.server.close(); }
 });
 
@@ -544,7 +552,10 @@ test('fix inbox #88: llms.txt names the testnet at its public origin, valun.tech
   for (const s of ['When IOUs form a loop, every debt in it falls by the same amount, the smallest one.',
     'By default a new agent on this network accepts any issuer\'s IOUs that way, up to 0.04 tERG per issuer, and its owner can narrow that.',
     'the tour in 2 to 3 minutes', 'the few reserves posted (most issuers have none), and the debt each backs',
-    'see whether the budget card is public (publish it with valun card publish)'])
+    'see whether the budget card is public (publish it with valun card publish)',
+    // What console approvals hold, the backing offers included, and what they never hold: a consent, or the IOU that
+    // honors a call (guarantees.mjs honor: recorded at once). Said without the word this file keeps out (above).
+    'console approvals hold (its offers, counter-offers and acceptances, its offers to back another agent\'s debt, and the IOU or payment by transfer at each delivery; never a consent, nor the IOU it pays when a debt it backs is called)'])
     assert.ok(text.includes(s), s);
   assert.doesNotMatch(text, /the loop is cancelled|about 3 minutes|publish the budget card,|reserves that back this network's notes/);
   // The same text with an origin given, in this process; the pilot's own file is served as it is.
@@ -559,8 +570,8 @@ test('fix inbox #88: llms.txt names the testnet at its public origin, valun.tech
 test('the testnet\'s rendered pages say no PC: the maintainers page prices its example in nanoERG (tERG) (fix inbox #48)', async () => {
   const agents = await import('../lib/pilot/agents.mjs'), loops = await import('../lib/pilot/loops.mjs');
   const html = agents.renderMaintainersPage();
-  assert.ok(html.includes('<code>uvx --from valun==0.7.1 valun profile --services "PR review for Python projects (3000000 nanoERG (0.003 tERG)); issue triage (2000000 nanoERG (0.002 tERG))"</code>'));
-  assert.ok(html.includes('<code>uvx --from valun==0.7.1 valun profile --wants "docs for new modules (3000000 nanoERG (0.003 tERG))"</code>'));
+  assert.ok(html.includes('<code>uvx --from valun==0.7.2 valun profile --services "PR review for Python projects (3000000 nanoERG (0.003 tERG)); issue triage (2000000 nanoERG (0.002 tERG))"</code>'));
+  assert.ok(html.includes('<code>uvx --from valun==0.7.2 valun profile --wants "docs for new modules (3000000 nanoERG (0.003 tERG))"</code>'));
   for (const page of [html, agents.renderAgentNotFound(), loops.renderLoopNotFound()]) assert.doesNotMatch(page, /\bPC\b/);
 });
 
@@ -609,8 +620,8 @@ test('the A2A join answer and card on the testnet: runnable commands, limits in 
     assert.equal(data.unit, 'nanoERG');
     assert.equal(data.limits.limits.max_issue_per_deal, 5_000_000);
     // A shell can't prompt the human: console first (the human approves each commitment), none only if they said so.
-    const join = 'uvx --from valun==0.7.1 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR HUMAN" --about "what you offer, in one line" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"';
-    assert.ok(text.includes(`If your human wants to approve each commitment: ${join} --approvals console (they approve at ${data.network.replace(/\/network$/, '')}/pilot#owner). Only if your human said you may act alone: ${join} --approvals none.`));
+    const join = 'uvx --from valun==0.7.2 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR HUMAN" --about "what you offer, in one line" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"';
+    assert.ok(text.includes(`If your human wants to approve what you sign (console approvals, the first tester's default): ${join} --approvals console (they approve at ${data.network.replace(/\/network$/, '')}/pilot#owner). Only if your human said you may act alone: ${join} --approvals none.`));
     assert.ok(text.indexOf('--approvals console') < text.indexOf('--approvals none'), 'console first');
     assert.equal(data.shell[0], `${join} --approvals console`);
     assert.ok(text.includes('Console approvals protect your human only while you can\'t read the owner token: tell them to move that file into their password manager.'));
@@ -618,9 +629,10 @@ test('the A2A join answer and card on the testnet: runnable commands, limits in 
     // Each client signs only for its own key (D3b, the redesign's round 2): never "its client signs ... the issuer's".
     assert.ok(text.includes('By default your agent accepts any issuer\'s IOUs as payment by transfer, up to 0.04 tERG per issuer. Your client signs that acceptance by itself in every approval mode, and the issuer\'s client signs the issuer\'s consent the same way. Your human can narrow whose IOUs it accepts under "Accept notes from" in the owner console.'));
     assert.doesNotMatch(text, /signs that consent, and the issuer's/);
-    assert.ok(text.includes('With --approvals console added to the join, these two lines have run end to end once (Claude Code 2.1.326, Nov 17, headless); Claude Code\'s own approval prompts are not yet tested. There is also a plugin (/plugin marketplace add fitzss/valun-open, then /plugin install valun@valun): an install check only, not yet run end to end.'));
-    // One MCP join everywhere: skill.md's, with no --approvals flag; console is added only as the text says.
-    assert.equal(data.mcp[0], join);
+    assert.ok(text.includes('These two lines have run end to end once (Claude Code 2.1.326, Nov 17, headless); Claude Code\'s own approval prompts are not yet tested.'));
+    assert.ok(text.includes('There is also a plugin (/plugin marketplace add fitzss/valun-open, then /plugin install valun@valun): an install check only, not yet run end to end.'));
+    // The MCP join is skill.md's with --approvals console, as the run that went end to end used (and the live build has).
+    assert.equal(data.mcp[0], `${join} --approvals console`);
     assert.ok(text.includes('Apart from the Claude Code run, only scripted MCP clients have run it; no other app (Codex, Cursor, Claude Desktop, VS Code) has been verified.'));
     assert.doesNotMatch(text, /\bcredits\b|\bPC\b/);
   } finally { srv.close(); }

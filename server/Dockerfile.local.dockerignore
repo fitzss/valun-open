@@ -7,7 +7,12 @@
 !basis/run-tracker.sh
 !scripts/local-entrypoint.sh
 !scripts/pilot-admin.mjs
+!README.md
+!docs/LOCAL.md
+!docs/LOCAL-ACCEPTANCE.md
 !dist/local-bins/amd64/basis_server
 !dist/local-bins/amd64/valun_signer
 !dist/local-bins/arm64/basis_server
 !dist/local-bins/arm64/valun_signer
+!dist/local-licenses/amd64/**
+!dist/local-licenses/arm64/**

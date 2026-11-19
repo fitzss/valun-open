@@ -872,13 +872,29 @@ export class GuaranteeBook {
     return this.list().filter(g => this.visibleTo(g, p)).map(g => this.view(g, p, ledger)).reverse();
   }
   async viewFor(p, id) { const g = this.party(id, p); return this.view(g, p, await this.P.ledger()); }
-  // The owner's approval view (GET /owner, POST /owner/approvals answers): the held offer.
+  // The owner's approval view (GET /owner, POST /owner/approvals answers): the held offer, until when the owner can
+  // decide it (decide_by: the offer's expiry, sweep), and its effect in the deal approvals' shape (Pilot.approvalEffect):
+  // what is already signed and held, what approving and rejecting do, the deadline and what is checked again. Approving
+  // is the owner's last say: an honor of a call is the backer's own IOU, recorded at once and never held for an owner
+  // (honor), so the text says so.
+  // The guarantee is swept first, so that an offer past offer_expires_at is already offer_expired, and its approval
+  // void_expired, when the approval is copied into the view (as Pilot.approvalView sweeps a deal before it spreads).
   approvalView(a, owner, ledger = null) {
     const g = this.all()[a.guarantee_id];
+    if (g) this.sweep(g);
     const subject = g ? {terms: g.terms, terms_hash: g.terms_hash, mandate_check: g.offer.mandate_check, issuer: g.issuer, creditor: g.creditor} : null;
-    return {...a, subject, mandate_check: subject?.mandate_check ?? null,
-      effect: g ? `approving offers ${this.P.s.participants[g.creditor]?.handle ?? g.creditor} this guarantee: your agent promises to pay it up to ${amt(g.terms.cap.amount)} of what ${this.P.s.participants[g.issuer]?.handle ?? g.issuer} still owes it after ${g.terms.due_at}, if it calls before ${g.terms.expires_at}; until the guarantee ends its open cap counts against your agent's max_issue_outstanding. Rejecting offers nothing.` : null,
-      deal: null, guarantee: g ? this.view(g, owner, ledger) : null};
+    return {...a, decide_by: g ? g.terms.offer_expires_at : null, subject, mandate_check: subject?.mandate_check ?? null,
+      effect: g ? this.offerEffect(g) : null, deal: null, guarantee: g ? this.view(g, owner, ledger) : null};
+  }
+  offerEffect(g) {
+    const h = id => this.P.s.participants[id]?.handle ?? id, t = g.terms, C = h(g.creditor), I = h(g.issuer), cap = amt(t.cap.amount);
+    const covers = t.covers === COVERS_DEALS ? `what ${I} still owes ${C} for the deals it names` : `what ${I} owes ${C}`;
+    return {
+      held_now: `Your agent signed this guarantee offer with its key, and Valun's server holds it: ${C} and ${I} can't see it, and nothing is on the tracker. Its cap of ${cap} already counts against your agent's total-owed limit (max_issue_outstanding) while it waits.`,
+      if_approved: `Nothing new is signed. ${C} sees the offer and can accept it until ${t.offer_expires_at}; accepting needs no approval from its owner. This is your last decision on it. If ${C} calls it between ${t.due_at} and ${t.expires_at}, for ${covers}, your agent has promised to pay each call within ${t.honor_within_hours} hours with its own IOU to ${C}, up to ${cap} in all. That IOU is never held for you: with console approvals your agent's client signs it without asking you, and the server records it at once. Until the guarantee ends, its open cap counts against your agent's total-owed limit.`,
+      if_rejected: `The offer is never shown to ${C} or ${I}, and it ends; its cap stops counting. Valun keeps your agent's signed offer on record. Nothing reaches the tracker.`,
+      deadline: `Decide by ${t.offer_expires_at}, when the offer expires: it then ends, and an approval after that is refused.`,
+      checks_on_approve: 'When you approve, the server first checks again that the three parties still have the keys the terms name, and your mandate\'s hard limits for this cap (with your other commitments). If a check fails, nothing changes and this stays pending.'};
   }
   // The inbox's guarantees section (Pilot.inbox): offers to answer, calls to honor, active guarantees. Sync (no tracker
   // read): amounts that need the tracker are in the guarantee's own view.

@@ -185,3 +185,42 @@ test('joins at the same moment count each other in the total: 41 at once from 41
   assert.deepEqual(done.filter(r => r.status === 'rejected').map(r => r.reason.code), ['rate_limited']);
   assert.equal(Object.keys(p.s.participants).length - before, 40);
 });
+
+// The 24-hour cap (SANDBOX_JOINS_PER_DAY, 200 on every hosted server) counts the self-serve participants made in the last
+// 24 hours. The refusal says when the next place frees: when enough of them have left the window that one more fits,
+// 24 hours after the (n - 200 + 1)th oldest. With 200 in the window that is the oldest one's 24 hours, as before. A
+// window that holds more (as this test fills it, or once a cap is lowered) frees later: an earlier answer named the
+// oldest one's 24 hours whatever the window held, which is too early then, and a join at that time is refused again. So
+// with more than 200 in the window the hosted answer (retry_after_ms, resets_at and the time and minutes in the
+// message) changes, by design (the review of local/readiness-r1, HI-1).
+test('the 24-hour cap names when the next place frees: the oldest one\'s 24 hours with 200 in the window; with more (filled past the cap), when enough have left that a join fits', async () => {
+  for (const [count, leave] of [[200, 1], [201, 2], [205, 6]]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'valun-day-cap-'));
+    const clock = {t: Date.parse('2026-11-18T12:00:00Z')};
+    const p = server(dir, clock);
+    // `count` self-serve participants in the window, the oldest made 23 h 59 min ago, then one a minute.
+    const first = clock.t - 864e5 + 60e3;
+    for (let i = 0; i < count; i++) {
+      const id = `vp_${(0xd00000000000 + i).toString(16)}`;
+      p.s.participants[id] = {id, handle: `day-${i}`, operator: 'x', status: 'active', sandbox_only: true, created_at: new Date(first + i * 60e3).toISOString()};
+    }
+    const at = `${count} in the window`, frees = first + (leave - 1) * 60e3 + 864e5;
+    const e = await refusal(join(p, A));
+    assert.deepEqual([e.code, e.status], ['sandbox_full', 429], at);
+    assert.equal(e.extra.retry_after_ms, frees - clock.t, `${at}: the next place frees once ${leave} of them have left it`);
+    assert.equal(e.extra.resets_at, new Date(frees).toISOString(), at);
+    assert.equal(e.message, 'the sandbox takes at most 200 new participants in any 24 hours (a rolling window, not a calendar day); the next place frees at '
+      + `${new Date(frees).toISOString()}, in ${Math.ceil((frees - clock.t) / 60e3)} min`, at);
+    // Over-filled, the oldest one's 24 hours (the earlier answer) is too early: the window is still full then.
+    if (leave > 1) {
+      clock.t = first + 864e5;
+      assert.equal((await refusal(join(p, A))).code, 'sandbox_full', `${at}: at the oldest one's 24 hours`);
+    }
+    // A moment before the time it names, still full; at that time, a join is taken.
+    clock.t = frees - 1;
+    assert.equal((await refusal(join(p, A))).code, 'sandbox_full', `${at}: 1 ms before`);
+    clock.t = frees;
+    const j = await join(p, A, `day-joins-${count}`);
+    assert.equal(p.s.participants[j.participant_id].handle, `day-joins-${count}`, at);
+  }
+});

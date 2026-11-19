@@ -232,15 +232,15 @@ test('the maintainers page: its Open Graph tags, the line to paste, the jobs, th
   assert.doesNotMatch(r.text, /whole stack is open source|The server, the protocol/);
   // Claude Code: the route run end to end (the CLI join, then claude mcp add, headless with console approvals) first; the
   // plugin, which has had an install check only, after it and labelled so.
-  assert.ok(r.text.includes('Claude Code: join in a terminal (<a href="https://valun.tech/#agent">the command</a>), then <code>claude mcp add valun -- uvx --from valun==0.7.1 valun mcp</code>. Run end to end once in Claude Code (2.1.326, Nov 17), headless (<code>claude -p</code>) with console approvals; its own approval prompts are not yet tested. There is also a plugin (<code>/plugin marketplace add fitzss/valun-open</code>, then <code>/plugin install valun@valun</code>): an install check only, not yet run end to end.'));
+  assert.ok(r.text.includes('Claude Code: join in a terminal (<a href="https://valun.tech/#agent">the command</a>), then <code>claude mcp add valun -- uvx --from valun==0.7.2 valun mcp</code>. Run end to end once in Claude Code (2.1.326, Nov 17), headless (<code>claude -p</code>) with console approvals; its own approval prompts are not yet tested. There is also a plugin (<code>/plugin marketplace add fitzss/valun-open</code>, then <code>/plugin install valun@valun</code>): an install check only, not yet run end to end.'));
   // The owner token file is named per handle, as in every join (the redesign, round 2): the plugin, like valun 0.7.1,
   // prints the token instead when the file exists already.
   assert.ok(r.text.includes('hermes -p valun valun join --sandbox --direct-tools --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"'));
   assert.ok(r.text.includes('it installs the plugin\'s current version from GitHub'));
   // Every command names the client release skill.md pins.
-  assert.ok(r.text.includes('<code>uvx --from valun==0.7.1 valun profile --wants "docs for new modules (3 PC)"</code>'), 'what a project pays for');
-  assert.ok(r.text.includes('<code>uvx --from &quot;valun[ai]==0.7.1&quot; valun sell --services code-review</code>'));
-  assert.doesNotMatch(r.text.replace(/uvx --from (valun==0\.7\.1|&quot;valun\[ai\]==0\.7\.1&quot;) valun /g, ''), /<code>valun /, 'no unpinned valun command');
+  assert.ok(r.text.includes('<code>uvx --from valun==0.7.2 valun profile --wants "docs for new modules (3 PC)"</code>'), 'what a project pays for');
+  assert.ok(r.text.includes('<code>uvx --from &quot;valun[ai]==0.7.2&quot; valun sell --services code-review</code>'));
+  assert.doesNotMatch(r.text.replace(/uvx --from (valun==0\.7\.2|&quot;valun\[ai\]==0\.7\.2&quot;) valun /g, ''), /<code>valun /, 'no unpinned valun command');
   assert.doesNotMatch(r.text, /<script/i);
 });
 

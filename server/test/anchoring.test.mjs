@@ -345,18 +345,19 @@ test('GET /chain: the box\'s age from the node (its fullHeight less the confirme
   } finally { s4.srv.close(); probe.close(); }
 });
 
-// The routes, with a fake tracker client and a spend ledger on disk.
-async function server({trackerState, redemptionBuild, setoffs = {}, spendLedger = null, node = undefined}) {
+// The routes, with a fake tracker client and a spend ledger on disk. `extra`: more of the pilot (positions, records).
+async function server({trackerState, redemptionBuild, setoffs = {}, spendLedger = null, node = undefined, extra = {}}) {
   const PKA = '02' + 'a1'.repeat(32), PKB = '03' + 'b2'.repeat(32);
-  const participants = {vp_aaaaaaaaaaaa: {id: 'vp_aaaaaaaaaaaa', handle: 'issuer-a', pubkey: PKA}, vp_bbbbbbbbbbbb: {id: 'vp_bbbbbbbbbbbb', handle: 'holder-b', pubkey: PKB}};
+  const participants = {vp_aaaaaaaaaaaa: {id: 'vp_aaaaaaaaaaaa', handle: 'issuer-a', pubkey: PKA, status: 'active'},
+    vp_bbbbbbbbbbbb: {id: 'vp_bbbbbbbbbbbb', handle: 'holder-b', pubkey: PKB, status: 'active'}};
   const basis = {denomination: 'erg', nft: 'ab'.repeat(32), trackerState,
     note: async () => ({amount_collected: 3_000_000, amount_redeemed: 0, timestamp: 1_700_000_000_123, signature: 'aa'.repeat(65)}),
     redemptionBuild};
   const pilot = {chain: {name: 'ergo-testnet', on_chain: true, tracker_nft_id: 'ab'.repeat(32), explorer: 'https://testnet.ergoplatform.com', spend_ledger: spendLedger, ...(node === undefined ? {} : {node})},
-    s: {participants, setoffs}, openSandbox: true, unit: 'nanoERG', mode: 'off', basis, store: {audit: () => {}}, selfServe: () => null,
+    s: {participants, setoffs, approvals: {}}, openSandbox: true, unit: 'nanoERG', mode: 'off', basis, store: {audit: () => {}}, selfServe: () => null,
     setoff: id => setoffs[id] ?? null, publicParticipant: x => ({handle: x.handle}),
     byPubkey: pk => Object.values(participants).find(x => x.pubkey === pk) || null,
-    authenticate: t => (t === 'vpa_b' ? {role: 'agent', p: participants.vp_bbbbbbbbbbbb} : null)};
+    authenticate: t => (t === 'vpa_b' ? {role: 'agent', p: participants.vp_bbbbbbbbbbbb} : null), ...extra};
   const handler = routes.createPilotRoutes({pilot, cfg: {}, adminTokenHash: 'x'.repeat(64)});
   const srv = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -364,6 +365,8 @@ async function server({trackerState, redemptionBuild, setoffs = {}, spendLedger 
     try {
       const m = /^\/loop\/(.+)$/.exec(url.pathname);
       if (m) return await handler.loopPage(req, res, m[1], send, () => '127.0.0.1');
+      const a = /^\/agent\/(.+)$/.exec(url.pathname);
+      if (a) return await handler.agentPage(req, res, a[1], send, () => '127.0.0.1');
       await handler(req, res, url, send, () => '127.0.0.1');
     } catch (e) { send(res, e.status || 500, {error: e.code || 'error', message: e.message}); }
   });
@@ -458,6 +461,153 @@ test('every anchoring state that speaks of nettings says committed, and committe
   assert.equal(anchors.BLOCK_WAIT, 'usually within minutes, up to about 30 when Ergo testnet blocks are slow');
   for (const name of ['update_in_flight', 'waiting_for_next_update', 'daily_cap_reached']) assert.ok(states[name].what_this_means.includes(`once a block includes ${name === 'update_in_flight' ? 'it' : 'that box'} (${anchors.BLOCK_WAIT})`), name);
   for (const s of Object.values(states)) assert.doesNotMatch(s.what_this_means, /few minutes|two minutes|normally within|\bNov\b/);
+});
+
+// The readiness assessment of Nov 18 (staging, 01:13:40Z): GET /chain, and `valun ergo chain` with it, said "overdue
+// ... a fault of the tracker" with unanchored_since 01:05:16 while the last box had been signed at 01:08:53 and
+// confirmed between two looks; the next box was in flight 24 s later. A box that waits for the tracker's next check is
+// waiting_for_next_update: a confirmed box that changed starts the wait again, and the newest box signed counts too.
+test('a box confirmed between two looks starts the wait again, and one signed lately is not overdue: a wait for the next check is never "a fault of the tracker"', () => {
+  const limit = (anchors.CHECK_INTERVAL_S + anchors.OVERDUE_GRACE_S) * 1000;
+  const T0 = Date.parse('2026-11-18T01:05:16.188Z'), T1 = T0 + limit + 1, signed = T1 - 60_000;
+  let now = T0;
+  const ahead = box => ({local_digest: 'f7', confirmed_digest: '6b', confirmed_box_id: box, pending_tx_id: null});
+  const w = new anchors.AnchorWatch({now: () => now});
+  assert.equal(w.state(ahead(H('a'))).state, 'waiting_for_next_update');
+  now = T1;                                        // a new box was confirmed meanwhile, and the state is ahead of it again
+  const s = w.state(ahead(H('b')), null, signed);
+  assert.equal(s.state, 'waiting_for_next_update');
+  assert.equal(s.unanchored_since, new Date(T1).toISOString(), 'the wait starts again at the new box');
+  assert.doesNotMatch(s.what_this_means, /fault/);
+  assert.equal(w.state(ahead(H('b'))).state, 'waiting_for_next_update', 'the same box seen again keeps the wait');
+  now = T1 + limit + 1;
+  assert.equal(w.state(ahead(H('b'))).state, 'overdue', 'no box past the interval and its grace: a fault');
+  assert.equal(w.state({...ahead(H('b')), pending_tx_id: H('5')}).state, 'update_in_flight');
+  // A tracker state that names no box: the newest box the wallet adapter signed counts instead (GET /chain passes it).
+  const w2 = new anchors.AnchorWatch({now: () => now});
+  now = T0; w2.state(ahead(null));
+  now = T1;
+  assert.equal(w2.state(ahead(null), null, signed).state, 'waiting_for_next_update');
+  assert.equal(w2.state(ahead(null)).state, 'overdue', 'without it, as before');
+  now = signed + limit; assert.equal(w2.state(ahead(null), null, signed).state, 'waiting_for_next_update');
+  now = signed + limit + 1; assert.equal(w2.state(ahead(null), null, signed).state, 'overdue');
+  // A tracker that restarts names no confirmed box until its first update check, then the same box again (the review of
+  // gap/first-use, rv-watch-restart.mjs: restarts every few minutes kept the wait from ever being overdue). No box was
+  // posted, so the wait goes on, overdue past the interval and its grace as before; a box named in place of the one
+  // before the restart is a new box, and starts it again.
+  const w3 = new anchors.AnchorWatch({now: () => now}), lastBox = T0 - 60_000;
+  now = T0; assert.equal(w3.state(ahead(H('c')), null, lastBox).state, 'waiting_for_next_update');
+  for (const [f, box] of [[0.3, null], [0.4, H('c')], [0.6, null], [0.7, null], [0.8, H('c')], [0.95, null]]) {
+    now = T0 + Math.round(f * limit);
+    assert.equal(w3.state(ahead(box), null, lastBox).state, 'waiting_for_next_update', `${f}: ${box}`);
+  }
+  now = T0 + limit + 1;
+  const same = w3.state(ahead(H('c')), null, lastBox);
+  assert.equal(same.state, 'overdue', 'X, null, X: the same box, so none was posted for the interval and its grace');
+  assert.equal(same.unanchored_since, new Date(T0).toISOString());
+  now += 60_000; assert.equal(w3.state(ahead(null), null, lastBox).state, 'overdue', 'a restart meanwhile changes nothing');
+  now += 60_000;
+  const next = w3.state(ahead(H('d')), null, lastBox);
+  assert.equal(next.state, 'waiting_for_next_update', 'X, null, Y: a new box, so the wait starts again');
+  assert.equal(next.unanchored_since, new Date(now).toISOString());
+  assert.match(fs.readFileSync(new URL('../lib/pilot/http.mjs', import.meta.url), 'utf8'), /\.\.\.anchorWatch\.state\(st, cap, last\?\.t \?\? null\)/, 'GET /chain passes the newest box signed');
+});
+
+// The node that names a box's transaction (creatingTx), now also read for positions and agent pages: a lookup that
+// found nothing is not asked again for 30 s, and lookups meanwhile share one read.
+test('the confirmed box\'s transaction: a node that does not answer is asked once per 30 s per box, and readers share one read', async () => {
+  let asked = 0, t = 5_000_000;
+  const down = async () => { asked++; throw new TypeError('fetch failed'); };
+  const opts = {fetchFn: down, clock: () => t};
+  assert.deepEqual(await Promise.all([1, 2, 3].map(() => anchors.creatingTx('http://node-x', H('d'), opts))), [null, null, null]);
+  assert.equal(asked, 1, 'three readers, one read');
+  t += anchors.CREATING_TX_FAILED_KEEP_MS - 1;
+  assert.equal(await anchors.creatingTx('http://node-x', H('d'), opts), null);
+  assert.equal(asked, 1, 'kept');
+  t += 1;
+  assert.equal(await anchors.creatingTx('http://node-x', H('d'), {fetchFn: async () => { asked++; return {ok: true, json: async () => ({transactionId: H('7')})}; }, clock: () => t}), H('7'));
+  assert.equal(asked, 2, 'asked again after 30 s, and kept for good once found');
+  assert.equal(await anchors.creatingTx('http://node-x', H('d'), opts), H('7'));
+  assert.equal(asked, 2);
+});
+
+// The position's settled_how and the agent page (the readiness assessment of Nov 18, staging 00:58Z): after a set-off,
+// valun_status said "committed but not final" and the agent page "(committed, not final)" while /pilot/v1/loops said
+// on_chain.anchored false and the loop card "Not committed on Ergo testnet yet". They now read every loop of the
+// participant as its card does (loopAnchor, as loopOnChain): committed once a confirmed box signed after it commits it.
+// The review of gap/first-use: a tour clears two loops 1 to 2 minutes apart (tour-run.out, 01:03:59 and 01:05:2x) and the
+// tracker posts a box every 300 s, so both often wait for the next box; "the newest loop" then said the earlier one was
+// committed while both cards said not.
+test('settled_how and the agent page say committed only of the loops a box committed, as their loop cards say: none, all, or the newest', async () => {
+  const early = 'vs_0123456789abcdef', late = 'vs_fedcba9876543210', later = 'vs_00000000000000aa';
+  const setoff = (id, at) => ({id, state: 'applied', applied_at: at, amount: 2_000_000, members: ['vp_aaaaaaaaaaaa', 'vp_bbbbbbbbbbbb']});
+  const EARLY = setoff(early, '2026-11-12T15:00:10.000Z'), LATE = setoff(late, '2026-11-12T23:00:00.000Z'), LATER = setoff(later, '2026-11-12T23:02:00.000Z');
+  const evidence = {delivery: {accepted: {count: 1, buyers: 1, buyers_by_kind: {sandbox_agent: 1}}, disputed_by_buyer: 0, not_delivered: 0},
+    repayment: {owed_ever_PC: 4_000_000, settled: {by_setoff_PC: 2_000_000, by_redemption_PC: 0, creditors: 1, creditors_by_kind: {sandbox_agent: 1}}, outstanding_PC: 2_000_000,
+      unpaid_accepted_work: {count: 0, PC: 0}}, acceptance: {holders_ever: 1, taken_by_transfer: {PC: 0}}, circle: {size: 2, closed: false}};
+  const position = async () => ({claims_held: 0, owes: 2_000_000, cleared_by_setoff: 2_000_000, settled: 2_000_000, settled_how: core.SETTLED_HOW_TESTNET.committed,
+    deals: {credit_notes_issued: 1, disputed: 0}, claims: [], debts: [], evidence});
+  const extra = {
+    participant(id) { return this.s.participants[id]; },
+    directoryRecord: x => ({id: x.id, handle: x.handle, display_name: x.handle, operator: 'Basis QA', joined_at: '2026-11-12T14:00:00.000Z', agent_last_seen: '2026-11-12T23:00:00.000Z', sandbox_only: true}),
+    publicPosition: position, position,
+    // issuer-a's own tokens, for /me (valun_status reads it) and /owner (the owner console reads it).
+    authenticate(t) { const p = this.s.participants.vp_aaaaaaaaaaaa; return t === 'vpa_a' ? {role: 'agent', p} : t === 'vpo_a' ? {role: 'owner', p} : null; },
+    ledger: async () => [], effectiveLimits: () => ({max_issue_outstanding: 40_000_000}), issueExposure: () => ({total: 0}),
+    dealsFor: () => [], inbox: () => ({}), circulationFor: () => false, guarantees: {available: () => false, lapseStale: () => {}}};
+  const st = async () => ({local_digest: 'e', confirmed_digest: 'd', confirmed_box_id: H('c'), confirmed_height: 640110, pending_tx_id: null});
+  const read = async setoffs => {
+    const {srv, call} = await server({trackerState: st, setoffs, spendLedger: ledgerFile(LEDGER), extra});
+    try {
+      const how = (await call('GET', '/pilot/v1/participants/vp_aaaaaaaaaaaa')).body.public_position.settled_how;
+      const page = (await call('GET', '/agent/issuer-a')).text;
+      const cards = {};
+      for (const id of Object.keys(setoffs)) cards[id] = (await call('GET', `/pilot/v1/loops/${id}`)).body.on_chain.anchored;
+      const me = await call('GET', '/pilot/v1/me', undefined, 'vpa_a'), owner = await call('GET', '/pilot/v1/owner', undefined, 'vpo_a');
+      assert.equal(me.status, 200, me.text);
+      assert.equal(owner.status, 200, owner.text);
+      return {how, repayment: /<li><strong>Cleared or redeemed\.<\/strong> ([^<]*)<\/li>/.exec(page)?.[1], cards, me: me.body.position.settled_how, owner: owner.body.position.settled_how};
+    } finally { srv.close(); }
+  };
+  const words = r => /cleared in loops \(([^)]*)\), 0 tERG redeemed/.exec(r.repayment)?.[1];
+  // Committed: the update signed at 15:03:46 commits the loop of 15:00:10 (the loop card says so too).
+  let r = await read({[early]: EARLY});
+  assert.deepEqual(r.cards, {[early]: true});
+  assert.equal(r.how, 'cleared in loops, committed but not final, and redeemed on Ergo testnet');
+  assert.equal(r.repayment, '0.002 tERG of the 0.004 tERG it owed cleared in loops (committed, not final), 0 tERG redeemed, with 1 creditor (1 practice agent); 0.002 tERG outstanding; 0 accepted jobs unpaid.');
+  // Not committed yet: no update was signed after the loop of 23:00 (its card: "Not committed on Ergo testnet yet").
+  r = await read({[late]: LATE});
+  assert.deepEqual(r.cards, {[late]: false});
+  assert.equal(r.how, 'cleared in loops, committed once the next tracker box commits it, and redeemed on Ergo testnet');
+  assert.equal(words(r), 'committed once the next tracker box commits it');
+  // Two loops after the last update, two minutes apart as a tour's are (the review's repro): both wait, and nothing
+  // says either is committed.
+  r = await read({[late]: LATE, [later]: LATER});
+  assert.deepEqual(r.cards, {[late]: false, [later]: false});
+  assert.equal(r.how, 'cleared in loops, committed once the next tracker box commits them, and redeemed on Ergo testnet');
+  assert.equal(words(r), 'committed once the next tracker box commits them');
+  assert.deepEqual([r.me, r.owner], [r.how, r.how], '/me and /owner say it as GET /participants/{id} does');
+  // After an earlier loop that a box committed: only the newest wait, and the words count them.
+  r = await read({[early]: EARLY, [late]: LATE});
+  assert.deepEqual(r.cards, {[early]: true, [late]: false});
+  assert.equal(r.how, 'cleared in loops, committed but not final (except the newest loop, which the next tracker box commits), and redeemed on Ergo testnet');
+  assert.equal(words(r), 'committed, not final, except the newest loop, which the next tracker box commits');
+  r = await read({[early]: EARLY, [late]: LATE, [later]: LATER});
+  assert.deepEqual(r.cards, {[early]: true, [late]: false, [later]: false});
+  assert.equal(r.how, 'cleared in loops, committed but not final (except the 2 newest loops, which the next tracker box commits), and redeemed on Ergo testnet');
+  assert.equal(words(r), 'committed, not final, except the 2 newest loops, which the next tracker box commits');
+  assert.deepEqual([r.me, r.owner], [r.how, r.how]);
+  // Every loop a box committed: the words as before.
+  r = await read({[early]: EARLY, [late]: setoff(late, '2026-11-12T22:00:00.000Z')});
+  assert.deepEqual(r.cards, {[early]: true, [late]: true});
+  assert.equal(r.how, core.SETTLED_HOW_TESTNET.committed);
+  assert.deepEqual([r.me, r.owner, words(r)], [r.how, r.how, 'committed, not final']);
+  // The tracker unread: what a committed netting is, as before (never a claim it is not committed).
+  const {srv, call} = await server({trackerState: async () => { throw new Error('down'); }, setoffs: {[late]: LATE}, spendLedger: ledgerFile(LEDGER), extra});
+  try {
+    assert.equal((await call('GET', '/pilot/v1/participants/vp_aaaaaaaaaaaa')).body.public_position.settled_how, core.SETTLED_HOW_TESTNET.committed);
+    assert.equal((await call('GET', '/pilot/v1/owner', undefined, 'vpo_a')).body.position.settled_how, core.SETTLED_HOW_TESTNET.committed);
+  } finally { srv.close(); }
 });
 
 test('a redemption of a note not anchored yet: the refusal says how long that lasts, and it uses up no build', async () => {

@@ -579,6 +579,11 @@ test('credit-policy mandate fields: filled with LEGACY values by migrate(), set 
   const sb = await pl.joinSandbox({handle: 'cp-sandbox'}), sp = pl.s.participants[sb.participant_id];
   assert.deepEqual(CIRCULATION_FIELDS.map(f => sp.mandate[f]), [true, true, true, [old.id, inv.id], [], 'when_asked'], 'a sandbox joiner');
   assert.equal(sp.mandate_version, 2, 'one change, as before: the sandbox mandate');
+  // A list can't name a sandbox joiner whose agent never enrolled a key (an unfinished join, which would then never be
+  // released: the review of fix inbox #131); once its agent has enrolled, it can be named, as below.
+  for (const f of ['accept_notes_from', 'refuse_notes_from'])
+    assert.throws(() => pl.setMandate(inv.p, {[f]: [sp.id]}), e => e.code === 'invalid_field' && /is a join that didn't finish/.test(e.message), f);
+  await pl.enroll({participant_id: sb.participant_id, code: sb.enrollment_code, pubkey: KEY(), signature: SIG()});
   // validation
   const bad = [[{auto_clear: 'yes'}, /auto_clear must be true or false/], [{novate_own_debt: 1}, /novate_own_debt/], [{accept_transfers: null}, /accept_transfers/],
     [{accept_notes_from: 'all'}, /accept_notes_from must be "any" or a list/], [{accept_notes_from: ['vp_000000000000']}, /accept_notes_from/], [{accept_notes_from: [old.id, 7]}, /accept_notes_from/],

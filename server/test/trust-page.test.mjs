@@ -133,8 +133,11 @@ test('the section keeps every disclosure, on the page as in skill.md', () => {
     'It can\'t use your key: IOUs your key signed and your reserve stay bound to it. The public record shows only an agent\'s current key, so a swap shows only to someone who noted the old one; your owner view lists past keys.',
     'So it cannot forge your IOUs or stop the contract\'s refund path (60 days; no Valun command for it yet)',
     'console approvals protect you only while your agent can\'t read it.',
-    'With `console` approvals, your agent has already signed what waits. The operator\'s server holds it and sends it on only when you approve. That hold is the operator\'s word, not the chain\'s: a held IOU can still be recorded for about an hour after it was signed.',
-    'It also writes skill.md, which agents follow as instructions, and publishes the clients and plugins. valun==0.7.1 on PyPI can\'t change; skill.md and the plugins\' latest versions can.',
+    // The hold, as the approval semantics of 2026-11-17 found it: a rejection keeps what was signed, and the hour is a
+    // bound note's (what valun signs on the testnet).
+    // ... except a payment by transfer, which a rejection deletes (the review of console/first-use).
+    'With `console` approvals, your agent has already signed what waits. The operator\'s server holds it and sends it on only when you approve. When you reject it, a held offer, acceptance, guarantee offer or IOU is kept, unsent; a held payment by transfer is deleted, all but its signatures\' hashes. That hold is the operator\'s word, not the chain\'s: a held or rejected bound IOU (what valun signs on the testnet) could still be recorded for an hour after your agent signed it, if the server submitted it.',
+    'It also writes skill.md, which agents follow as instructions, and publishes the clients and plugins. valun==0.7.2 on PyPI can\'t change; skill.md and the plugins\' latest versions can.',
     'each job\'s text goes to the Claude API under the operator\'s key',
     'So far almost every agent on the network is the team\'s or the operator\'s',
     'Basis, the operator\'s QA bot (not the developers of the Basis protocol)',
@@ -142,14 +145,17 @@ test('the section keeps every disclosure, on the page as in skill.md', () => {
     // The audit, and what a MATCH does not prove (the six things valun 0.7.1 prints, audit.py DOES_NOT_PROVE).
     'which is not a mismatch',
     'A MATCH proves that the box commits the published notes. It does not prove what is outstanding, that an issuer can pay, that a deal was real or any work good, that the participants are independent of each other, that a key belongs to a handle, or that a mandate was kept.',
-    // --mine in 0.7.1 (fix inbox #100, the blocker of the review of 24bec43): "a client bug" only for the note sandbox
-    // earn took; on a netted edge 0.7.1 tells nothing apart, and what to compare instead.
-    'In valun 0.7.1 it can wrongly flag the note `sandbox earn` took (`not_in_records`, with exit 3): that is a client bug, not a sign of tampering, and the next client release fixes it for the notes it takes. On an edge a set-off lowered, 0.7.1 can\'t tell a bug from a change you didn\'t sign',
+    // --mine in 0.7.2 (fix inbox #86, #100): it refreshes the client's records first (Client.sync_edges), and proves an
+    // edge a set-off it signed lowered (netted: audit.py MineCheck.netted); what to compare beyond that.
+    '`--mine` (with a joined profile) also checks your own edges against your client\'s records, which it first brings up to date from the server, as `valun_status` does. On an edge a set-off your client signed lowered, it says `netted` when the box commits the total your client signed in it',
     // The check (the lead's decision D4b): valun audit answers MISMATCH while the box and the published ledger differ,
     // so only a ledger changed to match goes unseen; a row saved on a MATCH, compared on a later MATCH, catches that.
-    'In valun 0.7.1, `valun audit --mine` can\'t check an edge that a netting lowered: it may show a netting you signed as `differs`, and it would show the earlier total, committed again, as `signed`. Until the next client release proves netted edges, nothing you run with 0.7.1 detects it if the server\'s ledger is changed to match.',
+    // valun 0.7.2 compares the box with its own records (audit.py _edge: anchored against the confirmed state, which
+    // records.sync_edge never moves back in time), so an earlier total committed again shows only where the records
+    // confirm the lowered one; a set-off signed with 0.7.1 kept no signature of its own (records.note_signature).
+    'valun 0.7.2\'s `valun audit --mine` proves an edge that a set-off your client signed lowered: it says `netted` when the box commits the total your client signed in that set-off. It compares the box with your client\'s own records, not with the server\'s ledger: an edge whose box total is not the total your records confirm shows as `differs`, such as an earlier total committed again on an edge whose lowered total your records confirm. A set-off signed with valun 0.7.1 is not proven this way.',
     'Run `valun audit`: a MISMATCH is the signal. After a loop lowers one of your edges and an audit says MATCH, save that edge\'s row from `GET /pilot/v1/ledger`. Later, on a MATCH, compare the edge\'s total with your saved row, and report any rise that no later IOU, transfer or set-off explains. The ledger and the loop card are the server\'s word; only a MATCH ties the ledger to the chain.',
-    '`valun audit` shows it as a MISMATCH unless the server\'s ledger is changed to match; then nothing you run with valun 0.7.1 detects it on your own edges',
+    '`valun audit` shows it as a MISMATCH unless the server\'s ledger is changed to match; then only `valun audit --mine`, on an edge whose lowered total your client\'s records confirm, or a row you saved, shows it',
     // #99: the tracker's source, and what of the contract check rests on it.
     'The tracker\'s source is not public yet.',
     'Valun\'s fork of basis-tracker (tracker v4.4.1). Its source is not public yet.',
@@ -159,7 +165,6 @@ test('the section keeps every disclosure, on the page as in skill.md', () => {
     'It stays committed only as long as the tracker key never commits an earlier total again. The operator holds that key, and nothing on chain stops it',
     'It revokes nothing on chain.',
     'A netting protects your reserve only as far as you trust the operator never to move R5 back.',
-    'valun 0.7.1\'s own messages still call a committed netting final; read that as committed.',
     // #107: a promise, held, not subrogation. What is held is the same amount of the issuer's IOU (never "held for the
     // backer").
     'A guarantee is a promise, not locked collateral.',
@@ -168,9 +173,9 @@ test('the section keeps every disclosure, on the page as in skill.md', () => {
     'Once a backer pays, the same amount of the issuer\'s IOU is held, so the creditor isn\'t paid twice. The backer doesn\'t take over the claim',
     'the backer does not take over the claim (subrogation), which is not built.',
     // #127: the residual, with its scope (an earlier redemption build), wherever it is named.
-    'A creditor with a client it writes itself and an earlier redemption build can redeem outside the server\'s checks. The documented valun 0.7.1 commands can\'t',
+    'A creditor with a client it writes itself and an earlier redemption build can redeem outside the server\'s checks. The documented valun 0.7.2 commands can\'t',
     'One gap is still open: a creditor that already got a redemption built (a dry run is enough) could, with a client it writes itself, redeem outside the server\'s checks',
-    'The documented valun 0.7.1 commands always go through those checks and can\'t do this.',
+    'The documented valun 0.7.2 commands always go through those checks and can\'t do this.',
     // Redemption and the operator; submitted, confirmed and paid kept apart; no refund command yet.
     'Only an IOU whose issuer posted one can be redeemed, and most issuers have none.',
     'while it keeps posting boxes, a creditor it refuses has no way around it on chain.',
@@ -196,7 +201,7 @@ test('the section keeps every disclosure, on the page as in skill.md', () => {
     assert.doesNotMatch(t, /trustless|fully decentrali[sz]ed|risk-free|guaranteed|within 8 minutes|final settlement|\bsettled\b|\bnormally\b/i);
     assert.doesNotMatch(t, /detects this case|its total before|report any difference|a new key shows as a different public key/);
     assert.doesNotMatch(t, /a few minutes|about two minutes|30 or more|lost its main miner/);
-    for (const m of t.matchAll(/[^.]*\bfinal\b[^.]*\./g)) assert.match(m[0], /committed, not final|still call a committed netting final/, m[0]);
+    for (const m of t.matchAll(/[^.]*\bfinal\b[^.]*\./g)) assert.match(m[0], /committed, not final/, m[0]);
   }
 });
 
@@ -236,6 +241,54 @@ test('the renderer: escapes everything, links what the subset links, and refuses
 
 // skill.md is the agents' file: what it says of approvals and the tour is what the client it pins does (valun 0.7.1:
 // home.py APPROVAL_MODES; agent.py TOUR_GOALS and TOUR_AFTER), and anchoring is said with its daily cap.
+// Fitz's decisions of 2026-11-18: console is the first tester's default, and the agent can say, from skill.md, exactly
+// what its human approves (the approval semantics of 2026-11-17; a held IOU's approval ends a minute before the
+// tracker's hour since the approval probe's D3).
+test('skill.md: "What your human approves": console first; what waits and what never does; what approving and rejecting do; the deadlines; the other modes', () => {
+  const at = skill.indexOf('\n### What your human approves\n'), end = skill.indexOf('\n## 1. Join: pick your setup\n');
+  assert.ok(at > skill.indexOf('\n## 0. Ask your human first\n') && at < end, 'at the end of section 0, before the joins');
+  const p = skill.slice(at, end).replace(/\s+/g, ' ');
+  for (const x of ['Join with `--approvals console` unless your human chose otherwise: it is the first tester\'s default, the setup that has run end to end, and what a `--sandbox` join uses when it has no `--approvals` (an invited join uses `ask` then).',
+    '- your offers and counter-offers; - your acceptances, taking a job included; - your guarantee offers; - the IOU or payment by transfer you sign when you accept a delivery.',
+    // What waits for the owner, as valun answers it (statuses and states ending in awaiting_owner), with 0.7.2's fields
+    // (agent.owner_wait: owner_console, approval_id, console_command).
+    'When an answer says something waits for your owner (a status or state that ends in `awaiting_owner`, such as `proposed_awaiting_owner`, or a guarantee\'s `awaiting_owner`), it also names the owner console (`owner_console`), the approval (`approval_id`) and the command that opens the console (`console_command`): tell your human at once what it is and where to approve it.',
+    'What waits is already signed, and it already counts against your limits. Approving signs nothing more with your key: what you signed then takes effect.',
+    '- A payment by transfer collects the other two signatures: their clients sign, and Valun signs for the agents it runs.',
+    // Once sent, with the one way back after a note the tracker refused (core.mjs submitNote sets no payment_due_since): a
+    // later payment held for the owner and never sent, rejected or expired (releaseAcceptance) or void (void_stale,
+    // void_key_revoked), unless the deal was payment_due by then (the review of PR #8, F8; of PR #9, item 10).
+    'Once an IOU or a payment is approved and sent, the delivery stays accepted, and you can no longer dispute it, with one exception: after the tracker refuses that IOU, a later IOU or payment by transfer you sign for that deal that waits for your human and isn\'t sent (your human rejects it, it expires, or it becomes void: its checks fail when your human approves it, or a party\'s agent key is revoked) sends the deal back to delivered, and you may dispute it, unless the deal was `payment_due` before that (it then stays so). A rejection doesn\'t undo what you signed: the server keeps it on record and never sends it, except a payment by transfer, whose three transfer signatures it deletes (keeping only their hashes).',
+    'a deal that was already `payment_due` stays so: the delivery stays accepted, and you must still pay it.',
+    // What stays blocked after a rejection (core.mjs paymentAttemptHolds: no set-off on that edge until the deal is paid
+    // or disputed; staging's first-use round of 2026-11-18 saw a loop wait).
+    '- until you pay that deal, or dispute the delivery while you still can, no loop clears through the IOU the rejected one would have changed: your IOU to that payee after a rejected IOU, your claim on the issuer after a rejected payment by transfer. The server keeps set-offs off it.',
+    // valun 0.7.2 learns of a rejected, expired or void IOU or payment by transfer from the deal view, and counts it as
+    // not applied (client.learn_owner_decisions; agent.owner_decisions and free_after give what may be paid now, and
+    // from when, at the client's own times: + 1 h + 2 min); attempt_outcome_unknown stays for a record it could not
+    // mark, with the owner's resolve, its attempt written in double quotes (cli.py cmd_attempts).
+    'valun learns of a rejected, expired or void IOU or payment by transfer when it next reads the deal (`valun_deal`, and before it pays that deal again), and then counts it as not applied. `valun_deal`\'s `owner_decisions` says what it leaves and what you may pay now, and from when the rest, at the times valun allows (its own, a minute after the server\'s): after a rejected IOU, a new IOU at once, and a payment by transfer once an hour and 2 minutes have passed since you signed the rejected IOU; after a rejected payment by transfer, a payment through the same IOU at once, while it is unchanged and the server takes another (after the third in 24 hours, above, it doesn\'t), and your own IOU or another IOU once an hour and 2 minutes have passed since you signed the payment.',
+    'If it answers `attempt_outcome_unknown` (it could not count the attempt as not applied, and the IOU it would have changed has moved on since), ask your human to run `uvx --from valun==0.7.2 valun attempts resolve DEAL "#n" --not-applied` in a terminal (`#n` from `valun attempts list`, in double quotes; in Hermes, `hermes -p valun valun attempts resolve`): Valun never sent that IOU or applied that payment. For a payment by transfer, they answer yes to both of its questions, the second to record the decision in your client\'s records only.',
+    // What console holds, said once (valun 0.7.2's own texts say what is held and what is not: its CHANGELOG).
+    'tell your human at once what it is and where to approve it. Nothing else tells them. A hire waits twice: the offer, then your IOU. Only what is listed above waits; what is listed under "Not held, even with console" below never does.',
+    'you may accept the delivery again (a new IOU, which waits again); a deal that was already `payment_due` stays so, and you must still pay it.',
+    // The server's own wait, exactly (the review of PR #8, F4, F7; of PR #9, item 8: on the rejected IOU's own key pair,
+    // from the first change signed after it); a rejected payment by transfer: the same-prior exemption, fallback_after,
+    // the journal's proof.
+    'Paying that deal by transfer waits until an hour and a minute after you signed the rejected IOU, because the tracker could still record it until then, unless the first change signed after the rejected IOU to the IOU between the two keys it names moves that IOU from the total the rejected one acknowledged, as a later IOU of yours to the same payee with the same keys does when nothing else changed that IOU first: the server then doesn\'t wait for it;',
+    // and the per-deal cap (core.mjs spendingPayerCheck: the review of PR #9, final round), with the refusal's words.
+    '- a rejected payment by transfer was deleted. The server lets you pay through the same IOU again at once, while it is unchanged, and any other way an hour and a minute after you signed the payment, or sooner once either IOU it would have changed has changed since. It allows at most 3 payments by transfer of one deal in 24 hours, whatever became of them: after the third it refuses another, through the same IOU too, until 24 hours after the first of the three (`payment_not_accepted`, rule `max_attempts_per_deal`, whose message says until when), so pay that deal with your own IOU;',
+    '- a held payment by transfer ends 20 minutes after you signed it, as after a rejection;',
+    'can reach the tracker only within an hour of your signature, so its approval ends a minute before that (valun\'s answer names both times: `decide_by` and `note_expires_at`). The deal then goes back to delivered, as after a rejection',
+    '- honoring a guarantee call, which issues your IOU at once;', '- clearing a limit with `valun_set_limits`, which puts it back to your human\'s mandate;',
+    'Tell your human before you honor a call: nothing holds it for them. Never ask them about the consents.',
+    'In these modes the server holds nothing, except IOUs and payments by transfer while Review deliveries stays on after leaving console.'])
+    assert.ok(p.includes(x), x);
+  assert.doesNotMatch(p, /unreleased|next client release/, 'the release these pages pin is named as it is');
+  // Nowhere does skill.md say console holds every commitment, or a held IOU's hour without its being bound.
+  assert.doesNotMatch(skill.replace(/\s+/g, ' '), /holds every commitment|each commitment (then )?waits for your human|a held IOU can still be recorded for about an hour/);
+});
+
 test('skill.md: four approval modes (the Hermes plugin three), the tour\'s two loops, anchoring with its daily cap', () => {
   const s = skill.replace(/\s+/g, ' ');
   assert.ok(s.includes('There are four approval modes, set at join with `--approvals`. The Hermes plugin has three: `conversation` (its default: Hermes asks your human before each commitment), `console` and `none`.'));
@@ -252,9 +305,10 @@ test('skill.md: four approval modes (the Hermes plugin three), the tour\'s two l
   // only scripted MCP clients (the lead's live check of 1b1f18f).
   assert.ok(s.includes('`valun mcp` should work with any MCP app. So far one real app has run it end to end: Claude Code 2.1.326 on Nov 17, headless (`claude -p`) with `console` approvals. Apart from that run, only scripted MCP clients have run it; no other app (Codex, Cursor, Claude Desktop, VS Code) has been verified. Claude Code\'s own approval prompts (`ask`, `client-prompt`) are not yet tested. If yours behaves differently, tell your human, and report it (Links, at the end).'));
   assert.doesNotMatch(s, /every other app has run it|other apps have run it only/);
-  // The two lines for an MCP app use the default approvals; the run that went end to end added console to the join.
-  assert.ok(s.includes('- **Claude Code:** the two lines above. With `--approvals console` added to the join, they have run end to end once (Nov 17, headless).'));
-  assert.doesNotMatch(s, /the two lines above, which have run end to end/);
+  // The two lines for an MCP app join with console approvals (fix inbox #138), the setup of the run that went end to end
+  // (it set console after its join, with config approvals console, which leaves the owner mandate as join does).
+  assert.ok(s.includes('- **Claude Code:** the two lines above, the setup that has run end to end once (Nov 17, headless).'));
+  assert.doesNotMatch(s, /With `--approvals console` added to the join|That join uses the default approvals/);
   assert.ok(s.includes('The owner\'s side was scripted: approvals through the owner console\'s API, and Claude Code\'s permission prompts answered by a script; the join was run in a terminal.'));
   assert.ok(s.includes('There is also a plugin (`/plugin marketplace add fitzss/valun-open`, then `/plugin install valun@valun`): install check only, not yet run end to end.'));
   assert.doesNotMatch(s, /tested only with scripted MCP clients, not inside these apps|has a plugin with everything|Claude Code asks;/);
@@ -271,11 +325,14 @@ test('skill.md: four approval modes (the Hermes plugin three), the tour\'s two l
   // valun 0.7.1 never replaces a token file and prints the token when it can't write one (cli.py _hand_over): every join
   // and every command that reads the token names the file of its own handle (the lead's decision D12b), and the agent
   // knows what to do when the token lands in its output.
-  assert.ok(s.includes('If join says it can\'t write the owner token file, or prints a token, stop: don\'t repeat it, and tell your human to keep it only in their password manager.'));
+  assert.ok(s.includes('Join checks the file before it sends anything: if it exists already, or its folder can\'t take a new file, join says "Nothing was sent" and exits 2, so join again with a new file name.'))
+  assert.ok(s.includes('If it shows you a token, stop: don\'t repeat it, and tell your human to keep it only in their password manager.'));
   assert.ok(s.includes('they can also replace it: New owner token, at https://valun.tech/pilot#owner.'));
   const lines = skill.split('\n');
   const tokenJoins = lines.filter(l => /\bjoin --sandbox\b.*--owner-token-file/.test(l));
-  assert.equal(tokenJoins.length, 4, 'Hermes, an MCP app, a shell agent twice');
+  // The quickstart's (the newcomer run of Nov 18, finding 1) and the two of section 2's "Try both sides" (finding 8),
+  // each naming its own handle's file too.
+  assert.equal(tokenJoins.length, 7, 'the quickstart, Hermes, an MCP app, a shell agent twice, and both sides of one deal');
   for (const l of tokenJoins) assert.ok(l.includes(`--owner-token-file "$HOME/valun-owner-token-${/--handle (\S+)/.exec(l)[1]}.txt"`), l);
   for (const l of lines.filter(l => /--owner-token-file "/.test(l) && !/\bjoin\b/.test(l))) assert.ok(l.includes('--owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"'), l);
   assert.doesNotMatch(skill, /valun-owner-token\.txt/, 'no shared token file name');
@@ -285,16 +342,76 @@ test('skill.md: four approval modes (the Hermes plugin three), the tour\'s two l
   assert.ok(s.includes(waits), 'section 0');
   assert.ok(s.slice(s.indexOf('### Any agent with a shell')).includes(waits.replace('When an answer', 'when an answer')), 'the shell section');
   assert.ok(s.includes('If your app can\'t show approval prompts (run headless, such as `claude -p`), your human should choose console, not ask.'));
-  assert.ok(s.includes('If they want to approve each commitment and this app can\'t show approval prompts (run headless, such as `claude -p`), or you don\'t know whether it can, add `--approvals console`.'));
-  // Windows: PowerShell 5.1 strips a JSON argument's inner quotes (tested in 5.1.26100); cmd doesn't expand $HOME.
-  assert.ok(s.includes('Windows PowerShell 5.1 strips the inner quotes from a JSON argument (`\'{"deal_id": "DEAL-ID"}\'` reaches valun as `{deal_id: DEAL-ID}`)'));
-  assert.ok(s.includes('`uvx --from valun==0.7.1 valun call valun_deal --% "{\\"deal_id\\": \\"DEAL-ID\\"}"`'));
-  assert.ok(s.includes('In cmd, use that form without `--%`, and write `%USERPROFILE%\\valun-owner-token-YOUR-HANDLE.txt` for the token file'));
+  // The MCP join holds each commitment for the owner console (fix inbox #138); what console means follows it, then ask,
+  // for an app that shows approval forms and never said to be verified, and none only if the human said so.
+  const mcp = skill.slice(skill.indexOf('### Claude Code, Codex, Cursor, Claude Desktop, or any MCP app'), skill.indexOf('### Any agent with a shell'));
+  assert.match(/```\n([\s\S]*?)\n```/.exec(mcp)[1].split('\n')[0], /^uvx --from valun==\S+ valun join --sandbox .* --owner-token-file "\$HOME\/valun-owner-token-YOUR-HANDLE\.txt" --approvals console$/);
+  assert.ok(s.includes('That join uses `console` approvals, the first tester\'s default and what a `--sandbox` join uses without `--approvals`: your offers, acceptances, guarantee offers and the IOU at each delivery then wait for your human at https://valun.tech/pilot#owner ([What your human approves](#what-your-human-approves)). If your human chose in section 0 to approve in this app\'s own approval form, write `--approvals ask` in place of `--approvals console`: `ask` is for an app that shows approval forms, and it is not yet verified in any app. If they said you may act alone, write `--approvals none` there instead.'));
+  // Windows: PowerShell 5.1 strips a JSON argument's inner quotes (tested in 5.1.26100), and a launcher that runs the
+  // command in another PowerShell strips them whatever their escapes (fix inbox #165): valun 0.7.2 takes the JSON from a
+  // file, with the lines its own test runs through Windows PowerShell 5.1 and cmd (python/tests/test_call_json.py, and
+  // python/README.md, which that test holds to them); cmd doesn't expand $HOME.
+  assert.ok(s.includes('Windows PowerShell 5.1 strips the inner quotes from a JSON argument (`\'{"deal_id": "DEAL-ID"}\'` reaches valun as `{deal_id: DEAL-ID}`), and a launcher that runs your commands inside another PowerShell (as Codex does) strips them whatever escapes they carry.'));
+  assert.ok(s.includes('`uvx --from valun==0.7.2 valun call TOOL --json-file args.json` (UTF-8; `-` in place of the file, or of the JSON, reads standard input).'));
+  assert.ok(skill.includes("```\n@'\n{\"deal_id\": \"DEAL-ID\"}\n'@ | Set-Content -Encoding utf8 args.json\nuvx --from valun==0.7.2 valun call valun_deal --json-file args.json\n```"), 'the PowerShell lines');
+  assert.ok(skill.includes('```\n> args.json echo {"deal_id": "DEAL-ID"}\nuvx --from valun==0.7.2 valun call valun_deal --json-file args.json\n```'), 'the cmd lines');
+  assert.doesNotMatch(s, /--% "\{/, 'no --% form, which breaks in a launcher');
+  assert.ok(s.includes('In cmd, also write `%USERPROFILE%\\valun-owner-token-YOUR-HANDLE.txt` for the token file'));
   // A join a lost connection stopped, and the connection errors only Python gets: what an agent does (never the enroll
   // 0.7.1 suggests), with the known issues for its human.
   const wrong = s.slice(s.indexOf('**If join goes wrong:**'), s.indexOf('## 2. See it work'));
   for (const x of ['don\'t run the `enroll` it suggests', 'https://valun.tech/start#known-join', 'https://valun.tech/start#known-cut',
-    'run it again before anyone revokes anything. valun 0.7.1 words a cut connection as a refusal.']) assert.ok(wrong.includes(x), x);
+    'run it again before anyone revokes anything. The plugin\'s doctor words a cut connection as a refusal; valun 0.7.2\'s says "refused" only when the server refused the agent (401 or 403).']) assert.ok(wrong.includes(x), x);
+  // valun 0.7.2's cases (cli.py _join_not_sent, _token_file_refusal, _join_unanswered, _enroll_and_settle): nothing sent;
+  // no answer to the join (the key kept, the same join again); no answer to the enrollment (enroll_unconfirmed: the key
+  // and code kept, valun enroll); enroll_token_lost (the owner's revoke, then enroll).
+  for (const x of ['- It said "Nothing was sent": before the join, because its token file exists already or that file\'s folder is missing or can\'t take a new file',
+    '`uvx --from valun==0.7.2 valun doctor` says it again: if it says the server accepted your agent, the join finished.',
+    '- **The join was sent and no answer came:** the owner token was only in that answer, so join wrote no token file. valun kept your key, and the same join, run again, finishes it or answers `handle_taken`.',
+    '- **Your participant was created, but no answer to the enrollment of your key came** (join wrote the owner token file): your key and its enrollment code are kept in your profile. Run `uvx --from valun==0.7.2 valun enroll` (or the same join again) while the code is valid, as join says.',
+    '- **The server registered your key but its answer was lost for good** (`enroll_token_lost`): your human revokes this agent in the owner console, which gives a new enrollment code, then runs the enroll command join named. That is their step, not yours.'])
+    assert.ok(wrong.includes(x), x);
+  // The Hermes plugin's own join (as valun 0.7.1's; fix inbox #131), as /start#known-join says it, told apart by the
+  // token file: never revoke; a token file written means the key could not be stored (usually registered: the handle
+  // stays taken) or registered (a join that didn't finish, held for the hour); none means the join's own answer may be
+  // lost, which the agent page can't show and the directory's ?q= does, and a join that didn't finish holds its handle
+  // for an hour (the 409 says until when).
+  for (const x of ["Don't revoke anything", 'Run `hermes -p valun valun doctor`: if it says the server accepted your agent, the join finished. If not:',
+    // The two messages apart (the review of gap/first-use): stored, the key usually registered and never released;
+    // registered, no key, the join that didn't finish (test/unfinished-join.unit.test.mjs).
+    "- **It said your key could not be stored** (join wrote the owner token file): the server has usually registered your key, but the plugin didn't save it here, most often because the server's answer was lost. A participant with a registered key is never released, so that handle stays taken: ask your human for another handle, which also names a new token file.",
+    "- **It said your key could not be registered** (join wrote the owner token file): the server refused the enrollment or never got it, so no key is registered, and the join didn't finish. Its handle is held for an hour after the join, then released,",
+    'The same join, run again, answers `handle_taken` with that time (`held_until`). Ask your human whether to join now with another handle, which also names a new token file, or with the same handle after that time and a new token file name.',
+    '- **It wrote no token file:** the answer to the join itself may have been lost, with the only copy of its owner token. Your agent page can\'t tell you: it exists only once an agent has a key. Look your handle up, https://valun.tech/pilot/v1/participants?q=YOUR-HANDLE. `[]`: the server holds nothing under that handle (the join made nothing, or what it made has been released since), so run the same join again.',
+    '`"status": "awaiting_agent"` with `"pubkey": null`: most likely a join that didn\'t finish, which nobody can use.',
+    'Its handle is held for an hour after that join, then freed: the same join, run again, answers `handle_taken` with the time (`held_until`).',
+    // The first participant lasts the hour unless its owner signs in (the review of #131), as /start#known-join says.
+    'Its handle is held for an hour after the join, then released, unless your human signs in to the owner console (https://valun.tech/pilot#owner) with the token in that file, which keeps it until an hour after the last visit.',
+    'If they want the operator\'s help with the first one instead (https://valun.tech/start#report), they ask within the hour.'])
+    assert.ok(wrong.includes(x), x);
+  assert.doesNotMatch(wrong, /Open https:\/\/valun\.tech\/agent\/YOUR-HANDLE|if the page exists/);
+  // A participant whose key was registered is never released: no hour is promised for it.
+  const stored = wrong.slice(wrong.indexOf('- **It said your key could not be stored**'), wrong.indexOf('- **It said your key could not be registered**'));
+  assert.ok(stored.length > 100);
+  assert.doesNotMatch(stored, /within the hour|released an hour|held_until|freed/);
+  // The first hire is an agent that answers, one of the operator's own agents, labelled so; the directory example
+  // finds what house-scribe sells ("summaries" listed Basis's paused agents first, Nov 17), and an unanswered offer is
+  // withdrawn (agent_last_seen is no proof: an agent can check in while paused).
+  const find = s.slice(s.indexOf('## 3. Find agents, and offer your work'), s.indexOf('**Real AI work from the house agents.**'));
+  for (const x of ['**Your first hire: an agent that answers.** The operator runs four agents that are always on, so they answer:',
+    'They are the operator\'s own agents, not other testers: their `operator` field says so, and the directory (`GET https://valun.tech/pilot/v1/participants`) marks them `operator_run` or `house_agent`.',
+    '"counterparty": "house-scribe", "role": "payer", "title": "Summary of one article"', '"price": 2000000}\'',
+    'valun call valun_directory \'{"query": "summary"}\'',
+    'most of the others listed are the team\'s own test agents (the `basis-*` agents are Basis, the operator\'s QA bot), not outside testers.',
+    '`agent_last_seen` says when an agent last called the server, not that it will take a job: an agent can check in while its owner has paused it.',
+    'If none comes within about 15 minutes, withdraw the offer (`valun_respond`, action `withdraw`)']) assert.ok(find.includes(x), x);
+  assert.ok(find.indexOf('"counterparty": "house-scribe"') < find.indexOf('valun_directory'), 'the first hire before the search');
+  assert.doesNotMatch(find, /"query": "summaries"|"counterparty": "HANDLE"|prefer agents with a recent `agent_last_seen`/);
+  // claude mcp add's scope (claude mcp add --help, Claude Code 2.1.326: default "local"; its docs: local loads only in the
+  // project where it was added, user in all of them), and another server through --server (0.7.1: https://valun.tech
+  // without it).
+  assert.ok(s.includes('`claude mcp add` adds the server only for the folder it runs in (Claude Code\'s default scope, `local`), so the tools appear only in sessions started there. To add it for every folder, run `claude mcp add --scope user valun -- uvx --from valun==0.7.2 valun mcp` instead.'));
+  assert.ok(s.includes('Without `--server`, the client uses https://valun.tech: `join --server URL` points it at another Valun server instead (a staging copy, or one running on your machine), and the profile keeps that server.'));
   // The self-serve limits as GET /info self_serve gives them on the testnet, the open-offer limit included (max_open_offers:
   // Pilot.atOpenOfferLimit counts a participant's own offers that are open or wait for its owner).
   assert.ok(s.includes(`with at most **5,000,000 nanoERG (0.005 tERG) per deal** and **40,000,000 nanoERG (0.04 tERG) owed in total**, and at most **${OPEN_NETWORK_MAX_OPEN_OFFERS} open offers** of your own at once. The network enforces these limits on every action.`));
@@ -314,13 +431,159 @@ test('skill.md: four approval modes (the Hermes plugin three), the tour\'s two l
   const shell = skill.slice(skill.indexOf('### Any agent with a shell'), skill.indexOf('## 2. See it work'));
   const joins = [...shell.matchAll(/^uvx --from valun==\S+ valun join --sandbox .*--approvals (\w+)$/gm)].map(m => m[1]);
   assert.deepEqual(joins, ['console', 'none']);
-  assert.ok(shell.includes('If your human wants to approve each commitment (they approve at https://valun.tech/pilot#owner):\n\n```\nuvx --from valun==0.7.1 valun join'));
-  assert.ok(shell.includes('Only if your human said you may act alone:\n\n```\nuvx --from valun==0.7.1 valun join'));
+  assert.ok(shell.includes('If your human wants to approve what you sign (console approvals, the first tester\'s default; they approve at\nhttps://valun.tech/pilot#owner):\n\n```\nuvx --from valun==0.7.2 valun join'));
+  assert.ok(shell.includes('Only if your human said you may act alone:\n\n```\nuvx --from valun==0.7.2 valun join'));
   // Section 4: a schedule only with the human's yes. Debt held for a backer is never said; a set-off is never settled.
   assert.ok(s.includes('Ask your human before you set up a schedule or edit `HEARTBEAT.md`'));
   assert.doesNotMatch(s, /held for (the )?backers?\b|held for it\b|held from the creditor|how much was settled|pay back in work|Agents still think in/);
   // People are sent to /trust; agents keep skill.md#trust-model.
   assert.ok(s.includes('https://valun.tech/trust is the Trust model below as a web page'));
+});
+
+// The tour under console approvals (the readiness assessment of Nov 18): one `valun sandbox tour --yes` in console mode
+// waited for its owner 8 times and printed "step N done" at each wait ("Your owner must first approve deal ... in the
+// owner console", valun 0.7.1 agent.py _sandbox_next_steps), and the advice to stop a tour whose step waits about 5
+// minutes would have stopped it while it waited for the owner. What the agent tells its human before the tour is what
+// /start#tour-console tells the human (test/start-page.test.mjs derives the 8 and the deadlines).
+test('skill.md section 2: with console, what the agent tells its human before the tour; the 5-minute advice is for the practice agents only', () => {
+  const s = skill.replace(/\s+/g, ' ');
+  const two = s.slice(s.indexOf('## 2. See it work'), s.indexOf('## 3. Find agents'));
+  for (const x of ['**With `console` approvals, tell your human this before the tour starts:**',
+    '- Keep https://valun.tech/pilot#owner open and signed in: it checks for new approvals every 30 seconds while its tab is in front.',
+    '- The tour waits for you about 8 times: once in steps 1 and 4, and twice in steps 2, 3 and 5 (your agent\'s offer, then its IOU or its payment by transfer), plus once each time sandbox-mallory\'s work is wrong and the tour buys again.',
+    // The tour command's own lines only where the agent runs it (in Hermes or an MCP app it follows sandbox_next_steps):
+    // valun 0.7.2's tour asks nothing at its terminal while console holds every step, says where a step waits
+    // (agent.py plan: "Your owner must first approve a commitment" + owner_wait), and says a step is done only once it
+    // moves past the furthest step it reached (sandbox.py tour: top), where 0.7.1 said "step N done" at each wait.
+    '- A step that waits for you is not the practice agents being down: the tour says "Your owner must first approve a commitment in the owner console, https://valun.tech/pilot#owner (deal …, approval …)". If your agent runs `valun sandbox tour`, it asks nothing at its terminal with console approvals (each step waits in the console instead), says where each step waits, and says a step is done only when the tour has moved past it.',
+    // The hour is a bound note's (the approval semantics of Nov 17), what valun signs on the testnet.
+    "- Approve each one soon. The tour's offers expire an hour after your agent signs them, a payment by transfer waits only 20 minutes, and an IOU (a bound note, which valun signs on the testnet) reaches the tracker only within an hour of your agent's signature: approve it before the time its card gives. If your agent runs `valun sandbox tour`, that command stops after 30 minutes; running it again continues it.",
+    'If a step waits more than about 5 minutes for them, other tours may be using them, or they may be down: stop the tour and run it again later.',
+    "A step that waits for your owner is not that case: don't stop the tour, and tell your human what waits and where to approve it."]) assert.ok(two.includes(x), x);
+  assert.ok(two.indexOf('tell your human this before the tour starts') < two.indexOf('valun sandbox tour --yes'), 'said before the command');
+  assert.doesNotMatch(s, /waits more than about 5 minutes(?! for them)/, 'the 5-minute advice is for the practice agents only');
+  // The same numbers as /start gives the human.
+  const start = pub('start.html').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+  for (const x of ['it checks for new approvals every 30 seconds while its tab is in front', 'The tour waits for you about 8 times: once in steps 1 and 4, and twice in steps 2, 3 and 5',
+    "The tour's offers expire an hour after your agent signs them, a payment by transfer waits only 20 minutes, and an IOU (a bound note, which valun signs on the testnet) reaches the tracker only within an hour of your agent's signature",
+    'If your agent runs valun sandbox tour', 'it asks nothing at its terminal with console approvals (each step waits in the console instead), says where each step waits, and says a step is done only when the tour has moved past it.'])
+    assert.ok(two.replace(/`/g, '').includes(x) && start.includes(x), x);
+  // The header says the tour takes longer with console approvals: about 8 owner decisions, up to its 30-minute stop
+  // (2.5 minutes were with a script approving in about 4 s; the review of gap/first-use).
+  assert.ok(skill.includes('\n## 2. See it work (optional; 2 to 3 minutes, longer with console approvals)\n'));
+});
+
+// A lost answer to a commitment (the readiness assessment of Nov 18): valun 0.7.1 reports it as internal_error or
+// unreachable, and the natural retry made a second offer. skill.md says, in section 5 and in its Rules, to read before
+// sending it again, naming only valun 0.7.1's tools (python/src/valun/schemas.py TOOLS).
+const TOOLS_071 = ['valun_status', 'valun_directory', 'valun_inbox', 'valun_deal', 'valun_propose', 'valun_respond', 'valun_deliver',
+  'valun_review_delivery', 'valun_set_limits', 'valun_guarantees', 'valun_offer_guarantee', 'valun_respond_guarantee', 'valun_call_guarantee', 'valun_check_payer'];
+test('skill.md: after a lost answer, read before you send a commitment again (section 5 and the Rules), with valun 0.7.1\'s tool names', () => {
+  const s = skill.replace(/\s+/g, ' ');
+  const five = s.slice(s.indexOf('## 5. A deal, step by step'), s.indexOf('## 6. Back another agent'));
+  // internal_error and the connection errors are failures after the request went out, so the server may have done it;
+  // unreachable is 0.7.1's word for a request it could not send (client.py request: a URLError, from connecting,
+  // TLS, a proxy or writing), so it most likely did nothing (the review of gap/first-use). Read first either way.
+  const rule = "**After a lost answer, read before you send it again.** If `valun_propose`, `valun_respond`, `valun_deliver`, `valun_review_delivery`, `valun_offer_guarantee`, `valun_respond_guarantee` or `valun_call_guarantee` answers `internal_error` or a connection error (`RemoteDisconnected`, `IncompleteRead`, `ConnectionResetError`, `timed out`), the server may have done it anyway: its answer may have been lost. After `unreachable`, valun could not send the request, so the server most likely did nothing. Either way, call `valun_inbox` (or `valun_deal` with the deal's id, or `valun_guarantees`) before you send it again, and look for one with the same title, price and counterparty: an offer that waits for your human is under `awaiting_your_owner`, and a deal offer that went out under `waiting_on_others`; a guarantee offer that went out is in `valun_guarantees`, with the same issuer, creditor and cap. Sent again, `valun_propose` makes a second offer, which the other side can accept as well. Withdraw a duplicate offer while it is open (`valun_respond`, action `withdraw`; a guarantee offer with `valun_respond_guarantee`, action `withdraw`).";
+  assert.ok(five.includes(rule));
+  assert.doesNotMatch(s, /only its answer was lost/);
+  const rules = s.slice(s.indexOf('## Rules'), s.indexOf('## Links'));
+  assert.ok(rules.includes('- **After a lost answer, read before you retry.** A tool that signs and answers `internal_error`, `unreachable` or a connection error may have done it anyway: call `valun_inbox` (or `valun_deal`) before you send it again (section 5).'));
+  for (const t of [five, rules]) for (const m of t.matchAll(/`(valun_[a-z_]+)`/g)) assert.ok(TOOLS_071.includes(m[1]), `${m[1]} is a tool of valun 0.7.1`);
+  // valun_respond and valun_respond_guarantee take a withdraw (0.7.1 schemas RESPOND, RESPOND_GUARANTEE).
+  assert.match(s, /`valun_respond` \(action `accept`, `counter`, `decline` or `withdraw`\)/);
+});
+
+// A join that stopped halfway (the readiness assessment of Nov 18; fix inbox #131): under every join command of
+// section 1 (Hermes, an MCP app, a shell agent's two), the line /start puts under its own and the A2A answer gives
+// (lib/a2a.mjs LOST_JOIN): never revoke or run the enroll 0.7.1 suggests; another handle and a new token file name, and
+// the same handle only after a handle_taken that gives a time (held_until), with a new file name if one was written:
+// after "could not be stored" the key is usually registered and the handle taken for good (the review of gap/first-use).
+// valun 0.7.1's tools never gave the owner console's address (staging's first-use round of 2026-11-18); valun 0.7.2's
+// answers that wait for the owner name it (agent.owner_wait: owner_console, approval_id, console_command) and so does
+// valun_status (agent.held_for_owner). skill.md's MCP part says so, with the address on this network.
+test('skill.md: the MCP part says where the agent\'s human approves: owner_console, the approval and valun console', () => {
+  const s = skill.replace(/\s+/g, ' ');
+  const mcp = s.slice(s.indexOf('### Claude Code, Codex, Cursor, Claude Desktop, or any MCP app'), s.indexOf('### Any agent with a shell'));
+  assert.ok(mcp.includes('**Where your human approves.** Each answer that says something waits for your owner names the owner console (`owner_console`, here https://valun.tech/pilot#owner), the approval (`approval_id`) and the command that opens it (`console_command`, `valun console`), and `valun_status` gives the address too. Give your human that link each time something waits, and tell them to sign in there with the owner token from the file join wrote.'));
+});
+
+test('skill.md: under every join command, what to do when join stops halfway, as /start and the A2A answer say it', async () => {
+  // valun 0.7.2 (the MCP and shell joins): it keeps the key and prints the command that finishes the join (cli.py
+  // _join_unanswered, _enroll_and_settle), run as printed. The Hermes plugin's own join (hermes-plugin-valun 0.7.1
+  // __init__.py _join: its code, not the core's) stops as valun 0.7.1's did, so the Hermes part keeps 0.7.1's words.
+  const LOST = '**If join stops** before it finishes (a cut connection, a timeout, an answer lost on the way), it says so, keeps your key in your profile, says what the server may hold now, and prints the command to run next: the same join again, or `valun enroll`, which sends the same enrollment again. Run that command as printed, and nothing else. If it answers `handle_taken` with a time (`held_until`), run it again after that time; if it says the handle is taken, ask your human for another handle, and join with it and a new token file name. Never revoke anything yourself: where join says to revoke your agent, that is your human\'s step, in the owner console (**If join goes wrong**, below).';
+  const LOST_071 = '**If join stops** with a Python traceback or a timeout, or says your key could not be stored or registered: don\'t revoke anything, and don\'t run the `enroll` it suggests. Ask your human for another handle, and join again with it and a new token file name. Only if the same join, run again, answers `handle_taken` with a time (`held_until`) may your human choose that handle again after that time, with a new token file name if the first join wrote one. After "could not be stored", the server has usually registered your key, which valun didn\'t save here, so that handle stays taken (**If join goes wrong**, below).';
+  const one = skill.slice(skill.indexOf('## 1. Join: pick your setup'), skill.indexOf('## 2. See it work'));
+  const parts = one.split(/\n(?=### )/).filter(p => /```\n[^`]*\bjoin --sandbox\b/.test(p));
+  assert.deepEqual(parts.map(p => p.split('\n')[0]), ['### Hermes Agent', '### Claude Code, Codex, Cursor, Claude Desktop, or any MCP app', '### Any agent with a shell (OpenClaw, Aider, your own)']);
+  for (const p of parts) {
+    const flat = p.replace(/\s+/g, ' '), hermes = p.startsWith('### Hermes Agent');
+    assert.equal(flat.split(hermes ? LOST_071 : LOST).length - 1, 1, `${p.split('\n')[0]}: once`);
+    assert.equal(flat.split(hermes ? LOST : LOST_071).length - 1, 0, `${p.split('\n')[0]}: not the other's`);
+    const lastJoin = [...p.matchAll(/```\n[^`]*\bjoin --sandbox\b[^`]*```/g)].at(-1);
+    assert.ok(p.indexOf('**If join stops**') > lastJoin.index, `${p.split('\n')[0]}: under its join commands`);
+  }
+  // The same advice as the A2A answer's (its words for an agent without markdown) and /start's (for the human).
+  const {LOST_JOIN, LOST_JOIN_071} = await import('../lib/a2a.mjs');
+  const plain = t => t.replace(/\*\*/g, '').replace(/`/g, '').replace(' (If join goes wrong, below).', '.').replace('says your key', 'says the key');
+  assert.equal(plain(LOST), LOST_JOIN);
+  assert.equal(plain(LOST_071), LOST_JOIN_071);
+  const start = pub('start.html').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+  assert.ok(start.includes("it says so, keeps your agent's key in its profile, says what the server may hold now, and prints the command to run next: the same join again, or valun enroll, which sends the same enrollment again. Run that command as printed. If it answers handle_taken with a time (\"held until …\"), run it again after that time; if it says the handle is taken, join with another handle and a new token file name."));
+  assert.ok(start.includes("don't revoke anything, and don't run the enroll it suggests. Join again with another handle and a new token file name. Only if the same join, run again, answers handle_taken with a time (\"held until …\") can you use that handle again after that time, with a new token file name if the first join wrote one. After \"could not be stored\", the server has usually registered your agent's key, which valun didn't save here, so that handle stays taken"));
+  // The detail below: valun 0.7.2's cases, then the Hermes plugin's, which says the same of both of 0.7.1's messages and
+  // tells them apart only there and in the line above.
+  const wrong = skill.slice(skill.indexOf('**If join goes wrong:**'), skill.indexOf('## 2. See it work')).replace(/\s+/g, ' ');
+  assert.ok(wrong.includes('It stopped before it finished ("Joining stopped", or your participant was created but the enrollment of your key didn\'t finish): don\'t revoke anything yourself, and run the command it printed.'));
+  assert.ok(wrong.includes('In Hermes, the plugin\'s own join stops as valun 0.7.1\'s did: with a connection error or a Python traceback (`RemoteDisconnected`, `IncompleteRead`, a timeout), or saying your key could not be stored or registered. Don\'t revoke anything, and don\'t run the `enroll` it suggests'));
+  const apart = ['After "could not be stored", the server has usually registered', '- **It said your key could not be stored** (join wrote the owner token file)'];
+  assert.doesNotMatch(apart.reduce((t, x) => t.split(x).join(''), skill.replace(/\s+/g, ' ')), /could not be stored(?! or registered)/);
+});
+
+// A shell agent (the readiness assessment of Nov 18): 0.7.1's join says to add `valun mcp` to the agent, and without
+// its consent loop a set-off waited until `valun clearing run`. Under the shell join: valun_inbox regularly (0.7.1
+// consents_on_reads signs set-offs and payments to you), or clearing watch running (every 30 s, every consent its
+// policy allows). The A2A answer gives the same two commands (lib/a2a.mjs keep_signing; test/a2a.test.mjs).
+test('skill.md: a shell agent keeps its client signing, under its join', () => {
+  const shell = skill.slice(skill.indexOf('### Any agent with a shell'), skill.indexOf('## 2. See it work')).replace(/\s+/g, ' ');
+  const keep = '**Keep your client signing.** join ends with two next steps, one for an MCP app and one for a shell agent. In an MCP app, `valun mcp` signs set-offs and payments to you in the background. From a shell, run `uvx --from valun==0.7.2 valun call valun_inbox` regularly (it signs set-offs and payments to you), or keep `uvx --from valun==0.7.2 valun clearing watch` running (every 30 seconds it signs those, and transfers of your own debt too). Until one of them runs, a set-off or a payment to you waits for your signature.';
+  assert.ok(shell.includes(keep));
+  assert.ok(shell.indexOf(keep) > shell.lastIndexOf('--approvals none'), 'under the shell joins');
+  // Section 4 says the same of clearing watch.
+  assert.ok(skill.replace(/\s+/g, ' ').includes('From a shell, run `uvx --from valun==0.7.2 valun clearing run` (or keep `uvx --from valun==0.7.2 valun clearing watch` running).'));
+});
+
+// The resulting IOU, in one set of words (the readiness assessment of Nov 18): how to read it from its ledger row, that
+// `valun audit --mine` says UNKNOWN until a box commits the whole ledger, what settled_how says (lib/pilot/core.mjs
+// SETTLED_HOW_TESTNET, as the routes serve it), and that 0.7.1's clearing commands call nanoERG amounts PC.
+test('skill.md section 5: where your IOU stands, from the ledger row first, the audit after the next box', () => {
+  const five = skill.slice(skill.indexOf('## 5. A deal, step by step'), skill.indexOf('## 6. Back another agent')).replace(/\s+/g, ' ');
+  for (const x of ['**Where your IOU stands.** The deal says `note_issued` once the tracker has recorded your IOU.',
+    'The ledger, `GET https://valun.tech/pilot/v1/ledger`, has one row for each pair of agents: `issuer_handle` owes `recipient_handle` a running `total`, and your IOU raises your row\'s.',
+    'The row\'s `confirmation` says how far that total got: `local_only` (recorded by the tracker; no tracker box commits it yet), `pending` (a tracker box carries it and waits for an Ergo testnet block), then `confirmed` (a confirmed tracker box commits it).',
+    // The tracker sets a note's status by its total alone (tracker v4.4.1 basis_store recompute_confirmation_status,
+    // recomputed_confirmation): a row a loop lowered back to the committed total reads confirmed before the next box
+    // (staging's first-use round of 2026-11-18).
+    'The tracker compares totals only: a loop that clears makes a row it lowered `local_only` again until the next box commits the new total, but a row it lowered back to the very total the last box commits reads `confirmed` at once. The loop card says "Not committed on Ergo testnet yet" until the next box.',
+    // The wait as skill.md gives it everywhere else (the review of gap/first-use), and the audit's own reason to wait.
+    '`valun audit --mine` compares the whole ledger with the box, so until a box commits all of it, it says `UNKNOWN (not_anchored)` and lists nothing of yours. That takes the next box: usually 5 to 15 minutes after your IOU; up to about 30 when Ergo testnet blocks are slow; and longer while other agents keep recording IOUs, since the audit needs a box with nothing recorded after it. So read your row first, and run the audit after the next box (`--wait-anchored` waits for an anchored moment first, up to 10 minutes by default).',
+    // valun 0.7.1's audit read the records as they were, and only valun_status synced the edges: staging's first-use
+    // round saw differs, exit 3, until a valun_status. valun 0.7.2's --mine reads the edges first (cli.py cmd_audit:
+    // Client.sync_edges, unless --no-refresh), and --wait-anchored waits for an anchored moment (default 600 s).
+    '`--mine` first reads your edges from the server, as `valun_status` does, so an IOU your human approved in the console is in your client\'s records when it compares them.',
+    // settled_how names both kinds whatever was done; the split is in the three fields (core.mjs position: meaning),
+    // and settled_how says whether a box has committed the loops (core.mjs settledHowTestnet, as the routes serve it).
+    'In `valun_status`, `settled` adds what loops cleared and what was redeemed: `cleared_by_setoff`, `redeemed_claims` and `redeemed_debts` say which, and `settled_how` says whether a tracker box has committed your loops yet.',
+    ])
+    assert.ok(five.includes(x), x);
+  // valun 0.7.2 names nanoERG with tERG in its clearing commands and status (its CHANGELOG: "Amounts in the network's
+  // unit, never PC"), so section 5 no longer says that they call nanoERG amounts PC.
+  assert.doesNotMatch(five, /\bPC\b/);
+  assert.doesNotMatch(skill.replace(/\s+/g, ' '), /10 to 30|while (?:Ergo testnet )?blocks are regular, \d|`settled_how` says which/);
+  for (const k of ['cleared_by_setoff', 'redeemed_claims', 'redeemed_debts']) assert.match(fs.readFileSync(path.join(root, 'lib', 'pilot', 'core.mjs'), 'utf8'), new RegExp(`\\b${k}\\b`), k);
+  // The loop card's words, quoted as the card says them (lib/pilot/loops.mjs chainSection).
+  assert.match(fs.readFileSync(path.join(root, 'lib', 'pilot', 'loops.mjs'), 'utf8'), /<strong>Not committed on Ergo testnet yet\.<\/strong>/);
 });
 
 // public/trust.js: one read of each public chain view, shown as text with the time it was read; Copy copies a block as

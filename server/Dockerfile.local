@@ -7,16 +7,27 @@
 # entrypoint (scripts/local-entrypoint.sh) computes the sha256 of the basis_server it runs at every start, and the
 # server checks it against the pins, so a binary that is not tracker v4.4.1's runs with circulation off.
 #
-# Build context: this folder, with the tracker's Linux binaries for each platform in dist/local-bins/<arch>/
-# (basis_server and valun_signer; <arch> is amd64 or arm64, as buildx sets TARGETARCH). Their build recipe is beside
-# the v4.4.1 pin in lib/pilot/pins.mjs; Dockerfile.local.dockerignore admits only what this file copies.
-#   docker buildx build -f Dockerfile.local --platform linux/amd64,linux/arm64 -t valun-local .
-# Run it, with its data in a named volume, then point a client at it:
+# Build context: this folder, with, for each platform (<arch> is amd64 or arm64, as buildx sets TARGETARCH):
+#   dist/local-bins/<arch>/      the tracker's Linux binaries, basis_server and valun_signer (lib/pilot/pins.mjs pins
+#                                their sha256; the tracker fork's source and its build recipe aren't public yet);
+#   dist/local-licenses/<arch>/  what the image carries in /opt/valun/licenses: README.txt, valun/LICENSE (this
+#                                server's, MIT), tracker/LICENSE (the tracker fork's, CC0-1.0),
+#                                tracker/THIRD-PARTY-NOTICES.txt (the license and notice texts of the Rust crates
+#                                statically linked into both binaries, made after the build from the tracker build's
+#                                own Cargo.lock and cargo home) and tracker/rust/ (the Rust standard library's notices).
+# Dockerfile.local.dockerignore admits only what this file copies. VALUN_BUILD_SHA names the commit it is built from
+# (below; GET /pilot/v1/info `build`):
+#   docker buildx build -f Dockerfile.local --build-arg VALUN_BUILD_SHA=<full commit id> --platform linux/amd64,linux/arm64 -t valun-local .
+# The prebuilt image, ghcr.io/fitzss/valun-local, is built from this file in CI, natively on each platform, from
+# valun-open's server/ (this folder's public copy) at the commit its label org.opencontainers.image.revision names, with
+# the tracker binaries of the same CI run: the amd64 ones are byte-identical to the pinned v4.4.1 build, and its labels
+# give both binaries' sha256.
+# Run it, with its data in a named volume, then point a client at it in a profile of its own (docs/LOCAL.md):
 #   docker run --rm -p 127.0.0.1:8080:8080 -v valun-local:/data valun-local
-#   valun config server http://127.0.0.1:8080 && valun join --sandbox ... && valun sandbox tour --yes
-# Published on another port (-p 127.0.0.1:9000:8080)? Add -e VALUN_PUBLIC_ORIGIN=http://127.0.0.1:9000, the origin
-# its links and banner name. scripts/local-acceptance.sh checks a started container.
-# The binaries need glibc >= 2.38, hence Debian trixie.
+#   valun --profile local join --sandbox --server http://127.0.0.1:8080 ... && valun --profile local sandbox tour --yes
+# The port is published on 127.0.0.1 only: anyone who reaches it can join and act on this server. On another port
+# (-p 127.0.0.1:9000:8080), add -e VALUN_PUBLIC_ORIGIN=http://127.0.0.1:9000, the origin its links and banner name.
+# scripts/local-acceptance.sh checks a started container. The binaries need glibc >= 2.38, hence Debian trixie.
 FROM node:24-trixie-slim
 ARG TARGETARCH
 
@@ -29,8 +40,36 @@ COPY --chmod=0755 basis/run-tracker.sh scripts/local-entrypoint.sh /opt/valun/
 COPY package.json server.mjs /opt/valun/app/
 COPY lib /opt/valun/app/lib
 COPY public /opt/valun/app/public
-# Invites and the clearing engine, from inside the container: docker exec CONTAINER node scripts/pilot-admin.mjs invite --uses 25
+# Invites and the clearing engine, from inside the container: docker exec CONTAINER node scripts/pilot-admin.mjs invite --uses 25 --code-only
 COPY scripts/pilot-admin.mjs /opt/valun/app/scripts/
+# The licenses and notices of what this image adds to its base (README.txt there says which file covers what).
+COPY dist/local-licenses/${TARGETARCH}/ /opt/valun/licenses/
+# The instructions a person follows, as the commit the image is built from has them (fix inbox #155: the image's check
+# runs their commands as written from here, and an outsider reads them without the repository): this server's README,
+# the local guide and the outsider checklist.
+COPY README.md /opt/valun/
+COPY docs/LOCAL.md docs/LOCAL-ACCEPTANCE.md /opt/valun/docs/
+# What the base image holds, for its licenses and the sources of its GPL and LGPL parts (README.txt says where each is):
+# base/debian-packages.tsv, every Debian package with its source package and version; base/node.txt, the Node.js, npm,
+# corepack and Yarn releases and where each is. Made here, from the base this image was built on.
+RUN set -eu; d=/opt/valun/licenses/base; mkdir -p "$d"; \
+    dpkg-query -W -f '${binary:Package}\t${Version}\t${source:Package}\t${source:Version}\n' | LC_ALL=C sort > "$d/debian-packages.tsv"; \
+    { echo "node $(node -p process.versions.node) /usr/local"; \
+      for m in npm corepack; do p=/usr/local/lib/node_modules/$m; \
+        if [ -f "$p/package.json" ]; then echo "$m $(node -p "require('$p/package.json').version") $p"; fi; done; \
+      if [ -e /usr/local/bin/yarn ]; then y=$(dirname "$(dirname "$(readlink -f /usr/local/bin/yarn)")"); \
+        echo "yarn $(node -p "require('$y/package.json').version") $y"; fi; } > "$d/node.txt"; \
+    test -s "$d/debian-packages.tsv"
+# The commit this image is built from: the valun-open commit its label org.opencontainers.image.revision names, passed
+# as --build-arg VALUN_BUILD_SHA=<that full commit id> (fix inbox #155: the local-readiness audit, IMG-12 and IMG-7). The
+# image records it in /opt/valun/revision; the entrypoint gives it to the server, whose GET /pilot/v1/info names it as
+# `build`, and records in the data volume which image last started on it. Built without it, the image names no build;
+# anything but a full commit id (40 lowercase hex digits) stops the build. Late in the file: earlier layers stay cached.
+ARG VALUN_BUILD_SHA=
+RUN set -eu; v="$VALUN_BUILD_SHA"; bad="VALUN_BUILD_SHA=$v: a full commit id (40 lowercase hex digits), or nothing"; \
+    case "$v" in *[!0-9a-f]*) echo "$bad" >&2; exit 1 ;; esac; \
+    if [ -n "$v" ] && [ "${#v}" -ne 40 ]; then echo "$bad" >&2; exit 1; fi; \
+    printf '%s\n' "$v" > /opt/valun/revision
 
 WORKDIR /opt/valun/app
 # The entrypoint enforces the network (valun-pilot-1, no chain) and the local mode; the rest can be changed with -e.

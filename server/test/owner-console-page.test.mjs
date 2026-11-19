@@ -139,23 +139,52 @@ test('without the script the page shows the guide and says why the console canno
   assert.match(JS, /document\.body\.classList\.add\('js'\);\r?\nroute\(\);/, 'the class is set just before the first view is shown');
 });
 
+// What a token the server holds no record of gets (pilot.js loadOwner, and showDeal for a deal view): it is removed, and
+// the form says what a 401 proves (no participant here holds that token), then its causes: a replaced token
+// (rotateOwnerToken: New owner token, or the operator's reset), a released join (core.mjs releaseEnded removes the
+// record of a self-serve join whose agent never enrolled a key, unless another participant's list names it), or a token
+// this server never issued. The review of PR #8, promotion's missed item; of PR #9, item 12 and code 4.
+const REFUSED_TOKEN = "That owner token is not valid on this server (HTTP 401): no participant here holds it. It has been removed from this tab. It was replaced (with New owner token, or by the operator), the join it was issued for was released, or this server never issued it (another Valun server's token, say). A self-serve join whose agent never enrolled a key is released when its hold ends, unless another participant's list names it; its handle was free again from then on, unless someone has joined with it since.";
+
 test('the guide at the top of the owner view: what it is for, where the owner token came from, what approving does, who sees what, and never to share the token', () => {
   const body = readBody(HTML), guide = body.querySelector('#owner-guide');
   assert.equal(body.querySelector('#tab-owner').children[0], guide, 'the first thing in the owner view');
   const part = id => text(guide.querySelector(`#${id}`));
-  assert.match(part('guide-for'), /^What it’s for Your agent signs its own deals with its own key\. Here you set the limits it works within, decide on the commitments those limits hold for you \(with console approvals, all of them\), and see its deals and what it holds and owes\. Nothing can be signed here\.$/);
+  // With console approvals, what waits (the approval semantics of 2026-11-17: never "all of them": honors, guarantee acts,
+  // deliveries and consents never wait).
+  assert.match(part('guide-for'), /^What it’s for Your agent signs its own deals with its own key\. Here you set the limits it works within, decide on what those limits hold for you \(with console approvals: its offers, counter-offers, acceptances and guarantee offers, and the IOU or payment by transfer at each delivery it accepts\), and see its deals and what it holds and owes\. Nothing can be signed here\.$/);
   const signin = part('guide-signin');
-  assert.match(signin, /Use your owner token, which starts with vpo_\. You got it once, when you joined: valun join \(or the Hermes plugin’s join\) showed it in the terminal, or wrote it to the file you named with --owner-token-file\./);
-  assert.match(signin, /Your client keeps no copy, and the server keeps only a hash, so nobody can show it to you again\. An agent token \(vpa_…\) doesn’t work here\./);
+  // Where the token is: the file join wrote, the documented path named.
+  assert.match(signin, /Use your owner token, which starts with vpo_\. You got it once, when you joined: valun join \(or the Hermes plugin’s join\) wrote it to the file you named with --owner-token-file \(with the commands on Start, \$HOME\/valun-owner-token-YOUR-HANDLE\.txt\), or showed it in the terminal\. Paste what that file holds\./);
+  assert.match(signin, /Your client keeps no other copy, and the server keeps only a hash, so nobody can show it to you again\. An agent token \(vpa_…\) doesn’t work here\./);
+  // What approving and rejecting do, as the server does it: approving signs nothing new and may not finish the item;
+  // rejecting unsigns nothing.
   const approve = part('guide-approve');
-  assert.match(approve, /Each commitment that waits shows the exact terms your agent signed, and what approving or rejecting will do\./);
-  assert.match(approve, /Approve, and that one commitment takes effect as shown: an offer goes out, a deal is agreed, or the IOU for an accepted delivery reaches the tracker and you owe it\. Reject, and it doesn’t\./);
+  assert.match(approve, /Each item that waits shows the exact terms your agent signed, and the server’s own words for it: what is already signed and held, what approving and rejecting do, and its deadline\. Your agent has already signed it with its key, and Valun’s server holds it\./);
+  // The review of console/first-use: an approved payment by transfer is then signed by the other two parties (Valun
+  // signing for the agents it runs); what a failed check does depends on the kind; a rejected payment by transfer is
+  // deleted, not kept; the transfer wait after a rejected IOU runs from its signature; valun 0.7.1 is not told.
+  assert.match(approve, /Approving signs nothing with your agent’s key: the server checks again, then releases what your agent signed\. An offer goes out; an acceptance makes the deal binding, once the other side’s owner has approved too if theirs must; an IOU goes to the tracker, and you owe it; a payment by transfer then collects the other two signatures \(their clients sign, and Valun signs for the agents it runs\)\. If the IOU between the agents or a key has changed since your agent signed \(for a payment, also anything else it relied on\), an IOU or a payment becomes void, and your agent signs again; an offer, acceptance or guarantee offer that fails a check stays pending\. Once Valun sends an IOU or a payment you approved, the delivery stays accepted, with one exception: after the tracker refuses that IOU, a later IOU or payment of the deal that waits for you and isn’t sent \(you reject it, it expires, or it becomes void: its checks fail when you approve it, or a party’s agent key is revoked\) sends the deal back to delivered, unless the deal was payment due before that\./);
+  // What stays blocked after a rejected IOU (paymentAttemptHolds), Valun's own wait exactly (on the rejected IOU's own key
+  // pair, from the first change signed after it: the review of PR #9, item 8), and what valun 0.7.1 does: only what
+  // holds in every case (each list of its conditions left a case it got wrong), what it usually does, that it may
+  // refuse, and what to do for each answer, for a rejected IOU and a rejected payment by transfer
+  // (scripts/client-071-attempts.py checks both ways out in every case it runs).
+  assert.match(approve, /Rejecting unsigns nothing: Valun keeps what your agent signed on record, and never sends it, except a payment by transfer, whose three transfer signatures Valun deletes, keeping only their hashes\. A rejected acceptance leaves the offer open\. After a rejected IOU \(a bound one, which valun 0\.7\.1 signs on the testnet\), paying that deal by transfer waits until an hour and a minute after your agent signed it, unless the first change signed after it to the IOU between the two keys it names moves that IOU from the total it acknowledged, as a later IOU of your agent’s to that agent with the same keys does when nothing else changed that IOU first: Valun then doesn’t wait for it\. After an ordinary IOU, it waits until the IOU between the two agents on the tracker moves past it\. Until your agent pays that deal or disputes the delivery, no loop that includes what your agent owes that agent clears\. Valun allows at most 3 payments by transfer of one deal in 24 hours, whatever became of them: after the third, it refuses another until 24 hours after the first of the three \(the card says until when\)\./);
+  assert.match(approve, /valun 0\.7\.1 isn’t told of a rejection, and keeps counting what your agent signed as a payment that may still apply\. After a rejected IOU it usually signs a new IOU for that deal at once; if anything else changed the IOU between the two agents first, or an agent’s key changed, it may refuse\. After a rejected payment by transfer it usually pays that deal again through the same IOU at once while that IOU is unchanged, unless Valun refuses another payment by transfer of it \(after the third in 24 hours\); any other way, or once that IOU has changed, it may refuse\. If it answers transfer_window_open, have your agent pay again once an hour and 2 minutes have passed since it signed what you rejected \(its retry_after_ms says how long to wait\)\. If it answers attempt_outcome_unknown, run valun attempts resolve DEAL '#n' --not-applied in a terminal, since Valun never sent what you rejected \(for a payment by transfer, answer yes to both of its questions, the second to record your decision in your client’s records only\), then have your agent pay again once those 62 minutes have passed\./);
+  assert.doesNotMatch(approve, /\), something else changed/, 'a refusal does not prove what moved the IOU: usually, not always (the review of PR #8, F2)');
+  assert.doesNotMatch(approve, /7 days|signed nothing else|on the conditions below/, 'no list of 0.7.1\'s conditions (the review of PR #9)');
+  assert.doesNotMatch(approve, /another deal with/);
+  assert.doesNotMatch(approve, /signs nothing new|waits about an hour|A check that fails can still void it/);
   assert.match(approve, /Approve stays off when this page can’t show you exactly what you would approve\. The server records your decision; it isn’t signed with a key\./);
+  assert.doesNotMatch(text(guide), /Reject, and it doesn’t|with console approvals, all of them/);
   const who = guide.querySelector('#guide-who dl');
   assert.deepEqual(who.querySelectorAll('dt').map(text), ['Anyone', 'The other side of a deal', 'Valun’s operator (Fitz Doud, who runs valun.tech)']);
   const [anyone, other, operator] = who.querySelectorAll('dd').map(text);
   assert.equal(anyone, 'Your agent’s profile and public key, what it holds and owes, and whose IOUs it accepts or refuses. If you publish its budget card, also how much it may commit you to, and your objective.');
-  assert.equal(other, 'The whole deal, and your decisions on what was offered to it. Never your notes.');
+  // Not the whole deal (core.mjs view and noteView): nothing of what waits for its owner or was rejected before it was
+  // offered, no acceptance signature before it is final, no held note's signatures.
+  assert.equal(other, 'The deal, but not what waits for you: never an offer, counter-offer or guarantee offer of your agent’s while it waits for you or after you rejected it, never your agent’s acceptance signature before the acceptance is final, and never the signatures of an IOU or payment that waits for you. It does see that an acceptance, an IOU or a payment waits for you, your agent’s signed acceptance of its delivery, and your decisions on those. Never your notes.');
   // What the operator can do (the site redesign's review: the owner token and the admin mandate route): any part of the
   // mandate, beyond the self-serve box, shown only as the last change; and a new owner token for any agent, which with
   // the agent's revocation puts another key on the handle. Never "give you a new owner token", which reads as recovery.
@@ -177,13 +206,19 @@ test('the guide at the top of the owner view: what it is for, where the owner to
   // approve_above at the per-deal limit outside console).
   assert.deepEqual(steps, ['Your agent signs and tells you something waits.',
     'Sign in here. Pending approvals shows the exact terms. This page re-reads every 30 s while it is open and in view; nothing notifies you otherwise.',
-    'Approve or reject before the offer expires. An IOU that waits for you can reach the tracker only within about an hour of your agent signing it: its card says until when. Approved later than that, it fails, and the deal goes back to your agent: tell it to accept the work again, which then waits for you once more.',
-    'Tell your agent you decided: it carries on only when it next checks. A hire waits for you twice: the offer, then the IOU once your agent accepts the work. When another agent hires yours, taking the job waits for you too. The tour through your agent waits about nine times.',
+    // The deadlines (core.mjs approvalDecideBy; a held bound IOU's approval ends at its timestamp + 1 h - 60 s since
+    // 2026-11-18, the approval probe's D3). valun 0.7.1 is told of neither expiry (the review of PR #8).
+    'Approve or reject by the deadline its card shows. An offer, counter-offer, acceptance or guarantee offer ends when the offer expires. A payment by transfer ends 20 minutes after your agent signed it, as after a rejection. A bound IOU, which valun 0.7.1 signs on the testnet, can reach the tracker only within an hour of your agent signing it, so its approval ends a minute before that: Valun never sends it then, and the deal goes back to your agent, as after a rejection (a deal that was already payment due stays payment due). Tell your agent to accept the work again, which then waits for you once more. As after a rejection, valun 0.7.1 isn’t told of either, and may then need valun attempts resolve.',
+    // The tour under console waited exactly 8 times on staging (2026-11-18), as /start and skill.md say it.
+    'Tell your agent you decided: it carries on only when it next checks. A hire waits for you twice: the offer, then the IOU once your agent accepts the work. When another agent hires yours, taking the job waits for you too. The tour through your agent waits about 8 times, plus once each time sandbox-mallory’s work is wrong and the tour buys again.',
     'To stop holding commitments, change the mode on your agent’s machine (with the valun client, valun config approvals ask or none, adding --owner-token-file and the file join wrote) and untick review deliveries here. Don’t type the token into a command: it stays in your shell history. Keep the file join wrote, move it into your password manager, and paste the token only into the console’s sign-in. In Hermes, which has no such command: set Ask me above to your per-deal limit and untick Review deliveries here, then set the plugin’s confirm_commitments back to true to be asked in Hermes (not yet verified in a real Hermes).']);
   assert.doesNotMatch(text(guide), /put the token in a new file|paste it into a new file/, 'no file typed by hand');
   // What does not wait, even with console approvals: the testnet's default acceptance and its consents (lib/pilot/core.mjs
   // joinSandbox; valun 0.7.1 SANDBOX_CONSENT_POLICY: each client signs for its own key only, D3b).
-  assert.equal(text(guide.querySelector('#guide-console p.guide-after')), 'Not everything waits. On the testnet a new self-serve agent accepts any issuer’s IOUs as payment by transfer, up to 0.04 tERG per issuer. Its client signs that acceptance by itself in every approval mode, and the issuer’s client signs the issuer’s consent the same way. You can narrow whose IOUs it accepts under “Accept notes from” in your mandate here.');
+  // And what never waits, even with console (the approval semantics of 2026-11-17).
+  assert.deepEqual(guide.querySelectorAll('#guide-console p.guide-after').map(text), [
+    'Not everything waits, even with console approvals. Your agent’s client signs these by itself, and the server records them at once: honoring a guarantee call (your agent’s own IOU to the creditor); accepting, calling and releasing guarantees; deliveries, declines, withdrawals and disputes; clearing a limit recorded from your conversation, which puts it back to your mandate; and the consents: set-offs, moves of your agent’s own debt, and payments to it by transfer.',
+    'On the testnet a new self-serve agent accepts any issuer’s IOUs as payment by transfer, up to 0.04 tERG per issuer. Its client signs that acceptance by itself in every approval mode, and the issuer’s client signs the issuer’s consent the same way. You can narrow whose IOUs it accepts under “Accept notes from” in your mandate here.']);
   assert.deepEqual(body.querySelectorAll('#guide-body > *').map(e => e.id), ['guide-for', 'guide-signin', 'guide-approve', 'guide-who', 'guide-console', 'guide-token']);
   const never = guide.querySelector('#guide-token');
   assert.ok(never.classList.contains('caution'), 'a caution note');
@@ -197,7 +232,15 @@ test('the guide at the top of the owner view: what it is for, where the owner to
   const form = body.querySelector('#login-form');
   assert.equal(body.querySelector('#owner-token').getAttribute('aria-describedby'), 'token-where token-never');
   assert.equal(text(form.querySelector('#token-never')), 'Never share it: whoever holds it can act as you here.');
-  assert.match(text(form.querySelector('#token-where')), /^Starts with vpo_\. Shown once when you joined, or written to the file you named with --owner-token-file\.$/);
+  // Where the token is (the file join wrote, at the documented path), and that a pasted file's contents work.
+  // valun console is the RC's (unreleased), and it prints the file only when the profile recorded it, which a join with
+  // valun 0.7.1 never does (the review of console/first-use).
+  assert.equal(text(form.querySelector('#token-where')), 'It is in the file your join wrote: with the commands on Start, $HOME/valun-owner-token-YOUR-HANDLE.txt, named for your agent’s handle. Open it and paste what it holds: it starts with vpo_, and the line break after it is ignored. The next client release (unreleased) is planned to add valun console, which prints where that file is if the profile recorded it (a join with valun 0.7.1 doesn’t). If join showed the token in the terminal instead, that was its only copy.');
+  // What the console is for and what will appear in it, in two sentences, above the form.
+  const what = body.querySelector('#signin-what');
+  assert.equal(what.parentNode.id, 'owner-login');
+  assert.equal(text(what).split(/(?<=\.)\s/).length, 2, 'two sentences');
+  assert.equal(text(what), 'Here you decide on what your agent has signed and Valun’s server holds for you, and you set the limits your agent works within. Once you sign in, you see first what waits for your approval (with console approvals: your agent’s offers, acceptances and guarantee offers, and the IOU or payment at each delivery it accepts), then your agent, what it holds and owes, its limits and every deal it makes.');
   assert.equal(body.querySelector('#owner-token').getAttribute('type'), 'password');
   // The copy rules: none of these words anywhere on the page.
   assert.doesNotMatch(text(body), /trustless|fully decentralized|revolutioni[sz]e|limitless|the agent economy|guaranteed|risk-free|seamless|final settlement|adoption|\bcredits\b/i);
@@ -213,7 +256,7 @@ test('the network and invite views say what an IOU is and whom the invite form i
   assert.equal(text(body.querySelectorAll('#tabs a').find(a => a.dataset.tab === 'join')), 'Invite codes');
   assert.match(text(body.querySelector('#tab-join .join-note')), /^You don’t need an invite to join Valun: .* This form is for an invite code from Valun’s operator:/);
   assert.equal(text(body.querySelectorAll('#tab-join .card').find(c => text(c.querySelector('h2')) === 'How joining works').querySelector('p.hint')),
-    'Joining here, with an invite code, your mandate starts by sending every commitment to you for approval (approve_above 0), and it expires after 14 days. An agent that joins by itself (valun join --sandbox) starts with the self-serve limits instead, for 7 days, renewed while it is active, and nothing waits for you here unless it uses console approvals.');
+    'Joining here, with an invite code, your mandate starts by sending every offer, counter-offer, acceptance and guarantee offer to you for approval (approve_above 0), and it expires after 14 days. An agent that joins by itself (valun join --sandbox) starts with the self-serve limits instead, for 7 days, renewed while it is active, and nothing waits for you here unless it uses console approvals.');
 });
 
 test('no text in the console is drawn below 12 px (0.75rem), the site\'s floor for small labels (the review\'s finding on page stylesheets)', () => {
@@ -293,6 +336,30 @@ test('signing in: an agent token, or anything that is not an owner token, is ref
   assert.equal(page.store.size, 0);
 });
 
+// The console decisions of 2026-11-18: the owner pastes what the file join wrote ($HOME/valun-owner-token-YOUR-HANDLE.txt:
+// the token and a line break; Windows editors may add a byte-order mark or \r\n, and a browser may turn a pasted line
+// break into a space in a one-line field). Every whitespace character is dropped (a token holds none), and the token
+// goes only in the Authorization header: never in the address, never in localStorage.
+test('signing in with a pasted token file: the line break, spaces and a byte-order mark around it are dropped; the token never goes into the address', async () => {
+  for (const pasted of [`${TOKEN}\n`, `\uFEFF${TOKEN}\r\n`, `  ${TOKEN}  \n\n`, `${TOKEN} `]) {
+    const page = await open();
+    await signIn(page, pasted);
+    const read = page.calls.find(c => c.method === 'GET' && c.path === '/owner');
+    assert.equal(read?.auth, `Bearer ${TOKEN}`, JSON.stringify(pasted));
+    assert.equal(page.store.get('valun-pilot-owner-token'), TOKEN, 'kept for this tab as the token itself');
+    assert.ok(!page.calls.some(c => c.path.includes(TOKEN)), 'never in a path or query');
+    assert.ok(!String(globalThis.location.hash).includes('vpo_'), 'never in the address');
+    assert.equal(page.$('#owner-console').hidden, false, 'the console opened');
+  }
+  // An agent token pasted from its file is still refused before anything is sent.
+  const page = await open(), before = page.calls.length;
+  await signIn(page, '\uFEFFvpa_agent-token\r\n');
+  assert.equal(text(page.$('#login-msg')), 'That is an agent token (vpa_…). The owner console needs the owner token (vpo_…) you received when you joined. Keep the two apart.');
+  assert.equal(page.calls.length, before);
+  assert.match(JS, /localStorage/, 'pilot.js names localStorage only to say it is not used');
+  assert.doesNotMatch(JS.replace(/\/\/.*$/gm, ''), /localStorage\.(setItem|getItem)/, 'no localStorage read or write');
+});
+
 test('loading: while the owner view is being read, the console says so (a status)', async () => {
   const page = await open({token: TOKEN, fetch: (u, o, base) => (new URL(u, 'http://x').pathname === '/pilot/v1/owner' ? new Promise(() => {}) : base(u, o))});
   const box = page.$('#owner-console .loading');
@@ -333,9 +400,24 @@ test('errors: the server\'s error says what failed, with Try again and Use anoth
   // A token the server refuses (401): removed from this tab, and the form says why.
   const refused = await open({token: 'vpo_revoked-or-replaced'});
   assert.equal(refused.$('#owner-login').hidden, false);
-  assert.equal(text(refused.$('#login-msg')), 'That owner token is not valid on this server (HTTP 401). It has been removed from this tab.');
+  assert.equal(text(refused.$('#login-msg')), REFUSED_TOKEN);
   assert.equal(refused.store.size, 0);
   assert.equal(refused.$('#guide-body').hidden, false, 'the guide is open again');
+});
+
+// The review of PR #9, code 3: the deal view's own 401 (pilot.js showDeal: GET /deals/{id} refused, as after the token
+// was replaced in another tab) says what the sign-in's does, from the same text, and removes the token from this tab.
+test('a deal view whose read the server refuses (401): the token is removed from this tab, and the form says what a 401 proves and what can cause it', async () => {
+  const VD = 'vd_2222222222222222';
+  const page = await open({token: TOKEN, hash: `#owner/deal/${VD}`,
+    routes: api({extra: (m, p) => (m === 'GET' && p === `/deals/${VD}` ? {status: 401, body: {error: 'unauthorized', message: 'missing or invalid token'}} : undefined)})});
+  assert.ok(page.calls.some(c => c.method === 'GET' && c.path === `/deals/${VD}` && c.auth === `Bearer ${TOKEN}`), 'the deal was read with the token');
+  assert.equal(page.$('#owner-login').hidden, false, 'the sign-in form');
+  assert.equal(text(page.$('#login-msg')), REFUSED_TOKEN);
+  assert.equal(page.store.size, 0, 'removed from this tab');
+  // What a 401 proves, and nothing more: never that a join was released, as if that were the only cause.
+  assert.match(REFUSED_TOKEN, /^That owner token is not valid on this server \(HTTP 401\): no participant here holds it\. /);
+  assert.doesNotMatch(REFUSED_TOKEN, /that join was released|is free to join again/);
 });
 
 // The redesign's round 2 (accessibility): reading the owner view hides the form that holds focus and folds the guide, so
@@ -352,7 +434,7 @@ test('a refused token: focus back in the token field, which says why, and the pa
   // The server refuses it (401): the form again, the field focused and described by the reason, the page where it was.
   Object.assign(globalThis.window, {scrollY: 3140, scrollTo: o => scrolled.push(o)});
   await signIn(page, 'vpo_replaced-token');
-  assert.equal(text($('#login-msg')), 'That owner token is not valid on this server (HTTP 401). It has been removed from this tab.');
+  assert.equal(text($('#login-msg')), REFUSED_TOKEN);
   assert.deepEqual([$('#owner-login').hidden, $('#guide-body').hidden], [false, false]);
   assert.equal(page.doc.activeElement, field);
   assert.deepEqual([field.getAttribute('aria-invalid'), field.getAttribute('aria-describedby')], ['true', 'login-msg token-where token-never']);
@@ -385,11 +467,19 @@ test('forced colours: only the current console tab keeps an underline, in Highli
 });
 
 test('empty: nothing waiting says what would wait here, by the owner\'s own mandate; no deals points to a first one', async () => {
-  const waits = async mandate => text((await open({token: TOKEN, routes: api({owner: ownerView({mandate})})})).$('#approvals p.empty'));
-  assert.equal(await waits({approve_above: 5e6, review_deliveries: false}),
-    'Nothing is waiting for you. An offer, acceptance or guarantee your agent signs for more than 5,000,000 nanoERG (0.005 tERG) (approve_above) waits here before it takes effect.');
+  // What waits, and what never does (the approval semantics of 2026-11-17): with circulating credit on (the testnet's
+  // owner view has credit_policy), guarantee offers and payments by transfer too; never an honor of a call, the guarantee
+  // acts, deliveries, declines, withdrawals, disputes or the consents.
+  const waits = async (mandate, extra = {}) => text((await open({token: TOKEN, routes: api({owner: ownerView({mandate, ...extra})})})).$('#approvals p.empty'));
+  const circ = {credit_policy: {auto_clear: true, novate_own_debt: true, accept_transfers: true, accept_notes_from: 'any', refuse_notes_from: [], pay_with_held_notes: 'when_asked'}};
+  const never = 'These never wait here: honoring a guarantee call (your agent\'s own IOU, recorded at once), accepting, calling and releasing guarantees, deliveries, declines, withdrawals and disputes, and the consents its client signs by itself.';
+  assert.equal(await waits({approve_above: 5e6, review_deliveries: false}, circ),
+    `Nothing is waiting for you. An offer, counter-offer, acceptance (taking a job included) or guarantee offer your agent signs for more than 5,000,000 nanoERG (0.005 tERG) (Ask me above) waits here before it takes effect. ${never}`);
+  assert.equal(await waits({approve_above: 0, review_deliveries: true}, circ),
+    `Nothing is waiting for you. With Ask me above at 0, every offer, counter-offer, acceptance (taking a job included) and guarantee offer your agent signs waits here before it takes effect, and so does the IOU or payment by transfer it signs when it accepts a delivery (Review deliveries). ${never}`);
+  // Circulating credit off: no guarantees, payments by transfer or consents to name.
   assert.equal(await waits({approve_above: 0, review_deliveries: true}),
-    'Nothing is waiting for you. Every offer, acceptance and guarantee your agent signs waits here before it takes effect (approve_above is 0), and so does every delivery it accepts, with the payment it signs for it (review_deliveries).');
+    'Nothing is waiting for you. With Ask me above at 0, every offer, counter-offer and acceptance (taking a job included) your agent signs waits here before it takes effect, and so does the IOU it signs when it accepts a delivery (Review deliveries). Deliveries, declines, withdrawals and disputes never wait here.');
   const page = await open({token: TOKEN});
   const deals = page.$('#deals-card p.empty');
   assert.equal(text(deals), 'No deals yet. Your agent proposes and answers deals with its own key, and each one appears here. For a first one, see Start.');

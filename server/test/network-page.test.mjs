@@ -603,7 +603,7 @@ test('phones: the census stacks; the latest changes keep two columns; fewer rows
 // The owner token file is named per handle (the redesign, round 2): valun 0.7.1 prints the token instead when the file
 // already exists, as after the tour's join.
 test('the join line is the whole command, pinned and runnable as it is; the page says redemption needs the issuer\'s reserve', async () => {
-  const JOIN = 'uvx --from valun==0.7.1 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"';
+  const JOIN = 'uvx --from valun==0.7.2 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"';
   const body = readBody(pub('network.html'));
   const code = () => body.querySelector('.join code');
   assert.equal(code().textContent, JOIN, 'as served, before any read');

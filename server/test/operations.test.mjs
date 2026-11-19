@@ -1,7 +1,7 @@
 // Release v16 operations and documentation, without a tracker:
 //   - scripts/pilot-downgrade-check.mjs refuses a v15 rollback while circulating credit is under way and otherwise writes a
 //     backup and maps payment_due to note_failed;
-//   - scripts/pilot-admin.mjs clearing run|status through the loopback admin routes;
+//   - scripts/pilot-admin.mjs clearing run|status and invite [--code-only] through the loopback admin routes;
 //   - scripts/check-persistence.mjs --pilot (ledger notes, reconciliation, participants, the pilot tracker's digest);
 //   - GET /info's description in each mode (OQ-49; mode off word for word v15's);
 //   - lib/basis.mjs trackerPin (what /api/status names as the tracker source);
@@ -212,6 +212,51 @@ test('pilot-admin clearing run and clearing status go through the loopback admin
   } finally { await close(srv); fs.rmSync(dir, {recursive: true, force: true}); }
 });
 
+// scripts/pilot-admin.mjs invite [--code-only] (fix inbox #155: the local-readiness audit's FB-3). valun 0.7.1's
+// `join --invite-from-stdin` sends the whole first line it reads as the code, so the local docs pipe the invite into it:
+// with --code-only the output is the code alone (and nothing on stderr); without it, the line an operator reads, as it was.
+test('pilot-admin invite: --code-only prints only the code, for valun join --invite-from-stdin; without it, the line it printed before', async t => {
+  if (!needs(t, 'scripts/pilot-admin.mjs')) return;
+  const TOKEN = 'admin-token-for-the-invite-test', dir = tmp();
+  fs.writeFileSync(path.join(dir, 'admin-token'), TOKEN + '\n');
+  const asked = [], CODE = 'vpi_0123456789abcdefghijklmn';
+  const pilot = {circulating: false, s: {invites: {}},
+    createInvite: o => { asked.push(o); return {id: 'inv_0123abcd', code: CODE, expires_at: '2026-12-02T12:00:00.000Z'}; }};
+  const srv = await listen(createHandler({service: {}, mcp: {}, cfg: {}, publicDir: '.', pilotRoutes: createPilotRoutes({pilot, cfg: {}, adminTokenHash: sha(TOKEN)})}));
+  try {
+    const args = ['--data', dir, '--port', String(srv.address().port)];
+    const only = await run('pilot-admin.mjs', ['invite', '--uses', '25', '--code-only', ...args]);
+    assert.equal(only.code, 0, only.out + only.err);
+    assert.equal(only.out, `${CODE}\n`, 'the code alone: the first line a pipe gives the join is the code');
+    assert.equal(only.err, '');
+    const line = await run('pilot-admin.mjs', ['invite', '--uses', '3', '--days', '2', '--note', 'for the lab', ...args]);
+    assert.equal(line.code, 0, line.out + line.err);
+    assert.equal(line.out, `invite inv_0123abcd: ${CODE}  (expires 2026-12-02T12:00:00.000Z)\n`);
+    assert.deepEqual(asked, [{note: '', maxUses: 25, ttlDays: 14}, {note: 'for the lab', maxUses: 3, ttlDays: 2}]);
+    // A refused call prints no code, and exits 1.
+    fs.writeFileSync(path.join(dir, 'admin-token'), 'wrong');
+    const refused = await run('pilot-admin.mjs', ['invite', '--code-only', ...args]);
+    assert.equal(refused.code, 1);
+    assert.equal(refused.out, '');
+    assert.match(refused.err, /^HTTP 404/);
+  } finally { await close(srv); fs.rmSync(dir, {recursive: true, force: true}); }
+});
+
+// The usage line pilot-admin prints for an unknown or missing command (on Fly through fly ssh console, and in the local
+// image through docker exec): every command once, each between ' | ' (the review of the local-readiness branch, HI-3:
+// 3481b31's --code-only had dropped the space before enrollment-code). It sends no request.
+test('pilot-admin with no command prints its usage line, every command between " | ", and calls nothing', async t => {
+  if (!needs(t, 'scripts/pilot-admin.mjs')) return;
+  const dir = tmp();
+  fs.writeFileSync(path.join(dir, 'admin-token'), 'admin-token-for-the-usage-test\n');
+  const r = await run('pilot-admin.mjs', ['--data', dir, '--port', '9']);
+  assert.deepEqual([r.code, r.err], [0, '']);
+  assert.equal(r.out, 'usage: pilot-admin.mjs invite [--note text] [--uses n] [--days n] [--code-only] | invites | enrollment-code <vp_id> | owner-token <vp_id> '
+    + '| mandate <vp_id> <json> | clearing run|status [--json]   [--data dir] [--port n]\n');
+  // Between two commands always ' | ' (run|status is one command's two forms).
+  assert.doesNotMatch(r.out.replace('clearing run|status', 'clearing run-status'), /\S\||\|\S/);
+});
+
 // ---------------------------------------------------------------------------------------------------------------
 // scripts/check-persistence.mjs --pilot
 test('check-persistence --pilot snapshots and compares the pilot ledger, reconciliation, participants and tracker digest', async t => {
@@ -341,27 +386,35 @@ test('the container entrypoint passes the tracker binary\'s own sha256 and BASIS
   assert.ok(entry.indexOf('export PILOT_TRACKER_SHA256') < entry.indexOf('node "$ROOT/app/server.mjs"'), 'computed before the app starts');
 });
 
-test('start-local gives the app the sha256 it computed in WSL, never one from the environment, and starts each tracker with BASIS_CONFIG_LAYOUT=auto', async t => {
+test('start-local gives its apps the sha256 it computed in WSL, never one from the environment, and starts each tracker with BASIS_CONFIG_LAYOUT=auto', async t => {
   if (!needs(t, 'scripts/start-local.mjs')) return;
   // Importing start-local starts nothing: it runs only as the entry point.
-  const {trackerSha256, trackerArgv, appEnv} = await import(pathToFileURL(path.join(root, 'scripts', 'start-local.mjs')).href);
+  const {trackerSha256, trackerArgv, appEnv, deskEnv} = await import(pathToFileURL(path.join(root, 'scripts', 'start-local.mjs')).href);
   const H = c => c.repeat(64);
   assert.equal(trackerSha256({status: 0, stdout: `${H('c')}  /home/valun/bins/basis_server\n`, stderr: ''}), H('c'));
   for (const r of [{status: 1, stdout: '', stderr: 'sha256sum: /home/valun/bins/basis_server: No such file or directory\n'}, {status: null, stdout: null, error: new Error('spawnSync wsl.exe ENOENT')},
     {status: 1, stdout: `${H('c')}  /home/valun/bins/basis_server\n`, stderr: 'wsl: an error'}, {status: 0, stdout: 'not a hash\n'}, {status: 0, stdout: ''}, null])
     assert.equal(trackerSha256(r), '', `no hash from ${JSON.stringify(r)} (fail closed)`);
-  const opts = sha256 => ({ports: {app: '4320', demo: '3048', pilot: '3058'}, bins: '/home/valun/bins', nfts: {demo: H('a'), pilot: H('b')}, dataDir: 'C:/v/data', pilotDir: 'C:/v/data-pilot', sha256});
+  const opts = sha256 => ({ports: {app: '4320', desk: '4321', demo: '3048', pilot: '3058'}, bins: '/home/valun/bins', nfts: {demo: H('a'), pilot: H('b')}, dataDir: 'C:/v/data', pilotDir: 'C:/v/data-pilot', sha256});
   const outer = Object.freeze({PILOT_TRACKER_SHA256: H('0'), PILOT_CIRCULATION: 'on', PORT: '9999', VALUN_SOMETHING: 'kept'});
+  // Two apps since the local-readiness audit (fix inbox #155, FB-4; test/start-local-env.unit.test.mjs): the network as
+  // a local server, and the legacy desk alone, which takes none of the network's settings.
   assert.deepEqual(appEnv(outer, opts(H('c'))), {PILOT_CIRCULATION: 'on', VALUN_SOMETHING: 'kept', PORT: '4320', BASIS_RUNNER: 'wsl', BASIS_SIGNER: '/home/valun/bins/examples/valun_signer',
-    BASIS_TRACKER_URL: 'http://127.0.0.1:3048', BASIS_TRACKER_NFT_ID: H('a'), VALUN_DATA_DIR: 'C:/v/data', VALUN_DEPLOYMENT: 'local', PILOT_TRACKER_URL: 'http://127.0.0.1:3058',
+    VALUN_DATA_DIR: 'C:/v/data', VALUN_DEPLOYMENT: 'local', VALUN_ENVIRONMENT: 'local', PILOT_TRACKER_URL: 'http://127.0.0.1:3058',
     PILOT_TRACKER_NFT_ID: H('b'), PILOT_DATA_DIR: 'C:/v/data-pilot', PILOT_TRACKER_SHA256: H('c')}, 'the computed sha256 replaces the environment\'s; the rest of the environment is kept');
+  assert.deepEqual(deskEnv(outer, opts(H('c'))), {VALUN_SOMETHING: 'kept', PORT: '4321', BASIS_RUNNER: 'wsl', BASIS_SIGNER: '/home/valun/bins/examples/valun_signer',
+    BASIS_TRACKER_URL: 'http://127.0.0.1:3048', BASIS_TRACKER_NFT_ID: H('a'), VALUN_DATA_DIR: 'C:/v/data', VALUN_DEPLOYMENT: 'local', PILOT_TRACKER_SHA256: H('c')},
+  'the desk: the computed sha256 too (its /api/status names the tracker binary by it), and none of the network\'s settings');
   assert.equal(appEnv(outer, opts('')).PILOT_TRACKER_SHA256, '', 'no hash computed: empty (circulation stays off), never the environment\'s');
+  assert.equal(deskEnv(outer, opts('')).PILOT_TRACKER_SHA256, '', 'the desk\'s too');
   assert.deepEqual(trackerArgv('/home/valun/run', '/home/valun/bins', ['BASIS_PORT=3058', 'BASIS_SERVED_TOKEN_SYMBOL=PC']),
     ['-d', 'valun-ic1', '-u', 'valun', '--exec', '/usr/bin/env', 'BASIS_CONFIG_LAYOUT=auto', 'BASIS_PORT=3058', 'BASIS_SERVED_TOKEN_SYMBOL=PC', '/home/valun/run/run-tracker.sh', '/home/valun/run', '/home/valun/bins/basis_server']);
-  // And start-local uses them: the hash of the binary both trackers run, read in WSL, and the app started with appEnv.
+  // And start-local uses them: the hash of the binary both trackers run, read in WSL, and the apps started with appEnv
+  // and deskEnv.
   const src = read('scripts/start-local.mjs');
   assert.match(src, /const hashed = spawnSync\(WSL, \[\.\.\.D, '--exec', '\/usr\/bin\/sha256sum', `\$\{BINS\}\/basis_server`\], \{encoding: 'utf8'\}\);\n\s*const TRACKER_SHA256 = trackerSha256\(hashed\);/);
-  assert.match(src, /spawn\(process\.execPath, \[path\.join\(root, 'server\.mjs'\)\], \{stdio: 'inherit',\n\s*env: appEnv\(process\.env, \{ports: PORTS, bins: BINS, nfts, dataDir, pilotDir, sha256: TRACKER_SHA256\}\)\}\)/);
+  assert.match(src, /const opts = \{ports: PORTS, bins: BINS, nfts, dataDir, pilotDir, sha256: TRACKER_SHA256\};\n/);
+  assert.match(src, /for \(const \[name, env\] of \[\['network', appEnv\(process\.env, opts\)\], \['desk', deskEnv\(process\.env, opts\)\]\]\) \{\n\s*apps\[name\] = spawn\(process\.execPath, \[path\.join\(root, 'server\.mjs'\)\], \{stdio: 'inherit', env\}\);/);
   assert.match(src, /spawn\(WSL, trackerArgv\(RUNS\[name\], BINS, env\)/);
 });
 

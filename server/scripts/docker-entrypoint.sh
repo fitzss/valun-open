@@ -38,6 +38,19 @@ if [ -n "${VALUN_MAINTENANCE:-}" ]; then
   else echo "docker-entrypoint: maintenance: downgrade check exit code $CODE; nothing was started" >&2; fi
   exit "$CODE"
 fi
+# Off Fly, this image starts a server whose docs and pages are the public network's unless VALUN_ENVIRONMENT says
+# otherwise: their joins name no server, so the client takes its default, the public network at https://valun.tech (the
+# local-readiness audit, FB-4; server.mjs says the same for valun-pilot-1). Said once, here, and nothing else changes.
+# On Fly (FLY_APP_NAME or FLY_MACHINE_ID, which Fly sets in every Machine: lib/environment.mjs onFly) nothing is said,
+# nor with VALUN_ENVIRONMENT=local or staging; any other value is ignored by the server (lib/environment.mjs).
+if [ -z "${FLY_APP_NAME:-}${FLY_MACHINE_ID:-}" ]; then
+  case "${VALUN_ENVIRONMENT:-}" in
+    local|staging) ;;
+    *) if [ -n "${VALUN_ENVIRONMENT:-}" ]; then SETTING="VALUN_ENVIRONMENT is $VALUN_ENVIRONMENT, which the server ignores"
+       else SETTING="VALUN_ENVIRONMENT is unset"; fi
+       echo "docker-entrypoint: warning: not on Fly, and $SETTING: this is the image of Valun's public servers, so the server it starts gives agents the public network's docs and pages, whose joins name no server: the client then uses its default, the public network at https://valun.tech, not this server. To run Valun on your own machine, with no chain, use the local image (Dockerfile.local; docs/LOCAL.md)." >&2 ;;
+  esac
+fi
 # Owner-only demo reset (pilot data is NOT touched): `fly ssh console -C "touch /data/RESET-DEMO"` then restart.
 if [ -e "$DATA/RESET-DEMO" ]; then
   echo "RESET-DEMO marker found: wiping the synthetic demo world" >&2

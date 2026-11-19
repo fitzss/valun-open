@@ -77,8 +77,12 @@ test('the live view, its pure parts: who runs whom, the open IOUs newest first, 
   assert.ok(lineAlpha(21_000_000, 'nanoERG') < 0.5 && lineAlpha(1_000_000, 'nanoERG') < lineAlpha(21_000_000, 'nanoERG'));
   assert.equal(lineAlpha(10_000_000_000, 'nanoERG'), 0.5, 'at most 0.5');
   assert.equal(lineAlpha(1_000_000, undefined), 0.18, 'no unit named: one neutral brightness');
+  // A local server's PC (fix inbox #146): 1 PC is as bright as 1,000,000 nanoERG.
+  near(lineAlpha(1, 'PC'), lineAlpha(1_000_000, 'nanoERG'));
+  near(lineAlpha(21, 'PC'), lineAlpha(21_000_000, 'nanoERG'));
   // The spotlight's words: who holds whose IOU, for how much.
   assert.deepEqual(spotWords(ious[0], 'nanoERG'), {holder: 'bo', issuer: 'ana', amount: '0.004 tERG', text: "bo holds ana's IOU for 0.004 tERG."});
+  assert.deepEqual(spotWords({holder: 'bo', issuer: 'ana', amount: 3}, 'PC'), {holder: 'bo', issuer: 'ana', amount: '3 PC', text: "bo holds ana's IOU for 3 PC."});
   assert.equal(spotWords({holder: 'bo', issuer: 'ana', amount: 1_500_000}, 'nanoERG').amount, '0.0015 tERG');
   assert.equal(spotWords({holder: 'bo', issuer: 'ana', amount: 1_500_000}, undefined).amount, '– tERG', 'no unit named: no number');
   // The newest loop, in words (the one with the rainbow ring).

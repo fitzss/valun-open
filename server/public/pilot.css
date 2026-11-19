@@ -53,8 +53,10 @@ body.js .tab:not(.active) { display: none; }
 /* site.css draws code in running text at 0.86em, which in the console's small text (.tiny, .explain) fell below 12 px:
    never below it here. A signed statement and a .small value keep their own sizes. */
 .console .tiny code:not(.signed-text):not(.small), .console .explain code { font-size: max(0.75rem, 0.86em); }
-/* a short command or flag in the page's own sentences stays on one line */
+/* a short command or flag in the page's own sentences stays on one line; a path may break where scripts/code-words.mjs
+   put a <wbr> (its pieces stay whole), as it would not fit a phone's line */
 .guide p code, .guide li code, .signin code, .join-note code, .budget-box code { white-space: nowrap; overflow-wrap: normal; }
+.guide p code.path, .signin code.path { white-space: normal; }
 code.copyable { cursor: copy; }
 .good { color: var(--live); }
 .bad, .warn { color: var(--caution); }
@@ -151,6 +153,7 @@ fieldset.cps .explain { flex-basis: 100%; margin-top: 0.4rem; }
 .guide-item { border-top: 1px solid var(--rule); padding-top: 1rem; }
 .console .guide-item h3, .console .guide-token h3 { margin: 0 0 0.45rem; font-size: 1rem; font-weight: 500; }
 .guide-item p { margin: 0; font-size: 0.97rem; }
+.guide-item p + p { margin-top: 0.6rem; }
 .who { margin: 0; display: grid; gap: 0.15rem; font-size: 0.97rem; }
 .who dt { font-weight: 500; margin-top: 0.55rem; }
 .who dt:first-child { margin-top: 0; }
@@ -176,7 +179,8 @@ fieldset.cps .explain { flex-basis: 100%; margin-top: 0.4rem; }
 #tab-owner.signed-in .guide-token, #tab-owner.signed-in #guide-console { grid-column: 1 / -1; }
 
 .signin { position: sticky; top: 1.2rem; border: 1px solid var(--rule); border-top: 2px solid var(--line); background: var(--panel); padding: 1.1rem 1.6rem 1.2rem; }
-.console .signin h2 { margin: 0 0 1rem; }
+.console .signin h2 { margin: 0 0 0.7rem; }
+.signin-what { margin: 0 0 1.1rem; font-size: 0.93rem; color: var(--dust); }
 .signin .form { gap: 0.5rem; }
 .signin label[for=owner-token] { font-size: 1rem; }
 .console #owner-token { font-size: 1rem; letter-spacing: 0.03em; min-height: 50px; }
@@ -218,7 +222,22 @@ fieldset.cps .explain { flex-basis: 100%; margin-top: 0.4rem; }
 .appr-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.9rem; }
 .appr-title { font-weight: 400; font-size: 1.2rem; }
 .appr-price { margin-left: auto; font: 400 0.88rem/1.4 var(--mono); }
+.appr-ask { margin: 0.55rem 0 0.3rem; font-size: 1rem; max-width: 52em; }
 .appr > div.tiny { font-family: var(--mono); font-size: 0.76rem; margin: 0.35rem 0 0.2rem; overflow-wrap: anywhere; }
+/* until when the owner can decide; once it has passed, said as a warning (the server has ended the approval) */
+.appr-deadline { margin: 0.5rem 0 0; font-size: 0.93rem; }
+.appr-deadline.expired { color: var(--caution); border-left: 2px solid var(--caution); padding: 0.15rem 0 0.15rem 0.85rem; }
+/* A card whose deadline has passed (pilot.js endCard): what was written while it waited is greyed, and its own deadline and
+   state say what became of it. Greyed with the secondary text colour, every descendant included (rows and code set their
+   own colour), never with opacity: opacity dims a whole subtree, so it would also dim the rows that say what became of
+   the card (.ended-now sits inside .mcheck), below WCAG AA (the review of PR #8, code F3). --dust is 7.5:1 on the card's
+   --panel, --caution 11.5:1. */
+.appr.ended :is(.effect, .mcheck, .appr-ask), .appr.ended :is(.effect, .mcheck, .appr-ask) :not(.ended-now) { color: var(--dust); }
+.appr.ended .ended-now { color: var(--caution); }
+/* above the cards: what is already true of everything that waits */
+.pending-hint { max-width: 56em; }
+.pending-hint p { margin: 0 0 0.45rem; }
+.pending-hint p:last-child { margin-bottom: 0; }
 .effect { border: 1px solid var(--rule-strong); padding: 0.7rem 0.95rem; margin: 0.9rem 0 1.1rem; }
 .effect .kv { margin: 0; }
 .effect .kv dt { color: var(--line); font-weight: 500; }

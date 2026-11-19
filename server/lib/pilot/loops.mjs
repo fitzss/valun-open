@@ -141,11 +141,22 @@ export function loopOf(o, participants, publicOf) {
     each_PC: cycles[0].each_PC, members: cycles[0].members, participants: all.size, cycles, card_url: `${PUBLIC_ORIGIN}/loop/${o.id}`};
 }
 
+// The applied set-offs, newest first (ties by id), as GET /loops lists them.
+const appliedNewestFirst = setoffs => Object.values(setoffs || {}).filter(o => o?.state === 'applied' && LOOP_ID_RE.test(String(o.id)))
+  .sort((a, b) => String(b.applied_at ?? '').localeCompare(String(a.applied_at ?? '')) || (a.id < b.id ? -1 : 1));
 // The most recent `max` applied set-offs as loops, newest first.
 export function loopsOf(setoffs, participants, publicOf, max = LOOPS_MAX) {
-  return Object.values(setoffs || {}).filter(o => o?.state === 'applied' && LOOP_ID_RE.test(String(o.id)))
-    .sort((a, b) => String(b.applied_at ?? '').localeCompare(String(a.applied_at ?? '')) || (a.id < b.id ? -1 : 1))
-    .slice(0, max).map(o => loopOf(o, participants, publicOf));
+  return appliedNewestFirst(setoffs).slice(0, max).map(o => loopOf(o, participants, publicOf));
+}
+// GET /loops?before=<id> (the local-readiness audit of Nov 18, MR-12: a run with more than LOOPS_MAX set-offs could list
+// only the newest, each older one readable by its id alone): the `max` applied set-offs listed after the one `before`
+// names, in the same order, and next_before, the id to page on with (the last of these), or null when none is older.
+// null when `before` names no applied set-off.
+export function loopsBefore(setoffs, participants, publicOf, before, max = LOOPS_MAX) {
+  const all = appliedNewestFirst(setoffs), at = all.findIndex(o => o.id === before);
+  if (at < 0) return null;
+  const page = all.slice(at + 1, at + 1 + max);
+  return {loops: page.map(o => loopOf(o, participants, publicOf)), next_before: at + 1 + max < all.length ? page.at(-1).id : null};
 }
 
 // The public records of a set-off's members, by handle (for the loop card's who-runs-it labels): the card reads who
@@ -241,6 +252,9 @@ export const foot = `<footer class="foot">
   <ul><li><a href="/trust">Trust</a></li><li><a href="/start#report">Report a problem</a></li><li><a href="/skill.md">skill.md</a></li><li><a href="/llms.txt">llms.txt</a></li><li><a href="https://github.com/fitzss/valun-open">GitHub</a></li></ul>
 </footer>`;
 
+// The link-preview image the rendered pages name: the public network's; a local server's own (fix inbox #155, SRV-15:
+// every page of a local server named https://valun.tech/og.png, so a preview of it fetched the public network's).
+const OG_IMAGE = LOCAL ? `${PUBLIC_ORIGIN}/og.png` : 'https://valun.tech/og.png';
 // A rendered page: the shared header, `body` as the page's <main> (class `main`), the shared footer.
 export const page = ({title, description, url, body, main = 'card'}) => `<!doctype html>
 <html lang="en">
@@ -257,7 +271,7 @@ ${url ? `<link rel="canonical" href="${esc(url)}">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:url" content="${esc(url)}">
-<meta property="og:image" content="https://valun.tech/og.png">
+<meta property="og:image" content="${esc(OG_IMAGE)}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Valun: let your agent work with agents you don't run. Three agents in a loop of IOUs, on Ergo testnet.">

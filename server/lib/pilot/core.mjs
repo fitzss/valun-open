@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {statusClass, bucketCounts, inboxSection, POSITION_BUCKETS} from './status.mjs';
 import {ordinaryTimestamp, BasisError} from '../basis.mjs';
-import {effectiveMode, featuresFor, validateCaps, BOUND_NOTE_MS, TRANSFER_MS, SETOFF_MS, SETOFF_TTL_MS, PRIOR_ACK} from './caps.mjs';
+import {effectiveMode, featuresFor, validateCaps, BOUND_NOTE_MS, TRANSFER_MS, SETOFF_MS, SETOFF_TTL_MS, PRIOR_ACK, NOVATION_MAX_AGE_MS} from './caps.mjs';
 import {TRACKER_SHA256_PINS} from './pins.mjs';
 import {ensureJournal, appendEntries, backfillJournal, flushEdgeLog, repairEdgeLog, journalFor, edgeEntries, firstEdgeEntryAfter, edgeKey, EDGE_LOG_FILE,
   compactJournal, journalCheckpoint, readCheckpoint, JOURNAL_HORIZON_MS, JOURNAL_COMPACT_EVERY_MS, JOURNAL_COMPACT_MIN_BYTES} from './journal.mjs';
@@ -30,7 +30,18 @@ import {CONSTRUCTION, SNAPSHOT_RETRIES, SNAPSHOT_PAUSE_MS, SNAPSHOT_RETRY_AFTER_
 export {guaranteeStatements};
 
 export {NETWORK} from './units.mjs';
-import {NETWORK, UNIT, pc, amt, BACKING, TRACKER_PLACE, ON_TESTNET} from './units.mjs';
+import {NETWORK, UNIT, pc, amt, BACKING, TRACKER_PLACE, ON_TESTNET, PUBLIC_ORIGIN} from './units.mjs';
+import {LOCAL} from '../environment.mjs';
+// How often the tracker posts a tracker box, and at most how many a UTC day (an approval's words; no import of this module).
+import {CHECK_INTERVAL_S, DAILY_TRACKER_SIGNATURES, dailyCap} from './anchors.mjs';
+// The client command an owner's approval card names when valun 0.7.1 needs an attempt resolved (`valun attempts ...`).
+// On a local server (fix inbox #155, FB-7) it runs in the client profile of that server and names it: run on the
+// default profile, `valun attempts resolve` asks for the owner token and sends it to that profile's server, the public
+// network for a profile that holds an identity there, so a local owner token left the machine. Its Hermes form is the
+// Hermes profile a local server's join names (lib/a2a.mjs, public/start-local.html). Elsewhere, as before.
+const ATTEMPTS = LOCAL ? 'valun --profile local attempts' : 'valun attempts', AT_SERVER = LOCAL ? ` --server ${PUBLIC_ORIGIN}` : '';
+export const OWNER_ATTEMPTS = Object.freeze({resolve: dealId => `${ATTEMPTS} resolve ${dealId} '#n' --not-applied${AT_SERVER}`,
+  list: `${ATTEMPTS} list${AT_SERVER}`, hermes: `hermes -p ${LOCAL ? 'valun-local' : 'valun'} valun attempts ...`});
 export const PROTOCOL = 'valun-deal/1';
 // The pilot unit: a synthetic token id the pilot tracker serves (it exists on no chain).
 export const PILOT_TOKEN_ID = crypto.createHash('sha256').update('valun-pilot-credit/1').digest('hex');
@@ -42,6 +53,21 @@ const LIMIT_MAX = pc(100000);             // the largest limit an owner or agent
 const MAX_OFFER_TTL_MS = 7 * 864e5;
 export const MAX_DELIVERY_MS = 30 * 864e5;
 const ENROLL_TTL_MS = 30 * 60e3;
+// An unfinished join (fix inbox #131: a self-serve participant whose agent never registered a key, as when the answer
+// to the join, which alone carried its owner token and enrollment code, was lost) holds its handle this long after the
+// latest of the join, its latest enrollment code and its owner's last request, and never less than until that code
+// expires; then it is released (Pilot.joinHeldUntil, releaseUnfinishedJoins). Twice the code's 30 minutes, so an
+// enrollment that can still be made is never cut off: once the code has expired, only a new code enrolls the agent,
+// and a new code, as any request of the owner, starts the hold again. PILOT_UNCLAIMED_JOIN_TTL_MS sets it (server.mjs).
+export const UNCLAIMED_JOIN_TTL_MS = 2 * ENROLL_TTL_MS;
+// An unfinished join's owner who signs in moves its hold (joinHeldUntil: its owner's last request), and a request that
+// only reads saves nothing: authenticate saves that time at most this often, so a restart keeps the hold to the minute.
+const OWNER_SEEN_SAVE_MS = 60e3;
+// The lists in a participant's record that name other participants (setMandate, setAgentLimits): what can keep an
+// unfinished join from being released (Pilot.namedElsewhere).
+const NAMING_LISTS = Object.freeze([['mandate', 'counterparties'], ['mandate', 'accept_notes_from'], ['mandate', 'refuse_notes_from'],
+  ['agent_limits', 'accept_notes_from'], ['agent_limits', 'refuse_notes_from']]);
+const listedIn = q => NAMING_LISTS.flatMap(([rec, k]) => (Array.isArray(q?.[rec]?.[k]) ? q[rec][k] : []));
 // An agreed deal the payee has not delivered this long after deliver_by ends as expired_undelivered (OQ-8). A delivery
 // waiting for the payer's review never expires.
 export const UNDELIVERED_GRACE_DAYS = 7;
@@ -60,6 +86,23 @@ const REDEMPTION_SUBMIT_HOLD_MS = 180e3;
 // pay_by_transfer (circulating credit): a payment by debt transfer held for the payer's owner (review_deliveries).
 // guarantee_offer (fix inbox #18): a guarantee offer whose cap is above the backer's approve_above, held for its owner.
 const APPROVAL_KINDS = Object.freeze(['issue_note', 'pay_by_transfer', 'propose', 'accept', 'confirm_offer', 'guarantee_offer']);
+// A bound credit note held for its payer's owner can reach the tracker only until its timestamp + the tracker's maximum
+// age (decision D-1 item 1). Its approval ends this long before that (heldNoteDecideBy), so that an approval made in time
+// always reaches the tracker in time; at the deadline the approval is void_expired and the deal is released as after a
+// rejection (Pilot.expireHeldNote). Until 2026-11-18 a late approval was sent all the same: the tracker refused it
+// (novation_expired) and left the deal note_failed, its delivery accepted and no longer disputable (approval probe D3).
+export const HELD_NOTE_SEND_MARGIN_MS = 60e3;
+// When the payer's owner must have decided a held credit note (ms), or null: only a bound note (it carries its prior
+// acknowledgment) has a deadline; an ordinary one has no maximum age at the tracker.
+export const heldNoteDecideBy = n => (n?.note?.prior_signature && Number.isSafeInteger(n.note.timestamp) ? n.note.timestamp + MAX_AGE_MS - HELD_NOTE_SEND_MARGIN_MS : null);
+// valun 0.7.1's own window for an earlier payment attempt of a deal (its novation.py MAX_AGE_MS + FALLBACK_MARGIN_MS:
+// the attempt's timestamp + 1 hour + 2 minutes; the server's margin is a minute, fallbackAfter). After a rejected or
+// expired bound IOU or payment by transfer that its owner resolved as not applied (`valun attempts resolve ...
+// --not-applied`), 0.7.1 pays that deal again only once this has passed, and answers transfer_window_open with
+// retry_after_ms until then (novation.py attempt_outcome, one_live_attempt); before any resolution, a payment other
+// than the one the attempt excludes at the tracker waits for it too. The IOU card's and the payment card's texts name
+// the time (approvalEffect).
+export const CLIENT_ATTEMPT_WINDOW_MS = NOVATION_MAX_AGE_MS + 120e3;   // caps.mjs: this module and novation.mjs import each other
 
 export class PilotError extends Error {
   constructor(code, message, status = 400, extra = {}) { super(message); this.name = 'PilotError'; this.code = code; this.status = status; this.extra = extra; }
@@ -114,6 +157,9 @@ export const DEFAULT_MANDATE = Object.freeze({
   min_payer_coverage_pct: 0,
   counterparties: 'any', approve_above: 0, review_deliveries: false, expires_at: null,
 });
+// An invited joiner's mandate ends this many days after its join (join(); its owner can move it). Named so that the local
+// docs state it from here (scripts/build-local-docs.mjs; fix inbox #155: the invited defaults the local docs give).
+export const INVITE_MANDATE_DAYS = 14;
 // The owner's credit policy for circulating credit (design §8). These mandate fields exist only once circulation is on
 // (effective mode sandbox or on); DEFAULT_MANDATE stays as it is, because /me returns the mandate verbatim. Values:
 // migrate() gives participants who joined before (LEGACY: nothing moves without the owner), join() an invited joiner,
@@ -161,6 +207,53 @@ const CIRCULATION_SETTLEMENT = 'not settled: a credit note is an outstanding obl
 const TESTNET_REDEMPTION = 'Its creditor can redeem it on Ergo testnet against the issuer\'s tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.';
 export const CIRCULATION_SETTLEMENT_TESTNET = `not settled until redeemed: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes); a netting is committed once a tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. ${TESTNET_REDEMPTION}`;
 const SETTLEMENT_TESTNET = `not settled until redeemed: issuing a credit note creates an outstanding obligation. ${TESTNET_REDEMPTION}`;
+// How far a pair's note got on Ergo testnet, from its confirmation (the tracker's status for the pair's note: local_only,
+// pending, confirmed; lib/pilot/committed.mjs): the words of a deal's labels.basis and labels.summary on the testnet (the
+// newcomer run of Nov 18, findings 3 and 12: the label said "its state anchored on Ergo testnet" beside confirmation
+// local_only). The status is of the pair's note as the tracker holds it, so of the pair's current total, which a later IOU
+// or set-off on the pair changes. `live`: read from the tracker now (dealView); otherwise as the tracker said when it
+// recorded the note (a view made without reading the tracker).
+export function onChainWords(status, {live = true} = {}) {
+  if (live) {
+    if (status === 'local_only') return 'no tracker box on Ergo testnet commits the pair\'s current total yet (local_only)';
+    if (status === 'pending') return 'a tracker box that carries the pair\'s current total waits for an Ergo testnet block (pending)';
+    if (status === 'confirmed') return 'a confirmed tracker box on Ergo testnet commits the pair\'s current total (confirmed)';
+    return 'whether a tracker box on Ergo testnet commits the pair\'s current total could not be read just now';
+  }
+  if (status === 'local_only') return 'when the tracker recorded it, no tracker box on Ergo testnet committed the pair\'s total yet (local_only)';
+  if (status === 'pending') return 'when the tracker recorded it, a tracker box that carried the pair\'s total waited for an Ergo testnet block (pending)';
+  if (status === 'confirmed') return 'when the tracker recorded it, a confirmed tracker box on Ergo testnet committed the pair\'s total (confirmed)';
+  return 'the tracker gave no confirmation when it recorded it';
+}
+// The tracker box updater's cycle (BASIS_TRACKER_UPDATE_INTERVAL_SECONDS, 300 on the testnet), as people read it.
+const UPDATE_EVERY = CHECK_INTERVAL_S % 60 ? `${CHECK_INTERVAL_S} seconds` : `${CHECK_INTERVAL_S / 60} minute${CHECK_INTERVAL_S === 60 ? '' : 's'}`;
+// How long a change to a pair's row (an IOU, or a set-off that lowers it) takes to read confirmed on the testnet, as
+// measured there (docs/PILOT-API.md, "An issued IOU's labels"): on Nov 16 to 19 each of the 22 loops cleared while the
+// day's boxes were not used up was in a tracker box signed 0.3 to 5.0 minutes after it (GET /loops, on_chain.signed_at),
+// and the IOUs the operator watched read confirmed 2 and about 5 minutes after the tracker recorded them (Basis's of
+// 00:02Z on Nov 19: confirmed when read at 00:26Z).
+// Measured with the testnet's 5-minute cycle only, so said only with that cycle.
+const COMMIT_TIME = CHECK_INTERVAL_S === 300 ? 'usually within 15 minutes of a change, as measured on this network' : null;
+// The first letter of a sentence.
+const capital = s => s.charAt(0).toUpperCase() + s.slice(1);
+// How much of a service's description and deliverable an inbox item to answer or deliver shows (Pilot.inbox).
+export const INBOX_TEXT_CHARS = Object.freeze({description: 400, deliverable: 200});
+// position.settled_how on the testnet with circulating credit: what `settled` adds up, a set-off clearing a debt and a
+// redemption paying it. A netting is committed once a tracker box commits it, not before: while the next box has not
+// committed some of a participant's nettings, the routes that serve its position say so (lib/pilot/http.mjs settledNow,
+// from each loop's on_chain state as its card reads it; the readiness assessment of Nov 18 found "committed but not
+// final" there while the loop card said "Not committed on Ergo testnet yet").
+export const SETTLED_HOW_TESTNET = Object.freeze({committed: 'cleared in loops, committed but not final, and redeemed on Ergo testnet'});
+// settled_how while `behind` of the participant's `loops` loops wait for the next tracker box (lib/pilot/http.mjs
+// nettingOf): the newest ones, since a box that commits a loop commits every earlier one. None (or not known): the words
+// above. All of them, or some (the review of gap/first-use: a tour clears two loops 1 to 2 minutes apart, both before
+// the next box, and "the newest loop" alone said the earlier one was committed).
+export function settledHowTestnet(netting) {
+  const {loops = 0, behind = null} = netting || {};
+  if (!(behind > 0)) return SETTLED_HOW_TESTNET.committed;
+  if (behind >= loops) return `cleared in loops, committed once the next tracker box commits ${loops > 1 ? 'them' : 'it'}, and redeemed on Ergo testnet`;
+  return `cleared in loops, committed but not final (except ${behind > 1 ? `the ${behind} newest loops` : 'the newest loop'}, which the next tracker box commits), and redeemed on Ergo testnet`;
+}
 // The last words of the join-sandbox note: what the amounts are.
 const UNITS_NOTE = ON_TESTNET ? 'Amounts are nanoERG of Ergo testnet: test coins with no monetary value.' : 'Synthetic units.';
 // A position row of a note issued by a participant the server runs (the sandbox agents; design §4.12, spec 16.1).
@@ -198,7 +291,7 @@ const isInt = (v, min, max) => Number.isSafeInteger(v) && v >= min && v <= max;
 // max_claims_total (phase-2 credit policy) is stored and enforced only with circulating credit on; with it off setMandate
 // ignores it, as any unknown field.
 export const SANDBOX_CAPS = Object.freeze({max_issue_per_deal: pc(5), max_issue_outstanding: pc(40), max_accept_per_deal: pc(5), max_accept_per_issuer: pc(40), max_claims_total: SANDBOX_MAX_CLAIMS_TOTAL}), SANDBOX_DAYS = 7;
-const SANDBOX_JOINS_PER_DAY = 200;
+export const SANDBOX_JOINS_PER_DAY = 200;
 // At most this many self-serve joins an hour from one address (an IPv4 address, or an IPv6 /48: the HTTP layer cuts it).
 // Fix inbox #21: the count is kept in the state (s.sandbox_joins: [{k, at}]), so a deploy or a restart does not reset
 // it. `k` is a keyed hash of the address (HMAC-SHA256 with a random key kept in its own file beside the state, never in
@@ -210,6 +303,17 @@ export const SANDBOX_JOINS_PER_HOUR_PER_ADDRESS = 12;
 // total, with SANDBOX_JOINS_PER_DAY for the day.
 export const SANDBOX_JOINS_PER_HOUR_TOTAL = 40;
 const SANDBOX_JOIN_WINDOW_MS = 3600e3, SANDBOX_JOIN_KEY_FILE = 'sandbox-join-key';
+// The three caps a Pilot enforces (its `joinLimits`): these, unless a local server's settings change them
+// (lib/pilot/limits.mjs limitSettings: fix inbox #145, for scale tests; a hosted server always runs these). A value that
+// is not a whole number of at least 1 keeps its default.
+export const SANDBOX_JOIN_LIMITS = Object.freeze({per_address_per_hour: SANDBOX_JOINS_PER_HOUR_PER_ADDRESS, per_hour: SANDBOX_JOINS_PER_HOUR_TOTAL, per_day: SANDBOX_JOINS_PER_DAY});
+const joinLimitsOf = given => Object.fromEntries(Object.entries(SANDBOX_JOIN_LIMITS).map(([k, d]) => [k, Number.isSafeInteger(given?.[k]) && given[k] >= 1 ? given[k] : d]));
+// What a local server's join refusals add (the local-readiness audit, SRV-17: they did not say what to do): every client
+// on the machine comes from one address there, and the next agents can join with an invite, which no hourly cap counts,
+// or the server can run with a higher cap (`setting`, docs/LOCAL.md). Elsewhere the refusals are as they were.
+const moreLocalAgents = setting => LOCAL ? '. Every client on this machine reaches a local server from the same address. For more agents now, '
+  + 'whoever runs this server makes an invite inside the container (docker exec CONTAINER node scripts/pilot-admin.mjs invite --uses 25 --code-only), '
+  + `which the next agents join with, or starts the server with a higher ${setting} (docs/LOCAL.md, "Many agents")` : '';
 // The open network (Pilot openNetwork, PILOT_OPEN_NETWORK=1): a self-serve participant may deal with any participant
 // whose own mandate allows it (other self-serve participants, invited participants, the sandbox agents), still within
 // SANDBOX_CAPS and its SANDBOX_DAYS. It has at most this many offers of its own open (or waiting for its owner) at once,
@@ -266,6 +370,21 @@ export function hasUnsafeText(s) {
   return false;
 }
 const RESERVED_HANDLES = new Set(['valun', 'admin', 'administrator', 'operator', 'owner', 'system', 'support', 'root', 'basis', 'tracker', 'null', 'undefined']);
+// Names are compared in a normalized form (letters and digits only, lower case): "Bea-Briefs", "bea briefs" and
+// "bea_briefs" are the same name to a reader.
+const nameKey = s => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+// The placeholders in the join commands people copy (the site's pages, skill.md, llms.txt, the client READMEs and
+// examples, the docs, and the next commands the clients print: NEW-HANDLE after a lost or held join, HANDLE in the
+// rejoin hint), by nameKey, each with the form the commands show. Pasted unchanged, a block joined as your-handle,
+// operated by "YOUR NAME", for good (Nov 17): a join (or join-sandbox) that names one, in any case or spelling nameKey
+// folds (your_handle, Your Name), is refused with 400 invalid_field before anything is recorded. The refusal names the
+// placeholder as the commands show it, never the text sent.
+export const PLACEHOLDER_HANDLES = new Map([['yourhandle', 'YOUR-HANDLE'], ['yourbacker', 'YOUR-BACKER'], ['backerhandle', 'BACKER-HANDLE'],
+  ['payerhandle', 'PAYER-HANDLE'], ['friendhandle', 'FRIEND-HANDLE'], ['theirhandle', 'their-handle'], ['handle', 'HANDLE'], ['myseller', 'my-seller'],
+  ['newhandle', 'NEW-HANDLE'], ['yourname', 'yourname'], ['buyerhandle', 'BUYER-HANDLE'], ['sellerhandle', 'SELLER-HANDLE']]);
+export const PLACEHOLDER_OPERATORS = new Map([['yourname', '"YOUR NAME"'], ['yourhuman', '"YOUR HUMAN"'], ['theirname', '"Their name"'], ['name', 'NAME']]);
+const placeholderRefusal = (field, shown) => new PilotError('invalid_field', `${field}: ${shown} is the placeholder in the example commands. `
+  + 'Choose your own handle and operator name (both are public, and neither can change after you join), and join with them', 400, {field});
 export function signedText(s, max, field) {
   const out = clean(s, max, field, {required: true});          // same type, length and required checks (and codes) as before
   if (hasUnsafeText(s)) throw new PilotError('invalid_field', `${field} contains control, bidi or zero-width characters; remove them and sign again`);
@@ -305,9 +424,17 @@ export class Pilot {
   // v3; undefined: not read yet, as while server.mjs starts); `trackerSha256` the running tracker binary's sha256
   // (PILOT_TRACKER_SHA256, computed by the launcher); `trackerPins` the pinned hashes (lib/pilot/pins.mjs; tests may
   // pass their own). The effective mode is `mode` below. `log` receives one line per distinct reason the mode is off.
+  // `unclaimedJoinTtlMs`: how long an unfinished join holds its handle (UNCLAIMED_JOIN_TTL_MS; joinHeldUntil).
+  // `joinLimits`: the self-serve join caps, {per_address_per_hour, per_hour, per_day} (SANDBOX_JOIN_LIMITS by default;
+  // a local server's settings may change them: lib/pilot/limits.mjs).
   constructor({store, basis, unitLabel = UNIT, now = () => Date.now(), openSandbox = false, openNetwork = false,
-    circulation = 'off', trackerCaps = undefined, trackerSha256 = null, trackerPins = TRACKER_SHA256_PINS, log = m => console.warn(m)}) {
+    circulation = 'off', trackerCaps = undefined, trackerSha256 = null, trackerPins = TRACKER_SHA256_PINS, log = m => console.warn(m),
+    unclaimedJoinTtlMs = UNCLAIMED_JOIN_TTL_MS, joinLimits = SANDBOX_JOIN_LIMITS}) {
     this.store = store; this.basis = basis; this.unit = unitLabel; this.now = now;
+    this.unclaimedJoinTtlMs = Number.isSafeInteger(unclaimedJoinTtlMs) && unclaimedJoinTtlMs >= 0 ? unclaimedJoinTtlMs : UNCLAIMED_JOIN_TTL_MS;
+    this.joinLimits = Object.freeze(joinLimitsOf(joinLimits));
+    this.keptLogged = new Set();        // unfinished joins a list keeps (releaseEnded), each logged once
+    this.ownerSeenSaved = new Map();    // unfinished join id -> when authenticate last saved its owner's request (ms)
     this.openSandbox = openSandbox; this.sandboxIds = new Set();   // filled by the Sandbox when it starts
     // What the sandbox agents keep on their edges for open tours: a function that returns a Map edge key -> PC, set by
     // the Sandbox when it starts (Sandbox.tourHolds; read through keptOnEdges).
@@ -316,6 +443,10 @@ export class Pilot {
     // The house agents (server.mjs: PILOT_HOUSE_AGENTS, participant ids): agents the operator runs on a machine of its
     // own, whose keys it holds though the server does not sign for them. Only their public records change (house_agent).
     this.houseIds = new Set();
+    // The operator's other test agents (server.mjs: PILOT_OPERATOR_TEST_AGENTS, participant ids; on the testnet the
+    // lab-* agents of the operator's lab): only their public records change (operator_test_agent), so that an owner
+    // console names them as the operator's test agents. Never by handle: anyone can register a handle like lab-x.
+    this.operatorTestIds = new Set();
     this.lock = Promise.resolve();
     this.log = log; this.modeLogged = new Set(); this.edgeLogQueue = [];
     // Functions called after a change others may react to (the Sandbox's poke): {deal, event} after every deal event,
@@ -467,18 +598,31 @@ export class Pilot {
       // A handle shaped like a participant id (vp_ + 12 hex) could be taken for another participant wherever a handle or
       // an id is accepted (for example an issuer named to pay with): refused in every mode (join and join-sandbox).
       if (PID_RE.test(handle)) throw new PilotError('invalid_field', 'handle: must not look like a participant id (vp_ followed by 12 hex digits)');
-      // Names are compared in a normalized form (letters and digits only, lower case): "Bea-Briefs", "bea briefs" and
-      // "bea_briefs" are the same name to a reader.
-      const others = Object.values(this.s.participants), norm = s => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-      const reserved = s => [...RESERVED_HANDLES].some(r => norm(s) === norm(r));
+      // The commands' placeholders (PLACEHOLDER_HANDLES, PLACEHOLDER_OPERATORS): refused before any name is compared, so a
+      // block pasted unchanged is told to choose, even where someone took the placeholder before this check.
+      if (PLACEHOLDER_HANDLES.has(nameKey(handle))) throw placeholderRefusal('handle', PLACEHOLDER_HANDLES.get(nameKey(handle)));
+      if (typeof operator === 'string' && PLACEHOLDER_OPERATORS.has(nameKey(operator))) throw placeholderRefusal('operator', PLACEHOLDER_OPERATORS.get(nameKey(operator)));
+      const norm = nameKey, reserved = s => [...RESERVED_HANDLES].some(r => norm(s) === norm(r));
       if (RESERVED_HANDLES.has(handle) || reserved(handle)) throw new PilotError('handle_taken', 'that handle is reserved', 409);
-      if (others.some(p => p.handle === handle || norm(p.handle) === norm(handle) || norm(p.display_name) === norm(handle)))
+      // An unfinished join (fix inbox #131) that holds the name and whose hold has ended is released first (releaseEnded),
+      // which frees the name; while its hold lasts, the refusal says until when (holdOf: retry_after_ms and held_until).
+      const holding = names => { this.releaseEnded(Object.values(this.s.participants).filter(names)); return Object.values(this.s.participants).filter(names); };
+      const taken = holding(p => p.handle === handle || norm(p.handle) === norm(handle) || norm(p.display_name) === norm(handle));
+      if (taken.length) {
+        const hold = this.holdOf(taken);
+        if (hold) throw new PilotError('handle_taken', `that handle is held until ${hold.held_until} by a join that didn't finish (no agent `
+          + 'key was ever enrolled for it): join again then, or choose another handle', 409, hold);
         throw new PilotError('handle_taken', "that handle is taken (as another participant's handle or display name)", 409);
+      }
       for (const [f, v] of Object.entries({display_name, operator, about, services, wants}))
         if (typeof v === 'string' && hasUnsafeText(v)) throw new PilotError('invalid_field', `${f} contains control, bidi or invisible characters`);
       const shown = norm(clean(display_name, 40, 'display_name'));
-      if (shown && shown !== norm(handle) && (reserved(shown) || others.some(p => norm(p.handle) === shown || norm(p.display_name) === shown)))
-        throw new PilotError('display_name_taken', "display_name must not be reserved or copy another participant's handle or display name", 409);
+      if (shown && shown !== norm(handle)) {
+        const copied = reserved(shown) ? null : holding(p => norm(p.handle) === shown || norm(p.display_name) === shown);
+        if (!copied || copied.length)
+          throw new PilotError('display_name_taken', "display_name must not be reserved or copy another participant's handle or display name", 409,
+            copied ? this.holdOf(copied) ?? {} : {});
+      }
       const ownerToken = token('vpo_'), code = 'vpe_' + crypto.randomBytes(12).toString('base64url');
       const p = {
         id: rid('vp_', 6), handle, display_name: clean(display_name, 40, 'display_name') || handle,
@@ -489,7 +633,7 @@ export class Pilot {
         enrollment: {code_hash: sha256(code), expires_at: iso(this.now() + ENROLL_TTL_MS)},
         // With circulation on, an invited joiner clears and novates its own debt automatically (net-neutral), but
         // accepts no transfers and nobody's notes until its owner names whose (design §8).
-        mandate: {...DEFAULT_MANDATE, expires_at: iso(this.now() + 14 * 864e5), ...(this.circulating ? INVITE_CIRCULATION() : {})}, mandate_version: 1,
+        mandate: {...DEFAULT_MANDATE, expires_at: iso(this.now() + INVITE_MANDATE_DAYS * 864e5), ...(this.circulating ? INVITE_CIRCULATION() : {})}, mandate_version: 1,
         last_seen_agent: null, last_seen_owner: null,
       };
       inv.uses += 1;
@@ -508,10 +652,30 @@ export class Pilot {
     return {enrollment_code: code, enrollment_expires_at: p.enrollment.expires_at};
   }
 
+  // An enrollment whose answer was lost (the Nov 17 tester report): the client keeps its key and the code
+  // before it sends them (valun 0.7.2, fix/join-enroll) and sends the same enrollment again when no answer arrived. When
+  // this server registered that key with that code already, it answers a new agent token for it (enrolled_again), while
+  // the code would still be valid and before the agent was ever seen with the token answered first (which then stops
+  // working: no one received it). Only the holder of the key and the code can ask, as for the first enrollment; any other
+  // request with a used code, a wrong proof included, is refused as before (invalid_enrollment).
   enroll({participant_id, code, pubkey, signature}) {
     return this.serial(async () => {
       const p = typeof participant_id === 'string' && Object.hasOwn(this.s.participants, participant_id) ? this.s.participants[participant_id] : null;
-      if (!p || !p.enrollment || typeof code !== 'string' || p.enrollment.code_hash !== sha256(code) || Date.parse(p.enrollment.expires_at) < this.now())
+      const done = p?.enrolled_with;
+      if (p && !p.enrollment && done && typeof code === 'string' && done.code_hash === sha256(code) && typeof pubkey === 'string'
+        && p.pubkey === pubkey && !p.last_seen_agent && !(Date.parse(done.expires_at) < this.now())
+        && await this.safeVerify(pubkey, hexOf(statements.enroll(p.id, pubkey, done.code_hash)), signature)) {
+        const agentToken = token('vpa_');
+        p.agent_token_hash = sha256(agentToken);
+        this.save(); this.store.audit({type: 'participant.enrolled_again', id: p.id, pubkey});
+        return {participant_id: p.id, agent_token: agentToken, network: NETWORK, enrolled_again: true};
+      }
+      // An id this server holds no participant for: most often a self-serve join whose agent never enrolled a key,
+      // released when its hold ended (releaseEnded removed its record, its owner token's hash with it), so nobody can
+      // issue a new code for it. Only a self-serve join is ever released (unfinishedJoin needs sandbox_only: an invited
+      // one is kept), and not while another participant's list names it (releaseEnded, namedElsewhere).
+      if (!p) throw new PilotError('invalid_enrollment', "this server holds no participant with this id: a self-serve join whose agent never enrolled a key is released when its hold ends (unless another participant's list names it), and its handle is then free again", 403);
+      if (!p.enrollment || typeof code !== 'string' || p.enrollment.code_hash !== sha256(code) || Date.parse(p.enrollment.expires_at) < this.now())
         throw new PilotError('invalid_enrollment', 'enrollment code is invalid or expired; the owner can issue a new one', 403);
       if (typeof pubkey !== 'string' || !KEY_RE.test(pubkey)) throw new PilotError('invalid_field', 'pubkey must be a 33-byte compressed key (hex string)');
       // A key is registered once, ever: tracker notes are keyed by public key, so a reused key would blur who owes what.
@@ -520,6 +684,7 @@ export class Pilot {
       const ok = await this.safeVerify(pubkey, hexOf(statements.enroll(p.id, pubkey, p.enrollment.code_hash)), signature);
       if (!ok) throw new PilotError('bad_signature', 'proof-of-possession signature does not verify', 403);
       const agentToken = token('vpa_');
+      p.enrolled_with = {code_hash: p.enrollment.code_hash, expires_at: p.enrollment.expires_at};    // enrolled_again
       p.pubkey = pubkey; p.agent_token_hash = sha256(agentToken); p.enrollment = null; p.status = 'active'; p.key_registered_at = iso(this.now());
       p.last_seen_agent = null;                      // "last seen" is per key: the new agent has not been seen yet
       this.save(); this.store.audit({type: 'participant.enrolled', id: p.id, pubkey});
@@ -545,7 +710,16 @@ export class Pilot {
         if (f) p.client_features = {consents: true, roles: f.roles, at: iso(this.now())};
         return {role: 'agent', p};
       }
-      if (p.owner_token_hash === h) { p.last_seen_owner = iso(this.now()); return {role: 'owner', p}; }
+      if (p.owner_token_hash === h) {
+        p.last_seen_owner = iso(this.now());
+        // An unfinished join's hold counts from its owner's last request (joinHeldUntil): saved, at most once a minute
+        // (OWNER_SEEN_SAVE_MS), so that a restart, which releases ended holds at once, keeps the hold this request gave.
+        if (this.unfinishedJoin(p) && !(this.now() - (this.ownerSeenSaved.get(p.id) ?? -Infinity) < OWNER_SEEN_SAVE_MS)) {
+          this.ownerSeenSaved.set(p.id, this.now());
+          this.save();
+        }
+        return {role: 'owner', p};
+      }
     }
     return null;
   }
@@ -556,6 +730,108 @@ export class Pilot {
   serverRun(p) { return !!p && typeof this.serverSigner?.has === 'function' && !!this.serverSigner.has(p.id); }
   // A self-serve sandbox participant whose sandbox time has ended.
   dormant(p) { return !!p?.sandbox_only && Date.parse(p.sandbox_expires_at) < this.now(); }
+
+  // ---------- unfinished joins (fix inbox #131) ----------
+  // The answer to a join carries the participant's only owner token and its enrollment code. When it is lost on the way
+  // (a cut connection), the participant exists but nobody can enroll its agent or sign in as its owner, and its handle
+  // used to stay taken for good. A self-serve participant whose agent never registered a key (none now, none revoked,
+  // none enrolled) is such an unfinished join: it holds its handle until joinHeldUntil, and is then released, its record
+  // removed (releaseEnded), so the handle is free again. Nobody else's records change: with no key it has signed nothing.
+  // Never released: an invited participant (its invite was given to someone), anyone who ever had a key, and the
+  // sandbox, house and server-run agents. An invited participant whose join answer was lost is finished by the operator
+  // who gave the invite, at its owner's request (POST /admin/participants/{vp}/owner-token and /enrollment-code), so it
+  // keeps its record and its handle.
+  unfinishedJoin(p) {
+    return !!p?.sandbox_only && p.status === 'awaiting_agent' && !p.pubkey && !p.key_registered_at && !(p.past_pubkeys || []).length
+      && !p.enrolled_with && !this.serverRun(p) && !this.sandboxIds?.has(p.id) && !this.houseIds?.has(p.id);
+  }
+  // The participant ids a list names (setMandate's counterparties, accept_notes_from and refuse_notes_from, and an
+  // agent's limits accept_notes_from and refuse_notes_from), without repeats; null when `v` is not a list of participant
+  // ids. A list may not add an unfinished join (400 invalid_field {field}): that list would keep it from being released
+  // (namedElsewhere), so a handle the 409 says is held until a time would stay taken after it (the review of #131). Once
+  // its agent has enrolled a key, it can be named. `current` is the list as it is: one that named an unfinished join
+  // before lists refused it can be sent again unchanged (a console resends every list), but nothing is added that way.
+  participantList(v, field, current = []) {
+    if (!Array.isArray(v) || !v.every(id => typeof id === 'string' && PID_RE.test(id) && Object.hasOwn(this.s.participants, id))) return null;
+    const had = new Set(Array.isArray(current) ? current : []);
+    const unfinished = v.filter(id => !had.has(id)).map(id => this.s.participants[id]).find(q => this.unfinishedJoin(q));
+    if (unfinished) throw new PilotError('invalid_field', `${field}: ${unfinished.id} (${unfinished.handle}) is a join that didn't finish: no agent key `
+      + 'was ever enrolled for it, so no list can name it until its agent enrolls one', 400, {field});
+    return [...new Set(v)];
+  }
+  // When an unfinished join's hold ends (ms since the epoch): unclaimedJoinTtlMs after the latest of the join, its latest
+  // enrollment code (one its owner or the operator issued later) and its owner's last request, and never before that
+  // code expires. An enrollment that can still be made is never cut off: once the code has expired, only a new code
+  // enrolls the agent, and issuing one (as any request of its owner, who holds the token the join answered) starts the
+  // hold again. After a lost join answer nobody holds that token, so the hold ends unclaimedJoinTtlMs after the join.
+  joinHeldUntil(p) {
+    const at = s => { const t = Date.parse(s); return Number.isFinite(t) ? t : 0; }, expires = at(p.enrollment?.expires_at);
+    const last = Math.max(at(p.created_at), expires ? expires - ENROLL_TTL_MS : 0, at(p.last_seen_owner));
+    return Math.max(last + this.unclaimedJoinTtlMs, expires);
+  }
+  // The hold that keeps a name taken by these participants (all of them unfinished joins, none of them named in another
+  // participant's list): {retry_after_ms, held_until}, the later of their holds; otherwise null (the name is taken for
+  // good, or while a list names it: no time is promised that the release would not keep).
+  holdOf(list) {
+    if (!list.length || !list.every(p => this.unfinishedJoin(p)) || this.namedElsewhere(list.map(p => p.id)).size) return null;
+    const until = Math.max(...list.map(p => this.joinHeldUntil(p)));
+    return {retry_after_ms: Math.max(1000, Math.ceil(until - this.now())), held_until: iso(until)};
+  }
+  // Releases the unfinished joins among `list` whose hold has ended: removes each record (the handle and display name are
+  // free again), records participant.released in the audit log, saves, and returns those released. One that another
+  // participant's list names (namedElsewhere) is kept while the list names it. Runs with the lock held (join,
+  // releaseUnfinishedJoins).
+  releaseEnded(list) {
+    const now = this.now();
+    const ended = list.filter(p => this.unfinishedJoin(p) && this.joinHeldUntil(p) < now);
+    if (!ended.length) return [];
+    const named = this.namedElsewhere(ended.map(p => p.id)), out = [];
+    for (const p of ended) {
+      if (named.has(p.id)) {
+        if (!this.keptLogged.has(p.id)) { this.keptLogged.add(p.id); this.log?.(`Pilot: unfinished join ${p.id} (${p.handle}) is named in another participant's list: kept while it is`); }
+        continue;
+      }
+      delete this.s.participants[p.id];
+      this.keptLogged.delete(p.id); this.ownerSeenSaved.delete(p.id);
+      this.store.audit({type: 'participant.released', id: p.id, handle: p.handle, joined_at: p.created_at, held_until: iso(this.joinHeldUntil(p)),
+        reason: 'unfinished_join'});
+      out.push(p);
+    }
+    if (out.length) this.save();
+    return out;
+  }
+  // Which of these participant ids (unfinished joins to release) another participant's lists name (NAMING_LISTS: a
+  // mandate's counterparties, accept_notes_from and refuse_notes_from, an agent's limits accept_notes_from and
+  // refuse_notes_from). Removing a participant such a list names would leave the list naming no one, so it is kept while
+  // the list does. Lists no longer take an unfinished join (participantList), so only one written before they refused it
+  // can. A list of a participant released with them names nothing then, unless that participant is kept itself.
+  // Nothing else can keep one: deals, guarantees, transfers, set-offs and approvals name only participants with a key
+  // (each checks it when it is made), and free text that mentions an id (a profile, a deal's description, an agent's
+  // notes) is anyone's to write, so it names no one (before the review of #131, the state's text was searched for the
+  // id, and anyone could keep anyone's join that way). A collection that can name a participant without a key would
+  // have to be added here.
+  namedElsewhere(ids) {
+    const going = new Set(ids), named = new Set();
+    for (let more = true; more;) {
+      more = false;
+      for (const q of Object.values(this.s.participants)) {
+        if (going.has(q.id) && !named.has(q.id)) continue;
+        for (const id of listedIn(q)) if (id !== q.id && going.has(id) && !named.has(id)) { named.add(id); more = true; }
+      }
+    }
+    return named;
+  }
+  // Every unfinished join whose hold has ended, released ({id, handle} each): server.mjs at startup and every 60 s.
+  releaseUnfinishedJoins() {
+    return this.serial(async () => this.releaseEnded(Object.values(this.s.participants)).map(p => ({id: p.id, handle: p.handle})));
+  }
+  // The participants a join with this name would meet (its handle or display name, compared by nameKey, as join does),
+  // unlisted ones included: GET /participants?q=NAME, how a newcomer whose join answer was lost sees whether that join
+  // made a participant (status awaiting_agent and no pubkey: a join that didn't finish).
+  holdersOf(name) {
+    const k = nameKey(name);
+    return k ? Object.values(this.s.participants).filter(p => nameKey(p.handle) === k || nameKey(p.display_name) === k) : [];
+  }
   // The open network keeps an active self-serve agent (SANDBOX_RENEW_WITHIN_DAYS): its sandbox time, and its mandate's
   // expiry with it, move to SANDBOX_DAYS from now; one that had ended (dormant) wakes up. A mandate expiry its owner set
   // earlier than the sandbox end stays as the owner set it. The mandate change is recorded as the operator's.
@@ -619,6 +895,7 @@ export class Pilot {
       const at = iso(this.now()), old = p.pubkey;
       p.past_pubkeys = [...(p.past_pubkeys || []), {pubkey: old, registered_at: p.key_registered_at ?? null, revoked_at: at}];
       p.agent_token_hash = null; p.pubkey = null; p.status = 'awaiting_agent'; p.last_seen_agent = null; p.key_registered_at = null;
+      delete p.enrolled_with;                        // a revoked key is never enrolled again
       const cancelled = [], voided = [];
       // Circulating credit: a transfer collecting signatures, or waiting for the payer's owner, that names the revoked key
       // in any role (issuer, payer or payee) is voided and purged; its deal becomes payment_due (or returns to delivered
@@ -732,10 +1009,9 @@ export class Pilot {
     for (const k of ['max_issue_per_deal', 'max_issue_outstanding', 'max_accept_per_deal', 'max_accept_per_issuer', 'min_price_as_payee', 'min_payer_coverage_pct', 'approve_above']) if (m[k] !== undefined) {
       if (!isInt(m[k], 0, LIMIT_MAX)) throw new PilotError('invalid_field', `${k} must be a whole number 0..${LIMIT_MAX}`); next[k] = m[k]; }
     if (m.counterparties !== undefined) {
-      if (m.counterparties === 'any') next.counterparties = 'any';
-      else if (Array.isArray(m.counterparties) && m.counterparties.every(id => typeof id === 'string' && PID_RE.test(id) && Object.hasOwn(this.s.participants, id)))
-        next.counterparties = [...new Set(m.counterparties)];
-      else throw new PilotError('invalid_field', 'counterparties must be "any" or a list of participant ids');
+      const list = m.counterparties === 'any' ? 'any' : this.participantList(m.counterparties, 'counterparties', cur.counterparties);
+      if (!list) throw new PilotError('invalid_field', 'counterparties must be "any" or a list of participant ids');
+      next.counterparties = list;
     }
     if (m.expires_at !== undefined) {
       if (m.expires_at !== null && isNaN(Date.parse(m.expires_at))) throw new PilotError('invalid_field', 'expires_at must be a date or null');
@@ -753,7 +1029,8 @@ export class Pilot {
     const circulating = this.circulating;
     if (circulating) {
       const ids = (v, field) => {
-        if (Array.isArray(v) && v.every(id => typeof id === 'string' && PID_RE.test(id) && Object.hasOwn(this.s.participants, id))) return [...new Set(v)];
+        const list = this.participantList(v, field, cur[field]);
+        if (list) return list;
         throw new PilotError('invalid_field', `${field} must be ${field === 'accept_notes_from' ? '"any" or ' : ''}a list of participant ids`);
       };
       for (const k of ['auto_clear', 'novate_own_debt', 'accept_transfers']) if (m[k] !== undefined) {
@@ -822,7 +1099,7 @@ export class Pilot {
       if (body[k] === undefined || (CIRCULATION_LIMIT_KINDS.has(kind) && !circulating)) continue;
       if (body[k] === null) { delete next[k]; delete recordedBy[k]; continue; }
       if (CIRCULATION_LIMIT_KINDS.has(kind)) {
-        const value = this.agentLimitValue(k, kind, body[k]), owner = this.ownerValue(p, k);
+        const value = this.agentLimitValue(k, kind, body[k], p.agent_limits?.[k]), owner = this.ownerValue(p, k);
         const wider = agentLimitWidens(kind, k, owner, value);
         if (wider) throw new PilotError(wider.code, wider.message, 403, {field: k, owner_value: owner ?? null});
         next[k] = value; recordedBy[k] = by;
@@ -841,17 +1118,17 @@ export class Pilot {
     return {agent_limits: next, agent_limits_recorded_by: recordedBy, effective_limits: this.effectiveLimits(p)};
   }
   // An agent limit of a credit-policy kind (ncap, off_only, allow, deny), checked for its type: a whole number; true or
-  // false (one of PAY_WITH_HELD_NOTES for pay_with_held_notes); a list of participant ids, without repeats (an agent
-  // cannot record 'any': it would be no limit).
-  agentLimitValue(k, kind, v) {
+  // false (one of PAY_WITH_HELD_NOTES for pay_with_held_notes); a list of participant ids, without repeats, adding no
+  // unfinished join to `current`, the list recorded now (participantList; an agent cannot record 'any': it would be no
+  // limit).
+  agentLimitValue(k, kind, v, current = []) {
     const bad = what => { throw new PilotError('invalid_field', `${k} must be ${what} (or null to clear it)`); };
     if (kind === 'ncap') return isInt(v, 0, LIMIT_MAX) ? v : bad(`a whole number 0..${LIMIT_MAX}`);
     if (kind === 'off_only') {
       if (k === 'pay_with_held_notes') return PAY_WITH_HELD_NOTES.includes(v) ? v : bad(PAY_WITH_HELD_NOTES.join(', '));
       return typeof v === 'boolean' ? v : bad('true or false');
     }
-    if (Array.isArray(v) && v.every(id => typeof id === 'string' && PID_RE.test(id) && Object.hasOwn(this.s.participants, id))) return [...new Set(v)];
-    return bad('a list of participant ids');
+    return this.participantList(v, k, current) ?? bad('a list of participant ids');
   }
   // The owner's value of field k: the mandate's, or a phase-2 field's default when the mandate does not hold it.
   ownerValue(p, k) { return policyValue(p, p.mandate, k); }
@@ -883,13 +1160,25 @@ export class Pilot {
   // With circulating credit on (modes sandbox and on), a participant the server runs (the sandbox agents) is labelled
   // operator_run: the operator holds its keys (spec 3, 18.15). In other modes the record is v15's. A house agent (the
   // operator runs it elsewhere and holds its key; this server names it by id: houseIds) is labelled house_agent, in every
-  // mode: a label only, nothing it may do changes (its notes are not operator_run: the server does not sign them).
+  // mode: a label only, nothing it may do changes (its notes are not operator_run: the server does not sign them). One of
+  // the operator's other test agents (this server names it by id: operatorTestIds) is labelled operator_test_agent, in
+  // every mode, a label only as well.
   publicParticipant(p) {
     return {id: p.id, handle: p.handle, display_name: p.display_name, operator: p.operator, about: p.about, services: p.services,
       ...(p.wants ? {wants: p.wants} : {}), ...(p.public_vouches ? {public_vouches: true} : {}), pubkey: p.pubkey, status: p.status, joined_at: p.created_at, agent_last_seen: p.last_seen_agent,
-      ...(p.sandbox_only ? {sandbox_only: true, sandbox_expires_at: p.sandbox_expires_at} : {}),
+      ...(p.sandbox_only ? this.selfServeFields(p) : {}),
       ...(this.serverRun(p) && this.circulating ? {operator_run: true} : {}),
-      ...(this.houseIds?.has(p.id) ? {house_agent: true} : {})};
+      ...(this.houseIds?.has(p.id) ? {house_agent: true} : {}),
+      ...(this.operatorTestIds?.has(p.id) ? {operator_test_agent: true} : {})};
+  }
+  // A self-serve participant's fields (the newcomer run of Nov 18, finding 5: "sandbox_only: true" read as boxed in, on a
+  // network where the join's note says it can deal with any agent): self_serve: true (joined without an invite, held to
+  // the self-serve limits until sandbox_expires_at, which the open network renews while its agent is active), and
+  // open_network: whether it may deal with any agent whose owner allows it (true) or only with the sandbox agents
+  // (false: boxedOut). sandbox_only stays, a deprecated alias of self_serve with the same value (as
+  // lib/pilot/amount-names.mjs keeps the _PC names); docs/PILOT-API.md, "Self-serve participants".
+  selfServeFields(p) {
+    return {self_serve: true, open_network: !!this.openNetwork, sandbox_only: true, sandbox_expires_at: p.sandbox_expires_at};
   }
   // The directory's record of a participant (GET /participants, GET /participants/{vp}, agent pages, the A2A front door):
   // the public record, where an agent the server runs (the sandbox agents) is always on, so its agent_last_seen is now,
@@ -920,22 +1209,28 @@ export class Pilot {
     return kept;
   }
   // Records a join from this address and returns its record, or refuses (429) when the server has had
-  // SANDBOX_JOINS_PER_HOUR_TOTAL joins in the last hour from all addresses (checked first), or the address has had
-  // SANDBOX_JOINS_PER_HOUR_PER_ADDRESS; each refusal says when the oldest join it counted stops counting.
+  // joinLimits.per_hour joins in the last hour from all addresses (checked first), or the address has had
+  // joinLimits.per_address_per_hour (SANDBOX_JOINS_PER_HOUR_TOTAL and SANDBOX_JOINS_PER_HOUR_PER_ADDRESS by default);
+  // each refusal says when the oldest join it counted stops counting. When a cap was lowered after more joins were
+  // counted, that is when enough of them have stopped counting.
   takeSandboxJoinSlot(addressKey) {
     this.sandboxJoinKey ??= this.store.secret(SANDBOX_JOIN_KEY_FILE);
     const k = crypto.createHmac('sha256', this.sandboxJoinKey).update(String(addressKey)).digest('hex').slice(0, 32), now = this.now();
-    const recent = this.recentSandboxJoins(now);
-    const retryAfter = rs => Math.max(1000, Math.min(...rs.map(r => Date.parse(r.at))) + SANDBOX_JOIN_WINDOW_MS - now);
-    if (recent.length >= SANDBOX_JOINS_PER_HOUR_TOTAL) {
-      const ms = retryAfter(recent);
-      throw new PilotError('rate_limited', `the sandbox takes at most ${SANDBOX_JOINS_PER_HOUR_TOTAL} new participants an hour from all addresses; try again in ${Math.ceil(ms / 60e3)} min`, 429,
+    const recent = this.recentSandboxJoins(now), {per_hour: total, per_address_per_hour: perAddress} = this.joinLimits;
+    const retryAfter = (rs, cap) => Math.max(1000, rs.map(r => Date.parse(r.at)).sort((a, b) => a - b)[rs.length - cap] + SANDBOX_JOIN_WINDOW_MS - now);
+    if (recent.length >= total) {
+      const ms = retryAfter(recent, total);
+      throw new PilotError('rate_limited', `the sandbox takes at most ${total} new participants an hour from all addresses; try again in ${Math.ceil(ms / 60e3)} min${moreLocalAgents('PILOT_SANDBOX_JOINS_PER_HOUR')}`, 429,
         {retry_after_ms: ms});
     }
     const mine = recent.filter(r => r.k === k);
-    if (mine.length >= SANDBOX_JOINS_PER_HOUR_PER_ADDRESS) {
-      throw new PilotError('rate_limited', `at most ${SANDBOX_JOINS_PER_HOUR_PER_ADDRESS} sandbox joins per hour from one address (an IPv4 address, or an IPv6 /48)`, 429,
-        {retry_after_ms: retryAfter(mine)});
+    if (mine.length >= perAddress) {
+      // On a local server its words also say how long to wait, as the other two caps' do: valun 0.7.1's join prints only
+      // `Joining failed (rate_limited): <message>`, never retry_after_ms, and every client on the machine meets this cap
+      // first (the review of local/readiness-r1, F2). Elsewhere the words are as they were.
+      const ms = retryAfter(mine, perAddress);
+      throw new PilotError('rate_limited', `at most ${perAddress} sandbox joins per hour from one address (an IPv4 address, or an IPv6 /48)`
+        + `${LOCAL ? `; try again in ${Math.ceil(ms / 60e3)} min` : ''}${moreLocalAgents('PILOT_SANDBOX_JOINS_PER_HOUR_PER_ADDRESS')}`, 429, {retry_after_ms: ms});
     }
     const slot = {k, at: iso(now)};
     (this.s.sandbox_joins ||= []).push(slot);
@@ -956,17 +1251,24 @@ export class Pilot {
     if (!ids.length) throw new PilotError('sandbox_unavailable', 'the sandbox agents are not running on this server', 503);
     // A cap for the whole server per day, on top of the hourly limits: many addresses cannot fill a small machine's state.
     // The day is a rolling 24 h window, not a calendar day (fix inbox #61): the refusal is a 429 like the hourly ones, and
-    // says when the next place frees (the oldest counted join leaves the window then).
-    const now = this.now(), since = now - 864e5;
+    // says when the next place frees (the oldest counted join leaves the window then). It counts the participants in the
+    // state: a join released as unfinished (releaseEnded) left it, so it no longer counts, while the hourly limits count
+    // every join (s.sandbox_joins).
+    // joinLimits.per_day (SANDBOX_JOINS_PER_DAY by default): when the window holds more than it (a cap lowered, for
+    // example), the next place frees once enough of them have left it, not when the oldest does (a join then is refused
+    // again). On a hosted server that is a change from the earlier answer, by design:
+    // test/sandbox-join-limit.unit.test.mjs.
+    const now = this.now(), since = now - 864e5, perDay = this.joinLimits.per_day;
     const inWindow = Object.values(this.s.participants).filter(x => x.sandbox_only && Date.parse(x.created_at) > since);
-    if (inWindow.length >= SANDBOX_JOINS_PER_DAY) {
-      const oldest = Math.min(...inWindow.map(x => Date.parse(x.created_at)));
-      const ms = Math.max(1000, oldest + 864e5 - now), at = iso(now + ms);
-      throw new PilotError('sandbox_full', `the sandbox takes at most ${SANDBOX_JOINS_PER_DAY} new participants in any 24 hours (a rolling window, not a calendar day); the next place frees at ${at}, in ${Math.ceil(ms / 60e3)} min`, 429,
+    if (inWindow.length >= perDay) {
+      const frees = inWindow.map(x => Date.parse(x.created_at)).sort((a, b) => a - b)[inWindow.length - perDay];
+      const ms = Math.max(1000, frees + 864e5 - now), at = iso(now + ms);
+      throw new PilotError('sandbox_full', `the sandbox takes at most ${perDay} new participants in any 24 hours (a rolling window, not a calendar day); the next place frees at ${at}, in ${Math.ceil(ms / 60e3)} min${moreLocalAgents('PILOT_SANDBOX_JOINS_PER_DAY')}`, 429,
         {retry_after_ms: ms, resets_at: at});
     }
     // The address's slot is taken before the first await, so joins running at the same time count each other, and is
     // given back if the join is refused: only joins that happen count.
+    const saved = this.generation;
     const slot = addressKey == null ? null : this.takeSandboxJoinSlot(addressKey);
     const inv = this.createInvite({note: 'self-serve sandbox join', maxUses: 1, ttlDays: 1, persist: false});
     const open = this.openNetwork;
@@ -978,6 +1280,12 @@ export class Pilot {
       delete this.s.invites[inv.id];
       const i = slot ? (this.s.sandbox_joins || []).indexOf(slot) : -1;
       if (i >= 0) this.s.sandbox_joins.splice(i, 1);
+      // Refused joins write nothing: a save while this join waited for the lock or ran (another request's, or the release
+      // of an ended hold the join met: releaseEnded) wrote its invite and its slot too, so the state is saved again
+      // without them (the review of #131: a restart would have counted the refused join against its address).
+      if (this.generation !== saved) {
+        try { this.save(); } catch (se) { this.log?.(`Pilot: saving the state after a refused sandbox join failed: ${se.message}`); }
+      }
       throw e;
     }
     const p = this.s.participants[j.participant_id], until = iso(this.now() + SANDBOX_DAYS * 864e5);
@@ -988,7 +1296,7 @@ export class Pilot {
       objective: open ? 'Self-serve: deal with any agent on the Valun test network, within small limits.' : 'Self-serve sandbox: deal with sandbox-exact and sandbox-mallory to try Valun.',
       ...(this.circulating ? SANDBOX_CIRCULATION(open ? 'any' : ids) : {})}, {by: 'operator'});
     this.store.audit({type: 'participant.sandbox_joined', id: p.id, ...(open ? {open_network: true} : {})});
-    return {...j, sandbox_only: true, sandbox_expires_at: until, counterparties: open ? 'any' : ids,
+    return {...j, ...this.selfServeFields(p), counterparties: open ? 'any' : ids,
       note: open
         ? `Open network: you can deal with any agent on the network whose owner allows it (sandbox-exact and sandbox-mallory are always on), at most ${amt(SANDBOX_CAPS.max_issue_per_deal)} per deal and ${amt(SANDBOX_CAPS.max_issue_outstanding)} owed in total, until ${until}, renewed for another ${SANDBOX_DAYS} days whenever your agent is active. ${UNITS_NOTE}`
         : `Sandbox only: you can deal with the sandbox agents (sandbox-exact, sandbox-mallory) until ${until}. ${UNITS_NOTE}`};
@@ -1222,7 +1530,7 @@ export class Pilot {
       ...(redeemed
         // settled keeps its name and sum for the clients; its words keep the two apart: a set-off clears a debt (committed,
         // not final: the Trust model), a redemption pays it.
-        ? {settled: journal.setoff + redeemed.redeemed_claims + redeemed.redeemed_debts, settled_how: 'cleared in loops, committed but not final, and redeemed on Ergo testnet', ...redeemed, backing,
+        ? {settled: journal.setoff + redeemed.redeemed_claims + redeemed.redeemed_debts, settled_how: SETTLED_HOW_TESTNET.committed, ...redeemed, backing,
           meaning: 'claims and debts are outstanding obligations recorded by the Valun testnet Basis tracker, which anchors its state on Ergo testnet (cumulative per pair). Some may have moved between creditors (transfer) or been cancelled in cycles (set-off: cleared, and committed once a tracker box commits it, not final). A claim is settled only when its creditor redeems it on Ergo testnet against its issuer\'s tERG reserve (GET /reserves). The field settled adds the two kinds, so read them apart: cleared_by_setoff (cleared in loops), redeemed_claims (the claims you redeemed) and redeemed_debts (your debts redeemed from your reserve). tERG are test coins with no monetary value.'}
         : {settled: journal.setoff, settled_how: 'by set-off only; nothing is redeemed', backing,
           meaning: 'claims and debts are outstanding obligations recorded by the pilot Basis tracker (cumulative per pair). Some may have moved between creditors (transfer) or been cancelled in cycles (set-off); settled counts only set-off. Nothing is redeemed; there is no reserve.'})};
@@ -1476,10 +1784,27 @@ export class Pilot {
       this.event(d, 'valun', 'expired_undelivered', {version: d.agreement.version, deliver_by: d.agreement.terms.deliver_by, grace_days: UNDELIVERED_GRACE_DAYS});
       this.save(); this.store.audit({type: 'deal.expired_undelivered', deal: d.id});
     }
+    if (expiry() === 'held_note') this.expireHeldNote(d);
     // Circulating credit: the deal's payment by transfer, past its collection window, expires (the deal becomes
     // payment_due, or returns to where it was while it waited for the payer's owner).
     if (d.payment?.method === 'transfer') { const t = this.transfer(d.payment.transfer_id); if (t) this.sweepTransfer(t); }
     return d;
+  }
+  // A credit note held for the payer's owner (expiry 'held_note'), at its deadline (heldNoteDecideBy: a bound note only)
+  // and after: the approval is void_expired and the deal is released as after a rejection (delivered with the completion
+  // cleared, or payment_due when its acceptance already stood), so the payer's agent may accept the delivery again. The
+  // signed note is kept (d.void_notes, state expired) and never sent: the payer's client counts it as a payment attempt,
+  // so decision D-1's window for a payment by transfer still applies to it. Returns whether it expired now. Saves.
+  expireHeldNote(d) {
+    const n = d.credit_note, by = heldNoteDecideBy(n);
+    if (d.status !== 'completion_awaiting_owner' || n?.state !== 'signed' || !n.approval_id || by === null || this.now() < by) return false;
+    const a = this.s.approvals[n.approval_id];
+    if (a?.state === 'pending') a.state = 'void_expired';
+    d.void_notes = [...(d.void_notes || []), {...n, state: 'expired'}];
+    d.credit_note = null; this.releaseAcceptance(d);
+    this.event(d, 'valun', 'credit_note_expired', {amount: n.amount, decide_by: iso(by), tracker_until: iso(n.note.timestamp + MAX_AGE_MS), status: d.status});
+    this.save(); this.store.audit({type: 'approval.void_expired', id: n.approval_id, deal: d.id, kind: 'issue_note', decide_by: iso(by)});
+    return true;
   }
 
   validateTerms(t, proposer) {
@@ -1801,15 +2126,19 @@ export class Pilot {
         // Releasing a held note while another note on its pair is unconfirmed could leave one of the two off the tracker:
         // the approval stays pending (pair_busy) until that note is settled.
         if (decision === 'approve') { const k = this.noteKeysOf(d); this.assertPairFree(d, k.issuer, k.recipient); this.assertNoteEdgeFree(k.issuer, k.recipient); }
-        a.decided_at = iso(this.now()); a.note = cleanNote;
         if (decision === 'approve') {
           const {issuer, recipient} = this.noteKeysOf(d), cur = await this.basis.note(issuer, recipient);
+          // A bound note is never sent past its deadline (heldNoteDecideBy, decision D-1 item 4): the sweep above refused a
+          // late approval (409 not_pending, "approval is void_expired"), and a read that sweeps may have ended the held note
+          // while the tracker was read, or its deadline may have passed during that read. Then nothing is decided here.
+          this.expireHeldNote(d);
+          if (a.state !== 'pending' || d.status !== 'completion_awaiting_owner' || d.credit_note?.approval_id !== a.id)
+            throw new PilotError('not_pending', a.state !== 'pending' ? `approval is ${a.state}` : 'this approval no longer matches the deal', 409);
+          a.decided_at = iso(this.now()); a.note = cleanNote;
           const keysNow = this.s.participants[d.payer].pubkey === issuer && this.s.participants[d.payee].pubkey === recipient;
           // The pair's tracker state must still be exactly the one the agent signed against: the total, and also the last
           // note's timestamp and signature (d.note_prior, kept by complete()), so a pair that went down and back up to the
           // same total is stale too. A note held by an older version has no d.note_prior: only its total is compared.
-          // A bound note held past the tracker's maximum age (decision D-1 item 4) is not stale here: the tracker refuses
-          // it (novation_expired), the read-back shows it did not apply, and the deal is note_failed (submitNote).
           const totalSame = Number(cur?.amount_collected ?? 0) === d.credit_note.prior_total, prior = d.note_prior;
           const noteSame = !prior || (Number(cur?.amount_collected ?? 0) === prior.total && (cur?.timestamp ?? null) === prior.timestamp && (cur?.signature ?? null) === prior.signature);
           if (!keysNow || !totalSame || !noteSame) {
@@ -1817,9 +2146,22 @@ export class Pilot {
             a.state = 'void_stale'; d.credit_note.state = 'stale'; d.status = d.payment_due_since ? 'payment_due' : 'delivered';
             this.event(d, `owner:${p.id}`, 'owner_approval_void_stale', {kind: 'issue_note'});
             this.save(); this.store.audit({type: 'approval.void_stale', id: a.id, deal: d.id, keys_changed: !keysNow, ...(keysNow && totalSame ? {last_note_changed: true} : {})});
-            throw new PilotError('stale_note', !keysNow ? "a party's agent key changed since the agent signed this credit note; the agent must sign a new one with the current keys"
-              : totalSame ? "the pair's last credit note on the tracker changed since the agent signed this credit note (the total is the same, the note is not); the agent must sign a new one"
-                : "the pair's tracker total changed since the agent signed this credit note; the agent must sign a new one", 409);
+            // The owner reads this (the console shows it, in local time): where the void left the deal, as the card's
+            // "Checked again when you approve" says. Delivered, the payer's agent may accept the delivery again (a new
+            // note, or a payment by transfer where one can start) or dispute it (dispute() takes a delivered deal);
+            // payment due, it must still pay it (the review of PR #9, code 2-1: this said "the agent must sign a new one"
+            // also where the delivery could be disputed again). Then until when the routes may make a payment wait
+            // (payAgainWaits: decision D-1 and the per-deal cap). A stale note is an earlier payment attempt too
+            // (ownNoteAttempts): a payment by transfer waits for it unless the journal proves it dead, which a change of
+            // its pair timestamped before it cannot do (the review of PR #9, final round: two held IOUs of one pair, signed
+            // from the same state and approved in the order they were signed).
+            const why = !keysNow ? "a party's agent key changed since your agent signed this credit note"
+              : totalSame ? "the pair's last credit note on the tracker changed since your agent signed this credit note (the total is the same, the note is not)"
+                : "the pair's tracker total changed since your agent signed this credit note";
+            const fresh = `a new IOU${keysNow ? '' : ' signed with the current keys'}`, {byTransfer, waits} = await this.payAgainWaits(d);
+            throw new PilotError('stale_note', `${why}; the approval is void, and Valun never sent the IOU: ${d.status === 'payment_due'
+              ? `the deal stays payment due, and your agent must still pay it, with ${fresh}${byTransfer ? ' or by transfer' : ''}`
+              : `the deal is delivered again, and your agent may accept the delivery again with ${fresh}${byTransfer ? ' (or pay by transfer)' : ''}, or dispute it`}${waits ? `; ${waits}` : ''}`, 409);
           }
           a.state = 'approved';
           d.credit_note.owner_approval = {approval_id: a.id, at: a.decided_at}; d.credit_note.state = 'submitting'; d.status = 'issuing_note';
@@ -1827,6 +2169,7 @@ export class Pilot {
           this.save(); this.store.audit({type: 'approval.approved', id: a.id, deal: d.id});
           await this.submitNote(d);
         } else {
+          a.decided_at = iso(this.now()); a.note = cleanNote;
           a.state = 'rejected';
           d.rejected_notes = [...(d.rejected_notes || []), {...d.credit_note, state: 'rejected_by_owner'}];
           d.credit_note = null; this.releaseAcceptance(d);       // delivered (completion cleared), or payment_due if it stood
@@ -2256,8 +2599,9 @@ export class Pilot {
         d.credit_note.error = r ? `the tracker did not record the note (HTTP ${r.status}${code ? `, ${code}` : ''})` : 'the tracker does not hold the note';
         if (r) d.credit_note.tracker_status = r.status;
       } else d.credit_note.error = r?.json?.error ?? r?.text?.slice(0, 300) ?? 'the tracker does not hold the note';
-      // A bound note also keeps the tracker's code (for example novation_expired: held for its owner past the tracker's
-      // maximum age, decision D-1 item 4); the payer then signs a new bound note.
+      // A bound note also keeps the tracker's code (for example novation_expired: older than the tracker's maximum age,
+      // decision D-1 item 4; a note held for its owner is no longer sent that late, heldNoteDecideBy); the payer then
+      // signs a new bound note.
       if (n.prior_signature && code) d.credit_note.error_code = code;
       this.event(d, 'basis-tracker', 'credit_note_failed', {error: d.credit_note.error});
       // Circulating credit (decision D-2 c): the failed note is a payment attempt of an unpaid deal; a collecting set-off
@@ -2544,9 +2888,26 @@ export class Pilot {
     const mine = Object.values(this.s.transfers || {}).filter(t => t.id !== exceptTransfer && t.payer.id === B.id);
     if (mine.filter(t => LIVE_TRANSFER.has(this.sweepTransfer(t).state)).length >= MAX_COLLECTING_AS_PAYER)
       no('max_collecting_transfers', `at most ${MAX_COLLECTING_AS_PAYER} of its payments by transfer can be in progress at once`);
+    const until = this.transferCapUntil(B, d, {exceptTransfer});
+    if (until !== null)
+      no('max_attempts_per_deal', `at most ${MAX_ATTEMPTS_PER_DAY} attempts to pay one deal by transfer in 24 hours, whatever became of them; this deal's next can start at ${iso(until)} at the earliest`);
+  }
+  // The per-deal cap of spendingPayerCheck: the times (ms) at which the payments by transfer of deal d by its payer B were
+  // made in the last 24 hours, oldest first. Every one counts, whatever became of it (rejected by the owner, expired,
+  // void, cancelled, failed, applied); a post refused before a transfer was recorded (refused_attempts) is none.
+  // `exceptTransfer`: leave that one out (the transfer being decided: its own checks do not count it).
+  transfersInDay(B, d, {exceptTransfer = null} = {}) {
     const since = this.now() - 864e5;
-    if (mine.filter(t => t.deal_id === d.id && Date.parse(t.created_at) > since).length >= MAX_ATTEMPTS_PER_DAY)
-      no('max_attempts_per_deal', `at most ${MAX_ATTEMPTS_PER_DAY} attempts to pay one deal by transfer in 24 hours`);
+    return Object.values(this.s.transfers || {}).filter(t => t.id !== exceptTransfer && t.payer.id === B.id && t.deal_id === d.id)
+      .map(t => Date.parse(t.created_at)).filter(c => c > since).sort((x, y) => x - y);
+  }
+  // Until when (ms) the cap refuses another payment by transfer of deal d (MAX_ATTEMPTS_PER_DAY in 24 hours): the time
+  // from which fewer than that many of them count (with three, 24 hours after the first); null while another may start.
+  // The cards, the 409s of a voided payment and the approval view's transfers_refused_until say it (approvalEffect,
+  // payAgainWaits, approvalView).
+  transferCapUntil(B, d, opts = {}) {
+    const made = this.transfersInDay(B, d, opts);
+    return made.length >= MAX_ATTEMPTS_PER_DAY ? made[made.length - MAX_ATTEMPTS_PER_DAY] + 864e5 : null;
   }
   // C being paid `a` PC of A's notes, for deal `dealId` (left out of C's committed deals: the transfer pays it). After
   // C's own switches, its counterparties and its mandate's expiry, the credit rules in their order (lib/pilot/policy.mjs
@@ -2746,6 +3107,22 @@ export class Pilot {
       }
     }
     return {note, transfer};
+  }
+  // For the 409 of a held payment of deal d voided on approval (stale_note, stale_payment: the review of PR #9, final
+  // round): how the payment routes judge paying it again now, as the deal view's next_actions do (paymentGate, with the
+  // tracker's notes; Valun's estimate when the tracker cannot be read just now), with the per-deal cap
+  // (transferCapUntil). {byTransfer: whether a payment by transfer of it can start at all (this mode and the payer's
+  // mandate allow one, mayPayByTransfer, and decision D-1 refuses it at most for an earlier attempt's window), waits: until
+  // when each route may have to wait, in words ('' when neither has to)}. "May": Valun's journal can prove an earlier
+  // attempt dead sooner (attemptDeadByJournal).
+  async payAgainWaits(d) {
+    const g = await this.paymentGate(d).catch(e => { if (e instanceof BasisError) return this.paymentGateEstimate(d); throw e; });
+    const end = b => (b?.code === 'transfer_window_open' ? this.now() + b.retry_after_ms - 1 : 0);   // the last ms it refuses
+    const byTransfer = this.mayPayByTransfer(d) && (!g.transfer || g.transfer.code === 'transfer_window_open');
+    const own = end(g.note), tr = byTransfer ? Math.max(end(g.transfer), this.transferCapUntil(this.s.participants[d.payer], d) ?? 0) : 0;
+    const waits = own && own === tr ? [`a payment may have to wait until ${iso(own)}`]
+      : [own ? `a payment with its own IOU may have to wait until ${iso(own)}` : null, tr ? (own ? `and one by transfer until ${iso(tr)}` : `a payment by transfer may have to wait until ${iso(tr)}`) : null];
+    return {byTransfer, waits: waits.filter(Boolean).join(', ')};
   }
   // Whether deal d has any payment attempt by transfer (recorded, or refused when posted): only then can an own credit
   // note have to wait for one (D-1). Never with circulation off, so mode off reads nothing more.
@@ -3163,7 +3540,15 @@ export class Pilot {
       this.event(d, `owner:${p.id}`, 'owner_approval_void_stale', {kind: 'pay_by_transfer', reason: stale.code});
       this.endTransfer(t, 'void_stale', stale.code, detail);
       this.store.audit({type: 'approval.void_stale', id: a.id, deal: d.id, transfer: t.id, reason: stale.code, ...detail});
-      throw new PilotError('stale_payment', `${stale.why}; nothing moved and the approval is void: the deal is ${d.status} again and your agent must pay it again`, 409,
+      // Where the void left the deal (endTransfer, releaseAcceptance), as the card's "Checked again when you approve"
+      // says: delivered, where the payer's agent may pay again or dispute the delivery, or payment due (the review of PR
+      // #9, code 2-1: this said "your agent must pay it again" also where the delivery could be disputed again). Then
+      // until when the routes may make a payment wait (payAgainWaits): this payment's own window (decision D-1), as they
+      // judge it with the tracker's notes (an edge that changed outside Valun's journal proves nothing), and the per-deal
+      // cap, which this payment counts toward (the review of PR #9, final round).
+      const {waits} = await this.payAgainWaits(d);
+      throw new PilotError('stale_payment', `${stale.why}; nothing moved, and the approval is void: ${d.status === 'payment_due'
+        ? 'the deal stays payment due, and your agent must still pay it' : 'the deal is delivered again, and your agent may pay again or dispute the delivery'}${waits ? `; ${waits}` : ''}`, 409,
         {reason: stale.code, ...detail, transfer_id: t.id, deal_status: d.status});
     }
     const signed = await this.serverSignatures(t, ['issuer', 'payee']);      // 503 signer_unavailable: nothing changed, still pending
@@ -4472,7 +4857,7 @@ export class Pilot {
       labels: {
         signed_by_parties: 'proposals, acceptances, deliveries, completions and disputes carry the acting participant\'s key signature',
         owner_approvals: 'owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner\'s note is seen only by that participant\'s side',
-        basis: d.status === 'note_issued' ? `credit note issued: the payer-signed Basis note is held by ${TRACKER_PLACE}; ${this.s.participants[d.payer].handle} owes ${this.s.participants[d.payee].handle} ${amt(d.agreement.terms.price.amount)} more`
+        basis: d.status === 'note_issued' ? this.issuedLabel(d, d.credit_note?.tracker_note?.confirmation ?? null, {live: false})
           : circulating && d.status === 'paid_by_transfer' && t ? `${handle(t.issuer.id)} now owes ${handle(d.payee)} ${amt(price)} that it owed ${handle(d.payer)} before; ${handle(d.payer)} issued no credit note for this deal`
             : 'no credit note for this deal is in the Basis tracker',
         settlement: ON_TESTNET ? (circulating ? CIRCULATION_SETTLEMENT_TESTNET : SETTLEMENT_TESTNET)
@@ -4493,9 +4878,94 @@ export class Pilot {
       ? await this.paymentGate(d).catch(e => { if (e instanceof BasisError) return null; throw e; }) : null;
     const v = this.view(d, p, {gate});
     // On chain (the testnet): the note's live state (fix inbox #13). With circulating credit: how long to wait (#8).
-    if (v.credit_note && this.chain?.on_chain) v.credit_note = await this.liveNote(d, v.credit_note);
+    const onChain = !!this.chain?.on_chain;
+    if (v.credit_note && onChain) v.credit_note = await this.liveNote(d, v.credit_note);
+    // An issued IOU (the newcomer run of Nov 18, findings 3 and 12): labels.basis says how far it got on Ergo testnet as
+    // the tracker says now, and, with circulating credit (modes sandbox and on; in modes off and bound the view stays
+    // v15's), labels.summary says in one paragraph who owes whom, when it was recorded and committed, how to check it and
+    // how it gets paid. 0.7.1's valun_deal passes labels on as they are.
+    if (d.status === 'note_issued' && v.credit_note?.state === 'recorded') {
+      const live = onChain ? (v.credit_note.pair_now ? v.credit_note.confirmation ?? null : null) : d.credit_note?.tracker_note?.confirmation ?? null;
+      v.labels = {...v.labels, basis: this.issuedLabel(d, live, {live: onChain})};
+      if (this.circulating) v.labels.summary = await this.issuedSummary(d, p, v.credit_note, {onChain});
+    }
     const wait = this.circulating ? this.waitHint(d, p, v.next_actions) : null;
     return wait ? {...v, retry_after_seconds: wait} : v;
+  }
+  // labels.basis of a deal whose note the tracker recorded: where the note is held and, on the testnet, how far the pair's
+  // note got on Ergo testnet (onChainWords), then who owes whom for this deal.
+  issuedLabel(d, confirmation, {live}) {
+    const where = ON_TESTNET ? `; ${onChainWords(confirmation, {live})}` : '';
+    return `credit note issued: the payer-signed Basis note is held by ${TRACKER_PLACE}${where}; ${this.s.participants[d.payer].handle} owes ${this.s.participants[d.payee].handle} ${amt(d.agreement.terms.price.amount)} more`;
+  }
+  // labels.summary of an issued IOU, for the deal's payer or payee p, from what the tracker holds now (cn: the view's
+  // credit_note after liveNote; a tracker that could not be read leaves it as recorded, and the summary says so):
+  //   - what was issued for this deal, to whom, and when the tracker recorded it; where the pair's row stands now (what
+  //     the payer owes the payee on it, total minus redeemed), and how many set-offs and transfers changed it since;
+  //   - on the testnet, how far that row got on Ergo testnet (onChainWords) and what commits it: the tracker box updater
+  //     checks every UPDATE_EVERY and posts at most DAILY_TRACKER_SIGNATURES boxes a UTC day (dailyCap: used up, the
+  //     summary says until when);
+  //   - how to check it: the pair's row on GET /ledger;
+  //   - while the row holds anything: how it gets paid back or used: a loop through the pair (a set-off lowers every debt
+  //     in it by the smallest), passing it on (a payment by transfer moves the payee's claim to a new creditor), and on the
+  //     testnet redemption, only against a reserve of the payer's note key once a tracker box commits the note
+  //     (reserveWords: whether the payer has one now). A row a loop or a transfer emptied says nothing is owed on it.
+  // Every clause is what the server does (test/newcomer-ending.unit.test.mjs).
+  async issuedSummary(d, p, cn, {onChain}) {
+    const payer = this.s.participants[d.payer].handle, payee = this.s.participants[d.payee].handle, mine = d.payer === p.id;
+    const price = d.agreement.terms.price.amount;
+    const row = cn.pair_now ? cn.pair_now.outstanding : Number(cn.tracker_note?.amount_collected) - Number(cn.tracker_note?.amount_redeemed ?? 0);
+    const out = [`For this deal ${mine ? `you issued ${payee}` : `${payer} issued you`} an IOU (credit note) of ${amt(price)}, which ${ON_TESTNET ? 'the testnet tracker' : 'the tracker'} recorded at ${cn.recorded_at}.`];
+    const known = Number.isSafeInteger(row);
+    if (known) {
+      out.push(`${mine ? `What you owe ${payee}` : `What ${payer} owes you`} on the pair's row (from ${payer} to ${payee}) ${cn.pair_now ? `is now ${amt(row)}`
+        : `was ${amt(row)} when the tracker recorded it${onChain ? ' (the tracker could not be read just now)' : ''}`}.`);
+    }
+    const changes = cn.pair_changes_since ?? [], setoffs = changes.filter(c => c.kind === 'setoff').length, transfers = changes.length - setoffs;
+    const times = n => (n === 1 ? 'once' : `${n} times`);
+    if (changes.length) out.push(`Since then, ${[setoffs ? `set-offs (loops) changed that row ${times(setoffs)}` : '', transfers ? `transfers changed it ${times(transfers)}` : ''].filter(Boolean).join(' and ')} (credit_note.pair_changes_since).`);
+    if (!cn.settled && cn.redeemed > 0 && cn.settled_how) out.push(`${capital(cn.settled_how)}.`);
+    if (ON_TESTNET) {
+      const status = cn.pair_now ? cn.confirmation ?? null : null;
+      let s = `${capital(onChainWords(onChain ? status : cn.tracker_note?.confirmation ?? null, {live: onChain}))}.`;
+      if (!onChain || status !== 'confirmed') {
+        s += ` The tracker checks for changes every ${UPDATE_EVERY} and posts one tracker box at a time, at most ${DAILY_TRACKER_SIGNATURES} a UTC day: the row reads pending while a box that carries it waits for a block, then confirmed${COMMIT_TIME ? ` (${COMMIT_TIME})` : ''}.`;
+        const cap = this.boxCapToday();
+        if (cap?.used_up) s += ` Today's ${cap.limit} boxes are used up, so the next comes after ${cap.resets_at}.`;
+      }
+      out.push(s);
+    } else out.push('This network\'s tracker has no chain: nothing is committed on chain, and nothing is redeemed.');
+    out.push(`Check it: GET ${PUBLIC_ORIGIN}/pilot/v1/ledger, the row with issuer_handle ${payer} and recipient_handle ${payee} (its total${ON_TESTNET ? ' and confirmation' : ''}).`);
+    if (cn.settled) out.push(`It was redeemed on Ergo testnet against ${mine ? 'your' : `${payer}'s`} reserve: nothing of it is outstanding.`);
+    else if (known && row === 0 && cn.pair_now) out.push('Nothing is owed on that row now.');
+    else {
+      const ways = [`a loop of IOUs through this pair lowers it by the loop's smallest debt (a set-off)`,
+        mine ? `${payee} can pass it on to another agent that accepts your IOUs (you then owe that agent instead)` : `you can pass it on to another agent that accepts ${payer}'s IOUs (${payer} then owes that agent instead)`];
+      if (ON_TESTNET) ways.push(`${mine ? `${payee} can` : 'you can'} redeem it for tERG only against a reserve ${mine ? 'you' : payer} posted on Ergo testnet, once a tracker box commits it: ${await this.reserveWords(cn.issuer_pubkey, mine ? null : payer)}`);
+      out.push(`How it is paid back or used: ${ways.join('; ')}. Until then it stays ${mine ? 'your' : `${payer}'s`} promise to pay, not a payment.`);
+    }
+    return out.join(' ');
+  }
+  // Whether the holder of a note issued with key `issuerPubkey` could redeem it now: the issuer's reserves of that key
+  // on Ergo testnet (the reserve contract pays only notes signed with its own key, as GET /reserves says), each with
+  // collateral and no refund under way (as reservesById counts them). `handle`: the issuer's, or null for "you".
+  async reserveWords(issuerPubkey, handle) {
+    const who = handle ?? 'you', has = handle ? 'has' : 'have';
+    let list;
+    try { list = this.chain?.on_chain && typeof this.basis.reserves === 'function' ? await this.basis.reserves() : null; } catch { list = null; }
+    if (!Array.isArray(list)) return `whether ${who} ${has} one could not be read just now (GET ${PUBLIC_ORIGIN}/pilot/v1/reserves)`;
+    const own = list.filter(r => r?.owner_pubkey === issuerPubkey && !(typeof r?.reserve_token_id === 'string' && r.reserve_token_id !== ''));
+    const live = own.filter(r => Number(r?.collateral_amount ?? 0) > 0 && !(Number(r?.refund_initiation_height ?? 0) > 0));
+    if (live.length) return `${who} ${has} one now, holding ${amt(live.reduce((a, r) => a + Number(r.collateral_amount), 0))} (GET ${PUBLIC_ORIGIN}/pilot/v1/reserves)`;
+    if (own.some(r => Number(r?.refund_initiation_height ?? 0) > 0)) return `${handle ? `${handle}'s` : 'your'} reserve is being refunded, and its owner may take it all once the waiting period ends`;
+    return `${who} ${has} none now`;
+  }
+  // The tracker-box signatures of this UTC day (the wallet adapter's spend ledger: lib/pilot/anchors.mjs dailyCap), or
+  // null without one (no chain, or a server that does not keep it).
+  boxCapToday() {
+    const file = this.chain?.spend_ledger;
+    if (!file) return null;
+    try { return dailyCap(file, this.now()); } catch { return null; }
   }
   // fix inbox #13: a recorded note as the tracker holds it now. Its confirmation is read live (local_only until the
   // tracker box on chain commits it, then confirmed; a view no longer says local_only after that), and on a pair with no
@@ -4691,64 +5161,229 @@ export class Pilot {
         message_hex: n.note.message_hex, signature: n.note.signature, signed_at: n.signed_at, ...bound}};
   }
 
+  // What an approval waits on, and what deciding it does, in plain words (GET /owner; the owner console's cards). `s` is
+  // its subject (approvalSubject). Every kind says what approving does (if_approved), what rejecting does and what stays
+  // on record after it (if_rejected), and what the server checks again first (checks_on_approve). In every mode but off
+  // it also says what the owner's agent has already signed and Valun's server holds while it waits (held_now), and until
+  // when the owner can decide (deadline; approvalDecideBy gives the time itself, as decide_by). In mode off the effect
+  // keeps v15's three keys (invariant I-DARK, test/circulation-identity.test.mjs).
   approvalEffect(a, d, s) {
     if (!s) return null;
-    const h = id => this.s.participants[id]?.handle ?? id, me = a.participant, other = h(d.payer === me ? d.payee : d.payer), price = s.terms.price.amount;
-    const recheck = 'When you approve, the server first checks again: your mandate\'s hard limits (with your other commitments), that both parties still have the keys named in the terms, and that the offer has not expired.';
-    if (a.kind === 'propose' && s.version === 1) return {
-      if_approved: `${other} can see this offer and accept, counter or decline it until ${s.terms.offer_expires_at}. If ${other} accepts it, the deal is agreed without asking you again.`,
-      if_rejected: `Nothing is offered and the deal ends. ${other} never sees it.`, checks_on_approve: recheck};
-    if (a.kind === 'propose') return {
-      if_approved: `This counter-offer replaces ${other}'s offer (version ${s.version - 1}). If ${other} accepts it, the deal is agreed without asking you again.`,
-      if_rejected: `Nothing is offered. ${other}'s offer stays open and ${other} never sees this counter-offer; your agent may answer it again.`, checks_on_approve: recheck};
-    const binding = `binding on both sides: ${h(d.payee)} delivers by ${s.terms.deliver_by}; when ${h(d.payer)} accepts the delivery, it issues a credit note for ${amt(price)} (an outstanding obligation; nothing is settled).`;
+    const h = id => this.s.participants[id]?.handle ?? id, me = a.participant, owner = this.s.participants[me];
+    const other = h(d.payer === me ? d.payee : d.payer), t = s.terms, price = amt(t.price.amount), payer = d.payer === me;
+    const effect = (held, approved, rejected, deadline, checks) => (this.mode === 'off'
+      ? {if_approved: approved, if_rejected: rejected, checks_on_approve: checks}
+      : {held_now: held, if_approved: approved, if_rejected: rejected, deadline, checks_on_approve: checks});
+    // An offer that expired is not a failed check: the sweep has ended its approval by then (void_expired), as the
+    // deadline says. A failed check leaves an offer, counter-offer or acceptance pending (decideApproval throws before
+    // anything changes).
+    const recheck = 'When you approve, the server first checks again: your mandate\'s hard limits (with your other commitments), and that both parties still have the keys named in the terms.';
+    const stays = ' If a check fails, nothing changes and this stays pending.';
+    // What an agreed deal binds both sides to, from this owner's side.
+    const binds = payer
+      ? `${other} delivers by ${t.deliver_by}, and when your agent accepts the delivery, it signs an IOU to ${other} for ${price}${owner?.mandate?.review_deliveries ? ', which waits for you here again (Review deliveries)' : ''}`
+      : `your agent delivers by ${t.deliver_by}, and when ${other} accepts the delivery, it owes you ${price}: its IOU, a promise to pay, not a payment. If your agent doesn't deliver within ${UNDELIVERED_GRACE_DAYS} days after that, the deal ends and nothing is owed`;
+    const decideBy = this.approvalDecideBy(a, d, s);
+    if (a.kind === 'propose') {
+      const accepted = `If ${other} accepts it, you aren't asked again, though ${other}'s own owner may have to approve its acceptance first. The deal is then binding on both sides: ${binds}. Nothing reaches the tracker before that.`;
+      if (s.version === 1) {
+        const limit = this.openNetwork && owner?.sandbox_only ? `, and as one of its open offers (at most ${OPEN_NETWORK_MAX_OPEN_OFFERS})` : '';
+        return effect(
+          `Your agent signed this offer with its key, and Valun's server holds it: ${other} can't see it, and nothing is on the tracker. While it waits, it counts against your agent's limits${limit}, and your agent may still withdraw it.`,
+          `Nothing new is signed. ${other} sees this offer, signed by your agent, and can accept, counter or decline it until ${t.offer_expires_at}. ${accepted}`,
+          `The offer is never shown to ${other}, and the deal ends. Valun keeps your agent's signed offer on record; it binds nobody and is not an IOU. Your agent sees your decision, and your note, when it next reads the deal.`,
+          `Decide by ${decideBy}, when the offer expires: the deal then ends, and an approval after that is refused.`,
+          recheck + stays);
+      }
+      // A counter-offer: the offer it answers (the other side's) stays open while it waits.
+      const answered = s.countered, was = answered?.version ?? s.version - 1, ownFirst = !answered || Date.parse(t.offer_expires_at) <= Date.parse(answered.terms.offer_expires_at);
+      return effect(
+        `Your agent signed this counter-offer (version ${s.version}) with its key, and Valun's server holds it: ${other} can't see it, and ${other}'s offer (version ${was}) stays open meanwhile. While it waits, it counts against your agent's limits, and your agent can't accept ${other}'s offer or counter it again; it may withdraw this counter-offer, or decline the offer.`,
+        `Nothing new is signed. This counter-offer replaces ${other}'s offer, and ${other} can accept, counter or decline it until ${t.offer_expires_at}. ${accepted}`,
+        `${other} never sees this counter-offer. Its offer (version ${was}) stays open${answered ? ` until ${answered.terms.offer_expires_at}` : ''}: your agent may accept it, counter it again or decline it. Valun keeps the signed counter-offer on record; it binds nobody.`,
+        ownFirst ? `Decide by ${decideBy}, when this counter-offer expires: an approval after that is refused, and ${other}'s offer stays open until it expires itself.`
+          : `Decide by ${decideBy}, when ${other}'s offer expires: the deal then ends, this counter-offer with it, and an approval after that is refused.`,
+        recheck + stays);
+    }
     if (a.kind === 'accept') {
       const proposerToo = d.acceptance?.approval_id === a.id && d.acceptance.proposer_approval_id && !d.versions.find(x => x.v === d.acceptance.version)?.owner_approval;
-      return {
-        if_approved: proposerToo ? `The deal is agreed once ${other}'s owner also confirms ${other}'s offer (it is above ${other}'s current threshold); it is then ${binding}`
-          : `The deal is agreed and ${binding}`,
-        if_rejected: `Your agent's acceptance does not take effect. The offer stays open until it expires and your agent may act on it again; ${other} sees that the acceptance was not approved.`,
-        checks_on_approve: `${recheck} The offer must also still be within ${other}'s mandate.`};
+      const again = t.price.amount > (owner?.mandate?.approve_above ?? 0) ? ', which waits for you again' : '';
+      return effect(
+        `Your agent signed its acceptance of ${other}'s ${payer ? 'offer' : 'job offer'}, and Valun's server holds it. ${other} already sees that your agent accepted and that this waits for you, but not the acceptance's signature, and it may still withdraw its offer. Nothing is on the tracker. The deal already counts against your agent's limits.`,
+        `Nothing new is signed. ${proposerToo ? `The deal is agreed once ${other}'s owner also confirms ${other}'s offer (it is above ${other}'s current threshold); it is then binding on both sides: ${binds}.`
+          : `The deal is agreed and binding on both sides: ${binds}.`} Nothing reaches the tracker before that.`,
+        `Your agent's acceptance doesn't take effect, and the offer is open again until ${t.offer_expires_at}: your agent may accept it again${again}. ${other} sees that the acceptance wasn't approved, never your note. Valun keeps the signed acceptance on record; ${other} never sees its signature.`,
+        `Decide by ${decideBy}, when the offer expires: your agent's acceptance expires with it, and an approval after that is refused.`,
+        `${recheck} The offer must also still be within ${other}'s mandate.${stays}`);
     }
-    if (a.kind === 'confirm_offer') return {
-      if_approved: s.acceptor_owner_must_approve ? `The deal is agreed once ${other}'s owner also approves ${other}'s acceptance; it is then ${binding}`
-        : `The deal is agreed and ${binding}`,
-      if_rejected: `Your agent's offer is withdrawn and ${other}'s acceptance is void. Nothing is agreed; ${other} sees that the offer was withdrawn.`,
-      checks_on_approve: `${recheck} ${other}'s acceptance must also still be within ${other}'s mandate.`};
+    if (a.kind === 'confirm_offer') return effect(
+      `Your agent signed this offer when its price was within your Ask me above; you have lowered that since, and ${other} has now accepted it. ${other}'s agent signed its acceptance, and Valun's server holds it: you see its signature once the deal is agreed. The deal already counts against both sides' limits. Nothing is on the tracker.`,
+      `Nothing new is signed. ${s.acceptor_owner_must_approve ? `The deal is agreed once ${other}'s owner also approves ${other}'s acceptance; it is then binding on both sides: ${binds}.`
+        : `The deal is agreed and binding on both sides: ${binds}.`} Nothing reaches the tracker before that.`,
+      `Your agent's offer is withdrawn on your behalf, and ${other}'s acceptance is void: nothing is agreed, and nothing is owed. Both sides see that the offer was withdrawn by its owner, never your note. Valun keeps both signatures on record.`,
+      `Decide by ${decideBy}, when the offer expires: ${other}'s acceptance expires with it, and an approval after that is refused.`,
+      `${recheck} ${other}'s acceptance must also still be within ${other}'s mandate.${stays}`);
     // A payment by debt transfer held for the payer's owner (spec 18.11); a deal whose acceptance already stood
-    // (payment_due) returns there on a rejection, and owes the payment still.
+    // (payment_due) stays there on a rejection, and owes the payment still.
     if (a.kind === 'pay_by_transfer') {
-      const tr = s.transfer, A = tr.issuer.handle ?? tr.issuer.id, C = tr.payee.handle ?? tr.payee.id, amount = tr.amount;
+      const tr = s.transfer, A = tr.issuer.handle ?? tr.issuer.id, C = tr.payee.handle ?? tr.payee.id, amount = tr.amount, due = !!d.payment_due_since;
+      const X = tr.from_edge.before?.total ?? 0, Y = tr.to_edge.before?.total ?? 0;
       // Decision D-1: the payer signed this payment's slots, so the tracker could still apply it until one hour after its
       // timestamp; every other payment waits until fallback_after, one through the same note too unless it acknowledges
-      // the same prior state of it (the same-prior exemption of tracker v3.2).
-      const wait = `only after ${iso(fallbackAfter(tr.timestamp))}, with its own credit note or any note it holds (${A}'s included), since the tracker could still apply this payment until one hour after its timestamp; through ${A}'s note at once, but only while ${A}'s note to you is exactly as this payment found it (the tracker applies at most one of the two)`;
-      return {
-        if_approved: `The transfer is submitted once ${A} and ${C} sign: ${A} then owes ${C} ${amt(amount)} more and you ${amt(amount)} less; you issue no credit note.`,
-        if_rejected: d.payment_due_since ? `Nothing moves. The deal returns to payment_due: the delivery stays accepted, and your agent must still pay it (${wait}).`
-          : `Nothing moves. The deal returns to delivered: your agent may accept again (paying ${wait}) or dispute.`,
-        checks_on_approve: `When you approve, the server first checks again that ${A}'s notes to you and to ${C} on the tracker (their totals, timestamps and signatures) are unchanged since your agent signed, that all three parties still have the keys named in the transfer, and that the payment still passes every check it passed when your agent made it (your agent's limits for paying with notes it holds, that ${C} still accepts ${A}'s notes, that ${A} may still move its debt to ${C}, and that no other payment of this deal could still apply); if not, the approval becomes void and your agent must pay again.`};
+      // the same prior state of it (the same-prior exemption of tracker v3.2), or until Valun's journal proves the payment
+      // dead: the first change of either edge after its timestamp moved it from the total this payment acknowledged
+      // (transferAttemptsBlock, attemptDeadByJournal). And the per-deal cap (spendingPayerCheck, transferCapUntil): at
+      // most MAX_ATTEMPTS_PER_DAY payments by transfer of one deal in 24 hours, whatever became of them, this one
+      // included; after the third, every payment by transfer of the deal is refused (403 payment_not_accepted,
+      // max_attempts_per_deal) until 24 hours after the first, through the same note too, and only the payer's own note
+      // remains, under D-1 (the review of PR #9, final round: every rejected card said "at once"). Counted while the
+      // approval is pending, when this payment is the deal's latest (none can be made while it waits); a decided one
+      // names the cap only.
+      const fb = fallbackAfter(tr.timestamp), payerRec = this.s.participants[d.payer], pending = a.state === 'pending';
+      const made = pending ? this.transfersInDay(payerRec, d).length : 0, cap = pending ? this.transferCapUntil(payerRec, d) : null;
+      const sooner = 'or sooner once either IOU this payment would have changed has changed since';
+      const payAgain = cap !== null
+        ? `This deal has had ${made} payments by transfer in 24 hours, this one included, the most Valun allows, whatever became of them: Valun refuses another one until ${iso(cap)}, through ${A}'s IOU too. With its own IOU, your agent may pay after ${iso(fb)}, ${sooner}.${cap <= fb
+          ? ` From ${iso(cap)}, Valun lets it pay by transfer again: through ${A}'s IOU while that IOU is exactly as this payment found it, and through any other IOU after ${iso(fb)}, ${sooner}.` : ''}`
+        : `Valun lets it pay through ${A}'s IOU at once, while that IOU is exactly as this payment found it (the tracker applies at most one of the two), and with its own IOU or any other IOU after ${iso(fb)}, ${sooner}. Valun allows at most ${MAX_ATTEMPTS_PER_DAY} payments by transfer of one deal in 24 hours, whatever became of them${made >= 1 && made <= 3 ? `, and this is this deal's ${['first', 'second', 'third'][made - 1]}` : ''}.`;
+      // valun 0.7.1 (the Hermes plugin 0.7.1 too) is not told of a rejected or expired payment by transfer either: it
+      // keeps it as a payment attempt on the IOU the agent paid through (A's IOU to the agent; its novation.py, decision
+      // D-1). The owner's texts say only what holds in every case (the review of PR #9: each list of 0.7.1's conditions
+      // left a case it got wrong): it usually pays the deal again through that IOU at once while that IOU is as the
+      // payment found it (the same-prior exemption), and it may refuse any other way, or once that IOU has changed
+      // (transfer_window_open until the attempt's window has passed, CLIENT_ATTEMPT_WINDOW_MS; attempt_outcome_unknown
+      // at any age once it sees that IOU changed after the payment's timestamp: its records can prove only a credit note
+      // dead). Then what to do for each answer: pay again after the window (retry_after_ms), or resolve the attempt as not
+      // applied, in the client's records only (the server has ended the transfer, so it has nothing to resolve: cli.py
+      // asks a second time, local_only), then pay again after the window. The exact conditions are in docs/PILOT-API.md;
+      // scripts/client-071-attempts.py runs 0.7.1's own rules on each case.
+      const clientAt = iso(tr.timestamp + CLIENT_ATTEMPT_WINDOW_MS), resolvePay = `\`${OWNER_ATTEMPTS.resolve(d.id)}\``;
+      const payResolve = `run ${resolvePay} in a terminal (#n from \`${OWNER_ATTEMPTS.list}\`; in Hermes, \`${OWNER_ATTEMPTS.hermes}\`) and answer yes to both of its questions, the second to record your decision in your client's records only: Valun never applied this payment`;
+      const payRefusals = `If it answers transfer_window_open, have your agent pay again once ${clientAt} has passed, an hour and 2 minutes after the payment's timestamp (its retry_after_ms says how long to wait). If it answers attempt_outcome_unknown, ${payResolve}. Then have your agent pay again once ${clientAt} has passed.`;
+      // After the deal's third payment by transfer in 24 hours, Valun refuses the next one's template (403: 0.7.1 signs
+      // nothing, client.py pay_by_transfer fetches the template first), so only its own IOU remains, which 0.7.1 judges as
+      // after any rejected payment (transfer_window_open, or attempt_outcome_unknown once A's IOU changed).
+      const payTrap = cap !== null
+        ? ` valun 0.7.1 isn't told either, and keeps counting this payment as one that may still apply. Until ${iso(cap)}, as Valun refuses another payment by transfer of this deal, your agent can pay it only with its own IOU, and 0.7.1 may refuse that. ${payRefusals}`
+        : ` valun 0.7.1 isn't told either, and keeps counting this payment as one that may still apply. It usually pays this deal again through ${A}'s IOU at once while that IOU is as this payment found it; any other way, or once that IOU has changed, it may refuse. ${payRefusals}`;
+      // A rejected (or expired) transfer of a deal not yet paid stays an earlier payment attempt of the deal, and the
+      // clearing engine keeps every set-off off its from-edge (the payer's claim on the issuer) until the deal is paid or
+      // has ended, whatever its age (paymentAttemptHolds); a delivered deal ends unpaid only when its payer disputes it.
+      const claimHeld = ` Until your agent pays this deal${due ? '' : ' or disputes the delivery'}, no set-off touches your claim on ${A}: no loop that includes what ${A} owes you clears.`;
+      return effect(
+        `Your agent accepted ${C}'s delivery and signed a payment by transfer: its acceptance of the delivery (which ${C} already sees), its pay statement, and its three signatures of the transfer. Your claim on ${A} would fall from ${amt(X)} to ${amt(X - amount)}, and ${A}'s debt to ${C} would rise from ${amt(Y)} to ${amt(Y + amount)}. Valun's server holds them: nobody else has signed, nothing is listed for ${A} or ${C} to sign, no signature has left Valun, and nothing is on the tracker. The two IOUs it changes are held for this payment meanwhile.`,
+        `Nothing new is signed by your agent. If the checks below pass, ${A} and ${C} sign within 20 minutes: their clients do it by themselves, and Valun signs for the agents it runs. With the last signature the tracker applies it: ${A} then owes ${C} ${amt(amount)} more and you ${amt(amount)} less, and you issue no IOU. From your approval on, the delivery stays accepted: if the transfer then fails or expires, the deal is payment due, your agent must pay again, and the delivery can no longer be disputed.`,
+        `Nothing moves, and nothing reaches the tracker. Valun deletes your agent's three transfer signatures, keeping only their hashes. ${due
+          ? `The deal stays payment due: the delivery stays accepted, and your agent must still pay it. ${payAgain}`
+          : `The deal goes back to delivered: your agent may pay again, or dispute the delivery. ${payAgain}`} ${C} sees that you rejected the payment, never your note.${claimHeld} Your agent isn't told: tell it.${payTrap}`,
+        `Approve or reject by ${decideBy}, 20 minutes after your agent signed it. The payment then ends as after a rejection: nothing moves, Valun deletes the signatures, and the deal ${due ? 'stays payment due' : 'goes back to delivered'}. Your agent isn't told: tell it. As after a rejection, valun 0.7.1 keeps counting this payment as one that may still apply. ${payRefusals}`,
+        // A stale one ends void_stale as a rejection ends it (decidePayByTransfer: endTransfer, releaseAcceptance): the
+        // deal back to delivered, where it can be disputed, or payment_due when its acceptance already stood. Nothing
+        // tells the agent or its client (the 409 stale_payment goes to the owner; the console's flash says what 0.7.1
+        // does then, as after a rejection: pilot.js payTrap).
+        `When you approve, the server first checks again that ${A}'s notes to you and to ${C} on the tracker (their totals, timestamps and signatures) are unchanged since your agent signed, that all three parties still have the keys named in the transfer, and that the payment still passes every check it passed when your agent made it (your agent's limits for paying with notes it holds, that ${C} still accepts ${A}'s notes, that ${A} may still move its debt to ${C}, and that no other payment of this deal could still apply); if not, the approval becomes void, nothing moves, and the deal ${due
+          ? 'stays payment due: your agent must still pay it.' : 'goes back to delivered: your agent may pay again, or dispute the delivery.'} As after a rejection, your agent isn't told, and valun 0.7.1 keeps counting this payment as one that may still apply.`);
     }
-    // With circulation on, the texts say what the server checks (the pair's whole last note, SV-1) and, for a deal whose
-    // acceptance already stood (payment_due), where a rejection leaves it. A bound note also says until when the tracker
-    // takes it (decision D-1 item 4).
-    const bound = s.credit_note.bound ? ` It is a bound note: the tracker records it only while the pair's note is still the one it acknowledges (total ${amt(s.credit_note.prior_total)}, the state it was signed on), and only until ${s.credit_note.expires_at} (one hour after its timestamp); after that it fails and your agent signs a new one.` : '';
-    // Circulating credit (decision D-1): a rejected bound note stays usable at the tracker until one hour after its
-    // timestamp, so a payment by transfer waits until then (paymentBlock).
-    const waitTransfer = this.circulating && s.credit_note.bound ? ` A payment by transfer can start only after ${iso(fallbackAfter(s.credit_note.timestamp))}: the tracker could still record this note until one hour after its timestamp.` : '';
-    return {
-      if_approved: `The signed credit note goes to the Basis tracker: ${h(d.payer)} then owes ${h(d.payee)} ${amt(price)} more (the running total for this key pair becomes ${amt(s.credit_note.total)}). It is an outstanding obligation; nothing is settled.${bound}`,
-      if_rejected: (d.payment_due_since ? 'Nothing reaches the tracker. The deal returns to "payment_due": the delivery stays accepted, and your agent must still pay it (with a new credit note, or by transfer).'
-        : 'Nothing reaches the tracker. The deal returns to "delivered": your agent may accept the delivery again (signing a new note) or dispute it.') + waitTransfer,
-      checks_on_approve: this.circulating
-        ? "When you approve, the server first checks that the pair's last credit note on the tracker (its total, timestamp and signature) and both parties' keys are unchanged since your agent signed; if not, the approval becomes void and your agent must sign a new note."
-        : "When you approve, the server first checks that the pair's tracker total and both parties' keys are unchanged since your agent signed; if not, the approval becomes void and your agent must sign a new note."};
+    // The credit note for an accepted delivery. With circulation on, the texts say what the server checks (the pair's
+    // whole last note, SV-1), and for a deal whose acceptance already stood (payment_due), where a rejection leaves it. A
+    // bound note says until when the tracker takes it, and so when this approval ends (heldNoteDecideBy).
+    const n = s.credit_note, payee = h(d.payee), due = !!d.payment_due_since, bound = !!n.bound;
+    const until = bound ? iso(n.timestamp + MAX_AGE_MS) : null;
+    const boundNote = bound ? ` It is a bound note: the tracker records it only while the pair's note is still the one it acknowledges (total ${amt(n.prior_total)}, the state it was signed on), and only until ${until}, one hour after its timestamp, so this approval ends at ${decideBy}.` : '';
+    // Circulating credit (decision D-1), Valun's own rule, exactly: a rejected bound note stays usable at the tracker
+    // until one hour after its timestamp, so a payment by transfer waits until then + 60 s, unless Valun's journal proves
+    // the note dead first: the first change of the note's own key pair (its issuer and recipient keys: ownNoteAttempts)
+    // after its timestamp moved the pair from the total the note acknowledged (attemptDeadByJournal). A later bound note
+    // of the payer's to the payee on the same keys does that once it applies, when nothing else changed the pair first; a
+    // note signed before it and recorded after it is an earlier change on the tracker's clock (the later note then moves
+    // the pair from another total), and a note on a new key pair after either party's key changed leaves this pair's
+    // journal as it was (the review of PR #9, item 8: so the transfer waits until fallback_after). An ordinary one waits
+    // until the pair's note moves past it (paymentBlock: pending_unbound_note). valun 0.7.1 is the trap's.
+    const clientAt = iso(n.timestamp + CLIENT_ATTEMPT_WINDOW_MS);
+    // The per-deal cap (transferCapUntil) refuses every payment by transfer of a deal that has had three in 24 hours,
+    // whatever became of them: a held IOU of such a deal (its agent paid it with its own IOU after them) says so too.
+    const payerRec = this.s.participants[d.payer], capped = this.circulating && a.state === 'pending' ? this.transferCapUntil(payerRec, d) : null;
+    const transferWait = !this.circulating ? '' : `${bound
+      ? ` If it were sent, the tracker could still record it until ${until}, so paying this deal by transfer waits until ${iso(fallbackAfter(n.timestamp))}, unless the first change to this key pair's IOU signed after this one moves it from ${amt(n.prior_total)}, the total this one acknowledged, as a later IOU of your agent's to ${payee} on this key pair does when nothing else changed the pair first: Valun then doesn't wait for this one.`
+      : ' An ordinary IOU has no time limit at the tracker, so paying this deal by transfer is refused until this pair\'s IOU on the tracker moves past it.'}${capped !== null
+      ? ` Valun also refuses any payment by transfer of this deal until ${iso(capped)}: it allows at most ${MAX_ATTEMPTS_PER_DAY} in 24 hours, whatever became of them, and this deal has had ${this.transfersInDay(payerRec, d).length}.` : ''}`;
+    // Circulating credit (decision D-1, paymentAttemptHolds): the rejected or expired note, bound or ordinary, stays an
+    // earlier payment attempt of this deal whatever its age (ownNoteAttempts), so the clearing engine keeps every set-off
+    // off this pair until the deal is paid or has ended; a delivered deal ends unpaid only when its payer disputes it
+    // (dispute(); a payment_due one cannot be). Staging's first-use round of 2026-11-18 saw a loop on the pair wait.
+    const pairHeld = ` no set-off touches this pair until your agent pays this deal${due ? '' : ' or disputes the delivery'}`;
+    const loopsHeld = !this.circulating ? '' : ` Until your agent pays this deal${due ? '' : ' or disputes the delivery'}, no set-off touches this pair: no loop that includes what you owe ${payee} clears.`;
+    // valun 0.7.1 (the Hermes plugin 0.7.1 too) never reads an approval's state: after a rejection, an expiry or a void it
+    // keeps a bound IOU it signed as a payment attempt that may still apply (its novation.py, decision D-1). The owner's
+    // texts say only what holds in every case (the review of PR #9: each list of 0.7.1's conditions left a case it got
+    // wrong: a key change, an honor signed before its client read a later IOU, credit notes in between). It usually signs
+    // a new IOU for the deal at once (the pair unchanged: both acknowledge the same state, so at most one can apply; or
+    // changed only by a later IOU of its own that its records prove applied, proven_dead), and it may refuse once
+    // anything else changed the pair first or a party's key changed (transfer_window_open until the attempt's window has
+    // passed, CLIENT_ATTEMPT_WINDOW_MS; attempt_outcome_unknown, at any age). Then what to do for each answer: pay again
+    // after the window (retry_after_ms), or resolve the attempt as not applied (Valun never sent it), then pay again after
+    // the window (a resolved attempt is dead once its window has passed: attempt_outcome). The
+    // exact conditions are in docs/PILOT-API.md; scripts/client-071-attempts.py runs 0.7.1's own rules on each case. The
+    // approval probe's D2; staging's first-use round of 2026-11-18. A bound note only: what 0.7.1 signs on the testnet.
+    // The deadline says it again.
+    const resolve = `\`${OWNER_ATTEMPTS.resolve(d.id)}\``;
+    const refusals = !bound ? '' : `If it answers transfer_window_open, have your agent pay again once ${clientAt} has passed, an hour and 2 minutes after this IOU's timestamp (its retry_after_ms says how long to wait). If it answers attempt_outcome_unknown, run ${resolve} in a terminal (#n from \`${OWNER_ATTEMPTS.list}\`; in Hermes, \`${OWNER_ATTEMPTS.hermes}\`): Valun never sent this IOU. Then have your agent pay again once ${clientAt} has passed.`;
+    const trap = !bound ? '' : ` valun 0.7.1 isn't told either, and keeps counting this IOU as a payment that may still apply. It usually signs a new IOU for this deal at once. If anything else changed this pair's IOU first, or an agent's key changed, it may refuse. ${refusals}`;
+    const trapAgain = !bound ? '' : ` As after a rejection,${this.circulating ? `${pairHeld}, and` : ''} valun 0.7.1 keeps counting this IOU as a payment that may still apply. ${refusals}`;
+    // The tracker posts a tracker box at most every CHECK_INTERVAL_S, and at most DAILY_TRACKER_SIGNATURES a UTC day.
+    const anchoring = ON_TESTNET ? `, and a later tracker box commits it on Ergo testnet: the tracker checks every ${UPDATE_EVERY}, and posts at most ${DAILY_TRACKER_SIGNATURES} tracker boxes a UTC day; once they are used, the IOU is committed on chain only after 00:00 UTC` : '';
+    return effect(
+      `Your agent accepted ${payee}'s delivery and signed two things with its key: its acceptance of the delivery, which ${payee} already sees, and an IOU to ${payee} for ${price}: a complete Basis note${bound ? ' with its prior acknowledgment' : ''} that raises what you owe ${payee} from ${amt(n.prior_total)} to ${amt(n.total)}. Valun's server holds the IOU: it is not on the tracker, and ${payee} sees its amount but not its signature. ${ON_TESTNET
+        ? 'Only Valun\'s server can submit it to the testnet tracker, and it does so only when you approve: that is the operator\'s word, not the chain\'s.'
+        : 'Valun\'s server submits it to the tracker only when you approve: that is the operator\'s word.'} While it waits, the deal counts against your limits${this.circulating ? ', no set-off touches this pair' : ''}, and ${payee}'s public record already counts the delivery as accepted.`,
+      // After a note the tracker refuses (note_failed, which sets no payment_due_since: submitNote) the payer pays again,
+      // and a later payment of it held for the owner that is never sent releases the deal to delivered, where it can be
+      // disputed: rejected or expired (releaseAcceptance), or void, when its checks fail on approval (void_stale: the
+      // stale note branch of decideApproval, endTransfer for a payment by transfer) or a party's agent key is revoked
+      // (revokeAgent: void_key_revoked). A deal that was payment_due by then stays so: only a payment by transfer that
+      // went out and did not apply sets payment_due_since (endTransfer), and nothing clears it (the review of PR #8, F8;
+      // of PR #9, item 10).
+      `Nothing new is signed. The signed IOU goes to the Basis tracker: you then owe ${payee} ${price} more, a running total of ${amt(n.total)} for this key pair. The tracker records it at once${anchoring}. It is a promise to pay: nothing is settled. ${due
+        ? 'From then on the delivery stays accepted: if the tracker refuses the IOU, your agent must pay again, and the delivery can no longer be disputed.'
+        : `From then on the delivery stays accepted and can no longer be disputed, with one exception: if the tracker refuses the IOU, your agent must pay again, and a later IOU${this.circulating ? ' or payment by transfer' : ''} of this deal that waits for you and isn't sent (you reject it, it expires, or it becomes void: its checks fail when you approve it, or a party's agent key is revoked) sends the deal back to delivered, where your agent may dispute the delivery${this.circulating ? ', unless the deal was payment due before that (it then stays payment due)' : ''}.`}${boundNote}`,
+      `${due ? `Valun doesn't send the IOU. The delivery stays accepted, and your agent must still pay it, with a new IOU${this.circulating ? ' or by transfer' : ''}.`
+        : 'Valun doesn\'t send the IOU, and the deal goes back to delivered: your agent may accept the delivery again, signing a new IOU (which waits for you again), or dispute it.'} ${payee} sees that you rejected it, never your note. Rejecting doesn't unsign the IOU: Valun keeps it on record, with its signatures, and never sends it.${transferWait}${loopsHeld} Your agent isn't told: tell it.${trap}`,
+      bound ? `Approve or reject by ${decideBy}. The tracker records this bound IOU only until ${until}, one hour after its timestamp, and Valun keeps the last minute for sending it. At ${decideBy} this approval expires: Valun never sends the IOU, and the deal ${due
+        ? 'stays payment due, as after a rejection: your agent must still pay it' : 'goes back to delivered, as after a rejection, so your agent may accept the delivery again'}. Your agent isn't told: tell it.${trapAgain}`
+        : 'No deadline: an ordinary IOU has no maximum age at the tracker, so it waits here until you decide.',
+      // A stale one is void_stale, the deal delivered again (where it can be disputed) or payment_due (decideApproval).
+      // Nothing tells the agent or its client (the 409 stale_note goes to the owner; the console's flash says what 0.7.1
+      // does then, as after a rejection: pilot.js iouTrap).
+      `When you approve, the server first checks that ${this.circulating ? "the pair's last IOU on the tracker (its total, timestamp and signature)" : "the pair's tracker total"} and both parties' keys are unchanged since your agent signed; if not, the approval becomes void, Valun doesn't send the IOU, and the deal ${due
+        ? 'stays payment due: your agent must still pay it.' : 'goes back to delivered: your agent may pay again, or dispute the delivery.'}${bound ? " As after a rejection, your agent isn't told, and valun 0.7.1 keeps counting this IOU as a payment that may still apply." : ''}`);
+  }
+  // Until when the owner can decide approval a (ISO), or null when nothing ends it: an offer or an acceptance (and a
+  // confirmation of an accepted offer) when the offer expires, and a counter-offer waiting for its owner also when the
+  // offer it answers does (Pilot.sweep); a payment by transfer when its hold ends (20 minutes after the agent posted it);
+  // a bound credit note at heldNoteDecideBy; an ordinary one never. A guarantee offer: GuaranteeBook.approvalView.
+  approvalDecideBy(a, d, s) {
+    if (!s) return null;
+    if (a.kind === 'propose') {
+      const cur = this.current(d), answers = s.version > 1 && cur && cur.v !== s.version ? Date.parse(cur.terms.offer_expires_at) : Infinity;
+      return iso(Math.min(Date.parse(s.terms.offer_expires_at), answers));
+    }
+    if (a.kind === 'accept' || a.kind === 'confirm_offer') return s.terms.offer_expires_at;
+    if (a.kind === 'pay_by_transfer') return s.transfer?.expires_at ?? null;
+    if (a.kind === 'issue_note') return s.credit_note?.bound ? iso(s.credit_note.timestamp + MAX_AGE_MS - HELD_NOTE_SEND_MARGIN_MS) : null;
+    return null;
   }
 
+  // decide_by (approvalDecideBy) in every mode but off, where the view keeps v15's keys (I-DARK). With circulating credit,
+  // a held IOU's or payment by transfer's approval also gives transfers_refused_until: until when Valun refuses another
+  // payment by transfer of its deal under the per-deal cap (transferCapUntil: three in 24 hours, whatever became of
+  // them, a pending one included), or null while another may start; the owner console says it after a decision
+  // (public/pilot.js transferCapOf), as the card's own words do.
   approvalView(a, p, {deal = null} = {}) {
     if (a.kind === 'guarantee_offer') return this.guarantees.approvalView(a, p);
     const d = this.sweep(this.deal(a.deal_id)), subject = this.approvalSubject(a, d);
-    return {...a, subject, mandate_check: subject?.mandate_check ?? null, effect: this.approvalEffect(a, d, subject), deal: deal ?? this.view(d, p)};
+    const cap = this.circulating && (a.kind === 'issue_note' || a.kind === 'pay_by_transfer') ? {transfers_refused_until: (u => (u === null ? null : iso(u)))(this.transferCapUntil(this.s.participants[d.payer], d))} : {};
+    return {...a, ...(this.mode === 'off' ? {} : {decide_by: this.approvalDecideBy(a, d, subject)}), ...cap, subject, mandate_check: subject?.mandate_check ?? null,
+      effect: this.approvalEffect(a, d, subject), deal: deal ?? this.view(d, p)};
   }
   // The approval view the server answers with (GET /owner): its deal as dealView makes it (a guarantee offer: its
   // guarantee, with the tracker's figures).
@@ -4767,9 +5402,28 @@ export class Pilot {
     const sections = deals.map(d => [inboxSection(d.status, d.payer === p.id ? 'payer' : 'payee',
       {ownOffer: () => cur(d).by === p.id, counterpartyOwnerPending: () => pendingFor(d, other(d))}), d]);
     const listed = s => sections.filter(([x]) => x === s).map(([, d]) => d);
+    // Whom a held item is with, by handle as the other sections name it (brief: counterparty): the deal's other party,
+    // or a guarantee offer's creditor (the agent it is offered to). After a lost answer the agent reads its inbox before
+    // it sends a commitment again (skill.md section 5), and the title and price alone can't tell whom a held offer went
+    // to (staging's first-use round, 2026-11-18). In every mode but off, where the inbox keeps v15's keys (I-DARK).
+    const withWhom = id => (this.mode === 'off' ? {} : {counterparty: id ? this.s.participants[id]?.handle ?? null : null});
+    // What an offer to answer, or agreed work to deliver, asks for (the newcomer run of Nov 18, finding 9: the inbox gave
+    // only its title and price, so an agent read valun_deal before it could accept): the terms_hash an acceptance signs
+    // (valun_respond's expected_terms_hash) and the service's description and deliverable, each cut at
+    // INBOX_TEXT_CHARS (then ending with "…", and truncated: true; valun_deal has the whole text). In every mode but off.
+    const terms = d => {
+      if (this.mode === 'off') return {};
+      // Cut before a lone half of a surrogate pair, never through one.
+      const cut = (s, n) => { if (s.length <= n) return s; const k = /[\uD800-\uDBFF]/.test(s[n - 2]) ? n - 2 : n - 1; return `${s.slice(0, k)}…`; };
+      const c = cur(d);
+      const {description = '', deliverable = ''} = c.terms.service;
+      const long = description.length > INBOX_TEXT_CHARS.description || deliverable.length > INBOX_TEXT_CHARS.deliverable;
+      return {terms_hash: c.terms_hash, description: cut(description, INBOX_TEXT_CHARS.description), deliverable: cut(deliverable, INBOX_TEXT_CHARS.deliverable),
+        ...(long ? {truncated: true} : {})};
+    };
     const box = {
-      respond: listed('respond').map(brief),
-      deliver: listed('deliver').map(brief),
+      respond: listed('respond').map(d => ({...brief(d), ...terms(d)})),
+      deliver: listed('deliver').map(d => ({...brief(d), ...terms(d)})),
       review_delivery: listed('review_delivery').map(brief),
       awaiting_your_owner: Object.values(this.s.approvals).filter(a => a.participant === p.id && a.state === 'pending').map(a => {
         // A guarantee offer (fix inbox #18) has no deal: its guarantee id, and its cap as the price.
@@ -4777,10 +5431,11 @@ export class Pilot {
           const g = this.s.guarantees?.[a.guarantee_id];
           return {approval_id: a.id, deal_id: null, guarantee_id: a.guarantee_id, kind: a.kind, version: a.version, terms_hash: a.terms_hash,
             title: g ? `guarantee of ${this.s.participants[g.issuer]?.handle ?? g.issuer}'s debt to ${this.s.participants[g.creditor]?.handle ?? g.creditor}` : null,
-            price: g ? {amount: g.terms.cap.amount, unit: g.terms.cap.unit} : null};
+            price: g ? {amount: g.terms.cap.amount, unit: g.terms.cap.unit} : null, ...withWhom(g?.creditor)};
         }
-        const s = this.approvalSubject(a, this.deal(a.deal_id));
-        return {approval_id: a.id, deal_id: a.deal_id, kind: a.kind, version: a.version, terms_hash: a.terms_hash, title: s?.terms.service.title ?? null, price: s?.terms.price ?? null};
+        const d = this.deal(a.deal_id), s = this.approvalSubject(a, d);
+        return {approval_id: a.id, deal_id: a.deal_id, kind: a.kind, version: a.version, terms_hash: a.terms_hash, title: s?.terms.service.title ?? null, price: s?.terms.price ?? null,
+          ...withWhom(d ? other(d) : null)};
       }),
       waiting_on_others: listed('waiting_on_others').map(brief),
       recent_closed: listed('recent_closed').slice(-10).map(brief),

@@ -7,5 +7,10 @@
 .valun-local a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .valun-local a:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .valun-local code { font: 500 13px/1.45 ui-monospace, "JetBrains Mono", monospace; overflow-wrap: anywhere; }
+/* A note a local server's pages add where the public network's text names what this server does not have: the chain,
+   reserves and redemption, the house agents (lib/local-pages.mjs; fix inbox #155). In the flow, in the banner's blue,
+   on the dark pages and in the light console alike. */
+.valun-local-note { margin: 0.6rem 0; padding: 0.4rem 0.75rem; border-left: 3px solid #bfe3ff; background: rgba(191, 227, 255, 0.1);
+  color: inherit; font-size: 0.92em; line-height: 1.5; }
 /* The live network view (network.css) lays its body out as a column in which only the stage grows, and counts no parts:
    the banner is its first part there and needs no rule of its own (fix inbox #47). */

@@ -153,18 +153,29 @@ export const NETTING_FINALITY = 'it stays committed only as long as the tracker 
 export const BLOCK_WAIT = 'usually within minutes, up to about 30 when Ergo testnet blocks are slow';
 
 // Since when the tracker's state has differed from its confirmed box with no update in flight (in this process: a poll
-// and every GET /chain observe it). null while it is anchored or an update is in flight.
+// and every GET /chain observe it). null while it is anchored or an update is in flight. A confirmed box that changed
+// since the last look means the tracker posted one meanwhile: the wait starts again then. (The readiness assessment of
+// Nov 18: a box signed and confirmed between two looks left the wait counted from before it, and GET /chain called a
+// normal wait for the next check "a fault of the tracker", 24 s before the next box was in flight.) Only a box named in
+// place of another one counts: a tracker that restarts names none until its first update check (core.mjs
+// committedSnapshot's 503 no_confirmed_box) and then the same box again, so a state that names no box changes neither
+// the wait nor the box it is compared with (the review of gap/first-use: a tracker restarting every few minutes was
+// never overdue).
 export class AnchorWatch {
-  constructor({now = () => Date.now()} = {}) { this.now = now; this.since = null; }
+  constructor({now = () => Date.now()} = {}) { this.now = now; this.since = null; this.box = null; }
   observe(st) {
     if (!st) return this.since;
+    const box = st.confirmed_box_id ?? null;
     if (isAnchored(st) || st.pending_tx_id) this.since = null;
-    else this.since ??= this.now();
+    else if (this.since === null || (box !== null && this.box !== null && box !== this.box)) this.since = this.now();
+    if (box !== null) this.box = box;
     return this.since;
   }
   // The anchoring state GET /chain shows, with what it means for a creditor who wants to redeem. `cap`: the owner's
-  // daily cap as dailyCap() gives it (none: not known, as before).
-  state(st, cap = null) {
+  // daily cap as dailyCap() gives it (none: not known, as before). `lastSignedMs`: when the newest tracker box the
+  // wallet adapter signed was signed (the spend ledger), if known: a wait is overdue only past the check interval and
+  // its grace after both that and the state's change, since the tracker posts a box only at its next check.
+  state(st, cap = null, lastSignedMs = null) {
     const since = this.observe(st);
     if (!st) return {state: 'unknown', what_this_means: 'The tracker\'s state could not be read just now; try again in a minute.'};
     const n = CHECK_INTERVAL_S;
@@ -176,7 +187,8 @@ export class AnchorWatch {
       return {state: 'daily_cap_reached', ...(since !== null ? {unanchored_since: new Date(since).toISOString()} : {}), resumes_at: cap.resets_at,
         what_this_means: `The tracker's state changed since its last tracker box, and the operator's daily cap of ${cap.limit} tracker boxes (per UTC day) is used up: the next box is posted after ${cap.resets_at} (within ${Math.round(n / 60) + 3} minutes of it). This is a limit the operator set, not a fault. Nothing is lost: once a block includes that box (${BLOCK_WAIT}), the notes recorded since the last box can be redeemed, and the nettings since then are committed (${NETTING_FINALITY}).`};
     }
-    const overdue = since !== null && this.now() - since > (n + OVERDUE_GRACE_S) * 1000;
+    const from = since === null ? null : Math.max(since, Number.isFinite(lastSignedMs) ? lastSignedMs : -Infinity);
+    const overdue = from !== null && this.now() - from > (n + OVERDUE_GRACE_S) * 1000;
     if (overdue) {
       return {state: 'overdue', unanchored_since: new Date(since).toISOString(),
         what_this_means: `The tracker's state changed and no new tracker box has been posted for more than ${Math.round((n + OVERDUE_GRACE_S) / 60)} minutes: that is a fault of the tracker, not of your note. Until it is fixed, the notes recorded since its last box cannot be redeemed, and the nettings since then are not committed on chain.`};
@@ -187,17 +199,27 @@ export class AnchorWatch {
 }
 
 // The transaction that made a box, read once from the node (GET /utxo/byId/<box>: the confirmed tracker box is unspent
-// while it is the confirmed one); null when the node does not answer. Cached per box id.
-const boxTx = new Map();
-export async function creatingTx(node, boxId, {fetchFn = fetch, timeoutMs = 4000} = {}) {
+// while it is the confirmed one); null when the node does not answer. Cached per box id. A lookup that found nothing is
+// not asked again for CREATING_TX_FAILED_KEEP_MS after it ended, and lookups meanwhile share one read, so a node that is
+// down costs the reads that need it (the loop views, and the positions and agent pages that say whether a netting is
+// committed) one wait of timeoutMs at most that often.
+export const CREATING_TX_FAILED_KEEP_MS = 30_000;
+const boxTx = new Map(), boxTxFailed = new Map(), boxTxReading = new Map();
+export async function creatingTx(node, boxId, {fetchFn = fetch, timeoutMs = 4000, clock = Date.now} = {}) {
   if (!node || !HEX64.test(String(boxId))) return null;
   if (boxTx.has(boxId)) return boxTx.get(boxId);
-  try {
-    const r = await fetchFn(`${node}/utxo/byId/${boxId}`, {signal: AbortSignal.timeout(timeoutMs)});
-    if (!r.ok) return null;
-    const j = await r.json();
-    const tx = HEX64.test(String(j?.transactionId)) ? j.transactionId : null;
-    if (tx) boxTx.set(boxId, tx);
+  const failed = boxTxFailed.get(boxId), now = clock();
+  if (failed !== undefined && now >= failed && now - failed < CREATING_TX_FAILED_KEEP_MS) return null;
+  if (boxTxReading.has(boxId)) return boxTxReading.get(boxId);
+  const read = (async () => {
+    let tx = null;
+    try {
+      const r = await fetchFn(`${node}/utxo/byId/${boxId}`, {signal: AbortSignal.timeout(timeoutMs)});
+      if (r.ok) { const j = await r.json(); tx = HEX64.test(String(j?.transactionId)) ? j.transactionId : null; }
+    } catch { /* the node did not answer: null */ }
+    if (tx) { boxTx.set(boxId, tx); boxTxFailed.delete(boxId); } else boxTxFailed.set(boxId, clock());
     return tx;
-  } catch { return null; }
+  })();
+  boxTxReading.set(boxId, read);
+  try { return await read; } finally { if (boxTxReading.get(boxId) === read) boxTxReading.delete(boxId); }
 }

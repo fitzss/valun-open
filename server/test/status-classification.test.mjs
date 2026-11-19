@@ -91,7 +91,9 @@ test('every classification has every field, with a valid and consistent value', 
   }
   // What sweep() expires (v15: core.mjs sweep) and which action set each party's view lists (v15: core.mjs view).
   assert.deepEqual(Object.fromEntries(ALL_STATUSES.map(s => [s, STATUS_CLASS[s].expiry]).filter(([, e]) => e)),
-    {open: 'offer', proposed_awaiting_owner: 'offer', accepted_awaiting_owner: 'held_acceptance', agreed: 'delivery'});
+    {open: 'offer', proposed_awaiting_owner: 'offer', accepted_awaiting_owner: 'held_acceptance', agreed: 'delivery',
+      // Since the approval probe's D3 (2026-11-18): a held bound credit note ends at its deadline (Pilot.expireHeldNote).
+      completion_awaiting_owner: 'held_note'});
   assert.deepEqual(Object.fromEntries(ALL_STATUSES.filter(s => !TERMINAL.includes(s)).map(s => [s, [STATUS_CLASS[s].actions.payer, STATUS_CLASS[s].actions.payee]])), {
     open: ['offer', 'offer'], proposed_awaiting_owner: ['wait_for_owner', 'wait_for_owner'], accepted_awaiting_owner: ['held_acceptance', 'held_acceptance'],
     agreed: [null, 'deliver'], delivered: ['review', null], completion_awaiting_owner: ['wait_for_owner', 'wait_for_owner'], issuing_note: [null, null],

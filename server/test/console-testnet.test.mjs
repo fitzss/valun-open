@@ -183,7 +183,12 @@ test('the testnet: every tab and the deal view name the testnet and its unit; no
   await until(() => $('#mandate-form'), 'the owner console');
   const con = $('#owner-console'), appr = con.querySelector('article.appr');
   assert.equal(page.doc.title, '(1) Valun owner console');
-  assert.match(text(appr), /new proposal\s*Review the budget card docs\s*4,000,000 nanoERG \(0\.004 tERG\) – you issue the credit note/);
+  assert.match(text(appr), /offer\s*Review the budget card docs\s*4,000,000 nanoERG \(0\.004 tERG\) – you pay, with your agent's IOU/);
+  // What the agent asks, and with whom, in nanoERG with its tERG; what is already signed and held; the deadline (the
+  // console's approval texts of 2026-11-18, from the server's approvalEffect).
+  assert.match(text(appr), /Your agent asks to hire erin-review for this job at 4,000,000 nanoERG \(0\.004 tERG\), paid with your agent's own IOU once it accepts the work\./);
+  assert.match(text(appr), /Already signed and heldYour agent signed this offer with its key, and Valun's server holds it: erin-review can't see it, and nothing is on the tracker\./);
+  assert.match(text(appr), /Decide by .* \(in 24 hours\)\./);
   assert.match(text(appr), /max_issue_outstanding: on the tracker 2,000,000 nanoERG \(0\.002 tERG\) \+ committed 0 nanoERG \(0 tERG\) \+ offered 0 nanoERG \(0 tERG\) \+ this deal 4,000,000 nanoERG \(0\.004 tERG\) = 6,000,000 nanoERG \(0\.006 tERG\) of 40,000,000 nanoERG \(0\.04 tERG\)/,
     "the server's mandate check, in nanoERG");
   assert.match(text(appr), /price 4,000,000 nanoERG \(0\.004 tERG\) within max_issue_per_deal 5,000,000 nanoERG \(0\.005 tERG\)/, 'the check computed in the page');
@@ -211,8 +216,9 @@ test('the testnet: every tab and the deal view name the testnet and its unit; no
 });
 
 // The site redesign's review: the agent learns of its owner's decision only when it next checks, so after an approval the console
-// tells the owner to tell it; a rejection says only what it did.
-test('the testnet: approving what waits says what it did, then "Tell your agent: it carries on when it next checks."; rejecting says only what it did', async () => {
+// tells the owner to tell it. Since the approval texts of 2026-11-18 a rejection says what it did and what Valun keeps,
+// and that the agent isn't told either.
+test('the testnet: approving what waits says what it did, then "Tell your agent: it carries on when it next checks."; rejecting says what it did and what Valun keeps, and that the agent isn\'t told', async () => {
   for (const decision of ['Approve', 'Reject']) {
     const w = await world();
     const page = await openPage({base: w.base, token: w.owner, hash: '#owner'});
@@ -226,8 +232,8 @@ test('the testnet: approving what waits says what it did, then "Tell your agent:
       assert.equal(said, `Approved (${a.id}). Deal ${w.deal} is open: erin-review can now accept, counter or decline. Tell your agent: it carries on when it next checks.`);
       assert.equal(w.pilot.s.deals[w.deal].status, 'open', 'the server offered it');
     } else {
-      assert.equal(said, `Rejected (${a.id}). Deal ${w.deal} is now: rejected by owner.`);
-      assert.doesNotMatch(said, /Tell your agent/);
+      assert.equal(said, `Rejected (${a.id}). The offer was never shown to erin-review, and deal ${w.deal} ended. Valun keeps your agent's signed offer on record; it binds nobody. Your agent isn't told: tell it.`);
+      assert.equal(w.pilot.s.deals[w.deal].status, 'rejected_by_owner');
     }
   }
 });

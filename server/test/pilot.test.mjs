@@ -319,7 +319,7 @@ test('an owner approval carries the exact terms, the agent signature, the mandat
   assert.equal(ap.subject.signer_pubkey, O.pubkey);
   assert.ok(await basis.verify(O.pubkey, hex(ap.subject.statement), ap.subject.signature), 'the owner can check the agent signature itself');
   assert.equal(ap.mandate_check.checks[0].rule, 'max_issue_outstanding');
-  assert.match(ap.effect.if_rejected, /never sees it/);
+  assert.match(ap.effect.if_rejected, /^The offer is never shown to .*, and the deal ends\. Valun keeps your agent's signed offer on record; it binds nobody and is not an IOU\./);
   // a counter-offer waiting for the owner: its full terms are in the approval and in the author's own view
   const q = ok(await propose(Q, terms(Q, O, Q, 9)), 201);                  // Q (payee) offers; O would pay
   const {t: t2, r} = await counterOf(O, q.id, 7);

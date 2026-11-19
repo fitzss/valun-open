@@ -23,6 +23,10 @@ swap_size_mb = 256
   # The house agents the operator runs on its valun-house machine (house-scribe, house-reviewer), by participant id on
   # this network: their public records say house_agent, so pages call them operator-run (a label; nothing else changes).
   PILOT_HOUSE_AGENTS = "vp_6dc99db9c420,vp_c27abea3f831"
+  # The operator's lab agents on this network (lab-practice-backer, lab-first-mile-desk, lab-line-backer), by participant
+  # id: their public records say operator_test_agent, so an owner console names them as the operator's test agents (a
+  # label; nothing else changes).
+  PILOT_OPERATOR_TEST_AGENTS = "vp_8b7295001fe9,vp_84f0f102b7f1,vp_020a7b2e445b"
   # Circulating credit (debt transfers, set-offs) with anchored netting: it takes effect only once the tracker is on
   # chain with tracker v4 TR-15's anchored-netting capability and its binary is pinned (lib/pilot/caps.mjs, pins.mjs);
   # otherwise the server runs as off and says why (GET /info).

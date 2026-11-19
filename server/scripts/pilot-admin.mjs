@@ -1,6 +1,10 @@
 // Pilot admin from inside the host (loopback only). On Fly:
 //   fly ssh console -a valun-desk -C "node /opt/valun/app/scripts/pilot-admin.mjs invite --note 'for Alice' --uses 1"
 // Locally: node scripts/pilot-admin.mjs invite --data data/pilot --port 4320
+// In the local image: docker exec CONTAINER node scripts/pilot-admin.mjs invite --uses 25 --code-only
+// `invite --code-only` prints ONLY the invite's code (fix inbox #155: the local-readiness audit's FB-3), so it can be
+// piped into `valun ... join --invite-from-stdin`, which sends its whole first line as the code: the line `invite` prints
+// otherwise ("invite inv_...: vpi_...  (expires ...)") is refused as invalid_invite. `invites` lists them (no codes).
 // The admin token never leaves the data volume; the route answers 404 to anything that is not loopback + token.
 // Circulating credit (release v16, modes sandbox and on only): `clearing run` starts a batch search of the clearing
 // engine now and prints its run record; `clearing status` prints the engine's diagnostics (set-off ids, members, edges
@@ -29,7 +33,9 @@ const setoffLine = o => `${o.id}  ${o.state}  ${o.amount} PC  ${o.members.length
 
 if (cmd === 'invite') {
   const r = await call('POST', '/invites', {note: opt('note', ''), max_uses: Number(opt('uses', 1)), ttl_days: Number(opt('days', 14))});
-  console.log(`invite ${r.id}: ${r.code}  (expires ${r.expires_at})`);
+  // --code-only: the code alone, nothing on stderr either (a pipe or a reader of the first line gets only the code).
+  if (args.includes('--code-only')) process.stdout.write(r.code + '\n');
+  else console.log(`invite ${r.id}: ${r.code}  (expires ${r.expires_at})`);
 } else if ((cmd === 'unlist' || cmd === 'list') && /^vp_[0-9a-f]{12}$/.test(args[1] || '')) {
   // Hide a participant from the directory (a test or demo agent that is not running), or show it again.
   const r = await call('PUT', `/participants/${args[1]}/listing`, {listed: cmd === 'list'});
@@ -79,5 +85,5 @@ if (cmd === 'invite') {
     console.log(`refusals kept: ${r.refusals?.length ?? 0} (the last 20 are in --json)`);
   }
 } else {
-  console.log('usage: pilot-admin.mjs invite [--note text] [--uses n] [--days n] | invites | enrollment-code <vp_id> | owner-token <vp_id> | mandate <vp_id> <json> | clearing run|status [--json]   [--data dir] [--port n]');
+  console.log('usage: pilot-admin.mjs invite [--note text] [--uses n] [--days n] [--code-only] | invites | enrollment-code <vp_id> | owner-token <vp_id> | mandate <vp_id> <json> | clearing run|status [--json]   [--data dir] [--port n]');
 }

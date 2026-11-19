@@ -72,6 +72,25 @@ test('live-check: the testnet network runs tracker v4 with anchored netting (its
   const p = healthy(); p.info.network = 'valun-pilot-1';
   p.status.basis.pin = 'Basis tracker v4.3 (anchored netting): Valun fork commit b84b2e7 (branch circulating-credit-v4)';
   assert.deepEqual(levels(L.evaluate(p, {expectMode: 'on'}), 'pin names tracker v3.2'), ['fail'], 'v4 on the pilot');
+  // A local server runs tracker v4 in pure credit on the pilot network, and its GET /pilot/v1/health says so (fix inbox
+  // #146: it named the build's anchored netting on a server with no chain). trackerPin names it so only when asked
+  // (pureCreditNamed: the health route, off the testnet) and only for a tracker that reports pure credit.
+  const caps = {build: 'valun-circulating-credit/4', commit: '7c3c0db093f9292cc887e27860075599e8706a8e', pure_credit: true};
+  const pure = trackerPin(caps, 'fallback', {pinned: true, pureCreditNamed: true});
+  assert.equal(pure, 'Basis tracker v4.4.1 (pure credit, keyspaces kept open): Valun fork commit 7c3c0db093f9292cc887e27860075599e8706a8e (branch tr-22-keep-keyspace on Basis upstream 43e2173), as the tracker reports itself');
+  p.status.basis.pin = pure;
+  assert.deepEqual(levels(L.evaluate(p, {expectMode: 'on'}), 'tracker pin'), ['ok'], 'tracker v4 in pure credit on the pilot network');
+  for (const [commit, b] of anchored) {
+    p.status.basis.pin = trackerPin({build: b.build, commit, pure_credit: true}, 'fallback', {pinned: true, pureCreditNamed: true});
+    assert.match(p.status.basis.pin, /^Basis tracker v4(\.\d+){0,2} \(pure credit(, [^)]+)?\): /, p.status.basis.pin);
+    assert.deepEqual(levels(L.evaluate(p, {expectMode: 'on'}), 'tracker pin'), ['ok'], p.status.basis.pin);
+  }
+  // Not asked, or a tracker that does not report pure credit: the build's own name, as /api/status and the testnet give it.
+  assert.equal(trackerPin(caps, 'fallback', {pinned: true}), s.status.basis.pin = 'Basis tracker v4.4.1 (anchored netting, keyspaces kept open): Valun fork commit 7c3c0db093f9292cc887e27860075599e8706a8e (branch tr-22-keep-keyspace on Basis upstream 43e2173), as the tracker reports itself');
+  assert.equal(trackerPin({...caps, pure_credit: false}, 'fallback', {pinned: true, pureCreditNamed: true}), s.status.basis.pin);
+  // A pure-credit name is the pilot network's: on the testnet it fails.
+  s.status.basis.pin = pure;
+  assert.deepEqual(levels(L.evaluate(s, {expectMode: 'on'}), 'pin names tracker v4 (anchored netting)'), ['fail'], 'pure credit on the testnet');
 });
 
 test('live-check: a tracker that is not pinned, or not v3.2, fails once circulation is on (a warning in mode off)', async t => {

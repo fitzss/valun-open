@@ -236,6 +236,13 @@ function renderNetworkCopy() {
 const PEOPLE = new Map();
 const remember = p => { if (p && p.id) PEOPLE.set(p.id, p); };
 const handleOf = id => !id ? '–' : PEOPLE.get(id)?.handle ?? id;
+// A participant as an approval card names it: an agent the operator runs is named as such, so nobody takes it for another
+// tester. The server's records say which (never a handle: anyone can register a handle like lab-x), as the directory and
+// deal views label them: the house agents (house_agent: house-scribe and house-reviewer do paid work with Claude, so they
+// are named as /start names them, the operator's house agents), the practice agents it runs (operator_run) and the other
+// test agents its configuration names (operator_test_agent: the testnet's lab-* agents).
+const operatorLabel = id => { const p = PEOPLE.get(id); return !p ? null : p.house_agent ? "one of the operator's house agents" : p.operator_run || p.operator_test_agent ? "one of the operator's test agents" : null; };
+const nameOf = id => { const l = operatorLabel(id); return `${handleOf(id)}${l ? ` (${l})` : ''}`; };
 function setDir(list) { S.dir = Array.isArray(list) ? list : []; S.dirLoaded = S.dirLoaded || Array.isArray(list); S.dir.forEach(remember); }
 // One-time enrollment code (S.oneTime): survives console refreshes; cleared when leaving the tab, when the owner hides it,
 // and as soon as the server says it can no longer be used (agent enrolled, code replaced, or expired).
@@ -353,7 +360,8 @@ function renderInfo() {
       kv([['Timestamp endings (ms mod 1000)', `${i.novation.bound_note_ms} bound note, ${i.novation.setoff_ms} set-off, ${i.novation.transfer_ms} transfer; reserved ${(i.novation.reserved_ms || []).join(', ')}; ordinary notes use the others`],
         ['Maximum age at the tracker', `${NF.format(i.novation.max_age_ms)} (one hour): a signature older than that can no longer be used`],
         ['Collection windows', `transfer ${NF.format(i.novation.transfer_ttl_ms)}, set-off ${NF.format(i.novation.setoff_ttl_ms)}`],
-        ['Any new payment after a failed attempt', `its timestamp + the maximum age + ${NF.format(i.novation.fallback_margin_ms)} (a transfer through the same note on the same prior state: at once)`]])) : null,
+        // and the per-deal cap, which /info doesn't publish (core.mjs spendingPayerCheck, MAX_ATTEMPTS_PER_DAY)
+        ['Any new payment after a failed attempt', `its timestamp + the maximum age + ${NF.format(i.novation.fallback_margin_ms)} (a transfer through the same note on the same prior state: at once); at most ${MAX_TRANSFERS_A_DAY} payments by transfer of one deal in 24 hours, whatever became of them`]])) : null,
     clearingFacts(S.clearing));
 }
 // GET /clearing (public, aggregates only: no participant ids, handles or keys). Its amounts by their unit-neutral names
@@ -517,9 +525,13 @@ function showLogin(message = '') {
   S.guideOpen = false; ownerLayout(false);
   if (message) refuseToken(message); else markToken(false);
 }
+// The token as pasted: what the file join wrote holds it followed by a line break, and a paste may bring spaces, line
+// breaks (a browser may turn them into spaces in a one-line field) or a byte-order mark with it. A token never holds
+// whitespace (vpo_ + base64url), so every whitespace character is dropped.
+const pastedToken = v => String(v || '').replace(/[\s\uFEFF]+/g, '');
 $('#login-form').addEventListener('submit', ev => {
   ev.preventDefault();
-  const f = new FormData(ev.target), tok = String(f.get('token') || '').trim(), out = $('#login-msg');
+  const f = new FormData(ev.target), tok = pastedToken(f.get('token')), out = $('#login-msg');
   // Not an owner token: refused here, before anything is sent; the page has not moved, and the field keeps focus.
   const wrong = /^vpa_/.test(tok) ? 'That is an agent token (vpa_…). The owner console needs the owner token (vpo_…) you received when you joined. Keep the two apart.'
     : !/^vpo_/.test(tok) ? 'Owner tokens start with vpo_.' : null;
@@ -539,6 +551,14 @@ async function showConsole() {
   else $('#owner-console').replaceChildren(el('div', {class: 'card loading', role: 'status'}, el('p', {class: 'hint'}, 'Loading your console…')));
   await loadOwner();
 }
+// What a token the server answers 401 to gets: no participant here holds its hash (core.mjs authenticate). That is all a
+// 401 proves. Its causes: the token was replaced (rotateOwnerToken: New owner token, here or in another tab, or the
+// operator's /admin/participants/{vp}/owner-token), its participant was released (releaseEnded removes the record of a
+// self-serve join whose agent never enrolled a key once its hold ends, unless another participant's list names it:
+// unfinishedJoin needs sandbox_only, namedElsewhere), or this server never issued it (another Valun server's token, a
+// typo). A released join's handle was free from then on, and a later join may have taken it (join refuses only a handle
+// someone holds). The review of PR #8, promotion's missed item; of PR #9, item 12 and code 4.
+const REFUSED_TOKEN = "That owner token is not valid on this server (HTTP 401): no participant here holds it. It has been removed from this tab. It was replaced (with New owner token, or by the operator), the join it was issued for was released, or this server never issued it (another Valun server's token, say). A self-serve join whose agent never enrolled a key is released when its hold ends, unless another participant's list names it; its handle was free again from then on, unless someone has joined with it since.";
 async function loadOwner({quiet = false} = {}) {
   if (!S.token) return;
   const signIn = S.signIn;              // a sign-in just now, which this read answers
@@ -561,7 +581,7 @@ async function loadOwner({quiet = false} = {}) {
     // Signed in: the form that held focus is gone, so focus goes to the console's first heading (its agent's name).
     if (signIn && S.signIn === signIn) { S.signIn = null; if (currentView() === 'console') $('#owner-console h2')?.focus(); }
   } catch (e) {
-    if (e.status === 401) { forgetToken(); if (currentRoute().tab === 'owner') showLogin('That owner token is not valid on this server (HTTP 401). It has been removed from this tab.'); S.signIn = null; return; }
+    if (e.status === 401) { forgetToken(); if (currentRoute().tab === 'owner') showLogin(REFUSED_TOKEN); S.signIn = null; return; }
     if (signIn && S.signIn === signIn) S.signIn = null;
     if (e.kind === 'network' && S.owner) return;               // keep the last data; the banner says it may be stale
     if (!quiet && currentView() === 'console') $('#owner-console').replaceChildren(el('div', {class: 'card load-error'}, el('h2', {}, 'Your console could not be loaded'),
@@ -650,18 +670,29 @@ function approvalsCard(pending, kept = {}) {
   return el('div', {class: `card approvals${pending.length ? ' has-pending' : ''}`, id: 'approvals'},
     el('h2', {}, 'Pending approvals ', el('span', {class: `count${pending.length ? ' on' : ''}`}, String(pending.length))),
     flash ? el('div', {class: `msg ${flash.ok ? 'ok' : 'err'} flash`, role: 'status'}, flash.text) : null,
-    pending.length
-      ? el('p', {class: 'hint'}, `Your agent signed these, but your mandate says they need you (${'review_deliveries' in S.owner.mandate ? `a price above approve_above, or review_deliveries for credit notes${S.owner.credit_policy ? ' and payments by transfer' : ''}` : 'the price is above approve_above'}). None of them takes effect until you decide. Check the exact terms.`)
-      : el('p', {class: 'hint empty'}, nothingWaiting(S.owner.mandate)),
+    pending.length ? pendingHint(!!S.owner.credit_policy) : el('p', {class: 'hint empty'}, nothingWaiting(S.owner.mandate, !!S.owner.credit_policy)),
     ...pending.map(a => (a.kind === 'guarantee_offer' ? guaranteeApprovalItem : approvalItem)(a, kept[a.id] || {})));
 }
-// The empty list says what would wait here, by the owner's mandate: an offer, acceptance or guarantee for more than
-// approve_above (0: every one; a guarantee by its cap), and with review_deliveries every delivery the agent accepts,
-// with the payment it signs for it (a credit note, or a payment by transfer).
-const nothingWaiting = m => `Nothing is waiting for you. ${m.approve_above > 0
-  ? `An offer, acceptance or guarantee your agent signs for more than ${amt(m.approve_above)} (approve_above) waits here before it takes effect`
-  : 'Every offer, acceptance and guarantee your agent signs waits here before it takes effect (approve_above is 0)'}${m.review_deliveries
-  ? ', and so does every delivery it accepts, with the payment it signs for it (review_deliveries).' : '.'}`;
+// Above the cards: what is already true of everything that waits (the approval probes of 2026-11-17: each item is
+// signed by the agent's key and held by Valun's server; approving signs nothing with the agent's key; rejecting
+// unsigns nothing). `circ`: circulating credit is on for this participant (GET /owner has credit_policy): payments by
+// transfer exist, and they are the exceptions: an approved one is then signed by the other two parties (Valun signs
+// for those it runs: decidePayByTransfer serverSignatures), and a rejected one is purged (endTransfer: only the
+// signatures' sha256 kept).
+const pendingHint = circ => el('div', {class: 'hint pending-hint'},
+  el('p', {}, `Your agent has already signed each item below with its own key, and Valun's server holds what it signed. None of it binds anyone or reaches the tracker until you approve. While it waits, it already counts against your agent's limits, and for an acceptance${circ ? ', an IOU or a payment by transfer' : ' or an IOU'}, the other side can see that it waits for you.`),
+  el('p', {}, `Approving signs nothing with your agent's key: the server checks again, records your decision under your owner token (not signed with a key), then releases exactly what your agent signed${circ ? ' (a payment by transfer then needs the other two parties\' signatures: their clients sign, and Valun signs for the agents it runs)' : ''}. Rejecting stops it from taking effect, but it doesn't unsign what your agent signed: Valun keeps it on record${circ ? ', except a payment by transfer, whose three transfer signatures Valun deletes, keeping only their hashes' : ''}. Each card says what your agent may do next. Your agent isn't told either way: tell it.`));
+// The empty list says what would wait here, by the owner's mandate: an offer, counter-offer, acceptance or guarantee
+// offer for more than approve_above (0: every one; a guarantee by its cap), and with review_deliveries the IOU (or
+// payment by transfer) the agent signs when it accepts a delivery. Never an honor of a guarantee call (the backer's own
+// IOU, recorded at once), the guarantee acts, deliveries, declines, withdrawals, disputes or the consents. Guarantees,
+// payments by transfer and consents exist only with circulating credit (`circ`).
+const nothingWaiting = (m, circ = true) => `Nothing is waiting for you. ${m.approve_above > 0
+  ? `An offer, counter-offer, acceptance (taking a job included)${circ ? ' or guarantee offer' : ''} your agent signs for more than ${amt(m.approve_above)} (Ask me above) waits here before it takes effect`
+  : `With Ask me above at 0, every offer, counter-offer${circ ? ',' : ' and'} acceptance (taking a job included)${circ ? ' and guarantee offer' : ''} your agent signs waits here before it takes effect`}${m.review_deliveries
+  ? `, and so does the IOU${circ ? ' or payment by transfer' : ''} it signs when it accepts a delivery (Review deliveries).` : '.'} ${circ
+  ? 'These never wait here: honoring a guarantee call (your agent\'s own IOU, recorded at once), accepting, calling and releasing guarantees, deliveries, declines, withdrawals and disputes, and the consents its client signs by itself.'
+  : 'Deliveries, declines, withdrawals and disputes never wait here.'}`;
 
 // What exactly is being approved. The server returns it with each approval: `subject` (the exact terms or credit note,
 // the agent's signature, the text it signed, the server's mandate check) and `effect` (what approving and rejecting do).
@@ -670,11 +701,11 @@ const nothingWaiting = m => `Nothing is waiting for you. ${m.approve_above > 0
 const APPROVAL_KINDS = ['issue_note', 'pay_by_transfer', 'propose', 'accept', 'confirm_offer', 'guarantee_offer'];
 function approvalSubject(a) {
   const s = a.subject || null, tr = a.kind === 'pay_by_transfer' ? s?.transfer ?? null : null;
-  const kindLabel = a.kind === 'issue_note' ? 'credit note: delivery accepted'
+  const kindLabel = a.kind === 'issue_note' ? 'IOU (credit note): delivery accepted'
     : a.kind === 'pay_by_transfer' ? `payment by transfer: delivery accepted, paid with ${tr ? (tr.issuer?.handle ?? handleOf(tr.issuer?.id)) : "another participant"}'s note`
-    : a.kind === 'accept' ? `acceptance of version ${a.version}`
+    : a.kind === 'accept' ? (s?.terms && s.terms.payee?.id === S.owner?.participant?.id ? `taking a job: acceptance of version ${a.version}` : `acceptance of version ${a.version}`)
     : a.kind === 'confirm_offer' ? `your agent's offer (version ${a.version}), accepted by ${handleOf(s?.accepted_by)}`
-    : a.kind === 'propose' ? (a.version === 1 ? 'new proposal' : `counter-offer, version ${a.version}`)
+    : a.kind === 'propose' ? (a.version === 1 ? 'offer' : `counter-offer, version ${a.version}`)
     : `approval of kind ${a.kind}, which this page does not know`;
   return {kindLabel, s, terms: s?.terms ?? null, issue: a.kind === 'issue_note', transfer: tr, pay: a.kind === 'pay_by_transfer', known: APPROVAL_KINDS.includes(a.kind),
     signature: s?.signature ?? null, statement: s?.statement ?? null,
@@ -682,15 +713,159 @@ function approvalSubject(a) {
     missing: a.kind === 'pay_by_transfer' && s && !tr ? 'The server did not return the transfer this payment is, so this page cannot show it. Approve stays off; reject it, or refresh.'
       : 'The server did not return what this approval is for, so this page cannot show it. Approve stays off; reject it, or refresh.'};
 }
+// The server's words as this page shows them: server times in local time, and the server's whole amounts
+// (lib/pilot/units.mjs amt: "2000000 nanoERG") grouped as this page writes every other amount ("2,000,000 nanoERG"). A
+// command the server's words name in backquotes (`valun attempts resolve ...`) is shown as code. The approval cards'
+// words (effectBox), and a 409's message when a decision was not applied (decide: a voided IOU or payment says until
+// when a payment may have to wait).
+const serverWords = t => String(t).replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, iso => when(iso))
+  .replace(/\b(\d{4,}) (nanoERG|PC)\b/g, (m, n, u) => `${NF.format(Number(n))} ${u}`)
+  .split('`').map((part, i, all) => (i % 2 && i < all.length - 1 ? el('code', {}, part) : (i % 2 ? `\`${part}` : part)));
+// The server's words for an approval (Pilot.approvalEffect, GuaranteeBook.offerEffect): what is already signed and held
+// while it waits, what approving and rejecting do, the deadline, and what the server checks again first. A server in
+// mode off sends only the last three of those; an older one a guarantee's effect as one sentence.
 function effectBox(e) {
   if (!e) return null;
-  const loc = t => String(t).replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, iso => when(iso));   // server times in local time
-  return el('div', {class: 'effect'}, kv([['If you approve', loc(e.if_approved)], ['If you reject', loc(e.if_rejected)], e.checks_on_approve && ['Checked again when you approve', loc(e.checks_on_approve)]]),
-    el('p', {class: 'tiny'}, SRC.valun(), ' What these decisions do, as the server will apply them.'));
+  const loc = serverWords;
+  const note = el('p', {class: 'tiny'}, SRC.valun(), ' What these decisions do, as the server will apply them.');
+  if (typeof e === 'string') return el('div', {class: 'effect'}, el('p', {}, loc(e)), note);
+  return el('div', {class: 'effect'}, kv([e.held_now && ['Already signed and held', loc(e.held_now)], ['If you approve', loc(e.if_approved)], ['If you reject', loc(e.if_rejected)],
+    e.deadline && ['Deadline', loc(e.deadline)], e.checks_on_approve && ['Checked again when you approve', loc(e.checks_on_approve)]]), note);
+}
+// What the agent asks to do, and with whom, in one sentence. The other side is named once as nameOf names it (an agent
+// the operator runs: one of its house agents, or of its test agents), never with a possessive after that label; later
+// in the sentence by handle.
+function askText(a, x) {
+  const t = x.terms, me = S.owner.participant.id;
+  if (!t || !x.known) return null;
+  const payer = t.payer.id === me, otherId = payer ? t.payee.id : t.payer.id, other = nameOf(otherId), them = handleOf(otherId), price = amt(t.price.amount, t.price.unit);
+  if (a.kind === 'propose') return a.version > 1
+    ? `Your agent asks to answer the offer from ${other}${x.countered ? ` (${amt(x.countered.terms.price.amount, x.countered.terms.price.unit)})` : ''} with this counter-offer at ${price}, ${payer ? 'paying for the job' : 'doing the job'}.`
+    : payer ? `Your agent asks to hire ${other} for this job at ${price}, paid with your agent's own IOU once it accepts the work.`
+      : `Your agent asks to offer ${other} this job at ${price}: your agent does the work, and ${them} pays with its IOU once it accepts it.`;
+  if (a.kind === 'accept') return payer ? `Your agent asks to accept the offer from ${other}: ${them} does this job, and your agent pays ${price} with its own IOU once it accepts the work.`
+    : `Your agent asks to take a job from ${other}: your agent does the work, and ${them} pays ${price} with its IOU once it accepts it.`;
+  if (a.kind === 'confirm_offer') return `${other} accepted the offer your agent made at ${price} (${payer ? 'your agent pays' : 'your agent does the work'}), and it binds only once you confirm it.`;
+  if (a.kind === 'issue_note') return `Your agent accepted the delivery from ${other} and asks to pay it: its own IOU to ${them} for ${price}.`;
+  if (a.kind === 'pay_by_transfer') {
+    const tr = x.transfer, A = tr ? nameOf(tr.issuer?.id) : 'another agent';
+    return `Your agent accepted the delivery from ${other} and asks to pay it with an IOU that ${A} issued: ${amt(tr?.amount ?? t.price.amount)} of what ${tr?.issuer?.handle ?? 'that agent'} owes you would move to ${them}.`;
+  }
+  return null;
+}
+// Until when the owner can decide approval a: the server's decide_by (Pilot.approvalDecideBy), or, from a server in mode
+// off, which sends none, the offer's expiry (a payment by transfer: its hold's). null: nothing ends it.
+const decideByOf = a => (a.decide_by !== undefined ? a.decide_by
+  : a.kind === 'pay_by_transfer' ? a.subject?.transfer?.expires_at ?? null : a.kind === 'issue_note' ? null : a.subject?.terms?.offer_expires_at ?? null);
+const decideByPassed = a => { const by = decideByOf(a); return !!by && Date.parse(by) <= Date.now(); };
+// Whether deal d owed its payment already (the server's payment_due_since: an earlier payment by transfer of it failed,
+// which the deal's history shows as payment_due or payment_outcome_unknown), and whether approval a's deal did when the
+// agent signed what waits. A rejection or an expiry then leaves the deal payment due, not delivered (core.mjs
+// releaseAcceptance).
+const dueOf = d => (d?.history || []).some(h => h.event === 'payment_due' || h.event === 'payment_outcome_unknown');
+const dueBefore = a => dueOf(a.deal);
+// valun 0.7.1's own window for an earlier payment attempt (its novation.py MAX_AGE_MS + FALLBACK_MARGIN_MS: the
+// attempt's timestamp + 1 hour + 2 minutes; the server's CLIENT_ATTEMPT_WINDOW_MS). After a rejected or expired IOU or
+// payment by transfer, 0.7.1 pays that deal another way only once this has passed (transfer_window_open until then),
+// and after its owner resolved such an attempt as not applied, it waits until then too.
+const CLIENT_WINDOW_MS = 3600e3 + 120e3;
+const clientWindowEnd = ts => (Number.isSafeInteger(ts) ? when(msIso(ts + CLIENT_WINDOW_MS)) : null);
+// valun 0.7.1 is never told of a rejected, expired or void IOU or payment by transfer (it never reads an approval's
+// state: the approval probe's D2) and keeps it as a payment attempt that may still apply (its novation.py, decision
+// D-1), as the cards' own words say (core.mjs approvalEffect). As there, only what holds in every case (the review of PR
+// #9: each list of 0.7.1's conditions left a case it got wrong): what it usually does, that it may refuse, and what the
+// owner does about each answer, as text and code (el flattens it). The exact conditions are in docs/PILOT-API.md;
+// scripts/client-071-attempts.py runs 0.7.1's own rules on each case.
+const resolveCode = dealId => el('code', {}, `valun attempts resolve ${dealId} '#n' --not-applied`);
+// After a bound IOU: transfer_window_open, pay again once the IOU's window has passed (retry_after_ms);
+// attempt_outcome_unknown, resolve the attempt as not applied (only the client's records hold it), then pay again once
+// that window has passed (a resolved attempt is dead from then on). `stale`: the IOU was void on approval, because the
+// pair's IOU or a key had changed since the agent signed it, so not "usually at once": then 0.7.1 waits for its window
+// (an IOU of its own signed before it and recorded after it, a key change: client-071-attempts.py cases 6, 6b) or
+// refuses until it is resolved (an honor: case 5), and signs at once only after a later IOU of its own (case 2).
+const iouTrap = (dealId, ts, it = 'this IOU', stale = false) => {
+  const at = clientWindowEnd(ts);
+  return [` valun 0.7.1 keeps counting ${it} as a payment that may still apply. ${stale
+    ? "As the IOU between the two agents, or an agent's key, changed since your agent signed it, it may refuse to pay the deal."
+    : "It usually signs a new IOU for the deal at once. If anything else changed the IOU between the two agents first, or an agent's key changed, it may refuse."} If it answers transfer_window_open, have your agent pay again once ${at ? `${at} has passed (its retry_after_ms says how long to wait)` : 'its retry_after_ms has passed'}. If it answers attempt_outcome_unknown, run `,
+    resolveCode(dealId), ' in a terminal (#n from ', el('code', {}, 'valun attempts list'), `): Valun never sent it. Then have your agent pay again once ${at ?? 'its window'} has passed.`];
+};
+// Valun allows at most 3 payments by transfer of one deal in 24 hours, whatever became of them (core.mjs
+// spendingPayerCheck, MAX_ATTEMPTS_PER_DAY). An approval's transfers_refused_until (core.mjs approvalView) is until when
+// it refuses another one of the approval's deal, counted when this page read it, a pending one included (none can be
+// made while one waits for the owner, so the count only falls); null while another may start. Only while it is ahead.
+const MAX_TRANSFERS_A_DAY = 3;
+const transferCapOf = a => { const u = a?.transfers_refused_until; return typeof u === 'string' && Date.parse(u) > Date.now() ? u : null; };
+// After a payment by transfer through A's IOU: usually through that IOU again at once while it is unchanged, and it may
+// refuse any other way or once that IOU has changed; transfer_window_open, pay again once the payment's window has
+// passed; attempt_outcome_unknown, resolve it as not applied in the client's records only (the server ended the
+// transfer, so it has nothing to resolve: valun asks a second time), then pay again once the window has passed. `cap`
+// (transferCapOf): Valun refuses another payment by transfer of the deal until then, so only the agent's own IOU remains.
+const payTrap = (dealId, ts, A, it = 'this payment', cap = null) => {
+  const at = clientWindowEnd(ts);
+  return [` valun 0.7.1 keeps counting ${it} as one that may still apply. ${cap
+    ? `Until ${when(cap)}, as Valun refuses another payment by transfer of this deal, your agent can pay it only with its own IOU, and 0.7.1 may refuse that.`
+    : `It usually pays this deal again through ${A}'s IOU at once while that IOU is unchanged; any other way, or once that IOU has changed, it may refuse.`} If it answers transfer_window_open, have your agent pay again once ${at ? `${at} has passed (its retry_after_ms says how long to wait)` : 'its retry_after_ms has passed'}. If it answers attempt_outcome_unknown, run `,
+    resolveCode(dealId), ' in a terminal (#n from ', el('code', {}, 'valun attempts list'), ") and answer yes to both of its questions, the second to record your decision in your client's records only: Valun never applied it.",
+    ` Then have your agent pay again once ${at ?? 'its window'} has passed.`];
+};
+// What became of an approval whose deadline passed before the owner decided (the server's sweep ended it; this page
+// says so until it reads the owner view again), as text and code. For an IOU or a payment by transfer, what valun 0.7.1,
+// which is not told, does then (iouTrap, payTrap).
+function expiredNow(a) {
+  const due = dueBefore(a);
+  if (a.kind === 'issue_note') return [`Valun never sends this IOU now. ${due ? 'The deal stays payment due: the delivery stays accepted, and your agent must still pay it.'
+    : 'The deal went back to your agent, which may accept the delivery again (a new IOU, which waits for you again).'} Tell your agent.`, iouTrap(a.deal_id, a.subject?.credit_note?.timestamp)];
+  if (a.kind === 'pay_by_transfer') {
+    const tr = a.subject?.transfer, A = tr ? (tr.issuer?.handle ?? handleOf(tr.issuer?.id)) : 'the issuer';
+    return [`Nothing moved, and Valun deleted your agent's transfer signatures: ${due ? 'the deal stays payment due, and your agent must still pay it' : 'the deal went back to your agent, which may pay again'}. Tell your agent.`,
+      payTrap(a.deal_id, tr?.timestamp, A, 'this payment', transferCapOf(a))];
+  }
+  if (a.kind === 'guarantee_offer') return ['The offer ended without being shown to the creditor.'];
+  return ['The offer expired before you decided: nothing was agreed.'];
+}
+const expiredLine = (a, by) => el('p', {class: 'appr-deadline expired', role: 'alert'}, el('b', {}, `This approval expired at ${when(by)}. `),
+  expiredNow(a), ' Approve and Reject are off. Refresh to see the deal as it is now.');
+// A part of an approval card that holds only while the approval waits (its own deadline, its state): once that deadline
+// has passed (watchDeadline, or a card shown after it), it says what became of it instead (endCard), and the server's
+// words and the details, written while it waited, are greyed (public/pilot.css .appr.ended): staging's first-use round of
+// 2026-11-18 found an expired card still saying "Approve or reject by ... (in 15 seconds)" and "waiting for the payer's
+// owner to approve" until the next read.
+const whileOpen = (live, ended) => el('span', {class: 'while-open', 'data-ended': ended}, live);
+function endCard(card) {
+  card.classList.add('ended');
+  for (const x of card.querySelectorAll('[data-ended]')) x.replaceWith(el('span', {class: 'ended-now'}, x.getAttribute('data-ended')));
+}
+function deadlineLine(a) {
+  const by = decideByOf(a);
+  if (!by) return a.kind === 'issue_note' ? el('p', {class: 'appr-deadline'}, el('b', {}, 'No deadline. '), 'An ordinary IOU has no maximum age at the tracker: it waits here until you decide.') : null;
+  if (!decideByPassed(a)) return el('p', {class: 'appr-deadline'}, el('b', {}, 'Decide by '), el('b', {}, whenRel(by)), '.');
+  return expiredLine(a, by);
+}
+// A card's deadline, kept true while the page shows it (the review of console/first-use): at decide_by the card says
+// that the approval expired and turns Approve and Reject off (`close`), even when no refresh comes (the 30-s refresh
+// waits while a note is being typed). The server has ended it by then: its next read lists it as void. A card no longer
+// on the page is left alone; a deadline beyond setTimeout's range is not watched (no approval lasts that long).
+function watchDeadline(a, card, close) {
+  const by = decideByOf(a), ms = by ? Date.parse(by) - Date.now() : NaN;
+  if (!(ms > 0) || ms > 2 ** 31 - 1) return;
+  const timer = setTimeout(() => {
+    if (!document.body.contains(card) || !decideByPassed(a)) return;
+    card.querySelector('.appr-deadline')?.replaceWith(expiredLine(a, by));
+    endCard(card);
+    close();
+  }, ms + 50);
+  timer?.unref?.();           // a browser's timer is a number; under Node (the tests) it must not keep the process alive
 }
 
-function termsKv(t, meId, extra = []) {
+// `endsAt`: the approval's deadline (decideByOf), on a card that waits: an offer expiry that is that deadline holds only
+// while the card waits, and says what became of it once the card ends (whileOpen, endCard), as the card's own deadline
+// line does (the review of PR #8, code F4: an offer card that expired while shown kept "Offer expires at ... (in 15
+// seconds)" until the next read).
+function termsKv(t, meId, extra = [], endsAt = null) {
   const party = x => [`${handleOf(x.id)}${x.id === meId ? ' (you)' : ''} `, keyFp(x.pubkey)];
+  const expiry = endsAt && t.offer_expires_at && Date.parse(t.offer_expires_at) === Date.parse(endsAt)
+    ? whileOpen(whenRel(t.offer_expires_at), `${when(t.offer_expires_at)}: the offer expired before you decided`) : whenRel(t.offer_expires_at);
   return kv([
     ['Title', el('b', {}, t.service.title)],
     ['Description', el('div', {class: 'pre-wrap'}, t.service.description)],
@@ -702,7 +877,7 @@ function termsKv(t, meId, extra = []) {
       : t.payment === 'on_delivery_accepted' ? 'a credit note (Basis note) from the payer when it accepts the delivery (payment: on_delivery_accepted)'
       : String(t.consideration ?? t.payment ?? '–')],
     ['Deliver by', whenRel(t.deliver_by)],
-    ['Offer expires at', whenRel(t.offer_expires_at)],
+    ['Offer expires at', expiry],
     ['Deal, version', `${t.deal_id} · version ${t.version}${t.prior_terms_hash ? ` · replaces ${short(t.prior_terms_hash)}` : ''}`],
     ['Bound to', `${t.network} · tracker ${short(t.tracker_nft_id)} · ${t.protocol} · nonce ${short(t.nonce, 6, 4)}`],
     ...extra,
@@ -783,14 +958,16 @@ function approvalItem(a, kept = {}) {
   const reject = el('button', {type: 'button', class: 'secondary reject'}, 'Reject');
   // Approve only what this page shows: off while the terms are missing (for a payment by transfer: also the transfer),
   // and off if the terms shown do not hash to the terms hash being approved. Reject always stays available, except for
-  // a kind this page does not know: the server decides none of those (409 unknown_approval_kind).
-  const gate = {terms: !!t && (!x.pay || !!x.transfer), hashOk: true, known: x.known};
+  // a kind this page does not know: the server decides none of those (409 unknown_approval_kind), and except once the
+  // approval's deadline has passed: the server has ended it (decideByOf), and refuses either decision (409 not_pending).
+  const gate = {terms: !!t && (!x.pay || !!x.transfer), hashOk: true, known: x.known, open: !decideByPassed(a)};
   const gateMsg = el('p', {class: 'tiny warn gate-msg', hidden: true});
   const sync = () => {
-    const ok = gate.hashOk && gate.terms && gate.known;
+    const ok = gate.hashOk && gate.terms && gate.known && gate.open;
     approve.disabled = !ok; gateMsg.hidden = ok;
-    if (!gate.known) reject.disabled = true;
+    if (!gate.known || !gate.open) reject.disabled = true;
     gateMsg.textContent = !gate.known ? 'This page does not know this kind of approval, and the server decides only the kinds it knows: nothing can be decided here.'
+      : !gate.open ? 'Approve and Reject are off: this approval\'s deadline has passed, and the server has ended it.'
       : !gate.hashOk ? 'Approve is off: the terms shown here do not hash to the terms hash you would be approving.'
       : x.pay && t ? 'Approve is off: this page cannot show the transfer you would be approving.' : 'Approve is off: this page cannot show the terms you would be approving.';
   };
@@ -799,6 +976,7 @@ function approvalItem(a, kept = {}) {
   approve.addEventListener('click', () => decide(a, 'approve', note, out, [approve, reject], reenable));
   reject.addEventListener('click', () => decide(a, 'reject', note, out, [approve, reject], reenable));
   sync();
+  const ask = askText(a, x);
   const comp = x.pay ? x.s?.completion ?? null : null;
   const proofRows = [
     ['Terms hash', [code(a.terms_hash), t ? el('div', {}, hashCheck(canonical(t), a.terms_hash, 'terms hash', ok => { if (ok === false) { gate.hashOk = false; sync(); } })) : null]],
@@ -814,22 +992,27 @@ function approvalItem(a, kept = {}) {
       el('div', {class: 'tiny'}, `${x.s.why ? `${cap1(x.s.why)}. ` : ''}Its acceptance signature is shown once the deal is agreed.`)]],
   ];
   const agreed = x.issue || x.pay;
-  return el('article', {class: 'appr', 'data-approval': a.id, 'data-deal': d.id, 'data-kind': a.kind},
+  const card = el('article', {class: 'appr', 'data-approval': a.id, 'data-deal': d.id, 'data-kind': a.kind},
     el('div', {class: 'appr-head'}, tag('owner', x.kindLabel), el('b', {class: 'appr-title'}, t ? t.service.title : 'terms not returned by the server'),
       t ? el('span', {class: 'appr-price'}, amt(t.price.amount, t.price.unit), x.pay ? ` – you pay with ${x.transfer ? (x.transfer.issuer?.handle ?? handleOf(x.transfer.issuer?.id)) : 'another participant'}'s note`
-        : t.payer.id === me.id ? ' – you issue the credit note' : ' – you do the work') : null),
+        : t.payer.id === me.id ? ' – you pay, with your agent\'s IOU' : ' – your agent does the work') : null),
+    ask ? el('p', {class: 'appr-ask'}, ask) : null,
     el('div', {class: 'tiny'}, `asked ${whenRel(a.created_at)} · deal `, el('a', {href: `#owner/deal/${d.id}`}, d.id), ` · approval ${a.id}`),
+    x.known ? deadlineLine(a) : null,
     effectBox(x.effect),
     t ? el('div', {}, el('div', {class: 'stitle'}, agreed ? 'Agreed terms ' : 'Exact terms ',
-      agreed ? [SRC.key(handleOf(t.payer.id)), ' ', SRC.key(handleOf(t.payee.id))] : SRC.key(handleOf(a.kind === 'accept' ? x.s.offered_by : me.id))), termsKv(t, me.id, proofRows))
+      agreed ? [SRC.key(handleOf(t.payer.id)), ' ', SRC.key(handleOf(t.payee.id))] : SRC.key(handleOf(a.kind === 'accept' ? x.s.offered_by : me.id))), termsKv(t, me.id, proofRows, x.known ? decideByOf(a) : null))
       : [el('p', {class: 'warn'}, x.missing), kv(proofRows)],
-    x.countered ? el('details', {}, el('summary', {}, `The offer this counters (version ${x.countered.version}, by ${handleOf(x.countered.by)}). These are not the terms you are approving.`), termsKv(x.countered.terms, me.id)) : null,
+    x.countered ? el('details', {}, el('summary', {}, `The offer this counters (version ${x.countered.version}, by ${handleOf(x.countered.by)}). These are not the terms you are approving.`), termsKv(x.countered.terms, me.id, [], decideByOf(a))) : null,
     x.issue ? issueNoteDetails(x.s) : x.pay ? payByTransferDetails(x.s) : x.known ? mandateCheck(a, t) : null,
     ack,
     el('div', {class: 'actions'}, note, approve, reject),
     gateMsg,
     out,
     el('p', {class: 'tiny'}, SRC.owner(), ' Your decision is recorded by the Valun server under your owner token. It is not signed with a key.'));
+  if (x.known) watchDeadline(a, card, () => { gate.open = false; sync(); });
+  if (x.known && !gate.open) endCard(card);
+  return card;
 }
 
 // A guarantee offer held for you (fix inbox #18; approval kind guarantee_offer, no deal): your agent promises to pay a
@@ -843,24 +1026,31 @@ function guaranteeApprovalItem(a, kept = {}) {
   const out = el('div', {class: 'msg', role: 'status'});
   const approve = el('button', {type: 'button', class: 'approve'}, 'Approve');
   const reject = el('button', {type: 'button', class: 'secondary reject'}, 'Reject');
-  const gate = {terms: !!t, hashOk: true};
+  const gate = {terms: !!t, hashOk: true, open: !decideByPassed(a)};
   const gateMsg = el('p', {class: 'tiny warn gate-msg', hidden: true});
   const sync = () => {
-    const ok = gate.terms && gate.hashOk;
+    const ok = gate.terms && gate.hashOk && gate.open;
     approve.disabled = !ok; gateMsg.hidden = ok;
-    gateMsg.textContent = !gate.terms ? 'Approve is off: this page cannot show the terms you would be approving.' : 'Approve is off: the terms shown here do not hash to the terms hash you would be approving.';
+    if (!gate.open) reject.disabled = true;
+    gateMsg.textContent = !gate.open ? 'Approve and Reject are off: this approval\'s deadline has passed, and the server has ended it.'
+      : !gate.terms ? 'Approve is off: this page cannot show the terms you would be approving.' : 'Approve is off: the terms shown here do not hash to the terms hash you would be approving.';
   };
   const reenable = () => { reject.disabled = false; sync(); };
   approve.addEventListener('click', () => decide(a, 'approve', note, out, [approve, reject], reenable));
   reject.addEventListener('click', () => decide(a, 'reject', note, out, [approve, reject], reenable));
   sync();
   const party = x => [`${handleOf(x.id)}${x.id === me.id ? ' (you)' : ''} `, keyFp(x.pubkey)];
-  return el('article', {class: 'appr', 'data-approval': a.id, 'data-guarantee': a.guarantee_id, 'data-kind': a.kind},
+  // What the agent asks: to back one agent's debt to another (each named as such when the operator runs it), up to a cap
+  // it would pay with its own IOU; a later call is honored by its client without asking again (the effect says so).
+  const ask = t ? `Your agent asks to back what ${nameOf(t.issuer.id)} owes ${nameOf(t.creditor.id)}: if ${handleOf(t.creditor.id)} calls this guarantee, your agent pays it, up to ${amt(t.cap.amount, t.cap.unit)} in all, with its own IOU: with console approvals, nobody asks you again.` : null;
+  const card = el('article', {class: 'appr', 'data-approval': a.id, 'data-guarantee': a.guarantee_id, 'data-kind': a.kind},
     el('div', {class: 'appr-head'}, tag('owner', 'guarantee offer'),
       el('b', {class: 'appr-title'}, t ? `Back what ${handleOf(t.issuer.id)} owes ${handleOf(t.creditor.id)}` : 'terms not returned by the server'),
-      t ? el('span', {class: 'appr-price'}, `up to ${amt(t.cap.amount, t.cap.unit)} – your agent pays a call with its own credit note`) : null),
+      t ? el('span', {class: 'appr-price'}, `up to ${amt(t.cap.amount, t.cap.unit)} – your agent pays a call with its own IOU`) : null),
+    ask ? el('p', {class: 'appr-ask'}, ask) : null,
     el('div', {class: 'tiny'}, `asked ${whenRel(a.created_at)} · guarantee ${a.guarantee_id} · approval ${a.id}`),
-    a.effect ? el('div', {class: 'effect'}, el('p', {}, a.effect), el('p', {class: 'tiny'}, SRC.valun(), ' What approving does, as the server will apply it.')) : null,
+    deadlineLine(a),
+    effectBox(a.effect),
     t ? kv([
       ['Backer (your agent)', party(t.backer)],
       ['Issuer (whose debt it covers)', party(t.issuer)],
@@ -869,7 +1059,8 @@ function guaranteeApprovalItem(a, kept = {}) {
       ['Covers', g?.covers ?? t.covers],
       ['Callable', `from ${whenRel(t.due_at)} until ${whenRel(t.expires_at)}`],
       ['Honored within', `${t.honor_within_hours} hours of a call`],
-      ['Offer open until', whenRel(t.offer_expires_at)],
+      // The card's deadline (decide_by is offer_expires_at: GuaranteeBook.approvalView), said as such once it ends.
+      ['Offer open until', whileOpen(whenRel(t.offer_expires_at), `${when(t.offer_expires_at)}: the offer expired before you decided`)],
       t.note && ['Note', el('div', {class: 'pre-wrap'}, t.note)],
       ['Terms hash', [code(a.terms_hash), el('div', {}, hashCheck(canonical(t), a.terms_hash, 'terms hash', ok => { if (ok === false) { gate.hashOk = false; sync(); } }))]],
       ['Bound to', `${t.network} · tracker ${short(t.tracker_nft_id)} · ${t.protocol} · nonce ${short(t.nonce, 6, 4)}`],
@@ -879,6 +1070,9 @@ function guaranteeApprovalItem(a, kept = {}) {
     gateMsg,
     out,
     el('p', {class: 'tiny'}, SRC.owner(), ' Your decision is recorded by the Valun server under your owner token. It is not signed with a key.'));
+  watchDeadline(a, card, () => { gate.open = false; sync(); });
+  if (!gate.open) endCard(card);
+  return card;
 }
 
 // For an issue_note approval: the delivery the agent accepted and the credit note it signed (held by Valun, not in Basis yet).
@@ -897,11 +1091,13 @@ function issueNoteDetails(s) {
       ['Signed note message (80 bytes)', el('details', {}, el('summary', {}, 'debt key ‖ running total ‖ timestamp ‖ tracker NFT id'), code(n.message_hex, 'small'))],
       ['Note signature', code(n.signature)], n.signed_at && ['Signed', whenRel(n.signed_at)],
       // A bound note (mode bound and above): signed with the pair's current total, so the tracker records it only
-      // while that total is unchanged, and only until one hour after its timestamp.
-      n.bound && ['Bound note', `the tracker records it only while the pair's total is still ${amt(n.prior_total)}, and only until ${whenRel(n.expires_at)}`],
+      // while that total is unchanged, and only until one hour after its timestamp; its approval ends a minute before
+      // (the server's decide_by, Pilot.approvalDecideBy).
+      n.bound && ['Bound note', whileOpen(`the tracker records it only while the pair's total is still ${amt(n.prior_total)}, and only until ${whenRel(n.expires_at)}; Valun ends this approval a minute before that`,
+        `the tracker would have recorded it only until ${when(n.expires_at)}; Valun ended this approval a minute before that and never sends this IOU`)],
       n.bound && ['Prior acknowledgment signature', code(n.prior_signature)]])
       : el('p', {class: 'warn'}, 'The server did not return the credit note.'),
-    el('p', {class: 'tiny'}, "Valun holds the signed note until you decide: it is not in the Basis tracker, and the payee cannot see its signature yet. Approving issues it: you then owe that amount, as an outstanding obligation; nothing is settled."));
+    el('p', {class: 'tiny'}, "Valun's server holds this signed IOU until you decide: it is not on the Basis tracker, and the payee sees its amount but not its signature. Approving sends it: you then owe that amount, a promise to pay, and the delivery stays accepted. Rejecting keeps it on record, unsent."));
 }
 
 // One edge of a transfer or set-off: issuer -> recipient, its note on the tracker before (an EdgeState: total, timestamp
@@ -927,14 +1123,20 @@ function payByTransferDetails(s) {
     el('div', {class: 'stitle'}, 'The payment by transfer your agent signed ', SRC.key(S.owner.participant.handle), ' ', SRC.none()),
     tr ? [kv([
       ['Pays with', `${amt(tr.amount)} of what ${tr.issuer?.handle ?? handleOf(tr.issuer?.id)} owes you, moved to ${tr.payee?.handle ?? handleOf(tr.payee?.id)}`],
-      ['Transfer', `${tr.id} · ${TRANSFER_STATE[tr.state] ?? tr.state}`],
+      // While it waits for the owner (its state awaiting_owner until the sweep ends it as expired at expires_at), the
+      // card's own deadline passing ends it (endCard).
+      ['Transfer', [`${tr.id} · `, tr.state === 'awaiting_owner'
+        ? whileOpen(TRANSFER_STATE.awaiting_owner, "ended at its deadline: nothing moved, and Valun deletes your agent's three transfer signatures") : TRANSFER_STATE[tr.state] ?? tr.state]],
       ['Timestamp', `${tr.timestamp} (it ends in 999 ms: only a debt transfer can use it)`],
-      ['Collects signatures until', whenRel(tr.expires_at)],
+      // While it waits for the owner nobody else can sign it: expires_at is the owner's deadline (20 minutes after the
+      // agent posted it); only once approved does it collect the other signatures (until a new expires_at).
+      tr.state === 'awaiting_owner' ? [whileOpen('Approve or reject by', 'Ended'), whileOpen(whenRel(tr.expires_at), `${when(tr.expires_at)}: its deadline passed before you decided`)]
+        : ['Collects signatures until', whenRel(tr.expires_at)],
       ['Quote digest', code(tr.quote_digest)],
       ['Keys', [`issuer `, keyFp(tr.issuer?.pubkey), ` · you `, keyFp(tr.payer?.pubkey), ` · payee `, keyFp(tr.payee?.pubkey)]]]),
       edgeRows([{...tr.from_edge, your_role: 'creditor (your claim falls)'}, {...tr.to_edge, your_role: 'payer (the payee\'s claim rises)'}])]
       : el('p', {class: 'warn'}, 'The server did not return the transfer.'),
-    el('p', {class: 'tiny'}, `Your agent signed your edge's current total, its new total and the payee's new total, at that timestamp. The tracker applies the transfer only when ${tr?.issuer?.handle ?? 'the issuer'} and ${tr?.payee?.handle ?? 'the payee'} have signed too, and only while both notes are exactly as shown; nobody but the signer sees a signature until then. What ${tr?.issuer?.handle ?? 'the issuer'} owes in total does not change.`));
+    el('p', {class: 'tiny'}, `Your agent signed your edge's current total, its new total and the payee's new total, at that timestamp. It waits for your approval first: until then nobody else can sign it, and nothing is listed for ${tr?.issuer?.handle ?? 'the issuer'} or ${tr?.payee?.handle ?? 'the payee'} to sign. Once you approve, they sign, and the tracker applies the transfer only while both notes are exactly as shown; nobody but the signer sees a signature until then. What ${tr?.issuer?.handle ?? 'the issuer'} owes in total does not change.`));
 }
 
 async function decide(a, decision, noteInput, out, buttons, reenable) {
@@ -943,56 +1145,126 @@ async function decide(a, decision, noteInput, out, buttons, reenable) {
   S.busy = true;
   try {
     const r = await api('POST', `/owner/approvals/${a.id}`, {token: S.token, body: {decision, note: noteInput.value.trim()}});
-    S.flash = {ok: true, text: outcomeText(r)};
-    showMsg(out, S.flash.text, 'ok');                // visible even if the reload below fails
+    S.flash = {ok: true, text: outcomeText(r, a)};
+    showMsg(out, el('span', {}, S.flash.text), 'ok');      // visible even if the reload below fails
     S.busy = false;
     await loadOwner();
   } catch (e) {
     S.busy = false;
     showErr(out, e, {write: true});                  // visible even if the reload below fails
     // 409 not_pending / stale_note / stale_payment: the server's state moved on (already decided or void; for a credit
-    // note, void because the pair's tracker total changed; for a payment by transfer, void because the transfer changed
-    // since the agent signed it: `reason` says what). unknown_approval_kind: the server decides no such kind. Reload, so
-    // the console shows that state instead of a card that cannot be decided.
+    // note, void because the pair's tracker total changed, or void_expired because its deadline passed; for a payment by
+    // transfer, void because the transfer changed since the agent signed it: `reason` says what). unknown_approval_kind:
+    // the server decides no such kind. Reload, so the console shows that state instead of a card that cannot be decided.
     if (e.status === 409 && ['not_pending', 'stale_note', 'stale_payment', 'unknown_approval_kind'].includes(e.code)) {
-      S.flash = {ok: false, text: `Your decision on ${a.id} was not applied: ${e.message} (HTTP 409, ${e.code}). The console below shows the server's current state.`};
+      const expired = e.code === 'not_pending' && /void_expired/.test(e.message);
+      // A stale IOU or payment by transfer is void, as after a rejection (core.mjs decideApproval, decidePayByTransfer):
+      // the server's message says where that left the deal and until when a payment may have to wait (its times in
+      // local time: serverWords), and nothing tells the agent, or valun 0.7.1, which keeps what it signed as a payment
+      // attempt that may still apply (the review of PR #9, code 2-1): iouTrap for a bound IOU (what 0.7.1 signs on the
+      // testnet), as a stale one (its pair or a key changed, so not "usually at once": the review of PR #9, final
+      // round), payTrap for a payment by transfer, with the per-deal cap as this page read it (transferCapOf).
+      const n = a.subject?.credit_note, tr = a.subject?.transfer;
+      const voided = e.code === 'stale_note' ? [` ${TELL_REJECTED}`, n?.bound ? iouTrap(a.deal_id, n.timestamp, 'that IOU', true) : []]
+        : e.code === 'stale_payment' ? [` ${TELL_REJECTED}`, payTrap(a.deal_id, tr?.timestamp, tr ? (tr.issuer?.handle ?? handleOf(tr.issuer?.id)) : 'the issuer', 'that payment', transferCapOf(a))] : [];
+      S.flash = {ok: false, text: expired
+        ? [`Your decision on ${a.id} was not applied: its deadline had passed, so the server had ended it (${e.message}; HTTP 409, ${e.code}). `, expiredNow(a), ' The console below shows the server\'s current state.']
+        : [`Your decision on ${a.id} was not applied: `, serverWords(e.message), ` (HTTP 409, ${e.code}).`, voided, ' The console below shows the server\'s current state.']};
       await loadOwner();
       return;
     }
     reenable();
   }
 }
-// What the owner's decision did, as the server answered it. After an approval the agent learns of it only when it next
-// checks (nothing tells it), so the owner is asked to tell it.
+// What the owner's decision did, as the server answered it (`asked`: the approval as this page showed it). The agent
+// learns of a decision only when it next reads the deal (nothing tells it), so the owner is asked to tell it.
 const TELL_AGENT = 'Tell your agent: it carries on when it next checks.';
-function outcomeText(r) {
-  const said = decisionText(r);
-  return r.approval?.state === 'approved' ? `${said} ${TELL_AGENT}` : said;
+const TELL_REJECTED = "Your agent isn't told: tell it.";
+// After a rejected bound IOU or payment by transfer, what valun 0.7.1 does (it never reads the approval's state: the
+// approval probe's D2), as text and code: iouTrap, payTrap.
+function outcomeText(r, asked = null) {
+  const a = r.approval, was = asked ?? a, rejected = !!a && a.state !== 'approved';
+  const n = was?.subject?.credit_note, bound = rejected && a.kind === 'issue_note' && !!n?.bound;
+  const tr = rejected && a.kind === 'pay_by_transfer' ? (r.transfer ?? was?.subject?.transfer) : null;
+  const trap = bound ? iouTrap(a.deal_id, n.timestamp, 'that IOU')
+    : tr ? payTrap(a.deal_id, tr.timestamp, tr.issuer?.handle ?? handleOf(tr.issuer?.id), 'that payment', transferCapOf(was)) : [];
+  return [`${decisionText(r, asked)} ${a?.state === 'approved' ? TELL_AGENT : TELL_REJECTED}`, trap];
 }
-function decisionText(r) {
+// After a rejected IOU or payment by transfer of a deal not yet paid, the clearing engine keeps every set-off off the IOU
+// it would have changed until the deal is paid or disputed (a payment-due deal can't be): the server's paymentAttemptHolds.
+const loopsHeld = (due, owed) => (circulationOn() ? ` Until your agent pays this deal${due ? '' : ' or disputes the delivery'}, no loop that includes ${owed} clears.` : '');
+// After a note the tracker refused (note_failed, which sets no payment_due_since: core.mjs submitNote), when the deal
+// goes back to delivered, where its payer may dispute it: once `what`, a later payment of it held for `owner` (the
+// payer's owner: 'you', or "<handle>'s owner"), is never sent. Rejected or expired (releaseAcceptance), or void: its
+// checks fail on approval (void_stale) or a party's agent key is revoked (revokeAgent: void_key_revoked). Not once the deal
+// was payment due (`circ`: circulating credit, the only way it can be): only a payment by transfer that went out and did
+// not apply makes it so (endTransfer sets payment_due_since), and it stays so (the review of PR #9, item 10).
+const unsentLater = (what, owner, circ) => {
+  const you = owner === 'you';
+  return `${what} waits for ${owner} and isn't sent (${you ? 'you reject' : `${owner} rejects`} it, it expires, or it becomes void: its checks fail when ${owner} ${you ? 'approve' : 'approves'} it, or a party's agent key is revoked), which sends the deal back to delivered${circ ? ', unless it was payment due before that' : ''}`;
+};
+function decisionText(r, asked = null) {
   if (r.approval?.kind === 'guarantee_offer') {
     const a = r.approval, g = r.guarantee;
-    if (a.state !== 'approved') return `Rejected (${a.id}). Guarantee ${a.guarantee_id} was not offered.`;
-    return `Approved (${a.id}). Guarantee ${a.guarantee_id} is offered to ${g?.creditor?.handle ?? 'the creditor'}, who can accept or decline it${g ? ` until ${when(g.offer_expires_at)}` : ''}.`;
+    if (a.state !== 'approved') return `Rejected (${a.id}). Guarantee ${a.guarantee_id} was never offered, and its cap no longer counts against your agent's limits. Valun keeps your agent's signed offer on record.`;
+    return `Approved (${a.id}). Guarantee ${a.guarantee_id} is offered to ${g?.creditor?.handle ?? 'the creditor'}, who can accept or decline it${g ? ` until ${when(g.offer_expires_at)}` : ''}. If it is called, your agent pays each call with its own IOU: that is never held for you.`;
   }
-  const a = r.approval, d = r.deal, other = d.counterparty?.handle ?? 'the counterparty', t = d.current?.terms;
+  const a = r.approval, d = r.deal, other = d.counterparty?.handle ?? 'the counterparty', t = d.current?.terms, due = d.status === 'payment_due';
   if (a.kind === 'pay_by_transfer') {
     // The answer is 200 {approval, deal, transfer} also when the tracker refused the transfer right after the approval:
     // transfer.state and transfer.result say what happened.
     const tr = r.transfer, A = tr?.issuer?.handle ?? 'the issuer', C = tr?.payee?.handle ?? other;
-    if (a.state !== 'approved') return `Rejected (${a.id}). Nothing moved; deal ${d.id} is back to: ${statusLabel(d.status)}.`;
+    // Valun's rule (core.mjs transferAttemptsBlock): through the same IOU at once while it is unchanged (the same-prior
+    // exemption); any other way after fallback_after, or once its journal proves the payment dead (either edge changed
+    // since its timestamp). And the per-deal cap (spendingPayerCheck): after the deal's third payment by transfer in 24
+    // hours, none until the time the card gives (transferCapOf), through the same IOU too, so only the agent's own IOU
+    // remains (the review of PR #9, final round: this said "at once" after the third too).
+    if (a.state !== 'approved') {
+      const fb = tr?.fallback_after ? when(tr.fallback_after) : "the payment's timestamp + 1 hour and a minute", cap = transferCapOf(asked);
+      const sooner = 'or sooner once either IOU that payment would have changed has changed since';
+      const again = cap
+        ? `That was this deal's third payment by transfer in 24 hours, the most Valun allows, whatever became of them: Valun refuses another one until ${when(cap)}, through ${A}'s IOU too. With its own IOU, your agent may pay after ${fb}, ${sooner}.${tr?.fallback_after && Date.parse(cap) <= Date.parse(tr.fallback_after)
+          ? ` From ${when(cap)}, Valun lets it pay by transfer again: through ${A}'s IOU while it is unchanged, and through any other IOU after ${fb}, ${sooner}.` : ''}`
+        : `Valun lets your agent pay again through ${A}'s IOU at once, while it is unchanged, and any other way after ${fb}, ${sooner}. Valun allows at most ${MAX_TRANSFERS_A_DAY} payments by transfer of one deal in 24 hours, whatever became of them.`;
+      return `Rejected (${a.id}). Nothing moved, and Valun deleted your agent's transfer signatures, keeping only their hashes; deal ${d.id} ${due ? 'stays payment due: your agent must still pay it' : `is back to: ${statusLabel(d.status)}`}. ${again}${loopsHeld(due, `what ${A} owes you`)}`;
+    }
     if (tr?.state === 'applied') return `Approved (${a.id}). The tracker applied the transfer: ${A} now owes ${C} ${amt(tr.amount)} more and you ${amt(tr.amount)} less; you issued no credit note. Outstanding, not settled.`;
-    if (tr?.state === 'collecting') return `Approved (${a.id}). The payment now waits for ${A}'s and ${C}'s signatures (until ${when(tr.expires_at)})${tr.regenerated_from ? '; it was made again after an edge changed' : ''}. Nothing has moved yet.`;
+    if (tr?.state === 'collecting') return `Approved (${a.id}). The payment now waits for ${A}'s and ${C}'s signatures (until ${when(tr.expires_at)})${tr.regenerated_from ? '; it was made again after an edge changed' : ''}. Nothing has moved yet, and the delivery stays accepted.`;
     if (tr?.state === 'applying') return `Approved (${a.id}). The transfer is being applied; the server decides its outcome by reading the tracker back.`;
-    return `Approved (${a.id}), but the transfer did not apply (${tr?.result?.code ?? tr?.state ?? 'unknown'}): nothing moved, and deal ${d.id} is now: ${statusLabel(d.status)}.`;
+    return `Approved (${a.id}), but the transfer did not apply (${tr?.result?.code ?? tr?.state ?? 'unknown'}): nothing moved, and deal ${d.id} is now: ${statusLabel(d.status)}. The delivery stays accepted and can no longer be disputed: your agent must pay again.`;
   }
   if (a.kind === 'issue_note') {
-    if (a.state !== 'approved') return `Rejected (${a.id}). No credit note reached the tracker; deal ${d.id} is back to: ${statusLabel(d.status)}.`;
-    if (ISSUED.includes(d.status) && t) return `Approved (${a.id}). The tracker recorded the credit note: ${handleOf(t.payer.id)} owes ${handleOf(t.payee.id)} ${amt(t.price.amount)} more (outstanding, not settled).`;
+    if (a.state !== 'approved') {
+      // Valun's own rule, exactly (core.mjs paymentBlockAt, attemptDeadByJournal): a bound note could still be recorded
+      // until its timestamp + 1 hour, so a payment by transfer waits until a minute after that (decision D-1), unless the
+      // first change to the note's own key pair after its timestamp moved the pair from the total the note acknowledged
+      // (a later note of the payer's to the payee on the same keys, when nothing else changed the pair first; not one
+      // after a key change, which is on another pair: the review of PR #9, item 8). What valun 0.7.1 does is iouTrap's.
+      // An ordinary one is refused while the pair's note has not moved past it.
+      // A deal that has had 3 payments by transfer in 24 hours (its agent then signed this IOU): none until the time the
+      // card gives (transferCapOf), as the card says too.
+      const n = (asked ?? a).subject?.credit_note, cap = circulationOn() && n ? transferCapOf(asked) : null, wait = !circulationOn() || !n ? ''
+        : `${n.bound ? ` Paying this deal by transfer waits until ${when(msIso(n.timestamp + 3600e3 + 60e3))}, as the tracker could still record that IOU until an hour after it was signed, unless the first change to that key pair's IOU signed after it moves it from ${amt(n.prior_total)}, the total it acknowledged, as a later IOU of your agent's to ${other} on that key pair does when nothing else changed the pair first: Valun then doesn't wait for it.`
+          : ' Paying this deal by transfer is refused until this pair\'s IOU on the tracker moves past it: an ordinary IOU has no time limit.'}${cap
+          ? ` Valun also refuses any payment by transfer of this deal until ${when(cap)}: it allows at most ${MAX_TRANSFERS_A_DAY} in 24 hours, whatever became of them, and this deal has had ${MAX_TRANSFERS_A_DAY}.` : ''}`;
+      return `Rejected (${a.id}). Valun didn't send the IOU, and keeps it on record, unsent; deal ${d.id} ${due ? 'stays payment due: your agent must still pay it' : `is back to: ${statusLabel(d.status)}, so your agent may accept the delivery again (a new IOU, which waits for you again) or dispute it`}.${wait}${loopsHeld(due, `what you owe ${other}`)}`;
+    }
+    if (ISSUED.includes(d.status) && t) return `Approved (${a.id}). The tracker recorded the IOU: ${handleOf(t.payer.id)} owes ${handleOf(t.payee.id)} ${amt(t.price.amount)} more (outstanding, not settled).`;
+    // A note the tracker refused leaves the deal note_failed and sets no payment_due_since (core.mjs submitNote; one the
+    // deal had already, as payment due, stays): a later payment of it held for the owner and never sent releases it to
+    // delivered, where it can be disputed (unsentLater); one that was payment due stays so (dueOf).
+    if (NOTE_FAILED.includes(d.status)) return `Approved (${a.id}), but the tracker did not record the IOU${noteOf(d)?.error_code ? ` (${noteOf(d).error_code})` : ''}: deal ${d.id} is now: ${statusLabel(d.status)}. The delivery stays accepted: your agent must pay again, and ${dueOf(d)
+      ? 'can no longer dispute it.' : `can't dispute it unless ${unsentLater(`a later IOU${circulationOn() ? ' or payment by transfer' : ''} of it`, 'you', circulationOn())}.`}`;
     return `Approved (${a.id}). Deal ${d.id} is now: ${statusLabel(d.status)}.`;
   }
-  if (a.state !== 'approved') return `Rejected (${a.id}). Deal ${d.id} is now: ${statusLabel(d.status)}.`;
-  if (d.status === 'agreed' && t) return `Approved (${a.id}). Deal ${d.id} is agreed: ${handleOf(t.payee.id)} delivers by ${when(t.deliver_by)}; on accepting the delivery, ${handleOf(t.payer.id)} issues a credit note for ${amt(t.price.amount)}.`;
+  if (a.state !== 'approved') {
+    if (a.kind === 'propose') return a.version > 1 ? `Rejected (${a.id}). ${other} never saw the counter-offer, and its own offer on deal ${d.id} stays open. Valun keeps your agent's signed counter-offer on record.`
+      : `Rejected (${a.id}). The offer was never shown to ${other}, and deal ${d.id} ended. Valun keeps your agent's signed offer on record; it binds nobody.`;
+    if (a.kind === 'accept') return `Rejected (${a.id}). Your agent's acceptance didn't take effect, and the offer on deal ${d.id} is open again. Valun keeps the signed acceptance on record.`;
+    if (a.kind === 'confirm_offer') return `Rejected (${a.id}). Your agent's offer on deal ${d.id} is withdrawn on your behalf, and ${other}'s acceptance is void: nothing is agreed, and nothing is owed.`;
+    return `Rejected (${a.id}). Deal ${d.id} is now: ${statusLabel(d.status)}.`;
+  }
+  if (d.status === 'agreed' && t) return `Approved (${a.id}). Deal ${d.id} is agreed: ${handleOf(t.payee.id)} delivers by ${when(t.deliver_by)}; on accepting the delivery, ${handleOf(t.payer.id)} signs an IOU for ${amt(t.price.amount)}.`;
   if (d.status === 'open') return `Approved (${a.id}). Deal ${d.id} is open: ${other} can now accept, counter or decline.`;
   return `Approved (${a.id}). Deal ${d.id} is now: ${statusLabel(d.status)}.`;
 }
@@ -1034,9 +1306,10 @@ function agentCard(o) {
         : o.features.consent_roles?.length ? [`${o.features.consent_roles.join(', ')} (as its client declared ${whenRel(o.features.consents_declared_at)}; counted until ${when(o.features.consents_count_until)})`]
           : 'none declared: its client does not sign consents by itself, so payments by transfer and set-offs that need its signature are not proposed to it'],
     ]),
+    // Its Valun client holds the key (staging's first-use round: a valun CLI agent's key sits in its valun profile file).
     el('p', {class: 'hint'}, ag.enrolled
-      ? "The agent signs with its own key; by design only its plugin holds it, and the server never receives it. Revoking stops that key and the agent token at once and cancels everything not yet agreed."
-      : "Give a valid enrollment code and the participant id to your agent's plugin. It generates its own key and enrolls, sending only the public key and a signed proof."),
+      ? "The agent signs with its own key; by design only its Valun client (the valun CLI, valun mcp or a plugin) holds it, and the server never receives it. Revoking stops that key and the agent token at once and cancels everything not yet agreed."
+      : "Give a valid enrollment code and the participant id to your agent's Valun client (the valun CLI, valun mcp or a plugin). It generates its own key and enrolls, sending only the public key and a signed proof."),
     actions, confirm, out);
 }
 async function issueCode(btn, out) {
@@ -1061,8 +1334,8 @@ function renderOneTime() {
     el('h2', {}, ot.title),
     el('p', {class: 'warnline'}, 'Shown once: the server keeps only a hash of the code.'),
     kv([['Participant id', code(ot.pid)], ['Enrollment code', el('code', {class: 'mono wrap', id: 'one-time-code'}, ot.code)], ['Expires', `${whenRel(ot.expires_at)}, single use`]]),
-    el('p', {class: 'hint'}, "Give both to your agent's plugin. It generates its own key and enrolls, sending only the public key and a signed proof. This card disappears once the code has been used, replaced or has expired."),
-    el('div', {class: 'actions'}, copyBtn(`server: ${location.origin}\nparticipant_id: ${ot.pid}\nenrollment_code: ${ot.code}`, 'Copy both for the plugin'),
+    el('p', {class: 'hint'}, "Give both to your agent's Valun client (the valun CLI, valun mcp or a plugin). It generates its own key and enrolls, sending only the public key and a signed proof. This card disappears once the code has been used, replaced or has expired."),
+    el('div', {class: 'actions'}, copyBtn(`server: ${location.origin}\nparticipant_id: ${ot.pid}\nenrollment_code: ${ot.code}`, "Copy both for your agent's client"),
       el('button', {type: 'button', class: 'secondary btn-small', onclick: clearOneTime}, 'Done – hide this'))));
 }
 
@@ -1265,6 +1538,7 @@ const EVENT_SHORT = {proposed: 'proposed', countered: 'counter-offer', accepted:
   payment_failed: 'credit note failed', credit_note_failed: 'credit note failed', credit_note_awaiting_owner: 'credit note awaiting owner',
   owner_approval_void_stale: 'owner approval void', disputed: 'disputed', declined: 'declined', withdrawn: 'withdrawn', expired: 'expired', expired_before_owner_approval: 'expired',
   cancelled: 'cancelled', credit_note_void: 'credit note voided', counter_expired_before_owner_approval: 'counter-offer expired',
+  credit_note_expired: 'IOU approval expired',
   expired_undelivered: 'ended: not delivered', held_for_proposer_owner: "held for the proposer's owner",
   // Circulating credit (release v16): payment by debt transfer. The server records these events; the spec draft's names
   // (transfer_* and setoff_applied) are listed too.
@@ -1286,6 +1560,12 @@ function dealsCard(deals) {
       : el('p', {class: 'hint empty'}, 'No deals yet. Your agent proposes and answers deals with its own key, and each one appears here. For a first one, see ',
         el('a', {href: '/start#agent'}, 'Start'), '.'));
 }
+// When a decided or void approval ended, for the list of them: the owner's decision (decided_at; a void_stale one has it
+// too: the owner approved it, and the server found it stale); for one the server ended at its deadline (void_expired:
+// its sweep records no decided_at), that deadline (decide_by), and not when it was asked, as it said until staging's
+// first-use round of 2026-11-18; any other void one (withdrawn, declined, superseded, a key revoked) records no time of
+// its own: when it was asked, said so.
+const endedWhen = a => (a.decided_at ? when(a.decided_at) : a.state === 'void_expired' && decideByOf(a) ? `ended ${when(decideByOf(a))}` : `asked ${when(a.created_at)}`);
 function decidedCard(decided) {
   if (!decided.length) return null;
   return el('div', {class: 'card'}, el('details', {}, el('summary', {}, `Decided and void approvals (${decided.length})`),
@@ -1293,7 +1573,7 @@ function decidedCard(decided) {
       el('tbody', {}, ...decided.map(a => el('tr', {},
         el('td', {class: 'mono'}, a.id), el('td', {}, ...(a.kind === 'guarantee_offer' ? [`guarantee offer · ${a.guarantee_id}`]
           : [`${kindName(a)} v${a.version} · `, el('a', {href: `#owner/deal/${a.deal_id}`}, a.deal_id)])),
-        el('td', {}, a.state.replace(/_/g, ' ')), el('td', {class: 'tiny'}, when(a.decided_at || a.created_at)), el('td', {}, a.note || '–')))))),
+        el('td', {}, a.state.replace(/_/g, ' ')), el('td', {class: 'tiny'}, endedWhen(a)), el('td', {}, a.note || '–')))))),
     el('p', {class: 'tiny'}, SRC.owner())));
 }
 
@@ -1319,7 +1599,7 @@ const NUM_FIELDS = [   // [name, label, explanation (or a function that writes i
   ['max_accept_per_issuer', 'Max claim on any one payer', 'Cap on what one payer could owe you: their notes to you on the tracker + agreed deals whose credit note is not issued yet + open offers + the new deal.'],
   ['min_price_as_payee', 'Min price to work for (min_price_as_payee)', 'Your agent may not commit you to do work in one deal for less than this. 0 = no minimum.', true],
   ['min_payer_coverage_pct', 'Min payer coverage (min_payer_coverage_pct)', coverageExplain, true, '%'],
-  ['approve_above', 'Ask me above (approve_above)', 'A commitment (a proposal, counter-offer or acceptance) priced above this waits for your approval. 0 = every commitment waits for you.'],
+  ['approve_above', 'Ask me above (approve_above)', 'An offer, counter-offer, acceptance or guarantee offer (by its cap) for more than this waits for your approval here; 0: every one. The IOU your agent signs at a delivery waits only with Review deliveries, and honoring a guarantee call never waits.'],
 ];
 const numFields = m => NUM_FIELDS.filter(([name, , , optional]) => !optional || name in m);
 // A limit's input: a whole number, 0 or more, no maximum (the server checks it). An amount shows what it is in tERG
@@ -1425,7 +1705,7 @@ function mandateCard(o) {
     el('div', {class: 'mandate-grid'},
       checkField('may_issue_credit', 'May issue credit notes (may_issue_credit)', 'Your agent may commit you as payer: once you accept a delivery you owe its price (an outstanding credit note).'),
       checkField('may_accept_credit', 'May work for credit (may_accept_credit)', 'Your agent may commit you as payee: you do the work and hold a claim for its price.'),
-      'review_deliveries' in m ? checkField('review_deliveries', 'Review deliveries (review_deliveries)', cp ? 'When your agent accepts a delivery, the credit note or payment by transfer it signs waits for your approval before it goes to the tracker.'
+      'review_deliveries' in m ? checkField('review_deliveries', 'Review deliveries (review_deliveries)', cp ? 'When your agent accepts a delivery, the credit note or payment by transfer it signs waits for your approval before it goes to the tracker. Not the credit note it signs to honor a guarantee call, which is recorded at once.'
         : 'When your agent accepts a delivery, the credit note it signs waits for your approval before it goes to the tracker.') : null,
       'review_deliveries' in m ? el('div', {}) : null,
       ...numFields(m).map(([name, label, explain, , unit = netUnit()]) => field(limitInput(name, m[name], unit), `${label}, ${unit === '%' ? '%' : unitLabel()}`,
@@ -1510,16 +1790,21 @@ function limitText(k, v) {
   if (k === 'min_payer_coverage_pct') return `${v}%`;
   return typeof v === 'number' ? amt(v) : String(v);
 }
+// What either token can do to these limits (lib/pilot/core.mjs setAgentLimits: a value above the owner's cap is refused,
+// 403 above_owner_mandate; null clears a limit, whoever recorded it). Nothing holds that for the owner, in any mode: only
+// clients ask first (valun's ask mode, the Hermes plugin while it asks in the conversation, confirm_commitments, and in
+// client-prompt an app that confirms each tool call, valun_set_limits being one it confirms).
+const LIMITS_CLEAR = "Your agent can make a limit stricter than your mandate, never looser, and it can't raise your mandate's caps. It can also clear any of these limits, one you recorded included, which puts that limit back to your mandate's value at once. Valun doesn't hold that for you in any approval mode: only valun's ask mode, Hermes asking you in the conversation, and an app that confirms each tool call (client-prompt) ask you first. For a limit your agent can't loosen, set it in the mandate below.";
 function agentLimitsBox(o) {
   const a = o.agent_limits || {}, keys = Object.keys(LIMIT_LABEL).filter(k => a[k] != null), by = o.agent_limits_recorded_by || {};
   const val = (k, v) => `${limitText(k, v)}${by[k] === 'owner' ? ', recorded by you' : ''}`;
   const head = el('div', {class: 'stitle'}, 'Limits your agent recorded from your conversation ', SRC.valun());
   if (!keys.length && !a.notes) return el('div', {class: 'open-offers'}, head,
-    el('p', {class: 'tiny'}, 'None yet. When you tell your agent your goals and limits in a conversation, it records them here. The server enforces them, and they can only be stricter than this mandate.'));
+    el('p', {class: 'tiny'}, `None yet. When you tell your agent your goals and limits in a conversation, it records them here. The server enforces them, and they can only be stricter than this mandate. ${LIMITS_CLEAR}`));
   return el('div', {class: 'open-offers'}, head,
     keys.length ? kv(keys.map(k => [LIMIT_LABEL[k], `${val(k, a[k])} (your mandate: ${limitText(k, ownerValue(o, k))}${CIRC_LIMITS.has(k) && o.effective_limits && k in o.effective_limits ? `; in force: ${limitText(k, o.effective_limits[k])}` : ''})`])) : null,
     a.notes ? kv([['Your goals, as your agent recorded them', el('div', {class: 'pre-wrap'}, a.notes)]]) : null,
-    el('p', {class: 'tiny'}, `Recorded ${a.set_at ? whenRel(a.set_at) : ''}. The server enforces the stricter of these and your mandate at every action. Your agent can only make limits stricter than your mandate, never looser.`));
+    el('p', {class: 'tiny'}, `Recorded ${a.set_at ? whenRel(a.set_at) : ''}. The server enforces the stricter of these and your mandate at every action. ${LIMITS_CLEAR}`));
 }
 // Checkboxes for a participant list of the mandate form (`name`: the input name; `chosen`: the ids the mandate's list
 // holds): one per participant in the directory, and one, ticked, for every id the list holds that the directory does not
@@ -1568,7 +1853,7 @@ async function showDeal(id) {
     remember(d.counterparty);
     if (currentRoute().id === id) renderDeal(d);
   } catch (e) {
-    if (e.status === 401) { forgetToken(); showLogin('That owner token is not valid on this server (HTTP 401). It has been removed from this tab.'); return; }
+    if (e.status === 401) { forgetToken(); showLogin(REFUSED_TOKEN); return; }
     box.replaceChildren(backLink(), el('div', {class: 'card'}, el('h2', {}, `Deal ${id}`), el('div', {class: 'msg err'}, errorView(e))));
   }
 }
@@ -1580,12 +1865,14 @@ function dealParties(d) {
   const payee = t?.payee.id ?? (d.your_role === 'payee' ? d.you : d.counterparty.id);
   return {t, payer, payee, H: id => `${handleOf(id)}${id === d.you ? ' (you)' : ''}`,
     P: id => id === d.you ? 'your' : `${handleOf(id)}'s`,                                   // possessive
+    // Who decides for id's agent: this view's reader for its own agent (never "your owner": the reader is that owner).
+    OWNER: id => id === d.you ? 'you' : `${handleOf(id)}'s owner`,
     APPROVAL: id => id === d.you ? 'your approval' : `approval by ${handleOf(id)}'s owner`,
     waitOwner: (id, what) => id === d.you ? `Waiting for your approval of the ${what}.` : `Waiting for ${handleOf(id)}'s owner to approve the ${what}.`};
 }
 const cap1 = s => s ? `${s[0].toUpperCase()}${s.slice(1)}` : s;
 function summaryText(d) {
-  const {t, payer, payee, H, P, APPROVAL} = dealParties(d), price = t ? amt(t.price.amount, t.price.unit) : 'the price';
+  const {t, payer, payee, H, P, OWNER, APPROVAL} = dealParties(d), price = t ? amt(t.price.amount, t.price.unit) : 'the price';
   const tr = transferOf(d), A = tr ? (tr.issuer?.handle ?? handleOf(tr.issuer?.id)) : 'the issuer';
   const n = noteOf(d), part = partlyRedeemed(n), unit = t?.price?.unit;
   switch (d.status) {
@@ -1598,7 +1885,7 @@ function summaryText(d) {
     case 'paid_by_transfer': return `Paid by transfer, not settled: ${A} now owes ${H(payee)} ${price} that it owed ${H(payer)} before; ${H(payer)} issued no credit note for this deal. ${NET.pilot()
       ? 'It is an outstanding obligation (nothing is redeemed); it may later move again or be cleared by set-off.' : `It is an outstanding obligation; it may later move again or be cleared by set-off${NET.testnet() ? `, and ${NET.redeem}` : ''}.`}`;
     case 'payment_due': return UNRESOLVED.includes(tr?.state)
-      ? `${H(payer)} accepted the delivery, but whether its payment by transfer applied cannot be told from the tracker. No other payment starts until ${P(payer)} owner resolves it (after confirming with ${H(payee)}). No dispute is possible any more.`
+      ? `${H(payer)} accepted the delivery, but whether its payment by transfer applied cannot be told from the tracker. No other payment starts until ${payer === d.you ? 'you resolve' : `${OWNER(payer)} resolves`} it (after confirming with ${H(payee)}). No dispute is possible any more.`
       : `${H(payer)} accepted the delivery, but its payment did not apply, so the payment is due: no dispute is possible any more, and ${P(payer)} agent pays it again, with its own credit note or by transfer.`;
     case 'completion_awaiting_owner': if (tr?.state === 'awaiting_owner') return `${cap1(P(payer))} agent accepted the delivery and signed a payment by transfer for ${price} with ${A}'s note; it goes ahead only after ${APPROVAL(payer)}. Nothing has moved yet.`;
       return `${cap1(P(payer))} agent accepted the delivery and signed a credit note for ${price}; it goes to the tracker only after ${APPROVAL(payer)}. Nothing is owed yet.`;
@@ -1608,10 +1895,16 @@ function summaryText(d) {
       ? `Delivered: waiting for ${H(payer)} to accept the delivery, paying ${price} with its own credit note or with a note it holds (a payment by transfer), or to dispute it. Nothing is owed yet.`
       : `Delivered: waiting for ${H(payer)} to accept the delivery, which issues a credit note for ${price}, or to dispute it. Nothing is owed yet.`;
     case 'paying': case 'issuing_note': return 'The payer accepted the delivery and signed the credit note; the server is recording it in the tracker (a restart finishes this).';
-    case 'payment_failed': case 'note_failed': return `The tracker did not record the credit note, so nothing is owed in Basis yet. ${cap1(P(payer))} agent can sign it again.`;
+    // The delivery stays accepted once a note was sent (status.mjs note_failed: the payer's actions are to pay, never to
+    // dispute), but the refusal sets no payment_due_since (core.mjs submitNote): unless the deal was payment due before, a
+    // later payment of it held for the payer's owner and never sent releases the deal to delivered, where it can be
+    // disputed (unsentLater). One that was payment due before stays so (dueOf). The payer's owner reads "you"; the
+    // payee's, "<payer>'s owner" (OWNER).
+    case 'payment_failed': case 'note_failed': return `The tracker did not record the credit note, so nothing is owed in Basis for this deal yet. The delivery stays accepted: ${P(payer)} agent must pay it again${'payment' in d ? ', with a new credit note or by transfer' : ', with a new credit note'}, and ${dueOf(d)
+      ? "can't dispute it any more." : `can't dispute it unless ${unsentLater('a later payment of it', OWNER(payer), 'payment' in d)}.`}`;
     case 'open': return `Open offer (version ${d.current?.version}) by ${H(d.current?.by)}: ${price}. Nothing is agreed yet.`;
     case 'proposed_awaiting_owner': return d.current ? `This proposal waits for ${APPROVAL(d.current.by)}. The other side cannot see it until then.` : "The other side's proposal waits for their owner's approval; you cannot see its terms yet.";
-    case 'rejected_by_owner': return d.current ? `This proposal by ${H(d.current.by)} was rejected by ${P(d.current.by)} owner, so it was never offered. Nothing is owed under it.` : `This deal ended: ${statusLabel(d.status)}. Nothing is owed under it.`;
+    case 'rejected_by_owner': return d.current ? `This proposal by ${H(d.current.by)} was rejected by ${OWNER(d.current.by)}, so it was never offered. Nothing is owed under it.` : `This deal ended: ${statusLabel(d.status)}. Nothing is owed under it.`;
     case 'accepted_awaiting_owner': return `${H(d.acceptance?.by)} accepted version ${d.acceptance?.version}; the acceptance waits for ${APPROVAL(d.acceptance?.by)}. Not agreed yet.`;
     case 'cancelled': return `Cancelled before it was agreed: ${H(d.cancellation?.participant)}'s owner revoked the agent key these terms name. Nothing is owed under it.`;
     case 'expired_undelivered': return `Ended without a delivery: ${H(payee)} did not deliver by ${when(t?.deliver_by)} or in the 7 days after it. Nothing is owed under it.`;
@@ -1635,7 +1928,7 @@ function waitingText(d) {
     return `Waiting for ${P(payer)} agent to pay again: with its own credit note or by transfer${wait}.`;
   }
   if (RECORDING.includes(d.status)) return 'The credit note is being recorded in the tracker.';
-  if (NOTE_FAILED.includes(d.status)) return circ ? `Waiting for ${P(payer)} agent to sign the credit note again, or to pay by transfer.` : `Waiting for ${P(payer)} agent to sign the credit note again.`;
+  if (NOTE_FAILED.includes(d.status)) return circ ? `Waiting for ${P(payer)} agent to pay again: a new credit note, or by transfer. The delivery stays accepted.` : `Waiting for ${P(payer)} agent to sign a new credit note. The delivery stays accepted.`;
   if (NET.pilot()) {
     if (ISSUED.includes(d.status)) return circ ? 'Nothing further happens to this deal: the credit note stays outstanding. With circulating credit the claim can move to another creditor or be cleared by set-off; nothing is redeemed.'
       : 'Nothing further happens in the pilot: the credit note stays outstanding (no redemption, reserve or clearing).';
@@ -1655,7 +1948,7 @@ const EVENT_TITLE = {
   accepted: h => `Accepted version ${h.version}${h.awaiting_owner ? ', held for the acceptor\'s owner' : ''}`,
   owner_approved: h => h.kind === 'issue_note' ? 'Owner approved issuing the credit note' : h.kind === 'pay_by_transfer' ? 'Owner approved the payment by transfer; it now collects the issuer\'s and the payee\'s signatures'
     : `Owner approved the ${kindName(h)} (version ${h.version})${h.offered ? '; it is now offered' : ''}`,
-  owner_rejected: h => h.kind === 'issue_note' ? 'Owner rejected issuing the credit note; nothing reached the tracker' : h.kind === 'pay_by_transfer' ? 'Owner rejected the payment by transfer; nothing moved'
+  owner_rejected: h => h.kind === 'issue_note' ? 'Owner rejected the credit note (IOU): Valun did not send it, and keeps it on record unsent' : h.kind === 'pay_by_transfer' ? 'Owner rejected the payment by transfer; nothing moved'
     : `Owner rejected the ${kindName(h)} (version ${h.version})`,
   owner_approval_void_stale: h => h.kind === 'pay_by_transfer' ? `Owner's approval void: the payment changed after the agent signed it (${h.reason ?? 'stale'}); nothing moved`
     : "Owner's approval void: the pair's tracker total changed after the agent signed the credit note",
@@ -1677,6 +1970,9 @@ const EVENT_TITLE = {
   counter_expired_before_owner_approval: h => `Counter-offer (version ${h.version}) expired before the owner decided`,
   cancelled: h => `Cancelled: ${handleOf(h.participant)}'s owner revoked the agent key these terms name`,
   credit_note_void: h => `Signed credit note voided before it reached the tracker: ${handleOf(h.participant)}'s agent key was revoked`,
+  // A bound credit note held for the payer's owner past its deadline (Pilot.expireHeldNote): never sent; the deal went
+  // back to delivered (or stayed payment_due), as after a rejection.
+  credit_note_expired: h => `The payer's owner did not decide on the credit note (IOU) by ${when(h.decide_by)}, its deadline: Valun never sent it, and the deal ${h.status === 'payment_due' ? 'stays payment due' : 'went back to delivered: the payer\'s agent may accept the delivery again'}`,
   // Circulating credit: payment by debt transfer (the issuer's debt to the payer moves to the payee).
   payment_by_transfer: h => `Delivery accepted; the payer's agent signed a payment by transfer: ${amt(h.amount)} of what ${handleOf(h.issuer)} owes the payer, moved to the payee`,
   payment_awaiting_owner: () => "Payment by transfer held for the payer's owner to approve; nobody else has signed it",
@@ -1703,7 +1999,7 @@ function displayHistory(hist) {
 }
 const STEP_CLASS = {payment_failed: 'failed', credit_note_failed: 'failed', disputed: 'failed', owner_rejected: 'failed', declined: 'failed',
   withdrawn: 'na', expired: 'na', expired_before_owner_approval: 'na', owner_approval_void_stale: 'na', credit_note_awaiting_owner: 'pending',
-  cancelled: 'na', credit_note_void: 'na', counter_expired_before_owner_approval: 'na', expired_undelivered: 'na', held_for_proposer_owner: 'pending',
+  cancelled: 'na', credit_note_void: 'na', credit_note_expired: 'na', counter_expired_before_owner_approval: 'na', expired_undelivered: 'na', held_for_proposer_owner: 'pending',
   payment_awaiting_owner: 'pending', payment_due: 'failed', payment_void: 'na', payment_outcome_unknown: 'failed', transfer_failed: 'failed', transfer_expired: 'na'};
 function historyStep(h) {
   const by = String(h.by || '');
@@ -1746,7 +2042,7 @@ function termsTitle(d, cur, P) {
 }
 
 function renderDeal(d) {
-  const {t, payer, payee, H, P} = dealParties(d), cur = d.current;
+  const {t, payer, payee, H, P, OWNER} = dealParties(d), cur = d.current;
   const verOf = n => d.versions.find(v => v.version === n);
   const flash = S.dealFlash?.id === d.id ? S.dealFlash.text : null; S.dealFlash = null;
   const header = el('div', {class: 'card'},
@@ -1766,7 +2062,7 @@ function renderDeal(d) {
   const never = !d.agreement && cur && ENDED.includes(d.status) && neverOffered(d, cur);
   const terms = el('div', {class: 'card'},
     el('h2', {}, termsTitle(d, cur, P), cur ? SRC.key(handleOf(cur.by)) : null),
-    never ? el('p', {class: 'hint'}, `${H(cur.by)} signed this proposal, but ${P(cur.by)} owner never approved it, so it was never open for acceptance. The other side never saw it.`) : null,
+    never ? el('p', {class: 'hint'}, `${H(cur.by)} signed this proposal, but ${OWNER(cur.by)} never approved it, so it was never open for acceptance. The other side never saw it.`) : null,
     t ? termsKv(t, d.you, [['Terms hash', [code(cur.terms_hash), el('div', {}, hashCheck(canonical(t), cur.terms_hash, 'terms hash'))]],
       ['Proposer signature', [code(cur.signature), el('div', {class: 'tiny'}, 'over the text ', signedText(`valun-pilot/propose/1\n${cur.terms_hash}`))]]])
       : el('p', {class: 'hint'}, "You cannot see the terms yet: the other side's proposal waits for their owner's approval."));
@@ -1842,9 +2138,12 @@ function transferCard(d) {
       ? `The Basis tracker applied it: ${A} now owes the payee ${amt(p.amount)} that it owed the payer before. The payer issued no credit note for this deal.`
       : UNRESOLVED.includes(p.state) ? `Reading the tracker back could not tell whether this transfer applied (${p.state}). No other payment of this deal starts until the payer's owner resolves it.`
       : ended ? endedText(d)
+      // Waiting for the payer's owner, nobody else can sign it: expires_at is that owner's deadline.
+      : p.state === 'awaiting_owner' ? `It waits for ${d.your_role === 'payer' ? 'your approval' : "the payer's owner"} first, until ${when(p.expires_at)}, and nobody else can sign it meanwhile. Once approved, ${A} and the payee sign, and ${amt(p.amount)} of what ${A} owes the payer moves to the payee. Nothing has moved yet.`
       : `${amt(p.amount)} of what ${A} owes the payer moves to the payee once ${A} and the payee have signed. Nothing has moved yet.`),
     kv([['State', TRANSFER_STATE[p.state] ?? p.state], ['Transfer', code(p.transfer_id)], ['Paid with', `${amt(p.amount)} of ${A}'s note to the payer`],
-      ['awaiting_owner', 'collecting'].includes(p.state) && ['Collects signatures until', whenRel(p.expires_at)],
+      p.state === 'awaiting_owner' && ["The payer's owner decides by", whenRel(p.expires_at)],
+      p.state === 'collecting' && ['Collects signatures until', whenRel(p.expires_at)],
       p.fallback_after && ['Any new payment from', whenRel(p.fallback_after)],
       p.signatures_withheld && ['Signatures', el('span', {class: 'hint'}, p.signatures_withheld)]]),
     el('div', {class: 'actions'}, show), out, box,

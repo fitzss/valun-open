@@ -295,6 +295,11 @@ test('GET /pilot/v1/health: 200 {ok: true} while the pilot tracker answers, 503 
   // The pin says when the running binary is not pinned, and is null without capabilities (a tracker before v3).
   pilot.trackerSha256 = 'cd'.repeat(32);
   assert.equal((await get(base, '/pilot/v1/health')).body.tracker.pin, `${V44_PIN} (binary not pinned)`);
+  // A tracker that reports pure credit, on the network with no chain (a local server's, fix inbox #146), is named as
+  // running pure credit, not by its build's anchored netting; on the testnet by the build's name, as /api/status does.
+  pilot.trackerSha256 = PIN_SHA;
+  pilot.trackerCaps = {...V44_CAPS, pure_credit: true};
+  assert.equal((await get(base, '/pilot/v1/health')).body.tracker.pin, NETWORK === 'valun-testnet-1' ? V44_PIN : V44_PIN.replace('(anchored netting)', '(pure credit)'));
   pilot.trackerCaps = null;
   assert.equal((await get(base, '/pilot/v1/health')).body.tracker.pin, null);
   assert.deepEqual(ran, [], 'the desk was never asked');

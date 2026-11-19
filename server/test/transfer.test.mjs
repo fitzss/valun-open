@@ -847,7 +847,7 @@ test('D-2 d: the payer\'s owner resolves an attempt of unknown outcome (owner to
   refused(await call('POST', `/owner/deals/${id3}/attempts/${vt3}/resolve`, {outcome: 'not_applied'}, B.owner), 409, 'wrong_state');
 });
 
-test('D-1 item 4: a bound note held past the tracker\'s maximum age fails at release (novation_expired, note_failed); a transfer then waits until its timestamp + 1 h + 60 s; the payer signs a new bound note', async t => {
+test('D-1 item 4: a bound note held past its deadline (its timestamp + 1 h - 60 s) is never released: its approval is void_expired and the deal back to delivered; a transfer then waits until its timestamp + 1 h + 60 s; the payer signs a new bound note', async t => {
   if (!live(t)) return;
   // Built 65 minutes in the past (this server's clock): the held bound note is then more than an hour old at the tracker,
   // with 5 minutes to spare for any skew between this clock and the tracker's.
@@ -866,23 +866,23 @@ test('D-1 item 4: a bound note held past the tracker\'s maximum age fails at rel
     assert.equal(ts % 1000, 997);
     assert.equal(ok(await boundComplete(B, id, tpl)).status, 'completion_awaiting_owner');
   } finally { clockOffset = 0; }
-  // The owner approves an hour later: the tracker refuses the note as expired; the read-back shows it did not apply.
-  const ap = ok(await call('GET', '/owner', null, B.owner)).approvals.find(a => a.deal_id === id && a.state === 'pending');
-  // The tracker's own answer, as it is sent: its text must never be stored or shown (decision D-2 f), only its status and code.
-  let raw = null;
-  basis.api = async function (m, p, b) { const r = await Object.getPrototypeOf(basis).api.call(this, m, p, b); if (m === 'POST' && p === '/notes') raw = r.json; return r; };
-  let dec;
-  try { dec = ok(await call('POST', `/owner/approvals/${ap.id}`, {decision: 'approve'}, B.owner)); } finally { delete basis.api; }
-  assert.equal(dec.deal.status, 'note_failed');
-  assert.equal(pilot.s.deals[id].credit_note.error_code, 'novation_expired');
+  // An hour later the owner's console reads it: the server's sweep has ended the approval at its deadline (the approval
+  // probe's D3: until 2026-11-18 a late approval was sent, the tracker refused it, novation_expired, and the deal was
+  // left note_failed with the delivery accepted and no longer disputable).
+  const ap = ok(await call('GET', '/owner', null, B.owner)).approvals.find(a => a.deal_id === id && a.kind === 'issue_note');
+  assert.deepEqual([ap.state, ap.decide_by], ['void_expired', new Date(ts + MAX_AGE_MS - 60e3).toISOString()]);
+  assert.deepEqual([pilot.s.deals[id].status, pilot.s.deals[id].completion, pilot.s.deals[id].credit_note], ['delivered', null, null], 'back to delivered, as after a rejection');
+  assert.deepEqual(pilot.s.deals[id].void_notes.map(n => [n.state, n.note.timestamp]), [['expired', ts]], 'the note is kept, never sent');
+  // Approving now is refused cleanly, and nothing reaches the tracker.
+  let posted = 0;
+  basis.api = async function (m, p, b) { if (m === 'POST' && p === '/notes') posted++; return Object.getPrototypeOf(basis).api.call(this, m, p, b); };
+  try { refused(await call('POST', `/owner/approvals/${ap.id}`, {decision: 'approve'}, B.owner), 409, 'not_pending'); } finally { delete basis.api; }
+  assert.equal(posted, 0, 'nothing sent to the tracker');
   assert.equal(await edge(B, C), null);
-  assert.ok(typeof raw?.error === 'string' && raw.error.length > 0 && raw.code === 'novation_expired', JSON.stringify(raw));
-  const cn = pilot.s.deals[id].credit_note;
-  assert.deepEqual([cn.error, cn.error_code, cn.tracker_status], ['the tracker did not record the note (HTTP 400, novation_expired)', 'novation_expired', 400]);
-  for (const [what, text] of [['the deal record', JSON.stringify(pilot.s.deals[id])], ['the payer\'s view', JSON.stringify(dec.deal)], ['the payee\'s view', JSON.stringify(await view(C, id))]])
-    assert.ok(!text.includes(raw.error), `${what}: no tracker text`);
-  // The failed bound note could still apply until ts + 1 h at the tracker: another kind of payment waits until
-  // ts + 1 h + 60 s (here on this server's clock, set back).
+  assert.ok((await view(C, id)).history.some(e => e.event === 'credit_note_expired'), 'the payee sees that it expired');
+  assert.ok((await view(B, id)).next_actions.includes('dispute'), 'the delivery is not accepted: still disputable');
+  // The expired bound note still counts as a payment attempt (it is signed): another kind of payment waits until
+  // ts + 1 h + 60 s (here on this server's clock, set back), as for a rejected one.
   clockOffset = -50 * MIN;
   try {
     const w = refused(await call('GET', `/deals/${id}/transfer-template?issuer=${A.id}`, null, B.agent), 409, 'transfer_window_open');
@@ -919,6 +919,15 @@ const pendingApproval = async (P, dealId) => {
   return a;
 };
 const decide = (P, a, decision, note) => call('POST', `/owner/approvals/${a.id}`, {decision, ...(note ? {note} : {})}, P.owner);
+// What valun 0.7.1 does after a rejected or expired payment by transfer of deal `id` with `A`'s IOU signed at T, as the
+// payment card says it (the review of PR #8: 0.7.1 keeps it as an attempt on the IOU it paid through; its window is
+// T + 1 h + 2 min). Only what holds in every case (the review of PR #9): what it usually does, that it may refuse, and
+// what to do for each answer (resolving it in the client's records only). scripts/client-071-attempts.py checks both
+// ways out in every case it runs.
+const payTrapOf = (id, A, T) => {
+  const at = new Date(T + MAX_AGE_MS + 120e3).toISOString();
+  return ` valun 0.7.1 isn't told either, and keeps counting this payment as one that may still apply. It usually pays this deal again through ${A}'s IOU at once while that IOU is as this payment found it; any other way, or once that IOU has changed, it may refuse. If it answers transfer_window_open, have your agent pay again once ${at} has passed, an hour and 2 minutes after the payment's timestamp (its retry_after_ms says how long to wait). If it answers attempt_outcome_unknown, run \`valun attempts resolve ${id} '#n' --not-applied\` in a terminal (#n from \`valun attempts list\`; in Hermes, \`hermes -p valun valun attempts ...\`) and answer yes to both of its questions, the second to record your decision in your client's records only: Valun never applied this payment. Then have your agent pay again once ${at} has passed.`;
+};
 const policyOf = m => ({auto_clear: true, novate_own_debt: true, accept_transfers: true, accept_notes_from: 'any', refuse_notes_from: [], pay_with_held_notes: 'when_asked', ...m});
 
 test('pay_by_transfer approval: review_deliveries holds the payment (nobody else signs yet); GET /owner shows exactly what is approved; the owner approves and the server-run issuer and payee sign, so it applies in that request', async t => {
@@ -951,10 +960,18 @@ test('pay_by_transfer approval: review_deliveries holds the payment (nobody else
     from_edge: {edge: `${A.pubkey}>${B.pubkey}`, issuer: who(A), recipient: who(B), before: tpl.from_edge.before, new_total: 2, change: -3},
     to_edge: {edge: `${A.pubkey}>${C.pubkey}`, issuer: who(A), recipient: who(C), before: null, new_total: 3, change: 3},
     timestamp: tpl.timestamp, quote_digest: tpl.quote_digest, expires_at: T_(vt).expires_at});
-  assert.equal(ap.effect.if_approved, `The transfer is submitted once ${A.handle} and ${C.handle} sign: ${A.handle} then owes ${C.handle} 3 PC more and you 3 PC less; you issue no credit note.`);
+  // What approving does, from the payer's side (the approval texts of 2026-11-18): nothing new signed by the agent, the
+  // other two sign by themselves within 20 minutes, the delivery stays accepted from the approval on.
+  assert.equal(ap.effect.if_approved, `Nothing new is signed by your agent. If the checks below pass, ${A.handle} and ${C.handle} sign within 20 minutes: their clients do it by themselves, and Valun signs for the agents it runs. With the last signature the tracker applies it: ${A.handle} then owes ${C.handle} 3 PC more and you 3 PC less, and you issue no IOU. From your approval on, the delivery stays accepted: if the transfer then fails or expires, the deal is payment due, your agent must pay again, and the delivery can no longer be disputed.`);
   // The D-1 wait is part of what a rejection means (fix 16): any payment only after T + 1 h + 60 s, except one through
-  // the same note while it is as this payment found it (the same-prior exemption).
-  assert.equal(ap.effect.if_rejected, `Nothing moves. The deal returns to delivered: your agent may accept again (paying only after ${new Date(tpl.timestamp + MAX_AGE_MS + FALLBACK_MARGIN_MS).toISOString()}, with its own credit note or any note it holds (${A.handle}'s included), since the tracker could still apply this payment until one hour after its timestamp; through ${A.handle}'s note at once, but only while ${A.handle}'s note to you is exactly as this payment found it (the tracker applies at most one of the two)) or dispute.`);
+  // the same note while it is as this payment found it (the same-prior exemption); and what Valun keeps (the hashes).
+  // And what stays blocked: no set-off on the payer's claim on the issuer until the deal is paid or disputed
+  // (paymentAttemptHolds: the rejected transfer's from-edge; staging's first-use round of 2026-11-18).
+  // Sooner too once Valun's journal proves it dead (either edge changed since its timestamp), and what valun 0.7.1, which
+  // isn't told, does (the review of PR #8).
+  assert.equal(ap.effect.if_rejected, `Nothing moves, and nothing reaches the tracker. Valun deletes your agent's three transfer signatures, keeping only their hashes. The deal goes back to delivered: your agent may pay again, or dispute the delivery. Valun lets it pay through ${A.handle}'s IOU at once, while that IOU is exactly as this payment found it (the tracker applies at most one of the two), and with its own IOU or any other IOU after ${new Date(tpl.timestamp + MAX_AGE_MS + FALLBACK_MARGIN_MS).toISOString()}, or sooner once either IOU this payment would have changed has changed since. Valun allows at most 3 payments by transfer of one deal in 24 hours, whatever became of them, and this is this deal's first. ${C.handle} sees that you rejected the payment, never your note. Until your agent pays this deal or disputes the delivery, no set-off touches your claim on ${A.handle}: no loop that includes what ${A.handle} owes you clears. Your agent isn't told: tell it.${payTrapOf(id, A.handle, tpl.timestamp)}`);
+  assert.equal(ap.decide_by, T_(vt).expires_at, 'the owner decides within the hold: 20 minutes after the agent posted it');
+  assert.match(ap.effect.deadline, /^Approve or reject by .*, 20 minutes after your agent signed it\./);
   assert.match(ap.effect.checks_on_approve, /totals, timestamps and signatures/); assert.match(ap.effect.checks_on_approve, /keys/); assert.match(ap.effect.checks_on_approve, /accepts/);
   assert.equal(ap.deal.status, 'completion_awaiting_owner');
   assert.deepEqual(Object.keys(own).slice(-2), ['credit_policy', 'features'], '/owner adds the credit policy and the features');
@@ -962,8 +979,9 @@ test('pay_by_transfer approval: review_deliveries holds the payment (nobody else
   // the inbox: the approval is deal-bound (awaiting_your_owner); the payment is under way for both parties
   const ib = ok(await call('GET', '/inbox', null, B.agent));
   assert.deepEqual(Object.keys(ib), INBOX_KEYS_ON);
+  // With whom it is, by handle as the other sections say it (staging's first-use round: read before you send again).
   assert.deepEqual(ib.awaiting_your_owner.find(x => x.deal_id === id), {approval_id: ap.id, deal_id: id, kind: 'pay_by_transfer', version: 1, terms_hash: d0.agreement.terms_hash,
-    title: d0.agreement.terms.service.title, price: {amount: 3, unit: 'PC'}});
+    title: d0.agreement.terms.service.title, price: {amount: 3, unit: 'PC'}, counterparty: C.handle});
   assert.deepEqual(ib.payments_in_progress.map(x => [x.deal_id, x.status, x.payment]), [[id, 'completion_awaiting_owner', payment]]);
   assert.equal(ib.consents_waiting_for_your_client, 0);
   for (const k of ['respond', 'deliver', 'review_delivery', 'waiting_on_others', 'recent_closed']) assert.ok(!ib[k].some(x => x.deal_id === id), `not in ${k}`);
@@ -1072,6 +1090,10 @@ test('pay_by_transfer approval gone stale: a moved edge or a changed policy make
   assert.equal(moved.response.success, true, JSON.stringify(moved.response));
   const st = refused(await decide(B, ap, 'approve'), 409, 'stale_payment');
   assert.deepEqual([st.reason, st.transfer_id, st.deal_status], ['edge_changed', vt, 'delivered']);
+  // Where the void left the deal, as the card's "Checked again when you approve" says (the review of PR #9, code 2-1),
+  // and until when a payment may have to wait, as the routes judge it (the final round): this payment's fallback_after,
+  // for both ways of paying (A3's note moved around Valun: the same note is not as the payment found it).
+  assert.equal(st.message, `${A3.handle}'s note to you or to ${C.handle} changed on the tracker (its total, timestamp or signature) since your agent signed this payment; nothing moved, and the approval is void: the deal is delivered again, and your agent may pay again or dispute the delivery; a payment may have to wait until ${new Date(T_(vt).fallback_after).toISOString()}`);
   const d = pilot.s.deals[id], tr = T_(vt);
   assert.deepEqual([pilot.s.approvals[ap.id].state, tr.state, tr.result.code, d.status, d.completion], ['void_stale', 'void_stale', 'edge_changed', 'delivered', null]);
   assert.ok(TRANSFER_SLOTS.every(s => !tr.slots[s.name]?.signature), 'purged');
@@ -1116,7 +1138,8 @@ test('pay_by_transfer approval from payment_due: a rejection or a stale approval
     second = ok(await pay(B, id, A));                                      // the same note on the same prior state
     assert.deepEqual([second.status, second.transfer.state], ['completion_awaiting_owner', 'awaiting_owner']);
     ap = await pendingApproval(B, id);
-    assert.equal(ap.effect.if_rejected, `Nothing moves. The deal returns to payment_due: the delivery stays accepted, and your agent must still pay it (only after ${new Date(T_(second.transfer.id).timestamp + MAX_AGE_MS + FALLBACK_MARGIN_MS).toISOString()}, with its own credit note or any note it holds (${A.handle}'s included), since the tracker could still apply this payment until one hour after its timestamp; through ${A.handle}'s note at once, but only while ${A.handle}'s note to you is exactly as this payment found it (the tracker applies at most one of the two)).`);
+    // A payment_due deal can no longer be disputed: only paying it frees the payer's claim on the issuer for set-offs.
+    assert.equal(ap.effect.if_rejected, `Nothing moves, and nothing reaches the tracker. Valun deletes your agent's three transfer signatures, keeping only their hashes. The deal stays payment due: the delivery stays accepted, and your agent must still pay it. Valun lets it pay through ${A.handle}'s IOU at once, while that IOU is exactly as this payment found it (the tracker applies at most one of the two), and with its own IOU or any other IOU after ${new Date(T_(second.transfer.id).timestamp + MAX_AGE_MS + FALLBACK_MARGIN_MS).toISOString()}, or sooner once either IOU this payment would have changed has changed since. Valun allows at most 3 payments by transfer of one deal in 24 hours, whatever became of them, and this is this deal's second. ${C.handle} sees that you rejected the payment, never your note. Until your agent pays this deal, no set-off touches your claim on ${A.handle}: no loop that includes what ${A.handle} owes you clears. Your agent isn't told: tell it.${payTrapOf(id, A.handle, T_(second.transfer.id).timestamp)}`);
     const dec = ok(await decide(B, ap, 'reject'));
     assert.deepEqual([dec.deal.status, dec.deal.completion?.by, dec.transfer.state], ['payment_due', B.id, 'void_rejected'], 'the acceptance stands');
     const d = await view(B, id);
@@ -1129,7 +1152,10 @@ test('pay_by_transfer approval from payment_due: a rejection or a stale approval
   ap = await pendingApproval(B, id);
   const toC = await basis.issueNote({issuer: A.pubkey, recipient: C.pubkey, total: 1, secretHex: A.secret});
   assert.equal(toC.response.success, true, JSON.stringify(toC.response));
-  assert.equal(refused(await decide(B, ap, 'approve'), 409, 'stale_payment').reason, 'edge_changed');
+  const stale = refused(await decide(B, ap, 'approve'), 409, 'stale_payment');
+  assert.equal(stale.reason, 'edge_changed');
+  const firstAt = Date.parse(T_(pilot.s.deals[id].transfer_ids[0]).created_at), isoOf = ms => new Date(ms).toISOString();
+  assert.ok(stale.message.endsWith(`; nothing moved, and the approval is void: the deal stays payment due, and your agent must still pay it; a payment with its own IOU may have to wait until ${isoOf(T_(third.transfer.id).fallback_after)}, and one by transfer until ${isoOf(firstAt + 864e5)}`), stale.message);
   assert.deepEqual([pilot.s.deals[id].status, pilot.s.deals[id].completion?.by, T_(third.transfer.id).state], ['payment_due', B.id, 'void_stale']);
   notAccepted(await call('GET', `/deals/${id}/transfer-template?issuer=${A.id}`, null, B.agent), 'payer', 'max_attempts_per_deal', 'three attempts in 24 hours');
 });
@@ -1415,7 +1441,10 @@ test('D-1 across kinds: the owner rejects a held bound note; a payment by transf
   const id = await delivered(B, C, 2), tpl = await boundTemplate(B, id);
   assert.equal(ok(await call('POST', `/deals/${id}/complete`, await boundCompleteBody(B, tpl), B.agent)).status, 'completion_awaiting_owner');
   const ap = await pendingApproval(B, id), until = tpl.timestamp + MAX_AGE_MS + FALLBACK_MARGIN_MS;
-  assert.ok(ap.effect.if_rejected.endsWith(` A payment by transfer can start only after ${new Date(until).toISOString()}: the tracker could still record this note until one hour after its timestamp.`), ap.effect.if_rejected);
+  // Then what stays blocked (paymentAttemptHolds: no set-off on the pair until the deal is paid or disputed), and what
+  // valun 0.7.1 does with the rejected note (the approval probe's D2): it keeps it as a payment attempt.
+  assert.ok(ap.effect.if_rejected.includes(` If it were sent, the tracker could still record it until ${new Date(tpl.timestamp + MAX_AGE_MS).toISOString()}, so paying this deal by transfer waits until ${new Date(until).toISOString()}, unless the first change to this key pair's IOU signed after this one moves it from 0 PC, the total this one acknowledged, as a later IOU of your agent's to ${C.handle} on this key pair does when nothing else changed the pair first: Valun then doesn't wait for this one. Until your agent pays this deal or disputes the delivery, no set-off touches this pair: no loop that includes what you owe ${C.handle} clears. Your agent isn't told: tell it. valun 0.7.1 isn't told either, and keeps counting this IOU as a payment that may still apply. `), ap.effect.if_rejected);
+  assert.ok(ap.effect.if_rejected.endsWith(`run \`valun attempts resolve ${id} '#n' --not-applied\` in a terminal (#n from \`valun attempts list\`; in Hermes, \`hermes -p valun valun attempts ...\`): Valun never sent this IOU. Then have your agent pay again once ${new Date(tpl.timestamp + MAX_AGE_MS + 120e3).toISOString()} has passed.`), ap.effect.if_rejected);
   ok(await decide(B, ap, 'reject'));
   assert.equal(pilot.s.deals[id].status, 'delivered');
   const w = refused(await call('GET', `/deals/${id}/transfer-template?issuer=${A.id}`, null, B.agent), 409, 'transfer_window_open', 'the rejected note can still apply');

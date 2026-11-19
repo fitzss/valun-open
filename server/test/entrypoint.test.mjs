@@ -5,7 +5,10 @@
 //   - a demo tracker that exits without writing its id: the app starts at once, with BASIS_TRACKER_NFT_ID empty (the
 //     server then runs the network without the desk: test/desk-optional.test.mjs), and the app is still watched;
 //   - the platform's stop (SIGTERM) with the demo tracker already gone still stops the app and the pilot tracker and
-//     exits 0 (Linux only: on Windows a child cannot be sent a signal bash can trap).
+//     exits 0 (Linux only: on Windows a child cannot be sent a signal bash can trap);
+//   - fix inbox #155 (the local-readiness audit, FB-4; test R-6 is test/start-local-env.unit.test.mjs): off Fly with
+//     VALUN_ENVIRONMENT unset it says, once, that the server it starts gives agents the public network's instructions;
+//     on Fly, and with VALUN_ENVIRONMENT=local or staging, it says nothing; the app starts the same either way.
 // Needs bash (Git for Windows on Windows, /bin/bash elsewhere) and node; no tracker binary. The image's copy of the app
 // does not hold the entrypoint (it is outside the app folder), so there these tests are skipped with the reason.
 // Run: node --test test/entrypoint.test.mjs
@@ -72,8 +75,9 @@ setInterval(() => { if (fs.existsSync(out + '/app-die')) process.exit(5); }, 100
 setTimeout(() => process.exit(9), 60000);
 `;
 const posix = p => p.replace(/\\/g, '/');
-// The fake image and data folder; start() runs the entrypoint over them (with none of this process's PILOT_, BASIS_,
-// VALUN_ or ERGO_ settings). When the test file ends every fake is told to stop (each also stops on its own after 60 s).
+// The fake image and data folder; start(extra) runs the entrypoint over them with the settings `extra` gives (and none
+// of this process's PILOT_, BASIS_, VALUN_, ERGO_ or FLY_ settings: a machine that has Fly's would look like Fly). When
+// the test file ends every fake is told to stop (each also stops on its own after 60 s).
 function fakeContainer() {
   const opt = tmp(), data = tmp(), out = tmp();
   fs.mkdirSync(path.join(opt, 'bin')); fs.mkdirSync(path.join(opt, 'app'));
@@ -83,10 +87,10 @@ function fakeContainer() {
   fs.mkdirSync(path.join(data, 'tracker'), {recursive: true}); fs.mkdirSync(path.join(data, 'pilot', 'tracker'), {recursive: true});
   cleanups.push(() => { for (const f of [path.join(data, 'tracker', 'die'), path.join(data, 'pilot', 'tracker', 'die'), path.join(out, 'app-die')]) fs.writeFileSync(f, ''); });
   const appInfo = () => fs.existsSync(path.join(out, 'app.json')) && JSON.parse(fs.readFileSync(path.join(out, 'app.json'), 'utf8'));
-  const start = () => {
-    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(PILOT_|BASIS_|VALUN_|ERGO_)/.test(k)));
+  const start = (extra = {}) => {
+    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(PILOT_|BASIS_|VALUN_|ERGO_|FLY_)/.test(k)));
     const c = spawn(BASH, [posix(path.join(root, 'scripts', 'docker-entrypoint.sh'))], {stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
-      env: {...env, VALUN_ROOT: posix(opt), VALUN_DATA: posix(data), FAKE_OUT: out, PATH: `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH}`}});
+      env: {...env, ...extra, VALUN_ROOT: posix(opt), VALUN_DATA: posix(data), FAKE_OUT: out, PATH: `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH}`}});
     children.push(c);
     const e = {child: c, log: '', code: null};
     c.stderr.on('data', d => { e.log += d; }); c.stdout.on('data', d => { e.log += d; });
@@ -142,4 +146,28 @@ test('the platform\'s stop (SIGTERM) with the demo tracker already gone stops th
   assert.equal(await e.exited, 0, e.log);
   assert.doesNotMatch(e.log, /a process exited; stopping/, 'stopped by the trap, not by an exit');
   assert.ok(!alive(app.pid), 'the app was stopped before the entrypoint exited');
+});
+
+// Fix inbox #155 (the local-readiness audit, FB-4): the hosted image run under Docker on someone's own machine started a
+// server whose docs and pages are the public network's, and nothing said so. The warning, word for word.
+const OFF_FLY = setting => `docker-entrypoint: warning: not on Fly, and ${setting}: this is the image of Valun's public servers, so the server it `
+  + 'starts gives agents the public network\'s docs and pages, whose joins name no server: the client then uses its default, the public network '
+  + 'at https://valun.tech, not this server. To run Valun on your own machine, with no chain, use the local image (Dockerfile.local; docs/LOCAL.md).';
+test('off Fly with VALUN_ENVIRONMENT unset (or a value the server ignores) the entrypoint says, once, that the server it starts gives agents the public network\'s instructions; on Fly, and with local or staging, it says nothing; the app starts the same either way', async t => {
+  if (!canRun(t)) return;
+  // Fly sets both FLY_APP_NAME and FLY_MACHINE_ID in every Machine; either is enough.
+  const runs = [[{}, OFF_FLY('VALUN_ENVIRONMENT is unset')], [{VALUN_ENVIRONMENT: ''}, OFF_FLY('VALUN_ENVIRONMENT is unset')],
+    [{VALUN_ENVIRONMENT: 'Local'}, OFF_FLY('VALUN_ENVIRONMENT is Local, which the server ignores')],
+    [{FLY_APP_NAME: 'valun-testnet', FLY_MACHINE_ID: 'fake-machine-id'}, null], [{FLY_APP_NAME: 'valun-staging'}, null], [{FLY_MACHINE_ID: 'fake-machine-id'}, null],
+    [{FLY_APP_NAME: 'valun-staging', FLY_MACHINE_ID: 'fake-machine-id', VALUN_ENVIRONMENT: 'staging'}, null], [{VALUN_ENVIRONMENT: 'staging'}, null], [{VALUN_ENVIRONMENT: 'local'}, null]];
+  for (const [extra, want] of runs) {
+    const {data, start, appInfo} = fakeContainer(), at = JSON.stringify(extra);
+    const e = start(extra);
+    const app = await until(`${at}: the app started (entrypoint: ${e.log.slice(-300)})`, appInfo);
+    assert.deepEqual([app.env.BASIS_TRACKER_NFT_ID, app.env.PILOT_TRACKER_NFT_ID, app.env.PILOT_TRACKER_URL], ['a'.repeat(64), 'b'.repeat(64), 'http://127.0.0.1:3058'], at);
+    assert.deepEqual(e.log.split('\n').filter(l => /warning/i.test(l)), want ? [want] : [], at);
+    // Then stopped, as the pilot tracker's exit stops the container.
+    fs.writeFileSync(path.join(data, 'pilot', 'tracker', 'die'), '');
+    assert.equal(await e.exited, 1, `${at}: ${e.log}`);
+  }
 });

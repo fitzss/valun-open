@@ -28,7 +28,10 @@
 //   expiry       what the lazy sweep (Pilot.sweep) does with the deal once its time passes, or null (nothing expires):
 //                'offer'           past the current version's offer_expires_at the deal is expired;
 //                'held_acceptance' past offer_expires_at an acceptance still waiting for an owner expires with it;
-//                'delivery'        past deliver_by + the grace period the deal is expired_undelivered (OQ-8).
+//                'delivery'        past deliver_by + the grace period the deal is expired_undelivered (OQ-8);
+//                'held_note'       a bound credit note held for the payer's owner, past its deadline (its timestamp +
+//                                  the tracker's maximum age, less a minute to send it: Pilot.expireHeldNote): the
+//                                  approval is void_expired and the deal is released as after a rejection.
 //   actions      {payer, payee}: which next_actions each party's deal view lists (Pilot.nextActions), or null (none):
 //                'offer'           accept, decline or counter the other party's offer; withdraw one's own;
 //                'held_acceptance' wait for the owner (the proposer may still withdraw its offer);
@@ -45,7 +48,7 @@ export const INBOX_SECTIONS = Object.freeze(['respond', 'deliver', 'review_deliv
 export const POSITION_BUCKETS = Object.freeze(['credit_notes_issued', 'open', 'agreed_note_not_issued', 'disputed', 'declined', 'expired_or_withdrawn']);
 export const BUCKETS = Object.freeze([...POSITION_BUCKETS, 'paid_by_transfer']);
 export const REVOKE_ACTIONS = Object.freeze(['cancel', 'void_held_note', 'void_transfer', 'keep']);
-export const EXPIRY_KINDS = Object.freeze(['offer', 'held_acceptance', 'delivery']);
+export const EXPIRY_KINDS = Object.freeze(['offer', 'held_acceptance', 'delivery', 'held_note']);
 export const ACTION_SETS = Object.freeze(['offer', 'held_acceptance', 'wait_for_owner', 'deliver', 'review', 'pay', 'paying', 'wait_for_consents']);
 
 const entry = (committed, reserved, terminal, offer_phase, bucket, payer_inbox, payee_inbox, revoke, {expiry = null, payer = null, payee = null} = {}) =>
@@ -60,7 +63,7 @@ export const STATUS_CLASS = Object.freeze({
   accepted_awaiting_owner: offer(false, 'waiting_on_counterparty_owner', true, 'held_acceptance', 'held_acceptance'),
   agreed: unpaid('waiting_on_others', 'deliver', 'keep', {expiry: 'delivery', payee: 'deliver'}),
   delivered: unpaid('review_delivery', 'waiting_on_others', 'keep', {payer: 'review'}),
-  completion_awaiting_owner: unpaid(null, 'waiting_on_others', 'void_held_note', {payer: 'wait_for_owner', payee: 'wait_for_owner'}),
+  completion_awaiting_owner: unpaid(null, 'waiting_on_others', 'void_held_note', {expiry: 'held_note', payer: 'wait_for_owner', payee: 'wait_for_owner'}),
   issuing_note: unpaid(null, null),
   note_failed: unpaid('review_delivery', null, 'keep', {payer: 'pay'}),
   paying_by_transfer: unpaid('waiting_on_others', 'waiting_on_others', 'void_transfer', {payer: 'paying', payee: 'wait_for_consents'}),

@@ -31,8 +31,8 @@ export const KIND_WORDS = Object.freeze({operator: 'operator-run', team: 'team t
 // IOU (a payment), 998 a set-off (a loop cleared part of it), 999 a debt transfer (it was passed on).
 export const HOW = Object.freeze({997: 'New IOU', 998: 'A loop cleared part of it', 999: 'Passed on'});
 // A line's brightness reads its amount in these steps, as public/network.js sizes its arrows (fix inbox #72): in raw
-// nanoERG every line sat at the brightest.
-const SIZE_SCALE = Object.freeze({nanoERG: 1_000_000});
+// nanoERG every line sat at the brightest. A PC is the same size (1 PC is 1,000,000 nanoERG: lib/pilot/units.mjs).
+const SIZE_SCALE = Object.freeze({nanoERG: 1_000_000, PC: 1});
 const TILT = 0.36, PERSP = 3.4;
 const RAINBOW = ['#ff5a5f', '#ffc145', '#3ddc97', '#4f7cff', '#9b5cff'];
 
@@ -125,10 +125,13 @@ export function tergRounded(n, digits = 3) {
 }
 // An amount as people read it: nanoERG of Ergo testnet in tERG, rounded. An amount whose unit no read named as nanoERG
 // shows no number: in the wrong unit it would be read 1,000,000 times too large (the stats line once said "104,475,000
-// credits cancelled" for 0.104475 tERG).
+// credits cancelled" for 0.104475 tERG). Where the reads name PC, the unit of the network with no chain that a local
+// server runs (valun-pilot-1), the amount is whole PC, as public/network.js shows it ("3 PC"); the landing said "– tERG"
+// there (fix inbox #146). Only a read naming PC gives PC: the testnet's name nanoERG.
 export function money(n, unit, digits = 3) {
-  const known = n != null && Number.isFinite(Number(n)) && unit === 'nanoERG';
-  return {n: known ? tergRounded(n, digits) : '–', u: 'tERG'};
+  const number = n != null && Number.isFinite(Number(n));
+  if (unit === 'PC') return {n: number ? Number(n).toLocaleString('en-US') : '–', u: 'PC'};
+  return {n: number && unit === 'nanoERG' ? tergRounded(n, digits) : '–', u: 'tERG'};
 }
 // An open IOU's line brightness before depth: 0.15 for 0.001 tERG, 0.33 for 0.021 (at most 0.5); a neutral 0.18 when the
 // unit is not known.

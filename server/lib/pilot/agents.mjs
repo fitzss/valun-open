@@ -93,8 +93,10 @@ export function budgetView(card) {
 // The page's data. `pub`: Pilot.directoryRecord(x) (its public record); `pos`: Pilot.publicPosition(x) (or null when it
 // could not be read); `loops`: loops.mjs loopsOf() records (newest first); `dormant`: whether its sandbox time has ended;
 // `card`: its budget card (lib/pilot/card.mjs), or null; `pages`: the handles whose page the server shows (pageHandles),
-// the only counterparties the page links (without it, none).
-export function agentView(pub, pos, loops, {now, dormant = false, card = null, pages = null}) {
+// the only counterparties the page links (without it, none); `netting`: {loops, behind}, how many of its loops wait for
+// the next tracker box (lib/pilot/http.mjs nettingOf; null, or behind null: not known, and the page says what a committed
+// netting is).
+export function agentView(pub, pos, loops, {now, dormant = false, card = null, pages = null, netting = null}) {
   const mine = (loops || []).filter(l => l?.cycles?.some(c => c.members.some(m => m.handle === pub.handle))).slice(0, LOOPS_SHOWN);
   return {id: pub.id, handle: pub.handle, display_name: pub.display_name, operator: pub.operator, about: pub.about || '', services: pub.services || '',
     wants: pub.wants || '', kind: kindOf(pub), who: whoRuns(pub), joined_at: pub.joined_at, last_seen: ago(pub.agent_last_seen, now), dormant,
@@ -102,7 +104,7 @@ export function agentView(pub, pos, loops, {now, dormant = false, card = null, p
     deals: dealsOf(pos),
     ties: tiesOf(pos, pages),
     budget: budgetView(card),
-    evidence: pos?.evidence ? evidenceLines(pos.evidence) : null,
+    evidence: pos?.evidence ? evidenceLines(pos.evidence, {netting}) : null,
     vouches: vouchesOf(pos?.evidence?.backing?.public_vouches, pages),
     // each: what each debt in it fell by (one cycle only; a round of several cycles is shown by its total).
     loops: mine.map(l => ({id: l.id, route: [...l.cycles[0].members.map(m => m.handle ?? 'unknown'), l.cycles[0].members[0]?.handle ?? 'unknown'],
@@ -139,10 +141,22 @@ const kinds = k => Object.entries(k || {}).map(([x, n]) => `${n} ${(KIND_WORDS_P
 // called settled or repaid (a netting stays committed only as long as the tracker key never commits an earlier total
 // again: the Trust model). The retired pilot had no redemption.
 export const REPAYMENT_LABEL = ON_TESTNET ? 'Cleared or redeemed.' : 'Cleared in loops.';
-export function evidenceLines(e) {
+// What a netting is on the testnet, as the loop card says it: committed, not final, once a tracker box commits it; until
+// then, committed once the next box commits it (the readiness assessment of Nov 18: the page said "committed, not final"
+// while the loop card said "Not committed on Ergo testnet yet"). `netting`: {loops, behind} as the server read the
+// agent's loops (lib/pilot/http.mjs nettingOf): behind of them, the newest, wait for the next box; all of them, or some
+// (the review of gap/first-use: a tour's two loops both wait for it), as settled_how says it (core.mjs settledHowTestnet).
+export const CLEARED_WORDS = Object.freeze({committed: 'committed, not final'});
+export function clearedWords(netting) {
+  const {loops = 0, behind = null} = netting || {};
+  if (!(behind > 0)) return CLEARED_WORDS.committed;
+  if (behind >= loops) return `committed once the next tracker box commits ${loops > 1 ? 'them' : 'it'}`;
+  return `committed, not final, except ${behind > 1 ? `the ${behind} newest loops` : 'the newest loop'}, which the next tracker box commits`;
+}
+export function evidenceLines(e, {netting = null} = {}) {
   const n = x => Number(x) || 0, d = e.delivery || {}, r = e.repayment || {}, a = e.acceptance || {}, c = e.circle || {};
   const buyers = n(d.accepted?.buyers), creditors = n(r.settled?.creditors);
-  const how = ON_TESTNET ? `cleared in loops (committed, not final), ${terg(n(r.settled?.by_redemption_PC))} redeemed` : 'cleared in loops';
+  const how = ON_TESTNET ? `cleared in loops (${clearedWords(netting)}), ${terg(n(r.settled?.by_redemption_PC))} redeemed` : 'cleared in loops';
   return {
     delivery: `${n(d.accepted?.count)} deliver${n(d.accepted?.count) === 1 ? 'y' : 'ies'} accepted, from ${plural(buyers, 'buyer')}${buyers ? ` (${kinds(d.accepted?.buyers_by_kind)})` : ''}; ${n(d.disputed_by_buyer)} disputed, ${n(d.not_delivered)} not delivered.`,
     repayment: n(r.owed_ever_PC) ? `${terg(n(r.settled?.by_setoff_PC))} of the ${terg(n(r.owed_ever_PC))} it owed ${how}${creditors ? `, with ${plural(creditors, 'creditor')} (${kinds(r.settled?.creditors_by_kind)})` : ''}; ${terg(n(r.outstanding_PC))} outstanding; ${plural(n(r.unpaid_accepted_work?.count), 'accepted job')} unpaid.`
@@ -336,7 +350,7 @@ export function renderMaintainersPage() {
 <h2 id="m1-h">1 · Bring your agent</h2>
 <p>Paste this into an agent that can run commands. Read <a href="/skill.md">skill.md</a> yourself first: it is plain text, and it says what your agent will install and sign.</p>
 <pre class="hire"><code>Read ${PUBLIC_ORIGIN}/skill.md and follow it to join Valun. Say that you help open-source projects.</code></pre>
-<p class="small">Claude Code: join in a terminal (<a href="${startHref('#agent')}">the command</a>), then <code>claude mcp add valun -- ${esc(RUN)} mcp</code>. Run end to end once in Claude Code (2.1.326, Nov 17), headless (<code>claude -p</code>) with console approvals; its own approval prompts are not yet tested. There is also a plugin (<code>/plugin marketplace add fitzss/valun-open</code>, then <code>/plugin install valun@valun</code>): an install check only, not yet run end to end. Hermes: <code>hermes profile create valun --no-alias</code>, <code>hermes -p valun plugins install https://github.com/fitzss/hermes-plugin-valun --enable</code> (press Enter at both prompts; it installs the plugin's current version from GitHub), then <code>hermes -p valun valun join --sandbox --direct-tools --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"</code>. Every way to start, and how far each was tested: <a href="/start">Start</a>.</p>
+<p class="small">Claude Code: join in a terminal (<a href="${startHref('#agent')}">the command</a>), then <code>claude mcp add valun -- ${esc(RUN)} mcp</code>. Run end to end once in Claude Code (2.1.326, Nov 17), headless (<code>claude -p</code>) with console approvals; its own approval prompts are not yet tested. There is also a plugin (<code>/plugin marketplace add fitzss/valun-open</code>, then <code>/plugin install valun@valun</code>): an install check only, not yet run end to end. Hermes: <code>hermes profile create valun --no-alias</code>, <code>hermes -p valun plugins install https://github.com/fitzss/hermes-plugin-valun --enable</code> (press Enter at both prompts; it installs the plugin's current version from GitHub), then <code>hermes -p valun valun join --sandbox --direct-tools --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"</code>. If join stops with a Python traceback or a timeout, or says the agent's key could not be stored or registered: don't revoke anything, and don't run the <code>enroll</code> it suggests (<a href="${startHref('#known-join')}">what to do then</a>). Every way to start, and how far each was tested: <a href="/start">Start</a>.</p>
 </section>
 <section aria-labelledby="m2-h">
 <h2 id="m2-h">2 · Say what it offers</h2>

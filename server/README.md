@@ -61,21 +61,28 @@ described beside their hashes in `lib/pilot/pins.mjs`, and the v4 fork's source 
   8080, from `dist/bin/basis_server` and `dist/bin/valun_signer`. `fly.testnet.toml` is the testnet's (one 512 MB
   machine and a 1 GB volume at `/data`) and `fly.staging.toml` staging's: a push to `main` that passes CI deploys
   staging, and the testnet changes only through the manual `promote-testnet` workflow.
-- **A Windows development machine:** the binaries run in a WSL distro. Run `node scripts/start-local.mjs`, which starts
-  the trackers in WSL and the app on `http://127.0.0.1:4320`.
+  It is the public servers' image: run off Fly without `VALUN_ENVIRONMENT`, its server gives agents the public
+  network's instructions, and its entrypoint says so at start (so does the server, on `valun-pilot-1`, the default).
+  To run Valun on your own machine, use `Dockerfile.local` (below).
+- **A Windows development machine:** the binaries run in a WSL distro. Run `node scripts/start-local.mjs` (`npm run
+  local`), which starts the trackers in WSL, the network on `http://127.0.0.1:4320` as a local server
+  (`VALUN_ENVIRONMENT=local`, as the local image runs it: its pages and agent docs name only that server), and the
+  older credit-desk demo alone on `http://127.0.0.1:4321` (`VALUN_DESK_PORT`; its pages and agent docs are the public
+  network's).
 
 Settings (environment):
 
 | Variable | Effect |
 |---|---|
 | `PILOT_NETWORK` | `valun-pilot-1` (the default: PC, no chain) or `valun-testnet-1` (nanoERG of Ergo testnet, the tracker anchored on chain). |
-| `VALUN_PUBLIC_ORIGIN` | The https origin the network's links name (loop cards, agent pages, the A2A card, llms.txt): `https://valun.tech` on the testnet. On a local server also `http://` on loopback with a port; there it is `http://127.0.0.1:PORT` by default. |
-| `VALUN_ENVIRONMENT` | `staging` (staging's banner) or `local`: a local server with no chain, on `valun-pilot-1` only (see "A local server with no chain" below). |
+| `VALUN_PUBLIC_ORIGIN` | The https origin the network's links name (loop cards, agent pages, the A2A card, llms.txt): `https://valun.tech` on the testnet. On a local server also `http://` on loopback with a port; there it is `http://127.0.0.1:PORT` by default, and the public network's hosts (`valun.tech`, `*.fly.dev`) and the Ergo explorer's are refused. |
+| `VALUN_ENVIRONMENT` | `staging` (staging's banner) or `local`: a local server with no chain, on `valun-pilot-1` only (see "A local server with no chain" below). Off Fly, a `valun-pilot-1` server without `local` warns at start that it gives agents the public network's instructions, which send them to `https://valun.tech`. |
 | `PILOT_OPEN_SANDBOX=1` | Self-serve joins: no invite; small limits; 7 days, renewed while the agent is active. |
 | `PILOT_OPEN_NETWORK=1` | Self-serve agents deal with anyone whose owner allows it, not only the sandbox agents. Unset it to box them in again at once. |
 | `PILOT_CIRCULATION` | `off`, `bound`, `sandbox` or `on`: circulating credit (debt transfers and set-offs). It takes effect only on a pinned tracker (`lib/pilot/pins.mjs`). |
 | `PILOT_PUBLIC_CACHE_MS` | The burst cache of the public reads, 3000 ms by default; 0 turns it off. |
-| `VALUN_TRUST_FLY_CLIENT_IP=1` | Read the client address from Fly's proxy header, for the rate limits. |
+| `PILOT_SANDBOX_JOINS_PER_HOUR_PER_ADDRESS`, `PILOT_SANDBOX_JOINS_PER_HOUR`, `PILOT_SANDBOX_JOINS_PER_DAY`, `PILOT_WRITES_PER_MINUTE_PER_ADDRESS`, `PILOT_WRITES_PER_MINUTE_PER_TOKEN`, `PILOT_READS_PER_MINUTE_PER_ADDRESS`, `PILOT_READS_PER_MINUTE_PER_TOKEN` | A local server's limits (`VALUN_ENVIRONMENT=local` only; `lib/pilot/limits.mjs`): self-serve joins an hour from one address (12 by default), an hour from all addresses (40) and in any 24 hours (200); writes a minute per client address (90) and per token (90); reads a minute per client address (1800) and per token (360). Each a whole number from 1 to 1000000; any other value stops the server. `GET /pilot/v1/info` names the limits in force (`limits`). A hosted server ignores them, and says so at start. |
+| `VALUN_TRUST_FLY_CLIENT_IP=1` | Read the client address from Fly's proxy header, for the rate limits (on Fly). A local server ignores it, and says so: it counts each client by the address it connects from, and the local image's entrypoint never passes it on. |
 | `VALUN_WRITE_TOKEN` | A passphrase for the demo console's writes. |
 
 The admin routes (`/pilot/v1/admin/*`, for invites) answer only on loopback, with a token the server generates and
@@ -99,23 +106,45 @@ tracker's Linux binaries, and their source isn't public yet either (fix inbox #9
 
 ```
 docker run --rm -p 127.0.0.1:8080:8080 -v valun-local:/data -e PILOT_OPEN_SANDBOX=1 -e PILOT_OPEN_NETWORK=1 ghcr.io/fitzss/valun-local:latest
-uvx --from valun==0.7.1 valun config server http://127.0.0.1:8080
-uvx --from valun==0.7.1 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file owner-token.txt
-uvx --from valun==0.7.1 valun sandbox tour --yes
+uvx --from valun==0.7.1 valun --profile local join --sandbox --server http://127.0.0.1:8080 --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt" --approvals console
+uvx --from valun==0.7.1 valun --profile local sandbox tour --yes --server http://127.0.0.1:8080
 ```
 
-- **Build it** with the tracker's Linux binaries (`basis_server`, `valun_signer`) for each platform in
-  `dist/local-bins/amd64/` and `dist/local-bins/arm64/` (their recipe is beside the v4.4.1 pin in `lib/pilot/pins.mjs`):
-  `docker buildx build -f Dockerfile.local --platform linux/amd64,linux/arm64 -t valun-local .`. At every start the
-  entrypoint (`scripts/local-entrypoint.sh`) computes the binary's sha256: circulating credit runs only on a pinned one.
+With `--approvals console`, each commitment the tour makes waits for you in the owner console,
+`http://127.0.0.1:8080/pilot#owner`, with the token from that file (about 8 times); an agent a script drives joins with
+`--approvals none` instead. `docs/LOCAL.md` is the guide: install, first use, many agents, isolation, inspection,
+restart and reset, troubleshooting, and what the image holds and how to check it. `docs/LOCAL-ACCEPTANCE.md` is the
+checklist an outsider runs against a release. The image carries both, and this file, in `/opt/valun`.
+
+- **Every command names a profile and this server:** the client's default server is the public testnet. Run every
+  command in `--profile local` (several agents each in a client home of its own: `VALUN_HOME`, with
+  `VALUN_SERVER=http://127.0.0.1:8080`), and give every join `--server http://127.0.0.1:8080`. valun 0.7.1's own
+  printed hints leave out `--server`: never run them as printed (`docs/LOCAL.md`, "Keep the public network out of
+  it").
+- **Build it** with, for each platform, the tracker's Linux binaries (`basis_server`, `valun_signer`) in
+  `dist/local-bins/<arch>/` (`lib/pilot/pins.mjs` pins their sha256; the tracker fork's source and its build recipe
+  aren't public yet, fix inbox #99) and the image's license files in `dist/local-licenses/<arch>/` (see
+  `Dockerfile.local`):
+  `docker buildx build -f Dockerfile.local --build-arg VALUN_BUILD_SHA=<full commit id> --platform linux/amd64,linux/arm64 -t valun-local .`
+  (`VALUN_BUILD_SHA`: the commit it is built from, which `GET /pilot/v1/info` then names as `build`; without it the image
+  names none). At every start the entrypoint (`scripts/local-entrypoint.sh`) computes the binary's sha256: circulating
+  credit runs only on a pinned one.
 - **Why not `valun-testnet-1`:** that network needs its tracker on Ergo testnet, and the released clients tell their
   agents its tracker anchors its state there. The server refuses `VALUN_ENVIRONMENT=local` with it.
 - **Another port** (`-p 127.0.0.1:9000:8080`): add `-e VALUN_PUBLIC_ORIGIN=http://127.0.0.1:9000`, the origin its links
   and banner name. `PILOT_CIRCULATION`, `PILOT_OPEN_SANDBOX` and `PILOT_OPEN_NETWORK` can be changed with `-e` too.
-- **Many agents:** a self-serve join is limited to 12 an hour from one address. Invited joins are not: make an invite
-  inside the container (`docker exec CONTAINER node scripts/pilot-admin.mjs invite --uses 25`) and join with
-  `valun join --invite-from-stdin`. An invited participant has the invited defaults, not a sandbox participant's (its
-  owner names whose IOUs it accepts), and the sandbox tour is for sandbox participants.
+- **Many agents:** every client on your machine reaches the container through the published port from one address, so
+  they share its limits: 12 self-serve joins an hour (40 an hour and 200 in any 24 hours from all addresses), and 90
+  writes and 1,800 reads a minute (each token also has 90 writes and 360 reads a minute). A refusal is
+  `429 rate_limited` (`sandbox_full` for the 24 hours) with `retry_after_ms`, how long to wait. For a scale test, start
+  it with higher limits (the settings above), for example `-e PILOT_SANDBOX_JOINS_PER_HOUR_PER_ADDRESS=100` and
+  `-e PILOT_WRITES_PER_MINUTE_PER_ADDRESS=6000`; `GET /pilot/v1/info` names the limits in force (`limits`). Invited
+  joins count in no join cap: make an invite inside the container
+  (`docker exec CONTAINER node scripts/pilot-admin.mjs invite --uses 25 --code-only` prints only its code), then join
+  each agent with it, in a client home of its own, only the code on stdin:
+  `uvx --from valun==0.7.1 valun --profile local join --invite-from-stdin --server http://127.0.0.1:8080 --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt" --approvals console`.
+  An invited participant has the invited defaults, not a sandbox participant's (its owner names whose IOUs it
+  accepts), and the sandbox tour is for sandbox participants (`docs/LOCAL.md`, "Many agents on one machine").
 - **Check a started container** with `scripts/local-acceptance.sh [URL]`: the released client joins, takes the tour, and
   the server's `GET /pilot/v1/loops` must show a set-off it was in.
 
@@ -128,6 +157,10 @@ uvx --from valun==0.7.1 valun sandbox tour --yes
 - **Tests that need no tracker** run in CI (`.github/workflows/ci.yml`); they include `unit`, `a2a`, `agent-page`,
   `close-the-loop`, `start-page`, `console`, `network-page`, `operations` and `policy.unit`.
 - **`scripts/a2a-sdk-check.py`** drives the A2A endpoint with the official `a2a-sdk` client (1.x or 0.3).
+- **`scripts/client-071-attempts.py`** runs the released client's own payment-attempt rules (valun 0.7.1's novation.py)
+  on each case the IOU card, the payment card and the docs describe after a rejected or expired IOU or payment by
+  transfer: `uv run --no-project --with valun==0.7.1 python -I scripts/client-071-attempts.py`. CI runs it on the
+  released wheel, pinned by hash (`scripts/client-071-requirements.txt`).
 
 ## Status and limits
 

@@ -5,11 +5,14 @@
 # published; then the Valun app on ${HOST:-0.0.0.0}:${PORT:-8080} in local mode (VALUN_ENVIRONMENT=local,
 # lib/environment.mjs: GET /pilot/v1/info and every page say "local: no chain"). The network is valun-pilot-1 (PC,
 # synthetic credits with no monetary value): the one network with no chain, and the one the released clients describe as
-# having none. If the tracker or the app exits, the container exits. No legacy desk runs (its /api and /mcp answer 503).
+# having none. If the tracker or the app exits, the container exits. No legacy desk runs (/api and /mcp answer 404:
+# agents run their MCP server on their own machine, `valun --profile local mcp`).
 # Settings (Dockerfile.local's ENV), each can be changed with docker run -e: PILOT_OPEN_SANDBOX=1 (self-serve joins),
 # PILOT_OPEN_NETWORK=1 (self-serve agents deal with anyone), PILOT_CIRCULATION=on (debt transfers and set-offs, on a
 # pinned tracker only), PORT, and VALUN_PUBLIC_ORIGIN (the origin its links name; by default http://127.0.0.1:$PORT).
-# Data (a volume at /data): the tracker's notes in /data/pilot/tracker, the network's state in /data/pilot.
+# Data (a volume at /data): the tracker's notes in /data/pilot/tracker (its output in stdout.log, the start before's in
+# stdout.log.1), the network's state in /data/pilot, and there the revision of the image that last started on it
+# (image-revision).
 # VALUN_ROOT / VALUN_DATA default to the container layout; they are overridable for a rehearsal outside Docker.
 set -euo pipefail
 ROOT=${VALUN_ROOT:-/opt/valun}; DATA=${VALUN_DATA:-/data}
@@ -26,8 +29,33 @@ if [ "$NETWORK" != valun-pilot-1 ]; then
   say "PILOT_NETWORK=$NETWORK: this image has no chain and runs only valun-pilot-1 (valun-testnet-1 needs its tracker on Ergo testnet)"
   exit 2
 fi
+# The tracker's port on the container's loopback (PILOT_BASIS_PORT, 3058 by default; another one lets two servers share
+# a network namespace). A port number, and never 3048: that is where the legacy desk looks for its demo tracker
+# (server.mjs: BASIS_TRACKER_URL, unset below), and a desk that found this network's tracker there would seed demo
+# notes into it and read the public Ergo explorer (the local-readiness audit, FB-15). The app builds no desk in local
+# mode either; this keeps the two apart whatever the app does. Compared as a number: 03048 is 3048 to the tracker.
+TRACKER_PORT=${PILOT_BASIS_PORT:-3058}
+case "$TRACKER_PORT" in
+  ''|*[!0-9]*) say "PILOT_BASIS_PORT=$TRACKER_PORT: the tracker's port must be a number"; exit 2 ;;
+esac
+if [ "${#TRACKER_PORT}" -gt 5 ] || [ "$((10#$TRACKER_PORT))" -lt 1 ] || [ "$((10#$TRACKER_PORT))" -gt 65535 ]; then
+  say "PILOT_BASIS_PORT=$TRACKER_PORT: the tracker's port must be 1 to 65535"; exit 2
+fi
+if [ "$((10#$TRACKER_PORT))" = 3048 ]; then
+  say "PILOT_BASIS_PORT=$TRACKER_PORT: 3048 is the legacy demo desk's tracker port, which a local server keeps free: use another (3058 by default)"
+  exit 2
+fi
+TRACKER_PORT=$((10#$TRACKER_PORT))
 # No legacy desk: its demo tracker does not run here, so the app runs the network without it.
 unset BASIS_TRACKER_NFT_ID BASIS_TRACKER_URL
+# Never behind Fly's proxy: the app counts each client by the address it connects from, not by a Fly-Client-IP header the
+# client sends (VALUN_TRUST_FLY_CLIENT_IP, the hosted servers' setting on Fly: with it, any client that reaches the port
+# names its own address, and so gets budgets of its own; the local-readiness audit, IMG-2). The app ignores it in local
+# mode too. To give agents more room, raise the limits (PILOT_WRITES_PER_MINUTE_PER_ADDRESS and the others).
+if [ -n "${VALUN_TRUST_FLY_CLIENT_IP:-}" ]; then
+  say "VALUN_TRUST_FLY_CLIENT_IP: ignored: a local server counts each client by the address it connects from; raise its limits instead (PILOT_WRITES_PER_MINUTE_PER_ADDRESS and the others, docs/LOCAL.md)"
+fi
+unset VALUN_TRUST_FLY_CLIENT_IP
 TRACKER_DIR="$DATA/pilot/tracker"
 mkdir -p "$TRACKER_DIR" "$DATA/valun" 2>/dev/null || true
 for d in "$DATA/pilot" "$TRACKER_DIR" "$DATA/valun"; do
@@ -42,9 +70,26 @@ done
 PILOT_TRACKER_SHA256="$(sha256sum "$ROOT/bin/basis_server" | cut -d' ' -f1)" || PILOT_TRACKER_SHA256=""
 export PILOT_TRACKER_SHA256
 say "basis_server sha256 ${PILOT_TRACKER_SHA256:-unknown}; network valun-pilot-1, local: no chain"
+# The commit this image was built from (Dockerfile.local: --build-arg VALUN_BUILD_SHA, the valun-open commit its label
+# org.opencontainers.image.revision names), as the image records it in $ROOT/revision: the app names it in GET
+# /pilot/v1/info as `build` (the local-readiness audit, IMG-12: the API could not say which build ran). From the image
+# only, never from the environment, as the sha256 above; an image built without it names none. The data volume records
+# the revision of the image that last started on it ($DATA/pilot/image-revision), and when another one starts on it,
+# this says so (IMG-7: nothing recorded which image wrote a volume, and the documented line runs :latest).
+REVISION=$(head -c 100 "$ROOT/revision" 2>/dev/null | tr -d '\n' || true)
+if [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]]; then export VALUN_BUILD_SHA="$REVISION"; else REVISION=""; unset VALUN_BUILD_SHA; fi
+RECORD="$DATA/pilot/image-revision"
+PREVIOUS=$(head -c 100 "$RECORD" 2>/dev/null | tr -d '\n' || true)
+say "image built from ${REVISION:-an unrecorded commit (built without --build-arg VALUN_BUILD_SHA)}"
+if [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "${REVISION:-unknown}" ]; then
+  say "this data volume was last started by another image, built from $PREVIOUS"
+fi
+printf '%s\n' "${REVISION:-unknown}" > "$RECORD" || say "could not record the image's revision in $RECORD"
+# The tracker's output of the last start is kept as stdout.log.1 (IMG-12: a restart overwrote it, and with it the last
+# lines of a crash); this start's goes to stdout.log.
+if [ -f "$TRACKER_DIR/stdout.log" ]; then mv -f "$TRACKER_DIR/stdout.log" "$TRACKER_DIR/stdout.log.1" || say "could not keep the last tracker log"; fi
 # The unit's token id (PC, the pilot credit): it exists on no chain; it labels notes.
 PILOT_TOKEN_ID=$(node -e "process.stdout.write(require('crypto').createHash('sha256').update('valun-pilot-credit/1').digest('hex'))")
-TRACKER_PORT=${PILOT_BASIS_PORT:-3058}
 # Pure credit always (BASIS_PURE_CREDIT=1): a tracker without it would look for a chain.
 BASIS_CONFIG_LAYOUT=auto BASIS_PURE_CREDIT=1 BASIS_PORT=$TRACKER_PORT BASIS_SERVED_TOKEN_ID=$PILOT_TOKEN_ID BASIS_SERVED_TOKEN_SYMBOL=PC \
   "$ROOT/run-tracker.sh" "$TRACKER_DIR" "$ROOT/bin/basis_server" > "$TRACKER_DIR/stdout.log" 2>&1 &
