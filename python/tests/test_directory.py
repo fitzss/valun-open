@@ -2,8 +2,9 @@
 directory (137 participants, about 72 KB, with one GET /participants/{id} for each). Now the default page is 10
 participants, `limit` asks for up to 50 and `offset` pages on. The order comes from the list's own fields: a query's
 matches in the handle or name first, then in services or wants, then only in about; then the agents active in the
-last 24 hours; then the most recently seen (never seen last); then the handle. Only the page's participants are looked
-up, and about, services and wants are cut to 160 code points. The same over a recorded server, value for value in the
+last 24 hours; then the most recently seen (never seen last); then the handle; since the Nov 18 fresh-join run, the
+operator's always-on agents (operator_run, then house_agent) before the rest, after a query's tiers. Only the page's
+participants are looked up, and about, services and wants are cut to 160 code points. The same over a recorded server, value for value in the
 JavaScript client: the 'directory:' scenarios of js/test/fixtures/generate_python_fixtures.py."""
 import json
 import os
@@ -120,6 +121,24 @@ class Order(unittest.TestCase):
         self.assertEqual((r['participants'], r['total_matching'], r['offset']), ([], 0, 0))
         self.assertNotIn('next_offset', r)
 
+    def test_the_operators_always_on_agents_come_first_then_its_house_agents(self):
+        # The Nov 18 fresh-join run (finding 6): last-seen time alone put the operator's always-on agents among idle
+        # test agents that look active (the paused society, seen moments ago). The server's own agents (operator_run),
+        # then its house agents (house_agent), then the rest; a query's tiers still come first.
+        people = [person(1, 'basis-busy', seen=0.01), person(2, 'house-scribe', seen=0.5, house_agent=True),
+                  person(3, 'sandbox-mallory', seen=0.2, operator_run=True), person(4, 'lab-desk', seen=0.02,
+                                                                                operator_test_agent=True),
+                  person(5, 'sandbox-exact', seen=0.2, operator_run=True), person(6, 'house-reviewer', seen=30, house_agent=True),
+                  person(7, 'not-quite', seen=0.1, operator_run='yes'), person(0, 'me', id=ME, seen=0)]
+        r = Agent(people).call('valun_directory', {})
+        self.assertEqual(handles(r), ['sandbox-exact', 'sandbox-mallory', 'house-scribe', 'house-reviewer', 'basis-busy',
+                                      'lab-desk', 'not-quite'])
+        r = Agent(people).call('valun_directory', {'query': 'busy'})
+        self.assertEqual(handles(r), ['basis-busy'])
+        people.append(person(8, 'scribe-fan', seen=0.01, about='I like house-scribe'))
+        r = Agent(people).call('valun_directory', {'query': 'scribe'})
+        self.assertEqual(handles(r), ['house-scribe', 'scribe-fan'])
+
     def test_ties_go_by_handle_in_code_point_order(self):
         seen = ago(3)
         people = [person(i, h, agent_last_seen=seen) for i, h in enumerate(['b', 'a\U0001F600', 'aａ', 'A', 'a'], 1)]
@@ -134,8 +153,8 @@ class Paging(unittest.TestCase):
         self.assertEqual(handles(r), [f'agent-{i:03d}' for i in range(1, 11)])
         self.assertEqual(list(r), ['participants', 'total_matching', 'offset', 'next_offset', 'note', 'how_to_see_more'])
         self.assertEqual((r['total_matching'], r['offset'], r['next_offset']), (25, 0, 10))
-        self.assertEqual(r['how_to_see_more'], 'Showing 1-10 of 25 (most recently active first). For more, call valun_directory '
-                                               'again with offset 10, or narrow it with query.')
+        self.assertEqual(r['how_to_see_more'], "Showing 1-10 of 25 (the operator's always-on agents first, then the most recently active). For more, call "
+                                               f'valun_directory again with offset 10, or narrow it with query.')
         self.assertTrue(r['note'].endswith(' A participant whose agent has not been seen in the last 24 hours may never answer an offer.'))
         self.assertEqual(a.fake.reads, 1)
 
@@ -146,8 +165,8 @@ class Paging(unittest.TestCase):
         self.assertEqual(len(set(sum((handles(r) for r in pages), []))), 25)
         r = pages[1]
         self.assertEqual((r['offset'], r['next_offset'], r['total_matching']), (10, 20, 25))
-        self.assertEqual(r['how_to_see_more'], 'Showing 11-20 of 25 (most recently active first). For more, call valun_directory '
-                                               'again with offset 20, or narrow it with query.')
+        self.assertEqual(r['how_to_see_more'], "Showing 11-20 of 25 (the operator's always-on agents first, then the most recently active). For more, call "
+                                               f'valun_directory again with offset 20, or narrow it with query.')
         last = pages[2]                                 # the last page: nothing more to show
         self.assertEqual((handles(last), last['offset'], last['total_matching']), ([f'agent-{i:03d}' for i in range(21, 26)], 20, 25))
         self.assertEqual(list(last), ['participants', 'total_matching', 'offset', 'note'])

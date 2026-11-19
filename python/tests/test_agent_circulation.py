@@ -39,7 +39,7 @@ from valun import schemas  # noqa: E402
 
 NFT = '6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa'
 DENOM = 'token:' + hashlib.sha256(b'valun-pilot-credit/1').hexdigest()
-SERVER = 'http://valun.invalid'
+SERVER = 'https://valun.invalid'
 CIRC = ('bound_notes/1', 'circulation/1')
 AGENT_TOKEN = 'vpa_test-only'                   # the agent token the World enrolls (a throwaway test value)
 UNBOUND = 'could not read what you would sign; nothing was signed'
@@ -480,8 +480,24 @@ class World:
             return self.transfer_view(self.transfers[parts[1]])
         if method == 'GET' and parts == ['participants']:
             return [self.public(p) for p in (S_ID, X_ID, M_ID) if p in self.keys or p == S_ID]
+        if method == 'GET' and parts == ['ledger']:       # public: every edge on the tracker, as v16 lists it
+            rows = []
+            for e, st in self.tracker.items():
+                i, r = e.split('>')
+                pi, pr = self.pid_of(i), self.pid_of(r)
+                rows.append({'issuer': pi, 'issuer_handle': HANDLES.get(pi), 'recipient': pr,
+                             'recipient_handle': HANDLES.get(pr), 'issuer_pubkey': i, 'recipient_pubkey': r,
+                             'total': st['total'], 'redeemed': 0, 'outstanding': st['total'],
+                             'timestamp': st['timestamp'], 'confirmation': 'local_only', 'unit': 'PC'})
+            return {'unit': 'PC', 'notes': rows, 'reconciliation': []}
         if method == 'GET' and len(parts) == 2 and parts[0] == 'participants' and parts[1] in HANDLES:
-            return self.public(parts[1])
+            out = self.public(parts[1])
+            if parts[1] in self.keys:           # as the server's public record: the participant's debts on the tracker
+                me = self.pk(parts[1])
+                out['public_position'] = {'debts': [
+                    {'to': HANDLES.get(self.pid_of(e.split('>')[1])), 'amount': st['total'], 'recipient_id': self.pid_of(e.split('>')[1]),
+                     'recipient_pubkey': e.split('>')[1]} for e, st in self.tracker.items() if e.split('>')[0] == me]}
+            return out
         if method == 'GET' and parts == ['me']:
             return {'role': 'agent', 'participant': self.public(S_ID), 'mandate': dict(self.mandate), 'mandate_version': self.mandate_version,
                     'effective_limits': dict(self.mandate), 'agent_limits': {}, 'position': self.position(), 'authority': {}}
@@ -830,7 +846,8 @@ def wired(world, heads):
         if world.s_roles is not None and caps is not None and tok == AGENT_TOKEN and not public:
             world.s_roles = {r for r in caps.split('roles=', 1)[-1].split(',') if r}
         return _Answer(out)
-    return [mock.patch.object(vc.Client, 'request', REAL_REQUEST), mock.patch.object(vc.urllib.request, 'urlopen', urlopen)]
+    return [mock.patch.object(vc.Client, 'request', REAL_REQUEST),
+            mock.patch.object(vc.Client, '_open', lambda c, req: urlopen(req, timeout=c.timeout))]
 
 
 class Base(unittest.TestCase):
@@ -1090,6 +1107,8 @@ LEGACY_STATUS_KEYS = ['connected', 'server', 'network', 'unit', 'you', 'objectiv
                       'settlement', 'honest_labels', 'real_vs_simulated']
 CIRCULATION_STATUS_KEYS = ['summary', 'money_view', 'notes_you_can_spend', 'payments_in_progress', 'clearing',
                            'consent_policy_in_force']
+# A self-serve participant's (sandbox_only: true): what that means, after `you` (the Nov 18 fresh-join run, finding 5).
+SELF_SERVE_STATUS_KEYS = LEGACY_STATUS_KEYS[:5] + ['you_are'] + LEGACY_STATUS_KEYS[5:]
 
 
 class OnlyWhenAdvertised(unittest.TestCase):
@@ -1102,13 +1121,13 @@ class OnlyWhenAdvertised(unittest.TestCase):
     def test_status_fields_and_labels(self):
         for features in (None, ['bound_notes/1']):
             st, w = self.run_status(features)
-            self.assertEqual(list(st), LEGACY_STATUS_KEYS, features)
+            self.assertEqual(list(st), SELF_SERVE_STATUS_KEYS, features)
             self.assertEqual((st['settlement'], st['honest_labels'], st['real_vs_simulated']),
                              (va.SETTLEMENT_NOTE, va.HONEST_LABELS, va.REAL_VS_SIMULATED))
             self.assertNotIn('GET /pilot/v1/inbox', w.requests())
             self.assertFalse([r for r in w.requests() if 'edges' in r or 'consents' in r])
         st, _w = self.run_status(list(CIRC))
-        self.assertEqual(list(st), LEGACY_STATUS_KEYS + CIRCULATION_STATUS_KEYS + ['sandbox_next_steps'])
+        self.assertEqual(list(st), SELF_SERVE_STATUS_KEYS + CIRCULATION_STATUS_KEYS + ['sandbox_next_steps'])
         self.assertEqual(st['settlement'], SERVER_SETTLEMENT)
         self.assertEqual(st['honest_labels'], va.HONEST_LABELS_CIRCULATION)
         self.assertEqual(st['honest_labels']['outstanding_promise'], SERVER_SETTLEMENT)
@@ -1128,6 +1147,39 @@ class OnlyWhenAdvertised(unittest.TestCase):
         self.assertEqual(st['sandbox_next_steps']['tour_step'], 2)
         st, _w = self.run_status(list(CIRC), sandbox_only=False)
         self.assertEqual(list(st), LEGACY_STATUS_KEYS + CIRCULATION_STATUS_KEYS)
+
+    def test_a_self_serve_participant_is_told_what_sandbox_only_means(self):
+        # The Nov 18 fresh-join run (finding 5): join said "Open network: you can deal with any agent", and valun_status
+        # showed sandbox_only: true with nothing that said it limits nothing there. The words follow GET /info self_serve.
+        until = '2026-11-25T19:01:20.380Z'
+        cases = (({'open_network': True, 'renews_while_active': True},
+                  'A self-serve participant on the open network: you can deal with any agent whose owner allows it, within '
+                  f'small limits (limits_in_force) until {until}, renewed while your agent is active. sandbox_only: true '
+                  'says you joined without an invite; on this network it does not limit whom you deal with.'),
+                 ({'open_network': False},
+                  'A self-serve sandbox participant: you can deal only with the sandbox agents (sandbox-exact and '
+                  f'sandbox-mallory), within small limits (limits_in_force) until {until}.'),
+                 (None, 'A self-serve participant (sandbox_only: true: you joined without an invite), within small limits '
+                        f'(limits_in_force) until {until}.'))
+        for self_serve, words in cases:
+            with self.subTest(self_serve=self_serve):
+                self.assertEqual(va.self_serve_words({'sandbox_only': True, 'sandbox_expires_at': until},
+                                                     {'self_serve': self_serve} if self_serve else {}), words)
+        self.assertIsNone(va.self_serve_words({'id': S_ID}, {'self_serve': {'open_network': True}}))
+        w = World(list(CIRC), sandbox_only=True, welcome=False)
+        route = w.route
+
+        def info(method, r, q, body, token):
+            out = route(method, r, q, body, token)
+            return dict(out, self_serve={'open_network': True}) if r == '/pilot/v1/info' else out
+        w.route = info
+        with routed(w):
+            agent = va.ValunAgent(MemStore(profile_state()), check_link_hosts=False)
+            full, brief = agent.call('valun_status', {}), agent.call('valun_status', {'brief': True})
+        self.assertTrue(full['you_are'].startswith('A self-serve participant on the open network: you can deal with any '
+                                                   'agent whose owner allows it'), full['you_are'])
+        self.assertEqual(brief['you_are'], full['you_are'])
+        self.assertEqual(list(brief)[:4], ['brief', 'connected', 'you', 'you_are'])
 
     def test_a_note_whose_tracker_state_does_not_verify_is_not_checked(self):
         w = World(list(CIRC), welcome=False)
@@ -1509,9 +1561,51 @@ class SandboxNextSteps(Base):
         self.assertEqual((n['tour_step'], n['next_calls'][0]['arguments']['counterparty'], n['next_calls'][0]['arguments']['role']),
                          (5, 'sandbox-exact', 'payer'))
         self.world.set_edge(S_ID, X_ID, 1, now_ms() - 30_000, signature=sign_note(S, X['pubkey'], 1, now_ms() - 30_000))
+        self.world.set_edge(X_ID, M_ID, 2, now_ms() - 20_000)            # the 3-cycle's third leg (step 2 moved it)
         n = self.steps()
         self.assertEqual((n['tour_step'], n['next_calls']), (4, []))
-        self.assertIn('set-off', n['then'])
+        self.assertIn('A set-off of the cycle is due', n['then'])
+        self.assertNotIn('blocked', n)
+
+    def test_a_3_cycle_without_its_third_leg_is_not_waited_for_in_vain(self):
+        # The onboarding review's step 4 stall: the server had set sandbox-exact's debt to sandbox-mallory off against
+        # sandbox-mallory's debt to it, so the 3-cycle M>S>X>M could never be proposed, and the tour waited for it.
+        self.world.welcome = False
+        self.hold(M_ID, 3)
+        self.world.set_edge(S_ID, X_ID, 1, now_ms() - 30_000, signature=sign_note(S, X['pubkey'], 1, now_ms() - 30_000))
+        self.world.set_edge(X_ID, M_ID, 2, now_ms() - 20_000)
+        self.world.set_edge(X_ID, M_ID, 0, now_ms() - 10_000, 'setoff', 'vs_server')
+        self.world.log.clear()
+        n = self.steps()
+        self.assertEqual((n['tour_step'], n['next_calls'], n['blocked'], n['retry_after_seconds']),
+                         (4, [], 'cycle_leg_missing', 30))
+        self.assertIn('sandbox-exact owes sandbox-mallory nothing, so no set-off can be proposed', n['then'])
+        self.assertIn("Nothing is lost: you hold 3 PC of sandbox-mallory's notes and owe 1 PC to sandbox-exact.",
+                      n['then'])
+        # The narrowest read (0.7.2): sandbox-exact's public record, never the whole public ledger.
+        self.assertIn(('GET', f'/pilot/v1/participants/{X_ID}', None), self.world.log)
+        self.assertNotIn(('GET', '/pilot/v1/ledger', None), self.world.log)
+        brief = self.agent.call('valun_status', {'brief': True})['sandbox_next_steps']
+        self.assertEqual((brief['blocked'], brief['retry_after_seconds']), ('cycle_leg_missing', 30))
+        # Once sandbox-exact owes sandbox-mallory again (another participant's step 2), the set-off is due again.
+        self.world.set_edge(X_ID, M_ID, 2, now_ms() - 5_000, 'transfer_in', 'vt_other')
+        n = self.steps()
+        self.assertEqual((n['tour_step'], n['next_calls'], 'blocked' in n), (4, [], False))
+        self.assertIn('A set-off of the cycle is due', n['then'])
+        self.assertEqual(n['retry_after_seconds'], va.SETOFF_DUE_RETRY_S, 'signed at the next consent run: polled less often')
+        # A record that cannot be read concludes nothing: the set-off is said to be due, as before.
+        self.world.set_edge(X_ID, M_ID, 0, now_ms() - 1_000, 'setoff', 'vs_server')
+        self.world.fail[f'GET /pilot/v1/participants/{X_ID}'] = [vc.ValunError('http_error', 'down', 503)]
+        n = self.steps()
+        self.assertEqual(('blocked' in n, n['tour_step']), (False, 4))
+        self.assertIn('A set-off of the cycle is due', n['then'])
+        # Step 3's 2-cycle has no leg but the participant's own: no read of sandbox-exact's record.
+        self.hold(X_ID, 1)
+        self.world.log.clear()
+        n = self.steps()
+        self.assertEqual((n['tour_step'], 'blocked' in n), (3, False))
+        self.assertNotIn(('GET', f'/pilot/v1/participants/{X_ID}', None), self.world.log)
+        self.assertNotIn(('GET', '/pilot/v1/ledger', None), self.world.log)
 
     def commit(self, call):
         """Make one next call as the tour does: prepare (bind), then call with exactly the prepared arguments."""
@@ -1563,6 +1657,24 @@ class SandboxNextSteps(Base):
         (item,) = [i for i in self.world.items.values() if i['state'] == 'collecting']
         self.assertEqual((item['kind'], item['summary']['your_total_owed_change_PC']), ('setoff', -2))
 
+    def test_the_end_of_the_tour_is_kept_for_this_participant(self):
+        """The 0.7.2 clean-user test: once valun_status has seen the tour done, the profile keeps it (sandbox_tour_done,
+        the participant id), and the next steps stay done whatever is held, owed or offered with the sandbox agents
+        later: a note of sandbox-exact held is not step 2 or 3 again, nor its new job step 1. An end kept for another
+        participant is not this one's."""
+        self.hold(X_ID, 3)
+        self.assertEqual(self.steps()['tour_step'], 1, 'the welcome job waits')
+        self.store.state['sandbox_tour_done'] = O_ID
+        self.assertEqual(self.steps()['tour_step'], 1, "another participant's end")
+        self.store.state['sandbox_tour_done'] = S_ID
+        n = self.steps()
+        self.assertEqual((n['tour_step'], n['next_calls'], 'retry_after_seconds' in n), ('done', [], False))
+        self.assertEqual(n['then'], va.TOUR_COMPLETED)
+        self.assertEqual(n['with_the_sandbox_agents'][va.SANDBOX_EXACT]['you_hold_PC'], 3)
+        brief = self.agent.call('valun_status', {'brief': True})['sandbox_next_steps']
+        self.assertEqual((brief['tour_step'], brief['then']), ('done', va.TOUR_COMPLETED))
+        self.assertEqual(va.TOUR_DONE_KEY, 'sandbox_tour_done')
+
     def test_no_set_off_cleared_anything_so_the_tour_is_not_done(self):
         # The end state of the live run: 6 PC earned, all spent by transfer, nothing cleared.
         self.world.welcome = False
@@ -1577,6 +1689,40 @@ class SandboxNextSteps(Base):
         self.assertIn('The tour is not complete: no set-off has cleared any of your claims or debts yet', n['then'])
         self.assertEqual((n['tour_step'], n['next_calls'][0]['tool'], n['next_calls'][0]['arguments']['counterparty'],
                           n['next_calls'][0]['arguments']['role']), (1, 'valun_propose', 'sandbox-exact', 'payee'))
+
+
+class PayerWords(Base):
+    """The 0.7.2 clean-user test: the offer the tour's step 2 makes said "after you accept their delivery you will owe
+    sandbox-mallory 2 PC (your credit note)", for a deal the tour then pays with sandbox-exact's note (the PAY prompt
+    said so later). How a payer pays is decided only when it accepts the delivery, so on a server with circulating
+    credit the payer's words in an offer, an acceptance and a counter-offer promise no credit note."""
+    PAYER = ('after you accept their delivery you will pay sandbox-mallory 2 PC: with your credit note, or with notes you '
+             'hold if you choose to.')
+
+    def text(self, call):
+        return self.agent.prepare(call['tool'], call['arguments'])['text']
+
+    def test_the_tour_step_2_offer(self):
+        self.world.welcome = False
+        self.hold(X_ID, 3)
+        n = self.agent.call('valun_status', {})['sandbox_next_steps']
+        self.assertEqual((n['tour_step'], n['next_calls'][0]['arguments']['role']), (2, 'payer'))
+        t = self.text(n['next_calls'][0])
+        self.assertIn('If sandbox-mallory accepts, the deal is binding without asking you again: ' + self.PAYER, t)
+        self.assertNotIn('(your credit note)', t)
+        sell = dict(n['next_calls'][0], arguments=dict(n['next_calls'][0]['arguments'], role='payee'))
+        self.assertIn('you must deliver; sandbox-mallory would then owe you 2 PC (their credit note).', self.text(sell))
+
+
+class PayerWordsWithoutCirculation(Base):
+    """Without circulating credit a payer pays only with its own credit note, and its words say so, as before."""
+    features = ()
+
+    def test_a_new_offer(self):
+        offer = {'counterparty': 'sandbox-mallory', 'role': 'payer', 'title': 'notary job', 'deliverable': 'x', 'price': 2,
+                 'description': 'notary for this text:\n```\nhi\n```'}
+        t = self.agent.prepare('valun_propose', offer)['text']
+        self.assertIn('after you accept their delivery you will owe sandbox-mallory 2 PC (your credit note).', t)
 
 
 class PhaseZeroFixes(unittest.TestCase):

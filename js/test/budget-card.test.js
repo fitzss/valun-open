@@ -6,14 +6,22 @@
 // over a recorded server, value for value with Python: the 'check_payer:', 'card:', 'set_public_card:' and #58 scenarios
 // of agent-parity.test.js.
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {test} from 'node:test';
+import {fileURLToPath} from 'node:url';
 import {
-  CHECK_FALLBACK, CHECK_LEAD, CHECK_PAYEE_SIDE, Client, MemoryStore, NETWORK, READ_ONLY_TOOLS, SIGNING_TOOLS, ValunAgent, ValunError,
-  checkSummary, offersCountedAt, schemas, valunTools,
+  CHECK_ASK_FALLBACK, CHECK_ASK_LEAD, CHECK_FALLBACK, CHECK_LEAD, CHECK_PAYEE_SIDE, Client, MemoryStore, NETWORK, READ_ONLY_TOOLS,
+  SIGNING_TOOLS, ValunAgent, ValunError, checkOwners, checkSummary, offersCountedAt, schemas, valunTools,
 } from '../src/index.js';
 import {fakeFetch} from './helpers.js';
 
-const BASE = 'http://valun.invalid';
+// Fix inbox #87: answers of the server's own code to the payee's own check, recorded with what valun 0.7.2 makes of them,
+// shared with the Python client (python/tests/test_budget_card.py BothSides).
+const SIDES_FILE = fileURLToPath(new URL('../../python/tests/fixtures/check-sides.json', import.meta.url));
+const SIDES = fs.existsSync(SIDES_FILE) ? JSON.parse(fs.readFileSync(SIDES_FILE, 'utf8')) : null;
+const NO_SIDES = SIDES === null && 'python/tests/fixtures is not next to js/ (published package)';
+
+const BASE = 'https://valun.invalid';
 const ME = 'vp_a1a1a1a1a1a1', BOB = 'vp_b0b0b0b0b0b0', ERIN = 'vp_e0e0e0e0e0e0', HIDDEN = 'vp_0f0f0f0f0f0f';
 const AGENT_TOKEN = 'vpa_test-agent', OWNER_TOKEN = 'vpo_test-owner-of-alice', BOBS_OWNER_TOKEN = 'vpo_test-owner-of-bob';
 const PEOPLE = [{id: ME, handle: 'alice', status: 'active'}, {id: BOB, handle: 'bob', status: 'active'}, {id: ERIN, handle: 'erin', status: 'active'}];
@@ -411,4 +419,90 @@ test('valun_check_payer: the schema offers deal_id, optional, and says when to p
   const {description: _d, ...dealId} = p.properties.deal_id;
   assert.deepEqual(dealId, {type: 'string', pattern: '^vd_[0-9a-f]{16}$'});
   assert.match(schemas.CHECK_PAYER.description, /Pass that deal's deal_id/);
+});
+
+// ---------- fix inbox #87: the step's verdict from both sides (payer_side, payee_side) ----------
+const BOTH = {verdict: 'accept', rule: null, reasons: ['Within its budget.']};
+
+test('fix inbox #87: the recorded answers give the summary the Python client gives, first in the tool\'s answer', {skip: NO_SIDES}, async () => {
+  assert.equal(SIDES.cases.length, 11);
+  const {payer, amount, path} = SIDES.request;
+  for (const c of SIDES.cases) {
+    const w = world();
+    w.routes[`GET ${path}`] = {status: c.status, body: c.body};
+    const r = await w.agent().callSafe('valun_check_payer', {payer, amount});
+    assert.equal(r.summary, c.summary, c.name);
+    if (c.status === 200) {
+      assert.equal(checkSummary(c.body), c.summary, c.name);
+      assert.equal(Object.keys(r)[0], 'summary');
+      const {summary: _s, ...rest} = r;
+      assert.deepEqual(rest, c.body, `${c.name}: the rest is the server's answer`);
+    } else {
+      assert.deepEqual([r.verdict, r.payer], ['unknown', {id: BOB, handle: 'bob'}], c.name);
+    }
+  }
+});
+
+test('fix inbox #87: the lead is the step\'s verdict, an ask_owner names whose owner, and the cover is the server\'s sentence, said once', {skip: NO_SIDES}, () => {
+  const leads = {accept: 'Accept: ', decline: 'Decline: ', unknown: 'Unknown: '};
+  for (const c of SIDES.cases.filter(x => x.status === 200 && Object.hasOwn(x.body, 'payer_side'))) {
+    const b = c.body;
+    const want = leads[b.verdict] ?? `${CHECK_ASK_LEAD[checkOwners(b)]}: `;
+    assert.ok(c.summary.startsWith(`${want}${b.reasons[0].slice(0, -1)}. `), c.summary);
+    const said = b.payee_side.reasons.filter(x => x.startsWith('Backed for you'));
+    assert.equal(c.summary.toLowerCase().split('backed for you').length - 1, said.length, c.name);
+    assert.ok(said.length <= 1);
+    assert.ok(c.summary.endsWith(` Your own side: ${b.payee_side.reasons.join(' ')}`), c.summary);
+  }
+  const named = Object.fromEntries(SIDES.cases.map(c => [c.name, c]));
+  assert.ok(named['ask owner payee with cover'].summary.startsWith('Ask your owner: '));
+  assert.ok(named['ask owner both'].summary.startsWith("Ask your owner and the payer's owner: "));
+  assert.ok(named['old server: ask owner payee with cover'].summary.startsWith('Accept: Within its budget'), 'a server from before #87: as in 0.7.1');
+});
+
+test('fix inbox #87: whose owner decides an ask_owner (checkOwners), with and without reasons', () => {
+  const side = v => ({verdict: v, rule: v === 'ask_owner' ? 'approve_above' : null, reasons: []});
+  const s = (payer, payee) => checkSummary({verdict: 'ask_owner', reasons: ['R.'], rule: 'approve_above', payer_side: payer, payee_side: payee});
+  assert.equal(s(side('accept'), side('ask_owner')), `Ask your owner: R. Your own side: ${CHECK_PAYEE_SIDE.ask_owner}.`);
+  assert.equal(s(side('ask_owner'), side('accept')), "Ask the payer's owner: R.");
+  assert.equal(s(side('ask_owner'), side('ask_owner')), `Ask your owner and the payer's owner: R. Your own side: ${CHECK_PAYEE_SIDE.ask_owner}.`);
+  for (const [payer, payee] of [[null, null], ['ask_owner', null], [side('accept'), side('accept')], [[side('ask_owner')], 7],
+    [{verdict: 'toString'}, {verdict: 'constructor'}]]) {
+    assert.ok(s(payer, payee).startsWith("Ask your owner and the payer's owner: R."), JSON.stringify([payer, payee]));
+  }
+  assert.equal(checkOwners({payer_side: side('ask_owner'), payee_side: null}), 'payer');
+  assert.equal(checkOwners(null), 'both');
+  for (const [whose, payer, payee] of [['payee', side('accept'), side('ask_owner')], ['payer', side('ask_owner'), side('accept')],
+    ['both', side('ask_owner'), side('ask_owner')]]) {
+    const r = checkSummary({verdict: 'ask_owner', reasons: [], payer_side: payer, payee_side: payee});
+    assert.ok(r.startsWith(`${CHECK_ASK_LEAD[whose]}: ${CHECK_ASK_FALLBACK[whose]}.`), r);
+  }
+  // a server from before #87 (no payer_side): the payer's owner, as in 0.7.1, and your own side after it
+  assert.equal(checkSummary({verdict: 'ask_owner', reasons: ['R.'], payee_side: side('ask_owner')}),
+    `Ask the payer's owner: R. Your own side: ${CHECK_PAYEE_SIDE.ask_owner}.`);
+});
+
+test('fix inbox #87: with payer_side this client never names the cover itself; your own accept adds its reasons', () => {
+  for (const payer of [BOTH, null, 'junk']) {
+    const v = {verdict: 'accept', reasons: ['Both sides allow it.'], cover: {covered: 3}, payer_side: payer};
+    assert.equal(checkSummary(v), 'Accept: Both sides allow it.', JSON.stringify(payer));
+    assert.equal(checkSummary({...v, payee_side: {verdict: 'accept', reasons: ['Your own limits allow it.', 'Backed for you up to 3 by @erin.']}}),
+      'Accept: Both sides allow it. Your own side: Your own limits allow it. Backed for you up to 3 by @erin.');
+  }
+  assert.equal(checkSummary({verdict: 'accept', reasons: ['r'], cover: {covered: 3}}), 'Accept: r, backed for you up to 3.', 'before #87: as in 0.7.1');
+  const v = {verdict: 'accept', reasons: ['Both sides allow it.'], payer_side: BOTH};
+  assert.equal(checkSummary({...v, payee_side: {verdict: 'accept', reasons: []}}), 'Accept: Both sides allow it.');
+  for (const side of [{verdict: 'Accept', reasons: ['x']}, {verdict: ['accept'], reasons: ['x']}, {reasons: ['x']}, 'accept']) {
+    assert.equal(checkSummary({...v, payee_side: side}), 'Accept: Both sides allow it.', JSON.stringify(side));
+  }
+  assert.equal(checkSummary({verdict: 'accept', reasons: ['r'], payee_side: {verdict: 'accept', reasons: ['x']}}), 'Accept: r.',
+    'before #87: your own accept adds nothing, as in 0.7.1');
+});
+
+test('the summary: a sentence of the server\'s follows after a stop, a fragment after a comma', () => {
+  const s = (...reasons) => checkSummary({verdict: 'accept', reasons});
+  assert.equal(s('Within its budget.', 'Its owner approves it.'), 'Accept: Within its budget. Its owner approves it.');
+  assert.equal(s('within its budget', 'fine'), 'Accept: within its budget, fine.');
+  assert.equal(s('Within its budget.', "bob's IOUs count 50%.", '2 of 40 left', 'Zed;'), "Accept: Within its budget, bob's IOUs count 50%, 2 of 40 left. Zed.");
+  assert.equal(s('A.', 'Été.', 'B'), 'Accept: A, Été. B.', 'capitals A to Z only, as in Python');
 });

@@ -18,7 +18,9 @@
 // entry      {total, timestamp, kind, ref, direction, signed_at}: something this client signed for the edge whose
 //            outcome is not known yet. kind: 'note' (a credit note) or a novation kind such as 'transfer' or 'setoff';
 //            ref: the deal, transfer or set-off id; direction: 'out' when this client is the edge's issuer, 'in' when it
-//            is the creditor; signed_at: when it was signed (ISO 8601, UTC), as the caller gives it.
+//            is the creditor; signed_at: when it was signed (ISO 8601, UTC), as the caller gives it. Since valun 0.7.2 a
+//            consent's entry may also hold signature (noteSignature): the signature this client made over that edge state
+//            (on an edge it issues, the issuer's own; on one it is the creditor of, its consent; fix inbox #86).
 //
 // Rules
 // - A pending entry becomes confirmed only when a recorded outcome or the edge's current state shows it applied
@@ -105,6 +107,25 @@ export function addPending(recs, pair, total, timestamp, kind, ref = null, direc
   const p = {total, timestamp, kind, ref, direction, signed_at: signedAt};
   e.pending.push(p);
   return p;
+}
+
+/**
+ * Keep on the pending entry of `pair` at (total, timestamp) for `ref` the signature this client made over that edge state
+ * (a hex string): on an edge it issues, the issuer's own signature of the state the tracker records once it applies; on one
+ * it is the creditor of, its consent to it. Returns how many entries got it (0: none is pending). The Python
+ * records.note_signature.
+ */
+export function noteSignature(recs, pair, total, timestamp, ref, signature) {
+  if (typeof signature !== 'string' || !signature) throw valueError('a signature is a non-empty hex string');
+  const e = isDict(recs) ? pyGet(recs, pair) : null;
+  let n = 0;
+  for (const p of isDict(e) && Array.isArray(pyGet(e, 'pending')) ? e.pending : []) {
+    if (isDict(p) && pyEq(pyGet(p, 'total'), total) && pyEq(pyGet(p, 'timestamp'), timestamp) && pyEq(pyGet(p, 'ref'), ref)) {
+      p.signature = signature;
+      n++;
+    }
+  }
+  return n;
 }
 
 /** Forget a pending entry that can never apply (for example the server refused it). Returns how many were removed. */

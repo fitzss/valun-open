@@ -38,7 +38,7 @@ from valun import novation as nv  # noqa: E402
 from valun import mcp_server  # noqa: E402
 from valun.mcp_server import APPROVAL_TEXT  # noqa: E402
 
-BASE = 'http://valun.invalid'
+BASE = 'https://valun.invalid'
 T0 = datetime(2026, 11, 6, 12, 0, 0, tzinfo=timezone.utc)
 T0_MS = int(T0.timestamp() * 1000)
 NFT = '6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa'
@@ -763,6 +763,13 @@ def scenarios():
     add('propose: an offer open longer than it gives to deliver is refused (fix inbox #23)', 'valun_propose',
         dict(brief, deliver_within_hours=6), created('open'))
     add('propose: an offer due in 6 h and open 6 h', 'valun_propose', dict(brief, deliver_within_hours=6, offer_valid_hours=6), created('open'))
+    # the 0.7.2 review of fix inbox #58: hours above the schema's maximum (the server's 30 and 7 days) are refused before
+    # anything is read or signed (0.7.1 signed them, or failed on hours too many for a date)
+    add('propose: more than 720 hours to deliver are refused', 'valun_propose', dict(brief, deliver_within_hours=721), created('open'))
+    add('propose: hours too many for a date are refused', 'valun_propose', dict(brief, deliver_within_hours=70_000_000), created('open'))
+    add('propose: an offer open more than 168 hours is refused', 'valun_propose', dict(brief, deliver_within_hours=720, offer_valid_hours=169),
+        created('open'))
+    add('propose: 720 hours to deliver, open 168', 'valun_propose', dict(brief, deliver_within_hours=720, offer_valid_hours=168), created('open'))
     add('propose: idle seller gets a warning', 'valun_propose', dict(brief, counterparty='frank'), created('open'))
     add('propose: new participant is not idle', 'valun_propose', dict(brief, counterparty='erin'), created('open'))
     add('propose: sandbox seller without the text', 'valun_propose',
@@ -805,6 +812,10 @@ def scenarios():
     add('respond: counter pinned to terms that changed', 'valun_respond',
         {'deal_id': ob, 'action': 'counter', 'price': 16, 'expected_terms_hash': '00' * 32}, g('open_from_bob'))
     add('respond: counter with fractional hours', 'valun_respond', {'deal_id': ob, 'action': 'counter', 'deliver_within_hours': 1.5}, g('open_from_bob'))
+    add('respond: counter with more than 720 hours to deliver (0.7.2 review)', 'valun_respond',
+        {'deal_id': ob, 'action': 'counter', 'deliver_within_hours': 721}, g('open_from_bob'))
+    add('respond: counter open more than 168 hours (0.7.2 review)', 'valun_respond',
+        {'deal_id': ob, 'action': 'counter', 'offer_valid_hours': 10 ** 15}, g('open_from_bob'))
     # fix inbox #23: by default a counter-offer stays open 24 h, but never past its delivery deadline nor past the offer it
     # answers; offer_valid_hours sets it, never past the delivery deadline either
     d6, d3, d1 = (D[k]['id'] for k in ('due_6h', 'due_3h', 'open_1h_due_48h'))
@@ -866,7 +877,8 @@ def scenarios():
     add('deliver: gate refuses a short draft', 'valun_deliver', {'deal_id': ap, 'content': 'Too short: only a few words here.'}, g('agreed_payee'))
     add('deliver: send_anyway', 'valun_deliver', {'deal_id': ap, 'content': 'Too short: only a few words here.', 'send_anyway': True},
         {**g('agreed_payee'), **post(ap, 'deliver', {'id': ap, 'status': 'delivered', 'delivery': {'sha256': vc.sha256_hex('Too short: only a few words here.')}})})
-    add('deliver: send_anyway as the string "false" is still true', 'valun_deliver',
+    # 0.7.1 took the string "false" as true, and sent the draft; 0.7.2 refuses it (fix inbox #58: true or false)
+    add('deliver: send_anyway as the string "false" is refused, not taken as true', 'valun_deliver',
         {'deal_id': ap, 'content': 'Too short: only a few words here.', 'send_anyway': 'false'},
         {**g('agreed_payee'), **post(ap, 'deliver', {'id': ap, 'status': 'delivered', 'delivery': {'sha256': vc.sha256_hex('Too short: only a few words here.')}})})
     t9 = make_terms('vd_9999999999999999', 'bob', 'bob', 'alice', *BRIEF_TERMS, 20)
@@ -1115,6 +1127,27 @@ def scenarios():
     add('status: sandbox tour, a set-off is due', 'valun_status', {},
         {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position=dict(sx, owes=1, debts=[{'to': 'sandbox-exact', 'amount': 1}]), participant=sb)},
          'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[])}}, state=circ_state)
+    # Step 4 (a note of sandbox-mallory held, a debt to sandbox-exact): its 3-cycle also needs sandbox-exact to owe
+    # sandbox-mallory (the onboarding review's step 4 stall), which sandbox-exact's public record shows (0.7.2: its
+    # GET /participants/{id}, the id my own debt to it names, not the whole public ledger).
+    s4 = {'claims_held': 3, 'owes': 1, 'net': 2, 'claims': [{'from': 'sandbox-mallory', 'amount': 3}],
+          'debts': [{'to': 'sandbox-exact', 'amount': 1, 'recipient_id': ID['carol']}]}
+    mallory_pk = '02' + hashlib.sha256(b'sandbox-mallory').hexdigest()
+
+    def record(xm):
+        return {'body': {'id': ID['carol'], 'handle': 'sandbox-exact', 'status': 'active', 'pubkey': K['carol']['pubkey'],
+                         'public_position': {'claims_held': 1, 'owes': xm, 'net': 1 - xm, 'claims': [{'from': 'basis-a', 'amount': 1}],
+                                             'debts': [{'to': 'sandbox-mallory', 'amount': xm, 'recipient_id': 'vp_0b0b0b0b0b0b',
+                                                        'recipient_pubkey': mallory_pk}]}}}
+    for name, route, pos4 in (('the 3-cycle is due', record(1), s4),
+                              ('the 3-cycle cannot form: sandbox-exact owes sandbox-mallory nothing', record(0), s4),
+                              ("sandbox-exact's record cannot be read", {'status': 503, 'body': {'error': 'busy', 'message': 'later'}}, s4),
+                              ('my debt names no id of sandbox-exact', record(0), dict(s4, debts=[{'to': 'sandbox-exact', 'amount': 1}]))):
+        for short in (False, True):
+            routes = {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position=pos4, participant=sb)},
+                      'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[])}, f"GET /pilot/v1/participants/{ID['carol']}": route}
+            add(f"status: {'brief, ' if short else ''}sandbox tour step 4, {name}", 'valun_status',
+                {'brief': True} if short else {}, routes, state=circ_state)
     add('status: sandbox tour, my owner must approve first', 'valun_status', {},
         {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position=sx, participant=sb)},
          'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[], awaiting_your_owner=[{'deal_id': 'vd_1313131313131313', 'counterparty': 'bob'}])}},
@@ -1155,6 +1188,19 @@ def scenarios():
                                                                          'transferred_out': 6, 'deals': {'paid_by_transfer': 3}},
                                                               participant=sb)},
          'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[], recent_closed=closed_x)}}, state=circ_state)
+    # 0.7.2, the clean-user test: the tour's end is kept in the profile (sandbox_tour_done), so a note earned from
+    # sandbox-exact after it (`valun sandbox earn`) and a job it offers are not step 3, or step 1, again; an end kept for
+    # another participant is not this one's.
+    after = {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position=dict(sx, cleared_by_setoff=2, transferred_out=4,
+                                                                                deals={'paid_by_transfer': 2}), participant=long_ago)},
+             'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[{'deal_id': 'vd_1616161616161616', 'counterparty': 'sandbox-exact',
+                                                                   'your_role': 'payee', 'price': {'amount': 3, 'unit': 'PC'}}])}}
+    kept = dict(circ_state, sandbox_tour_done=ID['alice'])
+    add('status: sandbox tour, complete before, then a note earned from sandbox-exact: still complete', 'valun_status', {}, after,
+        state=kept)
+    add('status: brief, sandbox tour complete before: still complete', 'valun_status', {'brief': True}, after, state=kept)
+    add("status: sandbox tour, an end kept for another participant is not this one's", 'valun_status', {}, after,
+        state=dict(circ_state, sandbox_tour_done=ID['bob']))
     pay_deal = dict(dg, payment=None)
     add('deal: delivered on a circulation server, how you can pay', 'valun_deal', {'deal_id': dg['id']},
         {f"GET /pilot/v1/deals/{dg['id']}": {'body': pay_deal}, **circ, po: {'body': payment_options(dg, why_not=None)}}, state=circ_state)
@@ -1223,7 +1269,9 @@ def scenarios():
         dict(brief, counterparty=ID['bob']), {**created('open'), 'GET /pilot/v1/participants': {'body': [impostor] + PEOPLE}})
     # set_limits
     limits_ok = {'agent_limits': {'max_issue_per_deal': 15, 'notes': 'x'}, 'effective_limits': {'max_issue_per_deal': 15, 'max_issue_outstanding': 100}}
-    add('set_limits: nothing to record', 'valun_set_limits', {'clear': ['not_a_limit']})
+    add('set_limits: nothing to record', 'valun_set_limits', {'clear': None, 'goals': None})
+    # 0.7.1 left out a name in clear that is not a limit (nothing to record); 0.7.2 refuses it (fix inbox #58: its enum)
+    add('set_limits: clear names a limit there is not', 'valun_set_limits', {'clear': ['not_a_limit']})
     add('set_limits: tighten and record goals', 'valun_set_limits', {'max_per_deal_as_payer': 15, 'goals': 'Prefer briefs with sources.'},
         {'PUT /pilot/v1/limits': {'body': limits_ok}})
     add('set_limits: loosen a recorded cap', 'valun_set_limits', {'max_per_deal_as_payer': 25}, {'PUT /pilot/v1/limits': {'body': limits_ok}})
@@ -1232,7 +1280,13 @@ def scenarios():
     add('set_limits: lower a recorded floor', 'valun_set_limits', {'min_price_as_payee': 6}, {'PUT /pilot/v1/limits': {'body': limits_ok}})
     add('set_limits: clear recorded limits', 'valun_set_limits', {'clear': ['max_per_deal_as_payer', 'max_total_owed']},
         {'PUT /pilot/v1/limits': {'body': limits_ok}})
-    add('set_limits: first limit of its kind, string number', 'valun_set_limits', {'max_total_owed': '60', 'goals': 7},
+    add('set_limits: first limit of its kind', 'valun_set_limits', {'max_total_owed': 60, 'goals': '7'},
+        {'PUT /pilot/v1/limits': {'body': limits_ok}})
+    # 0.7.1 recorded "60" as 60 and the goals 7 as "7"; 0.7.2 refuses them (fix inbox #58: a whole number, a string)
+    add('set_limits: a limit as a numeric string is refused', 'valun_set_limits', {'max_total_owed': '60', 'goals': 7},
+        {'PUT /pilot/v1/limits': {'body': limits_ok}})
+    # the 0.7.2 review: 0.7.1 recorded int(v), so 60.5 as 60; 0.7.2 refuses it (a JSON integer)
+    add('set_limits: a limit with a fraction (60.5) is refused, not truncated', 'valun_set_limits', {'max_total_owed': 60.5},
         {'PUT /pilot/v1/limits': {'body': limits_ok}})
     add('set_limits: not a number', 'valun_set_limits', {'max_total_owed': 'lots'})
     add('set_limits: server refuses a looser limit', 'valun_set_limits', {'max_total_owed': 500},
@@ -1415,6 +1469,45 @@ def scenarios():
                                                                                    'reasons': ['Your own limits allow it.']})}})
     add('check_payer: a payee_side this client does not know', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
         {bob18: {'body': check_view('accept', ['Within its budget.'], payee_side={'verdict': ['decline'], 'reasons': ['x']})}})
+    # fix inbox #87: the payee's own check gives the step's verdict from both sides (payer_side, payee_side); the cover is
+    # the server's sentence, among the payee's own reasons; a payer without a card is checked on the payee's side only
+    within = 'Within its budget: up to 30 a deal, 31 of 40 left.'
+    bob_side = {'verdict': 'accept', 'rule': None, 'reasons': [within]}
+    add('check_payer: both sides allow it, the cover said once (fix inbox #87)', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('accept', ['Both sides allow it.', within], payer_side=bob_side, payee_side={
+            'verdict': 'accept', 'rule': None, 'reasons': ['Your own limits allow it.', 'Backed for you up to 3 by @frank.']})}})
+    add('check_payer: your own coverage rule declines it, its side allows it (fix inbox #87)', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('decline', ['Your side refuses it (min_payer_coverage_pct); its side allows it.', within],
+                                    rule='min_payer_coverage_pct', covered=0, guarantees=[], payer_side=bob_side, payee_side={
+            'verdict': 'decline', 'rule': 'min_payer_coverage_pct', 'reasons': [
+                "Your own limits refuse it (min_payer_coverage_pct): bob's claims on the tracker (0) cover 0% of what it would owe "
+                "with this deal (18); this agent's owner requires at least 100% for a payer."]})}})
+    add('check_payer: ask your owner, backed for you (fix inbox #87)', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('ask_owner', ['Your side allows it once your owner approves; its side allows it.', within],
+                                    rule='approve_above', approval_needed=True, payer_side=bob_side, payee_side={
+            'verdict': 'ask_owner', 'rule': 'approve_above', 'reasons': [
+                'Your own limits allow it.', 'Backed for you up to 3 by @frank.',
+                'Your owner approves each commitment above 10: your acceptance waits for your owner before it binds.']})}})
+    add("check_payer: both owners approve it first (fix inbox #87)", 'valun_check_payer', {'payer': 'bob', 'amount': 30},
+        {chk('bob', 30): {'body': check_view('ask_owner', ['Both sides allow it once their owners approve.', within,
+                                                           'Its owner approves each commitment above 25: this one waits for the owner before it binds.'],
+                                             amount=30, rule='approve_above', approval_needed=True, covered=0, guarantees=[], payer_side={
+            'verdict': 'ask_owner', 'rule': 'approve_above', 'reasons': [within, 'Its owner approves each commitment above 25: this one waits for '
+                                                                                  'the owner before it binds.']}, payee_side={
+            'verdict': 'ask_owner', 'rule': 'approve_above', 'reasons': ['Your own limits allow it.', 'Your owner approves each commitment above '
+                                                                                                    '10: your acceptance waits for your owner before it binds.']})}})
+    no_card = dict(mandate=None, room_left=None, record=None, card_hash=None, covered=None, guarantees=[], payer_side=None)
+    add('check_payer: a payer without a card, your own side allows it: unknown (fix inbox #87)', 'valun_check_payer', {'payer': 'bob', 'amount': 18},
+        {bob18: {'body': check_view('unknown', ['Its side was not checked; your side allows it.', 'Its owner has not published its budget card, '
+                                                'so its own limits cannot be checked here (the server still enforces them): decide from its '
+                                                'public record, or ask your owner.'], **no_card,
+                                    payee_side={'verdict': 'accept', 'rule': None, 'reasons': ['Your own limits allow it.']})}})
+    add('check_payer: a payer without a card, your own side declines (fix inbox #87)', 'valun_check_payer', {'payer': 'bob', 'amount': 18, 'deal_id': X},
+        {f'{bob18}&deal={X}': {'body': check_view('decline', ['Your side refuses it (min_payer_coverage_pct); its side was not checked.'],
+                                                  rule='min_payer_coverage_pct', deal_id=X, **no_card, payee_side={
+            'verdict': 'decline', 'rule': 'min_payer_coverage_pct', 'reasons': [
+                "Your owner's coverage bar (min_payer_coverage_pct, 100%) refuses this payer's IOU for this amount; it has published no "
+                'budget card, so its own figures are not shown.']})}})
     room = {'outstanding': 9, 'room_left': 91}
     add('status: the room GET /me shows (budget cards)', 'valun_status', {}, {'GET /pilot/v1/me': {'body': dict(ME, room=room)}}, agent=ask)
     add('status: brief, with the room', 'valun_status', {'brief': True}, {'GET /pilot/v1/me': {'body': dict(ME, room=room)}}, agent=ask)
@@ -1518,6 +1611,282 @@ def late_scenarios():
     return S
 
 
+# Fix inbox #58 (0.7.2): the arguments of Basis's type sweep (fix inbox evidence testnet-0.7.1-1115, 58-py-typesweep.py and
+# 58-npm-typesweep.mjs), each tool's call with every argument it takes of the right type, and the calls that answered
+# internal_error in 0.7.1: 18 in the Python client, 15 of the same in the JavaScript one (33).
+BASIS_58_BASE = {
+    'valun_respond': {'deal_id': 'vd_0000000000000000', 'action': 'decline'}, 'valun_deal': {'deal_id': 'vd_0000000000000000'},
+    'valun_propose': {'counterparty': 'sandbox-exact', 'role': 'payer', 'title': 't', 'description': 'd', 'deliverable': 'x', 'price': 1},
+    'valun_deliver': {'deal_id': 'vd_0000000000000000', 'content': 'x'},
+    'valun_review_delivery': {'deal_id': 'vd_0000000000000000', 'decision': 'dispute', 'reason': 'r'},
+    'valun_check_payer': {'payer': 'sandbox-exact', 'amount': 1},
+    'valun_offer_guarantee': {'issuer': 'sandbox-exact', 'creditor': 'sandbox-mallory', 'cap': 1, 'due_in_hours': 0},
+    'valun_respond_guarantee': {'guarantee_id': 'vg_0000000000000000', 'action': 'decline'},
+    'valun_call_guarantee': {'guarantee_id': 'vg_0000000000000000'}, 'valun_guarantees': {}, 'valun_directory': {},
+    'valun_set_limits': {'goals': 'g'}}
+BASIS_58_INTERNAL_ERRORS = [(tool, k, v) for tool, ks in (('valun_directory', ('query',)), ('valun_propose', ('counterparty', 'description')),
+                                                          ('valun_respond', ('reason',)), ('valun_review_delivery', ('reason',)))
+                            for k in ks for v in (42, [1], {'a': 1})] + \
+                           [(tool, 'deal_id', {'a': 1}) for tool in ('valun_deal', 'valun_deliver', 'valun_review_delivery')]
+# A value of another type for each JSON type an argument has, and for an enum, a value that is not one of its values.
+WRONG_TYPE = {'string': [42, {'a': 1}], 'integer': ['7', 1.5, True], 'boolean': ['yes', 1], 'array': ['x', [5]]}
+
+
+def argument_type_scenarios():
+    """Fix inbox #58 (0.7.2), the type sweep: every argument a tool's schema gives, called with a value of another type
+    (WRONG_TYPE; a misspelt value for an enum, and an id of another shape for deal_id, guarantee_id and call_id), on top
+    of Basis's base arguments; and Basis's 18 calls that answered internal_error in 0.7.1. Each is refused before anything
+    is read or signed: bad_arguments naming the argument and what it must be, or the tool's own refusal (bad_role,
+    bad_action, bad_decision) of a value that is not one of an enum's. Recorded after every other scenario (main), as
+    late_scenarios are, though nothing here is signed."""
+    S = []
+
+    def add(name, tool, args):
+        S.append({'name': name, 'tool': tool, 'args': args, 'routes': {}, 'store': 'alice', 'agent': {}, 'state': {}})
+    for tool, k, v in BASIS_58_INTERNAL_ERRORS:
+        add(f'arguments: {tool} {k}={json.dumps(v)} (Basis #58, internal_error in 0.7.1)', tool, dict(BASIS_58_BASE[tool], **{k: v}))
+    for t in schemas.ALL:
+        base = BASIS_58_BASE.get(t['name'], {})
+        for k, spec in (t['parameters'].get('properties') or {}).items():
+            values = (['Accept', 7] if 'enum' in spec else
+                      ['vd_1', 'VD_' + '6A' * 8, 7] if k == 'deal_id' else ['vg_1', 7] if k == 'guarantee_id' else ['vgc_1', 7] if k == 'call_id'
+                      else WRONG_TYPE.get(spec.get('type'), []))
+            for v in values:
+                add(f'arguments: {t["name"]} {k}={json.dumps(v)}, of another type', t['name'], dict(base, **{k: v}))
+    add('arguments: valun_set_limits clear names a limit that is not one', 'valun_set_limits', {'clear': ['max_total_owed', 'nope']})
+    add('arguments: valun_offer_guarantee deals with one that is not a deal id', 'valun_offer_guarantee',
+        dict(BASIS_58_BASE['valun_offer_guarantee'], deals=['vd_' + '6a' * 8, 'vd_1']))
+    return S
+
+
+def payer_words_scenarios():
+    """0.7.2, the clean-user test: on a server with circulating credit a payer's binding words promise no credit note,
+    since it may pay with notes it holds and only the acceptance of the delivery decides how: accepting bob's offer to do
+    work for alice, and countering it (a new offer's words: the propose scenarios on a circulation server). Recorded
+    last, as late_scenarios are: they sign, and the nonces of everything recorded before them stay the same."""
+    S = []
+
+    def add(name, tool, args, routes):
+        S.append({'name': name, 'tool': tool, 'args': args, 'routes': routes, 'store': 'alice', 'agent': {'process_consents': False},
+                  'state': {'pins': dict(PINS), 'consent_policy': dict(POLICY)}})
+    view = dict(deals()['open_from_bob'], payment=None)     # a circulation server's deal view has the payment key
+    ob = view['id']
+    routes = {f'GET /pilot/v1/deals/{ob}': {'body': view}, 'GET /pilot/v1/info': {'body': CIRC_INFO}}
+    add('respond: accept as the payer on a circulation server (0.7.2)', 'valun_respond', {'deal_id': ob, 'action': 'accept'},
+        {**routes, f'POST /pilot/v1/deals/{ob}/accept': {'body': {'id': ob, 'status': 'agreed', 'next_actions': []}}})
+    add('respond: counter as the payer on a circulation server (0.7.2)', 'valun_respond', {'deal_id': ob, 'action': 'counter', 'price': 16},
+        {**routes, f'POST /pilot/v1/deals/{ob}/counter': {'body': {'id': ob, 'status': 'open', 'pending_counter': None, 'next_actions': []}}})
+    return S
+
+
+def owner_wait_scenarios():
+    """0.7.2, the newcomer tests: an answer that waits for the owner says where to approve (the server's owner console)
+    and which commitment: the deal, and the pending approval of this participant the server's answer names (one:
+    approval_id; several: approval_ids; ids of another shape and decided approvals are not named). Recorded last: they
+    sign, and the nonces of everything recorded before them stay the same."""
+    S = []
+
+    def add(name, tool, args, routes):
+        S.append({'name': name, 'tool': tool, 'args': args, 'routes': routes, 'store': 'alice', 'agent': {}, 'state': {}})
+    d = deals()
+    ob, dg = d['open_from_bob']['id'], d['delivered_good']['id']
+    rows = [{'id': 'va_0a0a0a0a0a0a', 'deal_id': ob, 'kind': 'accept', 'state': 'pending'},
+            {'id': 'va_0b0b0b0b0b0b', 'deal_id': ob, 'kind': 'propose', 'state': 'approved'},
+            {'id': 'not an approval id', 'deal_id': ob, 'kind': 'accept', 'state': 'pending'}]
+    add('respond: accept held for my owner, its approval named (0.7.2)', 'valun_respond', {'deal_id': ob, 'action': 'accept'},
+        {f'GET /pilot/v1/deals/{ob}': {'body': d['open_from_bob']},
+         f'POST /pilot/v1/deals/{ob}/accept': {'body': {'id': ob, 'status': 'accepted_awaiting_owner', 'next_actions': [], 'approvals': rows}}})
+    two = [{'id': 'va_0d0d0d0d0d0d', 'deal_id': dg, 'kind': 'complete', 'state': 'pending'},
+           {'id': 'va_0c0c0c0c0c0c', 'deal_id': dg, 'kind': 'complete', 'state': 'pending'}]
+    add('review: accept held for my owner, two approvals pending (0.7.2)', 'valun_review_delivery', {'deal_id': dg, 'decision': 'accept'},
+        {f'GET /pilot/v1/deals/{dg}': {'body': d['delivered_good']},
+         f'GET /pilot/v1/deals/{dg}/credit-note-template': {'body': template(d['delivered_good'])},
+         f'POST /pilot/v1/deals/{dg}/complete': {'body': {'id': dg, 'status': 'completion_awaiting_owner', 'counterparty': {'handle': 'bob'},
+                                                          'credit_note': {'state': 'awaiting_owner', 'amount': 20}, 'approvals': two}}})
+    # The 0.7.2 review: whose owner an acceptance waits for, as acceptance.held_for names it (the proposer's alone: no
+    # console of this participant's is named; both; a value that is not a list names neither).
+    for name, held_for, approvals in (("held for the proposer's owner only", ['proposer_owner'], []),
+                                      ('held for both owners', ['acceptor_owner', 'proposer_owner'], rows),
+                                      ('held for my owner, held_for alone', ['acceptor_owner'], []),
+                                      ('held_for not a list', 'acceptor_owner', [])):
+        add(f'respond: accept {name} (0.7.2 review)', 'valun_respond', {'deal_id': ob, 'action': 'accept'},
+            {f'GET /pilot/v1/deals/{ob}': {'body': d['open_from_bob']},
+             f'POST /pilot/v1/deals/{ob}/accept': {'body': {'id': ob, 'status': 'accepted_awaiting_owner', 'next_actions': [],
+                                                            'approvals': approvals,
+                                                            'acceptance': {'version': 1, 'state': 'awaiting_owner',
+                                                                           'held_for': held_for}}}})
+    # 0.7.2, the approval semantics of 2026-11-17: what is held and until when, the command that opens the console, whose
+    # turn it is while an owner decides, and what an owner's rejection leaves (valun_deal owner_decisions).
+    cmd = {'console_command': 'valun --profile p console'}
+    S.append({'name': 'respond: accept held for my owner, the console command named (0.7.2 approvals)', 'tool': 'valun_respond',
+              'args': {'deal_id': ob, 'action': 'accept'}, 'store': 'alice', 'agent': cmd, 'state': {},
+              'routes': {f'GET /pilot/v1/deals/{ob}': {'body': d['open_from_bob']},
+                         f'POST /pilot/v1/deals/{ob}/accept': {'body': {'id': ob, 'status': 'accepted_awaiting_owner',
+                                                                        'next_actions': [], 'approvals': rows[:1],
+                                                                        'counterparty': {'handle': 'bob'},
+                                                                        'current': {'terms': {'offer_expires_at': '2099-01-01T00:00:00.000Z'}},
+                                                                        'acceptance': {'version': 1, 'state': 'awaiting_owner',
+                                                                                       'held_for': ['acceptor_owner']}}}}})
+    ts = T0_MS - T0_MS % 1000 - 3                      # a bound note's timestamp (it ends in 997)
+    held_note = {'state': 'signed', 'amount': 20, 'approval_id': 'va_0e0e0e0e0e0e', 'prior_total': 10,
+                 'note': {'total': 30, 'timestamp': ts, 'signature': '03' + '11' * 64, 'prior_signature': '03' + '22' * 64}}
+    add('review: accept held for my owner, a bound note: its hour named (0.7.2 approvals)', 'valun_review_delivery',
+        {'deal_id': dg, 'decision': 'accept'},
+        {f'GET /pilot/v1/deals/{dg}': {'body': d['delivered_good']},
+         f'GET /pilot/v1/deals/{dg}/credit-note-template': {'body': template(d['delivered_good'])},
+         f'POST /pilot/v1/deals/{dg}/complete': {'body': {'id': dg, 'status': 'completion_awaiting_owner', 'counterparty': {'handle': 'bob'},
+                                                          'credit_note': held_note,
+                                                          'approvals': [{'id': 'va_0e0e0e0e0e0e', 'deal_id': dg, 'kind': 'issue_note',
+                                                                         'state': 'pending'}]}}})
+    rejected = [{'id': 'va_0b0b0b0b0b0b', 'deal_id': dg, 'kind': 'propose', 'state': 'approved'},
+                {'id': 'va_0f0f0f0f0f0f', 'deal_id': dg, 'kind': 'issue_note', 'state': 'rejected',
+                 'created_at': '2026-11-06T11:59:00.000Z', 'decided_at': '2026-11-06T11:59:30.000Z'}]
+    add('deal: an IOU my owner rejected, what it leaves (0.7.2 approvals)', 'valun_deal', {'deal_id': dg},
+        {f'GET /pilot/v1/deals/{dg}': {'body': dict(d['delivered_good'], approvals=rejected)}})
+    for st, role in (('completion_awaiting_owner', 'payer'), ('completion_awaiting_owner', 'payee'), ('note_failed', 'payer'),
+                     ('proposed_awaiting_owner', 'payer'), ('rejected_by_owner', 'payer')):
+        add(f'deal: whose turn, {st} as {role} (0.7.2 approvals)', 'valun_deal', {'deal_id': dg},
+            {f'GET /pilot/v1/deals/{dg}': {'body': dict(d['delivered_good'], status=st, your_role=role)}})
+    S.append({'name': 'status: console approvals and the mandate console sets (0.7.2 approvals)', 'tool': 'valun_status',
+              'args': {}, 'store': 'alice', 'agent': {'approvals': APPROVAL_TEXT['console']}, 'state': {},
+              'routes': {'GET /pilot/v1/me': {'body': dict(ME, mandate=dict(MANDATE, approve_above=0, review_deliveries=True))}}})
+    S.append({'name': 'status: ask approvals, Review deliveries left on (0.7.2 approvals)', 'tool': 'valun_status',
+              'args': {}, 'store': 'alice', 'agent': {'approvals': APPROVAL_TEXT['ask']}, 'state': {},
+              'routes': {'GET /pilot/v1/me': {'body': dict(ME, mandate=dict(MANDATE, review_deliveries=True))}}})
+    return S
+
+
+def review_scenarios():
+    """0.7.2, the RC's accuracy review: what valun_deal says a rejected or void hold leaves (next steps only while the
+    deal's status still fits them; the times this client allows; a confirmation the acceptance voided), the other side's
+    owner's decisions, a held IOU's hour and the words once it has passed (valun_deal and the tour's plan), and the reply
+    to an honor names the call the client chose. Recorded last: the honors sign, and the nonces of everything recorded
+    before them stay the same."""
+    S = []
+
+    def add(name, tool, args, routes, state=None):
+        S.append({'name': name, 'tool': tool, 'args': args, 'routes': routes, 'store': 'alice', 'agent': {}, 'state': state or {}})
+    d = deals()
+    dg, om, ni, dm = d['delivered_good'], d['open_mine'], d['note_issued'], d['delivered_to_me']
+    view = lambda v: {f"GET /pilot/v1/deals/{v['id']}": {'body': v}}   # noqa: E731
+    me, decided = ID['alice'], '2026-11-06T11:59:30.000Z'
+    ts = T0_MS - T0_MS % 1000 - 3                      # a bound note's timestamp (it ends in 997), signed just now
+    old = ts - 3_700_000                               # one signed more than an hour ago
+    row = lambda aid, did, kind, state: {'id': aid, 'deal_id': did, 'kind': kind, 'state': state,   # noqa: E731
+                                         'created_at': '2026-11-06T11:59:00.000Z', 'decided_at': decided}
+    add('deal: my offer open again, the acceptance not approved by its owner (0.7.2 review)', 'valun_deal', {'deal_id': om['id']},
+        view(dict(om, you=me, approvals=[row('va_1a1a1a1a1a1a', om['id'], 'confirm_offer', 'void_acceptance_rejected')])))
+    add('deal: my offer withdrawn, my owner did not confirm it (0.7.2 review)', 'valun_deal', {'deal_id': om['id']},
+        view(dict(om, you=me, status='withdrawn', next_actions=[],
+                  approvals=[row('va_1a1a1a1a1a1a', om['id'], 'confirm_offer', 'rejected')])))
+    add('deal: earlier decisions of my owner on a deal paid since (0.7.2 review)', 'valun_deal', {'deal_id': ni['id']},
+        view(dict(ni, you=me, approvals=[row('va_2a2a2a2a2a2a', ni['id'], 'accept', 'rejected'),
+                                         row('va_2b2b2b2b2b2b', ni['id'], 'issue_note', 'rejected')])))
+    rejected_transfer = {'deal_id': dg['id'], 'route': 'transfer', 'edge': edge('frank', 'alice'), 'prior': 30,
+                         'prior_timestamp': T0_MS - 900_000 + 1, 'prior_signature': note_sig('frank', 'alice', 30, T0_MS - 900_000 + 1),
+                         'total': 10, 'timestamp': ts + 2, 'quote_digest': 'ab' * 32, 'ack': 'basis/prior-ack/1',
+                         'signed_at': '2026-11-06T11:59:58.000Z', 'attempt_id': 'vt_1212121212121212', 'approval_id': 'va_2c2c2c2c2c2c',
+                         'outcome': 'not_applied', 'server_ended': {'state': 'rejected', 'approval_id': 'va_2c2c2c2c2c2c', 'at': decided}}
+    add('deal: a payment by transfer my owner rejected, as my client recorded it (0.7.2 review)', 'valun_deal', {'deal_id': dg['id']},
+        {'GET /pilot/v1/info': {'body': INFO},
+         **view(dict(dg, you=me, payment={'method': 'transfer', 'state': 'void_rejected', 'transfer_id': 'vt_1212121212121212',
+                                          'fallback_after': '2026-11-06T13:01:00.999Z'},
+                     approvals=[row('va_2c2c2c2c2c2c', dg['id'], 'pay_by_transfer', 'rejected')]))},
+        state={'pins': dict(PINS), 'transfer_attempts': {dg['id']: [rejected_transfer]}})
+    # valun_deal learns the rejection itself (state_after: the attempt not applied), as the Python agent does.
+    held_note = {'deal_id': dg['id'], 'route': 'note', 'edge': edge('alice', 'bob'), 'prior': 10,
+                 'prior_timestamp': T0_MS - 600_000, 'prior_signature': note_sig('alice', 'bob', 10, T0_MS - 600_000), 'total': 30,
+                 'timestamp': ts, 'ack': 'basis/prior-ack/1', 'signed_at': '2026-11-06T11:59:58.000Z', 'approval_id': 'va_3a3a3a3a3a3a'}
+    add('deal: learns that my owner rejected my IOU, and says what it leaves (0.7.2 review)', 'valun_deal', {'deal_id': dg['id']},
+        view(dict(dg, you=me, approvals=[row('va_3a3a3a3a3a3a', dg['id'], 'issue_note', 'rejected')])),
+        state={'pins': dict(PINS), 'transfer_attempts': {dg['id']: [held_note]}})
+    add("deal: the payer's owner rejected the IOU its agent signed, as the payee sees it (0.7.2 review)", 'valun_deal',
+        {'deal_id': dm['id']},
+        view(dict(dm, you=me, history=dm['history'] + [{'at': decided, 'by': f"owner:{ID['bob']}", 'event': 'owner_rejected',
+                                                        'kind': 'issue_note'}])))
+    pending = [{'id': 'va_0e0e0e0e0e0e', 'deal_id': dg['id'], 'kind': 'issue_note', 'state': 'pending',
+                'created_at': '2026-11-06T11:59:00.000Z'}]
+    for name, t in (('its hour named', ts), ('its hour passed: reject it', old)):
+        held = {'state': 'awaiting_owner', 'amount': 20, 'approval_id': 'va_0e0e0e0e0e0e', 'prior_total': 10,
+                'note': {'total': 30, 'timestamp': t, 'signature': '03' + '11' * 64, 'prior_signature': '03' + '22' * 64}}
+        add(f'deal: my IOU held for my owner, {name} (0.7.2 review)', 'valun_deal', {'deal_id': dg['id']},
+            view(dict(dg, you=me, status='completion_awaiting_owner', credit_note=held, approvals=pending)))
+    # The tour's plan while a held IOU waits for the owner, from this client's own record of the IOU it signed.
+    circ = {'GET /pilot/v1/info': {'body': CIRC_INFO}}
+    fa_edges = {'GET /pilot/v1/edges?since=0': {'body': edges_view(incoming=[('frank', 'alice', state_of('frank', 'alice', 30, T0_MS - 900_000 + 1))],
+                                                                    outgoing=[('alice', 'bob', state_of('alice', 'bob', 10, T0_MS - 600_000))],
+                                                                    next_seq=2)}}
+    sb = {'sandbox_only': True, 'joined_at': '2026-11-06T11:58:00.000Z'}
+    sx = {'claims_held': 3, 'owes': 0, 'net': 3, 'claims': [{'from': 'sandbox-exact', 'amount': 3}], 'debts': [],
+          'spendable_notes': [{'issuer_id': ID['carol'], 'issuer_handle': 'sandbox-exact', 'issuer_pubkey': K['carol']['pubkey'], 'spendable': 3}]}
+    waiting = [{'deal_id': 'vd_1313131313131313', 'counterparty': 'bob', 'kind': 'issue_note', 'approval_id': 'va_0e0e0e0e0e0e'}]
+    for name, t in (('its hour named', ts), ('its hour passed', old)):
+        note = {'deal_id': 'vd_1313131313131313', 'route': 'note', 'edge': edge('alice', 'bob'), 'prior': 10,
+                'prior_timestamp': T0_MS - 600_000, 'prior_signature': note_sig('alice', 'bob', 10, T0_MS - 600_000), 'total': 13,
+                'timestamp': t, 'ack': 'basis/prior-ack/1', 'signed_at': '2026-11-06T11:00:00.000Z', 'approval_id': 'va_0e0e0e0e0e0e'}
+        add(f'status: sandbox tour, my IOU waits for my owner, {name} (0.7.2 review)', 'valun_status', {},
+            {**circ, **fa_edges, 'GET /pilot/v1/me': {'body': me_circ(position=sx, participant=sb)},
+             'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[], awaiting_your_owner=waiting)}},
+            state={'pins': dict(PINS), 'consent_policy': dict(POLICY), 'transfer_attempts': {'vd_1313131313131313': [note]}})
+    # An honor with no call_id: the client honors its first open or failed call (C1), and the reply names that call and
+    # the state the server answered for it, not an earlier call honored before (C2).
+    gi = {'GET /pilot/v1/info': {'body': G_INFO}}
+    given = g_terms(G2, 'alice', 'frank', 'bob')
+    C2 = 'vgc_' + '5e' * 8
+    earlier = g_call(given, C2, 2, state='honored')
+    before = g_view(given, 'alice', state='active', owed=7, calls=[g_call(given, C1, 3), earlier])
+    tpl = {'guarantee_id': G2, 'call_id': C1, 'terms_hash': vc.terms_hash(given), 'amount': 3, 'issuer_pubkey': K['alice']['pubkey'],
+           'recipient_pubkey': K['bob']['pubkey'], 'keys_as_agreed': True, 'prior_total': 0, 'total': 3, 'timestamp': T997,
+           'tracker_nft_id': NFT, 'denomination': DENOM, 'message_hex': '00', 'prior_note': None, 'prior_timestamp': 0, 'prior_message_hex': '00'}
+    for name, st in (('the tracker did not record the note', 'failed'), ('honored, beside a call honored before', 'honored')):
+        after = g_view(given, 'alice', state='active', owed=7, calls=[g_call(given, C1, 3, state=st), earlier])
+        add(f'respond_guarantee: honor with no call_id, {name} (0.7.2 review)', 'valun_respond_guarantee',
+            {'guarantee_id': G2, 'action': 'honor'},
+            {**gi, f"GET /pilot/v1/guarantees/{G2}": {'body': before},
+             f'GET /pilot/v1/guarantees/{G2}/calls/{C1}/note-template?prior=1&bound=1': {'body': tpl},
+             f'POST /pilot/v1/guarantees/{G2}/calls/{C1}/honor': {'body': after}}, state={'pins': dict(PINS)})
+    # Each other branch of what valun_deal says, from the Python agent, so the JS agent says the same (nothing signs).
+    add('deal: my payment by transfer held for my owner, until its hold ends (0.7.2 review)', 'valun_deal', {'deal_id': dg['id']},
+        {'GET /pilot/v1/info': {'body': INFO},
+         **view(dict(dg, you=me, status='completion_awaiting_owner',
+                     payment={'method': 'transfer', 'state': 'awaiting_owner', 'transfer_id': 'vt_1212121212121212',
+                              'expires_at': '2026-11-06T12:19:58.000Z'},
+                     approvals=[dict(pending[0], kind='pay_by_transfer')]))})
+    for name, kind, state, status in (('an IOU void when my owner approved it', 'issue_note', 'void_stale', 'delivered'),
+                                      ('an IOU void by a revoked key, the delivery accepted', 'issue_note', 'void_key_revoked',
+                                       'payment_due'),
+                                      ('a payment by transfer whose hold expired', 'pay_by_transfer', 'void_expired', 'delivered'),
+                                      ('a payment by transfer void by a revoked key', 'pay_by_transfer', 'void_key_revoked',
+                                       'payment_due'),
+                                      ('a payment by transfer void when my owner approved it', 'pay_by_transfer', 'void_stale',
+                                       'delivered'),
+                                      ('a counter-offer my owner rejected, their offer open', 'propose', 'rejected', 'open'),
+                                      ('an acceptance my owner rejected, their offer open', 'accept', 'rejected', 'open'),
+                                      ('an acceptance that expired', 'accept', 'void_expired', 'expired'),
+                                      ('a confirmation that expired', 'confirm_offer', 'void_expired', 'expired')):
+        base = d['open_from_bob'] if status in ('open', 'expired') else dg
+        add(f'deal: {name} (0.7.2 review)', 'valun_deal', {'deal_id': base['id']},
+            {'GET /pilot/v1/info': {'body': INFO},
+             **view(dict(base, you=me, status=status, approvals=[row('va_4a4a4a4a4a4a', base['id'], kind, state)]))})
+    other = [({'at': decided, 'by': f"owner:{ID['bob']}", 'event': 'owner_approval_void_stale', 'kind': 'issue_note'},
+              'delivered', 'payee', dm, 'an IOU void when its owner approved it'),
+             ({'at': decided, 'by': f"owner:{ID['bob']}", 'event': 'owner_rejected', 'kind': 'pay_by_transfer'},
+              'payment_due', 'payee', dm, 'a payment by transfer its owner rejected, the delivery accepted'),
+             ({'at': decided, 'by': 'valun', 'event': 'payment_void', 'transfer_id': 'vt_1212121212121212', 'reason': 'expired'},
+              'delivered', 'payee', dm, 'a payment by transfer whose hold expired'),
+             ({'at': decided, 'by': f"owner:{ID['bob']}", 'event': 'owner_rejected', 'kind': 'accept', 'version': 1},
+              'open', 'payer', om, 'an acceptance of my offer its owner rejected'),
+             ({'at': decided, 'by': f"owner:{ID['bob']}", 'event': 'owner_rejected', 'kind': 'confirm_offer', 'version': 1},
+              'withdrawn', 'payer', d['open_from_bob'], 'its offer withdrawn by its owner'),
+             ({'at': decided, 'by': f"owner:{ID['bob']}", 'event': 'owner_rejected', 'kind': 'issue_note'},
+              'note_issued', 'payee', dm, 'an earlier rejection on a deal paid since')]
+    for h, status, role, base, name in other:
+        add(f"deal: the other side's owner's decision, {name} (0.7.2 review)", 'valun_deal', {'deal_id': base['id']},
+            {'GET /pilot/v1/info': {'body': INFO},
+             **view(dict(base, you=me, status=status, your_role=role, history=base['history'] + [h]))})
+    return S
+
+
 def run_scenarios(make=None):
     out = []
     for sc in (make or scenarios)():
@@ -1535,7 +1904,8 @@ def run_scenarios(make=None):
             ag = va.ValunAgent(store, approvals=sc['agent'].get('approvals', ''), check_link_hosts=sc['agent'].get('check_link_hosts', True),
                                setup_hint=sc['agent'].get('setup_hint'), process_consents=sc['agent'].get('process_consents', True),
                                consents_on_reads=sc['agent'].get('consents_on_reads', False),
-                               declare_roles=sc['agent'].get('declare_roles'), brief_status=sc['agent'].get('brief_status', False))
+                               declare_roles=sc['agent'].get('declare_roles'), brief_status=sc['agent'].get('brief_status', False),
+                               console_command=sc['agent'].get('console_command'))
             if what == 'call':
                 record['result'] = ag.call_safe(sc['tool'], sc['args'])
                 record['requests'] = list(LOG)
@@ -1650,7 +2020,9 @@ def client_helpers():
             'amount_text': [[n, u, vc.amount_text(n, u)] for u in ('PC', 'nanoERG')
                             for n in (0, 1, 3, -2_000_000, 3_000_000, 999_999_999, 1_000_000_000, 1_500_000_000, 123_456_789_012, '7')],
             'tour_goal': [[s, u, k, va.tour_goal(s, u, k)] for s in (1, 2, 3, 4, 5, None) for u, k in (('PC', 1), ('nanoERG', 1_000_000))],
-            'owes': [[r, u, n, va.owes(r, 'bob', n, u)] for r in ('payer', 'payee') for u, n in (('PC', 3), ('nanoERG', 3_000_000))],
+            # 0.7.2: with circulating credit a payer's words promise no credit note (it may pay with notes it holds)
+            'owes': [[r, u, n, c_, va.owes(r, 'bob', n, u, c_)] for r in ('payer', 'payee') for u, n in (('PC', 3), ('nanoERG', 3_000_000))
+                     for c_ in (False, True, None, 1)],
             'tracker_words': [[n, va.tracker_words(n)] for n in (None, 'valun-pilot-1', 'valun-testnet-1')],
             'features_of': [[i, va.features_of(i)] for i in (None, [], {}, {'features': None}, {'features': []}, {'features': ['circulation/1']},
                                                            {'features': 'circulation/1'}, {'features': [1]}, {'features': ['a', 'b']})]}
@@ -1983,9 +2355,68 @@ def client_scenarios():
     return S
 
 
-def run_client_scenarios():
+def owner_decision_scenarios():
+    """0.7.2 (approval probe D2): a payment the server held for the owner and that ended unreleased (rejected in the owner
+    console, or void) is recorded as not applied. Appended last: they read and record, and sign nothing."""
+    D = deals()
+    dg = D['delivered_good']
+    S = []
+
+    def add(name, method, kwargs, routes=None, state=None):
+        S.append({'name': name, 'method': method, 'kwargs': kwargs, 'routes': routes or {}, 'state': state or {}, 'store': 'alice'})
+    ts = T0_MS - T0_MS % 1000 - 3                      # a bound note's timestamp (it ends in 997)
+    note = {'deal_id': dg['id'], 'route': 'note', 'edge': PAIR_AB, 'prior': 10, 'prior_timestamp': T0_MS - 900_000,
+            'prior_signature': None, 'total': 30, 'timestamp': ts, 'quote_digest': None, 'ack': nv.PRIOR_ACK,
+            'signed_at': '2026-11-06T11:59:58.000Z'}
+    pend = {'total': 30, 'timestamp': ts, 'kind': 'note', 'ref': dg['id'], 'direction': 'out', 'signed_at': '2026-11-06T11:59:58.000Z'}
+    recs = {PAIR_AB: {'confirmed': None, 'pending': [pend]}}
+    made = datetime.fromtimestamp((ts + 2000) // 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + '.000Z'
+    appr = lambda aid, state, kind='issue_note', created=made: {'id': aid, 'deal_id': dg['id'], 'kind': kind, 'state': state,  # noqa: E731
+                                                                 'created_at': created, 'decided_at': '2026-11-06T12:00:30.000Z'}
+    view = lambda *rows, **kw: dict(dg, approvals=list(rows), **kw)  # noqa: E731
+    with_id = dict(note, approval_id='va_0e0e0e0e0e0e')
+    add('learn_owner_decisions: an IOU its owner rejected is not applied, its pending entry forgotten', 'learn_owner_decisions',
+        {'deal_id': dg['id'], 'd': view(appr('va_0e0e0e0e0e0e', 'rejected'))},
+        state={'transfer_attempts': {dg['id']: [with_id]}, 'records': recs})
+    add('learn_owner_decisions: a record without approval_id, matched by its time', 'learn_owner_decisions',
+        {'deal_id': dg['id'], 'd': view(appr('va_0e0e0e0e0e0e', 'void_stale'))},
+        state={'transfer_attempts': {dg['id']: [note]}, 'records': recs})
+    add('learn_owner_decisions: an approval made too long after the IOU is not taken for it', 'learn_owner_decisions',
+        {'deal_id': dg['id'], 'd': view(appr('va_0e0e0e0e0e0e', 'rejected', created='2026-11-06T13:00:00.000Z'))},
+        state={'transfer_attempts': {dg['id']: [note]}, 'records': recs})
+    later_note = dict(with_id, total=50, timestamp=ts + 1000, prior=30, signed_at='2026-11-06T11:59:59.000Z')
+    add("learn_owner_decisions: a record without approval_id is not matched to another attempt's approval",
+        'learn_owner_decisions', {'deal_id': dg['id'], 'd': view(appr('va_0e0e0e0e0e0e', 'rejected'))},
+        state={'transfer_attempts': {dg['id']: [note, later_note]}, 'records': recs})
+    add('learn_owner_decisions: pending or approved holds, and the payee side, record nothing', 'learn_owner_decisions',
+        {'deal_id': dg['id'], 'd': view(appr('va_0e0e0e0e0e0e', 'approved'), appr('va_0d0d0d0d0d0d', 'pending'))},
+        state={'transfer_attempts': {dg['id']: [with_id]}, 'records': recs})
+    add('learn_owner_decisions: the payee side records nothing', 'learn_owner_decisions',
+        {'deal_id': dg['id'], 'd': view(appr('va_0e0e0e0e0e0e', 'rejected'), your_role='payee')},
+        state={'transfer_attempts': {dg['id']: [with_id]}, 'records': recs})
+    add('learn_owner_decisions: approved after its hour, refused by the tracker (novation_expired)', 'learn_owner_decisions',
+        {'deal_id': dg['id'], 'd': view(appr('va_0e0e0e0e0e0e', 'approved'), status='note_failed',
+                                        credit_note={'state': 'failed', 'error_code': 'novation_expired',
+                                                     'note': {'total': 30, 'timestamp': ts}})},
+        state={'transfer_attempts': {dg['id']: [with_id]}, 'records': recs})
+    tr = {'deal_id': dg['id'], 'route': 'transfer', 'edge': edge('frank', 'alice'), 'prior': 30, 'prior_timestamp': T0_MS - 900_000 + 1,
+          'prior_signature': None, 'total': 10, 'timestamp': res(T0_MS - 5000, 999), 'quote_digest': 'ab' * 32,
+          'ack': nv.PRIOR_ACK, 'attempt_id': 'vt_7a7a7a7a7a7a7a7a', 'signed_at': '2026-11-06T11:59:55.000Z'}
+    add('learn_owner_decisions: a payment by transfer whose hold expired (0.7.1 record: by its transfer id)', 'learn_owner_decisions',
+        {'deal_id': dg['id'], 'd': view(appr('va_0c0c0c0c0c0c', 'void_expired', kind='pay_by_transfer'),
+                                        payment={'method': 'transfer', 'transfer_id': 'vt_7a7a7a7a7a7a7a7a', 'state': 'expired'})},
+        state={'transfer_attempts': {dg['id']: [tr]}})
+    add('refresh_owner_decisions: reads each deal with an open attempt', 'refresh_owner_decisions', {},
+        {f"GET /pilot/v1/deals/{dg['id']}": {'body': view(appr('va_0e0e0e0e0e0e', 'rejected'))}},
+        state={'transfer_attempts': {dg['id']: [with_id], 'vd_9999999999999999': [dict(note, deal_id='vd_9999999999999999',
+                                                                                          outcome='applied')]},
+               'records': recs})
+    return S
+
+
+def run_client_scenarios(make=None):
     out = []
-    for sc in client_scenarios():
+    for sc in (make or client_scenarios)():
         ROUTES.clear()
         ROUTES.update(base_routes())
         ROUTES.update(sc['routes'])
@@ -2006,6 +2437,28 @@ def run_client_scenarios():
 
 
 # ---------- helper-level parity ----------
+# Fix inbox #58 (0.7.2): values of every JSON type, for each argument of every tool (argument_refusal_table), and the
+# values a wrong-typed call of the type sweep passes (argument_type_scenarios).
+TYPE_PROBES = ('x', '', 'vd_' + '6a' * 8, 'VD_' + '6A' * 8, 'vd_' + '6a' * 8 + '\n', 'vg_' + '3c' * 8, 'vgc_' + '3c' * 8, 'vd_1', 7, 0,
+               -3, 2 ** 53 - 1, 1.5, True, False, [], [1], ['vd_' + '6a' * 8], ['max_total_owed'], ['nope'], {'a': 1}, 'accept',
+               'payer', 'Accept', 'own_note', 'x' * 60)
+
+
+def argument_refusal_table():
+    """argument_refusal (fix inbox #58, 0.7.2) of every argument of every tool for TYPE_PROBES, in the pilot's and the
+    testnet's unit: [tool, argument, value, unit, None or [code, message]]."""
+    out = []
+    for t in schemas.ALL:
+        for k in t['parameters'].get('properties') or {}:
+            for v in TYPE_PROBES + (None,):
+                for unit in ('PC', 'nanoERG'):
+                    e = va.argument_refusal(t['name'], k, v, unit)
+                    out.append([t['name'], k, v, unit, None if e is None else [e.code, str(e)]])
+    out.append(['valun_deal', 'no_such_argument', 7, 'PC', None])
+    out.append(['valun_no_such_tool', 'deal_id', 7, 'PC', None])
+    return out
+
+
 def records_table():
     """records.py, step by step: each step's call and outcome, and the records afterwards (real signatures, alice -> bob)."""
     alice, bob = K['alice']['pubkey'], K['bob']['pubkey']
@@ -2055,6 +2508,15 @@ def records_table():
         ('edge_state', [st(1, 2)]),
         ('edge_state', [{'total': 1, 'timestamp': 2, 'signature': ''}]),
         ('pair_key', [alice, bob]),
+        # 0.7.2 (fix inbox #86): a consent's pending new state keeps the signature this client made over it
+        ('add_pending', [pair, 0, 9998, 'setoff', 'vs_2', 'out']),
+        ('add_pending', [pair, 0, 9998, 'setoff', 'vs_3', 'out']),
+        ('note_signature', [pair, 0, 9998, 'vs_2', 'ab' * 64]),
+        ('note_signature', [pair, 0, 9998, 'vs_4', 'cd' * 64]),
+        ('note_signature', ['nokey', 0, 9998, 'vs_2', 'cd' * 64]),
+        ('note_signature', [pair, 0, 9998, 'vs_2', '']),
+        ('note_signature', [pair, 0, 9998, 'vs_2', 5]),
+        ('confirm', [pair, {'total': 0, 'timestamp': 9998, 'signature': 'ab' * 64}]),
     ]
     recs, out = {}, []
     for fn, args in steps:
@@ -2190,6 +2652,62 @@ def parity():
         ({'service': None}, 'x'),
     ]
     P['check_delivery'] = [[t, c, vs.check_delivery(t, c)] for t, c in cases]
+    # the Nov 18 fresh-join run (finding 10): the exact check of a built-in job only
+    free = {'title': 'word stats', 'description': 'Give me a word count of this text: "the cat sat on the mat"',
+            'deliverable': 'plain text'}
+    built = [({'service': sv}, None), ({'service': free}, None), ({'service': free}, 'sandbox-exact'), ({'service': free}, ' Sandbox-Mallory '),
+             ({'service': free}, 'sandbox-exactly'), ({'service': free}, 5), ({'service': dict(free, title='Notary')}, None),
+             ({'service': dict(free, title=' notary\tJOB ')}, None), ({'service': dict(free, title='Welcome job: text-stats')}, None),
+             ({'service': dict(free, title='text-stats of my essay')}, None), ({'service': dict(free, title=7)}, None),
+             ({'service': dict(free, deliverable='the result as a ```json block')}, None),
+             ({'service': dict(free, deliverable='the result as a ```JSON block')}, None),
+             ({'service': dict(free, description='Answer in a ```json block: word count of "a b"')}, None),
+             ({'service': dict(free, description='Review it:\n```json\n{"a": 1}\n```')}, None),
+             ({'service': {'title': 'Summary', 'description': 'word count at most 30:\n```\nlong text\n```'}}, None),
+             ({}, None), ({'service': None}, 'sandbox-exact')]
+    P['built_in_job'] = [[t, cp, vs.built_in_job(t, cp)] for t, cp in built]
+    P['check_built_in'] = [[t, c, cp, vs.check_built_in(t, c, cp)] for t, c, cp in [
+        ({'service': free}, 'Word count: 6.', 'bob'), ({'service': free}, 'Word count: 6.', 'sandbox-exact'),
+        ({'service': free}, vs.render('text-stats', vs.text_stats('the cat sat on the mat'), 'x'), 'sandbox-mallory'),
+        ({'service': sv}, 'no block', None), ({'service': {'title': 'write a poem'}}, 'x', 'sandbox-exact'),
+        ({'service': dict(free, title='notary')}, vs.render('notary', vs.notary('the cat sat on the mat'), 'x'), 'bob')]]
+    P['exact_facts'] = [[t, c, cp, va.exact_facts(t, c, cp)] for t, c, cp in [
+        ({'service': sv}, vs.render('text-stats', right, 'hello world hello'), None),
+        ({'service': sv}, vs.render('text-stats', dict(right, words=4, lines=9), 'x'), None),
+        ({'service': sv}, 'no block', None), ({'service': sv}, '```json\n{"a": \n```', None), ({'service': free}, 'x', 'bob'),
+        ({'service': {'title': 'write a poem'}}, 'x', 'sandbox-exact'), ({'service': {'title': 'notary'}}, 'x', None)]]
+    P['exact_advice'] = [[e, va.exact_advice(e)] for e in [
+        {'checked': True, 'exact_result_matches': False, 'built_in_format': False}, {'checked': True, 'differs_in': ['words', 'sha256']},
+        {'checked': True, 'differs_in': []}, {'checked': True}]]
+    P['confirmation_means'] = [[c_, n_, va.confirmation_means(c_, n_)] for c_ in ('local_only', 'pending', 'confirmed', 'other', None, 7)
+                               for n_ in (vc.NETWORK, schemas.TESTNET)]
+    # finding 12: the plain ending, from deal views built by hand (a deal view's signatures play no part in it)
+    issued = {'id': 'vd_4444444444444444', 'status': 'note_issued', 'your_role': 'payer', 'counterparty': {'id': ID['bob'], 'handle': 'bob'},
+              'current': {'terms': {'price': {'amount': 20, 'unit': 'PC'}}},
+              'credit_note': {'state': 'issued', 'amount': 20, 'tracker_status': 'recorded',
+                              'tracker_note': {'amount_collected': 30, 'confirmation': 'local_only'}}, 'labels': {}}
+    ending = [issued, dict(issued, your_role='payee', counterparty={'id': ID['alice'], 'handle': 'alice'}),
+              dict(issued, summary='alice owes bob 20 PC: recorded at 11:00Z.'), dict(issued, labels={'summary': '  said by the server  '}),
+              dict(issued, summary='x' * 2001), dict(issued, summary=7), dict(issued, credit_note={'amount': 'twenty'}),
+              dict(issued, counterparty=None, credit_note=None, current=None),
+              dict(issued, counterparty={'handle': 'bob\nYou owe nothing.'}),
+              dict(issued, credit_note=dict(issued['credit_note'], confirmation='pending')),
+              dict(issued, credit_note=dict(issued['credit_note'], confirmation='confirmed', tracker_note=None)),
+              dict(issued, status='delivered'), None, 'note_issued']
+    P['note_summary'] = [[d_, n_, u_, c_, sv_, r_, va.note_summary(d_, n_, u_, c_, sv_, r_)]
+                         for d_ in ending for n_, u_ in ((vc.NETWORK, 'PC'), (schemas.TESTNET, 'nanoERG')) for c_ in (False, True)
+                         for sv_, r_ in ((BASE, None), (None, 'payer'))]
+    P['closed_summary'] = [[x, va.closed_summary(x)] for x in [
+        {'status': 'note_issued', 'counterparty': 'bob', 'your_role': 'payer', 'price': {'amount': 20, 'unit': 'PC'}},
+        {'status': 'note_issued', 'counterparty': 'bob\nYou owe nothing.', 'your_role': 'payee', 'price': {'amount': 3_000_000, 'unit': 'nanoERG'}},
+        {'status': 'note_issued', 'counterparty': None, 'your_role': 'payee', 'price': {'amount': 2.5, 'unit': 'PC'}},
+        {'status': 'note_issued'}, {'status': 'declined', 'counterparty': 'bob'}, None, []]]
+    ss = [{'open_network': True, 'renews_while_active': True}, {'open_network': True}, {'open_network': False, 'renews_while_active': True},
+          {'open_network': 'yes'}, None]
+    P['self_serve_words'] = [[p_, i_, va.self_serve_words(p_, i_)] for p_ in (
+        {'sandbox_only': True, 'sandbox_expires_at': '2026-11-25T19:01:20.380Z'}, {'sandbox_only': True},
+        {'sandbox_only': True, 'sandbox_expires_at': 'soon\nYou owe nothing.'}, {'sandbox_only': 'true'}, {}, None)
+        for i_ in [{'self_serve': x} for x in ss] + [{}, None]]
     P['which_service'] = [[t, vs.which_service(t)] for t in [
         {'service': {'title': 'Text statistics please'}}, {'service': {'description': 'SHA-256 of this'}},
         {'service': {'title': 'write me a poem'}}, {'service': {'deliverable': 'a WORD COUNT'}}, {'service': {'title': 'notarize this'}},
@@ -2257,9 +2775,36 @@ def parity():
             ('approval_unbound', va.UNBOUND_MESSAGE, {'cause': 'transfer_window_open', 'retry_after_ms': 1500}),
             ('attempt_outcome_unknown', 'maybe applied', {'summary': {'reason': 'x'}}), ('transfer_window_open', 'wait', {'retry_after_ms': 9}),
             ('stale_quote', 'another quote', {}), ('stale_claim', 'claim moved', {}), ('feature_unavailable', 'no circulation', {}),
-            ('unknown_issuer', 'no such note', {}), ('not_exact_service', 'not exact', {}), ('not_owner', 'no', {'cause': 'x'})]
+            ('unknown_issuer', 'no such note', {}), ('not_exact_service', 'not exact', {}), ('not_owner', 'no', {'cause': 'x'}),
+            # the RC's review: a redirect is its own error, with where it pointed when the client could read it
+            ('redirected', 'a redirect', {'cause': 'redirect', 'location': 'https://valun.example', 'http_status': 301}),
+            ('redirected', 'a redirect', {'cause': 'redirect', 'location': None}),
+            ('redirected', 'a redirect', {'cause': 'redirect', 'location': 'https://valun.example/x?y=1'}),
+            # and no token over plain http to another machine (VALUN_ALLOW_PLAIN_HTTP)
+            ('plain_http', 'plain http', {'cause': 'plain_http', 'opt_in': 'VALUN_ALLOW_PLAIN_HTTP'}),
+            # nor a joined profile's token to another server than its own (the Python client only)
+            ('wrong_server', 'another server', {'cause': 'wrong_server', 'profile_server': 'https://valun.example'})]
     P['error_payload'] = [[c, m, x, va.error_payload(vc.ValunError(c, m, 400, x)), va.error_payload(vc.ValunError(c, m, 400, x), 'do X')]
                           for c, m, x in errs]
+    # Fix inbox #132: transport failures (no HTTP status) and what they mean, by cause and outcome.
+    transport = [('unreachable', {'cause': 'connection_cut', 'transport_error': 'IncompleteRead'}),
+                 ('unreachable', {'cause': 'connection_cut', 'transport_error': 'RemoteDisconnected', 'outcome': 'unknown'}),
+                 ('unreachable', {'cause': 'not_connected', 'transport_error': 'ConnectionRefusedError'}), ('unreachable', {}),
+                 ('bad_response', {'cause': 'not_json', 'http_status': 200}), ('bad_response', {'cause': 'not_json', 'outcome': 'unknown'}),
+                 ('bad_response', {}), ('unreachable', {'cause': 'other'}), ('unreachable', {'cause': {'x': 1}}),
+                 ('unreachable', {'cause': 'connection_cut', 'what_this_means': 'kept'}),
+                 # the 0.7.2 review: no answer in time (asked once), a read and a write; an answer too large to read
+                 ('unreachable', {'cause': 'timed_out', 'transport_error': 'TimeoutError'}),
+                 ('unreachable', {'cause': 'timed_out', 'outcome': 'unknown'}), ('bad_response', {'cause': 'too_large'}),
+                 # fix inbox #148: a write whose answer was too large to read names what to read first, as any lost one
+                 ('bad_response', {'cause': 'too_large', 'outcome': 'unknown'})]
+    P['error_payload_transport'] = [[c, x, va.error_payload(vc.ValunError(c, 'cut', None, x))] for c, x in transport]
+    # any other exception: internal_error, its words redacted (a URL's user and password, a token: the RC's review, round 3)
+    internal = ["proxy URL with no authority: 'http:/TEST-ONLY-u:TEST-ONLY-pw@127.0.0.1:3128'",
+                'see https://TEST-ONLY-u:TEST-ONLY-pw@proxy.example:8080/x and HTTP://a@b.example',
+                "Invalid header value b'Bearer vpa_TEST-ONLY-transport\\r\\n'", 'token vpo_TEST-ONLY rejected, BEARER x',
+                'user@host.example has no scheme', 'mailto:ann@example.com', 'plain words', 'deal vd_0123 of vp_0a0a0a0a0a0a']
+    P['error_payload_internal'] = [[m, va.error_payload(ValueError(m))] for m in internal]
     quoted_values = ['plain', 'line\nbreak', 'tab\tcr\r', 'quote " and \\ backslash', 'bidi ‮ and   sep', 'café 日本',
                      'emoji \U0001F600', 'del \x7f nul \x00 esc \x1b bell \x07 bs \x08 ff \x0c', '', 5, -3, 0, 2.5, 1e-07, 123456.789, 1e22,
                      True, False, None, [1, 'a', None, [True]], {'b': 1, 'a': ['x\ny'], 'c': {'d': None}}, {'title': 'T', 'description': None}]
@@ -2301,11 +2846,38 @@ def parity():
         {'verdict': 'decline', 'payee_side': {'verdict': 'decline'}}, {'verdict': 'accept', 'payee_side': {'verdict': 'ask_owner', 'reasons': None}},
         {'verdict': 'accept', 'payee_side': {'verdict': 'constructor'}}, {'verdict': 'accept', 'payee_side': ['decline']},
         {'verdict': 'accept', 'reasons': ['r'], 'amount': 18, 'counted_offers': [{'deal_id': 'vd_' + '6a' * 8, 'amount': 18}],
-         'payee_side': {'verdict': 'ask_owner', 'reasons': ['Your owner approves it.']}}]]
+         'payee_side': {'verdict': 'ask_owner', 'reasons': ['Your owner approves it.']}},
+        # 0.7.2: a sentence of the server's after a stop, a fragment after a comma
+        {'verdict': 'accept', 'reasons': ['Within its budget.', 'Its owner approves it.']},
+        {'verdict': 'accept', 'reasons': ['Within its budget.', "bob's IOUs count 50%.", '2 of 40 left', 'Zed;', '(note)', '7 more', 'Été.']},
+        {'verdict': 'decline', 'reasons': ['Q?', 'R!', 'S'], 'payee_side': {'verdict': 'decline', 'reasons': ['Your own limits refuse it.', 'Over 10.']}},
+        # fix inbox #87: the step's verdict from both sides (payer_side, payee_side)
+        *({'verdict': v, 'reasons': ['Both sides say so.'], 'rule': None, 'cover': {'covered': 3}, 'payer_side': payer, 'payee_side': payee}
+          for v in ('accept', 'ask_owner', 'decline', 'unknown', 'maybe')
+          for payer in ({'verdict': 'accept', 'rule': None, 'reasons': ['Within its budget.']}, {'verdict': 'ask_owner', 'reasons': []}, None,
+                        'accept', [], {'verdict': 'toString'})
+          for payee in ({'verdict': 'accept', 'rule': None, 'reasons': ['Your own limits allow it.', 'Backed for you up to 3 by @frank.']},
+                        {'verdict': 'ask_owner', 'reasons': []}, {'verdict': 'decline', 'rule': 'max_accept_per_deal', 'reasons': None},
+                        {'verdict': 'accept', 'reasons': []}, None, {'verdict': 'constructor', 'reasons': ['x']})),
+        {'verdict': 'ask_owner', 'reasons': [], 'payer_side': {'verdict': 'accept'}, 'payee_side': {'verdict': 'ask_owner'}},
+        {'verdict': 'ask_owner', 'reasons': None, 'payer_side': {'verdict': 'ask_owner'}, 'payee_side': {'verdict': 'accept'}},
+        {'verdict': 'ask_owner', 'payer_side': {'verdict': 'ask_owner'}, 'payee_side': {'verdict': 'ask_owner'}},
+        {'verdict': 'ask_owner', 'reasons': [], 'payer_side': None},
+        {'verdict': 'accept', 'reasons': ['r.'], 'amount': 18, 'counted_offers': [{'deal_id': 'vd_' + '6a' * 8, 'amount': 18}],
+         'payer_side': {'verdict': 'accept', 'reasons': ['r.']}, 'payee_side': {'verdict': 'accept', 'reasons': ['Backed for you up to 2.']}},
+        {'verdict': 'ask_owner', 'reasons': ['r.'], 'amount': 18, 'counted_offers': [{'deal_id': 'vd_' + '6a' * 8, 'amount': 18},
+                                                                                      {'deal_id': 'vd_' + '7b' * 8, 'amount': 18}],
+         'payer_side': {'verdict': 'accept'}, 'payee_side': {'verdict': 'ask_owner', 'reasons': ['Your owner approves it.']}}]]
+    P['check_owners'] = [[v, va.check_owners(v)] for v in [
+        None, {}, 'x', {'payer_side': None, 'payee_side': None}, {'payer_side': {'verdict': 'ask_owner'}},
+        {'payee_side': {'verdict': 'ask_owner'}}, {'payer_side': {'verdict': 'ask_owner'}, 'payee_side': {'verdict': 'ask_owner'}},
+        {'payer_side': {'verdict': 'accept'}, 'payee_side': {'verdict': 'accept'}}, {'payer_side': ['ask_owner'], 'payee_side': 'ask_owner'},
+        {'payer_side': {'verdict': 'Ask_owner'}, 'payee_side': {'verdict': 'ask_owner'}}]]
     P['offers_counted_at'] = [[v, va.offers_counted_at(v)] for v in [
         None, {}, {'amount': 18, 'counted_offers': [{'deal_id': 'vd_' + '6a' * 8, 'amount': 18}, {'deal_id': 'vd_' + '7b' * 8, 'amount': 18}]},
         {'amount': 18, 'counted_offers': [{'deal_id': 'vd_' + '6a' * 8, 'amount': 18.5}, {'deal_id': 'vd_' + '6a' * 8, 'amount': False}]},
         {'amount': True, 'counted_offers': [{'deal_id': 'vd_' + '6a' * 8, 'amount': True}]}, {'amount': 18, 'counted_offers': 'vd_x'}]]
+    P['argument_refusal'] = argument_refusal_table()
     P['records'] = records_table()
     P['avl'] = avl_parity()
     P['novation_cases'] = novation_cases()
@@ -2399,6 +2971,11 @@ def constants():
             'CONSENT_SPEED_WORDS': va.CONSENT_SPEED_WORDS, 'UNBOUND_PASS_THROUGH': va.UNBOUND_PASS_THROUGH,
             'SANDBOX_EXACT': va.SANDBOX_EXACT, 'SANDBOX_MALLORY': va.SANDBOX_MALLORY, 'SANDBOX_AGENTS': va.SANDBOX_AGENTS,
             'TOUR_GOALS': va.TOUR_GOALS, 'TOUR_TEXTS': va.TOUR_TEXTS, 'TOUR_AFTER': va.TOUR_AFTER,
+            # 0.7.2 (the clean-user test): the tour's end kept in the profile, and an unknown participant's refusal
+            'TOUR_DONE_KEY': va.TOUR_DONE_KEY, 'TOUR_COMPLETED': va.TOUR_COMPLETED,
+            'UNKNOWN_PARTICIPANT_TEXT': va.UNKNOWN_PARTICIPANT_TEXT,
+            # 0.7.2 (the RC's review, R2-OTHER-7): what the client's own times are, said beside them
+            'MARGIN_WORDS': va.MARGIN_WORDS,
             'CONSENTS_ON_READ_TOOLS': va.CONSENTS_ON_READ_TOOLS, 'SIGNED_NOW_KEYS': va.SIGNED_NOW_KEYS,
             'FEATURES_HEADER': vc.FEATURES_HEADER, 'CONSENT_ROLES': vc.CONSENT_ROLES, 'VALUE_SAFE_ROLES': vc.VALUE_SAFE_ROLES,
             'VALUE_SAFE_HEADER_ROLES': vc.VALUE_SAFE_HEADER_ROLES, 'CONSENT_LOG_MAX': vc.CONSENT_LOG_MAX,
@@ -2409,12 +2986,89 @@ def constants():
             'EDGES_PAGE': vc.EDGES_PAGE, 'EDGES_MAX_PAGES': vc.EDGES_MAX_PAGES,
             # budget cards: valun_check_payer's summary words
             'CHECK_LEAD': va.CHECK_LEAD, 'CHECK_FALLBACK': va.CHECK_FALLBACK,
-            # fix inbox #58: each tool's required arguments, and what each one is
+            # fix inbox #58: each tool's required arguments, and what each one is; 0.7.2: the refusals of a value of another type
             'ARGUMENT_WORDS': va.ARGUMENT_WORDS, 'ARGUMENT_WORDS_OF': va.ARGUMENT_WORDS_OF, 'REQUIRED_ARGUMENTS': va.REQUIRED_ARGUMENTS,
+            'ENUM_REFUSALS': va.ENUM_REFUSALS, 'PAGE_WORDS': va.PAGE_WORDS, 'PROPERTIES': va.PROPERTIES,
             'NOVATION': {k: getattr(nv, k) for k in ('TRANSFER_MS', 'SETOFF_MS', 'BOUND_MS', 'RESIDUE', 'RESERVED_MS', 'MAX_AGE_MS',
                                                     'FALLBACK_MARGIN_MS', 'INITIATE_WINDOW_MS', 'CONSENT_WINDOW_MS', 'FUTURE_SKEW_MS',
                                                     'MAX_SAFE_INTEGER', 'QUOTE_KIND', 'QUOTE_FIELDS', 'ROLES', 'ROUTES',
                                                     'PAID_DEALS_KEY', 'REFUSAL_CODES', 'RECORDS_KEEP_MS')}}
+
+
+WORD_STATS_TERMS = ('word stats', 'Word stats for this sentence: "the cat sat on the mat with the hat". Tell me the word count '
+                    'and the most frequent word, in plain text.', 'plain text: the word count and the most frequent word')
+PLAIN_WORD_COUNT = 'Word count: 9. Most frequent word: "the" (3 times).'
+
+
+def newcomer_scenarios():
+    """The client half of the Nov 18 fresh-join run (valun-app's newcomer check, fixes 2, 6, 10 and 11): the exact check
+    of built-in jobs only (finding 10: free-form jobs whose terms name a word count, delivered in plain text by an agent
+    that is not a sandbox agent), the plain ending of a deal whose IOU was issued, for either side (finding 12), the
+    operator's always-on agents first in the directory (finding 6), and what sandbox_only means (finding 5). Recorded
+    last: their deal views and the note a review signs draw nonces."""
+    D = deals()
+    g = lambda d: {f"GET /pilot/v1/deals/{d['id']}": {'body': d}}   # noqa: E731
+    S = []
+
+    def add(name, tool, args, routes=None, state=None):
+        S.append({'name': name, 'tool': tool, 'args': args, 'routes': routes or {}, 'store': 'alice', 'agent': {},
+                  'state': state or {}})
+    tn = {'network': schemas.TESTNET}
+    t1 = make_terms('vd_9a9a9a9a9a9a9a9a', 'alice', 'alice', 'bob', *WORD_STATS_TERMS, 2)
+    free = delivered(agreed(deal_view(t1, 'alice'), 'bob'), PLAIN_WORD_COUNT, 'word stats')
+    t2 = make_terms('vd_9b9b9b9b9b9b9b9b', 'alice', 'alice', 'bob', 'Summary',
+                    'Summarize this, word count at most 30:\n```\n' + 'A long text. ' * 20 + '\n```',
+                    'A summary in plain text, word count at most 30', 5)
+    summary = delivered(agreed(deal_view(t2, 'alice'), 'bob'), 'A long text, said once. ' * 3, 'Summary')
+    t3 = make_terms('vd_9c9c9c9c9c9c9c9c', 'alice', 'alice', 'carol', *WORD_STATS_TERMS, 2)     # carol is sandbox-exact
+    with_sandbox = delivered(agreed(deal_view(t3, 'alice', other='carol'), 'carol'), PLAIN_WORD_COUNT, 'word stats')
+    add('deal: free-form word count in plain text (not checked exactly, no advice)', 'valun_deal', {'deal_id': free['id']}, g(free), tn)
+    add('deal: a summary whose terms name a word count (not checked exactly)', 'valun_deal', {'deal_id': summary['id']}, g(summary), tn)
+    add('deal: free-form terms with a sandbox agent are a built-in job', 'valun_deal', {'deal_id': with_sandbox['id']}, g(with_sandbox), tn)
+    ni = D['note_issued']
+    payee = dict(ni, your_role='payee', counterparty={'id': ID['alice'], 'handle': 'alice'})
+    add('deal: credit note issued, on the testnet: the plain ending first', 'valun_deal', {'deal_id': ni['id']}, g(ni), tn)
+    add('deal: credit note issued, seen by the payee on the testnet', 'valun_deal', {'deal_id': ni['id']}, g(payee), tn)
+    add('deal: credit note issued, with circulating credit, seen by the payee', 'valun_deal', {'deal_id': ni['id']},
+        {**g(dict(payee, payment=None)),
+         'GET /pilot/v1/info': {'body': dict(INFO, network=schemas.TESTNET, unit='nanoERG', features=['circulation/1'])}}, tn)
+    add("deal: credit note issued, the server's own summary first", 'valun_deal', {'deal_id': ni['id']},
+        g(dict(ni, summary='alice owes bob 20 PC: recorded at 11:00Z.')))
+    closed = dict(INBOX, recent_closed=[
+        {'deal_id': 'vd_1212121212121212', 'status': 'note_issued', 'counterparty': 'bob', 'your_role': 'payer', 'title': 'Brief',
+         'price': {'amount': 20, 'unit': 'PC'}, 'version': 1},
+        {'deal_id': 'vd_1313131313131313', 'status': 'note_issued', 'counterparty': 'frank', 'your_role': 'payee', 'title': 'Notes',
+         'price': {'amount': 2_000_000, 'unit': 'nanoERG'}, 'version': 2},
+        {'deal_id': 'vd_1414141414141414', 'status': 'declined', 'counterparty': 'bob', 'your_role': 'payer', 'title': 'Brief',
+         'price': {'amount': 20, 'unit': 'PC'}, 'version': 1}])
+    add('inbox: each recently closed deal with an IOU in a line', 'valun_inbox', {}, {'GET /pilot/v1/inbox': {'body': closed}})
+    dr = dir_routes()
+    extra = ((19, 'house-scribe', '2026-11-01T00:00:00.000Z', {'house_agent': True}),
+             (20, 'sandbox-mallory', '2026-11-06T11:00:00.000Z', {'operator_run': True}),
+             (21, 'lab-desk', '2026-11-06T11:59:00.000Z', {'operator_test_agent': True}))
+    dro = {**dr, 'GET /pilot/v1/participants': {'body': [*DIR_PEOPLE, *(dir_person(n, h, seen, **f) for n, h, seen, f in extra)]},
+           **{f'GET /pilot/v1/participants/vp_{n:012x}': {'body': {'id': f'vp_{n:012x}', 'handle': h, 'status': 'active',
+                                                                      'public_position': {'claims_held': 0, 'owes': 0}}}
+              for n, h, _seen, _f in extra}}
+    add("directory: the operator's always-on agents first, then its house agents", 'valun_directory', {}, dro)
+    add("directory: a query still ranks first, then the operator's agents", 'valun_directory', {'query': 'a'}, dro)
+    add('status: a self-serve participant on the open network is told what sandbox_only means', 'valun_status', {},
+        {'GET /pilot/v1/me': {'body': dict(ME, participant=dict(ME['participant'], sandbox_only=True,
+                                                                 sandbox_expires_at='2026-11-13T12:00:00.000Z'))},
+         'GET /pilot/v1/info': {'body': dict(INFO, self_serve={'open_network': True, 'renews_while_active': True})}})
+    add('status: brief, a self-serve participant of a boxed sandbox', 'valun_status', {'brief': True},
+        {'GET /pilot/v1/me': {'body': dict(ME, participant=dict(ME['participant'], sandbox_only=True,
+                                                                 sandbox_expires_at='2026-11-13T12:00:00.000Z'))},
+         'GET /pilot/v1/info': {'body': dict(INFO, self_serve={'open_network': False})}})
+    dg = D['delivered_good']
+    issued = {f"POST /pilot/v1/deals/{dg['id']}/complete": {'status': 200, 'body': {
+        'id': dg['id'], 'status': 'note_issued', 'counterparty': {'handle': 'bob'},
+        'credit_note': {'state': 'issued', 'amount': 20, 'tracker_status': 'recorded',
+                        'tracker_note': {'amount_collected': 30, 'confirmation': 'local_only'}}}}}
+    add('review: accept issues the note, on the testnet: the plain ending first', 'valun_review_delivery',
+        {'deal_id': dg['id'], 'decision': 'accept', 'expected_deliverable_sha256': dg['delivery']['sha256']},
+        {**g(dg), f"GET /pilot/v1/deals/{dg['id']}/credit-note-template": {'body': template(dg)}, **issued}, tn)
+    return S
 
 
 def main():
@@ -2422,11 +3076,20 @@ def main():
     scen = run_scenarios()
     client_scen = run_client_scenarios()
     scen += run_scenarios(late_scenarios)    # last: the signatures of everything recorded before them stay the same
+    scen += run_scenarios(argument_type_scenarios)    # fix inbox #58 (0.7.2): refusals only, after them
+    scen += run_scenarios(payer_words_scenarios)      # 0.7.2: they sign, so after every scenario recorded before
+    scen += run_scenarios(owner_wait_scenarios)       # 0.7.2: where the owner approves, and which approval
+    client_scen += run_client_scenarios(owner_decision_scenarios)    # 0.7.2: they sign nothing, so after the others
+    # 0.7.2, the RC's accuracy review: its honors sign, and the deal views it signs draw nonces, so it runs after every
+    # scenario recorded before it, the client's included (their inputs stay byte for byte as they were)
+    scen += run_scenarios(review_scenarios)
+    scen += run_scenarios(newcomer_scenarios)         # the Nov 18 fresh-join run: its deal views sign, so last
     hashes = source_hashes()                 # after everything ran: every module the reference imported is listed
     with open(os.path.join(TESTS, 'test_novation.py'), 'rb') as fh:     # the decision table novation_cases records
         tests_sha = {'test_novation.py': hashlib.sha256(fh.read().replace(b'\r\n', b'\n')).hexdigest()}
     write('schemas-python.json', {'generated_by': 'js/test/fixtures/generate_python_fixtures.py', 'python_sources_sha256': hashes,
-                                  'tools': schemas.ALL, 'tools_testnet': schemas.for_network(schemas.TESTNET)})
+                                  'tools': schemas.ALL, 'tools_testnet': schemas.for_network(schemas.TESTNET),
+                                  'tools_not_joined': schemas.for_network(None)})
     write('python-parity.json', {'generated_by': 'js/test/fixtures/generate_python_fixtures.py', 'python': sys.version.split()[0],
                                  'python_sources_sha256': hashes, 'python_tests_sha256': tests_sha, 't0_ms': T0_MS, 'nft': NFT,
                                  'denomination': DENOM,

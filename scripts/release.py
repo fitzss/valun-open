@@ -9,8 +9,8 @@
                                                              the release workflow's gate, run here first
 
 `bump` changes each file only where a version is named, and refuses if any is not where it is expected. `check` is
-what the release workflow's verify job checks, plus the plugin pin and SKILL.md's client pins. Each exits non-zero
-with what is wrong."""
+what the release workflow's verify job checks, plus the plugin pin, and the client pins of SKILL.md, README.md and
+docs/GETTING-STARTED.md. Each exits non-zero with what is wrong."""
 import argparse
 import pathlib
 import re
@@ -34,7 +34,16 @@ SITES = [
     ('plugins/valun/skills/valun/SKILL.md', 'valun[ai]=={v}', None),
     ('examples/ai-seller/requirements.txt', 'valun[ai,ergo]=={v}', 1),
     ('js/README.md', '- Version `{v}`:', 1),
+    ('README.md', 'valun=={v}', None),
+    ('README.md', 'Every command here runs valun {v} with', 1),     # the install section's words, above its pins
+    ('docs/GETTING-STARTED.md', 'valun=={v}', None),
+    ('docs/GETTING-STARTED.md', 'valun[ergo]=={v}', None),
+    ('python/README.md', 'valun=={v}', None),        # the PyPI page: its commands pin the release they are published with
 ]
+# The documents whose commands pin the client: every pin names the release (SITES bumps them; check() refuses a pin of
+# another version there, as it does in SKILL.md).
+PINNED_DOCS = ('README.md', 'docs/GETTING-STARTED.md', 'python/README.md')
+PIN_RE = re.compile(r'valun(?:\[[a-z,]+\])?==(\d+\.\d+\.\d+)')
 VERSION_RE = re.compile(r'^\d+\.\d+\.\d+$')
 SHA_RE = re.compile(r'^[0-9a-f]{40}$')
 
@@ -62,6 +71,16 @@ def site_problems(root, v):
         n = text.count(needle)
         if (want is None and n < 1) or (want is not None and n != want):
             out.append(f'{rel}: {needle!r} found {n} time(s), expected {want if want is not None else "at least 1"}')
+    return out
+
+
+def doc_pin_problems(root, v):
+    """The documents of PINNED_DOCS with a client pin of another version than v (an empty list: none)."""
+    out = []
+    for rel in PINNED_DOCS:
+        other = sorted(set(PIN_RE.findall(read(root, rel))) - {v})
+        if other:
+            out.append(f'{rel} pins valun {", ".join(other)}, not {v}: every pin there names the release')
     return out
 
 
@@ -178,6 +197,7 @@ def check(version=None, plugin_dir=None, vectors=True, root=ROOT):
              'server.json packages[0]': server['packages'][0]['version']}
     problems += [f'{k} is {x}, not {v}' for k, x in found.items() if x != v]
     problems += site_problems(root, v)
+    problems += doc_pin_problems(root, v)
     heads = [line for line in read(root, 'CHANGELOG.md').splitlines() if line.startswith(f'## {v} ')]
     if not heads:
         problems.append(f'CHANGELOG.md has no "## {v} (date)" heading')

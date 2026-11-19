@@ -10,12 +10,15 @@
 
 import {APPROVAL_TEXT, errorPayload, UNBOUND_MESSAGE} from './agent.js';
 import {ValunError} from './errors.js';
+import {profileNetwork} from './protocol.js';
 import {forNetwork} from './schemas.js';
 
 /** What the model is told about approvals when no approve hook is given (valun_status shows it). */
-export const NO_APPROVAL_STEP = 'Commitments cannot be signed here: this app has no way to ask your owner, so every offer, '
-  + 'counter-offer, acceptance, credit note and loosening of a limit is refused and nothing is signed. Reading, declining, '
-  + 'withdrawing, delivering and tightening limits still work.';
+export const NO_APPROVAL_STEP = 'Commitments cannot be signed here: this app has no way to ask your owner, so every '
+  + 'commitment (an offer, counter-offer or acceptance; accepting a delivery, with your IOU or a payment by transfer; a '
+  + 'guarantee offer; honoring or releasing a guarantee; loosening a limit) is refused and nothing is signed. Reading, '
+  + 'declining, withdrawing, delivering, disputing, accepting, declining and calling guarantees, and tightening limits '
+  + 'still work.';
 
 function approvalUnavailable(message) {
   return {error: 'approval_unavailable', message,
@@ -24,6 +27,20 @@ function approvalUnavailable(message) {
 }
 
 const NO_HOOK = 'Not signed. This app asks the owner before every commitment, but it has no approval step (no approve hook was given).';
+
+/**
+ * not_connected with the agent's setup hint, as valun_status answers it, for an agent whose profile has not joined yet
+ * (no participant, agent key or token); null for a joined one. A commitment gets it before approval_unavailable, as in
+ * the Python MCP server and `valun call` (not_joined; the onboarding review). Local: nothing is read.
+ */
+function notJoined(agent) {
+  try {
+    agent.client();
+  } catch (e) {
+    if (e instanceof ValunError && e.code === 'not_connected') return errorPayload(e, agent.setupHint);
+  }
+  return null;
+}
 
 function deepFreeze(o) {
   if (o && typeof o === 'object') {
@@ -67,7 +84,7 @@ async function run(agent, name, raw, mode, approve) {
       commits = true;                           // when in doubt, it is a commitment
     }
     if (commits) {
-      if (mode !== 'ask') return approvalUnavailable(NO_HOOK);
+      if (mode !== 'ask') return notJoined(agent) ?? approvalUnavailable(NO_HOOK);    // before a join: its hint first
       // One read binds and describes: the approval and the signature cover the same exact terms. If that read fails,
       // nothing is signed and the owner is not asked (approval_unbound).
       const [p, refusal] = await prepared(agent, name, args);
@@ -101,7 +118,8 @@ async function run(agent, name, raw, mode, approve) {
  *              is refused with owner_declined; if the hook throws, with approval_unavailable. When what would be signed
  *              cannot be read or checked, the call is refused with approval_unbound and the hook is not called.
  *   approvals  'none' to sign commitments without asking anyone (the server still enforces the owner's mandate). Without
- *              an approve hook and without 'none', every commitment is refused with approval_unavailable (fail closed).
+ *              an approve hook and without 'none', every commitment is refused with approval_unavailable (fail closed);
+ *              before the profile has joined, with not_connected and how to join, as valun_status answers.
  * If agent.approvals (the sentence valun_status shows the model) is empty, it is set to match the mode chosen here.
  */
 export function valunTools(agent, options = {}) {
@@ -114,10 +132,11 @@ export function valunTools(agent, options = {}) {
   if (approvals === 'none' && approve) throw new TypeError("approvals: 'none' and an approve hook contradict each other");
   const mode = approvals === 'none' ? 'none' : approve ? 'ask' : 'unavailable';
   if (!agent.approvals) agent.approvals = mode === 'none' ? APPROVAL_TEXT.none : mode === 'ask' ? APPROVAL_TEXT.ask : NO_APPROVAL_STEP;
-  // In the words of the profile's network (forNetwork): the pilot's for an agent that has not joined yet.
+  // In the words of the profile's network (forNetwork, profileNetwork): the testnet's for an agent that has not joined
+  // yet (the one network it would join; fix inbox #15), the pilot's only for a profile of the pilot.
   let network = options.network ?? null;
   if (network === null) {
-    try { network = agent.client(false).state?.network ?? null; } catch { network = null; }
+    try { network = profileNetwork(agent.client(false).state); } catch { network = null; }
   }
   return forNetwork(network).map(def => ({
     name: def.name,

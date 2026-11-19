@@ -234,6 +234,21 @@ class Recording(unittest.TestCase):
         self.assertEqual(rec['confirmed'], w.tracker[w.pair])
         self.assertEqual(rec['pending'], [])
 
+    def test_a_dispute_of_a_deal_with_no_delivery_is_not_delivered_and_signs_nothing(self):
+        # fix inbox #58 and #122: Basis's daily sweep disputed an agreed deal whose payee never delivered, and 0.7.1
+        # answered internal_error (KeyError: 'delivery'). Now not_delivered, before anything is signed or sent.
+        w, s = World(), MemStore()
+        d = w.add_deal('vd_1')
+        d['status'], d['delivery'] = 'agreed', None
+        with self.assertRaises(vc.ValunError) as e:
+            WorldClient(w, s).dispute('vd_1', 'nothing delivered by the deadline')
+        self.assertEqual((e.exception.code, str(e.exception)), ('not_delivered', 'nothing has been delivered on this deal'))
+        self.assertEqual([x for x in w.log if not x.startswith('GET ')], [], 'nothing was sent')
+        del d['delivery']
+        with self.assertRaises(vc.ValunError) as e:
+            WorldClient(w, s).dispute('vd_1', 'nothing delivered by the deadline')
+        self.assertEqual(e.exception.code, 'not_delivered')
+
     def test_held_and_issuing_notes_are_pending_not_issued(self):
         for answer in ('completion_awaiting_owner', 'issuing_note'):
             w, s = World(), MemStore()

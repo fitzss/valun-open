@@ -318,6 +318,54 @@ class Cli(unittest.TestCase):
             self.assertEqual(rc, 2)
             self.assertIn('Set ANTHROPIC_API_KEY', out)
 
+    def test_sell_refuses_before_any_model_call_while_the_mandate_holds_its_acceptances(self):
+        """The 0.7.2 review: from 0.7.2 `join --sandbox` sets console approvals (approve_above 0), which hold every
+        acceptance for the owner console; the seller does the job with Claude before it accepts, so each job's cost was
+        spent before the owner approved it, and lost when the offer expired first."""
+        sent, made = [], []
+        for approvals, above, want in (('console', 0, 'config approvals none --owner-token-file FILE'),
+                                       ('ask', 1, 'raise Ask me above to at least 3 PC in the owner console '
+                                                  '(http://127.0.0.1:9/pilot#owner)')):
+            joined = types.SimpleNamespace(state={'participant_id': 'vp_000000000001', 'server': 'http://127.0.0.1:9',
+                                                  'approvals': approvals}, secret=lambda: 'x')
+            me = {'participant': {'handle': 'amy'}, 'mandate': {'approve_above': above, 'review_deliveries': True}}
+            with mock.patch.object(cli, '_store', return_value=joined), \
+                    mock.patch.object(vc.Client, 'me', lambda self: me), \
+                    mock.patch.object(vc.Client, 'set_profile', lambda self, **kw: sent.append(kw)), \
+                    mock.patch.object(A, 'Claude', lambda model: made.append(model) or object()), \
+                    mock.patch.object(A, 'AISeller', lambda *a, **k: self.fail('no seller may start')):
+                rc, out = self.run_cli('sell', '--services', 'summary,code-review', '--once',
+                                       env={'ANTHROPIC_API_KEY': 'sk-test-only'})
+            self.assertEqual(rc, 2, out)
+            self.assertIn('Not started: your owner mandate holds each acceptance priced above', out)
+            self.assertIn('and code-review is priced 3 PC', out)
+            self.assertIn("so each job's model cost would be spent before you approve it, and lost if the buyer's offer "
+                          'expires first', out)
+            self.assertIn(want, out)
+            self.assertIn('Nothing was spent, and nothing was signed.', out)
+        self.assertEqual(sent, [], 'the public services are not changed')
+        # Ask me above at or above every price: it starts
+        joined = types.SimpleNamespace(state={'participant_id': 'vp_000000000001', 'server': 'http://127.0.0.1:9',
+                                              'approvals': 'none'}, secret=lambda: 'x')
+        steps = []
+        seller = types.SimpleNamespace(step=lambda: steps.append(1))
+        me = {'participant': {'handle': 'amy', 'services': A.services_text(('summary',), 'PC', 1)},
+              'mandate': {'approve_above': 5, 'review_deliveries': True}}
+        with mock.patch.object(cli, '_store', return_value=joined), mock.patch.object(vc.Client, 'me', lambda self: me), \
+                mock.patch.object(A, 'Claude', lambda model: object()), \
+                mock.patch.object(A, 'AISeller', lambda *a, **k: seller):
+            rc, out = self.run_cli('sell', '--services', 'summary', '--once', env={'ANTHROPIC_API_KEY': 'sk-test-only'})
+        self.assertEqual((rc, steps), (0, [1]), out)
+
+    def test_sell_help_joins_with_approvals_none(self):
+        out = io.StringIO()
+        with redirect_stdout(out), self.assertRaises(SystemExit):
+            cli.main(['sell', '--help'])
+        words = ' '.join(out.getvalue().split())
+        self.assertIn('--about "AI summaries and code reviews" --approvals none', words)
+        self.assertIn('it refuses to start, before any model call, while Ask me above in the owner console is below its '
+                      'prices', words)
+
     def test_profile_needs_a_joined_profile(self):
         rc, out = self.run_cli('profile', '--services', 'x')
         self.assertEqual(rc, 1)

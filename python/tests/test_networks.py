@@ -1,6 +1,7 @@
 """0.5: the networks a client signs for. A profile takes its network from the join's answer (servers since 0.5 name
 it), enrolls on it, builds terms for it in its unit, and refuses terms for another network and any network it does not
 know; the default consent cap is scaled to the network (50 PC-sized amounts). Offline: a recorder stands in for HTTP."""
+import json
 import os
 import sys
 import tempfile
@@ -76,6 +77,50 @@ class Networks(unittest.TestCase):
         t = c.build_terms('vp_' + 'f' * 12, 'payer', 'Summary', 'Summarize it', 'markdown', 2_000_000)
         self.assertEqual((t['network'], t['price'], t['denomination']), ('valun-testnet-1', {'amount': 2_000_000, 'unit': 'nanoERG'}, 'erg'))
 
+    def test_nothing_is_pinned_or_signed_for_a_server_of_another_network(self):
+        """An enrolled profile is never pinned to the tracker of a server that names another network than its own (a
+        profile without a network is the pilot's), and terms are built or checked only against a server of its own
+        network: wrong_network before anything is signed (the onboarding review)."""
+        testnet_info = {'network': 'valun-testnet-1', 'tracker_nft_id': 'ee' * 32, 'denomination': 'erg',
+                        'features': ['guarantees/1']}
+        other = 'vp_' + 'f' * 12
+        answers = {('GET', '/pilot/v1/info'): testnet_info}
+        for pid, key in ((other, '03' + 'cd' * 32), ('vp_' + 'a' * 12, '03' + 'ab' * 32)):
+            answers[('GET', f'/pilot/v1/participants/{pid}')] = {'id': pid, 'pubkey': key, 'status': 'active'}
+        for network in (None, 'valun-pilot-1'):
+            s = store()
+            s.state.update({'participant_id': 'vp_' + 'd' * 12, 'pubkey': '02' + 'ab' * 32})
+            if network:
+                s.state['network'] = network
+            c = Recorder(s, 'https://example.test', answers=answers)
+            for fn in (c.info, lambda: c.build_terms(other, 'payer', 'S', 'd', 'x', 2),
+                       lambda: c.build_guarantee_terms(other, 'vp_' + 'a' * 12, 2, 1)):
+                with self.assertRaises(vc.ValunError) as e:
+                    fn()
+                self.assertEqual(str(e.exception), 'the server is on network "valun-testnet-1", not valun-pilot-1; '
+                                                   'nothing was signed')
+                self.assertEqual(e.exception.code, 'wrong_network')
+            self.assertNotIn('pins', s.state, "never the testnet's tracker in a pilot profile")
+            self.assertEqual({p for _m, p, _b in c.calls}, {'/pilot/v1/info'}, 'refused at the first read')
+        # its own network: pinned as before; a profile that has not joined: neither refused nor pinned
+        s = store()
+        s.state.update({'participant_id': 'vp_' + 'd' * 12, 'network': 'valun-testnet-1'})
+        Recorder(s, 'https://example.test', answers=answers).info()
+        self.assertEqual(s.state['pins'], {'tracker_nft_id': 'ee' * 32, 'denomination': 'erg'})
+        s = store()
+        self.assertEqual(Recorder(s, 'https://example.test', answers=answers).info(), testnet_info)
+        self.assertNotIn('pins', s.state)
+        # pinned to the tracker that server names, but it names another network: no terms for it either
+        s = store()
+        s.state.update({'participant_id': 'vp_' + 'd' * 12, 'pubkey': '02' + 'ab' * 32,
+                        'pins': {'tracker_nft_id': 'ee' * 32, 'denomination': 'erg'}})
+        c = Recorder(s, 'https://example.test', answers=answers)
+        for fn in (lambda: c.build_terms(other, 'payer', 'S', 'd', 'x', 2),
+                   lambda: c.build_guarantee_terms(other, 'vp_' + 'a' * 12, 2, 1)):
+            with self.assertRaises(vc.ValunError) as e:
+                fn()
+            self.assertEqual(e.exception.code, 'wrong_network')
+
     def test_the_default_consent_cap_is_scaled_to_the_network(self):
         s = store()
         s.state['network'] = 'valun-testnet-1'
@@ -87,14 +132,17 @@ class Networks(unittest.TestCase):
 # ---------- what the testnet texts say (0.5): amounts in nanoERG with tERG, and labels true on Ergo testnet ----------
 from valun import agent as va  # noqa: E402
 
-# The server's deal labels on the testnet (valun-app lib/pilot/core.mjs), word for word.
+# The server's deal labels on the testnet (valun-app lib/pilot/core.mjs since e18eb73, Nov 16: a netting is committed,
+# not final; fix inbox #85, #136 item 7), word for word. test_the_settlement_label_is_the_servers_own reads it in the
+# server's own source too, where this repository carries it (server/).
 SERVER_TESTNET_REDEMPTION = ("Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer "
                              'posted one; tERG are test coins with no monetary value.')
 SERVER_CIRCULATION_SETTLEMENT_TESTNET = (
     'not settled until redeemed: a credit note is an outstanding obligation. With circulating credit it can move to a new '
     'creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation '
-    '(set-off, signed by every party; no net position changes); a netting is final once a tracker box on Ergo testnet commits '
-    'it. ' + SERVER_TESTNET_REDEMPTION)
+    '(set-off, signed by every party; no net position changes); a netting is committed once a tracker box on Ergo '
+    'testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. '
+    + SERVER_TESTNET_REDEMPTION)
 SERVER_SETTLEMENT_TESTNET = 'not settled until redeemed: issuing a credit note creates an outstanding obligation. ' + SERVER_TESTNET_REDEMPTION
 # What is true on the pilot and false on the testnet.
 PILOT_ONLY = ('PC', 'Nothing is redeemed', 'no reserve', 'local_only', 'no blockchain connection', 'pilot tracker',
@@ -102,6 +150,17 @@ PILOT_ONLY = ('PC', 'Nothing is redeemed', 'no reserve', 'local_only', 'no block
 
 
 class TestnetWording(unittest.TestCase):
+    def test_the_package_says_what_it_is_on_the_testnet(self):
+        # the RC's staging test (2026-11-18), problem 10: help(valun) still described the retired pilot ("PC are
+        # synthetic units with no monetary value; ... nothing is redeemed")
+        import valun
+        doc = ' '.join(valun.__doc__.split())
+        for words in PILOT_ONLY + ('synthetic units with no monetary value', 'Experimental pilot', 'independently controlled'):
+            self.assertNotIn(words, doc)
+        for words in ('valun-testnet-1', 'nanoERG of Ergo testnet', 'no monetary value', 'redeemed on Ergo testnet',
+                      "against its issuer's tERG reserve", 'committed, not final', 'retired on 2026-11-13'):
+            self.assertIn(words, doc)
+
     def test_amounts_read_in_nanoerg_and_terg_exactly(self):
         for n, text in [(3_000_000, '3000000 nanoERG (0.003 tERG)'), (1_500_000_000, '1500000000 nanoERG (1.5 tERG)'),
                         (1_000_000_000, '1000000000 nanoERG (1 tERG)'), (1, '1 nanoERG (0.000000001 tERG)'),
@@ -110,6 +169,20 @@ class TestnetWording(unittest.TestCase):
             self.assertEqual(vc.amount_text(n, 'nanoERG'), text)
         self.assertEqual(vc.amount_text(3, 'PC'), '3 PC', 'the pilot: as before')
         self.assertEqual(vc.amount_text(None, 'nanoERG'), 'None nanoERG', 'not a whole number: shown as is')
+
+    def test_the_settlement_label_is_the_servers_own(self):
+        """The server's source this repository carries (server/, synced from valun-app) holds the same label, and no
+        client label calls a netting final (0.7.2)."""
+        core = os.path.join(os.path.dirname(os.path.dirname(HERE)), 'server', 'lib', 'pilot', 'core.mjs')
+        if not os.path.exists(core):
+            self.skipTest('no server/ copy here')
+        with open(core, encoding='utf-8') as f:
+            src = f.read()
+        self.assertIn(SERVER_CIRCULATION_SETTLEMENT_TESTNET.replace(SERVER_TESTNET_REDEMPTION, '${TESTNET_REDEMPTION}'), src)
+        self.assertIn(SERVER_TESTNET_REDEMPTION.replace("'", "\\'"), src)
+        for net in ('valun-testnet-1', 'valun-pilot-1'):
+            for circulating in (True, False):
+                self.assertNotIn('stays final', json.dumps(va.labels(circulating, net)))
 
     def test_the_testnet_labels_are_the_servers_and_say_nothing_only_the_pilot_is(self):
         for circulating, settlement in ((True, SERVER_CIRCULATION_SETTLEMENT_TESTNET), (False, SERVER_SETTLEMENT_TESTNET)):

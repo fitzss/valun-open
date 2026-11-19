@@ -13,6 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'src'))
 from valun import basis as vb  # noqa: E402
 from valun import ergo  # noqa: E402
+from valun import client as vc  # noqa: E402
 from valun.client import ValunError  # noqa: E402
 
 G = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
@@ -111,6 +112,35 @@ def box_at(tree, value, tx_id='11' * 32, index=0, registers=None, tokens=()):
         tokens=[c.Token(c.TokenId(t), a) for t, a in tokens] or None, registers=regs or None)
     box = c.ErgoBox.from_box_candidate(cand, E.transaction.TxId(tx_id), index)
     return box, json.loads(box.json()), bytes(box).hex()
+
+
+class BoxMoved(unittest.TestCase):
+    def test_an_input_box_the_node_no_longer_has_is_reserve_busy_not_a_raw_404(self):
+        # fix inbox #123: a retry right after a broadcast was refused as a double spend read a box that was spent
+        # meanwhile, and the node's 404 came through raw (node_error). Now reserve_busy, with the wait.
+        built = {'unsigned_tx': {'inputs': [{'boxId': 'aa' * 32}, {'boxId': 'bb' * 32}]}}
+
+        class Node:
+            def __init__(self, missing):
+                self.missing = missing
+
+            def box(self, box_id):
+                if box_id == self.missing:
+                    raise vc.ValunError('node_error', f'the Ergo node refused GET /utxo/byId/{box_id}: 404', 404)
+                return {'boxId': box_id}
+
+        self.assertEqual(vc.redemption_input_boxes(Node(None), built), [{'boxId': 'aa' * 32}, {'boxId': 'bb' * 32}])
+        with self.assertRaises(vc.ValunError) as e:
+            vc.redemption_input_boxes(Node('bb' * 32), built)
+        self.assertEqual((e.exception.code, e.exception.extra), ('reserve_busy', {'retry_after_ms': 180000, 'cause': 'box_moved'}))
+        self.assertIn('Nothing was spent', str(e.exception))
+
+        class Down:
+            def box(self, box_id):
+                raise vc.ValunError('node_error', 'the Ergo node refused GET /utxo/byId/x: 500', 500)
+        with self.assertRaises(vc.ValunError) as e:
+            vc.redemption_input_boxes(Down(), built)
+        self.assertEqual(e.exception.code, 'node_error', 'any other node error is as before')
 
 
 @unittest.skipIf(E is None, 'ergo-lib-python is not installed')

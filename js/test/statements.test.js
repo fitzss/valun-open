@@ -90,7 +90,7 @@ async function clientReasonRequest(kind, inputs, key) {
     [`POST /pilot/v1/deals/${id}/${kind}`]: {body: {id, status: kind === 'decline' ? 'declined' : 'disputed'}},
   });
   const store = new MemoryStore({state: {participant_id: 'vp_000000000000', pubkey: key.pubkey, issued: {}}, secret: bytesToHex(key.secret), token: 'stub-token'});
-  const client = new Client({store, server: 'http://valun.invalid', fetch});
+  const client = new Client({store, server: 'https://valun.invalid', fetch});
   client.verifiedAgreement = () => ({});
   let error = null;
   try {

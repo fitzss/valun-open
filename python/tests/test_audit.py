@@ -510,7 +510,7 @@ class Verdicts(AuditCase):
         w = World(committed=False, plain=True)
         w.anchored_now = False
         r = w.audit()
-        self.unknown(r, 'not_anchored', 'state waiting', 'after the next anchor')
+        self.unknown(r, 'not_anchored', 'state waiting', 'has no committed-snapshot route yet', 'right after the next tracker box', 'pass --wait-anchored')
         self.assertFalse(any('byTokenId' in u or '/ledger' == u[-7:] for u in w.log), 'neither the ledger nor the chain read')
         w = World(committed=False, plain=True)                # a server that says anchored, with two digests
         lying = w.chain()
@@ -667,7 +667,7 @@ class ServerCache(AuditCase):
     def test_the_deployed_cache_and_a_note_saved_400_ms_after_it_is_written_is_never_a_mismatch(self):
         w = CachedServer(3000, write_after=3, gap_ms=400)
         r = w.audit()
-        self.unknown(r, 'not_anchored', 'after the next anchor')
+        self.unknown(r, 'not_anchored', 'right after the next tracker box')
         self.assertEqual((r['attempts'], w.sleeps), (2, [vaudit.SETTLE_S, vaudit.SETTLE_S, vaudit.RETRY_S]),
                          'the ledger and the second /chain each wait out the cache; the second /chain shows the write')
         self.assertEqual(CachedServer(3000).audit()['verdict'], 'MATCH', 'no write: the cached reads are the anchored state')
@@ -686,7 +686,7 @@ class ServerCache(AuditCase):
             self.assertEqual(w.sleeps, [0.0, 0.0])
             w = CachedServer(3000, write_after=3, gap_ms=400)
             r = w.audit()
-            self.unknown(r, 'not_anchored', 'after the next anchor')
+            self.unknown(r, 'not_anchored', 'right after the next tracker box')
             self.assertEqual((r['attempts'], w.sleeps), (2, [0.0, 0.0, vaudit.RETRY_S]), 'read again: then the write shows')
 
     def test_a_cache_longer_than_the_wait_is_read_again_and_never_a_mismatch(self):
@@ -696,6 +696,108 @@ class ServerCache(AuditCase):
         self.assertEqual(r['attempts'], 2)
         r = CachedServer(10_000, write_after=3, gap_ms=10_000).audit(attempts=1)
         self.unknown(r, 'ledger_moving', 'not the state it calls anchored', 'a server cache longer than this audit waits')
+
+
+class WaitAnchored(AuditCase):
+    """Fix inbox #86: a server without GET /ledger/committed compares only while its published ledger is the anchored
+    state, and says so plainly when it is ahead of the box; --wait-anchored waits (GET /chain every WAIT_POLL_S, for at
+    most the seconds given) until the tracker's state is anchored, then audits."""
+
+    def ahead(self, w):
+        return dict(w.chain(), anchoring=dict(w.chain()['anchoring'], anchored=False, local_digest='ff' * 33, state='waiting'))
+
+    def test_without_the_committed_route_the_message_says_why_nothing_is_compared(self):
+        w = World(committed=False, plain=True)
+        w.anchored_now = False
+        r = w.audit()
+        self.unknown(r, 'not_anchored', 'this server has no committed-snapshot route yet (GET /pilot/v1/ledger/committed is not '
+                                        'deployed on it)', 'only while that ledger is the state its last tracker box anchored',
+                     'Right now the ledger is ahead of that box', 'Run the audit right after the next tracker box',
+                     'or pass --wait-anchored to wait for it')
+        self.assertNotIn('waited', r['message'])
+        self.assertIsNone(r['waited_s'])
+
+    def test_it_waits_for_the_next_box_then_compares_the_ledger(self):
+        w = World(committed=False, plain=True)
+        w.overrides[f'{SERVER}/pilot/v1/chain'] = [(200, self.ahead(w))] * 3 + [(200, w.chain)]
+        said = []
+        r = w.audit(wait_anchored=60, log=said.append)
+        self.assertEqual((r['verdict'], r['waited_s'], r['rows']['from']), ('MATCH', 3 * vaudit.WAIT_POLL_S, '/pilot/v1/ledger'))
+        self.assertEqual(w.sleeps, [vaudit.WAIT_POLL_S] * 3 + [vaudit.SETTLE_S] * 2)
+        self.assertEqual(len(said), 1)
+        self.assertIn('waiting up to 60 s for the next box, reading GET /pilot/v1/chain every 15 s', said[0])
+        w = World(committed=False, plain=True)                # anchored already: no wait, nothing said
+        said = []
+        r = w.audit(wait_anchored=60, log=said.append)
+        self.assertEqual((r['verdict'], r['waited_s'], said), ('MATCH', 0.0, []))
+
+    def test_the_wait_is_bounded_and_then_unknown_says_how_long_it_waited(self):
+        w = World(committed=False, plain=True)
+        w.overrides[f'{SERVER}/pilot/v1/chain'] = [(200, self.ahead(w))]
+        r = w.audit(wait_anchored=40)
+        self.unknown(r, 'not_anchored', 'and it was so still when the 40 s this audit waited for a box ran out (--wait-anchored)',
+                     'or wait longer (--wait-anchored SECONDS)')
+        self.assertNotIn('or pass --wait-anchored', r['message'])
+        self.assertEqual((r['waited_s'], w.sleeps), (40.0, [15.0, 15.0, 10.0]))
+        self.assertEqual(vaudit.exit_code(r), vaudit.EXIT_UNKNOWN, 'the verdict table: UNKNOWN is exit 2')
+
+    def test_the_reads_count_against_the_wait_on_its_clock(self):
+        """The 0.7.2 review: the wait ends at its deadline on the clock, reads included (0.7.2 before it counted only its
+        sleeps, so a server slow to answer made 600 s nearer 1800 s); it may end one read after it, never later."""
+        w = World(committed=False, plain=True)
+        url = f'{SERVER}/pilot/v1/chain'
+        w.overrides[url] = [(200, self.ahead(w))]
+        now = [0.0]
+        get = w.get
+
+        def slow(u):
+            if u == url:
+                now[0] += 30.0                  # each read of GET /chain takes 30 s (a server that answers at its timeout)
+            return get(u)
+        w.get = slow
+
+        def sleep(s):
+            w.sleeps.append(s)
+            now[0] += s
+        src = vaudit.Explorer(w.explorer, get=w.get)
+        r = vaudit.audit(w.server, src, get=w.get, sleep=sleep, clock=lambda: now[0], tracker_nft=w.nft, wait_anchored=100)
+        self.unknown(r, 'not_anchored', 'ran out (--wait-anchored)')
+        self.assertEqual(w.sleeps, [15.0, 15.0, 10.0], 'read, 15 s, read (30 s), 15 s ... until 100 s are gone')
+        self.assertLessEqual(now[0], 100 + 30 + 30, 'the deadline, one read after it, and the read the attempt makes')
+        self.assertEqual(r['waited_s'], 130.0, 'what the clock says it waited, its reads included')
+
+    def test_a_state_that_moves_on_after_the_wait_is_waited_for_again_under_the_same_deadline(self):
+        """The 0.7.2 review: the state is anchored at the wait's first poll, then the ledger moves while it is read (a
+        note arrived: ledger_moving), and GET /chain is ahead again: the next attempt waits again, under the deadline the
+        first wait had (0.7.2 before it ended UNKNOWN at once, saying the state stayed unanchored)."""
+        w = World(committed=False, plain=True)
+        ahead = self.ahead(w)
+        w.overrides[f'{SERVER}/pilot/v1/chain'] = [(200, ahead), (200, w.chain), (200, ahead), (200, ahead), (200, w.chain)]
+        r = w.audit(wait_anchored=600)
+        self.assertEqual((r['verdict'], r['attempts']), ('MATCH', 2), r['message'])
+        self.assertEqual(r['waited_s'], 2 * vaudit.WAIT_POLL_S)
+        w = World(committed=False, plain=True)                # and when the deadline is gone, it says so truly
+        w.overrides[f'{SERVER}/pilot/v1/chain'] = [(200, ahead), (200, w.chain), (200, ahead)]
+        r = w.audit(wait_anchored=20)
+        self.unknown(r, 'not_anchored', f"when the {r['waited_s']:g} s this audit waited for a box ran out (--wait-anchored)")
+        self.assertLessEqual(r['waited_s'], 20, 'the second wait had what was left of the 20 s, the first one\'s deadline')
+
+    def test_a_failed_read_while_waiting_is_read_again_and_another_nft_is_unknown(self):
+        w = World(committed=False, plain=True)
+        url = f'{SERVER}/pilot/v1/chain'
+        w.overrides[url] = [(200, self.ahead(w)), (502, {'error': 'bad_gateway'}), (200, w.chain)]
+        self.assertEqual(w.audit(wait_anchored=60)['verdict'], 'MATCH')
+        w = World(committed=False, plain=True)
+        w.overrides[url] = [(200, self.ahead(w)), (200, dict(w.chain(), tracker_nft_id='ee' * 32))]
+        self.unknown(w.audit(wait_anchored=60), 'server_inconsistent', 'another tracker NFT')
+        self.assertFalse(any('byTokenId' in u for u in w.log), 'no box is read')
+
+    def test_with_the_committed_route_it_waits_too_so_mine_compares_records_the_box_caught_up_with(self):
+        w = World()
+        w.overrides[f'{SERVER}/pilot/v1/chain'] = [(200, self.ahead(w)), (200, w.chain)]
+        r = w.audit(wait_anchored=60, profile_state=profile_state(), mine=True)
+        self.assertEqual((r['verdict'], r['waited_s'], r['rows']['from']), ('MATCH', vaudit.WAIT_POLL_S, '/pilot/v1/ledger/committed'))
+        self.assertIn('mine', r)
 
 
 class Sources(AuditCase):
@@ -1089,12 +1191,34 @@ class Command(unittest.TestCase):
         rc, text = self.run_cli('audit', '--node', self.chain, '--server', self.base, '--tracker-nft', NFT)
         self.assertIn(f'tracker   NFT {NFT}, as GET /pilot/v1/chain names it, and the one you pinned (--tracker-nft)\n', text)
 
+    def test_mine_refreshes_the_records_first_with_the_agent_token_on_the_profiles_own_server_only(self):
+        """0.7.2 (#86): --mine first refreshes the records as valun_status does: GET /pilot/v1/info and, where the server
+        shows edges, GET /pilot/v1/edges from the profile's own server, the agent token on the edges read only; the
+        audit's own reads carry none. This world's GET /info lists no feature that shows edges, so only it is read."""
+        self.joined_profile()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc, text = self.run_cli('--profile', 'alice', 'audit', '--explorer', self.chain, '--mine')
+        self.assertEqual(rc, vaudit.EXIT_NOT_PROVEN, text)
+        reqs = _Handler.requests
+        self.assertEqual({r['method'] for r in reqs}, {'GET'})
+        refresh = [r for r in reqs if r['user_agent'] != f'valun-audit/{__version__}']
+        self.assertTrue(refresh and all(r['path'].startswith(('/pilot/v1/info', '/pilot/v1/edges')) for r in refresh), refresh)
+        self.assertEqual({r['authorization'] for r in reqs if r not in refresh}, {None}, "the audit's own reads send no token")
+        self.assertEqual({r['authorization'] for r in refresh if r['path'].startswith('/pilot/v1/info')}, {None})
+        self.assertEqual([r['path'] for r in refresh], ['/pilot/v1/info'], 'no edges shown here: nothing else is read')
+        self.assertEqual(err.getvalue(), '')
+        self.assertNotIn('vpa_TEST-ONLY', text + err.getvalue())
+        _Handler.requests = []
+        rc, text = self.run_cli('--profile', 'alice', 'audit', '--explorer', self.chain, '--mine', '--server', self.chain)
+        self.assertEqual(rc, vaudit.EXIT_USAGE, 'the chain source itself as the server: refused before anything is read')
+
     def test_get_only_no_token_and_nothing_written_even_with_a_joined_profile_and_mine(self):
         path = self.joined_profile()
         files = lambda: sorted(os.listdir(os.path.dirname(path)))  # noqa: E731
         with open(path, 'rb') as f:
             before, listing = f.read(), files()
-        rc, text = self.run_cli('--profile', 'alice', 'audit', '--explorer', self.chain, '--mine')
+        rc, text = self.run_cli('--profile', 'alice', 'audit', '--explorer', self.chain, '--mine', '--no-refresh')
         self.assertEqual(rc, vaudit.EXIT_NOT_PROVEN, text)
         self.assertIn('Your edges (participant vp_a1a1a1a1a1a1', text)
         self.assertIn('2 of 8 edges proven (signed)', text)
@@ -1113,7 +1237,7 @@ class Command(unittest.TestCase):
         self.assertEqual({r['user_agent'] for r in reqs}, {f'valun-audit/{__version__}'})
         self.assertNotIn(ALICE_S.hex(), text)
         self.assertNotIn('vpa_TEST-ONLY', text)
-        rc, text = self.run_cli('--profile', 'alice', 'audit', '--explorer', self.chain, '--mine', '--json')
+        rc, text = self.run_cli('--profile', 'alice', 'audit', '--explorer', self.chain, '--mine', '--json', '--no-refresh')
         r = json.loads(text)
         self.assertEqual((rc, r['mine']['participant']), (vaudit.EXIT_NOT_PROVEN, ME))
         self.assertNotIn(ALICE_S.hex(), text)
@@ -1194,13 +1318,14 @@ class Command(unittest.TestCase):
                                             '(RuntimeError: a bug), so nothing was compared.'), text)
             rc, text = self.run_cli(*argv, '--json')
             self.assertEqual((rc, json.loads(text)['verdict'], json.loads(text)['reason']), (2, 'UNKNOWN', 'fault'))
-        # A fault before the audit runs, in a profile that reads as JSON (its server is not a string): exit 2 too.
+        # A profile that reads as JSON whose server is not a string: exit 2 too, before the audit runs (a usage error
+        # since the RC's review, round 3, which names the setting: client.server_problem; a fault before, AttributeError).
         with open(os.path.join(self.home, 'profiles', 'odd.json'), 'w', encoding='utf-8') as f:
             json.dump({'server': 5}, f)
         rc, text = self.run_cli('--profile', 'odd', 'audit', '--explorer', self.chain)
         self.assertEqual(rc, 2, text)
-        self.assertTrue(text.startswith('UNKNOWN (fault): not checked, so nothing is proven. The audit itself failed '
-                                        "(AttributeError: 'int' object has no attribute 'rstrip')"), text)
+        self.assertTrue(text.startswith("This profile's server must be an http(s) URL with a host, such as "
+                                        'https://valun.tech: it is not text. Nothing was sent.'), text)
         self.assertEqual(_Handler.requests, [])
 
     def test_any_character_a_server_writes_prints_on_a_stdout_that_cannot_encode_it(self):
@@ -1233,6 +1358,23 @@ class Command(unittest.TestCase):
         self.assertFalse(vaudit.same_origin('https://node.example', 'http://node.example'))
         self.assertFalse(vaudit.same_origin('http://node.example', None))
 
+    def test_wait_anchored_takes_seconds_or_its_default_and_refuses_anything_else(self):
+        """--wait-anchored (fix inbox #86): without a value the default (WAIT_ANCHORED_S), else 1 to a day of seconds; a
+        tracker already anchored is audited at once. Anything else is a usage error, before anything is read."""
+        argv = ('audit', '--explorer', self.chain, '--server', self.base, '--json')
+        for flag in (('--wait-anchored',), ('--wait-anchored', '30'), ('--wait-anchored', '1.5')):
+            rc, text = self.run_cli(*argv, *flag)
+            r = json.loads(text)
+            self.assertEqual((rc, r['verdict'], r['waited_s']), (0, 'MATCH', 0.0), flag)
+        self.assertEqual(cli._wait_seconds(None), None)
+        self.assertEqual(cli._wait_seconds(vaudit.WAIT_ANCHORED_S), 600.0)
+        _Handler.requests = []
+        for bad in ('0', '-5', 'soon', 'nan', 'inf', '86401'):
+            rc, text = self.run_cli(*argv, '--wait-anchored', bad)
+            self.assertEqual(rc, vaudit.EXIT_USAGE, bad)
+            self.assertIn('--wait-anchored takes a number of seconds from 1 to 86400', text)
+        self.assertEqual(_Handler.requests, [], 'nothing is read before the arguments are checked')
+
     def test_usage_one_chain_source_exactly_and_urls(self):
         for argv in (['audit'], ['audit', '--explorer', self.base, '--node', self.base], ['audit', '--explorer']):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as e:
@@ -1264,6 +1406,35 @@ class Command(unittest.TestCase):
             vaudit.get_json('http://127.0.0.1:9/pilot/v1/chain', timeout=5)
         self.assertEqual(e.exception.status, None)
         self.assertIn('no answer', str(e.exception))
+
+    def test_get_json_cuts_off_an_answer_sent_too_slowly(self):
+        """The 0.7.2 review: `timeout` bounds a read in all, not only each socket operation, so a server that sends its
+        answer a byte at a time cannot hold the audit (or a --wait-anchored poll) open."""
+        class Slow:
+            """An answer whose body comes a byte per read; each read takes 1 s on the clock below."""
+            def __init__(self):
+                self.left = b'{"a": 1}'
+
+            def read1(self, _n):
+                b, self.left = self.left[:1], self.left[1:]
+                return b
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+        now = [0.0]
+
+        def tick():
+            now[0] += 1.0
+            return now[0]
+        with mock.patch.object(vaudit.urllib.request, 'urlopen', lambda _req, timeout: Slow()), mock.patch.object(vaudit.time, 'monotonic', tick):
+            with self.assertRaises(vaudit.ReadError) as e:
+                vaudit.get_json('http://slow.invalid/chain', timeout=4)
+        self.assertIn('no answer in time', str(e.exception))
+        with mock.patch.object(vaudit.urllib.request, 'urlopen', lambda _req, timeout: Slow()), mock.patch.object(vaudit.time, 'monotonic', lambda: 0.0):
+            self.assertEqual(vaudit.get_json('http://slow.invalid/chain', timeout=4), {'a': 1}, 'in time, it is read whole')
 
 
 if __name__ == '__main__':

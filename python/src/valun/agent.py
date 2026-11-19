@@ -93,6 +93,9 @@ REAL_VS_SIMULATED_CIRCULATION = {
 # The same labels on the Valun testnet network (valun-testnet-1): word for word the server's testnet deal labels
 # (lib/pilot/core.mjs SETTLEMENT_TESTNET, CIRCULATION_SETTLEMENT_TESTNET). There a creditor can redeem a note on Ergo
 # testnet against its issuer's reserve, the tracker anchors its totals on Ergo testnet, and tERG have no monetary value.
+# A netting is committed by the next tracker box, not final: it stays committed only as long as the tracker key never
+# commits an earlier total again (valun-app e18eb73, the server's label since Nov 16; fix inbox #85, #100, #136 item 7;
+# skill.md, Trust model).
 TESTNET = 'valun-testnet-1'
 TESTNET_REDEMPTION = ("Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted "
                       'one; tERG are test coins with no monetary value.')
@@ -100,8 +103,9 @@ SETTLEMENT_TESTNET = 'not settled until redeemed: issuing a credit note creates 
 CIRCULATION_SETTLEMENT_TESTNET = ('not settled until redeemed: a credit note is an outstanding obligation. With circulating '
                                   'credit it can move to a new creditor (debt transfer, signed by the debtor and both '
                                   'creditors) or be cancelled against an equal opposite obligation (set-off, signed by every '
-                                  'party; no net position changes); a netting is final once a tracker box on Ergo testnet '
-                                  'commits it. ' + TESTNET_REDEMPTION)
+                                  'party; no net position changes); a netting is committed once a tracker box on Ergo '
+                                  'testnet commits it, and stays committed only as long as the tracker key never commits '
+                                  'an earlier total again. ' + TESTNET_REDEMPTION)
 _TESTNET_TRACKER = ('The Valun testnet Basis tracker keeps one running total per key pair: what the issuer key owes the '
                     'recipient key, with a timestamp, signed by the issuer, and anchors them on Ergo testnet (a tracker box '
                     'commits the digest of every total). ')
@@ -152,8 +156,34 @@ PAYABLE = ('delivered', 'note_failed', 'payment_due')
 # How fast an issuer signs a transfer of its debt (payment options issuer_consents), in an approval text.
 CONSENT_SPEED_WORDS = {'immediate': 'immediately', 'auto': 'automatically',
                        'when_online': 'when its agent is next online', 'unavailable': 'not at the moment (unavailable)'}
-# prepare() failures that keep their own code and setup hint instead of approval_unbound (still nothing is signed).
-UNBOUND_PASS_THROUGH = ('not_connected', 'not_configured', 'tracker_mismatch')
+# prepare() failures that keep their own code and setup hint instead of approval_unbound (still nothing is signed): a
+# redirect, a plain-http server and another server than the profile's too (the RC's review), which no read again changes
+# and only the owner can; and tls_unverified, which only the JS client raises (certificate checks off in its process: the
+# RC's review, round 3), as its agent's list has it.
+UNBOUND_PASS_THROUGH = ('not_connected', 'not_configured', 'tracker_mismatch', 'redirected', 'plain_http', 'wrong_server',
+                        'tls_unverified')
+# A profile of the pilot network, retired on 2026-11-13 (fix inbox #30), on a server that now serves another network:
+# that server knows neither its participant nor its key, nor the tracker it pinned, so its calls meet these refusals
+# (JavaScript's client says wrong_tracker for a pin it was given). ValunAgent.retired() answers network_retired instead,
+# with how to join again: in a new profile (rejoin_hint), since this one holds an identity of the old network.
+RETIRED_CODES = ('unauthorized', 'not_connected', 'tracker_mismatch', 'wrong_network', 'wrong_tracker')
+DEFAULT_REJOIN_HINT = ('join in a new profile, in a terminal: `valun --profile NAME join --sandbox --handle HANDLE '
+                       '--operator "YOUR NAME" --owner-token-file FILE` (NAME: a profile name not used yet; HANDLE: '
+                       'public and permanent; FILE: a new file for its owner token)')
+# approval_unbound's what_this_means when its cause is unknown_participant: the handle (or id) a commitment names is in no
+# entry of the network's directory, so reading the deal again cannot help (the 0.7.2 clean-user test: house-scribe, on
+# a server that has none).
+UNKNOWN_PARTICIPANT_TEXT = ('Nothing was signed and your owner was not asked: no participant with that handle exists on '
+                            'this network. Find the one you mean with valun_directory, and use the handle it lists.')
+
+
+def retired_text(network, rejoin_hint=DEFAULT_REJOIN_HINT):
+    """network_retired's what_this_means: the profile's pilot network was retired, and the server serves `network`."""
+    return (f"This agent's profile joined the pilot network ({vc.NETWORK}), which was retired on "
+            f'{vc.PILOT_RETIRED_ON}: the Valun server now serves {network}, which knows neither this participant nor '
+            f'its key. Nothing was signed. Its owner must use a profile on {network}: {rejoin_hint}.')
+
+
 # The server's sandbox agents (PROTOCOL.md 18.15) and the five-step tour a sandbox_only participant can take with them.
 SANDBOX_EXACT, SANDBOX_MALLORY = 'sandbox-exact', 'sandbox-mallory'
 SANDBOX_AGENTS = (SANDBOX_EXACT, SANDBOX_MALLORY)
@@ -185,8 +215,17 @@ def tour_goal(step, unit=vc.UNIT, scale=1):
 # What you hold / owe (PC-sized, times the scale) once each step is done, as tracker totals (design 9.2).
 TOUR_AFTER = {1: (3, 0), 2: (1, 0), 3: (0, 1), 4: (2, 0), 5: (0, 0)}
 # How long a tour step asks the agent to wait before calling valun_status again (fix-inbox #8): the sandbox agents act
-# within a few seconds; an owner approval takes a person.
-SANDBOX_RETRY_S, OWNER_RETRY_S = 5, 60
+# within a few seconds; an owner approval takes a person; a 3-cycle whose third leg is missing (blocked:
+# cycle_leg_missing) waits for another participant's payment; a set-off that is due is signed at the client's next
+# consent run, at most once a minute (0.7.2: 15 s, not the sandbox agents' 5 s).
+SANDBOX_RETRY_S, OWNER_RETRY_S, CYCLE_LEG_RETRY_S, SETOFF_DUE_RETRY_S = 5, 60, 30, 15
+# The tour's end, kept in the profile: state[TOUR_DONE_KEY] is the participant id whose tour valun_status saw done.
+# sandbox_next_steps reads the step from what the participant holds and owes with the sandbox agents, so a deal with them
+# after the tour (`valun sandbox earn`) made it step 3 again, and `valun sandbox tour` started over there (the 0.7.2
+# clean-user test). Once the end is kept, sandbox_next_steps stays done, with TOUR_COMPLETED.
+TOUR_DONE_KEY = 'sandbox_tour_done'
+TOUR_COMPLETED = ('The tour is complete. Deals with the sandbox agents from now on are not tour steps: valun_inbox shows '
+                  'what waits for you, as with any agent. You can keep trading with the sandbox agents.')
 
 
 BRIEF_NOTE = ('PC are pilot credits with no monetary value: a credit note is an outstanding promise, and nothing is redeemed. '
@@ -195,6 +234,28 @@ BRIEF_NOTE_TESTNET = ('Amounts are nanoERG of tERG, Ergo testnet coins with no m
                       "promise, which its creditor can redeem on Ergo testnet against the issuer's reserve, if it has one. "
                       'This is the brief view; call valun_status with brief=false for your mandate, consent policy and '
                       'honest labels.')
+
+
+def self_serve_words(participant, info):
+    """valun_status's words for a self-serve participant (sandbox_only: true), from the server's GET /info self_serve
+    (open_network, renews_while_active) and the participant's sandbox_expires_at, or None for another participant. The
+    Nov 18 fresh-join run (finding 5): the join note said "Open network: you can deal with any agent", and the record
+    said sandbox_only: true, a name left from the boxed sandbox that limits nothing on an open network."""
+    p = participant if isinstance(participant, dict) else {}
+    if p.get('sandbox_only') is not True:
+        return None
+    ss = info.get('self_serve') if isinstance(info, dict) and isinstance(info.get('self_serve'), dict) else {}
+    until = p.get('sandbox_expires_at')
+    when = (f' until {shown(until)}' + (', renewed while your agent is active' if ss.get('renews_while_active') is True
+                                        else '')) if isinstance(until, str) and until else ''
+    if ss.get('open_network') is True:
+        return ('A self-serve participant on the open network: you can deal with any agent whose owner allows it, within '
+                f'small limits (limits_in_force){when}. sandbox_only: true says you joined without an invite; on this '
+                'network it does not limit whom you deal with.')
+    if ss.get('open_network') is False:
+        return ('A self-serve sandbox participant: you can deal only with the sandbox agents (sandbox-exact and '
+                f'sandbox-mallory), within small limits (limits_in_force){when}.')
+    return f'A self-serve participant (sandbox_only: true: you joined without an invite), within small limits (limits_in_force){when}.'
 
 
 def guarantees_waiting(g):
@@ -244,6 +305,7 @@ def brief_status(out):
     you, pos = d(out.get('you')), d(out.get('position'))
     b = {'brief': True, 'connected': out.get('connected'),
          'you': {k: you.get(k) for k in ('id', 'handle', 'sandbox_expires_at') if you.get(k) is not None},
+         **({'you_are': out['you_are']} if isinstance(out.get('you_are'), str) else {}),
          'objective_from_your_owner': out.get('objective_from_your_owner'),
          'goals_your_owner_told_you': out.get('goals_your_owner_told_you'),
          'limits_in_force': out.get('limits_in_force'), 'approvals': out.get('approvals'),
@@ -259,7 +321,8 @@ def brief_status(out):
         b['guarantees_waiting'] = out['guarantees_waiting']
     step = out.get('sandbox_next_steps')
     if isinstance(step, dict):
-        b['sandbox_next_steps'] = {k: step[k] for k in ('tour_step', 'next_calls', 'then', 'retry_after_seconds') if k in step}
+        keys = ('tour_step', 'next_calls', 'then', 'blocked', 'retry_after_seconds')
+        b['sandbox_next_steps'] = {k: step[k] for k in keys if k in step}
     b['note'] = BRIEF_NOTE_TESTNET if out.get('network') == TESTNET else BRIEF_NOTE
     return b
 
@@ -405,6 +468,563 @@ def shown(value):
     return quoted(value)
 
 
+_APPROVAL_ID_RE = re.compile(r'va_[0-9a-f]{12}')
+
+
+def owner_wait(c, r, deal_id, command=None, kind='deal'):
+    """Where and what this participant's owner approves, for an answer that waits for them (the newcomer tests,
+    2026-11-17: valun_propose, valun_respond and valun_review_delivery said the owner must approve, not where, nor which
+    approval): (words, fields). words: ' in the owner console, <server>/pilot#owner (deal vd_..., approval va_...)',
+    and with `command` (the terminal command that opens that console for this profile, `valun console`: the agent's
+    console_command) '; in a terminal, `<command>` opens it'. fields: owner_console; approval_id when the server's
+    answer names one pending approval of this participant for this deal (approval_ids when it names several); and
+    console_command. kind: what deal_id names ('deal', or 'guarantee' for a guarantee offer)."""
+    state = getattr(c, 'state', None)
+    server = state.get('server') if isinstance(state, dict) else None
+    server = server.rstrip('/') if isinstance(server, str) else ''
+    rows = r.get('approvals') if isinstance(r, dict) and isinstance(r.get('approvals'), list) else []
+    ids = sorted({a['id'] for a in rows if isinstance(a, dict) and a.get('state') == 'pending'
+                  and isinstance(a.get('id'), str) and _APPROVAL_ID_RE.fullmatch(a['id'])})
+    fields = {}
+    if server:
+        fields['owner_console'] = f'{server}/pilot#owner'
+    if len(ids) == 1:
+        fields['approval_id'] = ids[0]
+    elif ids:
+        fields['approval_ids'] = ids
+    opens = ''
+    if isinstance(command, str) and command:
+        fields['console_command'] = command
+        opens = f'; in a terminal, `{command}` opens it'
+    which = ', '.join([f'{kind} {shown(deal_id)}'] + [f'approval {i}' for i in ids])
+    where = f' in the owner console, {server}/pilot#owner' if server else ' in the owner console'
+    return f'{where} ({which}{opens})', fields
+
+
+# What the Valun server never holds for an owner, in any approval mode (the approval semantics of 2026-11-17): it holds
+# only what the owner's mandate holds (approve_above, review_deliveries). A limit the agent recorded with
+# valun_set_limits can be loosened or cleared with its agent token alone (PUT /limits), never past the owner's mandate.
+NEVER_HELD = ('honoring a guarantee call (your IOU, recorded at once); accepting, calling and releasing guarantees; '
+              'deliveries, declines, withdrawals and disputes; loosening or clearing a limit you recorded with '
+              "valun_set_limits (never past your owner's mandate); and the consents your client signs by itself")
+# valun_status's approvals sentence for console approvals (the mode the profile names; mcp_server.APPROVAL_TEXT and
+# the CLI show it as theirs). The console's own address follows it (held_for_owner). What a rejection leaves, as the
+# server does it (lib/pilot/core.mjs decideApproval, decidePayByTransfer): a rejected offer, acceptance or IOU stays on
+# the server, still signed; a rejected payment by transfer is purged (endTransfer, purgeTransfer: only the signatures'
+# sha256), and a payment through the same IOU at the same prior state is allowed at once (the same-prior exemption,
+# novation.one_live_attempt). Any other payment of the deal waits until T + MAX_AGE_MS + FALLBACK_MARGIN_MS.
+CONSOLE_APPROVALS = ('Console approvals: you sign every commitment yourself, and the Valun server holds these for your '
+                     'owner in the owner console until they approve: your offers and counter-offers, your acceptances '
+                     '(taking a job included), your guarantee offers, and the IOU or payment by transfer you sign when '
+                     'you accept a delivery (console sets your owner mandate to approve_above 0 and review_deliveries '
+                     'on). Each takes effect only when your owner approves it. Rejecting does not unsign it: the server '
+                     'keeps your signed offer, acceptance or IOU on record, and a rejected IOU could still be recorded by '
+                     'the tracker until an hour after you signed it, so paying that deal by transfer waits until 1 hour '
+                     "and 2 minutes after you signed it (your Valun client's time, a minute after the server's, which the "
+                     'owner console shows, as a margin for clocks that differ). A rejected payment by transfer is the '
+                     'exception: it is deleted, '
+                     'its signatures included (the server keeps only their hashes), and you may pay again through the same '
+                     'IOU at once while it is unchanged; any other payment of that deal waits until 1 hour and 2 minutes '
+                     'after you signed it. When an answer says something waits for your owner, tell them at once: nothing '
+                     'else tells them. These are not held, so they take effect when you sign: ' + NEVER_HELD + '.')
+
+
+def held_for_owner(mandate, server, unit=vc.UNIT, console=False):
+    """valun_status's sentence on what the Valun server holds for the owner, from the owner mandate GET /me shows
+    (approve_above: an offer, counter-offer or acceptance priced above it, and a guarantee offer capped above it;
+    review_deliveries: the IOU or payment by transfer signed when the agent accepts a delivery) and where the owner
+    decides (<server>/pilot#owner). console: the approvals sentence before it is CONSOLE_APPROVALS; with the mandate
+    console sets, only the address follows (that sentence names the rest), and with another one, what it holds now."""
+    m = mandate if isinstance(mandate, dict) else {}
+    above, review = m.get('approve_above'), m.get('review_deliveries') is True
+    url = f'{str(server).rstrip("/")}/pilot#owner' if isinstance(server, str) and server else None
+    where = f'in the owner console ({url})' if url else 'in the owner console'
+    if console and _whole(above) and above == 0 and review:
+        return f'Your owner approves or rejects what waits for them in the owner console: {url or "/pilot#owner"}.'
+    held = []
+    if _whole(above) and above == 0:
+        held.append('every offer, counter-offer, acceptance and guarantee offer you sign (approve_above 0)')
+    elif _whole(above):
+        held.append(f'your offers, counter-offers and acceptances priced above {vc.amount_text(above, unit)}, and your '
+                    'guarantee offers capped above it (approve_above)')
+    if review:
+        held.append('the IOU or payment by transfer you sign when you accept a delivery (review_deliveries is on)')
+    lead = ('Your owner has changed your owner mandate since console set it: the Valun server holds ' if console else
+            'The Valun server also holds ')
+    if not held:
+        return lead + f'nothing for your owner {where} now.'
+    return (lead + f"these for your owner {where} until they approve: {'; and '.join(held)}. It never holds an honor of "
+            'a guarantee call.')
+
+
+def _terms_of(r):
+    """The current terms a deal view shows ({} when it shows none)."""
+    cur = r.get('current') if isinstance(r, dict) and isinstance(r.get('current'), dict) else {}
+    return cur.get('terms') if isinstance(cur.get('terms'), dict) else {}
+
+
+def _handle_of(r, default='the other side'):
+    """The counterparty's handle a deal view names, as a computed line shows it (default when it names none)."""
+    cp = r.get('counterparty') if isinstance(r, dict) and isinstance(r.get('counterparty'), dict) else {}
+    return shown(cp['handle']) if isinstance(cp.get('handle'), str) and cp['handle'] else default
+
+
+def iso_ms(ms):
+    """ms since the epoch as the server writes a time (ISO 8601, UTC, milliseconds: 2026-11-18T00:10:33.997Z); None for
+    a value that is not a whole number of ms between 1970 and 3000."""
+    if not (_whole(ms) and 0 <= ms < 32_503_680_000_000):
+        return None
+    return datetime.fromtimestamp(ms // 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + f'.{ms % 1000:03d}Z'
+
+
+# A held IOU's approval ends this long before the tracker's hour (valun-app's HELD_NOTE_SEND_MARGIN_MS, da29d10, from
+# 2026-11-18), so that an approval made in time reaches the tracker in time: the owner console's "Decide by" for it,
+# decide_by in the server's approval view (the RC's staging test, 2026-11-18: this client named the hour itself, a minute
+# later than the console). A server from before it (the testnet's 1b1f18f) ends no approval by itself: its card shows
+# the tracker's hour as the deadline ("only until ...; after that it fails"), and sends an approval made after the hour,
+# which fails at the tracker. This client's decide_by is then a minute before the time that console shows. The agent's
+# answers cannot tell the two apart (decide_by is in the owner's approval views only), so 0.7.2 is released after the
+# testnet runs da29d10 or later (RELEASING.md), and the owner's texts warn of the older server's late approval.
+HELD_NOTE_SEND_MARGIN_MS = 60_000
+
+
+def _bound_ts(note):
+    """The timestamp of a bound note as a deal view shows it ({total, timestamp, prior_signature, ...}), else None (an
+    ordinary note, which has no maximum age, or a note the view does not show)."""
+    n = note if isinstance(note, dict) else {}
+    ts = n.get('timestamp')
+    if not _whole(ts) or not (n.get('prior_signature') or n.get('bound') is True or ts % 1000 == nv.BOUND_MS):
+        return None
+    return ts
+
+
+def note_expires_at(note):
+    """When the tracker stops taking a bound note (its timestamp + 1 h, novation.MAX_AGE_MS; the server's expires_at)
+    as the server writes a time, for a note as a deal view shows it ({total, timestamp, prior_signature, ...}); None
+    for an ordinary note, which has no maximum age, or a note the view does not show."""
+    ts = _bound_ts(note)
+    return None if ts is None else iso_ms(ts + nv.MAX_AGE_MS)
+
+
+def note_decide_by(note):
+    """Until when the owner can approve or reject a bound note held for them: the owner console's deadline, a minute
+    before the tracker's (its timestamp + 1 h - HELD_NOTE_SEND_MARGIN_MS; the server's decide_by), as the server writes
+    a time; None where note_expires_at is None."""
+    ts = _bound_ts(note)
+    return None if ts is None else iso_ms(ts + nv.MAX_AGE_MS - HELD_NOTE_SEND_MARGIN_MS)
+
+
+def _deadline_words(by, exp):
+    """A held IOU's deadline for the owner, in words: '<by>, the owner console's deadline, a minute before the
+    tracker's limit (<exp>)'."""
+    return f"{by}, the owner console's deadline, a minute before the tracker's limit ({exp})"
+
+
+def _until(at, word='before'):
+    """' before <at>' (or another word) for a time the server's answer names (an ISO 8601 string), else ''."""
+    return f' {word} {shown(at)}' if isinstance(at, str) and at else ''
+
+
+def free_after(ts):
+    """Until when this client counts a payment attempt signed for `ts` (a bound note or a transfer) against another
+    payment of its deal, as the server writes a time: its timestamp + 1 h + 2 min (novation.MAX_AGE_MS +
+    FALLBACK_MARGIN_MS; attempt_outcome: dead only after it; the server's fallback_after is a minute sooner). None for a
+    timestamp that is not a whole number."""
+    return iso_ms(ts + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS) if _whole(ts) else None
+
+
+# What free_after's time is, said beside it (the RC's staging test, 2026-11-18: after a rejected IOU the owner console
+# said paying by transfer waits until its timestamp + 1 h + 60 s, the server's rule, and this client + 1 h + 2 min).
+MARGIN_WORDS = ("your Valun client's time, a minute after the server's, which the owner console shows, as a margin for "
+                'clocks that differ')
+
+
+def held_note_hour(d, now_ms):
+    """The payer's IOU the Valun server holds for its owner, in a deal view (completion_awaiting_owner, the payer's
+    credit_note.note, a bound note): (decide_by, note_expires_at, passed): the owner console's deadline
+    (note_decide_by), the tracker's, and whether now_ms is at the tracker's or later (approved then, on a server that
+    has not ended it, it fails at the tracker and leaves the delivery accepted, unpaid and no longer disputable:
+    approval probe D3). (None, None, False) for any other view: the payee's, a held payment by transfer, an ordinary
+    note."""
+    if not (isinstance(d, dict) and d.get('status') == 'completion_awaiting_owner' and d.get('your_role') == 'payer'):
+        return None, None, False
+    cn = d.get('credit_note') if isinstance(d.get('credit_note'), dict) else {}
+    note = cn.get('note') if isinstance(cn.get('note'), dict) else None
+    exp = note_expires_at(note)
+    if exp is None:
+        return None, None, False
+    return note_decide_by(note), exp, _whole(now_ms) and now_ms >= note['timestamp'] + nv.MAX_AGE_MS
+
+
+def held_note_of(c, row, now_ms):
+    """The deadlines of the IOU this client signed for a pending issue_note approval an inbox row names
+    (awaiting_your_owner: {approval_id, deal_id, kind}), from this client's own record of it (transfer_attempts[deal_id]:
+    the note attempt whose approval_id it is; a bound note): (decide_by, note_expires_at, passed), as held_note_hour.
+    (None, None, False) for another kind, or an IOU this client holds no record of."""
+    if not (isinstance(row, dict) and row.get('kind') == 'issue_note' and isinstance(row.get('approval_id'), str)
+            and isinstance(row.get('deal_id'), str)):
+        return None, None, False
+    state = getattr(c, 'state', None)
+    att = state.get('transfer_attempts') if isinstance(state, dict) else None
+    lst = att.get(row['deal_id']) if isinstance(att, dict) else None
+    rec = next((a for a in (lst if isinstance(lst, list) else []) if isinstance(a, dict) and a.get('route') == 'note'
+                and a.get('approval_id') == row['approval_id']), None)
+    ts = rec.get('timestamp') if rec is not None else None
+    exp = note_expires_at({'timestamp': ts}) if _whole(ts) else None
+    if exp is None:
+        return None, None, False
+    return note_decide_by({'timestamp': ts}), exp, _whole(now_ms) and now_ms >= ts + nv.MAX_AGE_MS
+
+
+def honor_marks(c, guarantee_id):
+    """{call_id: timestamp of the note} of this client's own record of the calls of `guarantee_id` it honored or is
+    honoring (client GUARANTEE_HONORS_KEY, which honor_guarantee writes ahead before it signs a note): before and after
+    an honor, the call whose entry changed is the one it honored."""
+    state = getattr(c, 'state', None)
+    honors = state.get(vc.GUARANTEE_HONORS_KEY) if isinstance(state, dict) else None
+    rec = honors.get(guarantee_id) if isinstance(honors, dict) else None
+    calls = rec.get('calls') if isinstance(rec, dict) else None
+    return {k: v.get('timestamp') for k, v in calls.items() if isinstance(k, str) and isinstance(v, dict)} \
+        if isinstance(calls, dict) else {}
+
+
+def acceptance_wait(c, r, deal_id, command=None):
+    """What an acceptance held for an owner (accepted_awaiting_owner) waits for, as the server's answer names it:
+    acceptance.held_for ('acceptor_owner' and/or 'proposer_owner') and the pending approvals of this participant
+    (approvals: a deal view lists only the viewer's own). (text, fields). Only when this participant's owner holds it
+    (held_for names acceptor_owner, or the answer lists a pending approval of this participant) does it name the owner
+    console, with owner_wait's fields; when only the proposer's owner does, it says so and names no console (the 0.7.2
+    review: it told the acceptor's owner to approve what only the proposer's owner held). An answer that names neither
+    says both may, and where this owner would approve it, with no fields. The other side already sees that it was
+    accepted and waits (never the acceptance's signature), and may still withdraw its offer (the approval semantics of
+    2026-11-17)."""
+    acc = r.get('acceptance') if isinstance(r, dict) and isinstance(r.get('acceptance'), dict) else {}
+    held_for = acc.get('held_for') if isinstance(acc.get('held_for'), list) else []
+    where, fields = owner_wait(c, r, deal_id, command)
+    mine = 'acceptor_owner' in held_for or 'approval_id' in fields or 'approval_ids' in fields
+    theirs = 'proposer_owner' in held_for
+    cp, before = _handle_of(r), _until(_terms_of(r).get('offer_expires_at'))
+    seen = (f' {cp} already sees that you accepted and that it waits (not your signature), and may still withdraw its '
+            'offer.')
+    if mine and theirs:
+        return (f"You signed your acceptance of {cp}'s offer. It binds only once your owner approves it{where} and "
+                f"{cp}'s owner confirms its offer (their limits require it){before}.{seen} Tell your owner. If your "
+                'owner rejects it, the offer is open again. valun_deal shows when both are decided.'), fields
+    if mine:
+        return (f"You signed your acceptance of {cp}'s offer. It binds only once your owner approves it{where}{before}."
+                f'{seen} Tell your owner: nothing else tells them. If your owner rejects it, the offer is open again.'), fields
+    if theirs:
+        return (f"You signed your acceptance. It binds once {cp}'s owner confirms its offer (their limits require it). "
+                f"Nothing waits for your owner. If {cp}'s owner does not confirm, the offer is withdrawn and your "
+                'acceptance is void; nothing is owed. valun_deal shows when it is decided.'), {}
+    return ('You signed the acceptance; it becomes binding when the owner holding it approves (yours, or the '
+            f"proposer's if their limits require it; valun_deal shows which). If it is yours, your owner approves it{where}."), {}
+
+
+# The deal statuses in which an owner decides (valun_deal's whose_turn: owner_turn), and the one an owner's rejection of
+# an offer ends a deal in.
+OWNER_WAITS = ('proposed_awaiting_owner', 'accepted_awaiting_owner', 'completion_awaiting_owner', 'rejected_by_owner')
+
+
+def owner_turn(d, me_id, now_ms=None):
+    """valun_deal's whose_turn while an owner decides (OWNER_WAITS), for the viewer `me_id`: whose owner, and what
+    waits for them (the approval semantics of 2026-11-17: 0.7.1 said 'nobody: the deal is ...' while this agent's own
+    owner held it). An acceptance names the owners acceptance.held_for names, from the viewer's side. The payer's held
+    payment says until when: a payment by transfer its hold's end (payment.expires_at); an IOU its hour
+    (held_note_hour), and once that has passed, that the owner must reject it (the 0.7.2 review: an approval then fails
+    at the tracker and leaves the delivery accepted and no longer disputable, approval probe D3)."""
+    st, role = d.get('status'), d.get('your_role')
+    if st == 'proposed_awaiting_owner':
+        return "your owner's: your signed offer waits for them in the owner console; the other side cannot see it yet"
+    if st == 'rejected_by_owner':
+        return 'nobody: your owner rejected this offer; it was never shown to the other side, and binds nobody'
+    if st == 'completion_awaiting_owner':
+        if role != 'payer':
+            return "the payer's owner's: the payment its agent signed when it accepted your delivery waits for them"
+        pay = d.get('payment') if isinstance(d.get('payment'), dict) else {}
+        hold = pay.get('expires_at') if pay.get('state') == 'awaiting_owner' else None
+        if isinstance(hold, str) and hold:
+            return ("your owner's: the payment by transfer you signed when you accepted the delivery waits for them in the "
+                    f'owner console until {shown(hold)} (20 minutes after you signed it); then it ends and nothing moves')
+        by, exp, passed = held_note_hour(d, now_ms)
+        if passed:
+            return ("your owner's: the IOU you signed when you accepted the delivery still waits for them, but the tracker "
+                    f'records it only until {exp}, which has passed: tell your owner to reject it in the owner console '
+                    '(approved now, it would fail at the tracker and leave the delivery accepted, unpaid and no longer '
+                    'disputable), then accept the delivery again to sign a new IOU')
+        if exp:
+            return ("your owner's: the IOU you signed when you accepted the delivery waits for them in the owner console: "
+                    f'they approve or reject it by {_deadline_words(by, exp)}')
+        return ("your owner's: the IOU or payment by transfer you signed when you accepted the delivery waits for them in "
+                "the owner console")
+    acc = d.get('acceptance') if isinstance(d.get('acceptance'), dict) else {}
+    held_for = acc.get('held_for') if isinstance(acc.get('held_for'), list) else []
+    acceptor = acc.get('by') == me_id
+    owners = [('your owner' if acceptor else "the acceptor's owner") if 'acceptor_owner' in held_for else None,
+              ("the proposer's owner" if acceptor else 'your owner') if 'proposer_owner' in held_for else None]
+    owners = [o for o in owners if o]
+    return ('an owner\'s: the acceptance waits for ' + (' and '.join(owners) if owners else 'an owner (valun_deal '
+                                                        'approvals lists your own owner\'s)') + ' in the owner console')
+
+
+# The statuses of a deal that still waits for its payment: what a rejected or void IOU or payment by transfer leaves to
+# do applies only then (owner_decisions, counterparty_owner_decisions; the 0.7.2 review).
+UNPAID = ('delivered', 'payment_due', 'note_failed')
+
+
+def _earlier(at, st):
+    """The past-tense frame of a decision the deal has moved on from: ('Earlier (<at>), ', ' The deal has since moved
+    on (<status>).')."""
+    return (f'Earlier ({shown(at)}), ' if isinstance(at, str) and at else 'Earlier, ',
+            f' The deal has since moved on ({shown(st)}).')
+
+
+def _pay_steps(st, how):
+    """What is left to do once a payment of this deal that the server held for the owner ended without being sent on
+    (the deal is in UNPAID): `how`, how it may be paid again; while it is delivered, a dispute too."""
+    if st == 'delivered':
+        return f' The deal is back to delivered: {how}, or dispute the delivery.'
+    return f' The delivery stays accepted, and you must still pay it: {how}.'
+
+
+def owner_decisions(d, attempts=None):
+    """valun_deal's owner_decisions: what this participant's owner (or the server, for them) decided about something its
+    agent signed that the server held for the owner, and that ended without taking effect: the deal view's approvals
+    (this participant's own) that were rejected or went void (client.hold_ended), each with what it leaves, in the
+    approval semantics of 2026-11-17 and the server's code (lib/pilot/core.mjs): a rejected offer, acceptance or IOU
+    stays on the server, still signed; a payment by transfer that ends is purged (only its signatures' hashes are kept).
+    attempts: this client's payment attempt records of the deal (transfer_attempts[deal_id]), for the times this client
+    actually allows (free_after: a payment of another kind waits until the attempt's timestamp + 1 h + 2 min) and
+    whether it counts the attempt as not applied (learn_owner_decisions; then it is dead once its edge moves past it:
+    novation.attempt_outcome). Next steps are given only for the last ended approval of each kind, and only while the
+    deal's status still fits them (UNPAID for an IOU or a payment, open on the other side's offer for a counter-offer or
+    an acceptance, open on this participant's offer for a confirmation its acceptance voided); otherwise a past-tense
+    line says when it was decided and that the deal has moved on (the 0.7.2 review). [{approval_id, kind, state,
+    decided_at, what_this_means}]; [] when there is none."""
+    d = d if isinstance(d, dict) else {}
+    rows = d.get('approvals') if isinstance(d.get('approvals'), list) else []
+    cp, st = _handle_of(d), d.get('status')
+    lead = 'The other side' if cp == 'the other side' else cp      # at the start of a sentence
+    until = _until(_terms_of(d).get('offer_expires_at'), 'until')
+    cur = d.get('current') if isinstance(d.get('current'), dict) else {}
+    open_by = cur.get('by') if st == 'open' else None
+    theirs_open = open_by is not None and open_by != d.get('you')
+    mine_open = open_by is not None and d.get('you') is not None and open_by == d.get('you')
+    pay = d.get('payment') if isinstance(d.get('payment'), dict) else {}
+    recs = [a for a in (attempts if isinstance(attempts, list) else []) if isinstance(a, dict)]
+    ended = [a for a in rows if isinstance(a, dict) and isinstance(a.get('id'), str) and _APPROVAL_ID_RE.fullmatch(a['id'])
+             and vc.hold_ended(a.get('state'))]
+    kind_of = lambda a: a.get('kind') if isinstance(a.get('kind'), str) else None     # noqa: E731
+    last = {kind_of(a): a['id'] for a in ended}                # the last ended approval of each kind
+    out = []
+    for a in ended:
+        kind, state = a.get('kind'), a['state']
+        latest = last.get(kind_of(a)) == a['id']
+        earlier, moved = _earlier(a.get('decided_at'), st)
+        mine = next((r for r in recs if r.get('approval_id') == a['id']
+                     or (isinstance(r.get('server_ended'), dict) and r['server_ended'].get('approval_id') == a['id'])), None)
+        ts = mine.get('timestamp') if mine is not None and _whole(mine.get('timestamp')) else None
+        counted = mine is not None and mine.get('outcome') == 'not_applied'
+        if kind == 'propose':
+            if state == 'rejected' and st == 'rejected_by_owner':
+                text = (f'Your owner rejected your offer: {cp} never saw it, and the deal has ended. What you signed stays on '
+                        'record at the Valun server and binds nobody. Make a new offer only if your owner wants one.')
+            elif state == 'rejected':
+                text = (f'Your owner rejected your counter-offer, and {cp} never saw it. Its offer stays as it was{until}: '
+                        'you may accept it, counter again or decline it.' if latest and theirs_open else
+                        f'{earlier}your owner rejected your counter-offer, and {cp} never saw it.{moved}')
+            else:
+                text = (f'Your offer (or counter-offer) ended before your owner approved it ({shown(state)}): it was never '
+                        f'shown to {cp} and binds nobody.')
+        elif kind == 'accept':
+            if state == 'rejected':
+                text = (f"Your owner did not approve your acceptance of {cp}'s offer. Nothing was agreed; the offer is open "
+                        f'again{until}, and {cp} sees that the acceptance was not approved. Accept it again only if your '
+                        'owner wants to: it would wait for them again.' if latest and theirs_open else
+                        f"{earlier}your owner did not approve your acceptance of {cp}'s offer: nothing was agreed by it."
+                        f'{moved}')
+            else:
+                text = (f'Your acceptance ended before your owner approved it ({shown(state)}): nothing was agreed, and '
+                        'nothing is owed.')
+        elif kind == 'confirm_offer':
+            # The proposer's owner confirms an offer its agent made once it is accepted (F4). Rejected: the offer is
+            # withdrawn on the owner's behalf. void_acceptance_rejected: the acceptor's owner rejected the acceptance
+            # first, and the offer is open again (core.mjs decideApproval). Other void states: the acceptance ended.
+            if state == 'rejected':
+                text = (f'Your owner did not confirm your offer, which {cp} had accepted: the offer is withdrawn on your '
+                        "owner's behalf and the acceptance is void. Nothing is agreed and nothing is owed.")
+            elif state == 'void_acceptance_rejected':
+                text = (f"{lead}'s owner did not approve its acceptance of your offer, so your owner had nothing to "
+                        f'confirm. Nothing was agreed, and your offer is open again{until}.' if latest and mine_open else
+                        f"{earlier}{cp}'s owner did not approve its acceptance of your offer, so your owner had nothing to "
+                        f'confirm: nothing was agreed by it.{moved}')
+            else:
+                text = (f"{lead}'s acceptance of your offer ended before your owner confirmed it ({shown(state)}): nothing "
+                        'was agreed, and nothing is owed.')
+        elif kind == 'issue_note':
+            bound = ts is not None and ts % 1000 == nv.BOUND_MS and free_after(ts) is not None
+            if not (latest and st in UNPAID):
+                text = (f'{earlier}your owner rejected the IOU you signed for this deal' if state == 'rejected' else
+                        f'{earlier}the IOU you signed for this deal went void ({shown(state)})') + (
+                    f': it was never sent to the tracker.{moved}')
+            else:
+                head = {'rejected': ('Your owner rejected the IOU you signed for this deal. The Valun server did not send it '
+                                     'to the tracker, and you owe nothing for it.'),
+                        'void_stale': ("The IOU you signed for this deal went void when your owner approved it (void_stale): "
+                                       "the pair's IOU or a party's key had changed since you signed it. The Valun server "
+                                       'did not send it, and you owe nothing for it.'),
+                        'void_key_revoked': ("The IOU you signed for this deal went void before your owner decided "
+                                             "(void_key_revoked): a party's key was revoked. The Valun server did not send "
+                                             'it, and you owe nothing for it.')}.get(
+                    state, f'The IOU you signed for this deal went void ({shown(state)}). The Valun server did not send it, '
+                           'and you owe nothing for it.')
+                steps = _pay_steps(st, ('accept the delivery again to sign a new IOU (it waits for your owner again)'
+                                        if st == 'delivered' else
+                                        'accept it again to sign a new IOU (it waits for your owner again)'))
+                if state == 'rejected':
+                    kept = (' The rejection did not unsign it: the server keeps it on record, and the tracker could still '
+                            'record it ' + (f"until {note_expires_at({'timestamp': ts})}." if bound else
+                                            'until an hour after you signed it.' if mine is None else
+                                            'at any time (an ordinary note has no maximum age).'))
+                else:
+                    kept = ' The server keeps it on record, still signed, and never sends it.'
+                # The waits are this client's own (novation.one_live_attempt) where it holds a record of the IOU, else
+                # the server's (paymentBlockAt: until fallback_after, unless its journal shows the pair's IOU moved past
+                # it: attemptDeadByJournal). A record not counted as not applied may still apply for the client, and
+                # once the pair's IOU moves past it, that is attempt_outcome_unknown, as in 0.7.1.
+                wait = (f'paying this deal by transfer waits until after {free_after(ts)} ({MARGIN_WORDS})' if bound else
+                        'paying this deal by transfer waits until a little over an hour after you signed it, unless this '
+                        "pair's IOU moves past it first" if mine is None
+                        else "paying this deal by transfer waits until your client sees this pair's IOU move past it")
+                if counted:
+                    count = (' Your Valun client counts it as not applied: a new IOU of this deal may be signed now, and '
+                             + wait + (", or until your client sees this pair's IOU move past it." if bound else '.'))
+                elif mine is not None:
+                    count = (f' {wait[0].upper()}{wait[1:]}.' if bound else '') + (
+                        ' Your Valun client still counts it as a payment that may apply: once this pair\'s IOU moves past '
+                        'it, your client pays this deal no more until your owner resolves it (`valun attempts resolve`).'
+                        if bound else ' Your Valun client still counts it as a payment that may apply (an ordinary note '
+                        'has no maximum age): it pays this deal by transfer no more until your owner resolves it '
+                        '(`valun attempts resolve`).')
+                else:
+                    count = f' {wait[0].upper()}{wait[1:]}.'
+                text = head + steps + kept + count
+        elif kind == 'pay_by_transfer':
+            if not (latest and st in UNPAID):
+                text = (f'{earlier}your owner rejected your payment by transfer' if state == 'rejected' else
+                        f'{earlier}your payment by transfer went void ({shown(state)})') + f': nothing moved.{moved}'
+            else:
+                head = {'rejected': 'Your owner rejected your payment by transfer.',
+                        'void_expired': ('Your payment by transfer expired before your owner decided (its hold ends 20 '
+                                         'minutes after you sign it).'),
+                        'void_stale': ('Your payment by transfer went void when your owner approved it (void_stale): it was '
+                                       "out of date (an IOU it moves, a party's key or a rule had changed since you signed "
+                                       'it).'),
+                        'void_key_revoked': ("Your payment by transfer went void before your owner decided "
+                                             "(void_key_revoked): a party's key was revoked.")}.get(
+                    state, f'Your payment by transfer went void ({shown(state)}).')
+                fallback = pay.get('fallback_after') if isinstance(pay.get('fallback_after'), str) else None
+                free = free_after(ts) if ts is not None else None
+                other = (f'after {free} ({MARGIN_WORDS})' if free else f'after {shown(fallback)}' if fallback else
+                         'about an hour after you signed it')
+                # As for an IOU: this client's waits where it holds a record, else the server's (which ends once the IOU
+                # it would have moved has moved past it: attemptDeadByJournal).
+                sooner = (', or once your client sees that IOU move past it' if counted else
+                          ' (or once that IOU moves past it)' if mine is None else '')
+                text = (head + ' Nothing moved, and the Valun server deleted your signatures of it (it keeps only their '
+                        'hashes).' + _pay_steps(st, 'pay again through the same IOU at once while it is unchanged (it '
+                                                    'waits for your owner again), or with your own IOU or another IOU '
+                                                    f'{other}{sooner}')
+                        + (' Your Valun client counts it as not applied.' if counted else
+                           ' Your Valun client still counts it as a payment that may apply: once that IOU moves past it, '
+                           'your client pays this deal no more until your owner resolves it (`valun attempts resolve`).'
+                           if mine is not None else ''))
+        elif kind == 'guarantee_offer':
+            text = (f'Your owner rejected your guarantee offer: it was never shown, and its cap no longer counts against '
+                    'your limits. Nothing reached the tracker.' if state == 'rejected' else
+                    f'Your guarantee offer ended before your owner approved it ({shown(state)}).')
+        else:
+            text = f'Approval {a["id"]} ({shown(kind)}) ended as {shown(state)} without taking effect.'
+        out.append({'approval_id': a['id'], 'kind': kind, 'state': state, 'decided_at': a.get('decided_at'),
+                    'what_this_means': text})
+    return out
+
+
+# The shared history events in which the other side's owner, or the Valun server, ended what the other side's agent
+# signed and the server held (lib/pilot/core.mjs: decideApproval and decidePayByTransfer write owner_rejected and
+# owner_approval_void_stale, by 'owner:<participant id>', with the approval's kind; endTransfer writes payment_void,
+# by 'valun', for a held payment by transfer that ended before its owner decided).
+COUNTERPARTY_OWNER_KINDS = ('accept', 'confirm_offer', 'issue_note', 'pay_by_transfer')
+
+
+def counterparty_owner_decisions(d, me_id):
+    """valun_deal's counterparty_owner_decisions: what the other side's owner decided in the owner console about what
+    its agent signed for this deal (the deal view's shared history: owner_rejected and owner_approval_void_stale by
+    owner:<the other participant>), and a held payment by transfer of the other side's that ended before its owner
+    decided (payment_void, its reason expired or key_revoked; the payee's view), each with what it means for this
+    participant, in the approval semantics of 2026-11-17 (the synth's words for the other side). As owner_decisions,
+    the last of each kind says what it leaves while the deal's status still fits; the others, and one the deal has moved
+    on from, say when it happened. me_id: this participant's id (a view without it, or a history without such events,
+    gives []). [{at, kind, event, what_this_means}]."""
+    if not (isinstance(d, dict) and isinstance(me_id, str) and me_id):
+        return []
+    hist = d.get('history') if isinstance(d.get('history'), list) else []
+    rows = []
+    for h in hist:
+        if not isinstance(h, dict):
+            continue
+        by, event, kind = h.get('by'), h.get('event'), h.get('kind')
+        if (isinstance(by, str) and by.startswith('owner:') and by != f'owner:{me_id}'
+                and event in ('owner_rejected', 'owner_approval_void_stale') and kind in COUNTERPARTY_OWNER_KINDS):
+            rows.append((h, kind, event))
+        elif (by == 'valun' and event == 'payment_void' and h.get('reason') in ('expired', 'key_revoked')
+              and d.get('your_role') == 'payee'):
+            rows.append((h, 'pay_by_transfer', event))
+    cp, st = _handle_of(d), d.get('status')
+    lead = 'The other side' if cp == 'the other side' else cp
+    until = _until(_terms_of(d).get('offer_expires_at'), 'until')
+    last = {kind: i for i, (_h, kind, _e) in enumerate(rows)}
+    out = []
+    for i, (h, kind, event) in enumerate(rows):
+        latest = last[kind] == i
+        at = h.get('at') if isinstance(h.get('at'), str) and h.get('at') else None
+        earlier, moved = _earlier(at, st)
+        void = event == 'owner_approval_void_stale'
+        if kind == 'accept':
+            text = (f"{lead}'s owner did not approve its acceptance of your offer. Nothing was agreed, and your offer is "
+                    f'open again{until}.' if latest and st == 'open' else
+                    f"{earlier}{cp}'s owner did not approve its acceptance of your offer: nothing was agreed by it.{moved}")
+        elif kind == 'confirm_offer':
+            text = (f"{lead}'s owner withdrew its offer before the deal was agreed. Your acceptance is void, and nothing is "
+                    'owed.')
+        elif kind == 'issue_note':
+            if latest and st in ('delivered', 'payment_due'):
+                text = ((f"The IOU {cp}'s agent signed for your delivery went void when its owner approved it (it was out "
+                         'of date).' if void else f"{lead}'s owner rejected the IOU its agent signed for your delivery.")
+                        + f' Nothing reached the tracker, and {cp} owes you nothing for this deal yet. '
+                        + (f"The deal is back to delivered: {cp}'s agent may accept it again or dispute it." if st == 'delivered'
+                           else f'The delivery stays accepted: {cp} must still pay it.'))
+            else:
+                text = (f"{earlier}the IOU {cp}'s agent signed for your delivery went void when its owner approved it"
+                        if void else f"{earlier}{cp}'s owner rejected the IOU its agent signed for your delivery") + (
+                    f'; nothing reached the tracker.{moved}')
+        else:                                   # pay_by_transfer
+            what = ('went void when its owner approved it (it was out of date)' if void else
+                    'expired before its owner decided (20 minutes after its agent signed it)'
+                    if event == 'payment_void' and h.get('reason') == 'expired' else
+                    "went void before its owner decided (a party's key was revoked)" if event == 'payment_void' else None)
+            if latest and st in ('delivered', 'payment_due'):
+                text = ((f"{lead}'s payment by transfer {what}." if what else
+                         f"{lead}'s owner rejected its payment by transfer.")
+                        + (' Nothing moved, and the deal is back to delivered.' if st == 'delivered' else
+                           f' Nothing moved; the delivery stays accepted, and {cp} must still pay it.'))
+            else:
+                text = ((f"{earlier}{cp}'s payment by transfer {what}" if what else
+                         f"{earlier}{cp}'s owner rejected its payment by transfer") + f'; nothing moved.{moved}')
+        out.append({'at': at, 'kind': kind, 'event': event, 'what_this_means': text})
+    return out
+
+
 def quote_line(label, fields):
     """The last line of an approval text: `label`, then `fields` (text a counterparty or the agent wrote) quoted as ONE
     JSON line. A text field longer than QUOTE_MAX_CHARS is cut to that many characters, and the label says so."""
@@ -417,9 +1037,14 @@ def quote_line(label, fields):
     return f'{label} (quoted exactly{note}): ' + quoted(out)
 
 
-def owes(role, who, price, unit=vc.UNIT):
-    """What a binding deal means for this participant, in the role the signed terms give it."""
+def owes(role, who, price, unit=vc.UNIT, circulating=False):
+    """What a binding deal means for this participant, in the role the signed terms give it. With circulating credit
+    (circulating True: the server offers it) a payer may pay with notes it holds instead of its own (pay_with), as only
+    the acceptance of the delivery decides, so the payer's words promise no credit note (the 0.7.2 clean-user test: tour
+    step 2's offer said "(your credit note)" for a deal the tour paid by transfer)."""
     p = vc.amount_text(price, unit)
+    if role == 'payer' and circulating is True:
+        return f'after you accept their delivery you will pay {who} {p}: with your credit note, or with notes you hold if you choose to.'
     return (f'after you accept their delivery you will owe {who} {p} (your credit note).' if role == 'payer'
             else f'you must deliver; {who} would then owe you {p} (their credit note).')
 
@@ -464,13 +1089,24 @@ def loosens(current, body):
 
 
 def _guarantee_int(a, k, default):
-    """A whole-number argument of a guarantee tool, or its default (None: required)."""
-    v = a.get(k, default) if isinstance(a, dict) else default
+    """A whole-number argument of a guarantee tool, or its default (None: required) when it is absent or null."""
+    v = a.get(k) if isinstance(a, dict) else None
+    v = default if v is None else v
     if v is None:
         raise vc.ValunError('bad_arguments', f'{k} is required')
     if not _whole(v):
         raise vc.ValunError('bad_arguments', f'{k} must be a whole number')
     return v
+
+
+def _got(v):
+    """A value an agent passed, as a refusal quotes it: one line of JSON, at most 40 characters."""
+    got = quoted(v)
+    return got if len(got) <= 40 else got[:37] + '...'
+
+
+def _count_message(k, v, units):
+    return f'{k} must be a whole number of {units}, at least 1 (a JSON integer), not {_got(v)}; nothing was signed'
 
 
 def _count(k, v, units):
@@ -479,14 +1115,29 @@ def _count(k, v, units):
     rounded or replaced by a default: a float (1.5), a numeric string ("1000"), a boolean, 0 or a negative number."""
     if _whole(v) and 1 <= v <= nv.MAX_SAFE_INTEGER:
         return v
-    got = quoted(v)
-    raise vc.ValunError('bad_arguments', f'{k} must be a whole number of {units}, at least 1 (a JSON integer), not '
-                                         f"{got if len(got) <= 40 else got[:37] + '...'}; nothing was signed")
+    raise vc.ValunError('bad_arguments', _count_message(k, v, units))
 
 
 def _count_or(a, k, units, default=None):
     """Argument k checked by _count, or `default` when it is absent or null."""
     return default if a.get(k) is None else _count(k, a[k], units)
+
+
+# The most hours an offer may give to deliver, and stay open (the schemas' maximum): the server refuses terms whose
+# deliver_by is more than 30 days ahead, or whose offer_expires_at is more than 7 days ahead.
+HOURS_MAX = {'deliver_within_hours': 720, 'offer_valid_hours': 168}
+
+
+def _hours_or(a, k, default=None):
+    """Argument k of valun_propose or valun_respond counter (deliver_within_hours, offer_valid_hours): _count_or, and
+    at most HOURS_MAX[k], else bad_arguments before anything is read or signed (fix inbox #58 review: 0.7.1 signed terms
+    the server then refused, or failed with internal_error on hours too many for a date)."""
+    h = _count_or(a, k, 'hours', default)
+    if h is not None and h > HOURS_MAX[k]:
+        days = HOURS_MAX[k] // 24
+        raise vc.ValunError('bad_arguments', f'{k} must be at most {HOURS_MAX[k]} hours ({days} days, the most the server takes), '
+                                             f'not {_got(h)}; nothing was signed')
+    return h
 
 
 # What each required argument of a tool is, for the refusal when it is missing (fix inbox #58): every argument a tool's
@@ -534,21 +1185,125 @@ def _required(a, keys, signs=True, words=None):
     return [a[k] for k in keys]
 
 
-def tool_arguments(name, args):
+# Fix inbox #58 (0.7.2): each argument a tool's schema gives is checked against its type there (argument_refusal). The
+# schema's properties of each tool, in the order the check goes through them:
+PROPERTIES = {t['name']: t['parameters'].get('properties') or {} for t in schemas.ALL}
+# The id shapes the server's routes take (valun-app lib/pilot/http.mjs: /deals/(vd_[0-9a-f]{16}), /guarantees/(vg_[0-9a-f]
+# {16}) and .../calls/(vgc_[0-9a-f]{16}); lib/pilot/core.mjs and guarantees.mjs check them the same way): an id of another
+# shape names nothing there, and a value that is not one never reaches a request.
+ID_SHAPES = {'deal_id': re.compile(r'vd_[0-9a-f]{16}'), 'guarantee_id': re.compile(r'vg_[0-9a-f]{16}'),
+             'call_id': re.compile(r'vgc_[0-9a-f]{16}')}
+# A value that is not one of an argument's values (its schema's enum) gets the refusal its tool gave it before the core
+# check did, code and words (a misspelt decision is still bad_decision): {tool: {argument: (code, message)}}.
+ENUM_REFUSALS = {
+    'valun_propose': {'role': ('bad_role', 'role must be payer (you pay with your credit) or payee (you do the work)')},
+    'valun_respond': {'action': ('bad_action', 'action must be accept, decline, counter or withdraw')},
+    'valun_review_delivery': {'decision': ('bad_decision', "decision must be exactly 'accept' or 'dispute'; nothing was signed")},
+    'valun_respond_guarantee': {'action': ('bad_arguments', 'action must be accept, decline, release, withdraw or honor')},
+}
+# The refusals a tool gave an argument of the wrong type before the core check did, kept word for word (each names the
+# argument and what it must be): (tool, argument) -> message; for an integer argument whose words name the network's unit
+# or the tool's own words, a function of (the value, the unit).
+_SAID = {
+    ('valun_status', 'brief'): 'brief must be true or false',
+    ('valun_deliver', 'exact_result'): 'exact_result is true or false',
+    ('valun_review_delivery', 'pay_with'): "pay_with is 'own_note' or the handle or id of an issuer whose note you hold",
+    ('valun_offer_guarantee', 'note'): 'note must be text',
+    ('valun_respond_guarantee', 'reason'): 'reason must be text',
+    ('valun_respond_guarantee', 'call_id'): 'call_id is malformed (vgc_ + 16 hex)',
+    ('valun_call_guarantee', 'amount'): 'amount must be a whole number of at least 1',
+    ('valun_check_payer', 'payer'): 'payer must be the handle or participant id (text) of the agent that would owe you',
+    **{(t, 'guarantee_id'): 'guarantee_id is missing or malformed (vg_ + 16 hex; valun_guarantees lists them)'
+       for t in ('valun_guarantees', 'valun_respond_guarantee', 'valun_call_guarantee')},
+    **{('valun_offer_guarantee', k): f'{k} must be a whole number'
+       for k in ('cap', 'due_in_hours', 'callable_for_hours', 'honor_within_hours', 'offer_valid_hours')},
+    **{(t, k): (lambda k: lambda v, unit: _count_message(k, v, unit if k in ('price', 'amount') else 'hours'))(k)
+       for t, ks in (('valun_propose', ('price', 'deliver_within_hours', 'offer_valid_hours')),
+                     ('valun_respond', ('price', 'deliver_within_hours', 'offer_valid_hours')), ('valun_check_payer', ('amount',)))
+       for k in ks},
+    ('valun_check_payer', 'deal_id'): lambda v, _u: ('deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as '
+                                                     f'valun_inbox lists it, not {_got(v)}'),
+    **{('valun_directory', k): (lambda k: lambda v, _u: _page_message(k, v, PAGE_WORDS[k]))(k) for k in ('limit', 'offset')},
+}
+
+
+def _deals_ok(v):
+    """valun_offer_guarantee deals: 1 to vc.GUARANTEE_MAX_DEALS different deal ids (the client's own check, items first)."""
+    return (isinstance(v, list) and 1 <= len(v) <= vc.GUARANTEE_MAX_DEALS
+            and all(isinstance(d, str) and ID_SHAPES['deal_id'].fullmatch(d) for d in v) and len(set(v)) == len(v))
+
+
+def argument_refusal(name, k, v, unit=vc.UNIT):
+    """Why the value v (not null) of argument k does not fit tool `name`'s schema (PROPERTIES), as the ValunError its call
+    answers, or None when it fits (fix inbox #58, 0.7.2). A string is a string, an integer an integer (a JSON integer
+    JavaScript can hold exactly: a bool, 1.5 or "7" is not one), a boolean true or false, and a value with an enum one of
+    its values (a list of them for valun_set_limits clear); deal_id, guarantee_id and call_id have the shape of the ids
+    the server's routes take (ID_SHAPES), and valun_offer_guarantee deals is its list of deal ids. The refusal names the
+    argument and what it must be: where its tool refused it already, with the same code and words (ENUM_REFUSALS,
+    _SAID; `unit` is the network's, for the words of an amount), else bad_arguments '<k> must be a string (<what it is,
+    for an argument the tool requires>), not <v>' (or a whole number, or true or false), ending in '; nothing was signed'
+    for a tool that is not read-only. Only the type, values and shape: how many, how long or how large is the tool's
+    own check, as before."""
+    spec = PROPERTIES.get(name, {}).get(k)
+    if not isinstance(spec, dict) or v is None:
+        return None
+    tail = '' if name in READ_ONLY_TOOLS else '; nothing was signed'
+    t, enum = spec.get('type'), spec.get('enum')
+    if enum is not None:
+        if isinstance(v, str) and v in enum:
+            return None
+        code, message = ENUM_REFUSALS[name][k]
+        return vc.ValunError(code, message)
+    if t == 'string':
+        shape = ID_SHAPES.get(k)
+        fits = isinstance(v, str) and (shape is None or shape.fullmatch(v) is not None)
+        words = {**ARGUMENT_WORDS, **ARGUMENT_WORDS_OF.get(name, {})}.get(k) if k in REQUIRED_ARGUMENTS.get(name, ()) else None
+        need = ('the deal id, vd_ + 16 hex, as valun_inbox lists it' if k == 'deal_id' else
+                'a string' + (f' ({words})' if words else ''))
+    elif t == 'integer':
+        fits, need = _safe_whole(v), 'a whole number (a JSON integer)'
+    elif t == 'boolean':
+        fits, need = isinstance(v, bool), 'true or false'
+    elif (name, k) == ('valun_set_limits', 'clear'):
+        names = spec['items']['enum']
+        fits = isinstance(v, list) and all(isinstance(x, str) and x in names for x in v)
+        need = f"a list of the limits to remove ({', '.join(names)})"
+    elif (name, k) == ('valun_offer_guarantee', 'deals'):
+        if _deals_ok(v):
+            return None
+        return vc.ValunError('bad_arguments', f'deals must be 1 to {vc.GUARANTEE_MAX_DEALS} different deal ids (vd_ + 16 hex)')
+    else:
+        return None
+    if fits:
+        return None
+    said = _SAID.get((name, k))
+    if callable(said):
+        said = said(v, unit)
+    return vc.ValunError('bad_arguments', said if said is not None else f'{k} must be {need}, not {_got(v)}{tail}')
+
+
+def tool_arguments(name, args, unit=vc.UNIT):
     """The arguments of a call of the tool `name` (one of TOOL_NAMES), as its handler takes them: {} when there are none
     (absent or null), else the JSON object given, itself. Fix inbox #58: arguments that are not a JSON object, or that
     lack one of the tool's required arguments (REQUIRED_ARGUMENTS, its schema's `required`; null counts as missing), are
     refused with bad_arguments naming each one missing and what it is, before anything is read or signed, so no tool can
-    fail on them later (an internal_error). The refusal ends in '; nothing was signed' for the tools that are not
-    read-only. ValunAgent checks it where every call comes in: call(), and prepare_or_refusal() for the adapters that ask
-    the owner before a commitment, which answers the same refusal instead of asking (prepare() refuses such a call too,
-    approval_unbound with the cause bad_arguments). is_commitment() does not look at it: its classification stays fail
-    closed, by name and by value."""
+    fail on them later (an internal_error). Then each argument given (not null) must fit its schema's type (0.7.2,
+    argument_refusal: the first one that does not, in the schema's order, is refused, naming it and what it must be).
+    The refusal ends in '; nothing was signed' for the tools that are not read-only. `unit`: the network's unit, which
+    the refusal of an amount names (ValunAgent passes its profile's: ValunAgent.tool_arguments). ValunAgent checks it
+    where every call comes in: call(), and prepare_or_refusal() for the adapters that ask the owner before a commitment,
+    which answers the same refusal instead of asking (prepare() refuses such a call too, approval_unbound with the cause
+    the refusal's code). is_commitment() does not look at it: its classification stays fail closed, by name and by
+    value."""
     signs = name not in READ_ONLY_TOOLS
     a = {} if args is None else args
     if not isinstance(a, dict):
         raise vc.ValunError('bad_arguments', 'the arguments are not a JSON object' + ('; nothing was signed' if signs else ''))
     _required(a, REQUIRED_ARGUMENTS.get(name, ()), signs=signs, words=ARGUMENT_WORDS_OF.get(name))
+    for k in PROPERTIES.get(name, {}):
+        e = argument_refusal(name, k, a.get(k), unit)
+        if e is not None:
+            raise e
     return a
 
 
@@ -560,6 +1315,12 @@ CHECK_FALLBACK = {'accept': "its owner's budget card allows this IOU",
                   'ask_owner': "the payer's owner approves an IOU this size before it binds",
                   'decline': "its owner's budget card does not allow this IOU"}
 CHECK_PAYEE_SIDE = {'decline': 'your own limits refuse it', 'ask_owner': 'your owner approves it before it binds'}
+# Fix inbox #87: an ask_owner from a server that gives the step's verdict from both sides (payer_side): the summary's
+# first words, and its words without reasons, by whose owner decides first (check_owners).
+CHECK_ASK_LEAD = {'payee': 'Ask your owner', 'payer': "Ask the payer's owner", 'both': "Ask your owner and the payer's owner"}
+CHECK_ASK_FALLBACK = {'payee': 'your owner approves it before it binds',
+                      'payer': "the payer's owner approves an IOU this size before it binds",
+                      'both': "your owner and the payer's owner approve it before it binds"}
 # A deal id as the server writes one (the offer under review, deal=; counted_offers).
 _OFFER_ID = re.compile(r'vd_[0-9a-f]{16}')
 
@@ -568,6 +1329,28 @@ def _summary_parts(reasons):
     """The server's reasons for a summary: each a text put on one line without its final stop; the others left out."""
     return [p for p in (' '.join(r.split()).rstrip(' .;,') for r in (reasons if isinstance(reasons, list) else [])
                         if isinstance(r, str)) if p]
+
+
+def _summary_text(parts):
+    """The summary's parts as one text, without a final stop: a part that starts with a capital letter (A to Z: a
+    sentence, as the server writes its reasons) follows the one before after a stop, any other after a comma. 0.7.1 put
+    every part after a comma, so a sentence of the server's ran on mid-line ('..., Within its budget: ...')."""
+    out = ''
+    for i, p in enumerate(parts):
+        out += p if i == 0 else ('. ' if 'A' <= p[0] <= 'Z' else ', ') + p
+    return out
+
+
+def check_owners(v):
+    """Fix inbox #87: whose owner decides first in a check's ask_owner, from the step's two sides (payer_side and
+    payee_side, each {verdict, rule, reasons}): 'payee' (this agent's own owner) when only the payee's side says
+    ask_owner, 'payer' when only the payer's side does, else 'both'. An answer whose sides do not say whose (neither is an
+    object with verdict ask_owner) names both, so this agent's own owner is never left out."""
+    def asks(key):
+        side = v.get(key) if isinstance(v, dict) else None
+        return isinstance(side, dict) and side.get('verdict') == 'ask_owner'
+    payer, payee = asks('payer_side'), asks('payee_side')
+    return 'payee' if payee and not payer else 'payer' if payer and not payee else 'both'
 
 
 def _safe_whole(v):
@@ -587,48 +1370,68 @@ def offers_counted_at(v):
 
 
 def check_summary(v):
-    """valun_check_payer's summary: the verdict, its reasons and the cover as one plain sentence, e.g. 'Accept: within its
-    budget (31 of 40 left), backed for you up to 3.' The reasons are the server's, each put on one line without its final
-    stop; without any, the words of CHECK_FALLBACK. The cover is named only when cover.covered is a whole number above 0
-    (the server shows it only to the payee itself, and null means not shown, never 0), and only for accept and ask_owner:
-    a declined IOU would not be issued at all. A verdict this client does not know reads Unknown.
+    """valun_check_payer's summary: the verdict, its reasons and the cover as plain sentences, e.g. 'Accept: Both sides
+    allow it. Within its budget: ... Your own side: Your own limits allow it. Backed for you up to 3 by @erin.' The
+    reasons are the server's, each put on one line without its final stop, a sentence after a stop and a fragment after
+    a comma (_summary_text); without any, the words of CHECK_FALLBACK. A verdict this client does not know reads Unknown.
+
+    Fix inbox #87: a server that gives the step's verdict from both sides (its answer has payer_side: the payer's own
+    {verdict, rule, reasons}, null for a payer whose owner has not published its card) gives the payee its own check's
+    verdict for the step as the server enforces it: decline if either side declines, ask_owner if an owner on either
+    side decides first, accept only if both go ahead, unknown when the payer's side was not checked (no card) and the
+    payee's does not decline. The summary leads with that verdict; for ask_owner it names whose owner decides
+    (check_owners): 'Ask your owner' when only the payee's side (payee_side) asks, "Ask the payer's owner" when only the
+    payer's does, "Ask your owner and the payer's owner" otherwise. The cover is the server's to say: its sentence is
+    among the payee's own reasons, which end the summary after 'Your own side: ' whatever that side's verdict (the words
+    of CHECK_PAYEE_SIDE for a decline or ask_owner without reasons).
+
+    A server from before #87 (no payer_side) gives the payer's verdict, and its summary is 0.7.1's: the lead of
+    CHECK_LEAD, the cover named by this client ('backed for you up to N') only when cover.covered is a whole number above
+    0 (the server shows it only to the payee itself, and null means not shown, never 0) and only for accept and
+    ask_owner (a declined IOU would not be issued at all), and 'Your own side: ' with the payee's own reasons only when
+    that side is decline (the payee's own limits refuse it) or ask_owner (the payee's owner decides first), so an Accept
+    for the payer never reads as one for you.
 
     Fix inbox #60: a check of a new deal (no deal_id) at the price of an offer the payer made this agent is not a check
     of that offer, which the payer's outstanding already counts: the answer is for a new deal on top of it. So when the
     answer's counted_offers has offers at exactly the amount checked (offers_counted_at), the summary says so after the
     verdict and gives the call that answers for the offer: 'Decline, for a new deal on top of the offer you received at
     this price (vd_..., already counted): ... To check that offer itself, call valun_check_payer again with deal_id
-    vd_...'. Several such offers are listed, and the call is with one of their deal_ids.
-
-    The payee's own side of the step (payee_side, which the server shows only to the payee itself): when it is decline
-    (the payee's own limits refuse it) or ask_owner (the payee's owner decides first), the summary ends with 'Your own
-    side: ' and its reasons (or the words of CHECK_PAYEE_SIDE), so an Accept for the payer never reads as one for you."""
+    vd_...'. Several such offers are listed, and the call is with one of their deal_ids."""
     v = v if isinstance(v, dict) else {}
     verdict = v.get('verdict') if isinstance(v.get('verdict'), str) else None
+    both = 'payer_side' in v                     # fix inbox #87: the step's verdict, from both sides
+    owners = check_owners(v) if both and verdict == 'ask_owner' else None
     parts = _summary_parts(v.get('reasons'))
     if not parts:
-        parts = [CHECK_FALLBACK.get(verdict, 'the server gave no verdict this client knows')]
+        parts = [CHECK_ASK_FALLBACK[owners] if owners else CHECK_FALLBACK.get(verdict, 'the server gave no verdict this client knows')]
     covered = v['cover'].get('covered') if isinstance(v.get('cover'), dict) else None
-    if verdict in ('accept', 'ask_owner') and _whole(covered) and 0 < covered <= nv.MAX_SAFE_INTEGER:
+    if not both and verdict in ('accept', 'ask_owner') and _whole(covered) and 0 < covered <= nv.MAX_SAFE_INTEGER:
         parts.append(f'backed for you up to {covered}')
-    lead, offers = CHECK_LEAD.get(verdict, 'Unknown'), offers_counted_at(v)
+    lead = CHECK_ASK_LEAD[owners] if owners else CHECK_LEAD.get(verdict, 'Unknown')
+    text, offers = _summary_text(parts), offers_counted_at(v)
     if len(offers) == 1:
         out = (f'{lead}, for a new deal on top of the offer you received at this price ({offers[0]}, already counted): '
-               f"{', '.join(parts)}. To check that offer itself, call valun_check_payer again with deal_id {offers[0]}.")
+               f'{text}. To check that offer itself, call valun_check_payer again with deal_id {offers[0]}.')
     elif offers:
         out = (f"{lead}, for a new deal on top of the {len(offers)} offers you received at this price ({', '.join(offers)}, "
-               f"already counted): {', '.join(parts)}. To check one of them, call valun_check_payer again with its deal_id.")
+               f'already counted): {text}. To check one of them, call valun_check_payer again with its deal_id.')
     else:
-        out = f"{lead}: {', '.join(parts)}."
+        out = f'{lead}: {text}.'
     side = v.get('payee_side') if isinstance(v.get('payee_side'), dict) else {}
-    if isinstance(side.get('verdict'), str) and side['verdict'] in CHECK_PAYEE_SIDE:
-        out += f" Your own side: {', '.join(_summary_parts(side.get('reasons')) or [CHECK_PAYEE_SIDE[side['verdict']]])}."
+    yours = side.get('verdict') if isinstance(side.get('verdict'), str) else None
+    if yours in CHECK_PAYEE_SIDE or (both and yours == 'accept'):
+        own = _summary_parts(side.get('reasons')) or ([CHECK_PAYEE_SIDE[yours]] if yours in CHECK_PAYEE_SIDE else [])
+        if own:
+            out += f' Your own side: {_summary_text(own)}.'
     return out
 
 
 def unchecked_payer(payer, amount, deal_id=None):
-    """valun_check_payer's answer when the payer's owner has not published a budget card (card_not_public): an answer,
-    not an error, with verdict 'unknown' (and the offer under review, deal_id, when the check named one)."""
+    """valun_check_payer's answer when the payer's owner has not published a budget card and the server says only that
+    (404 card_not_public, as a server from before fix inbox #87 answers every check of such a payer; one with #87 answers
+    the payee's own check for the payee's own side, which check_summary reads): an answer, not an error, with verdict
+    'unknown' (and the offer under review, deal_id, when the check named one)."""
     who = shown(payer.get('handle') or payer.get('id'))
     return {'summary': (f"Unknown: {who}'s owner has not published a budget card, so its budget cannot be checked; decide "
                         'from its record (valun_directory) or ask your owner.'),
@@ -666,6 +1469,147 @@ DIRECTORY_TEXT_MAX = 160
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
+def exact_facts(terms, content, counterparty):
+    """The approval card's line on the exact check of a built-in job (sandbox.check_built_in; counterparty: the payee's
+    handle), as a list of facts: [] when nothing was checked exactly (not a built-in job: the Nov 18 fresh-join run,
+    finding 10; or no text to recompute from). A delivery with no ```json result block is not in the built-in format,
+    which 0.7.1 and the RC showed as "DOES NOT MATCH (differs in )", with an empty list."""
+    try:
+        exact = sandbox.check_built_in(terms, content, counterparty)
+    except Exception:  # noqa: BLE001 - a malformed result block is a fact to show, not a reason to hide the prompt
+        return ['exact result: could not be checked']
+    if not (exact and exact.get('checked')):
+        return []
+    if exact.get('exact_result_matches'):
+        return ['exact result: matches the agreed text']
+    if exact.get('built_in_format') is False:
+        return ['exact result: not in the built-in format (no ```json result block)']
+    return ['exact result: DOES NOT MATCH (differs in ' + ', '.join(shown(k) for k in (exact.get('differs_in') or [])) + ')']
+
+
+# Where an IOU stands, by the confirmation its deal's credit note and its ledger row show (skill.md section 5, "Where your
+# IOU stands"): on the testnet the tracker anchors its totals on Ergo testnet; the pilot's tracker has no chain at all.
+# How soon the next box commits it is the server's own summary (valun-app d269b1e, Pilot.issuedSummary): one box at a
+# time, at most 50 a UTC day (DAILY_TRACKER_SIGNATURES), "usually within 15 minutes of a change, as measured on this
+# network", and after 00:00 UTC once the day's boxes are used up (on 2026-11-16, loops cleared after the cap waited 3.9
+# to 5.5 hours).
+CONFIRMATION_WORDS = {
+    'local_only': ('recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker '
+                   'box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, '
+                   "as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The "
+                   'confirmation then reads pending, then confirmed'),
+    'pending': 'a tracker box carries it and waits for an Ergo testnet block; the confirmation then reads confirmed',
+    'confirmed': 'a confirmed tracker box on Ergo testnet commits it',
+}
+CONFIRMATION_WORDS_PILOT = {'local_only': 'recorded by the pilot tracker, which has no blockchain connection: its notes stay '
+                                          'local_only'}
+
+
+def confirmation_means(confirmation, network=vc.NETWORK):
+    """What a credit note's confirmation (local_only, pending, confirmed) means on this network, or None for another."""
+    words = CONFIRMATION_WORDS if network == TESTNET else CONFIRMATION_WORDS_PILOT
+    return words.get(confirmation) if isinstance(confirmation, str) else None
+
+
+def server_summary(d):
+    """The plain summary a server adds to a deal view at note_issued (valun-app, the Nov 18 fresh-join run's fix 5: its
+    `summary`, or labels.summary), as text a tool can show (a str of at most 2000 characters), or None."""
+    if not isinstance(d, dict):
+        return None
+    labs = d.get('labels') if isinstance(d.get('labels'), dict) else {}
+    for s in (d.get('summary'), labs.get('summary')):
+        if isinstance(s, str) and s.strip() and len(s) <= 2000:
+            return s.strip()
+    return None
+
+
+def note_summary(d, network=vc.NETWORK, unit=vc.UNIT, circulating=False, server=None, role=None):
+    """The plain ending of a deal whose IOU was issued (note_issued), for either side (the Nov 18 fresh-join run,
+    finding 12: the buyer got 600 characters of settlement text and the seller nothing): the server's own summary when
+    it sends one (server_summary), else one built here from the deal view: who owes whom and how much more, the
+    tracker's running total for that pair, where the IOU stands (its confirmation: confirmation_means), how to check it
+    (the ledger row, and on the testnet `valun audit --mine`), and how it is paid back, as this network and circulating
+    credit allow. role: this side's ('payer' or 'payee'), else the view's your_role. None for any other deal."""
+    if not (isinstance(d, dict) and d.get('status') == 'note_issued'):
+        return None
+    own = server_summary(d)
+    if own:
+        return own
+    n = d.get('credit_note') if isinstance(d.get('credit_note'), dict) else {}
+    tn = n.get('tracker_note') if isinstance(n.get('tracker_note'), dict) else {}
+    cur = d.get('current') if isinstance(d.get('current'), dict) else {}
+    terms = cur.get('terms') if isinstance(cur.get('terms'), dict) else {}
+    price = terms.get('price').get('amount') if isinstance(terms.get('price'), dict) else None
+    amount = n.get('amount') if _whole(n.get('amount')) else price
+    cp = d.get('counterparty') if isinstance(d.get('counterparty'), dict) else {}
+    who = shown(cp['handle']) if isinstance(cp.get('handle'), str) and cp['handle'] else 'the other party'
+    payer = (role or d.get('your_role')) == 'payer'
+    out = (f"You owe {who} {vc.amount_text(amount, unit) if _whole(amount) else 'the price'} more by this deal's IOU"
+           if payer else
+           f"{who} owes you {vc.amount_text(amount, unit) if _whole(amount) else 'the price'} more by this deal's IOU")
+    total = tn.get('amount_collected')
+    out += f" (the tracker's running total for that pair: {vc.amount_text(total, unit)})." if _whole(total) else '.'
+    conf = n.get('confirmation') or tn.get('confirmation')
+    means = confirmation_means(conf, network)
+    row = (f"the row from {'you' if payer else who} to {who if payer else 'you'} in GET "
+           f"{server or 'the server'}/pilot/v1/ledger")
+    if network == TESTNET:
+        out += (f' Where it stands: {conf}, {means}.' if means else
+                ' Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it.')
+        out += (f' Check it: {row} (its total and confirmation), and `valun audit --mine`, which checks your records '
+                'against the box once the next box commits them.')
+        redeem = (f'{who} redeems it on Ergo testnet against your reserve, if you post one' if payer else
+                  f"you redeem it on Ergo testnet against {who}'s reserve, if it posts one")
+        if circulating:
+            passes = (f'{who} passes it on (pays another agent with it, which changes only whom you owe)' if payer else
+                      f'you pass it on (pay_with when you accept a delivery, which changes only whom {who} owes)')
+            out += f' It stays outstanding until a loop clears it (a set-off around a cycle of debts), {passes}, or {redeem}.'
+        else:
+            out += f' It stays outstanding until {redeem}.'
+        return out
+    out += f' Where it stands: {means}.' if means else ' Where it stands: the pilot tracker recorded it.'
+    out += f' Check it: {row}.'
+    if circulating:
+        return (out + ' It stays outstanding until a loop clears it (a set-off around a cycle of debts) or '
+                + (f'{who} passes it on' if payer else 'you pass it on') + '; nothing in the pilot redeems it, and PC have '
+                'no value.')
+    return out + ' Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value.'
+
+
+def _server_of(c):
+    """The server this client's profile names, or None."""
+    state = getattr(c, 'state', None)
+    s = state.get('server') if isinstance(state, dict) else None
+    return s.rstrip('/') if isinstance(s, str) and s else None
+
+
+def closed_summary(item):
+    """valun_inbox's one line for a recently closed deal whose IOU was issued (note_issued), from its inbox brief (its
+    counterparty, your_role and price), or None for any other."""
+    if not (isinstance(item, dict) and item.get('status') == 'note_issued'):
+        return None
+    price = item.get('price') if isinstance(item.get('price'), dict) else {}
+    amount, unit = price.get('amount'), price.get('unit')
+    amt = vc.amount_text(amount, unit) if _whole(amount) and isinstance(unit, str) and unit else 'its price'
+    cp = item.get('counterparty')
+    who = shown(cp) if isinstance(cp, str) and cp else 'the other party'
+    lead = (f'Paid with your IOU: this deal added {amt} to what you owe {who}.' if item.get('your_role') == 'payer' else
+            f'{who} paid with its IOU: this deal added {amt} to what {who} owes you.')
+    return lead + ' valun_deal shows where it stands on the tracker and how it is paid back.'
+
+
+def exact_advice(exact):
+    """valun_deal's advice to the payer of a built-in job whose delivery its client checked and found wrong
+    (sandbox.check_built_in): dispute it, saying why. Not in the built-in format (no ```json result block) is said so,
+    never "does not match"."""
+    if exact.get('built_in_format') is False:
+        return ('The delivery is not in the built-in format: it has no ```json result block to compare with the exact '
+                'result of the agreed text. Dispute it with that reason instead of issuing an IOU.')
+    return ('The delivered result does not match the exact result of the agreed text '
+            f"(differs in: {', '.join(str(k) for k in (exact.get('differs_in') or ['the result block']))}). "
+            'Dispute it with that reason instead of issuing an IOU.')
+
+
 def directory_text(v):
     """An about, services or wants text as valun_directory shows it: its first DIRECTORY_TEXT_MAX code points, and '…'
     when it is longer. Any other value is returned as it is."""
@@ -681,6 +1625,15 @@ def seen_us(iso):
         return None
 
 
+# What valun_directory's limit and offset are, for the refusal of one that is not a whole number.
+PAGE_WORDS = {'limit': f'how many participants to show: 1 to {DIRECTORY_PAGE_MAX}, {DIRECTORY_PAGE} by default',
+              'offset': 'how many participants to skip: next_offset from the last answer, 0 by default'}
+
+
+def _page_message(k, v, what):
+    return f'{k} must be a whole number ({what}), not {_got(v)}'
+
+
 def _page_arg(a, k, default, what):
     """valun_directory's limit or offset: `default` when it is absent or null, else a JSON integer (a bool is not one;
     nor is a number JavaScript cannot hold exactly). Anything else is refused (bad_arguments)."""
@@ -689,8 +1642,7 @@ def _page_arg(a, k, default, what):
         return default
     if _whole(v) and -nv.MAX_SAFE_INTEGER <= v <= nv.MAX_SAFE_INTEGER:
         return v
-    got = quoted(v)
-    raise vc.ValunError('bad_arguments', f"{k} must be a whole number ({what}), not {got if len(got) <= 40 else got[:37] + '...'}")
+    raise vc.ValunError('bad_arguments', _page_message(k, v, what))
 
 
 def service_text(svc):
@@ -742,15 +1694,120 @@ def with_unit_neutral_names(v):
     return out
 
 
+# What a transport failure means for the agent (fix inbox #132), by the client's (cause, outcome): a read whose answer
+# was cut after its tries, a request whose answer did not come in time (asked once), a write whose answer was cut or
+# did not come (the server may have done it), an answer that is not JSON, the server not reached; None: a failure that
+# names no cause (the server not reached, or its answer not read). The owner's check is named without a command line
+# (the 0.7.2 review: a bare `valun` is not on the PATH of a uvx user, and the npm package has no CLI). A write whose
+# outcome is unknown names what to read before sending it again (fix inbox #148: the natural retry of a lost offer made
+# a second one): valun_inbox, valun_deal for its deal, or valun_guarantees for a guarantee's offer, answer or call.
+_READ_AGAIN = ('Try again in a minute; if it keeps failing, tell your owner, who can check the connection with the '
+               "doctor command of their Valun CLI, for this agent's profile.")
+_READ_FIRST = 'valun_inbox, valun_deal for its deal, or valun_guarantees for a guarantee'
+_WRITE_UNKNOWN = ('the server may have done it. Do not send it again before you read what the server holds now '
+                  f'({_READ_FIRST}), so that nothing is done twice.')
+TRANSPORT_WORDS = {
+    'connection_cut|': ('The connection to the Valun server was cut before its whole answer arrived, also when your '
+                        'Valun client asked again: that is the network between this machine and the server (or a '
+                        'proxy, VPN or antivirus on it), not a refusal. ' + _READ_AGAIN),
+    'connection_cut|unknown': ('Your request reached the Valun server, but the connection was cut before its answer '
+                               'arrived, so ' + _WRITE_UNKNOWN),
+    'timed_out|': ('The Valun server did not answer in time (your Valun client asked once, so as not to add to its '
+                   'load): it may be busy, or something between this machine and the server held the answer; not a '
+                   'refusal. ' + _READ_AGAIN),
+    'timed_out|unknown': ('Your request was sent to the Valun server, but no answer came in time, so ' + _WRITE_UNKNOWN),
+    'not_json|': ("The Valun server's answer was not JSON, also when your Valun client asked again: it was cut "
+                  'short, or something between this machine and the server (a captive portal, proxy or antivirus) '
+                  'answered instead. ' + _READ_AGAIN),
+    'not_json|unknown': ("Your request reached the Valun server, but its answer was not JSON (cut short, or not the "
+                         "server's), so " + _WRITE_UNKNOWN),
+    'too_large|unknown': ("Your request reached the Valun server, but its answer was too large to read (not the "
+                          "server's), so " + _WRITE_UNKNOWN),
+    'not_connected|': 'The Valun server could not be reached, so nothing was sent to it. ' + _READ_AGAIN,
+    '|': ('The Valun server could not be reached, or its answer did not arrive. If this call was a commitment, read what '
+          f'the server holds now ({_READ_FIRST}) before you send it again. ' + _READ_AGAIN),
+}
+
+# A redirect (client.redirect_error; JS the same, with no address: fetch does not show where a refused redirect pointed):
+# the client follows none, so nothing was done, and only the owner can change the server's address (the RC's review:
+# the 401 that came back from where a redirect pointed was called "not connected").
+_ORIGIN_RE = re.compile(r'https?://[a-z0-9.-]{1,253}(:[0-9]{1,5})?|https?://\[[0-9a-f:.]{2,45}\](:[0-9]{1,5})?')
+
+
+def redirected_text(location):
+    """what_this_means of a redirect: where it pointed (an origin, as the client names it) when it is known."""
+    where = f' to {location}' if isinstance(location, str) and _ORIGIN_RE.fullmatch(location) else ''
+    return (f"The address set as this agent's Valun server answered with a redirect{where}, which your Valun client "
+            'never follows, so nothing was done and nothing refused this agent. Tell your owner: if that is their Valun '
+            "server's address now, they set it as this agent's server (the config server command of their Valun CLI).")
+
+
+# A plain-http server on another machine (client.plain_http_refusal; the JS client the same): no token is sent there.
+PLAIN_HTTP_TEXT = ("Your Valun client sends no token to this agent's Valun server: its address is plain http:// on "
+                   'another machine, where a token would cross the network in clear text. Nothing was sent. Tell your '
+                   "owner: they set the server's https:// address (the config server command of their Valun CLI), or, "
+                   'only on a network they trust, VALUN_ALLOW_PLAIN_HTTP=1 sends tokens over plain http anyway.')
+# Another server than the one this agent's profile joined (client.wrong_server_refusal): its tokens go only there.
+WRONG_SERVER_TEXT = ("This call was meant for another Valun server than the one this agent's profile joined, so your Valun "
+                     'client sent its token nowhere. Nothing was sent. Tell your owner: a profile moves to another server '
+                     'only with the config server command of their Valun CLI.')
+
+
+# `valun call` stopped (Ctrl+C) before the answer to a call that is not read-only arrived: its request may have reached
+# the server, as a lost answer's (fix inbox #148), so it says the same.
+INTERRUPTED_WORDS = 'Your Valun client was stopped (Ctrl+C) before the answer to this call arrived, so ' + _WRITE_UNKNOWN
+
+
+def transport_words(code, cause, outcome):
+    """TRANSPORT_WORDS for an error with no HTTP status (unreachable, bad_response): None when none applies (a
+    bad_response that names no cause)."""
+    known = lambda v: v is None or isinstance(v, str)  # noqa: E731
+    fallback = TRANSPORT_WORDS['|'] if code == 'unreachable' else None
+    if not (known(cause) and known(outcome)):
+        return fallback
+    if cause is None and code != 'unreachable':
+        return None
+    return TRANSPORT_WORDS.get(f"{cause or ''}|{outcome or ''}", fallback)
+
+
+# What an exception's own words may carry that must never reach the model (error_payload's internal_error): a URL's
+# user and password (urllib's ValueError for a proxy URL it cannot read quotes the whole URL: the RC's review, round
+# 3), a bearer token, and a Valun agent or owner token. The JS errorPayload removes the same.
+_URL_USERINFO = re.compile(r'\b([A-Za-z][A-Za-z0-9+.-]*:/{0,2})[^\s/@\'"<>]+@')
+_BEARER = re.compile(r'(?i)\b(bearer)\s+[^\s\'"]+')
+_VALUN_TOKEN = re.compile(r'\b(vp[a-z])_[A-Za-z0-9_-]+')
+
+
+def redacted(text):
+    """`text` without a URL's user and password, a bearer token or a Valun token (each replaced with ***)."""
+    text = _URL_USERINFO.sub(r'\1***@', str(text))
+    text = _BEARER.sub(r'\1 ***', text)
+    return _VALUN_TOKEN.sub(r'\1_***', text)
+
+
 def error_payload(e, setup_hint='run `valun join` (or `valun enroll`) in a terminal'):
-    """A ValunError (or any exception) as a plain dict an agent can act on. Never includes secrets."""
+    """A ValunError (or any exception) as a plain dict an agent can act on. Never includes secrets: any other
+    exception's words are redacted (a URL's user and password, a token)."""
     if isinstance(e, vc.ValunError):
         out = {'error': e.code, 'message': str(e)}
         for k in ('rule', 'mandate_version', 'measured', 'retry_after_ms', 'template', 'fallback_after', 'what_this_means',
-                  'cause'):
+                  'cause', 'transport_error', 'outcome'):
             if k in e.extra:
                 out[k] = e.extra[k]
-        if e.code == 'approval_unbound':
+        if e.code in ('unreachable', 'bad_response') and 'what_this_means' not in out and e.status is None:
+            words = transport_words(e.code, out.get('cause'), out.get('outcome'))
+            if words is not None:
+                out['what_this_means'] = words
+        if e.code == 'redirected' and 'what_this_means' not in out:
+            out['what_this_means'] = redirected_text(e.extra.get('location'))
+        if e.code == 'plain_http' and 'what_this_means' not in out:
+            out['what_this_means'] = PLAIN_HTTP_TEXT
+        if e.code == 'wrong_server' and 'what_this_means' not in out:
+            out['what_this_means'] = WRONG_SERVER_TEXT
+        if e.code == 'approval_unbound' and out.get('cause') == 'unknown_participant':
+            # the counterparty (or issuer, or creditor) named is in no directory entry: reading a deal again cannot help
+            out['what_this_means'] = UNKNOWN_PARTICIPANT_TEXT
+        elif e.code == 'approval_unbound':
             out['what_this_means'] = ('Nothing was signed and your owner was not asked: your Valun client could not read and check '
                                       'exactly what this call would sign (the deal, offer or delivery could not be read, does not '
                                       'match its hash, or changed after you read it). Read the deal again with valun_deal and retry; '
@@ -778,6 +1835,8 @@ def error_payload(e, setup_hint='run `valun join` (or `valun enroll`) in a termi
                                       'no longer be agreed; agreed deals continue once the party has a new key.')
         if e.code in ('unauthorized', 'not_connected', 'not_configured'):
             out['what_this_means'] = f'This agent is not connected to Valun. Its owner must {setup_hint}.'
+        if e.code == 'network_retired' and 'what_this_means' not in out:     # ValunAgent.retired() gives its own
+            out['what_this_means'] = retired_text('another network')
         if e.code == 'owner_declined':
             out['what_this_means'] = 'Your owner did not approve this commitment. Nothing was signed or sent.'
         if e.code == 'attempt_outcome_unknown':
@@ -808,7 +1867,7 @@ def error_payload(e, setup_hint='run `valun join` (or `valun enroll`) in a termi
             out['what_this_means'] = ('exact_result works only for text-stats and notary jobs whose agreed description '
                                       'carries the text to process. Nothing was sent. Deliver the content yourself.')
         return out
-    return {'error': 'internal_error', 'message': f'{type(e).__name__}: {e}'}
+    return {'error': 'internal_error', 'message': redacted(f'{type(e).__name__}: {e}')}
 
 
 class ValunAgent:
@@ -829,14 +1888,21 @@ class ValunAgent:
       payments to me by transfer as the standing policy allows; never an issuer's or a payer's), at most once per
       CONSENTS_EVERY_MS (consents_on_read); the tool's result then says what was signed (consents_signed_now). Only with
       process_consents on. The MCP server leaves it off: it has its optional background loop instead.
+    rejoin_hint: what the owner of a profile of the retired pilot network must do to join the network its server now
+      serves, in a new profile (network_retired; retired()). Default DEFAULT_REJOIN_HINT.
+    console_command: the command the owner runs in a terminal to open the owner console for this profile (`valun
+      --profile NAME console`, as the CLI and the MCP server name it); an answer that waits for the owner names it
+      (owner_wait). None: no command is named (a host with no Valun CLI).
     """
 
     def __init__(self, store, approvals='', check_link_hosts=True, setup_hint=None, server=None, process_consents=True,
-                 consents_on_reads=False, declare_roles=None, brief_status=False):
+                 consents_on_reads=False, declare_roles=None, brief_status=False, rejoin_hint=None, console_command=None):
         self.store = store
         self.approvals = approvals
+        self.console_command = console_command if isinstance(console_command, str) and console_command else None
         self.check_link_hosts = check_link_hosts
         self.setup_hint = setup_hint or 'run `valun join` (or `valun enroll`) in a terminal'
+        self.rejoin_hint = rejoin_hint or DEFAULT_REJOIN_HINT
         self.server = server
         self.process_consents = process_consents is True
         self.consents_on_reads = consents_on_reads is True
@@ -859,15 +1925,53 @@ class ValunAgent:
 
     def call(self, name, args=None):
         """Run one tool. Returns a dict; raises ValunError (use error_payload to turn it into a result). Its arguments
-        are checked first (tool_arguments, fix inbox #58: bad_arguments for arguments that are not a JSON object or lack
-        a required one, before anything is read or signed). Before a tool that is not read-only, the client signs the
-        consents its owner's policy allows (consents_if_due). With consents_on_reads, before valun_status and
-        valun_inbox it signs the value-safe ones (consents_on_read), and when that run took place the result adds
+        are checked first (tool_arguments, fix inbox #58: bad_arguments for arguments that are not a JSON object, lack
+        a required one or, since 0.7.2, have one of another type than its schema's, before anything is read or signed;
+        a value an enum does not list keeps its tool's code, bad_decision say). Before a tool that is not read-only, the
+        client signs the consents its owner's policy allows (consents_if_due). With consents_on_reads, before
+        valun_status and valun_inbox it signs the value-safe ones (consents_on_read), and when that run took place the result adds
         consents_signed_now: one entry (SIGNED_NOW_KEYS) for each consent it signed ([]: none). Every amount of the
-        result has its unit-neutral name too (with_unit_neutral_names, fix inbox #35)."""
+        result has its unit-neutral name too (with_unit_neutral_names, fix inbox #35). A profile of the retired pilot
+        network gets network_retired instead of the refusal its server gives it (retired(); fix inbox #30)."""
         if name not in self.handlers:
             raise vc.ValunError('unknown_tool', f'no Valun tool called {name!r}')
-        a = tool_arguments(name, args)
+        a = self.tool_arguments(name, args)
+        try:
+            return self._run_tool(name, a)
+        except vc.ValunError as e:
+            retired = self.retired(e)
+            if retired is None:
+                raise
+            raise retired from None
+
+    def retired(self, e):
+        """network_retired, for a profile of the pilot network (valun-pilot-1, retired on 2026-11-13; fix inbox #30), in
+        place of a refusal it meets on a server that now serves another network: one of RETIRED_CODES, or
+        approval_unbound with one of them as its cause. One GET /info, read only then, names the server's network
+        (client.retired_pilot); its what_this_means says how to join again (rejoin_hint). None for any other error or
+        profile, and when that read fails: the refusal then stands as it is."""
+        if not isinstance(e, vc.ValunError):
+            return None
+        code = (e.extra or {}).get('cause') if e.code == 'approval_unbound' else e.code
+        if code not in RETIRED_CODES:
+            return None
+        try:
+            c = self.client(require_connection=False)
+            if vc.profile_network(c.state) != vc.NETWORK:
+                return None
+            info = c.request('GET', '/pilot/v1/info', auth=False)
+        except Exception:  # noqa: BLE001 - the server's network is not known: the refusal stands
+            return None
+        net = info.get('network') if isinstance(info, dict) else None
+        if not vc.retired_pilot(c.state, net):
+            return None
+        shown_net = net if net in vc.NETWORKS else 'another network'    # the server's word: only a known name
+        return vc.ValunError('network_retired', f'this profile is on the pilot network ({vc.NETWORK}), retired on '
+                             f'{vc.PILOT_RETIRED_ON}; the server now serves {shown_net}; nothing was signed',
+                             extra={'what_this_means': retired_text(shown_net, self.rejoin_hint)})
+
+    def _run_tool(self, name, a):
+        """call() once its arguments are checked."""
         if name not in READ_ONLY_TOOLS:
             self.consents_if_due()
             return with_unit_neutral_names(self.handlers[name](a))
@@ -933,8 +2037,14 @@ class ValunAgent:
 
     @staticmethod
     def _mark_consents_run(c, now, key='consents_last_run_ms'):
+        ValunAgent._mark(c, key, now)
+
+    @staticmethod
+    def _mark(c, key, value):
+        """state[key] = value in the profile, through the store's update() where it has one (FileStore: under the
+        profile lock, on the state reloaded from disk). A mark that fails is not retried, and never fails the call."""
         def mark(state):
-            state[key] = now
+            state[key] = value
         try:
             upd = getattr(c.store, 'update', None)
             if callable(upd):
@@ -963,7 +2073,8 @@ class ValunAgent:
         otherwise from one GET /info, read only when it can matter (decision D-2 h): always for a call that names no deal,
         and for a deal only when its view carries the `payment` key, which a server shows only with circulation on. A
         failed read counts as no circulation (the legacy label is not false), except a tracker the profile is not pinned
-        to (tracker_mismatch), which stops the call."""
+        to (tracker_mismatch) or another network than the profile's (wrong_network), which stops the call: its owner is
+        then not asked to approve what cannot be signed (a profile of the retired pilot gets network_retired)."""
         if self.features is not None:
             return CIRCULATION in self.features
         if deal is not None and not (isinstance(deal, dict) and 'payment' in deal):
@@ -971,11 +2082,27 @@ class ValunAgent:
         try:
             return CIRCULATION in self._remember(c.info())
         except vc.ValunError as e:
-            if e.code == 'tracker_mismatch':
+            if e.code in ('tracker_mismatch', 'wrong_network'):
                 raise
             return False
         except Exception:  # noqa: BLE001 - a client that cannot read /info: as without circulation
             return False
+
+    def tool_arguments(self, name, args):
+        """The module's tool_arguments() (fix inbox #58), with this profile's unit for the words of an amount, read from
+        its own records: nothing is read from the server (the pilot's PC when the profile cannot be read). A profile
+        that has not joined yet is refused in the words of the one network it would join (client.profile_network; fix
+        inbox #15): nanoERG, not the retired pilot's PC."""
+        try:
+            c = self.client(require_connection=False)
+            state = getattr(c, 'state', None)
+            if isinstance(state, dict) and not (state.get('network') or state.get('participant_id')):
+                unit = vc.NETWORKS[vc.profile_network(state)]['unit']
+            else:
+                unit = getattr(c, 'unit', vc.UNIT)
+        except Exception:  # noqa: BLE001 - a profile that cannot be read now: the call refuses it later, with its own code
+            unit = vc.UNIT
+        return tool_arguments(name, args, unit if isinstance(unit, str) else vc.UNIT)
 
     def call_safe(self, name, args=None):
         """Like call(), but never raises: errors come back as {'error': ...}."""
@@ -1061,8 +2188,8 @@ class ValunAgent:
         if not self._may_commit(name, a):
             return {'args': a, 'text': None}
         try:
-            tool_arguments(name, args)               # fix inbox #58: not a JSON object, or a required argument missing
-            render = self._text_for(name, a)          # before any read: a misspelt action or decision has no text
+            self.tool_arguments(name, args)          # fix inbox #58: not a JSON object, a required argument missing, or one
+            render = self._text_for(name, a)          # of the wrong type; before any read: a misspelt action has no text
             snap = self._snapshot(name, a)
             if name in LIMIT_TOOLS and not loosens(snap['me'].get('agent_limits') or {}, limits_body(a)):
                 return {'args': a, 'text': None}      # this read shows nothing loosened: nothing to approve
@@ -1079,10 +2206,12 @@ class ValunAgent:
         never asked with a generic text, and nothing is signed (approval_unbound, with the code of the cause). A profile
         that is not connected or configured, or whose pinned tracker the server no longer names, gets that refusal
         itself (not_connected, not_configured, tracker_mismatch), with its own advice, and so do arguments the tool
-        refuses before anything is read (tool_arguments: bad_arguments, as the call itself answers; fix inbox #58)."""
+        refuses before anything is read (tool_arguments: bad_arguments, or a misspelt value's own code such as
+        bad_decision, as the call itself answers; fix inbox #58). A profile of the retired pilot network gets
+        network_retired (retired(); fix inbox #30)."""
         if name in TOOL_NAMES:
             try:
-                tool_arguments(name, args)
+                self.tool_arguments(name, args)
             except vc.ValunError as e:
                 return None, error_payload(e, self.setup_hint)
         extra = {}
@@ -1090,6 +2219,9 @@ class ValunAgent:
             prepared = self.prepare(name, args)
         except Exception as e:  # noqa: BLE001 - whatever went wrong, nothing is asked and nothing is signed
             prepared = None
+            retired = self.retired(e)
+            if retired is not None:
+                return None, error_payload(retired, self.setup_hint)
             info = e.extra if isinstance(e, vc.ValunError) else {}
             if info.get('cause') in UNBOUND_PASS_THROUGH:
                 return None, error_payload(vc.ValunError(info['cause'], info.get('cause_message') or UNBOUND_MESSAGE),
@@ -1168,7 +2300,8 @@ class ValunAgent:
             other = self._resolve(c, a.get('counterparty'))
             if not (isinstance(other, dict) and isinstance(other.get('id'), str) and other['id']):
                 raise vc.ValunError('approval_unbound', 'the directory names no participant id')
-            return {'counterparty': other, 'not_settled': labels(self._known_circulation(c), net)['not_settled'],
+            circulating = self._known_circulation(c)
+            return {'counterparty': other, 'circulating': circulating, 'not_settled': labels(circulating, net)['not_settled'],
                     'unit': unit, 'network': net}
         if name == 'valun_set_limits':
             me = c.me()
@@ -1202,8 +2335,9 @@ class ValunAgent:
         d = c.deal(did)
         if not isinstance(d, dict):
             raise vc.ValunError('approval_unbound', 'the deal could not be read')
-        snap = {'deal': d, 'checked': self._checked(d, did, c.participant_id, delivery=name == 'valun_review_delivery', unit=unit),
-                'not_settled': labels(self._known_circulation(c, d), net)['not_settled'], 'unit': unit, 'network': net}
+        snap = {'deal': d, 'checked': self._checked(d, did, c.participant_id, delivery=name == 'valun_review_delivery', unit=unit)}
+        snap['circulating'] = self._known_circulation(c, d)      # read after the check, as before: what owes() says
+        snap.update(not_settled=labels(snap['circulating'], net)['not_settled'], unit=unit, network=net)
         if name == 'valun_review_delivery' and a.get('decision') == 'accept' and self._pay_with(a) is not None:
             snap['transfer'] = self._transfer_snapshot(c, did, snap['checked'], self._pay_with(a))
             snap['not_settled'] = labels(True, net)['not_settled']
@@ -1492,7 +2626,7 @@ class ValunAgent:
             f"Valun - sign a NEW OFFER to {who} ({shown(other['id'])}):",
             f'  you are the {ROLE_WORDS[role]}; price: {vc.amount_text(price, u)}',
             f'  deliver within {due} h; the offer stays open {ttl} h',
-            f'If {who} accepts, the deal is binding without asking you again: ' + owes(role, who, price, u),
+            f'If {who} accepts, the deal is binding without asking you again: ' + owes(role, who, price, u, snap.get('circulating')),
             snap.get('not_settled', NOT_SETTLED),
             quote_line('Offer text written by your agent', {k: a.get(k) for k in ('title', 'description', 'deliverable')})])
 
@@ -1500,11 +2634,12 @@ class ValunAgent:
     def _offer_numbers(a, unit):
         """valun_propose's price, deliver_within_hours (default 48) and offer_valid_hours (default 24, and never longer
         than the hours it gives to deliver: a 6 h job's offer stays open 6 h): each a JSON integer of at least 1
-        (_count), and the offer open no longer than the hours it gives to deliver (check_offer_hours). Exactly what
-        propose() signs, or bad_arguments before anything is read or signed (also for a missing price: fix inbox #58)."""
+        (_count), the hours at most HOURS_MAX (_hours_or), and the offer open no longer than the hours it gives to deliver
+        (check_offer_hours). Exactly what propose() signs, or bad_arguments before anything is read or signed (also for
+        a missing price: fix inbox #58)."""
         price = _count('price', a.get('price'), unit)
-        due = _count_or(a, 'deliver_within_hours', 'hours', 48)
-        ttl = _count_or(a, 'offer_valid_hours', 'hours', min(24, due))
+        due = _hours_or(a, 'deliver_within_hours', 48)
+        ttl = _hours_or(a, 'offer_valid_hours', min(24, due))
         vc.check_offer_hours(ttl, due)
         return price, due, ttl
 
@@ -1512,9 +2647,10 @@ class ValunAgent:
     def _counter_numbers(a, unit):
         """valun_respond counter's price, deliver_within_hours and offer_valid_hours: each None when absent or null (the
         price and deadline of their offer; Client.counter's default validity), else a JSON integer of at least 1
-        (_count); with both hours given, the counter-offer open no longer than the hours it gives to deliver."""
-        price, hours, ttl = (_count_or(a, k, units) for k, units in (('price', unit), ('deliver_within_hours', 'hours'),
-                                                                   ('offer_valid_hours', 'hours')))
+        (_count), the hours at most HOURS_MAX (_hours_or); with both hours given, the counter-offer open no longer than
+        the hours it gives to deliver."""
+        price = _count_or(a, 'price', unit)
+        hours, ttl = _hours_or(a, 'deliver_within_hours'), _hours_or(a, 'offer_valid_hours')
         if hours is not None and ttl is not None:
             vc.check_offer_hours(ttl, hours)
         return price, hours, ttl
@@ -1537,7 +2673,7 @@ class ValunAgent:
             f"Valun - ACCEPT {who}'s offer ({shown(chk['other_id'])}, deal {shown(t['deal_id'])}, version {shown(t.get('version'))}):",
             f"  you are the {ROLE_WORDS[chk['role']]}; price: {vc.amount_text(price, u)}; deliver by {shown(t.get('deliver_by'))}",
             f"  terms hash {chk['terms_hash'][:16]}... (recomputed from these terms; your Valun client checks it again before signing)",
-            'This makes the deal binding on both sides: ' + owes(chk['role'], who, price, u),
+            'This makes the deal binding on both sides: ' + owes(chk['role'], who, price, u, snap.get('circulating')),
             snap.get('not_settled', NOT_SETTLED),
             quote_line(f'Offer text written by {who}', {k: svc.get(k) for k in ('title', 'description', 'deliverable')})])
 
@@ -1565,7 +2701,8 @@ class ValunAgent:
             '  deliver ' + (f'within {hours} h of signing' if hours is not None else
                             f"by {shown(t.get('deliver_by'))} as in their offer (rounded down to the hour, at least 1 h after signing)"),
             '  your agent changes: ' + (', '.join(changes) or 'nothing') + '; ' + stays,
-            f'If {who} accepts it, the deal is binding without asking you again: ' + owes(chk['role'], who, price, u),
+            f'If {who} accepts it, the deal is binding without asking you again: ' + owes(chk['role'], who, price, u,
+                                                                                       snap.get('circulating')),
             snap.get('not_settled', NOT_SETTLED),
             quote_line(f"Counter-offer text, with what your agent did not change copied from {who}'s offer",
                        {k: a[k] if a.get(k) else svc.get(k) for k in ('title', 'description', 'deliverable')})])
@@ -1576,14 +2713,7 @@ class ValunAgent:
         u = snap.get('unit', vc.UNIT)
         m = measure.measure(content, service_text(svc), check_hosts=False)
         facts = [f"{x['requirement']}: {x['measured']} ({'met' if x['met'] else 'NOT met'})" for x in m['checks_against_agreed_terms']]
-        try:
-            exact = sandbox.check_delivery(t, content)
-        except Exception:  # noqa: BLE001 - a malformed result block is a fact to show, not a reason to hide the prompt
-            exact = None
-            facts.append('exact result: could not be checked')
-        if exact and exact.get('checked'):
-            facts.append('exact result: ' + ('matches the agreed text' if exact.get('exact_result_matches') else
-                                             'DOES NOT MATCH (differs in ' + ', '.join(shown(k) for k in (exact.get('differs_in') or [])) + ')'))
+        facts += exact_facts(t, content, chk.get('handle'))
         return '\n'.join([
             f"Valun - ACCEPT {who}'s delivery ({shown(chk['other_id'])}, deal {shown(t['deal_id'])}) and ISSUE A CREDIT NOTE "
             f'of {vc.amount_text(price, u)} to {who}:',
@@ -1608,14 +2738,7 @@ class ValunAgent:
         speed = tr['option'].get('issuer_consents')
         m = measure.measure(content, service_text(svc), check_hosts=False)
         facts = [f"{x_['requirement']}: {x_['measured']} ({'met' if x_['met'] else 'NOT met'})" for x_ in m['checks_against_agreed_terms']]
-        try:
-            exact = sandbox.check_delivery(t, content)
-        except Exception:  # noqa: BLE001 - a malformed result block is a fact to show, not a reason to hide the prompt
-            exact = None
-            facts.append('exact result: could not be checked')
-        if exact and exact.get('checked'):
-            facts.append('exact result: ' + ('matches the agreed text' if exact.get('exact_result_matches') else
-                                             'DOES NOT MATCH (differs in ' + ', '.join(shown(k) for k in (exact.get('differs_in') or [])) + ')'))
+        facts += exact_facts(t, content, chk.get('handle'))
         return '\n'.join([
             f"Valun - PAY {payee} {vc.amount_text(price, u)} for deal {shown(t['deal_id'])} by moving {vc.amount_text(price, u)} "
             f"of {issuer}'s debt from you "
@@ -1636,7 +2759,8 @@ class ValunAgent:
 
     # ---------- tools ----------
     def status(self, a):
-        brief = a.get('brief', self.brief_status) if isinstance(a, dict) else self.brief_status
+        brief = a.get('brief') if isinstance(a, dict) else None
+        brief = self.brief_status if brief is None else brief       # null is not given (fix inbox #58 review)
         if not isinstance(brief, bool):
             raise vc.ValunError('bad_arguments', 'brief must be true or false')
         out = self._full_status()
@@ -1649,11 +2773,15 @@ class ValunAgent:
         u, net = getattr(c, 'unit', vc.UNIT), getattr(c, 'network', vc.NETWORK)
         lab = labels(circulating, net)
         recorded = me.get('agent_limits') or {}
+        # The approvals sentence of this adapter's mode, then what the server holds for the owner by the mandate in force
+        # (approve_above and review_deliveries: the approval semantics of 2026-11-17), and where the owner decides.
         approvals = (self.approvals or 'Commitments are signed without asking your owner first.')
-        approvals += f" The server also holds commitments priced above {vc.amount_text(me['mandate'].get('approve_above'), u)} for the owner console."
+        approvals += ' ' + held_for_owner(me['mandate'], c.state.get('server'), u, console=self.approvals == CONSOLE_APPROVALS)
+        words = self_serve_words(me['participant'], info)
         out = {'connected': True, 'server': c.state['server'], 'network': info['network'],
                'unit': info['unit'] + UNIT_WORDS.get(info['unit'], ''),
-               'you': me['participant'], 'objective_from_your_owner': me['mandate'].get('objective') or '(none set)',
+               'you': me['participant'], **({'you_are': words} if words else {}),
+               'objective_from_your_owner': me['mandate'].get('objective') or '(none set)',
                'goals_your_owner_told_you': recorded.get('notes') or '(none recorded yet: ask your owner, then use valun_set_limits)',
                'limits_you_recorded': {k: v for k, v in recorded.items() if k not in ('notes', 'set_at')},
                'limits_in_force': {arg: (me.get('effective_limits') or me['mandate']).get(field) for arg, (field, _k) in LIMIT_FIELDS.items()},
@@ -1750,7 +2878,9 @@ class ValunAgent:
     def _sandbox_next_steps(self, c, participant, pos, box, notes):
         """The exact next tool calls of the five-step sandbox tour (design 9.2), from the inbox and the position: answer
         what waits for you first (an offer, a delivery to make, a delivery to review), then the next deal of the tour
-        from what you hold and owe. Wait (no calls) while the sandbox agents or a set-off are working."""
+        from what you hold and owe. Wait (no calls) while the sandbox agents or a set-off are working. Once the end has
+        been seen, the profile keeps it (TOUR_DONE_KEY) and the tour stays done, whatever is dealt with them later. A
+        done plan asks for no retry."""
         def amount(rows, key, who):
             return sum(r['amount'] for r in (rows if isinstance(rows, list) else [])
                        if isinstance(r, dict) and r.get(key) == who and _whole(r.get('amount')))
@@ -1778,6 +2908,8 @@ class ValunAgent:
 
         def call(tool, args, why):
             return {'tool': tool, 'arguments': args, 'why': why}
+        if c.participant_id and c.state.get(TOUR_DONE_KEY) == c.participant_id:
+            return plan('done', [], TOUR_COMPLETED, None)    # done once: what it holds and owes now is not a tour step
 
         def offer(step, cp, role, service):
             price = sandbox.price_of(service, getattr(c, 'network', None))
@@ -1791,8 +2923,21 @@ class ValunAgent:
         wait = 'The sandbox agents act within a few seconds: call valun_status again.'
         if listed['awaiting_your_owner']:
             x = listed['awaiting_your_owner'][0]
-            return plan(None, [], f"Your owner must first approve deal {shown(x.get('deal_id'))} in the owner console; then call "
-                                  'valun_status again.', OWNER_RETRY_S)
+            where, _wait = owner_wait(c, {'approvals': [{'id': x.get('approval_id'), 'state': 'pending'}]}, x.get('deal_id'),
+                                      self.console_command)
+            # A held IOU names the console's deadline for it, and once the tracker's hour has passed, that the owner must
+            # reject it (the 0.7.2 review: an approval then fails at the tracker and leaves the delivery accepted and no
+            # longer disputable).
+            by, exp, passed = held_note_of(c, x, int(vc.time.time() * 1000))
+            if passed:
+                return plan(None, [], f'The IOU you signed for deal {shown(x.get("deal_id"))} still waits for your '
+                                      f'owner{where}, but the tracker records it only until {exp}, which has passed: tell '
+                                      'your owner to reject it there (approved now, it would fail at the tracker and leave '
+                                      'the delivery accepted, unpaid and no longer disputable), then call valun_status '
+                                      'again: the next step pays the deal again.', OWNER_RETRY_S)
+            return plan(None, [], f'Your owner must first approve a commitment{where}'
+                                  + (f' (an IOU: by {_deadline_words(by, exp)})' if exp else '')
+                                  + '; tell them, then call valun_status again.', OWNER_RETRY_S)
         for x in listed['review_delivery']:
             did, cp = x.get('deal_id'), x.get('counterparty')
             step = step_of(cp, 'payer')
@@ -1805,7 +2950,7 @@ class ValunAgent:
             dl = (d.get('delivery') or {}) if isinstance(d, dict) else {}
             price = (terms.get('price') or {}).get('amount')
             try:
-                exact = sandbox.check_delivery(terms, dl.get('content'))
+                exact = sandbox.check_built_in(terms, dl.get('content'), cp)
             except Exception:  # noqa: BLE001 - an unreadable result block is a wrong one
                 exact = {'checked': True, 'exact_result_matches': False, 'differs_in': ['the result block'],
                          'service': sandbox.which_service(terms)}
@@ -1818,8 +2963,10 @@ class ValunAgent:
                 return plan(step, [call('valun_review_delivery', args, why)],
                             'Payment by transfer applies at once with the sandbox agents; call valun_status again.')
             fields = ', '.join(str(k) for k in ((exact or {}).get('differs_in') or ['the result']))
-            reason = (f"The delivered result does not match the exact {(exact or {}).get('service') or 'result'} of the agreed "
-                      f'text (differs in: {fields}).')
+            service = (exact or {}).get('service') or 'result'
+            reason = (f'The delivery is not in the built-in format: it has no ```json result block to compare with the exact '
+                      f'{service} of the agreed text.' if (exact or {}).get('built_in_format') is False else
+                      f'The delivered result does not match the exact {service} of the agreed text (differs in: {fields}).')
             return plan(step, [call('valun_review_delivery', {'deal_id': did, 'decision': 'dispute', 'reason': reason},
                                     'the delivery is wrong: dispute it (nothing is paid), then buy again')],
                         'After the dispute, call valun_status again: the next call buys again.')
@@ -1852,8 +2999,24 @@ class ValunAgent:
             return plan(4 if ox > 0 else 1, [], 'A deal of yours with a sandbox agent is being paid (its credit note is being '
                                                  'recorded on the tracker); wait for it: call valun_status again in a few seconds.')
         if (hx > 0 or hm > 0) and ox > 0:
+            # Step 4's 3-cycle sandbox-mallory -> you -> sandbox-exact -> sandbox-mallory has a third leg that is not
+            # yours: sandbox-exact's debt to sandbox-mallory (your step 2 moved part of it there). Without it no set-off
+            # can be proposed, and waiting for one only ran into the tour's deadline (onboarding review, 2026-11-16).
+            if hx == 0 and self._sandbox_leg(c, pos) == 0:
+                u = getattr(c, 'unit', vc.UNIT)
+                then = ('The 3-cycle sandbox-mallory -> you -> sandbox-exact -> sandbox-mallory cannot clear now: '
+                        'it needs sandbox-exact to owe sandbox-mallory, and on the tracker sandbox-exact owes '
+                        'sandbox-mallory nothing, so no set-off can be proposed. Nothing is lost: you hold '
+                        f"{vc.amount_text(hm, u)} of sandbox-mallory's notes and owe {vc.amount_text(ox, u)} to "
+                        'sandbox-exact. It can clear once sandbox-exact owes sandbox-mallory again; call '
+                        'valun_status again in a minute, and if nothing has changed in a few minutes, stop and take '
+                        'the tour again later: it goes on from here.')
+                p = plan(4, [], then, CYCLE_LEG_RETRY_S)
+                p['blocked'] = 'cycle_leg_missing'
+                return p
             return plan(3 if hx > 0 else 4, [], ('A set-off of the cycle is due: your Valun client signs it by itself at its '
-                                                 'next consent run (within about a minute). Call valun_status again.'))
+                                                 'next consent run (within about a minute). Call valun_status again.'),
+                        SETOFF_DUE_RETRY_S)
         notary = sandbox.price_of('notary', getattr(c, 'network', None))
         paid_by_transfer = count('paid_by_transfer')
         cleared = pos.get('cleared_by_setoff', pos.get('settled', 0))
@@ -1867,7 +3030,8 @@ class ValunAgent:
         if ox > 0:
             return offer(4, SANDBOX_MALLORY, 'payee', 'text-stats')
         if paid_by_transfer > 0 and cleared > 0:
-            return plan('done', [], self._tour_done_text(pos, cleared, getattr(c, 'unit', vc.UNIT)))
+            self._mark(c, TOUR_DONE_KEY, c.participant_id)      # kept: later deals with them are not tour steps
+            return plan('done', [], self._tour_done_text(pos, cleared, getattr(c, 'unit', vc.UNIT)), None)
         any_exact = any(x.get('counterparty') == SANDBOX_EXACT for k in listed for x in listed[k])
         if not any_exact and recently_active(None, hours=10 / 60, joined_at=participant.get('joined_at')):
             return plan(1, [], 'The welcome job from sandbox-exact usually arrives within a minute of joining; call '
@@ -1879,6 +3043,29 @@ class ValunAgent:
                          'the 2-cycle that forms is cleared by a set-off. sandbox-exact answers within a few seconds; call '
                          'valun_status again for the next step.')
         return p
+
+    @staticmethod
+    def _sandbox_leg(c, pos):
+        """What sandbox-exact owes sandbox-mallory on the tracker: the leg of step 4's 3-cycle that is not the
+        participant's own, from sandbox-exact's public record (GET /participants/{id}: its public_position debts), the
+        narrowest read the server offers. 0.7.2's candidate read the whole public ledger here (about 270 KB) on every
+        valun_status of step 4, every 3 seconds while the tour waited (the 0.7.2 review; fix inbox #128, #132).
+        sandbox-exact's id is the one the participant's own debt to it names (position debts, recipient_id). None when
+        that id is not known, or the record cannot be read now or shows no debts (then nothing is concluded from it)."""
+        debts = pos.get('debts') if isinstance(pos, dict) and isinstance(pos.get('debts'), list) else []
+        ids = sorted({d.get('recipient_id') for d in debts if isinstance(d, dict) and d.get('to') == SANDBOX_EXACT
+                      and isinstance(d.get('recipient_id'), str) and vc._PID_RE.fullmatch(d['recipient_id'])})
+        if len(ids) != 1:
+            return None
+        try:
+            rec = c.participant(ids[0])
+        except (vc.ValunError, AttributeError):
+            return None
+        pp = rec.get('public_position') if isinstance(rec, dict) and rec.get('handle') == SANDBOX_EXACT else None
+        owes = pp.get('debts') if isinstance(pp, dict) else None
+        if not isinstance(owes, list):
+            return None
+        return sum(d['amount'] for d in owes if isinstance(d, dict) and d.get('to') == SANDBOX_MALLORY and _whole(d.get('amount')))
 
     @staticmethod
     def _tour_done_text(pos, cleared, unit=vc.UNIT):
@@ -1910,14 +3097,15 @@ class ValunAgent:
     def directory(self, a):
         """One page of the active participants other than this one (fix inbox #36), from the list's own fields: those
         matching `query` (case-insensitive) in their handle or display name first, then in services or wants, then only in
-        about (then the rest the text filter matches, across two fields); then those whose agent was active in the last 24
-        hours (recently_active); then the most recently seen (agent_last_seen, never seen last); then by handle. Only the
-        page's participants are looked up (GET /participants/{id}, for their public position)."""
+        about (then the rest the text filter matches, across two fields); then the always-on agents the server runs
+        (operator_run: sandbox-exact and sandbox-mallory), then its house agents (house_agent), then the rest (the Nov 18
+        fresh-join run, finding 6: last-seen time alone put idle test agents among them); then those whose agent was
+        active in the last 24 hours (recently_active); then the most recently seen (agent_last_seen, never seen last);
+        then by handle. Only the page's participants are looked up (GET /participants/{id}, for their public position)."""
         c = self.client()
         q = (a.get('query') or '').lower()
-        limit = min(max(_page_arg(a, 'limit', DIRECTORY_PAGE, f'how many participants to show: 1 to {DIRECTORY_PAGE_MAX}, '
-                                                             f'{DIRECTORY_PAGE} by default'), 1), DIRECTORY_PAGE_MAX)
-        offset = max(_page_arg(a, 'offset', 0, 'how many participants to skip: next_offset from the last answer, 0 by default'), 0)
+        limit = min(max(_page_arg(a, 'limit', DIRECTORY_PAGE, PAGE_WORDS['limit']), 1), DIRECTORY_PAGE_MAX)
+        offset = max(_page_arg(a, 'offset', 0, PAGE_WORDS['offset']), 0)
         ranked = []
         for p in c.directory():
             if p['id'] == c.participant_id or p['status'] != 'active':
@@ -1935,7 +3123,8 @@ class ValunAgent:
                 continue
             active = recently_active(p.get('agent_last_seen'), joined_at=p.get('joined_at'))
             seen = seen_us(p.get('agent_last_seen'))
-            ranked.append(((tier, not active, seen is None, -(seen or 0), str(p.get('handle') or '')), p, active))
+            kind = 0 if p.get('operator_run') is True else 1 if p.get('house_agent') is True else 2
+            ranked.append(((tier, kind, not active, seen is None, -(seen or 0), str(p.get('handle') or '')), p, active))
         ranked.sort(key=lambda r: r[0])
         out = []
         for _, p, active in ranked[offset:offset + limit]:
@@ -1958,12 +3147,19 @@ class ValunAgent:
             r['how_to_see_more'] = (
                 f'Showing {offset + 1}-{end} of {total} matching the query (best matches first). For more, call valun_directory '
                 f'again with the same query and offset {end}, or narrow the query.' if q else
-                f'Showing {offset + 1}-{end} of {total} (most recently active first). For more, call valun_directory again '
+                f"Showing {offset + 1}-{end} of {total} (the operator's always-on agents first, then the most recently active). "
+                'For more, call valun_directory again '
                 f'with offset {end}, or narrow it with query.')
         return r
 
     def inbox(self, a):
-        return self.client().inbox()
+        """The server's inbox, with a one-line summary first in each recently closed deal whose IOU was issued
+        (closed_summary; the Nov 18 fresh-join run, finding 12: recent_closed showed only status note_issued)."""
+        box = self.client().inbox()
+        if isinstance(box, dict) and isinstance(box.get('recent_closed'), list):
+            box = dict(box, recent_closed=[{'summary': closed_summary(x), **x} if closed_summary(x) else x
+                                           for x in box['recent_closed']])
+        return box
 
     # ---------- guarantees (fix inbox #18) ----------
     @staticmethod
@@ -2005,10 +3201,25 @@ class ValunAgent:
         g = c.offer_guarantee(issuer['id'], creditor['id'], vals['cap'], vals['due_in_hours'], vals['callable_for_hours'],
                               vals['honor_within_hours'], vals['offer_valid_hours'], note, deals)
         out = {'guarantee': guarantee_brief(g)}
-        out['what_happens_next'] = (f"Your owner must approve it first (approve_above); then {shown(creditor.get('handle'))} can accept it."
-                                    if isinstance(g, dict) and g.get('state') == 'awaiting_owner' else
-                                    f"{shown(creditor.get('handle'))} can accept or decline it. Once it is due, it can call what "
-                                    f"{shown(issuer.get('handle'))} still owes it, up to the cap; you then pay with your own credit note.")
+        who, of = shown(creditor.get('handle')), shown(issuer.get('handle'))
+        calls = (f'If {who} calls it, you pay each call with your own IOU to {who}, which is recorded at once and never '
+                 'held for your owner, even with console approvals.')
+        if isinstance(g, dict) and g.get('state') == 'awaiting_owner':
+            # Held for the owner (its cap above approve_above): where, which approval, until when, and that approving it
+            # is the owner's last decision on it (the approval semantics of 2026-11-17).
+            offer = g.get('offer') if isinstance(g.get('offer'), dict) else {}
+            aid = offer.get('approval_id')
+            where, wait = owner_wait(c, {'approvals': [{'id': aid, 'state': 'pending'}]} if isinstance(aid, str) else {},
+                                     g.get('guarantee_id'), self.console_command, kind='guarantee')
+            cap = vc.amount_text(g['cap'], getattr(c, 'unit', vc.UNIT)) if _whole(g.get('cap')) else 'its cap'
+            out['what_happens_next'] = (f'Your signed guarantee offer waits for your owner before {who} can see it. Your '
+                                        f"owner approves or rejects it{where}{_until(g.get('offer_expires_at'))}. Its cap "
+                                        f'of {cap} counts against your total-owed limit while it waits. Tell your owner '
+                                        f'that approving is their last step: {calls}')
+            out.update(wait)
+        else:
+            out['what_happens_next'] = (f'{who} can accept or decline it. Once it is due, it can call what {of} still owes '
+                                        f'it, up to the cap. {calls}')
         return out
 
     def respond_guarantee(self, a):
@@ -2030,10 +3241,44 @@ class ValunAgent:
             cid = a.get('call_id')
             if cid is not None and not (isinstance(cid, str) and _CALL_ID.fullmatch(cid)):
                 raise vc.ValunError('bad_arguments', 'call_id is malformed (vgc_ + 16 hex)')
+            before = honor_marks(c, gid)
             g = c.honor_guarantee(gid, cid, exp)
+            if cid is None:
+                # The call the client chose (its first open or failed one): the one its own honor record now holds a
+                # new note for, written ahead before the note was signed (the 0.7.2 review: the reply named the last
+                # honored call, whichever it was).
+                after = honor_marks(c, gid)
+                cid = next((k for k in sorted(after) if after[k] != before.get(k)), None)
         else:
             raise vc.ValunError('bad_arguments', "action must be accept, decline, release, withdraw or honor")
-        return {'guarantee': guarantee_brief(g)}
+        out = {'guarantee': guarantee_brief(g)}
+        if action == 'honor' and isinstance(g, dict):
+            # An honor is never held for the owner, whatever the mandate says (the approval semantics of 2026-11-17).
+            # What is said is the state the server answered for the call this client honored: a note the tracker did
+            # not record leaves the call failed, with nothing more owed (guarantees.mjs submitNote).
+            call = next((x for x in (g.get('calls') if isinstance(g.get('calls'), list) else []) if isinstance(x, dict)
+                         and cid is not None and x.get('call_id') == cid), None)
+            cr = g.get('creditor') if isinstance(g.get('creditor'), dict) else {}
+            who = shown(cr.get('handle') or cr.get('id') or 'the creditor')
+            state = call.get('state') if call is not None else None
+            if state == 'honored' and _whole(call.get('amount')):
+                amount = vc.amount_text(call['amount'], getattr(c, 'unit', vc.UNIT))
+                out['what_happened'] = (f'You honored call {shown(cid)}: your IOU to {who} for {amount} '
+                                        f"went to {tracker_words(getattr(c, 'network', vc.NETWORK))} at once. It was not "
+                                        'held for your owner: honoring a guarantee call never is, even with console '
+                                        f'approvals. You owe {who} {amount} more, and nothing is settled. Tell your owner.')
+            elif state == 'failed':
+                out['what_happened'] = (f'The tracker did not record your IOU for call {shown(cid)}, so it adds nothing to '
+                                        f'what you owe {who}. The call still waits to be honored: honor it again (your '
+                                        'client signs a new IOU), and tell your owner.')
+            elif call is not None:
+                out['what_happened'] = (f'Your IOU for call {shown(cid)} was sent; the server shows the call as '
+                                        f'{shown(state)}: valun_guarantees shows when the tracker has recorded it. It was '
+                                        'not held for your owner: honoring a guarantee call never is.')
+        elif action == 'release':
+            out['what_happened'] = ('You released the guarantee: it ends, and its calls not yet honored are void. A release '
+                                    'is never held for your owner in the owner console.')
+        return out
 
     def call_guarantee(self, a):
         c = self.client()
@@ -2052,8 +3297,11 @@ class ValunAgent:
         itself) with `summary` first (check_summary). The amount is checked as valun_propose checks its price (_count),
         before anything is read, and so is deal_id (fix inbox #60: the offer under review, which the server then counts
         once; vd_ + 16 hex). Without deal_id the answer is for a new deal on top of what the payer committed, and the
-        summary says when an offer the payer made this agent at that price is among it (check_summary). A payer whose
-        owner has not published a card gets verdict 'unknown' (unchecked_payer): an answer, not an error."""
+        summary says when an offer the payer made this agent at that price is among it (check_summary). Since fix inbox
+        #87 the server's verdict is the step's, from both sides (payer_side, payee_side), and a payer whose owner has not
+        published a card is checked on this agent's own side only (payer_side null: verdict decline when that side
+        declines, else unknown). A server from before #87 answers card_not_public for such a payer: verdict 'unknown'
+        (unchecked_payer), an answer, not an error."""
         c = self.client()
         payer, = _required(a, ('payer',), signs=False)
         if not isinstance(payer, str) or not payer.strip():
@@ -2079,8 +3327,21 @@ class ValunAgent:
         c = self.client()
         did, = _required(a, ('deal_id',), signs=False)
         d = c.deal(did)
+        # A payment of this deal that the server held for the owner and that ended unreleased (rejected in the owner
+        # console, or void) is recorded as not applied, so that paying the deal again is not blocked by it (fix: the
+        # approval probe's D2).
+        if isinstance(d, dict) and d.get('your_role') == 'payer':
+            c.learn_owner_decisions(did, d)
         out = {k: d.get(k) for k in ('id', 'status', 'your_role', 'counterparty', 'next_actions', 'versions', 'acceptance', 'agreement',
                                      'decline', 'completion', 'dispute', 'cancellation', 'approvals', 'labels')}
+        att = c.state.get('transfer_attempts') if isinstance(getattr(c, 'state', None), dict) else None
+        decided = owner_decisions(d, att.get(did) if isinstance(att, dict) else None)
+        if decided:
+            out['owner_decisions'] = decided
+        theirs = counterparty_owner_decisions(d, c.participant_id)
+        if theirs:                                  # the other side's owner's decisions (the 0.7.2 review)
+            out['counterparty_owner_decisions'] = theirs
+        now = int(vc.time.time() * 1000)
         if isinstance(d.get('retry_after_seconds'), int) and not isinstance(d['retry_after_seconds'], bool):
             out['retry_after_seconds'] = d['retry_after_seconds']   # the server's hint while it waits on the other side (#8)
         if d.get('pending_counter'):
@@ -2093,8 +3354,19 @@ class ValunAgent:
                                  else 'theirs: your offer is open; you cannot accept your own offer, only withdraw it or wait')
         elif st == 'agreed':
             out['whose_turn'] = 'yours: deliver the work' if d.get('your_role') == 'payee' else 'theirs: they deliver'
-        elif st in ('delivered', 'note_failed'):
+        elif st == 'delivered':
             out['whose_turn'] = 'yours: accept the delivery or dispute it' if d.get('your_role') == 'payer' else 'theirs: they review your delivery'
+        elif st == 'note_failed':
+            # The IOU failed at the tracker after the delivery was accepted: the acceptance stands, so a dispute is refused
+            # (the server's next_actions: complete, wait_for_transfer_window; approval probe D3).
+            out['whose_turn'] = ('yours: the delivery stays accepted and is unpaid; pay it again (a new IOU, or by transfer '
+                                 'when the window allows)' if d.get('your_role') == 'payer' else
+                                 'theirs: the payer accepted your delivery and must pay it again (its IOU failed at the tracker)')
+        elif st in OWNER_WAITS:
+            out['whose_turn'] = owner_turn(d, c.participant_id, now)
+            by, exp, _passed = held_note_hour(d, now)
+            if exp:                                 # the held IOU's deadlines, which whose_turn names (the 0.7.2 review)
+                out['decide_by'], out['note_expires_at'] = by, exp
         elif st == 'paying_by_transfer':
             out['whose_turn'] = ('theirs: the issuer and the payee sign the debt transfer that pays this deal (your Valun client '
                                  'signed your part)' if d.get('your_role') == 'payer' else
@@ -2125,13 +3397,14 @@ class ValunAgent:
             reviewing = d.get('your_role') == 'payer' and d.get('status') in ('delivered', 'note_failed')
             out['delivery']['measured_by_your_client'] = measure.measure(dl['content'], terms_text(d),
                                                                          check_hosts=reviewing and self.check_link_hosts)
-            exact = sandbox.check_delivery((d.get('current') or {}).get('terms') or {}, dl['content'])
+            # A built-in job only (the Nov 18 fresh-join run, finding 10: "word count" in a free-form job's terms made a
+            # correct plain-text answer "not match" text-stats, with the advice to dispute it).
+            cp = d.get('counterparty') if isinstance(d.get('counterparty'), dict) else {}
+            exact = sandbox.check_built_in((d.get('current') or {}).get('terms') or {}, dl['content'], cp.get('handle'))
             if exact is not None:
                 out['delivery']['checked_exactly_by_your_client'] = exact
                 if reviewing and exact.get('checked') and not exact.get('exact_result_matches'):
-                    out['delivery']['advice'] = ('The delivered result does not match the exact result of the agreed text '
-                                                 f"(differs in: {', '.join(exact.get('differs_in') or ['the result block'])}). "
-                                                 'Dispute it with that reason instead of issuing a credit note.')
+                    out['delivery']['advice'] = exact_advice(exact)
         if d.get('credit_note'):
             n = d['credit_note']
             out['credit_note'] = {'state': n.get('state'), 'amount_PC': n.get('amount'), 'tracker_status': n.get('tracker_status'),
@@ -2141,6 +3414,9 @@ class ValunAgent:
                                   'verified_by_valun': n.get('verified_by_valun'),
                                   'outstanding': n.get('outstanding'), 'settled': n.get('settled', False),
                                   'issuer_pubkey': n.get('issuer_pubkey'), 'recipient_pubkey': n.get('recipient_pubkey')}
+            means = confirmation_means(out['credit_note']['confirmation'], getattr(c, 'network', vc.NETWORK))
+            if means:                               # what local_only, pending or confirmed means (the Nov 18 run, #12)
+                out['credit_note']['confirmation_means'] = means
             for k in ('redeemed', 'settled_how', 'pair_now'):         # on chain: what redemption did to this note (#13)
                 if n.get(k) is not None:
                     out['credit_note'][k] = n[k]
@@ -2164,6 +3440,9 @@ class ValunAgent:
             if len(mine) == 2 and len(theirs) == 2 and mine[0] == mine[1] and theirs[0] == theirs[1] and mine[0] != theirs[0]:
                 out['negotiation']['stalemate'] = (f'Both sides have repeated the same price ({mine[0]} vs {theirs[0]} {u}). If no price '
                                                    'within your limits works for the other side, decline with a reason instead of countering again.')
+        if st == 'note_issued':                     # the plain ending first, for either side (the Nov 18 run, #12)
+            out = {'summary': note_summary(d, getattr(c, 'network', vc.NETWORK), getattr(c, 'unit', vc.UNIT),
+                                           self._offers_circulation(c, d), _server_of(c)), **out}
         return out
 
     def _offers_circulation(self, c, d=None):
@@ -2221,12 +3500,19 @@ class ValunAgent:
         idle = None if recently_active(other.get('agent_last_seen'), joined_at=other.get('joined_at')) else (
             f"{other['handle']}'s agent has not been seen in the last 24 hours; it may never answer. Consider an active seller too.")
         signed = vc.amount_text(price, unit)                # the amount signed, never the argument as given
+        where, wait = owner_wait(c, r, r['id'], self.console_command) if waiting else ('', {})
+        # Held for the owner (approve_above): the signed offer stays on the server and binds nobody until it is approved;
+        # it already counts against the limits, and the agent may still withdraw it (the approval semantics of 2026-11-17).
+        held = (f"Your signed offer waits for your owner before {other['handle']} can see it. Your owner approves or rejects "
+                f"it{where}{_until(_terms_of(r).get('offer_expires_at'))}. Tell your owner now: nothing else tells them. "
+                'While it waits it counts against your limits, and you can still withdraw it; if your owner rejects it, '
+                'it binds nobody and the deal ends. valun_deal shows when it is decided.')
         return {'deal_id': r['id'], 'status': r['status'], 'terms_hash': r['current']['terms_hash'] if r.get('current') else None,
-                'what_happened': (f"Your signed offer is waiting for your owner's approval before {other['handle']} can see it." if waiting
+                'what_happened': (held if waiting
                                   else f"{other['handle']} can now accept, decline or counter your signed offer."),
                 'if_agreed': (f"After you accept their delivery you issue them a credit note of {signed} (you will owe them; not settled)."
                               if role == 'payer' else f"After they accept your delivery they issue you a credit note of {signed} (they will owe you; not settled)."),
-                **({'warning': idle} if idle else {})}
+                **({'warning': idle} if idle else {}), **wait}
 
     def respond(self, a):
         c = self.client()
@@ -2249,13 +3535,24 @@ class ValunAgent:
         else:
             raise vc.ValunError('bad_action', 'action must be accept, decline, counter or withdraw')
         held = act == 'counter' and r.get('pending_counter')
+        accepted, wait = ('', {})
+        if r['status'] == 'accepted_awaiting_owner':        # whose owner holds it: acceptance_wait (the 0.7.2 review)
+            accepted, wait = acceptance_wait(c, r, did, self.console_command)
+        where = ''
+        if held and r['status'] == 'open':
+            where, wait = owner_wait(c, r, did, self.console_command)
+        # A counter-offer held for the owner: the other side's offer stays open meanwhile, and this agent can neither
+        # accept it nor counter again until the owner decides (the approval semantics of 2026-11-17).
+        cp, until = _handle_of(r), _until(_terms_of(r).get('offer_expires_at'), 'until')
         explain = {'agreed': 'Agreement formed: both sides have signed the same terms.',
-                   'accepted_awaiting_owner': ('You signed the acceptance; it becomes binding when the owner holding it approves '
-                                               '(yours, or the proposer\'s if their limits require it; valun_deal shows which).'),
-                   'open': (f"Your signed counter-offer{at} waits for your owner's approval; the other side cannot see it yet." if held
+                   'accepted_awaiting_owner': accepted,
+                   'open': (f'Your signed counter-offer{at} waits for your owner. {cp} cannot see it yet, and its own offer '
+                            f'stays open{until}. While it waits, you can neither accept that '
+                            f'offer nor counter again. Your owner approves or rejects it{where}. Tell your owner.' if held
                             else f'Your counter-offer{at} is open for the other side.' if act == 'counter' else 'The offer is open.'),
                    'declined': 'You declined; nothing is owed.', 'withdrawn': 'Your offer is withdrawn.'}
-        return {'deal_id': did, 'status': r['status'], 'what_happened': explain.get(r['status'], r['status']), 'next_actions': r.get('next_actions')}
+        return {'deal_id': did, 'status': r['status'], 'what_happened': explain.get(r['status'], r['status']), 'next_actions': r.get('next_actions'),
+                **wait}
 
     def deliver(self, a):
         c = self.client()
@@ -2317,17 +3614,45 @@ class ValunAgent:
             return self._review_pay_with(c, a, issuer)
         r = c.complete(did, a.get('expected_deliverable_sha256'), a.get('expected_terms_hash'))
         n = r.get('credit_note') or {}
+        wait = {}
         if r['status'] == 'completion_awaiting_owner':
-            msg = 'You accepted the delivery and signed the credit note; your owner must approve before it is issued to the tracker.'
+            # The IOU is held for the owner (review_deliveries): until when the owner can decide (the owner console's
+            # deadline, a minute before the tracker's for a bound note: its timestamp + 1 h), what the payee already
+            # sees, and what approving or rejecting it leaves (the approval semantics of 2026-11-17; approval probe D3:
+            # an approval after that hour leaves the delivery accepted, unpaid, and no longer disputable).
+            where, wait = owner_wait(c, r, r['id'], self.console_command)
+            payee, unit = _handle_of(r, 'the payee'), getattr(c, 'unit', vc.UNIT)
+            price = vc.amount_text(n['amount'], unit) if _whole(n.get('amount')) else 'the price'
+            exp, by = note_expires_at(n.get('note')), note_decide_by(n.get('note'))
+            if exp:
+                wait['decide_by'], wait['note_expires_at'] = by, exp
+            msg = (f'You accepted the delivery and signed your IOU to {payee} for {price}. The Valun server holds it for '
+                   f"your owner: it is not on the tracker yet, and {payee} sees that you accepted the delivery but not the "
+                   f"IOU's signature. Tell your owner to approve or reject it{where}"
+                   + (f' by {_deadline_words(by, exp)}: an IOU still held at {exp} is never recorded and pays nothing, and '
+                      'valun_deal then says what to do' if exp else '')
+                   + f". If approved, you owe {payee} {price} more: a promise to pay that "
+                   f"{tracker_words(getattr(c, 'network', vc.NETWORK))} records, not a settlement. If rejected, it is never "
+                   'sent (the server keeps it, still signed) and the deal comes back to you: valun_deal says what you may '
+                   'do (accept the delivery again with a new IOU, which waits for your owner again, or dispute it).')
         elif r['status'] == 'note_issued':
             msg = (f"Credit note issued: the Basis tracker now records that you owe {r['counterparty']['handle']} "
                    f"{(n.get('tracker_note') or {}).get('amount_collected')} {getattr(c, 'unit', vc.UNIT)} in total (this deal added {n.get('amount')}). "
                    + labels(self._circulating(c), getattr(c, 'network', vc.NETWORK))['settlement'])
         else:
             msg = r['status']
-        return {'deal_id': r['id'], 'status': r['status'], 'what_happened': msg,
-                'credit_note': {'state': n.get('state'), 'amount_PC': n.get('amount'), 'tracker_status': n.get('tracker_status'),
-                                'confirmation': (n.get('tracker_note') or {}).get('confirmation'), 'settled': False}}
+        conf = (n.get('tracker_note') or {}).get('confirmation')
+        out = {'deal_id': r['id'], 'status': r['status'], 'what_happened': msg,
+               'credit_note': {'state': n.get('state'), 'amount_PC': n.get('amount'), 'tracker_status': n.get('tracker_status'),
+                               'confirmation': conf, 'settled': False}, **wait}
+        if r['status'] == 'note_issued':
+            # The plain ending first, then the long fields (the Nov 18 fresh-join run, finding 12).
+            means = confirmation_means(conf, getattr(c, 'network', vc.NETWORK))
+            if means:
+                out['credit_note']['confirmation_means'] = means
+            out = {'summary': note_summary(r, getattr(c, 'network', vc.NETWORK), getattr(c, 'unit', vc.UNIT),
+                                           self._circulating(c), _server_of(c), role='payer'), **out}
+        return out
 
     def _review_pay_with(self, c, a, issuer):
         """valun_review_delivery accept with pay_with: Client.pay_by_transfer under the pins prepare() took (the delivery,
@@ -2347,15 +3672,29 @@ class ValunAgent:
         price = ((((r.get('current') or {}).get('terms') or {}).get('price') or {}).get('amount')) if isinstance(r, dict) else None
         who, by, amount = cp or 'the payee', iss or issuer, price if _whole(price) else 'the price in'
         u = getattr(c, 'unit', vc.UNIT)
+        did = r.get('id') if isinstance(r, dict) else a['deal_id']
+        where, wait = owner_wait(c, r, did, self.console_command) if st == 'completion_awaiting_owner' else ('', {})
+        # A payment by transfer held for the owner (review_deliveries): nobody else signs it until the owner approves, and
+        # the hold ends 20 minutes after it was posted (payment.expires_at; the approval semantics of 2026-11-17).
+        hold = pay.get('expires_at') if isinstance(pay.get('expires_at'), str) and pay.get('expires_at') else None
+        if hold and st == 'completion_awaiting_owner':
+            wait['hold_expires_at'] = hold
+        priced = vc.amount_text(price, u) if _whole(price) else 'the price'
+        held = (f"You accepted the delivery and signed a payment by transfer: {priced} of {shown(by)}'s IOU to you moves "
+                f'to {who}. Nobody else has signed it. It waits for your owner{where}'
+                + (f' until {shown(hold)}, 20 minutes after you signed it' if hold else '')
+                + f': tell your owner now. Once approved, {shown(by)} and {who} sign it (their Valun clients do so by '
+                'themselves where their owners allow it), and the delivery stays accepted even if the transfer then '
+                'fails. If your owner rejects it, or that time passes, nothing moves and the deal comes back to you: you '
+                f"may pay again through {shown(by)}'s IOU at once while it is unchanged, or any other way about an hour "
+                'after you signed.')
         msgs = {'paid_by_transfer': (f'Paid by debt transfer: {by} now owes {who} {amount} {u} more and you {amount} {u} '
                                      'less; you issued no credit note for this deal. '
                                      + labels(True, getattr(c, 'network', vc.NETWORK))['settlement']),
                 'paying_by_transfer': ('You accepted the delivery and signed the debt transfer; it applies once the issuer and '
                                        'the payee sign. Accepting is final: if it does not complete, the deal stays accepted and '
                                        'you pay later.'),
-                'completion_awaiting_owner': ('You accepted the delivery and signed the debt transfer; your owner must approve it '
-                                              'in the owner console before it is submitted.'),
+                'completion_awaiting_owner': held,
                 'payment_due': ('The transfer did not apply: the delivery stays accepted and the deal is payment_due. Pay it '
                                 'again (valun_deal how_you_can_pay).')}
-        return {'deal_id': r.get('id') if isinstance(r, dict) else a['deal_id'], 'status': st, 'what_happened': msgs.get(st, st),
-                'payment': pay or None}
+        return {'deal_id': did, 'status': st, 'what_happened': msgs.get(st, st), 'payment': pay or None, **wait}

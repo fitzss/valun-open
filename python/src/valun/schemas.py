@@ -3,7 +3,8 @@ and that issuing a credit note is not settling an obligation."""
 import re
 
 _SIM = ("Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other "
-        "independently controlled agents.")
+        "agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) "
+        "or the team's own.")
 
 STATUS = {
     "name": "valun_status",
@@ -57,9 +58,13 @@ DEAL = {
         "This tool re-checks the terms hash and the counterparty's signature itself before showing an offer as valid. For "
         "a delivery it adds measured_by_your_client: word count, links, the numeric requirements of the terms met or not, "
         "and whether each link host exists. Base word and link counts on these measurements, never on your own estimate. "
-        "For exactly checkable services (text-stats, notary) it also adds checked_exactly_by_your_client: whether the "
-        "delivered result equals the result your Valun client recomputed from the agreed text. If it does not match, "
-        "dispute the delivery with that reason; never claim you checked a hash or a count yourself."),
+        "For a built-in job (text-stats or notary with sandbox-exact or sandbox-mallory, or terms titled text-stats or "
+        "notary, or that ask for its ```json result block) it also adds checked_exactly_by_your_client: whether the "
+        "delivered result equals the result your Valun client recomputed from the agreed text. If it does not match, or "
+        "is not in the built-in format, dispute the delivery with that reason; never claim you checked a hash or a count "
+        "yourself. Any other job is not checked exactly, even if its terms mention a word count: judge it against the "
+        "agreed terms. Once the IOU is issued (note_issued), it opens with a summary: who owes whom, where the IOU "
+        "stands, how to check it and how it is paid back."),
     "parameters": {"type": "object", "properties": {
         "deal_id": {"type": "string", "description": "Deal id, e.g. vd_0123456789abcdef"}}, "required": ["deal_id"]},
 }
@@ -91,13 +96,14 @@ RESPOND = {
         "Answer an open offer on a deal: action='accept' signs the exact current terms (forming a binding agreement, "
         "possibly after your owner approves); 'decline' rejects them with a reason; 'counter' signs a new version with "
         "the fields you change (price, title, description, deliverable, deadline, how long it stays open); 'withdraw' takes back your own open "
-        "offer. Pass expected_terms_hash from valun_deal so you never accept terms that changed after you read them. "
+        "offer. Pass the terms_hash from valun_inbox or valun_deal as expected_terms_hash (an inbox item carries it where "
+        "the server lists it) so you never accept terms that changed after you read them. "
         "May ask your owner to confirm before signing an acceptance or counter."),
     "parameters": {"type": "object", "properties": {
         "deal_id": {"type": "string"},
         "action": {"type": "string", "enum": ["accept", "decline", "counter", "withdraw"]},
         "reason": {"type": "string", "description": "Required for decline: why, in one sentence (the counterparty reads it)"},
-        "expected_terms_hash": {"type": "string", "description": "terms_hash you reviewed (accept only)"},
+        "expected_terms_hash": {"type": "string", "description": "terms_hash you reviewed, from valun_inbox or valun_deal (accept only)"},
         "price": {"type": "integer", "minimum": 1, "description": "counter only"},
         "title": {"type": "string", "description": "counter only"},
         "description": {"type": "string", "description": "counter only"},
@@ -255,9 +261,11 @@ ALL = [STATUS, DIRECTORY, INBOX, DEAL, PROPOSE, RESPOND, DELIVER, REVIEW, SET_LI
        CALL_GUARANTEE, CHECK_PAYER]
 
 TESTNET = 'valun-testnet-1'
+PILOT = 'valun-pilot-1'             # retired on 2026-11-13: a profile enrolled before 0.5 (no network named) is on it
 _SIM_TESTNET = ("Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = "
-                "1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other independently "
-                "controlled agents.")
+                "1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding "
+                "its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's "
+                "own.")
 # The testnet's words for the pilot's, applied in this order (every one is in ALL: tests check it), then each word PC.
 TESTNET_WORDS = (
     (_SIM, _SIM_TESTNET),
@@ -283,6 +291,8 @@ def _testnet_text(v):
 
 
 def for_network(network=None):
-    """The tool definitions for a network: ALL on the pilot (or with no network); on the testnet the same tools in its own
-    words (fix-inbox #15): its name, and amounts in nanoERG of Ergo testnet instead of the pilot's PC."""
-    return [_testnet_text(t) for t in ALL] if network == TESTNET else ALL
+    """The tool definitions for a network: ALL on the pilot (valun-pilot-1, retired on 2026-11-13); on the testnet the
+    same tools in its own words (fix-inbox #15): its name, and amounts in nanoERG of Ergo testnet instead of the pilot's
+    PC. With no network (a profile that has not joined yet, which would join the one network) the testnet's words too,
+    since 0.7.2: the Claude Code plugin starts the MCP server before its user joins."""
+    return ALL if network == PILOT else [_testnet_text(t) for t in ALL]

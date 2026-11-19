@@ -16,7 +16,10 @@ EdgeState  {'total', 'timestamp', 'signature'}: the edge's note as last confirme
 entry      {'total', 'timestamp', 'kind', 'ref', 'direction', 'signed_at'}: something this client signed for the edge
            whose outcome is not known yet. kind: 'note' (a credit note) or a novation kind such as 'transfer' or
            'setoff'; ref: the deal, transfer or set-off id; direction: 'out' when this client is the edge's issuer,
-           'in' when it is the creditor; signed_at: when it was signed (ISO 8601, UTC), as the caller gives it.
+           'in' when it is the creditor; signed_at: when it was signed (ISO 8601, UTC), as the caller gives it. Since
+           valun 0.7.2 a consent's entry may also hold 'signature' (note_signature): the signature this client made
+           over that edge state (on an edge it issues, the issuer's own; on one it is the creditor of, its consent),
+           which the audit of this profile (valun audit --mine) verifies (fix inbox #86).
 
 Rules
 - A pending entry becomes confirmed only when a recorded outcome or the edge's current state shows it applied
@@ -87,6 +90,21 @@ def add_pending(recs, pair, total, timestamp, kind, ref=None, direction='out', s
     p = {'total': total, 'timestamp': timestamp, 'kind': kind, 'ref': ref, 'direction': direction, 'signed_at': signed_at}
     e['pending'].append(p)
     return p
+
+
+def note_signature(recs, pair, total, timestamp, ref, signature):
+    """Keep on the pending entry of `pair` at (total, timestamp) for `ref` the signature this client made over that edge
+    state (a hex string): on an edge it issues, the issuer's own signature of the state the tracker records once it
+    applies; on one it is the creditor of, its consent to it. Returns how many entries got it (0: none is pending)."""
+    if not (isinstance(signature, str) and signature):
+        raise ValueError('a signature is a non-empty hex string')
+    e = recs.get(pair) if isinstance(recs, dict) else None
+    n = 0
+    for p in (e.get('pending') if isinstance(e, dict) and isinstance(e.get('pending'), list) else []):
+        if isinstance(p, dict) and (p.get('total'), p.get('timestamp'), p.get('ref')) == (total, timestamp, ref):
+            p['signature'] = signature
+            n += 1
+    return n
 
 
 def remove_pending(recs, pair, total, timestamp, ref=None):

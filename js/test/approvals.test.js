@@ -15,7 +15,7 @@ import {jsonResponse, testKey} from './helpers.js';
 const UNBOUND = 'could not read what you would sign; nothing was signed';
 const NFT = '6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa';
 const DENOM = PILOT_DENOMINATION;
-const SERVER = 'http://valun.invalid';
+const SERVER = 'https://valun.invalid';
 const key = label => { const secret = testKey(label); return {secret, pubkey: bytesToHex(basis.publicKey(secret))}; };
 const ALICE = key('test/alice'), BOB = key('test/bob');
 const ME_ID = 'vp_a1a1a1a1a1a1', BOB_ID = 'vp_b0b0b0b0b0b0';
@@ -25,7 +25,7 @@ const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const signText = (k, text) => bytesToHex(basis.sign(utf8(text), k.secret));
 
 /** A complete valun-deal/1 terms object (16 fields). The keys are real; nothing here is signed unless a test signs it. */
-function makeTerms({price = 20, service = null, payer = ME_ID, payee = BOB_ID, proposer = BOB_ID, dealId = 'vd_1', version = 2} = {}) {
+function makeTerms({price = 20, service = null, payer = ME_ID, payee = BOB_ID, proposer = BOB_ID, dealId = 'vd_1111111111111111', version = 2} = {}) {
   return {protocol: PROTOCOL, network: NETWORK, tracker_nft_id: NFT, denomination: DENOM, deal_id: dealId, version, prior_terms_hash: null,
     nonce: 'ab'.repeat(16), proposer, payer: {id: payer, pubkey: PK[payer] ?? '02' + '00'.repeat(32)},
     payee: {id: payee, pubkey: PK[payee] ?? '02' + '00'.repeat(32)},
@@ -108,9 +108,9 @@ async function unbound(agent, name, args) {
   return err.extra.cause;
 }
 
-const ACCEPT = ['valun_respond', {deal_id: 'vd_1', action: 'accept'}];
-const COUNTER = ['valun_respond', {deal_id: 'vd_1', action: 'counter', price: 30}];
-const REVIEW = ['valun_review_delivery', {deal_id: 'vd_1', decision: 'accept'}];
+const ACCEPT = ['valun_respond', {deal_id: 'vd_1111111111111111', action: 'accept'}];
+const COUNTER = ['valun_respond', {deal_id: 'vd_1111111111111111', action: 'counter', price: 30}];
+const REVIEW = ['valun_review_delivery', {deal_id: 'vd_1111111111111111', decision: 'accept'}];
 
 // ---------- classification ----------
 test('classification: an unknown tool is a commitment; only the listed calls are not', async () => {
@@ -175,13 +175,13 @@ test('prepare(): a missing hash, a misspelt value or unreadable arguments give a
   const cases = [
     [Agent(edited(DEAL, {current: {terms_hash: null}})), ...ACCEPT],
     [Agent(edited(DEAL, {delivery: {sha256: ''}})), ...REVIEW],
-    [Agent(DEAL), 'valun_review_delivery', {deal_id: 'vd_1', decision: 'Accept'}],
-    [Agent(DEAL), 'valun_review_delivery', {deal_id: 'vd_1', decision: true}],
-    [Agent(DEAL), 'valun_respond', {deal_id: 'vd_1', action: 'agree'}],
+    [Agent(DEAL), 'valun_review_delivery', {deal_id: 'vd_1111111111111111', decision: 'Accept'}],
+    [Agent(DEAL), 'valun_review_delivery', {deal_id: 'vd_1111111111111111', decision: true}],
+    [Agent(DEAL), 'valun_respond', {deal_id: 'vd_1111111111111111', action: 'agree'}],
     [Agent(DEAL), 'valun_respond', {deal_id: '../vd_1', action: 'accept'}],
     [Agent(DEAL), 'valun_respond', {action: 'accept'}],
-    [Agent(DEAL), 'valun_respond', {deal_id: 'vd_1', action: 'counter', price: 'lots'}],
-    [Agent(DEAL), 'valun_respond', {deal_id: 'vd_1', action: 'counter', deliver_within_hours: 1.5}],
+    [Agent(DEAL), 'valun_respond', {deal_id: 'vd_1111111111111111', action: 'counter', price: 'lots'}],
+    [Agent(DEAL), 'valun_respond', {deal_id: 'vd_1111111111111111', action: 'counter', deliver_within_hours: 1.5}],
     [Agent({}, null, PEOPLE), 'valun_propose', {counterparty: 'nobody', role: 'payer', price: 3}],
     [Agent({}, null, PEOPLE), 'valun_propose', {counterparty: 'bob', role: 'buyer', price: 3}],
     [Agent({}, null, [{handle: 'bob'}]), 'valun_propose', {counterparty: 'bob', role: 'payer', price: 3}],
@@ -191,7 +191,7 @@ test('prepare(): a missing hash, a misspelt value or unreadable arguments give a
   ];
   for (const [agent, name, args] of cases) await unbound(agent, name, args);
   const misspelt = Agent(DEAL);
-  await unbound(misspelt, 'valun_review_delivery', {deal_id: 'vd_1', decision: 'Accept'});
+  await unbound(misspelt, 'valun_review_delivery', {deal_id: 'vd_1111111111111111', decision: 'Accept'});
   assert.deepEqual(misspelt.fake.reads, [], 'a misspelt decision has no text: refused before any read');
 });
 
@@ -209,23 +209,23 @@ test('prepare(): known commitments get their own text, unknown tools the generic
   }
   assert.deepEqual(await Agent().prepare('valun_new_signing_tool', {x: 1}), {args: {x: 1}, text: 'Valun: sign a commitment (valun_new_signing_tool).'});
   assert.deepEqual(await Agent().prepare('a$&b c', {}), {args: {}, text: 'Valun: sign a commitment ("a$&b c").'}, 'the name is quoted, not interpreted');
-  assert.equal((await Agent().prepare('valun_respond', {deal_id: 'vd_1', action: 'decline'})).text, null);
+  assert.equal((await Agent().prepare('valun_respond', {deal_id: 'vd_1111111111111111', action: 'decline'})).text, null);
   await assert.rejects(Agent().prepare(['valun_status'], {}), e => e.name === 'TypeError', 'an unhashable name, as in Python');
 });
 
 test('prepare(): one read binds and describes; a pin the agent passed must be the one shown', async () => {
   let a = Agent(DEAL);
   let p = await a.prepare(...ACCEPT);
-  assert.deepEqual(a.fake.reads, [['deal', 'vd_1']]);
-  assert.deepEqual(p.args, {deal_id: 'vd_1', action: 'accept', expected_terms_hash: T});
+  assert.deepEqual(a.fake.reads, [['deal', 'vd_1111111111111111']]);
+  assert.deepEqual(p.args, {deal_id: 'vd_1111111111111111', action: 'accept', expected_terms_hash: T});
   assert.ok(p.text.includes(`terms hash ${T.slice(0, 16)}...`));
   a = Agent(DEAL);
   p = await a.prepare(...REVIEW);
-  assert.deepEqual([a.fake.reads, p.args.expected_deliverable_sha256, p.args.expected_terms_hash], [[['deal', 'vd_1']], SHA, T]);
-  p = await Agent(DEAL).prepare('valun_respond', {deal_id: 'vd_1', action: 'accept', expected_terms_hash: T});
+  assert.deepEqual([a.fake.reads, p.args.expected_deliverable_sha256, p.args.expected_terms_hash], [[['deal', 'vd_1111111111111111']], SHA, T]);
+  p = await Agent(DEAL).prepare('valun_respond', {deal_id: 'vd_1111111111111111', action: 'accept', expected_terms_hash: T});
   assert.equal(p.args.expected_terms_hash, T);
-  assert.equal(await unbound(Agent(DEAL), 'valun_respond', {deal_id: 'vd_1', action: 'accept', expected_terms_hash: 'e'.repeat(64)}), 'stale_terms');
-  assert.equal(await unbound(Agent(DEAL), 'valun_review_delivery', {deal_id: 'vd_1', decision: 'accept', expected_deliverable_sha256: 'f'.repeat(64)}), 'stale_delivery');
+  assert.equal(await unbound(Agent(DEAL), 'valun_respond', {deal_id: 'vd_1111111111111111', action: 'accept', expected_terms_hash: 'e'.repeat(64)}), 'stale_terms');
+  assert.equal(await unbound(Agent(DEAL), 'valun_review_delivery', {deal_id: 'vd_1111111111111111', decision: 'accept', expected_deliverable_sha256: 'f'.repeat(64)}), 'stale_delivery');
 });
 
 test('prepare(): untrusted text is quoted on one line after the computed lines (no line can be added, faked or reordered)', async () => {
@@ -249,8 +249,8 @@ test('prepare(): a valun_set_limits call that loosens nothing has no text; prepa
   const tighter = {max_per_deal_as_payer: 5};
   assert.deepEqual(await a.prepare('valun_set_limits', tighter), {args: tighter, text: null});
   assert.deepEqual(await a.prepareOrRefusal('valun_set_limits', tighter), [{args: tighter, text: null}, null]);
-  assert.deepEqual(await a.prepareOrRefusal('valun_respond', {deal_id: 'vd_1', action: 'decline'}),
-    [{args: {deal_id: 'vd_1', action: 'decline'}, text: null}, null]);
+  assert.deepEqual(await a.prepareOrRefusal('valun_respond', {deal_id: 'vd_1111111111111111', action: 'decline'}),
+    [{args: {deal_id: 'vd_1111111111111111', action: 'decline'}, text: null}, null]);
   const [prepared, refusal] = await broken().prepareOrRefusal(...ACCEPT);
   assert.deepEqual([prepared, refusal.error, refusal.message], [null, 'approval_unbound', UNBOUND]);
 });
@@ -291,7 +291,7 @@ test('snapshot: the role comes from the signed terms, and what the server says a
     assert.equal(await unbound(Agent(makeDeal(t)), ...ACCEPT), 'not_a_party');
   }
   assert.equal(await unbound(Agent(edited(DEAL, {counterparty: {id: 'vp_c0c0c0c0c0c0'}})), ...ACCEPT), 'counterparty_mismatch');
-  assert.equal(await unbound(Agent(makeDeal(makeTerms({dealId: 'vd_2'}))), ...ACCEPT), 'deal_mismatch');
+  assert.equal(await unbound(Agent(makeDeal(makeTerms({dealId: 'vd_2222222222222222'}))), ...ACCEPT), 'deal_mismatch');
   assert.equal(await unbound(Agent(makeDeal(makeTerms({proposer: ME_ID}))), ...ACCEPT), 'own_offer', 'only theirs is answered');
   assert.equal(await unbound(Agent(makeDeal(makeTerms({proposer: ME_ID}))), ...COUNTER), 'own_offer');
   assert.ok((await Agent(makeDeal(makeTerms({proposer: ME_ID}))).prepare(...REVIEW)).text.includes('ISSUE A CREDIT NOTE'), 'either side proposed');
@@ -307,20 +307,20 @@ test('snapshot: the text shows computed values, not the server\'s claims; counte
   assert.ok(text.includes(`agreed terms hash ${T.slice(0, 16)}...`));
   assert.ok(!text.includes('12 bytes'));
   const lines = (await Agent(DEAL).prepare(...ACCEPT)).text.split('\n');
-  assert.equal(lines[0], `Valun - ACCEPT bob's offer (${BOB_ID}, deal vd_1, version 2):`);
+  assert.equal(lines[0], `Valun - ACCEPT bob's offer (${BOB_ID}, deal vd_1111111111111111, version 2):`);
   assert.equal(lines[1], '  you are the payer; price: 20 PC; deliver by 2099-01-02T00:00:00.000Z');
   let p = await Agent(DEAL).prepare(...COUNTER);
-  assert.deepEqual(p.args, {deal_id: 'vd_1', action: 'counter', price: 30, expected_terms_hash: T});
+  assert.deepEqual(p.args, {deal_id: 'vd_1111111111111111', action: 'counter', price: 30, expected_terms_hash: T});
   assert.ok(p.text.includes('price: 30 PC'));
   assert.ok(p.text.includes('your agent changes: price 20 -> 30 PC; the counter-offer stays open 24 h'));
   assert.ok(p.text.includes('as in their offer'));
-  p = await Agent(DEAL).prepare('valun_respond', {deal_id: 'vd_1', action: 'counter', deliver_within_hours: 12, title: 'New'});
+  p = await Agent(DEAL).prepare('valun_respond', {deal_id: 'vd_1111111111111111', action: 'counter', deliver_within_hours: 12, title: 'New'});
   assert.ok(p.text.includes('price: 20 PC'));
   assert.ok(p.text.includes('deliver within 12 h of signing'));
   assert.ok(p.text.split('\n').at(-1).includes('"title":"New"'));
   assert.ok(p.text.split('\n').at(-1).includes('"description":"Three sources."'), 'unchanged text, copied from their offer');
   p = await Agent(DEAL).prepare(...REVIEW);
-  assert.deepEqual(p.args, {deal_id: 'vd_1', decision: 'accept', expected_deliverable_sha256: SHA, expected_terms_hash: T});
+  assert.deepEqual(p.args, {deal_id: 'vd_1111111111111111', decision: 'accept', expected_deliverable_sha256: SHA, expected_terms_hash: T});
 });
 
 test('snapshot: the acceptance text measures what the deliverable asks, each field read without its own fenced blocks (fix inbox #70)', async () => {
@@ -365,7 +365,7 @@ const INFO = {network: NETWORK, protocol: PROTOCOL, unit: 'PC', tracker_nft_id: 
 function offer(price, title = 'Brief') {
   const t = makeTerms({price, version: 1, service: {title, description: 'Three sources.', deliverable: 'markdown'}});
   const h = termsHash(t);
-  return {id: 'vd_1', status: 'open', your_role: 'payer', counterparty: {id: BOB_ID, handle: 'bob'},
+  return {id: 'vd_1111111111111111', status: 'open', your_role: 'payer', counterparty: {id: BOB_ID, handle: 'bob'},
     current: {version: 1, by: BOB_ID, state: 'open', terms: t, terms_hash: h, signature: signText(BOB, statements.propose(h))}};
 }
 
@@ -376,10 +376,10 @@ function desk(views) {
     const p = url.slice(SERVER.length), method = init.method || 'GET';
     if (p === '/pilot/v1/info') return jsonResponse(200, INFO);
     if (p === `/pilot/v1/participants/${BOB_ID}`) return jsonResponse(200, {id: BOB_ID, handle: 'bob', status: 'active', pubkey: BOB.pubkey});
-    if (method === 'GET' && p === '/pilot/v1/deals/vd_1') return jsonResponse(200, d.views[Math.min(++d.reads, d.views.length) - 1]);
+    if (method === 'GET' && p === '/pilot/v1/deals/vd_1111111111111111') return jsonResponse(200, d.views[Math.min(++d.reads, d.views.length) - 1]);
     if (method === 'POST') {
       d.posts.push([p, JSON.parse(init.body)]);
-      return jsonResponse(200, {id: 'vd_1', status: p.endsWith('/accept') ? 'agreed' : 'open'});
+      return jsonResponse(200, {id: 'vd_1111111111111111', status: p.endsWith('/accept') ? 'agreed' : 'open'});
     }
     return jsonResponse(404, {error: 'not_found', message: p});
   };
@@ -397,7 +397,7 @@ test('end to end: an approved acceptance signs exactly the terms shown', async (
   await a.call('valun_respond', p.args);
   const [[pth, body]] = d.posts;
   const h = termsHash(offer(500).current.terms);
-  assert.deepEqual([pth, body.terms_hash], ['/pilot/v1/deals/vd_1/accept', h]);
+  assert.deepEqual([pth, body.terms_hash], ['/pilot/v1/deals/vd_1111111111111111/accept', h]);
   assert.ok(basis.verifyHex(body.signature, utf8(statements.accept(h)), ALICE.pubkey));
 });
 
@@ -434,9 +434,9 @@ test('valunTools(): a lying snapshot is refused without asking; a good one asks 
   r = await valunTools(aliceAgent(d), {approve}).find(t => t.name === 'valun_respond').execute(ACCEPT[1]);
   assert.equal(r.status, 'agreed');
   assert.equal(asked.length, 1);
-  assert.match(asked[0].text, new RegExp(`^Valun - ACCEPT bob's offer \\(${BOB_ID}, deal vd_1, version 1\\):`));
+  assert.match(asked[0].text, new RegExp(`^Valun - ACCEPT bob's offer \\(${BOB_ID}, deal vd_1111111111111111, version 1\\):`));
   const h = termsHash(offer(500).current.terms);
-  assert.deepEqual(asked[0].args, {deal_id: 'vd_1', action: 'accept', expected_terms_hash: h});
+  assert.deepEqual(asked[0].args, {deal_id: 'vd_1111111111111111', action: 'accept', expected_terms_hash: h});
   assert.equal(d.posts[0][1].terms_hash, h);
 });
 

@@ -13,7 +13,9 @@ import {generatorNonces, jsonResponse, testKeys, vec} from './helpers.js';
 
 const data = vec('transcript.json');
 const {meta, participants, steps} = data;
-const BASE = meta.base_url;
+// The recorded run's server, at its https:// address: a client sends a token over plain http only to a server on this
+// machine (the RC's review); only paths are compared.
+const BASE = meta.base_url.replace(/^http:\/\//, 'https://');
 const KEYS = testKeys(meta);
 const BY_PUB = Object.fromEntries(Object.values(KEYS).map(k => [k.pubkey, k]));
 const label = s => `step ${s.n}: ${s.label.slice(0, 80)}`;

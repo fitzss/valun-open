@@ -112,14 +112,28 @@ test('directory: ties go by handle in code point order (as Python compares strin
 });
 
 // ---------- paging ----------
+test("directory: the operator's always-on agents come first, then its house agents (the Nov 18 fresh-join run, finding 6)", async () => {
+  // last-seen time alone put them among idle test agents that look active; a query's tiers still come first
+  const people = [person(1, 'basis-busy', {seen: 0.01}), person(2, 'house-scribe', {seen: 0.5, house_agent: true}),
+    person(3, 'sandbox-mallory', {seen: 0.2, operator_run: true}), person(4, 'lab-desk', {seen: 0.02, operator_test_agent: true}),
+    person(5, 'sandbox-exact', {seen: 0.2, operator_run: true}), person(6, 'house-reviewer', {seen: 30, house_agent: true}),
+    person(7, 'not-quite', {seen: 0.1, operator_run: 'yes'}), person(0, 'me', {id: ME, seen: 0})];
+  let r = await agentOf(people).call('valun_directory', {});
+  assert.deepEqual(handles(r), ['sandbox-exact', 'sandbox-mallory', 'house-scribe', 'house-reviewer', 'basis-busy', 'lab-desk', 'not-quite']);
+  r = await agentOf(people).call('valun_directory', {query: 'busy'});
+  assert.deepEqual(handles(r), ['basis-busy']);
+  r = await agentOf([...people, person(8, 'scribe-fan', {seen: 0.01, about: 'I like house-scribe'})]).call('valun_directory', {query: 'scribe'});
+  assert.deepEqual(handles(r), ['house-scribe', 'scribe-fan']);
+});
+
 test('directory: the default page is ten and says how to see more', async () => {
   const a = agentOf(crowd(25));
   const r = await a.call('valun_directory', {});
   assert.deepEqual(handles(r), agents(1, 10));
   assert.deepEqual(Object.keys(r), ['participants', 'total_matching', 'offset', 'next_offset', 'note', 'how_to_see_more']);
   assert.deepEqual([r.total_matching, r.offset, r.next_offset], [25, 0, 10]);
-  assert.equal(r.how_to_see_more, 'Showing 1-10 of 25 (most recently active first). For more, call valun_directory again with offset 10, '
-    + 'or narrow it with query.');
+  assert.equal(r.how_to_see_more, "Showing 1-10 of 25 (the operator's always-on agents first, then the most recently active). For "
+    + 'more, call valun_directory again with offset 10, or narrow it with query.');
   assert.ok(r.note.endsWith(' A participant whose agent has not been seen in the last 24 hours may never answer an offer.'));
   assert.equal(a.fake.reads, 1);
 });
@@ -133,8 +147,8 @@ test('directory: offset pages on through every match once', async () => {
   assert.equal(new Set(all).size, 25);
   const r = pages[1];
   assert.deepEqual([r.offset, r.next_offset, r.total_matching], [10, 20, 25]);
-  assert.equal(r.how_to_see_more, 'Showing 11-20 of 25 (most recently active first). For more, call valun_directory again with offset 20, '
-    + 'or narrow it with query.');
+  assert.equal(r.how_to_see_more, "Showing 11-20 of 25 (the operator's always-on agents first, then the most recently active). For "
+    + 'more, call valun_directory again with offset 20, or narrow it with query.');
   const last = pages[2];                                // the last page: nothing more to show
   assert.deepEqual([handles(last), last.offset, last.total_matching], [agents(21, 25), 20, 25]);
   assert.deepEqual(Object.keys(last), ['participants', 'total_matching', 'offset', 'note']);
