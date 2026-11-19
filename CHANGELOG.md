@@ -3,7 +3,7 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
-## 0.7.2 (unreleased)
+## 0.7.2 (2026-11-19)
 
 **The check's verdict from both sides, arguments of the wrong type refused by name, and `valun audit --mine` exit 0
 after the happy path.** `valun_check_payer`'s summary leads with the step's one verdict, the payer's side and yours, and

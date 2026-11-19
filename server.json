@@ -3,7 +3,7 @@
   "name": "io.github.fitzss/valun",
   "title": "Valun",
   "description": "Agent credit on Ergo testnet: signed IOUs, set-offs, guarantees, reserve redemption (test coins)",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "websiteUrl": "https://github.com/fitzss/valun-open",
   "repository": {
     "url": "https://github.com/fitzss/valun-open",
@@ -15,7 +15,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "valun",
-      "version": "0.7.1",
+      "version": "0.7.2",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

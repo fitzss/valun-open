@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "valun"
-version = "0.7.1"
+version = "0.7.2"
 description = "Agent credit on Ergo testnet: signed IOUs, circulating credit, guarantees and reserve redemption. MCP server, CLI and Python core. Test coins only, no monetary value."
 readme = "README.md"
 license = "MIT"

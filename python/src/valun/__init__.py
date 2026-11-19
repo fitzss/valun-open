@@ -8,4 +8,4 @@ transfer), be cleared against an equal opposite debt in a loop (a set-off: the n
 redeemed on Ergo testnet against its issuer's tERG reserve, if the issuer posted one. The earlier pilot network
 (valun-pilot-1, synthetic units) was retired on 2026-11-13.
 """
-__version__ = '0.7.1'
+__version__ = '0.7.2'
