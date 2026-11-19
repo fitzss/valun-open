@@ -1015,7 +1015,11 @@ class JoinKeepsTheOwnerToken(Cli):
         cli._write_private(path, 'vpo_test-only\n')
         acl = subprocess.run(['icacls', path], capture_output=True, text=True, check=True).stdout
         self.assertNotIn('(I)', acl, f'nothing inherited from its folder: {acl}')
-        self.assertTrue(home._sddl_of(path).endswith(home.private_sddl(home._user_sid())), home._sddl_of(path))
+        # each ACE's trustee as its S-1-... string (home.sid_string), as access_of compares them: SDDL writes the built-in
+        # Administrator, the account CI's Windows runners use, as LA, where _user_sid() gives its S-1-5-21-...-500
+        canonical = lambda sddl: re.sub(r';;;([^;)]+)\)', lambda m: f';;;{home.sid_string(m.group(1))})', sddl)  # noqa: E731
+        self.assertTrue(canonical(home._sddl_of(path)).endswith(canonical(home.private_sddl(home._user_sid()))),
+                        home._sddl_of(path))
         self.assertEqual((home.others_with_access(path), cli._not_private_note(path)), ([], ''))
         with open(path, 'rb') as f:
             self.assertEqual(f.read(), b'vpo_test-only\r\n')
