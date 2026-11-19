@@ -39,6 +39,9 @@ The check, as the server-side auditor makes it (valun-app scripts/ops/anchor-aud
      wait the second /chain could be the first one's cached answer, older than a note the ledger shows. The ledger
      lists the notes in the network's denomination only (GET /info denomination, also a note's null or absent one),
      with totals as JSON numbers; the committed snapshot lists every denomination, with totals as decimal strings.
+     While the ledger is ahead of the box (not anchored) that route compares nothing: UNKNOWN (not_anchored), which says
+     so plainly (fix inbox #86). --wait-anchored [SECONDS] (wait_anchored) first reads GET /chain every WAIT_POLL_S
+     until it says the tracker's state is anchored, for at most SECONDS (WAIT_ANCHORED_S by default), then audits.
   3. The chain source's unspent boxes holding the NFT: exactly one, which holds the NFT (one token), is not spent and is
      on the main chain. Anything else is UNKNOWN (source_inconsistent, no_tracker_box), never a pass. The NFT's place
      among the box's tokens (in the order of their index, when the source gives every token one): the reserve contract
@@ -83,7 +86,13 @@ anchored total is compared with the state this profile's records confirm for it 
 signature}, the issuer's signature on that state, verified when it was recorded and verified again here on this
 profile's pinned tracker and unit). The records are read as they are: the audit does not sync them. Status (MINE_STATUS):
   signed               the total is the recorded one and its issuer's signature verifies: at height H the chain commits a
-                       total its issuer signed (the one proven status)
+                       total its issuer signed (a proven status). netted_by names the set-off this client signed that
+                       state in, when its R4 record (state['signed']) shows one
+  netted               fix inbox #86: the total is the after-state of a set-off this client signed (a pending entry of
+                       kind setoff in its records, newer than any confirmed state), and its own signature on it, kept
+                       with that entry, verifies under the key of its side: on an edge it issues, the issuer's; on one it
+                       is the creditor of, the recipient's (a proven status: netted_by, the set-off; netted_state). A
+                       set-off applies only with every member's signature, so the chain commits a state this client signed
   signature_not_held   the total is the recorded one, but the records hold no signature for it (a confirmed state drops
                        its signature 30 days after its timestamp)
   bad_signature        the total is the recorded one, and the signature held for it does not verify
@@ -97,7 +106,7 @@ nothing of it is proven. So does a profile pinned to another tracker than the on
 --tracker-nft named another), whose records are of that other tracker's notes.
 
 Exit codes (EXIT_*), the same as anchor-audit.mjs's (EXIT), so that one watcher reads both:
-  0  MATCH (with --mine: and every edge signed);
+  0  MATCH (with --mine: and every edge proven, signed or netted);
   1  MISMATCH, and nothing else;
   2  nothing was compared: UNKNOWN, whatever its reason, a usage error (argparse's, and the command's own: a profile it
      cannot use, a URL, a --tracker-nft that is not a token id, the server itself as the chain source, --mine without
@@ -135,6 +144,7 @@ import urllib.request
 
 from . import __version__
 from . import avl
+from . import basis as vb
 from . import client as vc
 from . import ergo
 from . import records
@@ -147,6 +157,11 @@ TRACKER_LESS_AFTER_BLOCKS = 2160        # the reserve contract waives the tracke
 ATTEMPTS = 3
 RETRY_S = 5.0
 MAX_WAIT_S = 15.0
+# --wait-anchored (fix inbox #86): GET /chain every WAIT_POLL_S until the tracker's state is anchored, for at most the
+# seconds given (WAIT_ANCHORED_S when none are: two of the tracker's checks, GET /chain check_interval_seconds 300).
+WAIT_ANCHORED_S = 600.0
+WAIT_ANCHORED_MAX_S = 86400.0
+WAIT_POLL_S = 15.0
 # The wait before each of GET /ledger and the second GET /chain of the older reads (step 2), from the answer before it:
 # longer than the server's public read cache (valun-app lib/pilot/http.mjs PUBLIC_CACHE_MS, 3 s; an entry is served
 # while it is younger than that and the server's state unsaved). A request sent SETTLE_S after an answer is then served
@@ -175,7 +190,9 @@ RESERVE_LIST_MAX = 5000                 # and at most (anchor-audit.mjs RESERVE_
 # EXIT.REFUSED and its faults (and as argparse exits on a usage error).
 EXIT_MATCH, EXIT_MISMATCH, EXIT_NOTHING_COMPARED, EXIT_NOT_PROVEN = 0, 1, 2, 3
 EXIT_UNKNOWN = EXIT_USAGE = EXIT_NOTHING_COMPARED
-MINE_STATUS = ('signed', 'signature_not_held', 'bad_signature', 'differs', 'not_in_records', 'not_anchored')
+MINE_STATUS = ('signed', 'netted', 'signature_not_held', 'bad_signature', 'differs', 'not_in_records', 'not_anchored')
+PROVEN_STATUS = ('signed', 'netted')                       # the statuses --mine counts as proven
+_SETOFF_ID = re.compile(r'vs_[0-9a-f]{16}')
 PROVES = ('The one unspent box holding the tracker NFT, created at height {height}, commits in R5 the AVL+ digest of exactly '
           'these {count} rows: for each note, its issuer key, recipient key, denomination and cumulative total, as anchored.')
 DOES_NOT_PROVE = (
@@ -231,13 +248,33 @@ def _no_constant(name):
     raise ValueError(f'{name} is not JSON')
 
 
+def _read_by(r, end, url):
+    """The answer's body, read a buffer at a time, before the time.monotonic() `end`: a server that sends it a byte at a
+    time (each within the socket's timeout) is cut off there (the 0.7.2 review), with at most MAX_ANSWER_BYTES + 1."""
+    read = getattr(r, 'read1', None)
+    if read is None:                            # a response object with no read1: read as before
+        return r.read(MAX_ANSWER_BYTES + 1)
+    chunks, n = [], 0
+    while n <= MAX_ANSWER_BYTES:
+        if time.monotonic() > end:
+            raise ReadError(url, 'no answer in time (the server sends it too slowly)')
+        b = read(min(1 << 16, MAX_ANSWER_BYTES + 1 - n))
+        if not b:
+            break
+        chunks.append(b)
+        n += len(b)
+    return b''.join(chunks)
+
+
 def get_json(url, timeout=30.0):
     """GET url and parse its JSON answer (exactly: integers stay ints; NaN and Infinity are refused). ReadError when there
-    is no answer, an error status or no JSON."""
+    is no answer, an error status or no JSON, and when the answer has not come within `timeout` seconds of the request
+    (each socket operation has that timeout too)."""
     req = urllib.request.Request(url, method='GET', headers={'Accept': 'application/json', 'User-Agent': USER_AGENT})
+    end = time.monotonic() + timeout
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            data = r.read(MAX_ANSWER_BYTES + 1)
+            data = _read_by(r, end, url)
     except urllib.error.HTTPError as e:
         try:
             body = json.loads(e.read(65536).decode('utf-8'))
@@ -591,24 +628,64 @@ def _committed(get, server, chain):
             'consistent': snap.get('consistent') if isinstance(snap.get('consistent'), bool) else None, 'notes': None}
 
 
-def _ledger_between(get, server, chain_a, sleep):
+def anchored_now(chain):
+    """Does a GET /pilot/v1/chain answer say the tracker's state is anchored now: anchoring.anchored, and its local digest
+    the confirmed one (the published ledger is then the state its confirmed box commits)?"""
+    a = _anchor_of(chain)
+    return a['anchored'] is True and isinstance(a['local_digest'], str) and a['local_digest'] == a['confirmed_digest']
+
+
+def _wait_anchored(get, server, chain, nft, sleep, deadline, clock, log=None):
+    """--wait-anchored (fix inbox #86): GET /pilot/v1/chain every WAIT_POLL_S until it says the tracker's state is
+    anchored (anchored_now), until `deadline` on `clock` (the 0.7.2 review: one deadline for the whole audit, which
+    counts the reads too, so the wait ends at the deadline, or one read after it; get_json caps a read's time). A read
+    that fails meanwhile is read again at the next poll; another tracker NFT is UNKNOWN (server_inconsistent). Returns
+    the last answer read; log(text) says once that it waits."""
+    if not anchored_now(chain) and log is not None:
+        log(f'The tracker\'s state is not anchored yet (its ledger is ahead of its last box): waiting up to '
+            f'{max(0.0, deadline - clock()):g} s for the next box, reading GET /pilot/v1/chain every {WAIT_POLL_S:g} s.')
+    while not anchored_now(chain):
+        left = deadline - clock()
+        if not left > 0:
+            break
+        sleep(min(WAIT_POLL_S, left))
+        try:
+            fresh = _chain(get, server)
+        except _Unknown as u:
+            if u.reason != 'server_unreadable':
+                raise
+            continue                            # read again at the next poll
+        if fresh['tracker_nft_id'] != nft:
+            raise _Unknown('server_inconsistent', 'GET /pilot/v1/chain named another tracker NFT during the audit')
+        chain = fresh
+    return chain
+
+
+def _ledger_between(get, server, chain_a, sleep, waited=None):
     """GET /ledger between two reads of GET /chain, taken as the confirmed state only while both say the same box and
     digest and that the tracker's state is anchored. GET /ledger is sent SETTLE_S after chain_a was answered, and the
     second GET /chain SETTLE_S after the ledger was: the server's public read cache serves an entry for at most
     PUBLIC_CACHE_MS, so each answer is computed after the one before it, and the two /chain answers bracket the ledger.
     (The pilot writes the tracker, then saves, and only a save ends a cache entry: a second /chain sent at once could be
-    the first one's cached answer, older than a note the ledger computed after the write shows.)"""
+    the first one's cached answer, older than a note the ledger computed after the write shows.) Not anchored: UNKNOWN
+    (not_anchored), saying why plainly (fix inbox #86): this server has no committed-snapshot route, and the older one
+    compares only while the published ledger is the anchored state; `waited`, the seconds --wait-anchored waited (None:
+    it was not asked to wait)."""
     a = _anchor_of(chain_a)
-    if a['anchored'] is not True or not isinstance(a['local_digest'], str) or a['local_digest'] != a['confirmed_digest'] \
-            or not (isinstance(a['confirmed_box_id'], str) and _HEX64.fullmatch(a['confirmed_box_id'])):
+    if not anchored_now(chain_a) or not (isinstance(a['confirmed_box_id'], str) and _HEX64.fullmatch(a['confirmed_box_id'])):
         anchoring = chain_a.get('anchoring')
         state = anchoring.get('state') if isinstance(anchoring, dict) else None
-        raise _Unknown('not_anchored', 'the server has no committed snapshot (GET /pilot/v1/ledger/committed), and its '
-                                       'ledger is not anchored right now (GET /pilot/v1/chain anchoring: not anchored, or a '
-                                       'local digest other than the confirmed one'
-                                       + (f'; state {_short(state, 40)}' if state else '') + '), so its live ledger is not '
-                                       'what the chain commits: run the audit again after the next anchor (about every 5 '
-                                       'minutes while notes change)')
+        raise _Unknown('not_anchored', (
+            'this server has no committed-snapshot route yet (GET /pilot/v1/ledger/committed is not deployed on it), so '
+            'this audit can compare only the ledger it publishes (GET /pilot/v1/ledger), and only while that ledger is the '
+            'state its last tracker box anchored. Right now the ledger is ahead of that box (GET /pilot/v1/chain '
+            'anchoring: not anchored, or its local digest is not the confirmed one'
+            + (f'; state {_short(state, 40)}' if state else '') + ')'
+            + ('. Run the audit right after the next tracker box (one is made about every 5 minutes while notes change), '
+               'or pass --wait-anchored to wait for it' if waited is None else
+               f', and it was so still when the {waited:g} s this audit waited for a box ran out (--wait-anchored). Run '
+               'the audit again after the next tracker box (one is made about every 5 minutes while notes change), or '
+               'wait longer (--wait-anchored SECONDS)')))
     info = _read(get, server, '/pilot/v1/info')
     denomination = info.get('denomination') if isinstance(info, dict) else None
     if not isinstance(denomination, str):
@@ -812,11 +889,18 @@ def _reserves_naming(source, chain, nft, server, pinned_by=None):
 # ---------------------------------------------------------------------------------------------------------------------
 # The audit.
 
-def audit(server, source, *, profile_state=None, mine=False, tracker_nft=None, get=None, sleep=None, attempts=ATTEMPTS):
+def audit(server, source, *, profile_state=None, mine=False, tracker_nft=None, get=None, sleep=None, attempts=ATTEMPTS,
+          wait_anchored=None, log=None, clock=None):
     """Check that the rows `server` publishes are what the one unspent tracker-NFT box in `source` (an Explorer or a Node)
     commits (the module docstring). profile_state: a profile's state (its server and pins and, for mine, its
-    participant, key and records), read and never changed. tracker_nft: the tracker NFT id the server must name
-    (--tracker-nft; tracker_nft_id() checks it, ValueError), which overrides every other pin (step 1). Returns the
+    participant, key, records and R4 records), read and never changed. tracker_nft: the tracker NFT id the server must name
+    (--tracker-nft; tracker_nft_id() checks it, ValueError), which overrides every other pin (step 1). wait_anchored
+    (--wait-anchored, fix inbox #86): before the rows are read, wait until GET /chain says the tracker's state is
+    anchored, for at most this many seconds in all (_wait_anchored; one deadline, which a later attempt waits under too,
+    when the state moved on meanwhile; the result's waited_s says how long it waited): its ledger is then the state its
+    box commits, so a server without GET /ledger/committed can be compared, and --mine compares records the box has
+    caught up with; log(text) says that it waits. clock() reads the time the deadline is on (time.monotonic; with an
+    injected sleep and no clock, the time slept). Returns the
     result as a JSON-ready dict: verdict MATCH, MISMATCH or UNKNOWN, reason and message, the tracker {nft: the one GET
     /chain names, pin: the one it must be (None when nothing pins it), pinned_by: 'you', 'profile', 'this audit' or
     None, reserves_naming_it: how many reserves at the pinned reserve contract name it (None when they were not
@@ -827,11 +911,31 @@ def audit(server, source, *, profile_state=None, mine=False, tracker_nft=None, g
     if tracker_nft is not None:
         tracker_nft_id(tracker_nft)
     get, sleep = get or get_json, sleep or time.sleep
+    if clock is None and sleep is time.sleep:
+        clock = time.monotonic
+    elif clock is None:                         # an injected sleep (a test's): the time is what it slept
+        spent, slept = [0.0], sleep
+
+        def sleep(s):
+            spent[0] += s
+            slept(s)
+
+        def clock():
+            return spent[0]
+    waited = [0.0]
+
+    def wait(chain, deadline, log=None):
+        t = clock()
+        try:
+            return _wait_anchored(get, server, chain, chain['tracker_nft_id'], sleep, deadline, clock, log)
+        finally:
+            waited[0] += clock() - t
     out = {'verdict': None, 'reason': None, 'message': None, 'server': server, 'network': None, 'tracker_nft_id': None,
            'tracker_nft_pinned': False, 'tracker': None, 'construction': CONSTRUCTION,
            'chain_source': {'kind': source.kind, 'url': source.url, 'named_by_server': False},
            'box': None, 'rows': None, 'server_says': None, 'height': None, 'box_age_blocks': None,
-           'nettings_refused_from_height': None, 'tracker_less_redemption_from_height': None, 'attempts': 0, 'warnings': []}
+           'nettings_refused_from_height': None, 'tracker_less_redemption_from_height': None, 'attempts': 0, 'warnings': [],
+           'waited_s': None}
     state = profile_state if isinstance(profile_state, dict) else {}
     attempts = max(1, attempts)
     try:
@@ -859,6 +963,10 @@ def audit(server, source, *, profile_state=None, mine=False, tracker_nft=None, g
                 out['warnings'].append(f"the tracker NFT {nft} is not pinned for {origin(server) or server}: {n} reserve "
                                        f"box{'' if n == 1 else 'es'} at the pinned reserve contract name{'s' if n == 1 else ''} "
                                        'it, which an operator can arrange for a tracker of its own too; pin it with --tracker-nft')
+        deadline = clock() + min(float(wait_anchored), WAIT_ANCHORED_MAX_S) if wait_anchored else None
+        if deadline is not None:
+            chain = wait(chain, deadline, log)
+            out['waited_s'] = round(waited[0], 3)
         for attempt in range(1, attempts + 1):
             out['attempts'] = attempt
             try:
@@ -866,7 +974,10 @@ def audit(server, source, *, profile_state=None, mine=False, tracker_nft=None, g
                     chain = _chain(get, server)
                     if chain['tracker_nft_id'] != nft:
                         raise _Unknown('server_inconsistent', 'GET /pilot/v1/chain named another tracker NFT during the audit')
-                snap = _committed(get, server, chain) or _ledger_between(get, server, chain, sleep)
+                    if deadline is not None:        # the state moved on meanwhile: wait again, under the same deadline
+                        chain = wait(chain, deadline)
+                        out['waited_s'] = round(waited[0], 3)
+                snap = _committed(get, server, chain) or _ledger_between(get, server, chain, sleep, out['waited_s'])
                 box = _the_box(source, nft)
                 inexact = _inexact(snap['rows'])
                 if inexact:
@@ -1049,6 +1160,9 @@ def mine_report(state, rows, notes, tracker_nft=None):
     # not_anchored.
     anchored = {(records.pair_key(r['issuer_pubkey'], r['recipient_pubkey']), r.get('denomination', 'erg')):
                 (r['issuer_pubkey'], r['recipient_pubkey'], int(r['total'])) for r in rows}
+    mine = _Mine(keys, _consent_verifier(pins['tracker_nft_id'], denomination),
+                 state.get('signed') if isinstance(state.get('signed'), dict) else {}, recs,
+                 {pair: total for (pair, d), (_i, _rc, total) in anchored.items() if d == denomination})
     edges, listed = [], set()
     for (pair, d), (i, rc, total) in anchored.items():
         if i not in keys and rc not in keys:
@@ -1056,7 +1170,7 @@ def mine_report(state, rows, notes, tracker_nft=None):
         mine_here = d == denomination                   # this profile's records are about its pinned denomination only
         if mine_here:
             listed.add(pair)
-        edges.append(_edge(pair, i, rc, d, total, records.get(recs, pair) if mine_here else None, verify, keys, owner))
+        edges.append(_edge(pair, i, rc, d, total, records.get(recs, pair) if mine_here else None, verify, keys, owner, mine))
     for pair in recs:
         if pair == 'paid_deals' or pair in listed or not isinstance(pair, str) or '>' not in pair:
             continue
@@ -1065,24 +1179,124 @@ def mine_report(state, rows, notes, tracker_nft=None):
             continue
         i, _sep, rc = pair.partition('>')
         hit = anchored.get((pair, denomination))
-        edges.append(_edge(pair, i, rc, denomination, hit[2] if hit else None, rec, verify, keys, owner))
-    proven = sum(1 for e in edges if e['status'] == 'signed')
+        edges.append(_edge(pair, i, rc, denomination, hit[2] if hit else None, rec, verify, keys, owner, mine))
+    proven = sum(1 for e in edges if e['status'] in PROVEN_STATUS)
     return {'participant': pid, 'keys': key_list, 'edges': edges, 'proven': proven, 'not_proven': len(edges) - proven, 'all_proven': proven == len(edges)}
 
 
-def _edge(pair, issuer, recipient, denomination, anchored, rec, verify, keys, owner):
+def _consent_verifier(tracker_nft_id, denomination):
+    """verify(key, issuer, recipient, total, timestamp, signature): is `signature` the Basis signature of `key` over the
+    note message of that edge state on this tracker and unit (M(I,R,t,ts), the message a set-off's members sign for each
+    of its edges)? False for anything malformed."""
+    def verify(key, issuer, recipient, total, timestamp, signature):
+        try:
+            msg = vb.note_message(bytes.fromhex(issuer), bytes.fromhex(recipient), total, timestamp, bytes.fromhex(tracker_nft_id),
+                                  denomination)
+            return vb.verify(bytes.fromhex(signature), msg, bytes.fromhex(key)) is True
+        except (ValueError, TypeError, AttributeError, OverflowError):
+            return False
+    return verify
+
+
+class _Mine:
+    """What --mine knows of this client beyond an edge's record: its keys, a verifier of its own signatures
+    (_consent_verifier), its R4 records of what it signed (state['signed']: {edge: {timestamp: {op, slots}}}), its
+    records of every edge (recs) and the anchored total of each edge in the pinned denomination (anchored: {pair:
+    total})."""
+
+    def __init__(self, keys, verify, signed, recs=None, anchored=None):
+        self.keys, self.verify, self.signed = keys, verify, signed
+        self.recs, self.anchored = recs if isinstance(recs, dict) else {}, anchored if isinstance(anchored, dict) else {}
+
+    def members(self, sid):
+        """The edges this client signed in set-off `sid`, each with the after-state it signed there: {pair: (total,
+        timestamp)}, from its pending entries (kind 'setoff', ref sid) and its R4 records (op 'setoff:<sid>', the slot
+        '<pair>:new')."""
+        out = {}
+        for pair in self.recs:
+            if pair == 'paid_deals' or not isinstance(pair, str) or '>' not in pair:
+                continue
+            for p in records.get(self.recs, pair)['pending']:
+                if isinstance(p, dict) and p.get('kind') == 'setoff' and p.get('ref') == sid and records._nat(p.get('total')) \
+                        and records._nat(p.get('timestamp')):
+                    out[pair] = (p['total'], p['timestamp'])
+        for pair, per in self.signed.items():
+            for ts, g in (per.items() if isinstance(per, dict) else ()):
+                slots = g.get('slots') if isinstance(g, dict) and isinstance(g.get('slots'), dict) else {}
+                total = slots.get(f'{pair}:new')
+                if g.get('op') == f'setoff:{sid}' and records._nat(total) and isinstance(ts, str) and ts.isdigit():
+                    out.setdefault(pair, (total, int(ts)))
+        return out
+
+    def applied(self, sid):
+        """Did set-off `sid` reach the box on every edge this client signed in it (members)? Each must be anchored at the
+        total this client signed there, or confirmed in its records at that timestamp or later and anchored at that
+        confirmed total (the edge moved on since). Fails closed: a set-off nets a cycle, so each of its members is on an
+        edge it owes and one it is owed, and one of which this client's records know fewer than two edges (pruned, or
+        never written) has not. A set-off the tracker refused, that expired or that moved only some of its edges never
+        makes an edge netted, even where an edge's anchored total happens to be the one this client signed (fix inbox #86
+        review: the server's own rule, every edge of a set-off moved, or none)."""
+        members = self.members(sid)
+        if len(members) < 2:
+            return False
+        for pair, (total, ts) in members.items():
+            at = self.anchored.get(pair)
+            if at == total:
+                continue
+            conf = records.get(self.recs, pair)['confirmed'] if pair in self.recs else None
+            if not (conf and records._nat(conf.get('timestamp')) and conf['timestamp'] >= ts and records._nat(conf.get('total'))
+                    and conf['total'] == at):
+                return False
+        return True
+
+    def setoff_at(self, pair, total, timestamp):
+        """The set-off this client signed this edge's state (total, timestamp) in, by its R4 record (op 'setoff:<id>',
+        its new slot at that total), or None."""
+        per = self.signed.get(pair) if isinstance(self.signed.get(pair), dict) else {}
+        g = per.get(str(timestamp)) if isinstance(per.get(str(timestamp)), dict) else {}
+        op, slots = g.get('op'), g.get('slots') if isinstance(g.get('slots'), dict) else {}
+        sid = op[len('setoff:'):] if isinstance(op, str) and op.startswith('setoff:') else None
+        return sid if sid and _SETOFF_ID.fullmatch(sid) and slots.get(f'{pair}:new') == total else None
+
+    def netted(self, rec, issuer, recipient, anchored):
+        """Fix inbox #86: the after-state of a set-off this client signed, pending in its records (kind 'setoff', ref the
+        set-off's id), whose total is the anchored one, newer than the confirmed state, with this client's own signature
+        on it (records.note_signature) verifying under the key of its side of the edge, one of its keys: on an edge it
+        issues the issuer's, on one it is the creditor of the recipient's; and the set-off reached the box on every edge
+        this client signed in it (applied). (entry, side) or None. The set-off can apply only with the signatures of all
+        its members, so the chain committing its after-states commits states this client signed itself."""
+        conf = rec['confirmed'] if rec else None
+        after = conf.get('timestamp') if conf and records._nat(conf.get('timestamp')) else -1
+        for p in reversed(rec['pending'] if rec else []):
+            if not (isinstance(p, dict) and p.get('kind') == 'setoff' and isinstance(p.get('ref'), str) and _SETOFF_ID.fullmatch(p['ref'])
+                    and records._nat(p.get('total')) and p['total'] == anchored and records._nat(p.get('timestamp'))
+                    and p['timestamp'] > after and isinstance(p.get('signature'), str) and p['signature']):
+                continue
+            side, key = ('issuer', issuer) if p.get('direction') == 'out' else ('creditor', recipient) if p.get('direction') == 'in' else (None, None)
+            if key in self.keys and self.verify(key, issuer, recipient, p['total'], p['timestamp'], p['signature']) \
+                    and self.applied(p['ref']):
+                return p, side
+        return None
+
+
+def _edge(pair, issuer, recipient, denomination, anchored, rec, verify, keys, owner, mine):
     role = ('issuer_and_recipient' if issuer in keys and recipient in keys else 'issuer' if issuer in keys
             else 'recipient' if recipient in keys else None)
     other = recipient if role == 'issuer' else issuer if role == 'recipient' else None
     conf = rec['confirmed'] if rec else None
     sig = conf.get('signature') if conf else None
     held = isinstance(sig, str) and bool(sig)
-    verified = None
+    verified, netted, netted_by = None, None, None
+    matches = conf is not None and records._nat(conf.get('total')) and conf['total'] == anchored
+    if anchored is not None and not matches:
+        netted = mine.netted(rec, issuer, recipient, anchored)
     if anchored is None:
         status = 'not_anchored'
+    elif netted is not None:
+        status, verified, netted_by = 'netted', True, netted[0]['ref']
     elif conf is None:
         status = 'not_in_records'
-    elif not (records._nat(conf.get('total')) and conf['total'] == anchored):
+    elif not matches:
         status = 'differs'
     elif not held:
         status = 'signature_not_held'
@@ -1092,11 +1306,17 @@ def _edge(pair, issuer, recipient, denomination, anchored, rec, verify, keys, ow
         except Exception:  # noqa: BLE001 - a verifier that fails proves nothing
             verified = False
         status = 'signed' if verified else 'bad_signature'
+    if matches and anchored is not None:        # a confirmed state a set-off this client signed gave the edge
+        netted_by = mine.setoff_at(pair, conf['total'], conf.get('timestamp'))
     out = {'edge': pair, 'role': role, 'counterparty_key': other, 'counterparty': owner.get(other) if other else None,
            'denomination': denomination, 'anchored_total': anchored,
            'recorded': ({'total': conf.get('total'), 'timestamp': conf.get('timestamp'), 'signature': 'held' if held else 'not_held'}
                         if conf else None),
            'signature_verified': verified, 'status': status}
+    if netted_by is not None:
+        out['netted_by'] = netted_by
+    if netted is not None:
+        out['netted_state'] = {'total': netted[0]['total'], 'timestamp': netted[0]['timestamp'], 'signed_by': 'you', 'as': netted[1]}
     pending = [p.get('total') for p in (rec['pending'] if rec else []) if isinstance(p, dict) and records._nat(p.get('total'))]
     if pending:
         out['pending_totals'] = pending

@@ -1,5 +1,12 @@
 # Valun pilot protocol `valun-deal/1` on network `valun-pilot-1`
 
+> **The live network is `valun-testnet-1`**, at https://valun.tech, on Ergo testnet; the pilot network this document
+> was written for (`valun-pilot-1`) was retired on 2026-11-13. The testnet's amounts are whole nanoERG of Ergo
+> testnet, test coins with no monetary value, and its prices and limits are 1,000,000 times the PC-sized values in the
+> examples here (a 3 PC job here is 3,000,000 nanoERG there, 0.003 tERG). Anchoring, reserves, redemption and what you
+> trust the operator for are in the Trust model, https://valun.tech/skill.md#trust-model, and in
+> [PILOT-API.md](../server/docs/PILOT-API.md), "Settlement on Ergo testnet". This document has no testnet revision yet.
+
 Specification of the protocol **as the server implements it**, written so that a third party can build a
 compatible client (TypeScript, Go, Rust, ...) without reading the server code. This is revision **v14** of this
 document.
@@ -2474,6 +2481,11 @@ part of the contract; the rest describes the server so clients know what to expe
   cut at 300 characters); in mode off the reason stays v15's.
 - sandbox-mallory pays with held notes of the other sandbox agent only, only when the payee's consent speed is `auto`
   or `immediate`, and never by transfer again on a deal whose payee refused one (its own note then waits for the window).
+- The agents keep the debt an open tour needs: what a sandbox participant moved from its note of sandbox-exact onto
+  sandbox-mallory (the tour's step 2), less what sandbox-mallory paid it back that way, stays on that edge for its step
+  4's 3-cycle until a set-off with that participant lowers the edge, for at most 24 hours. A set-off of the two agents
+  alone, and sandbox-mallory's payments to others with sandbox-exact's notes, leave it there; a cycle with a client
+  member may use all of it (valun-app `Sandbox.tourHolds`; `kept_for_clients` in `GET /admin/clearing`).
 - The server signer: `signFor(pid, msgHex, {op})` (`signHex` an alias); it signs only 80-byte note messages and
   105-byte prior acknowledgments PA for the pilot's tracker at residues 997-999, at most 1 h old and 5 s ahead, one
   operation per (agent, edge, timestamp) and one acknowledged prior state there, and rebuilds every message itself
@@ -2492,6 +2504,10 @@ part of the contract; the rest describes the server so clients know what to expe
 - The client tour (`valun sandbox tour`) stops with `tour_stuck` after 12 tool calls in a step that do not finish it;
   each disputed wrong delivery allows two more calls, up to 20 disputes in one step. The X->M and M->X edges are
   server-only and appear in the public ledger, not in the stranger's `GET /edges`.
+- In step 4 (a note of sandbox-mallory held, a debt to sandbox-exact) the clients read X->M on the public ledger: when
+  it is 0, `sandbox_next_steps` is `blocked: cycle_leg_missing` (no calls, `retry_after_seconds` 30) instead of saying
+  the set-off is due, and the tour stops with `tour_blocked` once that has lasted 2 minutes. A ledger that cannot be
+  read, or names no issuer, concludes nothing.
 
 **Clients and adapters.**
 - Records (design 6.1): `records {pair: {confirmed, pending}}` with `records.paid_deals {deal_id: {route, edge, total,

@@ -74,7 +74,7 @@ async function offerTo(v) {
     return undefined;
   });
   const store = new MemoryStore({state: {participant_id: viewer, pubkey: viewerKey.pubkey}, secret: bytesToHex(viewerKey.secret), token: 'stub'});
-  const client = new Client({store, server: 'http://valun.invalid', fetch, now: () => Date.parse(v.fixture_now)});
+  const client = new Client({store, server: 'https://valun.invalid', fetch, now: () => Date.parse(v.fixture_now)});
   try {
     await client.verifyOffer(deal);
     return null;

@@ -24,15 +24,20 @@
 // a client of its own (Client.fresh(), as the Python agent makes a new Client for each).
 
 import {verifyHex} from './basis.js';
-import {COUNTER_OFFER_HOURS, VALUE_SAFE_HEADER_ROLES, checkOfferHours, consentRoles} from './client.js';
+import {
+  COUNTER_OFFER_HOURS, GUARANTEE_HONORS_KEY, GUARANTEE_MAX_DEALS, VALUE_SAFE_HEADER_ROLES, checkOfferHours, consentRoles,
+  holdEnded,
+} from './client.js';
 import {ValunError} from './errors.js';
 import {without} from './fences.js';
 import {measure} from './measure.js';
 import * as nv from './novation.js';
-import {NETWORK, UNIT, amountText, sha256Hex, termsHash} from './protocol.js';
+import {
+  NETWORK, NETWORKS, PILOT_RETIRED_ON, UNIT, amountText, profileNetwork, retiredPilot, sha256Hex, termsHash,
+} from './protocol.js';
 import {utf8} from './bytes.js';
 import * as sandbox from './sandbox.js';
-import {checkDelivery, extractText} from './sandbox.js';
+import {extractText} from './sandbox.js';
 import * as schemas from './schemas.js';
 import {
   PyError, cmpCodePoints, cpLength, cpSlice, dictCopy, get, int, isDict, isoAwareMs, isoAwareUs, item, items, iterate, lower, or, pyEq,
@@ -98,6 +103,9 @@ export const REAL_VS_SIMULATED_CIRCULATION = Object.freeze({
 // The same labels on the Valun testnet network (valun-testnet-1): word for word the server's testnet deal labels
 // (lib/pilot/core.mjs SETTLEMENT_TESTNET, CIRCULATION_SETTLEMENT_TESTNET). There a creditor can redeem a note on Ergo
 // testnet against its issuer's reserve, the tracker anchors its totals on Ergo testnet, and tERG have no monetary value.
+// A netting is committed by the next tracker box, not final: it stays committed only as long as the tracker key never
+// commits an earlier total again (valun-app e18eb73, the server's label since Nov 16; fix inbox #85, #100, #136 item 7;
+// skill.md, Trust model).
 export const TESTNET = 'valun-testnet-1';
 export const TESTNET_REDEMPTION = "Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted "
   + 'one; tERG are test coins with no monetary value.';
@@ -105,8 +113,9 @@ export const SETTLEMENT_TESTNET = 'not settled until redeemed: issuing a credit 
 export const CIRCULATION_SETTLEMENT_TESTNET = 'not settled until redeemed: a credit note is an outstanding obligation. With circulating '
   + 'credit it can move to a new creditor (debt transfer, signed by the debtor and both '
   + 'creditors) or be cancelled against an equal opposite obligation (set-off, signed by every '
-  + 'party; no net position changes); a netting is final once a tracker box on Ergo testnet '
-  + 'commits it. ' + TESTNET_REDEMPTION;
+  + 'party; no net position changes); a netting is committed once a tracker box on Ergo testnet '
+  + 'commits it, and stays committed only as long as the tracker key never commits an earlier total again. '
+  + TESTNET_REDEMPTION;
 const TESTNET_TRACKER = 'The Valun testnet Basis tracker keeps one running total per key pair: what the issuer key owes the '
   + 'recipient key, with a timestamp, signed by the issuer, and anchors them on Ergo testnet (a tracker box '
   + 'commits the digest of every total). ';
@@ -158,8 +167,26 @@ export const PAYABLE = Object.freeze(['delivered', 'note_failed', 'payment_due']
 /** How fast an issuer signs a transfer of its debt (payment options issuer_consents), in an approval text. */
 export const CONSENT_SPEED_WORDS = Object.freeze({immediate: 'immediately', auto: 'automatically',
   when_online: 'when its agent is next online', unavailable: 'not at the moment (unavailable)'});
-/** prepare() failures that keep their own code and setup hint instead of approval_unbound (still nothing is signed). */
-export const UNBOUND_PASS_THROUGH = Object.freeze(['not_connected', 'not_configured', 'tracker_mismatch']);
+/** prepare() failures that keep their own code and setup hint instead of approval_unbound (still nothing is signed): a
+ *  redirect, a plain-http server and another server than the profile's too (the RC's review; only the Python client
+ *  raises wrong_server), which no read again changes and only the owner can. */
+export const UNBOUND_PASS_THROUGH = Object.freeze(['not_connected', 'not_configured', 'tracker_mismatch', 'redirected', 'plain_http',
+  'wrong_server', 'tls_unverified']);
+// A profile of the pilot network, retired on 2026-11-13 (fix inbox #30), on a server that now serves another network:
+// that server knows neither its participant nor its key, nor the tracker it pinned, so its calls meet these refusals
+// (wrong_tracker: a pin the Client was given). ValunAgent.retired() answers network_retired instead, with how to join
+// again: in a new profile (rejoinHint), since this one holds an identity of the old network. As the Python agent's.
+export const RETIRED_CODES = Object.freeze(['unauthorized', 'not_connected', 'tracker_mismatch', 'wrong_network',
+  'wrong_tracker']);
+export const DEFAULT_REJOIN_HINT = 'join in a new profile, in a terminal: `valun --profile NAME join --sandbox '
+  + '--handle HANDLE --operator "YOUR NAME" --owner-token-file FILE` (NAME: a profile name not used yet; HANDLE: '
+  + 'public and permanent; FILE: a new file for its owner token)';
+/** network_retired's what_this_means: the profile's pilot network was retired, and the server serves `network`. */
+export function retiredText(network, rejoinHint = DEFAULT_REJOIN_HINT) {
+  return `This agent's profile joined the pilot network (${NETWORK}), which was retired on ${PILOT_RETIRED_ON}: `
+    + `the Valun server now serves ${network}, which knows neither this participant nor its key. Nothing was signed. `
+    + `Its owner must use a profile on ${network}: ${rejoinHint}.`;
+}
 // The server's sandbox agents (PROTOCOL.md 18.15) and the five-step tour a sandbox_only participant can take with them.
 export const SANDBOX_EXACT = 'sandbox-exact';
 export const SANDBOX_MALLORY = 'sandbox-mallory';
@@ -190,8 +217,17 @@ export function tourGoal(step, unit = UNIT, scale = 1) {
 export const TOUR_AFTER = Object.freeze({1: Object.freeze([3, 0]), 2: Object.freeze([1, 0]), 3: Object.freeze([0, 1]),
   4: Object.freeze([2, 0]), 5: Object.freeze([0, 0])});
 // How long a tour step asks the agent to wait before calling valun_status again (fix-inbox #8): the sandbox agents act
-// within a few seconds; an owner approval takes a person.
-export const SANDBOX_RETRY_S = 5, OWNER_RETRY_S = 60;
+// within a few seconds; an owner approval takes a person; a 3-cycle whose third leg is missing (blocked:
+// cycle_leg_missing) waits for another participant's payment; a set-off that is due is signed at the client's next
+// consent run, at most once a minute (0.7.2: 15 s, not the sandbox agents' 5 s).
+export const SANDBOX_RETRY_S = 5, OWNER_RETRY_S = 60, CYCLE_LEG_RETRY_S = 30, SETOFF_DUE_RETRY_S = 15;
+// The tour's end, kept in the profile: state[TOUR_DONE_KEY] is the participant id whose tour valun_status saw done.
+// sandboxNextSteps reads the step from what the participant holds and owes with the sandbox agents, so a deal with them
+// after the tour (`valun sandbox earn`) made it step 3 again (the 0.7.2 clean-user test). Once the end is kept, the
+// next steps stay done, with TOUR_COMPLETED. As the Python agent's.
+export const TOUR_DONE_KEY = 'sandbox_tour_done';
+export const TOUR_COMPLETED = 'The tour is complete. Deals with the sandbox agents from now on are not tour steps: valun_inbox shows '
+  + 'what waits for you, as with any agent. You can keep trading with the sandbox agents.';
 
 /** The honest labels for a server with circulating credit (true) or without it: {settlement, not_settled, honest_labels, real_vs_simulated}. */
 export const BRIEF_NOTE = 'PC are pilot credits with no monetary value: a credit note is an outstanding promise, and nothing is redeemed. '
@@ -247,6 +283,7 @@ export function briefStatus(out) {
   const you = d(get(out, 'you')), pos = d(get(out, 'position'));
   const b = {brief: true, connected: get(out, 'connected'),
     you: Object.fromEntries(['id', 'handle', 'sandbox_expires_at'].filter(k => get(you, k) !== null).map(k => [k, you[k]])),
+    ...(typeof get(out, 'you_are') === 'string' ? {you_are: out.you_are} : {}),
     objective_from_your_owner: get(out, 'objective_from_your_owner'), goals_your_owner_told_you: get(out, 'goals_your_owner_told_you'),
     limits_in_force: get(out, 'limits_in_force'), approvals: get(out, 'approvals'),
     you_hold_PC: get(pos, 'claims_held'), you_owe_PC: get(pos, 'owes'), net_PC: get(pos, 'net')};
@@ -259,7 +296,10 @@ export function briefStatus(out) {
   }
   if (truthy(get(out, 'guarantees_waiting'))) b.guarantees_waiting = out.guarantees_waiting;
   const step = get(out, 'sandbox_next_steps');
-  if (isDict(step)) b.sandbox_next_steps = Object.fromEntries(['tour_step', 'next_calls', 'then', 'retry_after_seconds'].filter(k => k in step).map(k => [k, step[k]]));
+  if (isDict(step)) {
+    b.sandbox_next_steps = Object.fromEntries(['tour_step', 'next_calls', 'then', 'blocked', 'retry_after_seconds']
+      .filter(k => k in step).map(k => [k, step[k]]));
+  }
   b.note = get(out, 'network') === TESTNET ? BRIEF_NOTE_TESTNET : BRIEF_NOTE;
   return b;
 }
@@ -385,15 +425,53 @@ export const GENERIC_TEXT = 'Valun: sign a commitment ({name}).';
 export const QUOTE_MAX_CHARS = 2000;
 export const ROLE_WORDS = Object.freeze({payer: 'payer', payee: 'payee (you do the work)'});
 export const DEFAULT_SETUP_HINT = 'run `valun join` (or `valun enroll`) in a terminal';
-/** Where approvals happen, as the Python MCP server and CLI tell the model (python/src/valun/mcp_server.py). */
+/**
+ * approval_unbound's what_this_means when its cause is unknown_participant: the handle (or id) a commitment names is in
+ * no entry of the network's directory, so reading the deal again cannot help (the 0.7.2 clean-user test: house-scribe,
+ * on a server that has none). As the Python agent's.
+ */
+export const UNKNOWN_PARTICIPANT_TEXT = 'Nothing was signed and your owner was not asked: no participant with that handle '
+  + 'exists on this network. Find the one you mean with valun_directory, and use the handle it lists.';
+/**
+ * What the Valun server never holds for an owner, in any approval mode (as the Python agent's NEVER_HELD; the approval
+ * semantics of 2026-11-17): it holds only what the owner's mandate holds (approve_above, review_deliveries).
+ */
+export const NEVER_HELD = 'honoring a guarantee call (your IOU, recorded at once); accepting, calling and releasing guarantees; '
+  + 'deliveries, declines, withdrawals and disputes; loosening or clearing a limit you recorded with '
+  + "valun_set_limits (never past your owner's mandate); and the consents your client signs by itself";
+/**
+ * valun_status's approvals sentence for console approvals (as the Python agent's CONSOLE_APPROVALS): what a rejection
+ * leaves, as the server does it. A rejected offer, acceptance or IOU stays on the server, still signed; a rejected
+ * payment by transfer is purged (only its signatures' sha256), and a payment through the same IOU at the same prior
+ * state is allowed at once; any other payment of the deal waits until T + MAX_AGE_MS + FALLBACK_MARGIN_MS.
+ */
+export const CONSOLE_APPROVALS = 'Console approvals: you sign every commitment yourself, and the Valun server holds these for your '
+  + 'owner in the owner console until they approve: your offers and counter-offers, your acceptances '
+  + '(taking a job included), your guarantee offers, and the IOU or payment by transfer you sign when '
+  + 'you accept a delivery (console sets your owner mandate to approve_above 0 and review_deliveries '
+  + 'on). Each takes effect only when your owner approves it. Rejecting does not unsign it: the server '
+  + 'keeps your signed offer, acceptance or IOU on record, and a rejected IOU could still be recorded by '
+  + 'the tracker until an hour after you signed it, so paying that deal by transfer waits until 1 hour '
+  + "and 2 minutes after you signed it (your Valun client's time, a minute after the server's, which the "
+  + 'owner console shows, as a margin for clocks that differ). A rejected payment by transfer is the '
+  + 'exception: it is deleted, '
+  + 'its signatures included (the server keeps only their hashes), and you may pay again through the same '
+  + 'IOU at once while it is unchanged; any other payment of that deal waits until 1 hour and 2 minutes '
+  + 'after you signed it. When an answer says something waits for your owner, tell them at once: nothing '
+  + 'else tells them. These are not held, so they take effect when you sign: ' + NEVER_HELD + '.';
+/**
+ * Where approvals happen, as the Python MCP server and CLI tell the model (python/src/valun/mcp_server.py): valun_status
+ * follows it with what the server holds by the owner mandate (heldForOwner).
+ */
 export const APPROVAL_TEXT = Object.freeze({
-  ask: 'Before you sign an offer, counter-offer, acceptance or credit note, your owner is asked through this app and '
-    + 'sees exactly what you would sign; if they decline, nothing is signed.',
-  'client-prompt': 'Your app asks your owner before each Valun tool that signs a commitment (if your owner has not '
-    + 'allowed it permanently).',
-  console: 'Every commitment you sign waits for your owner in the Valun owner console before it takes effect: offers, '
-    + 'counter-offers and acceptances, and accepting a delivery (its credit note is issued only after your owner '
-    + 'approves it).',
+  ask: 'Before you sign a commitment, your owner is asked through this app and sees exactly what you would sign: an '
+    + 'offer, counter-offer or acceptance; accepting a delivery (with your own IOU, or paying with an IOU you '
+    + 'hold); a guarantee offer; honoring or releasing a guarantee; or loosening a limit you recorded. If they '
+    + 'decline, nothing is signed.',
+  'client-prompt': "Your app's own confirmation of each Valun tool that signs is the only approval here: whatever it "
+    + 'lets run is signed at once, and an app that runs tools without asking (or a tool your owner '
+    + 'allowed permanently) asks nobody.',
+  console: CONSOLE_APPROVALS,
   none: "You act on your own within your owner's limits; nobody is asked before you sign.",
 });
 
@@ -411,7 +489,8 @@ const whole = v => typeof v === 'number' && Number.isSafeInteger(v);
 
 /** A whole-number argument of a guarantee tool, or its default (null: required). The Python core's _guarantee_int. */
 function guaranteeInt(a, k, dflt) {
-  const v = isDict(a) ? get(a, k, dflt) : dflt;
+  const given = isDict(a) ? get(a, k) : null;
+  const v = given === null || given === undefined ? dflt : given;      // absent or null: the default
   if (v === null) throw new ValunError('bad_arguments', `${k} is required`);
   if (!whole(v)) throw new ValunError('bad_arguments', `${k} must be a whole number`);
   return v;
@@ -425,14 +504,42 @@ function guaranteeInt(a, k, dflt) {
  */
 function count(k, v, units) {
   if (whole(v) && v >= 1) return v;
+  throw new ValunError('bad_arguments', countMessage(k, v, units));
+}
+
+/** A value an agent passed, as a refusal quotes it: one line of JSON, at most 40 characters. The Python core's _got. */
+function shownValue(v) {
   const got = quoted(v);
-  throw new ValunError('bad_arguments', `${k} must be a whole number of ${units}, at least 1 (a JSON integer), not `
-    + `${got.length <= 40 ? got : got.slice(0, 37) + '...'}; nothing was signed`);
+  return got.length <= 40 ? got : got.slice(0, 37) + '...';
+}
+
+function countMessage(k, v, units) {
+  return `${k} must be a whole number of ${units}, at least 1 (a JSON integer), not ${shownValue(v)}; nothing was signed`;
 }
 
 /** Argument k checked by count(), or `dflt` when it is absent or null. The Python core's _count_or. */
 function countOr(a, k, units, dflt = null) {
   return get(a, k) === null ? dflt : count(k, a[k], units);
+}
+
+/**
+ * The most hours an offer may give to deliver, and stay open (the schemas' maximum): the server refuses terms whose
+ * deliver_by is more than 30 days ahead, or whose offer_expires_at is more than 7 days ahead. The Python core's.
+ */
+export const HOURS_MAX = Object.freeze({deliver_within_hours: 720, offer_valid_hours: 168});
+
+/**
+ * Argument k of valun_propose or valun_respond counter (deliver_within_hours, offer_valid_hours): countOr, and at most
+ * HOURS_MAX[k], else bad_arguments before anything is read or signed (fix inbox #58 review: 0.7.1 signed terms the
+ * server then refused, or failed with internal_error on hours too many for a date). The Python core's _hours_or.
+ */
+function hoursOr(a, k, dflt = null) {
+  const h = countOr(a, k, 'hours', dflt);
+  if (h !== null && h > HOURS_MAX[k]) {
+    throw new ValunError('bad_arguments', `${k} must be at most ${HOURS_MAX[k]} hours (${HOURS_MAX[k] / 24} days, the most the server `
+      + `takes), not ${shownValue(h)}; nothing was signed`);
+  }
+  return h;
 }
 
 /**
@@ -494,13 +601,116 @@ function required(a, keys, signs = true, words = null) {
  * approval_unbound with the cause bad_arguments). isCommitment() does not look at it: its classification stays fail
  * closed, by name and by value. The Python core's tool_arguments.
  */
-export function toolArguments(name, args) {
+export function toolArguments(name, args, unit = UNIT) {
   const signs = !READ_ONLY_TOOLS.includes(name);
   const a = args === null || args === undefined ? {} : args;
   if (!isDict(a)) throw new ValunError('bad_arguments', 'the arguments are not a JSON object' + (signs ? '; nothing was signed' : ''));
   required(a, Object.hasOwn(REQUIRED_ARGUMENTS, name) ? REQUIRED_ARGUMENTS[name] : [], signs,
     Object.hasOwn(ARGUMENT_WORDS_OF, name) ? ARGUMENT_WORDS_OF[name] : null);
+  for (const k of Object.keys(Object.hasOwn(PROPERTIES, name) ? PROPERTIES[name] : {})) {
+    const e = argumentRefusal(name, k, get(a, k), unit);
+    if (e !== null) throw e;
+  }
   return a;
+}
+
+// Fix inbox #58 (0.7.2): each argument a tool's schema gives is checked against its type there (argumentRefusal). The
+// schema's properties of each tool, in the order the check goes through them. The Python core's PROPERTIES.
+export const PROPERTIES = Object.freeze(Object.fromEntries(schemas.ALL.map(t => [t.name, t.parameters.properties ?? {}])));
+/**
+ * The id shapes the server's routes take (valun-app lib/pilot/http.mjs: /deals/(vd_[0-9a-f]{16}), /guarantees/(vg_[0-9a-f]
+ * {16}) and .../calls/(vgc_[0-9a-f]{16}); lib/pilot/core.mjs and guarantees.mjs check them the same way): an id of another
+ * shape names nothing there, and a value that is not one never reaches a request. The Python core's ID_SHAPES.
+ */
+export const ID_SHAPES = Object.freeze({deal_id: /^vd_[0-9a-f]{16}$/, guarantee_id: /^vg_[0-9a-f]{16}$/, call_id: /^vgc_[0-9a-f]{16}$/});
+/**
+ * A value that is not one of an argument's values (its schema's enum) gets the refusal its tool gave it before the core
+ * check did, code and words (a misspelt decision is still bad_decision): {tool: {argument: [code, message]}}. The Python
+ * core's.
+ */
+export const ENUM_REFUSALS = Object.freeze({
+  valun_propose: Object.freeze({role: Object.freeze(['bad_role', 'role must be payer (you pay with your credit) or payee (you do the work)'])}),
+  valun_respond: Object.freeze({action: Object.freeze(['bad_action', 'action must be accept, decline, counter or withdraw'])}),
+  valun_review_delivery: Object.freeze({decision: Object.freeze(['bad_decision', "decision must be exactly 'accept' or 'dispute'; nothing was signed"])}),
+  valun_respond_guarantee: Object.freeze({action: Object.freeze(['bad_arguments', 'action must be accept, decline, release, withdraw or honor'])}),
+});
+const GUARANTEE_ID_WORDS = 'guarantee_id is missing or malformed (vg_ + 16 hex; valun_guarantees lists them)';
+/**
+ * The refusals a tool gave an argument of the wrong type before the core check did, kept word for word (each names the
+ * argument and what it must be): {tool: {argument: message, or a function of (the value, the unit)}}. The Python core's
+ * _SAID.
+ */
+const SAID = {
+  valun_status: {brief: 'brief must be true or false'},
+  valun_directory: Object.fromEntries(['limit', 'offset'].map(k => [k, v => pageMessage(k, v, PAGE_WORDS[k])])),
+  valun_propose: Object.fromEntries(['price', 'deliver_within_hours', 'offer_valid_hours'].map(k => [k, (v, unit) => countMessage(k, v, k === 'price' ? unit : 'hours')])),
+  valun_respond: Object.fromEntries(['price', 'deliver_within_hours', 'offer_valid_hours'].map(k => [k, (v, unit) => countMessage(k, v, k === 'price' ? unit : 'hours')])),
+  valun_deliver: {exact_result: 'exact_result is true or false'},
+  valun_review_delivery: {pay_with: "pay_with is 'own_note' or the handle or id of an issuer whose note you hold"},
+  valun_guarantees: {guarantee_id: GUARANTEE_ID_WORDS},
+  valun_offer_guarantee: {note: 'note must be text', ...Object.fromEntries(['cap', 'due_in_hours', 'callable_for_hours', 'honor_within_hours',
+    'offer_valid_hours'].map(k => [k, `${k} must be a whole number`]))},
+  valun_respond_guarantee: {guarantee_id: GUARANTEE_ID_WORDS, reason: 'reason must be text', call_id: 'call_id is malformed (vgc_ + 16 hex)'},
+  valun_call_guarantee: {guarantee_id: GUARANTEE_ID_WORDS, amount: 'amount must be a whole number of at least 1'},
+  valun_check_payer: {payer: 'payer must be the handle or participant id (text) of the agent that would owe you',
+    amount: (v, unit) => countMessage('amount', v, unit),
+    deal_id: v => `deal_id must be the id of the offer you are deciding on, vd_ + 16 hex as valun_inbox lists it, not ${shownValue(v)}`},
+};
+
+/** valun_offer_guarantee deals: 1 to GUARANTEE_MAX_DEALS different deal ids (the client's own check, items first). */
+function dealsOk(v) {
+  return Array.isArray(v) && v.length >= 1 && v.length <= GUARANTEE_MAX_DEALS
+    && v.every(d => typeof d === 'string' && ID_SHAPES.deal_id.test(d)) && new Set(v).size === v.length;
+}
+
+/**
+ * Why the value v (not null) of argument k does not fit tool `name`'s schema (PROPERTIES), as the ValunError its call
+ * answers, or null when it fits (fix inbox #58, 0.7.2). A string is a string, an integer an integer (a safe integer: a
+ * boolean or "7" is not one), a boolean true or false, and a value with an enum one of its values (a list of them for
+ * valun_set_limits clear); deal_id, guarantee_id and call_id have the shape of the ids the server's routes take
+ * (ID_SHAPES), and valun_offer_guarantee deals is its list of deal ids. The refusal names the argument and what it must
+ * be: where its tool refused it already, with the same code and words (ENUM_REFUSALS, and the tools' own words; `unit` is
+ * the network's, for the words of an amount), else bad_arguments '<k> must be a string (<what it is, for an argument the
+ * tool requires>), not <v>' (or a whole number, or true or false), ending in '; nothing was signed' for a tool that is
+ * not read-only. Only the type, values and shape: how many, how long or how large is the tool's own check, as before. The
+ * Python core's argument_refusal (JavaScript cannot tell 2.0 from 2).
+ */
+export function argumentRefusal(name, k, v, unit = UNIT) {
+  const spec = Object.hasOwn(PROPERTIES, name) && Object.hasOwn(PROPERTIES[name], k) ? PROPERTIES[name][k] : null;
+  if (!isDict(spec) || v === null || v === undefined) return null;
+  const tail = READ_ONLY_TOOLS.includes(name) ? '' : '; nothing was signed';
+  const t = spec.type, en = spec.enum;
+  let fits, need;
+  if (Array.isArray(en)) {
+    if (typeof v === 'string' && en.includes(v)) return null;
+    const [code, message] = ENUM_REFUSALS[name][k];
+    return new ValunError(code, message);
+  }
+  if (t === 'string') {
+    const shape = Object.hasOwn(ID_SHAPES, k) ? ID_SHAPES[k] : null;
+    fits = typeof v === 'string' && (shape === null || shape.test(v));
+    const req = Object.hasOwn(REQUIRED_ARGUMENTS, name) && REQUIRED_ARGUMENTS[name].includes(k);
+    const words = req ? ({...ARGUMENT_WORDS, ...(Object.hasOwn(ARGUMENT_WORDS_OF, name) ? ARGUMENT_WORDS_OF[name] : {})})[k] : undefined;
+    need = k === 'deal_id' ? 'the deal id, vd_ + 16 hex, as valun_inbox lists it' : 'a string' + (words ? ` (${words})` : '');
+  } else if (t === 'integer') {
+    fits = whole(v);
+    need = 'a whole number (a JSON integer)';
+  } else if (t === 'boolean') {
+    fits = typeof v === 'boolean';
+    need = 'true or false';
+  } else if (name === 'valun_set_limits' && k === 'clear') {
+    const names = spec.items.enum;
+    fits = Array.isArray(v) && v.every(x => typeof x === 'string' && names.includes(x));
+    need = `a list of the limits to remove (${names.join(', ')})`;
+  } else if (name === 'valun_offer_guarantee' && k === 'deals') {
+    return dealsOk(v) ? null : new ValunError('bad_arguments', `deals must be 1 to ${GUARANTEE_MAX_DEALS} different deal ids (vd_ + 16 hex)`);
+  } else {
+    return null;
+  }
+  if (fits) return null;
+  const own = Object.hasOwn(SAID, name) && Object.hasOwn(SAID[name], k) ? SAID[name][k] : null;
+  const said = typeof own === 'function' ? own(v, unit) : own;
+  return new ValunError('bad_arguments', said !== null ? said : `${k} must be ${need}, not ${shownValue(v)}${tail}`);
 }
 
 // valun_check_payer (budget cards): the summary's first word for each verdict the server gives, and its words when the
@@ -511,6 +721,12 @@ export const CHECK_FALLBACK = Object.freeze({accept: "its owner's budget card al
   ask_owner: "the payer's owner approves an IOU this size before it binds",
   decline: "its owner's budget card does not allow this IOU"});
 export const CHECK_PAYEE_SIDE = Object.freeze({decline: 'your own limits refuse it', ask_owner: 'your owner approves it before it binds'});
+// Fix inbox #87: an ask_owner from a server that gives the step's verdict from both sides (payer_side): the summary's
+// first words, and its words without reasons, by whose owner decides first (checkOwners). The Python core's.
+export const CHECK_ASK_LEAD = Object.freeze({payee: 'Ask your owner', payer: "Ask the payer's owner", both: "Ask your owner and the payer's owner"});
+export const CHECK_ASK_FALLBACK = Object.freeze({payee: 'your owner approves it before it binds',
+  payer: "the payer's owner approves an IOU this size before it binds",
+  both: "your owner and the payer's owner approve it before it binds"});
 /** A deal id as the server writes one (the offer under review, deal=; counted_offers). */
 const OFFER_ID = /^vd_[0-9a-f]{16}$/;
 
@@ -518,6 +734,30 @@ const OFFER_ID = /^vd_[0-9a-f]{16}$/;
 function summaryParts(reasons) {
   return (Array.isArray(reasons) ? reasons : []).filter(r => typeof r === 'string')
     .map(r => rstripChars(splitWords(r).join(' '), ' .;,')).filter(Boolean);
+}
+
+/**
+ * The summary's parts as one text, without a final stop: a part that starts with a capital letter (A to Z: a sentence, as
+ * the server writes its reasons) follows the one before after a stop, any other after a comma. 0.7.1 put every part
+ * after a comma, so a sentence of the server's ran on mid-line. The Python core's _summary_text.
+ */
+function summaryText(parts) {
+  return parts.map((p, i) => (i === 0 ? p : (/^[A-Z]/.test(p) ? '. ' : ', ') + p)).join('');
+}
+
+/**
+ * Fix inbox #87: whose owner decides first in a check's ask_owner, from the step's two sides (payer_side and payee_side,
+ * each {verdict, rule, reasons}): 'payee' (this agent's own owner) when only the payee's side says ask_owner, 'payer' when
+ * only the payer's side does, else 'both'. An answer whose sides do not say whose names both, so this agent's own owner
+ * is never left out. The Python core's check_owners.
+ */
+export function checkOwners(v) {
+  const asks = key => {
+    const side = isDict(v) ? get(v, key) : null;
+    return isDict(side) && get(side, 'verdict') === 'ask_owner';
+  };
+  const payer = asks('payer_side'), payee = asks('payee_side');
+  return payee && !payer ? 'payee' : payer && !payee ? 'payer' : 'both';
 }
 
 /**
@@ -535,53 +775,73 @@ export function offersCountedAt(v) {
 }
 
 /**
- * valun_check_payer's summary: the verdict, its reasons and the cover as one plain sentence, e.g. 'Accept: within its
- * budget (31 of 40 left), backed for you up to 3.' The reasons are the server's, each put on one line without its final
- * stop; without any, the words of CHECK_FALLBACK. The cover is named only when cover.covered is a whole number above 0
- * (the server shows it only to the payee itself, and null means not shown, never 0), and only for accept and ask_owner: a
- * declined IOU would not be issued at all. A verdict this client does not know reads Unknown.
+ * valun_check_payer's summary: the verdict, its reasons and the cover as plain sentences, e.g. 'Accept: Both sides allow
+ * it. Within its budget: ... Your own side: Your own limits allow it. Backed for you up to 3 by @erin.' The reasons are
+ * the server's, each put on one line without its final stop, a sentence after a stop and a fragment after a comma
+ * (summaryText); without any, the words of CHECK_FALLBACK. A verdict this client does not know reads Unknown.
+ *
+ * Fix inbox #87: a server that gives the step's verdict from both sides (its answer has payer_side: the payer's own
+ * {verdict, rule, reasons}, null for a payer whose owner has not published its card) gives the payee its own check's
+ * verdict for the step as the server enforces it: decline if either side declines, ask_owner if an owner on either side
+ * decides first, accept only if both go ahead, unknown when the payer's side was not checked (no card) and the payee's
+ * does not decline. The summary leads with that verdict; for ask_owner it names whose owner decides (checkOwners): 'Ask
+ * your owner' when only the payee's side (payee_side) asks, "Ask the payer's owner" when only the payer's does, "Ask your
+ * owner and the payer's owner" otherwise. The cover is the server's to say: its sentence is among the payee's own
+ * reasons, which end the summary after 'Your own side: ' whatever that side's verdict (the words of CHECK_PAYEE_SIDE for a
+ * decline or ask_owner without reasons).
+ *
+ * A server from before #87 (no payer_side) gives the payer's verdict, and its summary is 0.7.1's: the lead of
+ * CHECK_LEAD, the cover named by this client ('backed for you up to N') only when cover.covered is a whole number above 0
+ * (the server shows it only to the payee itself, and null means not shown, never 0) and only for accept and ask_owner (a
+ * declined IOU would not be issued at all), and 'Your own side: ' with the payee's own reasons only when that side is
+ * decline or ask_owner.
  *
  * Fix inbox #60: a check of a new deal (no deal_id) at the price of an offer the payer made this agent is not a check of
  * that offer, which the payer's outstanding already counts: the answer is for a new deal on top of it. So when the
  * answer's counted_offers has offers at exactly the amount checked (offersCountedAt), the summary says so after the
  * verdict and gives the call that answers for the offer. Several such offers are listed, and the call is with one of
- * their deal_ids. The payee's own side of the step (payee_side): when it is decline or ask_owner, the summary ends with
- * 'Your own side: ' and its reasons (or the words of CHECK_PAYEE_SIDE). The Python core's check_summary.
+ * their deal_ids. The Python core's check_summary.
  */
 export function checkSummary(v) {
   const d = isDict(v) ? v : {};
   const verdict = typeof get(d, 'verdict') === 'string' ? d.verdict : null;
+  const both = Object.hasOwn(d, 'payer_side');                 // fix inbox #87: the step's verdict, from both sides
+  const owners = both && verdict === 'ask_owner' ? checkOwners(d) : null;
   let parts = summaryParts(get(d, 'reasons'));
   if (!parts.length) {
-    parts = [verdict !== null && Object.hasOwn(CHECK_FALLBACK, verdict) ? CHECK_FALLBACK[verdict] : 'the server gave no verdict this client knows'];
+    parts = [owners !== null ? CHECK_ASK_FALLBACK[owners]
+      : verdict !== null && Object.hasOwn(CHECK_FALLBACK, verdict) ? CHECK_FALLBACK[verdict] : 'the server gave no verdict this client knows'];
   }
   const covered = isDict(get(d, 'cover')) ? get(d.cover, 'covered') : null;
-  if ((verdict === 'accept' || verdict === 'ask_owner') && whole(covered) && covered > 0) parts.push(`backed for you up to ${covered}`);
-  const lead = verdict !== null && Object.hasOwn(CHECK_LEAD, verdict) ? CHECK_LEAD[verdict] : 'Unknown';
-  const offers = offersCountedAt(d);
+  if (!both && (verdict === 'accept' || verdict === 'ask_owner') && whole(covered) && covered > 0) parts.push(`backed for you up to ${covered}`);
+  const lead = owners !== null ? CHECK_ASK_LEAD[owners] : verdict !== null && Object.hasOwn(CHECK_LEAD, verdict) ? CHECK_LEAD[verdict] : 'Unknown';
+  const text = summaryText(parts), offers = offersCountedAt(d);
   let out;
   if (offers.length === 1) {
     out = `${lead}, for a new deal on top of the offer you received at this price (${offers[0]}, already counted): `
-      + `${parts.join(', ')}. To check that offer itself, call valun_check_payer again with deal_id ${offers[0]}.`;
+      + `${text}. To check that offer itself, call valun_check_payer again with deal_id ${offers[0]}.`;
   } else if (offers.length) {
     out = `${lead}, for a new deal on top of the ${offers.length} offers you received at this price (${offers.join(', ')}, `
-      + `already counted): ${parts.join(', ')}. To check one of them, call valun_check_payer again with its deal_id.`;
+      + `already counted): ${text}. To check one of them, call valun_check_payer again with its deal_id.`;
   } else {
-    out = `${lead}: ${parts.join(', ')}.`;
+    out = `${lead}: ${text}.`;
   }
   const side = isDict(get(d, 'payee_side')) ? d.payee_side : {};
-  const sv = get(side, 'verdict');
-  if (typeof sv === 'string' && Object.hasOwn(CHECK_PAYEE_SIDE, sv)) {
+  const sv = typeof get(side, 'verdict') === 'string' ? side.verdict : null;
+  const known = sv !== null && Object.hasOwn(CHECK_PAYEE_SIDE, sv);
+  if (known || (both && sv === 'accept')) {
     const sp = summaryParts(get(side, 'reasons'));
-    out += ` Your own side: ${(sp.length ? sp : [CHECK_PAYEE_SIDE[sv]]).join(', ')}.`;
+    const own = sp.length ? sp : known ? [CHECK_PAYEE_SIDE[sv]] : [];
+    if (own.length) out += ` Your own side: ${summaryText(own)}.`;
   }
   return out;
 }
 
 /**
- * valun_check_payer's answer when the payer's owner has not published a budget card (card_not_public): an answer, not an
- * error, with verdict 'unknown' (and the offer under review, deal_id, when the check named one). The Python core's
- * unchecked_payer.
+ * valun_check_payer's answer when the payer's owner has not published a budget card and the server says only that (404
+ * card_not_public, as a server from before fix inbox #87 answers every check of such a payer; one with #87 answers the
+ * payee's own check for the payee's own side, which checkSummary reads): an answer, not an error, with verdict 'unknown'
+ * (and the offer under review, deal_id, when the check named one). The Python core's unchecked_payer.
  */
 function uncheckedPayer(payer, amount, dealId = null) {
   const who = shown(or(get(payer, 'handle'), get(payer, 'id')));
@@ -641,6 +901,520 @@ export function shown(value) {
   return quoted(value);
 }
 
+const APPROVAL_ID_RE = /^va_[0-9a-f]{12}$/;
+
+/**
+ * Where and what this participant's owner approves, for an answer that waits for them (as the Python agent's
+ * owner_wait; the newcomer tests, 2026-11-17): [words, fields]. words: ' in the owner console, <server>/pilot#owner (deal
+ * vd_..., approval va_...)', and with `command` (the terminal command that opens that console for this profile, `valun
+ * console`: the agent's consoleCommand) '; in a terminal, `<command>` opens it'. fields: owner_console; approval_id when
+ * the server's answer names one pending approval of this participant for this deal (approval_ids when it names several);
+ * and console_command. kind: what dealId names ('deal', or 'guarantee' for a guarantee offer).
+ */
+export function ownerWait(c, r, dealId, command = null, kind = 'deal') {
+  const state = c?.state;
+  let server = isDict(state) ? get(state, 'server') : null;
+  server = typeof server === 'string' ? server.replace(/\/+$/, '') : '';
+  const rows = isDict(r) && Array.isArray(get(r, 'approvals')) ? r.approvals : [];
+  const ids = [...new Set(rows.filter(a => isDict(a) && get(a, 'state') === 'pending' && typeof get(a, 'id') === 'string'
+    && APPROVAL_ID_RE.test(a.id)).map(a => a.id))].sort();
+  const fields = {};
+  if (server) fields.owner_console = `${server}/pilot#owner`;
+  if (ids.length === 1) fields.approval_id = ids[0];
+  else if (ids.length) fields.approval_ids = ids;
+  let opens = '';
+  if (typeof command === 'string' && command) {
+    fields.console_command = command;
+    opens = `; in a terminal, \`${command}\` opens it`;
+  }
+  const which = [`${kind} ${shown(dealId)}`, ...ids.map(i => `approval ${i}`)].join(', ');
+  const where = server ? ` in the owner console, ${server}/pilot#owner` : ' in the owner console';
+  return [`${where} (${which}${opens})`, fields];
+}
+
+/** The current terms a deal view shows ({} when it shows none). */
+function termsOf(r) {
+  const cur = isDict(r) && isDict(get(r, 'current')) ? r.current : {};
+  return isDict(get(cur, 'terms')) ? cur.terms : {};
+}
+
+/** The counterparty's handle a deal view names, as a computed line shows it (dflt when it names none). */
+function handleOf(r, dflt = 'the other side') {
+  const cp = isDict(r) && isDict(get(r, 'counterparty')) ? r.counterparty : {};
+  return typeof get(cp, 'handle') === 'string' && cp.handle ? shown(cp.handle) : dflt;
+}
+
+/** ms since the epoch as the server writes a time (ISO 8601, UTC, milliseconds), as the Python agent's iso_ms. */
+export function isoMs(ms) {
+  if (!(whole(ms) && ms >= 0 && ms < 32_503_680_000_000)) return null;
+  return new Date(ms).toISOString();
+}
+
+/**
+ * A held IOU's approval ends this long before the tracker's hour (the server's HELD_NOTE_SEND_MARGIN_MS): the owner
+ * console's "Decide by" for it, as the Python agent's HELD_NOTE_SEND_MARGIN_MS.
+ */
+export const HELD_NOTE_SEND_MARGIN_MS = 60_000;
+
+/** The timestamp of a bound note as a deal view shows it, else null, as the Python agent's _bound_ts. */
+function boundTs(note) {
+  const n = isDict(note) ? note : {};
+  const ts = get(n, 'timestamp');
+  if (!whole(ts) || !(truthy(get(n, 'prior_signature')) || get(n, 'bound') === true || ts % 1000 === nv.BOUND_MS)) return null;
+  return ts;
+}
+
+/** When the tracker stops taking a bound note (its timestamp + 1 h), as the Python agent's note_expires_at. */
+export function noteExpiresAt(note) {
+  const ts = boundTs(note);
+  return ts === null ? null : isoMs(ts + nv.MAX_AGE_MS);
+}
+
+/**
+ * Until when the owner can approve or reject a bound note held for them: the owner console's deadline, a minute before
+ * the tracker's (its timestamp + 1 h - HELD_NOTE_SEND_MARGIN_MS), as the Python agent's note_decide_by.
+ */
+export function noteDecideBy(note) {
+  const ts = boundTs(note);
+  return ts === null ? null : isoMs(ts + nv.MAX_AGE_MS - HELD_NOTE_SEND_MARGIN_MS);
+}
+
+/** A held IOU's deadline for the owner, in words, as the Python agent's _deadline_words. */
+function deadlineWords(by, exp) {
+  return `${by}, the owner console's deadline, a minute before the tracker's limit (${exp})`;
+}
+
+/** ' before <at>' (or another word) for a time the server's answer names (an ISO 8601 string), else ''. */
+function until(at, word = 'before') {
+  return typeof at === 'string' && at ? ` ${word} ${shown(at)}` : '';
+}
+
+/**
+ * Until when this client counts a payment attempt signed for `ts` against another payment of its deal (its timestamp +
+ * 1 h + 2 min), as the Python agent's free_after; null for a timestamp that is not a whole number.
+ */
+export function freeAfter(ts) {
+  return whole(ts) ? isoMs(ts + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS) : null;
+}
+
+/** What freeAfter's time is, said beside it, as the Python agent's MARGIN_WORDS. */
+export const MARGIN_WORDS = "your Valun client's time, a minute after the server's, which the owner console shows, as a margin for "
+  + 'clocks that differ';
+
+/**
+ * The payer's IOU the Valun server holds for its owner, in a deal view: [decideBy, noteExpiresAt, passed], as the Python
+ * agent's held_note_hour ([null, null, false] for any other view).
+ */
+export function heldNoteHour(d, nowMs) {
+  if (!(isDict(d) && get(d, 'status') === 'completion_awaiting_owner' && get(d, 'your_role') === 'payer')) return [null, null, false];
+  const cn = isDict(get(d, 'credit_note')) ? d.credit_note : {};
+  const note = isDict(get(cn, 'note')) ? cn.note : null;
+  const exp = noteExpiresAt(note);
+  if (exp === null) return [null, null, false];
+  return [noteDecideBy(note), exp, whole(nowMs) && nowMs >= note.timestamp + nv.MAX_AGE_MS];
+}
+
+/**
+ * The deadlines of the IOU this client signed for a pending issue_note approval an inbox row names, from this client's
+ * own record of it: [decideBy, noteExpiresAt, passed], as the Python agent's held_note_of.
+ */
+export function heldNoteOf(c, row, nowMs) {
+  if (!(isDict(row) && get(row, 'kind') === 'issue_note' && typeof get(row, 'approval_id') === 'string'
+    && typeof get(row, 'deal_id') === 'string')) return [null, null, false];
+  const state = c?.state;
+  const att = isDict(state) ? get(state, 'transfer_attempts') : null;
+  const lst = isDict(att) ? get(att, row.deal_id) : null;
+  const rec = (Array.isArray(lst) ? lst : []).find(a => isDict(a) && get(a, 'route') === 'note'
+    && get(a, 'approval_id') === row.approval_id) ?? null;
+  const ts = rec !== null ? get(rec, 'timestamp') : null;
+  const exp = whole(ts) ? noteExpiresAt({timestamp: ts}) : null;
+  if (exp === null) return [null, null, false];
+  return [noteDecideBy({timestamp: ts}), exp, whole(nowMs) && nowMs >= ts + nv.MAX_AGE_MS];
+}
+
+/**
+ * {call_id: timestamp of the note} of this client's own record of the calls of a guarantee it honored or is honoring
+ * (GUARANTEE_HONORS_KEY, written ahead before a note is signed), as the Python agent's honor_marks.
+ */
+export function honorMarks(c, guaranteeId) {
+  const state = c?.state;
+  const honors = isDict(state) ? get(state, GUARANTEE_HONORS_KEY) : null;
+  const rec = isDict(honors) ? get(honors, guaranteeId) : null;
+  const calls = isDict(rec) ? get(rec, 'calls') : null;
+  if (!isDict(calls)) return {};
+  return Object.fromEntries(Object.entries(calls).filter(([, v]) => isDict(v)).map(([k, v]) => [k, get(v, 'timestamp')]));
+}
+
+/**
+ * valun_status's sentence on what the Valun server holds for the owner, from the owner mandate GET /me shows
+ * (approve_above, review_deliveries) and where the owner decides, as the Python agent's held_for_owner. console: the
+ * approvals sentence before it is CONSOLE_APPROVALS.
+ */
+export function heldForOwner(mandate, server, unit = UNIT, console = false) {
+  const m = isDict(mandate) ? mandate : {};
+  const above = get(m, 'approve_above'), review = get(m, 'review_deliveries') === true;
+  const url = typeof server === 'string' && server ? `${server.replace(/\/+$/, '')}/pilot#owner` : null;
+  const where = url ? `in the owner console (${url})` : 'in the owner console';
+  if (console && whole(above) && above === 0 && review) {
+    return `Your owner approves or rejects what waits for them in the owner console: ${url || '/pilot#owner'}.`;
+  }
+  const held = [];
+  if (whole(above) && above === 0) held.push('every offer, counter-offer, acceptance and guarantee offer you sign (approve_above 0)');
+  else if (whole(above)) {
+    held.push(`your offers, counter-offers and acceptances priced above ${amountText(above, unit)}, and your `
+      + 'guarantee offers capped above it (approve_above)');
+  }
+  if (review) held.push('the IOU or payment by transfer you sign when you accept a delivery (review_deliveries is on)');
+  const lead = console ? 'Your owner has changed your owner mandate since console set it: the Valun server holds '
+    : 'The Valun server also holds ';
+  if (!held.length) return lead + `nothing for your owner ${where} now.`;
+  return lead + `these for your owner ${where} until they approve: ${held.join('; and ')}. It never holds an honor of `
+    + 'a guarantee call.';
+}
+
+/**
+ * What an acceptance held for an owner (accepted_awaiting_owner) waits for, as the server's answer names it (as the
+ * Python agent's acceptance_wait): acceptance.held_for ('acceptor_owner' and/or 'proposer_owner') and the pending
+ * approvals of this participant. [text, fields]. Only when this participant's owner holds it does it name the owner
+ * console, with ownerWait's fields; when only the proposer's owner does, it says so and names no console (the 0.7.2
+ * review). An answer that names neither says both may, and where this owner would approve it, with no fields.
+ */
+export function acceptanceWait(c, r, dealId, command = null) {
+  const acc = isDict(r) && isDict(get(r, 'acceptance')) ? r.acceptance : {};
+  const heldFor = Array.isArray(get(acc, 'held_for')) ? acc.held_for : [];
+  const [where, fields] = ownerWait(c, r, dealId, command);
+  const mine = heldFor.includes('acceptor_owner') || Object.hasOwn(fields, 'approval_id')
+    || Object.hasOwn(fields, 'approval_ids');
+  const theirs = heldFor.includes('proposer_owner');
+  const cp = handleOf(r), before = until(get(termsOf(r), 'offer_expires_at'));
+  const seen = ` ${cp} already sees that you accepted and that it waits (not your signature), and may still withdraw its `
+    + 'offer.';
+  if (mine && theirs) {
+    return [`You signed your acceptance of ${cp}'s offer. It binds only once your owner approves it${where} and `
+      + `${cp}'s owner confirms its offer (their limits require it)${before}.${seen} Tell your owner. If your `
+      + 'owner rejects it, the offer is open again. valun_deal shows when both are decided.', fields];
+  }
+  if (mine) {
+    return [`You signed your acceptance of ${cp}'s offer. It binds only once your owner approves it${where}${before}.`
+      + `${seen} Tell your owner: nothing else tells them. If your owner rejects it, the offer is open again.`, fields];
+  }
+  if (theirs) {
+    return [`You signed your acceptance. It binds once ${cp}'s owner confirms its offer (their limits require it). `
+      + `Nothing waits for your owner. If ${cp}'s owner does not confirm, the offer is withdrawn and your `
+      + 'acceptance is void; nothing is owed. valun_deal shows when it is decided.', {}];
+  }
+  return ['You signed the acceptance; it becomes binding when the owner holding it approves (yours, or the '
+    + `proposer's if their limits require it; valun_deal shows which). If it is yours, your owner approves it${where}.`, {}];
+}
+
+/** The deal statuses in which an owner decides (valun_deal's whose_turn: ownerTurn), as the Python agent's OWNER_WAITS. */
+export const OWNER_WAITS = Object.freeze(['proposed_awaiting_owner', 'accepted_awaiting_owner', 'completion_awaiting_owner',
+  'rejected_by_owner']);
+
+/**
+ * valun_deal's whose_turn while an owner decides, for the viewer meId, as the Python agent's owner_turn: the payer's held
+ * payment says until when (a payment by transfer its hold's end; an IOU its hour, and once that has passed, that the
+ * owner must reject it).
+ */
+export function ownerTurn(d, meId, nowMs = null) {
+  const st = get(d, 'status'), role = get(d, 'your_role');
+  if (st === 'proposed_awaiting_owner') {
+    return "your owner's: your signed offer waits for them in the owner console; the other side cannot see it yet";
+  }
+  if (st === 'rejected_by_owner') return 'nobody: your owner rejected this offer; it was never shown to the other side, and binds nobody';
+  if (st === 'completion_awaiting_owner') {
+    if (role !== 'payer') return "the payer's owner's: the payment its agent signed when it accepted your delivery waits for them";
+    const pay = isDict(get(d, 'payment')) ? d.payment : {};
+    const hold = get(pay, 'state') === 'awaiting_owner' ? get(pay, 'expires_at') : null;
+    if (typeof hold === 'string' && hold) {
+      return "your owner's: the payment by transfer you signed when you accepted the delivery waits for them in the "
+        + `owner console until ${shown(hold)} (20 minutes after you signed it); then it ends and nothing moves`;
+    }
+    const [by, exp, passed] = heldNoteHour(d, nowMs);
+    if (passed) {
+      return "your owner's: the IOU you signed when you accepted the delivery still waits for them, but the tracker "
+        + `records it only until ${exp}, which has passed: tell your owner to reject it in the owner console `
+        + '(approved now, it would fail at the tracker and leave the delivery accepted, unpaid and no longer '
+        + 'disputable), then accept the delivery again to sign a new IOU';
+    }
+    if (exp) {
+      return "your owner's: the IOU you signed when you accepted the delivery waits for them in the owner console: "
+        + `they approve or reject it by ${deadlineWords(by, exp)}`;
+    }
+    return "your owner's: the IOU or payment by transfer you signed when you accepted the delivery waits for them in "
+      + 'the owner console';
+  }
+  const acc = isDict(get(d, 'acceptance')) ? d.acceptance : {};
+  const heldFor = Array.isArray(get(acc, 'held_for')) ? acc.held_for : [];
+  const acceptor = get(acc, 'by') === meId;
+  const owners = [heldFor.includes('acceptor_owner') ? (acceptor ? 'your owner' : "the acceptor's owner") : null,
+    heldFor.includes('proposer_owner') ? (acceptor ? "the proposer's owner" : 'your owner') : null].filter(Boolean);
+  return "an owner's: the acceptance waits for " + (owners.length ? owners.join(' and ')
+    : "an owner (valun_deal approvals lists your own owner's)") + ' in the owner console';
+}
+
+/**
+ * The statuses of a deal that still waits for its payment, as the Python agent's UNPAID: what a rejected or void IOU or
+ * payment by transfer leaves to do applies only then.
+ */
+export const UNPAID = Object.freeze(['delivered', 'payment_due', 'note_failed']);
+
+/** The past-tense frame of a decision the deal has moved on from, as the Python agent's _earlier. */
+function earlierFrame(at, st) {
+  return [typeof at === 'string' && at ? `Earlier (${shown(at)}), ` : 'Earlier, ',
+    ` The deal has since moved on (${shown(st)}).`];
+}
+
+/** What is left to do once a held payment of this deal ended without being sent on, as the Python agent's _pay_steps. */
+function paySteps(st, how) {
+  if (st === 'delivered') return ` The deal is back to delivered: ${how}, or dispute the delivery.`;
+  return ` The delivery stays accepted, and you must still pay it: ${how}.`;
+}
+
+/** Python's ts % 1000 (never negative), for a whole number. */
+const residue = ts => ((ts % 1000) + 1000) % 1000;
+
+/**
+ * valun_deal's owner_decisions, as the Python agent's owner_decisions: what this participant's owner (or the server, for
+ * them) decided about something its agent signed that the server held for the owner, and that ended without taking
+ * effect, with what it leaves as the server does it (a rejected offer, acceptance or IOU stays on the server, still
+ * signed; a payment by transfer that ends is purged). attempts: this client's payment attempt records of the deal, for
+ * the times this client actually allows (freeAfter) and whether it counts the attempt as not applied. Next steps only for
+ * the last ended approval of each kind, while the deal's status still fits them; otherwise a past-tense line.
+ */
+export function ownerDecisions(d, attempts = null) {
+  d = isDict(d) ? d : {};
+  const rows = Array.isArray(get(d, 'approvals')) ? d.approvals : [];
+  const cp = handleOf(d), st = get(d, 'status');
+  const lead = cp === 'the other side' ? 'The other side' : cp;     // at the start of a sentence
+  const open = until(get(termsOf(d), 'offer_expires_at'), 'until');
+  const cur = isDict(get(d, 'current')) ? d.current : {};
+  const openBy = st === 'open' ? get(cur, 'by') : null;
+  const you = get(d, 'you');
+  const theirsOpen = openBy !== null && !pyEq(openBy, you);
+  const mineOpen = openBy !== null && you !== null && pyEq(openBy, you);
+  const pay = isDict(get(d, 'payment')) ? d.payment : {};
+  const recs = (Array.isArray(attempts) ? attempts : []).filter(isDict);
+  const ended = rows.filter(a => isDict(a) && typeof get(a, 'id') === 'string' && APPROVAL_ID_RE.test(a.id)
+    && holdEnded(get(a, 'state')));
+  const kindOf = a => (typeof get(a, 'kind') === 'string' ? a.kind : null);
+  const last = new Map();                                            // the last ended approval of each kind
+  for (const a of ended) last.set(kindOf(a), a.id);
+  const out = [];
+  for (const a of ended) {
+    const kind = get(a, 'kind'), state = a.state;
+    const latest = last.get(kindOf(a)) === a.id;
+    const [earlier, moved] = earlierFrame(get(a, 'decided_at'), st);
+    const mine = recs.find(r => get(r, 'approval_id') === a.id
+      || (isDict(get(r, 'server_ended')) && get(r.server_ended, 'approval_id') === a.id)) ?? null;
+    const ts = mine !== null && whole(get(mine, 'timestamp')) ? mine.timestamp : null;
+    const counted = mine !== null && get(mine, 'outcome') === 'not_applied';
+    let text;
+    if (kind === 'propose') {
+      if (state === 'rejected' && st === 'rejected_by_owner') {
+        text = `Your owner rejected your offer: ${cp} never saw it, and the deal has ended. What you signed stays on `
+          + 'record at the Valun server and binds nobody. Make a new offer only if your owner wants one.';
+      } else if (state === 'rejected') {
+        text = latest && theirsOpen
+          ? `Your owner rejected your counter-offer, and ${cp} never saw it. Its offer stays as it was${open}: `
+            + 'you may accept it, counter again or decline it.'
+          : `${earlier}your owner rejected your counter-offer, and ${cp} never saw it.${moved}`;
+      } else {
+        text = `Your offer (or counter-offer) ended before your owner approved it (${shown(state)}): it was never `
+          + `shown to ${cp} and binds nobody.`;
+      }
+    } else if (kind === 'accept') {
+      if (state === 'rejected') {
+        text = latest && theirsOpen
+          ? `Your owner did not approve your acceptance of ${cp}'s offer. Nothing was agreed; the offer is open `
+            + `again${open}, and ${cp} sees that the acceptance was not approved. Accept it again only if your `
+            + 'owner wants to: it would wait for them again.'
+          : `${earlier}your owner did not approve your acceptance of ${cp}'s offer: nothing was agreed by it.${moved}`;
+      } else {
+        text = `Your acceptance ended before your owner approved it (${shown(state)}): nothing was agreed, and `
+          + 'nothing is owed.';
+      }
+    } else if (kind === 'confirm_offer') {
+      // Rejected: the offer is withdrawn on the owner's behalf. void_acceptance_rejected: the acceptor's owner rejected
+      // the acceptance first, and the offer is open again (core.mjs decideApproval). Other void states: it ended.
+      if (state === 'rejected') {
+        text = `Your owner did not confirm your offer, which ${cp} had accepted: the offer is withdrawn on your `
+          + "owner's behalf and the acceptance is void. Nothing is agreed and nothing is owed.";
+      } else if (state === 'void_acceptance_rejected') {
+        text = latest && mineOpen
+          ? `${lead}'s owner did not approve its acceptance of your offer, so your owner had nothing to `
+            + `confirm. Nothing was agreed, and your offer is open again${open}.`
+          : `${earlier}${cp}'s owner did not approve its acceptance of your offer, so your owner had nothing to `
+            + `confirm: nothing was agreed by it.${moved}`;
+      } else {
+        text = `${lead}'s acceptance of your offer ended before your owner confirmed it (${shown(state)}): nothing `
+          + 'was agreed, and nothing is owed.';
+      }
+    } else if (kind === 'issue_note') {
+      const bound = ts !== null && residue(ts) === nv.BOUND_MS && freeAfter(ts) !== null;
+      if (!(latest && UNPAID.includes(st))) {
+        text = (state === 'rejected' ? `${earlier}your owner rejected the IOU you signed for this deal`
+          : `${earlier}the IOU you signed for this deal went void (${shown(state)})`) + `: it was never sent to the tracker.${moved}`;
+      } else {
+        const heads = {
+          rejected: 'Your owner rejected the IOU you signed for this deal. The Valun server did not send it '
+            + 'to the tracker, and you owe nothing for it.',
+          void_stale: "The IOU you signed for this deal went void when your owner approved it (void_stale): "
+            + "the pair's IOU or a party's key had changed since you signed it. The Valun server "
+            + 'did not send it, and you owe nothing for it.',
+          void_key_revoked: 'The IOU you signed for this deal went void before your owner decided '
+            + "(void_key_revoked): a party's key was revoked. The Valun server did not send "
+            + 'it, and you owe nothing for it.',
+        };
+        const head = Object.hasOwn(heads, state) ? heads[state]
+          : `The IOU you signed for this deal went void (${shown(state)}). The Valun server did not send it, `
+            + 'and you owe nothing for it.';
+        const steps = paySteps(st, st === 'delivered'
+          ? 'accept the delivery again to sign a new IOU (it waits for your owner again)'
+          : 'accept it again to sign a new IOU (it waits for your owner again)');
+        const kept = state === 'rejected'
+          ? ' The rejection did not unsign it: the server keeps it on record, and the tracker could still '
+            + 'record it ' + (bound ? `until ${noteExpiresAt({timestamp: ts})}.`
+            : mine === null ? 'until an hour after you signed it.' : 'at any time (an ordinary note has no maximum age).')
+          : ' The server keeps it on record, still signed, and never sends it.';
+        // This client's own waits where it holds a record of the IOU, else the server's (as the Python agent).
+        const wait = bound ? `paying this deal by transfer waits until after ${freeAfter(ts)} (${MARGIN_WORDS})`
+          : mine === null ? 'paying this deal by transfer waits until a little over an hour after you signed it, unless this '
+            + "pair's IOU moves past it first"
+            : "paying this deal by transfer waits until your client sees this pair's IOU move past it";
+        let count;
+        if (counted) {
+          count = ' Your Valun client counts it as not applied: a new IOU of this deal may be signed now, and '
+            + wait + (bound ? ", or until your client sees this pair's IOU move past it." : '.');
+        } else if (mine !== null) {
+          count = (bound ? ` ${wait[0].toUpperCase()}${wait.slice(1)}.` : '') + (bound
+            ? " Your Valun client still counts it as a payment that may apply: once this pair's IOU moves past "
+              + 'it, your client pays this deal no more until your owner resolves it (`valun attempts resolve`).'
+            : ' Your Valun client still counts it as a payment that may apply (an ordinary note '
+              + 'has no maximum age): it pays this deal by transfer no more until your owner resolves it '
+              + '(`valun attempts resolve`).');
+        } else {
+          count = ` ${wait[0].toUpperCase()}${wait.slice(1)}.`;
+        }
+        text = head + steps + kept + count;
+      }
+    } else if (kind === 'pay_by_transfer') {
+      if (!(latest && UNPAID.includes(st))) {
+        text = (state === 'rejected' ? `${earlier}your owner rejected your payment by transfer`
+          : `${earlier}your payment by transfer went void (${shown(state)})`) + `: nothing moved.${moved}`;
+      } else {
+        const heads = {
+          rejected: 'Your owner rejected your payment by transfer.',
+          void_expired: 'Your payment by transfer expired before your owner decided (its hold ends 20 '
+            + 'minutes after you sign it).',
+          void_stale: 'Your payment by transfer went void when your owner approved it (void_stale): it was '
+            + "out of date (an IOU it moves, a party's key or a rule had changed since you signed "
+            + 'it).',
+          void_key_revoked: 'Your payment by transfer went void before your owner decided '
+            + "(void_key_revoked): a party's key was revoked.",
+        };
+        const head = Object.hasOwn(heads, state) ? heads[state] : `Your payment by transfer went void (${shown(state)}).`;
+        const fallback = typeof get(pay, 'fallback_after') === 'string' ? pay.fallback_after : null;
+        const free = ts !== null ? freeAfter(ts) : null;
+        const other = free ? `after ${free} (${MARGIN_WORDS})` : fallback ? `after ${shown(fallback)}` : 'about an hour after you signed it';
+        const sooner = counted ? ', or once your client sees that IOU move past it'
+          : mine === null ? ' (or once that IOU moves past it)' : '';
+        text = head + ' Nothing moved, and the Valun server deleted your signatures of it (it keeps only their '
+          + 'hashes).' + paySteps(st, 'pay again through the same IOU at once while it is unchanged (it '
+            + 'waits for your owner again), or with your own IOU or another IOU '
+            + `${other}${sooner}`)
+          + (counted ? ' Your Valun client counts it as not applied.'
+            : mine !== null ? ' Your Valun client still counts it as a payment that may apply: once that IOU moves past it, '
+              + 'your client pays this deal no more until your owner resolves it (`valun attempts resolve`).' : '');
+      }
+    } else if (kind === 'guarantee_offer') {
+      text = state === 'rejected'
+        ? 'Your owner rejected your guarantee offer: it was never shown, and its cap no longer counts against '
+          + 'your limits. Nothing reached the tracker.'
+        : `Your guarantee offer ended before your owner approved it (${shown(state)}).`;
+    } else {
+      text = `Approval ${a.id} (${shown(kind)}) ended as ${shown(state)} without taking effect.`;
+    }
+    out.push({approval_id: a.id, kind, state, decided_at: get(a, 'decided_at'), what_this_means: text});
+  }
+  return out;
+}
+
+/** The approval kinds whose decision by the other side's owner valun_deal reports, as the Python agent's. */
+export const COUNTERPARTY_OWNER_KINDS = Object.freeze(['accept', 'confirm_offer', 'issue_note', 'pay_by_transfer']);
+
+/**
+ * valun_deal's counterparty_owner_decisions, as the Python agent's counterparty_owner_decisions: what the other side's
+ * owner decided in the owner console about what its agent signed for this deal (the shared history's owner_rejected and
+ * owner_approval_void_stale by owner:<the other participant>), and a held payment by transfer of the other side's that
+ * ended before its owner decided (payment_void, its reason expired or key_revoked; the payee's view). meId: this
+ * participant's id ([] without it).
+ */
+export function counterpartyOwnerDecisions(d, meId) {
+  if (!(isDict(d) && typeof meId === 'string' && meId)) return [];
+  const hist = Array.isArray(get(d, 'history')) ? d.history : [];
+  const rows = [];
+  for (const h of hist) {
+    if (!isDict(h)) continue;
+    const by = get(h, 'by'), event = get(h, 'event'), kind = get(h, 'kind');
+    if (typeof by === 'string' && by.startsWith('owner:') && by !== `owner:${meId}`
+      && ['owner_rejected', 'owner_approval_void_stale'].includes(event) && COUNTERPARTY_OWNER_KINDS.includes(kind)) {
+      rows.push([h, kind, event]);
+    } else if (by === 'valun' && event === 'payment_void' && ['expired', 'key_revoked'].includes(get(h, 'reason'))
+      && get(d, 'your_role') === 'payee') {
+      rows.push([h, 'pay_by_transfer', event]);
+    }
+  }
+  const cp = handleOf(d), st = get(d, 'status');
+  const lead = cp === 'the other side' ? 'The other side' : cp;
+  const open = until(get(termsOf(d), 'offer_expires_at'), 'until');
+  const last = new Map();
+  rows.forEach(([, kind], i) => last.set(kind, i));
+  const out = [];
+  rows.forEach(([h, kind, event], i) => {
+    const latest = last.get(kind) === i;
+    const at = typeof get(h, 'at') === 'string' && h.at ? h.at : null;
+    const [earlier, moved] = earlierFrame(at, st);
+    const isVoid = event === 'owner_approval_void_stale';
+    let text;
+    if (kind === 'accept') {
+      text = latest && st === 'open'
+        ? `${lead}'s owner did not approve its acceptance of your offer. Nothing was agreed, and your offer is `
+          + `open again${open}.`
+        : `${earlier}${cp}'s owner did not approve its acceptance of your offer: nothing was agreed by it.${moved}`;
+    } else if (kind === 'confirm_offer') {
+      text = `${lead}'s owner withdrew its offer before the deal was agreed. Your acceptance is void, and nothing is `
+        + 'owed.';
+    } else if (kind === 'issue_note') {
+      if (latest && ['delivered', 'payment_due'].includes(st)) {
+        text = (isVoid ? `The IOU ${cp}'s agent signed for your delivery went void when its owner approved it (it was out `
+          + 'of date).' : `${lead}'s owner rejected the IOU its agent signed for your delivery.`)
+          + ` Nothing reached the tracker, and ${cp} owes you nothing for this deal yet. `
+          + (st === 'delivered' ? `The deal is back to delivered: ${cp}'s agent may accept it again or dispute it.`
+            : `The delivery stays accepted: ${cp} must still pay it.`);
+      } else {
+        text = (isVoid ? `${earlier}the IOU ${cp}'s agent signed for your delivery went void when its owner approved it`
+          : `${earlier}${cp}'s owner rejected the IOU its agent signed for your delivery`) + `; nothing reached the tracker.${moved}`;
+      }
+    } else {                                     // pay_by_transfer
+      const what = isVoid ? 'went void when its owner approved it (it was out of date)'
+        : event === 'payment_void' && get(h, 'reason') === 'expired'
+          ? 'expired before its owner decided (20 minutes after its agent signed it)'
+          : event === 'payment_void' ? "went void before its owner decided (a party's key was revoked)" : null;
+      if (latest && ['delivered', 'payment_due'].includes(st)) {
+        text = (what ? `${lead}'s payment by transfer ${what}.` : `${lead}'s owner rejected its payment by transfer.`)
+          + (st === 'delivered' ? ' Nothing moved, and the deal is back to delivered.'
+            : ` Nothing moved; the delivery stays accepted, and ${cp} must still pay it.`);
+      } else {
+        text = (what ? `${earlier}${cp}'s payment by transfer ${what}` : `${earlier}${cp}'s owner rejected its payment by transfer`)
+          + `; nothing moved.${moved}`;
+      }
+    }
+    out.push({at, kind, event, what_this_means: text});
+  });
+  return out;
+}
+
 /**
  * The last line of an approval text: `label`, then `fields` (text a counterparty or the agent wrote) quoted as ONE JSON
  * line. A text field longer than QUOTE_MAX_CHARS (code points, as Python counts them) is cut to that many, and the label
@@ -661,9 +1435,17 @@ export function quoteLine(label, fields) {
   return `${label} (quoted exactly${note}): ` + quoted(out);
 }
 
-/** What a binding deal means for this participant, in the role the signed terms give it. */
-export function owes(role, who, price, unit = UNIT) {
+/**
+ * What a binding deal means for this participant, in the role the signed terms give it. With circulating credit
+ * (circulating true: the server offers it) a payer may pay with notes it holds instead of its own (pay_with), as only the
+ * acceptance of the delivery decides, so the payer's words promise no credit note (the 0.7.2 clean-user test: tour step
+ * 2's offer said "(your credit note)" for a deal the tour paid by transfer). As the Python agent's.
+ */
+export function owes(role, who, price, unit = UNIT, circulating = false) {
   const p = amountText(price, unit);
+  if (role === 'payer' && circulating === true) {
+    return `after you accept their delivery you will pay ${who} ${p}: with your credit note, or with notes you hold if you choose to.`;
+  }
   return role === 'payer' ? `after you accept their delivery you will owe ${who} ${p} (your credit note).`
     : `you must deliver; ${who} would then owe you ${p} (their credit note).`;
 }
@@ -735,6 +1517,176 @@ function directoryText(v) {
 }
 
 /**
+ * The approval card's line on the exact check of a built-in job (sandbox.checkBuiltIn; counterparty: the payee's
+ * handle), as a list of facts: [] when nothing was checked exactly (not a built-in job: the Nov 18 fresh-join run,
+ * finding 10; or no text to recompute from). A delivery with no ```json result block is not in the built-in format,
+ * which 0.7.1 and the RC showed as "DOES NOT MATCH (differs in )", with an empty list. The Python core's exact_facts.
+ */
+export function exactFacts(terms, content, counterparty) {
+  let exact;
+  try {
+    exact = sandbox.checkBuiltIn(terms, content, counterparty);
+  } catch {                                           // a malformed result block is a fact to show, not a reason to hide the prompt
+    return ['exact result: could not be checked'];
+  }
+  if (!(truthy(exact) && truthy(get(exact, 'checked')))) return [];
+  if (truthy(get(exact, 'exact_result_matches'))) return ['exact result: matches the agreed text'];
+  if (get(exact, 'built_in_format') === false) return ['exact result: not in the built-in format (no ```json result block)'];
+  return ['exact result: DOES NOT MATCH (differs in ' + iterate(or(get(exact, 'differs_in'), [])).map(k => shown(k)).join(', ') + ')'];
+}
+
+// Where an IOU stands, by the confirmation its deal's credit note and its ledger row show (skill.md section 5, "Where your
+// IOU stands"): on the testnet the tracker anchors its totals on Ergo testnet; the pilot's tracker has no chain at all.
+// How soon the next box commits it is the server's own summary (valun-app d269b1e, Pilot.issuedSummary): one box at a
+// time, at most 50 a UTC day, "usually within 15 minutes of a change, as measured on this network", and after 00:00 UTC
+// once the day's boxes are used up.
+// The Python core's CONFIRMATION_WORDS and CONFIRMATION_WORDS_PILOT.
+export const CONFIRMATION_WORDS = Object.freeze({
+  local_only: 'recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker '
+    + 'box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, '
+    + "as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The "
+    + 'confirmation then reads pending, then confirmed',
+  pending: 'a tracker box carries it and waits for an Ergo testnet block; the confirmation then reads confirmed',
+  confirmed: 'a confirmed tracker box on Ergo testnet commits it',
+});
+export const CONFIRMATION_WORDS_PILOT = Object.freeze({
+  local_only: 'recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only'});
+
+/** What a credit note's confirmation (local_only, pending, confirmed) means on this network, or null for another. */
+export function confirmationMeans(confirmation, network = NETWORK) {
+  const words = network === TESTNET ? CONFIRMATION_WORDS : CONFIRMATION_WORDS_PILOT;
+  return typeof confirmation === 'string' && Object.hasOwn(words, confirmation) ? words[confirmation] : null;
+}
+
+/**
+ * The plain summary a server adds to a deal view at note_issued (valun-app, the Nov 18 fresh-join run's fix 5: its
+ * `summary`, or labels.summary), as text a tool can show (a string of at most 2000 code points), or null. The Python
+ * core's server_summary.
+ */
+export function serverSummary(d) {
+  if (!isDict(d)) return null;
+  const labs = isDict(get(d, 'labels')) ? d.labels : {};
+  for (const s of [get(d, 'summary'), get(labs, 'summary')]) {
+    if (typeof s === 'string' && strip(s) && cpLength(s) <= 2000) return strip(s);
+  }
+  return null;
+}
+
+/**
+ * The plain ending of a deal whose IOU was issued (note_issued), for either side (the Nov 18 fresh-join run, finding
+ * 12): the server's own summary when it sends one (serverSummary), else one built here from the deal view: who owes
+ * whom and how much more, the tracker's running total for that pair, where the IOU stands (confirmationMeans), how to
+ * check it, and how it is paid back, as this network and circulating credit allow. role: this side's ('payer' or
+ * 'payee'), else the view's your_role. null for any other deal. The Python core's note_summary.
+ */
+export function noteSummary(d, network = NETWORK, unit = UNIT, circulating = false, server = null, role = null) {
+  if (!(isDict(d) && get(d, 'status') === 'note_issued')) return null;
+  const own = serverSummary(d);
+  if (own) return own;
+  const n = isDict(get(d, 'credit_note')) ? d.credit_note : {};
+  const tn = isDict(get(n, 'tracker_note')) ? n.tracker_note : {};
+  const cur = isDict(get(d, 'current')) ? d.current : {};
+  const terms = isDict(get(cur, 'terms')) ? cur.terms : {};
+  const price = isDict(get(terms, 'price')) ? get(terms.price, 'amount') : null;
+  const amount = whole(get(n, 'amount')) ? n.amount : price;
+  const cp = isDict(get(d, 'counterparty')) ? d.counterparty : {};
+  const who = typeof get(cp, 'handle') === 'string' && cp.handle ? shown(cp.handle) : 'the other party';
+  const payer = (role || get(d, 'your_role')) === 'payer';
+  const amt = whole(amount) ? amountText(amount, unit) : 'the price';
+  let out = payer ? `You owe ${who} ${amt} more by this deal's IOU` : `${who} owes you ${amt} more by this deal's IOU`;
+  const total = get(tn, 'amount_collected');
+  out += whole(total) ? ` (the tracker's running total for that pair: ${amountText(total, unit)}).` : '.';
+  const conf = or(get(n, 'confirmation'), get(tn, 'confirmation'));
+  const means = confirmationMeans(conf, network);
+  const row = `the row from ${payer ? 'you' : who} to ${payer ? who : 'you'} in GET ${server || 'the server'}/pilot/v1/ledger`;
+  if (network === TESTNET) {
+    out += means ? ` Where it stands: ${conf}, ${means}.`
+      : ' Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it.';
+    out += ` Check it: ${row} (its total and confirmation), and \`valun audit --mine\`, which checks your records `
+      + 'against the box once the next box commits them.';
+    const redeem = payer ? `${who} redeems it on Ergo testnet against your reserve, if you post one`
+      : `you redeem it on Ergo testnet against ${who}'s reserve, if it posts one`;
+    if (circulating) {
+      const passes = payer ? `${who} passes it on (pays another agent with it, which changes only whom you owe)`
+        : `you pass it on (pay_with when you accept a delivery, which changes only whom ${who} owes)`;
+      out += ` It stays outstanding until a loop clears it (a set-off around a cycle of debts), ${passes}, or ${redeem}.`;
+    } else {
+      out += ` It stays outstanding until ${redeem}.`;
+    }
+    return out;
+  }
+  out += means ? ` Where it stands: ${means}.` : ' Where it stands: the pilot tracker recorded it.';
+  out += ` Check it: ${row}.`;
+  if (circulating) {
+    return out + ' It stays outstanding until a loop clears it (a set-off around a cycle of debts) or '
+      + (payer ? `${who} passes it on` : 'you pass it on') + '; nothing in the pilot redeems it, and PC have no value.';
+  }
+  return out + ' Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value.';
+}
+
+/** The server this client's profile names, or null. */
+function serverOf(c) {
+  const state = c?.state;
+  const s = isDict(state) ? get(state, 'server') : null;
+  return typeof s === 'string' && s ? rstripChars(s, '/') : null;
+}
+
+/**
+ * valun_inbox's one line for a recently closed deal whose IOU was issued (note_issued), from its inbox brief (its
+ * counterparty, your_role and price), or null for any other. The Python core's closed_summary.
+ */
+export function closedSummary(x) {
+  if (!(isDict(x) && get(x, 'status') === 'note_issued')) return null;
+  const price = isDict(get(x, 'price')) ? x.price : {};
+  const amount = get(price, 'amount'), unit = get(price, 'unit');
+  const amt = whole(amount) && typeof unit === 'string' && unit ? amountText(amount, unit) : 'its price';
+  const cp = get(x, 'counterparty');
+  const who = typeof cp === 'string' && cp ? shown(cp) : 'the other party';
+  const lead = get(x, 'your_role') === 'payer' ? `Paid with your IOU: this deal added ${amt} to what you owe ${who}.`
+    : `${who} paid with its IOU: this deal added ${amt} to what ${who} owes you.`;
+  return lead + ' valun_deal shows where it stands on the tracker and how it is paid back.';
+}
+
+/**
+ * valun_deal's advice to the payer of a built-in job whose delivery its client checked and found wrong
+ * (sandbox.checkBuiltIn): dispute it, saying why. Not in the built-in format (no ```json result block) is said so,
+ * never "does not match". The Python core's exact_advice.
+ */
+export function exactAdvice(exact) {
+  if (get(exact, 'built_in_format') === false) {
+    return 'The delivery is not in the built-in format: it has no ```json result block to compare with the exact '
+      + 'result of the agreed text. Dispute it with that reason instead of issuing an IOU.';
+  }
+  return 'The delivered result does not match the exact result of the agreed text '
+    + `(differs in: ${iterate(or(get(exact, 'differs_in'), ['the result block'])).map(k => str(k)).join(', ')}). `
+    + 'Dispute it with that reason instead of issuing an IOU.';
+}
+
+/**
+ * valun_status's words for a self-serve participant (sandbox_only: true), from the server's GET /info self_serve
+ * (open_network, renews_while_active) and the participant's sandbox_expires_at, or null for another participant (the
+ * Nov 18 fresh-join run, finding 5). The Python core's self_serve_words.
+ */
+export function selfServeWords(participant, info) {
+  const p = isDict(participant) ? participant : {};
+  if (get(p, 'sandbox_only') !== true) return null;
+  const ss = isDict(info) && isDict(get(info, 'self_serve')) ? info.self_serve : {};
+  const until = get(p, 'sandbox_expires_at');
+  const when = typeof until === 'string' && until
+    ? ` until ${shown(until)}` + (get(ss, 'renews_while_active') === true ? ', renewed while your agent is active' : '') : '';
+  if (get(ss, 'open_network') === true) {
+    return 'A self-serve participant on the open network: you can deal with any agent whose owner allows it, within '
+      + `small limits (limits_in_force)${when}. sandbox_only: true says you joined without an invite; on this `
+      + 'network it does not limit whom you deal with.';
+  }
+  if (get(ss, 'open_network') === false) {
+    return 'A self-serve sandbox participant: you can deal only with the sandbox agents (sandbox-exact and '
+      + `sandbox-mallory), within small limits (limits_in_force)${when}.`;
+  }
+  return `A self-serve participant (sandbox_only: true: you joined without an invite), within small limits (limits_in_force)${when}.`;
+}
+
+/**
  * A time as recentlyActive reads it in whole microseconds since the epoch (a BigInt), or null when it is missing, naive
  * or unreadable (never seen). The Python core's seen_us.
  */
@@ -748,8 +1700,15 @@ function pageArg(a, k, dflt, what) {
   const v = get(a, k);
   if (v === null || v === undefined) return dflt;
   if (whole(v)) return v;
-  const got = quoted(v);
-  throw new ValunError('bad_arguments', `${k} must be a whole number (${what}), not ${got.length <= 40 ? got : got.slice(0, 37) + '...'}`);
+  throw new ValunError('bad_arguments', pageMessage(k, v, what));
+}
+
+/** What valun_directory's limit and offset are, for the refusal of one that is not a whole number. The Python core's. */
+export const PAGE_WORDS = Object.freeze({limit: `how many participants to show: 1 to ${DIRECTORY_PAGE_MAX}, ${DIRECTORY_PAGE} by default`,
+  offset: 'how many participants to skip: next_offset from the last answer, 0 by default'});
+
+function pageMessage(k, v, what) {
+  return `${k} must be a whole number (${what}), not ${shownValue(v)}`;
 }
 
 /**
@@ -821,15 +1780,131 @@ function pySha256(s) {
   return sha256Hex(s);
 }
 
-/** A ValunError (or any exception) as a plain object an agent can act on. Never includes secrets. */
+// What a transport failure means for the agent (fix inbox #132), by the client's cause and outcome, as the Python
+// agent's TRANSPORT_WORDS: a read whose answer was cut after its tries, a request whose answer did not come in time
+// (asked once), a write whose answer was cut or did not come (the server may have done it), an answer that is not JSON,
+// the server not reached; '|' a failure that names no cause. The owner's check is named without a command line (the
+// 0.7.2 review: a bare `valun` is not on the PATH of a uvx user, and this package has no CLI). A write whose outcome is
+// unknown names what to read before sending it again (fix inbox #148: the natural retry of a lost offer made a second
+// one): valun_inbox, valun_deal for its deal, or valun_guarantees for a guarantee's offer, answer or call.
+const READ_AGAIN = 'Try again in a minute; if it keeps failing, tell your owner, who can check the connection with the '
+  + "doctor command of their Valun CLI, for this agent's profile.";
+const READ_FIRST = 'valun_inbox, valun_deal for its deal, or valun_guarantees for a guarantee';
+const WRITE_UNKNOWN = 'the server may have done it. Do not send it again before you read what the server holds now '
+  + `(${READ_FIRST}), so that nothing is done twice.`;
+export const TRANSPORT_WORDS = Object.freeze({
+  'connection_cut|': 'The connection to the Valun server was cut before its whole answer arrived, also when your '
+    + 'Valun client asked again: that is the network between this machine and the server (or a '
+    + 'proxy, VPN or antivirus on it), not a refusal. ' + READ_AGAIN,
+  'connection_cut|unknown': 'Your request reached the Valun server, but the connection was cut before its answer '
+    + 'arrived, so ' + WRITE_UNKNOWN,
+  'timed_out|': 'The Valun server did not answer in time (your Valun client asked once, so as not to add to its '
+    + 'load): it may be busy, or something between this machine and the server held the answer; not a '
+    + 'refusal. ' + READ_AGAIN,
+  'timed_out|unknown': 'Your request was sent to the Valun server, but no answer came in time, so ' + WRITE_UNKNOWN,
+  'not_json|': "The Valun server's answer was not JSON, also when your Valun client asked again: it was cut "
+    + 'short, or something between this machine and the server (a captive portal, proxy or antivirus) '
+    + 'answered instead. ' + READ_AGAIN,
+  'not_json|unknown': "Your request reached the Valun server, but its answer was not JSON (cut short, or not the "
+    + "server's), so " + WRITE_UNKNOWN,
+  'too_large|unknown': "Your request reached the Valun server, but its answer was too large to read (not the "
+    + "server's), so " + WRITE_UNKNOWN,
+  'not_connected|': 'The Valun server could not be reached, so nothing was sent to it. ' + READ_AGAIN,
+  '|': 'The Valun server could not be reached, or its answer did not arrive. If this call was a commitment, read what '
+    + `the server holds now (${READ_FIRST}) before you send it again. ` + READ_AGAIN,
+});
+
+// A redirect (client.js: the Python agent's redirected_text): the client follows none, so nothing was done, and only the
+// owner can change the server's address.
+const ORIGIN_RE = /^(https?:\/\/[a-z0-9.-]{1,253}(:[0-9]{1,5})?|https?:\/\/\[[0-9a-f:.]{2,45}\](:[0-9]{1,5})?)$/;
+/** what_this_means of a redirect: where it pointed (an origin, as the client names it) when it is known. */
+export function redirectedText(location) {
+  const where = typeof location === 'string' && ORIGIN_RE.test(location) ? ` to ${location}` : '';
+  return `The address set as this agent's Valun server answered with a redirect${where}, which your Valun client `
+    + 'never follows, so nothing was done and nothing refused this agent. Tell your owner: if that is their Valun '
+    + "server's address now, they set it as this agent's server (the config server command of their Valun CLI).";
+}
+
+// A plain-http server (client.js plainHttpRefusal; the Python agent's PLAIN_HTTP_TEXT): no token is sent there. Only
+// this client refuses a server on this machine that Node's fetch would send through a proxy (via: 'proxy').
+export const PLAIN_HTTP_TEXT = "Your Valun client sends no token to this agent's Valun server: its address is plain http:// on "
+  + 'another machine, where a token would cross the network in clear text. Nothing was sent. Tell your '
+  + "owner: they set the server's https:// address (the config server command of their Valun CLI), or, "
+  + 'only on a network they trust, VALUN_ALLOW_PLAIN_HTTP=1 sends tokens over plain http anyway.';
+// Another server than the one the agent's profile joined (the Python client's wrong_server; the Python agent's words).
+export const WRONG_SERVER_TEXT = "This call was meant for another Valun server than the one this agent's profile joined, so your "
+  + 'Valun client sent its token nowhere. Nothing was sent. Tell your owner: a profile moves to another server only with '
+  + 'the config server command of their Valun CLI.';
+export const PLAIN_HTTP_PROXY_TEXT = "Your Valun client sends no token to this agent's Valun server: its address is plain "
+  + "http:// on this machine, but Node's fetch would send it through a proxy, which would read the token in clear text. "
+  + 'Nothing was sent. Tell your owner: they name the server in NO_PROXY, or, only if they trust that proxy, set '
+  + 'VALUN_ALLOW_PLAIN_HTTP=1.';
+// The same through a fetch dispatcher the application set (setGlobalDispatcher), which may proxy everything (via:
+// 'dispatcher'; the RC's review, round 3).
+export const PLAIN_HTTP_DISPATCHER_TEXT = "Your Valun client sends no token to this agent's Valun server: its address is "
+  + "plain http:// on this machine, but the fetch dispatcher the application that runs it set may send it through a "
+  + 'proxy, which would read the token in clear text. Nothing was sent. Tell your owner: the application gives the client '
+  + "a fetch that reaches the server directly, or uses the server's https:// address, or, only if they trust that "
+  + 'dispatcher, sets VALUN_ALLOW_PLAIN_HTTP=1.';
+// The same through a globalThis.fetch that is not Node's own, which an application or a library put in its place and
+// which may send anywhere (via: 'fetch'; the RC's review, round 4).
+export const PLAIN_HTTP_FETCH_TEXT = "Your Valun client sends no token to this agent's Valun server: its address is plain "
+  + "http:// on this machine, but the fetch that the application running it put in place of Node's own may send it "
+  + 'through a proxy, which would read the token in clear text. Nothing was sent. Tell your owner: the application gives '
+  + "the client the fetch to use, or uses the server's https:// address, or, only if they trust that fetch, sets "
+  + 'VALUN_ALLOW_PLAIN_HTTP=1.';
+// Certificate checks off in this process (client.js tlsRefusal: NODE_TLS_REJECT_UNAUTHORIZED=0, or a dispatcher made so;
+// the RC's review, round 3): no token goes over https then. Only this client: the Python one always checks.
+export const TLS_UNVERIFIED_TEXT = "Your Valun client sends no token to this agent's Valun server while this process does "
+  + "not check servers' certificates (NODE_TLS_REJECT_UNAUTHORIZED=0, or the fetch dispatcher its application set): "
+  + 'whoever answered in its place could read and use it. Nothing was sent. Tell your owner: they turn the checks back on '
+  + '(a certificate authority this machine does not trust goes in NODE_EXTRA_CA_CERTS).';
+
+/** TRANSPORT_WORDS for an error with no HTTP status: undefined when none applies (a bad_response that names no cause). */
+function transportWords(code, cause, outcome) {
+  const known = v => v === undefined || v === null || typeof v === 'string';
+  const fallback = code === 'unreachable' ? TRANSPORT_WORDS['|'] : undefined;
+  if (!(known(cause) && known(outcome))) return fallback;
+  if ((cause === undefined || cause === null) && code !== 'unreachable') return undefined;
+  const key = `${cause || ''}|${outcome || ''}`;
+  return Object.hasOwn(TRANSPORT_WORDS, key) ? TRANSPORT_WORDS[key] : fallback;
+}
+
+/** `text` without a URL's user and password, a bearer token or a Valun agent or owner token (each replaced with ***):
+ *  what an exception's own words may carry that must never reach the model (errorPayload's internal_error; the RC's
+ *  review, round 3: urllib's error for a proxy URL it cannot read quoted the whole URL). The Python agent's redacted(). */
+function redacted(text) {
+  return String(text).replace(/\b([A-Za-z][A-Za-z0-9+.-]*:\/{0,2})[^\s/@'"<>]+@/g, '$1***@')
+    .replace(/\b(bearer)\s+[^\s'"]+/gi, '$1 ***').replace(/\b(vp[a-z])_[A-Za-z0-9_-]+/g, '$1_***');
+}
+
+/** A ValunError (or any exception) as a plain object an agent can act on. Never includes secrets: any other
+ *  exception's words are redacted (a URL's user and password, a token). */
 export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
   if (isValunError(e)) {
     const out = {error: e.code, message: e.message};
     const extra = isDict(e.extra) ? e.extra : {};
-    for (const k of ['rule', 'mandate_version', 'measured', 'retry_after_ms', 'template', 'fallback_after', 'what_this_means', 'cause']) {
+    for (const k of ['rule', 'mandate_version', 'measured', 'retry_after_ms', 'template', 'fallback_after', 'what_this_means', 'cause',
+      'transport_error', 'outcome']) {
       if (Object.hasOwn(extra, k)) out[k] = extra[k];
     }
-    if (e.code === 'approval_unbound') {
+    if ((e.code === 'unreachable' || e.code === 'bad_response') && !Object.hasOwn(out, 'what_this_means')
+        && (e.status === undefined || e.status === null)) {
+      const words = transportWords(e.code, out.cause, out.outcome);
+      if (words !== undefined) out.what_this_means = words;
+    }
+    if (e.code === 'redirected' && !Object.hasOwn(out, 'what_this_means')) out.what_this_means = redirectedText(extra.location);
+    if (e.code === 'plain_http' && !Object.hasOwn(out, 'what_this_means')) {
+      out.what_this_means = extra.via === 'proxy' ? PLAIN_HTTP_PROXY_TEXT
+        : extra.via === 'dispatcher' ? PLAIN_HTTP_DISPATCHER_TEXT : extra.via === 'fetch' ? PLAIN_HTTP_FETCH_TEXT
+          : PLAIN_HTTP_TEXT;
+    }
+    if (e.code === 'tls_unverified' && !Object.hasOwn(out, 'what_this_means')) out.what_this_means = TLS_UNVERIFIED_TEXT;
+    if (e.code === 'wrong_server' && !Object.hasOwn(out, 'what_this_means')) out.what_this_means = WRONG_SERVER_TEXT;
+    if (e.code === 'approval_unbound' && out.cause === 'unknown_participant') {
+      // the counterparty (or issuer, or creditor) named is in no directory entry: reading a deal again cannot help
+      out.what_this_means = UNKNOWN_PARTICIPANT_TEXT;
+    } else if (e.code === 'approval_unbound') {
       out.what_this_means = 'Nothing was signed and your owner was not asked: your Valun client could not read and check '
         + 'exactly what this call would sign (the deal, offer or delivery could not be read, does not '
         + 'match its hash, or changed after you read it). Read the deal again with valun_deal and retry; '
@@ -865,6 +1940,9 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
     }
     if (['unauthorized', 'not_connected', 'not_configured'].includes(e.code)) {
       out.what_this_means = `This agent is not connected to Valun. Its owner must ${setupHint}.`;
+    }
+    if (e.code === 'network_retired' && !Object.hasOwn(out, 'what_this_means')) {   // retired() gives its own
+      out.what_this_means = retiredText('another network');
     }
     if (e.code === 'owner_declined') out.what_this_means = 'Your owner did not approve this commitment. Nothing was signed or sent.';
     if (e.code === 'attempt_outcome_unknown') {
@@ -902,8 +1980,8 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
     }
     return out;
   }
-  if (e instanceof Error) return {error: 'internal_error', message: `${e.name}: ${e.message}`};
-  return {error: 'internal_error', message: `Error: ${String(e)}`};
+  if (e instanceof Error) return {error: 'internal_error', message: redacted(`${e.name}: ${e.message}`)};
+  return {error: 'internal_error', message: redacted(`Error: ${String(e)}`)};
 }
 /**
  * The Valun tools over one participant's Client.
@@ -926,6 +2004,10 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
  *                   and valun_inbox, sign the value-safe consents only (set-offs, and payments to me by transfer as the
  *                   standing policy allows; never an issuer's or a payer's), at most once per CONSENTS_EVERY_MS; the
  *                   tool's result then says what was signed (consents_signed_now). Only with processConsents on.
+ *   rejoinHint      what the owner of a profile of the retired pilot network must do to join the network its server now
+ *                   serves, in a new profile (network_retired; retired()). Default DEFAULT_REJOIN_HINT.
+ *   consoleCommand  the command the owner runs in a terminal to open the owner console for this profile (`valun
+ *                   --profile NAME console`); an answer that waits for the owner names it (ownerWait). null: none.
  *   now             clock in ms (test hook; the Client has its own).
  */
 export class ValunAgent {
@@ -938,7 +2020,8 @@ export class ValunAgent {
       throw new TypeError('ValunAgent needs a valun Client');
     }
     const {approvals = '', checkLinkHosts = true, resolveHost = null, hostTimeoutMs = 4000, setupHint = null, now = null,
-      processConsents = true, consentsOnReads = false, declareRoles = null, briefStatus = false} = options;
+      processConsents = true, consentsOnReads = false, declareRoles = null, briefStatus = false,
+      rejoinHint = null, consoleCommand = null} = options;
     if (resolveHost !== null && typeof resolveHost !== 'function') throw new TypeError('resolveHost must be a function');
     this.#client = client;
     this.#now = now || (() => Date.now());
@@ -947,6 +2030,8 @@ export class ValunAgent {
     this.resolveHost = resolveHost;
     this.hostTimeoutMs = hostTimeoutMs;
     this.setupHint = setupHint || DEFAULT_SETUP_HINT;
+    this.rejoinHint = rejoinHint || DEFAULT_REJOIN_HINT;
+    this.consoleCommand = typeof consoleCommand === 'string' && consoleCommand ? consoleCommand : null;
     this.processConsents = processConsents === true;
     this.consentsOnReads = consentsOnReads === true;
     this.briefStatus = briefStatus === true;   // valun_status answers the brief view unless brief=false is passed
@@ -1000,19 +2085,53 @@ export class ValunAgent {
 
   /**
    * Run one tool. Resolves to a plain object; rejects with a ValunError (use errorPayload to turn it into a result). Its
-   * arguments are checked first (toolArguments, fix inbox #58: bad_arguments for arguments that are not a JSON object or
-   * lack a required one, before anything is read or signed). Before a tool that is not read-only, the client signs the
+   * arguments are checked first (toolArguments, fix inbox #58: bad_arguments for arguments that are not a JSON object,
+   * lack a required one or, since 0.7.2, have one of another type than its schema's, before anything is read or signed; a
+   * value an enum does not list keeps its tool's code, bad_decision say). Before a tool that is not read-only, the client signs the
    * consents its owner's policy allows (consentsIfDue). With consentsOnReads, before valun_status and valun_inbox it signs
    * the value-safe ones (consentsOnRead), and when that run took place the result adds consents_signed_now: one entry
    * (SIGNED_NOW_KEYS) for each consent it signed ([]: none). Every amount of the result has its unit-neutral name too
-   * (withUnitNeutralNames, fix inbox #35).
+   * (withUnitNeutralNames, fix inbox #35). A profile of the retired pilot network gets network_retired instead of the
+   * refusal its server gives it (retired(); fix inbox #30).
    */
   async call(name, args = null) {
     if (typeof name !== 'string' || !Object.hasOwn(this.handlers, name)) {
       throw new ValunError('unknown_tool', `no Valun tool called ${repr(name)}`);
     }
-    const a = toolArguments(name, args);
-    return this.exclusive(() => this.#call(name, a));
+    const a = this.toolArguments(name, args);
+    try {
+      return await this.exclusive(() => this.#call(name, a));
+    } catch (e) {
+      throw (await this.retired(e)) ?? e;
+    }
+  }
+
+  /**
+   * network_retired, for a profile of the pilot network (valun-pilot-1, retired on 2026-11-13; fix inbox #30), in
+   * place of a refusal it meets on a server that now serves another network: one of RETIRED_CODES, or approval_unbound
+   * with one of them as its cause. One GET /info, read only then, names the server's network (retiredPilot); its
+   * what_this_means says how to join again (rejoinHint). Resolves to null for any other error or profile, and when that
+   * read fails: the refusal then stands as it is. Never rejects.
+   */
+  async retired(e) {
+    if (!isValunError(e)) return null;
+    const extra = isDict(e.extra) ? e.extra : {};
+    const code = e.code === 'approval_unbound' ? get(extra, 'cause') : e.code;
+    if (!RETIRED_CODES.includes(code)) return null;
+    let c, info;
+    try {
+      c = this.client(false);
+      if (profileNetwork(c.state) !== NETWORK) return null;
+      info = await c.request('GET', '/pilot/v1/info', undefined, {auth: false});
+    } catch {                                         // the server's network is not known: the refusal stands
+      return null;
+    }
+    const net = isDict(info) ? info.network : null;
+    if (!retiredPilot(c.state, net)) return null;
+    const shownNet = Object.hasOwn(NETWORKS, net) ? net : 'another network';   // the server's word: a known name
+    return new ValunError('network_retired', `this profile is on the pilot network (${NETWORK}), retired on `
+      + `${PILOT_RETIRED_ON}; the server now serves ${shownNet}; nothing was signed`, undefined,
+      {what_this_means: retiredText(shownNet, this.rejoinHint)});
   }
 
   async #call(name, a) {
@@ -1141,7 +2260,9 @@ export class ValunAgent {
    * Does the server offer circulating credit? From the features this agent already knows when it knows them; otherwise
    * from one GET /info, read only when it can matter (decision D-2 h): always for a call that names no deal, and for a
    * deal only when its view carries the `payment` key, which a server shows only with circulation on. A failed read
-   * counts as no circulation, except a tracker the profile is not pinned to (tracker_mismatch), which stops the call.
+   * counts as no circulation, except a tracker the profile is not pinned to (tracker_mismatch) or another network than
+   * the profile's (wrong_network), which stops the call: its owner is then not asked to approve what cannot be signed
+   * (a profile of the retired pilot gets network_retired).
    */
   async #knownCirculation(c, deal = null) {
     if (this.features !== null) return this.features.includes(CIRCULATION);
@@ -1149,9 +2270,26 @@ export class ValunAgent {
     try {
       return this.#remember(await c.info()).includes(CIRCULATION);
     } catch (e) {
-      if (isValunError(e) && e.code === 'tracker_mismatch') throw e;
+      if (isValunError(e) && (e.code === 'tracker_mismatch' || e.code === 'wrong_network')) throw e;
       return false;                                   // a client that cannot read /info: as without circulation
     }
+  }
+
+  /**
+   * The module's toolArguments() (fix inbox #58), with this profile's unit for the words of an amount, read from its own
+   * records: nothing is read from the server (the pilot's PC when the client cannot tell). The Python agent's
+   * tool_arguments method.
+   */
+  toolArguments(name, args) {
+    let unit;
+    try {
+      const st = this.#client.state;
+      // A profile that has not joined yet: the words of the one network it would join (profileNetwork; fix inbox #15).
+      unit = isDict(st) && !(st.network || st.participant_id) ? NETWORKS[profileNetwork(st)].unit : this.#client.unit;
+    } catch {
+      unit = UNIT;                                    // a profile that cannot be read now: the call refuses it later, with its own code
+    }
+    return toolArguments(name, args, typeof unit === 'string' ? unit : UNIT);
   }
 
   /** Like call(), but never rejects: errors come back as {error: ...}. */
@@ -1246,7 +2384,7 @@ export class ValunAgent {
     if (!ValunAgent.#mayCommit(name, a)) return {args: a, text: null};
     let bound, text;
     try {
-      toolArguments(name, args);                      // fix inbox #58: not a JSON object, or a required argument missing
+      this.toolArguments(name, args);                 // fix inbox #58: not a JSON object, a required argument missing, or one of the wrong type
       const render = this.#textFor(name, a);          // before any read: a misspelt action or decision has no text
       const snap = await this.#snapshot(name, a);
       if (LIMIT_TOOLS.includes(name) && !loosens(or(get(snap.me, 'agent_limits'), {}), limitsBody(a))) {
@@ -1266,13 +2404,13 @@ export class ValunAgent {
    * instead of asking when what would be signed cannot be read or checked: the owner is then never asked with a generic
    * text, and nothing is signed (approval_unbound). A profile that is not connected or configured, or whose pinned
    * tracker the server no longer names, gets that refusal itself (not_connected, not_configured, tracker_mismatch), with
-   * its own advice, and so do arguments the tool refuses before anything is read (toolArguments: bad_arguments, as the
-   * call itself answers; fix inbox #58).
+   * its own advice, and so do arguments the tool refuses before anything is read (toolArguments: bad_arguments, or a
+   * misspelt value's own code such as bad_decision, as the call itself answers; fix inbox #58).
    */
   async prepareOrRefusal(name, args = null) {
     if (TOOL_NAMES.includes(name)) {
       try {
-        toolArguments(name, args);
+        this.toolArguments(name, args);
       } catch (e) {
         if (!isValunError(e)) throw e;
         return [null, errorPayload(e, this.setupHint)];
@@ -1283,6 +2421,8 @@ export class ValunAgent {
       prepared = await this.prepare(name, args);
     } catch (e) {                                     // whatever went wrong, nothing is asked and nothing is signed
       prepared = null;
+      const retired = await this.retired(e);
+      if (retired !== null) return [null, errorPayload(retired, this.setupHint)];
       const info = isValunError(e) && isDict(e.extra) ? e.extra : {};
       if (UNBOUND_PASS_THROUGH.includes(get(info, 'cause'))) {
         return [null, errorPayload(new ValunError(info.cause, or(get(info, 'cause_message'), UNBOUND_MESSAGE)), this.setupHint)];
@@ -1377,7 +2517,8 @@ export class ValunAgent {
       if (!(isDict(other) && typeof get(other, 'id') === 'string' && other.id)) {
         throw new ValunError('approval_unbound', 'the directory names no participant id');
       }
-      return {counterparty: other, not_settled: labels(await this.#knownCirculation(c), net).not_settled, unit, network: net};
+      const circulating = await this.#knownCirculation(c);
+      return {counterparty: other, circulating, not_settled: labels(circulating, net).not_settled, unit, network: net};
     }
     if (name === 'valun_set_limits') {
       const me = await c.me();
@@ -1414,7 +2555,8 @@ export class ValunAgent {
     const d = await c.deal(did);
     if (!isDict(d)) throw new ValunError('approval_unbound', 'the deal could not be read');
     const snap = {deal: d, checked: ValunAgent.#checked(d, did, c.participantId, name === 'valun_review_delivery', c.unit)};
-    snap.not_settled = labels(await this.#knownCirculation(c, d), net).not_settled;
+    snap.circulating = await this.#knownCirculation(c, d);   // read after the check, as before: what owes() says
+    snap.not_settled = labels(snap.circulating, net).not_settled;
     snap.unit = unit;
     snap.network = net;
     if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept' && ValunAgent.#payWith(a) !== null) {
@@ -1700,7 +2842,7 @@ export class ValunAgent {
       `Valun - sign a NEW OFFER to ${who} (${shown(item(other, 'id'))}):`,
       `  you are the ${ROLE_WORDS[role]}; price: ${amountText(price, u)}`,
       `  deliver within ${due} h; the offer stays open ${ttl} h`,
-      `If ${who} accepts, the deal is binding without asking you again: ` + owes(role, who, price, u),
+      `If ${who} accepts, the deal is binding without asking you again: ` + owes(role, who, price, u, get(snap, 'circulating')),
       get(snap, 'not_settled', NOT_SETTLED),
       quoteLine('Offer text written by your agent', Object.fromEntries(TEXT_FIELDS.map(k => [k, get(a, k)])))].join('\n');
   }
@@ -1713,7 +2855,7 @@ export class ValunAgent {
   static #offerNumbers(a, unit) {
     const price = count('price', get(a, 'price'), unit);
     // The offer's default validity is never longer than the hours it gives to deliver: a 6 h job's offer is open 6 h.
-    const due = countOr(a, 'deliver_within_hours', 'hours', 48), ttl = countOr(a, 'offer_valid_hours', 'hours', Math.min(24, due));
+    const due = hoursOr(a, 'deliver_within_hours', 48), ttl = hoursOr(a, 'offer_valid_hours', Math.min(24, due));
     checkOfferHours(ttl, due);
     return [price, due, ttl];
   }
@@ -1724,8 +2866,7 @@ export class ValunAgent {
    * both hours given, the counter-offer open no longer than the hours it gives to deliver.
    */
   static #counterNumbers(a, unit) {
-    const [price, hours, ttl] = [['price', unit], ['deliver_within_hours', 'hours'], ['offer_valid_hours', 'hours']]
-      .map(([k, units]) => countOr(a, k, units));
+    const price = countOr(a, 'price', unit), hours = hoursOr(a, 'deliver_within_hours'), ttl = hoursOr(a, 'offer_valid_hours');
     if (hours !== null && ttl !== null) checkOfferHours(ttl, hours);
     return [price, hours, ttl];
   }
@@ -1747,7 +2888,7 @@ export class ValunAgent {
       `Valun - ACCEPT ${who}'s offer (${shown(chk.other_id)}, deal ${shown(t.deal_id)}, version ${shown(get(t, 'version'))}):`,
       `  you are the ${ROLE_WORDS[chk.role]}; price: ${amountText(price, u)}; deliver by ${shown(get(t, 'deliver_by'))}`,
       `  terms hash ${chk.terms_hash.slice(0, 16)}... (recomputed from these terms; your Valun client checks it again before signing)`,
-      'This makes the deal binding on both sides: ' + owes(chk.role, who, price, u),
+      'This makes the deal binding on both sides: ' + owes(chk.role, who, price, u, get(snap, 'circulating')),
       get(snap, 'not_settled', NOT_SETTLED),
       quoteLine(`Offer text written by ${who}`, Object.fromEntries(TEXT_FIELDS.map(k => [k, get(svc, k)])))].join('\n');
   }
@@ -1775,7 +2916,7 @@ export class ValunAgent {
       '  deliver ' + (hours !== null ? `within ${hours} h of signing`
         : `by ${shown(get(t, 'deliver_by'))} as in their offer (rounded down to the hour, at least 1 h after signing)`),
       '  your agent changes: ' + (changes.join(', ') || 'nothing') + '; ' + stays,
-      `If ${who} accepts it, the deal is binding without asking you again: ` + owes(chk.role, who, price, u),
+      `If ${who} accepts it, the deal is binding without asking you again: ` + owes(chk.role, who, price, u, get(snap, 'circulating')),
       get(snap, 'not_settled', NOT_SETTLED),
       quoteLine(`Counter-offer text, with what your agent did not change copied from ${who}'s offer`,
         Object.fromEntries(TEXT_FIELDS.map(k => [k, truthy(get(a, k)) ? item(a, k) : get(svc, k)])))].join('\n');
@@ -1787,17 +2928,7 @@ export class ValunAgent {
     const u = get(snap, 'unit', UNIT);
     const m = await measure(content, serviceText(svc), {checkHosts: false});
     const facts = m.checks_against_agreed_terms.map(x => `${x.requirement}: ${x.measured} (${x.met ? 'met' : 'NOT met'})`);
-    let exact;
-    try {
-      exact = checkDelivery(t, content);
-    } catch {                                         // a malformed result block is a fact to show, not a reason to hide the prompt
-      exact = null;
-      facts.push('exact result: could not be checked');
-    }
-    if (truthy(exact) && truthy(get(exact, 'checked'))) {
-      facts.push('exact result: ' + (truthy(get(exact, 'exact_result_matches')) ? 'matches the agreed text'
-        : 'DOES NOT MATCH (differs in ' + iterate(or(get(exact, 'differs_in'), [])).map(k => shown(k)).join(', ') + ')'));
-    }
+    facts.push(...exactFacts(t, content, chk.handle));
     return [
       `Valun - ACCEPT ${who}'s delivery (${shown(chk.other_id)}, deal ${shown(t.deal_id)}) and ISSUE A CREDIT NOTE `
         + `of ${amountText(price, u)} to ${who}:`,
@@ -1823,17 +2954,7 @@ export class ValunAgent {
     const speed = get(tr.option, 'issuer_consents');
     const m = await measure(content, serviceText(svc), {checkHosts: false});
     const facts = m.checks_against_agreed_terms.map(f => `${f.requirement}: ${f.measured} (${f.met ? 'met' : 'NOT met'})`);
-    let exact;
-    try {
-      exact = checkDelivery(t, content);
-    } catch {                                         // a malformed result block is a fact to show, not a reason to hide the prompt
-      exact = null;
-      facts.push('exact result: could not be checked');
-    }
-    if (truthy(exact) && truthy(get(exact, 'checked'))) {
-      facts.push('exact result: ' + (truthy(get(exact, 'exact_result_matches')) ? 'matches the agreed text'
-        : 'DOES NOT MATCH (differs in ' + iterate(or(get(exact, 'differs_in'), [])).map(k => shown(k)).join(', ') + ')'));
-    }
+    facts.push(...exactFacts(t, content, chk.handle));
     const speedWords = typeof speed === 'string' && Object.hasOwn(CONSENT_SPEED_WORDS, speed) ? CONSENT_SPEED_WORDS[speed] : shown(speed);
     return [
       `Valun - PAY ${payee} ${amountText(price, u)} for deal ${shown(t.deal_id)} by moving ${amountText(price, u)} `
@@ -1856,7 +2977,8 @@ export class ValunAgent {
 
   // ---------- tools ----------
   async status(a) {
-    const brief = isDict(a) && 'brief' in a ? a.brief : this.briefStatus;
+    const given = isDict(a) ? get(a, 'brief') : null;
+    const brief = given === null || given === undefined ? this.briefStatus : given;   // null is not given (fix inbox #58 review)
     if (typeof brief !== 'boolean') throw new ValunError('bad_arguments', 'brief must be true or false');
     const out = await this.#fullStatus();
     return brief ? briefStatus(out) : out;
@@ -1870,12 +2992,16 @@ export class ValunAgent {
     const lab = labels(circulating, c.network ?? NETWORK);
     const recorded = or(get(me, 'agent_limits'), {});
     let approvals = or(this.approvals, 'Commitments are signed without asking your owner first.');
-    approvals += ` The server also holds commitments priced above ${amountText(get(item(me, 'mandate'), 'approve_above'), u)} for the owner console.`;
+    // The approvals sentence of this host's mode, then what the server holds for the owner by the mandate in force
+    // (approve_above and review_deliveries: the approval semantics of 2026-11-17), and where the owner decides.
+    approvals += ' ' + heldForOwner(item(me, 'mandate'), get(c.state, 'server'), u, this.approvals === CONSOLE_APPROVALS);
     const inForce = or(get(me, 'effective_limits'), item(me, 'mandate'));
+    const words = selfServeWords(item(me, 'participant'), info);
     const out = {
       connected: true, server: item(c.state, 'server'), network: item(info, 'network'),
       unit: item(info, 'unit') + (Object.hasOwn(UNIT_WORDS, item(info, 'unit')) ? UNIT_WORDS[item(info, 'unit')] : ''),
-      you: item(me, 'participant'), objective_from_your_owner: or(get(item(me, 'mandate'), 'objective'), '(none set)'),
+      you: item(me, 'participant'), ...(words ? {you_are: words} : {}),
+      objective_from_your_owner: or(get(item(me, 'mandate'), 'objective'), '(none set)'),
       goals_your_owner_told_you: or(get(recorded, 'notes'), '(none recorded yet: ask your owner, then use valun_set_limits)'),
       limits_you_recorded: Object.fromEntries(items(recorded).filter(([k]) => k !== 'notes' && k !== 'set_at')),
       limits_in_force: Object.fromEntries(LIMITS_SHOWN.map(([arg, [field]]) => [arg, get(inForce, field)])),
@@ -1978,7 +3104,9 @@ export class ValunAgent {
   /**
    * The exact next tool calls of the five-step sandbox tour (design 9.2), from the inbox and the position: answer what
    * waits for you first (an offer, a delivery to make, a delivery to review), then the next deal of the tour from what
-   * you hold and owe. Wait (no calls) while the sandbox agents or a set-off are working.
+   * you hold and owe. Wait (no calls) while the sandbox agents or a set-off are working. Once the end has been seen, the
+   * profile keeps it (TOUR_DONE_KEY) and the tour stays done, whatever is dealt with them later. A done plan asks for
+   * no retry.
    */
   async #sandboxNextSteps(c, participant, pos, box, notes) {
     const amount = (rows, key, who) => (Array.isArray(rows) ? rows : [])
@@ -2003,6 +3131,9 @@ export class ValunAgent {
         ...(retryAfter ? {retry_after_seconds: retryAfter} : {})};
     };
     const call = (tool, args, why) => ({tool, arguments: args, why});
+    if (c.participantId && get(c.state, TOUR_DONE_KEY) === c.participantId) {
+      return plan('done', [], TOUR_COMPLETED, null);    // done once: what it holds and owes now is not a tour step
+    }
     const offer = (step, cp, role, service) => {
       const price = sandbox.priceOf(service, network);
       const args = {counterparty: cp, role, title: `${service} job`,
@@ -2014,8 +3145,21 @@ export class ValunAgent {
     const wait = 'The sandbox agents act within a few seconds: call valun_status again.';
     if (listed.awaiting_your_owner.length) {
       const x = listed.awaiting_your_owner[0];
-      return plan(null, [], `Your owner must first approve deal ${shown(get(x, 'deal_id'))} in the owner console; then call `
-        + 'valun_status again.', OWNER_RETRY_S);
+      const [where] = ownerWait(c, {approvals: [{id: get(x, 'approval_id'), state: 'pending'}]}, get(x, 'deal_id'),
+        this.consoleCommand);
+      // A held IOU names the console's deadline for it, and once the tracker's hour has passed, that the owner must
+      // reject it (the 0.7.2 review).
+      const [by, exp, passed] = heldNoteOf(c, x, typeof c.nowMs === 'function' ? c.nowMs() : this.#now());
+      if (passed) {
+        return plan(null, [], `The IOU you signed for deal ${shown(get(x, 'deal_id'))} still waits for your `
+          + `owner${where}, but the tracker records it only until ${exp}, which has passed: tell `
+          + 'your owner to reject it there (approved now, it would fail at the tracker and leave '
+          + 'the delivery accepted, unpaid and no longer disputable), then call valun_status '
+          + 'again: the next step pays the deal again.', OWNER_RETRY_S);
+      }
+      return plan(null, [], `Your owner must first approve a commitment${where}`
+        + (exp ? ` (an IOU: by ${deadlineWords(by, exp)})` : '')
+        + '; tell them, then call valun_status again.', OWNER_RETRY_S);
     }
     for (const x of listed.review_delivery) {
       const did = get(x, 'deal_id'), cp = get(x, 'counterparty');
@@ -2032,7 +3176,7 @@ export class ValunAgent {
       const price = get(or(get(terms, 'price'), {}), 'amount');
       let exact;
       try {
-        exact = checkDelivery(terms, get(dl, 'content'));
+        exact = sandbox.checkBuiltIn(terms, get(dl, 'content'), cp);
       } catch {                                       // an unreadable result block is a wrong one
         exact = {checked: true, exact_result_matches: false, differs_in: ['the result block'], service: sandbox.whichService(terms)};
       }
@@ -2046,8 +3190,11 @@ export class ValunAgent {
           'Payment by transfer applies at once with the sandbox agents; call valun_status again.');
       }
       const fields = iterate(or(get(or(exact, {}), 'differs_in'), ['the result'])).map(k => str(k)).join(', ');
-      const reason = `The delivered result does not match the exact ${str(or(get(or(exact, {}), 'service'), 'result'))} of the agreed `
-        + `text (differs in: ${fields}).`;
+      const service = str(or(get(or(exact, {}), 'service'), 'result'));
+      const reason = get(or(exact, {}), 'built_in_format') === false
+        ? `The delivery is not in the built-in format: it has no \`\`\`json result block to compare with the exact ${service} of `
+          + 'the agreed text.'
+        : `The delivered result does not match the exact ${service} of the agreed text (differs in: ${fields}).`;
       return plan(step, [call('valun_review_delivery', {deal_id: did, decision: 'dispute', reason},
         'the delivery is wrong: dispute it (nothing is paid), then buy again')],
       'After the dispute, call valun_status again: the next call buys again.');
@@ -2082,8 +3229,24 @@ export class ValunAgent {
         + 'recorded on the tracker); wait for it: call valun_status again in a few seconds.');
     }
     if ((hx > 0 || hm > 0) && ox > 0) {
+      // Step 4's 3-cycle sandbox-mallory -> you -> sandbox-exact -> sandbox-mallory has a third leg that is not yours:
+      // sandbox-exact's debt to sandbox-mallory (your step 2 moved part of it there). Without it no set-off can be
+      // proposed, and waiting for one only ran into the tour's deadline (onboarding review, 2026-11-16).
+      if (hx === 0 && await ValunAgent.#sandboxLeg(c, pos) === 0) {
+        const u = c.unit ?? UNIT;
+        const then = 'The 3-cycle sandbox-mallory -> you -> sandbox-exact -> sandbox-mallory cannot clear now: '
+          + 'it needs sandbox-exact to owe sandbox-mallory, and on the tracker sandbox-exact owes '
+          + 'sandbox-mallory nothing, so no set-off can be proposed. Nothing is lost: you hold '
+          + `${amountText(hm, u)} of sandbox-mallory's notes and owe ${amountText(ox, u)} to `
+          + 'sandbox-exact. It can clear once sandbox-exact owes sandbox-mallory again; call '
+          + 'valun_status again in a minute, and if nothing has changed in a few minutes, stop and take '
+          + 'the tour again later: it goes on from here.';
+        const p = plan(4, [], then, CYCLE_LEG_RETRY_S);
+        p.blocked = 'cycle_leg_missing';
+        return p;
+      }
       return plan(hx > 0 ? 3 : 4, [], 'A set-off of the cycle is due: your Valun client signs it by itself at its '
-        + 'next consent run (within about a minute). Call valun_status again.');
+        + 'next consent run (within about a minute). Call valun_status again.', SETOFF_DUE_RETRY_S);
     }
     const paidByTransfer = count('paid_by_transfer');
     let cleared = get(pos, 'cleared_by_setoff', get(pos, 'settled', 0));
@@ -2092,7 +3255,10 @@ export class ValunAgent {
     if (hx >= notary && paidByTransfer === 0) return offer(2, SANDBOX_MALLORY, 'payer', 'notary');
     if (hx > 0) return offer(3, SANDBOX_EXACT, 'payer', 'notary');   // once step 2 paid by transfer: pay sandbox-exact with your own note
     if (ox > 0) return offer(4, SANDBOX_MALLORY, 'payee', 'text-stats');
-    if (paidByTransfer > 0 && cleared > 0) return plan('done', [], ValunAgent.#tourDoneText(pos, cleared, c.unit ?? UNIT));
+    if (paidByTransfer > 0 && cleared > 0) {
+      await c.markSandboxTourDone();                  // kept: later deals with them are not tour steps
+      return plan('done', [], ValunAgent.#tourDoneText(pos, cleared, c.unit ?? UNIT), null);
+    }
     const anyExact = Object.values(listed).some(xs => xs.some(x => get(x, 'counterparty') === SANDBOX_EXACT));
     if (!anyExact && recentlyActive(null, 10 / 60, get(participant, 'joined_at'), this.#now())) {
       return plan(1, [], 'The welcome job from sandbox-exact usually arrives within a minute of joining; call '
@@ -2106,6 +3272,32 @@ export class ValunAgent {
         + 'valun_status again for the next step.';
     }
     return p;
+  }
+
+  /**
+   * What sandbox-exact owes sandbox-mallory on the tracker: the leg of step 4's 3-cycle that is not the participant's
+   * own, from sandbox-exact's public record (GET /participants/{id}: its public_position debts), the narrowest read the
+   * server offers. 0.7.2's candidate read the whole public ledger here (about 270 KB) on every valun_status of step 4
+   * (the 0.7.2 review; fix inbox #128, #132). sandbox-exact's id is the one the participant's own debt to it names
+   * (position debts, recipient_id). null when that id is not known, or the record cannot be read now or shows no debts
+   * (then nothing is concluded from it).
+   */
+  static async #sandboxLeg(c, pos) {
+    const debts = isDict(pos) && Array.isArray(get(pos, 'debts')) ? pos.debts : [];
+    const ids = [...new Set(debts.filter(d => isDict(d) && get(d, 'to') === SANDBOX_EXACT && typeof get(d, 'recipient_id') === 'string'
+      && /^vp_[0-9a-f]{12}$/.test(d.recipient_id)).map(d => d.recipient_id))].sort();
+    if (ids.length !== 1) return null;
+    let rec;
+    try {
+      rec = await c.participant(ids[0]);
+    } catch (e) {
+      if (!isValunError(e) && !(e instanceof PyError && e.name === 'AttributeError')) throw e;
+      return null;
+    }
+    const pp = isDict(rec) && get(rec, 'handle') === SANDBOX_EXACT ? get(rec, 'public_position') : null;
+    const owes = isDict(pp) ? get(pp, 'debts') : null;
+    if (!Array.isArray(owes)) return null;
+    return owes.filter(d => isDict(d) && get(d, 'to') === SANDBOX_MALLORY && whole(get(d, 'amount'))).reduce((t, d) => t + d.amount, 0);
   }
 
   /**
@@ -2147,9 +3339,8 @@ export class ValunAgent {
   async directory(a) {
     const c = this.client();
     const q = lower(or(get(a, 'query'), ''));
-    const limit = Math.min(Math.max(pageArg(a, 'limit', DIRECTORY_PAGE, `how many participants to show: 1 to ${DIRECTORY_PAGE_MAX}, `
-      + `${DIRECTORY_PAGE} by default`), 1), DIRECTORY_PAGE_MAX);
-    const offset = Math.max(pageArg(a, 'offset', 0, 'how many participants to skip: next_offset from the last answer, 0 by default'), 0);
+    const limit = Math.min(Math.max(pageArg(a, 'limit', DIRECTORY_PAGE, PAGE_WORDS.limit), 1), DIRECTORY_PAGE_MAX);
+    const offset = Math.max(pageArg(a, 'offset', 0, PAGE_WORDS.offset), 0);
     const ranked = [];
     for (const p of iterate(await c.directory())) {
       if (item(p, 'id') === c.participantId || item(p, 'status') !== 'active') continue;
@@ -2161,10 +3352,13 @@ export class ValunAgent {
       else if ([handle, name, about, services, wants].join(' ').includes(q)) tier = 3;
       else continue;
       const active = recentlyActive(get(p, 'agent_last_seen'), 24, get(p, 'joined_at'), this.#now());
-      ranked.push({tier, active, seen: seenUs(get(p, 'agent_last_seen')), handle: str(or(get(p, 'handle'), '')), p});
+      // the operator's always-on agents first (operator_run), then its house agents, then the rest (the Nov 18 run, #6)
+      const kind = get(p, 'operator_run') === true ? 0 : get(p, 'house_agent') === true ? 1 : 2;
+      ranked.push({tier, kind, active, seen: seenUs(get(p, 'agent_last_seen')), handle: str(or(get(p, 'handle'), '')), p});
     }
-    // as Python sorts its key (tier, not active, never seen, -seen, handle); stable, as Python's sort
-    ranked.sort((x, y) => x.tier - y.tier || Number(!x.active) - Number(!y.active) || Number(x.seen === null) - Number(y.seen === null)
+    // as Python sorts its key (tier, kind, not active, never seen, -seen, handle); stable, as Python's sort
+    ranked.sort((x, y) => x.tier - y.tier || x.kind - y.kind || Number(!x.active) - Number(!y.active)
+      || Number(x.seen === null) - Number(y.seen === null)
       || (x.seen === y.seen ? 0 : x.seen > y.seen ? -1 : 1) || cmpCodePoints(x.handle, y.handle));
     const out = [];
     for (const {p, active} of ranked.slice(offset, offset + limit)) {
@@ -2187,14 +3381,20 @@ export class ValunAgent {
       r.how_to_see_more = q
         ? `Showing ${offset + 1}-${end} of ${total} matching the query (best matches first). For more, call valun_directory `
           + `again with the same query and offset ${end}, or narrow the query.`
-        : `Showing ${offset + 1}-${end} of ${total} (most recently active first). For more, call valun_directory again `
-          + `with offset ${end}, or narrow it with query.`;
+        : `Showing ${offset + 1}-${end} of ${total} (the operator's always-on agents first, then the most recently active). `
+          + `For more, call valun_directory again with offset ${end}, or narrow it with query.`;
     }
     return r;
   }
 
+  /**
+   * The server's inbox, with a one-line summary first in each recently closed deal whose IOU was issued (closedSummary;
+   * the Nov 18 fresh-join run, finding 12: recent_closed showed only status note_issued).
+   */
   async inbox() {
-    return this.client().inbox();
+    const box = await this.client().inbox();
+    if (!(isDict(box) && Array.isArray(get(box, 'recent_closed')))) return box;
+    return {...box, recent_closed: box.recent_closed.map(x => (closedSummary(x) ? {summary: closedSummary(x), ...x} : x))};
   }
 
   // ---------- guarantees (fix inbox #18) ----------
@@ -2243,10 +3443,25 @@ export class ValunAgent {
       callableForHours: vals.callable_for_hours, honorWithinHours: vals.honor_within_hours, offerValidHours: vals.offer_valid_hours, note,
       deals: deals === undefined ? null : deals});
     const out = {guarantee: guaranteeBrief(g)};
-    out.what_happens_next = isDict(g) && get(g, 'state') === 'awaiting_owner'
-      ? `Your owner must approve it first (approve_above); then ${shown(get(creditor, 'handle'))} can accept it.`
-      : `${shown(get(creditor, 'handle'))} can accept or decline it. Once it is due, it can call what `
-        + `${shown(get(issuer, 'handle'))} still owes it, up to the cap; you then pay with your own credit note.`;
+    const who = shown(get(creditor, 'handle')), of = shown(get(issuer, 'handle'));
+    const calls = `If ${who} calls it, you pay each call with your own IOU to ${who}, which is recorded at once and never `
+      + 'held for your owner, even with console approvals.';
+    if (isDict(g) && get(g, 'state') === 'awaiting_owner') {
+      // Held for the owner (its cap above approve_above), as the Python agent says it.
+      const offer = isDict(get(g, 'offer')) ? g.offer : {};
+      const aid = get(offer, 'approval_id');
+      const [where, wait] = ownerWait(c, typeof aid === 'string' ? {approvals: [{id: aid, state: 'pending'}]} : {},
+        get(g, 'guarantee_id'), this.consoleCommand, 'guarantee');
+      const cap = whole(get(g, 'cap')) ? amountText(g.cap, c.unit ?? UNIT) : 'its cap';
+      out.what_happens_next = `Your signed guarantee offer waits for your owner before ${who} can see it. Your `
+        + `owner approves or rejects it${where}${until(get(g, 'offer_expires_at'))}. Its cap `
+        + `of ${cap} counts against your total-owed limit while it waits. Tell your owner `
+        + `that approving is their last step: ${calls}`;
+      Object.assign(out, wait);
+    } else {
+      out.what_happens_next = `${who} can accept or decline it. Once it is due, it can call what ${of} still owes `
+        + `it, up to the cap. ${calls}`;
+    }
     return out;
   }
 
@@ -2254,7 +3469,7 @@ export class ValunAgent {
     const c = this.client();
     const gid = ValunAgent.#gid(get(a, 'guarantee_id')), action = get(a, 'action');
     const exp = get(a, 'expected_terms_hash');
-    let g;
+    let g, cid = null;
     if (action === 'accept') {
       g = await c.acceptGuarantee(gid, {expectedTermsHash: exp});
     } else if (action === 'decline') {
@@ -2266,13 +3481,49 @@ export class ValunAgent {
     } else if (action === 'release') {
       g = await c.releaseGuarantee(gid, {expectedTermsHash: exp});
     } else if (action === 'honor') {
-      const cid = get(a, 'call_id');
+      cid = get(a, 'call_id');
       if (cid !== null && !(typeof cid === 'string' && CALL_ID.test(cid))) throw new ValunError('bad_arguments', 'call_id is malformed (vgc_ + 16 hex)');
+      const before = honorMarks(c, gid);
       g = await c.honorGuarantee(gid, {callId: cid, expectedTermsHash: exp});
+      if (cid === null) {
+        // The call the client chose (its first open or failed one): the one its own honor record now holds a new note
+        // for (as the Python agent; the 0.7.2 review: the reply named the last honored call, whichever it was).
+        const after = honorMarks(c, gid);
+        cid = Object.keys(after).sort(cmpCodePoints).find(k => !pyEq(after[k], Object.hasOwn(before, k) ? before[k] : null)) ?? null;
+      }
     } else {
       throw new ValunError('bad_arguments', 'action must be accept, decline, release, withdraw or honor');
     }
-    return {guarantee: guaranteeBrief(g)};
+    const out = {guarantee: guaranteeBrief(g)};
+    if (action === 'honor' && isDict(g)) {
+      // An honor is never held for the owner, whatever the mandate says (the approval semantics of 2026-11-17). What is
+      // said is the state the server answered for the call this client honored (a note the tracker did not record
+      // leaves the call failed, with nothing more owed).
+      const call = (Array.isArray(get(g, 'calls')) ? g.calls : []).find(x => isDict(x) && cid !== null
+        && get(x, 'call_id') === cid) ?? null;
+      const cr = isDict(get(g, 'creditor')) ? g.creditor : {};
+      const who = shown(or(get(cr, 'handle'), or(get(cr, 'id'), 'the creditor')));
+      const state = call !== null ? get(call, 'state') : null;
+      if (state === 'honored' && whole(get(call, 'amount'))) {
+        const amount = amountText(call.amount, c.unit ?? UNIT);
+        out.what_happened = `You honored call ${shown(cid)}: your IOU to ${who} for ${amount} `
+          + `went to ${trackerWords(c.network ?? NETWORK)} at once. It was not `
+          + 'held for your owner: honoring a guarantee call never is, even with console '
+          + `approvals. You owe ${who} ${amount} more, and nothing is settled. Tell your owner.`;
+      } else if (state === 'failed') {
+        out.what_happened = `The tracker did not record your IOU for call ${shown(cid)}, so it adds nothing to `
+          + `what you owe ${who}. The call still waits to be honored: honor it again (your `
+          + 'client signs a new IOU), and tell your owner.';
+      } else if (call !== null) {
+        out.what_happened = `Your IOU for call ${shown(cid)} was sent; the server shows the call as `
+          + `${shown(state)}: valun_guarantees shows when the tracker has recorded it. It was `
+          + 'not held for your owner: honoring a guarantee call never is.';
+      }
+    } else if (action === 'release') {
+      out.what_happened = 'You released the guarantee: it ends, and its calls not yet honored are void. A release '
+        + 'is never held for your owner in the owner console.';
+    }
+    return out;
   }
 
   async callGuarantee(a) {
@@ -2291,8 +3542,10 @@ export class ValunAgent {
    * with `summary` first (checkSummary). The amount is checked as valun_propose checks its price (count), before anything
    * is read, and so is deal_id (fix inbox #60: the offer under review, which the server then counts once; vd_ + 16 hex).
    * Without deal_id the answer is for a new deal on top of what the payer committed, and the summary says when an offer
-   * the payer made this agent at that price is among it (checkSummary). A payer whose owner has not published a card
-   * gets verdict 'unknown' (uncheckedPayer): an answer, not an error.
+   * the payer made this agent at that price is among it (checkSummary). Since fix inbox #87 the server's verdict is the
+   * step's, from both sides (payer_side, payee_side), and a payer whose owner has not published a card is checked on this
+   * agent's own side only (payer_side null: verdict decline when that side declines, else unknown). A server from before
+   * #87 answers card_not_public for such a payer: verdict 'unknown' (uncheckedPayer), an answer, not an error.
    */
   async checkPayer(a) {
     const c = this.client();
@@ -2325,7 +3578,17 @@ export class ValunAgent {
     const c = this.client();
     const [did] = required(a, ['deal_id'], false);
     const d = await c.deal(did);
+    // A payment of this deal that the server held for the owner and that ended unreleased (rejected in the owner
+    // console, or void) is recorded as not applied, so that paying the deal again is not blocked by it (as the Python
+    // agent does; the approval probe's D2).
+    if (isDict(d) && get(d, 'your_role') === 'payer') await c.learnOwnerDecisions(did, d);
     const out = Object.fromEntries(DEAL_FIELDS.map(k => [k, get(d, k)]));
+    const att = isDict(c.state) ? get(c.state, 'transfer_attempts') : null;
+    const decided = ownerDecisions(d, isDict(att) ? get(att, did) : null);
+    if (decided.length) out.owner_decisions = decided;
+    const theirs = counterpartyOwnerDecisions(d, c.participantId);
+    if (theirs.length) out.counterparty_owner_decisions = theirs;    // the other side's owner's decisions (the 0.7.2 review)
+    const now = typeof c.nowMs === 'function' ? c.nowMs() : this.#now();
     const retryAfter = get(d, 'retry_after_seconds');
     if (Number.isInteger(retryAfter)) out.retry_after_seconds = retryAfter;   // the server's hint while it waits on the other side (#8)
     if (truthy(get(d, 'pending_counter'))) {
@@ -2339,8 +3602,20 @@ export class ValunAgent {
         : 'theirs: your offer is open; you cannot accept your own offer, only withdraw it or wait';
     } else if (st === 'agreed') {
       out.whose_turn = get(d, 'your_role') === 'payee' ? 'yours: deliver the work' : 'theirs: they deliver';
-    } else if (st === 'delivered' || st === 'note_failed') {
+    } else if (st === 'delivered') {
       out.whose_turn = get(d, 'your_role') === 'payer' ? 'yours: accept the delivery or dispute it' : 'theirs: they review your delivery';
+    } else if (st === 'note_failed') {
+      // The IOU failed at the tracker after the delivery was accepted: the acceptance stands, so a dispute is refused.
+      out.whose_turn = get(d, 'your_role') === 'payer'
+        ? 'yours: the delivery stays accepted and is unpaid; pay it again (a new IOU, or by transfer when the window allows)'
+        : 'theirs: the payer accepted your delivery and must pay it again (its IOU failed at the tracker)';
+    } else if (OWNER_WAITS.includes(st)) {
+      out.whose_turn = ownerTurn(d, c.participantId, now);
+      const [by, exp] = heldNoteHour(d, now);
+      if (exp) {                              // the held IOU's deadlines, which whose_turn names (the 0.7.2 review)
+        out.decide_by = by;
+        out.note_expires_at = exp;
+      }
     } else if (st === 'paying_by_transfer') {
       out.whose_turn = get(d, 'your_role') === 'payer'
         ? 'theirs: the issuer and the payee sign the debt transfer that pays this deal (your Valun client signed your part)'
@@ -2376,14 +3651,13 @@ export class ValunAgent {
         signature: get(dl, 'signature')};
       const reviewing = get(d, 'your_role') === 'payer' && ['delivered', 'note_failed'].includes(get(d, 'status'));
       out.delivery.measured_by_your_client = await measure(content, termsText(d), this.#measureOptions(reviewing && this.checkLinkHosts));
-      const exact = checkDelivery(or(get(or(get(d, 'current'), {}), 'terms'), {}), content);
+      // A built-in job only (the Nov 18 fresh-join run, finding 10: "word count" in a free-form job's terms made a
+      // correct plain-text answer "not match" text-stats, with the advice to dispute it).
+      const cp = isDict(get(d, 'counterparty')) ? d.counterparty : {};
+      const exact = sandbox.checkBuiltIn(or(get(or(get(d, 'current'), {}), 'terms'), {}), content, get(cp, 'handle'));
       if (exact !== null) {
         out.delivery.checked_exactly_by_your_client = exact;
-        if (reviewing && truthy(exact.checked) && !truthy(exact.exact_result_matches)) {
-          out.delivery.advice = 'The delivered result does not match the exact result of the agreed text '
-            + `(differs in: ${or(exact.differs_in, ['the result block']).join(', ')}). `
-            + 'Dispute it with that reason instead of issuing a credit note.';
-        }
+        if (reviewing && truthy(exact.checked) && !truthy(exact.exact_result_matches)) out.delivery.advice = exactAdvice(exact);
       }
     }
     if (truthy(get(d, 'credit_note'))) {
@@ -2394,6 +3668,8 @@ export class ValunAgent {
         tracker_cumulative_total_PC: get(tn, 'amount_collected'), confirmation: or(get(n, 'confirmation'), get(tn, 'confirmation')),
         verified_by_valun: get(n, 'verified_by_valun'), outstanding: get(n, 'outstanding'), settled: get(n, 'settled', false),
         issuer_pubkey: get(n, 'issuer_pubkey'), recipient_pubkey: get(n, 'recipient_pubkey')};
+      const means = confirmationMeans(out.credit_note.confirmation, c.network ?? NETWORK);
+      if (means) out.credit_note.confirmation_means = means;   // what local_only, pending or confirmed means (the Nov 18 run, #12)
       for (const k of ['redeemed', 'settled_how', 'pair_now']) {    // on chain: what redemption did to this note (#13)
         const v = get(n, k);
         if (v !== null && v !== undefined) out.credit_note[k] = v;
@@ -2424,6 +3700,9 @@ export class ValunAgent {
         out.negotiation.stalemate = `Both sides have repeated the same price (${str(mine[0])} vs ${str(theirs[0])} ${u}). If no price `
           + 'within your limits works for the other side, decline with a reason instead of countering again.';
       }
+    }
+    if (st === 'note_issued') {                        // the plain ending first, for either side (the Nov 18 run, #12)
+      return {summary: noteSummary(d, c.network ?? NETWORK, c.unit ?? UNIT, await this.#offersCirculation(c, d), serverOf(c)), ...out};
     }
     return out;
   }
@@ -2488,14 +3767,20 @@ export class ValunAgent {
     const idle = recentlyActive(get(other, 'agent_last_seen'), 24, get(other, 'joined_at'), this.#now()) ? null
       : `${str(item(other, 'handle'))}'s agent has not been seen in the last 24 hours; it may never answer. Consider an active seller too.`;
     const handle = str(item(other, 'handle')), shownPrice = amountText(price, unit);   // the amount signed, never the argument as given
+    const [where, wait] = waiting ? ownerWait(c, r, item(r, 'id'), this.consoleCommand) : ['', {}];
+    // Held for the owner (approve_above), as the Python agent says it.
+    const heldText = `Your signed offer waits for your owner before ${handle} can see it. Your owner approves or rejects `
+      + `it${where}${until(get(termsOf(r), 'offer_expires_at'))}. Tell your owner now: nothing else tells them. `
+      + 'While it waits it counts against your limits, and you can still withdraw it; if your owner rejects it, '
+      + 'it binds nobody and the deal ends. valun_deal shows when it is decided.';
     return {deal_id: item(r, 'id'), status: item(r, 'status'),
       terms_hash: truthy(get(r, 'current')) ? item(item(r, 'current'), 'terms_hash') : null,
-      what_happened: waiting ? `Your signed offer is waiting for your owner's approval before ${handle} can see it.`
+      what_happened: waiting ? heldText
         : `${handle} can now accept, decline or counter your signed offer.`,
       if_agreed: role === 'payer'
         ? `After you accept their delivery you issue them a credit note of ${shownPrice} (you will owe them; not settled).`
         : `After they accept your delivery they issue you a credit note of ${shownPrice} (they will owe you; not settled).`,
-      ...(idle ? {warning: idle} : {})};
+      ...(idle ? {warning: idle} : {}), ...wait};
   }
 
   async respond(a) {
@@ -2521,15 +3806,20 @@ export class ValunAgent {
       throw new ValunError('bad_action', 'action must be accept, decline, counter or withdraw');
     }
     const held = act === 'counter' && truthy(get(r, 'pending_counter'));
+    const status = item(r, 'status');
+    let accepted = '', where = '', wait = {};
+    if (status === 'accepted_awaiting_owner') [accepted, wait] = acceptanceWait(c, r, did, this.consoleCommand);   // whose owner holds it
+    if (held && status === 'open') [where, wait] = ownerWait(c, r, did, this.consoleCommand);
+    const cp = handleOf(r), open = until(get(termsOf(r), 'offer_expires_at'), 'until');
     const explain = {agreed: 'Agreement formed: both sides have signed the same terms.',
-      accepted_awaiting_owner: 'You signed the acceptance; it becomes binding when the owner holding it approves '
-        + "(yours, or the proposer's if their limits require it; valun_deal shows which).",
-      open: held ? `Your signed counter-offer${at} waits for your owner's approval; the other side cannot see it yet.`
+      accepted_awaiting_owner: accepted,
+      open: held ? `Your signed counter-offer${at} waits for your owner. ${cp} cannot see it yet, and its own offer `
+        + `stays open${open}. While it waits, you can neither accept that `
+        + `offer nor counter again. Your owner approves or rejects it${where}. Tell your owner.`
         : act === 'counter' ? `Your counter-offer${at} is open for the other side.` : 'The offer is open.',
       declined: 'You declined; nothing is owed.', withdrawn: 'Your offer is withdrawn.'};
-    const status = item(r, 'status');
     return {deal_id: did, status, what_happened: typeof status === 'string' && Object.hasOwn(explain, status) ? explain[status] : status,
-      next_actions: get(r, 'next_actions')};
+      next_actions: get(r, 'next_actions'), ...wait};
   }
 
   async deliver(a) {
@@ -2600,9 +3890,29 @@ export class ValunAgent {
       expectedTermsHash: get(a, 'expected_terms_hash')});
     const n = or(get(r, 'credit_note'), {});
     const status = item(r, 'status');
-    let msg;
+    let msg, wait = {};
     if (status === 'completion_awaiting_owner') {
-      msg = 'You accepted the delivery and signed the credit note; your owner must approve before it is issued to the tracker.';
+      // The IOU is held for the owner (review_deliveries): until when the owner can decide (the owner console's
+      // deadline, a minute before the tracker's), what the payee already sees, and what approving or rejecting it
+      // leaves (as the Python agent says it).
+      let where;
+      [where, wait] = ownerWait(c, r, item(r, 'id'), this.consoleCommand);
+      const payee = handleOf(r, 'the payee'), unit = c.unit ?? UNIT;
+      const price = whole(get(n, 'amount')) ? amountText(n.amount, unit) : 'the price';
+      const exp = noteExpiresAt(get(n, 'note')), by = noteDecideBy(get(n, 'note'));
+      if (exp) {
+        wait.decide_by = by;
+        wait.note_expires_at = exp;
+      }
+      msg = `You accepted the delivery and signed your IOU to ${payee} for ${price}. The Valun server holds it for `
+        + `your owner: it is not on the tracker yet, and ${payee} sees that you accepted the delivery but not the `
+        + `IOU's signature. Tell your owner to approve or reject it${where}`
+        + (exp ? ` by ${deadlineWords(by, exp)}: an IOU still held at ${exp} is never recorded and pays nothing, and `
+          + 'valun_deal then says what to do' : '')
+        + `. If approved, you owe ${payee} ${price} more: a promise to pay that `
+        + `${trackerWords(c.network ?? NETWORK)} records, not a settlement. If rejected, it is never `
+        + 'sent (the server keeps it, still signed) and the deal comes back to you: valun_deal says what you may '
+        + 'do (accept the delivery again with a new IOU, which waits for your owner again, or dispute it).';
     } else if (status === 'note_issued') {
       msg = `Credit note issued: the Basis tracker now records that you owe ${str(item(item(r, 'counterparty'), 'handle'))} `
         + `${str(get(or(get(n, 'tracker_note'), {}), 'amount_collected'))} ${c.unit ?? UNIT} in total (this deal added ${str(get(n, 'amount'))}). `
@@ -2610,9 +3920,15 @@ export class ValunAgent {
     } else {
       msg = status;
     }
-    return {deal_id: item(r, 'id'), status, what_happened: msg,
+    const conf = get(or(get(n, 'tracker_note'), {}), 'confirmation');
+    const out = {deal_id: item(r, 'id'), status, what_happened: msg,
       credit_note: {state: get(n, 'state'), amount_PC: get(n, 'amount'), tracker_status: get(n, 'tracker_status'),
-        confirmation: get(or(get(n, 'tracker_note'), {}), 'confirmation'), settled: false}};
+        confirmation: conf, settled: false}, ...wait};
+    if (status !== 'note_issued') return out;
+    // The plain ending first, then the long fields (the Nov 18 fresh-join run, finding 12).
+    const means = confirmationMeans(conf, c.network ?? NETWORK);
+    if (means) out.credit_note.confirmation_means = means;
+    return {summary: noteSummary(r, c.network ?? NETWORK, c.unit ?? UNIT, this.#circulating(c), serverOf(c), 'payer'), ...out};
   }
 
   /**
@@ -2634,17 +3950,30 @@ export class ValunAgent {
     const iss = isDict(get(pay, 'issuer')) ? get(pay.issuer, 'handle') : null;
     const price = isDict(r) ? get(or(get(or(get(or(get(r, 'current'), {}), 'terms'), {}), 'price'), {}), 'amount') : null;
     const who = or(cp, 'the payee'), by = or(iss, issuer), amount = whole(price) ? price : 'the price in';
+    const did = isDict(r) ? get(r, 'id') : item(a, 'deal_id');
+    const [where, wait] = st === 'completion_awaiting_owner' ? ownerWait(c, r, did, this.consoleCommand) : ['', {}];
+    // A payment by transfer held for the owner (review_deliveries), as the Python agent says it.
+    const hold = typeof get(pay, 'expires_at') === 'string' && pay.expires_at ? pay.expires_at : null;
+    if (hold && st === 'completion_awaiting_owner') wait.hold_expires_at = hold;
+    const priced = whole(price) ? amountText(price, c.unit ?? UNIT) : 'the price';
+    const heldText = `You accepted the delivery and signed a payment by transfer: ${priced} of ${shown(by)}'s IOU to you moves `
+      + `to ${str(who)}. Nobody else has signed it. It waits for your owner${where}`
+      + (hold ? ` until ${shown(hold)}, 20 minutes after you signed it` : '')
+      + `: tell your owner now. Once approved, ${shown(by)} and ${str(who)} sign it (their Valun clients do so by `
+      + 'themselves where their owners allow it), and the delivery stays accepted even if the transfer then '
+      + 'fails. If your owner rejects it, or that time passes, nothing moves and the deal comes back to you: you '
+      + `may pay again through ${shown(by)}'s IOU at once while it is unchanged, or any other way about an hour `
+      + 'after you signed.';
     const msgs = {
       paid_by_transfer: `Paid by debt transfer: ${str(by)} now owes ${str(who)} ${amount} ${c.unit ?? UNIT} more and you ${amount} ${c.unit ?? UNIT} `
         + 'less; you issued no credit note for this deal. ' + labels(true, c.network ?? NETWORK).settlement,
       paying_by_transfer: 'You accepted the delivery and signed the debt transfer; it applies once the issuer and '
         + 'the payee sign. Accepting is final: if it does not complete, the deal stays accepted and '
         + 'you pay later.',
-      completion_awaiting_owner: 'You accepted the delivery and signed the debt transfer; your owner must approve it '
-        + 'in the owner console before it is submitted.',
+      completion_awaiting_owner: heldText,
       payment_due: 'The transfer did not apply: the delivery stays accepted and the deal is payment_due. Pay it '
         + 'again (valun_deal how_you_can_pay).'};
-    return {deal_id: isDict(r) ? get(r, 'id') : item(a, 'deal_id'), status: st,
-      what_happened: typeof st === 'string' && Object.hasOwn(msgs, st) ? msgs[st] : st, payment: truthy(pay) ? pay : null};
+    return {deal_id: did, status: st,
+      what_happened: typeof st === 'string' && Object.hasOwn(msgs, st) ? msgs[st] : st, payment: truthy(pay) ? pay : null, ...wait};
   }
 }

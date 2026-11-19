@@ -13,8 +13,13 @@ test('the tool definitions are exactly Python schemas.ALL (names, descriptions, 
   assert.equal(JSON.stringify(schemas.ALL), JSON.stringify(PY));
   // 0.5.2 (fix inbox #15): the testnet's tools in its own words, exactly Python schemas.for_network('valun-testnet-1')
   assert.equal(JSON.stringify(schemas.forNetwork(schemas.TESTNET)), JSON.stringify(PY_ALL.tools_testnet));
-  assert.equal(schemas.forNetwork(null), schemas.ALL);
+  // 0.7.2: a profile that has not joined yet (no network) gets the one network's words, as in Python, the pilot's only
+  // the pilot's profiles
+  assert.equal(JSON.stringify(schemas.forNetwork(null)), JSON.stringify(PY_ALL.tools_not_joined));
+  assert.equal(schemas.forNetwork(null), schemas.forNetwork(schemas.TESTNET));
+  assert.equal(schemas.forNetwork(), schemas.forNetwork(schemas.TESTNET));
   assert.equal(schemas.forNetwork('valun-pilot-1'), schemas.ALL);
+  assert.equal(schemas.forNetwork(schemas.PILOT), schemas.ALL);
   assert.doesNotMatch(JSON.stringify(schemas.forNetwork(schemas.TESTNET)), /\bPC\b|pilot/);
   assert.deepEqual(TOOL_NAMES, PY.map(t => t.name));
   const byName = {STATUS: 'valun_status', DIRECTORY: 'valun_directory', INBOX: 'valun_inbox', DEAL: 'valun_deal', PROPOSE: 'valun_propose',

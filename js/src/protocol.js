@@ -5,7 +5,11 @@ import {ValunError} from './errors.js';
 import {str} from './py.js';
 import {sha256} from './sha256.js';
 
-export const NETWORK = 'valun-pilot-1';   // the default network: a profile enrolled before 0.5 is on it
+export const NETWORK = 'valun-pilot-1';   // the pilot (retired 2026-11-13): what a profile enrolled before 0.5 is on
+/** The one network since 2026-11-13: what a profile that has not joined yet would join (profileNetwork). */
+export const TESTNET = 'valun-testnet-1';
+/** The day the pilot network (NETWORK) was retired (profileNetwork, retiredPilot). */
+export const PILOT_RETIRED_ON = '2026-11-13';
 /** The networks this client signs for (as the Python client's NETWORKS): amounts are whole numbers in `unit`; `scale`
  *  sizes the defaults written in PC (never a signed amount). valun-testnet-1 is Ergo TESTNET (nanoERG, test coins). */
 export const NETWORKS = Object.freeze({'valun-pilot-1': Object.freeze({unit: 'PC', scale: 1}),
@@ -15,6 +19,29 @@ export function networkOf(name) {
     throw new ValunError('unknown_network', `this client does not know the Valun network ${JSON.stringify(name)} (it knows ${Object.keys(NETWORKS).join(', ')}); nothing was signed. Update the client if this is a new network.`);
   }
   return NETWORKS[name];
+}
+
+/**
+ * The network a profile is on, as the words it is shown in and the checks on it name it (the Python client's
+ * profile_network): the one its join or enrollment named (state.network); the pilot (NETWORK) for a profile enrolled
+ * before 0.5, which names none; and for a profile that has not joined yet, the one network it would join (TESTNET), so
+ * that its tools speak the testnet's words, not the retired pilot's (fix inbox #15, the onboarding review). Client's
+ * network, what a profile signs for, still reads a profile without a network as the pilot's.
+ */
+export function profileNetwork(state) {
+  const s = state !== null && typeof state === 'object' && !Array.isArray(state) ? state : {};
+  if (typeof s.network === 'string' && s.network) return s.network;
+  return s.participant_id ? NETWORK : TESTNET;
+}
+
+/**
+ * Is this a profile of the pilot network (valun-pilot-1), retired on 2026-11-13, whose server now serves another
+ * network (serverNetwork, as its GET /info names it)? That server knows neither its participant nor its key, so the
+ * profile signs nothing there: its owner must join again in a new profile. False when the server's network is not
+ * known, or is the pilot's (the Python client's retired_pilot).
+ */
+export function retiredPilot(state, serverNetwork) {
+  return profileNetwork(state) === NETWORK && typeof serverNetwork === 'string' && serverNetwork !== NETWORK;
 }
 export const PROTOCOL = 'valun-deal/1';
 export const UNIT = 'PC';

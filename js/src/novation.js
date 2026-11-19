@@ -373,8 +373,11 @@ export function attemptOutcome(attempt, nowMs, state = null) {
   state ??= null;
   if (state !== null && pyEq(item(state, 'timestamp'), T) && pyEq(item(state, 'total'), total)) return 'applied';
   if (outcome === 'not_applied') {
-    if (expires(attempt)) return expired ? 'dead' : 'alive';
-    return state !== null && state.timestamp > T ? 'dead' : 'alive';    // an ordinary note never expires
+    // The owner's decision waits for the window (a transfer or bound note); the server's word that a payment it held
+    // for the owner was never sent on (server_ended: Client.learnOwnerDecisions) also ends once the edge is past T.
+    const past = state !== null && state.timestamp > T;
+    if (expires(attempt) && !isDict(get(attempt, 'server_ended'))) return expired ? 'dead' : 'alive';
+    return past || (expires(attempt) && expired) ? 'dead' : 'alive';    // an ordinary note never expires
   }
   if (state === null) return expires(attempt) && expired ? 'unread' : 'alive';
   if (state.timestamp >= T) return 'unknown';    // not its new state, at or past its timestamp: it may have applied

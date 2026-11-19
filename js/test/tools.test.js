@@ -4,8 +4,8 @@
 // commitment whose read fails is refused (approval_unbound) without asking. Offline.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {APPROVAL_TEXT, CONSENT_LOOP_MS, NO_APPROVAL_STEP, basis, bytesToHex, schemas, startConsentLoop, statements, termsHash, utf8,
-  valunTools} from '../src/index.js';
+import {APPROVAL_TEXT, CONSENT_LOOP_MS, NO_APPROVAL_STEP, basis, bytesToHex, novation, schemas, startConsentLoop, statements, termsHash,
+  utf8, valunTools} from '../src/index.js';
 import {KEYS, posts, scenario, world} from './agent-world.js';
 
 const ACCEPT = scenario('respond: accept');
@@ -132,18 +132,22 @@ test('when it cannot tell whether a call commits the owner, it is a commitment, 
 
 test('a misspelt review decision is a commitment (fail closed) with no approval text: refused without asking or sending anything', async () => {
   // Until 0.3.1 the owner was asked (with a generic text) and the tool then refused with bad_decision; since 0.4 (design
-  // 6.5) prepare() has no text for it, so the call is refused (approval_unbound) before anything is read or signed.
+  // 6.5) prepare() has no text for it, so the call is refused before anything is read or signed: approval_unbound until
+  // 0.7.1, and since 0.7.2 (fix inbox #58) the tool's own refusal, bad_decision, from the core's check of the arguments,
+  // as the call itself answers (prepare() still refuses it: approval_unbound, cause bad_decision).
   const sc = scenario('review: accept issues the note');
   const w = world(sc);
   const args = {...sc.args, decision: 'Accept'};
   assert.equal(await w.agent.isCommitment('valun_review_delivery', args), true, 'a commitment');
   const approve = hook(true);
   const r = await tool(valunTools(w.agent, {approve}), 'valun_review_delivery').execute(args);
-  assert.equal(r.error, 'approval_unbound');
+  const refused = {error: 'bad_decision', message: "decision must be exactly 'accept' or 'dispute'; nothing was signed"};
+  assert.deepEqual(r, refused);
   assert.equal(approve.calls.length, 0, 'the owner is not asked');
   assert.equal(w.fetch.calls.length, 0, 'no request at all');
-  assert.deepEqual(await w.agent.callSafe('valun_review_delivery', args),
-    {error: 'bad_decision', message: "decision must be exactly 'accept' or 'dispute'; nothing was signed"}, 'the tool itself refuses it too');
+  assert.deepEqual(await w.agent.callSafe('valun_review_delivery', args), refused, 'the tool itself refuses it the same');
+  const e = await w.agent.prepare('valun_review_delivery', args).then(() => null, x => x);
+  assert.deepEqual([e?.code, e?.extra?.cause], ['approval_unbound', 'bad_decision']);
 });
 
 test('prepare() before the hook: the hook sees the pinned terms hash, and exactly that hash is signed', async () => {
@@ -294,8 +298,26 @@ const ALREADY = {status: 409, body: {error: 'already_signed', message: 'these si
 const dueWorld = (state = {}) => world({...DUE, routes: {...DUE.routes, [CONSENT_POST]: {sequence: [DUE.routes[CONSENT_POST], ALREADY]}},
   state: {...DUE.state, ...state}});
 const count = (w, pred) => w.fetch.calls.filter(c => pred(c.key)).length;
+// (since 0.7.2 a consent's pending entry keeps the signature made over it, fresh in each run: only that one is held)
 const pendingOf = st => Object.fromEntries(Object.entries(st.records || {}).filter(([k]) => k !== 'paid_deals')
-  .map(([k, e]) => [k, e.pending || []]));
+  .map(([k, e]) => [k, (e.pending || []).map(({signature, ...p}) => ({...p, signature: typeof signature === 'string' && signature !== ''}))]));
+
+test('fix inbox #86: a set-off this client signs keeps, with each new state it wrote ahead, the signature it made over it', async () => {
+  const w = dueWorld();
+  await w.agent.consentsIfDue();
+  const st = w.store.state, me = st.pubkey, {tracker_nft_id: nft, denomination} = st.pins;
+  const kept = Object.entries(st.records).filter(([pair]) => pair !== 'paid_deals')
+    .flatMap(([pair, e]) => (e.pending ?? []).map(p => [pair, p])).filter(([, p]) => p.kind === 'setoff');
+  assert.equal(kept.length, 2, 'the two edges of the set-off, each pending: the server answered collecting');
+  for (const [pair, p] of kept) {
+    const [i, r] = pair.split('>');
+    assert.equal(p.direction, i === me ? 'out' : 'in', pair);
+    // on the edge it issues the issuer's signature of the new state; on the one it is the creditor of, its consent
+    assert.ok(basis.verifyHex(p.signature, novation.message(i, r, p.total, p.timestamp, nft, denomination), me), pair);
+  }
+  const sent = JSON.parse(w.fetch.calls.find(c => c.key === CONSENT_POST).init.body).signatures;
+  assert.deepEqual(kept.map(([pair, p]) => p.signature).sort(), kept.map(([pair]) => sent[`${pair}:new`]).sort(), 'the signatures it sent');
+});
 
 test('a consent loop round next to a tool call, two tool calls or two runs at once: one consent run, one POST, the pending entries kept', async () => {
   const one = dueWorld();
@@ -307,6 +329,11 @@ test('a consent loop round next to a tool call, two tool calls or two runs at on
     assert.equal(count(w, k => k === CONSENT_POST), 1, `${what}: the consent is sent once`);
     assert.deepEqual(w.store.state.consent_log.map(e => e.decision), ['signed'], what);
     assert.deepEqual(pendingOf(w.store.state), expected, `${what}: the pending entries are kept`);
+    // and the signature each keeps is the one that run sent (pendingOf shows only that one is held)
+    const sent = JSON.parse(w.fetch.calls.find(c => c.key === CONSENT_POST).init.body).signatures;
+    for (const [pair, e] of Object.entries(w.store.state.records).filter(([k]) => k !== 'paid_deals')) {
+      for (const p of (e.pending ?? []).filter(x => x.kind === 'setoff')) assert.equal(p.signature, sent[`${pair}:new`], `${what}: ${pair}`);
+    }
   };
   // a loop round alongside a tool call (the round first, then the call: neither interleaves with the other)
   const w1 = dueWorld({consent_loop: 'on'});
@@ -335,6 +362,20 @@ test('a consent loop round next to a tool call, two tool calls or two runs at on
   assert.equal(a.signed.length, 1);
   assert.equal(b, null);
   check(w4, 'two runs');
+});
+
+test('fix inbox #86 (review): a consent the server answers already_signed (another run sent it) keeps its pending entries and signatures', async () => {
+  // Two runs of one profile at once outside this agent's lock (the MCP server's loop and `valun clearing run`): the second
+  // POST of the same slots answers 409 already_signed. The server holds this client's signatures, so the entries are the
+  // states they sign; 0.7.2 before the review removed them, and --mine then could not prove the edges the set-off netted.
+  const w = dueWorld();
+  await w.agent.consentsIfDue();
+  const before = pendingOf(w.store.state);
+  assert.ok(Object.values(before).some(p => p.some(x => x.kind === 'setoff' && x.signature)), 'the first run kept its signatures');
+  const r = await w.agent.client().processConsents();
+  assert.equal(count(w, k => k === CONSENT_POST), 2, 'the second run sent the same slots');
+  assert.deepEqual(r.waiting.map(x => x.error), ['already_signed']);
+  assert.deepEqual(pendingOf(w.store.state), before, 'the pending entries, with a signature each, are kept');
 });
 
 test('the agent lock: exclusive() runs one holder at a time, in order, whatever each one does; valunTools() never holds it while the owner is asked', async () => {

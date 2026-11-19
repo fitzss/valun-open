@@ -15,7 +15,7 @@ import {
 } from '../src/index.js';
 import {jsonResponse, testKey} from './helpers.js';
 
-const SERVER = 'http://valun.invalid';
+const SERVER = 'https://valun.invalid';
 const NFT = '6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa';
 const key = label => { const secret = testKey(label); return {secret, pubkey: bytesToHex(basis.publicKey(secret))}; };
 const ALICE = key('test/alice'), BOB = key('test/bob');

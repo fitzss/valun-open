@@ -419,8 +419,9 @@ class OfferUnderReview(Card):
         self.world.routes[route] = (200, verdict('decline', ['Over its budget: it has 4 of 40 left, less than 18.', COUNTED_REASON],
                                                  cover=NO_COVER_SHOWN, counted_offers=[{'deal_id': OFFER, 'amount': 18}]))
         r = self.check(payer='bob', amount=18)
+        # 0.7.2: the server's second sentence follows the first after a stop (0.7.1: after a comma, mid-line)
         self.assertEqual(r['summary'], f'Decline, for a new deal on top of the offer you received at this price ({OFFER}, already counted): '
-                                       'Over its budget: it has 4 of 40 left, less than 18, ' + COUNTED_REASON.rstrip('.') +
+                                       'Over its budget: it has 4 of 40 left, less than 18. ' + COUNTED_REASON.rstrip('.') +
                          f'. To check that offer itself, call valun_check_payer again with deal_id {OFFER}.')
         self.assertEqual(r['counted_offers'], [{'deal_id': OFFER, 'amount': 18}], 'the answer itself is the server\'s')
         self.assertEqual(r['verdict'], 'decline')
@@ -595,8 +596,8 @@ class MissingArguments(Card):
         self.assertEqual(self.world.log, [], 'nothing is read for it')
 
 
-class CardCommands(Card):
-    """`valun card [WHO] | check PAYER AMOUNT | publish | unpublish`, on a profile in a temporary VALUN_HOME."""
+class CliCard(Card):
+    """`valun card ...` on a profile in a temporary VALUN_HOME (run_cli), over the fake server."""
 
     def setUp(self):
         super().setUp()
@@ -619,6 +620,10 @@ class CardCommands(Card):
         with contextlib.redirect_stdout(out):
             rc = cli.main(['--profile', profile, 'card', *argv])
         return rc, out.getvalue()
+
+
+class CardCommands(CliCard):
+    """`valun card [WHO] | check PAYER AMOUNT | publish | unpublish`, on a profile in a temporary VALUN_HOME."""
 
     def test_show_a_card_or_say_it_is_not_public(self):
         rc, out = self.run_cli('bob')
@@ -738,6 +743,139 @@ class CardCommands(Card):
             rc, out = self.run_cli(*argv)
             self.assertEqual((rc, out.strip()), (2, cli.CARD_USAGE), argv)
         self.assertEqual(self.world.log, [])
+
+
+# Fix inbox #87: answers of the server's own code to the payee's own check, recorded with what valun 0.7.2 makes of
+# them; the JavaScript client is held to the same file (js/test/budget-card.test.js).
+with open(os.path.join(HERE, 'fixtures', 'check-sides.json'), encoding='utf-8') as _f:
+    SIDES = json.load(_f)
+BOTH = {'verdict': 'accept', 'rule': None, 'reasons': ['Within its budget.']}
+
+
+class BothSides(CliCard):
+    """Fix inbox #87, the client side: a server that gives the payee's own check one verdict for the step from both sides
+    (payer_side, payee_side) gets a summary that leads with it, names whose owner decides an ask_owner, and says the
+    cover once, in the server's words (payee_side), never adding its own; `valun card check` exits 0 only when both
+    sides go ahead. A server from before #87 (no payer_side) is read as 0.7.1 read it. In both, a sentence of the server's
+    follows the one before after a stop, not a comma."""
+
+    def check(self, **args):
+        return self.agent().call_safe('valun_check_payer', args)
+
+    def serve(self, case):
+        self.world.routes[f"GET {SIDES['request']['path']}"] = (case['status'], case['body'])
+
+    def test_the_recorded_answers_summary_tool_answer_and_exit_code(self):
+        self.assertEqual(len(SIDES['cases']), 11)
+        req = SIDES['request']
+        for case in SIDES['cases']:
+            with self.subTest(case['name']):
+                self.serve(case)
+                r = self.check(payer=req['payer'], amount=req['amount'])
+                self.assertEqual(r['summary'], case['summary'])
+                if case['status'] == 200:
+                    self.assertEqual(va.check_summary(case['body']), case['summary'])
+                    self.assertEqual(list(r)[0], 'summary')
+                    self.assertEqual({k: v for k, v in r.items() if k != 'summary'}, case['body'], "the rest is the server's answer")
+                else:
+                    self.assertEqual((r['verdict'], r['payer']), ('unknown', {'id': BOB, 'handle': 'bob'}))
+                rc, out = self.run_cli('check', req['payer'], str(req['amount']))
+                self.assertEqual((rc, json.loads(out)['summary']), (case['exit'], case['summary']))
+        self.assertEqual([c['name'] for c in SIDES['cases'] if c['exit'] == 0], ['accept with cover', 'old server: accept with cover'])
+
+    def test_the_lead_is_the_steps_verdict_and_the_cover_is_the_servers_sentence_said_once(self):
+        leads = {'accept': 'Accept: ', 'decline': 'Decline: ', 'unknown': 'Unknown: '}
+        for case in SIDES['cases']:
+            b = case['body']
+            if case['status'] != 200 or 'payer_side' not in b:
+                continue
+            with self.subTest(case['name']):
+                want = leads.get(b['verdict']) or f"{va.CHECK_ASK_LEAD[va.check_owners(b)]}: "
+                self.assertTrue(case['summary'].startswith(want + b['reasons'][0][:-1] + '. '), case['summary'])
+                said = [x for x in b['payee_side']['reasons'] if x.startswith('Backed for you')]
+                self.assertEqual(case['summary'].lower().count('backed for you'), len(said))
+                self.assertLessEqual(len(said), 1)
+                self.assertTrue(case['summary'].endswith(f" Your own side: {' '.join(b['payee_side']['reasons'])}"), case['summary'])
+        names = {c['name']: c for c in SIDES['cases']}
+        self.assertTrue(names['ask owner payee with cover']['summary'].startswith('Ask your owner: '))
+        self.assertTrue(names['ask owner both']['summary'].startswith("Ask your owner and the payer's owner: "))
+        self.assertEqual(names['ask owner payee with cover']['summary'].lower().count('backed for you'), 1)
+        # A server from before #87: 0.7.1's reading, the cover named by this client after the step's reasons, and the
+        # payee's own reasons only when that side would not simply go ahead.
+        old = names['old server: ask owner payee with cover']
+        self.assertTrue(old['summary'].startswith('Accept: Within its budget'))
+        self.assertIn('by a backer not named here, backed for you up to 2000000. Your own side: Your own limits allow it. Your owner approves',
+                      old['summary'])
+        self.assertNotIn('Your own side', names['old server: accept with cover']['summary'])
+
+    def test_whose_owner_decides_an_ask_owner(self):
+        side = lambda v: {'verdict': v, 'rule': 'approve_above' if v == 'ask_owner' else None, 'reasons': []}   # noqa: E731
+        s = lambda payer, payee, **more: va.check_summary({'verdict': 'ask_owner', 'reasons': ['R.'], 'rule': 'approve_above',  # noqa: E731
+                                                           'payer_side': payer, 'payee_side': payee, **more})
+        self.assertEqual(s(side('accept'), side('ask_owner')), 'Ask your owner: R. Your own side: your owner approves it before it binds.')
+        self.assertEqual(s(side('ask_owner'), side('accept')), "Ask the payer's owner: R.")
+        self.assertEqual(s(side('ask_owner'), side('ask_owner')), "Ask your owner and the payer's owner: R. Your own side: your owner "
+                                                                  'approves it before it binds.')
+        # sides that do not say whose: both owners are named, so this agent's own is never left out
+        for payer, payee in ((None, None), ('ask_owner', None), (side('accept'), side('accept')), ([side('ask_owner')], 7)):
+            self.assertTrue(s(payer, payee).startswith("Ask your owner and the payer's owner: R."), (payer, payee))
+        self.assertEqual(va.check_owners({'payer_side': side('ask_owner'), 'payee_side': None}), 'payer')
+        self.assertEqual(va.check_owners(None), 'both')
+        # no reasons: the words of the owner who decides
+        for whose, payer, payee in (('payee', side('accept'), side('ask_owner')), ('payer', side('ask_owner'), side('accept')),
+                                    ('both', side('ask_owner'), side('ask_owner'))):
+            r = va.check_summary({'verdict': 'ask_owner', 'reasons': [], 'payer_side': payer, 'payee_side': payee})
+            self.assertTrue(r.startswith(f'{va.CHECK_ASK_LEAD[whose]}: {va.CHECK_ASK_FALLBACK[whose]}.'), r)
+        # a server from before #87 (no payer_side): the payer's owner, as in 0.7.1, and your own side after it
+        self.assertEqual(va.check_summary({'verdict': 'ask_owner', 'reasons': ['R.'], 'payee_side': side('ask_owner')}),
+                         "Ask the payer's owner: R. Your own side: your owner approves it before it binds.")
+        self.assertEqual(va.check_summary({'verdict': 'accept', 'reasons': ['R.'], 'payee_side': side('ask_owner')}),
+                         'Accept: R. Your own side: your owner approves it before it binds.')
+
+    def test_with_payer_side_this_client_never_names_the_cover_itself(self):
+        for payer in (BOTH, None, 'junk'):
+            v = {'verdict': 'accept', 'reasons': ['Both sides allow it.'], 'cover': {'covered': 3}, 'payer_side': payer}
+            self.assertEqual(va.check_summary(v), 'Accept: Both sides allow it.', payer)
+            self.assertEqual(va.check_summary(dict(v, payee_side={'verdict': 'accept', 'reasons': ['Your own limits allow it.',
+                                                                                                    'Backed for you up to 3 by @erin.']})),
+                             'Accept: Both sides allow it. Your own side: Your own limits allow it. Backed for you up to 3 by @erin.')
+        self.assertEqual(va.check_summary({'verdict': 'accept', 'reasons': ['r'], 'cover': {'covered': 3}}), 'Accept: r, backed for you up to 3.',
+                         'a server from before #87: the cover named by this client, as in 0.7.1')
+        # your own side's accept: its reasons follow (the cover is among them); without reasons nothing is added
+        v = {'verdict': 'accept', 'reasons': ['Both sides allow it.'], 'payer_side': BOTH}
+        self.assertEqual(va.check_summary(dict(v, payee_side={'verdict': 'accept', 'reasons': []})), 'Accept: Both sides allow it.')
+        for side in ({'verdict': 'Accept', 'reasons': ['x']}, {'verdict': ['accept'], 'reasons': ['x']}, {'reasons': ['x']}, 'accept'):
+            self.assertEqual(va.check_summary(dict(v, payee_side=side)), 'Accept: Both sides allow it.', side)
+        self.assertEqual(va.check_summary({'verdict': 'accept', 'reasons': ['r'], 'payee_side': {'verdict': 'accept', 'reasons': ['x']}}),
+                         'Accept: r.', 'a server from before #87: your own accept adds nothing, as in 0.7.1')
+
+    def test_a_sentence_follows_after_a_stop_and_a_fragment_after_a_comma(self):
+        s = lambda *reasons: va.check_summary({'verdict': 'accept', 'reasons': list(reasons)})   # noqa: E731
+        self.assertEqual(s('Within its budget.', 'Its owner approves it.'), 'Accept: Within its budget. Its owner approves it.')
+        self.assertEqual(s('within its budget', 'fine'), 'Accept: within its budget, fine.')
+        self.assertEqual(s('Within its budget.', "bob's IOUs count 50%.", '2 of 40 left', 'Zed;'),
+                         "Accept: Within its budget, bob's IOUs count 50%, 2 of 40 left. Zed.")
+        self.assertEqual(s('A.', 'Été.', 'B'), 'Accept: A, Été. B.', 'capitals A to Z only, as in JavaScript')
+        self.assertEqual(va._summary_text([]), '')
+
+    def test_card_check_exits_0_only_when_both_sides_go_ahead(self):
+        req = SIDES['request']
+        accept = next(c for c in SIDES['cases'] if c['name'] == 'accept with cover')
+        yours = accept['body']['payee_side']
+        for payer_side, payee_side, rc in ((BOTH, yours, 0), (None, yours, 1), ('accept', yours, 1), ({'verdict': 'Accept'}, yours, 1),
+                                           (BOTH, None, 1), (BOTH, {'verdict': 'ask_owner'}, 1), (BOTH, 'accept', 1),
+                                           ({'verdict': 'ask_owner', 'reasons': []}, yours, 1)):
+            body = {k: v for k, v in accept['body'].items() if k != 'payee_side'}
+            body.update(payer_side=payer_side, **({} if payee_side is None else {'payee_side': payee_side}))
+            self.serve({'status': 200, 'body': body})
+            self.assertEqual(self.run_cli('check', req['payer'], str(req['amount']))[0], rc, (payer_side, payee_side))
+            self.assertEqual(cli._check_goes_ahead(body), rc == 0)
+        for v in ('decline', 'ask_owner', 'unknown', None):
+            self.assertFalse(cli._check_goes_ahead(dict(accept['body'], verdict=v)), v)
+        # a server from before #87: as in 0.7.1 (without payee_side the payer's verdict alone decides)
+        self.assertTrue(cli._check_goes_ahead({'verdict': 'accept'}))
+        self.assertTrue(cli._check_goes_ahead({'verdict': 'accept', 'payee_side': None}))
+        self.assertFalse(cli._check_goes_ahead({'verdict': 'accept', 'payer_side': None}))
 
 
 if __name__ == '__main__':

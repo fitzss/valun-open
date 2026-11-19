@@ -83,14 +83,19 @@ test('the recorded scenarios cover every tool, every commitment kind and the mai
   for (const name of TOOL_NAMES) assert.ok(tools.has(name), name);
   assert.ok(FIX.scenarios.some(s => !TOOL_NAMES.includes(s.tool) && s.is_commitment === true), 'an unknown tool is a commitment');
   const errors = new Set(FIX.scenarios.map(s => s.result.error).filter(Boolean));
-  for (const code of ['not_connected', 'unauthorized', 'unknown_tool', 'internal_error', 'not_found', 'missing_text', 'unknown_participant',
+  // internal_error is no longer among them: the recorded calls that answered it (a query, a counterparty or a limit of the
+  // wrong type) are bad_arguments since 0.7.2 (fix inbox #58), and no recorded call answers it now
+  assert.ok(!errors.has('internal_error'), 'no recorded call answers internal_error');
+  for (const code of ['not_connected', 'unauthorized', 'unknown_tool', 'not_found', 'missing_text', 'unknown_participant',
     'mandate_exceeded', 'bad_role', 'stale_terms', 'bad_signature', 'reason_required', 'bad_action', 'offer_not_authorized',
     'draft_does_not_meet_terms', 'not_agreed', 'stale_delivery', 'nothing_to_record', 'bad_decision', 'hash_mismatch',
     'bad_delivery_signature', 'ledger_mismatch', 'already_paid', 'bad_prior_signature', 'bad_template', 'tracker_mismatch',
     'stale_note']) assert.ok(errors.has(code), code);
   const causes = new Set(FIX.scenarios.map(s => s.prepare.cause).filter(Boolean));
+  // ValueError is no longer among them: prepare() refused a limit of the wrong type with it (int('lots')) until the core's
+  // check refused it first, bad_arguments (fix inbox #58, 0.7.2); a misspelt action or decision is refused with its own code
   for (const cause of ['hash_mismatch', 'role_mismatch', 'counterparty_mismatch', 'own_offer', 'not_payer', 'stale_terms', 'stale_delivery',
-    'bad_arguments', 'not_connected', 'not_found', 'approval_unbound', 'ValueError']) assert.ok(causes.has(cause), `prepare refuses: ${cause}`);
+    'bad_arguments', 'not_connected', 'not_found', 'approval_unbound', 'bad_action', 'bad_decision']) assert.ok(causes.has(cause), `prepare refuses: ${cause}`);
   // fix inbox #58: a missing argument is bad_arguments, never a KeyError (internal_error), in the tools and in prepare()
   assert.ok(!causes.has('KeyError') && !FIX.scenarios.some(s => /KeyError/.test(s.result.message ?? '')), 'no KeyError left');
   const texts = FIX.scenarios.filter(s => typeof s.prepare.value?.text === 'string');
@@ -157,6 +162,9 @@ const CALL = {
   card: (c, k) => c.card(k.who),
   check_payer: (c, k) => c.checkPayer(k.payer, k.amount, {payee: k.payee ?? null, dealId: k.deal_id ?? null}),
   set_public_card: (c, k) => c.setPublicCard(k.on, k.owner_token),
+  // 0.7.2: what the owner decided about a payment the server held for them
+  learn_owner_decisions: (c, k) => c.learnOwnerDecisions(k.deal_id, k.d),
+  refresh_owner_decisions: c => c.refreshOwnerDecisions(),
 };
 
 test(`client methods: ${FIX.client_scenarios.length} scenarios give the Python reference's results, requests, signatures and records`, async t => {

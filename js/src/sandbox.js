@@ -116,7 +116,8 @@ export function requestWords(description) {
 
 /**
  * The exactly checkable service a deal asks for, named in its title, deliverable or the buyer's own words (never in the
- * text to work on: a code review of a hash function is not a notary job), or null.
+ * text to work on: a code review of a hash function is not a notary job), or null. What a seller sells by: whether a
+ * delivery is checked exactly is builtInJob's to say (a free-form job can name a word count).
  */
 export function whichService(terms) {
   const svc = or(get(terms, 'service'), {});
@@ -128,6 +129,45 @@ export function whichService(terms) {
   return null;
 }
 
+/** The always-on agents the server runs (lib/pilot/sandbox.mjs), whose jobs are the built-in ones, delivered as render()
+ * writes them. */
+export const SANDBOX_AGENTS = Object.freeze(['sandbox-exact', 'sandbox-mallory']);
+/** Titles that name a built-in service, lower-cased with their spaces collapsed: the service alone, "<service> job" (as
+ * `valun sandbox buy` and the tour write it), and the welcome job sandbox-exact sends (lib/pilot/sandbox.mjs WELCOME). */
+export const BUILT_IN_TITLES = Object.freeze(['text-stats', 'text-stats job', 'notary', 'notary job', 'welcome job: text-stats']);
+export const NOT_BUILT_IN = 'not a built-in job: not checked exactly. Your Valun client checks a text-stats or notary result '
+  + 'exactly only in a job with sandbox-exact or sandbox-mallory, or one whose title is text-stats or notary (alone or with '
+  + '" job" after it), or whose terms ask for its ```json result block; judge this delivery against the agreed terms';
+export const NOT_IN_BUILT_IN_FORMAT = 'not in the built-in format: the delivery has no ```json result block to compare';
+
+/**
+ * Is this deal one of the built-in jobs, whose delivery is the ```json result block render() writes, so that it is
+ * checked exactly and a wrong result is disputed (Python built_in_job)? The Nov 18 fresh-join run (finding 10): "word
+ * count" anywhere in a free-form job's terms made both clients check a correct plain-text answer against text-stats and
+ * advise a dispute. True when the counterparty (its handle) is sandbox-exact or sandbox-mallory, or when the terms name
+ * the built-in service: a title in BUILT_IN_TITLES, or a deliverable or buyer's own words (requestWords: never the text
+ * to work on) that ask for the ```json result block. Throws for terms that are not a deal's, as whichService does.
+ */
+export function builtInJob(terms, counterparty = null) {
+  const svc = or(get(terms, 'service'), {});
+  if (typeof counterparty === 'string' && SANDBOX_AGENTS.includes(lower(strip(counterparty)))) return true;
+  if (BUILT_IN_TITLES.includes(splitWords(lower(str(or(get(svc, 'title'), '')))).join(' '))) return true;
+  const asks = lower([requestWords(str(or(get(svc, 'description'), ''))), str(or(get(svc, 'deliverable'), ''))].join(' '));
+  return asks.includes('```json');
+}
+
+/**
+ * checkDelivery for a built-in job (builtInJob; counterparty: the other party's handle), which the agent tools show and
+ * advise on (Python check_built_in): null when the terms name no exactly checkable service (whichService), as
+ * checkDelivery; {checked: false, built_in_job: false, why: NOT_BUILT_IN} when they name one in a job that is not
+ * built-in, which is never checked exactly and never disputed for it.
+ */
+export function checkBuiltIn(terms, content, counterparty = null) {
+  if (!whichService(terms)) return null;
+  if (!builtInJob(terms, counterparty)) return {checked: false, built_in_job: false, why: NOT_BUILT_IN};
+  return checkDelivery(terms, content);
+}
+
 function keysOf(v) {
   if (isDict(v)) return Object.keys(v);
   if (Array.isArray(v) || typeof v === 'string') throw new PyError('AttributeError', `'${typeName(v)}' object has no attribute 'get'`);
@@ -136,8 +176,10 @@ function keysOf(v) {
 
 /**
  * For an exactly checkable service (text-stats, notary): recompute the result from the agreed text and compare it with
- * the delivered JSON. null when the deal is not such a service. The agent tools use it so that a model is told the fact
- * (match or not) instead of having to compute a SHA-256 or count words itself.
+ * the delivered JSON. null when the deal is not such a service. The agent tools use it, for a built-in job only
+ * (checkBuiltIn), so that a model is told the fact (match or not) instead of having to compute a SHA-256 or count words
+ * itself. A delivery without the ```json result block is not in the built-in format (built_in_format false): its result
+ * was not compared, and nothing says it does not match.
  */
 export function checkDelivery(terms, content) {
   const service = whichService(terms);
@@ -146,7 +188,7 @@ export function checkDelivery(terms, content) {
   if (text === null) return {service, checked: false, why: 'the agreed terms contain no text to recompute from'};
   const expected = COMPUTE[service](text), got = parseResult(content);
   if (got === null) {
-    return {service, checked: true, exact_result_matches: false, why: 'the delivery has no ```json result block to compare', expected};
+    return {service, checked: true, exact_result_matches: false, built_in_format: false, why: NOT_IN_BUILT_IN_FORMAT, expected};
   }
   const keys = [...new Set([...Object.keys(expected), ...keysOf(got)])];
   const at = (o, k) => (Object.hasOwn(o, k) ? o[k] : null);

@@ -67,3 +67,17 @@ test('the README example (a plain tool-call loop) runs as written, offline', asy
   const toolMsg = seen[1].messages.find(m => m.role === 'tool');
   assert.equal(JSON.parse(toolMsg.content).you.handle, 'alice');
 });
+
+test('the README\'s differences from the Python client are differences today: both follow no redirect (the RC\'s review, round 3)', () => {
+  // js-readme-stale-redirect-difference: the list still said this client's requests use redirect: 'error', "so a bearer
+  // token is never forwarded to a redirect target", as if the Python client forwarded it; since b9fcae4 it follows no
+  // redirect either, and its token is in an unredirected header. What differs is that only Python names where one pointed.
+  const readme = read('README.md');
+  const start = readme.indexOf('Differences from the Python client that a user may notice:');
+  assert.ok(start >= 0, 'the README has the list');
+  const list = readme.slice(start, readme.indexOf('\n\n', readme.indexOf('\n- ', start)));
+  assert.ok(!/never forwarded to a redirect target/.test(list), list);
+  assert.match(list, /neither client follows a redirect/);
+  const python = fs.readFileSync(fileURLToPath(new URL('../../python/README.md', import.meta.url)), 'utf8').replace(/\s+/g, ' ');
+  assert.match(python, /It follows no redirect/, 'the Python README says the same of its client');
+});

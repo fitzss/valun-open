@@ -111,10 +111,15 @@ def parse_result(content):
     return json.loads(m.group(1)) if m else None
 
 
+NOT_IN_BUILT_IN_FORMAT = 'not in the built-in format: the delivery has no ```json result block to compare'
+
+
 def check_delivery(terms, content):
     """For an exactly checkable service (text-stats, notary): recompute the result from the agreed text and compare it
-    with the delivered JSON. None when the deal is not such a service. Used by the agent tools so that an AI model is
-    told the fact (match or not) instead of having to compute a SHA-256 or count words itself."""
+    with the delivered JSON. None when the deal is not such a service. Used by the agent tools, for a built-in job only
+    (check_built_in), so that an AI model is told the fact (match or not) instead of having to compute a SHA-256 or
+    count words itself. A delivery without the ```json result block is not in the built-in format (built_in_format
+    false): its result was not compared, and nothing says it does not match."""
     service = which_service(terms)
     if not service:
         return None
@@ -123,8 +128,8 @@ def check_delivery(terms, content):
         return {'service': service, 'checked': False, 'why': 'the agreed terms contain no text to recompute from'}
     expected, got = COMPUTE[service](text), parse_result(content)
     if got is None:
-        return {'service': service, 'checked': True, 'exact_result_matches': False,
-                'why': 'the delivery has no ```json result block to compare', 'expected': expected}
+        return {'service': service, 'checked': True, 'exact_result_matches': False, 'built_in_format': False,
+                'why': NOT_IN_BUILT_IN_FORMAT, 'expected': expected}
     diff = sorted(k for k in set(expected) | set(got) if got.get(k) != expected.get(k))
     return {'service': service, 'checked': True, 'exact_result_matches': not diff, 'differs_in': diff,
             **({'expected': {k: expected.get(k) for k in diff}, 'delivered': {k: got.get(k) for k in diff}} if diff else {}),
@@ -149,7 +154,8 @@ def request_words(description):
 
 def which_service(terms):
     """The exactly checkable service a deal asks for, named in its title, deliverable or the buyer's own words (never in
-    the text to work on: a code review of a hash function is not a notary job), or None."""
+    the text to work on: a code review of a hash function is not a notary job), or None. What a seller sells by: whether
+    a delivery is checked exactly is built_in_job's to say (a free-form job can name a word count)."""
     svc = terms.get('service') or {}
     hay = ' '.join((str(svc.get('title') or ''), request_words(str(svc.get('description') or '')),
                     str(svc.get('deliverable') or ''))).lower()
@@ -157,6 +163,46 @@ def which_service(terms):
         if any(k in hay for k in s['keywords']):
             return name
     return None
+
+
+# The always-on agents the server runs (lib/pilot/sandbox.mjs), whose jobs are the built-in ones, delivered as render()
+# writes them.
+SANDBOX_AGENTS = ('sandbox-exact', 'sandbox-mallory')
+# Titles that name a built-in service, lower-cased with their spaces collapsed: the service alone, "<service> job" (as
+# `valun sandbox buy` and the tour write it), and the welcome job sandbox-exact sends (lib/pilot/sandbox.mjs WELCOME).
+BUILT_IN_TITLES = ('text-stats', 'text-stats job', 'notary', 'notary job', 'welcome job: text-stats')
+NOT_BUILT_IN = ('not a built-in job: not checked exactly. Your Valun client checks a text-stats or notary result exactly '
+                'only in a job with sandbox-exact or sandbox-mallory, or one whose title is text-stats or notary (alone or '
+                'with " job" after it), or whose terms ask for its ```json result block; judge this delivery against the '
+                'agreed terms')
+
+
+def built_in_job(terms, counterparty=None):
+    """Is this deal one of the built-in jobs, whose delivery is the ```json result block render() writes, so that it is
+    checked exactly and a wrong result is disputed? The Nov 18 fresh-join run (finding 10): "word count" anywhere in a
+    free-form job's terms made both clients check a correct plain-text answer against text-stats and advise a dispute.
+    True when the counterparty (its handle) is sandbox-exact or sandbox-mallory, or when the terms name the built-in
+    service: a title in BUILT_IN_TITLES, or a deliverable or buyer's own words (request_words: never the text to work on)
+    that ask for the ```json result block. Errors for terms that are not a deal's, as which_service raises them."""
+    svc = terms.get('service') or {}
+    if isinstance(counterparty, str) and counterparty.strip().lower() in SANDBOX_AGENTS:
+        return True
+    if ' '.join(str(svc.get('title') or '').lower().split()) in BUILT_IN_TITLES:
+        return True
+    asks = ' '.join((request_words(str(svc.get('description') or '')), str(svc.get('deliverable') or ''))).lower()
+    return '```json' in asks
+
+
+def check_built_in(terms, content, counterparty=None):
+    """check_delivery for a built-in job (built_in_job; counterparty: the other party's handle), which the agent tools
+    show and advise on: None when the terms name no exactly checkable service (which_service), as check_delivery;
+    {'checked': False, 'built_in_job': False, 'why': NOT_BUILT_IN} when they name one in a job that is not built-in,
+    which is never checked exactly and never disputed for it."""
+    if not which_service(terms):
+        return None
+    if not built_in_job(terms, counterparty):
+        return {'checked': False, 'built_in_job': False, 'why': NOT_BUILT_IN}
+    return check_delivery(terms, content)
 
 
 class Seller:
@@ -271,32 +317,53 @@ def participant(c, who):
     return found
 
 
+def owner_hint(c, status):
+    """The line that says where a commitment held for the owner waits (console approvals: the owner mandate holds it),
+    for a deal status that waits for this participant's owner; None for any other status. `sandbox buy`, `sell` and
+    `earn` log it when a deal they wait on reaches such a status (the 0.7.2 review: buy logged
+    proposed_awaiting_owner without saying where to approve it)."""
+    server = str((getattr(c, 'state', None) or {}).get('server') or '').rstrip('/')
+    where = f'in the owner console ({server}/pilot#owner)'
+    return {'proposed_awaiting_owner': f'  your offer waits for you {where}: approve it there, and this goes on by itself',
+            'accepted_awaiting_owner': f'  your acceptance waits for you {where}: approve it there, and this goes on by itself',
+            'completion_awaiting_owner': (f'  the payment your agent signed waits for you {where}: approve it there (an IOU '
+                                          'by the deadline its card shows, a minute before the hour after it was signed '
+                                          'ends; a payment by transfer within 20 minutes), or the deal is not paid')}.get(status)
+
+
 def buy(store, seller, service, text, price=None, server=None, wait_s=600, log=print, pay_with=None, poll_s=5):
     """Order one job from `seller` and verify the delivery exactly. Returns a summary dict. A delivery that is exactly
     right is paid with this agent's own credit note, or, with pay_with (the handle or id of an issuer whose note it
-    holds; circulating credit), by moving that much of the issuer's debt to the seller (Client.pay_by_transfer)."""
+    holds; circulating credit), by moving that much of the issuer's debt to the seller (Client.pay_by_transfer). With
+    console approvals each step waits for the owner in the owner console, and the log says so (owner_hint); an offer
+    the owner rejected ends the purchase (rejected_by_owner)."""
     c = vc.Client(store, server=server)
     who = participant(c, seller)
     price = price or price_of(service, c.network)
     desc = f'{service} for this text:\n```\n{text}\n```'
     d = c.propose(who['id'], 'payer', f'{service} job', desc, f'The exact {service} result as JSON.', price, 24, 1)
     did = d['id']
-    log(f'offered {price} {c.unit} to {who["handle"]}: deal {did}')
+    log(f'offered {vc.amount_text(price, c.unit)} to {who["handle"]}: deal {did}')
     deadline = time.time() + wait_s
     status = d['status']
+    if owner_hint(c, status):
+        log(f'deal {did}: {status}')
+        log(owner_hint(c, status))
     while time.time() < deadline:
         time.sleep(poll_s)
         d = c.deal(did)
         if d['status'] != status:
             status = d['status']
             log(f'deal {did}: {status}')
+            if owner_hint(c, status):
+                log(owner_hint(c, status))
         if status == 'open' and d['current']['by'] != c.participant_id:
             amount = d['current']['terms']['price']['amount']
             if amount <= price_of(service, c.network):
                 c.accept(did, c.verify_offer(d)['terms_hash'])
             else:
                 c.decline(did, f'{amount} {c.unit} is above the published price')
-        if status in ('delivered', 'declined', 'expired', 'withdrawn', 'disputed', 'note_issued'):
+        if status in ('delivered', 'declined', 'expired', 'withdrawn', 'disputed', 'note_issued', 'rejected_by_owner'):
             break
     if status != 'delivered':
         return {'deal_id': did, 'status': status, 'verified': None}
@@ -306,10 +373,14 @@ def buy(store, seller, service, text, price=None, server=None, wait_s=600, log=p
         if pay_with in (None, 'own_note'):
             r = c.complete(did, d['delivery']['sha256'])
             log(f'delivery verified exactly; credit note: {r["status"]}')
+            if owner_hint(c, r['status']):
+                log(owner_hint(c, r['status']))
             return {'deal_id': did, 'status': r['status'], 'verified': True, 'amount': price,
                     'paid': r['status'] in PAID_STATUSES}
         r = c.pay_by_transfer(did, pay_with, expected_deliverable_sha256=d['delivery']['sha256'])
         log(f'delivery verified exactly; paid with a note of {pay_with}: {r["status"]}')
+        if owner_hint(c, r['status']):
+            log(owner_hint(c, r['status']))
         return {'deal_id': did, 'status': r['status'], 'verified': True, 'amount': price, 'paid_with': pay_with,
                 'paid': r['status'] in PAID_STATUSES}
     diff = sorted(k for k in set(expected) | set(got or {}) if (got or {}).get(k) != expected.get(k))
@@ -329,9 +400,26 @@ TOUR_POLL_S = 3
 # in one step (20 in a row: about 1 in a million) before the tour stops.
 TOUR_CALLS_PER_STEP = 12
 TOUR_DISPUTES_PER_STEP = 20
+# A wait sandbox_next_steps says cannot end by itself (blocked: step 4's 3-cycle has no third leg on the tracker) ends
+# the tour with tour_blocked after TOUR_BLOCKED_S, instead of at its deadline.
+TOUR_BLOCKED_S = 120
+# While nothing is to be called, the tour waits what sandbox_next_steps asks (retry_after_seconds: 5 s while a sandbox
+# agent acts, 15 s while a set-off is due, 30 s while a 3-cycle cannot form, 60 s for the owner), at least its poll_s and
+# at most TOUR_WAIT_MAX_S, so that it reads valun_status (GET /me, /inbox, /edges) less often than every 3 s (0.7.2).
+TOUR_WAIT_MAX_S = 15
+
+
+def tour_wait_s(plan, poll_s):
+    """The wait before the tour's next valun_status when the plan has no call: its retry_after_seconds, at least
+    poll_s, at most TOUR_WAIT_MAX_S (poll_s when it names none)."""
+    r = plan.get('retry_after_seconds') if isinstance(plan, dict) else None
+    r = r if isinstance(r, (int, float)) and not isinstance(r, bool) and r > 0 else poll_s
+    return max(poll_s, min(r, TOUR_WAIT_MAX_S))
+
+
 # Refusals the tour stops on (any other error of one call is shown, and the next status decides again).
-TOUR_STOPS = ('owner_declined', 'not_sandbox_only', 'feature_unavailable', 'attempt_outcome_unknown', 'records_unreadable',
-              'tracker_mismatch', 'not_connected', 'not_configured', 'tour_unverified')
+TOUR_STOPS = ('owner_declined', 'approval_cancelled', 'not_sandbox_only', 'feature_unavailable', 'attempt_outcome_unknown',
+              'records_unreadable', 'tracker_mismatch', 'not_connected', 'not_configured', 'tour_unverified')
 
 
 def _deliver_and_wait(c, did, service, text, price, wait_s, log, poll_s):
@@ -344,6 +432,10 @@ def _deliver_and_wait(c, did, service, text, price, wait_s, log, poll_s):
         if d['status'] != status:
             status = d['status']
             log(f'deal {did}: {status}')
+            # console approvals: this payee's own offer (sell) or acceptance (earn) is held for its owner (a payment the
+            # payer's owner holds, completion_awaiting_owner, is not this owner's to approve)
+            if status in ('proposed_awaiting_owner', 'accepted_awaiting_owner'):
+                log(owner_hint(c, status))
         if status == 'open' and (d.get('current') or {}).get('by') not in (None, c.participant_id):
             c.decline(did, f'I offered this job at {price} {c.unit}.')       # a counter-offer: the price is the published one
             log(f'deal {did}: declined a counter-offer')
@@ -356,7 +448,25 @@ def _deliver_and_wait(c, did, service, text, price, wait_s, log, poll_s):
         if status in END_STATUSES or time.time() >= deadline:
             break
         time.sleep(poll_s)
-    return {'deal_id': did, 'status': status, 'paid': status in PAID_STATUSES, 'amount': price}
+    paid = status in PAID_STATUSES
+    if paid:
+        _record_payment(c, log)
+    return {'deal_id': did, 'status': status, 'paid': paid, 'amount': price}
+
+
+def _record_payment(c, log):
+    """Fix inbox #86: once the buyer paid, this client's records take the note it was paid with, as they take every
+    note the agent is paid with when valun_status reads its edges: one read-back of GET /edges (Client.sync_edges, each
+    state checked against its issuer's signature on the pinned tracker). The audit of this profile (valun audit --mine)
+    compares those records with what the chain commits. A server without GET /edges, or one that cannot be read now,
+    leaves them as they are, and so does a profile that cannot be written now (an OSError: a full disk): the payment
+    itself is done, and valun_status reads the edges again where the server shows them."""
+    try:
+        c.sync_edges()
+    except (vc.ValunError, OSError) as e:
+        why = e.code if isinstance(e, vc.ValunError) else f'{type(e).__name__}: {e}'
+        log(f'  (your records do not hold this payment yet ({why}); valun_status reads your edges again where this server '
+            'shows them)')
 
 
 def sell(store, buyer, service, text, price=None, server=None, wait_s=600, log=print, poll_s=TOUR_POLL_S):
@@ -369,7 +479,7 @@ def sell(store, buyer, service, text, price=None, server=None, wait_s=600, log=p
     price = price or price_of(service, c.network)
     desc = f'{service} for this text:\n```\n{text}\n```'
     d = c.propose(who['id'], 'payee', f'{service} job', desc, f'The exact {service} result as JSON.', price, 24, 1)
-    log(f'offered to do {service} for {who["handle"]} for {price} {c.unit}: deal {d["id"]}')
+    log(f'offered to do {service} for {who["handle"]} for {vc.amount_text(price, c.unit)}: deal {d["id"]}')
     return _deliver_and_wait(c, d['id'], service, text, price, wait_s, log, poll_s)
 
 
@@ -404,15 +514,23 @@ def earn(store, server=None, wait_s=600, log=print, poll_s=TOUR_POLL_S, text=Non
     if service is None or job is None:
         raise vc.ValunError('not_exact_service', f'the offer on {did} is not a text-stats or notary job with its text')
     c.accept(did, chk['terms_hash'])
-    log(f"accepted the {service} job from {offer['counterparty']} ({terms['price']['amount']} {c.unit}): deal {did}")
+    log(f"accepted the {service} job from {offer['counterparty']} ({vc.amount_text(terms['price']['amount'], c.unit)}): deal {did}")
     return _deliver_and_wait(c, did, service, job, terms['price']['amount'], wait_s, log, poll_s)
 
 
 def edge_totals(c):
     """This participant's edges on the tracker, as GET /edges shows them and the client verified (each state carries its
-    issuer's signature): {'<issuer> -> <recipient>': total PC}, handles from the directory, 'you' for this agent."""
+    issuer's signature): {'<issuer> -> <recipient>': total}, 'you' for this agent, and the other side's handle as this
+    participant's own position names it (GET /me: the issuer of each claim, the recipient of each debt), not from the
+    whole public directory (0.7.2: the narrowest read)."""
     edges = c.sync_edges()['edges']
-    names = {p.get('pubkey'): p.get('handle') for p in c.directory() if isinstance(p, dict) and p.get('pubkey')}
+    pos = (c.me() or {}).get('position')
+    pos = pos if isinstance(pos, dict) else {}
+    names = {}
+    for rows, key, who in ((pos.get('claims'), 'issuer_pubkey', 'from'), (pos.get('debts'), 'recipient_pubkey', 'to')):
+        for row in rows if isinstance(rows, list) else []:
+            if isinstance(row, dict) and isinstance(row.get(key), str) and isinstance(row.get(who), str):
+                names[row[key]] = row[who]
 
     def name(pk):
         return 'you' if pk == c.pubkey else (names.get(pk) or f'{pk[:16]}...')
@@ -434,7 +552,8 @@ def _consents_due(c, log):
         log(f'  (consents: {e.code}: {e})')
         return None
     for e in (r or {}).get('signed', []):
-        log(f"  your Valun client signed a {e.get('kind')} as {e.get('role')} (your net change: {e.get('your_net_change_PC')} {c.unit})")
+        log(f"  your Valun client signed a {e.get('kind')} as {e.get('role')} (your net change: "
+            f"{vc.amount_text(e.get('your_net_change_PC'), c.unit)})")
     for e in (r or {}).get('refused', []):
         log(f"  your Valun client refused a {e.get('kind')} ({e.get('code')})")
     return r
@@ -507,12 +626,14 @@ def tour_rules_problem(ag, name, args, ids):
     return None
 
 
-def _tour_call(ag, call, yes, ask, log, ids=None):
+def _tour_call(ag, call, yes, ask, log, ids=None, console=False):
     """One call of sandbox_next_steps through the agent tools: a commitment is prepared (bound to what is shown), then
     approved at the terminal (ask) unless `yes`, then called with exactly the prepared arguments. With `yes` a
     commitment is approved only when tour_rules_problem() finds nothing wrong with what was prepared (audit AI-3); else
-    the owner is asked (ask), or the tour stops (tour_unverified). A refusal of the preparation carries its cause
-    (attempt_outcome_unknown, records_unreadable, ...): that cause is the error raised, so the tour stops on it."""
+    the owner is asked (ask), or the tour stops (tour_unverified). console: `yes` comes from console approvals (the
+    owner mandate holds every step for the owner console), so the stop says that, not to run without --yes (which
+    changes nothing then). A refusal of the preparation carries its cause (attempt_outcome_unknown,
+    records_unreadable, ...): that cause is the error raised, so the tour stops on it."""
     ids = {} if ids is None else ids
     name, args = call.get('tool'), call.get('arguments') or {}
     log(f"  -> {name}: {call.get('why') or ''}")
@@ -528,6 +649,11 @@ def _tour_call(ag, call, yes, ask, log, ids=None):
             problem = tour_rules_problem(ag, name, args, ids) if yes else None
             if yes and problem is None:
                 log('\n'.join('     ' + line for line in prepared['text'].split('\n')))
+            elif yes and not ask and console:
+                raise vc.ValunError('tour_unverified', f'not signed: {problem}; nothing was signed; the tour stops here '
+                                                       "(with console approvals it signs by itself only what the tour's "
+                                                       'own rules allow, and each of those then waits for you in the '
+                                                       'owner console)')
             elif yes and not ask:
                 raise vc.ValunError('tour_unverified', f'not approved by --yes: {problem}; nothing was signed; the tour '
                                                        'stops here (run it without --yes to decide yourself)')
@@ -538,7 +664,8 @@ def _tour_call(ag, call, yes, ask, log, ids=None):
     return r
 
 
-def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S, timeout_s=1800, agent=None):
+def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S, timeout_s=1800, agent=None,
+         console_command=None, console=False):
     """The five-step circulating-credit tour of design 9.2, for a sandbox_only participant (not_sandbox_only otherwise)
     on a server that offers circulation/1 (feature_unavailable otherwise): earn a note from sandbox-exact, spend it with
     sandbox-mallory, pay sandbox-exact with your own note and see the 2-cycle cleared, sell to sandbox-mallory and see
@@ -546,18 +673,27 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
     sandbox_next_steps through the agent tools, so it takes exactly the path an agent takes; every commitment is
     approved through ask(text) -> bool unless `yes`. After each call, and while it waits, it processes consents when
     they are due (at most once a minute; its agent does not process them itself, but its clients declare the consent
-    roles the profile signs, as a client that signs consents must); a call that fails is shown and the
-    tour waits poll_s before the next status decides again; a refusal whose cause is in TOUR_STOPS ends the tour with
+    roles the profile signs, as a client that signs consents must); a call that fails (a cut connection included) is
+    shown and the tour waits poll_s before the next status decides again; while nothing is to be called it waits what
+    the plan asks (tour_wait_s); a step's tracker totals that cannot be read are said so, and the tour goes on; a
+    refusal whose cause is in TOUR_STOPS ends the tour with
     that cause. A step that does not finish after TOUR_CALLS_PER_STEP tool calls ends the tour with tour_stuck; a wrong
     delivery disputed, and the purchase made again after it, do not count, up to TOUR_DISPUTES_PER_STEP disputes in the
-    step. When a step is done it logs your edges' tracker totals (GET /edges). Returns {done, steps: [{step,
-    tracker_totals, money_view}]}."""
+    step. A wait that sandbox_next_steps marks blocked (a set-off that cannot be proposed now) ends the tour with
+    tour_blocked once it has lasted TOUR_BLOCKED_S. A step is done once the tour moves past the furthest step it has
+    reached, or ends: it then logs your edges' tracker totals (GET /edges). A plan that names no step waits for the
+    owner (console approvals): the step is not done, and the plan's words say what waits and where to approve it (the
+    first-tester readiness assessment of 2026-11-18: the tour logged "step N done" at each such wait); a step that comes
+    back (a deal of an earlier step to answer) is named again, and is not a step done either.
+    console: `yes` comes from console approvals, the owner mandate holding every step (the CLI reads it), which the
+    stop of a commitment outside the tour's rules then says (_tour_call).
+    Returns {done, steps: [{step, tracker_totals, money_view}]}."""
     from . import agent as va           # here: agent.py imports this module
     # Its agent's hook is off because the tour runs the consents itself, on this agent's client (_consents_due below), so
     # its clients declare the consent roles the profile signs (declare_roles; decision D-3 b): without them the server
     # leaves this participant out of every set-off, and steps 3 and 4 never clear.
     ag = agent or va.ValunAgent(store, approvals='', check_link_hosts=False, server=server, process_consents=False,
-                                declare_roles=True)
+                                declare_roles=True, console_command=console_command)
     c = ag.client()
     if (c.me().get('participant') or {}).get('sandbox_only') is not True:
         raise vc.ValunError('not_sandbox_only', 'the tour is for sandbox-only participants (`valun join --sandbox`)')
@@ -565,7 +701,8 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
         raise vc.ValunError('feature_unavailable', 'this Valun server does not offer circulating credit (circulation/1) yet')
     steps, current, said, calls_in_step, deadline = [], None, None, 0, time.time() + timeout_s
     ids = {}                                # the sandbox agents' directory ids, read once (tour_rules_problem)
-    disputes_in_step = 0
+    disputes_in_step, blocked_since = 0, None
+    top = None                              # the furthest step reached: done once the tour moves past it, or ends
     while True:
         try:
             st = ag.status({})
@@ -579,22 +716,41 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
         if not isinstance(nxt, dict):
             raise vc.ValunError('feature_unavailable', 'valun_status shows no sandbox_next_steps for this participant')
         step = nxt.get('tour_step')
-        if step != current:
-            if isinstance(current, int):
-                totals = edge_totals(c)
-                steps.append({'step': current, 'tracker_totals': totals, 'money_view': st.get('money_view')})
-                log(f'step {current} done. Your edges on the tracker: '
-                    + ('; '.join(f"{k}: {v} {getattr(c, 'unit', vc.UNIT)}" for k, v in totals.items()) or 'none'))
+        if step is not None and step != current:     # None: the owner decides; the step in hand goes on
+            if isinstance(top, int) and (step == 'done' or (isinstance(step, int) and step > top)):
+                try:
+                    totals = edge_totals(c)
+                except vc.ValunError as e:      # a cut connection, say: the step is done all the same
+                    totals = None
+                    log(f'step {top} done. (Your edges on the tracker could not be read just now: {e.code}.)')
+                steps.append({'step': top, 'tracker_totals': totals, 'money_view': st.get('money_view')})
+                if totals is not None:
+                    log(f'step {top} done. Your edges on the tracker: '
+                        + ('; '.join(f"{k}: {vc.amount_text(v, getattr(c, 'unit', vc.UNIT))}" for k, v in totals.items())
+                           or 'none'))
             if step == 'done':
                 log(nxt.get('then') or 'The tour is complete.')
                 return {'done': True, 'steps': steps}
             if isinstance(step, int):
                 log(f'step {step} of 5: {nxt.get("goal")}')
+                top = step if not isinstance(top, int) else max(top, step)
             current, calls_in_step, disputes_in_step = step, 0, 0
         calls = nxt.get('next_calls') or []
         if not calls and nxt.get('then') != said:
             said = nxt.get('then')
             log(f'  ... {said}')
+        if nxt.get('blocked') and not calls:
+            if blocked_since is None:
+                blocked_since = time.time()
+                log(f'  (waiting up to {TOUR_BLOCKED_S // 60} minutes for that to change)')
+            elif time.time() - blocked_since >= TOUR_BLOCKED_S:
+                means = ('The tour stopped early instead of waiting until its deadline: the set-off it waits for '
+                         'cannot be proposed now. Nothing is lost, and nothing was signed for it. Run the tour again '
+                         'later; it goes on from this step.')
+                why = f'step {current} cannot finish now ({nxt["blocked"]}): {nxt.get("then")}'
+                raise vc.ValunError('tour_blocked', why, extra={'what_this_means': means})
+        else:
+            blocked_since = None
         failed = False
         for call in calls:
             calls_in_step += 1
@@ -606,7 +762,7 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
                 raise vc.ValunError('tour_stuck', f'step {current}: {TOUR_DISPUTES_PER_STEP} wrong deliveries were disputed '
                                                   'and none was right; stopped')
             try:
-                _tour_call(ag, call, yes, ask, log, ids)
+                _tour_call(ag, call, yes, ask, log, ids, console=console)
             except vc.ValunError as e:
                 if e.code in TOUR_STOPS:
                     raise
@@ -619,4 +775,4 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
         if not calls or failed:
             if time.time() >= deadline:
                 raise vc.ValunError('tour_timeout', f'step {current} did not finish in time; run the tour again to continue')
-            time.sleep(poll_s)
+            time.sleep(poll_s if failed else tour_wait_s(nxt, poll_s))

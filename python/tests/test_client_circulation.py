@@ -14,6 +14,7 @@ import types
 import unittest
 import urllib.error
 import urllib.parse
+from datetime import datetime, timezone
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
@@ -25,7 +26,7 @@ from valun import records  # noqa: E402
 NFT = '6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa'
 DENOM = 'token:' + hashlib.sha256(b'valun-pilot-credit/1').hexdigest()
 PINS = {'tracker_nft_id': NFT, 'denomination': DENOM}
-SERVER = 'http://valun.invalid'
+SERVER = 'https://valun.invalid'
 NOW = 1_793_966_460_123
 DEAL, DEAL2, TID, SID = 'vd_0123456789abcdef', 'vd_1123456789abcdef', 'vt_0123456789abcdef', 'vs_0123456789abcdef'
 TID2 = 'vt_1123456789abcdef'                   # a transfer of DEAL2, where a test gives that deal its own id (Net.tids)
@@ -139,6 +140,7 @@ class Net:
         self.option_issuers = [A_ID]
         self.transfer_mode = 'apply'            # 'apply', 'collect' (A and C do not sign yet) or 'review' (B's owner)
         self.review = False                     # complete(): hold the note for the owner
+        self.approvals = False                  # a held note or transfer gets the owner's approval record, as v16 does
         self.force = []                         # [(code, fn)]: answer the next POST pay-by-transfer with 409 code after fn()
         self.pay_posts, self.consent_items, self.consent_posts, self.refusals = [], [], [], []
         self.consent_state, self.consent_rejected, self.page = {}, {}, 200
@@ -339,6 +341,10 @@ class Net:
                 raise vc.ValunError('bad_signature', 'the prior acknowledgment does not verify', 403)
         if self.review:
             d['status'] = 'completion_awaiting_owner'
+            if self.approvals:                  # v16: the payer's view of the held note, and the approval that holds it
+                aid = self.approval(d, 'issue_note')
+                d['credit_note'] = {'state': 'signed', 'approval_id': aid, 'amount': n['total'] - P, 'prior_total': P,
+                                    'note': {k: n[k] for k in ('total', 'timestamp', 'signature', 'prior_signature') if k in n}}
             return copy.deepcopy(d)
         self.tracker[edge] = {'total': n['total'], 'timestamp': n['timestamp'], 'signature': n['signature']}
         self.seq += 1
@@ -430,7 +436,23 @@ class Net:
             d['status'] = 'paid_by_transfer'
         else:
             d['status'] = 'completion_awaiting_owner' if self.transfer_mode == 'review' else 'paying_by_transfer'
+            if self.transfer_mode == 'review' and self.approvals:
+                self.approval(d, 'pay_by_transfer')
+                d['payment']['state'] = 'awaiting_owner'
         return copy.deepcopy(d)
+
+    def approval(self, d, kind):
+        """A pending approval of the payer's owner on deal d (va_ + 12 hex), made now, as the payer's view lists it."""
+        rows = d.setdefault('approvals', [])
+        aid = 'va_%012x' % (0xa0 + len(rows))
+        rows.append({'id': aid, 'deal_id': d['id'], 'kind': kind, 'state': 'pending', 'created_at': iso_ms(self.clock.now)})
+        return aid
+
+    def decide(self, did, kind, state='rejected'):
+        """The owner (or the server) decides the deal's latest approval of `kind`: rejected, or a void_ state."""
+        a = [x for x in self.deals[did]['approvals'] if x['kind'] == kind][-1]
+        a.update(state=state, decided_at=iso_ms(self.clock.now))
+        return a['id']
 
     def record_transfer(self, did, state, T, frm, to, amount, body):
         """The server records the transfer (id tid(did): one per deal here), as GET /transfers shows it later."""
@@ -533,6 +555,11 @@ class Base(unittest.TestCase):
     def client(self, store=None):
         self.store = store or profile()
         return NetClient(self.net, self.store)
+
+
+def iso_ms(ms):
+    """ms since the epoch as the server writes a time."""
+    return datetime.fromtimestamp(ms // 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + f'.{ms % 1000:03d}Z'
 
 
 def att(state, deal_id=DEAL):
@@ -1315,6 +1342,17 @@ class Consents(Base):
         self.assertEqual([(e['id'], e['error']) for e in rep['waiting']], [(TID, 'http_error')])
         self.assertEqual((self.net.refusals, self.net.consent_posts), ([], []))
 
+    def test_a_deal_read_answered_with_something_that_is_not_json_waits(self):
+        # The 0.7.2 review: an answer that is not JSON (a captive portal's page, an answer cut short: the transport's
+        # bad_response, cause not_json) to the payee's deal read was taken for a deal that cannot be checked, and the
+        # consent was refused at the server (deal_mismatch). It waits for a later run, as an unreachable server does.
+        self.net.hooks.append(lambda m, p, b: (_ for _ in ()).throw(vc.ValunError(
+            'bad_response', 'the answer is not JSON', None, {'cause': 'not_json', 'http_status': 200}))
+            if m == 'GET' and p == f'/pilot/v1/deals/{DEAL}' else None)
+        rep = self.payee_consent().process_consents()
+        self.assertEqual([(e['id'], e['error']) for e in rep['waiting']], [(TID, 'bad_response')])
+        self.assertEqual((rep['refused'], self.net.refusals, self.net.consent_posts), ([], [], []))
+
     def test_a_key_the_directory_lists_twice_or_only_inactive_is_not_resolved(self):
         # A lying directory lists the issuer's key under a second id the mandate also accepts: the client cannot tell
         # which participant it is, so it resolves no id for the key and the id-based mandate list refuses the payment.
@@ -1429,7 +1467,7 @@ class CapabilityHeader(unittest.TestCase):
                 info['features'] = features
             return Resp(info if req.full_url.endswith('/info') else {})
         c = vc.Client(MemStore(state, B['secret'].hex()))
-        with mock.patch.object(vc.urllib.request, 'urlopen', urlopen):
+        with mock.patch.object(vc.Client, '_open', lambda c, req: urlopen(req, timeout=c.timeout)):
             c.me()
             c.info()
             c.me()
@@ -1580,7 +1618,7 @@ class RolesWithdrawn(unittest.TestCase):
         return _Resp(info if path == '/pilot/v1/info' else {})
 
     def wire(self, c, *calls):
-        with mock.patch.object(vc.urllib.request, 'urlopen', self.urlopen):
+        with mock.patch.object(vc.Client, '_open', lambda c, req: self.urlopen(req, timeout=c.timeout)):
             for call in calls:
                 try:
                     call(c)
@@ -1827,6 +1865,106 @@ class Attempts(Base):
         self.net.deals[DEAL]['status'] = 'delivered'             # rejected by the owner
         self.net.set_edge(B, C, 4, ts + 1001, kind='setoff', ref=SID)
         return c, ts
+
+    def held_and_rejected_note(self, record_ids=True):
+        """Console approvals (approval probe D2): my bound note was held for my owner, who rejected it in the owner
+        console; then a set-off moved B>C past its timestamp. Returns the client and the note's timestamp."""
+        self.net.review, self.net.approvals = True, True
+        c = self.client()
+        r = c.complete(DEAL)
+        self.assertEqual(r['status'], 'completion_awaiting_owner')
+        ts = r['credit_note']['note']['timestamp']
+        self.assertEqual(att(self.store.state)[0]['approval_id'], r['credit_note']['approval_id'])   # recorded on hold
+        if not record_ids:                       # a record made before approval ids were recorded (0.7.1)
+            self.store.state['transfer_attempts'][DEAL][0].pop('approval_id')
+        self.net.review = False
+        self.clock.now += 20_000
+        aid = self.net.decide(DEAL, 'issue_note')
+        self.net.deals[DEAL].update(status='delivered', credit_note=None)          # the deal is back with its payer
+        self.net.set_edge(B, C, 4, ts + 1001, kind='setoff', ref=SID)
+        return c, ts, aid
+
+    def test_an_iou_its_owner_rejected_is_not_applied_and_the_deal_is_paid_at_once(self):
+        # 0.7.1 and the first 0.7.2 RC kept it as a live attempt, and once B>C moved past it refused to pay the deal
+        # (attempt_outcome_unknown) until the owner ran `valun attempts resolve`. The deal view says its approval was
+        # rejected: the server never sent it, and never will, so it is not applied.
+        c, ts, aid = self.held_and_rejected_note()
+        self.assertEqual(c.complete(DEAL)['status'], 'note_issued')
+        first = att(self.store.state)[0]
+        self.assertEqual((first['outcome'], first['server_ended']['state'], first['server_ended']['approval_id']),
+                         ('not_applied', 'rejected', aid))
+        self.assertEqual(first['server_ended']['at'], self.net.deals[DEAL]['approvals'][-1]['decided_at'])
+        pending = records.get(self.store.state['records'], f"{B['pubkey']}>{C['pubkey']}")['pending']
+        self.assertFalse([p for p in pending if p['timestamp'] == ts])                 # its pending entry is forgotten
+        rows = c.payment_attempts()
+        self.assertEqual([(r['ref'], r['state'], (r['server_ended'] or {}).get('state')) for r in rows][0], ('#1', 'dead', 'rejected'))
+
+    def test_a_record_without_the_approval_id_is_matched_by_its_time(self):
+        c, ts, aid = self.held_and_rejected_note(record_ids=False)
+        self.assertEqual(c.complete(DEAL)['status'], 'note_issued')
+        self.assertEqual(att(self.store.state)[0]['server_ended']['approval_id'], aid)
+
+    def test_an_approval_made_long_after_the_iou_is_not_taken_for_it(self):
+        # A record without approval_id is matched only by the one approval made within 10 minutes of its timestamp.
+        c, ts, aid = self.held_and_rejected_note(record_ids=False)
+        self.net.deals[DEAL]['approvals'][-1]['created_at'] = iso_ms(ts + vc.HELD_MATCH_MS + 1)
+        with self.assertRaises(vc.ValunError) as e:
+            c.complete(DEAL)
+        self.assertEqual(e.exception.code, 'attempt_outcome_unknown')               # as before: the owner resolves it
+        self.assertNotIn('outcome', att(self.store.state)[0])
+
+    def test_a_held_iou_still_pending_or_approved_is_not_marked(self):
+        c, ts, aid = self.held_and_rejected_note()
+        for state in ('pending', 'approved'):
+            self.net.deals[DEAL]['approvals'][-1]['state'] = state
+            self.assertEqual(c.learn_owner_decisions(DEAL, self.net.deals[DEAL]), [])
+            self.assertNotIn('outcome', att(self.store.state)[0])
+        # a deal view of the payee's side, or an answer that is not one, records nothing
+        self.net.deals[DEAL]['approvals'][-1]['state'] = 'rejected'
+        self.assertEqual(c.learn_owner_decisions(DEAL, dict(self.net.deals[DEAL], your_role='payee')), [])
+        self.assertEqual(c.learn_owner_decisions(DEAL, None), [])
+        self.assertEqual(len(c.learn_owner_decisions(DEAL, self.net.deals[DEAL])), 1)
+
+    def test_a_late_approved_iou_the_tracker_refused_for_its_age_is_not_applied(self):
+        # Approval probe D3: approved after its hour, the tracker refused it (note_failed, novation_expired).
+        c, ts, aid = self.held_and_rejected_note()
+        self.net.deals[DEAL]['approvals'][-1]['state'] = 'approved'
+        self.net.deals[DEAL].update(status='note_failed', credit_note={'state': 'failed', 'error_code': 'novation_expired',
+                                                                       'note': {'total': 9, 'timestamp': ts}})
+        found = c.learn_owner_decisions(DEAL, self.net.deals[DEAL])
+        self.assertEqual([x['server_ended']['state'] for x in found], ['novation_expired'])
+
+    def test_a_payment_by_transfer_its_owner_rejected_is_not_applied(self):
+        self.net.transfer_mode, self.net.approvals = 'review', True
+        c = self.client()
+        r = c.pay_by_transfer(DEAL, A_ID)
+        self.assertEqual(r['status'], 'completion_awaiting_owner')
+        first = att(self.store.state)[0]
+        self.assertEqual((first['attempt_id'], first['approval_id']), (TID, r['approvals'][-1]['id']))
+        T = self.net.pay_posts[0]['timestamp']
+        aid = self.net.decide(DEAL, 'pay_by_transfer')
+        self.net.deals[DEAL].update(status='delivered', completion=None)
+        self.net.deals[DEAL]['payment']['state'] = 'void_rejected'
+        self.net.transfers[TID]['state'] = 'void_rejected'
+        self.net.set_edge(A, B, 12, T + 5000)                # my claim on A moved past T to neither 10 nor 7
+        found = c.learn_owner_decisions(DEAL, c.deal(DEAL))
+        self.assertEqual([(x['route'], x['server_ended']['state'], x['server_ended']['approval_id']) for x in found],
+                         [('transfer', 'rejected', aid)])
+        rows = c.payment_attempts(edges=c.sync_edges()['edges'])
+        self.assertEqual(rows[0]['state'], 'dead')           # its edge is past it, and the server never sent it on
+
+    def test_the_owners_own_resolution_still_waits_for_the_window(self):
+        # Not the server's word: the owner's `valun attempts resolve --not-applied` keeps the window (a read-back is
+        # the server's report; only the window proves a bound note can no longer apply).
+        T = NOW - NOW % 1000 - 3                              # a bound note's timestamp (it ends in 997)
+        a = {'route': 'note', 'edge': f"{B['pubkey']}>{C['pubkey']}", 'prior': 6, 'total': 9, 'timestamp': T,
+             'outcome': 'not_applied'}
+        moved = {'total': 4, 'timestamp': T + 1000}
+        self.assertEqual(nv.attempt_outcome(a, NOW + 2000, moved), 'alive')
+        self.assertEqual(nv.attempt_outcome(dict(a, server_ended={'state': 'rejected'}), NOW + 2000, moved), 'dead')
+        self.assertEqual(nv.attempt_outcome(dict(a, server_ended={'state': 'rejected'}), NOW + 2000, None), 'alive')
+        self.assertEqual(nv.attempt_outcome(dict(a, server_ended={'state': 'rejected'}), NOW + 2000,
+                                            {'total': 9, 'timestamp': T}), 'applied')      # evidence wins
 
     def test_the_attempts_are_listed_with_how_the_client_judges_them(self):
         c, T = self.failed_transfer()
@@ -2525,6 +2663,127 @@ class TrackerContract(Base):
                 pay(self.client())
             self.assertEqual(e.exception.code, 'bad_template')
         self.assertEqual([r for r in self.net.requests() if r.startswith('POST')], [])
+
+
+class WhatARejectionLeaves(Base):
+    """The 0.7.2 review: what valun_deal's owner_decisions and `valun attempts list` say a rejected IOU or payment by
+    transfer leaves is what this client then does. After a rejected IOU, a new IOU is signed at once, and a payment by
+    transfer waits until the IOU's timestamp + 1 h + 2 min; after a rejected payment by transfer, a transfer through the
+    same IOU at the same prior state is signed at once, and an own IOU waits until its timestamp + 1 h + 2 min. Both
+    named times are the client's own (the review: 'does not stop a new payment' and 'a new IOU can be signed now' were
+    false after a transfer)."""
+
+    def setUp(self):
+        super().setUp()
+        from valun import agent, cli
+        self.va, self.cli = agent, cli
+
+    def rejected(self, route):
+        """My held IOU (route 'note') or payment by transfer ('transfer'), rejected by my owner in the owner console, and
+        what my client learnt of it from the deal view. Returns (client, its timestamp, the deal view)."""
+        self.net.approvals = True
+        if route == 'note':
+            self.net.review = True
+            c = self.client()
+            T = c.complete(DEAL)['credit_note']['note']['timestamp']
+            self.net.review = False
+            self.clock.now += 20_000
+            self.net.decide(DEAL, 'issue_note')
+            self.net.deals[DEAL].update(status='delivered', credit_note=None)
+        else:
+            self.net.transfer_mode = 'review'
+            c = self.client()
+            c.pay_by_transfer(DEAL, A_ID)
+            T = self.net.pay_posts[0]['timestamp']
+            self.net.decide(DEAL, 'pay_by_transfer')
+            self.net.deals[DEAL].update(status='delivered', completion=None)
+            self.net.deals[DEAL]['payment']['state'] = 'void_rejected'
+            self.net.transfers[TID]['state'] = 'void_rejected'
+        d = c.deal(DEAL)
+        self.assertEqual(len(c.learn_owner_decisions(DEAL, d)), 1)
+        return c, T, d
+
+    def refused_until(self, pay):
+        """The first ms at which the client would sign `pay` (a refusal transfer_window_open: now + retry_after_ms)."""
+        with self.assertRaises(vc.ValunError) as e:
+            pay()
+        self.assertEqual(e.exception.code, 'transfer_window_open')
+        return self.clock.now + e.exception.extra['retry_after_ms']
+
+    def test_after_a_rejected_iou_a_transfer_waits_until_the_time_the_texts_name(self):
+        c, T, d = self.rejected('note')
+        free = self.va.free_after(T)
+        text = self.va.owner_decisions(d, att(self.store.state))[0]['what_this_means']
+        self.assertIn('Your Valun client counts it as not applied: a new IOU of this deal may be signed now, and paying '
+                      f"this deal by transfer waits until after {free} ({self.va.MARGIN_WORDS}), or until your client sees "
+                      "this pair's IOU move past it.", text)
+        self.assertNotIn('does not stop a new payment', text)
+        first = self.refused_until(lambda: c.pay_by_transfer(DEAL, A_ID))
+        self.assertEqual(self.va.iso_ms(first - 1), free)          # signed only after the time named
+        rows = c.payment_attempts(edges=c.sync_edges()['edges'])
+        line = self.cli._attempt_line(c, rows[0])
+        self.assertIn('not applied (the server held it for your owner, who rejected it in the owner console, and never sent '
+                      "it on). A new IOU of this deal can be signed now, while the pair's IOU is unchanged; paying it by "
+                      f'transfer waits until after {free}', line)
+        self.assertEqual(c.complete(DEAL)['status'], 'note_issued')   # and a new IOU is signed at once
+
+    def test_after_a_rejected_transfer_the_same_iou_pays_at_once_and_an_own_iou_waits(self):
+        c, T, d = self.rejected('transfer')
+        free = self.va.free_after(T)
+        text = self.va.owner_decisions(d, att(self.store.state))[0]['what_this_means']
+        self.assertIn('Nothing moved, and the Valun server deleted your signatures of it (it keeps only their hashes). The '
+                      'deal is back to delivered: pay again through the same IOU at once while it is unchanged (it waits '
+                      f'for your owner again), or with your own IOU or another IOU after {free} ({self.va.MARGIN_WORDS}), '
+                      'or once your client sees that IOU move past it, or dispute the delivery.', text)
+        self.assertNotIn('does not stop a new payment', text)
+        first = self.refused_until(lambda: c.complete(DEAL))           # the review's probe: a new IOU was refused
+        self.assertEqual(self.va.iso_ms(first - 1), free)
+        rows = c.payment_attempts(edges=c.sync_edges()['edges'])
+        self.assertEqual((rows[0]['route'], rows[0]['state']), ('transfer', 'alive'))
+        line = self.cli._attempt_line(c, rows[0])
+        self.assertIn('A payment through the same IOU at the same prior state can be signed now; your own IOU or any other '
+                      f'payment of this deal waits until after {free}', line)
+        self.assertNotIn('A new IOU of this deal can be signed now', line)
+        self.clock.now += 5000
+        self.assertEqual(c.pay_by_transfer(DEAL, A_ID)['status'], 'completion_awaiting_owner')   # through the same IOU
+
+    def test_once_the_window_has_passed_an_own_iou_is_signed(self):
+        c, T, d = self.rejected('transfer')
+        self.clock.now = T + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 1
+        self.assertEqual(c.complete(DEAL)['status'], 'note_issued')
+
+    def test_pay_by_transfer_learns_the_owners_decision_itself(self):
+        """The review's mutation run: removing learn_owner_decisions from Client.pay_by_transfer failed no test. A held
+        IOU rejected, then a set-off moved the pair past it; once its window has passed, a payment by transfer reads the
+        pair back. Unless pay_by_transfer itself learnt the rejection from the deal view, the attempt may have applied
+        (attempt_outcome_unknown: the approval probe's D2)."""
+        self.net.review, self.net.approvals = True, True
+        c = self.client()
+        ts = c.complete(DEAL)['credit_note']['note']['timestamp']
+        self.net.review = False
+        self.clock.now += 20_000
+        self.net.decide(DEAL, 'issue_note')
+        self.net.deals[DEAL].update(status='delivered', credit_note=None)
+        self.net.set_edge(B, C, 4, ts + 1001, kind='setoff', ref=SID)
+        self.clock.now = ts + nv.MAX_AGE_MS + nv.FALLBACK_MARGIN_MS + 1
+        self.assertNotIn('outcome', att(self.store.state)[0])         # nothing learnt yet: no read of the deal so far
+        self.assertIn(c.pay_by_transfer(DEAL, A_ID)['status'], ('paid_by_transfer', 'paying_by_transfer'))
+        self.assertEqual(att(self.store.state)[0]['outcome'], 'not_applied')
+
+    def test_valun_deal_learns_the_owners_decision(self):
+        """The review's mutation run: removing learn_owner_decisions from valun_deal failed no unit test."""
+        self.net.review, self.net.approvals = True, True
+        c = self.client()
+        c.complete(DEAL)
+        self.net.review = False
+        self.clock.now += 20_000
+        self.net.decide(DEAL, 'issue_note')
+        self.net.deals[DEAL].update(status='delivered', credit_note=None)
+        ag = self.va.ValunAgent(self.store, approvals='', check_link_hosts=False)
+        ag.client = lambda: c
+        out = ag.deal({'deal_id': DEAL})
+        self.assertEqual(att(self.store.state)[0]['outcome'], 'not_applied')
+        self.assertIn('Your Valun client counts it as not applied', out['owner_decisions'][0]['what_this_means'])
 
 if __name__ == '__main__':
     unittest.main()

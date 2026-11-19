@@ -12,6 +12,7 @@ import * as api from '../src/index.js';
 import * as fences from '../src/fences.js';
 import {FileStore} from '../src/file-store.js';
 import {PyError, int, isoAwareUs, repr, str, typeName} from '../src/py.js';
+import * as agentModule from '../src/agent.js';
 import {FIX, PARITY as P} from './agent-world.js';
 
 const {ValunError, checkSummary, errorPayload, limitsBody, loosens, measure, owes, quoteLine, quoted, recentlyActive, records, sandbox, shown,
@@ -81,6 +82,25 @@ test('sandbox: more text-stats/notary, extract_text, render, parse_result, check
   for (const [d, words] of P.request_words) assert.equal(sandbox.requestWords(d), words, show(d));
 });
 
+test('the Nov 18 fresh-join run: builtInJob, checkBuiltIn, exactFacts, exactAdvice, the plain ending, closedSummary and '
+  + 'selfServeWords identical to Python', () => {
+  const same = (got, want, what) => {
+    assert.deepEqual(got, want, what);
+    assert.equal(JSON.stringify(got), JSON.stringify(want), `${what}: key order`);
+  };
+  assert.ok(P.built_in_job.length >= 18 && P.note_summary.length >= 100, 'the cases are recorded');
+  for (const [terms, cp, out] of P.built_in_job) assert.equal(sandbox.builtInJob(terms, cp), out, show([terms, cp]));
+  for (const [terms, content, cp, out] of P.check_built_in) same(sandbox.checkBuiltIn(terms, content, cp), out, show([terms, cp]));
+  for (const [terms, content, cp, out] of P.exact_facts) same(agentModule.exactFacts(terms, content, cp), out, show([terms, content]));
+  for (const [exact, out] of P.exact_advice) assert.equal(agentModule.exactAdvice(exact), out, show(exact));
+  for (const [c, n, out] of P.confirmation_means) assert.equal(agentModule.confirmationMeans(c, n), out, show([c, n]));
+  for (const [d, n, u, c, server, role, out] of P.note_summary) {
+    assert.equal(agentModule.noteSummary(d, n, u, c, server, role), out, show([d, n, c, server, role]));
+  }
+  for (const [x, out] of P.closed_summary) assert.equal(agentModule.closedSummary(x), out, show(x));
+  for (const [p, info, out] of P.self_serve_words) assert.equal(agentModule.selfServeWords(p, info), out, show([p, info]));
+});
+
 test('sandbox: a delivery whose ```json block is not JSON throws, as Python raises (callers turn it into internal_error)', () => {
   const terms = {service: {title: 'notary', description: 'TEXT: abc'}};
   assert.throws(() => sandbox.checkDelivery(terms, '```json\n{"bytes": 3,\n```'), SyntaxError);
@@ -141,8 +161,22 @@ test('agent helpers: recently_active, limits_body, loosens, terms_text and error
     assert.equal(JSON.stringify(errorPayload(e)), JSON.stringify(out), 'key order');
     assert.deepEqual(errorPayload(e, 'do X'), outHint, code);
   }
+  assert.ok(P.error_payload_transport.length >= 8, 'fix inbox #132: transport failures by cause and outcome');
+  for (const [code, extra, out] of P.error_payload_transport) {
+    const e = new ValunError(code, 'cut', undefined, extra);
+    assert.deepEqual(errorPayload(e), out, `${code} ${JSON.stringify(extra)}`);
+    assert.equal(JSON.stringify(errorPayload(e)), JSON.stringify(out), 'key order');
+  }
   assert.deepEqual(errorPayload(new TypeError('boom')), {error: 'internal_error', message: 'TypeError: boom'});
   assert.deepEqual(errorPayload('thrown text'), {error: 'internal_error', message: 'Error: thrown text'});
+  // the RC's review, round 3: an exception's words never carry a URL's user and password or a token, as in Python
+  assert.ok(P.error_payload_internal.length >= 8);
+  for (const [m, out] of P.error_payload_internal) {
+    const e = new Error(m);
+    e.name = 'ValueError';
+    assert.deepEqual(errorPayload(e), out, m);
+    for (const secret of ['TEST-ONLY-pw', 'TEST-ONLY-u:', 'vpa_TEST-ONLY', 'vpo_TEST-ONLY']) assert.ok(!out.message.includes(secret), m);
+  }
 });
 
 test('agent helpers: seen_us (valun_directory orders by it, fix inbox #36) gives Python\'s exact microseconds', () => {
@@ -169,7 +203,20 @@ test('approval text helpers: quoted (Python json.dumps, ASCII, compact), shown, 
   for (const [v, out] of P.check_summary) assert.equal(checkSummary(v), out, show(v));
   assert.ok(P.check_summary.some(([, out]) => out.includes('call valun_check_payer again with deal_id')));
   assert.ok(P.check_summary.some(([, out]) => out.includes(' Your own side: ')));
+  // fix inbox #87 (0.7.2): the step's verdict from both sides, whose owner decides an ask_owner, the cover the server's
+  assert.ok(P.check_summary.some(([v, out]) => Object.hasOwn(v ?? {}, 'payer_side') && out.startsWith('Ask your owner: ')));
+  assert.ok(P.check_summary.some(([, out]) => out.startsWith("Ask your owner and the payer's owner: ")));
+  for (const [v, out] of P.check_owners) assert.equal(api.checkOwners(v), out, show(v));
   for (const [v, out] of P.offers_counted_at) assert.deepEqual(api.offersCountedAt(v), out, show(v));
+  // fix inbox #58 (0.7.2): each argument of every tool against a value of every JSON type, in both units
+  assert.ok(P.argument_refusal.length >= 3000);
+  for (const [name, k, v, unit, want] of P.argument_refusal) {
+    const e = api.argumentRefusal(name, k, v, unit);
+    assert.deepEqual(e === null ? null : [e.code, e.message], want, `${name} ${k}=${show(v)} (${unit})`);
+    if (e !== null) assert.ok(e instanceof api.ValunError, `${name} ${k}: a ValunError`);
+  }
+  assert.ok(P.argument_refusal.some(([, , , , want]) => want === null), 'values that fit');
+  assert.ok(P.argument_refusal.some(([, , , , want]) => want?.[0] === 'bad_decision'), "an enum's own refusal");
 });
 
 test('records.py step by step: every call gives the same outcome and leaves the same records (real signatures)', () => {
@@ -208,10 +255,11 @@ test('constants: circulating-credit labels, consent policies, tour texts, client
   for (const name of ['CIRCULATION_SETTLEMENT', 'SETTLEMENT_NOTE_CIRCULATION', 'NOT_SETTLED_CIRCULATION', 'HONEST_LABELS_CIRCULATION',
     'REAL_VS_SIMULATED_CIRCULATION', 'CIRCULATION', 'CONSENTS_EVERY_MS', 'INVITE_CONSENT_POLICY', 'SANDBOX_CONSENT_POLICY',
     'CONSENT_POLICY_KEYS', 'PAYABLE', 'CONSENT_SPEED_WORDS', 'UNBOUND_PASS_THROUGH', 'SANDBOX_EXACT', 'SANDBOX_MALLORY', 'SANDBOX_AGENTS',
-    'TOUR_GOALS', 'TOUR_TEXTS', 'TOUR_AFTER', 'CONSENTS_ON_READ_TOOLS', 'SIGNED_NOW_KEYS', 'FEATURES_HEADER', 'CONSENT_ROLES',
+    'TOUR_GOALS', 'TOUR_TEXTS', 'TOUR_AFTER', 'TOUR_DONE_KEY', 'TOUR_COMPLETED', 'UNKNOWN_PARTICIPANT_TEXT', 'CONSENTS_ON_READ_TOOLS', 'SIGNED_NOW_KEYS', 'FEATURES_HEADER', 'CONSENT_ROLES',
     'VALUE_SAFE_ROLES', 'VALUE_SAFE_HEADER_ROLES', 'CONSENT_LOG_MAX', 'RECORDS_KEEP_MS', 'SIGNATURES_KEEP_MS', 'ATTEMPT_OUTCOMES',
     'UNRESOLVED_TRANSFER', 'LIVE_TRANSFER', 'LOCAL_CHOICES', 'NEVER_APPLIED_TRANSFER', 'RESOLVE_NOTE_MAX', 'PAYEE_EDGE_WHY', 'PAYEE_EDGE_NEXT', 'EDGES_PAGE',
-    'EDGES_MAX_PAGES', 'CHECK_LEAD', 'CHECK_FALLBACK', 'ARGUMENT_WORDS', 'ARGUMENT_WORDS_OF', 'REQUIRED_ARGUMENTS']) {
+    'EDGES_MAX_PAGES', 'CHECK_LEAD', 'CHECK_FALLBACK', 'ARGUMENT_WORDS', 'ARGUMENT_WORDS_OF', 'REQUIRED_ARGUMENTS', 'ENUM_REFUSALS',
+    'PAGE_WORDS', 'PROPERTIES', 'MARGIN_WORDS']) {
     assert.ok(Object.hasOwn(C, name), `the generator records ${name}`);
     assert.ok(Object.hasOwn(api, name), `the package exports ${name}`);
     assert.deepEqual(JSON.parse(JSON.stringify(api[name])), C[name], name);
@@ -297,7 +345,9 @@ test('circulation helpers: consentRoles, the capability header, the consent poli
   for (const [policy, out] of H.client_signs_testnet) assert.deepEqual(api.clientSigns(policy, 'nanoERG'), out, show(policy));
   for (const [n, u, out] of H.amount_text) assert.equal(api.amountText(n, u), out, `${n} ${u}`);
   for (const [s, u, k, out] of H.tour_goal) assert.equal(api.tourGoal(s, u, k), out, `${s} ${u}`);
-  for (const [r, u, n, out] of H.owes) assert.equal(api.owes(r, 'bob', n, u), out, `${r} ${u}`);
+  for (const [r, u, n, circulating, out] of H.owes) assert.equal(api.owes(r, 'bob', n, u, circulating), out, `${r} ${u} ${circulating}`);
+  assert.ok(H.owes.some(([r, , , circulating, out]) => r === 'payer' && circulating === true && !out.includes('(your credit note)')),
+    'with circulating credit the payer is promised no credit note');
   for (const [n, out] of H.tracker_words) assert.equal(api.trackerWords(n), out, String(n));
   assert.ok(H.labels_testnet.length === 2 && H.amount_text.length === 20 && H.tour_goal.length === 12, 'the testnet cases are recorded');
 });

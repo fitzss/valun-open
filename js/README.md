@@ -99,6 +99,38 @@ SHOULD pin). On `503 signer_unavailable` nothing was recorded. With `signerRetri
 request** again with doubling back-off. By default it throws, as the Python client does. Do not re-enroll because of
 this error. `now`, `randomBytes` and `generateSecret` are test hooks.
 
+Transport: the server URL, the `server` option or a profile's `state.server`, is `http://` or `https://`, a host, an
+optional port and path, and no user name, password, query or fragment; for any other (`http://`, which has no host,
+say) nothing is sent: `unreachable`, cause `not_connected`, in words that name the setting. The client follows no
+redirect (`redirect: 'error'`); a redirect is the error `redirected` (fetch does not show where it pointed). A token
+goes over plain `http://` only to a server on this machine (127.0.0.1, ::1, `localhost`); to an `http://` server
+elsewhere nothing that carries a token is sent (`plain_http`) unless `VALUN_ALLOW_PLAIN_HTTP=1` is set, and then
+tokens cross the network in clear text. Node's own fetch sends every request through the process's global dispatcher
+(Node 26's undici 8 keeps it in another place than Node 18 to 25, and this client reads the one each Node's fetch
+reads), so its proxy and certificate settings apply to this client's requests: Node's environment proxy
+(`NODE_USE_ENV_PROXY=1` or `--use-env-proxy`, with the `HTTP_PROXY` and `HTTPS_PROXY` Node read when it started,
+whatever they say later), a dispatcher an application set with `setGlobalDispatcher` (a `ProxyAgent`, say), and
+`NODE_TLS_REJECT_UNAUTHORIZED`. Node's fetch takes no per-request proxy setting, so this client cannot send a server
+on this machine directly as the Python client does. It judges from that dispatcher instead: where Node's environment
+proxy would carry a token over plain http, the request is refused, and naming the server in `NO_PROXY` as its URL does
+(`127.0.0.1`, `localhost`, or `[::1]` with its brackets) sends it directly (an entry that starts with `*` counts only
+as `*` alone or as `*.` and a domain); any other dispatcher than Node's own `Agent`, an `Agent` composed with
+interceptors (`compose()`) included, may proxy everything, so there a token goes over plain http only with
+`VALUN_ALLOW_PLAIN_HTTP=1`, or through a `fetch` of yours that reaches the server directly. Over https, while Node
+checks no certificate (`NODE_TLS_REJECT_UNAUTHORIZED=0`, or a global dispatcher made with
+`connect: {rejectUnauthorized: false}` or `tls: {rejectUnauthorized: false}`), nothing that carries a token, nor a
+join or an enrollment, is sent (`tls_unverified`): give Node the certificate authority it lacks with
+`NODE_EXTRA_CA_CERTS` instead. A dispatcher's other TLS settings (a `connect` function of its own, say, those of a
+dispatcher its interceptors send through, or of the one a `Dispatcher1Wrapper` set as the global dispatcher itself
+sends through) apply as they are. A `fetch` you pass in `options.fetch` keeps its own proxy and TLS settings, which
+this client cannot see: it sends through it as asked (Node's own fetch passed there is judged as above). A
+`globalThis.fetch` that is not Node's own, one an application or a library put in its place (a wrapper that passes a
+dispatcher of its own, say), or the fetch of Deno, Bun or a browser, is not judged by Node's dispatcher, which it need
+not use: a token goes over plain http to a server on this machine through it only with `VALUN_ALLOW_PLAIN_HTTP=1`, and
+since its own TLS settings are unknown to this client, over https only what holds for every fetch in the process is
+judged (`NODE_TLS_REJECT_UNAUTHORIZED=0`, a global dispatcher that checks no certificate). An application that routes
+fetch elsewhere should pass that fetch as `options.fetch`.
+
 Lower level: `canonical`, `termsHash`, `sha256Hex`, `statement`, `statements.*` (each act's exact statement text),
 `basis.sign / verify / verifyHex / publicKey / generateSecret / noteMessage / debtKey`, `blake2b`, `blake2b256`, `sha256`,
 `cleanText` (the server's `clean()`), `reasonProblem` (the server's v13 reason refusals), `hasUnsafeText` (the v13
@@ -209,7 +241,8 @@ Additions to the Python behaviour:
 
 Differences from the Python client that a user may notice:
 
-- requests use `redirect: 'error'`, so a bearer token is never forwarded to a redirect target;
+- a redirect is the error `redirected` in both, since neither client follows a redirect, but only the Python client
+  names where it pointed (`extra.location`): fetch's `redirect: 'error'` does not show it;
 - a `Content-Type` header is sent only with a body;
 - offers with non-RFC 3339 times are refused. The server accepts date-only and RFC 2822 strings. Python accepts some
   and crashes on others.
@@ -228,16 +261,20 @@ Not ported: the MCP server and the CLI. The agent tool layer is ported (next sec
 `valun_propose`, `valun_respond`, `valun_deliver`, `valun_review_delivery`, `valun_set_limits`), the same results and
 wording, and the same checks before signing: the missing-text guard, the deliver gate on measured terms, and the
 exact recomputation of text-stats and notary results. `call(name, args)` resolves to a plain object. `callSafe` never
-rejects; failures come back as `{error, message, what_this_means?}`. Arguments that are not a JSON object, or without
-one the tool's schema requires, are refused with `bad_arguments` naming each one missing, before anything is read or
-signed (`toolArguments`, fix inbox #58). The read-only `valun_check_payer` (`{payer, amount, deal_id?}`) checks a payer
-against its owner's budget card before the agent accepts its IOU: the server's verdict with `summary`, one sentence
-(`checkSummary`); `verdict: 'unknown'` when the card is not public. `deal_id` names the offer under review, which the
+rejects; failures come back as `{error, message, what_this_means?}`. Arguments that are not a JSON object, without
+one the tool's schema requires, or with one of another type than the schema's (a string, a whole number, true or
+false, one of an enum's values, a deal, guarantee or call id of its shape), are refused naming each one and what it
+must be, before anything is read or signed (`toolArguments`, `argumentRefusal`, fix inbox #58). The read-only `valun_check_payer` (`{payer, amount, deal_id?}`) checks a payer
+against its owner's budget card before the agent accepts its IOU: the server's verdict for the step from both sides
+(`payer_side`, `payee_side`; fix inbox #87) with `summary`, a few sentences (`checkSummary`; an `ask_owner` names whose
+owner decides, `checkOwners`); for a payer whose card is not public, the agent's own side only (`verdict: 'decline'` or
+`'unknown'`). `deal_id` names the offer under review, which the
 check then counts once; without it, the summary says when an offer the payer made the agent at that price is already
 counted, and how to check that offer.
 
 `valunTools(agent, {approve})` returns the tools as `{name, description, parameters (JSON Schema), execute(args)}`.
-Before every commitment (an offer, an acceptance, a counter-offer, accepting a delivery, loosening a limit) it calls
+Before every commitment (an offer, an acceptance, a counter-offer, accepting a delivery with an IOU or a payment by
+transfer, a guarantee offer, honoring or releasing a guarantee, loosening a limit) it calls
 `agent.prepare()`, as the Python MCP server and CLI do: one read of what would be signed gives both the arguments to
 sign with and the approval text. The text is built only from values checked against what is signed: the terms must
 hash to the stated hash, name this agent as one party and be offered by the other, the server's role and counterparty
@@ -247,12 +284,13 @@ is quoted after them as one line of JSON. It then calls `approve(text, name, arg
 arguments. Only `true` signs. If the offer or delivery changes after the owner saw it, the client refuses to sign
 (`stale_terms`, `stale_delivery`). When what would be signed cannot be read or does not hold together, the call is
 refused with `approval_unbound` and the owner is not asked. Without a hook, commitments are refused with
-`approval_unavailable`, unless you pass `approvals: 'none'`, which also skips preparing. The server enforces the
-owner's mandate in every mode.
+`approval_unavailable` (before the profile has joined, with `not_connected` and how to join), unless you pass
+`approvals: 'none'`, which also skips preparing. The server enforces the owner's mandate in every mode.
 
 Approvals fail closed, as in the Python core. Only the read-only tools, `valun_deliver`, `valun_respond` with the action
-exactly `decline` or `withdraw`, `valun_review_delivery` with the decision exactly `dispute`, and `valun_set_limits`
-calls that loosen nothing are not commitments; every other call, a tool name the client does not know included, is. A
+exactly `decline` or `withdraw`, `valun_review_delivery` with the decision exactly `dispute`, `valun_respond_guarantee`
+with the action exactly `accept`, `decline` or `withdraw`, `valun_call_guarantee`, and `valun_set_limits` calls that
+loosen nothing are not commitments; every other call, a tool name the client does not know included, is. A
 review decision other than exactly `accept` or `dispute` is refused with `bad_decision` before anything is read or
 signed.
 

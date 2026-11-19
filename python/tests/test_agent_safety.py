@@ -4,6 +4,7 @@ closed by tool name, prepare() binds and describes from one read and refuses (ap
 what would be signed, and the adapters (MCP, `valun call`) refuse instead of asking with a generic text. The approval
 text is built only from values checked against what is signed: the terms and the delivered text must hash to the
 hashes that the arguments pin, and the role comes from the signed terms (a lying snapshot is refused)."""
+import argparse
 import contextlib
 import io
 import json
@@ -11,6 +12,7 @@ import os
 import sys
 import tempfile
 import time
+import types
 import unittest
 from unittest import mock
 
@@ -30,7 +32,7 @@ ME_ID = ALICE_ID
 PK = {ALICE_ID: ALICE['pubkey'], BOB_ID: BOB['pubkey']}
 
 
-def make_terms(price=20, service=None, payer=ME_ID, payee=BOB_ID, proposer=BOB_ID, deal_id='vd_1', version=2):
+def make_terms(price=20, service=None, payer=ME_ID, payee=BOB_ID, proposer=BOB_ID, deal_id='vd_1111111111111111', version=2):
     """A complete valun-deal/1 terms object (16 fields). The keys are real, but these tests check what is shown, so
     nothing here is signed unless a test signs it."""
     return {'protocol': vc.PROTOCOL, 'network': vc.NETWORK, 'tracker_nft_id': NFT, 'denomination': DENOM, 'deal_id': deal_id,
@@ -114,9 +116,9 @@ def unbound(test, agent, name, args):
     return e.exception.extra.get('cause')
 
 
-ACCEPT = ('valun_respond', {'deal_id': 'vd_1', 'action': 'accept'})
-COUNTER = ('valun_respond', {'deal_id': 'vd_1', 'action': 'counter', 'price': 30})
-REVIEW = ('valun_review_delivery', {'deal_id': 'vd_1', 'decision': 'accept'})
+ACCEPT = ('valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'accept'})
+COUNTER = ('valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'counter', 'price': 30})
+REVIEW = ('valun_review_delivery', {'deal_id': 'vd_1111111111111111', 'decision': 'accept'})
 
 
 class Safety(unittest.TestCase):
@@ -133,7 +135,7 @@ class Safety(unittest.TestCase):
     def test_review_refuses_anything_but_accept_or_dispute(self):
         for d in ('Accept', 'ok', None):
             with self.assertRaises(vc.ValunError) as e:
-                Agent().review({'deal_id': 'vd_1', 'decision': d})
+                Agent().review({'deal_id': 'vd_1111111111111111', 'decision': d})
             self.assertEqual(e.exception.code, 'bad_decision')
 
     def test_bind_pins_the_terms_and_deliverable_the_owner_sees(self):
@@ -141,24 +143,24 @@ class Safety(unittest.TestCase):
         # with no terms or text behind them. Since 0.4 (design §6.5, §10.2 item 9) bind pins only hashes it recomputed
         # from what the deal shows, so the deal here is a consistent one and an inconsistent one is refused.
         a = Agent(DEAL)
-        self.assertEqual(a.bind('valun_respond', {'deal_id': 'vd_1', 'action': 'accept'})['expected_terms_hash'], T)
-        bound = a.bind('valun_review_delivery', {'deal_id': 'vd_1', 'decision': 'accept'})
+        self.assertEqual(a.bind('valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'accept'})['expected_terms_hash'], T)
+        bound = a.bind('valun_review_delivery', {'deal_id': 'vd_1111111111111111', 'decision': 'accept'})
         self.assertEqual((bound['expected_deliverable_sha256'], bound['expected_terms_hash']), (SHA, T))
         # an explicit hash from the agent is kept (the client then refuses it if the terms changed)
-        self.assertEqual(a.bind('valun_respond', {'deal_id': 'vd_1', 'action': 'accept', 'expected_terms_hash': 'x'})['expected_terms_hash'], 'x')
-        self.assertNotIn('expected_terms_hash', a.bind('valun_respond', {'deal_id': 'vd_1', 'action': 'decline'}))
+        self.assertEqual(a.bind('valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'accept', 'expected_terms_hash': 'x'})['expected_terms_hash'], 'x')
+        self.assertNotIn('expected_terms_hash', a.bind('valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'decline'}))
         with self.assertRaises(vc.ValunError) as e:
-            Agent({'current': {'terms_hash': 'h' * 64}, 'delivery': {'sha256': 'd' * 64}}).bind('valun_respond', {'deal_id': 'vd_1', 'action': 'accept'})
+            Agent({'current': {'terms_hash': 'h' * 64}, 'delivery': {'sha256': 'd' * 64}}).bind('valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'accept'})
         self.assertEqual(e.exception.code, 'approval_unbound')
 
     def test_bind_fails_closed_for_commitments(self):
         # Until 0.3.1 bind was best effort and returned the arguments unpinned; since 0.4 (design §6.5) a commitment that
         # cannot be bound is refused, so nobody is asked to approve an acceptance that is not pinned to what they saw.
-        args = {'deal_id': 'vd_1', 'action': 'accept'}
+        args = {'deal_id': 'vd_1111111111111111', 'action': 'accept'}
         with self.assertRaises(vc.ValunError) as e:
             Broken(store=None).bind('valun_respond', args)
         self.assertEqual((e.exception.code, str(e.exception)), ('approval_unbound', UNBOUND))
-        decline = {'deal_id': 'vd_1', 'action': 'decline'}
+        decline = {'deal_id': 'vd_1111111111111111', 'action': 'decline'}
         self.assertEqual(Broken(store=None).bind('valun_respond', decline), decline)     # not a commitment: nothing to read
 
 
@@ -209,6 +211,25 @@ class Classification(unittest.TestCase):
         p = va.error_payload(vc.ValunError('approval_unbound', UNBOUND))
         self.assertIn('Nothing was signed', p['what_this_means'])
 
+    def test_a_counterparty_the_network_does_not_have_is_said_to_be_unknown(self):
+        """The 0.7.2 clean-user test: valun_propose to a handle the network does not have (house-scribe, on a server
+        without it) answered approval_unbound with the cause unknown_participant, and told the agent to read the deal
+        again with valun_deal and retry, which cannot help. Now it says that no participant has that handle on this
+        network, and to look the one it means up with valun_directory. Another cause keeps its advice."""
+        offer = {'counterparty': 'house-scribe', 'role': 'payer', 'title': 'summary', 'description': 'd', 'deliverable': 'x',
+                 'price': 3}
+        prepared, refusal = Agent(people=PEOPLE).prepare_or_refusal('valun_propose', offer)
+        self.assertEqual((prepared, refusal['error'], refusal['message'], refusal['cause']),
+                         (None, 'approval_unbound', UNBOUND, 'unknown_participant'))
+        self.assertEqual(refusal['what_this_means'], 'Nothing was signed and your owner was not asked: no participant with '
+                                                     'that handle exists on this network. Find the one you mean with '
+                                                     'valun_directory, and use the handle it lists.')
+        guarantee = {'issuer': 'bob', 'creditor': 'house-scribe', 'cap': 3, 'due_in_hours': 2}
+        prepared, refusal = Agent(people=PEOPLE).prepare_or_refusal('valun_offer_guarantee', guarantee)
+        self.assertEqual((refusal['cause'], refusal['what_this_means']), ('unknown_participant', va.UNKNOWN_PARTICIPANT_TEXT))
+        other = va.error_payload(vc.ValunError('approval_unbound', UNBOUND, extra={'cause': 'stale_terms'}))
+        self.assertIn('Read the deal again with valun_deal and retry', other['what_this_means'])
+
 
 class Prepare(unittest.TestCase):
     def test_prepare_failure_gives_approval_unbound(self):
@@ -228,13 +249,13 @@ class Prepare(unittest.TestCase):
         no_sha = edited(DEAL, delivery={'sha256': ''})
         cases = [(Agent(no_hash), *ACCEPT),
                  (Agent(no_sha), *REVIEW),
-                 (Agent(DEAL), 'valun_review_delivery', {'deal_id': 'vd_1', 'decision': 'Accept'}),     # misspelt
-                 (Agent(DEAL), 'valun_review_delivery', {'deal_id': 'vd_1', 'decision': True}),
-                 (Agent(DEAL), 'valun_respond', {'deal_id': 'vd_1', 'action': 'agree'}),
+                 (Agent(DEAL), 'valun_review_delivery', {'deal_id': 'vd_1111111111111111', 'decision': 'Accept'}),     # misspelt
+                 (Agent(DEAL), 'valun_review_delivery', {'deal_id': 'vd_1111111111111111', 'decision': True}),
+                 (Agent(DEAL), 'valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'agree'}),
                  (Agent(DEAL), 'valun_respond', {'deal_id': '../vd_1', 'action': 'accept'}),
                  (Agent(DEAL), 'valun_respond', {'action': 'accept'}),
-                 (Agent(DEAL), 'valun_respond', {'deal_id': 'vd_1', 'action': 'counter', 'price': 'lots'}),
-                 (Agent(DEAL), 'valun_respond', {'deal_id': 'vd_1', 'action': 'counter', 'deliver_within_hours': 1.5}),
+                 (Agent(DEAL), 'valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'counter', 'price': 'lots'}),
+                 (Agent(DEAL), 'valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'counter', 'deliver_within_hours': 1.5}),
                  (Agent(people=PEOPLE), 'valun_propose', {'counterparty': 'nobody', 'role': 'payer', 'price': 3}),
                  (Agent(people=PEOPLE), 'valun_propose', {'counterparty': 'bob', 'role': 'buyer', 'price': 3}),
                  (Agent(people=[{'handle': 'bob'}]), 'valun_propose', {'counterparty': 'bob', 'role': 'payer', 'price': 3}),
@@ -259,26 +280,26 @@ class Prepare(unittest.TestCase):
             self.assertEqual(agent.describe_commitment(name, args), p['text'])
         p = Agent().prepare('valun_new_signing_tool', {'x': 1})
         self.assertEqual(p, {'args': {'x': 1}, 'text': 'Valun: sign a commitment (valun_new_signing_tool).'})
-        self.assertEqual(Agent().prepare('valun_respond', {'deal_id': 'vd_1', 'action': 'decline'})['text'], None)
+        self.assertEqual(Agent().prepare('valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'decline'})['text'], None)
 
     def test_one_read_binds_and_describes(self):
         a = Agent(DEAL)
         p = a.prepare(*ACCEPT)
-        self.assertEqual(a._fake.reads, [('deal', 'vd_1')])
-        self.assertEqual(p['args'], {'deal_id': 'vd_1', 'action': 'accept', 'expected_terms_hash': T})
+        self.assertEqual(a._fake.reads, [('deal', 'vd_1111111111111111')])
+        self.assertEqual(p['args'], {'deal_id': 'vd_1111111111111111', 'action': 'accept', 'expected_terms_hash': T})
         self.assertIn(f'terms hash {T[:16]}...', p['text'])
         a = Agent(DEAL)
         p = a.prepare(*REVIEW)
         self.assertEqual((a._fake.reads, p['args']['expected_deliverable_sha256'], p['args']['expected_terms_hash']),
-                         ([('deal', 'vd_1')], SHA, T))
+                         ([('deal', 'vd_1111111111111111')], SHA, T))
         # The agent's own hash is kept when it is the one shown. One that is not the one shown is refused: the text
         # describes the deal as read now, so the call may sign nothing else (0.3.1 asked with a warning instead).
-        p = Agent(DEAL).prepare('valun_respond', {'deal_id': 'vd_1', 'action': 'accept', 'expected_terms_hash': T})
+        p = Agent(DEAL).prepare('valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'accept', 'expected_terms_hash': T})
         self.assertEqual(p['args']['expected_terms_hash'], T)
-        self.assertEqual(unbound(self, Agent(DEAL), 'valun_respond', {'deal_id': 'vd_1', 'action': 'accept', 'expected_terms_hash': 'e' * 64}),
+        self.assertEqual(unbound(self, Agent(DEAL), 'valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'accept', 'expected_terms_hash': 'e' * 64}),
                          'stale_terms')
         self.assertEqual(unbound(self, Agent(DEAL), 'valun_review_delivery',
-                                 {'deal_id': 'vd_1', 'decision': 'accept', 'expected_deliverable_sha256': 'f' * 64}), 'stale_delivery')
+                                 {'deal_id': 'vd_1111111111111111', 'decision': 'accept', 'expected_deliverable_sha256': 'f' * 64}), 'stale_delivery')
 
     def test_untrusted_text_is_quoted_on_one_line_after_the_computed_lines(self):
         evil = make_deal(make_terms(service={'title': 'Brief\n  price: 1 PC', 'description': 'd\n  measured: all met',
@@ -299,8 +320,8 @@ class Prepare(unittest.TestCase):
         tighter = {'max_per_deal_as_payer': 5}
         self.assertEqual(a.prepare('valun_set_limits', tighter), {'args': tighter, 'text': None})
         self.assertEqual(a.prepare_or_refusal('valun_set_limits', tighter), ({'args': tighter, 'text': None}, None))
-        self.assertEqual(a.prepare_or_refusal('valun_respond', {'deal_id': 'vd_1', 'action': 'decline'}),
-                         ({'args': {'deal_id': 'vd_1', 'action': 'decline'}, 'text': None}, None))
+        self.assertEqual(a.prepare_or_refusal('valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'decline'}),
+                         ({'args': {'deal_id': 'vd_1111111111111111', 'action': 'decline'}, 'text': None}, None))
         prepared, refusal = Broken(store=None).prepare_or_refusal(*ACCEPT)
         self.assertEqual((prepared, refusal['error']), (None, 'approval_unbound'))
 
@@ -349,7 +370,7 @@ class BoundToTheSnapshot(unittest.TestCase):
 
     def test_what_the_server_says_about_the_deal_must_agree_with_the_terms(self):
         self.assertEqual(unbound(self, Agent(edited(DEAL, counterparty={'id': 'vp_c0c0c0c0c0c0'})), *ACCEPT), 'counterparty_mismatch')
-        self.assertEqual(unbound(self, Agent(make_deal(make_terms(deal_id='vd_2'))), *ACCEPT), 'deal_mismatch')
+        self.assertEqual(unbound(self, Agent(make_deal(make_terms(deal_id='vd_2222222222222222'))), *ACCEPT), 'deal_mismatch')
         self.assertEqual(unbound(self, Agent(make_deal(make_terms(proposer=ME_ID))), *ACCEPT), 'own_offer')   # only theirs is answered
         self.assertEqual(unbound(self, Agent(make_deal(make_terms(proposer=ME_ID))), *COUNTER), 'own_offer')
         self.assertIn('ISSUE A CREDIT NOTE', Agent(make_deal(make_terms(proposer=ME_ID))).prepare(*REVIEW)['text'])   # either side proposed
@@ -365,22 +386,22 @@ class BoundToTheSnapshot(unittest.TestCase):
         self.assertIn(f'agreed terms hash {T[:16]}...', text)
         self.assertNotIn('12 bytes', text)
         lines = Agent(DEAL).prepare(*ACCEPT)['text'].split('\n')
-        self.assertEqual(lines[0], f"Valun - ACCEPT bob's offer ({BOB_ID}, deal vd_1, version 2):")
+        self.assertEqual(lines[0], f"Valun - ACCEPT bob's offer ({BOB_ID}, deal vd_1111111111111111, version 2):")
         self.assertEqual(lines[1], '  you are the payer; price: 20 PC; deliver by 2099-01-02T00:00:00.000Z')
 
     def test_counter_and_review_pin_the_terms_hash(self):
         p = Agent(DEAL).prepare(*COUNTER)
-        self.assertEqual(p['args'], {'deal_id': 'vd_1', 'action': 'counter', 'price': 30, 'expected_terms_hash': T})
+        self.assertEqual(p['args'], {'deal_id': 'vd_1111111111111111', 'action': 'counter', 'price': 30, 'expected_terms_hash': T})
         self.assertIn('price: 30 PC', p['text'])
         self.assertIn('your agent changes: price 20 -> 30 PC; the counter-offer stays open 24 h', p['text'])
         self.assertIn('as in their offer', p['text'])
-        p = Agent(DEAL).prepare('valun_respond', {'deal_id': 'vd_1', 'action': 'counter', 'deliver_within_hours': 12, 'title': 'New'})
+        p = Agent(DEAL).prepare('valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'counter', 'deliver_within_hours': 12, 'title': 'New'})
         self.assertIn('price: 20 PC', p['text'])
         self.assertIn('deliver within 12 h of signing', p['text'])
         self.assertIn('"title":"New"', p['text'].split('\n')[-1])
         self.assertIn('"description":"Three sources."', p['text'].split('\n')[-1])     # unchanged text, copied from their offer
         p = Agent(DEAL).prepare(*REVIEW)
-        self.assertEqual(p['args'], {'deal_id': 'vd_1', 'decision': 'accept', 'expected_deliverable_sha256': SHA, 'expected_terms_hash': T})
+        self.assertEqual(p['args'], {'deal_id': 'vd_1111111111111111', 'decision': 'accept', 'expected_deliverable_sha256': SHA, 'expected_terms_hash': T})
 
     def test_propose_signs_for_the_participant_shown(self):
         a = Agent(people=PEOPLE)
@@ -413,12 +434,12 @@ class Desk:
             return {'network': vc.NETWORK, 'protocol': vc.PROTOCOL, 'unit': 'PC', 'tracker_nft_id': NFT, 'denomination': DENOM}
         if path == f'/pilot/v1/participants/{BOB_ID}':
             return {'id': BOB_ID, 'handle': 'bob', 'status': 'active', 'pubkey': BOB['pubkey']}
-        if method == 'GET' and path == '/pilot/v1/deals/vd_1':
+        if method == 'GET' and path == '/pilot/v1/deals/vd_1111111111111111':
             self.reads += 1
             return json.loads(json.dumps(self.views[min(self.reads, len(self.views)) - 1]))
         if method == 'POST':
             self.posts.append((path, body))
-            return {'id': 'vd_1', 'status': 'agreed' if path.endswith('/accept') else 'open'}
+            return {'id': 'vd_1111111111111111', 'status': 'agreed' if path.endswith('/accept') else 'open'}
         raise vc.ValunError('not_found', f'no route {method} {path}', 404)
 
 
@@ -426,7 +447,7 @@ def offer(price, title='Brief'):
     """Bob's genuinely signed open offer to Alice, as the server shows it."""
     t = make_terms(price=price, service={'title': title, 'description': 'Three sources.', 'deliverable': 'markdown'}, version=1)
     h = vc.terms_hash(t)
-    return {'id': 'vd_1', 'status': 'open', 'your_role': 'payer', 'counterparty': {'id': BOB_ID, 'handle': 'bob'},
+    return {'id': 'vd_1111111111111111', 'status': 'open', 'your_role': 'payer', 'counterparty': {'id': BOB_ID, 'handle': 'bob'},
             'current': {'version': 1, 'by': BOB_ID, 'state': 'open', 'terms': t, 'terms_hash': h,
                         'signature': sign_text(BOB, vc.statement('propose', h))}}
 
@@ -489,11 +510,11 @@ class MeasuredTerms(unittest.TestCase):
             a = Agent()
             a._fake = Payee(make_deal(make_terms(service=svc)))
             with self.assertRaises(vc.ValunError) as e:
-                a.deliver({'deal_id': 'vd_1', 'content': 'Agents pay with IOUs.'})
+                a.deliver({'deal_id': 'vd_1111111111111111', 'content': 'Agents pay with IOUs.'})
             self.assertEqual(e.exception.code, 'draft_does_not_meet_terms', svc)
             self.assertIn('300-500 words: measured 4 words', str(e.exception))
-            self.assertNotIn(('deliver', 'vd_1'), a._fake.reads, 'nothing sent')
-            self.assertEqual(a.deliver({'deal_id': 'vd_1', 'content': 'word ' * 350})['status'], 'delivered', svc)
+            self.assertNotIn(('deliver', 'vd_1111111111111111'), a._fake.reads, 'nothing sent')
+            self.assertEqual(a.deliver({'deal_id': 'vd_1111111111111111', 'content': 'word ' * 350})['status'], 'delivered', svc)
 
     def test_the_acceptance_text_measures_what_the_deliverable_asks(self):
         text = Agent(make_deal(make_terms(service=PROPOSE), content='Agents pay with IOUs.')).prepare(*REVIEW)['text']
@@ -515,7 +536,7 @@ class EndToEnd(unittest.TestCase):
         a.call('valun_respond', p['args'])
         (path, body), = desk.posts
         h = vc.terms_hash(offer(500)['current']['terms'])
-        self.assertEqual((path, body['terms_hash']), ('/pilot/v1/deals/vd_1/accept', h))
+        self.assertEqual((path, body['terms_hash']), ('/pilot/v1/deals/vd_1111111111111111/accept', h))
         self.assertTrue(vb.verify(bytes.fromhex(body['signature']), vc.statement('accept', h).encode(), bytes.fromhex(ALICE['pubkey'])))
 
     def test_a_lying_snapshot_is_refused_and_nothing_is_signed(self):
@@ -543,7 +564,7 @@ class EndToEnd(unittest.TestCase):
         # The snapshot shows a delivery on a 5 PC agreement; when the client signs, the same text is shown on another
         # genuinely agreed 500 PC deal under this id: nothing is signed, not even the template is asked for.
         w, s = World(), MemStore()
-        w.add_deal('vd_1', price=5)
+        w.add_deal('vd_1111111111111111', price=5)
 
         class WorldAgent(ValunAgent):
             def client(self, require_connection=True):
@@ -551,16 +572,16 @@ class EndToEnd(unittest.TestCase):
         a = WorldAgent(s)
         p = a.prepare(*REVIEW)
         self.assertIn('ISSUE A CREDIT NOTE of 5 PC', p['text'])
-        w.add_deal('vd_1', price=500)
+        w.add_deal('vd_1111111111111111', price=500)
         w.log.clear()
         with self.assertRaises(vc.ValunError) as e:
             a.call('valun_review_delivery', p['args'])
         self.assertEqual(e.exception.code, 'stale_terms')
-        self.assertEqual(w.log, ['GET /pilot/v1/deals/vd_1'])
+        self.assertEqual(w.log, ['GET /pilot/v1/deals/vd_1111111111111111'])
         self.assertEqual(w.tracker, {})
         # The consistent case pays exactly the price shown.
         w2, s2 = World(), MemStore()
-        w2.add_deal('vd_1', price=5)
+        w2.add_deal('vd_1111111111111111', price=5)
 
         class WorldAgent2(ValunAgent):
             def client(self, require_connection=True):
@@ -583,7 +604,7 @@ class Adapters(unittest.TestCase):
         class Never(Broken):
             def call(self, name, args=None):
                 raise AssertionError('must not be called')
-        args = {'deal_id': 'vd_1', 'action': 'accept'}
+        args = {'deal_id': 'vd_1111111111111111', 'action': 'accept'}
         s, out = self.mcp(Never(store=None))
         r = s.call('valun_respond', args)
         self.assertTrue(r['isError'])
@@ -612,12 +633,12 @@ class Adapters(unittest.TestCase):
         r = s.call(*ACCEPT)
         self.assertFalse(r['isError'])
         ask = json.loads(out.getvalue().decode().splitlines()[0])
-        self.assertIn(f"Valun - ACCEPT bob's offer ({BOB_ID}, deal vd_1, version 2)", ask['params']['message'])
-        self.assertEqual(called, [('valun_respond', {'deal_id': 'vd_1', 'action': 'accept', 'expected_terms_hash': T})])
+        self.assertIn(f"Valun - ACCEPT bob's offer ({BOB_ID}, deal vd_1111111111111111, version 2)", ask['params']['message'])
+        self.assertEqual(called, [('valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'accept', 'expected_terms_hash': T})])
         # 2026-07-28: the first round asks with the prepared text, bound into the HMAC request state
         s, _out = self.mcp(Ok(DEAL))
         meta = {'io.modelcontextprotocol/clientCapabilities': {'elicitation': {}}}
-        r = s.call_modern({'name': 'valun_respond', 'arguments': {'deal_id': 'vd_1', 'action': 'accept'}}, meta)
+        r = s.call_modern({'name': 'valun_respond', 'arguments': {'deal_id': 'vd_1111111111111111', 'action': 'accept'}}, meta)
         self.assertEqual(r['resultType'], 'input_required')
         self.assertIn("ACCEPT bob's offer", r['inputRequests']['approval']['params']['message'])
 
@@ -654,19 +675,19 @@ class Adapters(unittest.TestCase):
                 return {'ok': True}
         s, _out = self.mcp(Ok(DEAL))
         meta = {'io.modelcontextprotocol/clientCapabilities': {'elicitation': {}}}
-        p = {'name': 'valun_respond', 'arguments': {'deal_id': 'vd_1', 'action': 'accept'}}
+        p = {'name': 'valun_respond', 'arguments': {'deal_id': 'vd_1111111111111111', 'action': 'accept'}}
         first = s.call_modern(dict(p), meta)
         self.assertEqual(first['resultType'], 'input_required')
         yes = {'approval': {'action': 'accept', 'content': {'approve': True}}}
         done = s.call_modern(dict(p, requestState=first['requestState'], inputResponses=yes), meta)
         self.assertEqual((done['resultType'], done['isError']), ('complete', False))
-        self.assertEqual(called, [('valun_respond', {'deal_id': 'vd_1', 'action': 'accept', 'expected_terms_hash': T})])
+        self.assertEqual(called, [('valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'accept', 'expected_terms_hash': T})])
         again = s.call_modern(dict(p, requestState=first['requestState'], inputResponses=yes), meta)   # the same resent
         self.assertEqual(again['resultType'], 'input_required')
         self.assertNotEqual(again['requestState'], first['requestState'])
         self.assertEqual(len(called), 1)
         # a state older than the limit is asked again too; one that is not this process's is never accepted
-        old = s._state('valun_respond', {'deal_id': 'vd_1', 'action': 'accept', 'expected_terms_hash': T},
+        old = s._state('valun_respond', {'deal_id': 'vd_1111111111111111', 'action': 'accept', 'expected_terms_hash': T},
                        now=time.time() - mcp_server.APPROVAL_STATE_TTL_S - 5)
         late = s.call_modern(dict(p, requestState=old, inputResponses=yes), meta)
         self.assertEqual(late['resultType'], 'input_required')
@@ -678,15 +699,79 @@ class Adapters(unittest.TestCase):
         self.assertFalse(s.call_modern(dict(p, requestState=fresh, inputResponses=yes), meta)['isError'])
         self.assertEqual(len(called), 2)
 
-    def test_console_approval_text_says_credit_notes_wait(self):
-        self.assertIn('accepting a delivery', mcp_server.APPROVAL_TEXT['console'])
-        self.assertIn('credit note', cli.JOIN_APPROVALS['console'])
+    def test_console_approval_texts_say_what_is_held_and_what_is_not(self):
+        # The approval semantics of 2026-11-17 (staging, verified): console holds offers, counter-offers, acceptances,
+        # guarantee offers and the IOU or payment by transfer at a delivery; never an honor of a guarantee call, a
+        # guarantee release or a consent; and rejecting unsigns nothing. "Every commitment waits" was not true.
+        # The owner's words: what `valun console` says (join's own console lines are three and a link since the Nov 18
+        # fresh-join run, finding 3: they name what console holds, and point to `valun console` and /start#approve).
+        agent, owner = mcp_server.APPROVAL_TEXT['console'], cli._console_words('console')
+        joined = cli.JOIN_APPROVALS['console']
+        for words in (cli.CONSOLE_HOLDS, '`{valun} --profile {name} console` opens the console', cli.CONSOLE_DOC,
+                      'opens the console and says what approving and rejecting do'):
+            self.assertIn(words, joined)
+        self.assertNotIn(cli.CONSOLE_DECIDES, joined)
+        for words in ('your offers and counter-offers', 'your acceptances (taking a job included)', 'your guarantee offers',
+                      'the IOU or payment by transfer you sign when you accept a delivery', 'Rejecting does not unsign it',
+                      'honoring a guarantee call (your IOU, recorded at once)', 'the consents your client signs by itself',
+                      # the 0.7.2 review: a rejected payment by transfer is purged, and the agent may clear its own limits
+                      'A rejected payment by transfer is the exception: it is deleted, its signatures included (the server '
+                      'keeps only their hashes), and you may pay again through the same IOU at once while it is unchanged',
+                      "loosening or clearing a limit you recorded with valun_set_limits (never past your owner's mandate)",
+                      'paying that deal by transfer waits until 1 hour and 2 minutes after you signed it',
+                      # the RC's staging test (2026-11-18): the console shows the server's time, a minute sooner
+                      "(your Valun client's time, a minute after the server's, which the owner console shows, as a margin "
+                      'for clocks that differ)'):
+            self.assertIn(words, agent)
+        self.assertIn("(your agent's Valun client waits a minute longer than the time the owner console shows, as a margin "
+                      'for clocks that differ)', owner)
+        # a held IOU's deadline is the console's: a minute before its hour at the tracker ends; and the warning of a
+        # server older than valun-app da29d10, whose card shows the hour itself and which sends a late approval on
+        # (the RC's review, R2-OTHER-6: the live testnet ran 1b1f18f, and 0.7.2 had dropped this warning)
+        self.assertIn('Approve or reject a held IOU by the deadline its card shows, a minute before its hour at the tracker '
+                      'ends: an IOU still held when that hour ends is never recorded and pays nothing, and a server whose '
+                      'card shows the hour itself as the deadline (one from before 2026-11-18) still sends an IOU approved '
+                      'after it, which then fails at the tracker and leaves the delivery accepted, unpaid and no longer '
+                      'disputable.', owner)
+        repo = os.path.dirname(os.path.dirname(HERE))
+        for doc in ('python/README.md', 'docs/GETTING-STARTED.md'):
+            with open(os.path.join(repo, doc), encoding='utf-8') as f:
+                text = ' '.join(f.read().split())
+            self.assertIn('still sends an IOU approved after it, which then fails at the tracker and leaves the delivery '
+                          'accepted, unpaid and no longer disputable', text, doc)
+        for words in ("your agent's offers and counter-offers", 'its guarantee offers',
+                      'the IOU or payment by transfer it signs when it accepts a delivery', 'Rejecting does not unsign it',
+                      "Never held: honoring a guarantee call (your agent's own IOU",
+                      'within 20 minutes',
+                      'A rejected payment by transfer is the exception: it is deleted, its signatures included',
+                      'your agent loosening or clearing a limit it recorded (never past your mandate)'):
+            self.assertIn(words, owner)
+        # The general rule is never stated without the exception (the review: valun_status and valun_deal contradicted
+        # each other about a rejected payment by transfer).
+        for text in (agent, owner, cli.CONSOLE_DECIDES):
+            self.assertNotIn('the server keeps what you signed', text)
+            self.assertNotIn('the server keeps it on record.', text)
+        # ask's own offer of console names what console holds, never "what it signs" (the review: honors, guarantee
+        # calls and consents are signed and never held)
+        self.assertIn('holds its offers, acceptances and guarantee offers, and the IOU or payment at each delivery, for '
+                      'you in the owner console', cli.JOIN_APPROVALS['ask'])
+        self.assertNotIn('holds what it signs', cli.JOIN_APPROVALS['ask'])
+        # and doctor's line before a join (the RC's staging test, 2026-11-18): what the join it suggests will use
+        before = cli._approvals_before_join(argparse.Namespace(profile='default'), types.SimpleNamespace(state={}))
+        self.assertIn("the Valun server holds your agent's offers and counter-offers, its acceptances (taking a job "
+                      'included), its guarantee offers, and the IOU or payment by transfer it signs when it accepts a '
+                      'delivery for you in the owner console', before)
+        for text in (agent, owner, *cli.JOIN_APPROVALS.values(), *mcp_server.APPROVAL_TEXT.values(), mcp_server.ASK_WITHOUT_FORMS,
+                     mcp_server.APPROVAL_UNAVAILABLE['what_this_means'], before):
+            self.assertNotIn('every commitment waits', text.lower())
+            self.assertNotIn('each commitment waits', text.lower())
+            self.assertNotIn('holds each commitment', text.lower())
 
 
 class Terminal(unittest.TestCase):
     def setUp(self):
         self.home = tempfile.TemporaryDirectory()
-        self.env = mock.patch.dict(os.environ, {'VALUN_HOME': self.home.name})
+        self.env = mock.patch.dict(os.environ, {'VALUN_HOME': self.home.name, 'HOME': self.home.name, 'USERPROFILE': self.home.name})
         self.env.start()
         self.calls = []
 
@@ -750,11 +835,17 @@ class Terminal(unittest.TestCase):
         # the owner is told how to turn it off.
         self.assertEqual(puts, [({'approve_above': 0, 'review_deliveries': True}, 'vpo_test-only'),
                                 ({'approve_above': 25}, 'vpo_test-only')])
-        self.assertIn('Accepted deliveries still wait for your review (review_deliveries is on); turn that off in the owner console '
-                      '(http://valun.invalid/pilot#owner)', printed.getvalue())
+        self.assertIn('Owner mandate updated (approve_above 0, review_deliveries on): ' + cli.CONSOLE_HOLDS + ' now wait for '
+                      'you in the owner console (http://valun.invalid/pilot#owner). ' + cli.CONSOLE_DECIDES + ' Never held: '
+                      + cli.CONSOLE_NEVER + '. `valun --profile c console` opens the console.', printed.getvalue())
+        self.assertIn('Accepted deliveries still wait for your review (review_deliveries is on): the IOU or payment by '
+                      'transfer your agent signs when it accepts a delivery is held for you until you approve it. Untick '
+                      'Review deliveries in the owner console (http://valun.invalid/pilot#owner)', printed.getvalue())
         with open(path, encoding='utf-8') as f:
             disk = json.load(f)
         self.assertEqual((disk['approvals'], disk['server']), ('ask', 'http://other.invalid'))
+        # where the owner keeps the token, for `valun console` (the path only, never the token)
+        self.assertEqual(disk['owner_token_file'], os.path.abspath(tok))
         self.assertNotIn('pins', disk)                      # a new server is pinned again on its first call
         self.assertNotIn('vpo_test-only', json.dumps(disk))
 

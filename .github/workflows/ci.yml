@@ -6,7 +6,8 @@ name: ci
 #                Hermes plugin 0.7.1, both also held to the circulation and consent tiers (--require circulation/1),
 #                and against the plugin 0.3.0 the Hermes catalog pins until its entry moves to 0.4.0
 #   fixtures     CPython 3.14 regenerates the JS client's Python fixtures; they must equal the committed ones
-#   js           the zero-dependency JavaScript/TypeScript client: every vector, transcript replay, type check
+#   js           the zero-dependency JavaScript/TypeScript client: every vector, transcript replay, type check; Node 18 to
+#                26 (26 on Linux and Windows)
 #   ergo         settlement on Ergo testnet, with the optional ergo-lib installed (JS and Python signing tests)
 #   server       the Valun server (server/): its test files that start no Basis tracker, Node 22 and 24
 #   registry     server.json (the MCP Registry entry) passes the registry's own validator
@@ -108,11 +109,16 @@ jobs:
           git diff --exit-code -I '"python": "3\.14\.[0-9]*",$' -- js/test/fixtures
 
   js:
+    # Node 26, the current LTS (its undici 8 keeps the global dispatcher elsewhere than Node 18 to 25: the RC's review,
+    # round 5), on Linux and Windows only, so the macOS queue stays at the eleven jobs the ergo job's note gives.
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        node: ["18", "20", "22", "24"]
+        node: ["18", "20", "22", "24", "26"]
+        exclude:
+          - os: macos-latest
+            node: "26"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1

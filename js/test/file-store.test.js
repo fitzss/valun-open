@@ -29,14 +29,14 @@ test('a missing file gives an empty store and creates nothing until save()', () 
 test('saveCredentials() writes the Python FileStore layout (state keys + secret + agent_token, 1-space indent) and reads back', () => {
   const p = file();
   const s = new FileStore(p);
-  s.state.server = 'http://valun.invalid';
+  s.state.server = 'https://valun.invalid';
   s.state.issued = {'02aa>03bb': 20};
   s.saveCredentials(SECRET, TOKEN);
   const text = fs.readFileSync(p, 'utf8');
-  assert.deepEqual(JSON.parse(text), {server: 'http://valun.invalid', issued: {'02aa>03bb': 20}, secret: SECRET, agent_token: TOKEN});
+  assert.deepEqual(JSON.parse(text), {server: 'https://valun.invalid', issued: {'02aa>03bb': 20}, secret: SECRET, agent_token: TOKEN});
   assert.equal(text, JSON.stringify(JSON.parse(text), null, 1));
   const again = new FileStore(p);
-  assert.deepEqual(again.state, {server: 'http://valun.invalid', issued: {'02aa>03bb': 20}});
+  assert.deepEqual(again.state, {server: 'https://valun.invalid', issued: {'02aa>03bb': 20}});
   assert.equal(again.secret(), SECRET);
   assert.equal(again.token(), TOKEN);
   assert.deepEqual(fs.readdirSync(path.dirname(p)), ['state.json'], 'no temporary file is left behind');
@@ -45,7 +45,7 @@ test('saveCredentials() writes the Python FileStore layout (state keys + secret 
 test('reads a state file written by the Python client', () => {
   const p = file();
   fs.mkdirSync(path.dirname(p), {recursive: true});
-  fs.writeFileSync(p, JSON.stringify({server: 'http://valun.invalid', participant_id: 'vp_461ce015dd98', pubkey: '035e', network: NETWORK,
+  fs.writeFileSync(p, JSON.stringify({server: 'https://valun.invalid', participant_id: 'vp_461ce015dd98', pubkey: '035e', network: NETWORK,
     enrolled_at: '2026-11-06T12:06:00.000Z', issued: {}, secret: SECRET, agent_token: TOKEN}, null, 1));
   const s = new FileStore(p);
   assert.equal(s.secret(), SECRET);
@@ -97,7 +97,7 @@ test('Client + FileStore: enroll writes the key and token to the file; a new cli
   const p = file();
   const secret = testKey('valun-open/spec/test-key/bob');
   const f = fakeFetch({'POST /pilot/v1/enroll': {status: 201, body: {participant_id: 'vp_9850bb41e214', agent_token: TOKEN, network: NETWORK}}});
-  const c = new Client({store: new FileStore(p), server: 'http://valun.invalid', fetch: f, generateSecret: () => secret.slice()});
+  const c = new Client({store: new FileStore(p), server: 'https://valun.invalid', fetch: f, generateSecret: () => secret.slice()});
   await c.enroll('vp_9850bb41e214', 'vpe_TESTONLY');
   const saved = JSON.parse(fs.readFileSync(p, 'utf8'));
   assert.equal(saved.secret, bytesToHex(secret));
@@ -106,5 +106,5 @@ test('Client + FileStore: enroll writes the key and token to the file; a new cli
   const c2 = new Client({store: new FileStore(p)});
   assert.equal(c2.connected, true);
   assert.equal(c2.pubkey, saved.pubkey);
-  assert.equal(c2.state.server, 'http://valun.invalid');
+  assert.equal(c2.state.server, 'https://valun.invalid');
 });

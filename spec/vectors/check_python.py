@@ -14,8 +14,10 @@ disagreement is reported. Two clients can be checked (one per run):
   VALUN_CLIENT=plugin|package selects the client when --client is not given.
 
 The client's modules are imported and never modified (bytecode writing is switched off so not even a __pycache__ file
-is added). Its tool layer (tools.py / agent.py) is only read as text. No network: replays of the transcript patch
-urllib.request.urlopen in this process only. Standard library only; Python 3.10 or later.
+is added). Its tool layer (tools.py / agent.py) is only read as text. No network: replays of the transcript answer
+the client's one try in this process only (Client._open, each Client's own opener, from valun 0.7.2; urllib.request.urlopen
+for an earlier client), at the https:// form of the recorded server (a client sends a token over plain http only to a
+server on this machine, from 0.7.2). Standard library only; Python 3.10 or later.
 
 What is checked
 - canonical.json        canonical / terms_hash on json.loads(input_json)
@@ -88,7 +90,7 @@ from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, '..', '..'))      # the valun-open checkout
-BASE = 'http://valun.invalid'
+BASE = 'https://valun.invalid'    # the transcript's base_url (http://valun.invalid), at its https:// address: only paths are compared
 try:
     sys.stdout.reconfigure(errors='backslashreplace')
 except Exception:
@@ -425,6 +427,22 @@ class Transport:
         return Resp(status, body)
 
 
+def answered_by(urlopen):
+    """Every try of the client's requests answered by urlopen(req, timeout) instead of the network: through
+    Client._open, each Client's own opener (valun 0.7.2 and later), else through urllib.request.urlopen (earlier clients
+    sent through it). Returns the function that undoes it."""
+    if callable(getattr(vc.Client, '_open', None)):
+        saved = vc.Client.__dict__.get('_open')
+        vc.Client._open = lambda c, req: urlopen(req, timeout=c.timeout)
+        return lambda: setattr(vc.Client, '_open', saved)
+    saved = urllib.request.urlopen
+    urllib.request.urlopen = urlopen
+
+    def undo():
+        urllib.request.urlopen = saved
+    return undo
+
+
 class FakeStore:
     def __init__(self, state, secret_hex, token):
         self.state, self._s, self._t = state, secret_hex, token
@@ -459,15 +477,15 @@ def client_reason_request(kind, inputs, key):
         raise AssertionError(f'unexpected request {req.get_method()} {req.full_url}')
 
     secret = test_key(key['label'])
-    saved = (urllib.request.urlopen, vc.terms_hash)
+    saved, undo = vc.terms_hash, answered_by(urlopen)
     try:
-        urllib.request.urlopen = urlopen
         vc.terms_hash = lambda _terms: th
         client = vc.Client(FakeStore({'server': BASE, 'participant_id': 'vp_000000000000', 'pubkey': key['pubkey'], 'issued': {}}, secret.hex(), 'stub-token'))
         client.verified_agreement = lambda _d: {}
         getattr(client, kind)(deal_id, inputs['reason'])
     finally:
-        urllib.request.urlopen, vc.terms_hash = saved
+        vc.terms_hash = saved
+        undo()
     if 'body' not in captured:
         raise AssertionError(f'Client.{kind} sent no request')
     return captured['body']
@@ -572,14 +590,14 @@ def replay(step, meta, participants, variant=None):
             raise AssertionError(f'token_hex({n}) but the recorded value has {len(v)} hex chars')
         return v
 
-    saved = (vc.datetime, vc.time, vc.secrets, urllib.request.urlopen, vb.generate_secret)
+    saved = (vc.datetime, vc.time, vc.secrets, vb.generate_secret)
     token = (step['request'].get('headers', {}).get('authorization') or 'Bearer <none>')[len('Bearer '):]
     transport = Transport(step, token)
+    undo = answered_by(transport.urlopen)
     try:
         vc.datetime = FixedDT
         vc.time = types.SimpleNamespace(time=lambda: at.timestamp())
         vc.secrets = types.SimpleNamespace(token_hex=token_hex)
-        urllib.request.urlopen = transport.urlopen
         if call['method'] == 'enroll':
             vb.generate_secret = lambda: secret
             client = vc.Client(FakeStore({'server': BASE}, None, None))
@@ -599,7 +617,8 @@ def replay(step, meta, participants, variant=None):
         except vc.ValunError as e:  # an expected refusal (expect_error) is a result, not a crash
             raised = e
     finally:
-        vc.datetime, vc.time, vc.secrets, urllib.request.urlopen, vb.generate_secret = saved
+        vc.datetime, vc.time, vc.secrets, vb.generate_secret = saved
+        undo()
     return transport, key, raised, client.state
 
 

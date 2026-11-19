@@ -151,10 +151,12 @@ ctx keys (only me_pk, now_ms and verify are checked as arguments; the others giv
                    acknowledged state: timestamp 0 and signature None for an absent edge), total (that edge's total
                    once it applies), timestamp, quote_digest, ack ('basis/prior-ack/1': its prior slot was signed as
                    PA; absent in records written before it was recorded), signed_at; outcome 'applied' once the
-                   client learnt it applied, or 'not_applied' only by the owner's decision (attempt_outcome);
-                   attempt_id, the server's id of it, once known; resolved_at, the time (ISO 8601, UTC) of the owner's
-                   decision, written with outcome by Client.resolve_attempt (for people: no rule here reads it)}; None
-                   = empty
+                   client learnt it applied, or 'not_applied' by the owner's decision or, for a payment the server
+                   held for the owner, its word that the hold ended without sending it on (attempt_outcome);
+                   attempt_id, the server's id of it, once known; approval_id, the server's id of the owner's approval
+                   that held it; resolved_at, the time (ISO 8601, UTC) of the owner's decision, written with outcome by
+                   Client.resolve_attempt (for people: no rule here reads it), or server_ended {state, approval_id, at},
+                   written with it by Client.learn_owner_decisions (attempt_outcome reads it)}; None = empty
   novated_edges    edges a novation changed (a dict keyed by edge, or a list of edges); None = none (R12)
   features         /info features (bound templates: bound_notes/1 makes an unbound template bound_note_required)
   novation         GET /info novation, the server's report of its tracker's contract: a bound note, the payer's
@@ -501,11 +503,15 @@ def attempt_outcome(attempt, now_ms, state=None):
       'dead'     a read-back shows it did not apply (a state older than its timestamp) and now_ms > timestamp +
                  MAX_AGE_MS + FALLBACK_MARGIN_MS
       'unread'   its window has passed but the edge was not read, so it is not known to be dead
-    attempt['outcome'] == 'not_applied' records the OWNER's decision, after confirming with the payee, that an attempt
-    did not apply (the way out of attempt_outcome_unknown; a client never sets it by itself): the attempt is then 'dead'
-    once its window has passed ('alive' before; an ordinary note only once its edge has moved past it), unless the edge
-    holds exactly its new total at its timestamp. The evaluators also accept proof from this client's own records that
-    an 'unknown' attempt is dead (proven_dead)."""
+    attempt['outcome'] == 'not_applied' records that an attempt did not apply: the OWNER's decision, after confirming
+    with the payee (the way out of attempt_outcome_unknown), or, since 0.7.2, the server's word that a payment it held
+    for the owner was never sent on (its owner rejected it, or it went void: Client.learn_owner_decisions, which also
+    writes server_ended; the trust console approvals rest on). The owner's decision makes the attempt 'dead' once its
+    window has passed ('alive' before: a read-back is the server's report, and only the window proves a transfer or a
+    bound note can no longer apply; an ordinary note only once its edge has moved past it). The server's word does so
+    too, or once a read-back shows its edge past its timestamp (on that same word it can never apply then: an edge's
+    timestamps only increase). In both, an edge that holds exactly its new total at its timestamp shows it applied. The
+    evaluators also accept proof from this client's own records that an 'unknown' attempt is dead (proven_dead)."""
     outcome = attempt.get('outcome')
     if outcome == 'applied':
         return 'applied'
@@ -514,9 +520,10 @@ def attempt_outcome(attempt, now_ms, state=None):
     if state is not None and (state['timestamp'], state['total']) == (T, total):
         return 'applied'
     if outcome == 'not_applied':
-        if _expires(attempt):
+        past = state is not None and state['timestamp'] > T
+        if _expires(attempt) and not isinstance(attempt.get('server_ended'), dict):
             return 'dead' if expired else 'alive'
-        return 'dead' if state is not None and state['timestamp'] > T else 'alive'   # an ordinary note never expires
+        return 'dead' if past or (_expires(attempt) and expired) else 'alive'   # an ordinary note never expires
     if state is None:
         return 'unread' if _expires(attempt) and expired else 'alive'
     if state['timestamp'] >= T:

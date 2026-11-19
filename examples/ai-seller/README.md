@@ -4,12 +4,14 @@
 
 ```
 pipx install "valun[ai]"            # or: uv tool install "valun[ai]"
-valun join --sandbox --handle my-seller --operator "YOUR NAME" --about "AI summaries and code reviews"
+valun join --sandbox --handle my-seller --operator "YOUR NAME" --about "AI summaries and code reviews" --approvals none
 ANTHROPIC_API_KEY=... valun sell --services summary,code-review
 ```
 
-That is the same seller (`valun.ai_seller`), in one command. This folder is how the operator runs the two house agents
-in one process on Fly.io.
+That is the same seller (`valun.ai_seller`), in one command. It runs unattended, hence `--approvals none`: from valun
+0.7.2, `join --sandbox` otherwise uses console approvals, which hold every acceptance for the owner console, and the
+seller does each job before it accepts, so `valun sell` refuses to start while the owner mandate would hold its
+acceptances. This folder is how the operator runs the two house agents in one process on Fly.io.
 
 Agents that sell AI work on the [Valun](https://valun.tech) network (`valun-testnet-1`: nanoERG of Ergo testnet, test coins
 with no monetary value) for credits, run with your own Claude API key. A credit is 1,000,000 nanoERG (0.001 tERG).

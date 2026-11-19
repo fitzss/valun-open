@@ -5,14 +5,19 @@ terms hash itself, checks the counterparty's signature against the key in the pu
 templates against the agreed price and its own record of what it has already paid that payee. The key and tokens are
 stored in a private state file and are never returned by any method.
 """
+import calendar
 import contextlib
 import copy
 import hashlib
+import http.client
+import ipaddress
 import json
 import os
 import random
 import re
 import secrets
+import socket
+import ssl
 import stat
 import time
 import time as _systime          # the store's lock and retries: never the `time` a test or replay harness replaces
@@ -20,13 +25,16 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 from datetime import datetime, timedelta, timezone
 
 from . import basis as vb
 from . import novation as nv
 from . import records
 
-NETWORK = 'valun-pilot-1'          # the default network: a profile enrolled before 0.5 is on it
+NETWORK = 'valun-pilot-1'          # the pilot (retired 2026-11-13): what a profile enrolled before 0.5 is on
+TESTNET = 'valun-testnet-1'        # the one network since then: what a profile that has not joined would join
+PILOT_RETIRED_ON = '2026-11-13'    # (profile_network, retired_pilot)
 PROTOCOL = 'valun-deal/1'
 PILOT_TOKEN_ID = hashlib.sha256(b'valun-pilot-credit/1').hexdigest()
 UNIT = 'PC'
@@ -53,6 +61,29 @@ def network_of(name):
         raise ValunError('unknown_network', f'this client does not know the Valun network {name!r} (it knows {", ".join(NETWORKS)}); '
                                             'nothing was signed. Update valun if this is a new network.')
     return NETWORKS[name]
+
+
+def profile_network(state):
+    """The network a profile is on, as the words it is shown in and the checks on it name it: the one its join or
+    enrollment named (state['network']); the pilot (NETWORK) for a profile enrolled before 0.5, which names none; and
+    for a profile that has not joined yet, the one network it would join (TESTNET), so that its tools and hints speak
+    the testnet's words, not the retired pilot's (fix inbox #15, the onboarding review). Client.network, what a profile
+    signs for, still reads a profile without a network as the pilot's: a join whose answer names none enrolls there."""
+    s = state if isinstance(state, dict) else {}
+    n = s.get('network')
+    if isinstance(n, str) and n:
+        return n
+    return NETWORK if s.get('participant_id') else TESTNET
+
+
+def retired_pilot(state, server_network):
+    """Is this a profile of the pilot network (valun-pilot-1), retired on 2026-11-13, whose server now serves another
+    network (server_network, as its GET /info names it)? That server knows neither its participant nor its key, so the
+    profile signs nothing there: its owner must join again in a new profile. False when the server's network is not
+    known (None), or is the pilot's (a server that still runs it)."""
+    return profile_network(state) == NETWORK and isinstance(server_network, str) and server_network != NETWORK
+
+
 # Optional state keys a store keeps for this client (every store must keep them; all may be absent):
 #   issued    {pair: confirmed total} of this client's outgoing edges (the 0.3 record, kept equal to records' confirmed)
 #   records   per-edge confirmed state and pending entries (records.py), and records['paid_deals'] {deal_id: {route,
@@ -71,9 +102,11 @@ def network_of(name):
 #   guarantee_honors (fix inbox #18) {guarantee_id: {cap, calls: {call_id: {amount, state ('pending', 'honored' or
 #             'failed'), total, timestamp}}}}: the calls this client honored or is honoring as a backer, so it never pays
 #             beyond the cap it signed, whatever a server shows.
+#   sandbox_tour_done (for the agent layer, 0.7.2) the participant id whose sandbox tour valun_status saw done: its
+#             sandbox_next_steps then stays done (agent.TOUR_DONE_KEY).
 CORE_STATE_KEYS = ('issued', 'records', 'signed', 'novated_edges', 'transfer_attempts', 'approved_payments', 'consent_policy',
                    'consent_loop', 'consents_last_run_ms', 'consent_log', 'pins', 'journal_seq', 'consents_last_safe_run_ms',
-                   'consent_roles_declared', 'guarantee_honors')
+                   'consent_roles_declared', 'guarantee_honors', 'sandbox_tour_done')
 # Timestamp residues (ts mod 1000) the v3 tracker keeps for other operations: an ordinary note never uses them.
 RESERVED_MS_FROM = 995
 
@@ -123,6 +156,34 @@ LOCAL_CHOICES = ('no_server_id', 'server_unknown', 'server_ended')
 # so the server's word never lets this client sign a payment sooner.
 NEVER_APPLIED_TRANSFER = ('void_rejected', 'void_stale', 'void_expired', 'expired', 'cancelled', 'refused',
                           'void_key_revoked')
+# A payment this client signed that the server held for the payer's owner (console approvals: review_deliveries holds
+# the IOU, or the payment by transfer, signed when the agent accepts a delivery) and that ended without being released:
+# its owner rejected it in the owner console, or the server voided it (stale when the owner approved it, a key revoked,
+# the hold of a payment by transfer expired). On the server's contract a held payment is sent on only once its owner
+# approves it, so one whose approval ended otherwise never reached the tracker, and the server never sends it later
+# (the approval semantics of 2026-11-17, approval probe D2: 0.7.1 kept such an IOU as a live attempt and, once the
+# pair's IOU moved past it, refused to pay the deal again, attempt_outcome_unknown, until the owner resolved it).
+# learn_owner_decisions() records such an attempt as not applied (outcome not_applied, server_ended): the same trust
+# console approvals rest on, since the hold itself is the operator's word. A held IOU approved too late, which the
+# tracker refused for its age (note_failed, novation_expired), is recorded the same way. A hold ends without being
+# released when its approval is 'rejected' or void ('void_' and the reason: void_stale, void_expired, void_key_revoked;
+# hold_ended()).
+OWNER_HELD_KINDS = ('issue_note', 'pay_by_transfer')
+HELD_MATCH_MS = 600_000                       # an IOU's approval is made within 10 minutes of its timestamp (R5 window)
+
+
+def hold_ended(approval_state):
+    """Did a held commitment's approval end without releasing it (rejected by the owner, or void)?"""
+    return isinstance(approval_state, str) and (approval_state == 'rejected' or approval_state.startswith('void_'))
+
+
+def _held_end(v):
+    """An attempt record's server_ended ({state, approval_id, at}: learn_owner_decisions) in that shape, or None."""
+    if not isinstance(v, dict) or _server_word(v.get('state')) is None:
+        return None
+    aid = v.get('approval_id')
+    return {'state': v['state'], 'approval_id': aid if isinstance(aid, str) and _APPROVAL_ID_RE.match(aid) else None,
+            'at': v.get('at') if _iso_to_ms(v.get('at')) is not None else None}
 RESOLVE_NOTE_MAX = 300
 # The server records an attempt as applied only while the payee's edge on the tracker shows the transfer (valun-app
 # SV-AUTH-1): otherwise it answers 409 payee_edge_not_applied {payee_edge}, the class of the payee's edge as it read it
@@ -146,6 +207,24 @@ _PARTICIPANT_ID_RE = re.compile(r'vp_[0-9a-f]{12}\Z')
 _TRANSFER_ID_RE = re.compile(r'vt_[0-9a-f]{16}\Z')
 _ATTEMPT_REF_RE = re.compile(r'#[1-9][0-9]{0,3}\Z')
 _SERVER_WORD_RE = re.compile(r'[a-z_]{1,40}\Z')
+_APPROVAL_ID_RE = re.compile(r'va_[0-9a-f]{12}\Z')
+_ISO_MS_RE = re.compile(r'([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,6}))?Z\Z')
+
+
+def _iso_to_ms(s):
+    """A time as the server writes it (ISO 8601 in UTC: 2026-11-17T23:10:36.315Z) in ms since the epoch, or None for
+    anything else (another form, a date that does not exist, a year before 1970)."""
+    m = _ISO_MS_RE.match(s) if isinstance(s, str) else None
+    if m is None:
+        return None
+    y, mo, d, hh, mm, ss = (int(x) for x in m.groups()[:6])
+    try:
+        t = datetime(y, mo, d, hh, mm, ss, tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    if y < 1970:
+        return None
+    return calendar.timegm(t.utctimetuple()) * 1000 + int((m.group(7) or '').ljust(3, '0')[:3])
 # Default_Ignorable_Code_Point characters outside the categories C* (they hide text): refused in the owner's note.
 _IGNORABLE = ((0x034F, 0x034F), (0x115F, 0x1160), (0x17B4, 0x17B5), (0x180B, 0x180F), (0x3164, 0x3164),
               (0xFE00, 0xFE0F), (0xFFA0, 0xFFA0), (0xE0100, 0xE01EF))
@@ -155,6 +234,23 @@ class ValunError(Exception):
     def __init__(self, code, message, status=None, extra=None):
         super().__init__(message)
         self.code, self.status, self.extra = code, status, extra or {}
+
+
+BOX_MOVED = ("a box this redemption spends is spent already: the reserve's or the tracker's box moved since the server "
+             "built it (the tracker posts a new box every few minutes). Nothing was spent: build the redemption again in "
+             "about 3 minutes (`valun ergo chain` shows the tracker's anchoring)")
+
+
+def redemption_input_boxes(node, built):
+    """The boxes a built redemption spends, as the Ergo node reports them. One the node no longer has unspent (404) moved
+    between the server's build and this read: reserve_busy with how long to wait, not the node's raw 404 (fix inbox
+    #123), as the server answers a broadcast refused as a double spend."""
+    try:
+        return [node.box(i.get('boxId')) for i in ((built or {}).get('unsigned_tx') or {}).get('inputs') or []]
+    except ValunError as e:
+        if e.code == 'node_error' and e.status == 404:
+            raise ValunError('reserve_busy', BOX_MOVED, 409, {'retry_after_ms': 180000, 'cause': 'box_moved'}) from None
+        raise
 
 
 def sha256_hex(s) -> str:
@@ -253,6 +349,18 @@ def _pin_problem(pins, tracker_nft_id, denomination):
     return None
 
 
+def _network_problem(network, info):
+    """wrong_network unless GET /info (`info`) names `network`, the profile's own (Client.network: the pilot's for a
+    profile enrolled before 0.5, which names none). A server that names another network, or none, does not serve the
+    profile's: it knows neither its participant nor its key, and nothing is pinned or signed for it (the onboarding
+    review). None when it names `network`."""
+    net = info.get('network') if isinstance(info, dict) else None
+    if net == network:
+        return None
+    shown = json.dumps(net, ensure_ascii=False)
+    return ValunError('wrong_network', f'the server is on network {shown}, not {network}; nothing was signed')
+
+
 def verify_note(issuer_pubkey, recipient_pubkey, total, timestamp, signature, tracker_nft_id, denomination):
     """Is `signature` the issuer's Basis signature over the note (issuer, recipient, total, timestamp) on this tracker
     and unit? Hex strings in; False for anything malformed."""
@@ -340,8 +448,601 @@ def _seg(v):
 
 
 def _transient(e):
-    """A failure to reach or be served by the server, not an answer about the request itself: try again later."""
-    return e.code == 'unreachable' or (e.status is not None and (e.status >= 500 or e.status == 429))
+    """A failure to reach or be served by the server, not an answer about the request itself: try again later. An
+    answer that is not JSON (bad_response, cause not_json: cut short, or a captive portal's or proxy's page) is one too
+    (the 0.7.2 review: a consent's deal read answered so was refused at the server as deal_mismatch instead of waiting)."""
+    return (e.code == 'unreachable' or (e.status is not None and (e.status >= 500 or e.status == 429))
+            or (e.code == 'bad_response' and isinstance(e.extra, dict) and e.extra.get('cause') == 'not_json'))
+
+
+# The transport (fix inbox #132; the muse tester report, 2026-11-17: Python's urllib saw RemoteDisconnected and
+# IncompleteRead from valun.tech where curl and Node did not, and doctor called that "the server refused this agent").
+# urllib raises a failure that comes before the request is done at the server (no address, a refused connection, a TLS
+# handshake that failed, a connection cut while it was set up) as URLError, and one that comes after the request went
+# out (closed with no answer: RemoteDisconnected; an answer cut short: IncompleteRead; a reset, or a read that timed
+# out) as http.client's or the OS's own exception: the server may then have done the request. A read (SAFE_METHODS) is
+# sent again after each of READ_RETRY_WAITS seconds when its answer was cut, when its connection was cut while it was
+# set up (SETUP_CUT: a reset, or a TLS stream that ended; not a refused connection or an address that does not resolve,
+# which a second try does not change), when its answer is not JSON, or when a proxy answered PROXY_STATUSES itself (no
+# Valun error in its body). A write never is: its outcome is then unknown (extra outcome: unknown). Nor is a request
+# whose answer did not come within the client's timeout (cause timed_out; the 0.7.2 review: three tries of a read to a
+# busy server took three timeouts, tripled its load, and were reported as a network cut). What still fails is
+# ValunError('unreachable') with extra cause (connection_cut: the server was reached and the connection was cut;
+# timed_out: the request was sent and no answer came in time; not_connected: the server was not reached, a server URL
+# that is not valid included) and transport_error (the exception's class), or ValunError('bad_response') with cause
+# not_json (or too_large: MAX_ANSWER_BYTES); none of them has an HTTP status. Every request asks for a gzip answer (Fly's
+# proxy then sends /ledger in about a quarter of the bytes), and an answer is decoded as its Content-Encoding says, an
+# error answer too. Every try is a new ServerRequest, sent through the Client's own opener (server_opener), never one
+# the process installed, and no redirect is followed: a 3xx is ValunError('redirected') (redirect_error), never sent on.
+SAFE_METHODS = ('GET', 'HEAD')
+READ_RETRY_WAITS = (0.5, 1.5)
+PROXY_STATUSES = (502, 503, 504)
+SETUP_CUT = (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, ssl.SSLEOFError, ssl.SSLZeroReturnError)
+TIMED_OUT = (TimeoutError, socket.timeout)  # one class since Python 3.10: socket.timeout is TimeoutError
+# A gzip answer is decoded to at most this many bytes (the 0.7.2 review: a small compressed body can expand about
+# 1000:1, so a broken or hostile server or proxy could fill this machine's memory); one that expands further is
+# bad_response, cause too_large. The public ledger, the largest answer, is under 1 MB today.
+MAX_ANSWER_BYTES = 64 * 1024 * 1024
+
+
+class AnswerTooLarge(Exception):
+    """An answer that decodes to more than MAX_ANSWER_BYTES (Client.request raises it as bad_response, too_large)."""
+
+
+class DestinationRefused(Exception):
+    """A ServerRequest that urllib was about to send to another scheme, host or port than the configured server's,
+    refused before it was sent that way (Client.request raises it as unreachable, cause not_connected). sent: whether an
+    earlier pass of the same request may have gone out (a handler that opens a request again after an answer, as an
+    embedding application's auth handler does), so that the words never say "nothing was sent" after a send."""
+
+    def __init__(self, text, sent=False):
+        super().__init__(text)
+        self.sent = bool(sent)
+
+
+class ServerRequest(urllib.request.Request):
+    """A request to the configured Valun server, for one try only: Client.request builds a new one for every try.
+
+    urllib's ProxyHandler rewrites the Request it sends through a proxy (Request.set_proxy). Sent a second time through
+    an HTTPS proxy, the same Request carried its whole URL inside the tunnel, and a third time it went out as plain HTTP,
+    tunnelled to the server's port 80, with its Authorization header (the agent's or the owner's token) in clear text:
+    Python 3.10 to 3.14, through HTTPS_PROXY or the Windows system proxy (the 0.7.2 candidate's read retry; its staging
+    test of 2026-11-18). As a guard, a ServerRequest goes through a proxy once: a second pass, or a pass that leaves an
+    https request bound for another scheme or host than its own, raises DestinationRefused before it is sent that way.
+    The token goes in an unredirected header (add_unredirected_header), which urllib never copies onto a redirect, and
+    the Client's own opener follows no redirect (server_opener). Over plain http a token goes only to a server on this
+    machine, which no proxy is used for, unless PLAIN_HTTP_ENV opts in (Client.request). went_out: a handler of that
+    opener began to send it (_ServerHTTPHandler), so a later pass is refused as "not sent again"."""
+
+    def __init__(self, url, *args, **kwargs):
+        super().__init__(url, *args, **kwargs)
+        self.origin = (self.type, self.host)      # the configured server's scheme and host[:port], as the URL names them
+        self.proxied = False
+        self.went_out = False
+
+    def set_proxy(self, host, type):
+        scheme, origin = self.origin
+        if self.proxied:
+            raise DestinationRefused(f'this request to {scheme}://{origin} was about to go through a proxy a second time, '
+                                     "which would send it elsewhere (urllib rewrites a request it sends through a proxy)",
+                                     sent=self.went_out)
+        self.proxied = True
+        super().set_proxy(host, type)
+        if scheme == 'https' and (self.type != 'https' or self._tunnel_host != origin):
+            raise DestinationRefused(f'the proxy settings would send this request to {self.type}://'
+                                     f'{self._tunnel_host or self.host}, not to {scheme}://{origin}', sent=self.went_out)
+
+
+# Plain http (the RC's review, transport-security plain-http-token-to-proxy and missed[0]): both clients sent the agent's
+# and owner's tokens over plain http to whatever host an http:// server URL named, and through this machine's proxy
+# (the 0.7.2 docs called plain http "a local server", which nothing checked). A token now goes over plain http only to a
+# server on this machine (loopback_host), never through a proxy, unless the person running this client opts in with
+# PLAIN_HTTP_ENV=1: Client.request otherwise refuses, before anything is sent (plain_http), every request that carries a
+# token and every one whose answer carries one (SECRET_ROUTES: a join's owner token and enrollment code, an
+# enrollment's agent token). A request without either (GET /info, the public directory) goes as before.
+PLAIN_HTTP_ENV = 'VALUN_ALLOW_PLAIN_HTTP'
+SECRET_ROUTES = ('/pilot/v1/join', '/pilot/v1/join-sandbox', '/pilot/v1/enroll')
+# Codes Client.request raises before it sends anything: never an answer that was lost (answer_unread).
+NOT_SENT_CODES = ('not_configured', 'plain_http', 'wrong_server')
+
+
+def same_server(a, b):
+    """Do two server URLs name one server: the same scheme, host, port and path (the host's case, the default port and
+    trailing slashes aside), as audit.same_place reads them?"""
+    def norm(u):
+        p = urllib.parse.urlsplit(u.strip())
+        port = p.port or {'http': 80, 'https': 443}.get(p.scheme.lower())
+        return p.scheme.lower(), (p.hostname or '').lower(), port, p.path.rstrip('/')
+    try:
+        return isinstance(a, str) and isinstance(b, str) and norm(a) == norm(b)
+    except ValueError:
+        return False
+
+
+# A profile's tokens belong to the server its participant joined (the RC's review, transport-security
+# server-flag-sends-profile-tokens: any command's --server sent the agent token there, and config approvals the owner
+# token, and doctor then reported that server's acceptance as this profile's). A FileStore knows the server its file
+# names (profile_server); a joined profile's request that carries a token goes only there, whatever server the Client
+# was given: ValunError('wrong_server'), nothing sent. `valun config server URL` moves a profile.
+def profile_name_of(store):
+    """The name `valun --profile NAME` gives the profile a FileStore's file is (its file in a 'profiles' folder), or None."""
+    path = getattr(store, 'path', None)
+    in_profiles = isinstance(path, str) and os.path.basename(os.path.dirname(os.path.abspath(path))) == 'profiles'
+    name = os.path.splitext(os.path.basename(path))[0] if in_profiles else None
+    return name if name and re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,31}', name) else None
+
+
+def wrong_server_refusal(server, own, store=None):
+    """The refusal of a joined profile's token to another server than its own (`own`): nothing was sent. An `own` that
+    is not a server URL itself (server_problem: one with a user name and password, which 0.7.1's `valun config server`
+    and join stored, or a hand edit) is refused in profile_server_refusal's words instead, which never repeat it (the
+    RC's review, round 4, wrong-server-words-repeat-profile-server-password: these words and extra.profile_server
+    printed it, its password included)."""
+    why = server_problem(own)
+    if why is not None:
+        return profile_server_refusal(own, why, store)
+    name = profile_name_of(store)
+    move = (f'`valun --profile {name} config server {server}`' if name
+            and re.fullmatch(r'[A-Za-z0-9_.:/\[\]-]{1,300}', server) else '`valun config server URL`, in this profile')
+    return ValunError('wrong_server', f"this profile's participant is on {own}, so its tokens go only there: {server} is "
+                      'another server, and nothing was sent to it. Run this without --server, or, if the profile has '
+                      f'moved to {server}, set that first: {move}', None,
+                      {'cause': 'wrong_server', 'profile_server': own, 'server': server})
+
+
+def plain_http_allowed():
+    """Has the person running this client opted in to tokens over plain http to another machine (PLAIN_HTTP_ENV=1)?"""
+    return os.environ.get(PLAIN_HTTP_ENV, '').strip() == '1'
+
+
+def https_of(server):
+    """The https:// address of an http:// server URL, as its words suggest it: the same host (and a port that is not
+    80), path kept. None for anything else."""
+    try:
+        u = urllib.parse.urlsplit(server)
+        host, port = u.hostname, u.port
+    except (ValueError, TypeError):
+        return None
+    shown = f'[{host}]' if isinstance(host, str) and ':' in host else host
+    if u.scheme.lower() != 'http' or not host or origin_of(f'https://{shown}') is None:
+        return None
+    return f'https://{shown}' + (f':{port}' if port not in (None, 80) else '') + (u.path.rstrip('/') or '')
+
+
+# A server URL is absolute: http:// or https://, a host (a host name or an IP address), an optional port and path, and
+# no user name or password, query or fragment. Anything else is refused before anything is sent, naming the setting it
+# came from (the RC's review, round 3, transport-security js-hostless-server-url-bypasses-both-guards: a server with no
+# host, such as 'http://', is not a URL on its own, so neither of the JS client's guards judged it, but `server + path`
+# was one, whose host was the path's first segment: 'http:' + '/pilot/v1/me' is http://pilot/v1/me, and the agent's
+# token went in clear text to whatever the name 'pilot' reached; `valun config server http://` stored 'http:').
+EXAMPLE_SERVER = 'https://valun.tech'
+_HOST_NAME = re.compile(r'[A-Za-z0-9._~-]+')
+SERVER_USERINFO = 'has a user name or password (before an @), which a server URL never carries, so it is not repeated here'
+_SERVER_HOST = 'has a host that is not a host name (letters, digits, dots, hyphens and underscores) or an IP address'
+
+
+def server_problem(server):
+    """Why `server` is not a Valun server URL, in words that follow the setting as shown_server() names it ('"http:" has
+    no host'), or None for one: scheme://host[:port][/path], the scheme http or https (any case), the host a name of
+    letters, digits, dots, hyphens and underscores (a name outside ASCII in its xn-- form) or an IP address (IPv6 in
+    brackets), the port a number from 1 to 65535, and no user name or password, query, fragment, space, backslash or
+    control character. The JS client's serverProblem() reads it the same way."""
+    if not isinstance(server, str):
+        return 'is not text'
+    if not server:
+        return 'is empty'
+    if '\\' in server or any(c.isspace() or not c.isprintable() for c in server):
+        return 'has a space, a backslash or a control character in it'
+    m = re.fullmatch(r'([A-Za-z][A-Za-z0-9+.-]*):(.*)', server, re.S)
+    scheme, rest = (m[1].lower(), m[2]) if m else (None, '')
+    if scheme not in ('http', 'https'):
+        return ('is not an http:// or https:// URL' if scheme is not None and rest.startswith('//')
+                else 'has no scheme (a server URL starts with https://)')
+    if not rest.startswith('//'):
+        return 'has no host'
+    authority = re.split(r'[/?#]', rest[2:], maxsplit=1)[0]
+    if '@' in authority:
+        return SERVER_USERINFO
+    if '?' in server or '#' in server:
+        return 'has a query or a fragment (? or #), which a server URL never carries'
+    host, port = authority, ''
+    if authority.startswith('['):                   # an IPv6 address, [::1]
+        end = authority.find(']')
+        if end < 0:
+            return _SERVER_HOST
+        host, after = authority[:end + 1], authority[end + 1:]
+        if after and not after.startswith(':'):
+            return _SERVER_HOST
+        port = after[1:]
+    elif ':' in authority:
+        host, port = authority.split(':', 1)
+    if not host:
+        return 'has no host'
+    if host.startswith('['):
+        try:
+            ipaddress.IPv6Address(host[1:-1])
+            good = '%' not in host                  # no zone (fe80::1%eth0): fetch reads none
+        except ValueError:
+            good = False
+    else:
+        good = bool(_HOST_NAME.fullmatch(host))
+    if not good:
+        return _SERVER_HOST
+    if port and not (port.isascii() and port.isdigit() and 1 <= int(port) <= 65535):
+        return 'has a port that is not a number from 1 to 65535'
+    try:
+        urllib.parse.urlsplit(server).port          # as urllib reads it too
+    except ValueError:
+        return 'has a host or port that is not valid'
+    return None
+
+
+def shown_server(server):
+    """A server setting as an error names it: in double quotes (json.dumps: control characters and characters outside
+    ASCII escaped), at most 120 characters; 'it' for one with an @ in it, which may carry a password."""
+    if not isinstance(server, str) or '@' in server:
+        return 'it'
+    return json.dumps(server if len(server) <= 120 else server[:117] + '...')
+
+
+def server_refusal(server, setting, why, fix=''):
+    """The refusal of a server setting server_problem refuses (`why`), naming the `setting` it came from ('--server',
+    "This profile's server") and how to correct it (`fix`, a sentence or ''): unreachable, cause not_connected, as a
+    URL urllib cannot send to (_bad_url). Nothing was sent."""
+    return ValunError('unreachable', f'{setting} must be an http(s) URL with a host, such as {EXAMPLE_SERVER}: '
+                      f'{shown_server(server)} {why}. Nothing was sent.' + (f' {fix}' if fix else ''), None,
+                      {'cause': 'not_connected', 'transport_error': 'ValueError', 'setting': setting})
+
+
+def profile_server_refusal(server, why, store=None):
+    """server_refusal for a profile's own server (its file's "server") that server_problem refuses (`why`), with the
+    command that sets it again when the profile's name is known (profile_name_of)."""
+    name = profile_name_of(store)
+    return server_refusal(server, "This profile's server", why,
+                          f'Set it again: `valun --profile {name} config server URL`.' if name else '')
+
+
+def plain_http_refusal(server):
+    """The refusal of a request to a plain-http server on another machine that carries a token, or whose answer does,
+    when PLAIN_HTTP_ENV is not set (Client.request): nothing was sent."""
+    https = https_of(server)
+    return ValunError('plain_http', f'{server} is plain http on another machine, so this client sends it no token, nor '
+                      'a join or an enrollment, whose answers carry one: over plain http a token crosses the network in '
+                      'clear text, for anyone on the way to read and use. Nothing was sent. Use its https:// address'
+                      + (f' ({https})' if https else '') + f', or, only on a network you trust, set {PLAIN_HTTP_ENV}=1 to '
+                      'send tokens over plain http anyway', None, {'cause': 'plain_http', 'opt_in': PLAIN_HTTP_ENV})
+
+
+def loopback_host(host):
+    """Is `host` (a URL's host name: an IPv6 literal with or without its brackets, any case) this machine itself:
+    127.0.0.0/8, ::1 (an IPv4-mapped 127.x too) or the name localhost exactly? A request to it never goes through a
+    proxy, and may carry a token over plain http (Client.request). Not 'localhost.' with a final dot (the RC's review,
+    round 3, transport-security localhost-trailing-dot-resolved-by-dns): that is a name glibc looks up in DNS, not in
+    /etc/hosts, so it may be any machine the DNS server names, and the token went there in clear text."""
+    if not isinstance(host, str) or not host:
+        return False
+    h = host.strip().lower()
+    if h.startswith('[') and h.endswith(']'):
+        h = h[1:-1]
+    if h == 'localhost':
+        return True
+    try:
+        ip = ipaddress.ip_address(h.split('%', 1)[0])          # an IPv6 zone (%eth0) names no other host
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_loopback
+
+
+def tls_context():
+    """The TLS settings of every request a Client sends: the server's certificate verified against the CAs this machine
+    trusts (and those SSL_CERT_FILE or SSL_CERT_DIR name), its host name checked (ssl.create_default_context). Never
+    what a process set as ssl._create_default_https_context (the RC's review: the common workaround of an unverified
+    context there sent the agent token to a server whose certificate this machine does not trust)."""
+    return ssl.create_default_context()
+
+
+class ProxyRefused(Exception):
+    """This machine's proxy setting for a request, refused before anything was sent (proxy_refusal; Client.request
+    raises it as unreachable, cause not_connected, transport_error ProxyRefused). Its text never quotes the setting."""
+
+
+class Unsendable(Exception):
+    """A ValueError that urllib or http.client raised for a request before sending it (a host name Python cannot encode,
+    a header value it refuses): Client.request raises it as unreachable, cause not_connected, without its words, which
+    may quote a URL with its user and password (the RC's review, round 3)."""
+
+
+def proxy_refusal(proxy, scheme):
+    """Why this machine's proxy setting `proxy` for `scheme` requests is refused before anything is sent through it, in
+    words that name its scheme only (never its address, user or password: doctor's output goes into tester reports), or
+    None to use it (the RC's review, round 3):
+    - a setting urllib cannot read as a proxy URL (one slash after its scheme, say: urllib's ValueError quotes the whole
+      URL, its user and password included, and 0.7.1 and the RC printed it);
+    - for an https request, an https:// proxy URL with a user and password: urllib reaches every proxy without TLS (its
+      CONNECT, with Proxy-Authorization, in clear text), so they would cross the network to the proxy in clear text,
+      although its URL says https (Node reaches such a proxy over TLS). The agent's token stays inside the TLS to the
+      server either way, and one without a user and password is used as before."""
+    name = f'{scheme.upper()}_PROXY'
+    parse = getattr(urllib.request, '_parse_proxy', None)
+    if parse is None:
+        return None
+    try:
+        proxy_type, user, password, _hostport = parse(proxy)
+    except ValueError:
+        return (f"this machine's proxy setting for {scheme} is not a URL Python can use (check {name}, or the system's "
+                'proxy settings)')
+    if scheme == 'https' and (proxy_type or '').lower() == 'https' and user and password:
+        return ("this machine's proxy setting for https is an https:// proxy URL with a user and password (check "
+                f"{name}, or the system's proxy settings), and Python reaches a proxy without TLS, so they would cross "
+                'the network to it in clear text')
+    return None
+
+
+class _ServerProxyHandler(urllib.request.ProxyHandler):
+    """This machine's proxy settings (urllib.request.getproxies(): the environment, else Windows Internet Settings or
+    macOS System Settings), as urllib applies them, except to a server on this machine (loopback_host), which is always
+    reached directly: through a proxy, its plain http would carry the token to the proxy in clear text (the RC's review:
+    urllib's '<local>' bypass of the Windows system proxy does not cover 127.0.0.1, and NO_PROXY rarely names it). A
+    setting proxy_refusal refuses is ProxyRefused, before anything is sent (a host the settings bypass goes directly)."""
+
+    def proxy_open(self, req, proxy, type):
+        if loopback_host(urllib.parse.urlsplit(req.full_url).hostname):
+            return None
+        if req.host and urllib.request.proxy_bypass(req.host):
+            return None
+        refusal = proxy_refusal(proxy, type)
+        if refusal is not None:
+            raise ProxyRefused(refusal)
+        return super().proxy_open(req, proxy, type)
+
+
+def _went_out(req):
+    """Mark a ServerRequest as having begun to go out (DestinationRefused then says it was not sent again)."""
+    if isinstance(req, ServerRequest):
+        req.went_out = True
+
+
+class _ServerHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        _went_out(req)
+        return super().http_open(req)
+
+
+class _ServerHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        _went_out(req)
+        return super().https_open(req)
+
+
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Follows no redirect, as the JS client's fetch does (redirect: 'error'): urllib's own handler sends a request on to
+    whatever http, https or ftp address a 301 to 308 names (0.7.1 with the token; the RC without it, returning the
+    other origin's answer as the server's, a POST answered 301, 302 or 303 sent on as a GET, and with the proxy's
+    credentials). The 3xx goes on to HTTPDefaultErrorHandler, which raises it as the HTTPError it is, and
+    Client.request raises redirect_error for it."""
+
+    def http_error_302(self, req, fp, code, msg, headers):
+        return None
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
+
+
+def server_opener():
+    """The opener a Client sends every request through, its own (Client._open), so that nothing a process set for
+    urllib applies to a request that carries a token (the RC's review): not the opener urllib.request.install_opener
+    installed, whose handlers could send a request again after an answer, or unverified (an embedding application's
+    auth handler made the RC say "nothing was sent" after the token had reached the proxy), nor
+    ssl._create_default_https_context. Its handlers: this machine's proxy settings, never for a server on this machine
+    (_ServerProxyHandler); http and https, with tls_context(); HTTP errors raised as HTTPError; and no redirect
+    followed (_RefuseRedirects)."""
+    opener = urllib.request.OpenerDirector()
+    for handler in (_ServerProxyHandler(urllib.request.getproxies()), urllib.request.UnknownHandler(),
+                    _ServerHTTPHandler(), _ServerHTTPSHandler(context=tls_context()),
+                    urllib.request.HTTPDefaultErrorHandler(), _RefuseRedirects(), urllib.request.HTTPErrorProcessor()):
+        opener.add_handler(handler)
+    return opener
+
+
+def size_text(n):
+    """A number of bytes in words: '64 MB' for whole megabytes, else '1000 bytes'."""
+    mb = 1024 * 1024
+    return f'{n // mb} MB' if n >= mb and n % mb == 0 else f'{n} bytes'
+
+
+def _gunzip(raw, limit):
+    """The gzip members of `raw`, decoded, as gzip.decompress decodes them (concatenated members, NUL padding after
+    them), but never more than `limit` bytes: AnswerTooLarge past it. A stream that ends before its end marker, or does
+    not decode, was cut short (IncompleteRead)."""
+    out, size, data = [], 0, raw
+    try:
+        while True:
+            d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            part = d.decompress(data, limit - size + 1)
+            size += len(part)
+            if size > limit:
+                raise AnswerTooLarge(limit)
+            out.append(part)
+            if not d.eof:
+                raise http.client.IncompleteRead(raw)
+            data = d.unused_data.lstrip(b'\x00')
+            if not data:
+                return b''.join(out)
+    except zlib.error:
+        raise http.client.IncompleteRead(raw) from None
+
+
+def _decoded(raw, headers, limit=None):
+    """An answer's bytes as the server wrote them: gzip-decoded when its Content-Encoding says gzip, to at most `limit`
+    bytes (MAX_ANSWER_BYTES; AnswerTooLarge past it). A compressed answer that does not decode was cut short
+    (IncompleteRead)."""
+    try:
+        enc = headers.get('Content-Encoding') if headers is not None else None
+    except Exception:  # noqa: BLE001 - headers of another shape: none named
+        enc = None
+    if not isinstance(enc, str) or enc.strip().lower() not in ('gzip', 'x-gzip') or not raw:
+        return raw
+    return _gunzip(raw, MAX_ANSWER_BYTES if limit is None else limit)
+
+
+def _error_words(err):
+    """An exception as the words of a transport failure: 'RemoteDisconnected: Remote end closed connection without
+    response', 'IncompleteRead(4337 bytes read)' (its words name its class already), or the class alone."""
+    if isinstance(err, str):
+        return err
+    name, text = type(err).__name__, str(err).strip()
+    return text if text.startswith(name) else f'{name}: {text}' if text else name
+
+
+# What every failure of a write whose answer was not read ends with (its outcome is unknown). A caller with nothing it
+# could read first leaves it out (unsent_words): a join, whose answer held the only owner token.
+WRITE_SENT = '. The request was sent, so the server may have done it: read what it holds before sending it again'
+
+
+def unsent_words(e):
+    """said_error(e) without WRITE_SENT: what failed, for a caller that has nothing to read before it sends again."""
+    return said_error(e).replace(WRITE_SENT, '')
+
+
+def transport_text(server, method, err, sent, tries):
+    """What a transport failure was, in words that say where it happened and what it means for the request: `sent`, the
+    request went out and its answer was cut; else the server was not reached."""
+    times = f' ({tries} tries)' if tries > 1 else ''
+    if not sent:
+        return f'cannot reach {server}: {_error_words(err)}{times}'
+    text = f'the connection to {server} was cut before its whole answer arrived ({_error_words(err)}){times}'
+    if method in SAFE_METHODS:
+        return text + ('. The server was reached, so this is the network between this machine and the server (or a '
+                       'proxy, VPN or antivirus on it), not a refusal: try again')
+    return text + WRITE_SENT
+
+
+def timeout_text(server, method, err, timeout):
+    """A request that was sent and whose answer did not come within the client's `timeout` (seconds), in words: the
+    server may be busy (not a cut connection, and not a refusal); for a write, the server may have done it."""
+    within = f' within {timeout:g} s' if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) else ''
+    text = f'{server} did not answer{within} ({_error_words(err)})'
+    if method in SAFE_METHODS:
+        return text + (': it may be busy, or something between this machine and the server held the answer, not a '
+                       'refusal: try again in a minute')
+    return text + WRITE_SENT
+
+
+def _bad_url(server, err):
+    """A server URL urllib or http.client cannot send to (no scheme, a port that is not a number) as the failure it is:
+    unreachable, cause not_connected (nothing was sent), with the parser's words (the 0.7.2 review: 0.7.2's first RC
+    retried it and called it a cut connection)."""
+    return ValunError('unreachable', f'cannot reach {server}: it is not a valid server URL ({_error_words(err)})', None,
+                      {'cause': 'not_connected', 'transport_error': type(err).__name__})
+
+
+def origin_of(url, base=None):
+    """The scheme://host[:port] an http or https URL names (one relative to `base` against it), lower case and without
+    its default port: what this client shows of an address a server's answer names (its path and query may carry
+    anything). None for anything else, or a host name that is not plain letters, digits, dots and dashes or an IP."""
+    if not isinstance(url, str) or not url.strip():
+        return None
+    try:
+        u = urllib.parse.urlsplit(urllib.parse.urljoin(base, url.strip()) if base else url.strip())
+        host, port = u.hostname, u.port
+    except (ValueError, TypeError):
+        return None
+    scheme = (u.scheme or '').lower()
+    if scheme not in ('http', 'https') or not isinstance(host, str):
+        return None
+    if not (re.fullmatch(r'[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.?', host) and len(host) <= 253
+            or (':' in host and re.fullmatch(r'[0-9a-f:.]{2,45}', host))):
+        return None
+    shown = f'[{host}]' if ':' in host else host
+    return f'{scheme}://{shown}' + (f':{port}' if port is not None and port != {'http': 80, 'https': 443}[scheme] else '')
+
+
+# A 3xx answer (the RC's review: Python followed it, without the token, and took the other origin's answer for the
+# server's; doctor then called the 401 that came back a refusal of this agent). A Client's own opener follows no
+# redirect, and this is what it says: where the redirect pointed (scheme://host only), and that nothing was done.
+REDIRECT_WHY = ("Valun's API sends no redirect itself: something at that address answered in its place, such as a host "
+                'that moves http:// to https://, a server that moved, or a captive portal or proxy')
+
+
+def redirect_error(server, code, location):
+    """The error a redirect is (code redirected, the 3xx as its status): `location`, the scheme://host it pointed to
+    (origin_of), or None when it named none this client could read."""
+    where = f' to {location}' if location else ''
+    return ValunError('redirected', f'{server} answered with a redirect (HTTP {code}){where}. This client follows no '
+                      f'redirect, so nothing was done ({REDIRECT_WHY})', code,
+                      {'cause': 'redirect', 'location': location, 'http_status': code})
+
+
+def transport_cut(e):
+    """Is `e` a transport failure after the request reached the server, as Client.request raises it once its tries are
+    done: a cut connection (connection_cut), no answer within the timeout (timed_out), or an answer that is not JSON
+    (not_json) or too large to read (too_large)? Not a refusal: doctor and the CLI say so, and a join that failed so may
+    have been done (cmd_join)."""
+    return isinstance(e, ValunError) and e.status is None and (
+        (e.code == 'unreachable' and e.extra.get('cause') in ('connection_cut', 'timed_out'))
+        or (e.code == 'bad_response' and e.extra.get('cause') in ('not_json', 'too_large')))
+
+
+# An enrollment whose answer is lost (the tester report, 2026-11-17): 0.7.1 generated the agent's key in memory
+# only and saved it with the agent token from the answer, so an answer lost after the server registered the key lost
+# both, and left a participant whose registered key nobody holds (its owner had to revoke it for a new code).
+# Client.enroll now saves the key in the profile before it sends the request (PENDING_ENROLLMENT_KEY), and sends the
+# same request again while no answer is read.
+ENROLL_TRIES = 3                    # the request, and up to two more, the same, while no answer is read
+ENROLL_RETRY_S = (1.0, 3.0)         # the waits before the second and the third
+PENDING_ENROLLMENT_KEY = 'pending_enrollment'
+_PID_RE = re.compile(r'vp_[0-9a-f]{12}')
+
+
+def answer_unread(e):
+    """Did a request fail without the server's answer being read, so that the server may or may not have done it? A
+    connection that broke or timed out once the request was sent (Client.request raises it as unreachable with cause
+    connection_cut or timed_out; a request sent another way may raise http.client's RemoteDisconnected and
+    IncompleteRead, and TimeoutError, as they are), an answer whose body did not arrive whole (not JSON), the server not reached
+    (unreachable), a 5xx (a proxy's answer about an app that may have done it), or another ValunError with no HTTP
+    status, but for NOT_SENT_CODES (not_configured, plain_http), raised before anything is sent. A 4xx, or a redirect,
+    is the answer of what the server URL names."""
+    if isinstance(e, ValunError):
+        return e.code not in NOT_SENT_CODES and (e.status is None or e.status >= 500)
+    return isinstance(e, (OSError, http.client.HTTPException, ValueError))
+
+
+def said_error(e):
+    """An exception as one short line: a ValunError's code and words, else its class and words."""
+    if isinstance(e, ValunError):
+        return f'{e.code}: {e}'
+    text = str(e).strip()
+    return f'{type(e).__name__}: {text}' if text else type(e).__name__
+
+
+def pending_enrollment_of(state):
+    """The enrollment a profile holds that no answer has confirmed yet, which Client.enroll saved before sending it
+    (FileStore profiles only): {participant_id, network, server, pubkey, secret, code, since[, context]}. None when
+    there is none, or when it is not of that shape (its secret not the key of its pubkey, say): it is then ignored, and
+    the next enrollment replaces it."""
+    p = state.get(PENDING_ENROLLMENT_KEY) if isinstance(state, dict) else None
+    if not (isinstance(p, dict) and isinstance(p.get('participant_id'), str) and _PID_RE.fullmatch(p['participant_id'])
+            and isinstance(p.get('network'), str) and p['network'] and isinstance(p.get('server'), str) and p['server']
+            and _is_pubkey(p.get('pubkey')) and isinstance(p.get('secret'), str) and re.fullmatch(r'[0-9a-f]{64}', p['secret'])
+            and isinstance(p.get('code'), str) and p['code'] and isinstance(p.get('since'), str)):
+        return None
+    try:
+        if vb.public_key(bytes.fromhex(p['secret'])).hex() != p['pubkey']:
+            return None
+    except Exception:  # noqa: BLE001 - a secret that is no key: not a pending enrollment
+        return None
+    return p
+
+
+def _is_secret_hex(v):
+    """A signing key as a profile keeps it: 64 lowercase hex characters that make a key (basis.public_key)."""
+    if not (isinstance(v, str) and re.fullmatch(r'[0-9a-f]{64}', v)):
+        return False
+    try:
+        vb.public_key(bytes.fromhex(v))
+    except Exception:  # noqa: BLE001 - not a key
+        return False
+    return True
 
 
 def _guarded(fn, *args):
@@ -544,7 +1245,8 @@ class FileStore:
     saves atomically. The lock file holds '<pid> <time> <random>': its holder removes it only while it still holds
     exactly that. A stale lock is replaced only by a waiter holding '<path>.lock.break' (also O_CREAT|O_EXCL), after
     judging the lock's age again under it (_replace_stale). The JavaScript client uses the same protocol on the same
-    files."""
+    files. profile_server: the server the file names, as last read or written, the one a joined profile's tokens go to
+    (Client.request), whatever server a Client was given."""
     LOCK_WAIT_S = 5.0
     LOCK_STALE_S = 30.0
 
@@ -553,6 +1255,14 @@ class FileStore:
         self.state = {}
         if os.path.exists(path):
             self.state = self._load()
+        self.profile_server = self._server_of(self.state)
+
+    @staticmethod
+    def _server_of(state):
+        """The server a profile's file names (profile_server: what it was last read or written with), or None. A joined
+        profile's tokens go only there (Client.request; wrong_server_refusal)."""
+        v = state.get('server') if isinstance(state, dict) else None
+        return v if isinstance(v, str) and v else None
 
     def secret(self):
         return self.state.get('secret')
@@ -573,6 +1283,7 @@ class FileStore:
         result. Changes made to self.state without saving are replaced by the file's contents."""
         with self._locked():
             work = self._read() if os.path.exists(self.path) else copy.deepcopy(self.state)
+            self.profile_server = self._server_of(work)
             result = fn(work)
             self._write(work)
             self.state.clear()
@@ -583,6 +1294,7 @@ class FileStore:
         """Replace self.state (in place) with the file's current contents, if the file exists."""
         if os.path.exists(self.path):
             fresh = self._read()
+            self.profile_server = self._server_of(fresh)
             self.state.clear()
             self.state.update(fresh)
 
@@ -606,10 +1318,32 @@ class FileStore:
             raise ValunError('records_unreadable', f'the profile {self.path} is not a JSON object; nothing was changed or signed')
         return data
 
+    @staticmethod
+    def _home():
+        """The package's home module (private files and folders), or None where this module runs without it: the
+        Hermes plugin's vendored core, which keeps its profile in Hermes's secret store, not in a FileStore."""
+        try:
+            from . import home
+        except ImportError:
+            return None
+        return home
+
+    def _folder(self):
+        """The profile's folder, made private where it is missing (home.private_folder)."""
+        folder, h = os.path.dirname(os.path.abspath(self.path)), self._home()
+        if h is not None:
+            h.private_folder(folder)
+        else:
+            os.makedirs(folder, exist_ok=True)
+
     def _write(self, state):
-        os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
+        # A new file every time, private as it is made (home.open_new_private: 0600; on Windows an access list naming
+        # this user's SID, so that what an elevated run saves still opens from a normal shell: the RC's review,
+        # windows-acl missed[2]), in a folder made private where it is missing.
+        self._folder()
         tmp = f'{self.path}.{os.getpid()}.{os.urandom(4).hex()}.tmp'    # one per write: concurrent writers never share it
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        h = self._home()
+        fd = h.open_new_private(tmp) if h is not None else os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 json.dump(state, f, indent=1)
@@ -627,6 +1361,7 @@ class FileStore:
             with contextlib.suppress(OSError):
                 os.unlink(tmp)
             raise
+        self.profile_server = self._server_of(state)
         try:
             os.chmod(self.path, stat.S_IRUSR | stat.S_IWUSR)
         except OSError:
@@ -635,19 +1370,28 @@ class FileStore:
     @contextlib.contextmanager
     def _locked(self):
         lock = self.path + '.lock'
-        os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
+        self._folder()
         deadline = _systime.monotonic() + self.LOCK_WAIT_S
+        refused_only = True                    # Windows refused the lock file every time, and no other holder had it
         while True:
             try:        # O_BINARY (Windows): the mark is read back byte for byte when the lock is released
                 fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_BINARY', 0), 0o600)
                 break
             except FileExistsError:
+                refused_only = False
                 if self._replace_stale(lock) and _systime.monotonic() < deadline:
                     continue
             except PermissionError:            # Windows: the holder is deleting the lock file right now
                 if os.name != 'nt':
                     raise                      # elsewhere it means the folder is not writable: say so at once
             if _systime.monotonic() >= deadline:
+                if refused_only:
+                    # Not another holder: for all of LOCK_WAIT_S, this user may not make a file in the profile's folder (an
+                    # elevated run or another account made it: the RC's review, round 3, windows-acl WIN4)
+                    raise ValunError('profile_unwritable', f'this user may not create a file in '
+                                     f'{os.path.dirname(os.path.abspath(self.path))}, the folder of the profile '
+                                     f'{self.path} (Windows refused its lock file {lock}: access denied), so the profile '
+                                     'was not changed') from None
                 raise ValunError('profile_busy', f'another Valun process is using the profile {self.path} (lock file {lock}); '
                                  'try again') from None
             _systime.sleep(0.005 + random.random() * 0.02)
@@ -738,6 +1482,18 @@ class Client:
         self._advertised = []                   # the features the last GET /info listed (for the capability header)
         self._novation = None                   # the last GET /info novation: the tracker contract (novation.CONTRACT)
         self.declare_roles = bool(declare_roles)
+        self._opener = None                     # this client's own opener (server_opener), made at its first request
+
+    def _open(self, req):
+        """One try of a request: `req` sent through this client's own opener (server_opener), never the one
+        urllib.request.install_opener installed in this process. Returns the answer; raises as urllib does, but for a
+        ValueError, which urllib and http.client raise before anything is sent: Unsendable, naming its class only."""
+        if self._opener is None:
+            self._opener = server_opener()
+        try:
+            return self._opener.open(req, timeout=self.timeout)
+        except ValueError as e:
+            raise Unsendable(type(e).__name__) from None
 
     def _save(self):
         self.store.save()
@@ -791,35 +1547,144 @@ class Client:
         return vb.sign(text.encode('utf-8'), self._secret(), bytes.fromhex(self.pubkey)).hex()
 
     # ---------- HTTP ----------
-    def request(self, method, path, body=None, auth=True, token=None):
+    def _server_url(self):
+        """The server this client sends to: its own, else its profile's; not_configured for none. One that is not a
+        server URL (server_problem: one with no host, say) is refused, before anything is sent, naming where it came
+        from (server_refusal)."""
         server = self._server or self.state.get('server')
         if not server:
             raise ValunError('not_configured', 'no Valun server configured')
+        why = server_problem(server)
+        if why is not None:
+            if self._server:
+                raise server_refusal(server, 'The server this Client was given', why)
+            raise profile_server_refusal(server, why, self.store)
+        return server
+
+    def request(self, method, path, body=None, auth=True, token=None):
+        server = self._server_url()
+        if not isinstance(path, str) or not path.startswith('/'):
+            # from the server's root: any other path would join onto its host (https://h + .x is https://h.x)
+            raise ValunError('bad_arguments', 'a request path starts with / (from the server\'s root); nothing was sent')
         data = json.dumps(body).encode('utf-8') if body is not None else None
-        req = urllib.request.Request(server + path, data=data, method=method)
-        req.add_header('Content-Type', 'application/json')
-        req.add_header('Accept', 'application/json')
+        headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
         tok = token or (self.store.token() if auth else None)
-        if tok:
-            req.add_header('Authorization', 'Bearer ' + tok)
         caps = self.features_header()
         if caps:
-            req.add_header(FEATURES_HEADER, caps)
+            headers[FEATURES_HEADER] = caps
+        headers['Accept-Encoding'] = 'gzip'
+
+        def new_request():
+            """This request, new for every try (ServerRequest: urllib rewrites a request it sends through a proxy)."""
+            req = ServerRequest(server + path, data=data, method=method, headers=headers)
+            if tok:
+                req.add_unredirected_header('Authorization', 'Bearer ' + tok)    # never copied onto a redirect
+            return req
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
-                out = json.loads(r.read().decode('utf-8') or 'null')
+            first = new_request()
+        except ValueError as e:         # no scheme, say ('valun.tech'): nothing was sent
+            raise _bad_url(server, e) from None
+        if first.type not in ('http', 'https'):
+            raise _bad_url(server, ValueError(f'unknown url type: {first.type!r}: a server URL starts with https://'))
+        own = getattr(self.store, 'profile_server', None)
+        if tok and isinstance(own, str) and own and self.state.get('participant_id') and not same_server(own, server):
+            raise wrong_server_refusal(server, own, self.store)      # a joined profile's token to another server
+        if first.type == 'http' and (tok or path.split('?', 1)[0] in SECRET_ROUTES) and not plain_http_allowed() \
+                and not loopback_host(urllib.parse.urlsplit(server).hostname):
+            raise plain_http_refusal(server)        # a token in clear text across the network (PLAIN_HTTP_ENV)
+        # The transport (SAFE_METHODS, READ_RETRY_WAITS): a read is sent again while its answer is cut; a write never is.
+        safe = method in SAFE_METHODS
+        tries = 1 + (len(READ_RETRY_WAITS) if safe else 0)
+        unknown = {} if safe else {'outcome': 'unknown'}
+        for attempt in range(tries):
+            again = attempt + 1 < tries
+            try:
+                with self._open(new_request()) as r:
+                    raw = _decoded(r.read(), getattr(r, 'headers', None))
+                    status = getattr(r, 'status', None)
+            except urllib.error.HTTPError as e:
+                try:
+                    j = json.loads(_decoded(e.read(), getattr(e, 'headers', None)).decode('utf-8'))
+                except Exception:  # noqa: BLE001 - an error answer that is not JSON (a proxy's page), or cut short
+                    j = None
+                finally:
+                    with contextlib.suppress(Exception):
+                        e.close()
+                j = j if isinstance(j, dict) else {}
+                if 300 <= e.code < 400:         # this client's own opener follows no redirect (_RefuseRedirects)
+                    try:
+                        loc = e.headers.get('Location') if e.headers is not None else None
+                    except Exception:  # noqa: BLE001 - headers of another shape: no address named
+                        loc = None
+                    raise redirect_error(server, e.code, origin_of(loc, server + path)) from None
+                if safe and again and e.code in PROXY_STATUSES and 'error' not in j:
+                    _systime.sleep(READ_RETRY_WAITS[attempt])   # the proxy's own answer: the server did not answer yet
+                    continue
+                raise ValunError(j.get('error', 'http_error'), j.get('message') or j.get('error') or f'HTTP {e.code}', e.code,
+                                 {k: v for k, v in j.items() if k not in ('error', 'message')}) from None
+            except urllib.error.URLError as e:
+                if safe and again and isinstance(e.reason, SETUP_CUT):
+                    _systime.sleep(READ_RETRY_WAITS[attempt])
+                    continue
+                raise ValunError('unreachable', transport_text(server, method, e.reason, False, attempt + 1), None,
+                                 {'cause': 'not_connected', 'transport_error': type(e.reason).__name__}) from None
+            except http.client.InvalidURL as e:
+                # The server URL itself (a port that is not a number: http.client refuses it before connecting, the 0.7.2
+                # review), never a cut: nothing was sent, and another try changes nothing.
+                raise _bad_url(server, e) from None
+            except DestinationRefused as e:
+                # This machine's proxy handling would have sent it elsewhere (ServerRequest), and another try would be
+                # refused the same way. Nothing was sent unless an earlier pass of the same request went out (e.sent: a
+                # handler that sends a request again after an answer, which this client's own opener has none of); its
+                # answer is then not known, and no cause is named (neither not_connected nor a cut).
+                if e.sent:
+                    raise ValunError('unreachable', f'{server}: {e}. This client refused that, so it was not sent again'
+                                     + ('' if safe else WRITE_SENT), None,
+                                     {'transport_error': 'DestinationRefused', **unknown}) from None
+                raise ValunError('unreachable', f'cannot reach {server}: {e}. This client refused that, so nothing was sent',
+                                 None, {'cause': 'not_connected', 'transport_error': 'DestinationRefused'}) from None
+            except ProxyRefused as e:
+                # This machine's proxy setting, refused before anything was sent through it (proxy_refusal): never quoted
+                raise ValunError('unreachable', f'cannot reach {server}: {e}. This client refused that, so nothing was sent',
+                                 None, {'cause': 'not_connected', 'transport_error': 'ProxyRefused',
+                                        'proxy_refused': str(e)}) from None
+            except Unsendable as e:
+                # urllib or http.client refused the request before sending it: its words could quote a URL with its user
+                # and password, so only the exception's class is named (the RC's review, round 3)
+                raise ValunError('unreachable', f'cannot reach {server}: Python could not send this request ({e}), so '
+                                 'nothing was sent', None, {'cause': 'not_connected', 'transport_error': str(e)}) from None
+            except AnswerTooLarge:
+                raise ValunError('bad_response', f'the answer from {server} is larger than {size_text(MAX_ANSWER_BYTES)} '
+                                 "once decompressed, so it was not read: not a Valun server's answer"
+                                 + ('' if safe else WRITE_SENT), None, {'cause': 'too_large', **unknown}) from None
+            except TIMED_OUT as e:
+                # The request went out and no answer came within the timeout: the server may be busy (fix inbox #128). Not
+                # sent again: another try would wait as long again and add to its load (the 0.7.2 review).
+                raise ValunError('unreachable', timeout_text(server, method, e, self.timeout), None,
+                                 {'cause': 'timed_out', 'transport_error': type(e).__name__, 'timeout_s': self.timeout,
+                                  **unknown}) from None
+            except (http.client.HTTPException, OSError) as e:
+                # The request went out and its answer was cut (closed with no answer, cut short, reset).
+                if safe and again:
+                    _systime.sleep(READ_RETRY_WAITS[attempt])
+                    continue
+                raise ValunError('unreachable', transport_text(server, method, e, True, attempt + 1), None,
+                                 {'cause': 'connection_cut', 'transport_error': type(e).__name__, **unknown}) from None
+            try:
+                out = json.loads(raw.decode('utf-8') or 'null')
+            except ValueError:          # also UnicodeDecodeError: an answer cut short, or not the server's
+                if safe and again:
+                    _systime.sleep(READ_RETRY_WAITS[attempt])
+                    continue
+                raise ValunError('bad_response', f'the answer from {server} is not JSON ('
+                                 + (f'HTTP {status}, ' if isinstance(status, int) else '') + f'{len(raw)} bytes'
+                                 + (f', {attempt + 1} tries' if attempt else '') + '): it was cut short, or something '
+                                 'between this machine and the server (a captive portal, a proxy or antivirus) answered '
+                                 'instead' + ('' if safe else WRITE_SENT), None,
+                                 {'cause': 'not_json', 'http_status': status, **unknown}) from None
             if caps and token is None and auth and tok and _authenticated_route(path):
                 self._roles_declared(caps)      # the server authenticated this agent, so it took the roles
             return out
-        except urllib.error.HTTPError as e:
-            try:
-                j = json.loads(e.read().decode('utf-8'))
-            except Exception:
-                j = {}
-            raise ValunError(j.get('error', 'http_error'), j.get('message') or j.get('error') or f'HTTP {e.code}', e.code,
-                             {k: v for k, v in j.items() if k not in ('error', 'message')}) from None
-        except urllib.error.URLError as e:
-            raise ValunError('unreachable', f'cannot reach {server}: {e.reason}') from None
 
     # ---------- joining ----------
     def join(self, invite, handle, operator, display_name='', about='', services='', wants=''):
@@ -864,28 +1729,168 @@ class Client:
             raise ValunError('invalid_field', 'give at least one of display_name, about, services, wants, public_vouches')
         return self.request('PUT', '/pilot/v1/profile', body)
 
-    def enroll(self, participant_id, code):
-        """Generate this agent's key locally and register its public key with a proof-of-possession signature."""
+    def pending_enrollment(self):
+        """The enrollment this profile saved before sending it, which no answer has confirmed (pending_enrollment_of)."""
+        return pending_enrollment_of(self.state)
+
+    def _keeps_pending_keys(self):
+        """Only a FileStore saves an enrollment's key before the request is sent: its profile file is private (0600) and
+        holds the agent's key once enrolled anyway. Another store (the Hermes plugin keeps its secrets apart from its
+        state) is served as before: nothing is written before the answer, and a key whose answer is lost is lost."""
+        return isinstance(self.store, FileStore)
+
+    def _drop_pending(self, pubkey):
+        """Remove the pending enrollment of `pubkey` (the server registered no key, or one that cannot sign in). A
+        record that cannot be removed now is left: the next enrollment replaces it."""
+        def drop(state):
+            p = state.get(PENDING_ENROLLMENT_KEY)
+            if isinstance(p, dict) and p.get('pubkey') == pubkey:
+                del state[PENDING_ENROLLMENT_KEY]
+        try:
+            self._update(drop)
+        except (OSError, ValunError):
+            pass
+
+    def _registered_now(self, participant_id):
+        """The key the public directory names for `participant_id` now: its pubkey, '' for none, None when it cannot be
+        read."""
+        try:
+            p = self.participant(participant_id)
+        except Exception:  # noqa: BLE001 - not known
+            return None
+        if not isinstance(p, dict):
+            return None
+        return p.get('pubkey') if _is_pubkey(p.get('pubkey')) else ''
+
+    def enroll(self, participant_id, code, context=None, secret=None):
+        """Generate this agent's key locally and register its public key with a proof-of-possession signature, which
+        signs the profile's network (state['network']; the pilot's for a profile that names none) with the participant,
+        the key and the code. `secret` (hex): a key the caller made and kept already, enrolled instead of a new one
+        (`valun join` makes its agent's key before its first request and keeps it in the profile, so that a join whose
+        answer is lost keeps it for the next join); a pending enrollment sent again keeps its own key.
+
+        A FileStore profile saves the key before the request is sent (pending_enrollment: the participant, network,
+        server, key and code, and `context`, what a join adds for `valun join` or `valun enroll` to finish it), so an
+        answer lost on the way never loses a key the server registered. While no answer is read (answer_unread), the
+        same request (key, code and proof) is sent again, ENROLL_TRIES in all. A profile that holds a pending enrollment
+        of this participant, network, server and code sends that one again (a join or enroll that stopped):
+          - when no earlier request was done, the code is still valid and the key is registered now;
+          - a server that registered this key with this code answers a new agent token for it while the code would
+            still be valid (valun-app fix/enroll-retry, enrolled_again): the key is adopted;
+          - a server that registered it and answers no token again refuses the code (invalid_enrollment): when the
+            public directory names this key, that is enroll_token_lost (the key cannot sign in; the owner revokes the
+            agent for a new code), else the server's refusal.
+        Refusals of its own: profile_unwritable (the key could not be saved before sending: nothing was sent);
+        enroll_unconfirmed (no answer read in ENROLL_TRIES tries; extra kept_key: whether the key and code are kept for
+        `valun enroll` to send again). A refusal of the server's carries extra signed_for, the network the proof
+        signed. The pending record is removed once the key is stored, and on a refusal that shows no key was
+        registered."""
         if self.connected:
             raise ValunError('already_connected', 'this client already holds an enrolled key')
         net = self.state.get('network') or NETWORK          # the network the join named (join, join_sandbox)
         network_of(net)
-        secret = vb.generate_secret()
+        if self._server or self.state.get('server'):
+            self._server_url()          # one that is not a server URL: refused now, before a key is kept or anything sent
+        server = (self._server or self.state.get('server') or '').rstrip('/')
+        pending = self.pending_enrollment()
+        again = pending is not None and (pending['participant_id'], pending['network'], pending['server'].rstrip('/'),
+                                         pending['code']) == (participant_id, net, server, code)
+        if again:
+            secret = bytes.fromhex(pending['secret'])
+        elif secret is not None:
+            secret = bytes.fromhex(secret) if _is_secret_hex(secret) else None
+            if secret is None:
+                raise ValunError('bad_arguments', 'the kept key is not a key (64 hex characters); nothing was sent')
+        else:
+            secret = vb.generate_secret()
         pk = vb.public_key(secret).hex()
         sig = vb.sign(statement('enroll', net, participant_id, pk, sha256_hex(code)).encode('utf-8'), secret, bytes.fromhex(pk)).hex()
-        r = self.request('POST', '/pilot/v1/enroll', {'participant_id': participant_id, 'code': code, 'pubkey': pk, 'signature': sig}, auth=False)
+        body = {'participant_id': participant_id, 'code': code, 'pubkey': pk, 'signature': sig}
+        kept = self._keeps_pending_keys()
+        if kept:
+            rec = {'participant_id': participant_id, 'network': net, 'server': server, 'pubkey': pk, 'secret': secret.hex(),
+                   'code': code, 'since': pending['since'] if again else _iso(datetime.now(timezone.utc))}
+            ctx = context if context is not None else (pending.get('context') if again else None)
+            if isinstance(ctx, dict):
+                rec['context'] = ctx
+
+            def keep(state):
+                state[PENDING_ENROLLMENT_KEY] = rec
+                state['server'] = server
+                state.setdefault('network', net)
+            try:
+                self._update(keep)
+            except (OSError, ValunError) as e:
+                raise ValunError('profile_unwritable', "this agent's key could not be saved in the profile before its "
+                                 f'enrollment was sent ({said_error(e)}); nothing was sent') from None
+        tries = 0
+        while True:
+            tries += 1
+            try:
+                r = self.request('POST', '/pilot/v1/enroll', body, auth=False)
+                if not (isinstance(r, dict) and isinstance(r.get('agent_token'), str) and r['agent_token']):
+                    raise ValunError('bad_response', 'the answer to the enrollment holds no agent token')
+                break
+            except Exception as e:  # noqa: BLE001 - answer_unread decides; anything else is raised as it is
+                if answer_unread(e):
+                    if tries < ENROLL_TRIES:
+                        _systime.sleep(ENROLL_RETRY_S[min(tries, len(ENROLL_RETRY_S)) - 1])
+                        continue
+                    # what failed, without a write's general advice to read what the server holds first (WRITE_SENT):
+                    # the enrollee has nothing to read, its agent token being only in the lost answer, and the next
+                    # step sends the same enrollment again (the RC's review, regressions missed[0], as for the join)
+                    raise ValunError('enroll_unconfirmed', f"no answer to this agent's enrollment was read in {tries} tries "
+                                     f'(the last: {unsent_words(e)}); the server may have registered its key. '
+                                     + ('The key and the enrollment code are kept in this profile: the same enrollment can '
+                                        'be sent again while the code is valid (valun enroll, with no code to give)' if kept
+                                        else 'This store keeps no key before an enrollment is confirmed, so the key is '
+                                             'lost: when the owner console shows a key, revoke this agent for a new code'),
+                                     None, {'participant_id': participant_id, 'pubkey': pk, 'tries': tries,
+                                            'kept_key': kept, 'last': unsent_words(e), 'signed_for': net}) from None
+                if not isinstance(e, ValunError):
+                    raise
+                # The server's answer. After a request whose answer was lost, a refused code may be that request's
+                # doing: the public directory tells whether this key is the one registered now.
+                earlier = (tries > 1 or again) and e.status in (403, 409)
+                now = self._registered_now(participant_id) if earlier else ''
+                if now == pk:
+                    if kept:
+                        self._drop_pending(pk)
+                    raise ValunError('enroll_token_lost', "the server registered this agent's key (a request of this "
+                                     'enrollment whose answer was lost: that answer was the only copy of the agent token) '
+                                     'and answers no token for it again, so this agent cannot sign in with that key. The '
+                                     "owner revokes this agent in the owner console, which gives a new enrollment code, "
+                                     'and enrolls again with it', e.status,
+                                     {'participant_id': participant_id, 'pubkey': pk, 'server_said': e.code,
+                                      'tries': tries, 'signed_for': net}) from None
+                if kept and now is not None and e.status != 429:
+                    self._drop_pending(pk)          # no key of this enrollment is registered (429: not known yet)
+                e.extra = dict(e.extra or {}, signed_for=net)
+                raise
         if r.get('network') != net:
+            if kept:
+                self._drop_pending(pk)
             raise ValunError('wrong_network', f"the server enrolled this key on {r.get('network')!r}, not {net!r}")
+        self.state.pop(PENDING_ENROLLMENT_KEY, None)
         self.state.update({'participant_id': participant_id, 'pubkey': pk, 'network': r['network'],
                            'enrolled_at': _iso(datetime.now(timezone.utc)), 'issued': self.state.get('issued', {})})
         self.store.save_credentials(secret.hex(), r['agent_token'])
         self._save()
-        return {'participant_id': participant_id, 'pubkey': pk, 'network': r['network']}
+        out = {'participant_id': participant_id, 'pubkey': pk, 'network': r['network']}
+        if tries > 1 or again:
+            out['tries'] = tries
+        if again:
+            out['resumed_since'] = pending['since']
+        if r.get('enrolled_again') is True:
+            out['enrolled_again'] = True
+        return out
 
     # ---------- reads ----------
     def info(self):
         """The network's public description. Its tracker and unit are pinned in an enrolled profile the first time they
-        are read (at enroll, or on the first call after an upgrade); a later answer naming others is refused. The
+        are read (at enroll, or on the first call after an upgrade); a later answer naming others is refused. An
+        enrolled profile not pinned yet is never pinned to the tracker of a server that does not name the profile's
+        network: that answer is refused (wrong_network), so nothing is signed for it either (the onboarding review). The
         features it lists decide whether later requests carry the capability header (features_header); its `novation`
         object, the server's report of its tracker's contract, decides whether prior acknowledgments are signed
         (novation.contract_problem: tracker v3.2 only)."""
@@ -894,6 +1899,18 @@ class Client:
         self._advertised = _features_of(r) if isinstance(r, dict) else []
         self._novation = r.get('novation') if isinstance(r, dict) else None
         return r
+
+    def _network_info(self):
+        """GET /info (info()), for terms built or checked from it: refused before anything is signed when the server
+        does not name this profile's network (wrong_network; JavaScript's #onNetwork), also for a profile pinned to a
+        tracker that server names too."""
+        info = self.info()
+        if not isinstance(info, dict):
+            raise ValunError('bad_response', 'GET /info did not return an object')
+        err = _network_problem(self.network, info)
+        if err:
+            raise err
+        return info
 
     def features_header(self):
         """The X-Valun-Features value this client sends with its requests (PROTOCOL.md 18.1; design 4.1):
@@ -959,11 +1976,19 @@ class Client:
         nft, denom = info.get('tracker_nft_id'), info.get('denomination')
         if not (isinstance(nft, str) and nft and isinstance(denom, str) and denom):
             return
+        if not self.state.get('participant_id'):
+            if self._pinned():
+                self._check_pins(nft, denom)
+            return                              # only an enrolled profile is pinned
+        # An enrolled profile serves only a server of its own network, pinned or not: a pilot profile that valun 0.7.1
+        # pinned to the testnet's tracker is refused here too, before any approval is asked for terms that cannot be
+        # signed (the agents read GET /info first and turn wrong_network into network_retired).
+        err = _network_problem(self.network, info)
+        if err:
+            raise err
         if self._pinned():
             self._check_pins(nft, denom)
             return
-        if not self.state.get('participant_id'):
-            return                              # only an enrolled profile is pinned
 
         def pin(state):
             err = _pin_problem(_pins_of(state), nft, denom)
@@ -1029,7 +2054,8 @@ class Client:
     # guarantees that back the agent in public, and its record. Anyone can read a card (card) and check a payment against
     # it (check_payer): public reads that sign nothing. A card is read without a token; a check carries this agent's own
     # token, because the server shows the cover (what guarantees would pay the payee) only to the payee itself. Where the
-    # owner has not published its card, both answer 404 card_not_public.
+    # owner has not published its card, both answer 404 card_not_public, but for the payee's own check on a server with
+    # fix inbox #87, which answers for the payee's own side.
     def resolve_participant(self, who):
         """The participant `who` names, as {'id', 'handle'}. `who` is stripped and lower-cased; a participant id (vp_ + 12
         hex) is taken as it is, with handle None, without a read (it may be an unlisted participant). Anything else is a
@@ -1078,6 +2104,13 @@ class Client:
         side of the step (payee_side {verdict, rule, reasons}, from a server that sends it). amount is a whole number of
         this network's unit, at least 1 (bad_arguments otherwise, before anything is read). card_not_public (404) when
         the payer's owner has not published its card.
+
+        Fix inbox #87: a server with it gives every answer payer_side, the payer's own {verdict, rule, reasons}, and gives
+        the payee's own check (its token) the step's verdict from both sides, as it enforces them: decline if either side
+        declines, ask_owner if an owner on either side decides first, accept only if both go ahead. It answers the
+        payee's own check of a payer whose owner has not published its card too, for the payee's side only: verdict
+        decline when that side declines, else 'unknown'; payer_side, mandate, room_left, record and card_hash null, the
+        cover not shown.
 
         deal_id (fix inbox #60; &deal=): the offer under review, a deal where the payer pays the payee, still in its offer
         phase (open, waiting for its proposer's owner, or accepted and waiting for an owner), at exactly `amount`, its
@@ -1153,7 +2186,7 @@ class Client:
             raise ValunError('hash_mismatch', "the guarantee's terms do not hash to its terms_hash; refusing to sign")
         if t.get('protocol') != GUARANTEE_PROTOCOL or t.get('network') != self.network:
             raise ValunError('wrong_network', 'the guarantee is for a different network or protocol')
-        info = self.info()
+        info = self._network_info()
         if t.get('tracker_nft_id') != info['tracker_nft_id'] or t.get('denomination') != info['denomination']:
             raise ValunError('wrong_tracker', 'the guarantee names a different tracker or unit than this network')
         cap = t.get('cap') if isinstance(t.get('cap'), dict) else {}
@@ -1195,7 +2228,7 @@ class Client:
             raise ValunError('bad_arguments', 'note must be text of at most 500 characters')
         if issuer_id == creditor_id or self.participant_id in (issuer_id, creditor_id):
             raise ValunError('bad_arguments', 'the issuer, the creditor and you (the backer) must be three different participants')
-        info = self.info()
+        info = self._network_info()
         now = datetime.now(timezone.utc)
         due = now + timedelta(hours=due_in_hours)
         expires = due + timedelta(hours=callable_for_hours)
@@ -1423,7 +2456,7 @@ class Client:
             raise ValunError('hash_mismatch', 'the terms do not hash to the stated terms_hash; refusing to sign')
         if t['network'] != self.network or t['protocol'] != PROTOCOL:
             raise ValunError('wrong_network', 'terms are for a different network or protocol')
-        info = self.info()
+        info = self._network_info()
         if t['tracker_nft_id'] != info['tracker_nft_id'] or t['denomination'] != info['denomination']:
             raise ValunError('wrong_tracker', 'terms name a different tracker or unit than this network')
         mine = {'payer': t['payer'], 'payee': t['payee']}
@@ -1456,7 +2489,7 @@ class Client:
         amount = _price_amount(price, self.unit)
         if offer_ttl_hours is not None:
             check_offer_hours(offer_ttl_hours, deliver_by_hours)
-        info = self.info()
+        info = self._network_info()
         other = {'id': counterparty_id, 'pubkey': self._registered_key(counterparty_id)}
         me = {'id': self.participant_id, 'pubkey': self.pubkey}
         now = datetime.now(timezone.utc)
@@ -1552,6 +2585,10 @@ class Client:
         are built and signed here and sent as credit_note {total, timestamp, signature, prior_total, prior_timestamp,
         prior_signature}, after the R4 record, the payment attempt and the pending entry are saved.
 
+        Before anything else, what the deal view shows of an earlier payment the server held for the owner is recorded
+        (learn_owner_decisions: one the owner rejected, or the server voided, is not applied); a note the server holds
+        now gets the id of the approval that holds it on its attempt record (approval_id).
+
         Otherwise (no features, or a profile not pinned yet: exactly as 0.3 on the wire) an ORDINARY note: the template
         names this agent's key and the payee's current key, adds exactly the agreed price, names the agreed (and pinned)
         tracker and unit, is current and, when features are advertised, avoids the reserved residues 995-999
@@ -1566,6 +2603,7 @@ class Client:
         still reject a held note (OQ-23). A refused note is forgotten; a bound note's payment attempt is kept until it
         is dead (D-1)."""
         d = self.deal(deal_id)
+        self.learn_owner_decisions(deal_id, d)
         terms, h, dh = self._accepted_delivery(d, deal_id, expected_deliverable_sha256, expected_terms_hash)
         # A pinned (0.4) profile reads /info: a server offering bound_notes/1 takes bound notes, and with any feature the
         # tracker keeps the timestamp residues 995-999 for other operations. Otherwise exactly as 0.3.
@@ -1683,7 +2721,16 @@ class Client:
         status = r.get('status') if isinstance(r, dict) else None
         if status == 'note_issued':
             self._settle(lambda state: self._note_applied(state, deal_id, pair, note))
-        elif status not in ('completion_awaiting_owner', 'issuing_note'):
+        elif status == 'completion_awaiting_owner':
+            # Held for the owner: the id of the approval that holds it goes on its attempt record, so that the owner's
+            # decision is known on a later read of the deal (learn_owner_decisions).
+            cn = r.get('credit_note') if isinstance(r.get('credit_note'), dict) else {}
+            aid = cn.get('approval_id') if isinstance(cn.get('approval_id'), str) and _APPROVAL_ID_RE.match(cn['approval_id']) \
+                else self._held_approval(r, 'issue_note')
+            if aid:
+                held = {'deal_id': deal_id, 'route': 'note', 'edge': pair, 'total': note['total'], 'timestamp': note['timestamp']}
+                self._settle(lambda state: self._note_attempt_id(state, held, aid, 'approval_id'))
+        elif status != 'issuing_note':
             self._settle(forget)                # e.g. note_failed: the tracker does not hold it
         return r
 
@@ -1872,7 +2919,14 @@ class Client:
     def dispute(self, deal_id, reason):
         d = self.deal(deal_id)
         terms = self.verified_agreement(d)
-        h, dh = terms_hash(terms), d['delivery']['sha256']
+        # A dispute is of a delivery: on an agreed deal with none, nothing to sign (fix inbox #58, #122: it raised
+        # KeyError, which the agent answered as internal_error). As the JS client does.
+        dl = d.get('delivery')
+        if not isinstance(dl, dict) or not isinstance(dl.get('sha256'), str):
+            raise ValunError('not_delivered', 'nothing has been delivered on this deal')
+        if isinstance(dl.get('content'), str) and sha256_hex(dl['content']) != dl['sha256']:
+            raise ValunError('hash_mismatch', 'the delivered content does not match its hash')
+        h, dh = terms_hash(terms), dl['sha256']
         return self.request('POST', f'/pilot/v1/deals/{deal_id}/dispute', {'terms_hash': h, 'deliverable_sha256': dh, 'reason': reason,
                                                                             'signature': self._sign(statement('dispute', h, dh, sha256_hex(reason)))})
 
@@ -1945,6 +2999,7 @@ class Client:
                                               'nothing was signed')
         self._secret()
         d = self.deal(deal_id)
+        self.learn_owner_decisions(deal_id, d)  # a payment held for the owner that ended unreleased is not applied
         terms, h, dh = self._accepted_delivery(d, deal_id, expected_deliverable_sha256)
         payee = self._registered_key(terms['payee']['id'])
         self.check_delivery_signature(d['delivery'], h, terms['payee']['pubkey'], payee)
@@ -1989,6 +3044,9 @@ class Client:
             tid = nv.shown_id(pay.get('transfer_id'))
             if tid:
                 self._settle(lambda state, a=a: self._note_attempt_id(state, a, tid))
+            aid = self._held_approval(view, 'pay_by_transfer') if status == 'completion_awaiting_owner' else None
+            if aid:                             # held for the owner: its approval's id, for learn_owner_decisions
+                self._settle(lambda state, a=a: self._note_attempt_id(state, a, aid, 'approval_id'))
             if status == 'paid_by_transfer':
                 self._settle(lambda state, a=a: _guarded(nv.mark_paid, state, a['deal_id'], 'transfer', a['edge'], a['total'],
                                                          a['timestamp']))
@@ -1997,14 +3055,129 @@ class Client:
             return view
 
     @staticmethod
-    def _note_attempt_id(state, attempt, attempt_id):
-        """Record the server's id of a payment attempt (its transfer id) on my record of it, for the owner (valun attempts
-        list / resolve). An id it already has is kept."""
+    def _note_attempt_id(state, attempt, attempt_id, key='attempt_id'):
+        """Record the server's id of a payment attempt (its transfer id; key 'approval_id': the id of the owner's approval
+        that holds it) on my record of it, for the owner (valun attempts list / resolve) and learn_owner_decisions. An
+        id it already has is kept."""
         att = state.get('transfer_attempts')
         for x in (att.get(attempt['deal_id']) or []) if isinstance(att, dict) else ():
             if isinstance(x, dict) and all(x.get(k) == attempt[k] for k in ('route', 'edge', 'total', 'timestamp')) \
-                    and not x.get('attempt_id'):
-                x['attempt_id'] = attempt_id
+                    and not x.get(key):
+                x[key] = attempt_id
+
+    @staticmethod
+    def _held_approval(view, kind):
+        """The id of the one pending approval of `kind` a deal view lists (this participant's own: the owner's approval
+        that holds what the agent just signed), or None."""
+        rows = view.get('approvals') if isinstance(view, dict) and isinstance(view.get('approvals'), list) else []
+        ids = [a['id'] for a in rows if isinstance(a, dict) and a.get('kind') == kind and a.get('state') == 'pending'
+               and isinstance(a.get('id'), str) and _APPROVAL_ID_RE.match(a['id'])]
+        return ids[0] if len(ids) == 1 else None
+
+    def learn_owner_decisions(self, deal_id, d):
+        """What the payer's owner, or the server, decided about a payment of deal `deal_id` that this client signed and
+        the server held for the owner (OWNER_HELD_KINDS), from the deal view `d` (GET /deals/{id}: its approvals are this
+        participant's own). Each payment attempt whose hold ended without being released (hold_ended: its owner
+        rejected it in the owner console, or the server voided it) is recorded as not applied: outcome 'not_applied'
+        and server_ended {state, approval_id, at} on its record in transfer_attempts, and its pending entry is
+        forgotten, so that a new acceptance pays the deal (approval probe D2). An attempt is that approval's when its
+        record holds the approval's id (approval_id, recorded when the server held it); a record made before this
+        client recorded those ids is matched when it is the one IOU of the deal whose timestamp is at most
+        HELD_MATCH_MS before the approval was made, and that approval the only one in its window, or, for a payment by
+        transfer, when it is the transfer the deal's payment shows in a state the server never sends on
+        (NEVER_APPLIED_TRANSFER) beside an ended hold. The deal's current IOU, refused by the tracker for its age
+        (note_failed, credit_note.error_code novation_expired: approved after its hour), is recorded the same way.
+        Returns the attempts it recorded now ([{route, edge, total, timestamp, server_ended}]). Reads nothing; a
+        profile that cannot be written leaves the records as they were (they then keep blocking, as before)."""
+        if not (isinstance(d, dict) and isinstance(deal_id, str) and d.get('your_role') in (None, 'payer')):
+            return []
+        rows = [a for a in (d.get('approvals') if isinstance(d.get('approvals'), list) else [])
+                if isinstance(a, dict) and a.get('kind') in OWNER_HELD_KINDS and isinstance(a.get('id'), str)
+                and _APPROVAL_ID_RE.match(a['id']) and a.get('deal_id') in (None, deal_id)]
+        ended = {a['id']: a for a in rows if hold_ended(a.get('state'))}
+        cn = d.get('credit_note') if isinstance(d.get('credit_note'), dict) else {}
+        cnote = cn.get('note') if isinstance(cn.get('note'), dict) else {}
+        too_late = (cnote.get('timestamp') if d.get('status') == 'note_failed' and cn.get('error_code') == 'novation_expired'
+                    and _nat(cnote.get('timestamp')) else None)
+        pay = d.get('payment') if isinstance(d.get('payment'), dict) else {}
+        if not ended and too_late is None:
+            return []
+
+        def ended_by(a, open_rows):
+            aid = a.get('approval_id') if isinstance(a.get('approval_id'), str) and a.get('approval_id') else None
+            if a['route'] == 'note' and too_late is not None and a['timestamp'] == too_late:
+                return ('novation_expired', aid, None)      # approved after its hour; the tracker refused it
+            if aid:
+                x = ended.get(aid)
+                return (x.get('state'), aid, x.get('decided_at')) if x else None
+            if a['route'] == 'transfer':
+                held = [x for x in ended.values() if x.get('kind') == 'pay_by_transfer']
+                if held and a.get('attempt_id') and a['attempt_id'] == pay.get('transfer_id') \
+                        and pay.get('state') in NEVER_APPLIED_TRANSFER:
+                    return (_server_word(pay.get('state')), None, None)
+                return None
+            # A record made before approval ids were recorded: the one IOU of this deal signed within HELD_MATCH_MS
+            # before the approval was made, for the one approval made in that window (any state).
+            def near(x, b):
+                made = _iso_to_ms(x.get('created_at'))
+                return made is not None and 0 <= made - b['timestamp'] <= HELD_MATCH_MS
+            notes = [x for x in rows if x.get('kind') == 'issue_note' and near(x, a)]
+            if len(notes) != 1 or notes[0]['id'] not in ended or notes[0]['id'] in claimed:
+                return None                     # none, several, one still deciding, or another attempt's own
+            x = notes[0]
+            mine = [b for b in open_rows if b['route'] == 'note' and not b.get('approval_id') and near(x, b)]
+            return (x.get('state'), x['id'], x.get('decided_at')) if mine == [a] else None
+
+        claimed = set()                         # approval ids an attempt record of this deal holds as its own
+
+        def marks(state):
+            """[(attempt, (state, approval_id, at))] of the deal's open attempts in `state` that ended without release."""
+            att = state.get('transfer_attempts') if isinstance(state, dict) else None
+            lst = att.get(deal_id) if isinstance(att, dict) else None
+            lst = [a for a in (lst if isinstance(lst, list) else []) if isinstance(a, dict)]
+            claimed.clear()
+            claimed.update(a['approval_id'] for a in lst if isinstance(a.get('approval_id'), str))
+            open_rows = [a for a in lst if a.get('outcome') is None and a.get('route') in nv.ROUTES
+                         and nv.parse_edge(a.get('edge')) is not None and _nat(a.get('total')) and _nat(a.get('timestamp'))]
+            return [(a, w) for a, w in ((a, ended_by(a, open_rows)) for a in open_rows) if w is not None]
+
+        self._reload()                          # another process (`valun call`, the MCP server) may have recorded one
+        if not marks(self.state):               # nothing to record: the profile is not written
+            return []
+        found = []
+
+        def apply(state):
+            for a, (st, aid, at) in marks(state):
+                a['outcome'] = 'not_applied'
+                a['server_ended'] = {'state': _server_word(st), 'approval_id': aid,
+                                     'at': at if _iso_to_ms(at) is not None else None}
+                records.remove_pending(_records_in(state), a['edge'], a['total'], a['timestamp'], deal_id)
+                found.append({k: a[k] for k in ('route', 'edge', 'total', 'timestamp', 'server_ended')})
+        try:
+            self._update(apply)
+        except (ValunError, OSError, ValueError):
+            return []
+        return found
+
+    def refresh_owner_decisions(self):
+        """learn_owner_decisions() for each deal not recorded as paid with a payment attempt still open in this client's
+        records (no outcome): one GET /deals/{id} each, for `valun attempts list`; a deal that cannot be read now is
+        left as its records hold it. Returns the attempts recorded as not applied."""
+        att = self.state.get('transfer_attempts')
+        recs = _records_in(self.state, create=False)
+        paid = recs.get(nv.PAID_DEALS_KEY) if isinstance(recs.get(nv.PAID_DEALS_KEY), dict) else {}
+        found = []
+        for deal_id in sorted(att) if isinstance(att, dict) else []:
+            lst = att.get(deal_id)
+            if deal_id in paid or not (isinstance(deal_id, str) and _DEAL_ID_RE.match(deal_id)) or not isinstance(lst, list) \
+                    or not any(isinstance(a, dict) and a.get('outcome') is None for a in lst):
+                continue
+            try:
+                d = self.deal(deal_id)
+            except ValunError:
+                continue
+            found.extend(self.learn_owner_decisions(deal_id, d))
+        return found
 
     def _transfer_signed(self, tpl, issuer_id, issuer_pk, payee, deal, features, mandate, approved, claim):
         """One attempt of pay_by_transfer(): check the template, save what is about to be signed, sign it. Returns
@@ -2115,6 +3288,7 @@ class Client:
                      'route': a['route'], 'edge': a['edge'], 'prior': a.get('prior'), 'total': a['total'],
                      'timestamp': a['timestamp'],
                      'outcome': a.get('outcome') if a.get('outcome') in ATTEMPT_OUTCOMES else None,
+                     'server_ended': _held_end(a.get('server_ended')),
                      'state': o, 'paid': deal_id in paid}
                     for n, (a, o) in enumerate(self._deal_rows(state, deal_id, now, read), 1)]
             by = attempt_key(paid[deal_id]) if isinstance(paid.get(deal_id), dict) else None
@@ -2614,10 +3788,16 @@ class Client:
         sigs = {slot: self._sign_message(m) for slot, m in msgs.items()}
         mine = {slot.rsplit(':', 1)[0] for slot in sigs}
         revisions = {e['edge']: e['revision'] for e in item['edges'] if e['edge'] in mine}
+        # fix inbox #86: the records keep, with each new state written ahead, the signature made over it (before it is
+        # sent, as the write-ahead itself), so they show the after-state this client signed whatever the answer
+        self._settle(lambda state: self._keep_signatures(state, r['write_ahead']['pending'], sigs))
         try:
             ans = self.submit_consent(item['id'], sigs, revisions)
         except ValunError as e:
-            if e.status is not None and 400 <= e.status < 500:     # refused: the server recorded none of these signatures
+            # refused: the server recorded none of these signatures, unless it holds every one of this client's slots
+            # already (already_signed: another consent run sent them), when the entries are the states they sign, and
+            # stay (fix inbox #86, review: two runs at once lost the signatures --mine proves a netted edge by)
+            if e.status is not None and 400 <= e.status < 500 and e.code != 'already_signed':
                 self._settle(lambda state: self._forget_pending(state, r['write_ahead']['pending']))
             code = _server_word(e.code)
             return 'waiting', self._consent_entry(item, r, error=code,
@@ -2635,6 +3815,8 @@ class Client:
             self._settle(lambda st: self._note_attempt_id(st, a, tid))
         if answer == 'applied' and a is not None:
             self._settle(lambda st: _guarded(nv.mark_paid, st, a['deal_id'], a['route'], a['edge'], a['total'], a['timestamp']))
+        if answer == 'applied' and not rejected:     # fix inbox #86: the item applied, so its new states are the edges' now
+            self._settle(lambda st: self._applied_states(st, r['write_ahead']['pending'], sigs))
         if rejected:
             return 'waiting', self._consent_entry(item, r, code='stale_revision', state=answer, rejected=rejected,
                                                   reason='an edge was regenerated while you signed; it is signed again on a later run')
@@ -2716,6 +3898,30 @@ class Client:
         for p in pending:
             records.remove_pending(recs, p['pair'], p['total'], p['timestamp'], p['ref'])
 
+    @staticmethod
+    def _keep_signatures(state, pending, sigs):
+        """Fix inbox #86: each new state a consent wrote ahead (pending) keeps, in this client's records, the signature
+        this client just made over it (its slot '<edge>:new'; records.note_signature). On an edge it issues that is the
+        issuer's signature of the state the tracker records once the consent applies; on one it is the creditor of, its
+        consent to it. The audit of this profile (valun audit --mine) verifies it: an edge a set-off this client
+        signed netted is proven by it."""
+        recs = _records_in(state)
+        for p in pending:
+            sig = sigs.get(nv.slot_key(p['pair'], 'new'))
+            if sig:
+                records.note_signature(recs, p['pair'], p['total'], p['timestamp'], p['ref'], sig)
+
+    def _applied_states(self, state, pending, sigs):
+        """Fix inbox #86: a consent the server answered applied (this client's signatures were the last it waited for):
+        on each edge this client issues, the new state it signed is the edge's confirmed state now, with its own
+        signature, the issuer's (records.confirm: the matching pending entry is promoted; the 0.3 'issued' record
+        follows). On an edge it is the creditor of, the issuer's signature is not known here: the new state stays
+        pending, with this client's consent signature, until a read of the edge confirms it (sync_edges)."""
+        for p in pending:
+            sig = sigs.get(nv.slot_key(p['pair'], 'new'))
+            if sig and p['direction'] == 'out' and p['pair'].startswith(f'{self.pubkey}>'):
+                self._confirm_in(state, p['pair'], {'total': p['total'], 'timestamp': p['timestamp'], 'signature': sig})
+
     # ---------- settlement on Ergo testnet (the Valun testnet network, valun-testnet-1; valun/ergo.py) ----------
     # The agent's Ergo address is the P2PK address of its Valun key: its own key signs its own Ergo transactions, the
     # server never holds it. Signing needs ergo-lib (pip install ergo-lib-python==0.28.0); tERG have no monetary value.
@@ -2790,7 +3996,7 @@ class Client:
         if not isinstance(issuer_pubkey, str):
             raise ValunError('bad_redemption', 'the server named no issuer key')
         # The boxes it spends, as the Ergo node reports them (not the tracker's copies).
-        input_boxes = [node.box(i.get('boxId')) for i in ((built or {}).get('unsigned_tx') or {}).get('inputs') or []]
+        input_boxes = redemption_input_boxes(node, built)
         checked = ergo.check_redemption(built, issuer_pubkey=issuer_pubkey, recipient_pubkey=self.pubkey, amount=amount,
                                         tracker_nft_id=chain.get('tracker_nft_id'), reserve_tree=reserve_tree,
                                         input_boxes=input_boxes)

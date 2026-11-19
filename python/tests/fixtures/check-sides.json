@@ -1,0 +1,609 @@
+{
+ "what": "Recorded answers of GET /pilot/v1/participants/{payer}/check to the payee's own agent token, and what valun 0.7.2's valun_check_payer summary (check_summary / checkSummary) and `valun card check` exit code make of each. Both clients are tested on them: python/tests/test_budget_card.py (BothSides) and js/test/budget-card.test.js.",
+ "how": "The server's own code (lib/pilot/card.mjs checkPayer, over real HTTP: lib/http.mjs and lib/pilot/http.mjs) on the stub world of valun-app test/budget-card.unit.test.mjs (a stub tracker whose signatures verify; tracker v4 capabilities with anchored netting, circulating credit on), with PILOT_NETWORK=valun-testnet-1, a fixed clock (2026-11-15T19:00:00Z) and fixed ids: bob (vp_b0b0b0b0b0b0) pays, alice (vp_a1a1a1a1a1a1) is the payee whose agent token asks, erin (vp_e0e0e0e0e0e0) backs. Each participant's mandate: up to 5000000 a deal, 40000000 in all, plus what the case says. took_ms, the only value that differs from run to run, is written as 3. Two servers: valun-app 103b25f (fix inbox #87: the step's verdict from both sides, payer_side) and valun-app 89832cc, the server/ of this repository (no payer_side; the cover's words among the step's reasons; a payer without a card is 404 card_not_public).",
+ "request": {
+  "payer": "bob",
+  "amount": 2000000,
+  "path": "/pilot/v1/participants/vp_b0b0b0b0b0b0/check?amount=2000000&payee=vp_a1a1a1a1a1a1"
+ },
+ "network": "valun-testnet-1",
+ "unit": "nanoERG",
+ "cases": [
+  {
+   "name": "accept with cover",
+   "what": "Both sides go ahead; erin backs bob's IOUs to alice up to the amount (not a public vouch)",
+   "server": "valun-app 103b25f (fix inbox #87)",
+   "status": 200,
+   "body": {
+    "verdict": "accept",
+    "reasons": [
+     "Both sides allow it.",
+     "Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 2000000,
+    "mandate": {
+     "version": 2,
+     "expires_at": "2026-11-22T19:00:00.000Z"
+    },
+    "room_left": 40000000,
+    "approval_needed": false,
+    "cover": {
+     "covered": 2000000,
+     "for_other_deals": 0,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": null,
+       "remaining": 2000000,
+       "for_this_deal": 2000000
+      }
+     ]
+    },
+    "record": {
+     "completed": 0,
+     "disputed": 0,
+     "holds": 0,
+     "owes": 0,
+     "cleared": 0
+    },
+    "card_hash": "314319c932d2620341cd6697d2e068de0c2c255d2b90e3a17f88d4d4bdc641fd",
+    "checked_at": "2026-11-15T19:00:00.000Z",
+    "took_ms": 3,
+    "payer_side": {
+     "verdict": "accept",
+     "rule": null,
+     "reasons": [
+      "Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left."
+     ]
+    },
+    "payee_side": {
+     "verdict": "accept",
+     "rule": null,
+     "reasons": [
+      "Your own limits allow it.",
+      "Backed for you up to 2000000 nanoERG (0.002 tERG) by a backer not named here."
+     ]
+    }
+   },
+   "summary": "Accept: Both sides allow it. Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left. Your own side: Your own limits allow it. Backed for you up to 2000000 nanoERG (0.002 tERG) by a backer not named here.",
+   "exit": 0
+  },
+  {
+   "name": "decline payee coverage",
+   "what": "alice's owner requires 100% coverage (min_payer_coverage_pct) and bob holds nothing: her own side refuses it, bob's allows it",
+   "server": "valun-app 103b25f (fix inbox #87)",
+   "status": 200,
+   "body": {
+    "verdict": "decline",
+    "reasons": [
+     "Your side refuses it (min_payer_coverage_pct); its side allows it.",
+     "Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left."
+    ],
+    "rule": "min_payer_coverage_pct",
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 2000000,
+    "mandate": {
+     "version": 2,
+     "expires_at": "2026-11-22T19:00:00.000Z"
+    },
+    "room_left": 40000000,
+    "approval_needed": false,
+    "cover": {
+     "covered": 0,
+     "for_other_deals": 0,
+     "guarantees": []
+    },
+    "record": {
+     "completed": 0,
+     "disputed": 0,
+     "holds": 0,
+     "owes": 0,
+     "cleared": 0
+    },
+    "card_hash": "314319c932d2620341cd6697d2e068de0c2c255d2b90e3a17f88d4d4bdc641fd",
+    "checked_at": "2026-11-15T19:00:00.000Z",
+    "took_ms": 3,
+    "payer_side": {
+     "verdict": "accept",
+     "rule": null,
+     "reasons": [
+      "Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left."
+     ]
+    },
+    "payee_side": {
+     "verdict": "decline",
+     "rule": "min_payer_coverage_pct",
+     "reasons": [
+      "Your own limits refuse it (min_payer_coverage_pct): bob's claims on the tracker (0 nanoERG (0 tERG), of which 0 nanoERG (0 tERG) count: an IOU counts only as far as a reserve on chain or an issuer this agent's owner trusts stands behind it) cover 0% of what it would owe with this deal (2000000 nanoERG (0.002 tERG)); this agent's owner requires at least 100% for a payer (a guarantee of its debts to this agent counts too)."
+     ]
+    }
+   },
+   "summary": "Decline: Your side refuses it (min_payer_coverage_pct); its side allows it. Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left. Your own side: Your own limits refuse it (min_payer_coverage_pct): bob's claims on the tracker (0 nanoERG (0 tERG), of which 0 nanoERG (0 tERG) count: an IOU counts only as far as a reserve on chain or an issuer this agent's owner trusts stands behind it) cover 0% of what it would owe with this deal (2000000 nanoERG (0.002 tERG)); this agent's owner requires at least 100% for a payer (a guarantee of its debts to this agent counts too).",
+   "exit": 1
+  },
+  {
+   "name": "ask owner payee with cover",
+   "what": "alice's owner approves each commitment above 1000000 (approve_above): her acceptance waits for her owner; erin backs bob's IOUs to her",
+   "server": "valun-app 103b25f (fix inbox #87)",
+   "status": 200,
+   "body": {
+    "verdict": "ask_owner",
+    "reasons": [
+     "Your side allows it once your owner approves; its side allows it.",
+     "Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left."
+    ],
+    "rule": "approve_above",
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 2000000,
+    "mandate": {
+     "version": 2,
+     "expires_at": "2026-11-22T19:00:00.000Z"
+    },
+    "room_left": 40000000,
+    "approval_needed": true,
+    "cover": {
+     "covered": 2000000,
+     "for_other_deals": 0,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": null,
+       "remaining": 2000000,
+       "for_this_deal": 2000000
+      }
+     ]
+    },
+    "record": {
+     "completed": 0,
+     "disputed": 0,
+     "holds": 0,
+     "owes": 0,
+     "cleared": 0
+    },
+    "card_hash": "314319c932d2620341cd6697d2e068de0c2c255d2b90e3a17f88d4d4bdc641fd",
+    "checked_at": "2026-11-15T19:00:00.000Z",
+    "took_ms": 3,
+    "payer_side": {
+     "verdict": "accept",
+     "rule": null,
+     "reasons": [
+      "Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left."
+     ]
+    },
+    "payee_side": {
+     "verdict": "ask_owner",
+     "rule": "approve_above",
+     "reasons": [
+      "Your own limits allow it.",
+      "Backed for you up to 2000000 nanoERG (0.002 tERG) by a backer not named here.",
+      "Your owner approves each commitment above 1000000 nanoERG (0.001 tERG): your acceptance waits for your owner before it binds."
+     ]
+    }
+   },
+   "summary": "Ask your owner: Your side allows it once your owner approves; its side allows it. Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left. Your own side: Your own limits allow it. Backed for you up to 2000000 nanoERG (0.002 tERG) by a backer not named here. Your owner approves each commitment above 1000000 nanoERG (0.001 tERG): your acceptance waits for your owner before it binds.",
+   "exit": 1
+  },
+  {
+   "name": "ask owner payee no cover",
+   "what": "alice's owner approves each commitment above 1000000: her acceptance waits for her owner; nothing backs bob's IOUs",
+   "server": "valun-app 103b25f (fix inbox #87)",
+   "status": 200,
+   "body": {
+    "verdict": "ask_owner",
+    "reasons": [
+     "Your side allows it once your owner approves; its side allows it.",
+     "Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left."
+    ],
+    "rule": "approve_above",
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 2000000,
+    "mandate": {
+     "version": 2,
+     "expires_at": "2026-11-22T19:00:00.000Z"
+    },
+    "room_left": 40000000,
+    "approval_needed": true,
+    "cover": {
+     "covered": 0,
+     "for_other_deals": 0,
+     "guarantees": []
+    },
+    "record": {
+     "completed": 0,
+     "disputed": 0,
+     "holds": 0,
+     "owes": 0,
+     "cleared": 0
+    },
+    "card_hash": "314319c932d2620341cd6697d2e068de0c2c255d2b90e3a17f88d4d4bdc641fd",
+    "checked_at": "2026-11-15T19:00:00.000Z",
+    "took_ms": 3,
+    "payer_side": {
+     "verdict": "accept",
+     "rule": null,
+     "reasons": [
+      "Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left."
+     ]
+    },
+    "payee_side": {
+     "verdict": "ask_owner",
+     "rule": "approve_above",
+     "reasons": [
+      "Your own limits allow it.",
+      "Your owner approves each commitment above 1000000 nanoERG (0.001 tERG): your acceptance waits for your owner before it binds."
+     ]
+    }
+   },
+   "summary": "Ask your owner: Your side allows it once your owner approves; its side allows it. Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left. Your own side: Your own limits allow it. Your owner approves each commitment above 1000000 nanoERG (0.001 tERG): your acceptance waits for your owner before it binds.",
+   "exit": 1
+  },
+  {
+   "name": "ask owner both",
+   "what": "Both owners approve each commitment above 1000000: bob's offer waits for his owner, alice's acceptance for hers",
+   "server": "valun-app 103b25f (fix inbox #87)",
+   "status": 200,
+   "body": {
+    "verdict": "ask_owner",
+    "reasons": [
+     "Both sides allow it once their owners approve.",
+     "Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left.",
+     "Its owner approves each commitment above 1000000 nanoERG (0.001 tERG): this one waits for the owner before it binds."
+    ],
+    "rule": "approve_above",
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 2000000,
+    "mandate": {
+     "version": 2,
+     "expires_at": "2026-11-22T19:00:00.000Z"
+    },
+    "room_left": 40000000,
+    "approval_needed": true,
+    "cover": {
+     "covered": 0,
+     "for_other_deals": 0,
+     "guarantees": []
+    },
+    "record": {
+     "completed": 0,
+     "disputed": 0,
+     "holds": 0,
+     "owes": 0,
+     "cleared": 0
+    },
+    "card_hash": "c74bd634e1240fe807f884ae38f473897c9c9300d6e15e4f88bb683cf109f6ef",
+    "checked_at": "2026-11-15T19:00:00.000Z",
+    "took_ms": 3,
+    "payer_side": {
+     "verdict": "ask_owner",
+     "rule": "approve_above",
+     "reasons": [
+      "Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left.",
+      "Its owner approves each commitment above 1000000 nanoERG (0.001 tERG): this one waits for the owner before it binds."
+     ]
+    },
+    "payee_side": {
+     "verdict": "ask_owner",
+     "rule": "approve_above",
+     "reasons": [
+      "Your own limits allow it.",
+      "Your owner approves each commitment above 1000000 nanoERG (0.001 tERG): your acceptance waits for your owner before it binds."
+     ]
+    }
+   },
+   "summary": "Ask your owner and the payer's owner: Both sides allow it once their owners approve. Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left. Its owner approves each commitment above 1000000 nanoERG (0.001 tERG): this one waits for the owner before it binds. Your own side: Your own limits allow it. Your owner approves each commitment above 1000000 nanoERG (0.001 tERG): your acceptance waits for your owner before it binds.",
+   "exit": 1
+  },
+  {
+   "name": "no card",
+   "what": "bob's owner has not published his budget card; alice's own limits allow it",
+   "server": "valun-app 103b25f (fix inbox #87)",
+   "status": 200,
+   "body": {
+    "verdict": "unknown",
+    "reasons": [
+     "Its side was not checked; your side allows it.",
+     "Its owner has not published its budget card, so its own limits cannot be checked here (the server still enforces them): decide from its public record, or ask your owner."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 2000000,
+    "mandate": null,
+    "room_left": null,
+    "approval_needed": false,
+    "cover": {
+     "covered": null,
+     "for_other_deals": null,
+     "guarantees": []
+    },
+    "record": null,
+    "card_hash": null,
+    "checked_at": "2026-11-15T19:00:00.000Z",
+    "took_ms": 3,
+    "payer_side": null,
+    "payee_side": {
+     "verdict": "accept",
+     "rule": null,
+     "reasons": [
+      "Your own limits allow it."
+     ]
+    }
+   },
+   "summary": "Unknown: Its side was not checked; your side allows it. Its owner has not published its budget card, so its own limits cannot be checked here (the server still enforces them): decide from its public record, or ask your owner. Your own side: Your own limits allow it.",
+   "exit": 1
+  },
+  {
+   "name": "no card decline",
+   "what": "bob's owner has not published his budget card; alice's owner requires 100% coverage, which bob does not have",
+   "server": "valun-app 103b25f (fix inbox #87)",
+   "status": 200,
+   "body": {
+    "verdict": "decline",
+    "reasons": [
+     "Your side refuses it (min_payer_coverage_pct); its side was not checked.",
+     "Its owner has not published its budget card, so its own limits cannot be checked here (the server still enforces them): decide from its public record, or ask your owner."
+    ],
+    "rule": "min_payer_coverage_pct",
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 2000000,
+    "mandate": null,
+    "room_left": null,
+    "approval_needed": false,
+    "cover": {
+     "covered": null,
+     "for_other_deals": null,
+     "guarantees": []
+    },
+    "record": null,
+    "card_hash": null,
+    "checked_at": "2026-11-15T19:00:00.000Z",
+    "took_ms": 3,
+    "payer_side": null,
+    "payee_side": {
+     "verdict": "decline",
+     "rule": "min_payer_coverage_pct",
+     "reasons": [
+      "Your owner's coverage bar (min_payer_coverage_pct, 100%) refuses this payer's IOU for this amount; it has published no budget card, so its own figures are not shown."
+     ]
+    }
+   },
+   "summary": "Decline: Your side refuses it (min_payer_coverage_pct); its side was not checked. Its owner has not published its budget card, so its own limits cannot be checked here (the server still enforces them): decide from its public record, or ask your owner. Your own side: Your owner's coverage bar (min_payer_coverage_pct, 100%) refuses this payer's IOU for this amount; it has published no budget card, so its own figures are not shown.",
+   "exit": 1
+  },
+  {
+   "name": "old server: accept with cover",
+   "what": "Both sides go ahead; erin backs bob's IOUs to alice up to the amount (not a public vouch)",
+   "server": "valun-app 89832cc (before fix inbox #87: no payer_side)",
+   "status": 200,
+   "body": {
+    "verdict": "accept",
+    "reasons": [
+     "Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left.",
+     "Backed for you up to 2000000 nanoERG (0.002 tERG) by a backer not named here."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 2000000,
+    "mandate": {
+     "version": 2,
+     "expires_at": "2026-11-22T19:00:00.000Z"
+    },
+    "room_left": 40000000,
+    "approval_needed": false,
+    "cover": {
+     "covered": 2000000,
+     "for_other_deals": 0,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": null,
+       "remaining": 2000000,
+       "for_this_deal": 2000000
+      }
+     ]
+    },
+    "record": {
+     "completed": 0,
+     "disputed": 0,
+     "holds": 0,
+     "owes": 0,
+     "cleared": 0
+    },
+    "card_hash": "314319c932d2620341cd6697d2e068de0c2c255d2b90e3a17f88d4d4bdc641fd",
+    "checked_at": "2026-11-15T19:00:00.000Z",
+    "took_ms": 3,
+    "payee_side": {
+     "verdict": "accept",
+     "rule": null,
+     "reasons": [
+      "Your own limits allow it."
+     ]
+    }
+   },
+   "summary": "Accept: Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left. Backed for you up to 2000000 nanoERG (0.002 tERG) by a backer not named here, backed for you up to 2000000.",
+   "exit": 0
+  },
+  {
+   "name": "old server: decline payee coverage",
+   "what": "alice's owner requires 100% coverage (min_payer_coverage_pct) and bob holds nothing: her own side refuses it, bob's allows it",
+   "server": "valun-app 89832cc (before fix inbox #87: no payer_side)",
+   "status": 200,
+   "body": {
+    "verdict": "accept",
+    "reasons": [
+     "Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 2000000,
+    "mandate": {
+     "version": 2,
+     "expires_at": "2026-11-22T19:00:00.000Z"
+    },
+    "room_left": 40000000,
+    "approval_needed": false,
+    "cover": {
+     "covered": 0,
+     "for_other_deals": 0,
+     "guarantees": []
+    },
+    "record": {
+     "completed": 0,
+     "disputed": 0,
+     "holds": 0,
+     "owes": 0,
+     "cleared": 0
+    },
+    "card_hash": "314319c932d2620341cd6697d2e068de0c2c255d2b90e3a17f88d4d4bdc641fd",
+    "checked_at": "2026-11-15T19:00:00.000Z",
+    "took_ms": 3,
+    "payee_side": {
+     "verdict": "decline",
+     "rule": "min_payer_coverage_pct",
+     "reasons": [
+      "Your own limits refuse it (min_payer_coverage_pct): bob's claims on the tracker (0 nanoERG (0 tERG), of which 0 nanoERG (0 tERG) count: an IOU counts only as far as a reserve on chain or an issuer this agent's owner trusts stands behind it) cover 0% of what it would owe with this deal (2000000 nanoERG (0.002 tERG)); this agent's owner requires at least 100% for a payer (a guarantee of its debts to this agent counts too)."
+     ]
+    }
+   },
+   "summary": "Accept: Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left. Your own side: Your own limits refuse it (min_payer_coverage_pct): bob's claims on the tracker (0 nanoERG (0 tERG), of which 0 nanoERG (0 tERG) count: an IOU counts only as far as a reserve on chain or an issuer this agent's owner trusts stands behind it) cover 0% of what it would owe with this deal (2000000 nanoERG (0.002 tERG)); this agent's owner requires at least 100% for a payer (a guarantee of its debts to this agent counts too).",
+   "exit": 1
+  },
+  {
+   "name": "old server: ask owner payee with cover",
+   "what": "alice's owner approves each commitment above 1000000 (approve_above): her acceptance waits for her owner; erin backs bob's IOUs to her",
+   "server": "valun-app 89832cc (before fix inbox #87: no payer_side)",
+   "status": 200,
+   "body": {
+    "verdict": "accept",
+    "reasons": [
+     "Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left.",
+     "Backed for you up to 2000000 nanoERG (0.002 tERG) by a backer not named here."
+    ],
+    "rule": null,
+    "payer": {
+     "id": "vp_b0b0b0b0b0b0",
+     "handle": "bob"
+    },
+    "payee": {
+     "id": "vp_a1a1a1a1a1a1",
+     "handle": "alice"
+    },
+    "amount": 2000000,
+    "mandate": {
+     "version": 2,
+     "expires_at": "2026-11-22T19:00:00.000Z"
+    },
+    "room_left": 40000000,
+    "approval_needed": false,
+    "cover": {
+     "covered": 2000000,
+     "for_other_deals": 0,
+     "guarantees": [
+      {
+       "guarantee_id": "vg_3c3c3c3c3c3c3c3c",
+       "backer": null,
+       "remaining": 2000000,
+       "for_this_deal": 2000000
+      }
+     ]
+    },
+    "record": {
+     "completed": 0,
+     "disputed": 0,
+     "holds": 0,
+     "owes": 0,
+     "cleared": 0
+    },
+    "card_hash": "314319c932d2620341cd6697d2e068de0c2c255d2b90e3a17f88d4d4bdc641fd",
+    "checked_at": "2026-11-15T19:00:00.000Z",
+    "took_ms": 3,
+    "payee_side": {
+     "verdict": "ask_owner",
+     "rule": "approve_above",
+     "reasons": [
+      "Your own limits allow it.",
+      "Your owner approves each commitment above 1000000 nanoERG (0.001 tERG): your acceptance waits for your owner before it binds."
+     ]
+    }
+   },
+   "summary": "Accept: Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left. Backed for you up to 2000000 nanoERG (0.002 tERG) by a backer not named here, backed for you up to 2000000. Your own side: Your own limits allow it. Your owner approves each commitment above 1000000 nanoERG (0.001 tERG): your acceptance waits for your owner before it binds.",
+   "exit": 1
+  },
+  {
+   "name": "old server: no card",
+   "what": "bob's owner has not published his budget card; alice's own limits allow it",
+   "server": "valun-app 89832cc (before fix inbox #87: no payer_side)",
+   "status": 404,
+   "body": {
+    "error": "card_not_public",
+    "message": "this agent's owner has not published its budget card"
+   },
+   "summary": "Unknown: bob's owner has not published a budget card, so its budget cannot be checked; decide from its record (valun_directory) or ask your owner.",
+   "exit": 1
+  }
+ ]
+}

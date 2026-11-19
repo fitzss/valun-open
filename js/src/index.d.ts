@@ -136,6 +136,8 @@ export interface PendingEntry {
   /** 'out': this client is the edge's issuer; 'in': its creditor. */
   direction: 'out' | 'in';
   signed_at: string | null;
+  /** 0.7.2 (fix inbox #86): a consent's own signature over this state (the issuer's, on an edge this client issues). */
+  signature?: string;
 }
 
 /** One edge's record: the state last confirmed applied on the tracker, and what is signed but not known yet. */
@@ -264,10 +266,21 @@ export interface PaymentAttemptRecord {
   signed_at?: string;
   /** The server's id of the attempt (a transfer id), once known. */
   attempt_id?: string;
-  /** The OWNER's resolution (resolveAttempt()). */
+  /** The OWNER's resolution (resolveAttempt()), or the server's word that a held payment ended unreleased. */
   outcome?: 'not_applied' | 'applied';
   resolved_at?: string;
+  /** The id of the owner's approval that held it (console approvals), once known. */
+  approval_id?: string;
+  /** learnOwnerDecisions(): how the hold ended without being released (rejected, void_stale, ...). */
+  server_ended?: HeldEnd;
   [field: string]: unknown;
+}
+
+/** How a payment held for the owner ended without being released (learnOwnerDecisions). */
+export interface HeldEnd {
+  state: string;
+  approval_id: string | null;
+  at: string | null;
 }
 
 export interface ConsentLogEntry {
@@ -330,6 +343,8 @@ export interface PaymentAttemptRow {
   total: number;
   timestamp: number;
   outcome: 'not_applied' | 'applied' | null;
+  /** The server held it for the owner and never sent it on (learnOwnerDecisions), or null. */
+  server_ended: HeldEnd | null;
   state: 'applied' | 'unknown' | 'alive' | 'dead' | 'unread';
   paid: boolean;
   paid_by: string | null;
@@ -418,6 +433,11 @@ export interface ClientOptions {
   signerRetries?: number;
   /** First back-off delay for signerRetries in ms (default 1000; doubles each time). */
   retryDelayMs?: number;
+  /**
+   * The waits (ms) before each new try of a read (GET, HEAD) whose connection was cut on the way, or that a proxy answered
+   * 502, 503 or 504 itself (default [500, 1500]: three tries in all; [] for one try). Writes are never sent again.
+   */
+  readRetryWaitsMs?: number[];
   /**
    * false for a client whose adapter signs no consent by itself: it declares no consent role in X-Valun-Features and
    * withdraws the roles it declared before (decision D-3 b). Default true; a ValunAgent sets it from its own options.
@@ -536,6 +556,8 @@ export class Client {
   reload(): Promise<void>;
   /** Record a consent run at nowMs (state[key]); never rejects. */
   markConsentsRun(nowMs: number, key?: 'consents_last_run_ms' | 'consents_last_safe_run_ms'): Promise<void>;
+  /** Record that this profile's participant finished the sandbox tour (state.sandbox_tour_done); never rejects. */
+  markSandboxTourDone(): Promise<void>;
   /**
    * The X-Valun-Features value this client sends ('consents/1;roles=<roles>'), once GET /info listed circulation/1; the
    * empty list 'consents/1;roles=' while roles it declared before must be withdrawn (decision D-3 b); null otherwise.
@@ -649,6 +671,16 @@ export class Client {
   /** This client's payment attempts, deal by deal, as the evaluators classify them now. Makes no request. */
   paymentAttempts(options?: ReadBackOptions): PaymentAttemptRow[];
   /**
+   * From a deal view (the payer's side): each payment attempt the server held for the owner whose hold ended without
+   * being released (rejected in the owner console, or void) is recorded as not applied (outcome 'not_applied',
+   * server_ended), so that a new acceptance pays the deal. Makes no request. Resolves to the attempts recorded now.
+   */
+  learnOwnerDecisions(dealId: string, deal: unknown): Promise<Array<{route: 'note' | 'transfer'; edge: string; total: number;
+    timestamp: number; server_ended: HeldEnd}>>;
+  /** learnOwnerDecisions() for every unpaid deal with an open attempt (one GET /deals/{id} each). */
+  refreshOwnerDecisions(): Promise<Array<{route: 'note' | 'transfer'; edge: string; total: number; timestamp: number;
+    server_ended: HeldEnd}>>;
+  /**
    * paymentAttempts() as `valun attempts list` shows them, with ended_at_server: GET /info and GET /transfers/{id} for an
    * 'unknown' transfer attempt with a server id. Changes nothing, and never what is signed (R11).
    */
@@ -718,6 +750,14 @@ export const LIVE_TRANSFER: readonly string[];
 export const LOCAL_CHOICES: readonly string[];
 /** The transfer states the server sets only before it ever submits a transfer to the tracker (shown, never used for signing). */
 export const NEVER_APPLIED_TRANSFER: readonly string[];
+/** The approval kinds that hold a payment for the owner (issue_note, pay_by_transfer). */
+export const OWNER_HELD_KINDS: readonly string[];
+/** A record without approval_id is matched to the approval made within this many ms of its timestamp. */
+export const HELD_MATCH_MS: number;
+/** Did a held commitment's approval end without releasing it (rejected, or void_*)? */
+export function holdEnded(approvalState: unknown): boolean;
+/** A time as the server writes it, in ms since the epoch; null for anything else. */
+export function isoToMs(s: unknown): number | null;
 export const RESOLVE_NOTE_MAX: number;
 /** Why the server refused to record an attempt as applied (409 payee_edge_not_applied), by the payee edge's class. */
 export const PAYEE_EDGE_WHY: Readonly<Record<'prior' | 'changed' | 'moved_past' | 'unknown', string>>;
@@ -816,6 +856,8 @@ export namespace records {
   function addPending(recs: Records, pair: string, total: number, timestamp: number, kind: string, ref?: string | null,
     direction?: 'out' | 'in', signedAt?: string | null): PendingEntry;
   function removePending(recs: Records, pair: string, total: number, timestamp: number, ref?: string | null): number;
+  /** Keep this client's own signature over a pending state (0.7.2, fix inbox #86); how many entries got it. */
+  function noteSignature(recs: Records, pair: string, total: number, timestamp: number, ref: string | null, signature: string): number;
   /** `state` applied on `pair`: confirmed, a matching pending entry promoted, entries at or before it dropped; never back in time. */
   function confirm(recs: Records, pair: string, state: EdgeState): EdgeRecord;
   /** One row of the edge's current state ({edge} or {issuer_pubkey, recipient_pubkey}, plus an EdgeState). */
@@ -829,7 +871,18 @@ export namespace records {
 // ---------------------------------------------------------------------------------------------------------------------
 // Protocol helpers
 // ---------------------------------------------------------------------------------------------------------------------
+/** The pilot network, retired on 2026-11-13: what a profile enrolled before 0.5 (no network named) is on. */
 export const NETWORK: 'valun-pilot-1';
+/** The day the pilot network was retired. */
+export const PILOT_RETIRED_ON: '2026-11-13';
+/**
+ * The network a profile is on, as its words and checks name it: state.network; the pilot (NETWORK) for a profile
+ * enrolled before 0.5 (a participant_id, no network); the one network, valun-testnet-1, for a profile that has not
+ * joined yet.
+ */
+export function profileNetwork(state: unknown): string;
+/** A profile of the retired pilot network whose server names another network now (GET /info's `network`)? */
+export function retiredPilot(state: unknown, serverNetwork: unknown): boolean;
 export const PROTOCOL: 'valun-deal/1';
 export const UNIT: 'PC';
 /** An amount as people read it, in its network's unit: '3 PC' on the pilot, '3000000 nanoERG (0.003 tERG)' on the
@@ -1068,34 +1121,50 @@ export interface BudgetCard extends Record<string, unknown> {
   page: string;
 }
 
-/** The server's verdict on a payment against a payer's budget card (GET /participants/{id}/check). */
-export interface PayerCheck extends Record<string, unknown> {
+/** One side of the step a check answers for: the payer's (payer_side) or the payee's own (payee_side). */
+export interface CheckSide {
   verdict: 'accept' | 'ask_owner' | 'decline';
+  rule: string | null;
+  reasons: string[];
+}
+
+/**
+ * The server's verdict on a payment against a payer's budget card (GET /participants/{id}/check). Since fix inbox #87,
+ * the payee's own check gives the step's verdict from both sides (decline if either declines, ask_owner if an owner on
+ * either side decides first, accept only if both go ahead), and answers for a payer without a published card on the
+ * payee's own side only (verdict decline or unknown, payer_side null, the payer's figures null).
+ */
+export interface PayerCheck extends Record<string, unknown> {
+  verdict: 'accept' | 'ask_owner' | 'decline' | 'unknown';
   reasons: string[];
   rule: string | null;
   payer: CardParty;
   payee: CardParty;
   amount: number;
-  mandate: {version: number; expires_at: string | null};
-  room_left: number;
+  mandate: {version: number; expires_at: string | null} | null;
+  room_left: number | null;
   approval_needed: unknown;
   /** Shown only to the payee itself: otherwise covered is null (not shown, never 0) and guarantees is empty. */
-  cover: {covered: number | null; guarantees: Array<{guarantee_id: string; backer: CardParty | null; remaining: number}>};
-  record: Record<string, unknown>;
-  card_hash: string;
+  cover: {covered: number | null; for_other_deals?: number | null;
+    guarantees: Array<{guarantee_id: string; backer: CardParty | null; remaining: number; for_this_deal?: number; ends_too_soon?: true}>};
+  record: Record<string, unknown> | null;
+  card_hash: string | null;
   checked_at: string;
   took_ms: number;
   /** The offer under review, when the check named one (dealId; fix inbox #60). */
   deal_id?: string;
   /** For the payee's own check of a new deal: the payer's open offers to it that its outstanding already counts. */
   counted_offers?: Array<{deal_id: string; amount: number}>;
+  /** The payer's own side of the step (fix inbox #87): null when its owner has not published its card; absent from a server before #87. */
+  payer_side?: CheckSide | null;
   /** For the payee's own check: its own limits on the same step. */
-  payee_side?: {verdict: 'accept' | 'ask_owner' | 'decline'; rule: string | null; reasons: string[]};
+  payee_side?: CheckSide;
 }
 
 /**
- * valun_check_payer's answer: the server's verdict object with `summary` (one sentence) first; or, when the payer's owner
- * has not published a budget card, verdict 'unknown' with a summary that says so.
+ * valun_check_payer's answer: the server's verdict object with `summary` first; or, when the server answers only that the
+ * payer's owner has not published a budget card (404 card_not_public: a server from before fix inbox #87), verdict
+ * 'unknown' with a summary that says so.
  */
 export type PayerCheckAnswer = ({summary: string} & PayerCheck)
   | {summary: string; verdict: 'unknown'; reasons: string[]; rule: null; payer: CardParty; amount: number; deal_id?: string};
@@ -1138,9 +1207,14 @@ export namespace schemas {
   const ALL: readonly ToolDefinition[];
   /** 'valun-testnet-1'. */
   const TESTNET: string;
+  /** 'valun-pilot-1', retired on 2026-11-13. */
+  const PILOT: string;
   /** The testnet's words for the pilot's ([pilot text, testnet text], in order), then each word PC becomes nanoERG. */
   const TESTNET_WORDS: readonly (readonly [string, string])[];
-  /** The tool definitions for a network: ALL on the pilot (or with no network); on the testnet, in its own words. */
+  /**
+   * The tool definitions for a network: ALL on the pilot (valun-pilot-1); on the testnet, in its own words, and since
+   * 0.7.2 with no network too (a profile that has not joined yet would join the testnet).
+   */
   function forNetwork(network?: string | null): readonly ToolDefinition[];
 }
 
@@ -1244,12 +1318,16 @@ export interface NotaryResult {
   bytes: number;
 }
 
-/** checked_exactly_by_your_client: the delivered result against the result recomputed from the agreed text. */
+/** checked_exactly_by_your_client: the delivered result against the result recomputed from the agreed text (a built-in
+ * job's; built_in_job false, with no service, for a job that is not built-in: sandbox.checkBuiltIn). */
 export interface ExactCheck {
-  service: SandboxService;
+  service?: SandboxService;
   checked: boolean;
   why?: string;
+  built_in_job?: false;
   exact_result_matches?: boolean;
+  /** false: the delivery has no ```json result block (not in the built-in format), so its result was not compared. */
+  built_in_format?: false;
   differs_in?: string[];
   expected?: Record<string, unknown>;
   delivered?: Record<string, unknown>;
@@ -1281,6 +1359,18 @@ export namespace sandbox {
   function whichService(terms: {[field: string]: unknown}): SandboxService | null;
   /** null when the terms name no exactly checkable service. */
   function checkDelivery(terms: {[field: string]: unknown}, content: string): ExactCheck | null;
+  /** The always-on agents the server runs: sandbox-exact and sandbox-mallory. */
+  const SANDBOX_AGENTS: readonly string[];
+  /** The titles that name a built-in service (lower-cased, spaces collapsed). */
+  const BUILT_IN_TITLES: readonly string[];
+  const NOT_BUILT_IN: string;
+  const NOT_IN_BUILT_IN_FORMAT: string;
+  /** A built-in job: with sandbox-exact or sandbox-mallory (counterparty: a handle), or terms titled text-stats or notary
+   * (alone or with " job"; or the welcome job), or a deliverable or buyer's words that ask for the ```json result block. */
+  function builtInJob(terms: {[field: string]: unknown}, counterparty?: string | null): boolean;
+  /** checkDelivery for a built-in job only: null when the terms name no exactly checkable service; {checked: false,
+   * built_in_job: false, why} for a job that is not built-in (never checked exactly, never disputed for it). */
+  function checkBuiltIn(terms: {[field: string]: unknown}, content: string, counterparty?: string | null): ExactCheck | null;
 }
 
 export type LimitArgument =
@@ -1303,14 +1393,70 @@ export const LIMIT_TOOLS: readonly ToolName[];
 export const SIGNING_TOOLS: readonly ToolName[];
 /** The approval_unbound message: 'could not read what you would sign; nothing was signed'. */
 export const UNBOUND_MESSAGE: string;
+/** approval_unbound's what_this_means when its cause is unknown_participant: no participant has that handle. */
+export const UNKNOWN_PARTICIPANT_TEXT: string;
 /** The approval text for a tool this client does not know; '{name}' stands for the tool name. */
 export const GENERIC_TEXT: string;
 /** Text fields quoted in an approval text are cut to this many characters (code points). */
 export const QUOTE_MAX_CHARS: number;
 export const ROLE_WORDS: Readonly<{payer: string; payee: string}>;
 export const DEFAULT_SETUP_HINT: string;
+/** The refusals behind which a profile of the retired pilot network gets network_retired (ValunAgent.retired). */
+export const RETIRED_CODES: readonly string[];
+/** How the owner of such a profile joins again, by default: in a new profile, with a new owner token file. */
+export const DEFAULT_REJOIN_HINT: string;
+/** network_retired's what_this_means: the profile's pilot network was retired, and the server serves `network`. */
+export function retiredText(network: string, rejoinHint?: string): string;
 /** The Python adapters' sentences for where approvals happen (valun_status shows the one in use). */
 export const APPROVAL_TEXT: Readonly<{ask: string; 'client-prompt': string; console: string; none: string}>;
+/** Where and what the owner approves, for an answer that waits for them: [words, fields]. */
+export function ownerWait(c: unknown, r: unknown, dealId: unknown, command?: string | null, kind?: string): [string, Record<string, unknown>];
+/** What an acceptance held for an owner waits for (acceptance.held_for): [text, fields]. */
+export function acceptanceWait(c: unknown, r: unknown, dealId: unknown, command?: string | null): [string, Record<string, unknown>];
+/** What the Valun server never holds for an owner, in any approval mode. */
+export const NEVER_HELD: string;
+/** valun_status's approvals sentence for console approvals (APPROVAL_TEXT.console). */
+export const CONSOLE_APPROVALS: string;
+/** The deal statuses in which an owner decides (valun_deal's whose_turn). */
+export const OWNER_WAITS: readonly string[];
+/** valun_status's sentence on what the server holds for the owner, by the owner mandate. */
+export function heldForOwner(mandate: unknown, server: string | null, unit?: string, console?: boolean): string;
+/**
+ * valun_deal's whose_turn while an owner decides, for the viewer meId; the payer's held payment says until when, and a
+ * held IOU past its hour (at nowMs) that the owner must reject it.
+ */
+export function ownerTurn(deal: unknown, meId: string | null, nowMs?: number | null): string;
+/**
+ * valun_deal's owner_decisions: what the owner decided about what the server held for them, with what it leaves; next
+ * steps only for the last of each kind while the deal's status still fits them, a past-tense line otherwise.
+ */
+export function ownerDecisions(deal: unknown, attempts?: unknown): Array<{approval_id: string; kind: unknown; state: string;
+  decided_at: unknown; what_this_means: string}>;
+/** The deal statuses in which a payment of the deal is still due (owner_decisions' next steps). */
+export const UNPAID: readonly string[];
+/** The approval kinds whose decision by the other side's owner valun_deal reports. */
+export const COUNTERPARTY_OWNER_KINDS: readonly string[];
+/** valun_deal's counterparty_owner_decisions: what the other side's owner decided, from the deal's shared history. */
+export function counterpartyOwnerDecisions(deal: unknown, meId: string | null): Array<{at: string | null; kind: string;
+  event: string; what_this_means: string}>;
+/** Until when this client counts a payment attempt signed for ts against another payment of its deal (ts + 1 h + 2 min). */
+export function freeAfter(ts: unknown): string | null;
+/** The payer's held IOU in a deal view: [noteDecideBy, noteExpiresAt, passed at nowMs]; [null, null, false] for any other view. */
+export function heldNoteHour(deal: unknown, nowMs: number | null): [string | null, string | null, boolean];
+/** The deadlines of the IOU this client signed for a pending issue_note approval an inbox row names: [noteDecideBy, noteExpiresAt, passed]. */
+export function heldNoteOf(c: unknown, row: unknown, nowMs: number | null): [string | null, string | null, boolean];
+/** {call_id: note timestamp} of this client's own record of the calls of a guarantee it honored or is honoring. */
+export function honorMarks(c: unknown, guaranteeId: string): Record<string, unknown>;
+/** When the tracker stops taking a bound note (its timestamp + 1 h) as the server writes a time; null otherwise. */
+export function noteExpiresAt(note: unknown): string | null;
+/** A held bound note's owner console deadline (its timestamp + 1 h - HELD_NOTE_SEND_MARGIN_MS); null otherwise. */
+export function noteDecideBy(note: unknown): string | null;
+/** A held IOU's approval ends this long (ms) before the tracker's hour: the owner console's "Decide by". */
+export const HELD_NOTE_SEND_MARGIN_MS: number;
+/** What freeAfter's time is, said beside it: this client's own, a minute after the server's that the owner console shows. */
+export const MARGIN_WORDS: string;
+/** ms since the epoch as the server writes a time (ISO 8601 UTC with ms); null outside 1970-3000. */
+export function isoMs(ms: unknown): string | null;
 
 // ---- circulating credit (0.4; only where the server's GET /info lists circulation/1) ----
 export const CIRCULATION: 'circulation/1';
@@ -1333,12 +1479,15 @@ export function tourGoal(step: unknown, unit?: string, scale?: number): string;
 /** The tracker a credit note goes to, in an approval text. */
 export function trackerWords(network: unknown): string;
 /**
- * valun_check_payer's summary: the verdict, its reasons and the cover as one plain sentence, e.g. 'Accept: within its
- * budget (31 of 40 left), backed for you up to 3.' Without reasons, the words of CHECK_FALLBACK; the cover only for
- * accept and ask_owner, and only when cover.covered is a whole number above 0; a verdict this client does not know reads
- * Unknown. A check of a new deal at the price of an offer the payer made you (offersCountedAt) says it is for a new deal
- * on top of that offer, and how to check the offer itself (deal_id); a payee_side of decline or ask_owner adds 'Your own
- * side: ' and its reasons.
+ * valun_check_payer's summary: the verdict, its reasons and the cover as plain sentences, e.g. 'Accept: Both sides allow
+ * it. Within its budget: ... Your own side: Your own limits allow it. Backed for you up to 3 by @erin.' Each reason of
+ * the server's is a sentence after a stop, a fragment after a comma; without reasons, the words of CHECK_FALLBACK; a
+ * verdict this client does not know reads Unknown. From a server with fix inbox #87 (payer_side in the answer): the
+ * step's verdict leads, an ask_owner names whose owner decides (checkOwners, CHECK_ASK_LEAD), and the payee's own reasons
+ * follow 'Your own side: ' (the cover's sentence is among them). From an older server, as in 0.7.1: the cover named by
+ * this client ('backed for you up to N') for accept and ask_owner when cover.covered is a whole number above 0, and 'Your
+ * own side: ' only for a payee_side of decline or ask_owner. A check of a new deal at the price of an offer the payer
+ * made you (offersCountedAt) says it is for a new deal on top of that offer, and how to check the offer itself (deal_id).
  */
 export function checkSummary(check: unknown): string;
 /** The summary's first word for each verdict: Accept, Ask owner, Decline. */
@@ -1347,6 +1496,16 @@ export const CHECK_LEAD: Readonly<{accept: string; ask_owner: string; decline: s
 export const CHECK_FALLBACK: Readonly<{accept: string; ask_owner: string; decline: string}>;
 /** The summary's words for the payee's own side (payee_side) when it is decline or ask_owner and has no reasons. */
 export const CHECK_PAYEE_SIDE: Readonly<{decline: string; ask_owner: string}>;
+/** Fix inbox #87: an ask_owner's first words by whose owner decides (checkOwners). */
+export const CHECK_ASK_LEAD: Readonly<{payee: string; payer: string; both: string}>;
+/** Fix inbox #87: an ask_owner's words without reasons, by whose owner decides (checkOwners). */
+export const CHECK_ASK_FALLBACK: Readonly<{payee: string; payer: string; both: string}>;
+/**
+ * Fix inbox #87: whose owner decides first in a check's ask_owner, from payer_side and payee_side: 'payee' when only the
+ * payee's side says ask_owner, 'payer' when only the payer's does, else 'both' (an answer that does not say whose names
+ * both, so the payee's own owner is never left out).
+ */
+export function checkOwners(check: unknown): 'payee' | 'payer' | 'both';
 /**
  * For a check of a new deal (no deal_id in the answer): the deal ids of the payer's open offers to this agent its
  * outstanding already counts (counted_offers) at exactly the amount checked, as listed (fix inbox #60).
@@ -1356,9 +1515,31 @@ export function offersCountedAt(check: unknown): string[];
  * Fix inbox #58: the arguments of a call of the tool `name`, as its handler takes them ({} for null or undefined, else the
  * JSON object given). Arguments that are not a JSON object, or without one of the tool's required arguments
  * (REQUIRED_ARGUMENTS; null counts as missing), throw ValunError('bad_arguments') naming each one missing and what it is
- * (ARGUMENT_WORDS), before anything is read or signed. ValunAgent.call() and prepareOrRefusal() check every call with it.
+ * (ARGUMENT_WORDS), before anything is read or signed. Since 0.7.2 each argument given (not null) must also fit its
+ * schema's type (argumentRefusal; the first that does not, in the schema's order, is thrown). `unit`: the network's unit,
+ * which the refusal of an amount names (default PC; ValunAgent.toolArguments passes its profile's). ValunAgent.call()
+ * and prepareOrRefusal() check every call with it.
  */
-export function toolArguments(name: ToolName | string, args: unknown): ToolArgs;
+export function toolArguments(name: ToolName | string, args: unknown, unit?: string): ToolArgs;
+/**
+ * Fix inbox #58 (0.7.2): why the value `v` of argument `k` does not fit tool `name`'s schema type (a string, a safe
+ * integer, a boolean, one of its enum values; deal_id, guarantee_id and call_id in their id shapes; valun_offer_guarantee
+ * deals a list of 1 to 10 different deal ids), as the ValunError its call answers; null when it fits (or is null).
+ */
+export function argumentRefusal(name: ToolName | string, k: string, v: unknown, unit?: string): ValunError | null;
+/** Each tool's schema properties, in the order toolArguments checks them. */
+export const PROPERTIES: Readonly<Record<ToolName, Readonly<Record<string, unknown>>>>;
+/** The id shapes the server's routes take: deal_id vd_ + 16 hex, guarantee_id vg_ + 16 hex, call_id vgc_ + 16 hex. */
+export const ID_SHAPES: Readonly<{deal_id: RegExp; guarantee_id: RegExp; call_id: RegExp}>;
+/** The refusal (code, message) of a value that is not one of an argument's enum values, by tool and argument. */
+export const ENUM_REFUSALS: Readonly<Record<string, Readonly<Record<string, readonly [string, string]>>>>;
+/** What valun_directory's limit and offset are, for the refusal of one that is not a whole number. */
+export const PAGE_WORDS: Readonly<{limit: string; offset: string}>;
+/**
+ * The most hours valun_propose and valun_respond counter may give to deliver (720) and keep an offer open (168), the
+ * schemas' maximum and the server's: more is refused (bad_arguments) before anything is read or signed.
+ */
+export const HOURS_MAX: Readonly<{deliver_within_hours: number; offer_valid_hours: number}>;
 /** What each required argument of a tool is, for the refusal when it is missing. */
 export const ARGUMENT_WORDS: Readonly<Record<string, string>>;
 /** A tool's own words for an argument that means something else there (valun_respond_guarantee's action). */
@@ -1393,6 +1574,10 @@ export const TOUR_AFTER: Readonly<Record<1 | 2 | 3 | 4 | 5, readonly [number, nu
 export const SANDBOX_RETRY_S: number;
 /** Seconds to wait while an owner approval is pending. */
 export const OWNER_RETRY_S: number;
+/** The profile state key that keeps the tour's end: the participant id whose tour valun_status saw done. */
+export const TOUR_DONE_KEY: 'sandbox_tour_done';
+/** sandbox_next_steps' text once the tour's end is kept (tour_step 'done'). */
+export const TOUR_COMPLETED: string;
 /** The read-only tools before which consentsOnReads signs the value-safe consents (decision D-3 a). */
 export const CONSENTS_ON_READ_TOOLS: readonly ToolName[];
 /** The keys of each consents_signed_now entry. */
@@ -1428,8 +1613,11 @@ export function quoted(value: unknown): string;
 export function shown(value: unknown): string;
 /** The last line of an approval text: `label` and `fields` quoted as one JSON line (long fields cut, and the label says so). */
 export function quoteLine(label: string, fields: Record<string, unknown>): string;
-/** What a binding deal means for this participant in `role` ('payer' or 'payee'). */
-export function owes(role: string, who: string, price: number, unit?: string): string;
+/**
+ * What a binding deal means for this participant in `role` ('payer' or 'payee'); with `circulating` (the server offers
+ * circulating credit) a payer's words promise no credit note: it may pay with notes it holds.
+ */
+export function owes(role: string, who: string, price: number, unit?: string, circulating?: boolean): string;
 /** Seen (or joined) within the last `hours` (default 24)? Times without a UTC offset do not count. */
 export function recentlyActive(lastSeen: unknown, hours?: number, joinedAt?: unknown, nowMs?: number): boolean;
 /** The current terms' title, description and deliverable, each without its fenced blocks, joined by spaces: the text whose numeric requirements are measured. */
@@ -1489,6 +1677,10 @@ export interface ValunAgentOptions {
   hostTimeoutMs?: number;
   /** What the owner must do to connect the agent, in error explanations. */
   setupHint?: string | null;
+  /** How the owner of a profile of the retired pilot network joins again (network_retired; DEFAULT_REJOIN_HINT). */
+  rejoinHint?: string | null;
+  /** The command that opens the owner console for this profile (`valun --profile NAME console`), named where an answer waits. */
+  consoleCommand?: string | null;
   /**
    * Sign the consents the owner's policy allows before tools that are not read-only (consentsIfDue; default true). A host
    * with a consent loop of its own (startConsentLoop) may turn it off.
@@ -1515,6 +1707,8 @@ export class ValunAgent {
   resolveHost: ResolveHost | null;
   hostTimeoutMs: number;
   setupHint: string;
+  rejoinHint: string;
+  consoleCommand: string | null;
   processConsents: boolean;
   consentsOnReads: boolean;
   declareRoles: boolean;
@@ -1543,10 +1737,19 @@ export class ValunAgent {
    */
   client(requireConnection?: boolean): Client;
   /**
-   * Runs one tool; rejects with a ValunError (or another error) on failure. Arguments that are not a JSON object, or
-   * without one the tool requires, reject with bad_arguments before anything is read or signed (toolArguments).
+   * network_retired for a profile of the retired pilot network, in place of the refusal `error` (RETIRED_CODES, or
+   * approval_unbound with one as its cause) when one GET /info shows the server serves another network; else null.
+   * call() and prepareOrRefusal() use it. Never rejects.
+   */
+  retired(error: unknown): Promise<ValunError | null>;
+  /**
+   * Runs one tool; rejects with a ValunError (or another error) on failure. Arguments that are not a JSON object,
+   * without one the tool requires, or with one of the wrong type, reject before anything is read or signed
+   * (toolArguments).
    */
   call(name: ToolName | string, args?: ToolArgs | null): Promise<ToolResult>;
+  /** The module's toolArguments(), with this profile's unit (read from its records, nothing from the server). */
+  toolArguments(name: ToolName | string, args: unknown): ToolArgs;
   /** Like call(), but never rejects: failures resolve to a ToolError. */
   callSafe(name: ToolName | string, args?: ToolArgs | null): Promise<ToolResult>;
   /**
@@ -1635,7 +1838,7 @@ export function startConsentLoop(agent: ValunAgent, options?: {intervalMs?: numb
 /**
  * The nine tools of `agent` as FrameworkTool objects. Commitments ask `approve` first with the prepared text and
  * arguments (owner_declined unless it returns true; approval_unavailable if it throws; approval_unbound, without asking,
- * when what would be signed cannot be read); without a hook they are refused (approval_unavailable) unless approvals is
- * 'none'.
+ * when what would be signed cannot be read); without a hook they are refused (approval_unavailable; not_connected with
+ * how to join, before the profile has joined) unless approvals is 'none'.
  */
 export function valunTools(agent: ValunAgent, options?: ValunToolsOptions): FrameworkTool[];

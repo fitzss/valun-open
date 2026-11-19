@@ -52,7 +52,7 @@ export function world({routes = {}, store = 'alice', agent = {}, state = {}} = {
   const a = new ValunAgent(client, {approvals: agent.approvals ?? '', checkLinkHosts: agent.check_link_hosts ?? true,
     setupHint: agent.setup_hint ?? null, resolveHost: 'resolveHost' in agent ? agent.resolveHost : fakeResolveHost, now: () => T0,
     processConsents: agent.process_consents ?? true, consentsOnReads: agent.consents_on_reads ?? false, declareRoles: agent.declare_roles ?? null,
-    briefStatus: agent.brief_status ?? false});
+    briefStatus: agent.brief_status ?? false, consoleCommand: agent.console_command ?? null});
   return {agent: a, fetch, client, store: st};
 }
 

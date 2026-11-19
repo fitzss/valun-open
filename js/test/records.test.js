@@ -21,7 +21,7 @@ import {jsonResponse, testKey} from './helpers.js';
 const NFT = '6869a94d5e9f95ac25e73164f9a4e9fe57d710c0794dfa13367ca2d96353a0fa';
 const OTHER_NFT = '11'.repeat(32);
 const DENOM = PILOT_DENOMINATION;
-const SERVER = 'http://valun.invalid';
+const SERVER = 'https://valun.invalid';
 const NOW = Date.parse('2026-11-08T12:00:00.000Z');       // a whole second: NOW - 1500 ends in 500 ms
 const key = label => { const secret = testKey(label); return {secret, pubkey: bytesToHex(basis.publicKey(secret))}; };
 const ALICE = key('test/alice'), BOB = key('test/bob'), BOB2 = key('test/bob-rotated'), MALLORY = key('test/mallory');
@@ -365,19 +365,19 @@ test('complete(): a FileStore profile holds the records, the 0.3 record and the 
 test('end to end: a delivery acceptance signs only the agreement the owner was shown', async () => {
   // The snapshot shows a delivery on a 5 PC agreement; when the client signs, the same text is shown on another,
   // genuinely agreed 500 PC deal under this id: nothing is signed, not even the template is asked for.
-  const review = {deal_id: 'vd_1', decision: 'accept'};
+  const review = {deal_id: 'vd_1111111111111111', decision: 'accept'};
   const w = new World(), s = memStore();
-  w.addDeal('vd_1', {price: 5});
+  w.addDeal('vd_1111111111111111', {price: 5});
   const a = new ValunAgent(clientOf(w, s));
   const p = await a.prepare('valun_review_delivery', review);
   assert.ok(p.text.includes('ISSUE A CREDIT NOTE of 5 PC'), p.text);
-  w.addDeal('vd_1', {price: 500});
+  w.addDeal('vd_1111111111111111', {price: 500});
   w.log.length = 0;
   await assert.rejects(a.call('valun_review_delivery', p.args), isCode('stale_terms'));
-  assert.deepEqual(w.log, ['GET /pilot/v1/deals/vd_1']);
+  assert.deepEqual(w.log, ['GET /pilot/v1/deals/vd_1111111111111111']);
   assert.deepEqual(w.tracker, {});
   const w2 = new World(), a2 = new ValunAgent(clientOf(w2, memStore()));   // the consistent case pays exactly the price shown
-  w2.addDeal('vd_1', {price: 5});
+  w2.addDeal('vd_1111111111111111', {price: 5});
   assert.equal((await a2.call('valun_review_delivery', (await a2.prepare('valun_review_delivery', review)).args)).status, 'note_issued');
   assert.equal(w2.tracker[w2.pair].total, 5);
 });

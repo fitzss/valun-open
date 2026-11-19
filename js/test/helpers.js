@@ -45,7 +45,7 @@ export function jsonResponse(status, body) {
 }
 
 /** A fake fetch serving {"METHOD /path": {status, body}}; records every call. */
-export function fakeFetch(routes, base = 'http://valun.invalid') {
+export function fakeFetch(routes, base = 'https://valun.invalid') {
   const calls = [];
   const f = async (url, init = {}) => {
     const path = url.startsWith(base) ? url.slice(base.length) : url;

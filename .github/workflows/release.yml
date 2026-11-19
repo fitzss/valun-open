@@ -3,8 +3,8 @@ name: release
 #   verify  (no id-token) the gate every publishing job needs: the tag matches every version; the Python unit tests;
 #         the protocol vectors against the package and against the Hermes plugin 0.7.1 at PLUGIN_SHA, with the
 #         circulation and consent tiers required; the plugin's vendored core equals the package's (check_plugin_core);
-#         the JavaScript tests; then it builds the Python distributions and uploads them as an artifact. Build tooling
-#         runs here, where no OIDC token can be minted (audit SC-1).
+#         the JavaScript tests on Node 24 and 26; then it builds the Python distributions and uploads them as an
+#         artifact. Build tooling runs here, where no OIDC token can be minted (audit SC-1).
 #   pypi  downloads that artifact and uploads it through PyPI's trusted publisher for this repository and workflow
 #         (environment "pypi"); nothing is built or installed in the job that holds id-token: write.
 #   npm   publishes the `@fitzdoud/valun` JavaScript package with provenance through npm's trusted publisher (environment "npm"),
@@ -70,6 +70,11 @@ jobs:
       - name: The plugin 0.7.1 carries the valun package's core unchanged
         run: python scripts/check_plugin_core.py hermes-plugin-valun
       - name: JavaScript tests (every vector, transcript replay)
+        run: node --test js/test/
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26"
+      - name: JavaScript tests on Node 26, the current LTS (its undici 8 keeps the global dispatcher elsewhere)
         run: node --test js/test/
       - name: Build
         run: |

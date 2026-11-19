@@ -36,11 +36,12 @@ const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d
  * consent_roles_declared (the roles the server last took from this client's X-Valun-Features header; '' once it took
  * the empty list, decision D-3 b); guarantee_honors (fix inbox #18) {guarantee_id: {cap, calls: {call_id: {amount, state
  * ('pending', 'honored' or 'failed'), total, timestamp}}}}: the calls this client honored or is honoring as a backer, so
- * it never pays beyond the cap it signed, whatever a server shows.
+ * it never pays beyond the cap it signed, whatever a server shows. sandbox_tour_done (for the agent layer, 0.7.2): the
+ * participant id whose sandbox tour valun_status saw done; its sandbox_next_steps then stays done (agent TOUR_DONE_KEY).
  */
 export const CORE_STATE_KEYS = Object.freeze(['issued', 'records', 'signed', 'novated_edges', 'transfer_attempts', 'approved_payments',
   'consent_policy', 'consent_loop', 'consents_last_run_ms', 'consent_log', 'pins', 'journal_seq', 'consents_last_safe_run_ms',
-  'consent_roles_declared', 'guarantee_honors']);
+  'consent_roles_declared', 'guarantee_honors', 'sandbox_tour_done']);
 /** Timestamp residues (ts mod 1000) the v3 tracker keeps for other operations: an ordinary note never uses them. */
 export const RESERVED_MS_FROM = 995;
 /** Guarantees (servers listing guarantees/1; fix inbox #18): the terms protocol and the one kind of cover it has. */
@@ -90,6 +91,19 @@ export const LOCAL_CHOICES = Object.freeze(['no_server_id', 'server_unknown', 's
  */
 export const NEVER_APPLIED_TRANSFER = Object.freeze(['void_rejected', 'void_stale', 'void_expired', 'expired', 'cancelled', 'refused',
   'void_key_revoked']);
+/**
+ * A payment this client signed that the server held for the payer's owner (console approvals: review_deliveries holds
+ * the IOU, or the payment by transfer, signed when the agent accepts a delivery) and that ended without being released:
+ * its owner rejected it in the owner console, or the server voided it (as the Python client's OWNER_HELD_KINDS; the
+ * approval semantics of 2026-11-17, approval probe D2). learnOwnerDecisions() records it as not applied.
+ */
+export const OWNER_HELD_KINDS = Object.freeze(['issue_note', 'pay_by_transfer']);
+export const HELD_MATCH_MS = 600_000;              // an IOU's approval is made within 10 minutes of its timestamp (R5 window)
+
+/** Did a held commitment's approval end without releasing it (rejected by the owner, or void)? */
+export function holdEnded(approvalState) {
+  return typeof approvalState === 'string' && (approvalState === 'rejected' || approvalState.startsWith('void_'));
+}
 export const RESOLVE_NOTE_MAX = 300;
 /**
  * The server records an attempt as applied only while the payee's edge on the tracker shows the transfer (valun-app
@@ -115,6 +129,31 @@ const PARTICIPANT_ID_RE = /^vp_[0-9a-f]{12}$/;
 const TRANSFER_ID_RE = /^vt_[0-9a-f]{16}$/;
 const ATTEMPT_REF_RE = /^#[1-9][0-9]{0,3}$/;
 const SERVER_WORD_RE = /^[a-z_]{1,40}$/;
+const APPROVAL_ID_RE = /^va_[0-9a-f]{12}$/;
+const ISO_MS_RE = /^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,6}))?Z$/;
+
+/**
+ * A time as the server writes it (ISO 8601 in UTC: 2026-11-17T23:10:36.315Z) in ms since the epoch, or null for anything
+ * else (another form, a date that does not exist, a year before 1970), as the Python client's _iso_to_ms.
+ */
+export function isoToMs(s) {
+  const m = typeof s === 'string' ? ISO_MS_RE.exec(s) : null;
+  if (m === null) return null;
+  const [y, mo, d, hh, mm, ss] = m.slice(1, 7).map(Number);
+  if (y < 1970 || mo < 1 || mo > 12 || hh > 23 || mm > 59 || ss > 59) return null;
+  const t = Date.UTC(y, mo - 1, d, hh, mm, ss);
+  const back = new Date(t);
+  if (back.getUTCFullYear() !== y || back.getUTCMonth() !== mo - 1 || back.getUTCDate() !== d) return null;
+  return t + Number((m[7] ?? '').padEnd(3, '0').slice(0, 3));
+}
+
+/** An attempt record's server_ended ({state, approval_id, at}: learnOwnerDecisions) in that shape, or null. */
+function heldEnd(v) {
+  if (!isDict(v) || serverWord(pyGet(v, 'state')) === null) return null;
+  const aid = pyGet(v, 'approval_id');
+  return {state: v.state, approval_id: typeof aid === 'string' && APPROVAL_ID_RE.test(aid) ? aid : null,
+    at: isoToMs(pyGet(v, 'at')) !== null ? v.at : null};
+}
 // Default_Ignorable_Code_Point characters outside the categories C* (they hide text): refused in the owner's note.
 const IGNORABLE = [[0x034F, 0x034F], [0x115F, 0x1160], [0x17B4, 0x17B5], [0x180B, 0x180F], [0x3164, 0x3164],
   [0xFE00, 0xFE0F], [0xFFA0, 0xFFA0], [0xE0100, 0xE01EF]];
@@ -205,7 +244,387 @@ const isPubkey = v => typeof v === 'string' && /^0[23][0-9a-f]{64}$/.test(v);
 
 /** A failure to reach or be served by the server, not an answer about the request itself: try again later. */
 function transient(e) {
-  return e.code === 'unreachable' || (typeof e.status === 'number' && (e.status >= 500 || e.status === 429));
+  // An answer that is not JSON (cut short, or a captive portal's or proxy's page) is one too: wait, as the Python
+  // client's _transient does (the 0.7.2 review).
+  return e.code === 'unreachable' || (typeof e.status === 'number' && (e.status >= 500 || e.status === 429))
+    || (e.code === 'bad_response' && isDict(e.extra) && e.extra.cause === 'not_json');
+}
+
+// The transport (fix inbox #132, as the Python client's Client.request): a read (GET or HEAD) is sent again after each of
+// READ_RETRY_WAITS_MS when its connection was cut (a reset socket, a socket closed with no answer, a body that stopped
+// arriving) or when a proxy answered 502, 503 or 504 itself (no Valun error in its body); a write never is. A connection
+// refused or a name that does not resolve is not sent again: a second try does not change it. Nor is a request whose
+// answer did not come within the timeout (cause timed_out; the 0.7.2 review: three tries took three timeouts and tripled
+// a busy server's load). A cut connection is cause connection_cut, as in Python, and a write's outcome is then unknown.
+// fetch() asks for compressed answers and decodes them by itself.
+export const READ_RETRY_WAITS_MS = Object.freeze([500, 1500]);
+const SAFE_METHODS = new Set(['GET', 'HEAD']);
+const PROXY_STATUSES = new Set([502, 503, 504]);
+const CUT_CODES = new Set(['ECONNRESET', 'ECONNABORTED', 'EPIPE', 'UND_ERR_SOCKET', 'UND_ERR_CLOSED']);
+const TIMEOUT_CODES = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
+const failureCode = e => e?.cause?.code ?? e?.code;
+/** Was this fetch failure a connection cut on the way, once the server was reached (worth one more try of a read)? */
+function cutOnTheWay(e) {
+  return CUT_CODES.has(failureCode(e));
+}
+/** Did this fetch fail because no answer came in time (this client's timeout, or undici's own)? Never tried again. */
+function timedOut(e) {
+  return e?.name === 'AbortError' || e?.name === 'TimeoutError' || TIMEOUT_CODES.has(failureCode(e));
+}
+// A redirect (the RC's review: fetch refused it, redirect: 'error', and this client said "cannot reach ...: fetch
+// failed"): Node's fetch names it in its cause, 'unexpected redirect'. It is the Python client's ValunError('redirected'),
+// in the same words, without where it pointed or its status: fetch does not show them for a redirect it refused.
+export const REDIRECT_WHY = "Valun's API sends no redirect itself: something at that address answered in its place, "
+  + 'such as a host that moves http:// to https://, a server that moved, or a captive portal or proxy';
+function refusedRedirect(e) {
+  return e?.cause?.message === 'unexpected redirect';
+}
+
+// Plain http (the RC's review, as client.py's PLAIN_HTTP_ENV): a token goes over plain http only to a server on this
+// machine, unless the person running this client sets VALUN_ALLOW_PLAIN_HTTP=1. Otherwise request() refuses, before
+// anything is sent (plain_http), every request that carries a token, and every one whose answer carries one
+// (SECRET_ROUTES: a join's owner token and enrollment code, an enrollment's agent token). Unlike the Python client, this
+// one cannot send a server on this machine directly when Node's own fetch sends requests through a proxy: Node's fetch
+// takes no per-request proxy setting without an undici dispatcher, which Node does not export. So it refuses a token
+// over plain http to this machine too where the process-wide dispatcher Node's fetch uses would send it through a proxy
+// (nodeRoute, judged from that dispatcher itself, the RC's review, round 3): Node's environment proxy (NODE_USE_ENV_PROXY=1
+// or --use-env-proxy), with the http proxy it read at its start, unless NO_PROXY, read now as undici reads it, names the
+// server's host (it says to name it there); or any other dispatcher an application set (setGlobalDispatcher: a
+// ProxyAgent, say), which may proxy everything. Over https it sends no token, nor a join or an enrollment, while Node
+// checks no certificate (tlsRefusal: NODE_TLS_REJECT_UNAUTHORIZED=0, or a global dispatcher made with
+// connect.rejectUnauthorized false), as the Python client, which always checks, never does. Through a fetch passed in
+// options.fetch, whose proxy and TLS settings this client cannot see, it sends as asked. A globalThis.fetch that is not
+// Node's own (nodeFetch: an application or a library replaced it, with a wrapper that passes a dispatcher of its own,
+// say) is neither (the RC's review, round 4, js-replaced-global-fetch-judged-as-nodes-own: it was judged by the global
+// dispatcher, which such a wrapper need not use, and the tokens went through its proxy in clear text): it may send
+// anywhere, so over plain http a token goes to this machine through it only with VALUN_ALLOW_PLAIN_HTTP=1, and its own
+// TLS settings are unknown here, so over https only what holds for every fetch in this process is judged.
+export const PLAIN_HTTP_ENV = 'VALUN_ALLOW_PLAIN_HTTP';
+const SECRET_ROUTES = new Set(['/pilot/v1/join', '/pilot/v1/join-sandbox', '/pilot/v1/enroll']);
+const environment = () => {
+  const e = globalThis.process?.env;
+  return e && typeof e === 'object' ? e : {};
+};
+/** Has the person running this client opted in to tokens over plain http to another machine (VALUN_ALLOW_PLAIN_HTTP=1)? */
+export function plainHttpAllowed() {
+  return String(environment()[PLAIN_HTTP_ENV] ?? '').trim() === '1';
+}
+/** Is `host` (a URL's host name; an IPv6 address with or without its brackets) this machine: 127.0.0.0/8, ::1 (an
+ *  IPv4-mapped 127.x too) or the name localhost exactly? As the URL parser reads it (127.1 is 127.0.0.1). Not
+ *  'localhost.' with a final dot (the RC's review, round 3, transport-security localhost-trailing-dot-resolved-by-dns):
+ *  getaddrinfo, which Node resolves through, looks that name up in DNS on glibc, so it may be any machine. */
+export function loopbackHost(host) {
+  if (typeof host !== 'string' || !host.trim()) return false;
+  const h = host.trim();
+  let name;
+  try {
+    name = new URL(`http://${h.includes(':') && !h.startsWith('[') ? `[${h}]` : h}/`).hostname;
+  } catch {
+    return false;
+  }
+  return name === 'localhost' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(name) || name === '[::1]'
+    || /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/.test(name);
+}
+// A server URL is absolute: http:// or https://, a host (a host name or an IP address), an optional port and path, and
+// no user name or password, query or fragment. Anything else is refused before anything is sent, naming the setting it
+// came from (the RC's review, round 3, transport-security js-hostless-server-url-bypasses-both-guards: a server with no
+// host, such as 'http://', is not a URL on its own, so neither guard below judged it, but `server + path` was one, whose
+// host was the path's first segment: 'http:' + '/pilot/v1/me' is http://pilot/v1/me, so the agent's token went in
+// clear text to whatever the name 'pilot' reached, and over unverified TLS for 'https://'). As the Python client's
+// server_problem.
+const EXAMPLE_SERVER = 'https://valun.tech';
+const SERVER_USERINFO = 'has a user name or password (before an @), which a server URL never carries, so it is not repeated here';
+const SERVER_HOST = 'has a host that is not a host name (letters, digits, dots, hyphens and underscores) or an IP address';
+/** Why `server` is not a Valun server URL, in words that follow the setting as shownServer() names it ('"http:" has no
+ *  host'), or null for one: scheme://host[:port][/path], the scheme http or https (any case), the host a name of
+ *  letters, digits, dots, hyphens and underscores (a name outside ASCII in its xn-- form) or an IP address (IPv6 in
+ *  brackets), the port a number from 1 to 65535, and no user name or password, query, fragment, space, backslash or
+ *  control character. */
+export function serverProblem(server) {
+  if (typeof server !== 'string') return 'is not text';
+  if (!server) return 'is empty';
+  if (/[\\\s\p{C}\p{Z}]/u.test(server)) return 'has a space, a backslash or a control character in it';
+  const m = /^([A-Za-z][A-Za-z0-9+.-]*):(.*)$/s.exec(server);
+  const scheme = m ? m[1].toLowerCase() : null, rest = m ? m[2] : '';
+  if (scheme !== 'http' && scheme !== 'https') {
+    return scheme !== null && rest.startsWith('//') ? 'is not an http:// or https:// URL'
+      : 'has no scheme (a server URL starts with https://)';
+  }
+  if (!rest.startsWith('//')) return 'has no host';
+  const authority = rest.slice(2).split(/[/?#]/, 1)[0];
+  if (authority.includes('@')) return SERVER_USERINFO;
+  if (/[?#]/.test(server)) return 'has a query or a fragment (? or #), which a server URL never carries';
+  let host = authority, port = '';
+  if (authority.startsWith('[')) {                 // an IPv6 address, [::1]
+    const end = authority.indexOf(']');
+    if (end < 0) return SERVER_HOST;
+    host = authority.slice(0, end + 1);
+    const after = authority.slice(end + 1);
+    if (after && !after.startsWith(':')) return SERVER_HOST;
+    port = after.slice(1);
+  } else if (authority.includes(':')) {
+    const i = authority.indexOf(':');
+    [host, port] = [authority.slice(0, i), authority.slice(i + 1)];
+  }
+  if (!host) return 'has no host';
+  if (host.startsWith('[') ? host.includes('%') || !ipv6Literal(host) : !/^[A-Za-z0-9._~-]+$/.test(host)) return SERVER_HOST;
+  if (port && !(/^[0-9]+$/.test(port) && Number(port) >= 1 && Number(port) <= 65535)) {
+    return 'has a port that is not a number from 1 to 65535';
+  }
+  try {
+    new URL(server);                               // as fetch reads it too
+  } catch {
+    return 'has a host or port that is not valid';
+  }
+  return null;
+}
+/** Is `host` ('[...]') an IPv6 address, as the URL parser reads one? */
+function ipv6Literal(host) {
+  try {
+    return new URL(`http://${host}/`).hostname.startsWith('[');
+  } catch {
+    return false;
+  }
+}
+/** A server setting as an error names it: in double quotes (JSON, characters outside ASCII escaped, as Python's
+ *  json.dumps), at most 120 characters; 'it' for one with an @ in it, which may carry a password. */
+function shownServer(server) {
+  if (typeof server !== 'string' || server.includes('@')) return 'it';
+  return JSON.stringify(server.length <= 120 ? server : server.slice(0, 117) + '...')
+    .replace(/[\u007f-￿]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+/** The URL a request to `path` goes to on `server` (`setting`: where that server came from, for the words), judged as
+ *  fetch reads `server + path` (the RC's review, round 3): the server a server URL (serverProblem), the path from its
+ *  root, and the joined URL on the server's own origin. Otherwise nothing is sent: unreachable, cause not_connected,
+ *  naming the setting (as for a URL fetch cannot parse), or bad_arguments for a path. */
+function requestUrl(server, path, setting) {
+  const why = serverProblem(server);
+  if (why !== null) {                              // setting: 'client' (the server option) or 'profile' (state.server)
+    const fix = setting === 'client' ? ''
+      : ' Correct the profile\'s "server" (`valun --profile NAME config server URL` with the Python client), or give '
+        + 'this Client a server option.';
+    throw new ValunError('unreachable', `${setting === 'client' ? 'The server option' : 'This profile\'s server'} must be an `
+      + `http(s) URL with a host, such as ${EXAMPLE_SERVER}: ${shownServer(server)} ${why}. Nothing was sent.${fix}`,
+    undefined, {cause: 'not_connected', setting});
+  }
+  let url = null;
+  try {
+    if (typeof path === 'string' && path.startsWith('/')) url = new URL(server + path);
+  } catch { /* below */ }
+  if (url === null || url.origin !== new URL(server).origin) {
+    throw new ValunError('bad_arguments', 'a request path starts with / (from the server\'s root); nothing was sent');
+  }
+  return url;
+}
+
+/** The https:// address of an http:// server URL (the same host, a port that is not 80, the path), or null. */
+function httpsOf(server) {
+  try {
+    const u = new URL(server);
+    if (u.protocol !== 'http:') return null;
+    return `https://${u.hostname}${u.port && u.port !== '80' ? `:${u.port}` : ''}${u.pathname.replace(/\/+$/, '')}`;
+  } catch {
+    return null;
+  }
+}
+/** Would NO_PROXY's `value` keep a request to `host` (as a URL's host names it: IPv6 in brackets) and `port` from the
+ *  proxy, as every undici reads it (EnvHttpProxyAgent: entries apart by commas or spaces, '*' alone, a port after the
+ *  last colon, a leading '.' or '*.' for a domain and its names, else the exact host)? Only what each of undici 6
+ *  (Node 22), 7 (Node 24) and 8 (Node 26) reads so, whichever the dispatcher is: undici 7 and 8 take an entry that
+ *  starts with '*' but not '*.' for no name (undici 7 a '*' among other entries too), where undici 6 takes it for the
+ *  end of a host name, as this client did (found while fixing the RC's review, round 5: with NO_PROXY '*0.0.1', or
+ *  'example.com,*', it sent the token for 127.0.0.1 directly, and Node 24's fetch sent it through the proxy). */
+export function noProxyNames(value, host, port) {
+  if (value === '*') return true;
+  for (const entry of String(value).split(/[,\s]/)) {
+    if (!entry) continue;
+    const m = entry.match(/^(.+):(\d+)$/);
+    const name = (m ? m[1] : entry).toLowerCase(), p = m ? Number.parseInt(m[2], 10) : 0;
+    if (p && p !== port) continue;
+    if (name.startsWith('*') && !name.startsWith('*.')) continue;
+    if (!/^[.*]/.test(name) ? host === name : host.endsWith(name.replace(/^\*/, ''))) return true;
+  }
+  return false;
+}
+// The process-wide dispatcher Node's fetch sends every request through (undici's global dispatcher): Node's own Agent,
+// made at the first fetch; Node's EnvHttpProxyAgent, made at its start with NODE_USE_ENV_PROXY=1 or --use-env-proxy;
+// or whatever an application set with setGlobalDispatcher. Where undici keeps it depends on its version
+// (process.versions.undici): undici 5 to 7 (Node 18 to 25) in the .1 slot, which their fetch reads (undici 7 puts it in
+// .2 too); undici 8 (Node 26) in .2, which its fetch reads, with a Dispatcher1Wrapper around it in .1 for older undici
+// code in the process (fetchDispatcher; the RC's review, round 5, js-node26-local-server-refused: this client read .1
+// only, so on Node 26 it took that wrapper for an application's dispatcher and refused every token to a server on this
+// machine once the process had made a fetch, NO_PROXY or not; and js-node26-tls-guard-misses-undici8-dispatcher: the
+// wrapper keeps its dispatcher's TLS settings out of sight, so one that checks no certificate went unseen).
+const GLOBAL_DISPATCHER_1 = Symbol.for('undici.globalDispatcher.1');
+const GLOBAL_DISPATCHER_2 = Symbol.for('undici.globalDispatcher.2');
+const DISPATCHER1_WRAPPER = 'Dispatcher1Wrapper';
+// Node's own fetch, as every Node from 18.0.0 to 26 defines globalThis.fetch: its source loads Node's undici
+// (`require('internal/deps/undici/undici')`, which no code outside Node can do), through `lazyUndici().fetch(` up to
+// Node 21.0. It sends every request through the global dispatcher (fetchDispatcher), which nodeRoute and tlsRefusal
+// judge. A fetch whose source is anything else (an application's or a library's wrapper, Node's own fetch bound,
+// another runtime's) may send a request anywhere, whatever that dispatcher is.
+const NODE_FETCH_SOURCE = /\brequire\('internal\/deps\/undici\/undici'\)|\blazyUndici\(\)\.fetch\(/;
+const functionSource = Function.prototype.toString;
+/** Is `f` Node's own fetch (NODE_FETCH_SOURCE)? */
+function nodeFetch(f) {
+  try {
+    return typeof f === 'function' && NODE_FETCH_SOURCE.test(functionSource.call(f));
+  } catch {
+    return false;
+  }
+}
+/** The value of undici's own field `name` of `object` (a symbol it describes so), or undefined. */
+function undiciField(object, name) {
+  if (object === null || typeof object !== 'object') return undefined;
+  try {
+    const k = Object.getOwnPropertySymbols(object).find(s => s.description === name);
+    return k === undefined ? undefined : object[k];
+  } catch {
+    return undefined;
+  }
+}
+/** The class name of a dispatcher, when it is a plain name (for a message), or null. */
+function className(d) {
+  const n = d?.constructor?.name;
+  return typeof n === 'string' && /^[A-Za-z_$][A-Za-z0-9_$]{0,59}$/.test(n) ? n : null;
+}
+/** The major version of the undici this Node bundles (process.versions.undici: '8.12.4' on Node 26.13.1), or 0. */
+function undiciMajor() {
+  const m = /^(\d+)\./.exec(String(globalThis.process?.versions?.undici ?? ''));
+  return m ? Number(m[1]) : 0;
+}
+/** The global dispatcher Node's own fetch sends through now, or undefined before a fetch made one: the .2 slot with
+ *  undici 8 or later, else .1 (GLOBAL_DISPATCHER_1). A Dispatcher1Wrapper there holds the dispatcher it sends through
+ *  in a private field. undici 8's setGlobalDispatcher(d) puts d in .2 and a wrapper of d in .1, so on a Node before 26
+ *  an application's dispatcher set by npm's undici 8 is sent through that wrapper: it is judged as the dispatcher in .2
+ *  beside it. Any other wrapper (one set as the global dispatcher itself) is judged as what it is, a dispatcher this
+ *  client cannot see into. */
+function fetchDispatcher() {
+  const d = globalThis[undiciMajor() >= 8 ? GLOBAL_DISPATCHER_2 : GLOBAL_DISPATCHER_1];
+  if (className(d) !== DISPATCHER1_WRAPPER) return d;
+  const held = globalThis[GLOBAL_DISPATCHER_2];
+  return held !== d && held !== undefined && held !== null && className(held) !== DISPATCHER1_WRAPPER ? held : d;
+}
+/** Does the dispatcher `d` send through another dispatch than its class's (the RC's review, round 4,
+ *  js-composed-agent-judged-as-nodes-own-agent)? So is undici 7's Agent.compose(): a Proxy whose class name is still
+ *  'Agent', and whose dispatch runs the interceptors given, which may send a request anywhere (undici 6's compose made
+ *  a ComposedDispatcher, another class). A dispatch an application set on the object itself is one too. */
+function composedDispatch(d) {
+  try {
+    return d.dispatch !== Object.getPrototypeOf(d)?.dispatch;
+  } catch {
+    return true;
+  }
+}
+/** How Node's own fetch would send this plain-http URL (a server on this machine), judged from the dispatcher it uses
+ *  (the RC's review, round 3: from the environment and the class name only, an application's ProxyAgent and a proxy
+ *  Node read at its start went unseen): null directly; {via: 'proxy', name} through Node's environment proxy
+ *  (EnvHttpProxyAgent: the http proxy it was made with, whatever HTTP_PROXY says now, unless NO_PROXY, which undici
+ *  reads at each request, names the host; name: the variable that names it now, or null); {via: 'dispatcher', name}
+ *  through another dispatcher than Node's own Agent, which may proxy everything, one composed with interceptors
+ *  included (composedDispatch). With no dispatcher yet (no fetch so far), Node's environment proxy is on only with
+ *  NODE_USE_ENV_PROXY=1 or --use-env-proxy at its start. The dispatcher it uses: fetchDispatcher(). */
+function nodeRoute(url) {
+  const e = environment();
+  const host = url.host.replace(/:\d*$/, '').toLowerCase();
+  const named = () => noProxyNames(e.no_proxy ?? e.NO_PROXY ?? '', host, Number.parseInt(url.port, 10) || 80);
+  const variable = () => Object.keys(e).includes('http_proxy') ? 'http_proxy'
+    : Object.keys(e).includes('HTTP_PROXY') ? 'HTTP_PROXY' : null;      // as it is set (Windows: either case)
+  const d = fetchDispatcher();
+  if (d !== undefined && d !== null) {
+    const name = className(d);
+    if ((name === 'Agent' || name === 'EnvHttpProxyAgent') && composedDispatch(d)) {
+      return {via: 'dispatcher', name: `${name} composed with interceptors`};
+    }
+    if (name === 'Agent') return null;                // Node's own: no proxy
+    if (name === 'EnvHttpProxyAgent') {
+      const proxied = undiciField(d, 'http proxy agent'), direct = undiciField(d, 'no proxy agent');
+      if (proxied !== undefined && proxied === direct) return null;     // made with no proxy for http
+      return named() ? null : {via: 'proxy', name: variable()};
+    }
+    return {via: 'dispatcher', name};
+  }
+  const on = e.NODE_USE_ENV_PROXY === '1' || (globalThis.process?.execArgv ?? []).includes('--use-env-proxy');
+  if (!on || !(e.http_proxy ?? e.HTTP_PROXY) || named()) return null;
+  return {via: 'proxy', name: variable()};
+}
+/** Does the dispatcher `d` (or one it holds: Node's environment proxy agent's) skip the server's certificate check
+ *  (connect.rejectUnauthorized false, or the tls option's, or a ProxyAgent's requestTls so)? What it was made with, as
+ *  undici keeps it; a dispatcher whose settings this client cannot read (a Dispatcher1Wrapper fetchDispatcher cannot
+ *  see into, say) is not judged. undici's tls option holds an Agent's TLS settings too: connect's own
+ *  rejectUnauthorized wins over it, and a connect function of its own replaces both (found while fixing the RC's
+ *  review, round 5: an Agent made with tls: {rejectUnauthorized: false} went unseen on every Node, and the agent and
+ *  owner tokens went to a server whose certificate Node was not given). */
+function uncheckedDispatcher(d, depth = 0) {
+  if (d === null || typeof d !== 'object' || depth > 2) return false;
+  const off = o => o !== null && typeof o === 'object' && o.rejectUnauthorized === false;
+  const agentOff = o => off(o?.connect)
+    || (typeof o?.connect !== 'function' && o?.connect?.rejectUnauthorized === undefined && off(o?.tls));
+  const options = undiciField(d, 'options'), proxyOptions = undiciField(d, 'proxy agent options');
+  if (agentOff(options) || off(undiciField(d, 'request tls settings')) || off(proxyOptions?.connect)
+      || off(proxyOptions?.requestTls)) {
+    return true;
+  }
+  return ['no proxy agent', 'http proxy agent', 'https proxy agent', 'proxy agent']
+    .some(f => uncheckedDispatcher(undiciField(d, f), depth + 1));
+}
+/** The refusal of a request over https that carries a token, or whose answer does, while Node's fetch checks no
+ *  certificate (NODE_TLS_REJECT_UNAUTHORIZED=0, or a global dispatcher made so): any server could then read and use the
+ *  token, so nothing is sent (tls_unverified; the RC's review, round 3). null to send it. `url`: the URL fetch is given
+ *  (requestUrl), never the server alone (round 3: a server with no host was no URL, so this sent it as asked).
+ *  `sender`, whose fetch sends it (request()): 'node', or 'replaced' (a globalThis.fetch that is not Node's own, whose
+ *  own TLS settings are unknown here: judged by what holds for every fetch in this process, NODE_TLS_REJECT_UNAUTHORIZED
+ *  and the global dispatcher, which a wrapper that hands requests on to Node's fetch uses); 'given' (options.fetch, not
+ *  Node's own) is never refused. */
+function tlsRefusal(server, url, path, tok, sender) {
+  if (url.protocol !== 'https:' || sender === 'given' || !(tok || SECRET_ROUTES.has(path.split('?', 1)[0]))) return null;
+  const env = String(environment().NODE_TLS_REJECT_UNAUTHORIZED ?? '') === '0';
+  const d = fetchDispatcher();
+  if (!env && !uncheckedDispatcher(d)) return null;
+  const what = env ? 'NODE_TLS_REJECT_UNAUTHORIZED=0 turns off Node\'s check of a server\'s certificate'
+    : `this process's fetch dispatcher (${className(d) ?? 'set with setGlobalDispatcher'}) does not check a server's certificate`
+      + ' (rejectUnauthorized: false)';
+  const fix = env ? 'Unset it; a certificate authority this machine does not trust goes in NODE_EXTRA_CA_CERTS'
+    : 'The application that runs this client checks certificates, or gives this client a fetch that does (options.fetch)';
+  return new ValunError('tls_unverified', `${server}: ${what}, so this client sends it no token, nor a join or an `
+    + 'enrollment, whose answers carry one: whoever answered in its place could read and use them. Nothing was sent. '
+    + fix, undefined, {cause: 'tls_unverified', via: env ? 'env' : 'dispatcher'});
+}
+/** The plain_http refusal of a request that carries a token, or whose answer does, or null to send it (above). `url`:
+ *  the URL fetch is given (requestUrl); `sender`, whose fetch sends it (tlsRefusal): to this machine, Node's own is
+ *  judged by its dispatcher (nodeRoute), one in options.fetch sends as asked, and a replaced one may send anywhere. */
+function plainHttpRefusal(server, url, path, tok, sender) {
+  if (url.protocol !== 'http:' || !(tok || SECRET_ROUTES.has(path.split('?', 1)[0])) || plainHttpAllowed()) return null;
+  if (!loopbackHost(url.hostname)) {
+    const https = httpsOf(server);
+    return new ValunError('plain_http', `${server} is plain http on another machine, so this client sends it no token, nor `
+      + 'a join or an enrollment, whose answers carry one: over plain http a token crosses the network in clear text, '
+      + `for anyone on the way to read and use. Nothing was sent. Use its https:// address${https ? ` (${https})` : ''}, or, `
+      + `only on a network you trust, set ${PLAIN_HTTP_ENV}=1 to send tokens over plain http anyway`, undefined,
+    {cause: 'plain_http', opt_in: PLAIN_HTTP_ENV});
+  }
+  const route = sender === 'node' ? nodeRoute(url) : sender === 'replaced' ? {via: 'fetch'} : null;
+  if (route === null) return null;
+  if (route.via === 'fetch') {
+    return new ValunError('plain_http', `${server} is plain http on this machine, but this process's fetch is not Node's own `
+      + '(an application or a library replaced globalThis.fetch), so this client cannot tell whether it sends it through a '
+      + 'proxy, which would read the token in clear text. Nothing was sent. Give this client the fetch to use '
+      + `(options.fetch), use its https:// address, or, only if you trust that fetch, set ${PLAIN_HTTP_ENV}=1`, undefined,
+    {cause: 'plain_http', via: 'fetch', opt_in: PLAIN_HTTP_ENV});
+  }
+  if (route.via === 'dispatcher') {
+    return new ValunError('plain_http', `${server} is plain http on this machine, but this process's fetch dispatcher `
+      + `(${route.name ?? 'an object'}, set with setGlobalDispatcher) may send it through a proxy, which would read the token `
+      + 'in clear text, and this client cannot send it directly. Nothing was sent. Give this client a fetch that reaches it '
+      + `directly (options.fetch), use its https:// address, or, only if you trust that dispatcher, set ${PLAIN_HTTP_ENV}=1`,
+    undefined, {cause: 'plain_http', via: 'dispatcher', opt_in: PLAIN_HTTP_ENV});
+  }
+  const which = route.name ? `the proxy ${route.name} names` : 'the proxy HTTP_PROXY named when Node started';
+  return new ValunError('plain_http', `${server} is plain http on this machine, but Node's fetch sends it through ${which} `
+    + '(its environment proxy is on: NODE_USE_ENV_PROXY), which would read the token in clear text, and this client cannot '
+    + `send it directly. Nothing was sent. Name it in NO_PROXY as its URL does (${url.host.replace(/:\d*$/, '')}), or, only `
+    + `if you trust that proxy, set ${PLAIN_HTTP_ENV}=1`, undefined,
+  {cause: 'plain_http', via: 'proxy', opt_in: PLAIN_HTTP_ENV});
 }
 
 /**
@@ -391,6 +810,19 @@ function pinProblem(pins, trackerNftId, denomination) {
   return null;
 }
 
+/**
+ * wrong_network unless GET /info (`info`) names `network`, the profile's own (Client.network: the pilot's for a profile
+ * enrolled before 0.5, which names none). A server that names another network, or none, does not serve the profile's:
+ * it knows neither its participant nor its key, and nothing is pinned or signed for it (the onboarding review). null
+ * when it names `network`.
+ */
+function networkProblem(network, info) {
+  const net = isObject(info) ? (info.network ?? null) : null;
+  if (net === network) return null;
+  return new ValunError('wrong_network', `the server is on network ${JSON.stringify(net)}, not ${network}; `
+    + 'nothing was signed');
+}
+
 /** Node's errors from the file system and other system calls (Python's OSError). */
 function isSystemError(e) {
   return e instanceof Error && (typeof e.errno === 'number' || typeof e.syscall === 'string');
@@ -531,6 +963,7 @@ export class Client {
   #pin;
   #signerRetries;
   #retryDelayMs;
+  #readRetryWaitsMs;
   #server;
   #queue = {tail: Promise.resolve()};           // this client's state changes, one after another (shared by fresh())
   #advertised = [];                             // the features the last GET /info listed (for the capability header)
@@ -540,12 +973,15 @@ export class Client {
    * @param {object} options
    *   store          an object with .state (non-secret, plain object), .secret(), .token(), .save() and
    *                  .saveCredentials(secretHex, token) (save/saveCredentials may return a Promise). Default: MemoryStore.
-   *   server         base URL of the Valun server, e.g. "https://host" (the API is under /pilot/v1). Kept in state.
+   *   server         base URL of the Valun server, e.g. "https://host" (the API is under /pilot/v1). Kept in state. A
+   *                  request to one that is not a server URL (serverProblem: "http://", with no host, say) sends nothing.
    *   timeoutMs      per request (default 30000).
    *   fetch          a fetch implementation (default globalThis.fetch).
    *   pin            {trackerNftId, denomination}: values the network must have (spec 15.2: SHOULD pin).
    *   signerRetries  how many times to send the same signed request again after 503 signer_unavailable (default 0:
    *                  the error is thrown, as the Python client does); retryDelayMs (default 1000) doubles each time.
+   *   readRetryWaitsMs  the waits (ms) before each new try of a read whose connection was cut on the way (default
+   *                  READ_RETRY_WAITS_MS, [500, 1500]: three tries in all; [] for one try). Writes are never sent again.
    *   declareRoles   false for a client whose adapter signs no consent by itself: it declares no consent role in
    *                  X-Valun-Features, whatever its consent policy says, and withdraws the roles it declared before
    *                  (featuresHeader; decision D-3 b). Default true. A ValunAgent sets it from its own options.
@@ -553,11 +989,15 @@ export class Client {
    */
   constructor(options = {}) {
     const {store = new MemoryStore(), server, timeoutMs = 30_000, fetch, pin = {}, signerRetries = 0, retryDelayMs = 1000,
-      now, randomBytes, generateSecret, declareRoles = true} = options;
+      readRetryWaitsMs = READ_RETRY_WAITS_MS, now, randomBytes, generateSecret, declareRoles = true} = options;
     this.declareRoles = declareRoles !== false;
     if (!Number.isInteger(signerRetries) || signerRetries < 0) throw new TypeError('signerRetries must be a whole number');
+    if (!Array.isArray(readRetryWaitsMs) || !readRetryWaitsMs.every(ms => Number.isFinite(ms) && ms >= 0)) {
+      throw new TypeError('readRetryWaitsMs must be an array of waits in ms');
+    }
     this.#signerRetries = signerRetries;
     this.#retryDelayMs = retryDelayMs;
+    this.#readRetryWaitsMs = Object.freeze([...readRetryWaitsMs]);
     for (const m of ['secret', 'token', 'save', 'saveCredentials']) {
       if (typeof store?.[m] !== 'function') throw new TypeError(`store must have a ${m}() method`);
     }
@@ -613,7 +1053,8 @@ export class Client {
   fresh() {
     const Cls = typeof this.constructor === 'function' ? this.constructor : Client;
     const c = new Cls({store: this.#store, server: this.#server ?? undefined, timeoutMs: this.#timeoutMs, fetch: this.#fetch,
-      pin: {...this.#pin}, signerRetries: this.#signerRetries, retryDelayMs: this.#retryDelayMs, now: this.#now,
+      pin: {...this.#pin}, signerRetries: this.#signerRetries, retryDelayMs: this.#retryDelayMs,
+      readRetryWaitsMs: this.#readRetryWaitsMs, now: this.#now,
       randomBytes: this.#randomBytes, generateSecret: this.#generateSecret, declareRoles: this.declareRoles});
     c.#queue = this.#queue;
     for (const k of Object.keys(this)) {
@@ -700,6 +1141,18 @@ export class Client {
     } catch { /* not retried */ }
   }
 
+  /**
+   * Record that this profile's participant finished the sandbox tour (state.sandbox_tour_done = its participant id), so
+   * the agent layer's sandbox_next_steps stays done whatever is dealt with the sandbox agents later (the 0.7.2 clean-user
+   * test). Never rejects: a mark that fails is not retried.
+   */
+  async markSandboxTourDone() {
+    const pid = this.participantId;
+    try {
+      await this.#update(state => { state.sandbox_tour_done = pid; });
+    } catch { /* not retried */ }
+  }
+
   /** Read the records again where the store can (another process may have recorded notes since this one loaded). */
   async #reload() {
     if (typeof this.#store.reload !== 'function') return;
@@ -727,6 +1180,7 @@ export class Client {
   async request(method, path, body = undefined, {auth = true, token = undefined} = {}) {
     const server = this.#server || this.state.server;
     if (!server) throw new ValunError('not_configured', 'no Valun server configured');
+    const url = requestUrl(server, path, this.#server ? 'client' : 'profile');   // a server with no host: nothing sent
     const f = this.#fetch || globalThis.fetch;
     if (typeof f !== 'function') throw new ValunError('not_configured', 'no fetch implementation: pass options.fetch');
     const headers = {Accept: 'application/json'};
@@ -736,9 +1190,22 @@ export class Client {
       headers['Content-Type'] = 'application/json';
     }
     const tok = token || (auth ? this.#store.token() : null);
+    // Whose fetch sends it, for the guards: Node's own (nodeFetch, in options.fetch or not), judged by the dispatcher it
+    // sends through; another one passed in options.fetch, as asked; or a globalThis.fetch that is not Node's own, which
+    // may send anywhere (the RC's review, round 4: it was judged as Node's own).
+    const sender = nodeFetch(f) ? 'node' : this.#fetch ? 'given' : 'replaced';
+    const refusal = plainHttpRefusal(server, url, path, tok, sender) ?? tlsRefusal(server, url, path, tok, sender);
+    if (refusal !== null) throw refusal;          // a token in clear text, or to a server whose certificate is not checked
     if (tok) headers.Authorization = 'Bearer ' + tok;
     const caps = this.featuresHeader();
     if (caps) headers[FEATURES_HEADER] = caps;
+    const safe = SAFE_METHODS.has(method), waits = this.#readRetryWaitsMs;
+    let reads = 0;                                // the new tries of a read made so far (READ_RETRY_WAITS_MS)
+    const readAgain = async () => {
+      if (!(safe && reads < waits.length)) return false;
+      await new Promise(resolve => setTimeout(resolve, waits[reads++]));
+      return true;
+    };
     for (let attempt = 0; ; attempt++) {
       const {signal, cancel} = timeoutSignal(this.#timeoutMs);
       let res, text;
@@ -747,8 +1214,31 @@ export class Client {
         res = await f.call(globalThis, server + path, {method, headers, body: payload, signal, redirect: 'error'});
         text = await res.text();
       } catch (e) {
-        const why = e?.name === 'AbortError' || e?.name === 'TimeoutError' ? 'timed out' : (e?.message || String(e));
-        throw new ValunError('unreachable', `cannot reach ${server}: ${why}`);
+        if (refusedRedirect(e)) {               // never followed, so nothing was done (and never sent again)
+          throw new ValunError('redirected', `${server} answered with a redirect. This client follows no redirect, so `
+            + `nothing was done (${REDIRECT_WHY})`, undefined, {cause: 'redirect', location: null});
+        }
+        const late = timedOut(e), code = failureCode(e);
+        const named = typeof code === 'string' && code ? ` (${code})` : '';
+        const why = late ? 'timed out' : (e?.message || String(e)) + named;
+        const unknown = safe ? {} : {outcome: 'unknown'};
+        const sentWords = safe ? '' : '. The request was sent, so the server may have done it: read what it holds '
+          + 'before sending it again';
+        if (late) {                               // no answer in time: asked once (the 0.7.2 review)
+          const within = this.#timeoutMs > 0 ? ` within ${this.#timeoutMs / 1000} s` : '';
+          const busy = ': it may be busy, or something between this machine and the server held the answer, not a '
+            + 'refusal: try again in a minute';
+          throw new ValunError('unreachable', `${server} did not answer${within} (timed out)${safe ? busy : sentWords}`,
+            undefined, {cause: 'timed_out', ...unknown});
+        }
+        // An answer whose body stopped arriving, or a connection cut on the way: a read is sent again.
+        if ((res !== undefined || cutOnTheWay(e)) && await readAgain()) continue;
+        const tries = reads ? ` (${reads + 1} tries)` : '';
+        if (res !== undefined || cutOnTheWay(e)) {  // the server was reached, and the connection was cut
+          throw new ValunError('unreachable', `the connection to ${server} was cut before its whole answer arrived `
+            + `(${why})${tries}${sentWords}`, undefined, {cause: 'connection_cut', ...unknown});
+        }
+        throw new ValunError('unreachable', `cannot reach ${server}: ${why}${tries}`);
       } finally {
         cancel();
       }
@@ -758,7 +1248,8 @@ export class Client {
           try {
             out = JSON.parse(text);
           } catch {
-            throw new ValunError('bad_response', `the server sent a response that is not JSON (HTTP ${res.status})`, res.status);
+            throw new ValunError('bad_response', `the server sent a response that is not JSON (HTTP ${res.status})`,
+              res.status, {cause: 'not_json'});
           }
         }
         if (caps && (token ?? null) === null && auth && tok && authenticatedRoute(path)) await this.#rolesDeclared(caps);
@@ -771,9 +1262,12 @@ export class Client {
       } catch { /* not JSON */ }
       const {error, message, ...extra} = j;
       const code = typeof error === 'string' && error ? error : 'http_error';
+      // A proxy's own 502, 503 or 504 (no Valun error in its body): the server did not answer yet; a read is sent again.
+      if (code === 'http_error' && PROXY_STATUSES.has(res.status) && await readAgain()) continue;
       // spec 15.2: on 503 signer_unavailable nothing was recorded; send the same signed request again, with back-off
-      if (res.status === 503 && code === 'signer_unavailable' && attempt < this.#signerRetries) {
-        await new Promise(resolve => setTimeout(resolve, this.#retryDelayMs * 2 ** attempt));
+      const signerAttempt = attempt - reads;
+      if (res.status === 503 && code === 'signer_unavailable' && signerAttempt < this.#signerRetries) {
+        await new Promise(resolve => setTimeout(resolve, this.#retryDelayMs * 2 ** signerAttempt));
         continue;
       }
       const msg = (typeof message === 'string' && message) || (typeof error === 'string' && error) || `HTTP ${res.status}`;
@@ -910,7 +1404,8 @@ export class Client {
   // guarantees that back the agent in public, and its record. Anyone can read a card (card) and check a payment against it
   // (checkPayer): public reads that sign nothing. A card is read without a token; a check carries this agent's own token,
   // because the server shows the cover (what guarantees would pay the payee) only to the payee itself. Where the owner has
-  // not published its card, both answer 404 card_not_public.
+  // not published its card, both answer 404 card_not_public, but for the payee's own check on a server with fix inbox #87,
+  // which answers for the payee's own side.
 
   /**
    * The participant `who` names, as {id, handle}. `who` is stripped and lower-cased; a participant id (vp_ + 12 hex) is
@@ -971,6 +1466,12 @@ export class Client {
    * step (payee_side {verdict, rule, reasons}, from a server that sends it). amount is a whole number of this network's
    * unit, at least 1 (bad_arguments otherwise, before anything is read). card_not_public (404) when the payer's owner has
    * not published its card.
+   *
+   * Fix inbox #87: a server with it gives every answer payer_side, the payer's own {verdict, rule, reasons}, and gives the
+   * payee's own check (its token) the step's verdict from both sides, as it enforces them: decline if either side
+   * declines, ask_owner if an owner on either side decides first, accept only if both go ahead. It answers the payee's
+   * own check of a payer whose owner has not published its card too, for the payee's side only: verdict decline when that
+   * side declines, else 'unknown'; payer_side, mandate, room_left, record and card_hash null, the cover not shown.
    *
    * dealId (fix inbox #60; &deal=): the offer under review, a deal where the payer pays the payee, still in its offer
    * phase (open, waiting for its proposer's owner, or accepted and waiting for an owner), at exactly `amount`, its price
@@ -1038,11 +1539,18 @@ export class Client {
     if (!isObject(info)) return;
     const nft = info.tracker_nft_id, denom = info.denomination;
     if (!(typeof nft === 'string' && nft && typeof denom === 'string' && denom)) return;
+    if (!truthy(this.state.participant_id ?? null)) {               // only an enrolled profile is pinned
+      if (this.#pinned()) this.#checkPins(nft, denom);
+      return;
+    }
+    // An enrolled profile serves only a server of its own network, pinned or not: a pilot profile that valun 0.7.1
+    // pinned to the testnet's tracker is refused here too, before any approval is asked for terms that cannot be signed.
+    const err = networkProblem(this.network, info);
+    if (err) throw err;
     if (this.#pinned()) {
       this.#checkPins(nft, denom);
       return;
     }
-    if (!truthy(this.state.participant_id ?? null)) return;     // only an enrolled profile is pinned
     await this.#update(state => {
       const err = pinProblem(pinsOf(state), nft, denom);
       if (err) throw err;
@@ -1115,7 +1623,7 @@ export class Client {
     if (pyGet(t, 'protocol') !== GUARANTEE_PROTOCOL || pyGet(t, 'network') !== this.network) {
       throw new ValunError('wrong_network', 'the guarantee is for a different network or protocol');
     }
-    const info = await this.info();
+    const info = await this.#onNetwork();
     if (pyGet(t, 'tracker_nft_id') !== info.tracker_nft_id || pyGet(t, 'denomination') !== info.denomination) {
       throw new ValunError('wrong_tracker', 'the guarantee names a different tracker or unit than this network');
     }
@@ -1162,7 +1670,7 @@ export class Client {
     if (issuerId === creditorId || [issuerId, creditorId].includes(this.participantId)) {
       throw new ValunError('bad_arguments', 'the issuer, the creditor and you (the backer) must be three different participants');
     }
-    const info = await this.info();
+    const info = await this.#onNetwork();
     const now = this.#now(), due = now + dueInHours * HOUR, expires = due + callableForHours * HOUR;
     const guaranteeId = 'vg_' + bytesToHex(this.#randomBytes(8)), nonce = bytesToHex(this.#randomBytes(16));
     const issuer = {id: issuerId, pubkey: await this.#registeredKey(issuerId)};
@@ -1396,13 +1904,22 @@ export class Client {
     return p.pubkey;
   }
 
-  /** GET /info, checked against the protocol constants and the pins given to the constructor. */
-  async #networkInfo() {
+  /**
+   * GET /info, for terms built or checked from it: refused before anything is signed when the server does not name
+   * this profile's network (wrong_network; Client.network, so also for a profile enrolled before 0.5, which names
+   * none), also for a profile pinned to a tracker that server names too. The Python _network_info.
+   */
+  async #onNetwork() {
     const info = await this.info();
     if (!isObject(info)) throw new ValunError('bad_response', 'GET /info did not return an object');
-    if (!Object.hasOwn(NETWORKS, info.network) || (this.state.network && info.network !== this.state.network)) {
-      throw new ValunError('wrong_network', `the server is on network ${JSON.stringify(info.network)}, not ${this.network}`);
-    }
+    const err = networkProblem(this.network, info);
+    if (err) throw err;
+    return info;
+  }
+
+  /** GET /info, checked against this profile's network (#onNetwork) and the pins given to the constructor. */
+  async #networkInfo() {
+    const info = await this.#onNetwork();
     if (this.#pin.trackerNftId && info.tracker_nft_id !== this.#pin.trackerNftId) {
       throw new ValunError('wrong_tracker', 'the server names a different tracker than the one pinned for this client');
     }
@@ -1655,6 +2172,7 @@ export class Client {
    */
   async complete(dealId, {expectedDeliverableSha256 = undefined, expectedTermsHash = undefined} = {}) {
     const d = await this.deal(dealId);
+    await this.learnOwnerDecisions(dealId, d);    // a payment held for the owner that ended unreleased is not applied
     const [terms, h, dh] = this.#acceptedDelivery(d, dealId, expectedDeliverableSha256, expectedTermsHash);
     // A pinned (0.4) profile reads /info: a server offering bound_notes/1 takes bound notes, and with any feature the
     // tracker keeps the timestamp residues 995-999 for other operations. Otherwise exactly as 0.3.
@@ -1782,7 +2300,17 @@ export class Client {
     const status = isObject(r) ? r.status : null;
     if (status === 'note_issued') {
       await this.#settle(state => this.#noteApplied(state, dealId, pair, note));
-    } else if (status !== 'completion_awaiting_owner' && status !== 'issuing_note') {
+    } else if (status === 'completion_awaiting_owner') {
+      // Held for the owner: the id of the approval that holds it goes on its attempt record, so that the owner's
+      // decision is known on a later read of the deal (learnOwnerDecisions).
+      const cn = isDict(pyGet(r, 'credit_note')) ? r.credit_note : {};
+      const aid = typeof pyGet(cn, 'approval_id') === 'string' && APPROVAL_ID_RE.test(cn.approval_id) ? cn.approval_id
+        : Client.#heldApproval(r, 'issue_note');
+      if (aid) {
+        const held = {deal_id: dealId, route: 'note', edge: pair, total: note.total, timestamp: note.timestamp};
+        await this.#settle(state => Client.#noteAttemptId(state, held, aid, 'approval_id'));
+      }
+    } else if (status !== 'issuing_note') {
       await this.#settle(forget);               // e.g. note_failed: the tracker does not hold it
     }
     return r;
@@ -2043,6 +2571,7 @@ export class Client {
     }
     this.#secretBytes().fill(0);
     const d = await this.deal(dealId);
+    await this.learnOwnerDecisions(dealId, d);    // a payment held for the owner that ended unreleased is not applied
     const [terms, h, dh] = this.#acceptedDelivery(d, dealId, expectedDeliverableSha256);
     const payee = await this.#registeredKey(terms.payee.id);
     Client.checkDeliverySignature(d.delivery, h, terms.payee.pubkey, payee);
@@ -2086,6 +2615,8 @@ export class Client {
       const pay = isDict(view) && isDict(pyGet(view, 'payment')) ? view.payment : {};
       const tid = nv.shownId(pyGet(pay, 'transfer_id'));
       if (tid) await this.#settle(state => Client.#noteAttemptId(state, a, tid));
+      const aid = status === 'completion_awaiting_owner' ? Client.#heldApproval(view, 'pay_by_transfer') : null;
+      if (aid) await this.#settle(state => Client.#noteAttemptId(state, a, aid, 'approval_id'));   // held for the owner
       if (status === 'paid_by_transfer') {
         await this.#settle(state => guarded(nv.markPaid, state, a.deal_id, 'transfer', a.edge, a.total, a.timestamp));
       } else if (status === 'payment_due') {
@@ -2096,15 +2627,124 @@ export class Client {
     return undefined;                             // not reached: the second attempt returns or throws
   }
 
-  /** Record the server's id of a payment attempt (its transfer id) on my record of it. An id it already has is kept. */
-  static #noteAttemptId(state, attempt, attemptId) {
+  /**
+   * Record the server's id of a payment attempt (its transfer id; key 'approval_id': the id of the owner's approval that
+   * holds it) on my record of it. An id it already has is kept.
+   */
+  static #noteAttemptId(state, attempt, attemptId, key = 'attempt_id') {
     const att = state.transfer_attempts;
     const lst = isDict(att) ? or(pyGet(att, attempt.deal_id), []) : [];
     for (const x of Array.isArray(lst) ? lst : []) {
-      if (isDict(x) && ['route', 'edge', 'total', 'timestamp'].every(k => pyEq(pyGet(x, k), attempt[k])) && !truthy(pyGet(x, 'attempt_id'))) {
-        x.attempt_id = attemptId;
+      if (isDict(x) && ['route', 'edge', 'total', 'timestamp'].every(k => pyEq(pyGet(x, k), attempt[k])) && !truthy(pyGet(x, key))) {
+        x[key] = attemptId;
       }
     }
+  }
+
+  /** The id of the one pending approval of `kind` a deal view lists (this participant's own), or null. */
+  static #heldApproval(view, kind) {
+    const rows = isDict(view) && Array.isArray(pyGet(view, 'approvals')) ? view.approvals : [];
+    const ids = rows.filter(a => isDict(a) && pyGet(a, 'kind') === kind && pyGet(a, 'state') === 'pending'
+      && typeof pyGet(a, 'id') === 'string' && APPROVAL_ID_RE.test(a.id)).map(a => a.id);
+    return ids.length === 1 ? ids[0] : null;
+  }
+
+  /**
+   * What the payer's owner, or the server, decided about a payment of deal `dealId` that this client signed and the
+   * server held for the owner (OWNER_HELD_KINDS), from the deal view `d`, as the Python client's learn_owner_decisions:
+   * each payment attempt whose hold ended without being released (holdEnded: rejected in the owner console, or void) is
+   * recorded as not applied (outcome 'not_applied', server_ended {state, approval_id, at}), and its pending entry is
+   * forgotten. Resolves to the attempts recorded now; a profile that cannot be written leaves the records as they were.
+   */
+  async learnOwnerDecisions(dealId, d) {
+    if (!(isDict(d) && typeof dealId === 'string' && [null, undefined, 'payer'].includes(pyGet(d, 'your_role')))) return [];
+    const rows = (Array.isArray(pyGet(d, 'approvals')) ? d.approvals : []).filter(a => isDict(a)
+      && OWNER_HELD_KINDS.includes(pyGet(a, 'kind')) && typeof pyGet(a, 'id') === 'string' && APPROVAL_ID_RE.test(a.id)
+      && [null, undefined, dealId].includes(pyGet(a, 'deal_id')));
+    const ended = new Map(rows.filter(a => holdEnded(pyGet(a, 'state'))).map(a => [a.id, a]));
+    const cn = isDict(pyGet(d, 'credit_note')) ? d.credit_note : {};
+    const cnote = isDict(pyGet(cn, 'note')) ? cn.note : {};
+    const tooLate = pyGet(d, 'status') === 'note_failed' && pyGet(cn, 'error_code') === 'novation_expired'
+      && natural(pyGet(cnote, 'timestamp')) ? cnote.timestamp : null;
+    const pay = isDict(pyGet(d, 'payment')) ? d.payment : {};
+    if (!ended.size && tooLate === null) return [];
+    const near = (x, b) => {
+      const made = isoToMs(pyGet(x, 'created_at'));
+      return made !== null && made - b.timestamp >= 0 && made - b.timestamp <= HELD_MATCH_MS;
+    };
+    const endedBy = (a, openRows) => {
+      const aid = typeof pyGet(a, 'approval_id') === 'string' && a.approval_id ? a.approval_id : null;
+      if (a.route === 'note' && tooLate !== null && a.timestamp === tooLate) return ['novation_expired', aid, null];
+      if (aid) {
+        const x = ended.get(aid);
+        return x ? [pyGet(x, 'state'), aid, pyGet(x, 'decided_at')] : null;
+      }
+      if (a.route === 'transfer') {
+        const held = [...ended.values()].filter(x => pyGet(x, 'kind') === 'pay_by_transfer');
+        if (held.length && truthy(pyGet(a, 'attempt_id')) && a.attempt_id === pyGet(pay, 'transfer_id')
+            && NEVER_APPLIED_TRANSFER.includes(pyGet(pay, 'state'))) return [serverWord(pay.state), null, null];
+        return null;
+      }
+      const notes = rows.filter(x => pyGet(x, 'kind') === 'issue_note' && near(x, a));
+      if (notes.length !== 1 || !ended.has(notes[0].id) || claimed.has(notes[0].id)) return null;   // another attempt's own
+      const x = notes[0];
+      const mine = openRows.filter(b => b.route === 'note' && !truthy(pyGet(b, 'approval_id')) && near(x, b));
+      return mine.length === 1 && mine[0] === a ? [pyGet(x, 'state'), x.id, pyGet(x, 'decided_at')] : null;
+    };
+    const claimed = new Set();                 // approval ids an attempt record of this deal holds as its own
+    const marks = state => {
+      const att = isDict(state) ? pyGet(state, 'transfer_attempts') : null;
+      const lst = (Array.isArray(isDict(att) ? pyGet(att, dealId) : null) ? att[dealId] : []).filter(isDict);
+      claimed.clear();
+      for (const a of lst) if (typeof pyGet(a, 'approval_id') === 'string') claimed.add(a.approval_id);
+      const openRows = lst.filter(a => pyGet(a, 'outcome') === null
+        && nv.ROUTES.includes(pyGet(a, 'route')) && nv.parseEdge(pyGet(a, 'edge')) !== null
+        && natural(pyGet(a, 'total')) && natural(pyGet(a, 'timestamp')));
+      return openRows.map(a => [a, endedBy(a, openRows)]).filter(([, w]) => w !== null);
+    };
+    await this.#reload();                        // another process may have recorded one
+    if (!marks(this.state).length) return [];   // nothing to record: the profile is not written
+    const found = [];
+    try {
+      await this.#update(state => {
+        for (const [a, [st, aid, at]] of marks(state)) {
+          a.outcome = 'not_applied';
+          a.server_ended = {state: serverWord(st), approval_id: aid, at: isoToMs(at) !== null ? at : null};
+          records.removePending(recordsIn(state), a.edge, a.total, a.timestamp, dealId);
+          found.push({route: a.route, edge: a.edge, total: a.total, timestamp: a.timestamp, server_ended: {...a.server_ended}});
+        }
+      });
+    } catch (e) {
+      if (!isValunError(e) && !isSystemError(e) && !(e instanceof TypeError)) throw e;
+      return [];
+    }
+    return found;
+  }
+
+  /**
+   * learnOwnerDecisions() for each deal not recorded as paid with a payment attempt still open in this client's records
+   * (one GET /deals/{id} each); a deal that cannot be read now is left as its records hold it. Resolves to the attempts
+   * recorded as not applied.
+   */
+  async refreshOwnerDecisions() {
+    const att = pyGet(this.state, 'transfer_attempts');
+    const recs = recordsIn(this.state, false);
+    const paid = isDict(pyGet(recs, nv.PAID_DEALS_KEY)) ? recs[nv.PAID_DEALS_KEY] : {};
+    const found = [];
+    for (const dealId of isDict(att) ? sortedStrings(Object.keys(att)) : []) {
+      const lst = att[dealId];
+      if (Object.hasOwn(paid, dealId) || !DEAL_ID_RE.test(dealId) || !Array.isArray(lst)
+          || !lst.some(a => isDict(a) && pyGet(a, 'outcome') === null)) continue;
+      let d;
+      try {
+        d = await this.deal(dealId);
+      } catch (e) {
+        if (isValunError(e)) continue;
+        throw e;
+      }
+      found.push(...await this.learnOwnerDecisions(dealId, d));
+    }
+    return found;
   }
 
   /** One attempt of payByTransfer(): check the template, save what is about to be signed, sign it. [evaluation, body]. */
@@ -2207,7 +2847,8 @@ export class Client {
       const rows = this.#dealRows(state, dealId, now, read).map(([a, o], i) => ({
         deal_id: dealId, ref: `#${i + 1}`, attempt_id: nv.shownId(pyGet(a, 'attempt_id')), route: a.route, edge: a.edge,
         prior: pyGet(a, 'prior'), total: a.total, timestamp: a.timestamp,
-        outcome: ATTEMPT_OUTCOMES.includes(pyGet(a, 'outcome')) ? a.outcome : null, state: o, paid: Object.hasOwn(paid, dealId)}));
+        outcome: ATTEMPT_OUTCOMES.includes(pyGet(a, 'outcome')) ? a.outcome : null, server_ended: heldEnd(pyGet(a, 'server_ended')),
+        state: o, paid: Object.hasOwn(paid, dealId)}));
       const by = isDict(pyGet(paid, dealId)) ? attemptKey(paid[dealId]) : null;
       const hit = by !== null ? rows.find(r => sameAttemptKey(attemptKey(r), by)) : undefined;
       for (const r of rows) r.paid_by = hit ? hit.ref : null;
@@ -2656,12 +3297,18 @@ export class Client {
     const mine = new Set(Object.keys(sigs).map(s => s.slice(0, s.lastIndexOf(':'))));
     const revisions = {};
     for (const e of it.edges) if (mine.has(e.edge)) revisions[e.edge] = e.revision;
+    // fix inbox #86: the records keep, with each new state written ahead, the signature made over it (before it is sent,
+    // as the write-ahead itself), so they show the after-state this client signed whatever the answer
+    await this.#settle(state => Client.#keepSignatures(state, r.write_ahead.pending, sigs));
     let ans;
     try {
       ans = await this.submitConsent(it.id, sigs, revisions);
     } catch (e) {
       if (!isValunError(e)) throw e;
-      if (typeof e.status === 'number' && e.status >= 400 && e.status < 500) {   // refused: the server recorded none of these
+      // refused: the server recorded none of these, unless it holds every one of this client's slots already
+      // (already_signed: another consent run sent them), when the entries are the states they sign, and stay (fix inbox
+      // #86, review: two runs at once lost the signatures --mine proves a netted edge by)
+      if (typeof e.status === 'number' && e.status >= 400 && e.status < 500 && e.code !== 'already_signed') {
         await this.#settle(state => Client.#forgetPending(state, r.write_ahead.pending));
       }
       const code = serverWord(e.code);
@@ -2678,6 +3325,9 @@ export class Client {
     if (a !== null && tid) await this.#settle(st => Client.#noteAttemptId(st, a, tid));   // a regenerated transfer of my payment
     if (answer === 'applied' && a !== null) {
       await this.#settle(st => guarded(nv.markPaid, st, a.deal_id, a.route, a.edge, a.total, a.timestamp));
+    }
+    if (answer === 'applied' && !rejected.length) {   // fix inbox #86: the item applied, so its new states are the edges' now
+      await this.#settle(st => this.#appliedStates(st, r.write_ahead.pending, sigs));
     }
     if (rejected.length) {
       return ['waiting', Client.#consentEntry(it, r, {code: 'stale_revision', state: answer, rejected,
@@ -2759,6 +3409,35 @@ export class Client {
   static #forgetPending(state, pending) {
     const recs = recordsIn(state);
     for (const p of pending) records.removePending(recs, p.pair, p.total, p.timestamp, p.ref);
+  }
+
+  /**
+   * Fix inbox #86: each new state a consent wrote ahead (pending) keeps, in this client's records, the signature this
+   * client just made over it (its slot '<edge>:new'; records.noteSignature): on an edge it issues, the issuer's signature
+   * of the state the tracker records once the consent applies; on one it is the creditor of, its consent to it. The
+   * Python client's _keep_signatures.
+   */
+  static #keepSignatures(state, pending, sigs) {
+    const recs = recordsIn(state);
+    for (const p of pending) {
+      const sig = Object.hasOwn(sigs, nv.slotKey(p.pair, 'new')) ? sigs[nv.slotKey(p.pair, 'new')] : null;
+      if (sig) records.noteSignature(recs, p.pair, p.total, p.timestamp, p.ref, sig);
+    }
+  }
+
+  /**
+   * Fix inbox #86: a consent the server answered applied: on each edge this client issues, the new state it signed is the
+   * edge's confirmed state now, with its own signature, the issuer's (records.confirm; the 0.3 'issued' record follows).
+   * On an edge it is the creditor of the new state stays pending, with this client's consent signature, until a read of
+   * the edge confirms it (syncEdges). The Python client's _applied_states.
+   */
+  #appliedStates(state, pending, sigs) {
+    for (const p of pending) {
+      const sig = Object.hasOwn(sigs, nv.slotKey(p.pair, 'new')) ? sigs[nv.slotKey(p.pair, 'new')] : null;
+      if (sig && p.direction === 'out' && p.pair.startsWith(`${this.pubkey}>`)) {
+        this.#confirmIn(state, p.pair, {total: p.total, timestamp: p.timestamp, signature: sig});
+      }
+    }
   }
 
   // ---------- circulating credit: my edges (PROTOCOL.md 18.14; design 6.1, 11) ----------
