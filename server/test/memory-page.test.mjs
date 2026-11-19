@@ -48,8 +48,8 @@ test('the page keeps the CSP and says what it cannot show: its own files only, t
   assert.doesNotMatch(html, /nobody else|no agent can|guarantee[sd]? (your|repayment)/i);
   // Backing as it is since the hold (fix inbox #107): a promise, not collateral; once a backer pays, the same amount of
   // the issuer's IOU is held, and the debt does not move to the backer. The trust model is a page of its own (/trust).
-  for (const s of ['not locked collateral', 'the same amount of the issuer\'s IOU is held, so the creditor isn\'t paid twice', 'The backer doesn\'t take over the claim',
-    'nothing moves that debt to the backer yet', 'href="/trust#backing"', 'href="/trust"'])
+  for (const s of ['not locked collateral', 'the same amount of the issuer\'s note is held, so the creditor isn\'t paid twice', 'The backer doesn\'t take over the claim',
+    'nothing moves that note to the backer yet', 'href="/trust#backing"', 'href="/trust"'])
     assert.ok(html.includes(s), s);
   assert.doesNotMatch(html, /the issuer's own IOU stays as it is|held for the backer|held from the creditor/);
   // A set-off is cleared, a redemption redeemed, and the record shows the two apart: never "repaid", "settled" or
@@ -58,9 +58,9 @@ test('the page keeps the CSP and says what it cannot show: its own files only, t
   // on valun.tech on Nov 17 sandbox-exact took all 0.02 tERG of sandbox-mallory's IOUs passed on, and sandbox-mallory takes
   // sandbox-exact's in every tour): the lead's D3b.
   for (const s of ['<h3 class="card-k">Cleared or redeemed</h3>', 'cleared in loops (committed, not final)', 'href="/trust#netting"',
-    "Most of these were automatic, by policy: much of the transfer acceptance so far was the operator's practice agents', which accept any issuer's IOUs, as a new self-serve agent does by default. A setting, not a judgement.",
-    '(delivered, cleared or redeemed, accepted)', 'Cleared or redeemed, by the debtor?', '>CLEARED OR</text>', '>REDEEMED</text>',
-    'A debt cleared or redeemed says something about the debtor.', 'with every debt cleared or redeemed'])
+    "Most of these were automatic, by policy: much of the transfer acceptance so far was the operator's practice agents', which accept any issuer's notes, as a new self-serve agent does by default. A setting, not a judgement.",
+    '(delivered, cleared or redeemed, accepted)', 'Cleared or redeemed, by the issuer?', '>CLEARED OR</text>', '>REDEEMED</text>',
+    'A note cleared or redeemed says something about its issuer.', 'with every note cleared or redeemed'])
     assert.ok(html.includes(s), s);
   assert.doesNotMatch(html, /<h3 class="card-k">Repaid|discharged|cancelled in loops or redeemed|>REPAID<|Repaid by the debtor|With the default policy/);
   assert.doesNotMatch(js, /cleared or repaid/);
@@ -135,7 +135,7 @@ test('memory.js renders the three kinds, the groups and the attacks table, as te
   assert.equal(text($('rep-pct')), '80%');
   assert.equal(text($('rep-d')), '4 credits cleared in loops (committed, not final), of 5 credits owed · 1 credit outstanding · 1 accepted and unpaid');
   assert.equal(text($('acc-n')), '2');
-  assert.equal(text($('acc-d')), '1 time, someone took an IOU from a party it never dealt with');
+  assert.equal(text($('acc-d')), '1 time, someone took a note from a party it never dealt with');
   assert.match(text($('groups')), /^4 participants with exchanges, in 2 groups \(the largest has 4\)\. 1 group has no invited or operator-run member: what a staged circle looks like/);
   assert.equal($('live').className, 'on');
   const x = JSON.parse(pub('evidence-attacks.json'));
@@ -155,7 +155,7 @@ test('on the testnet the amounts are tERG', async () => {
   const {$, doc} = await render(tn, 2);
   assert.equal(text($('del-d')), '0.01 tERG · 1 disputed · 0 not delivered');
   assert.equal(text($('acc-n')), '0.002');
-  assert.equal(text(doc.querySelector('.c-acc .card-u')), 'tERG of IOUs taken by transfer');
+  assert.equal(text(doc.querySelector('.c-acc .card-u')), 'tERG of notes taken by transfer');
   // Cleared and redeemed apart (D2 of the review of 24bec43), each as tERG.
   assert.equal(text($('rep-d')), '0.003 tERG cleared in loops (committed, not final), 0.001 tERG redeemed, of 0.005 tERG owed · 0.001 tERG outstanding · 1 accepted and unpaid');
   // The attacks report counts in credits; on the testnet the table and the callout say tERG (1 credit = 0.001 tERG).

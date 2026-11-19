@@ -97,11 +97,11 @@ function deal(w, P, Q, status, {by = P, total, confirmation = 'local_only', ...m
 const setConfirmation = (w, P, Q, status, more = {}) => { const n = w.notes.get(`${P.pubkey}>${Q.pubkey}`); n.confirmation = {status}; Object.assign(n, more); };
 
 // ---------- finding 3: where the IOU stands, not "anchored" beside local_only ----------
-test('finding 3: an issued IOU\'s labels.basis says how far the pair\'s note got on Ergo testnet, read live, never "anchored" beside local_only', async () => {
+test('finding 3: an issued note\'s labels.basis says how far the pair\'s note got on Ergo testnet, read live, never "anchored" beside local_only', async () => {
   const w = world(), {pilot, person} = w, carl = person('carl'), dana = person('dana');
   const d = deal(w, carl, dana, 'note_issued');
   const label = async who => (await pilot.dealView(d, who)).labels.basis;
-  const lead = 'credit note issued: the payer-signed Basis note is held by the testnet tracker; ', tail = '; carl owes dana 3000000 nanoERG (0.003 tERG) more';
+  const lead = 'note issued: the payer-signed note is held by the testnet tracker; ', tail = '; carl owes dana 3000000 nanoERG (0.003 tERG) more';
   assert.equal(await label(carl), `${lead}no tracker box on Ergo testnet commits the pair's current total yet (local_only)${tail}`);
   assert.equal(await label(dana), `${lead}no tracker box on Ergo testnet commits the pair's current total yet (local_only)${tail}`, 'the same for the payee');
   setConfirmation(w, carl, dana, 'pending');
@@ -124,15 +124,15 @@ test('finding 12: at note_issued labels.summary tells the payee and the payer, f
   const summary = async who => (await pilot.dealView(d, who)).labels.summary;
   const commit = 'No tracker box on Ergo testnet commits the pair\'s current total yet (local_only). The tracker checks for changes every 5 minutes and posts one tracker box at a time, at most 50 a UTC day: the row reads pending while a box that carries it waits for a block, then confirmed (usually within 15 minutes of a change, as measured on this network).';
   const check = 'Check it: GET https://valun.tech/pilot/v1/ledger, the row with issuer_handle carl and recipient_handle dana (its total and confirmation).';
-  assert.equal(await summary(dana), 'For this deal carl issued you an IOU (credit note) of 3000000 nanoERG (0.003 tERG), which the testnet tracker recorded at 2026-11-18T19:00:00.000Z. '
+  assert.equal(await summary(dana), 'For this deal carl issued you a note of 3000000 nanoERG (0.003 tERG), which the testnet tracker recorded at 2026-11-18T19:00:00.000Z. '
     + 'What carl owes you on the pair\'s row (from carl to dana) is now 3000000 nanoERG (0.003 tERG). '
     + `${commit} ${check} `
-    + 'How it is paid back or used: a loop of IOUs through this pair lowers it by the loop\'s smallest debt (a set-off); you can pass it on to another agent that accepts carl\'s IOUs (carl then owes that agent instead); '
+    + 'How it can be cleared, passed on or redeemed: a loop of notes through this pair lowers it by at most the smallest amount in the loop (a set-off: it clears, and settles nothing); you can pass it on to another agent that accepts carl\'s notes (carl then owes that agent instead); '
     + 'you can redeem it for tERG only against a reserve carl posted on Ergo testnet, once a tracker box commits it: carl has none now. Until then it stays carl\'s promise to pay, not a payment.');
-  assert.equal(await summary(carl), 'For this deal you issued dana an IOU (credit note) of 3000000 nanoERG (0.003 tERG), which the testnet tracker recorded at 2026-11-18T19:00:00.000Z. '
+  assert.equal(await summary(carl), 'For this deal you issued dana a note of 3000000 nanoERG (0.003 tERG), which the testnet tracker recorded at 2026-11-18T19:00:00.000Z. '
     + 'What you owe dana on the pair\'s row (from carl to dana) is now 3000000 nanoERG (0.003 tERG). '
     + `${commit} ${check} `
-    + 'How it is paid back or used: a loop of IOUs through this pair lowers it by the loop\'s smallest debt (a set-off); dana can pass it on to another agent that accepts your IOUs (you then owe that agent instead); '
+    + 'How it can be cleared, passed on or redeemed: a loop of notes through this pair lowers it by at most the smallest amount in the loop (a set-off: it clears, and settles nothing); dana can pass it on to another agent that accepts your notes (you then owe that agent instead); '
     + 'dana can redeem it for tERG only against a reserve you posted on Ergo testnet, once a tracker box commits it: you have none now. Until then it stays your promise to pay, not a payment.');
   // A reserve of the IOU's own key counts, with collateral and no refund under way (as GET /reserves and reservesById);
   // another key's reserve, a refunding one or a token reserve does not back it.
@@ -163,7 +163,7 @@ test('finding 12: at note_issued labels.summary tells the payee and the payer, f
   setConfirmation(w, carl, dana, 'local_only', {amount_collected: '1000000'});
   s = await summary(dana);
   assert.match(s, /Since then, set-offs \(loops\) changed that row 2 times and transfers changed it once \(credit_note\.pair_changes_since\)\./);
-  assert.match(s, /How it is paid back or used:/, 'what is still owed can still be paid back');
+  assert.match(s, /How it can be cleared, passed on or redeemed:/, 'what is still owed can still be paid back');
   delete pilot.pairChangesSince;
   // Today's tracker boxes used up (the wallet adapter's spend ledger): the summary says until when.
   setConfirmation(w, carl, dana, 'local_only', {amount_collected: '3000000'});
@@ -178,7 +178,7 @@ test('finding 12: at note_issued labels.summary tells the payee and the payer, f
   w.stub.unreadable = true;
   s = await summary(dana);
   assert.doesNotMatch(s, /Nothing is owed|It was redeemed/, 'nothing said that was not read');
-  assert.match(s, /How it is paid back or used:/);
+  assert.match(s, /How it can be cleared, passed on or redeemed:/);
   assert.match(s, /What carl owes you on the pair's row \(from carl to dana\) was 3000000 nanoERG \(0\.003 tERG\) when the tracker recorded it \(the tracker could not be read just now\)\. Whether a tracker box on Ergo testnet commits the pair's current total could not be read just now\. The tracker checks/);
 });
 
@@ -261,6 +261,28 @@ test('finding 6: GET /participants lists the agents the server runs first, then 
   } finally { await new Promise(r => srv.close(r)); }
 });
 
+// Fix inbox #173: sandbox-exact, the practice agent whose first job always succeeds (no AI budget), comes first even
+// when sandbox-mallory joined before it, and every agent the server runs has one agent_last_seen in a listing, so a
+// client that sorts again by the newest last-seen and then by handle (valun 0.7.2's valun_directory) keeps exact first.
+test('fix inbox #173: GET /participants lists sandbox-exact first, before sandbox-mallory that joined earlier, with one agent_last_seen for the agents the server runs', async () => {
+  let t = Date.parse('2026-11-19T12:00:00.000Z');
+  const w = world({onChain: false}), {pilot, person} = w;
+  const mallory = person('sandbox-mallory'), scribe = person('house-scribe'), exact = person('sandbox-exact');
+  person('ann');
+  pilot.sandboxIds = new Set([exact.id, mallory.id]);
+  pilot.serverSigner = {has: id => id === exact.id || id === mallory.id};
+  pilot.houseIds = new Set([scribe.id]);
+  pilot.now = () => (t += 1);           // each read of the clock is a millisecond later
+  const srv = http.createServer(createHandler({service: {}, mcp: {}, cfg: {}, publicDir: path.join(root, 'public'), pilotRoutes: createPilotRoutes({pilot, cfg: {}})}));
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  try {
+    const list = await (await fetch(`http://127.0.0.1:${srv.address().port}/pilot/v1/participants`)).json();
+    assert.deepEqual(list.map(x => x.handle), ['sandbox-exact', 'sandbox-mallory', 'house-scribe', 'ann']);
+    const seen = list.filter(x => x.handle.startsWith('sandbox-')).map(x => x.agent_last_seen);
+    assert.equal(new Set(seen).size, 1, `one agent_last_seen for the agents the server runs: ${seen}`);
+  } finally { await new Promise(r => srv.close(r)); }
+});
+
 // ---------- the docs half: skill.md (public/skill-testnet.md), /start and llms.txt ----------
 const pub = f => fs.readFileSync(path.join(root, 'public', f), 'utf8');
 const SKILL = pub('skill-testnet.md'), START = pub('start.html'), flat = s => s.replace(/\s+/g, ' ');
@@ -298,12 +320,12 @@ test('findings 1 and 13: skill.md opens with a quickstart whose first command is
   assert.deepEqual([calls[3][1].action, calls[4][1].exact_result, calls[5][1].decision], ['accept', true, 'accept']);
   assert.ok(ledger > 0, 'then the ledger');
   const quick = quickWords();
-  for (const s of ['Write `--approvals none` instead only if your human said you may act alone.', 'With console, your offer, your acceptance and your IOU each wait for your human first.',
-    '**Why it matters.** The work and the IOUs go on a public record', 'Valun grants no credit itself. A newcomer\'s IOU has nothing behind it until another agent backs it (section 6) or you post a reserve (section 7).'])
+  for (const s of ['Write `--approvals none` instead only if your human said you may act alone.', 'With console, your offer, your acceptance and your note each wait for your human first.',
+    '**Why it matters.** The work and the notes go on a public record', 'Valun grants no credit itself. A newcomer\'s note has nothing behind it until another agent guarantees it (section 6) or you post a reserve (section 7).'])
     assert.ok(quick.includes(s), s);
   // Section 0's approval question stays as it was (decision 1 waits on the owner: fix inbox #164).
-  assert.ok(flat(SKILL).includes('2. **Approvals**: console approvals are the first tester\'s default: you sign, and your offers, acceptances, guarantee offers and the IOU at each delivery wait for your human in the owner console (`console`; what they approve: below). Or may you act on your own within the limits above (approvals `none`), or do they want to approve in your app\'s own approval prompt (`ask`)? If your app can\'t show approval prompts (run headless, such as `claude -p`), your human should choose console, not ask.'));
-  assert.ok(flat(START).includes('skill.md opens with a quickstart, from the join to a first IOU; its section 2 has one agent of yours hire another.'));
+  assert.ok(flat(SKILL).includes('2. **Approvals**: console approvals are the first tester\'s default: you sign, and your offers, acceptances, guarantee offers and the note at each delivery wait for your human in the owner console (`console`; what they approve: below). Or may you act on your own within the limits above (approvals `none`), or do they want to approve in your app\'s own approval prompt (`ask`)? If your app can\'t show approval prompts (run headless, such as `claude -p`), your human should choose console, not ask.'));
+  assert.ok(flat(START).includes('skill.md opens with a quickstart, from the join to a first note; its section 2 has one agent of yours hire another.'));
   // /start is not to grow while it waits to be slimmed (139,770 bytes on Nov 18).
   assert.ok(Buffer.byteLength(START) <= 139_770, `${Buffer.byteLength(START)} bytes`);
 });
@@ -321,7 +343,7 @@ test('finding 8: section 2\'s "Try both sides": two profiles, each with its own 
   assert.ok(ledger > 0, 'then the ledger');
   for (const h of ['BUYER-HANDLE', 'SELLER-HANDLE']) assert.equal(PLACEHOLDER_HANDLES.get(h.toLowerCase().replace(/[^a-z0-9]/g, '')), h, `${h} is refused at join`);
   const words = flat(section);
-  for (const s of ['with console approvals each side\'s offers, acceptances and IOUs wait for an owner', 'the two show as a closed circle (`circle.closed`'])
+  for (const s of ['with console approvals each side\'s offers, acceptances and notes wait for an owner', 'the two show as a closed circle (`circle.closed`'])
     assert.ok(words.includes(s), s);
 });
 
@@ -329,7 +351,7 @@ test('finding 8: section 2\'s "Try both sides": two profiles, each with its own 
 // seller is shown nothing, and the server's plain ending (labels.summary, which 0.7.1's valun_deal passes on) came only
 // from a valun_deal that neither recipe ran after accepting. valun 0.7.2's valun_deal at note_issued opens with
 // `summary`, the server's own when the deal view carries one (labels.summary), for both sides (its CHANGELOG, finding 12).
-test('the plain ending with valun 0.7.2: the quickstart and "Try both sides" end with a valun_deal on each side, after the review and the ledger, and say it opens with that summary, which the server gives the payee and the payer of an issued IOU', async () => {
+test('the plain ending with valun 0.7.2: the quickstart and "Try both sides" end with a valun_deal on each side, after the review and the ledger, and say it opens with that summary, which the server gives the payee and the payer of an issued note', async () => {
   // The quickstart: you answer and deliver the welcome job (its payee) and review your own offer's work (its payer);
   // then one valun_deal on each deal.
   const q = blockAfter('## Quickstart'), qLedger = q.indexOf(LEDGER), quick = q.slice(1, qLedger).map(toolOf);
@@ -343,7 +365,7 @@ test('the plain ending with valun 0.7.2: the quickstart and "Try both sides" end
   assert.equal(side(r[rLedger - 1])[1], 'valun_review_delivery');
   assert.deepEqual(r.slice(rLedger + 1).map(side), [['seller', 'valun_deal', {deal_id: 'DEAL-ID'}], ['buyer', 'valun_deal', {deal_id: 'DEAL-ID'}]]);
   // What they say it is, and where the quickstart sends you next.
-  for (const s of ['The last two calls show how each deal ended once it says `note_issued`, for you as its payee and as its payer: `valun_deal` then opens with that plain ending as `summary` (what was issued, the pair\'s row now, whether a tracker box on Ergo testnet commits it yet, how to check it, how it is paid back).',
+  for (const s of ['The last two calls show how each deal ended once it says `note_issued`, for you as its payee and as its payer: `valun_deal` then opens with that plain ending as `summary` (what was issued, the pair\'s row now, whether a tracker box on Ergo testnet commits it yet, how to check it, how it can be cleared, passed on or redeemed).',
     'To see one deal from both ends, with two agents of your own: **Try both sides**, in section 2.'])
     assert.ok(quickWords().includes(s), s);
   assert.ok(bothWords().includes('The last two calls give each side its plain ending, written for the seller and for the buyer (`summary`, at the top of `valun_deal`).'));
@@ -352,8 +374,8 @@ test('the plain ending with valun 0.7.2: the quickstart and "Try both sides" end
   const w = world(), carl = w.person('carl'), dana = w.person('dana'), d = deal(w, carl, dana, 'note_issued');
   for (const who of [carl, dana]) {
     const s = (await w.pilot.dealView(d, who)).labels.summary;
-    for (const part of [/^For this deal (you|carl) issued (dana|you) an IOU/, /on the pair's row \(from carl to dana\) is now /, /tracker box on Ergo testnet commits the pair's current total/,
-      /Check it: GET https:\/\/valun\.tech\/pilot\/v1\/ledger, the row/, /How it is paid back or used: /]) assert.match(s, part, who.handle);
+    for (const part of [/^For this deal (you|carl) issued (dana|you) a note/, /on the pair's row \(from carl to dana\) is now /, /tracker box on Ergo testnet commits the pair's current total/,
+      /Check it: GET https:\/\/valun\.tech\/pilot\/v1\/ledger, the row/, /How it can be cleared, passed on or redeemed: /]) assert.match(s, part, who.handle);
   }
   // Before note_issued (an IOU that waits for its owner, say), there is no summary yet: "once it says note_issued".
   const agreed = deal(w, carl, dana, 'agreed');
@@ -377,7 +399,7 @@ test('valun 0.7.2, where its users act: the quickstart\'s join is followed by "a
   const after = flat(SKILL.slice(close + 5, SKILL.indexOf('**Why it matters.**'))).trim();
   assert.ok(after.startsWith('Write `--approvals none` instead only if your human said you may act alone. Name a token file that doesn\'t exist yet, a new one for each join: if it exists, join says "Nothing was sent" and exits 2, so join again with a new file name.'),
     'the line right after the join');
-  const review = 'read the work with `valun_deal`, then accept it, which issues your IOU. ';
+  const review = 'read the work with `valun_deal`, then accept it, which issues your note. ';
   const advice = `valun checks a delivery exactly only in a built-in job (with ${Object.keys(AGENTS).join(' or ')}, or titled text-stats or notary): for any other job it says \`checked_exactly_by_your_client.checked: false\`, and you judge the work yourself.`;
   assert.deepEqual(Object.keys(AGENTS), ['sandbox-exact', 'sandbox-mallory'], 'the practice agents the server runs');
   assert.ok(after.includes(review + advice), 'the line right after the review');
@@ -397,8 +419,8 @@ test('findings 3 and 5, the docs: one default per mode, console needs someone ap
   assert.ok(s.includes('- `ask`, what an invited join uses when it has no `--approvals` (a `--sandbox` join uses console then; write the mode in the join either way):'));
   assert.ok(s.includes('without a terminal it refuses (`approval_unavailable`)'));
   assert.ok(s.includes('It needs a person: until your human signs in there and approves, each of these waits (and ends when its time runs out).'));
-  assert.ok(s.includes('With `console` the agent signs, but its offers, acceptances and IOUs then wait until your human approves them at https://valun.tech/pilot#owner, so it needs your human approving there; with `none` nothing waits.'));
+  assert.ok(s.includes('With `console` the agent signs, but its offers, acceptances and notes then wait until your human approves them at https://valun.tech/pilot#owner, so it needs your human approving there; with `none` nothing waits.'));
   assert.ok(s.includes('This needs the join\'s `--approvals none`, or `console` with your human approving (see Approvals above).'));
   assert.ok(s.includes('Your record says `self_serve: true` (and `sandbox_only: true`, its older name): you joined without an invite and have these limits. On valun.tech it does not limit whom you deal with (`open_network: true`).'));
-  assert.ok(pub('llms-testnet.txt').includes('the first tester\'s default, where your agent\'s offers, acceptances and IOUs wait until you approve them in the owner console (console is also what a --sandbox join of valun 0.7.2 uses without --approvals; ask signs nothing from a shell with nobody at the terminal)'));
+  assert.ok(pub('llms-testnet.txt').includes('the first tester\'s default, where your agent\'s offers, acceptances and notes wait until you approve them in the owner console (console is also what a --sandbox join of valun 0.7.2 uses without --approvals; ask signs nothing from a shell with nobody at the terminal)'));
 });

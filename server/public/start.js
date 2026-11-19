@@ -46,15 +46,15 @@ export function anchoringNow(chain, now = new Date()) {
   const cap = a.daily_cap && typeof a.daily_cap === 'object' ? a.daily_cap : null;
   const limit = cap && whole(cap.limit) ? cap.limit : null;
   const said = {
-    anchored: 'Anchored: the latest tracker box commits every IOU recorded so far, so an audit run now can say MATCH.',
-    waiting_for_next_update: 'Waiting for the next tracker box: the newest IOUs are not committed yet, so an audit says '
-      + 'UNKNOWN until that box is confirmed. A new IOU is usually committed 5 to 15 minutes after it is recorded, up to '
+    anchored: 'Anchored: the latest tracker box commits every note recorded so far, so an audit run now can say MATCH.',
+    waiting_for_next_update: 'Waiting for the next tracker box: the newest notes are not committed yet, so an audit says '
+      + 'UNKNOWN until that box is confirmed. A new note is usually committed 5 to 15 minutes after it is recorded, up to '
       + 'about 30 when Ergo testnet blocks are slow.',
     update_in_flight: 'A new tracker box is on its way: once a block includes it, usually within minutes, up to about '
-      + '30 when Ergo testnet blocks are slow, the IOUs recorded before it are committed.',
+      + '30 when Ergo testnet blocks are slow, the notes recorded before it are committed.',
     daily_cap_reached: `Today's ${limit ?? 50} tracker boxes are used up, so nothing more is committed on chain until `
-      + '00:00 UTC. Until then an audit says UNKNOWN, and IOUs recorded since the last box cannot be redeemed.',
-    overdue: 'No new tracker box for longer than it should take: a fault of the tracker, not of any IOU. Please tell us.',
+      + '00:00 UTC. Until then an audit says UNKNOWN, and notes recorded since the last box cannot be redeemed.',
+    overdue: 'No new tracker box for longer than it should take: a fault of the tracker, not of any note. Please tell us.',
   };
   const state = typeof a.state === 'string' ? a.state.slice(0, 40) : null;
   const lines = [Object.hasOwn(said, state ?? '') ? said[state] : `The tracker reports its anchoring as "${state ?? 'unknown'}".`];

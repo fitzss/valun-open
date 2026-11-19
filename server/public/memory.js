@@ -35,8 +35,8 @@ function renderEvidence(e) {
   text($('rep-d'), `${amount(cleared)} cleared in loops (committed, not final)${redeemed === undefined ? '' : `, ${amount(redeemed)} redeemed`}, `
     + `of ${amount(r.owed_ever_PC)} owed · ${amount(r.outstanding_PC)} outstanding · ${int(r.unpaid_accepted_work.count)} accepted and unpaid`);
   text($('acc-n'), amount(a.taken_by_transfer.PC, {bare: true}));
-  text(document.querySelector('.c-acc .card-u'), `${UNIT === 'nanoERG' ? 'tERG' : 'credits'} of IOUs taken by transfer`);
-  text($('acc-d'), `${int(a.taken_by_transfer.count)} time${a.taken_by_transfer.count === 1 ? '' : 's'}, someone took an IOU from a party it never dealt with`);
+  text(document.querySelector('.c-acc .card-u'), `${UNIT === 'nanoERG' ? 'tERG' : 'credits'} of notes taken by transfer`);
+  text($('acc-d'), `${int(a.taken_by_transfer.count)} time${a.taken_by_transfer.count === 1 ? '' : 's'}, someone took a note from a party it never dealt with`);
   const lone = g.self_serve_only;
   text($('groups'), `${int(e.participants_with_exchanges)} participants with exchanges, in ${int(g.count)} group${g.count === 1 ? '' : 's'} (the largest has ${int(g.largest)}). `
     + (lone ? `${int(lone)} group${lone === 1 ? ' has' : 's have'} no invited or operator-run member: what a staged circle looks like, and also what an honest new group looks like before it deals with anyone else.`
@@ -70,8 +70,8 @@ function renderAttacks(x) {
   const staged = (x.earned_limits || []).find(z => z.id === 'any_settlement');
   if (staged) {
     const c = $('earned');
-    c.replaceChildren('If credit limits grew automatically with every debt cleared or redeemed, a staged circle could add about ',
-      el('span', 'n', reportAmount(staged.per_identity_per_day_PC)), `${UNIT === 'nanoERG' ? '' : ' credits'} a day to each identity's limit, for nothing. So Valun grants no credit from evidence: each holder decides whose IOU it takes, within the limits its owner sets.`);
+    c.replaceChildren('If credit limits grew automatically with every note cleared or redeemed, a staged circle could add about ',
+      el('span', 'n', reportAmount(staged.per_identity_per_day_PC)), `${UNIT === 'nanoERG' ? '' : ' credits'} a day to each identity's limit, for nothing. So Valun grants no credit from evidence: each holder decides whose note it takes, within the limits its owner sets.`);
   }
   const f = $('findings');
   if (f) f.replaceChildren(...(x.findings || []).slice(0, 5).map(s => el('li', '', s)));

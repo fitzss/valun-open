@@ -193,7 +193,7 @@ test('the testnet position counts redemptions as settled, in the testnet\'s word
   // settled keeps its name and its sum; its words keep a set-off (cleared, committed, not final) apart from a redemption.
   assert.equal(pos.settled_how, 'cleared in loops, committed but not final, and redeemed on Ergo testnet');
   assert.doesNotMatch(pos.meaning, /pilot|Nothing is redeemed|there is no reserve|also settled|settled counts both/);
-  assert.match(pos.meaning, /A claim is settled only when its creditor redeems it on Ergo testnet/);
+  assert.match(pos.meaning, /A claim is settled only when its holder redeems it on Ergo testnet/);
   assert.ok(pos.meaning.includes('The field settled adds the two kinds, so read them apart: cleared_by_setoff (cleared in loops), redeemed_claims'));
 });
 
@@ -302,7 +302,7 @@ test('the node\'s height: a read that hangs is kept from when it ends, and the r
 test('the anchored text says what holds while the box is fresh, names the fields that say how old it is, and the tracker\'s other refusals of a novation', () => {
   const s = new anchors.AnchorWatch().state({local_digest: 'a', confirmed_digest: 'a'});
   assert.equal(s.state, 'anchored');
-  assert.equal(s.what_this_means, "The tracker box on Ergo testnet commits the tracker's current state: every note recorded so far can be redeemed against its issuer's tERG reserve (if the issuer posted one), and every netting so far is committed (it stays committed only as long as the tracker key never commits an earlier total again: see skill.md, Trust model). The tracker builds a redemption only while its records of what the box commits agree with the box. A set-off or debt transfer that lowers an edge with an on-chain total needs the box fresh, younger than 1440 blocks (box_age_blocks): the tracker refreshes an unchanged box every 720 blocks to keep it so, and refuses such a novation from novations_refused_from_height until the next box. It may refuse one sooner: when it has not observed its box on chain for 2 hours (it observes it on each update check in which it can read the box and the node and no update is waiting to confirm), and when the novation would lower the edge below a total it signed a redemption for. From tracker_less_redemption_from_height (2161 blocks after the box was made) the reserve contract lets a holder redeem without the tracker's signature.");
+  assert.equal(s.what_this_means, "The tracker box on Ergo testnet commits the tracker's current state: every note recorded so far can be redeemed against a tERG reserve locked under the key that signed it (if one was posted), and every netting so far is committed (it stays committed only as long as the tracker key never commits an earlier total again: see skill.md, Trust model). The tracker builds a redemption only while its records of what the box commits agree with the box. A set-off or transfer that lowers an edge with an on-chain total needs the box fresh, younger than 1440 blocks (box_age_blocks): the tracker refreshes an unchanged box every 720 blocks to keep it so, and refuses such a novation from novations_refused_from_height until the next box. It may refuse one sooner: when it has not observed its box on chain for 2 hours (it observes it on each update check in which it can read the box and the node and no update is waiting to confirm), and when the novation would lower the edge below a total it signed a redemption for. From tracker_less_redemption_from_height (2161 blocks after the box was made) the reserve contract lets a holder redeem without the tracker's signature.");
   assert.equal(anchors.ANCHORED_MEANS, s.what_this_means);
   assert.doesNotMatch(s.what_this_means, /are accepted/, 'never a promise that the tracker accepts a novation');
   // the tracker v4.4 value the text states (basis_store ANCHOR_OBSERVATION_MAX_AGE_MS; GET /capabilities
@@ -574,7 +574,7 @@ test('settled_how and the agent page say committed only of the loops a box commi
   let r = await read({[early]: EARLY});
   assert.deepEqual(r.cards, {[early]: true});
   assert.equal(r.how, 'cleared in loops, committed but not final, and redeemed on Ergo testnet');
-  assert.equal(r.repayment, '0.002 tERG of the 0.004 tERG it owed cleared in loops (committed, not final), 0 tERG redeemed, with 1 creditor (1 practice agent); 0.002 tERG outstanding; 0 accepted jobs unpaid.');
+  assert.equal(r.repayment, '0.002 tERG of the 0.004 tERG it owed cleared in loops (committed, not final), 0 tERG redeemed, with 1 holder (1 practice agent); 0.002 tERG outstanding; 0 accepted jobs unpaid.');
   // Not committed yet: no update was signed after the loop of 23:00 (its card: "Not committed on Ergo testnet yet").
   r = await read({[late]: LATE});
   assert.deepEqual(r.cards, {[late]: false});
@@ -633,7 +633,7 @@ test('a redemption of a note not anchored yet: the refusal says how long that la
 
 test('loop words on the testnet: amounts in tERG, the chain named, never the pilot', () => {
   const loop = loops.loopOf({id: 'vs_0123456789abcdef', state: 'applied', amount: 2_000_000, members: []}, {}, x => x);
-  assert.match(loops.loopDescription(loop), /cancelled 0\.002 tERG of IOUs in one set-off\. No coins moved\./);
+  assert.match(loops.loopDescription(loop), /cancelled 0\.002 tERG of notes in one set-off\. No coins moved\./);
   assert.match(loops.loopDescription(loop), /anchors its state on Ergo testnet/);
   assert.doesNotMatch(loops.loopDescription(loop), /pilot|credits/);
 });

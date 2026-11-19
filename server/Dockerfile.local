@@ -30,6 +30,10 @@
 # scripts/local-acceptance.sh checks a started container. The binaries need glibc >= 2.38, hence Debian trixie.
 FROM node:24-trixie-slim
 ARG TARGETARCH
+# The repository this image's source is published in: the label GitHub's container registry links a package to its
+# repository by (ghcr.io/fitzss/valun-local to valun-open, whose server/ this file is in). The CI's build adds the
+# other labels (title, url, revision, the tracker's); this one is the same for every build of this file.
+LABEL org.opencontainers.image.source=https://github.com/fitzss/valun-open
 
 RUN groupadd --system --gid 10001 valun \
  && useradd --system --uid 10001 --gid valun --home-dir /data --shell /usr/sbin/nologin valun \

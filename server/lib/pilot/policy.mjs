@@ -198,7 +198,7 @@ export async function creditCheck(pilot, C, X, amount, {via, ledger = null, excl
     const f = issuerNetDebt(pilot, X, ledger, {excludeDealId, excludeGuaranteeId, delta: via === 'agreement' ? amount : 0});
     const entry = {rule: 'max_issuer_net_debt', issuer_owes_on_tracker: f.owes, issuer_committed: f.committed, this_deal: f.delta,
       issuer_adjusted_claims: cents(f.adjusted, 'down'), issuer_net_debt: cents(f.net, 'up'), limit: netLimit};
-    if (exceeds(f.net, netLimit)) return fail('max_issuer_net_debt', `${X.handle}'s net debt would be ${amt(entry.issuer_net_debt)} (it owes ${f.owes} on the tracker and ${f.committed} agreed${f.delta ? `, ${f.delta} more with this deal` : ''}; its claims count for ${amt(entry.issuer_adjusted_claims)} after the one-level haircut), above max_issuer_net_debt ${netLimit}`);
+    if (exceeds(f.net, netLimit)) return fail('max_issuer_net_debt', `the net amount ${X.handle} owes would be ${amt(entry.issuer_net_debt)} (it owes ${f.owes} on the tracker and ${f.committed} agreed${f.delta ? `, ${f.delta} more with this deal` : ''}; its claims count for ${amt(entry.issuer_adjusted_claims)} after the one-level haircut), above max_issuer_net_debt ${netLimit}`);
     checks.push(entry);
   }
   return {ok: true, checks};

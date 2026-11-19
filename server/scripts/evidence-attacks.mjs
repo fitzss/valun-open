@@ -25,15 +25,15 @@ const anchoredCreditor = e => ['invited', 'operator_run', 'sandbox_agent'].some(
 // Candidate owner policies: what a holder might require before taking an issuer's IOU, and how much it would then take.
 // Every one is capped by the self-serve box (a sandbox participant takes at most max_accept_per_issuer of one issuer).
 const POLICIES = [
-  {id: 'box', name: 'The box only', rule: `take any issuer's IOU, within the self-serve caps (${BOX.max_accept_per_deal} a deal, ${BOX.max_accept_per_issuer} per issuer)`,
+  {id: 'box', name: 'The box only', rule: `take any issuer's note, within the self-serve caps (${BOX.max_accept_per_deal} a deal, ${BOX.max_accept_per_issuer} per issuer)`,
     accepts: () => true, exposure: () => BOX.max_accept_per_issuer},
-  {id: 'settled', name: 'Settled before', rule: 'the issuer has settled at least 2 credits and has no accepted work unpaid',
+  {id: 'settled', name: 'Cleared before', rule: 'at least 2 credits of the issuer\'s notes were cleared in loops or redeemed, and it has no accepted work unpaid',
     accepts: e => settledOf(e) >= 2 && noUnpaid(e), exposure: () => BOX.max_accept_per_issuer},
-  {id: 'open_circle', name: 'Settled, not in a closed group', rule: 'as "settled before", and its circle is not closed',
+  {id: 'open_circle', name: 'Cleared before, not in a closed group', rule: 'as "cleared before", and its circle is not closed',
     accepts: e => settledOf(e) >= 2 && noUnpaid(e) && !e.circle.closed, exposure: () => BOX.max_accept_per_issuer},
-  {id: 'anchored_creditor', name: 'Settled with an invited creditor', rule: 'as "settled before", and one creditor it settled with joined by invitation or is run by the operator',
+  {id: 'anchored_creditor', name: 'Cleared with an invited holder', rule: 'as "cleared before", and one holder whose notes from it were cleared or redeemed joined by invitation or is run by the operator',
     accepts: e => settledOf(e) >= 2 && noUnpaid(e) && anchoredCreditor(e), exposure: () => BOX.max_accept_per_issuer},
-  {id: 'scaled', name: 'Scaled to what it settled', rule: 'take up to twice what the issuer has settled, within the caps',
+  {id: 'scaled', name: 'Scaled to what it cleared', rule: 'take up to twice the amount of the issuer\'s notes that was cleared or redeemed, within the caps',
     accepts: e => settledOf(e) > 0 && noUnpaid(e), exposure: e => Math.min(BOX.max_accept_per_issuer, 2 * settledOf(e))},
 ];
 
@@ -42,7 +42,7 @@ function house(w) { const h = w.person('house-scribe', 'invited'), other = w.per
 // The scenarios. Each returns {subject, cost, ...}; `subject` is the participant whose evidence a holder would read.
 const SCENARIOS = [
   {id: 'honest_trio', title: 'Three independent operators', kind: 'honest',
-    story: 'ana, bo and cy run their own agents. ana hires bo; bo pays cy with ana\'s IOU; cy hires ana, and the loop with ana cancels. Each also buys a tl;dr from the house scribe and pays it back with feedback it accepts.',
+    story: 'ana, bo and cy run their own agents. ana hires bo; bo pays cy with ana\'s note; cy hires ana, and the loop with ana cancels. Each also buys a tl;dr from the house scribe and sells it feedback it accepts, and the two notes clear in a loop.',
     build(w) {
       const h = house(w), [a, b, c] = ['ana', 'bo', 'cy'].map(x => w.person(x));
       w.job(a, b, 2); w.pass(b, a, c, 2); w.job(c, a, 2); w.loop([a, c], 2);
@@ -60,7 +60,7 @@ const SCENARIOS = [
       return {subject: s[0], cost: {identities: 3, operators: 1, real_jobs: 0, feedback_checked: 0, outsiders: 0, days: 0, minutes: Math.ceil(60 / ENGINE_RUNS_PER_HOUR)}};
     }},
   {id: 'staged_circle_opened', title: 'A staged circle that buys from a house agent', kind: 'attack',
-    story: 'The same circle, and each identity also buys a tl;dr from the house scribe and pays it back with feedback the scribe\'s model accepts (feedback can itself be written by a model).',
+    story: 'The same circle, and each identity also buys a tl;dr from the house scribe and sells it feedback the scribe\'s model accepts, so the two notes clear in a loop (feedback can itself be written by a model).',
     build(w) {
       const h = house(w), s = ['s1', 's2', 's3'].map(x => w.person(x, 'self_serve', {operatorName: 'one-operator'}));
       w.job(s[0], s[1], 2); w.job(s[1], s[2], 2); w.job(s[2], s[0], 2); w.loop(s, 2);
@@ -68,14 +68,14 @@ const SCENARIOS = [
       return {subject: s[0], cost: {identities: 3, operators: 1, real_jobs: 0, feedback_checked: 3, outsiders: 1, days: 1}};
     }},
   {id: 'identity_reset', title: 'An identity reset', kind: 'attack',
-    story: 'd takes a 5-credit job from vic, pays with its IOU, never settles, lets the identity lapse and joins again as d2.',
+    story: 'd takes a 5-credit job from vic, pays with its note, never has it cleared or redeemed, lets the identity lapse and joins again as d2.',
     build(w) {
       const d = w.person('d'), vic = w.person('vic');
       w.job(d, vic, BOX.max_issue_per_deal);
       return {subject: w.person('d2'), before: d, cost: {identities: 2, operators: 1, real_jobs: 0, feedback_checked: 0, outsiders: 0, days: 0, lost_by_victims_PC: BOX.max_issue_per_deal}};
     }},
   {id: 'slow_burn', title: 'Good on small jobs, then a default', kind: 'attack',
-    story: 'f settles small jobs honestly with three partners and once with the house scribe, then takes as much work on credit as holders will give it, and walks away.',
+    story: 'f clears small jobs honestly in loops with three partners and once with the house scribe, then takes as much work on credit as holders will give it, and walks away.',
     build(w) {
       const h = house(w), f = w.person('f'), partners = ['p1', 'p2', 'p3'].map(x => w.person(x));
       for (let i = 0; i < 5; i++) { const p = partners[i % 3]; w.job(f, p, 1); w.job(p, f, 1); w.loop([f, p], 1); }
@@ -110,33 +110,33 @@ async function runScenario(sc) {
   } finally { w.cleanup(); }
 }
 
-// Earned limits (not built): a self-serve box that grows with settled credits. What would a staged circle, or a farm of
+// Earned limits (not built): a self-serve box that grows with cleared or redeemed credits. What would a staged circle, or a farm of
 // house feedback, add to an identity's box per day, and at what cost?
 function earnedLimits() {
   const perLoop = BOX.max_issue_per_deal;                       // a pretend job of the largest deal, then cancelled
   const stagedPerDay = perLoop * ENGINE_RUNS_PER_HOUR * 24;      // one loop a clearing run, all day
   const farmPerDay = HOUSE.feedback_PC * HOUSE.feedback_per_person_per_day;
   return [
-    {id: 'any_settlement', counts: 'every settled credit', per_identity_per_day_PC: stagedPerDay, cost: 'three self-serve joins and pretend jobs; no outsider, no real work',
-      reading: `A staged circle settles up to ${perLoop} credits per identity at each clearing run (about ${ENGINE_RUNS_PER_HOUR} an hour): about ${stagedPerDay} credits a day per identity, for nothing. Limits that grow with any settlement grow without bound.`},
-    {id: 'anchored_settlement', counts: 'credits settled with an invited or operator-run creditor', per_identity_per_day_PC: farmPerDay, cost: 'one tl;dr bought and one feedback the house agent\'s model accepts, a day, per identity',
-      reading: `Settling with a house agent is rationed by its own limits: ${HOUSE.feedback_per_person_per_day} paid feedback a day per person and ${HOUSE.feedback_per_agent_per_day} a day per house agent, so about ${farmPerDay} credits a day per identity and ${HOUSE.feedback_per_agent_per_day * HOUSE.feedback_PC} a day in all per house agent. Slower, but still bought with model-written feedback, and it spends the operator's model budget.`},
+    {id: 'any_settlement', counts: 'every credit cleared or redeemed', per_identity_per_day_PC: stagedPerDay, cost: 'three self-serve joins and pretend jobs; no outsider, no real work',
+      reading: `A staged circle clears up to ${perLoop} credits per identity at each clearing run (about ${ENGINE_RUNS_PER_HOUR} an hour): about ${stagedPerDay} credits a day per identity, for nothing. Limits that grow with every credit cleared grow without bound.`},
+    {id: 'anchored_settlement', counts: 'credits cleared or redeemed with an invited or operator-run holder', per_identity_per_day_PC: farmPerDay, cost: 'one tl;dr bought and one feedback the house agent\'s model accepts, a day, per identity',
+      reading: `Clearing with a house agent is rationed by its own limits: ${HOUSE.feedback_per_person_per_day} paid feedback a day per person and ${HOUSE.feedback_per_agent_per_day} a day per house agent, so about ${farmPerDay} credits a day per identity and ${HOUSE.feedback_per_agent_per_day * HOUSE.feedback_PC} a day in all per house agent. Slower, but still bought with model-written feedback, and it spends the operator's model budget.`},
   ];
 }
 
 const FINDINGS = [
-  'The record alone cannot tell a staged circle from an honest one. Three identities one operator runs leave exactly the evidence three independent operators do: the same counts, the same kinds, the same settlement, the same closed circle (test/evidence.unit.test.mjs checks this).',
-  'Closed-group and invited-creditor checks only raise the price. One tl;dr bought from a house agent, paid back with feedback its model accepts, opens a staged circle and gives it an invited creditor within a day.',
+  'The record alone cannot tell a staged circle from an honest one. Three identities one operator runs leave exactly the evidence three independent operators do: the same counts, the same kinds, the same amounts cleared, the same closed circle (test/evidence.unit.test.mjs checks this).',
+  'Closed-group and invited-holder checks only raise the price. One tl;dr bought from a house agent, and cleared in a loop by selling it feedback its model accepts, opens a staged circle and gives it an invited holder within a day.',
   'An identity reset costs one join. The new identity has no record, so every policy that asks for evidence refuses it, and the box-only policy takes it as it takes any newcomer. An identity bound to an X account costs a new X account instead.',
   'The fixed self-serve box is what bounds the damage. Whatever its record shows and whatever policy its holders use, one self-serve identity can owe at most the box\'s total; a clean record lets it reach that total sooner, not exceed it.',
-  'Limits that grew automatically with settled credits would be bought for nothing: a staged circle settles credits as fast as the clearing engine runs. Counting only settlement with invited creditors slows that to the house agents\' feedback ration, which model-written feedback can still fill.',
+  'Limits that grew automatically with cleared or redeemed credits would be bought for nothing: a staged circle clears credits as fast as the clearing engine runs. Counting only what is cleared with invited holders slows that to the house agents\' feedback ration, which model-written feedback can still fill.',
   'Stricter evidence policies refuse honest newcomers too: a real newcomer has no record, exactly like a fresh attacker. Evidence helps a holder decide only together with what the record cannot show: who the operator is, and what it has at stake.',
   "The same weakness was found earlier in the server's own coverage rule: finding F3 (docs/ADVERSARIAL-FINDINGS.md) shows that min_payer_coverage_pct counts claims issued by anyone, so a colluder with no backing can manufacture a payer's coverage.",
 ];
 const LIMITATIONS = [
   'States are built directly as the server stores them (deals, the edge journal, set-offs, transfers, tracker notes), not by running agents through the API; costs use the server\'s caps and the house agents\' limits as configured on 2026-11-13.',
   'Independence is not observable here: kinds say how a participant joined, not who runs it. An invited participant can be dishonest too.',
-  'Defaults are modelled as walking away with debt outstanding. The pilot has no due dates on IOUs, so an unsettled IOU is not yet marked as a broken promise.',
+  'Defaults are modelled as walking away with notes outstanding. The pilot has no due dates on notes, so an outstanding note is not yet marked as a broken promise.',
 ];
 
 async function main() {
@@ -163,25 +163,25 @@ function markdown(o) {
   const L = [];
   L.push('# What staged records look like', '');
   L.push('Generated by `node scripts/evidence-attacks.mjs` from the evidence code (`lib/pilot/evidence.mjs`); do not edit by hand.', '');
-  L.push('The evidence in a Valun record is three separate things: **delivery** (work its buyers accepted: evidence about a seller), **repayment** (what it owed and how much was settled: evidence about a debtor) and **acceptance** (who chose to hold its IOU: a willingness to take its risk, not repayment). This page stages the attacks that a record must survive and reads them through that evidence. The owner policies and earned limits below are candidates under study. **None of them is built: Valun grants no credit from evidence.**', '');
+  L.push('The evidence in a Valun record is three separate things: **delivery** (work its buyers accepted: evidence about a seller), **repayment** (what it owed and how much of it was cleared or redeemed: evidence about an issuer) and **acceptance** (who chose to hold its note: a willingness to take its risk, not repayment). This page stages the attacks that a record must survive and reads them through that evidence. The owner policies and earned limits below are candidates under study. **None of them is built: Valun grants no credit from evidence.**', '');
   L.push('## The scenarios', '');
   for (const s of o.scenarios) {
     const e = s.evidence;
     L.push(`### ${s.title} (${s.kind})`, '', s.story, '');
     L.push(`- Delivery: ${e.delivered.accepted} accepted, from ${e.delivered.buyers} buyer(s) (${kinds(e.delivered.buyers_by_kind)}).`);
-    L.push(`- Repayment: settled ${e.settled.PC} of ${e.settled.owed_ever_PC} credits owed, with ${e.settled.creditors} creditor(s) (${kinds(e.settled.creditors_by_kind)}); unpaid accepted work: ${e.settled.unpaid_accepted_work}.`);
+    L.push(`- Repayment: cleared or redeemed ${e.settled.PC} of ${e.settled.owed_ever_PC} credits owed, with ${e.settled.creditors} holder(s) (${kinds(e.settled.creditors_by_kind)}); unpaid accepted work: ${e.settled.unpaid_accepted_work}.`);
     L.push(`- Acceptance: ${e.accepted_by.holders_ever} holder(s) ever; ${e.accepted_by.taken_by_transfer_PC} credits taken by transfer.`);
     L.push(`- Circle: ${e.circle.size} participant(s), ${e.circle.closed ? 'closed' : 'open'} (${kinds(e.circle.members_by_kind)}).`);
-    if (s.evidence_before_reset) L.push(`- The identity before the reset: owed ${s.evidence_before_reset.settled.owed_ever_PC}, settled ${s.evidence_before_reset.settled.PC}; its victim still holds ${s.cost.lost_by_victims_PC} credits of an IOU nobody will settle. The new identity starts with nothing.`);
+    if (s.evidence_before_reset) L.push(`- The identity before the reset: owed ${s.evidence_before_reset.settled.owed_ever_PC}, cleared or redeemed ${s.evidence_before_reset.settled.PC}; its victim still holds ${s.cost.lost_by_victims_PC} credits of a note nobody will clear or redeem. The new identity starts with nothing.`);
     const c = s.cost;
     L.push(`- Cost: ${c.identities} identit${c.identities === 1 ? 'y' : 'ies'} run by ${c.operators} operator(s), ${c.real_jobs} real job(s), ${c.feedback_checked} checked feedback, ${c.outsiders} outsider(s) involved${c.minutes ? `, about ${c.minutes} minutes` : c.days ? `, ${c.days} day(s)` : ''}.`, '');
   }
-  L.push('## Candidate owner policies', '', 'What a holder might require before taking an issuer\'s IOU. "Takeable" is what the subject could take on credit from holders using that policy before walking away' + ' (eight holders in the slow burn, one elsewhere), within the box.', '');
+  L.push('## Candidate owner policies', '', 'What a holder might require before taking an issuer\'s note. "Takeable" is what the subject could take on credit from holders using that policy before walking away' + ' (eight holders in the slow burn, one elsewhere), within the box.', '');
   L.push('| Policy | Rule |', '|---|---|');
   for (const p of o.policies) L.push(`| ${p.name} | ${p.rule} |`);
   L.push('', '| Scenario | ' + o.policies.map(p => p.name).join(' | ') + ' |', '|---|' + o.policies.map(() => '---').join('|') + '|');
   for (const s of o.scenarios) L.push(`| ${s.title} | ` + o.policies.map(p => { const r = s.policies[p.id]; return r.accepts ? `takes ${r.takeable_PC}` : 'refuses'; }).join(' | ') + ' |');
-  L.push('', '## Earned limits (not built)', '', 'If the self-serve box grew with settled credits, what would an attacker add to an identity\'s box per day?', '');
+  L.push('', '## Earned limits (not built)', '', 'If the self-serve box grew with cleared or redeemed credits, what would an attacker add to an identity\'s box per day?', '');
   L.push('| Counts | Per identity per day | Cost |', '|---|---|---|');
   for (const x of o.earned_limits) L.push(`| ${x.counts} | about ${x.per_identity_per_day_PC} credits | ${x.cost} |`);
   L.push('');

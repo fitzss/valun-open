@@ -6,8 +6,8 @@
 // public network's /start gave a local server's visitors that network's prompt and joins. Each file is rendered from
 // its source in scripts/local-docs/:
 //   - {{name}}: a fact from the server's own constants (the self-serve limits and join caps, the practice agents' prices
-//     and limits, the bound note's age), the client release (lib/a2a.mjs LOCAL_CLIENT: the release the local image was
-//     verified with, which may be older than the one public/skill-testnet.md pins, lib/a2a.mjs CLIENT) and {{run}}, the
+//     and limits, the bound note's age), the client release (lib/a2a.mjs LOCAL_CLIENT: the release the local image is
+//     checked with, which may be older than the one public/skill-testnet.md pins, lib/a2a.mjs CLIENT) and {{run}}, the
 //     local command (uvx --from valun==X valun --profile local);
 //   - a line `<!-- shared: HEADING | START -->`: the block of public/skill-testnet.md under that heading that begins with
 //     START (a paragraph, a list item or a table), made local (localize): its commands run in the local profile, its
@@ -43,14 +43,15 @@ export const DOCS = Object.freeze([
   Object.freeze({source: 'scripts/local-docs/start.html', out: 'public/start-local.html'})]);
 export const PROFILE = 'local';
 export const ORIGIN = '{origin}';
-// valun 0.7.1's commands that take --server (its cli.py), and those that do not: they use the server the profile joined.
-export const SERVER_COMMANDS = new Set(['join', 'enroll', 'doctor', 'config', 'clearing', 'policy', 'attempts', 'profile',
+// valun 0.7.2's commands that take --server (its cli.py: every add_argument('--server'); console is new in 0.7.2), and
+// those that do not: they use the server the profile joined.
+export const SERVER_COMMANDS = new Set(['join', 'enroll', 'console', 'doctor', 'config', 'clearing', 'policy', 'attempts', 'profile',
   'card', 'verify-check', 'sell', 'ergo', 'audit', 'sandbox']);
 export const PROFILE_COMMANDS = new Set(['status', 'tools', 'call', 'mcp']);
 // The only links a local doc has besides this server's own: the code (the clients and the server, and the Hermes plugin,
 // which a local server's A2A answer installs: lib/a2a.mjs), and uv's install page.
 export const EXTERNAL = ['https://github.com/fitzss/valun-open', 'https://github.com/fitzss/hermes-plugin-valun', 'https://docs.astral.sh/uv/'];
-// valun 0.7.1's default consent cap for a sandbox join (agent.py SANDBOX_CONSENT_POLICY max_PC), in PC.
+// valun 0.7.2's default consent cap for a sandbox join (agent.py SANDBOX_CONSENT_POLICY max_PC), in PC.
 const CLIENT_CONSENT_CAP_PC = 50;
 
 const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
@@ -165,8 +166,13 @@ export function localDocProblems(text, {origin = ORIGIN, version = LOCAL_VERSION
 }
 
 // A shared block, made local: this server's origin for the public one, the local token file, the local profile.
+// The money's word in a shared block (fix inbox #173): the testnet's skill says "note"; a local server's docs keep the
+// word of the release its image was verified with, IOU (skill-local.md glosses it as the credit note), until that image
+// is released again. Each phrase is one a shared block has; a block without it is unchanged.
+export const LOCAL_WORDS = Object.freeze([['decide whose notes you accept', 'decide whose IOUs you accept'], ['`accept` signs your note,', '`accept` signs your IOU,']]);
 export function localize(block) {
-  const t = block.replace(/https:\/\/valun\.tech(?![\w.-])/g, ORIGIN)
+  const t = LOCAL_WORDS.reduce((s, [testnet, local]) => s.replaceAll(testnet, local), block)
+    .replace(/https:\/\/valun\.tech(?![\w.-])/g, ORIGIN)
     .replaceAll('valun-owner-token-', 'valun-local-owner-token-')
     .replace(/(uvx --from \S+ valun) (?!--profile )(?=[a-z])/g, `$1 --profile ${PROFILE} `);
   const bad = [...NEVER, ...NEVER_SHARED].filter(([re]) => re.test(t)).map(([re, what]) => `${what}: ${re.exec(t)[0]}`);

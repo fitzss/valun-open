@@ -87,7 +87,7 @@ test('every approval kind the server decides has a console name; an unknown kind
   assert.deepEqual(kinds, ['issue_note', 'pay_by_transfer', 'propose', 'accept', 'confirm_offer', 'guarantee_offer']);
   const kindName = new Function(`return ${/const kindName = (a => [^;]+);/.exec(SRC)[1]}`)();
   const names = Object.fromEntries(kinds.map(k => [k, kindName({kind: k, version: 1})]));
-  assert.deepEqual(names, {issue_note: 'credit note', pay_by_transfer: 'payment by transfer', propose: 'proposal', accept: 'acceptance', confirm_offer: 'accepted offer',
+  assert.deepEqual(names, {issue_note: 'note', pay_by_transfer: 'payment by transfer', propose: 'proposal', accept: 'acceptance', confirm_offer: 'accepted offer',
     guarantee_offer: 'guarantee offer'});
   assert.equal(kindName({kind: 'propose', version: 2}), 'counter-offer');
   assert.equal(kindName({kind: 'some_future_kind', version: 1}), 'approval of kind some_future_kind');
@@ -110,7 +110,7 @@ const edgeState = (total, ts, c) => ({total, timestamp: ts, signature: SIG(c)});
 const tEdge = (which, before, nt) => ({edge: `${ISS.pubkey}>${which === 'from' ? ME.pubkey : PAYEE.pubkey}`, issuer: {id: ISS.id, handle: ISS.handle, pubkey: ISS.pubkey},
   recipient: which === 'from' ? {id: ME.id, handle: ME.handle, pubkey: ME.pubkey} : {id: PAYEE.id, handle: PAYEE.handle, pubkey: PAYEE.pubkey},
   before, new_total: nt, change: nt - (before?.total ?? 0)});
-const labels = {signed_by_parties: 's', owner_approvals: 'o', basis: 'no credit note for this deal is in the Basis tracker', settlement: 'not settled: circulating', work: 'w'};
+const labels = {signed_by_parties: 's', owner_approvals: 'o', basis: 'no note for this deal is in the Basis tracker', settlement: 'not settled: circulating', work: 'w'};
 // `role`: this participant's (olivia's) role in the deal; as payee, carol pays olivia.
 function dealView(id, status, {payment = null, history = [], next_actions = [], circulation = true, role = 'payer'} = {}) {
   const t = terms(id), [payer, payee] = role === 'payer' ? [ME, PAYEE] : [PAYEE, ME];
@@ -250,9 +250,9 @@ test('circulation on: approvals, unresolved attempts, position, clearing panel a
   assert.match(all, /payment due \(accepted, unpaid\)2/);
   // What set-offs cleared, never "settled"; the pilot redeems nothing, so no redemption row.
   const position = con.querySelectorAll('.card').find(c => /^Position/.test(text(c.querySelector('h2'))));
-  assert.match(text(position), /Cleared by set-off1 PC of your debts cleared in loops, and as much of your claims(?! \()/);
+  assert.match(text(position), /Cleared by set-off1 PC of the notes you issued cleared in loops, and as much of the notes you hold(?! \()/);
   assert.doesNotMatch(text(position), /settled|Redeemed on Ergo testnet/i);
-  assert.match(text(position), /These are outstanding IOUs \(credit notes\), as the tracker records them: one running total per pair\. A payment by transfer can move a claim to another creditor, and a set-off lowers every debt in a loop by the same amount\. Nothing is redeemed: the pilot has no reserve\./);
+  assert.match(text(position), /These are outstanding notes, as the tracker records them: one running total per pair\. A payment by transfer can move a claim to another holder, and a set-off lowers every note in a loop by the same amount\. Nothing is redeemed: the pilot has no reserve\./);
   // Clearing panel: consents read-only, receipts.
   const clr = con.querySelector('#clearing-card');
   assert.ok(clr, 'the clearing panel');
@@ -277,9 +277,9 @@ test('circulation on: approvals, unresolved attempts, position, clearing panel a
   // A set-off lowers every debt in the loop by the smallest one, once every member signs; nothing is cancelled "at once"
   // (lib/pilot/clearing.mjs, SETOFF_TTL_MS). Coverage counts what stands behind the payer, not its claims at face value
   // (lib/pilot/grounding.mjs); the pilot has no reserve.
-  assert.match(text(form), /Your agent's client may sign set-offs by itself: once every member of a loop of debts signs, every debt in it falls by the same amount, the smallest one in it, and nobody's net position changes\./);
+  assert.match(text(form), /Your agent's client may sign set-offs by itself: once every member of a loop of notes signs, every note in it falls by the same amount, at most the smallest in the loop, and nobody's net position changes\./);
   assert.doesNotMatch(text(con), /at once, and nobody|cancels a cycle|cycle of debts? (is )?cancelled/);
-  assert.match(text(form), /Your agent may accept a credit note only from a payer whose own claims and guarantees of its debt to you cover at least this percentage of everything it would owe, this deal included\. A claim or a guarantee counts only as far as an issuer you list under Accept notes from stands behind it; a payer you list there counts as covered\. It is still the payer's own promise/);
+  assert.match(text(form), /Your agent may accept a note only from a payer whose own claims and guarantees of what it owes you cover at least this percentage of everything it would owe, this deal included\. A claim or a guarantee counts only as far as an issuer you list under Accept notes from stands behind it; a payer you list there counts as covered\. It is still the payer's own promise/);
   assert.doesNotMatch(text(form), /On the testnet a new self-serve agent/, "the testnet's default is not the pilot's");
   form.querySelector('[name=c_accept_transfers]').click();
   form.querySelector(`[name=anf][value=${ISS.id}]`).click();
@@ -368,7 +368,7 @@ test('circulation on: approving a payment by transfer that went stale (409 stale
   assert.ok(flash, 'a message above the approvals');
   // The server's words, then, as after a rejection (the payment is void: the review of PR #9, code 2-1), that nothing
   // tells the agent and what valun 0.7.1 does then (pilot.js payTrap; test/console-cards.test.mjs has its whole text).
-  assert.ok(text(flash).startsWith(`Your decision on va_aaaaaaaaaaaa was not applied: ${STALE} (HTTP 409, stale_payment). Your agent isn't told: tell it. valun 0.7.1 keeps counting that payment as one that may still apply. It usually pays this deal again through ${ISS.handle}'s IOU at once while that IOU is unchanged;`), text(flash));
+  assert.ok(text(flash).startsWith(`Your decision on va_aaaaaaaaaaaa was not applied: ${STALE} (HTTP 409, stale_payment). Your agent isn't told: tell it. valun 0.7.1 keeps counting that payment as one that may still apply. It usually pays this deal again through ${ISS.handle}'s note at once while that note is unchanged;`), text(flash));
   assert.ok(text(flash).endsWith(" The console below shows the server's current state."), text(flash));
   assert.deepEqual(flash.querySelectorAll('code').map(text), [`valun attempts resolve ${VD_HELD} '#n' --not-applied`, 'valun attempts list']);
   assert.equal(page.doc.querySelector('article.appr[data-kind=pay_by_transfer]'), null, 'the void approval is no longer shown as pending');
@@ -480,13 +480,13 @@ test('the network tab: with circulation off it reads no GET /clearing and shows 
   assert.match(infoOff, /Network\s*valun-pilot-1/, 'mode off: the network facts are shown');
   assert.ok(off.calls.some(c => c.method === 'GET' && c.path === '/info'), '/info was read');
   assert.ok(!off.calls.some(c => c.path === '/clearing'), 'mode off: no GET /clearing');
-  assert.doesNotMatch(infoOff, /Features|circulation\/1|Clearing:|Debt outstanding now/, 'mode off: no features, no clearing figures');
+  assert.doesNotMatch(infoOff, /Features|circulation\/1|Clearing:|Notes outstanding now/, 'mode off: no features, no clearing figures');
   const on = await openConsole(serve({circulation: true}), {hash: '#network'});
   assert.equal(on.calls.filter(c => c.method === 'GET' && c.path === '/clearing').length, 1, 'mode on: GET /clearing once');
   const infoOn = text(on.doc.querySelector('#info'));
-  assert.match(infoOn, /Features\s*bound_notes\/1, circulation\/1\s*Circulating credit is on: a payer may pay with a note it holds \(debt transfer\)/);
+  assert.match(infoOn, /Features\s*bound_notes\/1, circulation\/1\s*Circulating credit is on: a payer may pay with a note it holds \(a payment by transfer\)/);
   assert.match(infoOn, /Clearing: what set-offs and transfers did/);
-  assert.match(infoOn, /Debt outstanding now\s*7 PC gross over 3 notes; net floor 3 PC \(what no clearing can remove\)/);
+  assert.match(infoOn, /Notes outstanding now\s*7 PC gross over 3 notes; net floor 3 PC \(what no clearing can remove\)/);
   assert.match(infoOn, /Clearable now\s*2 PC in theory; 2 PC within the engine's limits/);
   assert.match(infoOn, /Applied so far\s*1 set-offs clearing 2 PC \(summed over every edge they decreased; 1 notes closed\); 1 transfers moving 3 PC/);
   assert.match(infoOn, /Last 7 days\s*9 PC issued, 2 PC cleared \(22\.2%\)/);
@@ -499,7 +499,7 @@ test('the clearing figures are read by their unit-neutral names, not the depreca
   const odd = JSON.parse(JSON.stringify(clearing), (k, v) => (k.endsWith('_PC') && typeof v === 'number' ? 4242 : v));
   const page = await openConsole(serve({circulation: true, extra: (m, p) => (m === 'GET' && p === '/clearing' ? {status: 200, body: odd} : undefined)}), {hash: '#network'});
   const figures = text(page.doc.querySelector('#info'));
-  assert.match(figures, /Debt outstanding now\s*7 PC gross over 3 notes; net floor 3 PC/);
+  assert.match(figures, /Notes outstanding now\s*7 PC gross over 3 notes; net floor 3 PC/);
   assert.match(figures, /Applied so far\s*1 set-offs clearing 2 PC .*1 transfers moving 3 PC/);
   assert.match(figures, /Last 7 days\s*9 PC issued, 2 PC cleared/);
   assert.doesNotMatch(figures, /4,?242/);
@@ -550,7 +550,7 @@ test('a guarantee offer held for the owner (fix inbox #18, approval kind guarant
   const appr = page.doc.querySelector('article.appr[data-kind=guarantee_offer]');
   assert.ok(appr, 'the pending guarantee approval is shown, with no deal');
   assert.match(text(appr), /guarantee offer/);
-  assert.match(text(appr), /Back what carol owes sandbox-exact/);
+  assert.match(text(appr), /Guarantee what carol owes sandbox-exact/);
   assert.match(text(appr), /up to 5 PC/);
   assert.match(text(appr), /backs carol for sandbox-exact/);
   assert.match(text(appr), /valun-pilot\/guarantee-offer\/1/, 'the statement the agent signed');
@@ -616,15 +616,15 @@ test('the testnet (fix inbox #72): every amount in nanoERG with its tERG; a cred
   // Cleared by set-off and redeemed on Ergo testnet as two rows, never one "settled" sum, and the page's own words for
   // what the figures are, not the server's notes on its fields.
   const position = con.querySelectorAll('.card').find(c => /^Position/.test(text(c.querySelector('h2'))));
-  assert.match(text(position), /Cleared by set-off1 nanoERG \(0\.000000001 tERG\) of your debts cleared in loops, and as much of your claims \(each set-off is committed by the next tracker box on Ergo testnet, and is not final\)/);
+  assert.match(text(position), /Cleared by set-off1 nanoERG \(0\.000000001 tERG\) of the notes you issued cleared in loops, and as much of the notes you hold \(each set-off is committed by the next tracker box on Ergo testnet, and is not final\)/);
   assert.equal(position.querySelectorAll('a').find(a => text(a) === 'not final')?.getAttribute('href'), '/trust#netting');
-  assert.match(text(position), /Redeemed on Ergo testnet2 nanoERG \(0\.000000002 tERG\) of your claims, which you redeemed; 1 nanoERG \(0\.000000001 tERG\) of your debts, redeemed from your reserve/);
-  assert.match(text(position), /These are outstanding IOUs \(credit notes\), as the tracker records them: one running total per pair\. A payment by transfer can move a claim to another creditor, and a set-off lowers every debt in a loop by the same amount\. A claim is paid only when its creditor redeems it on Ergo testnet against its issuer's tERG reserve, if the issuer posted one\./);
+  assert.match(text(position), /Redeemed on Ergo testnet2 nanoERG \(0\.000000002 tERG\) of the notes you hold, which you redeemed; 1 nanoERG \(0\.000000001 tERG\) of the notes you issued, redeemed from your reserve/);
+  assert.match(text(position), /These are outstanding notes, as the tracker records them: one running total per pair\. A payment by transfer can move a claim to another holder, and a set-off lowers every note in a loop by the same amount\. A claim is paid only when its holder redeems it on Ergo testnet against a tERG reserve locked under the key that signed it, if one was posted\./);
   assert.doesNotMatch(text(position), /settled/i, 'no "settled" in the position card');
   // The testnet's default acceptance, where the console shows "Accept notes from".
-  assert.match(text(con.querySelector('#mandate-form')), /Whose debt you may be paid with by transfer\. Your counterparties list does not imply it: ticking none accepts no transfer\. On the testnet a new self-serve agent accepts any issuer's IOUs as payment by transfer, up to 0\.04 tERG per issuer\. Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way\. You can narrow whose IOUs your agent accepts here, with “only those ticked here”\./);
+  assert.match(text(con.querySelector('#mandate-form')), /Whose notes you may be paid with by transfer\. Your counterparties list does not imply it: ticking none accepts no transfer\. On the testnet a new self-serve agent accepts any issuer's notes as payment by transfer, up to 0\.04 tERG per issuer\. Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way\. You can narrow whose notes your agent accepts here, with “only those ticked here”\./);
   assert.match(text(con.querySelector('#clearing-card')), /What you owe changes by-1 nanoERG \(-0\.000000001 tERG\)/, "a consent's summary (only its _PC name is served there)");
-  assert.match(text(con.querySelector('#mandate-form')), /Max credit note per deal \(as payer\), nanoERG/);
+  assert.match(text(con.querySelector('#mandate-form')), /Largest note per deal \(as payer\), nanoERG/);
   assert.deepEqual(said(page).filter(l => BAD.test(l)), [], 'the owner console');
   const views = {};
   for (const id of [VD_ISSUED, VD_REDEEMED, VD_PAID, VD_DUE, VD_UNKNOWN, VD_HELD]) {
@@ -635,17 +635,17 @@ test('the testnet (fix inbox #72): every amount in nanoERG with its tERG; a cred
     assert.deepEqual(said(page).filter(l => BAD.test(l)), [], `${id}: nothing says PC or pilot`);
   }
   const issued = views[VD_ISSUED];
-  assert.match(issued, /Credit note issued, not settled: carol owes olivia \(you\) 3 nanoERG \(0\.000000003 tERG\) under this deal\. The payer-signed Basis note is held by the network's Basis tracker, which anchors its state on Ergo testnet\. It is an outstanding obligation: its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one\./);
-  assert.match(issued, /Not settled until redeemed: issuing a credit note creates an outstanding obligation\./);
+  assert.match(issued, /Note issued, not settled: carol owes olivia \(you\) 3 nanoERG \(0\.000000003 tERG\) under this deal\. The payer-signed note is held by the network's Basis tracker, which anchors its state on Ergo testnet\. It is a promise to pay that stays outstanding: its holder can redeem it on Ergo testnet against a tERG reserve locked under the key that signed it, if one was posted\./);
+  assert.match(issued, /Not settled until redeemed: issuing a note creates a promise to pay that stays outstanding\./);
   assert.match(issued, /Settledno: not redeemed yet/);
   assert.match(issued, /The tracker anchors its state on Ergo testnet: GET \/pilot\/v1\/chain shows the digest its tracker box commits now\./);
-  assert.match(issued, /Nothing further happens to this deal: the credit note stays outstanding until its creditor redeems it on Ergo testnet \(against the issuer's tERG reserve, if the issuer posted one\)\. With circulating credit the claim can also move to another creditor or be cleared by set-off\./);
+  assert.match(issued, /Nothing further happens to this deal: the note stays outstanding until its holder redeems it on Ergo testnet \(against a tERG reserve locked under the key that signed it, if one was posted\)\. With circulating credit the claim can also move to another holder or be cleared by set-off\./);
   const redeemed = views[VD_REDEEMED];
-  assert.match(redeemed, /Credit note issued and settled: carol owed olivia \(you\) 3 nanoERG \(0\.000000003 tERG\) under this deal, redeemed on Ergo testnet against the issuer's reserve\./);
+  assert.match(redeemed, /Note issued and settled: carol owed olivia \(you\) 3 nanoERG \(0\.000000003 tERG\) under this deal, redeemed on Ergo testnet against the issuer's reserve\./);
   assert.match(redeemed, /Settledyes: redeemed on Ergo testnet against the issuer's reserve/);
-  assert.match(redeemed, /Nothing further happens to this deal: its credit note is settled\./);
-  assert.match(views[VD_PAID], /Paid by transfer, not settled: sandbox-exact now owes carol 3 nanoERG \(0\.000000003 tERG\) that it owed olivia \(you\) before; olivia \(you\) issued no credit note for this deal\. It is an outstanding obligation; it may later move again or be cleared by set-off, and its creditor can redeem it on Ergo testnet/);
-  assert.match(views[VD_PAID], /the debt stays outstanding with its new creditor, who can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one\./);
+  assert.match(redeemed, /Nothing further happens to this deal: its note is settled\./);
+  assert.match(views[VD_PAID], /Paid by transfer, not settled: sandbox-exact now owes carol 3 nanoERG \(0\.000000003 tERG\) that it owed olivia \(you\) before; olivia \(you\) issued no note for this deal\. It stays outstanding; it may later move again or be cleared by set-off, and its holder can redeem it on Ergo testnet/);
+  assert.match(views[VD_PAID], /the note stays outstanding with its new holder, who can redeem it on Ergo testnet against a tERG reserve locked under the key that signed it, if one was posted\./);
 });
 
 // The review's finding on min_payer_coverage_pct: the server counts the payer's reserve, its claims at what stands
@@ -668,8 +668,8 @@ test('an acceptance waiting for its owner: the payer coverage check says what th
   const page = await openConsole(serve({circulation: true, change: o => withAcceptance(o, {...base, payer_claims_grounded: 2, payer_reserve: 1, backing_for_you: 1, coverage_pct: 57})}));
   const appr = page.doc.querySelector(`article.appr[data-approval=${VA}]`);
   assert.ok(appr, 'the acceptance waiting for its owner');
-  assert.match(text(appr), /min_payer_coverage_pct: the payer's reserve \(1 PC\), claims on the tracker \(5 PC, of which 2 PC count\) and guarantees of its debt to you \(1 PC still callable\) cover 57% of what it would owe \(on the tracker 4 PC \+ agreed 0 PC \+ this deal 3 PC\); your minimum is 50%/);
-  assert.match(text(appr), /min_payer_coverage_pct 50%: the server checks that what stands behind carol \(its reserve, its claims at what backs them, and the guarantees of its debt to you\) covers at least that share of what it would owe/);
+  assert.match(text(appr), /min_payer_coverage_pct: the payer's reserve \(1 PC\), claims on the tracker \(5 PC, of which 2 PC count\) and guarantees of what it owes you \(1 PC still callable\) cover 57% of what it would owe \(on the tracker 4 PC \+ agreed 0 PC \+ this deal 3 PC\); your minimum is 50%/);
+  assert.match(text(appr), /min_payer_coverage_pct 50%: the server checks that what stands behind carol \(its reserve, its claims as far as what stands behind them, and the guarantees of what it owes you\) covers at least that share of what it would owe/);
   assert.doesNotMatch(text(appr), /the payer's claims on the tracker \d+ PC cover/);
   // A payer the owner trusts is covered; its claims counted in full show no "of which".
   const trusted = await openConsole(serve({circulation: true, change: o => withAcceptance(o, {...base, payer_claims_grounded: 5, payer_trusted_by_owner: true, coverage_pct: 125})}));
@@ -679,8 +679,8 @@ test('an acceptance waiting for its owner: the payer coverage check says what th
   // line names both parts, and the guarantees' part once nothing more can be called (the redesign, round 2).
   const paid = await openConsole(serve({circulation: true, change: o => withAcceptance(o, {...base, backing_for_you: 1, already_paid_by_backers: 2, coverage_pct: 114})}));
   assert.match(text(paid.doc.querySelector(`article.appr[data-approval=${VA}]`)),
-    /min_payer_coverage_pct: the payer's claims on the tracker \(5 PC\) and guarantees of its debt to you \(1 PC still callable, 2 PC already paid by backers\) cover 114% of what it would owe/);
+    /min_payer_coverage_pct: the payer's claims on the tracker \(5 PC\) and guarantees of what it owes you \(1 PC still callable, 2 PC already paid by backers\) cover 114% of what it would owe/);
   const spent = await openConsole(serve({circulation: true, change: o => withAcceptance(o, {...base, backing_for_you: 0, already_paid_by_backers: 2, coverage_pct: 100})}));
   assert.match(text(spent.doc.querySelector(`article.appr[data-approval=${VA}]`)),
-    /min_payer_coverage_pct: the payer's claims on the tracker \(5 PC\) and guarantees of its debt to you \(2 PC already paid by backers\) cover 100% of what it would owe/);
+    /min_payer_coverage_pct: the payer's claims on the tracker \(5 PC\) and guarantees of what it owes you \(2 PC already paid by backers\) cover 100% of what it would owe/);
 });

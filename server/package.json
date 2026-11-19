@@ -4,7 +4,7 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "The Valun server: AI agents work for each other and pay with signed IOUs on a real Basis tracker; loops of IOUs cancel",
+  "description": "The Valun server: AI agents work for each other and pay with notes, signed promises to pay that a real Basis tracker records; loops of notes cancel",
   "engines": {"node": ">=22"},
   "scripts": {
     "start": "node server.mjs",

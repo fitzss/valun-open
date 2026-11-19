@@ -116,10 +116,10 @@ export function parseAmount(raw, unit) {
   return n;
 }
 export function findPayee(pilot, raw, payer) {
-  if (typeof raw !== 'string' || !raw.trim()) throw new PilotError('invalid_field', 'payee is required: the participant id or handle of the agent that would take the IOU');
+  if (typeof raw !== 'string' || !raw.trim()) throw new PilotError('invalid_field', 'payee is required: the participant id or handle of the agent that would take the note');
   const s = raw.trim().toLowerCase(), all = pilot.s.participants;
   const q = PID_RE.test(s) ? (Object.hasOwn(all, s) ? all[s] : null) : AGENT_HANDLE_RE.test(s) ? Object.values(all).find(x => x.handle === s) ?? null : null;
-  if (!q) throw new PilotError('not_found', 'unknown payee: give the participant id or handle of the agent that would take the IOU', 404);
+  if (!q) throw new PilotError('not_found', 'unknown payee: give the participant id or handle of the agent that would take the note', 404);
   if (payer && q.id === payer.id) throw new PilotError('invalid_field', 'payee must be another participant than the payer');
   return q;
 }
@@ -176,9 +176,9 @@ export function coverFor(pilot, p, payee, {deal = null, deliverBy = null} = {}) 
 // there too, their summary said it twice.
 function coverWords({covered, for_other_deals: other}, {deal, by, others, soon}) {
   const what = deal ? 'this deal' : 'a new deal', one = (n, a, b) => (n === 1 ? a : b);
-  const head = covered > 0 ? `Backed for you up to ${amt(covered)} by ${listed(by)}${other ? `; another ${amt(other)} backs only ${deal ? 'other deals' : 'particular deals, not a new one'}` : ''}.`
-    : other > 0 ? `Nothing backs ${what} for you: ${one(others, 'a guarantee', 'guarantees')} with ${amt(other)} left ${one(others, 'backs', 'back')} only ${deal ? 'other' : 'particular'} deals.`
-      : soon.count ? `Nothing backs ${what} for you.` : null;
+  const head = covered > 0 ? `Guaranteed for you up to ${amt(covered)} by ${listed(by)}${other ? `; another ${amt(other)} covers only ${deal ? 'other deals' : 'particular deals, not a new one'}` : ''}.`
+    : other > 0 ? `No guarantee covers ${what} for you: ${one(others, 'a guarantee', 'guarantees')} with ${amt(other)} left ${one(others, 'covers', 'cover')} only ${deal ? 'other' : 'particular'} deals.`
+      : soon.count ? `No guarantee covers ${what} for you.` : null;
   return [...(head ? [head] : []), ...(soon.count ? [`${one(soon.count, 'A guarantee', 'Guarantees')} with ${amt(soon.amount)} left ${one(soon.count, 'ends', 'end')} too soon to count: one counts for a deal only if it can still be called an hour after the deal's deliver_by (${iso(soon.until)}).`] : [])];
 }
 
@@ -264,7 +264,7 @@ function declineReason(pilot, e, {p, payee, amount, mandate, room}) {
     case 'counterparties': return list !== 'any' && !(list || []).includes(payee.id)
       ? `Its owner has not listed ${payee.handle} among the agents it may deal with.`
       : `It is a self-serve sandbox agent: on this server it may deal only with the sandbox agents, not ${payee.handle}.`;
-    case 'may_issue_credit': return 'Its owner has not allowed it to pay with IOUs.';
+    case 'may_issue_credit': return 'Its owner has not allowed it to pay with notes.';
     case 'max_issue_per_deal': return `Over its limit per deal: ${amt(amount)} is more than the ${amt(mandate.per_deal)} a deal its owner allows.`;
     case 'max_issue_outstanding': return room.without_deal != null
       ? `Over its budget: leaving this deal out it has ${amt(room.without_deal)} of ${amt(mandate.outstanding_cap)} left, less than ${amt(amount)}.`
@@ -368,7 +368,7 @@ async function payeeSideOf(pilot, p, payee, amount, {ledger, deal, step, deliver
   const cov = chk.checks.find(c => c.rule === 'min_payer_coverage_pct');
   return side(waits ? 'ask_owner' : 'accept', waits ? 'approve_above' : null, ['Your own limits allow it.',
     ...(Q !== payee && mandateEnded(pilot, payee) ? [`Your mandate ended at ${until} with your sandbox time, and your agent's own request at this step renews both.`] : []),
-    ...(cov ? [`${p.handle}'s IOUs to you would be covered ${cov.coverage_pct}%, and your owner requires ${cov.limit}%${pilot.circulating ? ' (its claims and each backer counted at their grounded worth)' : ''}.`] : []),
+    ...(cov ? [`${p.handle}'s notes to you would be covered ${cov.coverage_pct}%, and your owner requires ${cov.limit}%${pilot.circulating ? ' (its claims and each backer counted at their grounded worth)' : ''}.`] : []),
     ...cover, ...ownerWords(pilot, payee, {deal, chk, waits, you: true, proposing: step === 'payee_proposes'}), ...hint]);
 }
 
@@ -393,7 +393,7 @@ function unpublishedSide(pilot, payee, {verdict, rule, reasons}) {
   const words = verdict === 'accept' ? 'Your own limits allow it.'
     : verdict === 'ask_owner' ? 'Your own limits allow it once your owner approves.'
       : READS_NO_PAYER.has(rule) ? reasons[0]
-        : rule === 'min_payer_coverage_pct' ? `Your owner's coverage bar (min_payer_coverage_pct, ${pilot.effectiveLimits(payee).min_payer_coverage_pct}%) refuses this payer's IOU for this amount; it has published no budget card, so its own figures are not shown.`
+        : rule === 'min_payer_coverage_pct' ? `Your owner's coverage bar (min_payer_coverage_pct, ${pilot.effectiveLimits(payee).min_payer_coverage_pct}%) refuses this payer's note for this amount; it has published no budget card, so its own figures are not shown.`
           : `Your own limits refuse it (${rule}); this payer has published no budget card, so the check shows no figures.`;
   return {verdict, rule, reasons: [words]};
 }
@@ -442,7 +442,7 @@ async function payerSideOf(pilot, p, payee, amount, {ledger, card, deal, step}) 
   const needsOwner = !refusal && (deal ? ownerDecides(pilot, deal, p, chk) : !!chk.needsOwner);
   // What the payee's renewal at the step adds to the card's outstanding, when the room is what decides.
   const woken = room.woken > 0 && (!refusal || refusal.extra?.rule === 'max_issue_outstanding')
-    ? [`What it owes ${payee.handle} on the tracker (${amt(room.woken)}) counts here, though its card leaves it out: ${payee.handle}'s sandbox time has ended (a sandbox agent's debt to a participant whose time has ended does not count against its limit), and ${payee.handle}'s own agent acts at this step, which renews it.`] : [];
+    ? [`What it owes ${payee.handle} on the tracker (${amt(room.woken)}) counts here, though its card leaves it out: ${payee.handle}'s sandbox time has ended (what a sandbox agent owes a participant whose time has ended does not count against its limit), and ${payee.handle}'s own agent acts at this step, which renews it.`] : [];
   const reasons = refusal ? [declineReason(pilot, refusal, {p, payee, amount, mandate, room}), ...woken] : [
     deal ? `Within its budget: up to ${amt(mandate.per_deal)} a deal; deal ${deal.id} is counted once, and ${amt(room.left_with_deal)} of ${amt(mandate.outstanding_cap)} is left with it.`
       : `Within its budget: up to ${amt(mandate.per_deal)} a deal, ${amt(room.room_left)} of ${amt(mandate.outstanding_cap)} left.`,

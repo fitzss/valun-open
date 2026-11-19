@@ -169,7 +169,7 @@ export function buildPage(md) {
   const first = blocks.findIndex(b => b.type === 'heading');
   const intro = blocks.slice(0, first < 0 ? blocks.length : first);
   // The opening: paragraphs (the page's lede), then, optionally, a label paragraph ending with ":" and an ordered list:
-  // the life of an IOU, which the page draws as a row of numbered steps.
+  // the life of a note, which the page draws as a row of numbered steps.
   const steps = intro.at(-1)?.type === 'list' ? intro.at(-1) : null;
   const label = steps ? intro.at(-2) : null;
   const ledes = intro.slice(0, steps ? -2 : intro.length);
@@ -213,7 +213,7 @@ ${renderBlocks(p.blocks, {shift: -1})}
 <meta property="og:image" content="https://valun.tech/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Valun: let your agent work with agents you don't run. Three agents in a loop of IOUs, on Ergo testnet.">
+<meta property="og:image:alt" content="Valun: let your agent work with agents you don't run. Three agents in a loop of notes, on Ergo testnet.">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/jost-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -242,7 +242,7 @@ ${steps.items.map(it => `      <li>${inline(it.blocks[0].text)}</li>`).join('\n'
 ` : ''}  <aside class="now" id="now" aria-labelledby="now-h">
     <h2 class="now-h" id="now-h">What the server reports about the chain</h2>
     <div class="now-read" id="now-read"></div>
-    <p class="now-what" id="now-what">Two public reads of the operator's server, as JSON: <a href="/pilot/v1/chain">GET /pilot/v1/chain</a> (the tracker box and the day's count of boxes) and <a href="/pilot/v1/reserves">GET /pilot/v1/reserves</a> (every reserve and the debt it backs). They are its word. To read the chain itself, run <code>valun audit</code> (it reads the box from the explorer or your own node) or open the box on the explorer.</p>
+    <p class="now-what" id="now-what">Two public reads of the operator's server, as JSON: <a href="/pilot/v1/chain">GET /pilot/v1/chain</a> (the tracker box and the day's count of boxes) and <a href="/pilot/v1/reserves">GET /pilot/v1/reserves</a> (every reserve and what the notes it backs still owe). They are its word. To read the chain itself, run <code>valun audit</code> (it reads the box from the explorer or your own node) or open the box on the explorer.</p>
   </aside>
 </div>
 

@@ -204,9 +204,9 @@ const PAIR_CHANGE_KINDS = new Set(['transfer_out', 'transfer_in', 'setoff']);
 const CIRCULATION_SETTLEMENT = 'not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.';
 // The same labels on the Valun testnet network (valun-testnet-1), where a note can be redeemed on Ergo testnet and
 // netting is anchored there (tracker v4.1).
-const TESTNET_REDEMPTION = 'Its creditor can redeem it on Ergo testnet against the issuer\'s tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.';
-export const CIRCULATION_SETTLEMENT_TESTNET = `not settled until redeemed: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes); a netting is committed once a tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. ${TESTNET_REDEMPTION}`;
-const SETTLEMENT_TESTNET = `not settled until redeemed: issuing a credit note creates an outstanding obligation. ${TESTNET_REDEMPTION}`;
+const TESTNET_REDEMPTION = 'Its holder can redeem it on Ergo testnet against a tERG reserve locked under the key that signed it, if one was posted; tERG are test coins with no monetary value.';
+export const CIRCULATION_SETTLEMENT_TESTNET = `not settled until redeemed: a note is a promise to pay that stays outstanding. With circulating credit it can move to a new holder (a transfer, signed by its issuer and both holders) or be cleared in a loop of notes (set-off, signed by every party; no net position changes); a netting is committed once a tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. ${TESTNET_REDEMPTION}`;
+const SETTLEMENT_TESTNET = `not settled until redeemed: issuing a note creates a promise to pay that stays outstanding. ${TESTNET_REDEMPTION}`;
 // How far a pair's note got on Ergo testnet, from its confirmation (the tracker's status for the pair's note: local_only,
 // pending, confirmed; lib/pilot/committed.mjs): the words of a deal's labels.basis and labels.summary on the testnet (the
 // newcomer run of Nov 18, findings 3 and 12: the label said "its state anchored on Ergo testnet" beside confirmation
@@ -1184,8 +1184,9 @@ export class Pilot {
   // the public record, where an agent the server runs (the sandbox agents) is always on, so its agent_last_seen is now,
   // and a participant the operator unlisted (a test or demo agent that is not running; setListed) carries unlisted:
   // true. Deal views keep publicParticipant as it was.
-  directoryRecord(p) {
-    return {...this.publicParticipant(p), ...(this.serverRun(p) || this.sandboxIds?.has(p.id) ? {agent_last_seen: iso(this.now())} : {}),
+  // `now`: one time for a whole listing, so every agent the server runs has the same agent_last_seen in it.
+  directoryRecord(p, now = this.now()) {
+    return {...this.publicParticipant(p), ...(this.serverRun(p) || this.sandboxIds?.has(p.id) ? {agent_last_seen: iso(now)} : {}),
       ...(p.unlisted ? {unlisted: true} : {})};
   }
   // The operator lists or unlists a participant (the admin route PUT /admin/participants/{vp}/listing): an unlisted
@@ -1298,7 +1299,7 @@ export class Pilot {
     this.store.audit({type: 'participant.sandbox_joined', id: p.id, ...(open ? {open_network: true} : {})});
     return {...j, ...this.selfServeFields(p), counterparties: open ? 'any' : ids,
       note: open
-        ? `Open network: you can deal with any agent on the network whose owner allows it (sandbox-exact and sandbox-mallory are always on), at most ${amt(SANDBOX_CAPS.max_issue_per_deal)} per deal and ${amt(SANDBOX_CAPS.max_issue_outstanding)} owed in total, until ${until}, renewed for another ${SANDBOX_DAYS} days whenever your agent is active. ${UNITS_NOTE}`
+        ? `Open network: you can deal with any agent on the network whose owner allows it (the practice agents are always on: hire sandbox-exact first, with exact results and no AI; sandbox-mallory is wrong on purpose, for trying a dispute), at most ${amt(SANDBOX_CAPS.max_issue_per_deal)} per deal and ${amt(SANDBOX_CAPS.max_issue_outstanding)} owed in total, until ${until}, renewed for another ${SANDBOX_DAYS} days whenever your agent is active. ${UNITS_NOTE}`
         : `Sandbox only: you can deal with the sandbox agents (sandbox-exact, sandbox-mallory) until ${until}. ${UNITS_NOTE}`};
   }
   // A self-serve participant boxed in (no open network) refuses every counterparty, and every issuer, but the sandbox
@@ -1500,7 +1501,7 @@ export class Pilot {
       deals: Object.fromEntries(POSITION_BUCKETS.map(b => [b, buckets[b]])),
       settled: redeemed ? redeemed.redeemed_claims + redeemed.redeemed_debts : 0, ...(redeemed ?? {}), backing,
       meaning: ON_TESTNET
-        ? 'claims and debts are outstanding credit notes (cumulative per pair, as the tracker records them). A claim is settled only when its creditor redeems it on Ergo testnet against the issuer\'s tERG reserve (GET /reserves).'
+        ? 'claims are the notes held and debts the notes issued, outstanding (cumulative per pair, as the tracker records them). A claim is settled only when its holder redeems it on Ergo testnet against a tERG reserve locked under the key that signed it (GET /reserves).'
         : 'claims and debts are outstanding credit notes (cumulative per pair, as the tracker records them). None has been settled: the pilot has no redemption, reserve or clearing.'};
     // Circulating credit (modes sandbox and on; design §5.6): what moved, from the edge journal, over every key the
     // participant has had. Set-offs cancel as much of its claims as of its debts, so cleared_by_setoff counts one side.
@@ -1531,7 +1532,7 @@ export class Pilot {
         // settled keeps its name and sum for the clients; its words keep the two apart: a set-off clears a debt (committed,
         // not final: the Trust model), a redemption pays it.
         ? {settled: journal.setoff + redeemed.redeemed_claims + redeemed.redeemed_debts, settled_how: SETTLED_HOW_TESTNET.committed, ...redeemed, backing,
-          meaning: 'claims and debts are outstanding obligations recorded by the Valun testnet Basis tracker, which anchors its state on Ergo testnet (cumulative per pair). Some may have moved between creditors (transfer) or been cancelled in cycles (set-off: cleared, and committed once a tracker box commits it, not final). A claim is settled only when its creditor redeems it on Ergo testnet against its issuer\'s tERG reserve (GET /reserves). The field settled adds the two kinds, so read them apart: cleared_by_setoff (cleared in loops), redeemed_claims (the claims you redeemed) and redeemed_debts (your debts redeemed from your reserve). tERG are test coins with no monetary value.'}
+          meaning: 'claims are the notes held and debts the notes issued, outstanding, as the Valun testnet Basis tracker records them (cumulative per pair); a tracker box on Ergo testnet commits each pair\'s total. Some may have moved between holders (transfer) or been cleared in loops (set-off: cleared, and committed once a tracker box commits it, not final). A claim is settled only when its holder redeems it on Ergo testnet against a tERG reserve locked under the key that signed it (GET /reserves). The field settled adds the two kinds, so read them apart: cleared_by_setoff (cleared in loops), redeemed_claims (what you redeemed of the notes you hold) and redeemed_debts (what holders redeemed of your notes, from your reserve). tERG are test coins with no monetary value.'}
         : {settled: journal.setoff, settled_how: 'by set-off only; nothing is redeemed', backing,
           meaning: 'claims and debts are outstanding obligations recorded by the pilot Basis tracker (cumulative per pair). Some may have moved between creditors (transfer) or been cancelled in cycles (set-off); settled counts only set-off. Nothing is redeemed; there is no reserve.'})};
   }
@@ -1722,8 +1723,8 @@ export class Pilot {
           ...(trusted ? {payer_trusted_by_owner: true} : {}),
           ...(back.cover || back.ids.length ? {backing_for_you: back.amount, already_paid_by_backers: back.already_paid, guarantees: back.ids} : {}),
           payer_owes_on_tracker: pe.tracker, payer_committed: pe.committed, ...(pe.guaranteed ? {payer_guaranteed: pe.guaranteed} : {}), this_deal: price, coverage_pct: pct, limit: bar});
-        const counted = circ ? ` (${amt(face)}, of which ${amt(claims)} count: an IOU counts only as far as a reserve on chain or an issuer this agent's owner trusts stands behind it)` : ` (${amt(face)})`;
-        if (pct < bar) fail(barRule, `${payer.handle}'s ${reserve ? `reserve (${amt(reserve)}) and ` : ''}claims on the tracker${counted}${back.cover ? ` and what guarantees of its debt to this agent pay or could still be called for (${amt(back.cover)})` : ''} cover ${pct}% of what it would owe with this ${guarantee ? 'guarantee' : 'deal'} (${amt(owes)}); this agent's owner requires at least ${bar}% for a ${guarantee ? `backer${backerBar ? '' : ' (min_payer_coverage_pct; min_backer_coverage_pct sets a separate bar for backers)'}` : 'payer'}${back.cover || guarantee ? '' : ' (a guarantee of its debts to this agent counts too)'}`);
+        const counted = circ ? ` (${amt(face)}, of which ${amt(claims)} count: a note counts only as far as a reserve on chain or an issuer this agent's owner trusts stands behind it)` : ` (${amt(face)})`;
+        if (pct < bar) fail(barRule, `${payer.handle}'s ${reserve ? `reserve (${amt(reserve)}) and ` : ''}claims on the tracker${counted}${back.cover ? ` and what guarantees of what it owes this agent pay or could still be called for (${amt(back.cover)})` : ''} cover ${pct}% of what it would owe with this ${guarantee ? 'guarantee' : 'deal'} (${amt(owes)}); this agent's owner requires at least ${bar}% for a ${guarantee ? `backer${backerBar ? '' : ' (min_payer_coverage_pct; min_backer_coverage_pct sets a separate bar for backers)'}` : 'payer'}${back.cover || guarantee ? '' : ' (a guarantee of what it owes this agent counts too)'}`);
       }
       // Circulating credit (modes sandbox and on): the phase-2 credit rules on the payer, as the issuer of the note p would
       // hold (lib/pilot/policy.mjs: refuse_notes_from, accept_operator_issuers, max_claims_total, max_issuer_net_debt).
@@ -1833,7 +1834,7 @@ export class Pilot {
     if (!sv || typeof sv !== 'object' || Object.keys(sv).sort().join() !== 'deliverable,description,title') bad('service must be {title, description, deliverable}');
     signedText(sv.title, 120, 'service.title'); signedText(sv.description, 2000, 'service.description'); signedText(sv.deliverable, 500, 'service.deliverable');
     if (!t.price || Object.keys(t.price).sort().join() !== 'amount,unit' || t.price.unit !== this.unit || !isInt(t.price.amount, 1, PRICE_CAP)) bad(`price must be {amount: 1..${PRICE_CAP}, unit: "${this.unit}"}`);
-    if (t.consideration !== 'credit_note_on_delivery_accepted') bad('consideration must be "credit_note_on_delivery_accepted" (the payer issues a credit note when it accepts the delivery)');
+    if (t.consideration !== 'credit_note_on_delivery_accepted') bad('consideration must be "credit_note_on_delivery_accepted" (the payer issues a note when it accepts the delivery)');
     const exp = Date.parse(t.offer_expires_at), due = Date.parse(t.deliver_by), now = this.now();
     if (!(exp > now && exp <= now + MAX_OFFER_TTL_MS)) bad('offer_expires_at must be in the future, at most 7 days ahead');
     if (!(due > now && due <= now + MAX_DELIVERY_MS)) bad('deliver_by must be in the future, at most 30 days ahead');
@@ -2155,11 +2156,11 @@ export class Pilot {
             // (ownNoteAttempts): a payment by transfer waits for it unless the journal proves it dead, which a change of
             // its pair timestamped before it cannot do (the review of PR #9, final round: two held IOUs of one pair, signed
             // from the same state and approved in the order they were signed).
-            const why = !keysNow ? "a party's agent key changed since your agent signed this credit note"
-              : totalSame ? "the pair's last credit note on the tracker changed since your agent signed this credit note (the total is the same, the note is not)"
-                : "the pair's tracker total changed since your agent signed this credit note";
-            const fresh = `a new IOU${keysNow ? '' : ' signed with the current keys'}`, {byTransfer, waits} = await this.payAgainWaits(d);
-            throw new PilotError('stale_note', `${why}; the approval is void, and Valun never sent the IOU: ${d.status === 'payment_due'
+            const why = !keysNow ? "a party's agent key changed since your agent signed this note"
+              : totalSame ? "the pair's last note on the tracker changed since your agent signed this note (the total is the same, the signed note is not)"
+                : "the pair's tracker total changed since your agent signed this note";
+            const fresh = `a new note${keysNow ? '' : ' signed with the current keys'}`, {byTransfer, waits} = await this.payAgainWaits(d);
+            throw new PilotError('stale_note', `${why}; the approval is void, and Valun never sent the note: ${d.status === 'payment_due'
               ? `the deal stays payment due, and your agent must still pay it, with ${fresh}${byTransfer ? ' or by transfer' : ''}`
               : `the deal is delivered again, and your agent may accept the delivery again with ${fresh}${byTransfer ? ' (or pay by transfer)' : ''}, or dispute it`}${waits ? `; ${waits}` : ''}`, 409);
           }
@@ -2277,7 +2278,7 @@ export class Pilot {
   noteParties(d) {
     const a = this.s.participants[d.payer], b = this.s.participants[d.payee];
     if (a.status !== 'active' || !a.pubkey) throw new PilotError('no_key', 'the payer has no registered agent key', 409);
-    if (b.status !== 'active' || !b.pubkey) throw new PilotError('payee_no_key', `${b.handle} has no registered agent key right now (its owner revoked it); the credit note can be issued once a new key is enrolled`, 409);
+    if (b.status !== 'active' || !b.pubkey) throw new PilotError('payee_no_key', `${b.handle} has no registered agent key right now (its owner revoked it); the note can be issued once a new key is enrolled`, 409);
     return {issuer: a.pubkey, recipient: b.pubkey};
   }
   noteKeysOf(d) {
@@ -2293,11 +2294,11 @@ export class Pilot {
       if (o.id === d.id || o.status !== 'issuing_note') continue;
       const k = this.noteKeysOf(o);
       if (k.issuer === issuer && k.recipient === recipient)
-        throw new PilotError('pair_busy', "another credit note for this key pair is being issued and the tracker has not confirmed it yet; a new note now could count it twice. Try again in 60 s.", 409, {retry_after_ms: PAIR_BUSY_RETRY_MS});
+        throw new PilotError('pair_busy', "another note for this key pair is being issued and the tracker has not confirmed it yet; a new note now could count it twice. Try again in 60 s.", 409, {retry_after_ms: PAIR_BUSY_RETRY_MS});
     }
     // A backer's note honoring a guarantee call on this pair, being recorded (fix inbox #18), holds it the same way.
     if (this.guarantees?.issuingOn(edgeKey(issuer, recipient)))
-      throw new PilotError('pair_busy', "another credit note for this key pair is being issued and the tracker has not confirmed it yet; a new note now could count it twice. Try again in 60 s.", 409, {retry_after_ms: PAIR_BUSY_RETRY_MS});
+      throw new PilotError('pair_busy', "another note for this key pair is being issued and the tracker has not confirmed it yet; a new note now could count it twice. Try again in 60 s.", 409, {retry_after_ms: PAIR_BUSY_RETRY_MS});
   }
 
   // The template's timestamp is after the pair's last note and never after this server's clock (OQ-12), which is the rule
@@ -2322,9 +2323,9 @@ export class Pilot {
   // novation_pending with the consents the payer must sign or refuse first, else 409 edge_busy).
   async noteTemplate(p, id, {wait = true, prior: withPrior = false, bound = false} = {}) {
     const d = this.partyDeal(id, p);
-    if (d.payer !== p.id) throw new PilotError('not_payer', 'only the payer signs the credit note', 403);
-    if (!PAYABLE.includes(d.status)) throw new PilotError('wrong_state', `deal is ${d.status}; a credit note follows a delivery`, 409);
-    if (bound && this.mode === 'off') throw new PilotError('feature_unavailable', 'bound credit notes are not enabled on this server (circulating credit is off); fetch the template without bound=1', 409);
+    if (d.payer !== p.id) throw new PilotError('not_payer', 'only the payer signs the note', 403);
+    if (!PAYABLE.includes(d.status)) throw new PilotError('wrong_state', `deal is ${d.status}; a note follows a delivery`, 409);
+    if (bound && this.mode === 'off') throw new PilotError('feature_unavailable', 'bound notes are not enabled on this server (circulating credit is off); fetch the template without bound=1', 409);
     const t = d.agreement.terms, {issuer, recipient} = this.noteParties(d);
     this.assertPairFree(d, issuer, recipient);
     this.assertNoteEdgeFree(issuer, recipient);
@@ -2346,8 +2347,8 @@ export class Pilot {
     }
     if (ahead > 0) {
       if (!wait || ahead > NOTE_CLOCK_WAIT_MS) throw new PilotError('note_timestamp_ahead', bound
-        ? `a bound credit note needs a timestamp ending in ${BOUND_NOTE_MS} ms, after the pair's last credit note on the tracker (timestamped ${last}) and at least 1.5 s before this server's clock; there is one in ${ahead} ms. Fetch the template again in ${Math.ceil(ahead / 1000)} s.`
-        : `the pair's last credit note on the tracker is timestamped ${last}, ${ahead} ms after this server's clock; a new note must be later than it and not in the future. Fetch the template again in ${Math.ceil(ahead / 1000)} s.`,
+        ? `a bound note needs a timestamp ending in ${BOUND_NOTE_MS} ms, after the pair's last note on the tracker (timestamped ${last}) and at least 1.5 s before this server's clock; there is one in ${ahead} ms. Fetch the template again in ${Math.ceil(ahead / 1000)} s.`
+        : `the pair's last note on the tracker is timestamped ${last}, ${ahead} ms after this server's clock; a new note must be later than it and not in the future. Fetch the template again in ${Math.ceil(ahead / 1000)} s.`,
       409, {retry_after_ms: ahead, last_note_timestamp: last});
       await new Promise(r => setTimeout(r, ahead + 5));
       return this.noteTemplate(p, id, {wait: false, prior: withPrior, bound});     // read the tracker again: the pair's note may have changed meanwhile
@@ -2408,19 +2409,19 @@ export class Pilot {
         : new PilotError('stale_note', message, 409, {template: await this.noteTemplate(p, id, {wait: false}).catch(() => null)});
       const cur = await this.basis.note(issuer, recipient);
       const prior = Number(cur?.amount_collected ?? 0);
-      if (!note || note.total !== prior + t.price.amount) throw await staleNote(`the credit note total must be ${prior + t.price.amount} (tracker prior ${prior} + price ${t.price.amount}); fetch a new credit-note template${bound ? ' (bound=1)' : ''}`);
-      if (!isInt(note.timestamp, Number(cur?.timestamp ?? 0) + 1, this.now())) throw new PilotError('stale_note', 'the credit note timestamp must be after the pair\'s last note and not in the future', 409);
+      if (!note || note.total !== prior + t.price.amount) throw await staleNote(`the note total must be ${prior + t.price.amount} (tracker prior ${prior} + price ${t.price.amount}); fetch a new credit-note template${bound ? ' (bound=1)' : ''}`);
+      if (!isInt(note.timestamp, Number(cur?.timestamp ?? 0) + 1, this.now())) throw new PilotError('stale_note', 'the note timestamp must be after the pair\'s last note and not in the future', 409);
       // A bound note older than the tracker's maximum age (tracker v3.1, decision D-1) can never apply.
-      if (bound && note.timestamp < this.now() - MAX_AGE_MS) throw await staleNote('a bound credit note more than one hour old can no longer be recorded by the tracker; fetch a new credit-note template (bound=1)');
+      if (bound && note.timestamp < this.now() - MAX_AGE_MS) throw await staleNote('a bound note more than one hour old can no longer be recorded by the tracker; fetch a new credit-note template (bound=1)');
       if (reserved && !bound && reserved.includes(note.timestamp % 1000))
-        throw await staleNote(`the credit note timestamp ${note.timestamp} ends in ${note.timestamp % 1000} ms, which the tracker keeps for other operations (${reserved.join(', ')}); fetch a new credit-note template`);
+        throw await staleNote(`the note timestamp ${note.timestamp} ends in ${note.timestamp % 1000} ms, which the tracker keeps for other operations (${reserved.join(', ')}); fetch a new credit-note template`);
       if (bound && note.prior_total !== prior)
-        throw await staleNote(`a bound credit note's prior_total must be the pair's current total on the tracker, ${prior}; fetch a new credit-note template (bound=1)`);
+        throw await staleNote(`a bound note's prior_total must be the pair's current total on the tracker, ${prior}; fetch a new credit-note template (bound=1)`);
       const priorTs = cur ? cur.timestamp : 0;
       if (bound && note.prior_timestamp != null && note.prior_timestamp !== priorTs)
-        throw await staleNote(`a bound credit note's prior_timestamp must be the timestamp of the pair's current note on the tracker, ${priorTs} (0 for a pair with no note); fetch a new credit-note template (bound=1)`);
+        throw await staleNote(`a bound note's prior_timestamp must be the timestamp of the pair's current note on the tracker, ${priorTs} (0 for a pair with no note); fetch a new credit-note template (bound=1)`);
       const {message_hex} = await this.noteMessage({issuer, recipient, total: note.total, timestamp: note.timestamp});
-      if (!(await this.safeVerify(issuer, message_hex, note.signature))) throw new PilotError('bad_signature', 'the Basis note signature does not verify', 403);
+      if (!(await this.safeVerify(issuer, message_hex, note.signature))) throw new PilotError('bad_signature', 'the note signature does not verify', 403);
       if (bound) {
         const ack = await this.messageHex({issuer, recipient, total: prior, prior_timestamp: priorTs, timestamp: note.timestamp});
         if (!(await this.safeVerify(issuer, ack, note.prior_signature)))
@@ -2855,12 +2856,12 @@ export class Pilot {
     const [i, r] = k.split('>');
     // A backer's note honoring a guarantee call, being issued on this edge, holds it as a deal's note does (review F4: a
     // transfer applied meanwhile made recovery call the recorded note failed, and the backer paid the call twice).
-    if (this.guarantees?.issuingOn(k)) throw new PilotError('edge_busy', 'a credit note honoring a guarantee call is being issued on this edge; try again later', 409, {retry_after_ms: PAIR_BUSY_RETRY_MS});
+    if (this.guarantees?.issuingOn(k)) throw new PilotError('edge_busy', 'a note honoring a guarantee call is being issued on this edge; try again later', 409, {retry_after_ms: PAIR_BUSY_RETRY_MS});
     for (const d of Object.values(this.s.deals)) {
       if ((d.status !== 'issuing_note' && d.status !== 'completion_awaiting_owner') || !d.credit_note) continue;
       const n = this.noteKeysOf(d);
       if (n.issuer === i && n.recipient === r)
-        throw new PilotError('edge_busy', 'a credit note on this edge is being issued or waits for an owner; try again later', 409, {retry_after_ms: PAIR_BUSY_RETRY_MS});
+        throw new PilotError('edge_busy', 'a note on this edge is being issued or waits for an owner; try again later', 409, {retry_after_ms: PAIR_BUSY_RETRY_MS});
     }
   }
   // A credit note on an edge a live transfer holds (noteTemplate, complete, the owner's release): 409 novation_pending
@@ -2873,7 +2874,7 @@ export class Pilot {
     const held = this.transfersOnEdge(edgeKey(issuer, recipient));
     if (!held.length) return;
     const pending = held.filter(t => t.state === 'collecting' && t.issuer.pubkey === issuer && this.slotsOf(t, 'issuer').some(s => !t.slots[s.name]?.signature));
-    if (pending.length) throw new PilotError('novation_pending', 'a payment by transfer of your debt on this edge waits for your consent; sign or refuse it (GET /consents) before a new credit note here', 409, {consent_ids: pending.map(t => t.id)});
+    if (pending.length) throw new PilotError('novation_pending', 'a payment by transfer of your note on this edge waits for your consent; sign or refuse it (GET /consents) before a new note here', 409, {consent_ids: pending.map(t => t.id)});
     throw new PilotError('edge_busy', 'a payment by transfer holds this edge until it is applied or ends; try again later', 409, {retry_after_ms: Math.max(...held.map(t => this.retryAfter(t)))});
   }
 
@@ -2936,7 +2937,7 @@ export class Pilot {
     if (!this.consentCapable(C, 'creditor')) no('creditor_consent');
   }
   novatingIssuerCheck(A, C, {pubkey = null} = {}) {
-    const no = rule => this.refusePayment('issuer', rule, `${A.handle} cannot move its debt to ${C.handle} now (${rule})`);
+    const no = rule => this.refusePayment('issuer', rule, `${A.handle}'s note cannot move to ${C.handle} now (${rule})`);
     if (A.status !== 'active' || !A.pubkey || (pubkey && A.pubkey !== pubkey)) no('issuer_key');
     const m = this.effectiveLimits(A);
     if (m.expires_at && Date.parse(m.expires_at) < this.now()) no('expires_at');
@@ -2968,7 +2969,7 @@ export class Pilot {
   cannotSpendWhy(B, A, note, a, prefix = '') {
     const held = this.heldForBackers(A.id, B.id);
     if (held && this.spendableNote(B, A, note, {lessHeld: false}) >= a)
-      return `${amt(a)} of ${A.handle}'s note to you cannot be spent: ${amt(held)} of it is held: backers already paid you that much for ${A.handle}'s debt (guarantee calls they honored), so you are not paid twice; you can spend at most ${amt(this.spendableNote(B, A, note))}`;
+      return `${amt(a)} of ${A.handle}'s note to you cannot be spent: ${amt(held)} of it is held: backers already paid you that much for what ${A.handle} owes you (guarantee calls they honored), so you are not paid twice; you can spend at most ${amt(this.spendableNote(B, A, note))}`;
     return `${amt(a)} of ${A.handle}'s note to you cannot be spent now (${prefix}it must reconcile exactly with Valun's journal)`;
   }
   // Fix inbox #107: what backers paid creditor C for issuer A's debt (GuaranteeBook.paidOnPair: honored calls, and honors
@@ -3121,7 +3122,7 @@ export class Pilot {
     const byTransfer = this.mayPayByTransfer(d) && (!g.transfer || g.transfer.code === 'transfer_window_open');
     const own = end(g.note), tr = byTransfer ? Math.max(end(g.transfer), this.transferCapUntil(this.s.participants[d.payer], d) ?? 0) : 0;
     const waits = own && own === tr ? [`a payment may have to wait until ${iso(own)}`]
-      : [own ? `a payment with its own IOU may have to wait until ${iso(own)}` : null, tr ? (own ? `and one by transfer until ${iso(tr)}` : `a payment by transfer may have to wait until ${iso(tr)}`) : null];
+      : [own ? `a payment with its own note may have to wait until ${iso(own)}` : null, tr ? (own ? `and one by transfer until ${iso(tr)}` : `a payment by transfer may have to wait until ${iso(tr)}`) : null];
     return {byTransfer, waits: waits.filter(Boolean).join(', ')};
   }
   // Whether deal d has any payment attempt by transfer (recorded, or refused when posted): only then can an own credit
@@ -3204,7 +3205,7 @@ export class Pilot {
     if (b.code === 'transfer_window_open') return new PilotError('transfer_window_open', `an earlier attempt to pay this deal can still apply at the tracker (until its timestamp + 1 hour); another payment (with any note, the same issuer's included, unless it is a transfer through the same note acknowledging the same prior state, total and timestamp, as that attempt did) can start in ${Math.ceil(b.retry_after_ms / 1000)} s`, 409, {retry_after_ms: b.retry_after_ms});
     if (b.code === 'attempt_outcome_unknown') return new PilotError('attempt_outcome_unknown', "an earlier attempt to pay this deal may have applied (the tracker's state cannot tell); no other payment starts until the payer's owner resolves it, after confirming with the payee", 409);
     if (b.code === 'already_paid') return new PilotError('already_paid', 'an earlier payment of this deal applied; it is not paid again', 409);
-    if (b.code === 'pending_unbound_note') return new PilotError('pending_unbound_note', 'an earlier credit note of yours for this deal (an ordinary note: it has no maximum age) was not recorded but could still be, so a payment by transfer could pay the deal twice; pay it with a new credit note (complete) instead', 409);
+    if (b.code === 'pending_unbound_note') return new PilotError('pending_unbound_note', 'an earlier note of yours for this deal (an ordinary note: it has no maximum age) was not recorded but could still be, so a payment by transfer could pay the deal twice; pay it with a new note (complete) instead', 409);
     return new PilotError('edge_busy', 'a payment of this deal is in progress', 409, {retry_after_ms: b.retry_after_ms ?? PAIR_BUSY_RETRY_MS});
   }
 
@@ -4856,10 +4857,13 @@ export class Pilot {
       history: d.history.filter(h => !h.only || h.only === p.id).map(h => h.note !== undefined && h.by !== `owner:${p.id}` ? (({note, ...rest}) => rest)(h) : h),
       labels: {
         signed_by_parties: 'proposals, acceptances, deliveries, completions and disputes carry the acting participant\'s key signature',
-        owner_approvals: 'owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner\'s note is seen only by that participant\'s side',
+        // In mode off v15's text (invariant I-DARK); elsewhere the owner's decision note is called a comment, as the
+        // money is called a note (fix inbox #173).
+        owner_approvals: this.mode === 'off' ? 'owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner\'s note is seen only by that participant\'s side'
+          : 'owner approvals are recorded by the Valun server under the owner token (not key-signed); an owner\'s comment (its note field) is seen only by that participant\'s side',
         basis: d.status === 'note_issued' ? this.issuedLabel(d, d.credit_note?.tracker_note?.confirmation ?? null, {live: false})
-          : circulating && d.status === 'paid_by_transfer' && t ? `${handle(t.issuer.id)} now owes ${handle(d.payee)} ${amt(price)} that it owed ${handle(d.payer)} before; ${handle(d.payer)} issued no credit note for this deal`
-            : 'no credit note for this deal is in the Basis tracker',
+          : circulating && d.status === 'paid_by_transfer' && t ? `${handle(t.issuer.id)} now owes ${handle(d.payee)} ${amt(price)} that it owed ${handle(d.payer)} before; ${handle(d.payer)} issued no note for this deal`
+            : 'no note for this deal is in the Basis tracker',
         settlement: ON_TESTNET ? (circulating ? CIRCULATION_SETTLEMENT_TESTNET : SETTLEMENT_TESTNET)
           : circulating ? CIRCULATION_SETTLEMENT : 'not settled: issuing a credit note creates an outstanding obligation; the pilot has no redemption, reserve or clearing, so nothing is ever settled here',
         work: 'delivery and acceptance are the parties\' statements; Valun does not judge the work',
@@ -4896,7 +4900,7 @@ export class Pilot {
   // note got on Ergo testnet (onChainWords), then who owes whom for this deal.
   issuedLabel(d, confirmation, {live}) {
     const where = ON_TESTNET ? `; ${onChainWords(confirmation, {live})}` : '';
-    return `credit note issued: the payer-signed Basis note is held by ${TRACKER_PLACE}${where}; ${this.s.participants[d.payer].handle} owes ${this.s.participants[d.payee].handle} ${amt(d.agreement.terms.price.amount)} more`;
+    return `note issued: the payer-signed note is held by ${TRACKER_PLACE}${where}; ${this.s.participants[d.payer].handle} owes ${this.s.participants[d.payee].handle} ${amt(d.agreement.terms.price.amount)} more`;
   }
   // labels.summary of an issued IOU, for the deal's payer or payee p, from what the tracker holds now (cn: the view's
   // credit_note after liveNote; a tracker that could not be read leaves it as recorded, and the summary says so):
@@ -4915,7 +4919,7 @@ export class Pilot {
     const payer = this.s.participants[d.payer].handle, payee = this.s.participants[d.payee].handle, mine = d.payer === p.id;
     const price = d.agreement.terms.price.amount;
     const row = cn.pair_now ? cn.pair_now.outstanding : Number(cn.tracker_note?.amount_collected) - Number(cn.tracker_note?.amount_redeemed ?? 0);
-    const out = [`For this deal ${mine ? `you issued ${payee}` : `${payer} issued you`} an IOU (credit note) of ${amt(price)}, which ${ON_TESTNET ? 'the testnet tracker' : 'the tracker'} recorded at ${cn.recorded_at}.`];
+    const out = [`For this deal ${mine ? `you issued ${payee}` : `${payer} issued you`} a note of ${amt(price)}, which ${ON_TESTNET ? 'the testnet tracker' : 'the tracker'} recorded at ${cn.recorded_at}.`];
     const known = Number.isSafeInteger(row);
     if (known) {
       out.push(`${mine ? `What you owe ${payee}` : `What ${payer} owes you`} on the pair's row (from ${payer} to ${payee}) ${cn.pair_now ? `is now ${amt(row)}`
@@ -4939,10 +4943,10 @@ export class Pilot {
     if (cn.settled) out.push(`It was redeemed on Ergo testnet against ${mine ? 'your' : `${payer}'s`} reserve: nothing of it is outstanding.`);
     else if (known && row === 0 && cn.pair_now) out.push('Nothing is owed on that row now.');
     else {
-      const ways = [`a loop of IOUs through this pair lowers it by the loop's smallest debt (a set-off)`,
-        mine ? `${payee} can pass it on to another agent that accepts your IOUs (you then owe that agent instead)` : `you can pass it on to another agent that accepts ${payer}'s IOUs (${payer} then owes that agent instead)`];
+      const ways = [`a loop of notes through this pair lowers it by at most the smallest amount in the loop (a set-off: it clears, and settles nothing)`,
+        mine ? `${payee} can pass it on to another agent that accepts your notes (you then owe that agent instead)` : `you can pass it on to another agent that accepts ${payer}'s notes (${payer} then owes that agent instead)`];
       if (ON_TESTNET) ways.push(`${mine ? `${payee} can` : 'you can'} redeem it for tERG only against a reserve ${mine ? 'you' : payer} posted on Ergo testnet, once a tracker box commits it: ${await this.reserveWords(cn.issuer_pubkey, mine ? null : payer)}`);
-      out.push(`How it is paid back or used: ${ways.join('; ')}. Until then it stays ${mine ? 'your' : `${payer}'s`} promise to pay, not a payment.`);
+      out.push(`How it can be ${ON_TESTNET ? 'cleared, passed on or redeemed' : 'cleared or passed on'}: ${ways.join('; ')}. Until then it stays ${mine ? 'your' : `${payer}'s`} promise to pay, not a payment.`);
     }
     return out.join(' ');
   }
@@ -5181,8 +5185,8 @@ export class Pilot {
     const stays = ' If a check fails, nothing changes and this stays pending.';
     // What an agreed deal binds both sides to, from this owner's side.
     const binds = payer
-      ? `${other} delivers by ${t.deliver_by}, and when your agent accepts the delivery, it signs an IOU to ${other} for ${price}${owner?.mandate?.review_deliveries ? ', which waits for you here again (Review deliveries)' : ''}`
-      : `your agent delivers by ${t.deliver_by}, and when ${other} accepts the delivery, it owes you ${price}: its IOU, a promise to pay, not a payment. If your agent doesn't deliver within ${UNDELIVERED_GRACE_DAYS} days after that, the deal ends and nothing is owed`;
+      ? `${other} delivers by ${t.deliver_by}, and when your agent accepts the delivery, it signs a note to ${other} for ${price}${owner?.mandate?.review_deliveries ? ', which waits for you here again (Review deliveries)' : ''}`
+      : `your agent delivers by ${t.deliver_by}, and when ${other} accepts the delivery, it owes you ${price}: its note, a promise to pay, not a payment. If your agent doesn't deliver within ${UNDELIVERED_GRACE_DAYS} days after that, the deal ends and nothing is owed`;
     const decideBy = this.approvalDecideBy(a, d, s);
     if (a.kind === 'propose') {
       const accepted = `If ${other} accepts it, you aren't asked again, though ${other}'s own owner may have to approve its acceptance first. The deal is then binding on both sides: ${binds}. Nothing reaches the tracker before that.`;
@@ -5191,7 +5195,7 @@ export class Pilot {
         return effect(
           `Your agent signed this offer with its key, and Valun's server holds it: ${other} can't see it, and nothing is on the tracker. While it waits, it counts against your agent's limits${limit}, and your agent may still withdraw it.`,
           `Nothing new is signed. ${other} sees this offer, signed by your agent, and can accept, counter or decline it until ${t.offer_expires_at}. ${accepted}`,
-          `The offer is never shown to ${other}, and the deal ends. Valun keeps your agent's signed offer on record; it binds nobody and is not an IOU. Your agent sees your decision, and your note, when it next reads the deal.`,
+          `The offer is never shown to ${other}, and the deal ends. Valun keeps your agent's signed offer on record; it binds nobody and is not a note. Your agent sees your decision, and your comment, when it next reads the deal.`,
           `Decide by ${decideBy}, when the offer expires: the deal then ends, and an approval after that is refused.`,
           recheck + stays);
       }
@@ -5212,7 +5216,7 @@ export class Pilot {
         `Your agent signed its acceptance of ${other}'s ${payer ? 'offer' : 'job offer'}, and Valun's server holds it. ${other} already sees that your agent accepted and that this waits for you, but not the acceptance's signature, and it may still withdraw its offer. Nothing is on the tracker. The deal already counts against your agent's limits.`,
         `Nothing new is signed. ${proposerToo ? `The deal is agreed once ${other}'s owner also confirms ${other}'s offer (it is above ${other}'s current threshold); it is then binding on both sides: ${binds}.`
           : `The deal is agreed and binding on both sides: ${binds}.`} Nothing reaches the tracker before that.`,
-        `Your agent's acceptance doesn't take effect, and the offer is open again until ${t.offer_expires_at}: your agent may accept it again${again}. ${other} sees that the acceptance wasn't approved, never your note. Valun keeps the signed acceptance on record; ${other} never sees its signature.`,
+        `Your agent's acceptance doesn't take effect, and the offer is open again until ${t.offer_expires_at}: your agent may accept it again${again}. ${other} sees that the acceptance wasn't approved, never your comment. Valun keeps the signed acceptance on record; ${other} never sees its signature.`,
         `Decide by ${decideBy}, when the offer expires: your agent's acceptance expires with it, and an approval after that is refused.`,
         `${recheck} The offer must also still be within ${other}'s mandate.${stays}`);
     }
@@ -5220,7 +5224,7 @@ export class Pilot {
       `Your agent signed this offer when its price was within your Ask me above; you have lowered that since, and ${other} has now accepted it. ${other}'s agent signed its acceptance, and Valun's server holds it: you see its signature once the deal is agreed. The deal already counts against both sides' limits. Nothing is on the tracker.`,
       `Nothing new is signed. ${s.acceptor_owner_must_approve ? `The deal is agreed once ${other}'s owner also approves ${other}'s acceptance; it is then binding on both sides: ${binds}.`
         : `The deal is agreed and binding on both sides: ${binds}.`} Nothing reaches the tracker before that.`,
-      `Your agent's offer is withdrawn on your behalf, and ${other}'s acceptance is void: nothing is agreed, and nothing is owed. Both sides see that the offer was withdrawn by its owner, never your note. Valun keeps both signatures on record.`,
+      `Your agent's offer is withdrawn on your behalf, and ${other}'s acceptance is void: nothing is agreed, and nothing is owed. Both sides see that the offer was withdrawn by its owner, never your comment. Valun keeps both signatures on record.`,
       `Decide by ${decideBy}, when the offer expires: ${other}'s acceptance expires with it, and an approval after that is refused.`,
       `${recheck} ${other}'s acceptance must also still be within ${other}'s mandate.${stays}`);
     // A payment by debt transfer held for the payer's owner (spec 18.11); a deal whose acceptance already stood
@@ -5241,11 +5245,11 @@ export class Pilot {
       // names the cap only.
       const fb = fallbackAfter(tr.timestamp), payerRec = this.s.participants[d.payer], pending = a.state === 'pending';
       const made = pending ? this.transfersInDay(payerRec, d).length : 0, cap = pending ? this.transferCapUntil(payerRec, d) : null;
-      const sooner = 'or sooner once either IOU this payment would have changed has changed since';
+      const sooner = 'or sooner once either note this payment would have changed has changed since';
       const payAgain = cap !== null
-        ? `This deal has had ${made} payments by transfer in 24 hours, this one included, the most Valun allows, whatever became of them: Valun refuses another one until ${iso(cap)}, through ${A}'s IOU too. With its own IOU, your agent may pay after ${iso(fb)}, ${sooner}.${cap <= fb
-          ? ` From ${iso(cap)}, Valun lets it pay by transfer again: through ${A}'s IOU while that IOU is exactly as this payment found it, and through any other IOU after ${iso(fb)}, ${sooner}.` : ''}`
-        : `Valun lets it pay through ${A}'s IOU at once, while that IOU is exactly as this payment found it (the tracker applies at most one of the two), and with its own IOU or any other IOU after ${iso(fb)}, ${sooner}. Valun allows at most ${MAX_ATTEMPTS_PER_DAY} payments by transfer of one deal in 24 hours, whatever became of them${made >= 1 && made <= 3 ? `, and this is this deal's ${['first', 'second', 'third'][made - 1]}` : ''}.`;
+        ? `This deal has had ${made} payments by transfer in 24 hours, this one included, the most Valun allows, whatever became of them: Valun refuses another one until ${iso(cap)}, through ${A}'s note too. With its own note, your agent may pay after ${iso(fb)}, ${sooner}.${cap <= fb
+          ? ` From ${iso(cap)}, Valun lets it pay by transfer again: through ${A}'s note while that note is exactly as this payment found it, and through any other note after ${iso(fb)}, ${sooner}.` : ''}`
+        : `Valun lets it pay through ${A}'s note at once, while that note is exactly as this payment found it (the tracker applies at most one of the two), and with its own note or any other note after ${iso(fb)}, ${sooner}. Valun allows at most ${MAX_ATTEMPTS_PER_DAY} payments by transfer of one deal in 24 hours, whatever became of them${made >= 1 && made <= 3 ? `, and this is this deal's ${['first', 'second', 'third'][made - 1]}` : ''}.`;
       // valun 0.7.1 (the Hermes plugin 0.7.1 too) is not told of a rejected or expired payment by transfer either: it
       // keeps it as a payment attempt on the IOU the agent paid through (A's IOU to the agent; its novation.py, decision
       // D-1). The owner's texts say only what holds in every case (the review of PR #9: each list of 0.7.1's conditions
@@ -5264,24 +5268,24 @@ export class Pilot {
       // nothing, client.py pay_by_transfer fetches the template first), so only its own IOU remains, which 0.7.1 judges as
       // after any rejected payment (transfer_window_open, or attempt_outcome_unknown once A's IOU changed).
       const payTrap = cap !== null
-        ? ` valun 0.7.1 isn't told either, and keeps counting this payment as one that may still apply. Until ${iso(cap)}, as Valun refuses another payment by transfer of this deal, your agent can pay it only with its own IOU, and 0.7.1 may refuse that. ${payRefusals}`
-        : ` valun 0.7.1 isn't told either, and keeps counting this payment as one that may still apply. It usually pays this deal again through ${A}'s IOU at once while that IOU is as this payment found it; any other way, or once that IOU has changed, it may refuse. ${payRefusals}`;
+        ? ` valun 0.7.1 isn't told either, and keeps counting this payment as one that may still apply. Until ${iso(cap)}, as Valun refuses another payment by transfer of this deal, your agent can pay it only with its own note, and 0.7.1 may refuse that. ${payRefusals}`
+        : ` valun 0.7.1 isn't told either, and keeps counting this payment as one that may still apply. It usually pays this deal again through ${A}'s note at once while that note is as this payment found it; any other way, or once that note has changed, it may refuse. ${payRefusals}`;
       // A rejected (or expired) transfer of a deal not yet paid stays an earlier payment attempt of the deal, and the
       // clearing engine keeps every set-off off its from-edge (the payer's claim on the issuer) until the deal is paid or
       // has ended, whatever its age (paymentAttemptHolds); a delivered deal ends unpaid only when its payer disputes it.
       const claimHeld = ` Until your agent pays this deal${due ? '' : ' or disputes the delivery'}, no set-off touches your claim on ${A}: no loop that includes what ${A} owes you clears.`;
       return effect(
-        `Your agent accepted ${C}'s delivery and signed a payment by transfer: its acceptance of the delivery (which ${C} already sees), its pay statement, and its three signatures of the transfer. Your claim on ${A} would fall from ${amt(X)} to ${amt(X - amount)}, and ${A}'s debt to ${C} would rise from ${amt(Y)} to ${amt(Y + amount)}. Valun's server holds them: nobody else has signed, nothing is listed for ${A} or ${C} to sign, no signature has left Valun, and nothing is on the tracker. The two IOUs it changes are held for this payment meanwhile.`,
-        `Nothing new is signed by your agent. If the checks below pass, ${A} and ${C} sign within 20 minutes: their clients do it by themselves, and Valun signs for the agents it runs. With the last signature the tracker applies it: ${A} then owes ${C} ${amt(amount)} more and you ${amt(amount)} less, and you issue no IOU. From your approval on, the delivery stays accepted: if the transfer then fails or expires, the deal is payment due, your agent must pay again, and the delivery can no longer be disputed.`,
+        `Your agent accepted ${C}'s delivery and signed a payment by transfer: its acceptance of the delivery (which ${C} already sees), its pay statement, and its three signatures of the transfer. The total of ${A}'s note to you would fall from ${amt(X)} to ${amt(X - amount)}, and the total of ${A}'s note to ${C} would rise from ${amt(Y)} to ${amt(Y + amount)}. Valun's server holds them: nobody else has signed, nothing is listed for ${A} or ${C} to sign, no signature has left Valun, and nothing is on the tracker. The two notes it changes are held for this payment meanwhile.`,
+        `Nothing new is signed by your agent. If the checks below pass, ${A} and ${C} sign within 20 minutes: their clients do it by themselves, and Valun signs for the agents it runs. With the last signature the tracker applies it: ${A} then owes ${C} ${amt(amount)} more and you ${amt(amount)} less, and you issue no note. From your approval on, the delivery stays accepted: if the transfer then fails or expires, the deal is payment due, your agent must pay again, and the delivery can no longer be disputed.`,
         `Nothing moves, and nothing reaches the tracker. Valun deletes your agent's three transfer signatures, keeping only their hashes. ${due
           ? `The deal stays payment due: the delivery stays accepted, and your agent must still pay it. ${payAgain}`
-          : `The deal goes back to delivered: your agent may pay again, or dispute the delivery. ${payAgain}`} ${C} sees that you rejected the payment, never your note.${claimHeld} Your agent isn't told: tell it.${payTrap}`,
+          : `The deal goes back to delivered: your agent may pay again, or dispute the delivery. ${payAgain}`} ${C} sees that you rejected the payment, never your comment.${claimHeld} Your agent isn't told: tell it.${payTrap}`,
         `Approve or reject by ${decideBy}, 20 minutes after your agent signed it. The payment then ends as after a rejection: nothing moves, Valun deletes the signatures, and the deal ${due ? 'stays payment due' : 'goes back to delivered'}. Your agent isn't told: tell it. As after a rejection, valun 0.7.1 keeps counting this payment as one that may still apply. ${payRefusals}`,
         // A stale one ends void_stale as a rejection ends it (decidePayByTransfer: endTransfer, releaseAcceptance): the
         // deal back to delivered, where it can be disputed, or payment_due when its acceptance already stood. Nothing
         // tells the agent or its client (the 409 stale_payment goes to the owner; the console's flash says what 0.7.1
         // does then, as after a rejection: pilot.js payTrap).
-        `When you approve, the server first checks again that ${A}'s notes to you and to ${C} on the tracker (their totals, timestamps and signatures) are unchanged since your agent signed, that all three parties still have the keys named in the transfer, and that the payment still passes every check it passed when your agent made it (your agent's limits for paying with notes it holds, that ${C} still accepts ${A}'s notes, that ${A} may still move its debt to ${C}, and that no other payment of this deal could still apply); if not, the approval becomes void, nothing moves, and the deal ${due
+        `When you approve, the server first checks again that ${A}'s notes to you and to ${C} on the tracker (their totals, timestamps and signatures) are unchanged since your agent signed, that all three parties still have the keys named in the transfer, and that the payment still passes every check it passed when your agent made it (your agent's limits for paying with notes it holds, that ${C} still accepts ${A}'s notes, that ${A} may still let the note it issued you move to ${C}, and that no other payment of this deal could still apply); if not, the approval becomes void, nothing moves, and the deal ${due
           ? 'stays payment due: your agent must still pay it.' : 'goes back to delivered: your agent may pay again, or dispute the delivery.'} As after a rejection, your agent isn't told, and valun 0.7.1 keeps counting this payment as one that may still apply.`);
     }
     // The credit note for an accepted delivery. With circulation on, the texts say what the server checks (the pair's
@@ -5304,8 +5308,8 @@ export class Pilot {
     // whatever became of them: a held IOU of such a deal (its agent paid it with its own IOU after them) says so too.
     const payerRec = this.s.participants[d.payer], capped = this.circulating && a.state === 'pending' ? this.transferCapUntil(payerRec, d) : null;
     const transferWait = !this.circulating ? '' : `${bound
-      ? ` If it were sent, the tracker could still record it until ${until}, so paying this deal by transfer waits until ${iso(fallbackAfter(n.timestamp))}, unless the first change to this key pair's IOU signed after this one moves it from ${amt(n.prior_total)}, the total this one acknowledged, as a later IOU of your agent's to ${payee} on this key pair does when nothing else changed the pair first: Valun then doesn't wait for this one.`
-      : ' An ordinary IOU has no time limit at the tracker, so paying this deal by transfer is refused until this pair\'s IOU on the tracker moves past it.'}${capped !== null
+      ? ` If it were sent, the tracker could still record it until ${until}, so paying this deal by transfer waits until ${iso(fallbackAfter(n.timestamp))}, unless the first change to this key pair's note signed after this one moves it from ${amt(n.prior_total)}, the total this one acknowledged, as a later note of your agent's to ${payee} on this key pair does when nothing else changed the pair first: Valun then doesn't wait for this one.`
+      : ' An ordinary note has no time limit at the tracker, so paying this deal by transfer is refused until this pair\'s note on the tracker moves past it.'}${capped !== null
       ? ` Valun also refuses any payment by transfer of this deal until ${iso(capped)}: it allows at most ${MAX_ATTEMPTS_PER_DAY} in 24 hours, whatever became of them, and this deal has had ${this.transfersInDay(payerRec, d).length}.` : ''}`;
     // Circulating credit (decision D-1, paymentAttemptHolds): the rejected or expired note, bound or ordinary, stays an
     // earlier payment attempt of this deal whatever its age (ownNoteAttempts), so the clearing engine keeps every set-off
@@ -5327,13 +5331,13 @@ export class Pilot {
     // approval probe's D2; staging's first-use round of 2026-11-18. A bound note only: what 0.7.1 signs on the testnet.
     // The deadline says it again.
     const resolve = `\`${OWNER_ATTEMPTS.resolve(d.id)}\``;
-    const refusals = !bound ? '' : `If it answers transfer_window_open, have your agent pay again once ${clientAt} has passed, an hour and 2 minutes after this IOU's timestamp (its retry_after_ms says how long to wait). If it answers attempt_outcome_unknown, run ${resolve} in a terminal (#n from \`${OWNER_ATTEMPTS.list}\`; in Hermes, \`${OWNER_ATTEMPTS.hermes}\`): Valun never sent this IOU. Then have your agent pay again once ${clientAt} has passed.`;
-    const trap = !bound ? '' : ` valun 0.7.1 isn't told either, and keeps counting this IOU as a payment that may still apply. It usually signs a new IOU for this deal at once. If anything else changed this pair's IOU first, or an agent's key changed, it may refuse. ${refusals}`;
-    const trapAgain = !bound ? '' : ` As after a rejection,${this.circulating ? `${pairHeld}, and` : ''} valun 0.7.1 keeps counting this IOU as a payment that may still apply. ${refusals}`;
+    const refusals = !bound ? '' : `If it answers transfer_window_open, have your agent pay again once ${clientAt} has passed, an hour and 2 minutes after this note's timestamp (its retry_after_ms says how long to wait). If it answers attempt_outcome_unknown, run ${resolve} in a terminal (#n from \`${OWNER_ATTEMPTS.list}\`; in Hermes, \`${OWNER_ATTEMPTS.hermes}\`): Valun never sent this note. Then have your agent pay again once ${clientAt} has passed.`;
+    const trap = !bound ? '' : ` valun 0.7.1 isn't told either, and keeps counting this note as a payment that may still apply. It usually signs a new note for this deal at once. If anything else changed this pair's note first, or an agent's key changed, it may refuse. ${refusals}`;
+    const trapAgain = !bound ? '' : ` As after a rejection,${this.circulating ? `${pairHeld}, and` : ''} valun 0.7.1 keeps counting this note as a payment that may still apply. ${refusals}`;
     // The tracker posts a tracker box at most every CHECK_INTERVAL_S, and at most DAILY_TRACKER_SIGNATURES a UTC day.
-    const anchoring = ON_TESTNET ? `, and a later tracker box commits it on Ergo testnet: the tracker checks every ${UPDATE_EVERY}, and posts at most ${DAILY_TRACKER_SIGNATURES} tracker boxes a UTC day; once they are used, the IOU is committed on chain only after 00:00 UTC` : '';
+    const anchoring = ON_TESTNET ? `, and a later tracker box commits it on Ergo testnet: the tracker checks every ${UPDATE_EVERY}, and posts at most ${DAILY_TRACKER_SIGNATURES} tracker boxes a UTC day; once they are used, the note is committed on chain only after 00:00 UTC` : '';
     return effect(
-      `Your agent accepted ${payee}'s delivery and signed two things with its key: its acceptance of the delivery, which ${payee} already sees, and an IOU to ${payee} for ${price}: a complete Basis note${bound ? ' with its prior acknowledgment' : ''} that raises what you owe ${payee} from ${amt(n.prior_total)} to ${amt(n.total)}. Valun's server holds the IOU: it is not on the tracker, and ${payee} sees its amount but not its signature. ${ON_TESTNET
+      `Your agent accepted ${payee}'s delivery and signed two things with its key: its acceptance of the delivery, which ${payee} already sees, and a note to ${payee} for ${price}, complete in the tracker's signed format${bound ? ', with its prior acknowledgment' : ''}, that raises the total of your note to ${payee} from ${amt(n.prior_total)} to ${amt(n.total)}. Valun's server holds the note: it is not on the tracker, and ${payee} sees its amount but not its signature. ${ON_TESTNET
         ? 'Only Valun\'s server can submit it to the testnet tracker, and it does so only when you approve: that is the operator\'s word, not the chain\'s.'
         : 'Valun\'s server submits it to the tracker only when you approve: that is the operator\'s word.'} While it waits, the deal counts against your limits${this.circulating ? ', no set-off touches this pair' : ''}, and ${payee}'s public record already counts the delivery as accepted.`,
       // After a note the tracker refuses (note_failed, which sets no payment_due_since: submitNote) the payer pays again,
@@ -5343,19 +5347,19 @@ export class Pilot {
       // (revokeAgent: void_key_revoked). A deal that was payment_due by then stays so: only a payment by transfer that
       // went out and did not apply sets payment_due_since (endTransfer), and nothing clears it (the review of PR #8, F8;
       // of PR #9, item 10).
-      `Nothing new is signed. The signed IOU goes to the Basis tracker: you then owe ${payee} ${price} more, a running total of ${amt(n.total)} for this key pair. The tracker records it at once${anchoring}. It is a promise to pay: nothing is settled. ${due
-        ? 'From then on the delivery stays accepted: if the tracker refuses the IOU, your agent must pay again, and the delivery can no longer be disputed.'
-        : `From then on the delivery stays accepted and can no longer be disputed, with one exception: if the tracker refuses the IOU, your agent must pay again, and a later IOU${this.circulating ? ' or payment by transfer' : ''} of this deal that waits for you and isn't sent (you reject it, it expires, or it becomes void: its checks fail when you approve it, or a party's agent key is revoked) sends the deal back to delivered, where your agent may dispute the delivery${this.circulating ? ', unless the deal was payment due before that (it then stays payment due)' : ''}.`}${boundNote}`,
-      `${due ? `Valun doesn't send the IOU. The delivery stays accepted, and your agent must still pay it, with a new IOU${this.circulating ? ' or by transfer' : ''}.`
-        : 'Valun doesn\'t send the IOU, and the deal goes back to delivered: your agent may accept the delivery again, signing a new IOU (which waits for you again), or dispute it.'} ${payee} sees that you rejected it, never your note. Rejecting doesn't unsign the IOU: Valun keeps it on record, with its signatures, and never sends it.${transferWait}${loopsHeld} Your agent isn't told: tell it.${trap}`,
-      bound ? `Approve or reject by ${decideBy}. The tracker records this bound IOU only until ${until}, one hour after its timestamp, and Valun keeps the last minute for sending it. At ${decideBy} this approval expires: Valun never sends the IOU, and the deal ${due
+      `Nothing new is signed. The signed note goes to the Basis tracker: you then owe ${payee} ${price} more, a running total of ${amt(n.total)} for this key pair. The tracker records it at once${anchoring}. It is a promise to pay: nothing is settled. ${due
+        ? 'From then on the delivery stays accepted: if the tracker refuses the note, your agent must pay again, and the delivery can no longer be disputed.'
+        : `From then on the delivery stays accepted and can no longer be disputed, with one exception: if the tracker refuses the note, your agent must pay again, and a later note${this.circulating ? ' or payment by transfer' : ''} of this deal that waits for you and isn't sent (you reject it, it expires, or it becomes void: its checks fail when you approve it, or a party's agent key is revoked) sends the deal back to delivered, where your agent may dispute the delivery${this.circulating ? ', unless the deal was payment due before that (it then stays payment due)' : ''}.`}${boundNote}`,
+      `${due ? `Valun doesn't send the note. The delivery stays accepted, and your agent must still pay it, with a new note${this.circulating ? ' or by transfer' : ''}.`
+        : 'Valun doesn\'t send the note, and the deal goes back to delivered: your agent may accept the delivery again, signing a new note (which waits for you again), or dispute it.'} ${payee} sees that you rejected it, never your comment. Rejecting doesn't unsign the note: Valun keeps it on record, with its signatures, and never sends it.${transferWait}${loopsHeld} Your agent isn't told: tell it.${trap}`,
+      bound ? `Approve or reject by ${decideBy}. The tracker records this bound note only until ${until}, one hour after its timestamp, and Valun keeps the last minute for sending it. At ${decideBy} this approval expires: Valun never sends the note, and the deal ${due
         ? 'stays payment due, as after a rejection: your agent must still pay it' : 'goes back to delivered, as after a rejection, so your agent may accept the delivery again'}. Your agent isn't told: tell it.${trapAgain}`
-        : 'No deadline: an ordinary IOU has no maximum age at the tracker, so it waits here until you decide.',
+        : 'No deadline: an ordinary note has no maximum age at the tracker, so it waits here until you decide.',
       // A stale one is void_stale, the deal delivered again (where it can be disputed) or payment_due (decideApproval).
       // Nothing tells the agent or its client (the 409 stale_note goes to the owner; the console's flash says what 0.7.1
       // does then, as after a rejection: pilot.js iouTrap).
-      `When you approve, the server first checks that ${this.circulating ? "the pair's last IOU on the tracker (its total, timestamp and signature)" : "the pair's tracker total"} and both parties' keys are unchanged since your agent signed; if not, the approval becomes void, Valun doesn't send the IOU, and the deal ${due
-        ? 'stays payment due: your agent must still pay it.' : 'goes back to delivered: your agent may pay again, or dispute the delivery.'}${bound ? " As after a rejection, your agent isn't told, and valun 0.7.1 keeps counting this IOU as a payment that may still apply." : ''}`);
+      `When you approve, the server first checks that ${this.circulating ? "the pair's last note on the tracker (its total, timestamp and signature)" : "the pair's tracker total"} and both parties' keys are unchanged since your agent signed; if not, the approval becomes void, Valun doesn't send the note, and the deal ${due
+        ? 'stays payment due: your agent must still pay it.' : 'goes back to delivered: your agent may pay again, or dispute the delivery.'}${bound ? " As after a rejection, your agent isn't told, and valun 0.7.1 keeps counting this note as a payment that may still apply." : ''}`);
   }
   // Until when the owner can decide approval a (ISO), or null when nothing ends it: an offer or an acceptance (and a
   // confirmation of an accepted offer) when the offer expires, and a counter-offer waiting for its owner also when the
@@ -5430,7 +5434,7 @@ export class Pilot {
         if (a.kind === 'guarantee_offer') {
           const g = this.s.guarantees?.[a.guarantee_id];
           return {approval_id: a.id, deal_id: null, guarantee_id: a.guarantee_id, kind: a.kind, version: a.version, terms_hash: a.terms_hash,
-            title: g ? `guarantee of ${this.s.participants[g.issuer]?.handle ?? g.issuer}'s debt to ${this.s.participants[g.creditor]?.handle ?? g.creditor}` : null,
+            title: g ? `guarantee of what ${this.s.participants[g.issuer]?.handle ?? g.issuer} owes ${this.s.participants[g.creditor]?.handle ?? g.creditor}` : null,
             price: g ? {amount: g.terms.cap.amount, unit: g.terms.cap.unit} : null, ...withWhom(g?.creditor)};
         }
         const d = this.deal(a.deal_id), s = this.approvalSubject(a, d);

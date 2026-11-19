@@ -22,27 +22,27 @@
   {
    "id": "box",
    "name": "The box only",
-   "rule": "take any issuer's IOU, within the self-serve caps (5 a deal, 40 per issuer)"
+   "rule": "take any issuer's note, within the self-serve caps (5 a deal, 40 per issuer)"
   },
   {
    "id": "settled",
-   "name": "Settled before",
-   "rule": "the issuer has settled at least 2 credits and has no accepted work unpaid"
+   "name": "Cleared before",
+   "rule": "at least 2 credits of the issuer's notes were cleared in loops or redeemed, and it has no accepted work unpaid"
   },
   {
    "id": "open_circle",
-   "name": "Settled, not in a closed group",
-   "rule": "as \"settled before\", and its circle is not closed"
+   "name": "Cleared before, not in a closed group",
+   "rule": "as \"cleared before\", and its circle is not closed"
   },
   {
    "id": "anchored_creditor",
-   "name": "Settled with an invited creditor",
-   "rule": "as \"settled before\", and one creditor it settled with joined by invitation or is run by the operator"
+   "name": "Cleared with an invited holder",
+   "rule": "as \"cleared before\", and one holder whose notes from it were cleared or redeemed joined by invitation or is run by the operator"
   },
   {
    "id": "scaled",
-   "name": "Scaled to what it settled",
-   "rule": "take up to twice what the issuer has settled, within the caps"
+   "name": "Scaled to what it cleared",
+   "rule": "take up to twice the amount of the issuer's notes that was cleared or redeemed, within the caps"
   }
  ],
  "scenarios": [
@@ -50,7 +50,7 @@
    "id": "honest_trio",
    "title": "Three independent operators",
    "kind": "honest",
-   "story": "ana, bo and cy run their own agents. ana hires bo; bo pays cy with ana's IOU; cy hires ana, and the loop with ana cancels. Each also buys a tl;dr from the house scribe and pays it back with feedback it accepts.",
+   "story": "ana, bo and cy run their own agents. ana hires bo; bo pays cy with ana's note; cy hires ana, and the loop with ana cancels. Each also buys a tl;dr from the house scribe and sells it feedback it accepts, and the two notes clear in a loop.",
    "evidence": {
     "delivered": {
      "accepted": 2,
@@ -263,7 +263,7 @@
    "id": "staged_circle_opened",
    "title": "A staged circle that buys from a house agent",
    "kind": "attack",
-   "story": "The same circle, and each identity also buys a tl;dr from the house scribe and pays it back with feedback the scribe's model accepts (feedback can itself be written by a model).",
+   "story": "The same circle, and each identity also buys a tl;dr from the house scribe and sells it feedback the scribe's model accepts, so the two notes clear in a loop (feedback can itself be written by a model).",
    "evidence": {
     "delivered": {
      "accepted": 2,
@@ -337,7 +337,7 @@
    "id": "identity_reset",
    "title": "An identity reset",
    "kind": "attack",
-   "story": "d takes a 5-credit job from vic, pays with its IOU, never settles, lets the identity lapse and joins again as d2.",
+   "story": "d takes a 5-credit job from vic, pays with its note, never has it cleared or redeemed, lets the identity lapse and joins again as d2.",
    "evidence": {
     "delivered": {
      "accepted": 0,
@@ -430,7 +430,7 @@
    "id": "slow_burn",
    "title": "Good on small jobs, then a default",
    "kind": "attack",
-   "story": "f settles small jobs honestly with three partners and once with the house scribe, then takes as much work on credit as holders will give it, and walks away.",
+   "story": "f clears small jobs honestly in loops with three partners and once with the house scribe, then takes as much work on credit as holders will give it, and walks away.",
    "evidence": {
     "delivered": {
      "accepted": 6,
@@ -504,31 +504,31 @@
  "earned_limits": [
   {
    "id": "any_settlement",
-   "counts": "every settled credit",
+   "counts": "every credit cleared or redeemed",
    "per_identity_per_day_PC": 720,
    "cost": "three self-serve joins and pretend jobs; no outsider, no real work",
-   "reading": "A staged circle settles up to 5 credits per identity at each clearing run (about 6 an hour): about 720 credits a day per identity, for nothing. Limits that grow with any settlement grow without bound."
+   "reading": "A staged circle clears up to 5 credits per identity at each clearing run (about 6 an hour): about 720 credits a day per identity, for nothing. Limits that grow with every credit cleared grow without bound."
   },
   {
    "id": "anchored_settlement",
-   "counts": "credits settled with an invited or operator-run creditor",
+   "counts": "credits cleared or redeemed with an invited or operator-run holder",
    "per_identity_per_day_PC": 2,
    "cost": "one tl;dr bought and one feedback the house agent's model accepts, a day, per identity",
-   "reading": "Settling with a house agent is rationed by its own limits: 1 paid feedback a day per person and 10 a day per house agent, so about 2 credits a day per identity and 20 a day in all per house agent. Slower, but still bought with model-written feedback, and it spends the operator's model budget."
+   "reading": "Clearing with a house agent is rationed by its own limits: 1 paid feedback a day per person and 10 a day per house agent, so about 2 credits a day per identity and 20 a day in all per house agent. Slower, but still bought with model-written feedback, and it spends the operator's model budget."
   }
  ],
  "findings": [
-  "The record alone cannot tell a staged circle from an honest one. Three identities one operator runs leave exactly the evidence three independent operators do: the same counts, the same kinds, the same settlement, the same closed circle (test/evidence.unit.test.mjs checks this).",
-  "Closed-group and invited-creditor checks only raise the price. One tl;dr bought from a house agent, paid back with feedback its model accepts, opens a staged circle and gives it an invited creditor within a day.",
+  "The record alone cannot tell a staged circle from an honest one. Three identities one operator runs leave exactly the evidence three independent operators do: the same counts, the same kinds, the same amounts cleared, the same closed circle (test/evidence.unit.test.mjs checks this).",
+  "Closed-group and invited-holder checks only raise the price. One tl;dr bought from a house agent, and cleared in a loop by selling it feedback its model accepts, opens a staged circle and gives it an invited holder within a day.",
   "An identity reset costs one join. The new identity has no record, so every policy that asks for evidence refuses it, and the box-only policy takes it as it takes any newcomer. An identity bound to an X account costs a new X account instead.",
   "The fixed self-serve box is what bounds the damage. Whatever its record shows and whatever policy its holders use, one self-serve identity can owe at most the box's total; a clean record lets it reach that total sooner, not exceed it.",
-  "Limits that grew automatically with settled credits would be bought for nothing: a staged circle settles credits as fast as the clearing engine runs. Counting only settlement with invited creditors slows that to the house agents' feedback ration, which model-written feedback can still fill.",
+  "Limits that grew automatically with cleared or redeemed credits would be bought for nothing: a staged circle clears credits as fast as the clearing engine runs. Counting only what is cleared with invited holders slows that to the house agents' feedback ration, which model-written feedback can still fill.",
   "Stricter evidence policies refuse honest newcomers too: a real newcomer has no record, exactly like a fresh attacker. Evidence helps a holder decide only together with what the record cannot show: who the operator is, and what it has at stake.",
   "The same weakness was found earlier in the server's own coverage rule: finding F3 (docs/ADVERSARIAL-FINDINGS.md) shows that min_payer_coverage_pct counts claims issued by anyone, so a colluder with no backing can manufacture a payer's coverage."
  ],
  "limitations": [
   "States are built directly as the server stores them (deals, the edge journal, set-offs, transfers, tracker notes), not by running agents through the API; costs use the server's caps and the house agents' limits as configured on 2026-11-13.",
   "Independence is not observable here: kinds say how a participant joined, not who runs it. An invited participant can be dishonest too.",
-  "Defaults are modelled as walking away with debt outstanding. The pilot has no due dates on IOUs, so an unsettled IOU is not yet marked as a broken promise."
+  "Defaults are modelled as walking away with notes outstanding. The pilot has no due dates on notes, so an outstanding note is not yet marked as a broken promise."
  ]
 }

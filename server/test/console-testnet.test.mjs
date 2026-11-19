@@ -154,22 +154,22 @@ test('the testnet: every tab and the deal view name the testnet and its unit; no
   const w = await world({max_issue_per_deal: pc(5), max_issue_outstanding: pc(40), max_accept_per_deal: pc(5), max_accept_per_issuer: pc(40)});
   const page = await openPage({base: w.base, token: w.owner, hash: '#network'});
   const $ = s => page.doc.querySelector(s);
-  await until(() => text($('#info')).includes('Debt outstanding now') && $('#ledger table'), 'the network tab, with the clearing figures (GET /clearing comes after GET /info)');
+  await until(() => text($('#info')).includes('Notes outstanding now') && $('#ledger table'), 'the network tab, with the clearing figures (GET /clearing comes after GET /info)');
   assert.equal(page.doc.title, 'Valun owner console');
   assert.equal(text($('.netline .netname')), 'Valun testnet network', 'the console head names the network');
-  assert.equal(text($('.banner')), 'Valun testnet network (experimental). Agents agree jobs and pay each other with signed IOUs (credit notes, in this console), which a Basis tracker records. '
+  assert.equal(text($('.banner')), 'Valun testnet network (experimental). Agents agree jobs and pay each other with notes, signed promises to pay, which a Basis tracker records. '
     + 'Amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG): test coins with no monetary value. Its Basis tracker anchors its state on Ergo testnet.');
   assert.equal(text($('#net-what')), 'What the Valun testnet network is');
   const facts = text($('.facts-list'));
   assert.match(facts, /^Experimental\. A test network, valun-testnet-1, where AI agents make service-for-credit deals with each other\./);
-  assert.match(facts, /Amounts are nanoERG of Ergo testnet\. 1 tERG = 1,000,000,000 nanoERG\. tERG are test coins with no monetary value\. A creditor can redeem a credit note on Ergo testnet against its issuer's tERG reserve, if the issuer posted one\./);
-  assert.match(facts, /A Basis tracker records the note and anchors its state on Ergo testnet\. An issued note is an outstanding obligation until its creditor redeems it; with circulating credit it can also move/);
-  assert.match(facts, /Payment is a credit note: a debt the payer owes\./);
-  assert.match(facts, /or be lowered by a set-off when debts form a loop \(every debt in the loop falls by the same amount\)\./);
-  assert.match(text($('#deal-end')), /^It then stays outstanding until its creditor redeems it on Ergo testnet/);
+  assert.match(facts, /Amounts are nanoERG of Ergo testnet\. 1 tERG = 1,000,000,000 nanoERG\. tERG are test coins with no monetary value\. The holder of a note can redeem it on Ergo testnet against a tERG reserve locked under the key that signed it, if one was posted\./);
+  assert.match(facts, /A Basis tracker records the note and anchors its state on Ergo testnet\. An issued note is a promise to pay that stays outstanding until its holder redeems it; with circulating credit it can also move/);
+  assert.match(facts, /Payment is a note: a signed promise to pay, which the payer owes\./);
+  assert.match(facts, /or be lowered by a set-off when notes form a loop \(every note in the loop falls by the same amount\)\./);
+  assert.match(text($('#deal-end')), /^It then stays outstanding until its holder redeems it on Ergo testnet/);
   assert.match(text($('#info')), /UnitnanoERG: the smallest unit of tERG, Ergo testnet's coin \(1 tERG = 1,000,000,000 nanoERG\); test coins with no monetary value/);
   assert.match(text($('#info')), /Tracker on a blockchainyes: Ergo testnet; the tracker anchors its state there/);
-  assert.match(text($('#info')), /Debt outstanding now5,000,000 nanoERG \(0\.005 tERG\) gross over 2 notes/, 'the clearing figures, by their unit-neutral names');
+  assert.match(text($('#info')), /Notes outstanding now5,000,000 nanoERG \(0\.005 tERG\) gross over 2 notes/, 'the clearing figures, by their unit-neutral names');
   assert.deepEqual(page.doc.body.querySelectorAll('[data-tracker-tag]').map(t => [t.textContent, t.getAttribute('title')]),
     Array(2).fill(['Basis tracker (on Ergo testnet)', "Read from the network's Basis tracker, which anchors its state on Ergo testnet (GET /pilot/v1/chain says when it last did)."]));
   assert.match(text($('#ledger')), /carol-research\s*olivia-ops\s*3,000,000 nanoERG \(0\.003 tERG\)/);
@@ -183,10 +183,10 @@ test('the testnet: every tab and the deal view name the testnet and its unit; no
   await until(() => $('#mandate-form'), 'the owner console');
   const con = $('#owner-console'), appr = con.querySelector('article.appr');
   assert.equal(page.doc.title, '(1) Valun owner console');
-  assert.match(text(appr), /offer\s*Review the budget card docs\s*4,000,000 nanoERG \(0\.004 tERG\) – you pay, with your agent's IOU/);
+  assert.match(text(appr), /offer\s*Review the budget card docs\s*4,000,000 nanoERG \(0\.004 tERG\) – you pay, with your agent's note/);
   // What the agent asks, and with whom, in nanoERG with its tERG; what is already signed and held; the deadline (the
   // console's approval texts of 2026-11-18, from the server's approvalEffect).
-  assert.match(text(appr), /Your agent asks to hire erin-review for this job at 4,000,000 nanoERG \(0\.004 tERG\), paid with your agent's own IOU once it accepts the work\./);
+  assert.match(text(appr), /Your agent asks to hire erin-review for this job at 4,000,000 nanoERG \(0\.004 tERG\), paid with your agent's own note once it accepts the work\./);
   assert.match(text(appr), /Already signed and heldYour agent signed this offer with its key, and Valun's server holds it: erin-review can't see it, and nothing is on the tracker\./);
   assert.match(text(appr), /Decide by .* \(in 24 hours\)\./);
   assert.match(text(appr), /max_issue_outstanding: on the tracker 2,000,000 nanoERG \(0\.002 tERG\) \+ committed 0 nanoERG \(0 tERG\) \+ offered 0 nanoERG \(0 tERG\) \+ this deal 4,000,000 nanoERG \(0\.004 tERG\) = 6,000,000 nanoERG \(0\.006 tERG\) of 40,000,000 nanoERG \(0\.04 tERG\)/,
@@ -197,15 +197,15 @@ test('the testnet: every tab and the deal view name the testnet and its unit; no
   // The real server's position: cleared and redeemed as two rows; its `settled` sum, `settled_how` and `meaning` (which
   // says "settled counts both") are not shown.
   const position = con.querySelectorAll('.card').find(c => /^Position/.test(text(c.querySelector('h2'))));
-  assert.match(text(position), /Cleared by set-off0 nanoERG \(0 tERG\) of your debts cleared in loops, and as much of your claims \(each set-off is committed by the next tracker box on Ergo testnet, and is not final\)/);
-  assert.match(text(position), /Redeemed on Ergo testnet0 nanoERG \(0 tERG\) of your claims, which you redeemed; 0 nanoERG \(0 tERG\) of your debts, redeemed from your reserve/);
+  assert.match(text(position), /Cleared by set-off0 nanoERG \(0 tERG\) of the notes you issued cleared in loops, and as much of the notes you hold \(each set-off is committed by the next tracker box on Ergo testnet, and is not final\)/);
+  assert.match(text(position), /Redeemed on Ergo testnet0 nanoERG \(0 tERG\) of the notes you hold, which you redeemed; 0 nanoERG \(0 tERG\) of the notes you issued, redeemed from your reserve/);
   assert.doesNotMatch(text(position), /settled/i);
   // The testnet's default acceptance where "Accept notes from" is, and what payer coverage counts there.
   const form = text(con.querySelector('#mandate-form'));
   // Each client signs only for its own key (D3b, the redesign's round 2).
-  assert.match(form, /On the testnet a new self-serve agent accepts any issuer's IOUs as payment by transfer, up to 0\.04 tERG per issuer\. Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way\. You can narrow whose IOUs your agent accepts here, with “only those ticked here”\./);
+  assert.match(form, /On the testnet a new self-serve agent accepts any issuer's notes as payment by transfer, up to 0\.04 tERG per issuer\. Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way\. You can narrow whose notes your agent accepts here, with “only those ticked here”\./);
   assert.doesNotMatch(form, /signs that consent, and the issuer's/);
-  assert.match(form, /Your agent may accept a credit note only from a payer whose own tERG reserve, claims and guarantees of its debt to you cover at least this percentage of everything it would owe, this deal included\. A claim or a guarantee counts only as far as a reserve on Ergo testnet, or an issuer you list under Accept notes from, stands behind it; a payer you list there counts as covered\./);
+  assert.match(form, /Your agent may accept a note only from a payer whose own tERG reserve, claims and guarantees of what it owes you cover at least this percentage of everything it would owe, this deal included\. A claim or a guarantee counts only as far as a reserve on Ergo testnet, or an issuer you list under Accept notes from, stands behind it; a payer you list there counts as covered\./);
   assert.deepEqual(offending(page), [], 'the owner console says nothing of the pilot');
 
   // The deal view of the proposal waiting for her.
@@ -252,7 +252,7 @@ test('the testnet: the limits editor saves 5,000,000 a deal and 40,000,000 in al
   }
   const label = name => form.querySelector(`input[name=${name}]`).closest('label').childNodes[0].textContent;
   assert.deepEqual(['max_issue_per_deal', 'max_issue_outstanding', 'approve_above', 'c_max_claims_total', 'min_payer_coverage_pct'].map(label),
-    ['Max credit note per deal (as payer), nanoERG', 'Max you may owe in total, nanoERG', 'Ask me above (approve_above), nanoERG', 'Max claims on all payers together (max_claims_total), nanoERG',
+    ['Largest note per deal (as payer), nanoERG', 'Max you may owe in total, nanoERG', 'Ask me above (approve_above), nanoERG', 'Max claims on all payers together (max_claims_total), nanoERG',
       'Min payer coverage (min_payer_coverage_pct), %']);
   const terg = name => text(form.querySelector(`.amount-terg[data-for=${name}]`));
   assert.deepEqual([terg('max_issue_per_deal'), terg('max_issue_outstanding')], ['= 0.025 tERG', '= 0.05 tERG'], 'each amount shown in tERG beside it');
@@ -308,18 +308,18 @@ test('the testnet: a recorded credit note as the tracker holds it now: what is l
   const $ = s => page.doc.querySelector(s);
   await until(() => $('#payment-card'), 'the deal view');
   let view = text($('#deal-view')), card = text($('#payment-card'));
-  assert.match(view, /Credit note issued, partly redeemed: olivia-ops \(you\) still owes erin-review 3,000,000 nanoERG \(0\.003 tERG\) of the 4,000,000 nanoERG \(0\.004 tERG\) under this deal; 1,000,000 nanoERG \(0\.001 tERG\) of it was redeemed on Ergo testnet\. The rest is an outstanding obligation: its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one\./);
-  assert.match(view, /credit note issued \(partly redeemed, the rest outstanding\)/, 'the status shown');
+  assert.match(view, /Note issued, partly redeemed: olivia-ops \(you\) still owes erin-review 3,000,000 nanoERG \(0\.003 tERG\) of the 4,000,000 nanoERG \(0\.004 tERG\) under this deal; 1,000,000 nanoERG \(0\.001 tERG\) of it was redeemed on Ergo testnet\. The rest is outstanding: its holder can redeem it on Ergo testnet against a tERG reserve locked under the key that signed it, if one was posted\./);
+  assert.match(view, /note issued \(partly redeemed, the rest outstanding\)/, 'the status shown');
   assert.match(card, /Outstandingyes: the payer still owes 3,000,000 nanoERG \(0\.003 tERG\) of 4,000,000 nanoERG \(0\.004 tERG\) \(1,000,000 nanoERG \(0\.001 tERG\) redeemed\)/);
   assert.match(card, /Settledno: partly redeemed on Ergo testnet/, "the server's own words");
   assert.match(card, /Tracker holds now4,000,000 nanoERG \(0\.004 tERG\) in total for this key pair, 1,000,000 nanoERG \(0\.001 tERG\) redeemed, 3,000,000 nanoERG \(0\.003 tERG\) outstanding/);
-  assert.match(view, /Nothing further happens to this deal: the rest of the credit note, 3,000,000 nanoERG \(0\.003 tERG\), stays outstanding until its creditor redeems it on Ergo testnet/);
+  assert.match(view, /Nothing further happens to this deal: the rest of the note, 3,000,000 nanoERG \(0\.003 tERG\), stays outstanding until its holder redeems it on Ergo testnet/);
   assert.doesNotMatch(view, /owes erin-review 4,000,000|the payer owes this amount/, 'nothing says the full price is still owed');
   assert.deepEqual(offending(page), []);
   // The owner console's list of deals says the same.
   globalThis.location.hash = '#owner'; page.hashchange();
   await until(() => $('#deals-card') && !$('#owner-console').hidden, 'the owner console');
-  assert.match(text($('#deals-card')), /credit note issued \(partly redeemed, the rest outstanding\)/);
+  assert.match(text($('#deals-card')), /note issued \(partly redeemed, the rest outstanding\)/);
   // A note no tracker box has committed yet: redeemable once the next one is confirmed; nothing about a reserve.
   globalThis.location.hash = `#owner/deal/${fresh}`; page.hashchange();
   await until(() => $('#payment-card') && text($('#deal-view')).includes('A job for 2000000'), 'the second deal');

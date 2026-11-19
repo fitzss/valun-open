@@ -194,13 +194,13 @@ export function loopTitle(loop) {
 const cancelledText = loop => (ON_TESTNET ? terg(loop.amount_PC) : plural(loop.amount_PC, 'credit'));
 export function loopDescription(loop) {
   return ON_TESTNET
-    ? `${plural(loop.participants, 'agent')} cancelled ${cancelledText(loop)} of IOUs in one set-off. No coins moved. Recorded by a Basis tracker that anchors its state on Ergo testnet (test coins with no monetary value).`
+    ? `${plural(loop.participants, 'agent')} cancelled ${cancelledText(loop)} of notes in one set-off. No coins moved. Recorded by a Basis tracker that anchors its state on Ergo testnet (test coins with no monetary value).`
     : `${plural(loop.participants, 'agent')} cancelled ${plural(loop.amount_PC, 'credit')} of IOUs in one set-off. No money moved. Recorded on a Basis tracker (pilot network; credits have no value).`;
 }
 
 // The ring: the members on a ring, an arrow from each to the next (it owed the next one), each member's shape saying who
 // runs it (a diamond: operator-run; a hollow circle: a team test agent; a filled circle: anyone else), and one thin
-// rainbow ring with what each debt fell by (the loop cleared). Labels sit above or below their node and are cut to
+// rainbow ring with what each note fell by (the loop cleared). Labels sit above or below their node and are cut to
 // the room they have, so none leaves the frame. Ids are suffixed with the cycle's index: a card may show several cycles.
 const W = 400, CX = 200, CY = 176;
 function ringSvg(c, k, whoOf) {
@@ -230,7 +230,7 @@ function ringSvg(c, k, whoOf) {
   const y0 = Math.floor(top - 8), vh = Math.ceil(bottom + 8) - y0;
   const each = c.each_PC != null
     ? `<text class="mid" x="${CX}" y="${CY + 2}" text-anchor="middle">${esc(signed(-c.each_PC).replace(/ (tERG|PC)$/, ''))}</text><text class="mid-u" x="${CX}" y="${CY + 22}" text-anchor="middle">${ON_TESTNET ? 'tERG' : esc(UNIT)} each</text>` : '';
-  const name = `Live: ${loopTitle({cycles: [c]}).replace(/^Loop closed: /, 'the loop ')}. Each arrow points from the agent that owed to the agent it owed${c.each_PC != null ? `; each of these debts fell by ${terg(c.each_PC)}` : ''}.`;
+  const name = `Live: ${loopTitle({cycles: [c]}).replace(/^Loop closed: /, 'the loop ')}. Each arrow points from the agent that owed to the agent it owed${c.each_PC != null ? `; each of these notes fell by ${terg(c.each_PC)}` : ''}.`;
   return `<svg class="ring" viewBox="0 ${y0} ${W} ${vh}" role="img" aria-label="${esc(name)}">`
     + `<defs><marker id="loop-arrow-${k}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path class="ah" d="M0,1 L9,5 L0,9"/></marker>`
     + `<linearGradient id="loop-rainbow-${k}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ff5a5f"/><stop offset=".25" stop-color="#ffc145"/><stop offset=".5" stop-color="#3ddc97"/><stop offset=".75" stop-color="#4f7cff"/><stop offset="1" stop-color="#9b5cff"/></linearGradient></defs>`
@@ -274,7 +274,7 @@ ${url ? `<link rel="canonical" href="${esc(url)}">
 <meta property="og:image" content="${esc(OG_IMAGE)}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Valun: let your agent work with agents you don't run. Three agents in a loop of IOUs, on Ergo testnet.">
+<meta property="og:image:alt" content="Valun: let your agent work with agents you don't run. Three agents in a loop of notes, on Ergo testnet.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:description" content="${esc(description)}">
@@ -348,7 +348,7 @@ function changedTable(loop, link) {
   const single = loop.cycles.length === 1;
   return `<section aria-labelledby="changed-h">
 <h2 id="changed-h">What changed, and what didn't</h2>
-<p><strong>What changed:</strong> ${single ? `every debt in the loop fell by ${esc(ON_TESTNET ? terg(loop.cycles[0].each_PC) : amt(loop.cycles[0].each_PC))}, the smallest one in it.` : 'every debt in each loop fell by the smallest one in it.'}</p>
+<p><strong>What changed:</strong> ${single ? `every note in the loop fell by the same amount, ${esc(ON_TESTNET ? terg(loop.cycles[0].each_PC) : amt(loop.cycles[0].each_PC))}.` : 'every note in each loop fell by the same amount.'}</p>
 <ul class="debts">
 ${debts.map(([a, b, v]) => `  <li>${link(handleOf(a))} <span class="arr">owed</span> ${link(handleOf(b))} <span class="num">${esc(signed(-v))}</span></li>`).join('\n')}
 </ul>
@@ -360,7 +360,7 @@ ${debts.map(([a, b, v]) => `  <li>${link(handleOf(a))} <span class="arr">owed</s
 ${[...rows.values()].map(r => `<tr><th scope="row">${link(handleOf(r.m))}</th><td class="num">${num(r.owes)}</td><td class="num">${num(r.owed)}</td><td>unchanged</td></tr>`).join('\n')}
 </tbody>
 </table></div>
-<p>The work behind these IOUs stays done, the record keeps every IOU and this loop, and no coins moved.</p>
+<p>The work behind these notes stays done, the record keeps every note and this loop, and no coins moved.</p>
 </section>`;
 }
 
@@ -392,8 +392,8 @@ export function renderLoopPage(loop, {records = null, now = null, pages = null} 
   const when = loop.applied_at ? new Date(loop.applied_at) : null, at = when && !Number.isNaN(+when) ? +when : null;
   const whenText = at ? `${new Date(at).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'unknown';
   const more = loop.cycles.length > 1 ? `\n<p class="more">and ${esc(plural(loop.cycles.length - 1, 'more loop'))} in the same round: ${loop.cycles.slice(1).map(c => `<span class="route-sm">${route(c)}</span>`).join('; ')}</p>` : '';
-  const each = loop.cycles.length === 1 && loop.each_PC != null ? `, and every debt in the loop fell by ${esc(ON_TESTNET ? terg(loop.each_PC) : amt(loop.each_PC))}` : '';
-  const lede = `${esc(plural(loop.participants, 'agent'))}' IOUs formed ${loop.cycles.length > 1 ? 'loops' : 'a loop'}. Each agent signed once${each}: ${esc(cancelledText(loop))} of debt cancelled in all. `
+  const each = loop.cycles.length === 1 && loop.each_PC != null ? `, and every note in the loop fell by ${esc(ON_TESTNET ? terg(loop.each_PC) : amt(loop.each_PC))}` : '';
+  const lede = `${esc(plural(loop.participants, 'agent'))}' notes formed ${loop.cycles.length > 1 ? 'loops' : 'a loop'}. Each agent signed once${each}: ${esc(cancelledText(loop))} of notes cancelled in all. `
     + (ON_TESTNET ? 'Nobody\'s net position changed, the work stays done, and no coins moved.' : 'The work stays done. No money moved.');
   const body = `<div class="loop-head">
 <p class="eyebrow">Loop cleared</p>
@@ -406,14 +406,14 @@ ${loop.cycles.map((c, k) => ringSvg(c, k, whoOf)).join('\n')}
 </figure>
 <dl class="facts">
   <div><dt>${ON_TESTNET ? 'Cancelled' : 'Credits cancelled'}</dt><dd>${esc(ON_TESTNET ? terg(loop.amount_PC) : amt(loop.amount_PC))}</dd></div>
-  <div><dt>Length</dt><dd>${esc(plural(loop.cycle_length, 'IOU'))}</dd></div>
+  <div><dt>Length</dt><dd>${esc(plural(loop.cycle_length, 'note'))}</dd></div>
   <div><dt>Closed</dt><dd>${esc(whenText)}</dd></div>
 </dl>
 <div class="loop-body">
 ${changedTable(loop, link)}
 ${membersList(loop, whoOf, link)}
 ${chainSection(loop, at)}
-<p class="small not-public">Not public, so not shown: which job each IOU paid for. A deal's record is private to its two parties and the operator.</p>
+<p class="small not-public">Not public, so not shown: which job each note paid for. A deal's record is private to its two parties and the operator.</p>
 ${ctas}
 <p class="provenance">${ON_TESTNET ? `${ON_TESTNET_FOOTER} ` : 'Valun is a test network. Promises are recorded on a Basis tracker; credits have no monetary value. '}<code>${esc(loop.id)}</code> · <a href="/pilot/v1/loops/${esc(loop.id)}">as JSON</a>${ON_TESTNET ? ' · <a href="/trust">Trust model</a>' : ''}</p>
 </div>`;

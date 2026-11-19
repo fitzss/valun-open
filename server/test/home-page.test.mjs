@@ -34,17 +34,17 @@ test("the home's numbers are the server's: a self-serve agent's limits and days,
   // The testnet's default acceptance, in the worked example and under "Your approvals": what a self-serve join's mandate
   // accepts by transfer (SANDBOX_CAPS.max_accept_per_issuer), who signs it (each client for its own key: the lead's D3b),
   // and that the operator's own agents are outside these caps.
-  const accept = `On the testnet a new self-serve agent accepts any issuer's IOUs as payment by transfer, up to ${terg(c.max_accept_per_issuer)} tERG per issuer. Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way. Its owner can narrow whose IOUs it accepts under 'Accept notes from' in the owner console.`;
+  const accept = `On the testnet a new self-serve agent accepts any issuer's notes as payment by transfer, up to ${terg(c.max_accept_per_issuer)} tERG per issuer. Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way. Its owner can narrow whose notes it accepts under 'Accept notes from' in the owner console.`;
   assert.equal(text.split(accept).length - 1, 2, 'the default, in the example and in "Your approvals"');
   assert.ok(text.includes(`Limits cap what each self-serve agent can owe (${terg(c.max_issue_outstanding)} tERG); the operator's own agents, and any agent whose limits the operator changes, aren't bound by them.`));
   // How an IOU last changed, from its timestamp's residue: the server's own (GET /info novation).
   assert.deepEqual(Object.keys(home.HOW).map(Number).sort(), [caps.BOUND_NOTE_MS, caps.SETOFF_MS, caps.TRANSFER_MS].sort());
   assert.equal(home.HOW[caps.TRANSFER_MS], 'Passed on');
   assert.equal(home.HOW[caps.SETOFF_MS], 'A loop cleared part of it');
-  assert.equal(home.HOW[caps.BOUND_NOTE_MS], 'New IOU');
+  assert.equal(home.HOW[caps.BOUND_NOTE_MS], 'New note');
 });
 
-test('the live view, its pure parts: who runs whom, the open IOUs newest first, amounts in tERG, the turn to the spotlight, when to read', () => {
+test('the live view, its pure parts: who runs whom, the open notes newest first, amounts in tERG, the turn to the spotlight, when to read', () => {
   const {kindOf, openIOUs, latestIOUs, lineAlpha, spotWords, newestLoop, constellation, spotAngle, turn, nextReadIn, ago, utcTime} = home;
   // Who runs an agent: public/who.js, the rule /network and the server's pages use. The practice agents by their reserved
   // handles; the house agents by the server's house_agent flag; operator_run; a team test agent by what its operator
@@ -81,8 +81,8 @@ test('the live view, its pure parts: who runs whom, the open IOUs newest first, 
   near(lineAlpha(1, 'PC'), lineAlpha(1_000_000, 'nanoERG'));
   near(lineAlpha(21, 'PC'), lineAlpha(21_000_000, 'nanoERG'));
   // The spotlight's words: who holds whose IOU, for how much.
-  assert.deepEqual(spotWords(ious[0], 'nanoERG'), {holder: 'bo', issuer: 'ana', amount: '0.004 tERG', text: "bo holds ana's IOU for 0.004 tERG."});
-  assert.deepEqual(spotWords({holder: 'bo', issuer: 'ana', amount: 3}, 'PC'), {holder: 'bo', issuer: 'ana', amount: '3 PC', text: "bo holds ana's IOU for 3 PC."});
+  assert.deepEqual(spotWords(ious[0], 'nanoERG'), {holder: 'bo', issuer: 'ana', amount: '0.004 tERG', text: "bo holds ana's note for 0.004 tERG."});
+  assert.deepEqual(spotWords({holder: 'bo', issuer: 'ana', amount: 3}, 'PC'), {holder: 'bo', issuer: 'ana', amount: '3 PC', text: "bo holds ana's note for 3 PC."});
   assert.equal(spotWords({holder: 'bo', issuer: 'ana', amount: 1_500_000}, 'nanoERG').amount, '0.0015 tERG');
   assert.equal(spotWords({holder: 'bo', issuer: 'ana', amount: 1_500_000}, undefined).amount, '– tERG', 'no unit named: no number');
   // The newest loop, in words (the one with the rainbow ring).
@@ -119,13 +119,13 @@ test('the live view, its pure parts: who runs whom, the open IOUs newest first, 
   const {readLabel, nextSaid, curveMiddle, clearOf} = home, at = Date.parse('2026-11-17T01:12:40Z');
   assert.deepEqual(readLabel({}), {text: 'Testnet records: reading…', tag: null});
   assert.deepEqual(readLabel({failures: 2}), {text: 'Testnet records: cannot be read right now', tag: null}, 'no read has answered: no tag');
-  assert.deepEqual(readLabel({readAt: at}), {lead: 'Testnet records, one real IOU at a time, ', read: 'read 01:12 UTC', tail: '', tag: 'Live'});
+  assert.deepEqual(readLabel({readAt: at}), {lead: 'Testnet records, one real note at a time, ', read: 'read 01:12 UTC', tail: '', tag: 'Live'});
   // Paused is said once, by the tag (the label said it too: a screen reader read "Paused Paused; testnet records").
-  assert.deepEqual(readLabel({readAt: at, paused: true}), {lead: 'Testnet records, one real IOU at a time, ', read: 'read 01:12 UTC', tail: '', tag: 'Paused'});
-  assert.deepEqual(readLabel({readAt: at, failures: 1}), {lead: 'Testnet records, one real IOU at a time, ', read: 'read 01:12 UTC', tail: ' (retrying)', tag: 'Offline'});
+  assert.deepEqual(readLabel({readAt: at, paused: true}), {lead: 'Testnet records, one real note at a time, ', read: 'read 01:12 UTC', tail: '', tag: 'Paused'});
+  assert.deepEqual(readLabel({readAt: at, failures: 1}), {lead: 'Testnet records, one real note at a time, ', read: 'read 01:12 UTC', tail: ' (retrying)', tag: 'Offline'});
   // What Next says (the spotlight's words are no live region: they change by themselves every 8 s).
-  assert.equal(nextSaid(ious[0], 0, 3, 'nanoERG'), "IOU 1 of 3: bo holds ana's IOU for 0.004 tERG.");
-  assert.equal(nextSaid(undefined, 0, 0, 'nanoERG'), 'No open IOUs right now.');
+  assert.equal(nextSaid(ious[0], 0, 3, 'nanoERG'), "Note 1 of 3: bo holds ana's note for 0.004 tERG.");
+  assert.equal(nextSaid(undefined, 0, 0, 'nanoERG'), 'No open notes right now.');
   // The newest loop's glow and ring are left out where they would cover the spotlight's arrow.
   assert.deepEqual(curveMiddle({x: 0, y: 0}, {x: 10, y: 20}, {x: 20, y: 0}), {x: 10, y: 10});
   assert.equal(clearOf({x: 10, y: 12}, {x: 10, y: 10}, 24), false);
@@ -166,16 +166,16 @@ function openPage({reads = READS, reduce = false, status = 200} = {}) {
 }
 const meta = el => el.children.map(c => [c.className, c.textContent]);
 
-test('the live view on the page: one IOU at a time in words, with who runs each; the latest as a list; the counts and the newest loop', async () => {
+test('the live view on the page: one note at a time in words, with who runs each; the latest as a list; the counts and the newest loop', async () => {
   const {$, body, pending} = openPage();
   await settle();
   assert.equal($('sky-ctl').hidden, false, 'the controls, shown once a read answered (hidden in the HTML)');
   assert.equal($('sky-legend').hidden, false);
   assert.equal($('sky-tag').hidden, false, 'Live, once a read answered');
   assert.deepEqual([$('sky-tag').textContent, $('sky-tag').className], ['Live', 'tag live']);
-  assert.match($('sky-read').textContent, /^Testnet records, one real IOU at a time, read \d\d:\d\d UTC$/, 'what it reads, and when');
+  assert.match($('sky-read').textContent, /^Testnet records, one real note at a time, read \d\d:\d\d UTC$/, 'what it reads, and when');
   // The spotlight: the newest open IOU first.
-  assert.equal($('spot').textContent, "house-scribe holds sandbox-exact's IOU for 0.004 tERG.");
+  assert.equal($('spot').textContent, "house-scribe holds sandbox-exact's note for 0.004 tERG.");
   assert.deepEqual(meta($('spot-meta')), [['role', 'holder'], ['tag operator', 'operator-run'], ['role', 'issuer'], ['tag operator', 'operator-run'], ['when', 'Passed on, 5 min ago']]);
   assert.equal($('spot-meta').textContent, 'holder operator-run issuer operator-run Passed on, 5 min ago', 'its parts read apart');
   // Next steps through the latest, and round again; each press says the new one in the status line (role=status), and
@@ -183,15 +183,15 @@ test('the live view on the page: one IOU at a time in words, with who runs each;
   assert.equal($('sky-said').getAttribute('role'), 'status');
   assert.equal($('sky-said').textContent, '', 'nothing said before the reader asks');
   $('sky-next').click();
-  assert.equal($('spot').textContent, "basis-x-1 holds ana-tester's IOU for 0.0015 tERG.");
-  assert.equal($('sky-said').textContent, "IOU 2 of 3: basis-x-1 holds ana-tester's IOU for 0.0015 tERG.");
+  assert.equal($('spot').textContent, "basis-x-1 holds ana-tester's note for 0.0015 tERG.");
+  assert.equal($('sky-said').textContent, "Note 2 of 3: basis-x-1 holds ana-tester's note for 0.0015 tERG.");
   assert.deepEqual(meta($('spot-meta')), [['role', 'holder'], ['tag team', 'team test'], ['when', 'A loop cleared part of it, 2 h ago']], 'no label for an agent the record does not place');
   $('sky-next').click();
-  assert.equal($('spot').textContent, "sandbox-exact holds basis-x-1's IOU for 0.003 tERG.");
-  assert.deepEqual(meta($('spot-meta')), [['role', 'holder'], ['tag operator', 'operator-run'], ['role', 'issuer'], ['tag team', 'team test'], ['when', 'New IOU, 1 d ago']]);
+  assert.equal($('spot').textContent, "sandbox-exact holds basis-x-1's note for 0.003 tERG.");
+  assert.deepEqual(meta($('spot-meta')), [['role', 'holder'], ['tag operator', 'operator-run'], ['role', 'issuer'], ['tag team', 'team test'], ['when', 'New note, 1 d ago']]);
   $('sky-next').click();
-  assert.equal($('spot').textContent, "house-scribe holds sandbox-exact's IOU for 0.004 tERG.");
-  assert.equal($('sky-next').getAttribute('aria-label'), 'Next IOU');
+  assert.equal($('spot').textContent, "house-scribe holds sandbox-exact's note for 0.004 tERG.");
+  assert.equal($('sky-next').getAttribute('aria-label'), 'Next note');
   // The same as a list: issuer to holder (the arrow read as "owes"), each linked to its agent page, what is still owed,
   // and its last change. A closed IOU (nothing outstanding) is not listed.
   const rows = $('latest').children;
@@ -199,11 +199,11 @@ test('the live view on the page: one IOU at a time in words, with who runs each;
   assert.deepEqual(rows.map(li => li.querySelector('.pair').textContent),
     ['sandbox-exact operator-run →  owes house-scribe operator-run', 'ana-tester →  owes basis-x-1 team test', 'basis-x-1 team test →  owes sandbox-exact operator-run']);
   assert.deepEqual(rows.map(li => li.querySelector('.amt').textContent), ['0.004 tERG', '0.0015 tERG', '0.003 tERG']);
-  assert.deepEqual(rows.map(li => li.querySelector('.how').textContent), ['Passed on, 5 min ago', 'A loop cleared part of it, 2 h ago', 'New IOU, 1 d ago']);
+  assert.deepEqual(rows.map(li => li.querySelector('.how').textContent), ['Passed on, 5 min ago', 'A loop cleared part of it, 2 h ago', 'New note, 1 d ago']);
   assert.deepEqual(rows[0].querySelectorAll('a').map(a => a.href), ['/agent/sandbox-exact', '/agent/house-scribe']);
   assert.equal(rows[0].querySelector('.arw').getAttribute('aria-hidden'), 'true');
-  assert.equal($('stats').textContent, '6 agents and 3 open IOUs now. 47 loops cleared so far, cutting 0.104 tERG of IOUs in all.');
-  assert.equal($('sky-loop').textContent, 'The newest loop that cleared, with the rainbow ring: sandbox-exact → sandbox-mallory → sandbox-exact, 0.001 tERG off each IOU in it, 10 min ago (its loop card).');
+  assert.equal($('stats').textContent, '6 agents and 3 open notes now. 47 loops cleared so far, cutting 0.104 tERG of notes in all.');
+  assert.equal($('sky-loop').textContent, 'The newest loop that cleared, with the rainbow ring: sandbox-exact → sandbox-mallory → sandbox-exact, 0.001 tERG off each note in it, 10 min ago (its loop card).');
   assert.doesNotMatch(body.textContent, /\bcredits\b|nanoERG|\d{1,3}(,\d{3})+ tERG/, 'tERG, rounded, in words');
   // It reads again in a minute, and the spotlight moves on in 8 s.
   assert.deepEqual(pending(), [home.SPOT_MS, home.REFRESH_MS]);
@@ -237,23 +237,23 @@ test('Pause stops the spotlight and the reads; Resume starts them again; the spo
   assert.deepEqual(fetched.sort(), ['/pilot/v1/clearing', '/pilot/v1/ledger', '/pilot/v1/loops', '/pilot/v1/participants?all=1']);
   // The spotlight moves on by itself, and sets its next move.
   run(home.SPOT_MS);
-  assert.equal($('spot').textContent, "basis-x-1 holds ana-tester's IOU for 0.0015 tERG.");
+  assert.equal($('spot').textContent, "basis-x-1 holds ana-tester's note for 0.0015 tERG.");
   assert.deepEqual(pending(), [home.SPOT_MS, home.REFRESH_MS]);
   // Pause: nothing moves and nothing is read; the label and the tag say so (no Live tag over a paused view). Next still
   // steps.
   $('sky-pause').click();
   assert.equal($('sky-pause').textContent, 'Resume');
-  assert.match($('sky-read').textContent, /^Testnet records, one real IOU at a time, read \d\d:\d\d UTC$/);
+  assert.match($('sky-read').textContent, /^Testnet records, one real note at a time, read \d\d:\d\d UTC$/);
   assert.deepEqual([$('sky-tag').hidden, $('sky-tag').textContent, $('sky-tag').className], [false, 'Paused', 'tag']);
   assert.doesNotMatch($('sky-read').textContent, /Paused/, 'Paused once, in the tag');
   assert.deepEqual(pending(), []);
   $('sky-next').click();
-  assert.equal($('spot').textContent, "sandbox-exact holds basis-x-1's IOU for 0.003 tERG.");
+  assert.equal($('spot').textContent, "sandbox-exact holds basis-x-1's note for 0.003 tERG.");
   assert.deepEqual(pending(), [], 'paused: Next sets no timer');
   // Resume: the last read is recent, so the next one is a minute away again.
   $('sky-pause').click();
   assert.equal($('sky-pause').textContent, 'Pause');
-  assert.match($('sky-read').textContent, /^Testnet records, one real IOU at a time, read \d\d:\d\d UTC$/);
+  assert.match($('sky-read').textContent, /^Testnet records, one real note at a time, read \d\d:\d\d UTC$/);
   assert.deepEqual([$('sky-tag').textContent, $('sky-tag').className], ['Live', 'tag live']);
   assert.deepEqual(pending(), [home.SPOT_MS, home.REFRESH_MS]);
   // The next read: the ledger, the loops and the counts, not the directory (read less than 5 minutes ago). The spotlight
@@ -262,17 +262,17 @@ test('Pause stops the spotlight and the reads; Resume starts them again; the spo
   await run(home.REFRESH_MS);
   await settle();
   assert.deepEqual(fetched.sort(), ['/pilot/v1/clearing', '/pilot/v1/ledger', '/pilot/v1/loops']);
-  assert.equal($('spot').textContent, "sandbox-exact holds basis-x-1's IOU for 0.003 tERG.");
+  assert.equal($('spot').textContent, "sandbox-exact holds basis-x-1's note for 0.003 tERG.");
   assert.deepEqual(pending(), [home.SPOT_MS, home.REFRESH_MS]);
 });
 
 test('reduced motion: the spotlight moves only when asked (Next); the reads go on', async () => {
   const {$, pending} = openPage({reduce: true});
   await settle();
-  assert.equal($('spot').textContent, "house-scribe holds sandbox-exact's IOU for 0.004 tERG.");
+  assert.equal($('spot').textContent, "house-scribe holds sandbox-exact's note for 0.004 tERG.");
   assert.deepEqual(pending(), [home.REFRESH_MS], 'no spotlight timer');
   $('sky-next').click();
-  assert.equal($('spot').textContent, "basis-x-1 holds ana-tester's IOU for 0.0015 tERG.");
+  assert.equal($('spot').textContent, "basis-x-1 holds ana-tester's note for 0.0015 tERG.");
   assert.deepEqual(pending(), [home.REFRESH_MS]);
 });
 
@@ -292,15 +292,15 @@ test('when the network cannot be read: the view says so, keeps no stale claim, a
   for (const k of Object.keys(reads)) delete reads[k];
   await later.run(home.REFRESH_MS);
   await settle();
-  assert.match(later.$('sky-read').textContent, /^Testnet records, one real IOU at a time, read \d\d:\d\d UTC \(retrying\)$/);
+  assert.match(later.$('sky-read').textContent, /^Testnet records, one real note at a time, read \d\d:\d\d UTC \(retrying\)$/);
   assert.deepEqual([later.$('sky-tag').hidden, later.$('sky-tag').textContent, later.$('sky-tag').className], [false, 'Offline', 'tag']);
   assert.equal(later.$('sky-ctl').hidden, false, 'Next still steps through what was read');
-  assert.equal(later.$('spot').textContent, "house-scribe holds sandbox-exact's IOU for 0.004 tERG.");
+  assert.equal(later.$('spot').textContent, "house-scribe holds sandbox-exact's note for 0.004 tERG.");
   assert.deepEqual(later.pending(), [home.SPOT_MS, 2 * home.REFRESH_MS]);
   // An empty ledger: said plainly.
   const empty = openPage({reads: {...READS, '/pilot/v1/ledger': {unit: 'nanoERG', notes: []}}});
   await settle();
-  assert.equal(empty.$('spot').textContent, 'No open IOUs right now.');
+  assert.equal(empty.$('spot').textContent, 'No open notes right now.');
   assert.equal(empty.$('spot-meta').children.length, 0);
 });
 

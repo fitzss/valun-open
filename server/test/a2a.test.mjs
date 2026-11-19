@@ -92,7 +92,7 @@ test('the other skills: how to join, recent loops; a data part can name the skil
   // Claude Code joins with console, as the one real run did, end to end (headless Claude Code cancels ask's prompt, and ask
   // has been verified in no app); the text says what leaving the flag out (ask) relies on, and when none is for.
   assert.equal(jd.mcp[0], `${JOIN} --approvals console`);
-  assert.ok(j.parts[0].text.includes(`- Claude Code: join in a terminal (${JOIN} --approvals console: your offers, acceptances, guarantee offers and IOUs then wait for your human at ${base}/pilot#owner; honoring a guarantee call and the consents never do), then claude mcp add valun -- uvx --from valun==0.7.2 valun mcp. These two lines have run end to end once (Claude Code 2.1.326, Nov 17, headless); Claude Code's own approval prompts are not yet tested. claude mcp add adds the server only for the folder it runs in (Claude Code's default scope, local); claude mcp add --scope user valun -- uvx --from valun==0.7.2 valun mcp adds it for every folder. Console is also what a --sandbox join of valun 0.7.2 uses without --approvals. Write --approvals ask in its place only if your human chose to approve in your app\'s own prompts, which works only in an app that shows them (verified in no app yet); write --approvals none instead only if they said you may act alone. There is also a plugin (/plugin marketplace add fitzss/valun-open, then /plugin install valun@valun): an install check only, not yet run end to end.`));
+  assert.ok(j.parts[0].text.includes(`- Claude Code: join in a terminal (${JOIN} --approvals console: your offers, acceptances, guarantee offers and notes then wait for your human at ${base}/pilot#owner; honoring a guarantee call and the consents never do), then claude mcp add valun -- uvx --from valun==0.7.2 valun mcp. These two lines have run end to end once (Claude Code 2.1.326, Nov 17, headless); Claude Code's own approval prompts are not yet tested. claude mcp add adds the server only for the folder it runs in (Claude Code's default scope, local); claude mcp add --scope user valun -- uvx --from valun==0.7.2 valun mcp adds it for every folder. Console is also what a --sandbox join of valun 0.7.2 uses without --approvals. Write --approvals ask in its place only if your human chose to approve in your app\'s own prompts, which works only in an app that shows them (verified in no app yet); write --approvals none instead only if they said you may act alone. There is also a plugin (/plugin marketplace add fitzss/valun-open, then /plugin install valun@valun): an install check only, not yet run end to end.`));
   assert.doesNotMatch(j.parts[0].text, /That join uses the default approvals/, 'the line to copy is not the default');
   // The evidence for other apps, as it is: only scripted MCP clients, and no other app verified (the lead's live check).
   assert.ok(j.parts[0].text.includes('- Other MCP apps: the same join, then add the MCP server: uvx --from valun==0.7.2 valun mcp. It should work with any MCP app. Apart from the Claude Code run, only scripted MCP clients have run it; no other app (Codex, Cursor, Claude Desktop, VS Code) has been verified.'));
@@ -123,7 +123,7 @@ test('the other skills: how to join, recent loops; a data part can name the skil
   assert.deepEqual(jd.keep_signing, ['uvx --from valun==0.7.2 valun call valun_inbox', 'uvx --from valun==0.7.2 valun clearing watch']);
   const skillText = fs.readFileSync(new URL('../public/skill-testnet.md', import.meta.url), 'utf8').replace(/\s+/g, ' ');
   for (const cmd of jd.keep_signing) assert.ok(skillText.includes(`\`${cmd}\``), cmd);
-  assert.ok(j.parts[0].text.includes(`From a shell, nothing signs in the background (that is valun mcp, in an MCP app): run ${jd.keep_signing[0]} regularly (it signs set-offs and payments to you), or keep ${jd.keep_signing[1]} running (it also signs transfers of your own debt).\n`));
+  assert.ok(j.parts[0].text.includes(`From a shell, nothing signs in the background (that is valun mcp, in an MCP app): run ${jd.keep_signing[0]} regularly (it signs set-offs and payments to you), or keep ${jd.keep_signing[1]} running (it also signs transfers of notes you issued).\n`));
   // The limits in force (the server's self-serve limits), in the network's unit: credits on the pilot this test runs.
   assert.match(j.parts[0].text, /for 7 days, renewed while it is active, at most 5 credits per deal and 40 owed in total\. Credits have no monetary value\.$/);
   const l = (await rpc(v1('show recent loops'))).body.result.message;
@@ -179,7 +179,7 @@ test('find-work: the agents that pay for work, what they pay for, and how to tak
 // Who runs an agent, as the pages say it (lib/pilot/loops.mjs whoRuns), not how it joined: a house agent joined
 // self-serve but the operator runs it. The card and the directory say that so far the agents are almost all the team's
 // or the operator's.
-test('find-agents says who runs each agent and that almost every agent so far is the team\'s or the operator\'s; recent loops say what each debt fell', async () => {
+test('find-agents says who runs each agent, sandbox-exact first as the job to try first, and that almost every agent so far is the team\'s or the operator\'s; recent loops say what each note fell', async () => {
   const pilot = fakePilot(), at = (id, extra) => Object.assign(pilot.s.participants[id], extra);
   at('vp_000000000002', {operator: 'Basis QA'});                                                     // a team test agent, by its operator field
   at('vp_000000000003', {operator: 'Valun (house agents)', sandbox_only: true, sandbox_expires_at: new Date(Date.now() + 864e5).toISOString()});
@@ -190,14 +190,16 @@ test('find-agents says who runs each agent and that almost every agent so far is
   try {
     const ask = async text => (await (await fetch(`http://127.0.0.1:${srv.address().port}/a2a`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(v1(text))})).json()).result.message;
     const m = await ask('list agents'), text = m.parts[0].text;
-    assert.match(text, /^- sandbox-exact \(practice agent, operator-run\): offers /m);
-    assert.match(text, /^- brief-bot \(house agent, operator-run\): Summaries of research papers; pays for /m);
+    // Fix inbox #173: the practice agent that always answers is named the one to try first, and listed first; a house
+    // agent says it may be out of its shared AI budget.
+    assert.match(text, /^Agents on Valun \(3 active; sandbox-exact first, then the operator's other agents, then the most recently seen\):\n- sandbox-exact \(practice agent, operator-run; always exact, the one to try first\): offers /);
+    assert.match(text, /^- brief-bot \(house agent, operator-run; Claude on a shared daily and monthly budget, so it may decline\): Summaries of research papers; pays for /m);
     assert.match(text, /^- open-poet \(team test agent, by its operator field\): offers haiku/m);
     assert.doesNotMatch(text, /sandbox participant|sandbox agent\)/, 'how it joined is not who runs it');
     assert.ok(text.includes('So far almost every agent on the network is the team\'s or the operator\'s. To hire one'));
     assert.deepEqual(m.parts[1].data.agents.map(a => a.kind).sort(), ['sandbox_agent', 'sandbox_participant', 'sandbox_participant'], 'the data keeps each kind');
     const l = (await ask('show recent loops')).parts[0].text;
-    assert.ok(l.includes('- sandbox-exact -> open-poet -> brief-bot -> sandbox-exact: 2 credits off each debt, 6 credits in all ('), l);
+    assert.ok(l.includes('- sandbox-exact -> open-poet -> brief-bot -> sandbox-exact: 2 credits off each note, 6 credits in all ('), l);
   } finally { srv.close(); }
   assert.ok(agentCard('https://valun.tech').description.includes('So far almost every agent on the network is the team\'s or the operator\'s.'));
   assert.doesNotMatch(agentCard('https://valun.tech').description, /AI agents run by different people agree/);

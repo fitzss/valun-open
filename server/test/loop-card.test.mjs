@@ -36,7 +36,7 @@ test('the ring: an arrow from each member to the one it owed, the centre in tERG
   const html = loops.renderLoopPage(LOOP, {records: RECORDS, now: NOW});
   const svg = /<svg class="ring" viewBox="0 (-?\d+) 400 (\d+)" role="img" aria-label="([^"]+)">[\s\S]*?<\/svg>/.exec(html);
   assert.ok(svg, 'the ring');
-  assert.equal(svg[3], 'Live: the loop sandbox-mallory → claude-live-1 → sandbox-exact → sandbox-mallory. Each arrow points from the agent that owed to the agent it owed; each of these debts fell by 0.001 tERG.');
+  assert.equal(svg[3], 'Live: the loop sandbox-mallory → claude-live-1 → sandbox-exact → sandbox-mallory. Each arrow points from the agent that owed to the agent it owed; each of these notes fell by 0.001 tERG.');
   assert.equal((svg[0].match(/<path class="arc" d="[^"]+" marker-end="url\(#loop-arrow-0\)"\/>/g) || []).length, 3, 'three arrows, each with its head');
   assert.match(svg[0], /<text class="mid" x="200" y="178" text-anchor="middle">−0\.001<\/text><text class="mid-u" x="200" y="198" text-anchor="middle">tERG each<\/text>/);
   assert.doesNotMatch(svg[0], /−1000000|1000000/, 'never raw nanoERG');
@@ -53,7 +53,7 @@ test('the ring: an arrow from each member to the one it owed, the centre in tERG
 
 test('the card: what changed and what didn\'t, who runs each member, committed not final, what is not public, live and labelled', () => {
   const html = loops.renderLoopPage(LOOP, {records: RECORDS, now: NOW, pages: PAGES});
-  assert.ok(html.includes('<p class="lede">3 agents\' IOUs formed a loop. Each agent signed once, and every debt in the loop fell by 0.001 tERG: 0.003 tERG of debt cancelled in all. Nobody\'s net position changed, the work stays done, and no coins moved.</p>'));
+  assert.ok(html.includes('<p class="lede">3 agents\' notes formed a loop. Each agent signed once, and every note in the loop fell by 0.001 tERG: 0.003 tERG of notes cancelled in all. Nobody\'s net position changed, the work stays done, and no coins moved.</p>'));
   assert.ok(html.includes('<p class="live-line"><span class="tag live">Live record</span> <span>valun-testnet-1</span> <span>read 01:12 UTC</span> <a href="/pilot/v1/loops/vs_4f8d53475c9e591a">the record as JSON</a></p>'));
   // What changed: each debt in the loop, by the same amount.
   const debts = [...html.matchAll(/<li><a class="h" href="\/agent\/([\w-]+)">[\w-]+<\/a> <span class="arr">owed<\/span> <a class="h" href="\/agent\/([\w-]+)">[\w-]+<\/a> <span class="num">([^<]+)<\/span><\/li>/g)].map(m => [m[1], m[2], m[3]]);
@@ -65,7 +65,7 @@ test('the card: what changed and what didn\'t, who runs each member, committed n
   assert.doesNotMatch(html, /after the loop cleared \(in/);
   const rows = [...html.matchAll(/<tr><th scope="row"><a class="h" href="\/agent\/([\w-]+)">[\w-]+<\/a><\/th><td class="num">([^<]+)<\/td><td class="num">([^<]+)<\/td><td>([^<]+)<\/td><\/tr>/g)].map(m => m.slice(1));
   assert.deepEqual(rows, [['sandbox-mallory', '−0.001', '−0.001', 'unchanged'], ['claude-live-1', '−0.001', '−0.001', 'unchanged'], ['sandbox-exact', '−0.001', '−0.001', 'unchanged']]);
-  assert.ok(html.includes('The work behind these IOUs stays done, the record keeps every IOU and this loop, and no coins moved.'));
+  assert.ok(html.includes('The work behind these notes stays done, the record keeps every note and this loop, and no coins moved.'));
   // Who runs each member, in words.
   assert.ok(html.includes('<a class="h" href="/agent/sandbox-mallory">sandbox-mallory</a> <span class="tag operator">operator-run</span> <span class="who-line">Practice agent. The operator runs it inside the server and holds its key. It uses no AI.</span>'));
   assert.ok(html.includes('<a class="h" href="/agent/claude-live-1">claude-live-1</a> <span class="tag team">team test agent</span> <span class="who-line">Its operator field names the team, so we count it as one of our own test agents (the field is self-declared).</span>'));
@@ -76,7 +76,7 @@ test('the card: what changed and what didn\'t, who runs each member, committed n
   assert.ok(html.includes(`<strong>Committed on Ergo testnet</strong> by the next tracker box: <a href="https://testnet.ergoplatform.com/en/transactions/${TX}">tx f2a146cf387f…</a>, signed 17:33 UTC, 2 minutes after the loop cleared. The server matches that box to the loop by time (the first one signed after it); <code>valun audit</code> checks only the current box.`));
   assert.ok(html.includes('Committed, not final: a netting the tracker commits stays committed as long as the tracker key never commits an earlier total again. The operator holds that key, and nothing on chain stops it. <a href="/trust#netting">How netting is committed</a>.'));
   assert.doesNotMatch(html, /stays final|\bis final\b|irreversible|settled|\bmoney\b|nanoERG|\bcredits\b/i, 'committed, never final; tERG, never the pilot\'s credits');
-  assert.ok(html.includes('Not public, so not shown: which job each IOU paid for.'));
+  assert.ok(html.includes('Not public, so not shown: which job each note paid for.'));
   // The shared shell: skip link, navigation (none current), one h1, a heading for each section, the shared footer.
   assert.match(html, /<body>\n<a class="skip" href="#main">Skip to content<\/a>\n<header class="top"><a class="brand" href="\/" aria-label="Valun home">/);
   assert.doesNotMatch(html, /aria-current/);
@@ -177,16 +177,16 @@ test('the agent page on the testnet: amounts in tERG, live and labelled, a house
 // claude-live-1's record as valun.tech served it (Nov 17): it owed 0.004 tERG, two loops cleared 0.002 of it with the
 // practice agents, nothing was redeemed. The page called that "Repaid ... settled"; a set-off clears a debt (committed,
 // not final) and a redemption pays it, so the two are shown apart and neither word is used.
-test('the agent page on the testnet: cleared in loops and redeemed, apart, never "repaid" or "settled"; each loop by what each debt fell', () => {
+test('the agent page on the testnet: cleared in loops and redeemed, apart, never "repaid" or "settled"; each loop by what each note fell', () => {
   const pub = {id: 'vp_c93601acafff', handle: 'claude-live-1', operator: 'Claude live check', joined_at: '2026-11-16T17:20:00.000Z', agent_last_seen: '2026-11-16T17:40:00.000Z', sandbox_only: true};
   const evidence = {delivery: {accepted: {count: 1, buyers: 1, buyers_by_kind: {sandbox_agent: 1}}, disputed_by_buyer: 0, not_delivered: 0},
     repayment: {owed_ever_PC: 4_000_000, settled: {by_setoff_PC: 2_000_000, by_redemption_PC: 0, creditors: 1, creditors_by_kind: {sandbox_agent: 1}}, outstanding_PC: 2_000_000,
       unpaid_accepted_work: {count: 0, PC: 0}}, acceptance: {holders_ever: 2, taken_by_transfer: {PC: 0}}, circle: {size: 3, closed: false}};
   const pos = {claims_held: 0, owes: 2_000_000, cleared_by_setoff: 2_000_000, deals: {credit_notes_issued: 5, disputed: 0, notes_received: 3, notes_issued_as_payer: 2}, evidence, claims: [], debts: []};
   const html = agents.renderAgentPage(agents.agentView(pub, pos, [LOOP], {now: NOW}));
-  assert.ok(html.includes('<li><strong>Cleared or redeemed.</strong> 0.002 tERG of the 0.004 tERG it owed cleared in loops (committed, not final), 0 tERG redeemed, with 1 creditor (1 practice agent); 0.002 tERG outstanding; 0 accepted jobs unpaid.</li>'));
+  assert.ok(html.includes('<li><strong>Cleared or redeemed.</strong> 0.002 tERG of the 0.004 tERG it owed cleared in loops (committed, not final), 0 tERG redeemed, with 1 holder (1 practice agent); 0.002 tERG outstanding; 0 accepted jobs unpaid.</li>'));
   assert.doesNotMatch(html, /Repaid|\bsettled\b|\brepaid\b/i);
-  assert.ok(html.includes('</a> · 0.001 tERG off each debt (0.003 tERG in all)</li>'), 'the loop by what each debt fell, as the loop card says');
+  assert.ok(html.includes('</a> · 0.001 tERG off each note (0.003 tERG in all)</li>'), 'the loop by what each note fell, as the loop card says');
   // While no confirmed box commits some of its loops (the readiness assessment of Nov 18: the page said "committed, not
   // final" while that loop's card said "Not committed on Ergo testnet yet"), the page says so, of all of them or of the
   // newest (the review of gap/first-use: a tour's two loops both wait for the next box); the server reads each as its

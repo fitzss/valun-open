@@ -22,7 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath, pathToFileURL} from 'node:url';
-import {LOCAL_CLIENT, LOCAL_MCP, LOCAL_RUN, LOST_JOIN_071} from '../lib/a2a.mjs';
+import {LOCAL_CLIENT, LOCAL_MCP, LOCAL_RUN, LOST_JOIN_HERMES_LOCAL, LOST_JOIN_LOCAL} from '../lib/a2a.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // scripts/build-local-docs.mjs and its sources (scripts/local-docs/) are not in the hosted image's copy of the app
@@ -62,7 +62,7 @@ const strings = (v, at = 'data') => (typeof v === 'string' ? [[at, v]] : v && ty
 // The parts of an A2A answer: 1.0's result is {message}, 0.3's the message itself.
 const partsOf = r => (r.json.result.message ?? r.json.result).parts;
 const answerOf = r => { const parts = partsOf(r); return {text: parts.find(p => typeof p.text === 'string').text, data: parts.find(p => p.data).data}; };
-// The valun 0.7.1 subcommands that take --server (scripts/build-local-docs.mjs SERVER_COMMANDS: its cli.py).
+// The valun 0.7.2 subcommands that take --server (scripts/build-local-docs.mjs SERVER_COMMANDS: its cli.py).
 const takesServer = cmd => B.SERVER_COMMANDS.has(/^uvx --from \S+ valun --profile \S+ ([a-z-]+)/.exec(cmd)?.[1]);
 // The local docs' checker on a text that gives no command, so names no client release (the card, the other skills).
 const unpinned = (text, origin) => B.localDocProblems(text, {origin}).filter(p => p !== 'pins no client release');
@@ -130,9 +130,21 @@ test('local: the join answer\'s commands are skill-local.md\'s, in the profile l
         for (const cmd of [data.mcp[0], data.mcp[1], data.shell[1], ...data.keep_signing, data.hermes[2]]) assert.ok(text.includes(cmd), `${at}: the text gives ${cmd}`);
         assert.ok(text.includes(`Only if your human said you may act alone: ${data.shell[0].replace(/ --approvals console$/, ' --approvals none')}. Then ${data.shell[1]}.`), at);
         assert.doesNotMatch(JSON.stringify(data), /--approvals none/, `${at}: the data never gives none to copy`);
-        // A lost join: what skill-local.md section 1 says ("If join goes wrong"), not the public network's /start.
-        assert.equal(data.if_join_stops, `${LOST_JOIN_071} Details: ${origin}/skill.md, section 1 ("If join goes wrong").`, at);
+        // A lost join: what skill-local.md section 1 says ("If join goes wrong"), not the public network's /start: valun
+        // 0.7.2's (LOST_JOIN_LOCAL: run the command it prints, in this profile with this server), and the Hermes plugin
+        // 0.7.2's own join (LOST_JOIN_HERMES_LOCAL: its core's unreachable, no key kept, so no enroll and another handle).
+        assert.equal(data.if_join_stops, `${LOST_JOIN_LOCAL} In Hermes, whose plugin joins with its own code: ${LOST_JOIN_HERMES_LOCAL} `
+          + `Details: ${origin}/skill.md, section 1 ("If join goes wrong").`, at);
         assert.ok(served.includes('**If join goes wrong:**'), 'skill-local.md has that section');
+        // The owner token and the default approvals, as valun 0.7.2 has them (cli.py _token_file_refusal, _hand_over,
+        // default_approvals).
+        // "Nothing was sent" is also join's answer when the server was not reached (cli.py _join_not_sent) and for a
+        // plain_http refusal (client.py plain_http_refusal): fix what it names.
+        assert.ok(text.includes('If join says "Nothing was sent", fix what it names: for a token file that exists already, or a folder that can\'t take one, join again with a new token file name; for no connection, run the doctor it names, then the same join.'), at);
+        assert.doesNotMatch(`${text}\n${JSON.stringify(data)}`, /Python traceback|as valun 0\.7\.1 did/, `${at}: no 0.7.1 words for the Hermes plugin 0.7.2`);
+        assert.ok(LOST_JOIN_HERMES_LOCAL.startsWith('If the plugin\'s join stops with Joining failed (unreachable) after a cut connection or a timeout'), at);
+        assert.ok(text.includes('Console is also what a --sandbox join of valun 0.7.2 uses without --approvals.'), at);
+        assert.doesNotMatch(text, /the default approvals, ask/, at);
         assert.ok(text.includes(`\n${data.if_join_stops}\n`), at);
         // PC, never credits; the limits in force.
         assert.equal(data.unit, 'PC', at);

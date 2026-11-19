@@ -1,22 +1,29 @@
 #!/bin/bash
 # The local image's acceptance test (fix inbox #143), run against a started container of Dockerfile.local: the server
 # says it is local with no chain and runs circulating credit; then, with a fresh client home, the released client
-# (valun 0.7.1 by default) points at it (`valun config server URL`), joins without an invite (`valun join --sandbox`)
-# and takes the five-step sandbox tour (`valun sandbox tour --yes`); last, the server's public API must show an applied
+# (valun 0.7.2 by default) points at it (`valun config server URL`), joins without an invite (`valun join --sandbox`,
+# with --approvals none: 0.7.2's sandbox join defaults to console approvals, which would hold the tour's commitments
+# for an owner nobody plays here; 0.7.1 takes the flag too) and takes the five-step sandbox tour (`valun sandbox tour
+# --yes`); last, the server's public API must show an applied
 # set-off with this participant in it (GET /pilot/v1/loops). It prints no secret: the owner token goes to a file in the
 # temporary client home, which is removed at the end (KEEP=1 keeps it, and says where).
 # Needs bash, curl, uvx (uv) and python3 (or python); network access for uvx to fetch the client once.
 # Usage: scripts/local-acceptance.sh [URL]   (URL: default $VALUN_URL, else http://127.0.0.1:8080)
-#   VALUN_CLIENT   the client to run, as uvx --from takes it (default valun==0.7.1)
+#   VALUN_CLIENT   the client to run, as uvx --from takes it (default valun==0.7.2)
 #   WAIT_S         how long to wait for the server to answer (default 180 s); TOUR_S, for the tour (default 1500 s)
 # Exit codes: 0 the tour completed with a set-off; 1 it did not (what failed is printed); 2 a setup problem (a tool
 # missing, or no server answering at URL).
 set -euo pipefail
 URL=${1:-${VALUN_URL:-http://127.0.0.1:8080}}; URL=${URL%/}
-CLIENT=${VALUN_CLIENT:-valun==0.7.1}
+CLIENT=${VALUN_CLIENT:-valun==0.7.2}
 WAIT_S=${WAIT_S:-180}; TOUR_S=${TOUR_S:-1500}
 say() { echo "local-acceptance: $*"; }
 fail() { say "FAIL: $*"; exit 1; }
+# curl to a server on this machine goes direct, as valun 0.7.2 does: curl would send it through http_proxy unless
+# NO_PROXY named this machine (docs/LOCAL.md, "Behind a proxy"). Another URL keeps the shell's proxy settings.
+NOPROXY=""
+case "$URL" in http://127.*|http://localhost|http://localhost[:/]*|http://\[::1\]|http://\[::1\][:/]*) NOPROXY='*' ;; esac
+lcurl() { if [ -n "$NOPROXY" ]; then curl --noproxy "$NOPROXY" "$@"; else curl "$@"; fi; }
 for tool in curl uvx timeout; do command -v "$tool" >/dev/null 2>&1 || { say "needs $tool"; exit 2; }; done
 PY=""
 for p in python3 python; do if command -v "$p" >/dev/null 2>&1 && "$p" -I -c 'import json' >/dev/null 2>&1; then PY=$p; break; fi; done
@@ -27,12 +34,12 @@ jq_() { "$PY" -I -c 'import json, sys; j = json.load(sys.stdin); v = eval(sys.ar
 # 1. The server answers, says it is local with no chain, and runs circulating credit on its pinned tracker.
 say "server $URL, client $CLIENT"
 deadline=$((SECONDS + WAIT_S))
-until health=$(curl -fsS -m 5 "$URL/pilot/v1/health" 2>/dev/null) && [ "$(printf '%s' "$health" | jq_ 'j.get("ok") is True')" = true ]; do
+until health=$(lcurl -fsS -m 5 "$URL/pilot/v1/health" 2>/dev/null) && [ "$(printf '%s' "$health" | jq_ 'j.get("ok") is True')" = true ]; do
   [ $SECONDS -lt $deadline ] || { say "no healthy server at $URL/pilot/v1/health within ${WAIT_S} s"; exit 2; }
   sleep 2
 done
 say "health: $health"
-info=$(curl -fsS -m 10 "$URL/pilot/v1/info") || fail "GET /pilot/v1/info failed"
+info=$(lcurl -fsS -m 10 "$URL/pilot/v1/info") || fail "GET /pilot/v1/info failed"
 summary=$(printf '%s' "$info" | jq_ '{k: j.get(k) for k in ("network", "environment", "unit", "tracker_on_chain", "features")}')
 say "info: $summary"
 [ "$(printf '%s' "$info" | jq_ 'j.get("environment") == "local" and j.get("network") == "valun-pilot-1" and j.get("tracker_on_chain") is False and "chain" not in j')" = true ] \
@@ -49,8 +56,8 @@ trap cleanup EXIT
 HANDLE="acc-$(od -An -tx1 -N4 /dev/urandom | tr -d ' \n')"
 say "\$ valun config server $URL"
 uvx --from "$CLIENT" valun config server "$URL" || fail "valun config server exited $?"
-say "\$ valun join --sandbox --handle $HANDLE --operator 'local acceptance' --owner-token-file \$VALUN_HOME/owner-token.txt"
-uvx --from "$CLIENT" valun join --sandbox --handle "$HANDLE" --operator "local acceptance" --owner-token-file "$VALUN_HOME/owner-token.txt" \
+say "\$ valun join --sandbox --handle $HANDLE --operator 'local acceptance' --owner-token-file \$VALUN_HOME/owner-token.txt --approvals none"
+uvx --from "$CLIENT" valun join --sandbox --handle "$HANDLE" --operator "local acceptance" --owner-token-file "$VALUN_HOME/owner-token.txt" --approvals none \
   || fail "valun join --sandbox exited $?"
 say "\$ valun sandbox tour --yes"
 set +e
@@ -61,7 +68,7 @@ set -e
 grep -q '^The tour is complete' "$VALUN_HOME/tour.log" || fail "the tour did not say it is complete"
 
 # 3. The set-off, as the server's public API shows it: an applied loop with this participant among its members.
-loops=$(curl -fsS -m 10 "$URL/pilot/v1/loops") || fail "GET /pilot/v1/loops failed"
+loops=$(lcurl -fsS -m 10 "$URL/pilot/v1/loops") || fail "GET /pilot/v1/loops failed"
 mine=$(printf '%s' "$loops" | "$PY" -I -c '
 import json, sys
 handle, doc = sys.argv[1], json.load(sys.stdin)

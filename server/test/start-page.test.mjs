@@ -171,12 +171,12 @@ test('the chooser comes first, with the four paths; each path says what it needs
   // Whether each path needs an agent, a model, a wallet or tERG.
   assert.match(text('agent'), /You need Your agent, with the model it already uses: Valun needs no model or API key of its own\. [^.]*\. No wallet and no tERG\./);
   assert.match(text('tour'), /No AI model, no wallet and no tERG\./);
-  assert.match(text('ergo'), /uv for the audit, which needs no profile, key, wallet or tERG\. To redeem an IOU, a joined profile \(the tour's\) and still no tERG\. To post a reserve, tERG from a testnet faucet/);
+  assert.match(text('ergo'), /uv for the audit, which needs no profile, key, wallet or tERG\. To redeem a note, a joined profile \(the tour's\) and still no tERG\. To post a reserve, tERG from a testnet faucet/);
   assert.match(text('build'), /No wallet and no tERG\./);
   // What fails, and what to do: each path's own cases.
   const cases = id => [...part(id).matchAll(/<summary>(?:<span>)?((?:(?!<\/summary>)[\s\S])*?)(?:<\/span>)?<\/summary>/g)].map(m => words(m[1]).trim())
-    .filter(t => !/^(?:Any agent|Claude Code|Hermes Agent|Or take|Or close|The commands|The same from)/.test(t));
-  assert.deepEqual(cases('agent'), ["Your app can't show approval prompts", "The valun tools don't appear in your app", 'The network is busy', "house-scribe doesn't answer",
+    .filter(t => !/^(?:Any agent|Claude Code|Hermes Agent|Or take|Or close|Then house-scribe|The commands|The same from)/.test(t));
+  assert.deepEqual(cases('agent'), ["Your app can't show approval prompts", "The valun tools don't appear in your app", 'The network is busy', "house-scribe declines or doesn't answer",
     'The daily anchoring cap is used up', 'The audit says UNKNOWN', 'A connection error, or join stopped halfway', 'A tool answered internal_error or a connection error', 'Setup fails']);
   assert.deepEqual(cases('tour'), ['The tour waits', 'Joining failed (handle_taken)', 'The network is busy', 'No one is at the terminal',
     'A connection error, or join stopped halfway', 'Setup fails']);
@@ -196,7 +196,7 @@ test('the chooser comes first, with the four paths; each path says what it needs
   // that does not confirm tool calls.
   const noPrompt = text('no-prompt');
   assert.match(noPrompt, /An app that cannot show that prompt gets approval_unavailable for every commitment, and nothing is signed/);
-  assert.match(noPrompt, /With console, what your agent signs \(its offers, acceptances, guarantee offers and the IOU at each delivery\) waits until you approve it in the owner console, valun\.tech\/pilot#owner, with your owner token/);
+  assert.match(noPrompt, /With console, what your agent signs \(its offers, acceptances, guarantee offers and the note at each delivery\) waits until you approve it in the owner console, valun\.tech\/pilot#owner, with your owner token/);
   assert.match(noPrompt, /in an app that does not confirm tool calls, nobody is asked/);
   assert.match(part('no-prompt'), /<a href="\/pilot#owner">/);
   // Console protects the owner only while the agent can't read the owner token (the lead's decisions D12 and D12b): the
@@ -240,19 +240,24 @@ test('the chooser comes first, with the four paths; each path says what it needs
   assert.doesNotMatch(words(body(html)), /within 8 minutes/);
 });
 
-test('the first meaningful action of each path: hiring house-scribe or the tour through the agent, the tour, the audit, a read from code', () => {
-  assert.equal(blocks['cmd-hire'], 'Use Valun to hire house-scribe: a summary, in 5 bullet points, of the text after this line, for 2000000 nanoERG. '
-    + 'Check the summary against the terms before you accept it.\nPASTE THE TEXT HERE');
+// Fix inbox #173: the first job is sandbox-exact's text-stats, which needs no AI budget, so it always answers; house-scribe
+// comes after it, labelled as possibly out of its shared AI budget.
+test('the first meaningful action of each path: hiring sandbox-exact or the tour through the agent, the tour, the audit, a read from code', () => {
+  assert.equal(blocks['cmd-hire'], 'Use Valun to hire sandbox-exact: text-stats of the text after this line, for 3000000 nanoERG. '
+    + 'Check the result against the terms before you accept it.\nPASTE THE TEXT HERE');
   assert.equal(blocks['cmd-agent-tour'], 'Take the Valun sandbox tour: call valun_status and follow its sandbox_next_steps until it says the tour is complete.');
   const agent = text('agent');
-  assert.match(agent, /house-scribe operator-run writes summaries with Claude/);
+  assert.match(agent, /Hire sandbox-exact for a text-stats job sandbox-exact operator-run is a practice agent with no AI model: exact results, no budget to run out, an answer within seconds\./);
+  assert.ok(agent.indexOf('Hire sandbox-exact for a text-stats job') < agent.indexOf('Then house-scribe, for a real summary (it may be out of budget)'), 'sandbox-exact first, house-scribe after it');
+  assert.match(agent, /house-scribe operator-run writes summaries with Claude \(if it declines\)\./);
   assert.match(agent, /Paste only text you're happy for the operator and Anthropic's Claude API to read\./);
-  // What you should see, mode by mode: console as the Nov 17 run went (what the owner must do), ask as not yet verified
-  // in a real app, none.
-  assert.match(agent, /Your agent offers house-scribe 0\.002 tERG \(2,000,000 nanoERG\), and house-scribe answers within about 20 seconds with the summary\. Your agent accepts it and signs its IOU; the deal then says note_issued, and your agent owes house-scribe 0\.002 tERG \(2,000,000 nanoERG\)\./);
-  assert.match(agent, /With console \(how the Nov 17 run went\): approve the offer at \/pilot#owner, tell your agent to carry on, then approve its IOU there after it accepts the summary\./);
-  assert.match(agent, /With ask \(not yet verified in a real app\): your app should ask you twice, for the offer and for the IOU\. Each prompt is a form with one box, Approve: tick it and accept to sign; anything else signs nothing\. The second one shows the delivery's size and hash, not its text: read the summary in your agent's reply before you approve\. With none, nobody is asked\./);
-  assert.match(agent, /With ask, your app should ask before each commitment, 8 or 9 times; with console, each offer and acceptance, and the IOU or payment by transfer at each delivery, waits for you in the owner console\. At the end, valun_status says the tour is complete/);
+  // What you should see, mode by mode: console (what the owner must do), ask as not yet verified in a real app, none.
+  assert.match(agent, /Your agent offers sandbox-exact 0\.003 tERG \(3,000,000 nanoERG\) and gets the result in seconds\. It checks it, accepts it and signs its note; the deal then says note_issued, and your agent owes sandbox-exact 0\.003 tERG, less what a loop clears once its client signs the set-off, if it still holds the welcome job's note\./);
+  assert.match(agent, /With console: approve the offer at \/pilot#owner, tell your agent to carry on, then approve its note there after it accepts the result\./);
+  assert.match(agent, /With ask \(not yet verified in a real app\): your app should ask twice, for the offer and the note, each a form with one box, Approve: tick it and accept to sign; anything else signs nothing\. The second shows the delivery's size and hash, not its text: read the result in your agent's reply first\. With none, nobody is asked\./);
+  // valun 0.7.2 reads the tour's step from what you hold and owe with the practice agents (agent.py _sandbox_next_steps).
+  assert.match(agent, /Want the tour\? Take it first: valun 0\.7\.2 reads its step from what you hold and owe with the practice agents\./);
+  assert.match(agent, /With ask, your app should ask before each commitment, 8 or 9 times; with console, each offer and acceptance, and the note or payment by transfer at each delivery, waits for you in the owner console\. At the end, valun_status says the tour is complete/);
   // A loop with friends: the prompt, who goes first, and what every friend must keep running.
   assert.equal(blocks['cmd-friends'], 'Use Valun to hire FRIEND-HANDLE: ask what it offers, agree on one small job for 2000000 nanoERG, and check the work against the terms before you accept it.');
   const friends = text('friends-loop');
@@ -260,14 +265,14 @@ test('the first meaningful action of each path: hiring house-scribe or the tour 
   // What every friend keeps running: an MCP app or Hermes runs the consent loop; a shell agent signs the set-off only
   // in valun clearing (watch) or when it checks its inbox (valun 0.7.1 cli.py consents_on_reads). With console, the
   // seller's owner approves taking the job too (lib/pilot/core.mjs: an acceptance above approve_above waits).
-  assert.ok(friends.includes("Each of you keeps valun mcp (your MCP app) or the Hermes plugin running until the loop clears: an agent that isn't running can't answer, deliver or sign, and the loop waits up to 30 minutes for every signature. A shell agent keeps uvx --from valun==0.7.2 valun clearing watch running, or checks its inbox, until the loop clears. With console approvals, each hire waits for the buyer's owner twice (the offer, then the IOU) and for the seller's owner once (taking the job), so the loop closes only after every owner has approved."));
+  assert.ok(friends.includes("Each of you keeps valun mcp (your MCP app) or the Hermes plugin running until the loop clears: an agent that isn't running can't answer, deliver or sign, and the loop waits up to 30 minutes for every signature. A shell agent keeps uvx --from valun==0.7.2 valun clearing watch running, or checks its inbox, until the loop clears. With console approvals, each hire waits for the buyer's owner twice (the offer, then the note) and for the seller's owner once (taking the job), so the loop closes only after every owner has approved."));
   assert.match(src('lib/pilot/core.mjs'), /d\.acceptance = \{[^}]*state: 'awaiting_owner'\};\n[^\n]*\n\s*if \(chk\.needsOwner\) d\.acceptance\.approval_id = this\.approval\(p, d, 'accept', cur\)\.id;/, 'an acceptance waits for its owner');
   assert.equal(30 * 60e3, windows.SETOFF_TTL_MS, 'the 30 minutes are the set-off window');
-  // On a server with no house agents (a staging copy), the hire step names the practice agent's job that works there.
-  assert.ok(agent.includes("On a server without house agents, such as a staging copy of this site (its /agent/house-scribe page doesn't exist there), ask your agent to hire sandbox-exact for its text-stats job instead, at 0.003 tERG (3,000,000 nanoERG), or try this step on valun.tech."));
+  // The hire step is the practice agent's job, which works on a server with no house agents too (a staging copy).
+  assert.doesNotMatch(agent, /On a server without house agents/);
   assert.equal(sandbox.SERVICES['text-stats'].price, 3_000_000, "sandbox-exact's text-stats price");
   assert.match(text('tour'), /the tour ends with The tour is complete: you earned 6000000 nanoERG and spent 6000000 nanoERG …: you hold nothing and owe nothing/);
-  assert.match(text('ergo'), /MATCH: the N notes https:\/\/valun\.tech publishes are exactly what its tracker box on Ergo testnet commits\. and exit code 0\. While new IOUs wait for the next tracker box, it says UNKNOWN \(not_anchored\) and exits 2: not a mismatch/);
+  assert.match(text('ergo'), /MATCH: the N notes https:\/\/valun\.tech publishes are exactly what its tracker box on Ergo testnet commits\. and exit code 0\. While new notes wait for the next tracker box, it says UNKNOWN \(not_anchored\) and exits 2: not a mismatch/);
   // What a MATCH doesn't prove: the six things valun 0.7.1's audit prints (audit.py DOES_NOT_PROVE).
   assert.match(text('ergo'), /A MATCH proves that the box commits the published notes\. It doesn't prove what is outstanding, that an issuer can pay, that any deal was real or any work good, that the participants are independent of each other, that a key belongs to a handle, or that a mandate was kept\./);
   assert.match(text('look'), /You should see info names the network valun-testnet-1 and the unit nanoERG; chain shows anchoring\.state and the day's count of tracker boxes\./);
@@ -275,7 +280,7 @@ test('the first meaningful action of each path: hiring house-scribe or the tour 
   assert.match(text('build'), /valun-testnet-1 nanoERG: info\(\) reads GET \/pilot\/v1\/info, with no key or token\./);
   // The live anchoring line: a static pointer without the script (it says live only when it read something).
   const live = part('anchoring-now');
-  assert.match(words(live), /Anchoring right now Read it in \/pilot\/v1\/chain: anchoring\.state is anchored when the latest tracker box commits every IOU so far, and anchoring\.daily_cap counts the day's tracker boxes, at most 50\./);
+  assert.match(words(live), /Anchoring right now Read it in \/pilot\/v1\/chain: anchoring\.state is anchored when the latest tracker box commits every note so far, and anchoring\.daily_cap counts the day's tracker boxes, at most 50\./);
   assert.doesNotMatch(live, /tag live/, 'the static text does not claim to be live');
   assert.match(live, /<button type="button" class="btn reread" hidden>Read it again<\/button>/);
 });
@@ -292,56 +297,56 @@ test('"What you approve": console first, what waits and what never does, what is
   assert.match(/<ul class="more" aria-label="Also on this page">([\s\S]*?)<\/ul>/.exec(html)[1], /^\s*<li><a href="#approve">What you approve<\/a><\/li>/, 'first in the rail\'s "Also on this page"');
   for (const x of [
     "Join with console approvals: add --approvals console to valun join (valun 0.7.2's join --sandbox uses it without the flag too). It is the first tester's default, and the setup that has run end to end.",
-    'every offer and counter-offer your agent makes;', "every acceptance: your agent accepting another agent's offer, or taking a job;", "every guarantee offer your agent makes, to back another agent's IOU;",
-    'the IOU your agent signs when it accepts a delivery, or the payment by transfer it signs instead (Review deliveries).', 'A hire waits twice (the offer, then the IOU); taking a job waits once.',
+    'every offer and counter-offer your agent makes;', "every acceptance: your agent accepting another agent's offer, or taking a job;", "every guarantee offer your agent makes, to guarantee another agent's notes;",
+    'the note your agent signs when it accepts a delivery, or the payment by transfer it signs instead (Review deliveries).', 'A hire waits twice (the offer, then the note); taking a job waits once.',
     // The review of console/first-use: a rejected payment by transfer is purged (endTransfer purgeTransfer), not kept.
     "Your agent has already signed it, and Valun's server holds it. Rejecting doesn't unsign it: Valun keeps what was signed on record, except a payment by transfer, whose three transfer signatures it deletes, keeping only their hashes.",
-    "A held IOU is complete: the tracker would record it if it were submitted. Only Valun's server can submit to the testnet tracker, and it sends a held IOU only when you approve. That is the operator's word, not the chain's.",
+    "A held note is complete: the tracker would record it if it were submitted. Only Valun's server can submit to the testnet tracker, and it sends a held note only when you approve. That is the operator's word, not the chain's.",
     // What approving signs (a payment by transfer: the other parties, Valun for the agents it runs), what a failed check
     // does by kind, and when an IOU is committed on chain (the tracker's daily cap).
-    "Approving signs nothing with your agent's key. The server checks everything again first. For an IOU or a payment by transfer, if the IOU between the agents or a key has changed since your agent signed, the approval becomes void and your agent signs again; an offer, acceptance or guarantee offer that fails a check stays pending.",
-    'committed on Ergo testnet by a later tracker box. The tracker checks every 5 minutes and posts at most 50 tracker boxes a UTC day; once they are used, the IOU is committed only after 00:00 UTC.',
+    "Approving signs nothing with your agent's key. The server checks everything again first. For a note or a payment by transfer, if the note between the agents or a key has changed since your agent signed, the approval becomes void and your agent signs again; an offer, acceptance or guarantee offer that fails a check stays pending.",
+    'committed on Ergo testnet by a later tracker box. The tracker checks every 5 minutes and posts at most 50 tracker boxes a UTC day; once they are used, the note is committed only after 00:00 UTC.',
     "their clients sign by themselves, and Valun signs for the agents it runs",
     // Once sent; an approval whose checks fail is void instead (decideApproval void_stale). A note the tracker refuses
     // leaves no payment_due_since (core.mjs submitNote), so a later payment held for the owner and never sent (rejected,
     // expired, or void: stale on approval, a key revoked) releases the deal, unless it was payment due by then
     // (releaseAcceptance: the review of PR #8, F8; of PR #9, item 10).
-    'Once the server sends an IOU or a payment you approved (one whose checks fail becomes void instead, and the deal goes back to your agent), the delivery stays accepted. If the transfer then fails, your agent must pay again, and the delivery can no longer be disputed. If the tracker refuses the IOU, your agent must pay again too, and can\'t dispute the delivery unless a later IOU or payment of the deal waits for you and isn\'t sent (you reject it, it expires, or it becomes void: its checks fail when you approve it, or a party\'s agent key is revoked): that sends the deal back to your agent, which may then dispute it, unless the deal was payment due before that (it then stays payment due).',
+    'Once the server sends a note or a payment you approved (one whose checks fail becomes void instead, and the deal goes back to your agent), the delivery stays accepted. If the transfer then fails, your agent must pay again, and the delivery can no longer be disputed. If the tracker refuses the note, your agent must pay again too, and can\'t dispute the delivery unless a later note or payment of the deal waits for you and isn\'t sent (you reject it, it expires, or it becomes void: its checks fail when you approve it, or a party\'s agent key is revoked): that sends the deal back to your agent, which may then dispute it, unless the deal was payment due before that (it then stays payment due).',
     'a deal that was already payment due stays payment due: the delivery stays accepted, and your agent must still pay it.',
     // Valun's own wait, exactly (the review of PR #8, F4 and F7; of PR #9, item 8: on the rejected IOU's own key pair, from
     // the first change signed after it); 0.7.1's is the next item's.
-    "Valun keeps the rejected IOU with its signature, and the tracker could record it until an hour after your agent signed it, so paying that deal by transfer waits until a minute after that, unless the first change signed after the rejected IOU to the IOU between the two keys it names moves that IOU from the total the rejected one acknowledged, as a later IOU of your agent's to the same agent with the same keys does when nothing else changed that IOU first: Valun then doesn't wait for it.",
+    "Valun keeps the rejected note with its signature, and the tracker could record it until an hour after your agent signed it, so paying that deal by transfer waits until a minute after that, unless the first change signed after the rejected note to the note between the two keys it names moves that note from the total the rejected one acknowledged, as a later note of your agent's to the same agent with the same keys does when nothing else changed that note first: Valun then doesn't wait for it.",
     // A rejected payment by transfer: Valun's rule (the same-prior exemption, fallback_after, the journal's proof), and
     // the per-deal cap (core.mjs spendingPayerCheck: the review of PR #9, final round).
-    'A rejected payment by transfer is deleted, its signatures included (Valun keeps only their hashes). Valun lets your agent pay through the same IOU again at once, while it is unchanged, and any other way an hour and a minute after your agent signed the payment, or sooner once either IOU the payment would have changed has changed since. Valun allows at most 3 payments by transfer of one deal in 24 hours, whatever became of them: after the third, it refuses another, through the same IOU too, until 24 hours after the first of the three (the card says until when), so until then your agent can pay that deal only with its own IOU.',
+    'A rejected payment by transfer is deleted, its signatures included (Valun keeps only their hashes). Valun lets your agent pay through the same note again at once, while it is unchanged, and any other way an hour and a minute after your agent signed the payment, or sooner once either note the payment would have changed has changed since. Valun allows at most 3 payments by transfer of one deal in 24 hours, whatever became of them: after the third, it refuses another, through the same note too, until 24 hours after the first of the three (the card says until when), so until then your agent can pay that deal only with its own note.',
     "Your agent isn't told until it next reads the deal. Tell it: it carries on when it next checks.",
     // What stays blocked after a rejection: the server keeps every set-off off the IOU the rejected one would have
     // changed until the deal is paid or disputed (core.mjs paymentAttemptHolds; staging's first-use round, 2026-11-18).
-    "Until your agent pays that deal, or disputes the delivery while it still can, no loop clears through the IOU the rejected one would have changed: what your agent owes the payee after a rejected IOU, or what the issuer owes your agent after a rejected payment by transfer. Valun keeps set-offs off it.",
+    "Until your agent pays that deal, or disputes the delivery while it still can, no loop clears through the note the rejected one would have changed: what your agent owes the payee after a rejected note, or what the issuer owes your agent after a rejected payment by transfer. Valun keeps set-offs off it.",
     // valun 0.7.2 reads the owner's decision from the deal view and counts the attempt as not applied
     // (client.learn_owner_decisions); valun_deal's owner_decisions gives what may be paid now and from when, at the
     // client's own times (agent.free_after: + 1 h + 2 min); the owner's resolve stays for a record it could not mark,
     // the attempt in double quotes (cli.py cmd_attempts). An agent on 0.7.1 is never told (the approval probe's D2): the
     // console's card says what it does (scripts/client-071-attempts.py checks those words on 0.7.1's own rules).
-    "valun 0.7.2 then counts a rejected, expired or void IOU or payment by transfer as not applied, and valun_deal's owner_decisions tells your agent what it may pay now, and from when the rest, at the client's own times, a minute after the console's: after a rejected IOU, a new IOU at once, and a payment by transfer once an hour and 2 minutes have passed since it signed the rejected IOU; after a rejected payment by transfer, a payment through the same IOU at once (while it is unchanged, and Valun takes another), and its own IOU or another IOU once those 62 minutes have passed.",
-    'If it answers attempt_outcome_unknown (it could not count the attempt as not applied, and the IOU it would have changed has moved on since), run uvx --from valun==0.7.2 valun attempts resolve DEAL "#n" --not-applied in a terminal (#n from valun attempts list, in double quotes): Valun never sent that IOU or applied that payment. For a payment by transfer, answer yes to both of its questions, the second to record your decision in your client\'s records only.',
+    "valun 0.7.2 then counts a rejected, expired or void note or payment by transfer as not applied, and valun_deal's owner_decisions tells your agent what it may pay now, and from when the rest, at the client's own times, a minute after the console's: after a rejected note, a new note at once, and a payment by transfer once an hour and 2 minutes have passed since it signed the rejected note; after a rejected payment by transfer, a payment through the same note at once (while it is unchanged, and Valun takes another), and its own note or another note once those 62 minutes have passed.",
+    'If it answers attempt_outcome_unknown (it could not count the attempt as not applied, and the note it would have changed has moved on since), run uvx --from valun==0.7.2 valun attempts resolve DEAL "#n" --not-applied in a terminal (#n from valun attempts list, in double quotes): Valun never sent that note or applied that payment. For a payment by transfer, answer yes to both of its questions, the second to record your decision in your client\'s records only.',
     "An agent on valun 0.7.1, or on the Hermes plugin 0.7.1, isn't told, and keeps counting what it signed as a payment that may still apply: the card in the owner console says what it does then (in Hermes, hermes -p valun valun attempts takes the same words as valun attempts).",
     "A held payment by transfer ends 20 minutes after your agent signed it, as after a rejection: valun 0.7.2 counts it as not applied once it reads the deal; 0.7.1 isn't told, and may need valun attempts resolve.",
     'can reach the tracker only within an hour of your agent signing it, so its approval ends a minute before that. Valun never sends it then, and the deal goes back to your agent, as after a rejection (one that was already payment due stays payment due): tell it to accept the work again. As after a rejection, valun 0.7.2 counts it as not applied once it reads the deal; 0.7.1 isn\'t told, and may need valun attempts resolve.',
     // What the console does at a card's deadline (pilot.js watchDeadline; the next read lists it as void).
     "Each card in the console shows its deadline. When it passes, the card says that the approval expired and turns Approve and Reject off; the console's next read lists it under decided and void approvals (void expired), and a late decision is refused.",
-    "honoring a guarantee call: your agent's own IOU to the creditor;", 'accepting, calling and releasing guarantees; deliveries, declines, withdrawals and disputes;',
+    "honoring a guarantee call: your agent's own note to the creditor;", 'accepting, calling and releasing guarantees; deliveries, declines, withdrawals and disputes;',
     "clearing a limit recorded from your conversation, one you recorded included: it goes back to your mandate. Your agent can make a limit stricter, never looser than your mandate, and can't raise its caps.",
-    'ask (what an invited join uses without --approvals): your app shows you an approval form before your agent signs an offer, acceptance, IOU, payment by transfer, guarantee offer, honor or release, or loosens a limit. Decline, and nothing is signed or sent.',
+    'ask (what an invited join uses without --approvals): your app shows you an approval form before your agent signs an offer, acceptance, note, payment by transfer, guarantee offer, honor or release, or loosens a limit. Decline, and nothing is signed or sent.',
     "client-prompt: your app's own confirmation of each Valun signing tool call. Whatever it lets run is signed at once; an app that doesn't confirm tool calls asks nobody.",
-    'Leaving console keeps Review deliveries on until you untick it in the owner console, so IOUs and payments by transfer still wait there.'])
+    'Leaving console keeps Review deliveries on until you untick it in the owner console, so notes and payments by transfer still wait there.'])
     assert.ok(s.includes(x), x);
   // Never "every commitment waits", never "about an hour" for a held IOU without saying it is bound, never "signs
   // nothing new" (a payment by transfer is then signed by the others), never "every 5 minutes" alone.
   assert.doesNotMatch(s, /every commitment|each commitment|about an hour after it was signed|signs nothing new|about every 5 minutes/);
   // The "You approve" of Connect your agent leads with console and points here. Only the MCP join adds console: the
   // Hermes join's default is conversation (hermes-plugin-valun join --approvals), as its own text below says.
-  assert.match(words(part('agent')), /You approve With console approvals, the first tester's default \(the MCP join below adds --approvals console; the Hermes join defaults to conversation, where Hermes asks you, so add --approvals console to it for the console\), your agent signs, and Valun's server holds its offers, acceptances and guarantee offers, and the IOU at each delivery it accepts, until you approve or reject them in the owner console\. What each does, and what never waits: What you approve\./);
+  assert.match(words(part('agent')), /You approve With console approvals, the first tester's default \(the MCP join below adds --approvals console; the Hermes join defaults to conversation, where Hermes asks you, so add --approvals console to it for the console\), your agent signs, and Valun's server holds its offers, acceptances and guarantee offers, and the note at each delivery it accepts, until you approve or reject them in the owner console\. What each does, and what never waits: What you approve\./);
   assert.ok(/<code id="cmd-mcp">[^<]*--approvals console/.test(html), 'the MCP join adds it');
   assert.ok(!/<code id="cmd-hermes">[^<]*--approvals/.test(html), 'the Hermes join does not');
   assert.match(words(part('agent')), /Hermes's approval modes are conversation \(the default: Hermes asks you\), console and none/);
@@ -361,20 +366,20 @@ test('approvals as the 0.7.1 client does them (never "always asked"), what stays
   for (const mode of ['ask: the MCP server sends your app an approval form (MCP elicitation) before each commitment. Whether a person sees it depends on the app; no interactive app has been verified yet. An app without elicitation gets approval_unavailable, and nothing is signed. valun call and the tour ask whoever is at the terminal; with no terminal they refuse.',
     'client-prompt: the server signs whatever the app lets run. Only some apps confirm each tool call: Claude Code is designed to ask before each such call unless you have allowed the tool, which is not yet verified. In an app that doesn\'t, nobody is asked.',
     // What console holds, and what never waits (the approval semantics of 2026-11-17).
-    'console, the first tester\'s default: your agent signs everything, and the server holds its offers, counter-offers, acceptances and guarantee offers, and the IOU or payment by transfer at each delivery, until you approve them in the owner console. If you reject them, it keeps them on record, unsent, except a payment by transfer, which it deletes (keeping only its signatures\' hashes). Honors of guarantee calls, guarantee calls and releases, and the consents are never held (What you approve). That hold is the operator\'s word, not the chain\'s: a held or rejected bound IOU, which valun signs on the testnet, could still be recorded for an hour after your agent signed it, if the server submitted it.',
+    'console, the first tester\'s default: your agent signs everything, and the server holds its offers, counter-offers, acceptances and guarantee offers, and the note or payment by transfer at each delivery, until you approve them in the owner console. If you reject them, it keeps them on record, unsent, except a payment by transfer, which it deletes (keeping only its signatures\' hashes). Honors of guarantee calls, guarantee calls and releases, and the consents are never held (What you approve). That hold is the operator\'s word, not the chain\'s: a held or rejected bound note, which valun signs on the testnet, could still be recorded for an hour after your agent signed it, if the server submitted it.',
     'none: everything within the limits is signed without asking.',
     'The Hermes plugin has conversation (Hermes asks you), console and none.']) assert.ok(cred.includes(mode), mode);
   // The consents signed in every mode, each with what it does to the agent's position (valun 0.7.1 agent.py
   // client_signs), and the testnet's default acceptance (the lead's decision D3b: each client signs only for its own
   // key, the issuer's client its consent): never "safe".
-  assert.match(cred, /Signed without asking, in every mode Deliveries, declines, withdrawals and disputes; accepting and calling guarantees; and, within your client's caps, three consents: set-offs \(your net position doesn't change\), transfers of your agent's own debt \(what it owes in all doesn't change; see the reserve caution under Inspect the network\) and payments to your agent by transfer \(by default, of any issuer's IOU\)\./);
-  const d3 = "On the testnet a new self-serve agent accepts any issuer's IOUs as payment by transfer, up to 0.04 tERG per issuer. Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way. Its owner can narrow whose IOUs it accepts under 'Accept notes from' in the owner console.";
+  assert.match(cred, /Signed without asking, in every mode Deliveries, declines, withdrawals and disputes; accepting and calling guarantees; and, within your client's caps, three consents: set-offs \(your net position doesn't change\), transfers of notes your agent issued \(what it owes in all doesn't change; see the reserve caution under Inspect the network\) and payments to your agent by transfer \(by default, of any issuer's note\)\./);
+  const d3 = "On the testnet a new self-serve agent accepts any issuer's notes as payment by transfer, up to 0.04 tERG per issuer. Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way. Its owner can narrow whose notes it accepts under 'Accept notes from' in the owner console.";
   assert.doesNotMatch(all, /signs that consent, and the issuer's/, "no client signs another's consent");
   for (const id of ['agent', 'credentials']) assert.ok(text(id).includes(d3), `${id}: the default acceptance`);
   assert.equal(core.SANDBOX_CAPS.max_accept_per_issuer, 40_000_000, '0.04 tERG per issuer');
   assert.match(src('lib/pilot/core.mjs'), /const SANDBOX_CIRCULATION = from => \(\{[^}]*accept_transfers: true, accept_notes_from: from === 'any' \? 'any'/);
   assert.match(pub('pilot.js'), /accept_notes_from: 'Accept notes from'/, 'the owner console\'s label');
-  assert.match(cred, /In console and none the client also signs these without asking, and nothing holds them for you: honoring a guarantee call \(your agent's own IOU, recorded at once\), releasing a guarantee, and clearing a limit recorded from your conversation \(it goes back to your mandate; your agent can't raise your mandate's caps\)\. In ask it asks before an honor, a release and a limit it loosens\./);
+  assert.match(cred, /In console and none the client also signs these without asking, and nothing holds them for you: honoring a guarantee call \(your agent's own note, recorded at once\), releasing a guarantee, and clearing a limit recorded from your conversation \(it goes back to your mandate; your agent can't raise your mandate's caps\)\. In ask it asks before an honor, a release and a limit it loosens\./);
   assert.match(cred, /valun sandbox earn also signs its acceptance of the welcome job without asking \(with console approvals the acceptance then waits for you\), and sandbox tour --yes approves only the tour's own steps with the practice agents\. In client-prompt, an app that confirms each tool call also asks before declines, withdrawals, disputes, and accepting or calling a guarantee, since they use the tools it confirms; not before deliveries or the consents\./);
   assert.match(part('credentials'), /see <a href="#reserve-caution">the reserve caution<\/a> under\s+Inspect the network/);
   assert.doesNotMatch(all, /position safe|leave your (?:net )?position unchanged/, 'no consent is called safe');
@@ -389,23 +394,23 @@ test('approvals as the 0.7.1 client does them (never "always asked"), what stays
   assert.match(text('agent'), /Commands that need it read it from a file, or ask you for it at your terminal \(not shown\), and never store it\./);
   // What the operator can do (the lead's decision D5): never told as recovery.
   const ops = text('operator-powers');
-  assert.match(ops, /It can change any part of an agent's mandate, including what waits for the owner \(approve_above\) and whose IOUs it accepts, beyond the self-serve limits\. The owner console shows the last change as by: operator\. Routine renewals of the expiry are shown the same way, and no history is kept\./);
+  assert.match(ops, /It can change any part of an agent's mandate, including what waits for the owner \(approve_above\) and whose notes it accepts, beyond the self-serve limits\. The owner console shows the last change as by: operator\. Routine renewals of the expiry are shown the same way, and no history is kept\./);
   // A key swap (the lead's decision D5b): the public record keeps only the current key; the owner view lists past ones
   // (lib/pilot/http.mjs GET /owner past_keys).
-  assert.ok(ops.includes("It can also issue a new owner token for any agent (recorded as by: operator; the old token stops working), and an owner token can revoke the agent's key and enroll another. So the operator could put a key of its own on your handle and record. It can't use your key: IOUs your key signed and your reserve stay bound to it. The public record shows only an agent's current key, so a swap shows only to someone who noted the old one; your owner view lists past keys."));
+  assert.ok(ops.includes("It can also issue a new owner token for any agent (recorded as by: operator; the old token stops working), and an owner token can revoke the agent's key and enroll another. So the operator could put a key of its own on your handle and record. It can't use your key: notes your key signed and your reserve stay bound to it. The public record shows only an agent's current key, so a swap shows only to someone who noted the old one; your owner view lists past keys."));
   assert.match(src('lib/pilot/http.mjs'), /past_keys: me\.past_pubkeys \|\| \[\]/);
   assert.doesNotMatch(all, /a new key shows as a different public key/);
   assert.doesNotMatch(all, /give an owner a new owner token/i);
   assert.match(text('agent'), /only the operator can go beyond that \(what the operator can do\)/);
   assert.match(part('agent'), /<a href="#operator-powers">what the operator can do<\/a>/);
   const pub_ = text('public');
-  for (const s of ['your handle, your operator name', 'its public key, and so its Ergo testnet address', 'whose IOUs it accepts (its credit policy)', 'every IOU on the ledger',
+  for (const s of ['your handle, your operator name', 'its public key, and so its Ergo testnet address', 'whose notes it accepts (its credit policy)', 'every note on the ledger',
     'what is in a deal: its terms, the offer\'s text and the delivery are seen by the two parties and by the operator',
     'The house agents send each job\'s text to Anthropic\'s Claude API, under the operator\'s key',
-    'its backing record: the guarantees it gave or was backed by, and how it honored calls (counts, not whom)',
-    'your agent\'s limits, except what its credit policy shows (whose IOUs it accepts, and how much net debt an issuer may have for it to accept them), unless you publish its budget card'])
+    'its guarantee record: the guarantees it gave or was given, and how it honored calls (counts, not whom)',
+    'your agent\'s limits, except what its credit policy shows (whose notes it accepts, and how much an issuer may owe, net, for it to accept them), unless you publish its budget card'])
     assert.ok(pub_.includes(s), s);
-  assert.match(text('tour'), /Becomes public Your handle and operator name, which can't change after you join; your agent's public key, what it holds and owes, whose IOUs it accepts \(its credit policy\), its counts of deals and disputes \(the tour's dispute of a wrong delivery shows there\), and its two loops\./);
+  assert.match(text('tour'), /Becomes public Your handle and operator name, which can't change after you join; your agent's public key, what it holds and owes, whose notes it accepts \(its credit policy\), its counts of deals and disputes \(the tour's dispute of a wrong delivery shows there\), and its two loops\./);
   assert.match(text('agent'), /The agent on the other side of a deal sees the whole deal, and the operator sees every deal\. The house agents send each job's text to Anthropic's Claude API, under the operator's key\./);
   // The full troubleshooting list, in the reference.
   assert.deepEqual([...part('help').matchAll(/<dt>([^<]+)<\/dt>/g)].map(m => m[1]), ['Setup fails', 'Joining failed (handle_taken)', 'The owner token was shown on screen',
@@ -427,7 +432,7 @@ test('approvals as the 0.7.1 client does them (never "always asked"), what stays
   // doctor's first line names the profile folder, which can carry the user name into a public issue.
   assert.match(words(report), /doctor prints no token or key\. Its first line shows your profile folder, which can include your user name: edit it out if you like\./);
   assert.match(text('tour'), /Its first line names your profile folder, which can include your user name: edit that out if you like\./);
-  assert.match(words(report), /house-scribe and house-reviewer pay with their own IOU for 0\.002 tERG \(2,000,000 nanoERG\), redeemable against their reserves, for an onboarding report/);
+  assert.match(words(report), /house-scribe and house-reviewer pay with their own note for 0\.002 tERG \(2,000,000 nanoERG\), redeemable against their reserves, for an onboarding report/);
   // The tester report has no approval-mode field: doctor prints it; claude mcp add is "Another MCP app".
   assert.match(text('agent'), /choose how you connected \(for claude mcp add, "Another MCP app"\), and give the app and its version, the approval mode \(valun doctor prints it\) and your prompt/);
   // The report is public: the hire prompt's pasted text stays out, and doctor's first line can carry the user name.
@@ -458,7 +463,7 @@ test('every command is pinned, gives what join would ask for, and keeps the owne
   // Since fix inbox #84 one person can see backing: a second profile offers sandbox-exact a guarantee of the first's
   // IOUs.
   assert.match(blocks['cmd-guarantee'], /--profile backer call valun_offer_guarantee '\{"issuer": "YOUR-HANDLE", "creditor": "sandbox-exact", "cap": 2000000,/);
-  assert.match(text('backing'), /sandbox-exact is run by the operator, so this shows a guarantee offered and accepted, not that anyone independent backs you\. sandbox-exact never calls one, so the call, the honor and the hold can't be seen this way\./);
+  assert.match(text('backing'), /sandbox-exact is run by the operator, so this shows a guarantee offered and accepted, not that anyone independent guarantees you\. sandbox-exact never calls one, so the call, the honor and the hold can't be seen this way\./);
   assert.match(src('lib/pilot/sandbox.mjs'), /It never calls, releases or offers one/, 'sandbox-exact never calls a guarantee');
   // Checking one deal after the tour: the command, and for Windows the --json-file form (fix inbox #165), whose lines
   // are skill.md's, word for word (valun-open's python/tests/test_call_json.py runs them through Windows PowerShell 5.1
@@ -528,7 +533,7 @@ test('its numbers are the server\'s: limits and days, capacity, the welcome job,
   const all = words(body(html));
   // In prose an amount leads in tERG (1 tERG = 10^9 nanoERG), with the nanoERG the commands use beside it.
   const terg = n => `${n / 1e9} tERG (${thousands(n)} nanoERG)`;
-  assert.ok(all.includes(`it pays you with its IOU for ${terg(sandbox.WELCOME.price)}`));
+  assert.ok(all.includes(`it pays you with its note for ${terg(sandbox.WELCOME.price)}`));
   assert.ok(all.includes(`the sandbox takes ${perDay} new agents in any 24 hours`));
   assert.ok(all.includes(`the ${core.SANDBOX_JOINS_PER_HOUR_TOTAL} joins an hour from all addresses, or the ${core.SANDBOX_JOINS_PER_HOUR_PER_ADDRESS} from yours`));
   assert.ok(all.includes(`In every mode the server holds your agent to ${terg(caps.max_issue_per_deal)} a deal and ${terg(caps.max_issue_outstanding)} owed in total`));
@@ -540,21 +545,21 @@ test('its numbers are the server\'s: limits and days, capacity, the welcome job,
 
 test('what it claims stays within what works: redemption, netting, backing, the budget card, who runs what, and the evidence for each host', () => {
   const all = words(body(html));
-  assert.ok(all.includes('A redemption pays only from the issuer\'s own reserve, and only up to what it holds.'));
-  assert.ok(all.includes('sandbox-exact has posted one, so an IOU from sandbox-exact can be redeemed.'));
-  assert.ok(all.includes('An IOU whose issuer posted no reserve cannot be redeemed: look the issuer up in /pilot/v1/reserves first.'));
+  assert.ok(all.includes('A redemption pays only from a reserve locked under the key that signed the note, and only up to what it holds.'));
+  assert.ok(all.includes('sandbox-exact has posted one, so a note from sandbox-exact can be redeemed.'));
+  assert.ok(all.includes('A note whose issuer posted no reserve cannot be redeemed: look the issuer up in /pilot/v1/reserves first.'));
   assert.ok(all.includes('The operator signs every redemption authorization, so it can refuse one.'));
   assert.ok(all.includes('tERG are test coins with no monetary value'));
   assert.ok(all.includes('You need no tERG to redeem'));
   // Fix inbox #100: what a reserve relies on after a netting with an agent the operator runs, linked to the trust model.
-  assert.match(html, /<div class="note caution" id="reserve-caution"><p>Before you post one: if a loop or a debt transfer ever lowered an IOU of yours to an\s+agent the operator runs \(sandbox-exact, sandbox-mallory, house-scribe or house-reviewer; the tour does this\),\s+your reserve then relies on the operator never committing that IOU's earlier, higher total again\s+\(<a href="\/trust#netting">Trust model<\/a>\)\.<\/p><\/div>/);
+  assert.match(html, /<div class="note caution" id="reserve-caution"><p>Before you post one: if a loop or a transfer ever lowered a note of yours to an\s+agent the operator runs \(sandbox-exact, sandbox-mallory, house-scribe or house-reviewer; the tour does this\),\s+your reserve then relies on the operator never committing that note's earlier, higher total again\s+\(<a href="\/trust#netting">Trust model<\/a>\)\.<\/p><\/div>/);
   // Fix inbox #100 (the lead's decisions D4 and D4b) with valun 0.7.2: --mine proves an edge a set-off its client signed
   // lowered (netted), against the client's own records, not the server's ledger. Plain valun audit answers MISMATCH when
   // the box and the published ledger differ, so only a ledger changed to match goes unseen there; the check is then
   // --mine where the records confirm the lowered total, or a row saved on a MATCH, compared on a later MATCH. Said in the
   // inspect path and the known issues alike.
   const d4 = "valun 0.7.2's --mine proves an edge that a set-off your client signed lowered: it says netted when the box commits the total your client signed in that set-off. It compares the box with your client's own records, not with the server's ledger: an edge whose box total is not the total your records confirm shows as differs, such as an earlier total committed again on an edge whose lowered total your records confirm. A set-off signed with valun 0.7.1 is not proven this way.";
-  const d4b = "Run valun audit: a MISMATCH is the signal. After a loop lowers one of your edges and an audit says MATCH, save that edge's row from GET /pilot/v1/ledger. Later, on a MATCH, compare the edge's total with your saved row, and report any rise that no later IOU, transfer or set-off explains. The ledger and the loop card are the server's word; only a MATCH ties the ledger to the chain";
+  const d4b = "Run valun audit: a MISMATCH is the signal. After a loop lowers one of your edges and an audit says MATCH, save that edge's row from GET /pilot/v1/ledger. Later, on a MATCH, compare the edge's total with your saved row, and report any rise that no later note, transfer or set-off explains. The ledger and the loop card are the server's word; only a MATCH ties the ledger to the chain";
   for (const id of ['mine-netted', 'known-netted']) {
     assert.ok(text(id).includes(d4), id);
     assert.ok(text(id).includes(d4b), id);
@@ -571,8 +576,8 @@ test('what it claims stays within what works: redemption, netting, backing, the 
   assert.match(text('ergo'), /The first redeem is a dry run: the tracker builds it on the server, your client checks and signs it here, and nothing is submitted\. The build counts toward your 6 a day and holds the issuer's reserve for 2 minutes\./);
   assert.equal(routes.RESERVE_BUILD_HOLD_MS, 2 * 60e3, 'the reserve is held 2 minutes for a build');
   assert.equal(routes.REDEMPTION_BUILDS_PER_DAY, 6);
-  assert.match(text('ergo'), /Each build also gives your client the tracker's signature on the IOU's committed total; the known gap under What backing is, and isn't starts there\./);
-  assert.match(text('ergo'), /Another creditor's redemption build also holds the issuer's reserve for up to 2 minutes: try again after that\./);
+  assert.match(text('ergo'), /Each build also gives your client the tracker's signature on the note's committed total; the known gap under What a guarantee is, and isn't starts there\./);
+  assert.match(text('ergo'), /Another holder's redemption build also holds the issuer's reserve for up to 2 minutes: try again after that\./);
   // A reserve can't be taken back with valun 0.7.1; the contract's own way, and how long it takes.
   assert.match(text('ergo'), /valun 0\.7\.2 can't take a reserve back yet\. The contract lets you take it back without the tracker 60 days after starting a refund \(setting R7\), which needs a transaction you build yourself\. Lock only what you're happy to leave there\./);
   // The reserves figure says when it was read; a server without sandbox-exact's reserve (staging) is named.
@@ -595,10 +600,10 @@ test('what it claims stays within what works: redemption, netting, backing, the 
   // A netting is committed, never final: "final" only where the page says the 0.7.1 client calls it so (the known
   // issue of older clients; valun 0.7.2 says committed: its CHANGELOG, the lead's decision D15).
   for (const m of all.matchAll(/[^.]*\bfinal\b[^.]*\./g)) assert.match(m[0], /its prompts call a netting final \(read that as committed/, m[0]);
-  assert.ok(text('tour').includes("valun's prompts call an IOU a 'credit note' (a netting is committed). Expect 8 or 9 prompts."));
+  assert.ok(text('tour').includes("valun 0.7.2's prompts call a note a 'credit note' or an 'IOU' (a netting is committed). Expect 8 or 9 prompts."));
   // A set-off is cleared, never settled, repaid or discharged (D2); what a backer paid is never "held for" anyone (D14).
   assert.doesNotMatch(all, /\brepaid\b|\bdischarged\b|held for the backer|held for it\b|held from the creditor/i);
-  for (const id of ['backing', 'known-issues']) assert.match(text(id), /once a backer pays, the same amount of the issuer's IOU is held, so the creditor isn't paid twice/, id);
+  for (const id of ['backing', 'known-issues']) assert.match(text(id), /once a backer pays, the same amount of the issuer's note is held, so the creditor isn't paid twice/, id);
   assert.match(text('ergo'), /The netting is committed once the next box commits it, and stays committed only as long as the tracker key never commits an earlier total again: nothing on chain stops that key from doing so\. /);
   assert.doesNotMatch(all, /debt is gone|\bsettled\b|\bguarantee[sd]? (?:that|your)|risk-free|real money|\bguaranteed\b|trustless|decentrali[sz]ed|revolutioni[sz]e|limitless|agent economy|seamless|final settlement|\busers\b|\bcommunity\b|\bpartners?\b|\bsupported\b|works with/i);
   for (const m of all.matchAll(/[^.]*\badoption\b[^.]*\./gi)) assert.match(m[0], /not adoption/, m[0]);
@@ -613,13 +618,13 @@ test('what it claims stays within what works: redemption, netting, backing, the 
   assert.match(text('compat'), /Our QA bot is Basis, a bot the team runs; it is not the team that develops the Basis protocol\./);
   // Backing: a promise, not collateral; the hold, not subrogation; the card, the server's word; the known gap.
   const backing = text('backing');
-  for (const s of ['A guarantee is a promise, not locked collateral: it is worth what the backer can and will pay. A paid call is the backer\'s own IOU to the creditor.',
-    'Since Nov 16, 2026, once a backer pays, the same amount of the issuer\'s IOU is held, so the creditor isn\'t paid twice: it can\'t spend, set off or redeem that part.',
+  for (const s of ['A guarantee is a promise, not locked collateral: it is worth what the backer can and will pay. A paid call is the backer\'s own note to the creditor.',
+    'Since Nov 16, 2026, once a backer pays, the same amount of the issuer\'s note is held, so the creditor isn\'t paid twice: it can\'t spend, set off or redeem that part.',
     'The backer doesn\'t take over the claim; that would be subrogation, which isn\'t built.',
-    'A backer\'s honor waits (pair_busy) while the creditor has a redemption build of the same IOU that could still be spent, a dry run included, until the next tracker box. On a day the cap is used up that can be hours, and the wait still counts against the backer as overdue.',
+    'A backer\'s honor waits (pair_busy) while the creditor has a redemption build of the same note that could still be spent, a dry run included, until the next tracker box. On a day the cap is used up that can be hours, and the wait still counts against the backer as overdue.',
     'A budget card is the server\'s statement of the limits it enforces. The owner doesn\'t sign it, and nothing ties it to an anchor on Ergo testnet.',
-    'a creditor with a hand-built client and an earlier redemption build can redeem outside the server\'s checks. The documented 0.7.2 commands can\'t.',
-    'Nothing is locked up: a call is paid with your agent\'s own IOU']) assert.ok(backing.includes(s), s);
+    'a holder with a hand-built client and an earlier redemption build can redeem outside the server\'s checks. The documented 0.7.2 commands can\'t.',
+    'Nothing is locked up: a call is paid with your agent\'s own note']) assert.ok(backing.includes(s), s);
   // The evidence for each way to connect, word for word (the site's copy rules), and the label each host carries.
   const rows = [...part('compat').matchAll(/<tr><th scope="row">([\s\S]*?)<\/th><td>([\s\S]*?)<\/td><\/tr>/g)].map(m => [words(m[1]).trim(), words(m[2]).trim()]);
   assert.deepEqual(rows, [
@@ -628,7 +633,7 @@ test('what it claims stays within what works: redemption, netting, backing, the 
     ['valun CLI 0.7.2', "New, the release these pages pin: its release candidate ran in the team's own runs on staging and on a local copy of the testnet (Nov 17-18), and its own tests run its --json-file lines through Windows PowerShell 5.1 and cmd. Our QA bot has not run the release yet"],
     ['valun CLI 0.7.1', "Scripted: our QA bot daily (Nov 16-17, builds 103b25f and 09875a4), and a Claude session acting as a newcomer on a clean profile (Nov 16, build d11e6b4); and an AI agent of the team's (muse) used it end to end on Nov 16-17: the tour, real jobs (a code review it acted on) and a redemption, after the join and connection failures in Known issues"],
     ['valun mcp (MCP server)', 'Scripted MCP clients against the live testnet (Nov 16), and the Claude Code run below'],
-    ['Claude Code, with claude mcp add', "One complete exchange in Claude Code 2.1.326 on Nov 17 (build 09875a4): the join in a terminal (CLI), claude mcp add, then a summary hired from house-scribe and paid with the agent's IOU. Run headless (claude -p) with console approvals; the owner's side was scripted (approvals through the owner console's API, and Claude Code's permission prompts answered by a script). Claude Code's own approval prompts are not yet verified"],
+    ['Claude Code, with claude mcp add', "One complete exchange in Claude Code 2.1.326 on Nov 17 (build 09875a4): the join in a terminal (CLI), claude mcp add, then a summary hired from house-scribe and paid with the agent's note. Run headless (claude -p) with console approvals; the owner's side was scripted (approvals through the owner console's API, and Claude Code's permission prompts answered by a script). Claude Code's own approval prompts are not yet verified"],
     ['Hermes plugin', 'End to end in a real Hermes (v0.23.1) with plugin 0.6.0, Nov 13 (our QA bot). 0.7.1 is not yet verified in a real Hermes'],
     ['Claude Code plugin', 'Install check only (Claude Code 2.1.322, Nov 11, plugin 0.4.1). Not run end to end'],
     ['Codex, Cursor, Claude Desktop, VS Code, OpenClaw', 'Setup command documented; never verified'],
@@ -643,7 +648,7 @@ test('what it claims stays within what works: redemption, netting, backing, the 
     ['Not yet verified end to end', 'Run end to end once in Claude Code (headless, console approvals)', 'Run end to end with plugin 0.6.0; 0.7.1 not yet verified']);
   // What console means, once, under the join that uses it; ask is the way for an app that shows approval forms, never
   // said to be verified (fix inbox #138).
-  assert.ok(text('agent').includes("With console, what your agent signs (its offers, acceptances, guarantee offers and the IOU at each delivery) waits for you at /pilot#owner, where you sign in with the owner token join wrote to that file (what you approve). Then move the token file out of your agent's reach (why). If your app shows MCP approval forms (elicitation), you can join with --approvals ask instead and approve in the app: that form is not yet verified in any app."));
+  assert.ok(text('agent').includes("With console, what your agent signs (its offers, acceptances, guarantee offers and the note at each delivery) waits for you at /pilot#owner, where you sign in with the owner token join wrote to that file (what you approve). Then move the token file out of your agent's reach (why). If your app shows MCP approval forms (elicitation), you can join with --approvals ask instead and approve in the app: that form is not yet verified in any app."));
   assert.doesNotMatch(text('agent'), /add --approvals console to the join|the Claude Code run used console/);
   assert.ok(text('agent').includes('Took the tour already? Your agent can use that identity: skip the join and only add the server. For a separate agent, join with --profile NAME and a handle of its own (so the token file has a new name too), and put --profile NAME before mcp too.'));
   assert.match(text('agent'), /ask Claude to join Valun; after the join, run \/mcp, select plugin:valun:valun and choose Reconnect\./);
@@ -658,7 +663,7 @@ test('what it claims stays within what works: redemption, netting, backing, the 
     'It may set itself a schedule to check its inbox (skill.md section 4). Say no if you don\'t want that.']) assert.ok(paste.includes(s), s);
   assert.match(part('before-paste'), /<a href="\/skill\.md">\/skill\.md<\/a>/);
   assert.ok(html.indexOf('id="before-paste"') < html.indexOf('id="cmd-skill"'), 'read before the line to paste');
-  assert.match(text('agent'), /A shell agent can't show you a prompt: it joins with console \(you approve what it signs, its offers, acceptances, guarantee offers and the IOU at each delivery, in the owner console\) or none \(it acts alone within the limits\), and it asks you which\./);
+  assert.match(text('agent'), /A shell agent can't show you a prompt: it joins with console \(you approve what it signs, its offers, acceptances, guarantee offers and the note at each delivery, in the owner console\) or none \(it acts alone within the limits\), and it asks you which\./);
   // The release these pages pin is named as it is, never as a next release to come, and nothing names a later one.
   assert.doesNotMatch(all, /next client release|\(unreleased\)|0\.7\.[3-9]|0\.[89]\.\d/i);
 });
@@ -670,7 +675,7 @@ test('the known issues of the client release, in one place: each with what to do
   // refresh and the notes earn takes, amounts in nanoERG, who the counterparties are, the package descriptions, and a
   // marketplace entry with no version.
   assert.deepEqual(titles, ['A lost connection during join', 'Connection errors in Python but not in curl or Node',
-    'audit --mine and an edge a netting lowered', 'Prompts call an IOU a credit note', 'A dry run prints a link to nothing',
+    'audit --mine and an edge a netting lowered', 'Prompts call a note a credit note or an IOU', 'A dry run prints a link to nothing',
     'Guarantee texts predate the hold', 'valun audit makes an empty folder', 'Older clients']);
   const known = text('known-issues'), all = words(body(html));
   // A lost answer with valun 0.7.2 (cli.py _join_unanswered, _enroll_and_settle, _enroll_refusal, _join_not_sent,
@@ -718,7 +723,7 @@ test('the known issues of the client release, in one place: each with what to do
   // A cut connection: Python's proxy settings, what 0.7.2 does about a cut (a read sent again; "refused" only for a 401
   // or 403), and the Hermes plugin's doctor, which words any failure as a refusal (its __init__.py doctor).
   assert.ok(known.includes("valun 0.7.2 sends a read again when its answer was cut, names a cut connection for what it is, and says \"refused\" only when the server refused your agent (401 or 403). The Hermes plugin's doctor words any failure as a refusal: when it says the server refused your agent right after a connection error, run it again before you revoke anything."));
-  assert.match(known, /They also call|call an IOU a credit note in places/);
+  assert.match(known, /valun 0\.7\.2's prompts and answers call a note a credit note or an IOU \(credit_note, "your credit note", "the IOU you signed"\)\. It is the same thing: a signed promise to pay that the tracker records\./);
   assert.match(known, /An agent still on valun 0\.7\.1, or on the Hermes plugin 0\.7\.1, keeps 0\.7\.1's problems/);
   assert.match(known, /a redemption against an issuer with no reserve is answered "busy, try again in 60 s" every time\. That answer is a known bug on the server, and no retry helps/);
   assert.doesNotMatch(known, /unreleased|next client release/, 'no fix promised to a release that is out');
@@ -745,12 +750,15 @@ test('first use: Claude Code\'s two lines before the plugin and their scope, a f
   // added it", a user-scoped one in all your projects).
   assert.ok(agent.includes("claude mcp add adds the server only for the folder you run it in (Claude Code's default scope, local), so the tools appear only in sessions started there. To add it for every folder, run claude mcp add --scope user valun -- uvx --from valun==0.7.2 valun mcp instead."));
   assert.ok(agent.includes("Both list only the servers of the folder Claude Code runs in: a server added with claude mcp add in another folder isn't there, so add it again in this one, or for every folder with --scope user (above)."));
-  // The first hire answers: one of the operator's house agents, labelled so (as the console's cards name it: pilot.js
-  // nameOf; the review of PR #8, P9: they do paid work, so not "test agents"). agent_last_seen is no proof that another
-  // agent will (Basis's paused agents check in), so an unanswered offer is withdrawn after a while.
-  assert.ok(agent.includes("house-scribe operator-run writes summaries with Claude. It is one of the operator's house agents, always on, so it answers: hire it before agents other people run."));
+  // The first hire answers: the practice agent sandbox-exact, which needs no AI budget (fix inbox #173); a house agent
+  // is labelled as one (as the console's cards name it: pilot.js nameOf; the review of PR #8, P9: they do paid work, so
+  // not "test agents"). agent_last_seen is no proof that another agent will (Basis's paused agents check in), so an
+  // unanswered offer is withdrawn after a while.
+  assert.ok(agent.includes('sandbox-exact operator-run is a practice agent with no AI model: exact results, no budget to run out, an answer within seconds.'));
   assert.match(pub('pilot.js'), /p\.house_agent \? "one of the operator's house agents"/);
-  assert.ok(agent.includes("Other agents answer only while they run, and most of them are the team's own test agents. agent_last_seen in the directory says when an agent last called the server, not that it will take a job: an agent can check in while its owner has paused it. If an offer gets no answer within about 15 minutes, have your agent withdraw it (valun_respond, action withdraw) and hire one of the operator's agents instead: house-scribe, house-reviewer, or the practice agent sandbox-exact."));
+  assert.ok(agent.includes("Other agents answer only while they run, and most of them are the team's own test agents. agent_last_seen in the directory says when an agent last called the server, not that it will take a job: an agent can check in while its owner has paused it. If an offer gets no answer within about 15 minutes, have your agent withdraw it (valun_respond, action withdraw) and hire one of the operator's agents instead: sandbox-exact first (no AI budget), house-scribe or house-reviewer."));
+  // A house agent out of its shared AI budget declines, in valun 0.7.2's ai_seller words, and nothing is owed (fix inbox #173).
+  assert.ok(text('house-budget').includes('The house agents share a daily and a monthly AI budget. Once either is used up, they decline each offer ("My AI budget for today is used up …"): the deal ends declined, and nothing is owed, until 00:00 UTC or the next UTC month.'));
   // Another server: --server on join, and https://valun.tech without it (valun 0.7.1, home.py DEFAULT_SERVER).
   assert.ok(text('tour').includes('Without --server, the client uses https://valun.tech: --server URL on join points it at another Valun server instead (a staging copy, or one on your machine), and the profile keeps that server.'));
   // The placeholders, which the server refuses as they are (core.mjs PLACEHOLDER_HANDLES and PLACEHOLDER_OPERATORS).
@@ -777,7 +785,7 @@ test('the tour under console approvals: what the owner does before it, how often
   assert.match(pub('pilot.js'), /setInterval\(\(\) => \{ if \(!document\.hidden && [^}]*loadOwner\(\{quiet: true\}\); \}, 30000\);/, 'every 30 s, while the tab is shown');
   const n = Object.values(TOUR_OWNER_WAITS).reduce((a, b) => a + b, 0);
   assert.equal(n, 8);
-  assert.ok(before.includes(`The tour waits for you about ${n} times: once in steps 1 and 4, and twice in steps 2, 3 and 5 (your agent's offer, then its IOU or its payment by transfer), plus once each time sandbox-mallory's work is wrong and the tour buys again.`));
+  assert.ok(before.includes(`The tour waits for you about ${n} times: once in steps 1 and 4, and twice in steps 2, 3 and 5 (your agent's offer, then its note or its payment by transfer), plus once each time sandbox-mallory's work is wrong and the tour buys again.`));
   // The tour command's own lines only where the agent runs it: the prompt here has it follow sandbox_next_steps, which
   // prints nothing. valun 0.7.2's tour asks nothing at its terminal while console holds every step, says where each
   // waits, and says a step is done only once it has moved past it (sandbox.py tour: top), where 0.7.1 printed
@@ -793,7 +801,7 @@ test('the tour under console approvals: what the owner does before it, how often
   assert.equal(windows.TRANSFER_TTL_MS, 20 * 60e3);
   assert.equal(windows.NOVATION_MAX_AGE_MS, 3600e3);
   // The hour is a bound note's, which is what 0.7.1 signs on the testnet (the approval semantics of Nov 17, must_change).
-  assert.ok(before.includes("Approve each one soon. The tour's offers expire an hour after your agent signs them, a payment by transfer waits only 20 minutes, and an IOU (a bound note, which valun signs on the testnet) reaches the tracker only within an hour of your agent's signature: approve it before the time its card gives. If your agent runs valun sandbox tour, that command stops after 30 minutes; running it again continues it."));
+  assert.ok(before.includes("Approve each one soon. The tour's offers expire an hour after your agent signs them, a payment by transfer waits only 20 minutes, and a note (a bound note, which valun signs on the testnet) reaches the tracker only within an hour of your agent's signature: approve it before the time its card gives. If your agent runs valun sandbox tour, that command stops after 30 minutes; running it again continues it."));
   // The tour at a terminal points to the same, and its waits are told apart: the practice agents, or the owner.
   assert.ok(text('tour').includes('With console approvals, the tour waits for its owner in the owner console about 8 times: what the owner does before the tour.'));
   assert.ok(text('tour').includes("If a step waits more than about 5 minutes for a practice agent, other testers' tours may be using the practice agents, or they may be down."));
@@ -878,7 +886,7 @@ test('a lost join: under every join command, never revoke or enroll; another han
 test('a shell agent keeps its client signing: valun_inbox regularly, or clearing watch running', () => {
   const shell = text('shell-signing');
   assert.ok(part('agent').indexOf('id="cmd-skill"') < part('agent').indexOf('id="shell-signing"'), 'under the one line a shell agent follows');
-  assert.ok(shell.includes("A shell agent doesn't run valun mcp, which signs set-offs and payments to your agent in the background in an MCP app (join's last lines name both ways). So it runs uvx --from valun==0.7.2 valun call valun_inbox regularly (that signs them too), or keeps uvx --from valun==0.7.2 valun clearing watch running (which also signs transfers of its own debt). Until one of them runs, a set-off or a payment to your agent waits for its signature."));
+  assert.ok(shell.includes("A shell agent doesn't run valun mcp, which signs set-offs and payments to your agent in the background in an MCP app (join's last lines name both ways). So it runs uvx --from valun==0.7.2 valun call valun_inbox regularly (that signs them too), or keeps uvx --from valun==0.7.2 valun clearing watch running (which also signs transfers of notes it issued). Until one of them runs, a set-off or a payment to your agent waits for its signature."));
   for (const m of part('shell-signing').replace(/<[^>]+>/g, '').matchAll(/uvx --from (\S+) valun/g)) assert.equal(m[1], 'valun==0.7.2');
 });
 
@@ -887,20 +895,20 @@ test('a shell agent keeps its client signing: valun_inbox regularly, or clearing
 // 00:58Z and 01:09Z while the ledger already showed the edges confirmed; MATCH came at 01:14Z, with the next box. The
 // page says how to read the IOU from its ledger row (GET /ledger rows carry the tracker's confirmation status:
 // local_only, pending, confirmed; lib/pilot/core.mjs ledger), and how long the audit says UNKNOWN.
-test('the IOU: read it from its ledger row first; the audit says UNKNOWN until a box commits the whole ledger; PC in 0.7.1 is nanoERG', () => {
+test('the note: read it from its ledger row first; the audit says UNKNOWN until a box commits the whole ledger; PC in 0.7.1 is nanoERG', () => {
   const check = text('agent').slice(text('agent').indexOf('Check it'));
   // local_only until a box carries the IOU, pending while that box waits (lib/pilot/committed.mjs; the review of
   // gap/first-use), as skill.md section 5 says it.
   // The tracker sets a note's status by comparing its total with the totals a box commits or carries (tracker v4.4.1
   // basis_store recompute_confirmation_status, recomputed_confirmation): a row a loop lowered back to the committed total
   // reads confirmed before the next box (staging's first-use round of 2026-11-18).
-  assert.ok(check.includes("That row's confirmation says local_only until a tracker box carries your IOU, pending while that box waits for an Ergo testnet block, then confirmed. The tracker compares totals only: a loop that clears makes a row it lowered local_only again until the next box commits the new total, but a row it lowered back to the very total the last box commits reads confirmed at once. The loop's card says when a box has committed it."));
+  assert.ok(check.includes("That row's confirmation says local_only until a tracker box carries your note, pending while that box waits for an Ergo testnet block, then confirmed. The tracker compares totals only: a loop that clears makes a row it lowered local_only again until the next box commits the new total, but a row it lowered back to the very total the last box commits reads confirmed at once. The loop's card says when a box has committed it."));
   // After a console approval: valun 0.7.2's --mine reads the edges first (cli.py cmd_audit: Client.sync_edges), and
   // --wait-anchored waits for an anchored moment (default 600 s).
-  assert.ok(check.includes('Read your ledger row first; valun audit --wait-anchored waits for an anchored moment (up to 10 minutes by default). --mine first reads your agent\'s edges from the server, as valun_status does, so an IOU you approved in the console is in its records when it compares them.'));
+  assert.ok(check.includes('Read your ledger row first; valun audit --wait-anchored waits for an anchored moment (up to 10 minutes by default). --mine first reads your agent\'s edges from the server, as valun_status does, so a note you approved in the console is in its records when it compares them.'));
   // The wait in the words the page gives it everywhere else (the review of gap/first-use: "5 to 15 while regular, 10 to
   // 30 while slow" gave a second answer, above the measured figures), and what is the audit's own: other agents' IOUs.
-  assert.ok(check.includes('Until a box commits the whole ledger, valun audit --mine says UNKNOWN (not_anchored) and lists nothing of yours: usually 5 to 15 minutes after your IOU; up to about 30 when Ergo testnet blocks are slow; and longer while other agents keep recording IOUs, since the audit needs a box with nothing recorded after it. Read your ledger row first;'));
+  assert.ok(check.includes('Until a box commits the whole ledger, valun audit --mine says UNKNOWN (not_anchored) and lists nothing of yours: usually 5 to 15 minutes after your note; up to about 30 when Ergo testnet blocks are slow; and longer while other agents keep recording notes, since the audit needs a box with nothing recorded after it. Read your ledger row first;'));
   for (const id of ['ergo', 'help']) assert.ok(text(id).includes('usually 5 to 15 minutes; up to about 30 when Ergo testnet blocks are slow'), id);
   assert.doesNotMatch(words(body(html)), /10 to 30|while (?:Ergo testnet )?blocks are regular, \d/);
   assert.match(src('lib/pilot/core.mjs'), /confirmation: n\.confirmation\?\.status \?\? 'unknown', unit: this\.unit\}/, 'each ledger row names its status');
@@ -1052,7 +1060,7 @@ test('start.js: the live line reads GET /pilot/v1/chain only once the inspect pa
   assert.equal(again.hidden, false);
   assert.equal(said()[0], 'Live valun-testnet-1: anchoring right now');
   assert.equal(out.children[0].children[0].className, 'tag live');
-  assert.equal(said()[1], 'Anchored: the latest tracker box commits every IOU recorded so far, so an audit run now can say MATCH.');
+  assert.equal(said()[1], 'Anchored: the latest tracker box commits every note recorded so far, so an audit run now can say MATCH.');
   assert.equal(said()[2], 'Tracker boxes today: 4 of 50. The count starts again at 00:00 UTC.');
   assert.match(said()[3], /^Read at \d\d:\d\d UTC from \/pilot\/v1\/chain$/);
   assert.equal(out.getAttribute('aria-live'), 'polite', 'announced from the next reading on');
@@ -1073,13 +1081,13 @@ test('start.js: the live line reads GET /pilot/v1/chain only once the inspect pa
   // Each state of lib/pilot/anchors.mjs in words: the daily cap says until when, and none calls a netting final.
   const now = new Date('2026-11-17T01:15:00Z');
   const line = (state, cap = {limit: 50, signed_today: 50}) => p.context.anchoringNow({network: 'valun-testnet-1', anchoring: {state, daily_cap: cap}}, now);
-  assert.match(line('daily_cap_reached').lines[0], /^Today's 50 tracker boxes are used up, so nothing more is committed on chain until 00:00 UTC\. Until then an audit says UNKNOWN, and IOUs recorded since the last box cannot be redeemed\.$/);
+  assert.match(line('daily_cap_reached').lines[0], /^Today's 50 tracker boxes are used up, so nothing more is committed on chain until 00:00 UTC\. Until then an audit says UNKNOWN, and notes recorded since the last box cannot be redeemed\.$/);
   // The wait in the same words as the page's prose (the lead's decision D7b), undated in a live line; never "a few
   // minutes" or "about two minutes" for the full wait.
-  assert.equal(line('waiting_for_next_update').lines[0], 'Waiting for the next tracker box: the newest IOUs are not committed yet, so an audit says UNKNOWN until that box is confirmed. A new IOU is usually committed 5 to 15 minutes after it is recorded, up to about 30 when Ergo testnet blocks are slow.');
-  assert.equal(line('update_in_flight').lines[0], 'A new tracker box is on its way: once a block includes it, usually within minutes, up to about 30 when Ergo testnet blocks are slow, the IOUs recorded before it are committed.');
+  assert.equal(line('waiting_for_next_update').lines[0], 'Waiting for the next tracker box: the newest notes are not committed yet, so an audit says UNKNOWN until that box is confirmed. A new note is usually committed 5 to 15 minutes after it is recorded, up to about 30 when Ergo testnet blocks are slow.');
+  assert.equal(line('update_in_flight').lines[0], 'A new tracker box is on its way: once a block includes it, usually within minutes, up to about 30 when Ergo testnet blocks are slow, the notes recorded before it are committed.');
   for (const s of ['anchored', 'waiting_for_next_update', 'update_in_flight', 'daily_cap_reached', 'overdue']) assert.doesNotMatch(line(s).lines.join(' '), /a few minutes|about two minutes|normally/, s);
-  assert.match(line('overdue').lines[0], /a fault of the tracker, not of any IOU/);
+  assert.match(line('overdue').lines[0], /a fault of the tracker, not of any note/);
   assert.equal(line('anchored').read, 'Read at 01:15 UTC from /pilot/v1/chain');
   assert.deepEqual(line('anchored', null).lines.length, 1, 'no count without the cap');
   assert.equal(p.context.anchoringNow(null, now).state, null);

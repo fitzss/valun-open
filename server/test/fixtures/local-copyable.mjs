@@ -8,18 +8,18 @@
 //     (*.ergoplatform.com); none offers the Claude Code plugin (its MCP server runs the default profile);
 //   - every `valun` command in them (`valun ...`, `uvx --from valun==X valun ...`, after `--` in `claude mcp add NAME --`,
 //     the args of an MCP JSON config, a Hermes `hermes -p P valun ...` line) runs in a named profile and, where the
-//     command takes --server (valun 0.7.1's cli.py), names this server's origin. A code span that is only a command's
+//     command takes --server (valun 0.7.2's cli.py), names this server's origin. A code span that is only a command's
 //     name (`valun mcp`, `valun audit`) is a mention in prose, not a command to run.
 // This check is a little stricter than the image's: the profile must be a local one (local, local2, ...), and a
 // `uvx --from "valun[ai]==X" valun ...` counts as a command too.
 // Pure (no I/O).
 
 export const PUBLIC_HOST_RE = /(?<![a-z0-9.-])((?:[a-z0-9-]+\.)*valun\.tech|[a-z0-9-]+\.fly\.dev|(?:[a-z0-9-]+\.)*ergoplatform\.com)(?![a-z0-9-])/gi;
-// valun 0.7.1's subcommands that take --server (python/src/valun/cli.py at v0.7.1: every add_argument('--server')), and
-// the others.
-export const SERVER_SUBCOMMANDS = new Set(['join', 'enroll', 'doctor', 'config', 'clearing', 'policy', 'attempts', 'profile', 'card',
+// valun 0.7.2's subcommands that take --server (python/src/valun/cli.py at v0.7.2: every add_argument('--server'); console
+// is new in 0.7.2), and the others.
+export const SERVER_SUBCOMMANDS = new Set(['join', 'enroll', 'console', 'doctor', 'config', 'clearing', 'policy', 'attempts', 'profile', 'card',
   'verify-check', 'sell', 'ergo', 'audit', 'sandbox']);
-export const VALUN_SUBCOMMANDS = new Set([...SERVER_SUBCOMMANDS, 'status', 'tools', 'call', 'mcp', 'console']);
+export const VALUN_SUBCOMMANDS = new Set([...SERVER_SUBCOMMANDS, 'status', 'tools', 'call', 'mcp']);
 const PLUGIN_RE = /\/plugin\s+(install\s+valun@valun|marketplace\s+add\s+fitzss\/valun-open)/;
 const URL_RE = /(?:https?:)?\/\/[A-Za-z0-9.-]+(?::\d+)?[^\s'"`)<>\\]*/g;
 const ENV_RE = /^[A-Z_][A-Z0-9_]*=/;

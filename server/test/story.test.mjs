@@ -119,7 +119,7 @@ test('the example says it is one, in words: on its frame and in each picture\'s 
   for (const s of body.querySelector('.story-key').querySelectorAll('svg')) assert.equal(s.getAttribute('aria-hidden'), 'true');
   assert.deepEqual(body.querySelector('.story-key').querySelectorAll('li').map(text), [
     'owes: the arrow points to the agent owed', 'work done: the arrow points to the client',
-    'an IOU, with its issuer\'s name, beside the agent that holds it', 'a loop that cleared', '1 = 0.001 tERG, test coins with no monetary value']);
+    'a note, with its issuer\'s name, beside the agent that holds it', 'a loop that cleared', '1 = 0.001 tERG, test coins with no monetary value']);
 });
 
 test('the live records are labelled for what they are: our own test agent and the operator\'s practice agents, no AI in the loops', () => {
@@ -137,7 +137,7 @@ test('the live records are labelled for what they are: our own test agent and th
 });
 
 // ---- the steps, their tables and their numbers ----
-const STEP_TITLES = ['Ask and agree', 'Work, and pay with an IOU', 'Pass it on, if Cy accepts it', 'A loop forms', 'The loop clears'];
+const STEP_TITLES = ['Ask and agree', 'Work, and pay with a note', 'Pass it on, if Cy accepts it', 'A loop forms', 'The loop clears'];
 function readTable(t) {
   const head = t.querySelector('thead').querySelectorAll('th');
   assert.deepEqual(head.map(h => h.getAttribute('scope')), ['col', 'col', 'col']);
@@ -162,16 +162,16 @@ test('five steps, each with its heading, its picture, its words and a before-and
     assert.ok(text(s.querySelector('.story-text')).length > 100, 'its words');
     const t = readTable(s.querySelector('table.story-table'));
     assert.equal(t.caption, `Who owes whom, before and after step ${i + 1}`);
-    assert.equal(t.first, 'Debt');
+    assert.equal(t.first, 'Who owes whom');
   });
   const links = body.querySelector('.story-track').querySelectorAll('a');
   assert.deepEqual(links.map(a => a.getAttribute('href')), [1, 2, 3, 4, 5].map(n => `#story-step-${n}`));
-  assert.deepEqual(links.map(text), ['Step 1 Ask and agree', 'Step 2 Pay with an IOU', 'Step 3 Pass it on', 'Step 4 A loop forms', 'Step 5 The loop clears']);
+  assert.deepEqual(links.map(text), ['Step 1 Ask and agree', 'Step 2 Pay with a note', 'Step 3 Pass it on', 'Step 4 A loop forms', 'Step 5 The loop clears']);
   const nets = readTable(steps[4].querySelector('table.story-nets'));
   assert.equal(nets.caption, 'Net positions, before and after step 5');
 });
 
-test('the numbers agree: each table starts where the last ended, the loop falls by its smallest debt, no net position moves, and every picture draws its table', () => {
+test('the numbers agree: each table starts where the last ended, the loop falls by its smallest note, no net position moves, and every picture draws its table', () => {
   const steps = page().querySelector('.story-steps').children;
   let ledger = {};   // "Ana>Bo" -> what Ana owes Bo
   const nets = l => Object.fromEntries(['Ana', 'Bo', 'Cy'].map(w => [w, Object.entries(l).reduce((s, [k, v]) => {
@@ -204,14 +204,14 @@ test('the numbers agree: each table starts where the last ended, the loop falls 
     for (const g of svg.querySelectorAll('g.story-ticket')) {
       const k = `${g.getAttribute('data-issuer')}>${g.getAttribute('data-holder')}`, a = num(g.getAttribute('data-amount'));
       const [name, amount] = g.querySelectorAll('text').map(text);
-      assert.equal(name, `${g.getAttribute('data-issuer')}'s IOU`, 'the ticket carries its issuer\'s name');
-      assert.equal(a, ledger[k] ?? 0, `step ${i + 1}: the IOU ${k}`);
+      assert.equal(name, `${g.getAttribute('data-issuer')}'s note`, 'the ticket carries its issuer\'s name');
+      assert.equal(a, ledger[k] ?? 0, `step ${i + 1}: the note ${k}`);
       assert.equal(g.classList.contains('is-spent'), a === 0, `step ${i + 1}: ${k} is drawn spent exactly when it holds nothing`);
       const was = g.getAttribute('data-was');
       assert.equal(num(amount), was === null ? a : num(was), 'the ticket shows its amount, or where it was, what it had there');
       if (was !== null) assert.equal(num(was), before[k], `step ${i + 1}: the outline of ${k} shows what it held before`);
     }
-    for (const [k, v] of Object.entries(ledger)) if (v > 0) assert.ok(svg.querySelectorAll('g.story-ticket').some(g => `${g.getAttribute('data-issuer')}>${g.getAttribute('data-holder')}` === k && !g.classList.contains('is-spent')), `step ${i + 1}: the IOU ${k} is drawn`);
+    for (const [k, v] of Object.entries(ledger)) if (v > 0) assert.ok(svg.querySelectorAll('g.story-ticket').some(g => `${g.getAttribute('data-issuer')}>${g.getAttribute('data-holder')}` === k && !g.classList.contains('is-spent')), `step ${i + 1}: the note ${k} is drawn`);
   });
   // step 1 agrees and owes nothing; step 2 issues; step 3 passes Ana's IOU on (same issuer, new holder, same total)
   assert.deepEqual(ledgers[0].after, {'Ana>Bo': 0});
@@ -246,44 +246,44 @@ test('the numbers agree: each table starts where the last ended, the loop falls 
   // and the words
   const words = steps.map(s => text(s.querySelector('.story-text')));
   assert.match(words[0], /Nothing is owed yet: agreeing isn't paying\./);
-  assert.match(words[1], /pays with an IOU: a promise of 3, signed with Ana's key\. Bo now holds it, and Ana owes Bo 3\./);
+  assert.match(words[1], /pays with a note: a promise of 3, signed with Ana's key\. Bo now holds it, and Ana owes Bo 3\./);
   assert.match(words[2], /Now Ana owes Cy 3, though Cy never dealt with Ana/);
   assert.match(words[3], /so Cy owes Bo 2\. .* so Bo owes Ana 2\./);
-  assert.match(words[4], /every debt in the loop falls by the smallest one in it, 2\. Ana now owes Cy 1/);
+  assert.match(words[4], /every note in the loop falls by the same amount, 2, the smallest one in it\. Ana now owes Cy 1/);
 });
 
 // ---- the claims ----
 test('what it claims stays within what is true: passing on is conditional, clearing is committed and no more, backing is a promise, redemption needs a reserve', () => {
   const body = page(), t = text(body);
   // passing on needs the next agent's acceptance and the issuer's consent; another agent could refuse
-  assert.ok(t.includes('This works only because Cy accepts Ana\'s IOUs and Ana consents to the move, within both sides\' limits. Another agent could refuse Ana\'s IOUs, and Bo would have to pay another way.'));
+  assert.ok(t.includes('This works only because Cy accepts Ana\'s notes and Ana consents to the move, within both sides\' limits. Another agent could refuse Ana\'s notes, and Bo would have to pay another way.'));
   // and what the testnet does by default: a self-serve join accepts any issuer's notes by transfer (lib/pilot/core.mjs
   // SANDBOX_CIRCULATION('any') on the open network), up to max_accept_per_issuer (SANDBOX_CAPS: test/home-page.test.mjs
   // checks the number), and valun 0.7.1's SANDBOX_CONSENT_POLICY signs as_new_creditor by itself in every approval mode,
   // and as_issuer the same way in the issuer's own client: each client signs only for its own key (the lead's D3b; it
   // read as if Cy's client signed Ana's consent)
-  assert.ok(t.includes("On the testnet a new self-serve agent accepts any issuer's IOUs as payment by transfer, up to 0.04 tERG per issuer. Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way. Its owner can narrow whose IOUs it accepts under 'Accept notes from' in the owner console."));
+  assert.ok(t.includes("On the testnet a new self-serve agent accepts any issuer's notes as payment by transfer, up to 0.04 tERG per issuer. Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way. Its owner can narrow whose notes it accepts under 'Accept notes from' in the owner console."));
   assert.doesNotMatch(t, /signs that consent, and the issuer's/);
   // a loop clears: what changes, what does not, no coins; committed by the next tracker box, as long as the key behaves
   // (moved here from the old home page's "How it works", fix inbox #85 and #100), in the one wording of the anchoring
   // wait every page uses (the lead's D7b: the muse run's measurements, and Ergo testnet's slow blocks since Nov 16)
-  for (const s of ['What changes Those three debts, each by 2.',
+  for (const s of ['What changes Those three notes, each by 2.',
     'What doesn\'t Anyone\'s net position (what it is owed minus what it owes), the work, which stays done, and the record. No coins move.',
     "The clearing is committed when the next tracker box on Ergo testnet commits it: usually 5 to 15 minutes; up to about 30 when Ergo testnet blocks are slow (as since late Nov 16); hours later once the day's cap of 50 tracker boxes is used up.",
     'It stays committed only as long as the tracker key never commits an earlier total again. The operator holds that key, and nothing on chain stops it.']) assert.ok(t.includes(s), s);
   // backing is a promise, not collateral, and paying a call is the backer's own act (lib/pilot/guarantees.mjs: within
   // honor_within_hours, or it is overdue); redemption only against the issuer's reserve, which the operator's key signs
-  assert.ok(t.includes('A backer can promise to pay Ana\'s creditor, up to a cap, if Ana doesn\'t. It is a signed promise, not coins set aside. A backer that is called should pay with its own IOU, worth what the backer can and will pay; a call it leaves unpaid shows as overdue on its record.'));
+  assert.ok(t.includes('A backer can promise to pay Ana\'s creditor, up to a cap, if Ana doesn\'t. It is a signed promise, not coins set aside. A backer that is called should pay with its own note, worth what the backer can and will pay; a call it leaves unpaid shows as overdue on its record.'));
   assert.ok(t.includes('Only if Ana posted a reserve of tERG on Ergo testnet, and only up to what the reserve holds. Most agents that owe have no reserve. The tracker key signs each redemption, so the operator can refuse one.'));
   // the open gap, with its condition: an earlier redemption build (lib/pilot/http.mjs: /redemption/submit checks a
   // built redemption again; a broadcast of one's own does not pass there)
-  assert.ok(t.includes('One gap is still open: a creditor that already got a redemption built (a dry run is enough) could, with a client it writes itself, redeem outside the server\'s checks; the documented 0.7.2 commands can\'t.'));
+  assert.ok(t.includes('One gap is still open: a holder that already got a redemption built (a dry run is enough) could, with a client it writes itself, redeem outside the server\'s checks; the documented 0.7.2 commands can\'t.'));
   // the words the copy rules keep out
   assert.doesNotMatch(t, /trustless|decentrali[sz]ed|revolutioni|limitless|agent economy|guaranteed|risk-free|seamless|\bfinal\b|irreversible|\bsettle|\bmoney\b|\bcredits?\b|debt is gone/i);
   assert.doesNotMatch(story.replace(/<circle\b/g, ''), /circle/i, 'no "circle" in the copy (it reads as the company Circle)');
   // amounts in prose are tERG only (as on the rest of the home page): the live records' 0.003, 0.002 and 0.001 tERG
   assert.doesNotMatch(t, /nanoERG/, 'no nanoERG in the story: prose names tERG');
-  for (const a of ['an IOU of 0.003 tERG', '0.002 tERG of that IOU', 'Each debt fell by 0.001 tERG']) assert.ok(t.includes(a), a);
+  for (const a of ['a note of 0.003 tERG', '0.002 tERG of that note', 'Each note fell by 0.001 tERG']) assert.ok(t.includes(a), a);
   assert.ok(t.includes('1 = 0.001 tERG, test coins with no monetary value'));
 });
 
@@ -297,18 +297,18 @@ test('the live records: the loops, amounts and transaction GET /pilot/v1/loops g
   // which part the newcomer played, as the reader's agent does in the tour (valun 0.7.1 TOUR_GOALS: sandbox-exact pays
   // the new agent, which passes that IOU on to sandbox-mallory)
   assert.ok(t.includes('claude-live-1 played Bo\'s part, as your agent does in the tour.'));
-  assert.ok(text(body.querySelector('.story-lede')).endsWith('Your agent could take any of the three parts: hire like Ana, work and get paid like Bo, or take a passed-on IOU like Cy. In the guided tour, it plays Bo.'));
+  assert.ok(text(body.querySelector('.story-lede')).endsWith('Your agent could take any of the three parts: hire like Ana, work and get paid like Bo, or take a passed-on note like Cy. In the guided tour, it plays Bo.'));
   assert.ok(t.includes('Take the same tour: 2 to 3 minutes, with no wallet, no tERG and no AI model.'), 'the tour\'s length as every page gives it (fix inbox #124)');
   assert.ok(t.includes('sandbox-exact owed sandbox-mallory, sandbox-mallory owed claude-live-1, and claude-live-1 owed sandbox-exact'),
     'the 3-agent loop in its members\' order (vs_4f8d53475c9e591a: sandbox-mallory > claude-live-1 > sandbox-exact)');
-  assert.ok(t.includes('Each debt fell by 0.001 tERG'));
+  assert.ok(t.includes('Each note fell by 0.001 tERG'));
   assert.ok(t.includes('A two-agent loop between claude-live-1 and sandbox-exact had cleared a minute before'));
   assert.ok(t.includes('The loops cleared at 17:29 and 17:30 UTC, and the next tracker box on Ergo testnet committed both at 17:33 UTC'));
   const tx = real.querySelectorAll('a').find(a => a.getAttribute('href').includes(TX));
   assert.equal(text(tx), `transaction ${TX.slice(0, 8)}…${TX.slice(-4)}`);
   // the welcome job and the IOU passed on (the sandbox tour's fixed prices: valun 0.7.1 TOUR_GOALS 1 and 2)
-  assert.ok(t.includes('claude-live-1 did sandbox-exact\'s welcome job (word counts and a hash), and sandbox-exact paid with an IOU of 0.003 tERG.'));
-  assert.ok(t.includes('claude-live-1 paid sandbox-mallory for a job with 0.002 tERG of that IOU. sandbox-mallory accepts sandbox-exact\'s IOUs.'));
+  assert.ok(t.includes('claude-live-1 did sandbox-exact\'s welcome job (word counts and a hash), and sandbox-exact paid with a note of 0.003 tERG.'));
+  assert.ok(t.includes('claude-live-1 paid sandbox-mallory for a job with 0.002 tERG of that note. sandbox-mallory accepts sandbox-exact\'s notes.'));
   // links: the server's own pages (its static map, or the loop and agent pages it renders), and anchors that exist
   const http = fs.readFileSync(path.join(root, 'lib', 'http.mjs'), 'utf8');
   const STATIC = new Set([...http.matchAll(/\[\s*'(\/[^']*)'\s*,\s*'[^']+'\s*\]/g)].map(m => m[1]));
@@ -396,14 +396,14 @@ test('story.js: one step at a time, with Previous and Next, the step list and th
     assert.equal(api.status.getAttribute('aria-atomic'), 'true');
     // the step list's links are buttons now, with the same words
     assert.equal(r.querySelector('.story-track').querySelectorAll('a').length, 0);
-    assert.deepEqual(api.buttons.map(b => [b.getAttribute('type'), text(b)]), ['Ask and agree', 'Pay with an IOU', 'Pass it on', 'A loop forms', 'The loop clears'].map((t, i) => ['button', `Step ${i + 1} ${t}`]));
+    assert.deepEqual(api.buttons.map(b => [b.getAttribute('type'), text(b)]), ['Ask and agree', 'Pay with a note', 'Pass it on', 'A loop forms', 'The loop clears'].map((t, i) => ['button', `Step ${i + 1} ${t}`]));
     assert.deepEqual([api.prev, api.next].map(b => [text(b), b.getAttribute('type')]), [['Previous step', 'button'], ['Next step', 'button']]);
     assert.equal(api.prev.getAttribute('aria-disabled'), 'true', 'nothing before the first step');
     // Next
     api.next.focus(); api.next.click();
     assert.deepEqual(shown(), ['story-step-2']);
     assert.equal(current(), 1);
-    assert.equal(api.status.textContent, 'Step 2 of 5: Work, and pay with an IOU');
+    assert.equal(api.status.textContent, 'Step 2 of 5: Work, and pay with a note');
     assert.equal(doc.activeElement, api.next, 'focus stays on Next');
     assert.ok(r.querySelector('#story-step-2').classList.contains('is-entering'), 'the step the reader opened may move (story.css, without reduced motion)');
     assert.equal(api.prev.getAttribute('aria-disabled'), null);

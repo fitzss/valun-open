@@ -967,7 +967,7 @@ test('review: a house sandbox agent payer owing a dormant payee: the check count
     return w.done(S, C, w.deal(S, C, C, 4, 'open'));       // C's own offer to S, made before its time ended
   });
   const c = {kind: 'new', path: 'payer_proposes', amount: 10, due: T + 2 * DAY, exp: T + DAY, dealId: 'vd_' + 'b'.repeat(16), nonce: 'cd'.repeat(16)};
-  const woken = 'What it owes c-payee on the tracker (15 PC) counts here, though its card leaves it out: c-payee\'s sandbox time has ended (a sandbox agent\'s debt to a participant whose time has ended does not count against its limit), and c-payee\'s own agent acts at this step, which renews it.';
+  const woken = 'What it owes c-payee on the tracker (15 PC) counts here, though its card leaves it out: c-payee\'s sandbox time has ended (what a sandbox agent owes a participant whose time has ended does not count against its limit), and c-payee\'s own agent acts at this step, which renews it.';
   for (const path of ['payer_proposes', 'payee_proposes']) {
     // The payee's owner token, and the public answer (runCase): C's 15 counts, D's 12 does not; the real steps agree.
     let {W, live} = build();

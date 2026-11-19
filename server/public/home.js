@@ -24,12 +24,12 @@ export const REFRESH_MAX_MS = 300_000;     // after failed reads, at most 5 minu
 export const PEOPLE_MS = 300_000;          // the directory, at most once in 5 minutes
 export const SPOT_MS = 8_000;              // the spotlight moves on
 export const DRIFT_MS = 240_000;           // between spotlights the sphere drifts, one turn in 4 minutes
-export const LATEST_SHOWN = 12;            // the IOUs the spotlight and the list go through, newest first
+export const LATEST_SHOWN = 12;            // the notes the spotlight and the list go through, newest first
 const LOOPS_SHOWN = 6;
 export const KIND_WORDS = Object.freeze({operator: 'operator-run', team: 'team test'});
 // How an IOU last changed, from its timestamp's last three digits (ms mod 1000, GET /pilot/v1/info novation): 997 a new
 // IOU (a payment), 998 a set-off (a loop cleared part of it), 999 a debt transfer (it was passed on).
-export const HOW = Object.freeze({997: 'New IOU', 998: 'A loop cleared part of it', 999: 'Passed on'});
+export const HOW = Object.freeze({997: 'New note', 998: 'A loop cleared part of it', 999: 'Passed on'});
 // A line's brightness reads its amount in these steps, as public/network.js sizes its arrows (fix inbox #72): in raw
 // nanoERG every line sat at the brightest. A PC is the same size (1 PC is 1,000,000 nanoERG: lib/pilot/units.mjs).
 const SIZE_SCALE = Object.freeze({nanoERG: 1_000_000, PC: 1});
@@ -151,12 +151,12 @@ export function stats({participants, ledger, loops, clearing} = {}) {
 }
 export function statsLine(s) {
   const m = money(s.cleared, s.unit);
-  return `${count(s.agents, 'agent')} and ${count(s.open, 'open IOU')} now. ${count(s.loops, 'loop')} cleared so far${m.n === '–' ? '.' : `, cutting ${m.n} ${m.u} of IOUs in all.`}`;
+  return `${count(s.agents, 'agent')} and ${count(s.open, 'open note')} now. ${count(s.loops, 'loop')} cleared so far${m.n === '–' ? '.' : `, cutting ${m.n} ${m.u} of notes in all.`}`;
 }
 // The spotlight's words for one open IOU: "sandbox-exact holds basis-x-t33f's IOU for 0.003 tERG."
 export function spotWords(r, unit) {
   const m = money(r.amount, unit, 4);
-  return {holder: r.holder, issuer: r.issuer, amount: `${m.n} ${m.u}`, text: `${r.holder} holds ${r.issuer}'s IOU for ${m.n} ${m.u}.`};
+  return {holder: r.holder, issuer: r.issuer, amount: `${m.n} ${m.u}`, text: `${r.holder} holds ${r.issuer}'s note for ${m.n} ${m.u}.`};
 }
 // The newest loop that cleared (the one with the rainbow ring), in words.
 export function newestLoop(loops, now = Date.now()) {
@@ -208,14 +208,14 @@ export function turn(a, b) {
 export const curveMiddle = (a, c, b) => ({x: (a.x + 2 * c.x + b.x) / 4, y: (a.y + 2 * c.y + b.y) / 4});
 export const clearOf = (k, mid, r) => !mid || Math.hypot(k.x - mid.x, k.y - mid.y) > r;
 // What a screen reader hears after Next (the spotlight's words are not a live region: the spotlight moves by itself).
-export const nextSaid = (r, i, n, unit) => (r ? `IOU ${i + 1} of ${n}: ${spotWords(r, unit).text}` : 'No open IOUs right now.');
+export const nextSaid = (r, i, n, unit) => (r ? `Note ${i + 1} of ${n}: ${spotWords(r, unit).text}` : 'No open notes right now.');
 // The live view's label: what it reads and when ("Testnet records, one real IOU at a time, read 01:12 UTC"), and its tag:
 // Live only while what is shown came from a read that answered and nothing holds it; Paused; Offline while the reads
 // fail after one answered; none before any read answered. The tag alone says Paused (a screen reader read the label's
 // own "Paused" right after it: "Paused Paused; testnet records").
 export function readLabel({readAt = 0, paused = false, failures = 0} = {}) {
   if (!readAt) return {text: failures ? 'Testnet records: cannot be read right now' : 'Testnet records: reading…', tag: null};
-  return {lead: 'Testnet records, one real IOU at a time, ', read: `read ${utcTime(readAt)}`,
+  return {lead: 'Testnet records, one real note at a time, ', read: `read ${utcTime(readAt)}`,
     tail: failures ? ' (retrying)' : '', tag: paused ? 'Paused' : failures ? 'Offline' : 'Live'};
 }
 // When the next read is due, in ms, or null for none: none while paused, hidden or off screen (each of those ends with a
@@ -400,12 +400,12 @@ function start() {
     const spot = $('spot'), meta = $('spot-meta'), r = st.latest[st.spot];
     if (!spot || !meta) return;
     if (!r) {
-      spot.textContent = st.readAt ? 'No open IOUs right now.' : st.failures ? 'The network cannot be read right now. Trying again soon.' : 'Reading the network…';
+      spot.textContent = st.readAt ? 'No open notes right now.' : st.failures ? 'The network cannot be read right now. Trying again soon.' : 'Reading the network…';
       meta.replaceChildren();
       return;
     }
     const words = spotWords(r, st.unit);
-    spot.replaceChildren(el('span', 'h', words.holder), ' holds ', el('span', 'h', words.issuer), "'s IOU for ", el('span', 'amt', words.amount), '.');
+    spot.replaceChildren(el('span', 'h', words.holder), ' holds ', el('span', 'h', words.issuer), "'s note for ", el('span', 'amt', words.amount), '.');
     const parts = [];
     for (const [role, handle] of [['holder', r.holder], ['issuer', r.issuer]]) {
       const kind = kindOfHandle(handle);
@@ -419,7 +419,7 @@ function start() {
     if (!ol) return;
     ol.replaceChildren();
     if (!st.latest.length) {
-      const li = el('li'); li.append(el('span', 'none', st.readAt ? 'No open IOUs right now.' : st.failures ? 'The ledger cannot be read right now.' : 'Reading the ledger…')); ol.append(li);
+      const li = el('li'); li.append(el('span', 'none', st.readAt ? 'No open notes right now.' : st.failures ? 'The ledger cannot be read right now.' : 'Reading the ledger…')); ol.append(li);
       return;
     }
     const labelled = handle => { const k = kindOfHandle(handle); return k ? [el('span', `k ${k}`, ` ${KIND_WORDS[k]}`)] : []; };
@@ -439,7 +439,7 @@ function start() {
     if (!n) { l.replaceChildren(); return; }
     const a = el('a', null, 'its loop card');
     a.href = `/loop/${n.id}`;
-    l.replaceChildren(`The newest loop that cleared, with the rainbow ring: ${n.path}, ${n.each} off each IOU in it, ${n.when} (`, a, ').');
+    l.replaceChildren(`The newest loop that cleared, with the rainbow ring: ${n.path}, ${n.each} off each note in it, ${n.when} (`, a, ').');
   }
   const renderAll = () => { renderRead(); renderSpot(); renderList(); renderCounts(); };
   const legend = $('sky-legend');

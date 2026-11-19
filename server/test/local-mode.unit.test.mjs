@@ -288,6 +288,9 @@ test('Dockerfile.local: node 24 on Debian trixie; the tracker binaries per platf
   const lines = docker.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
   assert.equal(lines[0], 'FROM node:24-trixie-slim');
   assert.ok(lines.includes('ARG TARGETARCH'), 'buildx names the platform');
+  // The label GitHub's container registry links the package to its repository by (fix inbox #143): valun-open, whose
+  // server/ holds this file; the only LABEL here (the CI's build adds the rest).
+  assert.deepEqual(lines.filter(l => l.startsWith('LABEL ')), ['LABEL org.opencontainers.image.source=https://github.com/fitzss/valun-open']);
   // COPY sources and destinations.
   const copies = lines.filter(l => l.startsWith('COPY ')).map(l => l.split(/\s+/).slice(1).filter(w => !w.startsWith('--')));
   const sources = copies.flatMap(c => c.slice(0, -1));
@@ -366,13 +369,21 @@ test('scripts/local-acceptance.sh: the released client, a fresh home, the issue\
   if (!needs(t, 'scripts/local-acceptance.sh')) return;
   const s = read('scripts/local-acceptance.sh');
   assert.match(s, /^#!\/bin\/bash\n/);
-  assert.match(s, /CLIENT=\$\{VALUN_CLIENT:-valun==0\.7\.1\}/);
+  // The client release a local server's docs pin (lib/a2a.mjs LOCAL_CLIENT), by default.
+  const pinned = /^export const LOCAL_CLIENT = '(valun==\d+\.\d+\.\d+)';$/m.exec(read('lib/a2a.mjs'))[1];
+  assert.ok(s.includes(`CLIENT=\${VALUN_CLIENT:-${pinned}}`), pinned);
   assert.match(s, /URL=\$\{1:-\$\{VALUN_URL:-http:\/\/127\.0\.0\.1:8080\}\}/);
   assert.match(s, /VALUN_HOME=\$\(mktemp -d\)/);
   assert.match(s, /uvx --from "\$CLIENT" valun config server "\$URL"/);
-  assert.match(s, /uvx --from "\$CLIENT" valun join --sandbox --handle "\$HANDLE" --operator "local acceptance" --owner-token-file "\$VALUN_HOME\/owner-token\.txt"/);
+  // --approvals none: valun 0.7.2's --sandbox join without it uses console, which would hold the tour for an owner
+  // nobody plays here (cli.py default_approvals, cmd_sandbox).
+  assert.match(s, /uvx --from "\$CLIENT" valun join --sandbox --handle "\$HANDLE" --operator "local acceptance" --owner-token-file "\$VALUN_HOME\/owner-token\.txt" --approvals none /);
   assert.match(s, /timeout "\$TOUR_S" uvx --from "\$CLIENT" valun sandbox tour --yes/);
-  assert.match(s, /curl -fsS -m 10 "\$URL\/pilot\/v1\/loops"/);
+  assert.match(s, /lcurl -fsS -m 10 "\$URL\/pilot\/v1\/loops"/);
+  // curl to a server on this machine never goes through a proxy (as valun 0.7.2 goes direct there), and another URL
+  // keeps the shell's proxy settings: every curl call is lcurl.
+  assert.match(s, /lcurl\(\) \{ if \[ -n "\$NOPROXY" \]; then curl --noproxy "\$NOPROXY" "\$@"; else curl "\$@"; fi; \}/);
+  assert.equal((s.match(/\$\(curl /g) || []).length, 0, 'no curl call outside lcurl');
   assert.match(s, /j\.get\("environment"\) == "local" and j\.get\("network"\) == "valun-pilot-1"/);
   assert.match(s, /"circulation\/1" in/);
   assert.doesNotMatch(s, /cat [^\n]*owner-token|owner_token/, 'the owner token is never printed');

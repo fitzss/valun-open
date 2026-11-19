@@ -6,11 +6,10 @@ The image carries this file, `docs/LOCAL.md` and the README in `/opt/valun`.
 
 **How to use it.** Do the steps in order. Each step says what to do and what must be true to pass.
 
-**Status.** The package is private until its first public version (fix inbox #143), so step 1 fails until then. This
-file is the public copy of the checklist the image's CI runs: its outsider job runs these steps, in this order, from
-the CI's own copy (private), on linux/amd64 and linux/arm64, from a job with no private access (how it differs from a
-person is at the end). The job is dispatched by hand for each release candidate's digest; what a candidate passed is in
-that run's summary.
+**Status.** The package is public, so step 1 needs no login. This file is the checklist the image's CI runs: its
+outsider job runs these steps, in this order, from this file as the image carries it, on linux/amd64 and linux/arm64,
+from a job with no private access (how it differs from a person is at the end). The job is dispatched by hand for each
+release candidate's digest; what a candidate passed is in that run's summary.
 
 **Placeholders.** `TAG` and `DIGEST` are the release tag and index digest that the docs publish. You pick the handles
 `HANDLE-A` to `HANDLE-D`.
@@ -31,11 +30,11 @@ that run's summary.
 ## 2. Install the client while you still have network
 - **Do:**
   1. Install uv as the docs say.
-  2. Run `uv tool install valun==0.7.1` (or `pipx install valun==0.7.1`), then `valun --version`.
+  2. Run `uv tool install valun==0.7.2` (or `pipx install valun==0.7.2`), then `valun --version`.
   3. For step 9, build a client image now from a two-line Dockerfile (`FROM python:3.12-slim` and
-     `RUN pip install valun==0.7.1`), tagged `valun-client`.
-- **Pass:** `valun --version` prints 0.7.1. From here on, type `valun` where the docs say
-  `uvx --from valun==0.7.1 valun`; or keep using uvx and set `UV_OFFLINE=1`.
+     `RUN pip install valun==0.7.2`), tagged `valun-client`.
+- **Pass:** `valun --version` prints 0.7.2. From here on, type `valun` where the docs say
+  `uvx --from valun==0.7.2 valun`; or keep using uvx and set `UV_OFFLINE=1`.
 
 ## 3. Set the client tripwire
 - **Do:** in bash or zsh, run the line below. In PowerShell, set each variable with `$env:NAME = "value"`.
@@ -43,11 +42,15 @@ that run's summary.
   export HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost UV_OFFLINE=1
   ```
   Nothing listens on port 9. So any request the client sends to a host other than this machine fails at once, with a
-  message that names the host.
+  message that names the host. valun 0.7.2 reaches this machine directly in any case; `NO_PROXY` does the same for the
+  other tools here that read it, such as curl.
 - **Control:** run `valun --profile tripwire-check doctor`, deliberately without `--server`. It is read-only, so it
   creates nothing either way. It must report that https://valun.tech is not reachable, which shows the tripwire works.
 - **Pass, from here to the end:** apart from the controls, no command fails with "cannot reach https://valun.tech" or
-  names another public host. Any such message is a silent fallback that the tripwire has made loud.
+  names another public host. Any such message is a silent fallback that the tripwire has made loud. One link is
+  expected: a join with `--approvals console` ends by linking to the public network's page about approvals,
+  https://valun.tech/start#approve. It is a page to read, never a request; this server's own is
+  http://127.0.0.1:8080/start#approve.
 - **Limits:** the tripwire covers the Python client's HTTP requests, not DNS lookups. Step 9 covers the rest.
 
 ## 4. Start the server exactly as the docs say
@@ -175,8 +178,9 @@ that run's summary.
   - The server has a new tracker id and no loops.
   - An old profile's doctor reports `tracker_mismatch` and `unauthorized`, as `docs/LOCAL.md` says.
   - After you remove `local.json` **and the token file step 6's join wrote**
-    (`$HOME/valun-local-owner-token-HANDLE-A.txt`: valun 0.7.1 never replaces a file that exists), step 6's join works
-    again; so does step 6's line in a fresh client home with a new handle and token file.
+    (`$HOME/valun-local-owner-token-HANDLE-A.txt`: valun never replaces a file that exists, and its join refuses one
+    before anything is sent), step 6's join works again; so does step 6's line in a fresh client home with a new
+    handle and token file.
   - `docs/LOCAL.md`'s own Reset, done as its paragraph says (in the client home its First use lines made in step 6),
     ends with its join line joining the reset server.
   - The tripwire never fired.
@@ -206,12 +210,13 @@ The image is ready for outsiders when all three hold:
 
 - **No private access.** The job that runs the checklist has no token, no secret and no `docker login`, and checks that
   at its start: the anonymous registry token request and an anonymous clone of the CI's own repository must fail.
-- **Step 1, while the package is private,** is a stand-in: the anonymous pull must fail as `docs/LOCAL.md` says
-  (`unauthorized`), and the image comes from an artifact that a separate job pulled by digest; the test job checks
-  that what it loads is that digest's platform image. At release, with the package public, the pull itself must work.
-- **The docs** are the image's own `/opt/valun/README.md` and `/opt/valun/docs/LOCAL.md`, and the running server's
-  `/skill.md`. Their lines run as written, in order: the README's and `docs/LOCAL.md`'s each on a fresh volume, the
-  served `/skill.md`'s on `docs/LOCAL.md`'s server. Only the documented placeholders are filled in (`YOUR-HANDLE`
+- **Step 1** is the anonymous pull itself, as a person makes it. A run for a candidate the docs don't publish yet may
+  take the image from an artifact that a separate job pulled by digest instead, and reports step 1 as a stand-in; the
+  test job checks that what it loads is that digest's platform image.
+- **The docs** are the image's own `/opt/valun/README.md`, `/opt/valun/docs/LOCAL.md` and this file,
+  `/opt/valun/docs/LOCAL-ACCEPTANCE.md`, and the running server's `/skill.md`. Their lines run as written, in order:
+  the README's and `docs/LOCAL.md`'s each on a fresh volume, the served `/skill.md`'s on `docs/LOCAL.md`'s server.
+  Only the documented placeholders are filled in (`YOUR-HANDLE`
   with a handle of its own for each join, `"YOUR NAME"` and `"YOUR HUMAN"`, `CONTAINER`, `TEXT`, `<revision>`,
   `<index digest>`). Every join
   with `--approvals console` gets an approver, the owner API with its token file, as a person approves at

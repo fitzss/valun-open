@@ -28,6 +28,7 @@ import {readBody, Element} from './network-dom.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const {LOCAL_EDITS, LOCAL_FILES, LOCAL_TOKEN_FILE, applyEdits, localPage} = await import('../lib/local-pages.mjs');
 const {localBanner, withBanner} = await import('../lib/environment.mjs');
+const {LOCAL_CLIENT} = await import('../lib/a2a.mjs');
 const ORIGIN = 'http://127.0.0.1:8080', OTHER = 'http://127.0.0.1:9000';
 const text = b64 => Buffer.from(b64, 'base64').toString('utf8');
 const pub = f => fs.readFileSync(path.join(root, 'public', f), 'utf8');
@@ -162,7 +163,7 @@ test('R-2: the prompts read this server\'s skill.md, and the commands for people
     assert.ok(maint.includes(`<code>${mcp[1]}</code>`), '/maintainers: skill.md\'s claude mcp add');
     // Keep signing from a shell: skill.md's two commands.
     const skill = fileOf(run, '/skill.md'), signing = pageParts(part(start, 'shell-signing')).code;
-    assert.deepEqual(signing, [`uvx --from valun==0.7.1 valun --profile local call valun_inbox`, `uvx --from valun==0.7.1 valun --profile local clearing watch --server ${o}`]);
+    assert.deepEqual(signing, [`uvx --from ${LOCAL_CLIENT} valun --profile local call valun_inbox`, `uvx --from ${LOCAL_CLIENT} valun --profile local clearing watch --server ${o}`]);
     for (const c of signing) assert.ok(skill.includes(c), c);
     // The owner token file a local join writes, wherever a page names one; never the public network's.
     for (const p of run.pages.filter(q => q.file || q.route === '/maintainers')) assert.doesNotMatch(text(p.body), /(?<!local-)owner-token-(?:<\/span>|YOUR|SECOND)/, named(p));
@@ -279,6 +280,11 @@ test('R-2: the owner console names its commands in the profile local, with this 
   assert.equal(js.split(`el('code', {}, 'valun --profile local attempts list --server ${ORIGIN}')`).length - 1, 2);
   assert.ok(js.includes(`el('code', {}, \`valun --profile local card \${word} --server ${ORIGIN} --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt"\`)`));
   assert.ok(text(asset(runs.other, 'pilot.js').body).includes(`--server ${OTHER}`), 'the origin it was given');
+  // The sign-in names valun 0.7.2's `valun console` (cli.py cmd_console: the token file's path, never the token), not
+  // the 0.7.1-era "planned" sentence.
+  const where = part(text(pageOf(runs.local, '/pilot').body), 'token-where').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+  assert.ok(where.includes(`valun --profile local console --server ${ORIGIN} prints where that file is (never the token).`), where);
+  assert.doesNotMatch(where, /unreleased|0\.7\.1/, where);
   // The script still parses as a module.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'valun-local-pilot-js-')), f = path.join(dir, 'pilot.mjs');
   try {

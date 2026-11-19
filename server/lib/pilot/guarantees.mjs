@@ -87,9 +87,9 @@ export const guaranteeStatements = {
   honor: (h, callId, amount) => `valun-pilot/guarantee-honor/1\n${h}\n${callId}\n${amount}`,
 };
 
-export const COVERS_TEXT = 'What the issuer owes the creditor on the tracker when the creditor calls (recorded minus redeemed, on every key either has had), up to the cap in all, between due_at and expires_at. A call claims at most what is still owed less what earlier calls claimed. This includes debt created after the guarantee was accepted: the cap, not today\'s debt, is the backer\'s exposure.';
-export const COVERS_DEALS_TEXT = 'What the issuer still owes the creditor for the deals the terms name, up to the cap in all, between due_at and expires_at: each deal\'s price once its credit note is issued, less what the issuer repaid since (repayments retire the oldest debt first), so debt created after a deal\'s note never counts toward it. A call claims at most that less what earlier calls claimed.';
-const WHAT_IT_MEANS = `A guarantee is the backer's signed promise to pay the creditor, up to the cap, what the issuer still owes the creditor after due_at, if the creditor calls before expires_at. The backer pays a call with its own credit note to the creditor for that amount, within honor_within_hours: an IOU like any other${ON_TESTNET ? ', redeemable on Ergo testnet against the backer\'s tERG reserve if it posted one' : ''}. Once a backer pays, the same amount of the issuer's IOU is held, so the creditor isn't paid twice: the creditor can't spend, set off or redeem that part (held_for_backers). The backer doesn't take over the claim (no subrogation yet): the issuer's IOU stays the creditor's, and recovered_for_backer, what the creditor recovered from the issuer beyond the part the backers did not pay, is only shown; nothing moves it to the backer. It is not a score and grants no credit limit.`;
+export const COVERS_TEXT = 'What the issuer owes the creditor on the tracker when the creditor calls (recorded minus redeemed, on every key either has had), up to the cap in all, between due_at and expires_at. A call claims at most what is still owed less what earlier calls claimed. This includes notes issued after the guarantee was accepted: the cap, not what is owed today, is the backer\'s exposure.';
+export const COVERS_DEALS_TEXT = 'What the issuer still owes the creditor for the deals the terms name, up to the cap in all, between due_at and expires_at: each deal\'s price once its note is issued, less what the issuer repaid since (set-offs, transfers out and redemptions of its notes to the creditor, which retire the oldest amount owed first), so notes issued after a deal\'s note never count toward it. A call claims at most that less what earlier calls claimed.';
+const WHAT_IT_MEANS = `A guarantee is the backer's signed promise to pay the creditor, up to the cap, what the issuer still owes the creditor after due_at, if the creditor calls before expires_at. The backer pays a call with its own note to the creditor for that amount, within honor_within_hours: a note like any other${ON_TESTNET ? ', redeemable on Ergo testnet against the backer\'s tERG reserve if it posted one' : ''}. Once a backer pays, the same amount of the issuer's note is held, so the creditor isn't paid twice: the creditor can't spend, set off or redeem that part (held_for_backers). The backer doesn't take over the claim (no subrogation yet): the issuer's note stays the creditor's, and recovered_for_backer, what the creditor recovered from the issuer beyond the part the backers did not pay, is only shown; nothing moves it to the backer. It is not a score and grants no credit limit.`;
 
 // GET /info guarantees: the protocol, what it covers, the bounds and the statements' meaning.
 export const GUARANTEE_INFO = Object.freeze({protocol: GUARANTEE_PROTOCOL, covers: COVERS, covers_means: COVERS_TEXT, limits: GUARANTEE_LIMITS, means: WHAT_IT_MEANS});
@@ -510,8 +510,8 @@ export class GuaranteeBook {
         const others = this.ofDebt(g).filter(x => x.id !== g.id && this.claimed(x) > 0).map(x => ({guarantee_id: x.id, claimed: this.claimed(x)}));
         const via = others.length ? ` (${others.map(o => `${amt(o.claimed)} via ${o.guarantee_id}`).join(', ')}${claimed ? `, ${amt(claimed)} via this one` : ''})` : '';
         const honorDebt = this.honorDebt(g), onDeals = unpaid !== null ? this.dealsClaimed(g) : null;
-        const dealsText = unpaid === null ? '' : `, what is unpaid of the deals it backs is ${amt(unpaid)}${onDeals ? `, of which calls on the guarantees of those deals claimed ${amt(onDeals)}` : ''}`;
-        throw new PilotError('exceeds_callable', `at most ${amt(callable)} can be called now: the cap left is ${amt(g.terms.cap.amount - claimed)}${dealsText}, and the issuer owes you ${amt(owed)} that this guarantee covers${honorDebt ? ` (on the tracker ${amt(owed + honorDebt)}, of which ${amt(honorDebt)} are its own payments to you as a backer, which a guarantee of its debts does not cover)` : ''}, of which earlier calls on this debt claimed ${amt(onDebt)}${via}`, 409,
+        const dealsText = unpaid === null ? '' : `, what is unpaid of the deals it guarantees is ${amt(unpaid)}${onDeals ? `, of which calls on the guarantees of those deals claimed ${amt(onDeals)}` : ''}`;
+        throw new PilotError('exceeds_callable', `at most ${amt(callable)} can be called now: the cap left is ${amt(g.terms.cap.amount - claimed)}${dealsText}, and the issuer owes you ${amt(owed)} that this guarantee covers${honorDebt ? ` (on the tracker ${amt(owed + honorDebt)}, of which ${amt(honorDebt)} are its own payments to you as a backer, which a guarantee of what it owes does not cover)` : ''}, of which earlier calls on what it owes you claimed ${amt(onDebt)}${via}`, 409,
           {callable, issuer_owes_creditor: owed, claimed, claimed_on_debt: onDebt, ...(others.length ? {claimed_by_other_guarantees: others} : {}), ...(honorDebt ? {issuer_honor_debt: honorDebt} : {}),
             ...(unpaid !== null ? {deals_unpaid: unpaid, claimed_on_deals: onDeals} : {}), cap: g.terms.cap.amount});
       }
@@ -579,7 +579,7 @@ export class GuaranteeBook {
   }
   assertPairFree(c, issuer, recipient) {
     this.P.assertPairFree({id: null}, issuer, recipient);
-    if (this.issuingOn(edgeKey(issuer, recipient), c.id)) throw new PilotError('pair_busy', 'another credit note for this key pair is being issued and the tracker has not confirmed it yet; try again in 60 s.', 409, {retry_after_ms: 60000});
+    if (this.issuingOn(edgeKey(issuer, recipient), c.id)) throw new PilotError('pair_busy', 'another note for this key pair is being issued and the tracker has not confirmed it yet; try again in 60 s.', 409, {retry_after_ms: 60000});
     this.P.assertNoteEdgeFree(issuer, recipient);
   }
   // The checks a template and an honor share: the caller is the backer, the call is unhonored, and still payable.
@@ -601,7 +601,7 @@ export class GuaranteeBook {
   async assertDebtFree(g) {
     const P = this.P, iq = P.s.participants[g.issuer], cq = P.s.participants[g.creditor];
     if (!iq || !cq) return;
-    const busy = (what, ms) => new PilotError('pair_busy', `the creditor is collecting this debt another way right now (${what}); an honor now could pay it twice. Try again in ${Math.ceil(ms / 1000)} s.`, 409, {retry_after_ms: ms});
+    const busy = (what, ms) => new PilotError('pair_busy', `the creditor is collecting what is owed another way right now (${what}); an honor now could pay it twice. Try again in ${Math.ceil(ms / 1000)} s.`, 409, {retry_after_ms: ms});
     for (const ik of P.keysOf(iq)) for (const ck of P.keysOf(cq)) {
       const k = edgeKey(ik, ck);
       const t = P.transfersOnEdge(k).find(x => x.from_edge.edge === k);
@@ -617,11 +617,11 @@ export class GuaranteeBook {
   //   prior: true  adds prior_note (the pair's tracker note, signed by the backer itself), or null.
   async noteTemplate(p, id, callId, {wait = true, prior: withPrior = false, bound = false} = {}) {
     const P = this.P, {g, c, owed, unpaid} = await this.honorContext(p, id, callId);
-    if (!this.honorable(g, c, owed, unpaid)) throw new PilotError('call_lapsed', `the issuer now owes the creditor ${amt(owed)}, less than the ${amt(this.debtClaimed(g))} claimed on this debt with this call: it can no longer be honored (it lapses at the next honor or call)`, 409, {issuer_owes_creditor: owed, claimed_on_debt: this.debtClaimed(g)});
-    if (bound && P.mode === 'off') throw new PilotError('feature_unavailable', 'bound credit notes are not enabled on this server; fetch the template without bound=1', 409);
+    if (!this.honorable(g, c, owed, unpaid)) throw new PilotError('call_lapsed', `the issuer now owes the creditor ${amt(owed)}, less than the ${amt(this.debtClaimed(g))} claimed on it with this call: it can no longer be honored (it lapses at the next honor or call)`, 409, {issuer_owes_creditor: owed, claimed_on_debt: this.debtClaimed(g)});
+    if (bound && P.mode === 'off') throw new PilotError('feature_unavailable', 'bound notes are not enabled on this server; fetch the template without bound=1', 409);
     const {issuer, recipient} = this.noteParties(g), k = edgeKey(issuer, recipient);
     this.assertPairFree(c, issuer, recipient);
-    if (!bound && P.s.edges?.[k]?.novated) throw new PilotError('bound_note_required', 'a debt transfer or set-off changed this edge, so it takes bound credit notes only: fetch the template with bound=1', 409);
+    if (!bound && P.s.edges?.[k]?.novated) throw new PilotError('bound_note_required', 'a transfer or set-off changed this edge, so it takes bound notes only: fetch the template with bound=1', 409);
     const reserved = bound ? null : await P.reservedResidues();
     const cur = await P.basis.note(issuer, recipient);
     const prior = Number(cur?.amount_collected ?? 0), total = prior + c.amount, last = Number(cur?.timestamp ?? 0);
@@ -675,13 +675,13 @@ export class GuaranteeBook {
       const stale = m => new PilotError('stale_note', `${m}; fetch a new note template${bound ? ' (bound=1)' : ''}`, 409);
       if (!note || typeof note !== 'object' || note.total !== prior + c.amount) throw stale(`the note total must be ${prior + c.amount} (tracker prior ${prior} + the call's ${c.amount})`);
       if (!isInt(note.timestamp, Number(cur?.timestamp ?? 0) + 1, this.now())) throw stale('the note timestamp must be after the pair\'s last note and not in the future');
-      if (!bound && P.s.edges?.[k]?.novated) throw new PilotError('bound_note_required', 'a debt transfer or set-off changed this edge, so it takes bound credit notes only', 409);
+      if (!bound && P.s.edges?.[k]?.novated) throw new PilotError('bound_note_required', 'a transfer or set-off changed this edge, so it takes bound notes only', 409);
       if (bound && note.timestamp < this.now() - MAX_AGE_MS) throw stale('a bound note more than one hour old can no longer be recorded by the tracker');
       if (reserved && !bound && reserved.includes(note.timestamp % 1000)) throw stale(`the note timestamp ends in ${note.timestamp % 1000} ms, which the tracker keeps for other operations`);
       if (bound && note.prior_total !== prior) throw stale(`a bound note's prior_total must be the pair's current total on the tracker, ${prior}`);
       if (bound && note.prior_timestamp != null && note.prior_timestamp !== priorTs) throw stale(`a bound note's prior_timestamp must be the timestamp of the pair's current note, ${priorTs} (0 for a pair with no note)`);
       const {message_hex} = await P.noteMessage({issuer, recipient, total: note.total, timestamp: note.timestamp});
-      if (!(await P.safeVerify(issuer, message_hex, note.signature))) throw new PilotError('bad_signature', 'the Basis note signature does not verify for the backer\'s key', 403);
+      if (!(await P.safeVerify(issuer, message_hex, note.signature))) throw new PilotError('bad_signature', 'the note signature does not verify for the backer\'s key', 403);
       if (bound) {
         const ack = await P.messageHex({issuer, recipient, total: prior, prior_timestamp: priorTs, timestamp: note.timestamp});
         if (!(await P.safeVerify(issuer, ack, note.prior_signature)))
@@ -891,7 +891,7 @@ export class GuaranteeBook {
     const covers = t.covers === COVERS_DEALS ? `what ${I} still owes ${C} for the deals it names` : `what ${I} owes ${C}`;
     return {
       held_now: `Your agent signed this guarantee offer with its key, and Valun's server holds it: ${C} and ${I} can't see it, and nothing is on the tracker. Its cap of ${cap} already counts against your agent's total-owed limit (max_issue_outstanding) while it waits.`,
-      if_approved: `Nothing new is signed. ${C} sees the offer and can accept it until ${t.offer_expires_at}; accepting needs no approval from its owner. This is your last decision on it. If ${C} calls it between ${t.due_at} and ${t.expires_at}, for ${covers}, your agent has promised to pay each call within ${t.honor_within_hours} hours with its own IOU to ${C}, up to ${cap} in all. That IOU is never held for you: with console approvals your agent's client signs it without asking you, and the server records it at once. Until the guarantee ends, its open cap counts against your agent's total-owed limit.`,
+      if_approved: `Nothing new is signed. ${C} sees the offer and can accept it until ${t.offer_expires_at}; accepting needs no approval from its owner. This is your last decision on it. If ${C} calls it between ${t.due_at} and ${t.expires_at}, for ${covers}, your agent has promised to pay each call within ${t.honor_within_hours} hours with its own note to ${C}, up to ${cap} in all. That note is never held for you: with console approvals your agent's client signs it without asking you, and the server records it at once. Until the guarantee ends, its open cap counts against your agent's total-owed limit.`,
       if_rejected: `The offer is never shown to ${C} or ${I}, and it ends; its cap stops counting. Valun keeps your agent's signed offer on record. Nothing reaches the tracker.`,
       deadline: `Decide by ${t.offer_expires_at}, when the offer expires: it then ends, and an approval after that is refused.`,
       checks_on_approve: 'When you approve, the server first checks again that the three parties still have the keys the terms name, and your mandate\'s hard limits for this cap (with your other commitments). If a check fails, nothing changes and this stays pending.'};

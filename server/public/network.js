@@ -461,7 +461,7 @@ function start() {
     if (st.paused || Date.now() - st.lastAnnounce < ANNOUNCE_GAP_MS) return;
     st.lastAnnounce = Date.now();
     const names = (l.members || []).map(m => m?.handle ?? 'unknown');
-    $('announce').textContent = `A loop cleared: ${[...names, names[0]].join(' to ')}, ${amount(l.each ?? 0)} off each debt.`;
+    $('announce').textContent = `A loop cleared: ${[...names, names[0]].join(' to ')}, ${amount(l.each ?? 0)} off each note.`;
   }
 
   // ----- the status line: what it reads and when (not a live region) -----
@@ -580,7 +580,7 @@ function start() {
     const sub = $('map-sub');
     sub.textContent = `The ${fmt(view.ring.length)} agents in the latest changes to the ledger${since ? ` (since ${since})` : ''}, and the ${fmt(view.core.length)} the operator runs. Read from GET /pilot/v1/ledger.`;
     const hid = view.hidden, parts = [[hid.team, 'team test agent'], [hid.other, 'other agent'], [hid.operator, 'operator-run agent']].filter(([k]) => k > 0);
-    $('quiet').textContent = parts.length ? `Not drawn: ${parts.map(([k, w]) => `${fmt(k)} ${w}${k === 1 ? '' : 's'}`).join(', ')} with no recent change. Every open IOU is in the tables below.` : '';
+    $('quiet').textContent = parts.length ? `Not drawn: ${parts.map(([k, w]) => `${fmt(k)} ${w}${k === 1 ? '' : 's'}`).join(', ')} with no recent change. Every open note is in the tables below.` : '';
     if (keep) gN.querySelector(`[data-id="${keep}"]`)?.focus({preventScroll: true});
     if (st.focus) show(st.focus);
   }
@@ -649,7 +649,7 @@ function start() {
     if (!rows.length) ol.replaceChildren(H('li', 'small', 'No loop has cleared yet.'));
   }
 
-  const WHAT = {note: 'new IOU for a job', transfer: 'IOU passed on', setoff: 'cut by a loop'};
+  const WHAT = {note: 'new note for a job', transfer: 'note passed on', setoff: 'cut by a loop'};
   function changes() {
     const body = $('changes-body'), rows = latestChanges(st.edges, st.residues, CHANGES_SHOWN);
     body.replaceChildren(...rows.map(c => {
@@ -662,7 +662,7 @@ function start() {
       tr.append(td, who, H('td', 'what', WHAT[c.kind]), H('td', 'num', amount(c.owed)));
       return tr;
     }));
-    if (!rows.length) { const tr = H('tr'), td = H('td', null, 'No IOU on the ledger yet.'); td.setAttribute('colspan', '4'); tr.append(td); body.replaceChildren(tr); }
+    if (!rows.length) { const tr = H('tr'), td = H('td', null, 'No note on the ledger yet.'); td.setAttribute('colspan', '4'); tr.append(td); body.replaceChildren(tr); }
   }
   // Every open IOU, largest first: drawn when the visitor opens the list.
   const all = $('all-open');
@@ -682,7 +682,7 @@ function start() {
   function totals() {
     const open = [...st.edges.values()].filter(e => e.amount > 0), owed = open.reduce((s, e) => s + e.amount, 0);
     const agents = new Set(open.flatMap(e => [e.from, e.to])).size, t = st.clearing?.totals;
-    $('t-out').textContent = amount(owed, {total: true}); $('t-out-sub').textContent = `${many(open.length, 'IOU')} between ${many(agents, 'agent')}`;
+    $('t-out').textContent = amount(owed, {total: true}); $('t-out-sub').textContent = `${many(open.length, 'note')} between ${many(agents, 'agent')}`;
     if (t) {
       $('t-clear').textContent = amount(t.cleared ?? 0, {total: true}); $('t-clear-sub').textContent = `in ${many(t.setoffs_applied ?? 0, 'loop')}`;
       $('t-move').textContent = amount(t.transferred ?? 0, {total: true}); $('t-move-sub').textContent = `in ${many(t.transfers_applied ?? 0, 'transfer')}`;
@@ -704,7 +704,7 @@ function start() {
       : `Today: ${fmt(c.cap.today)} of ${fmt(c.cap.limit)} tracker boxes. The cap resets at 00:00 UTC.`);
     const held = c.reserves.reduce((s, r) => s + r.nanoerg, 0), backs = c.reserves.filter(r => r.backs > 0), backed = backs.reduce((s, r) => s + r.backs, 0);
     const owed = [...st.edges.values()].reduce((s, e) => s + Math.max(0, e.amount), 0);
-    items.push(`${many(c.reserves.length, 'reserve')} ${c.reserves.length === 1 ? 'holds' : 'hold'} ${terg(held, {total: true})}. ${backs.length === 1 ? 'One backs' : backs.length ? `${fmt(backs.length)} back` : 'None backs'} IOUs owed now: ${terg(backed, {total: true})} of the ${terg(owed, {total: true})} owed. An IOU can be redeemed only against its own issuer's reserve.`);
+    items.push(`${many(c.reserves.length, 'reserve')} ${c.reserves.length === 1 ? 'holds' : 'hold'} ${terg(held, {total: true})}. ${backs.length === 1 ? 'One backs' : backs.length ? `${fmt(backs.length)} back` : 'None backs'} notes owed now: ${terg(backed, {total: true})} of the ${terg(owed, {total: true})} owed. A note can be redeemed only against a reserve locked under the key that signed it.`);
     ul.replaceChildren(...items.map(t => H('li', null, t)));
     const links = H('li', 'links');
     for (const [href, text] of [[c.links.nft, 'The tracker NFT'], [c.links.address, 'The tracker on the explorer']]) {

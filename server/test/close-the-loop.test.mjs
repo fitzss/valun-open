@@ -207,7 +207,7 @@ test('/loop/<id>: a server-rendered card with Open Graph and Twitter tags', asyn
   assert.equal((r.text.match(/<path class="arc"/g) || []).length, 3);
   assert.match(r.text, /<circle class="rainbow" [^>]*stroke="url\(#loop-rainbow-0\)"/);
   assert.match(r.text, /<dd>3 PC<\/dd>/);
-  assert.match(r.text, /3 agents' IOUs formed a loop\. Each agent signed once, and every debt in the loop fell by 1 PC: 3 credits of debt cancelled in all\. The work stays done\. No money moved\./);
+  assert.match(r.text, /3 agents' notes formed a loop\. Each agent signed once, and every note in the loop fell by 1 PC: 3 credits of notes cancelled in all\. The work stays done\. No money moved\./);
   assert.match(r.text, /<code>vs_00000000000000a3<\/code>/);
   assert.match(r.text, /<dd>2026-11-11 13:00 UTC<\/dd>/);
   assert.match(r.text, /no monetary value/);
@@ -325,9 +325,9 @@ const homeWords = h => (/<body>([\s\S]*)<\/body>/.exec(h)?.[1] ?? h).replace(/<!
   .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ');
 // The headline, the lede and the link preview's words: the lead's decision D1 of fix round 1 (all four newcomer readers
 // ranked "Hire an agent. Pay with a promise. Pass it on." first for wanting to try).
-const LEDE = 'Your agent can hire another agent now and pay with a signed IOU, a promise to pay later, so it needs no balance up front. It earns IOUs back with its own work, and can pass them on to agents that accept them. It works inside limits you set, on a public record anyone can check. On Ergo testnet, with test coins only.';
-const DESCRIPTION = "Let your agent work with agents you don't run. It can hire another agent now and pay with a signed IOU, a promise to pay later, so it needs no balance up front. It earns IOUs back with its own work, and can pass them on to agents that accept them, inside limits you set, on a public record anyone can check. Ergo testnet, test coins only.";
-const SHARE = 'Your agent can hire another agent now and pay with a signed IOU, a promise to pay later, so it needs no balance up front. It works inside limits you set, on a public record anyone can check. Ergo testnet, test coins only.';
+const LEDE = 'Your agent can hire another agent now and pay with a note, a signed promise to pay later that the testnet tracker records, so it needs no balance up front. It earns notes back with its own work, and can pass them on to agents that accept them. It works inside limits you set, on a public record anyone can check. On Ergo testnet, with test coins only.';
+const DESCRIPTION = "Let your agent work with agents you don't run. It can hire another agent now and pay with a note, a signed promise to pay later that the testnet tracker records, so it needs no balance up front. It earns notes back with its own work, and can pass them on to agents that accept them, inside limits you set, on a public record anyone can check. Ergo testnet, test coins only.";
+const SHARE = 'Your agent can hire another agent now and pay with a note, a signed promise to pay later that the testnet tracker records, so it needs no balance up front. It works inside limits you set, on a public record anyone can check. Ergo testnet, test coins only.';
 test('the landing: the headline and lede, the meta tags, the shared header and footer, the calls to action and the anchors others link', () => {
   const home = pub('home.html');
   // Two lines: what Valun lets your agent do, then how (home.css .h1b: the second in the secondary ink).
@@ -340,7 +340,7 @@ test('the landing: the headline and lede, the meta tags, the shared header and f
   assert.equal(meta(home, 'name', 'description'), DESCRIPTION);
   for (const [attr, name] of [['property', 'og:title'], ['name', 'twitter:title']]) assert.equal(meta(home, attr, name), "Let your agent work with agents you don't run.", name);
   for (const [attr, name] of [['property', 'og:description'], ['name', 'twitter:description']]) assert.equal(meta(home, attr, name), SHARE, name);
-  assert.equal(meta(home, 'property', 'og:image:alt'), "Valun: let your agent work with agents you don't run. Three agents in a loop of IOUs, on Ergo testnet.", 'the image says what it shows');
+  assert.equal(meta(home, 'property', 'og:image:alt'), "Valun: let your agent work with agents you don't run. Three agents in a loop of notes, on Ergo testnet.", 'the image says what it shows');
   // The shared header: a skip link, the mark (the home's own link), the five links; and the shared footer.
   assert.match(home, /<body>\n<a class="skip" href="#main">Skip to content<\/a>\n<header class="top"><a class="brand" href="\/" aria-label="Valun home" aria-current="page"><svg class="mark" viewBox="0 0 100 100" aria-hidden="true">.*?<\/svg><span class="wordmark">Valun<\/span><\/a>\n<nav aria-label="Main"><ul><li><a href="\/start">Start<\/a><\/li><li><a href="\/network">Network<\/a><\/li><li><a href="\/trust">Trust<\/a><\/li><li><a href="\/memory">Memory<\/a><\/li><li><a href="https:\/\/github\.com\/fitzss\/valun-open">GitHub<\/a><\/li><\/ul><\/nav><\/header>\n<main id="main">/);
   const foot = /<footer class="foot">([\s\S]*?)<\/footer>/.exec(home)[1];
@@ -348,11 +348,12 @@ test('the landing: the headline and lede, the meta tags, the shared header and f
   assert.deepEqual([...foot.matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map(m => [m[1], m[2]]),
     [['/trust', 'Trust'], ['/start#report', 'Report a problem'], ['/skill.md', 'skill.md'], ['/llms.txt', 'llms.txt'], ['https://github.com/fitzss/valun-open', 'GitHub']]);
   // The calls to action: connect your agent, or try it without one; under them the first job to try, then the live
-  // network (not "Inspect the network", which is the name of a path on /start) beside what backs an IOU. Two newcomer
-  // readers of build 992999e still asked "what job could I do first?" and "what backs an IOU?" on the first screen (the
-  // lead's D1b). house-scribe's summary is 2,000,000 nanoERG (its services on GET /pilot/v1/participants, Nov 17).
-  assert.match(home, /<a class="btn primary" href="\/start#agent">Connect your agent<\/a>\s*<a class="btn" href="\/start#tour">Explore without an agent<\/a>\s*<\/div>\s*<p class="first-try"><span class="k">First thing to try:<\/span> hire house-scribe, an operator-run agent, for a summary \(0\.002 tERG\), paid with your agent's IOU\.<\/p>/);
-  assert.match(home, /<p class="inspect"><a href="\/network">Watch the live network<\/a> <a href="\/trust#backing">What backs an IOU\?<\/a><\/p>/);
+  // network (not "Inspect the network", which is the name of a path on /start) beside what stands behind a note. Two
+  // newcomer readers of build 992999e still asked "what job could I do first?" and "what backs an IOU?" on the first
+  // screen (the lead's D1b). Fix inbox #173: the first job is sandbox-exact's text-stats, 3,000,000 nanoERG, which needs
+  // no AI budget, so it always answers.
+  assert.match(home, /<a class="btn primary" href="\/start#agent">Connect your agent<\/a>\s*<a class="btn" href="\/start#tour">Explore without an agent<\/a>\s*<\/div>\s*<p class="first-try"><span class="k">First thing to try:<\/span> hire sandbox-exact, a practice agent with no AI, for a text-stats job \(0\.003 tERG\), paid with your agent's note\.<\/p>/);
+  assert.match(home, /<p class="inspect"><a href="\/network">Watch the live network<\/a> <a href="\/trust#backing">What stands behind a note\?<\/a><\/p>/);
   // The anchors other pages, docs and tests link (/#agent, /#solo, /#friends), and the worked example's place.
   for (const id of ['agent', 'solo', 'friends', 'how', 'try', 'why', 'evidence', 'live']) assert.equal((home.match(new RegExp(`\\sid="${id}"`, 'g')) || []).length, 1, id);
   // The worked example (public/story-fragment.html, pasted between the markers) brings the section's own h2.
@@ -386,12 +387,12 @@ test('the landing claims no more than the evidence: test agents, how far each wa
   assert.equal((text.match(/adoption/g) || []).length, 1, '"adoption" only to say these are not it');
   // The worked example's place holds an example, labelled as one.
   assert.match(home, /<span class="tag example">Example: made-up agents, not live data<\/span>/);
-  // What you can try today: four things, each with its path on /start.
+  // What you can try today: five things, each with its path on /start; the first job is sandbox-exact's (fix inbox #173).
   const tries = [...home.matchAll(/<li(?: id="([a-z]+)")?>\s*<div class="do">\s*<h3>([^<]+)<\/h3>[\s\S]*?<p class="go"><a href="([^"]+)">/g)].map(m => [m[1] ?? null, m[2], m[3]]);
   // (the audit's link lands on the audit command itself, inside /start's "Inspect the network" path: start.js opens the
   // path that holds an address's target)
-  assert.deepEqual(tries, [[null, 'Hire house-scribe for a summary, a rewrite or a translation', '/start#agent'], ['solo', 'Take the guided tour, without an AI agent', '/start#tour'],
-    ['backing', 'Back an agent, or check a payer before you accept', '/start#backing'], ['audit', "Check the operator's ledger against the chain", '/start#audit']]);
+  assert.deepEqual(tries, [[null, 'Hire sandbox-exact for a text-stats job', '/start#agent'], [null, 'Hire house-scribe for a summary, a rewrite or a translation', '/start#agent'], ['solo', 'Take the guided tour, without an AI agent', '/start#tour'],
+    ['backing', 'Guarantee an agent, or check a payer before you accept', '/start#backing'], ['audit', "Check the operator's ledger against the chain", '/start#audit']]);
   assert.match(pub('start.html'), /<code id="cmd-audit">[^<]*valun audit/);
   assert.match(pub('start.html'), /\sid="audit"/, 'the home links /start#audit');
   assert.match(pub('start.html'), /\sid="friends-loop"/, 'the home links /start#friends-loop');
@@ -399,17 +400,17 @@ test('the landing claims no more than the evidence: test agents, how far each wa
     'a promise, not locked collateral', "A budget card is the server's statement: its owner doesn't sign it, and it isn't tied to the tracker box on chain.",
     // a guarantee names one creditor (lib/pilot/guarantees.mjs); a payer with no public card checks as unknown
     // (lib/pilot/card.mjs combined()), and on Nov 17 none of the operator's agents, nor 15 sampled others, published one
-    "Backing is a signed promise to pay one creditor, up to a cap, what another agent still owes it, if that agent doesn't",
+    "A guarantee is a signed promise to pay one creditor, up to a cap, what another agent still owes it, if that agent doesn't",
     "One answer for the deal, with the reasons, before your agent commits: accept, ask the owner, decline, or unknown when the payer's owner hasn't published a card, as most haven't yet.",
     "MATCH, MISMATCH, or UNKNOWN: the box hasn't caught up yet, which is not a mismatch.",
     // the six things valun 0.7.1 says a MATCH doesn't prove (audit.py DOES_NOT_PROVE)
-    "A MATCH proves the box commits the published IOUs. It doesn't prove what is outstanding, that an issuer can pay, that any deal was real or any work good, that the agents are independent of each other, that a key belongs to a handle, or that a mandate was kept.",
-    'An IOU can be redeemed for tERG only from its issuer\'s reserve: only if the issuer posted one, and only up to what it holds.', 'tERG have no monetary value.',
+    "A MATCH proves the box commits the published notes. It doesn't prove what is outstanding, that an issuer can pay, that any deal was real or any work good, that the agents are independent of each other, that a key belongs to a handle, or that a mandate was kept.",
+    'A note can be redeemed for tERG only from a reserve locked under the key that signed it: only if one was posted, and only up to what it holds.', 'tERG have no monetary value.',
     '2 to 3 minutes in a terminal.'])
     assert.ok(text.includes(s), s);
   assert.doesNotMatch(text, /about (?:3|three) minutes/i, 'the tour takes 2 to 3 minutes on every page (fix inbox #124)');
   // With friends: no invite. The old page offered an invite-code route right after "no invite is needed".
-  assert.match(homeWords(/<div class="friends" id="friends">[\s\S]*?<\/div>/.exec(home)[0]), /Three or more people, each with an agent, and no invite needed\. [^.]+\. That last IOU closes the loop: each agent signs once and the loop clears\./);
+  assert.match(homeWords(/<div class="friends" id="friends">[\s\S]*?<\/div>/.exec(home)[0]), /Three or more people, each with an agent, and no invite needed\. [^.]+\. That last note closes the loop: each agent signs once and the loop clears\./);
   assert.ok(text.includes('The loop waits up to 30 minutes for every signature.'));
   // a shell agent signs a set-off only while valun clearing watch runs, or when it reads its inbox or status (valun 0.7.1
   // cli.py: valun call signs the value-safe consents before valun_status and valun_inbox, consents_on_reads)
@@ -419,7 +420,7 @@ test('the landing claims no more than the evidence: test agents, how far each wa
   assert.ok(text.includes('Three ways in, all on the same released client, valun==0.7.2. No invite is needed.'));
   // The Claude Code run as its evidence has it (the team's record of the Nov 17 run): the join in a terminal,
   // the owner's side scripted, ask cancelled and client-prompt refused by headless Claude Code, its own prompts untested.
-  for (const s of ["Tested so far One complete exchange in Claude Code 2.1.326, on Nov 17 (build 09875a4): the join in a terminal (CLI), claude mcp add, then a summary bought from house-scribe and paid with the agent's IOU. It ran headless (claude -p) with console approvals, and the owner's side was scripted: approvals through the owner console's API, and Claude Code's permission prompts answered by a script.",
+  for (const s of ["Tested so far One complete exchange in Claude Code 2.1.326, on Nov 17 (build 09875a4): the join in a terminal (CLI), claude mcp add, then a summary bought from house-scribe and paid with the agent's note. It ran headless (claude -p) with console approvals, and the owner's side was scripted: approvals through the owner console's API, and Claude Code's permission prompts answered by a script.",
     "In that run Claude Code cancelled ask's form and refused client-prompt; other headless setups haven't been tested, so choose console or none on purpose. Claude Code's own approval prompts, in the interactive app, are not tested yet. Scripted MCP clients too (Nov 16). Other MCP apps: not tested yet, so tell us how it goes.",
     'The Claude Code plugin has had an install check only (plugin 0.4.1, Nov 11).',
     // The join holds each commitment for the owner console (fix inbox #138: console is the first tester's default until
@@ -427,7 +428,7 @@ test('the landing claims no more than the evidence: test agents, how far each wa
     // mcp_server.py: elicitation; approval_unavailable)
     // What console holds, never "each commitment" (the approval semantics of 2026-11-17: honors, guarantee acts and
     // consents never wait), and where it is said in full (/start#approve).
-    "You join once in a terminal, with console approvals, then add the local server, valun mcp, to your app. With console, the first tester's default, what your agent signs (its offers, acceptances, guarantee offers and the IOU at each delivery) waits for you at valun.tech/pilot#owner (what you approve).",
+    "You join once in a terminal, with console approvals, then add the local server, valun mcp, to your app. With console, the first tester's default, what your agent signs (its offers, acceptances, guarantee offers and the note at each delivery) waits for you at valun.tech/pilot#owner (what you approve).",
     "If your app shows MCP approval forms (elicitation), you can join with ask instead: valun mcp then sends a form through your app before each commitment, and if the form is cancelled or can't be shown, nothing is signed. Whether a person sees it depends on the app: no interactive app has been verified yet.",
     // Hermes asks through its own approval gate (hermes-plugin-valun 0.7.1: never run with --yolo)
     'By default Hermes asks you in the conversation before each commitment, through its own approval gate, so never run it with --yolo.',
@@ -435,7 +436,7 @@ test('the landing claims no more than the evidence: test agents, how far each wa
     // a shell agent: console or none, its human's choice (the lead's D10); the scripted runs with their dates and builds
     // (d11e6b4 for the newcomer run, 17:24-17:43 UTC; the QA bot's daily sweeps on Nov 16, 10:54 UTC, on 103b25f and on
     // Nov 17, 10:46 UTC, on 09875a4: 1b1f18f reached the testnet at about 14:44 UTC, after them)
-    'A shell agent can\'t show you a prompt: it joins with console (you approve what it signs, its offers, acceptances, guarantee offers and the IOU at each delivery, in the owner console) or none (it acts alone within the limits), and it asks you which.',
+    'A shell agent can\'t show you a prompt: it joins with console (you approve what it signs, its offers, acceptances, guarantee offers and the note at each delivery, in the owner console) or none (it acts alone within the limits), and it asks you which.',
     "Tested so far The valun command is run by scripts: 0.7.1 by our QA bot daily (Nov 16-17, builds 103b25f and 09875a4), and by a Claude session acting as a newcomer on a clean profile (Nov 16, build d11e6b4); 0.7.2, the release this line runs, as a release candidate by the team on staging (Nov 17-18), not yet by our QA bot. No AI agent has yet been recorded following this line from start to finish. An AI agent of the team's (muse) used the valun command and the JS library end to end on Nov 16-17, a redemption included, after join and connection failures (known issues)."])
     assert.ok(text.includes(s), s);
   assert.doesNotMatch(text, /the current build/, 'every label names its build');
@@ -458,13 +459,13 @@ test('the landing claims no more than the evidence: test agents, how far each wa
   // Approvals and limits as the client and the server have them: four modes, limits the server enforces in every mode.
   // Never "your owner is always asked": some steps are signed without asking in every mode (/start lists them).
   // Console first (Fitz's decision of 2026-11-18), with ask named as valun's own default.
-  assert.ok(text.includes("You choose the mode: console (the first tester's default: your agent's offers, acceptances, guarantee offers and the IOU at each delivery wait for you in the owner console), ask (valun's own default), client-prompt or none (what you approve). Some steps are signed without asking in every mode, such as deliveries, disputes and loop sign-offs within local caps (the full list)."));
+  assert.ok(text.includes("You choose the mode: console (the first tester's default: your agent's offers, acceptances, guarantee offers and the note at each delivery wait for you in the owner console), ask (valun's own default), client-prompt or none (what you approve). Some steps are signed without asking in every mode, such as deliveries, disputes and loop sign-offs within local caps (the full list)."));
   assert.ok(home.includes('<a href="/start#approve">what you approve</a>'));
   assert.ok(home.includes('<a href="/start#credentials">the full list</a>'));
   // the testnet's default acceptance (test/home-page.test.mjs checks its number against the server's; each client signs
   // only for its own key: the lead's D3b), and that a console hold is the operator's server's (lib/pilot/core.mjs: the
   // signed note is held, not submitted)
-  assert.ok(text.includes("Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way. Its owner can narrow whose IOUs it accepts under 'Accept notes from' in the owner console. With console, your agent has already signed what waits: the operator's server holds it until you approve. If you reject it, a held offer, acceptance, guarantee offer or IOU is kept, unsent, and a payment by transfer is deleted, all but its signatures' hashes. That hold is the operator's word, not the chain's. Honoring a guarantee call never waits: it is your agent's own IOU, recorded at once."));
+  assert.ok(text.includes("Its client signs that acceptance by itself in every approval mode, and the issuer's client signs the issuer's consent the same way. Its owner can narrow whose notes it accepts under 'Accept notes from' in the owner console. With console, your agent has already signed what waits: the operator's server holds it until you approve. If you reject it, a held offer, acceptance, guarantee offer or note is kept, unsent, and a payment by transfer is deleted, all but its signatures' hashes. That hold is the operator's word, not the chain's. Honoring a guarantee call never waits: it is your agent's own note, recorded at once."));
   assert.ok(text.includes('The server enforces them in every mode: at most 0.005 tERG per deal and 0.04 tERG owed in all, 10 open offers, for 7 days, renewed while your agent is active.'));
   assert.ok(text.includes("Made on your machine, and it stays there, unencrypted in the client's profile file. Only its public key reaches the server, so the operator can't sign for your agent."));
   assert.doesNotMatch(text, /always asked|owner is always/i);
@@ -483,11 +484,11 @@ test('the landing claims no more than the evidence: test agents, how far each wa
     "Writes skill.md, which agents follow as instructions, and publishes the clients and plugins. valun==0.7.2 on PyPI can't change; skill.md and the plugins' latest versions can.",
     // the admin mandate route sets any field, past the self-serve box (lib/pilot/core.mjs setMandate, by 'operator'), and
     // renewSandbox records each renewal as the operator's; only the last change is kept
-    "Can change any part of an agent's mandate, including what waits for the owner (approve_above) and whose IOUs it accepts, beyond the self-serve limits. The owner console shows the last change as by: operator; routine renewals of the expiry are shown the same way, and no history is kept.",
+    "Can change any part of an agent's mandate, including what waits for the owner (approve_above) and whose notes it accepts, beyond the self-serve limits. The owner console shows the last change as by: operator; routine renewals of the expiry are shown the same way, and no history is kept.",
     // the owner-token route (the lead's D5): a takeover power, said as one, and what it still can't do; and who could
     // notice a swap (the lead's D5b: the public record carries only the current pubkey, lib/pilot/core.mjs
     // publicParticipant; GET /pilot/v1/owner lists past_keys)
-    "It can also issue a new owner token for any agent (recorded as by: operator; the old token stops working), and an owner token can revoke the agent's key and enroll another. So the operator could put a key of its own on your handle and record. It can't use your key: IOUs your key signed and your reserve stay bound to it. The public record shows only an agent's current key, so a swap shows only to someone who noted the old one; your owner view lists past keys.",
+    "It can also issue a new owner token for any agent (recorded as by: operator; the old token stops working), and an owner token can revoke the agent's key and enroll another. So the operator could put a key of its own on your handle and record. It can't use your key: notes your key signed and your reserve stay bound to it. The public record shows only an agent's current key, so a swap shows only to someone who noted the old one; your owner view lists past keys.",
     'Holds the reserve contract (upstream Basis, unchanged).']) assert.ok(text.includes(s), s);
   assert.doesNotMatch(text, /give an owner a new owner token|change an agent's limits, recorded|a new key shows as a different public key/i);
   // What isn't true yet, each linked to its part of the trust model (/trust: people's links; agents keep skill.md's).
@@ -495,11 +496,11 @@ test('the landing claims no more than the evidence: test agents, how far each wa
   assert.ok(text.includes('A cleared loop is committed, not irreversible. It holds only as long as the tracker key never commits an earlier total again. The operator holds that key, and nothing on chain stops it.'));
   // what is held once a backer pays (the lead's D14; lib/pilot/core.mjs heldForBackers): the same amount of the issuer's
   // IOU, never "held from the creditor" or "for the backer"
-  assert.ok(text.includes("Backing is a promise, not collateral. A backer that honors a call pays with its own IOU. Once a backer pays, the same amount of the issuer's IOU is held, so the creditor isn't paid twice. The backer doesn't take over the claim."));
+  assert.ok(text.includes("A guarantee is a promise, not collateral. A backer that honors a call pays with its own note. Once a backer pays, the same amount of the issuer's note is held, so the creditor isn't paid twice. The backer doesn't take over the claim."));
   assert.doesNotMatch(text, /held from the creditor|held for the backer/i);
-  assert.ok(text.includes('A backer that honors a call pays with its own IOU; nothing is locked up.'));
+  assert.ok(text.includes('A backer that honors a call pays with its own note; nothing is locked up.'));
   assert.ok(text.includes('The documented 0.7.2 client stays within the server\'s checks; a hand-built client with an earlier redemption build (a dry run is enough) can go around them.'));
-  assert.ok(text.includes('holds the debt until it is cleared in a loop, passed on, or redeemed if the agent posted a reserve.'));
+  assert.ok(text.includes('holds the note until it is cleared in a loop, passed on, or redeemed if the agent posted a reserve.'));
   assert.ok(text.includes('Now a stranger that trusts the backer, or sees a reserve behind it, can say yes.'));
   assert.ok(text.includes('Almost every agent so far is ours.'));
   // Words the site never uses (the copy rules); "irreversible" only as "not irreversible"; no unit but tERG in prose.
@@ -539,13 +540,13 @@ test('the landing in testnet units: the counts, the spotlight and the list in tE
   assert.deepEqual(money(null, 'PC'), {n: '–', u: 'PC'});
   assert.deepEqual(money(3, 'credits'), {n: '–', u: 'tERG'}, 'another unit: no number');
   assert.equal(statsLine(stats({participants: [{handle: 'a'}], ledger: {unit: 'PC', notes: []}, clearing: {unit: 'PC', totals: {setoffs_applied: 2, cleared: 5}}})),
-    '1 agent and 0 open IOUs now. 2 loops cleared so far, cutting 5 PC of IOUs in all.');
+    '1 agent and 0 open notes now. 2 loops cleared so far, cutting 5 PC of notes in all.');
   assert.deepEqual(money(null, 'nanoERG'), {n: '–', u: 'tERG'});
   const clearing = {unit: 'nanoERG', totals: {setoffs_applied: 47, cleared: 104_475_000, cleared_PC: 104_475_000}};
   // what the loops cut (clearing totals.cleared: the sum of the applied set-offs), not what is outstanding
   assert.equal(statsLine(stats({participants: [{handle: 'a'}], ledger: {unit: 'nanoERG', notes: []}, clearing})),
-    '1 agent and 0 open IOUs now. 47 loops cleared so far, cutting 0.104 tERG of IOUs in all.');
-  assert.equal(statsLine(stats({})), '– agents and – open IOUs now. – loops cleared so far.');
+    '1 agent and 0 open notes now. 47 loops cleared so far, cutting 0.104 tERG of notes in all.');
+  assert.equal(statsLine(stats({})), '– agents and – open notes now. – loops cleared so far.');
   assert.equal(stats({clearing: {unit: 'nanoERG', totals: {cleared: 7, cleared_PC: 9}}}).cleared, 7, 'the unit-neutral name first');
   assert.equal(stats({clearing: {totals: {cleared_PC: 9}}, loops: {unit: 'nanoERG', loops: []}}).unit, 'nanoERG', 'the unit from any read');
 
@@ -572,9 +573,9 @@ test('the landing in testnet units: the counts, the spotlight and the list in tE
   await settle();
   assert.deepEqual(copied, [blocks['cmd-agent']]);
   const $ = id => body.all('*').find(e => e.id === id);
-  assert.equal($('stats').textContent, '3 agents and 1 open IOU now. 47 loops cleared so far, cutting 0.104 tERG of IOUs in all.');
-  assert.equal($('spot').textContent, "sandbox-exact holds surety-cole's IOU for 0.003 tERG.");
-  assert.equal($('sky-loop').textContent, 'The newest loop that cleared, with the rainbow ring: surety-cole → surety-jun → surety-cole, 0.0015 tERG off each IOU in it, 5 min ago (its loop card).');
+  assert.equal($('stats').textContent, '3 agents and 1 open note now. 47 loops cleared so far, cutting 0.104 tERG of notes in all.');
+  assert.equal($('spot').textContent, "sandbox-exact holds surety-cole's note for 0.003 tERG.");
+  assert.equal($('sky-loop').textContent, 'The newest loop that cleared, with the rainbow ring: surety-cole → surety-jun → surety-cole, 0.0015 tERG off each note in it, 5 min ago (its loop card).');
   assert.equal($('sky-loop').querySelector('a').href, '/loop/vs_d6d2970797e2572a');
   assert.deepEqual($('latest').children.map(li => li.querySelector('.amt').textContent), ['0.003 tERG']);
   assert.doesNotMatch(body.textContent, /\bcredits\b|\d\s*credit\b|\d{1,3}(,\d{3})+ (?:credits|tERG)|nanoERG/, 'no nanoERG count named as credits or tERG');

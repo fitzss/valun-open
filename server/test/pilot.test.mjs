@@ -238,7 +238,7 @@ test('credit note: wrong total refused; dispute instead of issuing; nothing reac
   const dis = ok(await call('POST', `/deals/${d.id}/dispute`, {terms_hash: deal.agreement.terms_hash, deliverable_sha256: deal.delivery.sha256, reason,
     signature: await sign(C, statements.dispute(deal.agreement.terms_hash, deal.delivery.sha256, reason))}, C.agent));
   assert.equal(dis.status, 'disputed');
-  assert.match(dis.labels.basis, /no credit note for this deal is in the Basis tracker/);
+  assert.match(dis.labels.basis, /no note for this deal is in the Basis tracker/);
   assert.equal(await basis.note(C.pubkey, B.pubkey), null);
 });
 
@@ -319,7 +319,7 @@ test('an owner approval carries the exact terms, the agent signature, the mandat
   assert.equal(ap.subject.signer_pubkey, O.pubkey);
   assert.ok(await basis.verify(O.pubkey, hex(ap.subject.statement), ap.subject.signature), 'the owner can check the agent signature itself');
   assert.equal(ap.mandate_check.checks[0].rule, 'max_issue_outstanding');
-  assert.match(ap.effect.if_rejected, /^The offer is never shown to .*, and the deal ends\. Valun keeps your agent's signed offer on record; it binds nobody and is not an IOU\./);
+  assert.match(ap.effect.if_rejected, /^The offer is never shown to .*, and the deal ends\. Valun keeps your agent's signed offer on record; it binds nobody and is not a note\./);
   // a counter-offer waiting for the owner: its full terms are in the approval and in the author's own view
   const q = ok(await propose(Q, terms(Q, O, Q, 9)), 201);                  // Q (payee) offers; O would pay
   const {t: t2, r} = await counterOf(O, q.id, 7);

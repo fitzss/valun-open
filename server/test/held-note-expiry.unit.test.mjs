@@ -90,7 +90,7 @@ test('a bound held note: the approval says until when (decide_by: its timestamp 
   const v = pilot.approvalView(a, P);
   assert.equal(v.decide_by, iso(by));
   assert.deepEqual(Object.keys(v.effect), ['held_now', 'if_approved', 'if_rejected', 'deadline', 'checks_on_approve']);
-  assert.match(v.effect.held_now, /^Your agent accepted held-payee's delivery and signed two things with its key: its acceptance of the delivery, which held-payee already sees, and an IOU to held-payee for 3 PC: a complete Basis note with its prior acknowledgment that raises what you owe held-payee from 0 PC to 3 PC\. Valun's server holds the IOU: it is not on the tracker, and held-payee sees its amount but not its signature\./);
+  assert.match(v.effect.held_now, /^Your agent accepted held-payee's delivery and signed two things with its key: its acceptance of the delivery, which held-payee already sees, and a note to held-payee for 3 PC, complete in the tracker's signed format, with its prior acknowledgment, that raises the total of your note to held-payee from 0 PC to 3 PC\. Valun's server holds the note: it is not on the tracker, and held-payee sees its amount but not its signature\./);
   // valun 0.7.1 is never told of an expiry or a rejection and keeps the IOU as a payment attempt that may still apply
   // (the approval probe's D2). The card says only what holds in every case (the review of PR #9: each list of 0.7.1's
   // conditions left a case it got wrong): it usually signs a new IOU for the deal at once, and may refuse once something
@@ -100,30 +100,30 @@ test('a bound held note: the approval says until when (decide_by: its timestamp 
   // exact conditions.
   const at = iso(T + MAX_AGE_MS + 120e3);
   assert.equal(CLIENT_ATTEMPT_WINDOW_MS, MAX_AGE_MS + 120e3, 'valun 0.7.1 novation.py: MAX_AGE_MS + FALLBACK_MARGIN_MS');
-  const refusals = `If it answers transfer_window_open, have your agent pay again once ${at} has passed, an hour and 2 minutes after this IOU's timestamp (its retry_after_ms says how long to wait). If it answers attempt_outcome_unknown, run \`valun attempts resolve ${d.id} '#n' --not-applied\` in a terminal (#n from \`valun attempts list\`; in Hermes, \`hermes -p valun valun attempts ...\`): Valun never sent this IOU. Then have your agent pay again once ${at} has passed.`;
-  const trap = ` valun 0.7.1 isn't told either, and keeps counting this IOU as a payment that may still apply. It usually signs a new IOU for this deal at once. If anything else changed this pair's IOU first, or an agent's key changed, it may refuse. ${refusals}`;
-  assert.equal(v.effect.deadline, `Approve or reject by ${iso(by)}. The tracker records this bound IOU only until ${iso(T + MAX_AGE_MS)}, one hour after its timestamp, and Valun keeps the last minute for sending it. At ${iso(by)} this approval expires: Valun never sends the IOU, and the deal goes back to delivered, as after a rejection, so your agent may accept the delivery again. Your agent isn't told: tell it. As after a rejection, no set-off touches this pair until your agent pays this deal or disputes the delivery, and valun 0.7.1 keeps counting this IOU as a payment that may still apply. ${refusals}`);
+  const refusals = `If it answers transfer_window_open, have your agent pay again once ${at} has passed, an hour and 2 minutes after this note's timestamp (its retry_after_ms says how long to wait). If it answers attempt_outcome_unknown, run \`valun attempts resolve ${d.id} '#n' --not-applied\` in a terminal (#n from \`valun attempts list\`; in Hermes, \`hermes -p valun valun attempts ...\`): Valun never sent this note. Then have your agent pay again once ${at} has passed.`;
+  const trap = ` valun 0.7.1 isn't told either, and keeps counting this note as a payment that may still apply. It usually signs a new note for this deal at once. If anything else changed this pair's note first, or an agent's key changed, it may refuse. ${refusals}`;
+  assert.equal(v.effect.deadline, `Approve or reject by ${iso(by)}. The tracker records this bound note only until ${iso(T + MAX_AGE_MS)}, one hour after its timestamp, and Valun keeps the last minute for sending it. At ${iso(by)} this approval expires: Valun never sends the note, and the deal goes back to delivered, as after a rejection, so your agent may accept the delivery again. Your agent isn't told: tell it. As after a rejection, no set-off touches this pair until your agent pays this deal or disputes the delivery, and valun 0.7.1 keeps counting this note as a payment that may still apply. ${refusals}`);
   assert.ok(v.effect.if_rejected.endsWith(`Until your agent pays this deal or disputes the delivery, no set-off touches this pair: no loop that includes what you owe held-payee clears. Your agent isn't told: tell it.${trap}`), v.effect.if_rejected);
   assert.doesNotMatch(`${v.effect.if_rejected} ${v.effect.deadline}`, /another deal with/, 'never the example that does not make 0.7.1 refuse');
   // Once sent, the delivery stays accepted, but for the one way back (the review of PR #8, F8; of PR #9, item 10): after
   // the tracker refused the note (note_failed, no payment_due_since), a later payment of the deal held for the owner and
   // never sent (rejected, expired or void) releases the deal, unless it was payment due by then.
-  assert.match(v.effect.if_approved, new RegExp(`From then on the delivery stays accepted and can no longer be disputed, with one exception: if the tracker refuses the IOU, your agent must pay again, and a later IOU or payment by transfer of this deal that waits for you and isn't sent \\(you reject it, it expires, or it becomes void: its checks fail when you approve it, or a party's agent key is revoked\\) sends the deal back to delivered, where your agent may dispute the delivery, unless the deal was payment due before that \\(it then stays payment due\\)\\. It is a bound note: the tracker records it only while the pair's note is still the one it acknowledges \\(total 0 PC, the state it was signed on\\), and only until ${iso(T + MAX_AGE_MS).replace(/\./g, '\\.')}, one hour after its timestamp, so this approval ends at ${iso(by).replace(/\./g, '\\.')}\\.$`));
+  assert.match(v.effect.if_approved, new RegExp(`From then on the delivery stays accepted and can no longer be disputed, with one exception: if the tracker refuses the note, your agent must pay again, and a later note or payment by transfer of this deal that waits for you and isn't sent \\(you reject it, it expires, or it becomes void: its checks fail when you approve it, or a party's agent key is revoked\\) sends the deal back to delivered, where your agent may dispute the delivery, unless the deal was payment due before that \\(it then stays payment due\\)\\. It is a bound note: the tracker records it only while the pair's note is still the one it acknowledges \\(total 0 PC, the state it was signed on\\), and only until ${iso(T + MAX_AGE_MS).replace(/\./g, '\\.')}, one hour after its timestamp, so this approval ends at ${iso(by).replace(/\./g, '\\.')}\\.$`));
   // Checked again on approval: if not, void, never sent, and the deal back to delivered, where it can be disputed; as
   // after a rejection, nothing tells the agent or 0.7.1 (the review of PR #9, code 2-1).
-  assert.equal(v.effect.checks_on_approve, "When you approve, the server first checks that the pair's last IOU on the tracker (its total, timestamp and signature) and both parties' keys are unchanged since your agent signed; if not, the approval becomes void, Valun doesn't send the IOU, and the deal goes back to delivered: your agent may pay again, or dispute the delivery. As after a rejection, your agent isn't told, and valun 0.7.1 keeps counting this IOU as a payment that may still apply.");
+  assert.equal(v.effect.checks_on_approve, "When you approve, the server first checks that the pair's last note on the tracker (its total, timestamp and signature) and both parties' keys are unchanged since your agent signed; if not, the approval becomes void, Valun doesn't send the note, and the deal goes back to delivered: your agent may pay again, or dispute the delivery. As after a rejection, your agent isn't told, and valun 0.7.1 keeps counting this note as a payment that may still apply.");
   // The payment by transfer's wait, Valun's own rule exactly (paymentBlockAt, attemptDeadByJournal): until
   // fallback_after, unless the first change of this key pair after the IOU's timestamp moves it from the total it
   // acknowledged (the review of PR #8, F4 and F7; of PR #9, item 8: on this key pair only). 0.7.1's own wait is the
   // trap's (transfer_window_open).
-  assert.ok(v.effect.if_rejected.includes(`Rejecting doesn't unsign the IOU: Valun keeps it on record, with its signatures, and never sends it. If it were sent, the tracker could still record it until ${iso(T + MAX_AGE_MS)}, so paying this deal by transfer waits until ${iso(fallbackAfter(T))}, unless the first change to this key pair's IOU signed after this one moves it from 0 PC, the total this one acknowledged, as a later IOU of your agent's to held-payee on this key pair does when nothing else changed the pair first: Valun then doesn't wait for this one.`), v.effect.if_rejected);
+  assert.ok(v.effect.if_rejected.includes(`Rejecting doesn't unsign the note: Valun keeps it on record, with its signatures, and never sends it. If it were sent, the tracker could still record it until ${iso(T + MAX_AGE_MS)}, so paying this deal by transfer waits until ${iso(fallbackAfter(T))}, unless the first change to this key pair's note signed after this one moves it from 0 PC, the total this one acknowledged, as a later note of your agent's to held-payee on this key pair does when nothing else changed the pair first: Valun then doesn't wait for this one.`), v.effect.if_rejected);
 });
 
 // The review of PR #8, F4 and F7: after a rejected bound IOU, a payment by transfer of the deal waits until its timestamp
 // + 1 h + 60 s unless Valun's journal proves the IOU dead first: the pair's first change after the IOU's timestamp left
 // the total it acknowledged, as a later IOU of the payer's to the payee, signed after it, does once recorded. One
 // signed before it and recorded after it is an earlier change on the tracker's clock, which proves nothing.
-test('after a rejected bound IOU, a payment by transfer waits for it unless a later IOU of the payer\'s, signed after it, applied; one signed before it does not end the wait', async () => {
+test('after a rejected bound note, a payment by transfer waits for it unless a later note of the payer\'s, signed after it, applied; one signed before it does not end the wait', async () => {
   for (const order of ['after', 'before']) {
     const w = world(), {pilot, P, clock} = w;
     const first = heldNote(w);                          // signed at T1
@@ -133,11 +133,11 @@ test('after a rejected bound IOU, a payment by transfer waits for it unless a la
     const [rejected, approved] = order === 'after' ? [first, second] : [second, first];
     await pilot.decideApproval(P, rejected.a.id, {decision: 'reject'});
     const r = await pilot.decideApproval(P, approved.a.id, {decision: 'approve'});
-    assert.equal(r.deal.status, 'note_issued', `${order}: the other IOU recorded`);
+    assert.equal(r.deal.status, 'note_issued', `${order}: the other note recorded`);
     const b = await pilot.paymentBlock(rejected.d, {route: 'transfer', fromEdge: 'some>edge', fromPrior: 5});
-    if (order === 'after') assert.equal(b, null, 'a later IOU, signed after the rejected one, ends the wait');
+    if (order === 'after') assert.equal(b, null, 'a later note, signed after the rejected one, ends the wait');
     else {
-      assert.equal(b?.code, 'transfer_window_open', `an IOU signed before the rejected one does not: ${JSON.stringify(b)}`);
+      assert.equal(b?.code, 'transfer_window_open', `a note signed before the rejected one does not: ${JSON.stringify(b)}`);
       assert.ok(Math.abs(b.retry_after_ms - (fallbackAfter(rejected.T) - clock.t)) <= 2);
     }
   }
@@ -146,7 +146,7 @@ test('after a rejected bound IOU, a payment by transfer waits for it unless a la
 // The review of PR #9, item 8: the journal's proof is on the rejected IOU's own key pair. After the payee's key changed, a
 // later IOU of the payer's to it is on a new pair: the old pair's journal has no entry after the rejected IOU's
 // timestamp, so a payment by transfer still waits until its fallback_after (the card says "this key pair's IOU").
-test('after a rejected bound IOU and a key change of the payee, a later IOU to its new key does not end the wait: a payment by transfer waits until fallback_after', async () => {
+test('after a rejected bound note and a key change of the payee, a later note to its new key does not end the wait: a payment by transfer waits until fallback_after', async () => {
   const w = world(), {pilot, P, Q, clock} = w;
   const rejected = heldNote(w), oldKey = Q.pubkey;
   await pilot.decideApproval(P, rejected.a.id, {decision: 'reject'});
@@ -154,13 +154,13 @@ test('after a rejected bound IOU and a key change of the payee, a later IOU to i
   // The payee's owner revokes its agent's key and enrolls another (revokeAgent keeps the old one in past_pubkeys).
   Q.past_pubkeys = [...(Q.past_pubkeys || []), oldKey]; Q.pubkey = '02' + hex(32);
   const later = heldNote(w);
-  assert.equal(later.d.credit_note.recipient_pubkey, Q.pubkey, 'the later IOU is to the new key');
+  assert.equal(later.d.credit_note.recipient_pubkey, Q.pubkey, 'the later note is to the new key');
   assert.equal((await pilot.decideApproval(P, later.a.id, {decision: 'approve'})).deal.status, 'note_issued', 'recorded, on the new pair');
   const b = await pilot.paymentBlock(rejected.d, {route: 'transfer', fromEdge: 'some>edge', fromPrior: 5});
   assert.equal(b?.code, 'transfer_window_open', JSON.stringify(b));
   assert.ok(Math.abs(b.retry_after_ms - (fallbackAfter(rejected.T) - clock.t)) <= 2, 'until its fallback_after');
   assert.equal(pilot.attemptDeadByJournal(`${P.pubkey}>${oldKey}`, 0, rejected.T), false, 'nothing on the old pair proves it dead');
-  assert.equal(pilot.attemptDeadByJournal(`${P.pubkey}>${Q.pubkey}`, 0, rejected.T), true, 'the new pair has the later IOU, after it, from 0');
+  assert.equal(pilot.attemptDeadByJournal(`${P.pubkey}>${Q.pubkey}`, 0, rejected.T), true, 'the new pair has the later note, after it, from 0');
   clock.t = fallbackAfter(rejected.T) + 1;
   assert.equal(await pilot.paymentBlock(rejected.d, {route: 'transfer', fromEdge: 'some>edge', fromPrior: 5}), null, 'not after it');
 });
@@ -169,7 +169,7 @@ test('after a rejected bound IOU and a key change of the payee, a later IOU to i
 // deal had, as payment_due, stays: the review of PR #9, v2), so a later payment of it held for the owner and then
 // rejected (or expired) releases the deal to delivered (releaseAcceptance), where the payer may dispute it; a deal that
 // was payment_due before stays so. The IOU card's if_approved says both.
-test('after the tracker refuses an approved IOU, rejecting the next held IOU sends the deal back to delivered, where it can be disputed; a payment_due deal stays payment_due', async () => {
+test('after the tracker refuses an approved note, rejecting the next held note sends the deal back to delivered, where it can be disputed; a payment_due deal stays payment_due', async () => {
   for (const due of [false, true]) {
     const w = world(), {pilot, P, clock, edges} = w, {d, a} = heldNote(w, {due});
     // The tracker refuses the note: its POST records nothing. (The messages a new note is checked against: any bytes,
@@ -186,7 +186,7 @@ test('after the tracker refuses an approved IOU, rejecting the next held IOU sen
     const T2 = ending(clock.t - 1500, 997);
     await pilot.complete(P, d.id, {terms_hash: d.agreement.terms_hash, deliverable_sha256: d.delivery.sha256, signature: '02' + hex(64),
       credit_note: {total: 3, timestamp: T2, signature: '02' + hex(64), prior_signature: '02' + hex(64), prior_total: 0, prior_timestamp: 0}});
-    assert.equal(d.status, 'completion_awaiting_owner', `due ${due}: the new IOU waits for the owner`);
+    assert.equal(d.status, 'completion_awaiting_owner', `due ${due}: the new note waits for the owner`);
     await pilot.decideApproval(P, d.credit_note.approval_id, {decision: 'reject'});
     assert.equal(d.status, due ? 'payment_due' : 'delivered', `due ${due}: where the rejection leaves it`);
     assert.equal(pilot.view(d, P).next_actions.includes('dispute'), !due, `due ${due}: a dispute is possible only once delivered`);
@@ -194,10 +194,10 @@ test('after the tracker refuses an approved IOU, rejecting the next held IOU sen
   }
   // What the card says of it, beside a deal that was payment due.
   const w = world(), {d, a} = heldNote(w), v = w.pilot.approvalView(a, w.P);
-  assert.ok(v.effect.if_approved.includes("if the tracker refuses the IOU, your agent must pay again, and a later IOU or payment by transfer of this deal that waits for you and isn't sent (you reject it, it expires, or it becomes void: its checks fail when you approve it, or a party's agent key is revoked) sends the deal back to delivered, where your agent may dispute the delivery, unless the deal was payment due before that (it then stays payment due)."), d.id);
+  assert.ok(v.effect.if_approved.includes("if the tracker refuses the note, your agent must pay again, and a later note or payment by transfer of this deal that waits for you and isn't sent (you reject it, it expires, or it becomes void: its checks fail when you approve it, or a party's agent key is revoked) sends the deal back to delivered, where your agent may dispute the delivery, unless the deal was payment due before that (it then stays payment due)."), d.id);
   const w2 = world(), due = heldNote(w2, {due: true}), v2 = w2.pilot.approvalView(due.a, w2.P);
-  assert.ok(v2.effect.if_approved.includes('From then on the delivery stays accepted: if the tracker refuses the IOU, your agent must pay again, and the delivery can no longer be disputed.'));
-  assert.ok(v2.effect.checks_on_approve.endsWith("if not, the approval becomes void, Valun doesn't send the IOU, and the deal stays payment due: your agent must still pay it. As after a rejection, your agent isn't told, and valun 0.7.1 keeps counting this IOU as a payment that may still apply."));
+  assert.ok(v2.effect.if_approved.includes('From then on the delivery stays accepted: if the tracker refuses the note, your agent must pay again, and the delivery can no longer be disputed.'));
+  assert.ok(v2.effect.checks_on_approve.endsWith("if not, the approval becomes void, Valun doesn't send the note, and the deal stays payment due: your agent must still pay it. As after a rejection, your agent isn't told, and valun 0.7.1 keeps counting this note as a payment that may still apply."));
 });
 
 // The review of PR #9, code 2-1: the 409 stale_note says where the void left the deal, as the card does, for each check
@@ -206,18 +206,18 @@ test('after the tracker refuses an approved IOU, rejecting the next held IOU sen
 // Then (the review of PR #9, final round) until when a payment by transfer may have to wait: the void IOU is an earlier
 // payment attempt, and nothing in Valun's journal after its timestamp proves it dead (here the pair's change is
 // timestamped before it, or is on its old key pair), so until its fallback_after, as the routes and next_actions say.
-test('a held IOU whose checks fail on approval: the 409 says why, that it is void and never sent, and where the deal is now (delivered, where it can be disputed, or payment due)', async () => {
+test('a held note whose checks fail on approval: the 409 says why, that it is void and never sent, and where the deal is now (delivered, where it can be disputed, or payment due)', async () => {
   for (const [why, due] of [['key', false], ['key', true], ['note', false], ['total', true]]) {
     const w = world(), {pilot, P, Q, edges} = w, {d, a, T} = heldNote(w, {due});
     if (why === 'key') { Q.past_pubkeys = [Q.pubkey]; Q.pubkey = '02' + hex(32); }
     // The pair holds a note at the total the IOU acknowledged (0) but another one: the whole last note changed.
     if (why === 'note') edges.set(`${P.pubkey}>${Q.pubkey}`, {amount_collected: '0', amount_redeemed: '0', timestamp: T - 2000, signature: '02' + hex(64), confirmation: {status: 'local_only'}});
     if (why === 'total') edges.set(`${P.pubkey}>${Q.pubkey}`, {amount_collected: '2', amount_redeemed: '0', timestamp: T - 2000, signature: '02' + hex(64), confirmation: {status: 'local_only'}});
-    const cause = {key: "a party's agent key changed since your agent signed this credit note",
-      note: "the pair's last credit note on the tracker changed since your agent signed this credit note (the total is the same, the note is not)",
-      total: "the pair's tracker total changed since your agent signed this credit note"}[why];
-    const fresh = why === 'key' ? 'a new IOU signed with the current keys' : 'a new IOU';
-    await refusedWith(pilot.decideApproval(P, a.id, {decision: 'approve'}), 'stale_note', `${cause}; the approval is void, and Valun never sent the IOU: ${due
+    const cause = {key: "a party's agent key changed since your agent signed this note",
+      note: "the pair's last note on the tracker changed since your agent signed this note (the total is the same, the signed note is not)",
+      total: "the pair's tracker total changed since your agent signed this note"}[why];
+    const fresh = why === 'key' ? 'a new note signed with the current keys' : 'a new note';
+    await refusedWith(pilot.decideApproval(P, a.id, {decision: 'approve'}), 'stale_note', `${cause}; the approval is void, and Valun never sent the note: ${due
       ? `the deal stays payment due, and your agent must still pay it, with ${fresh} or by transfer` : `the deal is delivered again, and your agent may accept the delivery again with ${fresh} (or pay by transfer), or dispute it`}; a payment by transfer may have to wait until ${iso(fallbackAfter(T))}`);
     assert.deepEqual([a.state, d.status], ['void_stale', due ? 'payment_due' : 'delivered'], `${why}, due ${due}`);
     assert.equal(pilot.view(d, P).next_actions.includes('dispute'), !due, `${why}, due ${due}: a dispute only once delivered`);
@@ -233,7 +233,7 @@ test('a held IOU whose checks fail on approval: the 409 says why, that it is voi
 // (attemptDeadByJournal). Approved the other way round, the journal proves the earlier one dead and nothing waits. The
 // 409 says which, as next_actions do; and it names no payment by transfer where none can start (the mandate pays with
 // held notes never).
-test('a held IOU made stale by another held IOU of its pair: the 409 says until when a payment by transfer may have to wait, as the route and next_actions judge it', async () => {
+test('a held note made stale by another held note of its pair: the 409 says until when a payment by transfer may have to wait, as the route and next_actions judge it', async () => {
   for (const [order, due] of [['signed', false], ['signed', true], ['reverse', false], ['reverse', true]]) {
     const w = world(), {pilot, P, clock} = w, what = `${order}, due ${due}`;
     const first = heldNote(w, {due});
@@ -241,16 +241,16 @@ test('a held IOU made stale by another held IOU of its pair: the 409 says until 
     const second = heldNote(w, {due});
     const [ok, stale] = order === 'signed' ? [first, second] : [second, first];
     assert.equal((await pilot.decideApproval(P, ok.a.id, {decision: 'approve'})).deal.status, 'note_issued', what);
-    const where = due ? 'the deal stays payment due, and your agent must still pay it, with a new IOU or by transfer'
-      : 'the deal is delivered again, and your agent may accept the delivery again with a new IOU (or pay by transfer), or dispute it';
+    const where = due ? 'the deal stays payment due, and your agent must still pay it, with a new note or by transfer'
+      : 'the deal is delivered again, and your agent may accept the delivery again with a new note (or pay by transfer), or dispute it';
     await refusedWith(pilot.decideApproval(P, stale.a.id, {decision: 'approve'}), 'stale_note',
-      `the pair's tracker total changed since your agent signed this credit note; the approval is void, and Valun never sent the IOU: ${where}${order === 'signed' ? `; a payment by transfer may have to wait until ${iso(fallbackAfter(stale.T))}` : ''}`);
+      `the pair's tracker total changed since your agent signed this note; the approval is void, and Valun never sent the note: ${where}${order === 'signed' ? `; a payment by transfer may have to wait until ${iso(fallbackAfter(stale.T))}` : ''}`);
     const b = await pilot.paymentBlock(stale.d, {route: 'transfer', fromEdge: 'some>edge', fromPrior: 5}), next = pilot.view(stale.d, P).next_actions;
     if (order === 'signed') {
       assert.equal(b?.code, 'transfer_window_open', what);
       assert.deepEqual([next.includes('wait_for_transfer_window'), next.includes('pay_by_transfer')], [true, false], `${what}: ${next}`);
     } else {
-      assert.equal(b, null, `${what}: the journal proves the earlier IOU dead`);
+      assert.equal(b, null, `${what}: the journal proves the earlier note dead`);
       assert.deepEqual([next.includes('wait_for_transfer_window'), next.includes('pay_by_transfer')], [false, true], `${what}: ${next}`);
     }
   }
@@ -261,7 +261,7 @@ test('a held IOU made stale by another held IOU of its pair: the 409 says until 
   P.mandate.pay_with_held_notes = 'never';
   await pilot.decideApproval(P, first.a.id, {decision: 'approve'});
   await refusedWith(pilot.decideApproval(P, second.a.id, {decision: 'approve'}), 'stale_note',
-    "the pair's tracker total changed since your agent signed this credit note; the approval is void, and Valun never sent the IOU: the deal is delivered again, and your agent may accept the delivery again with a new IOU, or dispute it");
+    "the pair's tracker total changed since your agent signed this note; the approval is void, and Valun never sent the note: the deal is delivered again, and your agent may accept the delivery again with a new note, or dispute it");
 });
 
 // The review of PR #9, item 10: a rejection or an expiry is not the only way back. After the tracker refused an approved
@@ -269,7 +269,7 @@ test('a held IOU made stale by another held IOU of its pair: the 409 says until 
 // approves it (void_stale: here the pair moved since the agent signed it), or a key of either party is revoked
 // (revokeAgent: void_key_revoked). Either sends the deal back to delivered, where the payer disputes it; a deal that was
 // payment_due stays payment_due. The card names the void cases beside reject and expire.
-test('after the tracker refuses an approved IOU, the next held IOU becoming void (stale on approval, or a key revoked) sends the deal back to delivered, where it can be disputed; a payment_due deal stays payment_due', async () => {
+test('after the tracker refuses an approved note, the next held note becoming void (stale on approval, or a key revoked) sends the deal back to delivered, where it can be disputed; a payment_due deal stays payment_due', async () => {
   for (const [how, due] of [['stale', false], ['stale', true], ['revoked', false], ['revoked', true]]) {
     const w = world(), {pilot, P, Q, clock, edges} = w, {d, a} = heldNote(w, {due});
     pilot.basis.api = async () => ({status: 409, json: {code: 'novation_expired', error: 'refused'}, text: '{}'});
@@ -280,7 +280,7 @@ test('after the tracker refuses an approved IOU, the next held IOU becoming void
     const T2 = ending(clock.t - 1500, 997);
     await pilot.complete(P, d.id, {terms_hash: d.agreement.terms_hash, deliverable_sha256: d.delivery.sha256, signature: '02' + hex(64),
       credit_note: {total: 3, timestamp: T2, signature: '02' + hex(64), prior_signature: '02' + hex(64), prior_total: 0, prior_timestamp: 0}});
-    assert.equal(d.status, 'completion_awaiting_owner', `${how}, due ${due}: the next IOU waits for the owner`);
+    assert.equal(d.status, 'completion_awaiting_owner', `${how}, due ${due}: the next note waits for the owner`);
     const next = d.credit_note.approval_id;
     if (how === 'stale') {
       // The pair moved on the tracker since the agent signed it (an earlier note of the payer's to the payee, recorded).
@@ -288,8 +288,8 @@ test('after the tracker refuses an approved IOU, the next held IOU becoming void
       // code 2-1): delivered, where the payer may pay again or dispute it, or payment due; and that a payment by transfer
       // may have to wait for the void IOU (the later of the deal's two IOUs, so its fallback_after: final round).
       edges.set(`${P.pubkey}>${Q.pubkey}`, {amount_collected: '1', amount_redeemed: '0', timestamp: T2 - 2000, signature: '02' + hex(64), confirmation: {status: 'local_only'}});
-      await refusedWith(pilot.decideApproval(P, next, {decision: 'approve'}), 'stale_note', `the pair's tracker total changed since your agent signed this credit note; the approval is void, and Valun never sent the IOU: ${due
-        ? 'the deal stays payment due, and your agent must still pay it, with a new IOU or by transfer' : 'the deal is delivered again, and your agent may accept the delivery again with a new IOU (or pay by transfer), or dispute it'}; a payment by transfer may have to wait until ${iso(fallbackAfter(T2))}`);
+      await refusedWith(pilot.decideApproval(P, next, {decision: 'approve'}), 'stale_note', `the pair's tracker total changed since your agent signed this note; the approval is void, and Valun never sent the note: ${due
+        ? 'the deal stays payment due, and your agent must still pay it, with a new note or by transfer' : 'the deal is delivered again, and your agent may accept the delivery again with a new note (or pay by transfer), or dispute it'}; a payment by transfer may have to wait until ${iso(fallbackAfter(T2))}`);
       assert.equal(pilot.s.approvals[next].state, 'void_stale', `${how}, due ${due}`);
     } else {
       await pilot.revokeAgent(Q);                       // the payee's owner revokes its agent's key
@@ -363,7 +363,7 @@ test('a deal whose acceptance already stood (payment_due) stays payment_due when
   assert.equal(d.history.at(-1).status, 'payment_due');
   const v = pilot.approvalView(a, P);
   // A payment_due deal can no longer be disputed (dispute() takes a delivered deal only): only paying it frees the pair.
-  assert.match(v.effect.deadline, /the deal stays payment due, as after a rejection: your agent must still pay it\. Your agent isn't told: tell it\. As after a rejection, no set-off touches this pair until your agent pays this deal, and valun 0\.7\.1 keeps counting this IOU as a payment that may still apply\. If it answers transfer_window_open, /);
+  assert.match(v.effect.deadline, /the deal stays payment due, as after a rejection: your agent must still pay it\. Your agent isn't told: tell it\. As after a rejection, no set-off touches this pair until your agent pays this deal, and valun 0\.7\.1 keeps counting this note as a payment that may still apply\. If it answers transfer_window_open, /);
   assert.match(v.effect.if_rejected, / Until your agent pays this deal, no set-off touches this pair: no loop that includes what you owe held-payee clears\. /);
 });
 
@@ -371,11 +371,11 @@ test('a deal whose acceptance already stood (payment_due) stays payment_due when
 // a key change, an honor signed before its client read a later IOU, credit notes in between), so it gives no example
 // of one either, and says the same whoever the payee is (it said a practice agent never passes the IOU on, beside the
 // example). The exact conditions are in docs/PILOT-API.md, and scripts/client-071-attempts.py runs them.
-test('the IOU card gives what holds in every case of valun 0.7.1, no list of its conditions, and the same words whoever the payee is', () => {
+test('the note card gives what holds in every case of valun 0.7.1, no list of its conditions, and the same words whoever the payee is', () => {
   const w = world(), {pilot, P, Q} = w, {a} = heldNote(w);
   const words = () => { const e = pilot.approvalView(a, P).effect; return `${e.if_rejected} ${e.deadline}`; };
   const before = words();
-  assert.doesNotMatch(before, /7 days|signed nothing else|valun_status|passed your agent's IOU on|guarantee call|did not apply|practice agents|was the first to change|back at the total/);
+  assert.doesNotMatch(before, /7 days|signed nothing else|valun_status|passed your agent's note on|guarantee call|did not apply|practice agents|was the first to change|back at the total/);
   pilot.serverSigner = {has: id => id === Q.id, signFor: async () => null};
   assert.equal(words(), before, 'a practice agent as the payee changes nothing');
 });
@@ -386,7 +386,7 @@ test('the IOU card gives what holds in every case of valun 0.7.1, no list of its
 // past the note's hour too, until the deal is paid or disputed. A payment by transfer through the pair is not held
 // (assertTransferEdgeFree holds a pair only while a note on it is held or being issued): that is what can move the
 // pair, and so make valun 0.7.1 refuse to pay the deal (the IOU card says so).
-test('after a rejected or expired held IOU, no set-off touches its pair until the deal is paid or disputed, at any age; a payment by transfer through the pair is not held', async () => {
+test('after a rejected or expired held note, no set-off touches its pair until the deal is paid or disputed, at any age; a payment by transfer through the pair is not held', async () => {
   for (const how of ['rejected', 'expired']) {
     const w = world(), {pilot, P, Q, clock} = w, {d, a, T, by} = heldNote(w), pair = `${P.pubkey}>${Q.pubkey}`;
     assert.throws(() => pilot.assertTransferEdgeFree(pair), e => e.code === 'edge_busy', `${how}: while held, a transfer through the pair waits`);
@@ -440,8 +440,8 @@ test('an ordinary held note has no deadline: it waits for its owner however long
   assert.deepEqual([a.state, d.status], ['pending', 'completion_awaiting_owner']);
   const v = pilot.approvalView(a, P);
   assert.equal(v.decide_by, null);
-  assert.equal(v.effect.deadline, 'No deadline: an ordinary IOU has no maximum age at the tracker, so it waits here until you decide.');
-  assert.match(v.effect.if_rejected, /An ordinary IOU has no time limit at the tracker, so paying this deal by transfer is refused until this pair's IOU on the tracker moves past it\./);
+  assert.equal(v.effect.deadline, 'No deadline: an ordinary note has no maximum age at the tracker, so it waits here until you decide.');
+  assert.match(v.effect.if_rejected, /An ordinary note has no time limit at the tracker, so paying this deal by transfer is refused until this pair's note on the tracker moves past it\./);
   assert.doesNotMatch(v.effect.if_rejected, /attempts resolve/, 'valun 0.7.1\'s attempt records are said for a bound note only, as the probes saw them');
 });
 
@@ -450,6 +450,6 @@ test('mode off (I-DARK): the approval view keeps v15\'s keys, no decide_by and n
   const v = pilot.approvalView(a, P);
   assert.ok(!('decide_by' in v));
   assert.deepEqual(Object.keys(v.effect), ['if_approved', 'if_rejected', 'checks_on_approve']);
-  assert.match(v.effect.if_rejected, /^Valun doesn't send the IOU, and the deal goes back to delivered/);
+  assert.match(v.effect.if_rejected, /^Valun doesn't send the note, and the deal goes back to delivered/);
   assert.doesNotMatch(v.effect.if_rejected, /by transfer/, 'no payment by transfer with circulation off');
 });

@@ -9,13 +9,14 @@
 //   - the README's local section ("A local server with no chain", up to the next section);
 //   - docs/LOCAL-ACCEPTANCE.md, the outsider checklist; its two controls run without --server on purpose;
 //   - a local server's skill.md and llms.txt (public/skill-local.md, public/llms-local.txt) as it serves them.
-// A valun command is the word `valun` followed by --profile or one of valun 0.7.1's subcommands, wherever it stands in
+// A valun command is the word `valun` followed by --profile or one of valun 0.7.2's subcommands, wherever it stands in
 // a line: after `uvx --from valun==X`, after `--` in `claude mcp add NAME --`, after an image in `docker run ... IMAGE`,
 // in an MCP JSON config's args; and a Hermes line, `hermes -p P valun ...`. test/fixtures/local-copyable.mjs, the pages'
-// check (R-2), judges each. Beyond that: the joins, the invite and the reset are written as valun 0.7.1 needs them (a
-// token file per handle, which it never replaces: LD-1; only the invite's code on stdin), the facts a person needs are
-// there (NO_PROXY, a client home with VALUN_SERVER, the order the client picks a server in, its hints that leave out
-// --server, install first), and every number is the code's. No tracker; pure file reads.
+// check (R-2), judges each. Beyond that: the joins, the invite and the reset are written as valun 0.7.2 needs them (a
+// token file per handle, which it never replaces and its join refuses when it exists: LD-1; only the invite's code on
+// stdin), the facts a person needs are there (a proxy and plain http, a client home with VALUN_SERVER, the order the
+// client picks a server in, the joins its hints print without --server, install first), and every number is the code's.
+// No tracker; pure file reads.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -257,8 +258,9 @@ test('R-3 checks what it should: the old docs\' invited join, a doctor or a tour
   }
 });
 
-// valun 0.7.1's joins as the docs write them: this profile and this server, a token file of its own per handle (0.7.1
-// never replaces a file: a join whose token file exists already prints the token and exits 1, LD-1), the approvals.
+// valun 0.7.2's joins as the docs write them: this profile and this server, a token file of its own per handle (valun
+// never replaces a file, and 0.7.2's join refuses one that exists before anything is sent: "Nothing was sent", exit 2,
+// cli.py _token_file_refusal; LD-1), the approvals, always written (0.7.2's --sandbox join without them uses console).
 test('R-3: every join is written in full: --sandbox or --invite-from-stdin, a handle, an operator, a new token file per handle, and console or none approvals', t => {
   if (!needs(t, ...DOC_FILES)) return;
   const {DOCS, LOCAL, README, CHECKLIST, SKILL} = load();
@@ -282,7 +284,7 @@ test('R-3: every join is written in full: --sandbox or --invite-from-stdin, a ha
   for (const [doc, text] of Object.entries(DOCS)) assert.doesNotMatch(text, /--owner-token-file "?local-owner-token\.txt/, doc);
 });
 
-// The invite: valun 0.7.1's join --invite-from-stdin sends the whole first line it reads as the code, so the docs give
+// The invite: valun's join --invite-from-stdin sends the whole first line it reads as the code, so the docs give
 // the invite command that prints only the code (scripts/pilot-admin.mjs --code-only); the image's check runs the docs'
 // first invite command and pipes its first line into their invited join, once as pasted and once whole.
 test('R-3: every invite prints only its code, the first one in LOCAL.md and the README is good for several joins, and comes before any listing of the invites', t => {
@@ -316,28 +318,51 @@ test('R-3: the README\'s local section has no config-server route ("works too": 
   const local = DOCS['the README\'s local section'];
   assert.doesNotMatch(local, /works too|valun config server/);
   assert.ok(flat(local).includes('`docs/LOCAL-ACCEPTANCE.md` is the checklist an outsider runs against a release. The image carries both, and this file, in `/opt/valun`.'));
-  assert.ok(flat(local).includes('valun 0.7.1\'s own printed hints leave out `--server`: never run them as printed'));
+  assert.ok(flat(local).includes('On a profile that has not joined, a join valun 0.7.2 prints without `--server` goes to the public testnet: run the join above instead'));
+  // Plain http only to this machine (valun 0.7.2 client.py PLAIN_HTTP_ENV), and where LOCAL.md says more.
+  // The opt-in alone is not enough: the server takes writes only for its own origin or a loopback name (lib/pilot/http.mjs
+  // localWriteRefusal: host_not_allowed), so the README points to the server's namespace, not to VALUN_ALLOW_PLAIN_HTTP.
+  assert.ok(flat(local).includes('valun 0.7.2 sends tokens over plain http only to this machine (`127.0.0.1`, `localhost`), and the server takes writes only for its own origin or a loopback name: an agent in another container runs in the server\'s network namespace (`--network container:`), where `127.0.0.1` is the server'));
+  assert.doesNotMatch(local, /VALUN_ALLOW_PLAIN_HTTP/, 'the README does not offer the opt-in, which alone gets 403 host_not_allowed');
+  // The package is public, the image optional (Fitz's decision of Nov 19: testers onboard with uvx or pipx; the skill
+  // says not a plain pip install).
+  assert.ok(flat(local).includes('**Status:** the package is public: pulling it needs no login. It is optional: an agent joins the public testnet with the client alone (valun 0.7.2, with uvx, or pipx: pip in a virtual environment).'));
+  assert.doesNotMatch(local, /unauthorized|is private|Once the image is public/);
+  assert.ok(flat(local).includes('their source isn\'t public yet (fix inbox #99)'), 'the tracker fork\'s source is still not public');
 });
 
 // What a person needs and the audit found missing (FB-5, FB-6, FB-8, FB-10, FB-16, FB-17, FB-18; SRV-4, SRV-5, SRV-9,
 // SRV-10, SRV-16; CLI-3, CLI-5, CLI-6, CLI-8, CLI-9, CLI-10, CLI-15, CLI-16; IMG-1, IMG-6, IMG-10, IMG-11, IMG-12, IMG-13,
 // IMG-15; MR-2, MR-7, MR-8, MR-10, MR-11, MR-13, MR-14, MR-15, MR-16; COV-4, COV-12), each where LOCAL.md says it.
-test('R-3: LOCAL.md says how to keep the public network out: the server order, VALUN_HOME with VALUN_SERVER, 0.7.1\'s hints, a refused join, owner commands, install first, NO_PROXY', t => {
+test('R-3: LOCAL.md says how to keep the public network out: the server order, VALUN_HOME with VALUN_SERVER, 0.7.2\'s hints, a refused join, owner commands, install first, a proxy, plain http', t => {
   if (!needs(t, ...DOC_FILES)) return;
   const {DOCS, LOCAL, README, CHECKLIST, SKILL} = load();
   const s = flat(LOCAL);
   for (const sentence of [
     'A command picks its server in this order: its own `--server`; else the server its profile joined; else `VALUN_SERVER`; else the public testnet.',
-    '**valun 0.7.1\'s printed hints leave out `--server`.**',
-    'Never run them as printed: run this page\'s join line again, and add `--profile local --server http://127.0.0.1:8080` to anything else they suggest.',
-    // valun 0.7.1's join prints only `Joining failed (<code>): <message>`, never retry_after_ms (F2 of the branch's review):
-    // the wait it can show is the one the message names, in minutes.
-    '**After a refused join** (`429 rate_limited` past a join cap) the profile holds nothing, not even a server. valun 0.7.1 prints only the server\'s message (`Joining failed (rate_limited): ...`), which says how many minutes to wait (the HTTP answer\'s `retry_after_ms`): wait that long, then run the same join line again.',
-    'It never overrides the server a profile joined, and valun 0.7.1\'s status ignores it',
+    // valun 0.7.2's hints name the profile, and --server where the command knows this server (cli.py _join_command,
+    // _sandbox_join, _server_flag); on a profile that has not joined, call's and mcp's name none without VALUN_SERVER, and
+    // the tour's "not joined yet" line never does (cli.py _server, cmd_sandbox).
+    '**valun 0.7.2\'s printed hints name the profile, and the server where they know it.**',
+    'On a profile that has not joined, `call` and `mcp`, which take no `--server`, print a join without it unless `VALUN_SERVER` is set, and the "not joined yet" line of the tour, `clearing`, `attempts`, `profile`, `card`, `verify-check`, `audit --mine`, `ergo` and `sell` names a bare join (no `--server`) in any case, even when the command itself was given `--server`: run as printed, such a join goes to the public testnet. Run this page\'s join line instead.',
+    // valun 0.7.2's join prints only `Joining failed (<code>): <message>` for a 429, never retry_after_ms (cli.py
+    // _join_refused; F2 of the branch's review): the wait it can show is the one the message names, in minutes.
+    '**After a refused join** (`429 rate_limited` past a join cap) the profile holds nothing, not even a server. valun prints only the server\'s message (`Joining failed (rate_limited): ...`), which says how many minutes to wait (the HTTP answer\'s `retry_after_ms`): wait that long, then run the same join line again.',
+    'It never overrides the server a profile joined, and valun\'s status ignores it',
     '**Owner commands** send your owner token to the profile\'s server, so they take the profile and the server too',
     'install the client first, or run uvx once with network and then set `UV_OFFLINE=1`',
-    'valun 0.7.1 sends its requests for `http://127.0.0.1:8080` through that proxy, your agent and owner tokens included',
-    'Node\'s `fetch`, which a harness of your own may use, ignores the proxy variables unless `NODE_USE_ENV_PROXY=1` is set.',
+    // A proxy: valun 0.7.2 reaches this machine directly (client.py _ServerProxyHandler, loopback_host); other tools may
+    // not, and the JS client refuses a token through Node's environment proxy (js client.js nodeRoute).
+    '**Behind a proxy.** valun 0.7.2 reaches a server on this machine (`127.0.0.1`, `localhost` or `::1`) directly, never through a proxy, whatever `HTTP_PROXY`, `http_proxy` or the system\'s proxy settings (Windows, macOS) say',
+    'the JavaScript client under Node\'s environment proxy (`NODE_USE_ENV_PROXY=1`) refuses to send a token there until `NO_PROXY` names this machine',
+    'Node\'s `fetch` ignores the proxy variables unless `NODE_USE_ENV_PROXY=1` is set.',
+    // Plain http only to this machine, unless the client's environment opts in (client.py PLAIN_HTTP_ENV).
+    'valun 0.7.2 sends a token over plain http (and a join or an enrollment, whose answers carry one) only to a server on this machine: `http://127.0.0.1:8080` and `http://localhost:8080` work as written.',
+    'is refused before anything is sent (`plain_http`), unless `VALUN_ALLOW_PLAIN_HTTP=1` is set in that client\'s environment. Set it only on a network you trust',
+    // The package is public; the image is optional (Fitz's decision of Nov 19).
+    'The image is optional: an agent joins the public testnet with the client alone (valun 0.7.2, with uvx, or pipx: pip in a virtual environment). The package `ghcr.io/fitzss/valun-local` is public, so `docker pull` and the `docker run` below need no login.',
+    // A console join links to the public network's page about approvals (valun 0.7.2 cli.py CONSOLE_DOC): a page to read.
+    'Join\'s console line links to the public network\'s page about approvals (`https://valun.tech/start#approve`), a page to read and never a request; this server\'s own is `http://127.0.0.1:8080/start#approve`.',
     // The plugin off, and no VALUN_PROFILE=local instead: its skill's join and doctor name no server (FH-1).
     'If the Valun plugin for Claude Code is installed, turn it off while you use this server. The plugin is for the public testnet: its MCP server runs in the default profile, with tools of the same names as the local server\'s, and its skill tells the agent to join and run doctor with lines that name no server, which on a profile with no server yet reach the public testnet.',
     '`/loop 15m check my local Valun inbox with mcp__valun-local__valun_inbox and handle what is waiting within my limits`',
@@ -345,7 +370,9 @@ test('R-3: LOCAL.md says how to keep the public network out: the server order, V
     assert.ok(s.includes(sentence), sentence);
   }
   assert.ok(LOCAL.includes('```\nexport NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost\n```'));
-  assert.ok(LOCAL.includes('```\nuv tool install valun==0.7.1\nvalun --version\n```'));
+  assert.ok(LOCAL.includes(`\`\`\`\nuv tool install ${LOCAL_CLIENT}\nvalun --version\n\`\`\``));
+  assert.doesNotMatch(LOCAL, /authentication \(`unauthorized`\)|is private while|docker login/, 'no line says the package is private');
+  assert.ok(flat(LOCAL).includes('**Not public yet:** the tracker fork\'s source and its build recipe (fix inbox #99).'), 'the fork\'s source is still not public');
   assert.ok(LOCAL.includes('  export VALUN_HOME="$HOME/valun-agents/agent-2" VALUN_SERVER=http://127.0.0.1:8080\n'), 'one client home per agent, with this server');
   assert.ok(s.includes('In one home, a second agent\'s join in the profile `local` is refused (`Profile \'local\' is already connected`)'));
 });
@@ -364,12 +391,12 @@ test('R-3: LOCAL.md\'s many agents, script, isolation and inspection parts: the 
   assert.equal(I.max_accept_per_deal, I.max_issue_per_deal, 'one figure per deal, as payer and as payee');
   assert.equal(S.max_accept_per_deal, S.max_issue_per_deal);
   assert.ok(s.includes(`at most ${pcOf(S.max_issue_per_deal)} PC per deal and ${pcOf(S.max_issue_outstanding)} PC owed in total, ${pcOf(S.max_accept_per_issuer)} PC accepted from one issuer, and ${OPEN_NETWORK_MAX_OPEN_OFFERS} open offers of its own at once, for ${SANDBOX_DAYS} days`));
-  assert.ok(s.includes('`uvx --from valun==0.7.1 valun --profile local config consents.as_new_creditor on --server http://127.0.0.1:8080`'));
-  // An invited agent's MCP server signs no set-off in the background until its consent loop is on (valun 0.7.1's invited
+  assert.ok(s.includes(`\`uvx --from ${LOCAL_CLIENT} valun --profile local config consents.as_new_creditor on --server http://127.0.0.1:8080\``));
+  // An invited agent's MCP server signs no set-off in the background until its consent loop is on (valun 0.7.2's invited
   // join writes consent_loop off, and `valun mcp` then signs only before a tool that commits: F4 of the branch's review),
   // and the clearing engine leaves out an agent after so many expiries in a row (clearing.mjs).
   assert.ok(s.includes('| Set-offs and transfers of its own debt | its client signs them when it runs a call or `clearing watch`; its MCP server, once its consent loop is on (below) | its client signs them by itself; its MCP server in the background |'));
-  assert.ok(s.includes(`after ${EXPIRIES_TO_EXCLUDE} set-offs in a row expire unsigned, an agent is left out of set-offs for ${EXCLUSION_MS / 3600e3} hours. Turn the loop on in each invited agent's profile before its MCP server starts: \`uvx --from valun==0.7.1 valun --profile local config consent_loop on --server http://127.0.0.1:8080\`.`));
+  assert.ok(s.includes(`after ${EXPIRIES_TO_EXCLUDE} set-offs in a row expire unsigned, an agent is left out of set-offs for ${EXCLUSION_MS / 3600e3} hours. Turn the loop on in each invited agent's profile before its MCP server starts: \`uvx --from ${LOCAL_CLIENT} valun --profile local config consent_loop on --server http://127.0.0.1:8080\`.`));
   // The operator raises one participant's limits (scripts/pilot-admin.mjs mandate: PUT /admin/participants/{vp}/mandate),
   // the payer's and the payee's sides (checkMandate: max_accept_per_deal for a payee). Then the owner's own changes are
   // refused until every field is back in the box (core.mjs setMandate checks the whole mandate against SANDBOX_CAPS: F3 of
@@ -390,9 +417,14 @@ test('R-3: LOCAL.md\'s many agents, script, isolation and inspection parts: the 
   assert.ok(s.includes('GET `/pilot/v1/owner` lists the approvals waiting (state `pending`), and POST `/pilot/v1/owner/approvals/<id>` with `{"decision": "approve"}` decides one'));
   for (const tool of ['valun_propose', 'valun_respond', 'valun_deliver', 'valun_review_delivery']) assert.ok(LOCAL.includes(`valun --profile local call ${tool} '`), tool);
   assert.ok(s.includes(`\`@fitzdoud/valun\` ${LOCAL_CLIENT.replace('valun==', '')} (npm, no dependencies)`) && LOCAL.includes("server: 'http://127.0.0.1:8080'"));
+  // A script writes the approvals (0.7.2's --sandbox join without them uses console), a tool's JSON in a file on Windows
+  // (cli.py call --json-file), and a lost answer as 0.7.2 gives it (unreachable, outcome unknown).
+  assert.ok(s.includes('and write the flag: valun 0.7.2\'s `join --sandbox` without it uses console, so a script that approves nothing waits.'));
+  assert.ok(s.includes(`\`uvx --from ${LOCAL_CLIENT} valun --profile local call TOOL --json-file args.json\`, or \`-\` for standard input.`));
+  assert.ok(s.includes('(valun 0.7.2 answers it `unreachable` with `"outcome": "unknown"`)'));
   // Isolation: link checks off, an agent's container in the server's namespace, a sealed server, neighbours, host
   // networking, servers side by side.
-  for (const part of ['`uvx --from valun==0.7.1 valun --profile local config check_link_hosts off --server http://127.0.0.1:8080`',
+  for (const part of [`\`uvx --from ${LOCAL_CLIENT} valun --profile local config check_link_hosts off --server http://127.0.0.1:8080\``,
     '`--network container:valun-local` puts an agent\'s container in the server\'s own network namespace',
     '`docker run -d --name valun-sealed --network none -v valun-sealed:/data ghcr.io/fitzss/valun-local:latest`',
     // A network of the server's own, its agents in its namespace: an agent on that network names the server by its name
@@ -414,15 +446,16 @@ test('R-3: LOCAL.md\'s many agents, script, isolation and inspection parts: the 
   // journal and the signer's records only once there is an IOU, lib/pilot/journal.mjs flushEdgeLog and sandbox.mjs
   // saveRecords; the join key with the first self-serve join, core.mjs takeSandboxJoinSlot).
   assert.ok(s.includes('Later: `sandbox-join-key` (the key that hashes the addresses joins come from) with the first self-serve join, `pilot-edge-log.jsonl` (the journal of each IOU edge) with the first IOU, and `sandbox-records.json` (what the server signed for the practice agents) once one of them has signed an IOU.'));
-  // status prints its label padded to a column (valun 0.7.1 cli.py), so no doc quotes `server: URL` as one string (F10).
+  // status prints its label padded to a column (valun 0.7.2 cli.py cmd_status), so no doc quotes `server: URL` as one string (F10).
   assert.doesNotMatch(LOCAL, /`server: http/);
 });
 
 // LD-1 (found by the image's check): LOCAL.md's Reset said to remove local.json and run the join line again, and valun
-// 0.7.1 never replaces the token file that line names, so the join printed the new owner token and exited 1. The Reset
+// never replaces the token file that line names (0.7.1 then printed the new owner token and exited 1; 0.7.2 sends
+// nothing and exits 2), so the Reset says to remove it too. The Reset
 // is one paragraph (the image's check reads it as the paragraph around `docker volume rm valun-local`: the files it says
 // to remove, whether to join again, the messages it says doctor and join give a profile from before).
-test('R-3: LOCAL.md\'s Reset works with valun 0.7.1: wait until the container is gone, remove the profile\'s file and its token file, join again with --server, or a new client home', t => {
+test('R-3: LOCAL.md\'s Reset works with valun 0.7.2: wait until the container is gone, remove the profile\'s file and its token file, join again with --server, or a new client home', t => {
   if (!needs(t, ...DOC_FILES)) return;
   const {DOCS, LOCAL, README, CHECKLIST, SKILL} = load();
   const lines = LOCAL.split('\n'), at = lines.findIndex(l => l.startsWith('- **Reset everything:**'));
@@ -432,8 +465,8 @@ test('R-3: LOCAL.md\'s Reset works with valun 0.7.1: wait until the container is
   assert.ok(item.startsWith('- **Reset everything:** stop the container and wait until `docker ps -a` no longer lists it'), item);
   // The doctor it names is the full command, in the profile local and naming this server (FH-2: a bare `valun doctor`,
   // run as written, read the public testnet).
-  for (const part of ['then `docker volume rm valun-local`.', 'its doctor, `uvx --from valun==0.7.1 valun --profile local doctor --server http://127.0.0.1:8080`, reports `tracker_mismatch` and `unauthorized`, and `join` refuses it as already connected.',
-    'Remove that profile\'s file, `local.json` in its profiles folder (above), and the owner token file its join wrote (`$HOME/valun-local-owner-token-YOUR-HANDLE.txt`): valun 0.7.1 never replaces a file.',
+  for (const part of ['then `docker volume rm valun-local`.', `its doctor, \`uvx --from ${LOCAL_CLIENT} valun --profile local doctor --server http://127.0.0.1:8080\`, reports \`tracker_mismatch\` and \`unauthorized\`, and \`join\` refuses it as already connected.`,
+    'Remove that profile\'s file, `local.json` in its profiles folder (above), and the owner token file its join wrote (`$HOME/valun-local-owner-token-YOUR-HANDLE.txt`): valun never replaces a file, and its join refuses one that exists before anything is sent.',
     'Then run the join line above again, `--server` included', 'Or start each agent over in a new client home, a `VALUN_HOME` of its own.']) {
     assert.ok(item.includes(part), part);
   }
@@ -452,11 +485,14 @@ test('R-3: LOCAL.md says what a local server cannot show, and how it is tested',
     '**Agents on other machines, or in containers on a plain Docker network:**', '**What real agent apps and browsers do:**',
     '**Other Docker setups:**', '**Durability after a crash:**', '**Upgrades from images that do not exist yet:**',
     // How the image's CI runs the docs and the checklist (the local image's CI checks (private): the README and
-    // LOCAL.md each on a fresh volume, the served skill.md on LOCAL.md's server; its outsider job runs its own copy of
-    // the checklist; every workflow is dispatched by hand: F7 of the branch's review).
+    // LOCAL.md each on a fresh volume, the served skill.md on LOCAL.md's server; its outsider job runs the checklist the
+    // image carries, /opt/valun/docs/LOCAL-ACCEPTANCE.md, each step's commands as written (fix inbox #163); every workflow
+    // is dispatched by hand: F7 of the branch's review).
     'its workflows are dispatched by hand for the candidate\'s digest',
     'the commands of the README\'s local section and of this page, each on a fresh volume, then those of the served `/skill.md` on this page\'s server, as written and in order',
-    'the outsider checklist from a job with no private access: the job runs the CI\'s own copy of it (private), with the steps of `docs/LOCAL-ACCEPTANCE.md`, its public copy.']) {
+    'the outsider checklist from a job with no private access: the job runs `docs/LOCAL-ACCEPTANCE.md` as the image carries it, each step\'s commands as written.',
+    // Agents that reach the server by another name: valun 0.7.2 sends no token over plain http there (PLAIN_HTTP_ENV).
+    'and valun 0.7.2 sends tokens over plain http only to its own machine (unless `VALUN_ALLOW_PLAIN_HTTP=1` is set), so such a test needs `--network container:` or TLS in front of the server.']) {
     assert.ok(s.includes(part), part);
   }
 });
@@ -475,23 +511,29 @@ test('R-3: docs/LOCAL-ACCEPTANCE.md has the image CI\'s steps, in its order, and
   // Its server line is the README's, named; its skill lines are the served skill.md's, with a handle filled in.
   const readmeServer = /^docker run --rm (-p 127\.0\.0\.1:8080:8080 .*ghcr\.io\/fitzss\/valun-local):latest$/m.exec(readmeLocal(README));
   assert.ok(readmeServer && CHECKLIST.includes(`docker run --rm --name valun-local ${readmeServer[1]}:TAG`));
-  const skillJoin = /^uvx --from valun==0\.7\.1 (valun --profile local join --sandbox --server http:\/\/127\.0\.0\.1:8080) --handle YOUR-HANDLE .*--approvals console$/m.exec(SKILL);
+  const skillJoin = new RegExp(`^uvx --from ${LOCAL_CLIENT.replaceAll('.', '\\.')} (valun --profile local join --sandbox --server http://127\\.0\\.0\\.1:8080) --handle YOUR-HANDLE .*--approvals console$`, 'm').exec(SKILL);
   assert.ok(skillJoin && CHECKLIST.includes(`${skillJoin[1]} --handle HANDLE-A`), 'step 6: the skill\'s join, HANDLE-A');
   assert.ok(SKILL.includes('valun --profile local sandbox tour --yes --server http://127.0.0.1:8080') && CHECKLIST.includes('valun --profile local sandbox tour --yes --server http://127.0.0.1:8080'));
   // Step 10: what the client shows of the 13th join (the message, its wait in minutes) and where retry_after_ms is seen
-  // (the HTTP answer: valun 0.7.1 never prints it).
+  // (the HTTP answer: valun 0.7.2 never prints it, cli.py _join_refused).
   assert.ok(flat(CHECKLIST).includes('The 13th is refused: the client prints `Joining failed (rate_limited): ...`, a message that says how many minutes to wait and points to invites.'));
   assert.ok(flat(CHECKLIST).includes('`curl -s http://127.0.0.1:8080/pilot/v1/join-sandbox -H \'content-type: application/json\' -d \'{}\'`, answers 429 `rate_limited` with `retry_after_ms`'));
-  assert.doesNotMatch(flat(`${LOCAL}\n${CHECKLIST}\n${SKILL}`), /wait the `retry_after_ms` it gave/, 'no doc says to wait a retry_after_ms that valun 0.7.1 does not show');
+  assert.doesNotMatch(flat(`${LOCAL}\n${CHECKLIST}\n${SKILL}`), /wait the `retry_after_ms` it gave/, 'no doc says to wait a retry_after_ms that valun 0.7.2 does not show');
   // Step 12: the token file too (LD-1), and LOCAL.md's own Reset.
-  assert.ok(flat(CHECKLIST).includes('After you remove `local.json` **and the token file step 6\'s join wrote** (`$HOME/valun-local-owner-token-HANDLE-A.txt`: valun 0.7.1 never replaces a file that exists)'));
+  assert.ok(flat(CHECKLIST).includes('After you remove `local.json` **and the token file step 6\'s join wrote** (`$HOME/valun-local-owner-token-HANDLE-A.txt`: valun never replaces a file that exists, and its join refuses one before anything is sent)'));
+  // Step 2: the client release the docs pin (lib/a2a.mjs LOCAL_CLIENT), for uv, pipx and the client image.
+  for (const part of [`Run \`uv tool install ${LOCAL_CLIENT}\` (or \`pipx install ${LOCAL_CLIENT}\`)`, `\`RUN pip install ${LOCAL_CLIENT}\``,
+    `\`valun --version\` prints ${LOCAL_CLIENT.replace('valun==', '')}.`]) assert.ok(flat(CHECKLIST).includes(part), part);
   assert.doesNotMatch(CHECKLIST, /\*\*Today:\*\*/, 'no state of an earlier test image');
   // Step 13: the files there from the first start, and what step 12's reset leaves for the two that come with an IOU (F6).
   assert.ok(flat(CHECKLIST).includes('The files that `docs/LOCAL.md` lists in `/data/pilot` as there from the first start are there, and `sandbox-join-key` (step 12\'s joins made it).'));
-  // What it is and how the CI runs it (F7): the public copy of the CI's own checklist, dispatched by hand per digest, the
-  // docs on the volumes they run on, and every placeholder the CI fills in.
+  // What it is and how the CI runs it (F7, and fix inbox #163): the checklist the CI runs, as the image carries it,
+  // dispatched by hand per digest, the docs on the volumes they run on, and every placeholder the CI fills in. The package
+  // is public: step 1 needs no login (fix inbox #143).
   const c = flat(CHECKLIST);
-  assert.ok(c.includes('This file is the public copy of the checklist the image\'s CI runs: its outsider job runs these steps, in this order, from the CI\'s own copy (private)'));
+  assert.ok(c.includes('**Status.** The package is public, so step 1 needs no login. This file is the checklist the image\'s CI runs: its outsider job runs these steps, in this order, from this file as the image carries it'));
+  assert.ok(c.includes('**Step 1** is the anonymous pull itself, as a person makes it.'));
+  assert.doesNotMatch(c, /while the package is private|step 1 fails until then|CI's own copy \(private\)/);
   assert.ok(c.includes('The job is dispatched by hand for each release candidate\'s digest'));
   assert.ok(c.includes('the README\'s and `docs/LOCAL.md`\'s each on a fresh volume, the served `/skill.md`\'s on `docs/LOCAL.md`\'s server.'));
   assert.ok(c.includes('(`YOUR-HANDLE` with a handle of its own for each join, `"YOUR NAME"` and `"YOUR HUMAN"`, `CONTAINER`, `TEXT`, `<revision>`, `<index digest>`)'));

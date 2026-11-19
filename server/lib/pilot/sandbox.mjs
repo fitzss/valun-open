@@ -63,14 +63,15 @@ export const SERVICES = {
 export const SERVICES_TEXT = `text-stats (${amt(pc(3))}): word, character and line counts, unique words, SHA-256, the 10 most frequent words. `
   + `notary (${amt(pc(2))}): SHA-256 and byte length. ` + 'Put the text in a ``` block, after TEXT:, or as the only quoted string. '
   + 'Deterministic: check every number.';
-// payWithHeldNotes: the agent's pay_with_held_notes with circulating credit on. `about`: its public about, which ensure()
-// keeps as this build words it (mallory's said "before issuing a credit note" until the redesign's live check; the site
-// calls a credit note an IOU).
+// payWithHeldNotes: the agent's pay_with_held_notes with circulating credit on. `display_name` and `about`: its public
+// name and about, which ensure() keeps as this build words them (mallory's said "before issuing a credit note" until the
+// redesign's live check). Fix inbox #173: the site calls the money a note; sandbox-exact is the first job to try (no AI,
+// no budget to run out), and sandbox-mallory is the dispute exercise, not a first job.
 export const AGENTS = {
   'sandbox-exact': {display_name: 'Sandbox: exact results, always on', wrongOnPurpose: false, payWithHeldNotes: 'never',
-    about: 'A deterministic test agent run inside the Valun server: no AI model, always on. Its results are exact, so you can verify every delivery yourself.'},
-  'sandbox-mallory': {display_name: 'Sandbox Mallory: wrong on purpose', wrongOnPurpose: true, payWithHeldNotes: 'prefer',
-    about: 'A deterministic test agent that is WRONG ON PURPOSE in about half of its deliveries. Use it to test that your agent verifies work and disputes wrong deliveries before issuing an IOU (credit note).'},
+    about: 'The first job to try: a deterministic test agent run inside the Valun server, with no AI model and no budget to run out, always on. Its results are exact, so you can verify every delivery yourself.'},
+  'sandbox-mallory': {display_name: 'Sandbox Mallory: try a dispute', wrongOnPurpose: true, payWithHeldNotes: 'prefer',
+    about: 'The dispute exercise, not a first job: a deterministic test agent that is WRONG ON PURPOSE in about half of its deliveries. Use it to practise checking work and disputing a wrong delivery before you issue a note. For a first job, hire sandbox-exact.'},
 };
 const OPERATOR = 'Valun operator (sandbox agent run by the server, no AI)';
 const MANDATE = {objective: 'Sell exactly checkable text jobs to anyone testing Valun.', may_issue_credit: false, may_accept_credit: true,
@@ -128,7 +129,7 @@ export const WELCOME_PER_TICK = 3;
 export const WELCOME = Object.freeze({title: 'Welcome job: text-stats', price: pc(3), offer_hours: 24, deliver_hours: 48,
   deliverable: 'the exact text-stats result as JSON (your Valun client can compute it: valun_deliver exact_result=true)',
   text: handle => `Welcome to the Valun sandbox, ${handle}. This text is your first paid job.`});
-const welcomeDescription = handle => `Your first paid job in the Valun sandbox: compute the exact text-stats of the text in the block below and deliver the result as JSON. sandbox-exact checks it exactly and pays you ${amt(WELCOME.price)} with a credit note.\n\`\`\`\n${WELCOME.text(handle)}\n\`\`\``;
+const welcomeDescription = handle => `Your first paid job in the Valun sandbox: compute the exact text-stats of the text in the block below and deliver the result as JSON. sandbox-exact checks it exactly and pays you ${amt(WELCOME.price)} with its note.\n\`\`\`\n${WELCOME.text(handle)}\n\`\`\``;
 // poke(): a tick this long after a change to an agent's deal (or an enrollment), so the agents react within about 200 ms.
 const POKE_MS = 200;
 // How long the agents keep the debt a tour's step 2 moved onto sandbox-mallory for that tour's 3-cycle (tourHolds),
@@ -315,10 +316,10 @@ export class Sandbox {
       const drifted = m && Object.entries(target).some(([k, v]) => JSON.stringify(m[k]) !== JSON.stringify(v));
       if (x && (!m?.expires_at || drifted || Date.parse(m.expires_at) - Date.now() < 7 * 864e5))
         p.setMandate(x, {...target, expires_at: new Date(Date.now() + MANDATE_DAYS * 864e5).toISOString()}, {by: 'operator'});
-      // Its public about and offer as this build words them: a record that joined with an earlier text is updated once
-      // (setProfile saves and audits only a real change, and only the fields that differ are sent). A refusal is logged;
-      // it never stops the agents.
-      const stale = x ? Object.fromEntries(Object.entries({about: a.about, services: SERVICES_TEXT}).filter(([k, v]) => x[k] !== v)) : {};
+      // Its public name, about and offer as this build words them: a record that joined with an earlier text is updated
+      // once (setProfile saves and audits only a real change, and only the fields that differ are sent). A refusal is
+      // logged; it never stops the agents.
+      const stale = x ? Object.fromEntries(Object.entries({display_name: a.display_name, about: a.about, services: SERVICES_TEXT}).filter(([k, v]) => x[k] !== v)) : {};
       if (Object.keys(stale).length) {
         try { p.setProfile(x, stale, {by: 'operator'}); } catch (e) { this.log(`sandbox: ${handle}'s ${Object.keys(stale).join(' and ')} not updated: ${e.message}`); }
       }
@@ -343,7 +344,7 @@ export class Sandbox {
     if (!k || !this.pilot.circulating) no('not_server_run', 'it signs only for the sandbox agents, and only with circulating credit on');
     if (!this.records) no('records_unreadable', `its records (${RECORDS_FILE}) cannot be read; it signs nothing until they can`);
     const m = parseNoteMessage(msgHex) ?? parsePriorAckMessage(msgHex);
-    if (!m) no('not_a_note_message', `it signs only 80-byte Basis note messages and ${PRIOR_ACK} prior acknowledgments`);
+    if (!m) no('not_a_note_message', `it signs only 80-byte note messages (the tracker's signed format) and ${PRIOR_ACK} prior acknowledgments`);
     if (m.nft !== this.pilot.basis.nft) no('tracker_mismatch', "the message is not for this pilot's tracker");
     if (!SIGNED_RESIDUES.includes(m.timestamp % 1000)) no('timestamp_domain', `it signs only timestamps ending in ${SIGNED_RESIDUES.join(', ')} ms`);
     const now = this.pilot.now();
@@ -616,8 +617,8 @@ export class Sandbox {
       if (problem) throw sandboxError('bad_template', `the bound credit-note template does not describe this payment (${problem})`);
       const block = await this.ownNoteBlock(x, d, tpl);
       if (block) {
-        if (block.code !== 'transfer_window_open') this.log(`sandbox: ALARM: ${handle} does not pay ${d.id} again: ${block.code} (an earlier credit note of its own may have applied; the operator resolves it)`);
-        throw sandboxError(block.code, `an earlier credit note of this agent for ${d.id} ${block.code === 'transfer_window_open' ? 'can still apply' : 'may have applied'}`, block.retry_after_ms ?? BACKOFF_MAX_MS);
+        if (block.code !== 'transfer_window_open') this.log(`sandbox: ALARM: ${handle} does not pay ${d.id} again: ${block.code} (an earlier note of its own may have applied; the operator resolves it)`);
+        throw sandboxError(block.code, `an earlier note of this agent for ${d.id} ${block.code === 'transfer_window_open' ? 'can still apply' : 'may have applied'}`, block.retry_after_ms ?? BACKOFF_MAX_MS);
       }
       // Rule R1: both messages are rebuilt here from the checked values (the agent's key, the payee's key, the totals, the
       // prior note's timestamp and the timestamp), never taken from the template, whose messages must be exactly these:
@@ -641,7 +642,7 @@ export class Sandbox {
         throw e;
       }
       if (v.status === 'note_issued' || v.status !== 'note_failed') return v;
-      if (attempt >= OWN_NOTE_ATTEMPTS) throw sandboxError('note_failed', `the tracker did not record the credit note for ${d.id} (${d.credit_note?.error_code ?? 'refused'})`);
+      if (attempt >= OWN_NOTE_ATTEMPTS) throw sandboxError('note_failed', `the tracker did not record the note for ${d.id} (${d.credit_note?.error_code ?? 'refused'})`);
     }
   }
   noteTemplateProblem(x, d, tpl) {

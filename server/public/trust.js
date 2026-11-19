@@ -33,8 +33,8 @@ const hhmm = iso => (typeof iso === 'string' && /T\d\d:\d\d/.test(iso) ? `${iso.
 
 // What anchoring.state says, in words (the states GET /pilot/v1/chain names; skill.md section 7 lists them).
 export const STATE_WORDS = {
-  anchored: 'anchored: it commits every IOU recorded so far',
-  waiting_for_next_update: 'the ledger is ahead of the box; a new IOU is usually committed 5 to 15 minutes after it is recorded, up to about 30 when Ergo testnet blocks are slow',
+  anchored: 'anchored: it commits every note recorded so far',
+  waiting_for_next_update: 'the ledger is ahead of the box; a new note is usually committed 5 to 15 minutes after it is recorded, up to about 30 when Ergo testnet blocks are slow',
   update_in_flight: 'a new box is on its way to the chain',
   daily_cap_reached: "the day's boxes are used up; the next one follows soon after 00:00 UTC",
   overdue: 'the next box is later than it should be: a fault',
@@ -64,7 +64,7 @@ export function readings(chain, reserves) {
   if (list) {
     const backing = list.filter(r => whole(r?.total_debt_nanoerg) && r.total_debt_nanoerg > 0);
     const debt = backing.reduce((s, r) => s + r.total_debt_nanoerg, 0);
-    rows.push(['Reserves', [`${list.length} posted; ${backing.length} back${backing.length === 1 ? 's' : ''} any debt${backing.length ? ` (${tERG(debt)} of IOUs)` : ''}`]]);
+    rows.push(['Reserves', [`${list.length} posted; ${backing.length} back${backing.length === 1 ? 's' : ''} any notes${backing.length ? ` (${tERG(debt)} of notes)` : ''}`]]);
   }
   return rows;
 }

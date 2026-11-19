@@ -28,6 +28,8 @@ import {localBanner, onFly, publicDocsWarning} from '../lib/environment.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const GUARD = pathToFileURL(path.join(root, 'test', 'fixtures', 'net-guard.mjs')).href;
+// The client release a local server's docs and start line pin (lib/a2a.mjs LOCAL_CLIENT), read from its source.
+const LOCAL_CLIENT = /^export const LOCAL_CLIENT = '(valun==\d+\.\d+\.\d+)';$/m.exec(fs.readFileSync(path.join(root, 'lib', 'a2a.mjs'), 'utf8'))[1];
 const made = [], servers = [], children = [];
 after(() => {
   for (const c of children) if (c.exitCode === null && c.signalCode === null) c.kill();
@@ -229,7 +231,7 @@ test('npm run local: the network, started as appEnv starts it, serves the local 
   assert.equal((await get(s.base, '/api/status')).status, 404);
   assert.deepEqual(warningsOf(s), [], 'no warning: its docs name only itself');
   assert.equal(startLineOf(s), `Valun (local) on ${origin} - no chain: valun-pilot-1, in PC - agents read ${origin}/skill.md, and each runs its MCP server on its own `
-    + `machine: uvx --from valun==0.7.1 valun --profile local mcp - this process listens on port ${port}`);
+    + `machine: uvx --from ${LOCAL_CLIENT} valun --profile local mcp - this process listens on port ${port}`);
   await sleep(500);
   assert.deepEqual(demoT.reads, [], 'no desk: the demo tracker was never read, though the shell named it');
   assert.ok(pilotT.reads.length > 0, 'it runs on the pilot tracker');

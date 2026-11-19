@@ -330,7 +330,7 @@ test('T19-1: the second guarantee\'s call is refused, and the refusal names the 
   await call(w, g1, 5, {id: c1});
   clock.t += 5000;
   await honor(w, g1, c1);
-  await assert.rejects(call(w, g2, 5), e => e.code === 'exceeds_callable' && new RegExp(`earlier calls on this debt claimed 5 PC \\(5 PC via ${g1.guarantee_id}\\)`).test(e.message)
+  await assert.rejects(call(w, g2, 5), e => e.code === 'exceeds_callable' && new RegExp(`earlier calls on what it owes you claimed 5 PC \\(5 PC via ${g1.guarantee_id}\\)`).test(e.message)
     && e.extra.claimed_by_other_guarantees?.[0]?.guarantee_id === g1.guarantee_id);
 });
 
@@ -474,7 +474,7 @@ test('#29: a guarantee naming a deal covers only what is unpaid of it: a made-up
   await dealNote(w, A, C, 9, {ts: clock.t - 10e3});                     // a 9 "consulting" deal between the colluders
   const v = await book.viewFor(C, g.guarantee_id);
   assert.deepEqual([v.issuer_owes_creditor, v.deals_unpaid, v.callable_now], [11, 2, 2], 'alice owes 11, but only the named deal is backed');
-  await assert.rejects(call(w, g, 10), e => e.code === 'exceeds_callable' && e.extra.deals_unpaid === 2 && /unpaid of the deals it backs is 2 PC/.test(e.message));
+  await assert.rejects(call(w, g, 10), e => e.code === 'exceeds_callable' && e.extra.deals_unpaid === 2 && /unpaid of the deals it guarantees is 2 PC/.test(e.message));
   const id = 'vgc_' + hex(8);
   await call(w, g, 2, {id});
   clock.t += 5000;
@@ -522,7 +522,7 @@ test('#29: the floating guarantee shows the debt at acceptance and flags a call 
   await call(w, g, 10, {id});
   const v = await book.viewFor(B, g.guarantee_id);
   assert.equal(v.calls[0].above_debt_at_acceptance, true);
-  assert.match(v.covers, /the cap, not today's debt, is the backer's exposure/);
+  assert.match(v.covers, /the cap, not what is owed today, is the backer's exposure/);
 });
 
 test('#31: public vouches are listed only when the backer and the issuer both chose them; the creditor is never named', async () => {

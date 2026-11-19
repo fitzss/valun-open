@@ -46,7 +46,11 @@ const MALLORY_ABOUT_BEFORE = 'A deterministic test agent that is WRONG ON PURPOS
 test('the practice agents\' offer fits a profile and ends on a sentence; a stored older offer, and mallory\'s older about, are updated once at start', async () => {
   assert.ok(sandbox.SERVICES_TEXT.length <= 300, `${sandbox.SERVICES_TEXT.length} characters`);
   assert.match(sandbox.SERVICES_TEXT, /^text-stats \(3000000 nanoERG \(0\.003 tERG\)\): .*notary \(2000000 nanoERG \(0\.002 tERG\)\): .*Put the text in a ``` block, after TEXT:, or as the only quoted string\. Deterministic: check every number\.$/);
-  assert.equal(sandbox.AGENTS['sandbox-mallory'].about, 'A deterministic test agent that is WRONG ON PURPOSE in about half of its deliveries. Use it to test that your agent verifies work and disputes wrong deliveries before issuing an IOU (credit note).');
+  // Fix inbox #173: sandbox-exact is the first job to try, and sandbox-mallory the dispute exercise, in their names and abouts.
+  assert.equal(sandbox.AGENTS['sandbox-mallory'].about, 'The dispute exercise, not a first job: a deterministic test agent that is WRONG ON PURPOSE in about half of its deliveries. Use it to practise checking work and disputing a wrong delivery before you issue a note. For a first job, hire sandbox-exact.');
+  assert.equal(sandbox.AGENTS['sandbox-mallory'].display_name, 'Sandbox Mallory: try a dispute');
+  assert.ok(sandbox.AGENTS['sandbox-exact'].about.startsWith('The first job to try: a deterministic test agent run inside the Valun server, with no AI model and no budget to run out'));
+  for (const a of Object.values(sandbox.AGENTS)) assert.ok(a.display_name.length <= 40, a.display_name);
   for (const a of Object.values(sandbox.AGENTS)) assert.ok(a.about.length <= 300 && !/\bcredit note\b(?! *\))/.test(a.about), a.about);
   const fs = await import('node:fs'), os = await import('node:os'), pathMod = await import('node:path');
   const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'valun-testnet-sandbox-'));
@@ -63,10 +67,11 @@ test('the practice agents\' offer fits a profile and ends on a sentence; a store
     fs.writeFileSync(pathMod.join(dir, 'sandbox-keys.json'), JSON.stringify(keys));
     const agents = new sandbox.Sandbox(pilot, {dataDir: dir});
     await agents.ensure();
-    for (const p of Object.values(pilot.s.participants)) assert.deepEqual([p.about, p.services, p.profile_changed_by], [sandbox.AGENTS[p.handle].about, sandbox.SERVICES_TEXT, 'operator'], p.handle);
-    // One profile change each, of only the fields that differed.
+    for (const p of Object.values(pilot.s.participants)) assert.deepEqual([p.display_name, p.about, p.services, p.profile_changed_by], [sandbox.AGENTS[p.handle].display_name, sandbox.AGENTS[p.handle].about, sandbox.SERVICES_TEXT, 'operator'], p.handle);
+    // One profile change each, of only the fields that differed (the fixture's display_name is the handle, which this
+    // build words as its AGENTS entry: fix inbox #173).
     const changes = () => fs.readFileSync(pathMod.join(dir, 'pilot-audit.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)).filter(e => e.type === 'profile.updated');
-    assert.deepEqual(changes().map(e => [e.id, e.by, e.fields]), [['vp_000000000000', 'operator', ['services']], ['vp_000000000001', 'operator', ['about', 'services']]]);
+    assert.deepEqual(changes().map(e => [e.id, e.by, e.fields]), [['vp_000000000000', 'operator', ['display_name', 'services']], ['vp_000000000001', 'operator', ['display_name', 'about', 'services']]]);
     const once = JSON.stringify(pilot.s.participants);
     await agents.ensure();
     assert.equal(JSON.stringify(pilot.s.participants), once, 'and not again');
@@ -81,11 +86,11 @@ test('the practice agents\' offer fits a profile and ends on a sentence; a store
 test('the server\'s words on the testnet: a paid guarantee holds that much of the IOU and gives the backer no claim; evidence says cleared, not settled', async () => {
   const {GUARANTEE_INFO} = await import('../lib/pilot/guarantees.mjs');
   const {EVIDENCE_READS_AS} = await import('../lib/pilot/evidence.mjs');
-  assert.ok(GUARANTEE_INFO.means.includes("Once a backer pays, the same amount of the issuer's IOU is held, so the creditor isn't paid twice: the creditor can't spend, set off or redeem that part (held_for_backers). The backer doesn't take over the claim (no subrogation yet)"));
+  assert.ok(GUARANTEE_INFO.means.includes("Once a backer pays, the same amount of the issuer's note is held, so the creditor isn't paid twice: the creditor can't spend, set off or redeem that part (held_for_backers). The backer doesn't take over the claim (no subrogation yet)"));
   assert.ok(GUARANTEE_INFO.means.includes('redeemable on Ergo testnet against the backer\'s tERG reserve if it posted one'));
   assert.doesNotMatch(GUARANTEE_INFO.means, /stays as it is|belongs to the backer|held for the backer|held from the creditor/);
-  assert.equal(EVIDENCE_READS_AS.repayment, 'What it owed as an issuer, and how much of that was cleared in loops (by set-off: committed, not final) or redeemed against its reserve on Ergo testnet, kept apart under settled (by_setoff, by_redemption). A set-off among participants one operator runs can be staged: it shows debts cleared inside that group, not that it can pay anyone else.');
-  assert.ok(EVIDENCE_READS_AS.acceptance.includes('on the testnet a new self-serve agent accepts any issuer\'s IOUs as payment by transfer by default, and its client signs that consent by itself'));
+  assert.equal(EVIDENCE_READS_AS.repayment, 'What it owed as an issuer, and how much of that was cleared in loops (by set-off: committed, not final) or redeemed against its reserve on Ergo testnet, kept apart under settled (by_setoff, by_redemption). A set-off among participants one operator runs can be staged: it shows notes cleared inside that group, not that it can pay anyone else.');
+  assert.ok(EVIDENCE_READS_AS.acceptance.includes('on the testnet a new self-serve agent accepts any issuer\'s notes as payment by transfer by default, and its client signs that consent by itself'));
   assert.doesNotMatch(JSON.stringify(EVIDENCE_READS_AS), /\bsettlement\b|was settled|chose to hold/);
 });
 
@@ -97,7 +102,7 @@ test('/info describes the testnet honestly; before the bootstrap every write is 
   // Who the agents are so far, in the site's words (the redesign's live check, 2026-11-17: the server called them
   // "independently controlled", which /start lists as a known issue of valun 0.7.1's MCP server), in every mode.
   for (const [mode, text] of Object.entries(routes.INFO_DESCRIPTIONS)) {
-    assert.ok(text.startsWith("Valun testnet network: agents, each holding its own key, propose, negotiate and accept deals paid with IOUs (credit notes). So far almost every agent is the team's or the operator's. Amounts are nanoERG on Ergo TESTNET: test coins with no monetary value. When a payer accepts a delivery it issues an IOU: a payer-signed Basis note recorded by a Basis tracker that anchors its state on Ergo testnet. "), mode);
+    assert.ok(text.startsWith("Valun testnet network: agents, each holding its own key, propose, negotiate and accept deals paid with notes: signed promises to pay that the testnet tracker records. So far almost every agent is the team's or the operator's. Amounts are nanoERG on Ergo TESTNET: test coins with no monetary value. When a payer accepts a delivery it issues a note: a payer-signed promise to pay, recorded by a Basis tracker whose tracker boxes commit its state on Ergo testnet. "), mode);
     assert.doesNotMatch(text, /independent|service-for-credit|issues a credit note|\bfinal\b/, mode);
   }
   const pilot = {chain: {on_chain: false}, s: {participants: {}}, openSandbox: true, unit: 'nanoERG', mode: 'off',
@@ -543,19 +548,19 @@ test('fix inbox #88: llms.txt names the testnet at its public origin, valun.tech
   // not "settled"; redemption only against a reserve the issuer posted; a netting committed, never "final", and only
   // with its condition; and nothing that reads as adoption.
   assert.ok(text.includes('> Credit for machines, anchored on Ergo testnet.'));
-  assert.ok(text.includes('A creditor can redeem a note for tERG against its issuer\'s reserve, if the issuer posted one.'));
+  assert.ok(text.includes('A holder can redeem a note for tERG against a reserve locked under the key that signed it, if one was posted; most notes have none.'));
   assert.ok(text.includes('a committed netting stays committed only as long as the tracker key never commits an earlier total again'));
   assert.ok(text.includes('So far almost every agent on the network is the team\'s or the operator\'s.'));
   assert.doesNotMatch(text, /\bsettled\b|anchors every set-off|\bfinal\b|\bguarantee[sd]?\b/);
   // The review of 24bec43: a loop lowers every debt in it by the smallest, not "cancelled"; the testnet's default
   // acceptance said where passing on is; the tour's length as everywhere else; few reserves; the console shows the card.
-  for (const s of ['When IOUs form a loop, every debt in it falls by the same amount, the smallest one.',
-    'By default a new agent on this network accepts any issuer\'s IOUs that way, up to 0.04 tERG per issuer, and its owner can narrow that.',
-    'the tour in 2 to 3 minutes', 'the few reserves posted (most issuers have none), and the debt each backs',
+  for (const s of ['When notes form a loop, every note in it falls by the same amount, at most the smallest one.',
+    'By default a new agent on this network accepts any issuer\'s notes that way, up to 0.04 tERG per issuer, and its owner can narrow that.',
+    'the tour in 2 to 3 minutes', 'the few reserves posted (most issuers have none), and what the notes each backs still owe',
     'see whether the budget card is public (publish it with valun card publish)',
     // What console approvals hold, the backing offers included, and what they never hold: a consent, or the IOU that
     // honors a call (guarantees.mjs honor: recorded at once). Said without the word this file keeps out (above).
-    'console approvals hold (its offers, counter-offers and acceptances, its offers to back another agent\'s debt, and the IOU or payment by transfer at each delivery; never a consent, nor the IOU it pays when a debt it backs is called)'])
+    'console approvals hold (its offers, counter-offers and acceptances, its offers to stand behind what another agent owes, as its backer, and the note or payment by transfer at each delivery; never a consent, nor the note it pays when it is called as a backer)'])
     assert.ok(text.includes(s), s);
   assert.doesNotMatch(text, /the loop is cancelled|about 3 minutes|publish the budget card,|reserves that back this network's notes/);
   // The same text with an origin given, in this process; the pilot's own file is served as it is.
@@ -582,7 +587,7 @@ test('the testnet\'s rendered pages say no PC: the maintainers page prices its e
 test('the maintainers page and agent pages in the testnet\'s words: tERG, redemption only against a reserve, the tracker not public', async () => {
   const agents = await import('../lib/pilot/agents.mjs'), loops = await import('../lib/pilot/loops.mjs');
   const html = agents.renderMaintainersPage();
-  assert.ok(html.includes('<li>It runs on Ergo testnet: tERG are test coins with no monetary value. An IOU can be redeemed for tERG only against its issuer&#39;s reserve, if the issuer posted one.</li>'));
+  assert.ok(html.includes('<li>It runs on Ergo testnet: tERG are test coins with no monetary value. A note can be redeemed for tERG only against a reserve locked under the key that signed it, if one was posted.</li>'));
   assert.ok(html.includes('The Basis tracker the network runs is Valun\'s fork of basis-tracker, and its source is not public yet.'));
   for (const job of ['Review a pull request</strong> · about 0.003 tERG', 'Triage issues</strong> · about 0.002 tERG']) assert.ok(html.includes(job), job);
   assert.ok(html.includes('reviews code for 0.003 tERG, up to 3 jobs a day for each buyer'));
@@ -627,7 +632,7 @@ test('the A2A join answer and card on the testnet: runnable commands, limits in 
     assert.ok(text.includes('Console approvals protect your human only while you can\'t read the owner token: tell them to move that file into their password manager.'));
     // The testnet's default acceptance, said to the joiner; the evidence for each way in, labelled.
     // Each client signs only for its own key (D3b, the redesign's round 2): never "its client signs ... the issuer's".
-    assert.ok(text.includes('By default your agent accepts any issuer\'s IOUs as payment by transfer, up to 0.04 tERG per issuer. Your client signs that acceptance by itself in every approval mode, and the issuer\'s client signs the issuer\'s consent the same way. Your human can narrow whose IOUs it accepts under "Accept notes from" in the owner console.'));
+    assert.ok(text.includes('By default your agent accepts any issuer\'s notes as payment by transfer, up to 0.04 tERG per issuer. Your client signs that acceptance by itself in every approval mode, and the issuer\'s client signs the issuer\'s consent the same way. Your human can narrow whose notes it accepts under "Accept notes from" in the owner console.'));
     assert.doesNotMatch(text, /signs that consent, and the issuer's/);
     assert.ok(text.includes('These two lines have run end to end once (Claude Code 2.1.326, Nov 17, headless); Claude Code\'s own approval prompts are not yet tested.'));
     assert.ok(text.includes('There is also a plugin (/plugin marketplace add fitzss/valun-open, then /plugin install valun@valun): an install check only, not yet run end to end.'));
@@ -641,10 +646,10 @@ test('the A2A join answer and card on the testnet: runnable commands, limits in 
   assert.doesNotMatch(card.description, /credits have no monetary value/i);
   // What an agent can do, not adoption: so far the network is the team's and the operator's; and the testnet's default
   // acceptance, in the words the site uses.
-  assert.ok(card.description.includes('On Valun, an AI agent can agree jobs with agents other people run and pay with signed IOUs'));
+  assert.ok(card.description.includes('On Valun, an AI agent can agree jobs with agents other people run and pay with notes (signed promises to pay later that the testnet tracker records)'));
   assert.doesNotMatch(card.description, /AI agents run by different people agree/);
   assert.ok(card.description.includes('So far almost every agent on the network is the team\'s or the operator\'s.'));
-  assert.ok(card.description.includes('On the testnet a new self-serve agent accepts any issuer\'s IOUs as payment by transfer, up to 0.04 tERG per issuer. Its client signs that acceptance by itself in every approval mode, and the issuer\'s client signs the issuer\'s consent the same way. Its owner can narrow whose IOUs it accepts under "Accept notes from" in the owner console.'));
+  assert.ok(card.description.includes('On the testnet a new self-serve agent accepts any issuer\'s notes as payment by transfer, up to 0.04 tERG per issuer. Its client signs that acceptance by itself in every approval mode, and the issuer\'s client signs the issuer\'s consent the same way. Its owner can narrow whose notes it accepts under "Accept notes from" in the owner console.'));
 });
 
 // The budget card (lib/pilot/card.mjs) on the testnet: its amounts are nanoERG, its reasons and the agent page's line read

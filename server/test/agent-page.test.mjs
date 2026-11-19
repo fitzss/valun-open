@@ -65,7 +65,7 @@ test('an agent page: Open Graph tags, what it offers, its record, its loops and 
   assert.match(r.text, /<a class="h" href="\/agent\/sandbox-exact">sandbox-exact<\/a><svg class="tie-bar"[^>]*><rect width="50" height="6"\/><\/svg><span class="num">2 PC<\/span>/);
   assert.match(r.text, /<a href="\/loop\/vs_00000000000000aa"><span class="h">sandbox-exact<\/span> <span class="arr">→<\/span> <span class="h">open-poet<\/span>/);
   // What each debt in the loop fell by, as its loop card says, with the total beside it (not the total alone).
-  assert.ok(r.text.includes('</a> · 2 credits off each debt (6 credits in all)</li>'));
+  assert.ok(r.text.includes('</a> · 2 credits off each note (6 credits in all)</li>'));
   assert.ok(r.text.includes('Read https://valun.tech/skill.md, join Valun, and offer open-poet a job.'));
   assert.ok(r.text.includes('<a href="/pilot/v1/participants/vp_000000000002">as JSON</a>'));
   assert.doesNotMatch(r.text, /<script/i, 'no script on the page');
@@ -73,9 +73,9 @@ test('an agent page: Open Graph tags, what it offers, its record, its loops and 
   assert.ok(r.text.includes('<h2 id="evidence-h">Evidence, kept apart</h2>'));
   assert.ok(r.text.includes('<li><strong>Delivered.</strong> 3 deliveries accepted, from 2 buyers (1 invited, 1 joined self-serve); 1 disputed, 0 not delivered.</li>'));
   // A set-off clears a debt; it is never called repaid or settled (on the testnet, redemptions are a second figure).
-  assert.ok(r.text.includes('<li><strong>Cleared in loops.</strong> 4 PC of the 6 PC it owed cleared in loops, with 1 creditor (1 &lt;b&gt;x&lt;/b&gt;); 2 PC outstanding; 1 accepted job unpaid.</li>'));
+  assert.ok(r.text.includes('<li><strong>Cleared in loops.</strong> 4 PC of the 6 PC it owed cleared in loops, with 1 holder (1 &lt;b&gt;x&lt;/b&gt;); 2 PC outstanding; 1 accepted job unpaid.</li>'));
   assert.doesNotMatch(r.text, /Repaid|\bsettled\b/);
-  assert.ok(r.text.includes('<li><strong>Accepted.</strong> 2 participants have held its IOU; 3 PC of it taken by transfer, from parties it never dealt with.</li>'));
+  assert.ok(r.text.includes('<li><strong>Accepted.</strong> 2 participants have held its notes; 3 PC of them taken by transfer, from parties it never dealt with.</li>'));
   assert.ok(r.text.includes('none of them deals with anyone else (a closed group: what a staged circle looks like, and also a new one).'));
   assert.ok(r.text.includes('Evidence to weigh, not a score.') && r.text.includes('<a href="/memory">What the record cannot show</a>'));
   assert.doesNotMatch(r.text, /<b>x<\/b>/, 'escaped');
@@ -87,7 +87,7 @@ test('an agent that pays for work: its page says what it pays for and how to ear
   assert.ok(r.text.includes('<h2 id="wants-h">What it pays for</h2>\n<p class="offers">translations of research summaries into Spanish (3 PC)</p>'));
   assert.ok(r.text.includes('<h2 id="earn-h">Get paid by it</h2>'));
   assert.ok(r.text.includes('<code>"role": "payee"</code>'));
-  assert.ok(r.text.includes("is paid with brief-bot's IOU when the work meets the terms"));
+  assert.ok(r.text.includes("is paid with brief-bot's note when the work meets the terms"));
   const o = await get('/agent/open-poet');
   assert.doesNotMatch(o.text, /What it pays for|Get paid by it/, 'nothing about paid work for an agent that lists none');
 });
@@ -102,7 +102,7 @@ test('fix inbox #141: a counterparty or a vouch with no page of its own (unliste
   assert.match(ties, /<h3>It owes<\/h3>\n<ul class="ties-list">\n {2}<li><span class="h">not-enrolled<\/span><svg class="tie-bar"/);
   assert.match(ties, /<h3>It is owed by<\/h3>\n<ul class="ties-list">\n {2}<li><span class="h">hidden-test<\/span><svg class="tie-bar"[^>]*><rect width="100" height="6"\/><\/svg><span class="num">5 PC<\/span><\/li>/);
   assert.match(ties, /<li><a class="h" href="\/agent\/open-poet">open-poet<\/a><svg class="tie-bar"[^>]*><rect width="80" height="6"\/><\/svg><span class="num">4 PC<\/span><\/li>/, 'an agent with a page is linked');
-  assert.ok(r.text.includes('<li><strong>Vouches.</strong> Vouched for by <span class="h">hidden-test</span>; vouches for <a href="/agent/open-poet"><span class="h">open-poet</span></a>. Public because both agents chose it; who held the IOUs is not shown.</li>'));
+  assert.ok(r.text.includes('<li><strong>Vouches.</strong> Vouched for by <span class="h">hidden-test</span>; vouches for <a href="/agent/open-poet"><span class="h">open-poet</span></a>. Public because both agents chose it; who held the notes is not shown.</li>'));
   // #141's acceptance: every link to an agent page on it answers 200.
   const linked = [...new Set([...r.text.matchAll(/href="\/agent\/([^"]+)"/g)].map(m => m[1]))];
   assert.deepEqual(linked, ['open-poet']);
@@ -181,7 +181,7 @@ test('public vouches on the page (fix inbox #31): who vouched for it and whom it
   const v = agentView(pub, {evidence: {backing}}, [], {now, pages});
   assert.deepEqual(v.vouches, {by: [{handle: 'basis-x-tr-ari', page: true}], of: [{handle: 'newcomer-one', page: true}], more_by: 0, more_of: 0}, 'a name that is not a handle is left out');
   const html = renderAgentPage(v);
-  assert.ok(html.includes('<li><strong>Vouches.</strong> Vouched for by <a href="/agent/basis-x-tr-ari"><span class="h">basis-x-tr-ari</span></a>; vouches for <a href="/agent/newcomer-one"><span class="h">newcomer-one</span></a>. Public because both agents chose it; who held the IOUs is not shown.</li>'));
+  assert.ok(html.includes('<li><strong>Vouches.</strong> Vouched for by <a href="/agent/basis-x-tr-ari"><span class="h">basis-x-tr-ari</span></a>; vouches for <a href="/agent/newcomer-one"><span class="h">newcomer-one</span></a>. Public because both agents chose it; who held the notes is not shown.</li>'));
   assert.doesNotMatch(html, /<script>/);
   // Fix inbox #141: a vouch whose agent has no page (unlisted) is named, not linked; with no pages known, none is linked.
   const hidden = renderAgentPage(agentView(pub, {evidence: {backing}}, [], {now, pages: new Set(['newcomer-one'])}));
@@ -213,12 +213,12 @@ test('the maintainers page: its Open Graph tags, the line to paste, the jobs, th
   assert.equal(r.status, 200);
   assert.match(r.text, /<meta property="og:url" content="https:\/\/valun.tech\/maintainers">/);
   // What a shared link previews says it as a possibility, with no adoption claimed: no maintainer has tried it yet.
-  const description = 'Your AI agent could review, triage and document other maintainers&#39; projects on Valun and be paid with signed IOUs. So far almost every agent here is ours: no maintainer has tried it yet.';
+  const description = 'Your AI agent could review, triage and document other maintainers&#39; projects on Valun and be paid with notes, signed promises to pay. So far almost every agent here is ours: no maintainer has tried it yet.';
   assert.match(r.text, /<title>Let your agents help each other&#39;s projects · Valun<\/title>/);
   for (const tag of ['name="description"', 'property="og:description"', 'name="twitter:description"']) assert.ok(r.text.includes(`<meta ${tag} content="${description}">`), tag);
   for (const tag of ['og:title', 'twitter:title']) assert.match(r.text, new RegExp(`<meta (property|name)="${tag}" content="Let your agents help each other&#39;s projects">`), tag);
   assert.ok(r.text.includes('<h2 id="m4-h">Good to know</h2>\n<ul class="rows">\n  <li>So far almost every agent here is ours: no maintainer has tried it yet.</li>'));
-  assert.ok(r.text.includes('Each job is paid with a signed IOU: the project that got the help now owes the helper.'));
+  assert.ok(r.text.includes('Each job is paid with a note, a signed promise to pay: the project that got the help now owes the helper.'));
   assert.doesNotMatch(r.text, /favou?r|helping each other|exact record of who helped/i, 'a paid job, not a favour');
   assert.ok(r.text.includes('Read https://valun.tech/skill.md and follow it to join Valun. Say that you help open-source projects.'));
   for (const job of ['Review a pull request', 'Triage issues', 'Write a docs page', 'Explain a failing test']) assert.ok(r.text.includes(job), job);

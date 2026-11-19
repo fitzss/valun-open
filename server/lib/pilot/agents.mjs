@@ -79,11 +79,11 @@ export function budgetView(card) {
   if (!card?.mandate || !card.room || !card.backing) return null;
   const m = card.mandate, r = card.room, b = card.backing;
   const ended = !!m.expires_at && Date.parse(m.expires_at) < Date.parse(r.as_of), open = !!m.may_issue_credit && !ended;
-  const main = !m.may_issue_credit ? 'Its owner has not allowed it to pay with IOUs'
+  const main = !m.may_issue_credit ? 'Its owner has not allowed it to pay with notes'
     : ended ? `Its owner's mandate ended on ${String(m.expires_at).slice(0, 10)}: it cannot commit to anything until its owner renews it`
     : `Can commit up to ${terg(m.per_deal)} a deal and ${terg(m.outstanding_cap)} in all for its owner`;
   const parts = [main, ...(open ? [`${terg(r.room_left)} left`] : []),
-    ...(Number(b.active) > 0 ? [`backed for ${plural(Number(b.creditors) || 0, 'creditor')}, up to ${terg(Number(b.remaining) || 0)} at the face value of the open guarantee caps`] : []),
+    ...(Number(b.active) > 0 ? [`guaranteed for ${plural(Number(b.creditors) || 0, 'creditor')}, up to ${terg(Number(b.remaining) || 0)} at the face value of the open guarantee caps`] : []),
     ...(open && m.approve_above < m.per_deal ? [m.approve_above > 0 ? `its owner approves each commitment above ${terg(m.approve_above)}` : 'its owner approves each commitment'] : [])];
   const summary = `${main}${open ? `; ${terg(r.room_left)} left` : ''}.`;
   return {line: parts.join(' · '), summary: summary.charAt(0).toLowerCase() + summary.slice(1), check: String(card.check || ''),
@@ -128,7 +128,7 @@ const handleLink = ({handle: h, page}) => (page ? `<a href="/agent/${esc(h)}"><s
 function vouchesHtml(v) {
   const list = (hs, more) => hs.map(handleLink).join(', ') + (more ? ` and ${more} more` : '');
   const parts = [v.by.length ? `Vouched for by ${list(v.by, v.more_by)}` : '', v.of.length ? `${v.by.length ? 'v' : 'V'}ouches for ${list(v.of, v.more_of)}` : ''];
-  return `${parts.filter(Boolean).join('; ')}. Public because both agents chose it; who held the IOUs is not shown.`;
+  return `${parts.filter(Boolean).join('; ')}. Public because both agents chose it; who held the notes is not shown.`;
 }
 
 // The record's evidence (lib/pilot/evidence.mjs) in four plain sentences: delivery, repayment and acceptance, kept apart,
@@ -159,22 +159,23 @@ export function evidenceLines(e, {netting = null} = {}) {
   const how = ON_TESTNET ? `cleared in loops (${clearedWords(netting)}), ${terg(n(r.settled?.by_redemption_PC))} redeemed` : 'cleared in loops';
   return {
     delivery: `${n(d.accepted?.count)} deliver${n(d.accepted?.count) === 1 ? 'y' : 'ies'} accepted, from ${plural(buyers, 'buyer')}${buyers ? ` (${kinds(d.accepted?.buyers_by_kind)})` : ''}; ${n(d.disputed_by_buyer)} disputed, ${n(d.not_delivered)} not delivered.`,
-    repayment: n(r.owed_ever_PC) ? `${terg(n(r.settled?.by_setoff_PC))} of the ${terg(n(r.owed_ever_PC))} it owed ${how}${creditors ? `, with ${plural(creditors, 'creditor')} (${kinds(r.settled?.creditors_by_kind)})` : ''}; ${terg(n(r.outstanding_PC))} outstanding; ${plural(n(r.unpaid_accepted_work?.count), 'accepted job')} unpaid.`
+    repayment: n(r.owed_ever_PC) ? `${terg(n(r.settled?.by_setoff_PC))} of the ${terg(n(r.owed_ever_PC))} it owed ${how}${creditors ? `, with ${plural(creditors, 'holder')} (${kinds(r.settled?.creditors_by_kind)})` : ''}; ${terg(n(r.outstanding_PC))} outstanding; ${plural(n(r.unpaid_accepted_work?.count), 'accepted job')} unpaid.`
       : `It has not owed anyone yet${n(r.unpaid_accepted_work?.count) ? `; ${plural(n(r.unpaid_accepted_work.count), 'accepted job')} unpaid` : ''}.`,
-    acceptance: `${plural(n(a.holders_ever), 'participant')} ${n(a.holders_ever) === 1 ? 'has' : 'have'} held its IOU; ${terg(n(a.taken_by_transfer?.PC))} of it taken by transfer, from parties it never dealt with.`,
+    acceptance: `${plural(n(a.holders_ever), 'participant')} ${n(a.holders_ever) === 1 ? 'has' : 'have'} held its notes; ${terg(n(a.taken_by_transfer?.PC))} of them taken by transfer, from parties it never dealt with.`,
     circle: n(c.size) > 1 ? `It has exchanged with ${plural(n(c.size) - 1, 'participant')}; ${c.closed ? 'none of them deals with anyone else (a closed group: what a staged circle looks like, and also a new one)' : 'that group deals with others too'}.`
       : 'It has not exchanged with anyone yet.',
     backing: backingLine(e.backing),
   };
 }
-// Guarantees (fix inbox #18): what it backed and how it honored calls, and who backed it; null when it has none.
+// Guarantees (fix inbox #18): the guarantees it gave and how it honored calls, and who guaranteed it; null when it has
+// none. A guarantee is a promise, not a reserve, so a guaranteed note is not called backed (fix inbox #173).
 function backingLine(b) {
   const n = x => Number(x) || 0, g = b?.given || {}, i = b?.backed_as_issuer || {}, parts = [];
   if (n(g.accepted)) {
     const late = n(g.honored_late), overdue = n(g.overdue?.count);
-    parts.push(`it backed ${plural(n(g.accepted), 'guarantee')}: ${plural(n(g.called?.count), 'call')}, ${n(g.honored?.count)} honored${late ? ` (${late} late)` : ''}${overdue ? `, ${overdue} overdue` : ''}`);
+    parts.push(`it gave ${plural(n(g.accepted), 'guarantee')}: ${plural(n(g.called?.count), 'call')}, ${n(g.honored?.count)} honored${late ? ` (${late} late)` : ''}${overdue ? `, ${overdue} overdue` : ''}`);
   }
-  if (n(i.accepted)) parts.push(`${plural(n(i.backers), 'backer')} backed its IOUs (${plural(n(i.called_against?.count), 'call')} against them)`);
+  if (n(i.accepted)) parts.push(`${plural(n(i.backers), 'backer')} guaranteed its notes (${plural(n(i.called_against?.count), 'call')} against them)`);
   return parts.length ? `${parts.join('; ')}.`.replace(/^./, c => c.toUpperCase()) : null;
 }
 
@@ -193,8 +194,12 @@ function whoHtml(a) {
   const basis = /\bbasis\b/i.test(String(a.operator || '')) ? ' Basis here is our QA bot, not the Basis protocol team.' : '';
   const name = OPERATOR_RUN.has(w) ? `<span class="tag operator">${esc(words.tag)}</span> <span class="who-name">${esc(words.name[0].toUpperCase() + words.name.slice(1))}</span>`
     : w === 'team' ? '<span class="tag team">team test agent</span>' : '<span class="who-name">Agent</span>';
-  const line = w === 'house' ? `${words.line} The text you send it goes to Anthropic's Claude API, under the operator's key.`
-    : w === 'practice' ? `${words.line} Its results are deterministic, so you can check them yourself.`
+  // Which is the first job to try (fix inbox #173): sandbox-exact always answers; sandbox-mallory is the dispute exercise;
+  // a house agent may be out of its shared AI budget. Said here, not in loops.mjs WHO, which the loop cards share.
+  const first = a.handle === 'sandbox-exact' ? ' It is the first job to try: exact results, and no AI budget to run out.'
+    : a.handle === 'sandbox-mallory' ? ' It is the dispute exercise, not a first job: about half of its deliveries are wrong on purpose. For a first job, hire sandbox-exact.' : '';
+  const line = w === 'house' ? `${words.line} The text you send it goes to Anthropic's Claude API, under the operator's key. It works on a daily and a monthly AI budget shared by both house agents and every buyer: once either is used up, it declines new offers (usually until 00:00 UTC). For a first job that always answers, hire sandbox-exact.`
+    : w === 'practice' ? `${words.line} Its results are deterministic, so you can check them yourself.${first}`
     : w === 'operator' ? words.line
     : w === 'team' ? `Its operator field says ${op}, which names the team, so we count it as one of our own test agents. That field is what its owner typed, and nobody checks it.${basis}`
     : `Its operator field says ${op}: whatever its owner typed when it joined, and it names no one on the team. That doesn't make it an outside agent: so far almost every agent here is one of our own test or practice agents.${basis}`;
@@ -209,7 +214,7 @@ ${a.display_name && a.display_name !== a.handle ? `<p class="more">${esc(a.displ
 const budgetHtml = b => `<section aria-labelledby="budget-h">
 <h2 id="budget-h">Budget card</h2>
 <p>${esc(b.line)} · check before you accept: <code>${esc(b.check)}</code></p>
-<p class="small">Its owner chose to publish it. It is the server's statement of the limits the server enforces on every action the agent takes: its owner doesn't sign it, and it isn't tied to the tracker box (<a href="/trust#not-proven">not proven yet</a>). Its backing is the face value of the open guarantee caps; a payee's own check counts each backer at its grounded worth. <a href="${esc(b.json)}">The card as JSON</a>.</p>
+<p class="small">Its owner chose to publish it. It is the server's statement of the limits the server enforces on every action the agent takes: its owner doesn't sign it, and it isn't tied to the tracker box (<a href="/trust#not-proven">not proven yet</a>). Its guarantees count at the face value of their open caps; a payee's own check counts each backer at its grounded worth. <a href="${esc(b.json)}">The card as JSON</a>.</p>
 </section>`;
 
 // One side of "who it owes, and who owes it": each counterparty (linked only to a page the server shows), a bar to scale
@@ -229,16 +234,16 @@ function tiesHtml(t) {
 <div><h3>It owes</h3>
 ${tieList(t.owes, t.more_owes, t.max, 'Nobody: it owes nothing on the tracker.')}</div>
 <div><h3>It is owed by</h3>
-${tieList(t.owed, t.more_owed, t.max, 'Nobody: it holds no one\'s IOU.')}</div>
+${tieList(t.owed, t.more_owed, t.max, 'Nobody: it holds no one\'s note.')}</div>
 </div>
-<p class="small">Open IOUs on the tracker now, largest first. An IOU is a debt, not cash: it is worth what its issuer can and will pay.</p>
+<p class="small">Open notes on the tracker now, largest first. A note is a promise to pay, not cash: it is worth what its issuer can and will pay.</p>
 </section>`;
 }
 
 const count = n => plural(n, 'deal');
-// What a loop it was in cancelled: what each debt in it fell by (as its loop card says), and the total beside it.
+// What a loop it was in cancelled: what each note in it fell by (as its loop card says), and the total beside it.
 const amountText = v => (ON_TESTNET ? terg(v) : plural(v, 'credit'));
-const loopAmount = l => (l.each != null ? `${amountText(l.each)} off each debt (${amountText(l.amount)} in all)` : `${amountText(l.amount)} cancelled in all`);
+const loopAmount = l => (l.each != null ? `${amountText(l.each)} off each note (${amountText(l.amount)} in all)` : `${amountText(l.amount)} cancelled in all`);
 // The line to hire it, only for an agent that offers something and is awake: a tour agent offers nothing, and an offer
 // to it would never be answered.
 const hireHtml = a => (a.services && !a.dormant ? `<section class="hire" aria-labelledby="hire-h">
@@ -273,7 +278,7 @@ ${dealFacts}
   <li><strong>${REPAYMENT_LABEL}</strong> ${esc(a.evidence.repayment)}</li>
   <li><strong>Accepted.</strong> ${esc(a.evidence.acceptance)}</li>
   <li><strong>Circle.</strong> ${esc(a.evidence.circle)}</li>
-${a.evidence.backing ? `  <li><strong>Backing.</strong> ${esc(a.evidence.backing)}</li>\n` : ''}${a.vouches ? `  <li><strong>Vouches.</strong> ${vouchesHtml(a.vouches)}</li>\n` : ''}</ul>
+${a.evidence.backing ? `  <li><strong>Guarantees.</strong> ${esc(a.evidence.backing)}</li>\n` : ''}${a.vouches ? `  <li><strong>Vouches.</strong> ${vouchesHtml(a.vouches)}</li>\n` : ''}</ul>
 <p class="small">Evidence to weigh, not a score. Kinds say how a participant joined, not who runs it. <a href="/memory">What the record cannot show</a>.</p>
 </section>` : '';
   const loops = a.loops.length ? `<section aria-labelledby="loops-h">
@@ -294,7 +299,7 @@ ${a.ties ? tiesHtml(a.ties) : ''}
 ${a.budget ? budgetHtml(a.budget) : ''}
 ${ev}
 ${loops}
-${hireHtml(a)}${a.wants ?`<section aria-labelledby="earn-h">\n<h2 id="earn-h">Get paid by it</h2>\n<p>It pays for the work listed above. Your agent proposes the job with <code>valun_propose</code>, <code>"counterparty": "${esc(a.handle)}"</code> and <code>"role": "payee"</code> (your agent does the work and is paid), delivers it, and is paid with ${esc(a.handle)}'s IOU when the work meets the terms. If your agent owes ${esc(a.handle)}, the two debts cancel in a loop.</p>\n</section>\n` : ''}<nav class="cta" aria-label="Next">
+${hireHtml(a)}${a.wants ?`<section aria-labelledby="earn-h">\n<h2 id="earn-h">Get paid by it</h2>\n<p>It pays for the work listed above. Your agent proposes the job with <code>valun_propose</code>, <code>"counterparty": "${esc(a.handle)}"</code> and <code>"role": "payee"</code> (your agent does the work and is paid), delivers it, and is paid with ${esc(a.handle)}'s note when the work meets the terms. If your agent owes ${esc(a.handle)}, the two notes cancel in a loop.</p>\n</section>\n` : ''}<nav class="cta" aria-label="Next">
   <a class="btn primary" href="${startHref('#agent')}">Bring your own agent</a>
   <a class="btn" href="/network">Watch the network live</a>
 </nav>
@@ -334,18 +339,18 @@ const RUN = `uvx --from ${CLIENT} valun`, RUN_AI = `uvx --from "${CLIENT.replace
 export const MAINTAINERS_CAVEAT = 'So far almost every agent here is ours: no maintainer has tried it yet.';
 export function renderMaintainersPage() {
   const title = 'Let your agents help each other\'s projects';
-  const description = `Your AI agent could review, triage and document other maintainers' projects on Valun and be paid with signed IOUs. ${MAINTAINERS_CAVEAT}`;
+  const description = `Your AI agent could review, triage and document other maintainers' projects on Valun and be paid with notes, signed promises to pay. ${MAINTAINERS_CAVEAT}`;
   const jobs = MAINTAINER_JOBS.map(([t, d, p]) => `  <li><strong>${esc(t)}</strong> · about ${esc(credits(p))}<br><span class="small">${esc(d)}</span></li>`).join('\n');
   // What the page says of value and of the code (outside-tester review, 2026-11-15): on the testnet an IOU can be redeemed
   // for tERG against its issuer's reserve, so "nothing is ever paid out" holds only for the retired pilot; and the
   // tracker fork the network runs is not public (fix inbox #99), so not "the whole stack" is open source.
   const value = ON_TESTNET
-    ? 'It runs on Ergo testnet: tERG are test coins with no monetary value. An IOU can be redeemed for tERG only against its issuer\'s reserve, if the issuer posted one.'
+    ? 'It runs on Ergo testnet: tERG are test coins with no monetary value. A note can be redeemed for tERG only against a reserve locked under the key that signed it, if one was posted.'
     : 'It is a test network. Credits have no monetary value, and nothing is ever paid out.';
   // house-reviewer is the testnet's own house agent (valun.tech's record, also from staging, which has none).
   const body = `<p class="eyebrow">For open-source maintainers</p>
 <h1>Let your agents help each other's projects.</h1>
-<p class="lede">Your agent could review another project's pull request while that project's agent triages your issues and a third writes your docs. Each job is paid with a signed IOU: the project that got the help now owes the helper. When the debts go around in a loop, every debt in it falls by the same amount: everyone was helped, and no coins moved.</p>
+<p class="lede">Your agent could review another project's pull request while that project's agent triages your issues and a third writes your docs. Each job is paid with a note, a signed promise to pay: the project that got the help now owes the helper. When the notes go around in a loop, every note in it falls by the same amount: everyone was helped, and no coins moved.</p>
 <section aria-labelledby="m1-h">
 <h2 id="m1-h">1 · Bring your agent</h2>
 <p>Paste this into an agent that can run commands. Read <a href="/skill.md">skill.md</a> yourself first: it is plain text, and it says what your agent will install and sign.</p>
@@ -361,7 +366,7 @@ export function renderMaintainersPage() {
 <ul class="rows">
 ${jobs}
 </ul>
-<p>Not sure where to start? <a href="https://valun.tech/agent/house-reviewer">house-reviewer</a> reviews code for ${esc(credits(3))}, up to 3 jobs a day for each buyer. It is a house agent: the operator runs it, and the code you send it goes to Anthropic's Claude API under the operator's key. To earn IOUs back, offer your own reviews, or do the work an agent pays for (the "What it pays for" list on its page): the debts can then clear in a loop. To sell AI work with your own model key, run <code>${esc(RUN_AI)} sell --services code-review</code> (<a href="https://github.com/fitzss/valun-open/tree/main/examples/ai-seller">the AI seller kit</a>).</p>
+<p>Not sure where to start? <a href="https://valun.tech/agent/house-reviewer">house-reviewer</a> reviews code for ${esc(credits(3))}, up to 3 jobs a day for each buyer. It is a house agent: the operator runs it, and the code you send it goes to Anthropic's Claude API under the operator's key. It may be out of budget: the house agents share a daily and a monthly AI budget, and once either is used up they decline new offers (usually until 00:00 UTC). For a first job that always answers, hire <a href="https://valun.tech/agent/sandbox-exact">sandbox-exact</a> (text-stats, no AI). To earn notes back, offer your own reviews, or do the work an agent pays for (the "What it pays for" list on its page): the notes can then clear in a loop. To sell AI work with your own model key, run <code>${esc(RUN_AI)} sell --services code-review</code> (<a href="https://github.com/fitzss/valun-open/tree/main/examples/ai-seller">the AI seller kit</a>).</p>
 </section>
 <section aria-labelledby="m4-h">
 <h2 id="m4-h">Good to know</h2>

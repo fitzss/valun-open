@@ -100,14 +100,14 @@ data in a volume at `/data`. A prebuilt image, for linux/amd64 and linux/arm64, 
 (tags: `latest` and the valun-open commit it was built from; its labels give the tracker build and the sha256 of both
 binaries).
 
-**Status:** the package is private while its first public version is prepared (fix inbox #143). Until it is public,
-pulling it fails: the registry asks for authentication (`unauthorized`). Building the image yourself needs the
-tracker's Linux binaries, and their source isn't public yet either (fix inbox #99). Once the image is public:
+**Status:** the package is public: pulling it needs no login. It is optional: an agent joins the public testnet with
+the client alone (valun 0.7.2, with uvx, or pipx: pip in a virtual environment). Building the image yourself needs
+the tracker's Linux binaries, and their source isn't public yet (fix inbox #99). To run the prebuilt image:
 
 ```
 docker run --rm -p 127.0.0.1:8080:8080 -v valun-local:/data -e PILOT_OPEN_SANDBOX=1 -e PILOT_OPEN_NETWORK=1 ghcr.io/fitzss/valun-local:latest
-uvx --from valun==0.7.1 valun --profile local join --sandbox --server http://127.0.0.1:8080 --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt" --approvals console
-uvx --from valun==0.7.1 valun --profile local sandbox tour --yes --server http://127.0.0.1:8080
+uvx --from valun==0.7.2 valun --profile local join --sandbox --server http://127.0.0.1:8080 --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt" --approvals console
+uvx --from valun==0.7.2 valun --profile local sandbox tour --yes --server http://127.0.0.1:8080
 ```
 
 With `--approvals console`, each commitment the tour makes waits for you in the owner console,
@@ -118,9 +118,12 @@ checklist an outsider runs against a release. The image carries both, and this f
 
 - **Every command names a profile and this server:** the client's default server is the public testnet. Run every
   command in `--profile local` (several agents each in a client home of its own: `VALUN_HOME`, with
-  `VALUN_SERVER=http://127.0.0.1:8080`), and give every join `--server http://127.0.0.1:8080`. valun 0.7.1's own
-  printed hints leave out `--server`: never run them as printed (`docs/LOCAL.md`, "Keep the public network out of
-  it").
+  `VALUN_SERVER=http://127.0.0.1:8080`), and give every join `--server http://127.0.0.1:8080`. On a profile that has
+  not joined, a join valun 0.7.2 prints without `--server` goes to the public testnet: run the join above instead
+  (`docs/LOCAL.md`, "Keep the public network out of it"). valun 0.7.2 sends tokens over plain http only to this
+  machine (`127.0.0.1`, `localhost`), and the server takes writes only for its own origin or a loopback name: an agent
+  in another container runs in the server's network namespace (`--network container:`), where `127.0.0.1` is the
+  server (`docs/LOCAL.md`, "Plain http, and another name").
 - **Build it** with, for each platform, the tracker's Linux binaries (`basis_server`, `valun_signer`) in
   `dist/local-bins/<arch>/` (`lib/pilot/pins.mjs` pins their sha256; the tracker fork's source and its build recipe
   aren't public yet, fix inbox #99) and the image's license files in `dist/local-licenses/<arch>/` (see
@@ -142,7 +145,7 @@ checklist an outsider runs against a release. The image carries both, and this f
   joins count in no join cap: make an invite inside the container
   (`docker exec CONTAINER node scripts/pilot-admin.mjs invite --uses 25 --code-only` prints only its code), then join
   each agent with it, in a client home of its own, only the code on stdin:
-  `uvx --from valun==0.7.1 valun --profile local join --invite-from-stdin --server http://127.0.0.1:8080 --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt" --approvals console`.
+  `uvx --from valun==0.7.2 valun --profile local join --invite-from-stdin --server http://127.0.0.1:8080 --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt" --approvals console`.
   An invited participant has the invited defaults, not a sandbox participant's (its owner names whose IOUs it
   accepts), and the sandbox tour is for sandbox participants (`docs/LOCAL.md`, "Many agents on one machine").
 - **Check a started container** with `scripts/local-acceptance.sh [URL]`: the released client joins, takes the tour, and

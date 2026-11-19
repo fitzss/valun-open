@@ -153,10 +153,10 @@ async function honor(w, g, callId, {B = w.B, bound = true} = {}) {
 }
 const rejects = (p, code) => assert.rejects(p, e => (e instanceof PilotError && e.code === code) || assert.fail(`expected ${code}, got ${e?.code}: ${e?.message}`));
 
-test('backed or refused: a creditor whose owner requires coverage refuses a newcomer\'s IOU, then takes it because a guarantee covers it (min_payer_coverage_pct counts the open cap)', async () => {
+test('backed or refused: a creditor whose owner requires coverage refuses a newcomer\'s note, then takes it because a guarantee covers it (min_payer_coverage_pct counts the open cap)', async () => {
   const w = await world(), {pilot, A, B, C} = w;
   await rejects(pilot.checkMandate(C, 'payee', A.id, 3), 'mandate_exceeded');
-  await assert.rejects(pilot.checkMandate(C, 'payee', A.id, 3), e => e.extra.rule === 'min_payer_coverage_pct' && /a guarantee of its debts to this agent counts too/.test(e.message));
+  await assert.rejects(pilot.checkMandate(C, 'payee', A.id, 3), e => e.extra.rule === 'min_payer_coverage_pct' && /a guarantee of what it owes this agent counts too/.test(e.message));
   const g = await offer(w, {cap: 5});
   assert.equal(g.state, 'offered');
   assert.deepEqual([g.your_role, g.cap, g.claimed, g.remaining_cap, g.issuer_owes_creditor, g.callable_now], ['backer', 5, 0, 5, 0, 0]);
@@ -195,7 +195,7 @@ test('repaid: nothing can be called, the creditor releases the guarantee, and th
   assert.match(ev.reads_as, /not that it repays/);
 });
 
-test('default: after due_at the creditor calls what is still owed (at most the cap), the backer honors it with its own bound note; the issuer\'s IOU stays, and what the creditor recovers later belongs to the backer', async () => {
+test('default: after due_at the creditor calls what is still owed (at most the cap), the backer honors it with its own bound note; the issuer\'s note stays, and what the creditor recovers later belongs to the backer', async () => {
   const w = await world(), {pilot, tracker, A, B, C, book, clock} = w;
   const g = await accept(w, await offer(w, {cap: 5, dueIn: HOUR}));
   await issue(w, A, C, 7);
@@ -213,7 +213,7 @@ test('default: after due_at the creditor calls what is still owed (at most the c
   const h = await honor(w, g, id);
   assert.deepEqual([h.calls[0].state, h.honored, h.calls[0].late], ['honored', 5, false]);
   const BC = tracker.edges.get(`${B.pubkey}>${C.pubkey}`);
-  assert.equal(BC.total, 5, 'bob\'s IOU to charlie: 5');
+  assert.equal(BC.total, 5, 'bob\'s note to charlie: 5');
   assert.equal(BC.timestamp % 1000, 997, 'a bound note');
   assert.equal(tracker.edges.get(`${A.pubkey}>${C.pubkey}`).total, 7, 'alice still owes charlie 7: Basis changes no note without its issuer');
   const k = edgeKey(B.pubkey, C.pubkey);
@@ -294,7 +294,7 @@ test('an offer above approve_above waits for the backer\'s owner (approval kind 
   await rejects(book.viewFor(C, g.guarantee_id), 'not_found');
   const box = pilot.inbox(B).awaiting_your_owner;
   assert.deepEqual(box.map(x => [x.kind, x.guarantee_id, x.deal_id, x.price.amount]), [['guarantee_offer', g.guarantee_id, null, 5]]);
-  assert.match(box[0].title, /guarantee of alice's debt to charlie/);
+  assert.match(box[0].title, /guarantee of what alice owes charlie/);
   const a = Object.values(pilot.s.approvals).find(x => x.guarantee_id === g.guarantee_id);
   const served = await pilot.servedApprovalView(a, B);
   assert.deepEqual([served.deal, served.guarantee.guarantee_id, served.subject.terms.cap.amount], [null, g.guarantee_id, 5]);
@@ -302,7 +302,7 @@ test('an offer above approve_above waits for the backer\'s owner (approval kind 
   // the owner's last say: a call is paid with the backer's own IOU, never held for its owner.
   assert.deepEqual(Object.keys(served.effect), ['held_now', 'if_approved', 'if_rejected', 'deadline', 'checks_on_approve']);
   assert.match(served.effect.held_now, /already counts against your agent's total-owed limit \(max_issue_outstanding\) while it waits/);
-  assert.match(served.effect.if_approved, /This is your last decision on it\. .* That IOU is never held for you: with console approvals your agent's client signs it without asking you, and the server records it at once\./);
+  assert.match(served.effect.if_approved, /This is your last decision on it\. .* That note is never held for you: with console approvals your agent's client signs it without asking you, and the server records it at once\./);
   assert.match(served.effect.if_rejected, /Valun keeps your agent's signed offer on record\./);
   assert.equal(served.decide_by, served.subject.terms.offer_expires_at);
   const r = await pilot.decideApproval(B, a.id, {decision: 'approve', note: 'fine'});
@@ -521,10 +521,10 @@ test('#19: coverage counts the backing of one debt only up to what backers could
 });
 
 // ---------- fix inbox #20: coverage counts only what a reserve or the owner's trust stands behind ----------
-test('#20: a wash trade with a fresh sybil gives a newcomer no coverage (the IOU it holds has nothing behind it)', async () => {
+test('#20: a wash trade with a fresh sybil gives a newcomer no coverage (the note it holds has nothing behind it)', async () => {
   const w = await world(), {pilot, A, C} = w, S = await w.person('s2a');
   await rejects(pilot.checkMandate(C, 'payee', A.id, 3), 'mandate_exceeded');
-  await issue(w, S, A, 30);                                     // the sybil "buys" from alice: alice holds 30 of its IOUs
+  await issue(w, S, A, 30);                                     // the sybil "buys" from alice: alice holds 30 of its notes
   await assert.rejects(pilot.checkMandate(C, 'payee', A.id, 3), e => e.code === 'mandate_exceeded' && e.extra.rule === 'min_payer_coverage_pct' && /of which 0 PC count/.test(e.message));
   // A chain of sybils is no better.
   const S2 = await w.person('s2b'), S3 = await w.person('s2c');
@@ -538,7 +538,7 @@ test('#20: a wash trade with a fresh sybil gives a newcomer no coverage (the IOU
 
 test('#20: a sybil backer is no backing: charlie refuses its guarantee, and a guarantee from it would count 0 anyway', async () => {
   const w = await world(), {pilot, A, C, book} = w, S2 = await w.person('s2b'), S3 = await w.person('s2c');
-  await issue(w, S3, S2, 30);                                   // s2b looks covered: it holds 30 of s2c's IOUs
+  await issue(w, S3, S2, 30);                                   // s2b looks covered: it holds 30 of s2c's notes
   const g = await offer(w, {cap: 5, backer: S2});
   await assert.rejects(accept(w, g), e => e.code === 'mandate_exceeded' && e.extra.rule === 'min_payer_coverage_pct');
   // Even accepted (an owner who does not require coverage of backers, then does of payers), it counts for nothing.

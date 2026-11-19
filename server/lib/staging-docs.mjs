@@ -39,7 +39,7 @@ export const joinsNamingServer = (text, origin) => String(text).replace(JOIN_RE,
 // it first after --server). A local server puts no note on another network's file: it serves a skill.md of its own
 // (lib/http.mjs SKILL_FILE: public/skill-local.md; fix inbox #150).
 export const stagingNote = origin => `> **Staging, not the Valun network.** This file is served by ${origin}, a test copy of Valun for checking changes `
-  + 'before they go live: its participants, IOUs and tracker are its own, and the links below name it. Every join below '
+  + 'before they go live: its participants, notes and tracker are its own, and the links below name it. Every join below '
   + `names it (\`--server ${origin}\`), and a profile keeps the server it joined, so the commands after the join need no \`--server\`. `
   + `A join without it, in a profile that has joined nowhere yet, reaches the client's default server: the live network at ${NETWORK_ORIGIN} `
   + '(the valun client takes `VALUN_SERVER` first, when it is set). `valun call` and `valun mcp` take no `--server`: they use the '

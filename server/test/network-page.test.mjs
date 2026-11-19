@@ -274,17 +274,17 @@ test('the page on the testnet\'s reads: who is here by who runs them, the totals
     assert.deepEqual(['n-all', 'n-operator', 'n-team', 'n-other'].map(id => $(id).textContent), ['4', '2', '1', '1'], order);
     // The whole network: amounts as people read them, in tERG (rounded totals), whichever read answered first.
     assert.deepEqual(['t-out', 't-out-sub', 't-clear', 't-clear-sub', 't-move', 't-move-sub', 't-check', 't-check-sub'].map(id => $(id).textContent),
-      ['0.147 tERG', '3 IOUs between 4 agents', '0.002 tERG', 'in 1 loop', '0.001 tERG', 'in 1 transfer', '3 of 3 match', 'pairs: the server\'s records agree with its tracker'], order);
+      ['0.147 tERG', '3 notes between 4 agents', '0.002 tERG', 'in 1 loop', '0.001 tERG', 'in 1 transfer', '3 of 3 match', 'pairs: the server\'s records agree with its tracker'], order);
     // On Ergo testnet: anchored, today's boxes, what the reserves hold and back (its issuer owes 0.145; it holds 0.136).
     assert.equal($('chain').hidden, false, order);
     assert.deepEqual($('chain-list').children.map(li => li.textContent), ['Anchored: the tracker box on chain commits the ledger as of block 645,189.',
       'Today: 4 of 50 tracker boxes. The cap resets at 00:00 UTC.',
-      '1 reserve holds 0.136 tERG. One backs IOUs owed now: 0.136 tERG of the 0.147 tERG owed. An IOU can be redeemed only against its own issuer\'s reserve.'], order);
+      '1 reserve holds 0.136 tERG. One backs notes owed now: 0.136 tERG of the 0.147 tERG owed. A note can be redeemed only against a reserve locked under the key that signed it.'], order);
     // The latest changes, newest first: who owes whom, what changed (by the timestamp's code), what is owed now.
     const rows = $('changes-body').children.map(tr => [...tr.querySelectorAll('.h').map(h => h.textContent), tr.querySelector('.arr').textContent.trim(),
       tr.querySelector('td.what').textContent, tr.querySelector('td.num').textContent]);
-    assert.deepEqual(rows, [['bob', 'house-scribe', 'owes', 'new IOU for a job', '0.002 tERG'], ['ann', 'bob', 'owes', 'cut by a loop', '0.000493 tERG'],
-      ['sandbox-exact', 'ann', 'owes', 'new IOU for a job', '0.145 tERG']], order);
+    assert.deepEqual(rows, [['bob', 'house-scribe', 'owes', 'new note for a job', '0.002 tERG'], ['ann', 'bob', 'owes', 'cut by a loop', '0.000493 tERG'],
+      ['sandbox-exact', 'ann', 'owes', 'new note for a job', '0.145 tERG']], order);
     // The loops cleared: the route with who runs each member, what each debt fell by, committed, the card.
     const loop = $('loops').children[0];
     assert.equal(loop.querySelector('.loop-route').textContent, 'ann → bob → ann', order);
@@ -423,8 +423,8 @@ test('the picture on the page: links to each agent\'s page with who runs it and 
   const label = h => nodes.find(n => n.getAttribute('href') === `/agent/${h}`).getAttribute('aria-label');
   assert.equal(label('house-scribe'), 'house-scribe, operator-run house agent: owes nothing; is owed 0.002 tERG by 1 agent');
   assert.equal(label('ann'), 'ann, team test agent, by its operator field: owes 0.000493 tERG to 1 agent; is owed 0.145 tERG by 1 agent');
-  assert.equal(svg.querySelectorAll('path.edge').length, 3, 'every IOU between the agents drawn');
-  assert.equal(svg.querySelectorAll('g.loop.newest path.loop-arc').length, 2, 'the newest loop (ann and bob): an arc for each of its two IOUs');
+  assert.equal(svg.querySelectorAll('path.edge').length, 3, 'every note between the agents drawn');
+  assert.equal(svg.querySelectorAll('g.loop.newest path.loop-arc').length, 2, 'the newest loop (ann and bob): an arc for each of its two notes');
   assert.equal(svg.querySelectorAll('g.loop').length, 1, 'only the newest loop is drawn: the others are in "Loops cleared"');
   // The picture is one tab stop through its first agent, never the <svg> itself (Chrome gave it a stop of its own).
   assert.equal(svg.getAttribute('tabindex'), '-1');
@@ -488,7 +488,7 @@ test('the status line is not a live region; only a new loop is announced, at mos
   routes['/pilot/v1/clearing'].totals.setoffs_applied = 2;
   timers.filter(t => t.ms === POLL_MS).at(-1).fn();
   await settle();
-  assert.equal($('announce').textContent, 'A loop cleared: sandbox-exact to ann to sandbox-exact, 0.002 tERG off each debt.');
+  assert.equal($('announce').textContent, 'A loop cleared: sandbox-exact to ann to sandbox-exact, 0.002 tERG off each note.');
   routes['/pilot/v1/loops'].loops.unshift(loop('vs_00000000000000cc', ['bob', 'ann']));
   routes['/pilot/v1/clearing'].totals.setoffs_applied = 3;
   timers.filter(t => t.ms === POLL_MS).at(-1).fn();
@@ -556,13 +556,13 @@ test('the page: the shared navigation (Network current), one h1, a heading for e
   // Both tables have a name; the picture's caption and hint say what is drawn and what a tap does.
   const html = pub('network.html');
   assert.match(html, /<table class="plain" id="changes" aria-labelledby="changes-h">/);
-  assert.match(html, /<table class="plain" aria-label="Every open IOU">/);
+  assert.match(html, /<table class="plain" aria-label="Every open note">/);
   assert.ok(body.querySelector('#graph-cap').textContent.includes('The newest loop that cleared is drawn as a rainbow arc.'));
   const hint = 'Hover over an agent, or tab to the picture and use the arrow keys, to see what it owes and is owed; tap one to open its page.';
   assert.equal(body.querySelector('#detail').textContent, hint);
   assert.ok(pub('network.js').includes(`const HINT = '${hint}'`), 'the script says the same');
   // An IOU is a debt: a new one means the buyer now owes the seller, not that the job is paid.
-  assert.ok(body.querySelector('.changes .small').textContent.includes('A new IOU: the buyer now owes the seller for a job;'));
+  assert.ok(body.querySelector('.changes .small').textContent.includes('A new note: the buyer now owes the seller for a job;'));
   assert.doesNotMatch(html, /pays for a job/);
 });
 
@@ -629,7 +629,7 @@ test('the join line is the whole command, pinned and runnable as it is; the page
   await settle();
   assert.equal(copied, JOIN);
   assert.equal(body.all('*').find(e => e.id === 'announce').textContent, 'Copied.');
-  assert.ok(body.querySelector('.join .small').textContent.includes('tERG are test coins on Ergo testnet with no monetary value. An IOU can be redeemed for tERG only against its issuer\'s reserve, if the issuer posted one.'));
+  assert.ok(body.querySelector('.join .small').textContent.includes('tERG are test coins on Ergo testnet with no monetary value. A note can be redeemed for tERG only against a reserve locked under the key that signed it, if one was posted.'));
   const css = cssRules(pub('network.css'));
   assert.equal(css.find(r => r.selector === '#join-cmd span').decls['white-space'], 'nowrap');
   assert.equal(css.find(r => r.selector === '#join-cmd').decls['white-space'], 'normal');

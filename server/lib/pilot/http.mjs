@@ -25,15 +25,16 @@ const sources = o => Object.fromEntries(Object.entries(o).map(([k, f]) => [k, f.
 // the wording of the deal's settlement label with circulating credit on (core.mjs CIRCULATION_SETTLEMENT, spec 16.1),
 // and in mode sandbox it also says whom circulating credit is on for. The testnet's says who the agents are so far (the
 // redesign's live check, 2026-11-17: it called them "independently controlled", which /start lists as a known issue of
-// valun 0.7.1's MCP server), and calls a credit note an IOU, as the site does; the retired pilot's stays v15's.
+// valun 0.7.1's MCP server), and calls a credit note a note, as the site does (fix inbox #173); the retired pilot's stays
+// v15's.
 const INFO_PREFIX = ON_TESTNET
-  ? 'Valun testnet network: agents, each holding its own key, propose, negotiate and accept deals paid with IOUs (credit notes). So far almost every agent is the team\'s or the operator\'s. Amounts are nanoERG on Ergo TESTNET: test coins with no monetary value. When a payer accepts a delivery it issues an IOU: a payer-signed Basis note recorded by a Basis tracker that anchors its state on Ergo testnet.'
+  ? 'Valun testnet network: agents, each holding its own key, propose, negotiate and accept deals paid with notes: signed promises to pay that the testnet tracker records. So far almost every agent is the team\'s or the operator\'s. Amounts are nanoERG on Ergo TESTNET: test coins with no monetary value. When a payer accepts a delivery it issues a note: a payer-signed promise to pay, recorded by a Basis tracker whose tracker boxes commit its state on Ergo testnet.'
   : 'Valun pilot network: independently controlled agents propose, negotiate and accept service-for-credit deals. PC (pilot credits) are simulated units with no monetary value. When a payer accepts a delivery it issues a credit note: a payer-signed Basis note recorded by a real Basis tracker that has no blockchain connection.';
 const INFO_SETTLEMENT = ON_TESTNET
-  ? 'an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes), also on an edge whose total the tracker box on Ergo testnet commits: never below a total the tracker signed for a redemption, and only while that tracker box is fresh. A change is committed once the next tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. A creditor can redeem a note on Ergo testnet against its issuer\'s tERG reserve, if the issuer posted one; tERG have no monetary value.'
+  ? 'a promise to pay that stays outstanding. With circulating credit it can move to a new holder (a transfer, signed by its issuer and both holders) or be cleared in a loop of notes (set-off, signed by every party; no net position changes), also on an edge whose total the tracker box on Ergo testnet commits: never below a total the tracker signed for a redemption, and only while that tracker box is fresh. A change is committed once the next tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. A holder can redeem a note on Ergo testnet against a tERG reserve locked under the key that signed it, if one was posted; tERG have no monetary value.'
   : 'not settled: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes). Nothing is redeemed, there is no reserve, and PC have no value.';
 export const INFO_DESCRIPTIONS = Object.freeze({
-  off: ON_TESTNET ? `${INFO_PREFIX} An issued note is an outstanding obligation. A creditor can redeem it on Ergo testnet against its issuer's tERG reserve, if the issuer posted one; tERG have no monetary value. Debt transfers and set-offs (netting) are not on for this network yet: they come once netting is anchored on chain.` : `${INFO_PREFIX} An issued note is an outstanding obligation; nothing in the pilot is settled (no redemption, reserve or clearing).`,
+  off: ON_TESTNET ? `${INFO_PREFIX} An issued note is a promise to pay that stays outstanding. A holder can redeem it on Ergo testnet against a tERG reserve locked under the key that signed it, if one was posted; tERG have no monetary value. Transfers and set-offs (netting) are not on for this network yet: they come once netting is anchored on chain.` : `${INFO_PREFIX} An issued note is an outstanding obligation; nothing in the pilot is settled (no redemption, reserve or clearing).`,
   on: `${INFO_PREFIX} An issued note is ${INFO_SETTLEMENT}`,
   sandbox: `${INFO_PREFIX} An issued note is ${INFO_SETTLEMENT} On this server circulating credit is on for sandbox participants only: the sandbox agents and those who joined with join-sandbox.`,
 });
@@ -96,13 +97,17 @@ const writesRefused = pilot => {
   return r ? {writes_refused: {code: r.code, since: r.since, reason: r.reason, fix: WRITES_REFUSED_FIX}} : {};
 };
 
-// The directory's order (GET /participants, with ?all=1 too): first the agents the server runs (the sandbox agents,
-// operator_run), then the house agents (house_agent), then everyone else, each group in the order the participants
-// joined. The always-on agents a newcomer can hire first came first only by insertion order (the newcomer run of
-// Nov 18, finding 6), and on ?all=1 five unlisted test agents sat ahead of the house agents. A stable sort, so the
-// rest stay in join order as before.
+// The directory's order (GET /participants, with ?all=1 too): first sandbox-exact, the first job to try (no AI, so no
+// budget to run out: fix inbox #173), then the other agents the server runs (the sandbox agents, operator_run), then the
+// house agents (house_agent), then everyone else, each group in the order the participants joined. The always-on agents
+// a newcomer can hire first came first only by insertion order (the newcomer run of Nov 18, finding 6), and on ?all=1
+// five unlisted test agents sat ahead of the house agents. A stable sort, so the rest stay in join order as before.
+// valun 0.7.2's valun_directory sorts again (operator_run, house_agent, then the newest agent_last_seen, then the
+// handle): the listing gives every agent the server runs one agent_last_seen (directoryRecord's `now`), so there too
+// sandbox-exact comes before sandbox-mallory.
 export function directoryOrder(pilot, list) {
-  const rank = x => (pilot.serverRun?.(x) || pilot.sandboxIds?.has(x.id) ? 0 : pilot.houseIds?.has(x.id) ? 1 : 2);
+  const run = x => pilot.serverRun?.(x) || pilot.sandboxIds?.has(x.id);
+  const rank = x => (run(x) ? (x.handle === 'sandbox-exact' ? 0 : 1) : pilot.houseIds?.has(x.id) ? 2 : 3);
   return list.map((x, i) => [rank(x), i, x]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(e => e[2]);
 }
 
@@ -118,7 +123,7 @@ export function directoryOrder(pilot, list) {
 // token reserve (reserve_token_id) holds its collateral in that token's units and backs notes in that token, which this
 // network's notes are not: no figure in nanoERG. `ledger` is null when the tracker's notes could not be read;
 // participantOf(pubkey) is the participant holding a key (Pilot.byPubkey).
-export const RESERVES_MEANING = 'total_debt_nanoerg is what this reserve backs: the outstanding amount of the notes signed with its own key (total minus redeemed, at least 0 a note; the tracker\'s own counters as GET /ledger shows them, notes not yet anchored on chain included), the only notes its contract pays. collateralization_ratio is collateral_nanoerg / total_debt_nanoerg, rounded down to 4 decimals: the reserve box\'s value over that debt, not what creditors could take (the tracker leaves 1000000 nanoERG in a reserve; a pending refund lets the owner take it all). debt_under_other_keys_nanoerg, when present, is what the owner owes under its other keys, which this reserve cannot pay: it is not counted in the ratio. The owner\'s public_position.owes counts every key it has had, so it is total_debt_nanoerg plus debt_under_other_keys_nanoerg (the same as total_debt_nanoerg for an owner with one key). A figure that cannot be computed, and the ratio when nothing is owed, is null, never 0: why_null says why. No amount redeemed from the reserve is given: its box holds only the digest of its redemption tree; what was redeemed shows as the value its box lost along the lineage of its NFT on chain, and per note as redeemed on GET /ledger.';
+export const RESERVES_MEANING = 'total_debt_nanoerg is what this reserve backs: the outstanding amount of the notes signed with its own key (total minus redeemed, at least 0 a note; the tracker\'s own counters as GET /ledger shows them, notes not yet anchored on chain included), the only notes its contract pays. collateralization_ratio is collateral_nanoerg / total_debt_nanoerg, rounded down to 4 decimals: the reserve box\'s value over that amount, not what holders could take (the tracker leaves 1000000 nanoERG in a reserve; a pending refund lets the owner take it all). debt_under_other_keys_nanoerg, when present, is what the owner owes under its other keys, which this reserve cannot pay: it is not counted in the ratio. The owner\'s public_position.owes counts every key it has had, so it is total_debt_nanoerg plus debt_under_other_keys_nanoerg (the same as total_debt_nanoerg for an owner with one key). A figure that cannot be computed, and the ratio when nothing is owed, is null, never 0: why_null says why. No amount redeemed from the reserve is given: its box holds only the digest of its redemption tree; what was redeemed shows as the value its box lost along the lineage of its NFT on chain, and per note as redeemed on GET /ledger.';
 const wholeOf = v => ((typeof v === 'number' || (typeof v === 'string' && /^\d+$/.test(v))) && Number.isSafeInteger(Number(v)) && Number(v) >= 0 ? Number(v) : null);
 // The outstanding amount of ledger rows, at least 0 a note; null when a row has no whole total or redeemed amount, or the
 // sum is above what a JavaScript number counts exactly.
@@ -536,7 +541,10 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     }
     if (R && p === '/participants') {
       const all = url.searchParams.get('all') === '1';
-      return sendCached(res, send, all ? 'participants:all' : 'participants', () => directoryOrder(pilot, Object.values(pilot.s.participants).filter(x => all || !x.unlisted)).map(x => pilot.directoryRecord(x)));
+      return sendCached(res, send, all ? 'participants:all' : 'participants', () => {
+        const now = typeof pilot.now === 'function' ? pilot.now() : undefined;
+        return directoryOrder(pilot, Object.values(pilot.s.participants).filter(x => all || !x.unlisted)).map(x => pilot.directoryRecord(x, now));
+      });
     }
     if (R && (m = /^\/participants\/(vp_[0-9a-f]{12})$/.exec(p))) {
       const x = pilot.participant(m[1]);
@@ -701,7 +709,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
           // Less what backers paid you for X's debt (fix inbox #107): that much is held for them, not yours to redeem.
           const held = typeof pilot.heldForBackers === 'function' ? pilot.heldForBackers(X.id, me.id) : 0;
           const outstanding = Math.max(0, Number(note.amount_collected) - Number(note.amount_redeemed || 0) - held);
-          if (amount > outstanding) throw new PilotError('insufficient_claim', `you can redeem at most ${outstanding} nanoERG of ${X.handle}'s note${held ? `: ${held} nanoERG of it is held: backers already paid you that much for ${X.handle}'s debt (guarantee calls they honored), so you are not paid twice` : ''}`, 409);
+          if (amount > outstanding) throw new PilotError('insufficient_claim', `you can redeem at most ${outstanding} nanoERG of ${X.handle}'s note${held ? `: ${held} nanoERG of it is held: backers already paid you that much for what ${X.handle} owes you (guarantee calls they honored), so you are not paid twice` : ''}`, 409);
           built = await relay(() => pilot.basis.redemptionBuild({issuer_pubkey: X.pubkey, recipient_pubkey: me.pubkey, amount,
             timestamp: Number(note.timestamp), issuer_signature: note.signature, denomination: 'erg'})).catch(e => {
             // A note recorded after the tracker's last box (fix inbox #14): say how long that normally lasts and where to look.
@@ -748,7 +756,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
           const room = Math.max(0, Number(n?.amount_collected ?? 0) - Number(n?.amount_redeemed ?? 0) - held);
           if (rec.redeemed_amount > room) {
             builtRedemptions.delete(body.signed_tx.id);
-            throw new PilotError('insufficient_claim', `this redemption takes ${rec.redeemed_amount} nanoERG of ${X.handle}'s note, but you can redeem at most ${room} now: ${held} nanoERG of it is held: backers already paid you that much for ${X.handle}'s debt since it was built (guarantee calls they honored). Nothing was submitted.`, 409);
+            throw new PilotError('insufficient_claim', `this redemption takes ${rec.redeemed_amount} nanoERG of ${X.handle}'s note, but you can redeem at most ${room} now: ${held} nanoERG of it is held: backers already paid you that much for what ${X.handle} owes you since it was built (guarantee calls they honored). Nothing was submitted.`, 409);
           }
         }
       }
@@ -801,7 +809,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
     if (G && p === '/deals') return send(res, 200, (await Promise.all(pilot.dealsFor(me).map(d => pilot.dealView(d, me)))).reverse());
     if (G && (m = /^\/deals\/(vd_[0-9a-f]{16})$/.exec(p))) return send(res, 200, await pilot.dealView(pilot.partyDeal(m[1], me), me));
     if (G && (m = /^\/deals\/(vd_[0-9a-f]{16})\/credit-note-template$/.exec(p))) {
-      if (who.role !== 'agent') throw new PilotError('agent_only', 'credit notes are signed by the agent\'s key', 403);
+      if (who.role !== 'agent') throw new PilotError('agent_only', 'notes are signed by the agent\'s key', 403);
       // Opt-in: ?prior=1 adds the pair's tracker note (any mode); ?bound=1 asks for a bound note (mode bound and above).
       const q = url.searchParams;
       return send(res, 200, await pilot.noteTemplate(me, m[1], {prior: q.get('prior') === '1', bound: q.get('bound') === '1'}));
@@ -840,7 +848,7 @@ export function createPilotRoutes({pilot, cfg, adminTokenHash = null}) {
       if (G && p === '/guarantees') return send(res, 200, await pilot.guarantees.viewsFor(me));
       if (G && (m = /^\/guarantees\/(vg_[0-9a-f]{16})$/.exec(p))) return send(res, 200, await pilot.guarantees.viewFor(me, m[1]));
       if (G && (m = /^\/guarantees\/(vg_[0-9a-f]{16})\/calls\/(vgc_[0-9a-f]{16})\/note-template$/.exec(p))) {
-        if (who.role !== 'agent') throw new PilotError('agent_only', 'credit notes are signed by the agent\'s key', 403);
+        if (who.role !== 'agent') throw new PilotError('agent_only', 'notes are signed by the agent\'s key', 403);
         const q = url.searchParams;
         return send(res, 200, await pilot.guarantees.noteTemplate(me, m[1], m[2], {prior: q.get('prior') === '1', bound: q.get('bound') === '1'}));
       }

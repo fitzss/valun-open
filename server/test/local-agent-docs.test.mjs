@@ -59,8 +59,8 @@ test('the shared blocks come from skill-testnet.md: a change there changes the l
   const testnet = read(B.TESTNET_SKILL), source = read('scripts/local-docs/skill.md');
   const shared = [...source.matchAll(/^<!-- shared: (.+?) \| (.+?) -->$/gm)];
   assert.ok(shared.length >= 5, 'the directory, deal and rules blocks are shared');
-  // The install and Windows blocks are the source's own: the testnet's name its own client release (valun 0.7.2's
-  // --json-file), which a local server's docs do not pin (LOCAL_CLIENT).
+  // The install and Windows blocks are the source's own: the testnet's name its own client release (lib/a2a.mjs
+  // CLIENT), which moves apart from a local server's (LOCAL_CLIENT), and the testnet's token file and commands.
   for (const start of ['**Installing:**', '**On Windows:**']) {
     assert.ok(!shared.some(m => m[2] === start), `${start}: written in the source, not shared`);
     assert.ok(source.split('\n').some(l => l.startsWith(start)), `${start}: in the source`);
@@ -88,7 +88,8 @@ test('the source names the client release it was written for: another pin stops 
   if (!needs(t, ...BUILD_FILES)) return;
   const source = read('scripts/local-docs/skill.md');
   assert.match(source, new RegExp(`^<!-- client: ${LOCAL_CLIENT.replaceAll('.', '\\.')} -->$`, 'm'));
-  assert.throws(() => B.render(source, read(B.TESTNET_SKILL), {...B.facts(), client: 'valun==9.9.9'}), /written for valun==0\.7\.1, and a local server pins valun==9\.9\.9/);
+  assert.throws(() => B.render(source, read(B.TESTNET_SKILL), {...B.facts(), client: 'valun==9.9.9'}),
+    new RegExp(`written for ${LOCAL_CLIENT.replaceAll('.', '\\.')}, and a local server pins valun==9\\.9\\.9`));
   assert.throws(() => B.render(source.replace(/^<!-- client: .* -->\n/m, '')), /the client release it was written for/);
 });
 
@@ -123,7 +124,8 @@ test('a local server\'s docs name the pinned client, only its own origin, and no
   // agent pages and loop cards); the chain reads only as what answers 404 no_chain.
   const paths = new Set([...`${skill}\n${llms}`.matchAll(/\{origin\}(\/[^\s)`"'\]]*)?/g)].map(m => (m[1] ?? '/').replace(/[.,;:!?]+$/, '')));
   const SERVED = ['/', '/skill.md', '/agents.md', '/network', '/start', '/trust', '/pilot#owner', '/pilot/v1/info',
-    '/pilot/v1/participants', '/pilot/v1/loops', '/agent/HANDLE', '/agent/<handle>', '/loop/<id>', '/pilot/v1/chain', '/pilot/v1/reserves'];
+    '/pilot/v1/participants', '/pilot/v1/loops', '/agent/HANDLE', '/agent/<handle>', '/loop/<id>', '/pilot/v1/chain', '/pilot/v1/reserves',
+    '/start#approve'];
   for (const p of paths) assert.ok(SERVED.includes(p), `a link to ${p}`);
   assert.match(skill, /answers `GET \{origin\}\/pilot\/v1\/chain` and `GET \{origin\}\/pilot\/v1\/reserves` with\n {2}`404 no_chain`/);
 });
@@ -148,9 +150,12 @@ test('every command runs the pinned client in a local profile, with --server whe
   }
   assert.ok(skill.includes(`"args": ["--from", "${LOCAL_CLIENT}", "valun", "--profile", "local", "mcp"]`), 'the MCP config');
   // The parser: a bare `uvx --from X valun` (an install note) is no command; one outside the profile is a problem.
-  assert.deepEqual(B.commands('type `valun` where this file says `uvx --from valun==0.7.1 valun`.').map(c => c.sub), [null]);
-  assert.deepEqual(B.localDocProblems('`uvx --from valun==0.7.1 valun call valun_status` at {origin}'), ['runs outside a local profile: uvx --from valun==0.7.1 valun call valun_status']);
-  assert.deepEqual(B.localDocProblems('`uvx --from valun==0.7.1 valun --profile local doctor` at {origin}'), ['has no --server {origin}: uvx --from valun==0.7.1 valun --profile local doctor']);
+  assert.deepEqual(B.commands(`type \`valun\` where this file says \`uvx --from ${LOCAL_CLIENT} valun\`.`).map(c => c.sub), [null]);
+  assert.deepEqual(B.localDocProblems(`\`uvx --from ${LOCAL_CLIENT} valun call valun_status\` at {origin}`), [`runs outside a local profile: uvx --from ${LOCAL_CLIENT} valun call valun_status`]);
+  assert.deepEqual(B.localDocProblems(`\`uvx --from ${LOCAL_CLIENT} valun --profile local doctor\` at {origin}`), [`has no --server {origin}: uvx --from ${LOCAL_CLIENT} valun --profile local doctor`]);
+  // valun 0.7.2's console takes --server too (its cli.py), so a local doc names this server there.
+  assert.deepEqual(B.localDocProblems(`\`uvx --from ${LOCAL_CLIENT} valun --profile local console\` at {origin}`), [`has no --server {origin}: uvx --from ${LOCAL_CLIENT} valun --profile local console`]);
+  assert.ok(skill.includes(`\`${run} console --server {origin}\``), 'the owner console command');
 });
 
 test('console is the first tester\'s approval mode, with the local owner console, the token rules and the hour an IOU waits', () => {
@@ -161,19 +166,40 @@ test('console is the first tester\'s approval mode, with the local owner console
   }
   assert.match(skill, /Never read that file or use the\ntoken yourself, not even to approve your own commitments\./);
   assert.match(skill, /approve an IOU within about one hour of when you accepted the delivery/);
-  assert.match(skill, /the tour\nalso waits for your human about 8 times/);
+  // valun 0.7.2's tour with console approvals asks nothing at the terminal and waits in the owner console (cli.py
+  // cmd_sandbox: console_holds_all), a payment by transfer 20 minutes; a --sandbox join without --approvals uses console
+  // (cli.py default_approvals).
+  const flat = skill.replace(/\s+/g, ' ');
+  assert.ok(flat.includes('With `console`, the tour asks nothing at the terminal: what it signs waits for your human about 8 times in the owner console'));
+  assert.ok(flat.includes('a payment by transfer (steps 2 and 5) within 20 minutes, after which the tour signs it again'));
+  assert.ok(flat.includes('It is also what a `--sandbox` join of valun 0.7.2 uses when `--approvals` is not given'));
+  // The owner token: refused before anything is sent when its file exists (cli.py _token_file_refusal), never on stdout.
+  assert.ok(flat.includes('if it exists already, or its folder can\'t take a new file, join says "Nothing was sent" and exits 2'));
+  assert.ok(flat.includes('valun never prints the token on stdout'));
 });
 
-test('read before retry, and recovery advice that matches the server and valun 0.7.1', () => {
+test('read before retry, and recovery advice that matches the server and valun 0.7.2', () => {
+  const flat = skill.replace(/\s+/g, ' ');
   assert.match(skill, /\*\*Read before you retry\.\*\*/);
   assert.match(skill, /Before you send it again, read what the server holds now:\n`valun_inbox`, or `valun_deal` for its deal\./);
   assert.match(skill, /withdraw the extra one\n\(`valun_respond`, action `withdraw`\)/);
-  // A lost join: no enroll (0.7.1's skips the sandbox settings join --sandbox writes), another handle.
-  assert.match(skill, /don't run the `enroll` it suggests\. With valun 0\.7\.1, an enroll skips the\n {2}settings `join --sandbox` writes/);
-  assert.match(skill, /Join again with another handle instead/);
+  // A write whose answer was lost: valun 0.7.2's unreachable with outcome unknown (client.py, agent.py TRANSPORT_WORDS).
+  assert.ok(flat.includes('valun 0.7.2 then answers `unreachable` with `"outcome": "unknown"`'));
+  // A lost join: valun 0.7.2 keeps the key and prints the command that finishes it, in this profile with this server
+  // (cli.py _join_unanswered, _join_command, _enroll_refusal); the Hermes plugin 0.7.2's own join keeps no key, and says
+  // Joining failed (unreachable) for a cut (hermes-plugin-valun __init__.py _join, its core valun 0.7.2's client.py): no
+  // enroll, another handle.
+  assert.ok(flat.includes('valun 0.7.2 keeps your key in your profile, says what this server may hold now, and prints the next command in the profile `local` with `--server {origin}`'));
+  assert.ok(flat.includes('In Hermes, the plugin\'s own join keeps no key when it stops: it says `Joining failed (unreachable): ...` after a cut connection or a timeout'));
+  assert.doesNotMatch(skill, /Python traceback|RemoteDisconnected|as valun 0\.7\.1's (was|did)/, 'the Hermes plugin is 0.7.2');
+  // A console join links to the public network's page about approvals (valun 0.7.2 cli.py CONSOLE_DOC): the skill names
+  // this server's own, and never the public host.
+  assert.ok(flat.includes('A console join\'s last lines link to the public network\'s page about approvals: it is a page to read, not a place to approve; this server\'s own is {origin}/start#approve.'));
+  assert.ok(flat.includes('don\'t run the `enroll` it suggests: join again with another handle'));
   assert.doesNotMatch(skill, /agent\/YOUR-HANDLE:/, 'no check of an agent page, which a participant without a key does not have');
-  assert.match(skill, /valun 0\.7\.1 words a cut connection as a refusal/);
+  assert.ok(flat.includes('says "refused" only when this server refused your agent (401 or 403)'));
   assert.match(skill, /After your human reset this server, the local profile no longer works/);
+  assert.doesNotMatch(skill, /valun 0\.7\.1 (words|never|prints|sends)|valun 0\.7\.1's (own hints|messages|call)/, 'no 0.7.1 known issue left but the Hermes plugin\'s');
 });
 
 // Several agents on one machine, an invite, a machine with no network after setup or behind a proxy (fix inbox #155: the
@@ -213,17 +239,31 @@ test('the skill: a client home and this server for each agent, the invited join 
   // the tour and the agent page this file names (the local image's CI checks (private)).
   const at = skill.indexOf(invited);
   for (const later of [' sandbox tour --', '{origin}/agent/']) assert.ok(skill.indexOf(later) < at && skill.indexOf(later, at) < 0, `${later.trim()} only before the invited join`);
-  // valun 0.7.1 prints join hints with no --server (doctor's FIX line, the not-connected answers, the tour), and the MCP
-  // server's approval_unavailable answer gives config approvals with no --profile: never run as printed.
-  assert.ok(s.includes('valun 0.7.1\'s own hints leave out `--server`'));
-  assert.ok(s.includes('Never run them: run the join above again (it names this server)'));
+  // valun 0.7.2's hints name the profile, and --server where the command knows this server (cli.py _join_command,
+  // _sandbox_join, _server_flag), but on a profile that has not joined, call's and mcp's name none without VALUN_SERVER
+  // (cli.py _server), and the tour's "not joined yet" line never does (cmd_sandbox): never run such a join.
+  assert.ok(s.includes('valun 0.7.2\'s hints name the profile `local`, and `--server {origin}` wherever the command that prints them knows this server'));
+  assert.ok(s.includes('Never run it: run the join above again (it names this server)'));
+  // ... and every other "not joined yet" line names a bare join (cli.py _connected for clearing and attempts; profile,
+  // card, verify-check, audit --mine, ergo, sell): the 0.7.2 source's list.
+  assert.ok(s.includes('the "not joined yet" line of the tour, `clearing`, `attempts`, `profile`, `card`, `verify-check`, `audit --mine`, `ergo` and `sell` names a bare join (no `--server`, and but for `sell` no `--sandbox`) in any case, even when the command itself was given `--server`'));
   assert.match(skill, /a join without `--server` joins the public network/, 'the warning the image\'s check reads (the local image\'s CI checks, private)');
-  // After a reset: the profile's file and the token file (0.7.1 never replaces a file), then the join with --server.
-  assert.ok(s.includes('and the owner token file your join wrote (`$HOME/valun-local-owner-token-YOUR-HANDLE.txt`: valun 0.7.1 never replaces a file), then join again with the command above, `--server` included'));
-  // No network after setup (uvx revalidates a stale cache with PyPI), and a proxy (0.7.1 sends http://127.0.0.1 through it).
-  assert.ok(s.includes('install the client while you still have network (`uv tool install valun==0.7.1`'));
+  // After a reset: the profile's file and the token file (valun never replaces a file, and 0.7.2's join refuses one that
+  // exists), then the join with --server.
+  assert.ok(s.includes('and the owner token file your join wrote (`$HOME/valun-local-owner-token-YOUR-HANDLE.txt`: valun never replaces a file, and its join refuses one that exists), then join again with the command above, `--server` included'));
+  // No network after setup (uvx revalidates a stale cache with PyPI), and a proxy: valun 0.7.2 reaches a server on this
+  // machine directly, never through a proxy (client.py _ServerProxyHandler, loopback_host).
+  assert.ok(s.includes(`install the client while you still have network (\`uv tool install ${LOCAL_CLIENT}\``));
   assert.ok(s.includes('or run uvx once and then set `UV_OFFLINE=1`'));
-  assert.ok(s.includes('set `NO_PROXY=127.0.0.1,localhost` and `no_proxy=127.0.0.1,localhost` as well'));
+  assert.ok(s.includes('valun 0.7.2 reaches `127.0.0.1`, `localhost` and `::1` directly, never through a proxy'));
+  assert.doesNotMatch(skill, /NO_PROXY/, 'no proxy setting a 0.7.2 client needs for this machine');
+  // Plain http only to this machine, unless the human opts in (client.py PLAIN_HTTP_ENV, plain_http_refusal).
+  assert.ok(s.includes('valun 0.7.2 sends your tokens over plain http only to a server on this machine (`127.0.0.1`, `localhost` or `::1`)'));
+  assert.ok(s.includes('setting `VALUN_ALLOW_PLAIN_HTTP=1` in the shell that runs valun sends tokens over plain http anyway, which is for them to decide'));
+  // A tool's JSON on Windows: --json-file (valun 0.7.2 cli.py call), with the PowerShell and cmd lines that write it.
+  assert.ok(skill.includes(`'@ | Set-Content -Encoding utf8 args.json\n${run} call valun_deal --json-file args.json\n\`\`\``));
+  assert.ok(skill.includes(`> args.json echo {"deal_id": "DEAL-ID"}\n${run} call valun_deal --json-file args.json\n\`\`\``));
+  assert.doesNotMatch(skill, /--%/, 'no --% form: it breaks under a launcher');
   // MCP: the plugin's server runs the default profile and its tools have the same names; the schedule names this server's.
   // The plugin off, never VALUN_PROFILE=local instead: that moves its MCP server to the profile, and its skill's join and
   // doctor, which name no server, then go to the public network from a profile with no server yet (FH-1 of the review).

@@ -14,36 +14,47 @@ This page is for whoever runs the server. An agent you connect reads the server'
 profile of its own and names this server, because the client's default server is the public testnet ("Keep the public
 network out of it", below).
 
-> **Status:** the package `ghcr.io/fitzss/valun-local` is private while its first public version is prepared (fix
-> inbox #143). Until it is public, `docker pull` and the `docker run` below fail: the registry asks for
-> authentication (`unauthorized`).
+The image is optional: an agent joins the public testnet with the client alone (valun 0.7.2, with uvx, or pipx: pip
+in a virtual environment). The package `ghcr.io/fitzss/valun-local` is public, so `docker pull` and the `docker run`
+below need no login.
 
 ## Install
 
-You need Docker, and the Valun client, valun 0.7.1, which comes from PyPI. Install the client now, while you have
-network, with [uv](https://docs.astral.sh/uv/) (or `pipx install valun==0.7.1`):
+You need Docker, and the Valun client, valun 0.7.2, which comes from PyPI. Install the client now, while you have
+network, with [uv](https://docs.astral.sh/uv/) (or `pipx install valun==0.7.2`):
 
 ```
-uv tool install valun==0.7.1
+uv tool install valun==0.7.2
 valun --version
 ```
 
-This page writes the client as `uvx --from valun==0.7.1 valun`, which runs the pinned release without installing it;
+This page writes the client as `uvx --from valun==0.7.2 valun`, which runs the pinned release without installing it;
 once it is installed, you can type `valun` instead. uvx reaches PyPI on its first run, and again whenever its cached
 index entry is stale, even with a warm cache. So for a run with no network after setup (an isolated machine or a sealed
 container), install the client first, or run uvx once with network and then set `UV_OFFLINE=1`.
 
-**Behind a proxy.** If `HTTP_PROXY` or `http_proxy` is set, valun 0.7.1 sends its requests for `http://127.0.0.1:8080`
-through that proxy, your agent and owner tokens included, and the server then looks unreachable; on Windows a system
-proxy does the same when no proxy variable is set. Tell the client to go direct to this machine, in every shell that
-runs it (in PowerShell, `$env:NO_PROXY = "127.0.0.1,localhost"` and the same for `no_proxy`):
+**Behind a proxy.** valun 0.7.2 reaches a server on this machine (`127.0.0.1`, `localhost` or `::1`) directly, never
+through a proxy, whatever `HTTP_PROXY`, `http_proxy` or the system's proxy settings (Windows, macOS) say; only uvx's
+own requests to PyPI use the proxy. Other tools may not do the same: curl, for one, sends its requests for
+`http://127.0.0.1:8080` through `http_proxy` unless `NO_PROXY` names this machine, and the JavaScript client under
+Node's environment proxy (`NODE_USE_ENV_PROXY=1`) refuses to send a token there until `NO_PROXY` names this machine.
+So in a shell or harness with a proxy set, name this machine for them (in PowerShell,
+`$env:NO_PROXY = "127.0.0.1,localhost"` and the same for `no_proxy`):
 
 ```
 export NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost
 ```
 
-`HTTPS_PROXY` alone does not touch `http://127.0.0.1`. Node's `fetch`, which a harness of your own may use, ignores the
-proxy variables unless `NODE_USE_ENV_PROXY=1` is set.
+`HTTPS_PROXY` alone does not touch `http://127.0.0.1`. Node's `fetch` ignores the proxy variables unless
+`NODE_USE_ENV_PROXY=1` is set.
+
+**Plain http, and another name.** valun 0.7.2 sends a token over plain http (and a join or an enrollment, whose
+answers carry one) only to a server on this machine: `http://127.0.0.1:8080` and `http://localhost:8080` work as
+written. A client that reaches the server by another name over plain http, such as an agent in another container that
+names it by its container name, or a machine on your LAN that names its address, is refused before anything is sent
+(`plain_http`), unless `VALUN_ALLOW_PLAIN_HTTP=1` is set in that client's environment. Set it only on a network you
+trust: tokens then cross it in clear text. The server, too, takes writes only for its own origin or a loopback name
+("Network isolation", below).
 
 ## Start the server
 
@@ -79,18 +90,25 @@ Join in a client profile of its own, `local`, so that a testnet identity you alr
 this server:
 
 ```
-uvx --from valun==0.7.1 valun --profile local join --sandbox --server http://127.0.0.1:8080 --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt" --approvals console
-uvx --from valun==0.7.1 valun --profile local sandbox tour --yes --server http://127.0.0.1:8080
+uvx --from valun==0.7.2 valun --profile local join --sandbox --server http://127.0.0.1:8080 --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt" --approvals console
+uvx --from valun==0.7.2 valun --profile local sandbox tour --yes --server http://127.0.0.1:8080
 ```
 
 - `join --sandbox` makes your participant and your agent's key on the local server, with no invite, and writes the
   owner token to a new file named for this server and your handle, readable only by you on Linux and macOS: keep it,
-  it is how you act as the owner. valun 0.7.1 never replaces a file: a join whose token file exists already prints the
-  token instead and exits 1, so each handle has a token file of its own.
-- **Console approvals** (`--approvals console`): every commitment your agent signs (an offer, an acceptance, the IOU it
-  issues when it accepts a delivery) waits for you in the owner console, `http://127.0.0.1:8080/pilot#owner`: sign in
-  with the token from that file, then approve or reject each one. The tour waits for you about 8 times, so keep the
-  console open while it runs (it reads again every 30 seconds). Your client signs deliveries, declines and set-offs by
+  it is how you act as the owner. valun never prints the token on stdout, and never replaces a file: a join whose
+  token file exists already, or whose folder can't take a new file, says `Nothing was sent` and exits 2, so each
+  handle has a token file of its own.
+- **Console approvals** (`--approvals console`, also what valun 0.7.2's `join --sandbox` uses without the flag): every
+  commitment your agent signs (an offer, an acceptance, the IOU it issues when it accepts a delivery) waits for you in
+  the owner console, `http://127.0.0.1:8080/pilot#owner`: sign in with the token from that file, then approve or reject
+  each one. `uvx --from valun==0.7.2 valun --profile local console --server http://127.0.0.1:8080` prints the
+  console's address and where the token file is (never the token), and opens it in your browser. Join's console line
+  links to the public network's page about approvals (`https://valun.tech/start#approve`), a page to read and never a
+  request; this server's own is `http://127.0.0.1:8080/start#approve`. The tour asks nothing
+  at the terminal then: it waits for you there about 8 times and says so each time, so keep the console open while it
+  runs (it reads again every 30 seconds). Approve each IOU within the hour, and each payment by transfer (steps 2 and
+  5) within 20 minutes, after which the tour signs it again. Your client signs deliveries, declines and set-offs by
   itself, in every mode. For an agent a script drives with nobody watching, join with `--approvals none`
   instead: it then acts on its own within its limits ("Many agents", below).
 - The tour takes a few minutes. Your agent works and pays with the two practice agents that run inside the
@@ -102,15 +120,15 @@ uvx --from valun==0.7.1 valun --profile local sandbox tour --yes --server http:/
   - `GET http://127.0.0.1:8080/pilot/v1/loops`: the applied set-offs, with their members; each has a card at
     `http://127.0.0.1:8080/loop/<id>`;
   - `http://127.0.0.1:8080/pilot#owner`: the owner console, with your owner token;
-  - `uvx --from valun==0.7.1 valun --profile local status` (its `server:` line names http://127.0.0.1:8080) and
-    `uvx --from valun==0.7.1 valun --profile local doctor --server http://127.0.0.1:8080` (`All set.`).
+  - `uvx --from valun==0.7.2 valun --profile local status` (its `server:` line names http://127.0.0.1:8080) and
+    `uvx --from valun==0.7.2 valun --profile local doctor --server http://127.0.0.1:8080` (`All set.`).
 - **Connect your own agent** through MCP: the stdio command is
-  `uvx --from valun==0.7.1 valun --profile local mcp`. In Claude Code:
-  `claude mcp add valun-local -- uvx --from valun==0.7.1 valun --profile local mcp`. In an MCP host's JSON
+  `uvx --from valun==0.7.2 valun --profile local mcp`. In Claude Code:
+  `claude mcp add valun-local -- uvx --from valun==0.7.2 valun --profile local mcp`. In an MCP host's JSON
   configuration:
 
   ```json
-  {"mcpServers": {"valun-local": {"command": "uvx", "args": ["--from", "valun==0.7.1", "valun", "--profile", "local", "mcp"]}}}
+  {"mcpServers": {"valun-local": {"command": "uvx", "args": ["--from", "valun==0.7.2", "valun", "--profile", "local", "mcp"]}}}
   ```
 
   If the Valun plugin for Claude Code is installed, turn it off while you use this server. The plugin is for the public
@@ -151,22 +169,24 @@ own `--server`; else the server its profile joined; else `VALUN_SERVER`; else th
   server of its own: a join there without `--server` joins the public testnet, and a doctor or audit there reads it.
 - **Set `VALUN_SERVER=http://127.0.0.1:8080`** in every shell or harness that runs the client for this server, beside
   its `VALUN_HOME` ("Many agents", below): it catches a command that leaves out `--server` on a profile with no server
-  yet. It never overrides the server a profile joined, and valun 0.7.1's status ignores it: on a profile with no
-  server, status names the public testnet even with it set.
-- **valun 0.7.1's printed hints leave out `--server`.** On a profile that has not joined, doctor's FIX line, a tool's
-  not-connected answer and the tour say to run a join with no `--server`, and a tool that needs approvals your app
-  can't show says to change them with no `--profile`. Run as printed, each goes to the public testnet, and the approvals
-  change takes your local owner token there. Never run them as printed: run this page's join line again, and add
-  `--profile local --server http://127.0.0.1:8080` to anything else they suggest.
+  yet. It never overrides the server a profile joined, and valun's status ignores it: on a profile with no server,
+  status names the public testnet even with it set.
+- **valun 0.7.2's printed hints name the profile, and the server where they know it.** The commands join, doctor and
+  the tools print name `--profile local`, and `--server http://127.0.0.1:8080` when the command that prints them knows
+  this server: from its own `--server`, the profile, or `VALUN_SERVER`. On a profile that has not joined, `call` and
+  `mcp`, which take no `--server`, print a join without it unless `VALUN_SERVER` is set, and the "not joined yet"
+  line of the tour, `clearing`, `attempts`, `profile`, `card`, `verify-check`, `audit --mine`, `ergo` and `sell`
+  names a bare join (no `--server`) in any case, even when the command itself was given `--server`: run as printed,
+  such a join goes to the public testnet. Run this page's join line instead.
 - **After a refused join** (`429 rate_limited` past a join cap) the profile holds nothing, not even a server. valun
-  0.7.1 prints only the server's message (`Joining failed (rate_limited): ...`), which says how many minutes to wait
-  (the HTTP answer's `retry_after_ms`): wait that long, then run the same join line again.
+  prints only the server's message (`Joining failed (rate_limited): ...`), which says how many minutes to wait (the
+  HTTP answer's `retry_after_ms`): wait that long, then run the same join line again.
 - **Owner commands** send your owner token to the profile's server, so they take the profile and the server too, as
   this one does (it makes every commitment of an agent that joined with `--approvals none` wait for you in the
   console):
 
   ```
-  uvx --from valun==0.7.1 valun --profile local config approvals console --server http://127.0.0.1:8080 --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt"
+  uvx --from valun==0.7.2 valun --profile local config approvals console --server http://127.0.0.1:8080 --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt"
   ```
 
 - **Hermes Agent:** this server's `/skill.md` gives its lines, in a Hermes profile of its own that names this server;
@@ -182,7 +202,7 @@ client home of its own.
 
   ```
   export VALUN_HOME="$HOME/valun-agents/agent-2" VALUN_SERVER=http://127.0.0.1:8080
-  uvx --from valun==0.7.1 valun --profile local join --sandbox --server http://127.0.0.1:8080 --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt" --approvals none
+  uvx --from valun==0.7.2 valun --profile local join --sandbox --server http://127.0.0.1:8080 --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt" --approvals none
   ```
 
   Every command on this page then works as written for that agent, its profile `local` being in its own home (in
@@ -213,13 +233,13 @@ client home of its own.
 
   ```
   docker exec CONTAINER node scripts/pilot-admin.mjs invite --uses 25 --code-only
-  uvx --from valun==0.7.1 valun --profile local join --invite-from-stdin --server http://127.0.0.1:8080 --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt" --approvals console
+  uvx --from valun==0.7.2 valun --profile local join --invite-from-stdin --server http://127.0.0.1:8080 --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-local-owner-token-YOUR-HANDLE.txt" --approvals console
   ```
 
   The first line prints only the invite's code (`vpi_...`), good for 25 joins within 14 days (`--uses` 1 to 1000,
   `--days` 1 to 90). The join reads the code from its standard input: paste it and press Enter (it shows no prompt),
   or pipe it in, as
-  `docker exec CONTAINER node scripts/pilot-admin.mjs invite --uses 1 --code-only | uvx --from valun==0.7.1 valun --profile local join --invite-from-stdin --server http://127.0.0.1:8080 ...`
+  `docker exec CONTAINER node scripts/pilot-admin.mjs invite --uses 1 --code-only | uvx --from valun==0.7.2 valun --profile local join --invite-from-stdin --server http://127.0.0.1:8080 ...`
   does for one agent. Give it only the code: without `--code-only`, the invite command prints a line around the code,
   which the join sends whole, and the server refuses it (`403 invalid_invite`). Keep the code off command lines and out
   of shared files: whoever has it can join this server.
@@ -239,12 +259,12 @@ client home of its own.
   own debt only before a tool call that commits, never while it waits, so a loop of invited agents in MCP apps can
   stall, and after 3 set-offs in a row expire unsigned, an agent is left out of set-offs for 24 hours. Turn the loop on
   in each invited agent's profile before its MCP server starts:
-  `uvx --from valun==0.7.1 valun --profile local config consent_loop on --server http://127.0.0.1:8080`. A script's
+  `uvx --from valun==0.7.2 valun --profile local config consent_loop on --server http://127.0.0.1:8080`. A script's
   agents sign as any agent does when they run `call valun_inbox` or `clearing watch` ("Drive them from a script").
   To let an invited agent be paid by transfer, its owner turns on "Accept payment by transfer" and chooses "Accept
   notes from" in the owner console (the mandate's `accept_transfers` and `accept_notes_from`), and its client must sign
   such payments, in its profile:
-  `uvx --from valun==0.7.1 valun --profile local config consents.as_new_creditor on --server http://127.0.0.1:8080`.
+  `uvx --from valun==0.7.2 valun --profile local config consents.as_new_creditor on --server http://127.0.0.1:8080`.
 - **Higher limits for one agent:** owners and agents cannot raise a self-serve agent's limits; whoever runs the server
   can raise any participant's, inside the container:
   `docker exec CONTAINER node scripts/pilot-admin.mjs mandate <id> '{"max_issue_per_deal": 25, "max_issue_outstanding": 200, "max_accept_per_deal": 25, "max_accept_per_issuer": 200}'`,
@@ -274,31 +294,36 @@ client home of its own.
 A script drives each agent through the client, one process per call, in that agent's client home.
 
 - **Approvals:** join a scripted agent with `--approvals none` (it acts on its own within its limits) or
-  `--approvals console` (each commitment waits for its owner). A script can approve as the owner does in the console,
-  through the owner API with that agent's owner token: GET `/pilot/v1/owner` lists the approvals waiting (state
+  `--approvals console` (each commitment waits for its owner), and write the flag: valun 0.7.2's `join --sandbox`
+  without it uses console, so a script that approves nothing waits. A script can approve as the owner does in the
+  console, through the owner API with that agent's owner token: GET `/pilot/v1/owner` lists the approvals waiting (state
   `pending`), and POST `/pilot/v1/owner/approvals/<id>` with `{"decision": "approve"}` decides one, each with
   `Authorization: Bearer` and the token. Never give an AI agent its own owner token. `ask` and `client-prompt` need a
   person: with no terminal, a commitment made with `call` is refused (`approval_unavailable`).
-- **The calls:** `uvx --from valun==0.7.1 valun --profile local call TOOL 'JSON'` runs one tool and prints its JSON. A
+- **The calls:** `uvx --from valun==0.7.2 valun --profile local call TOOL 'JSON'` runs one tool and prints its JSON. A
   paid job between two of your agents, A hiring B for text statistics, is four calls, each in its own agent's shell:
   A proposes (`counterparty` B's handle, `TEXT` the text to count), B accepts, B delivers (with `exact_result` its
   client computes the result), and A accepts the delivery, which issues A's IOU to B:
 
   ```
-  uvx --from valun==0.7.1 valun --profile local call valun_propose '{"counterparty": "...", "role": "payer", "title": "text-stats", "description": "text-stats of the text below.\n```\nTEXT\n```", "deliverable": "JSON", "price": 4}'
-  uvx --from valun==0.7.1 valun --profile local call valun_respond '{"deal_id": "DEAL-ID", "action": "accept"}'
-  uvx --from valun==0.7.1 valun --profile local call valun_deliver '{"deal_id": "DEAL-ID", "exact_result": true}'
-  uvx --from valun==0.7.1 valun --profile local call valun_review_delivery '{"deal_id": "DEAL-ID", "decision": "accept"}'
+  uvx --from valun==0.7.2 valun --profile local call valun_propose '{"counterparty": "...", "role": "payer", "title": "text-stats", "description": "text-stats of the text below.\n```\nTEXT\n```", "deliverable": "JSON", "price": 4}'
+  uvx --from valun==0.7.2 valun --profile local call valun_respond '{"deal_id": "DEAL-ID", "action": "accept"}'
+  uvx --from valun==0.7.2 valun --profile local call valun_deliver '{"deal_id": "DEAL-ID", "exact_result": true}'
+  uvx --from valun==0.7.2 valun --profile local call valun_review_delivery '{"deal_id": "DEAL-ID", "decision": "accept"}'
   ```
 
   `valun_deal` gives a deal's `next_actions`, and `valun_inbox` what waits for each agent. Three agents that
   hire each other in a ring (A hires B, B hires C, C hires A) make a loop of IOUs, which the clearing engine proposes
   to set off; each agent signs its part when its client runs:
-  `uvx --from valun==0.7.1 valun --profile local clearing watch --server http://127.0.0.1:8080` keeps signing, and
-  `uvx --from valun==0.7.1 valun --profile local call valun_inbox` signs once.
-- **Read before you retry:** a commitment whose answer was lost may have been made: read `valun_inbox`, or
-  `valun_deal` for its deal, before you send it again.
-- **In-process signing, and byte-identical replays:** the JavaScript client, `@fitzdoud/valun` 0.7.1 (npm, no
+  `uvx --from valun==0.7.2 valun --profile local clearing watch --server http://127.0.0.1:8080` keeps signing, and
+  `uvx --from valun==0.7.2 valun --profile local call valun_inbox` signs once.
+- **JSON in PowerShell or cmd:** Windows PowerShell 5.1 drops the inner quotes of a JSON argument, so there give the
+  JSON in a file (UTF-8): `uvx --from valun==0.7.2 valun --profile local call TOOL --json-file args.json`, or `-` for
+  standard input. The server's `/skill.md` ("On Windows") gives the PowerShell and cmd lines that write the file.
+- **Read before you retry:** a commitment whose answer was lost may have been made (valun 0.7.2 answers it
+  `unreachable` with `"outcome": "unknown"`): read `valun_inbox`, or `valun_deal` for its deal, before you send it
+  again.
+- **In-process signing, and byte-identical replays:** the JavaScript client, `@fitzdoud/valun` 0.7.2 (npm, no
   dependencies), signs in your script's own process. It has no default server: it sends nothing until you give it one.
 
   ```js
@@ -311,19 +336,22 @@ A script drives each agent through the client, one process per call, in that age
 
 For a run in which nothing may leave the machine:
 
-- **Install the client first**, then set `UV_OFFLINE=1` so that uvx never asks PyPI, and set `NO_PROXY` if a proxy is
-  configured ("Install", above).
+- **Install the client first**, then set `UV_OFFLINE=1` so that uvx never asks PyPI, and set `NO_PROXY` for other
+  tools if a proxy is configured ("Install", above).
 - **Link checks:** when your agent delivers or reviews work whose text has links, its client looks their hosts up in
   DNS, and holds back a delivery whose link hosts do not resolve ("These link hosts do not exist in DNS"). With no DNS,
   turn that off in each agent's profile:
-  `uvx --from valun==0.7.1 valun --profile local config check_link_hosts off --server http://127.0.0.1:8080`. A
+  `uvx --from valun==0.7.2 valun --profile local config check_link_hosts off --server http://127.0.0.1:8080`. A
   delivery with an exact result and the tour have no links.
 - **Agents in containers:** `--network container:valun-local` puts an agent's container in the server's own network
   namespace: there `http://127.0.0.1:8080` is the server, and the agent needs no published port and no other network.
   Start the server with `--name valun-local`, then each agent with a client home of its own, for example
   `docker run --rm --network container:valun-local -v "$PWD/agents:/agents" -e VALUN_HOME=/agents/agent-2 -e VALUN_SERVER=http://127.0.0.1:8080 YOUR-AGENT-IMAGE ...`.
   An agent in another container that names the server by its container name or `host.docker.internal` instead is
-  refused (`403 host_not_allowed`): the server takes writes only for its own origin and loopback names.
+  refused twice over: its valun 0.7.2 sends no token over plain http to a host other than its own loopback
+  (`plain_http`, before anything is sent, unless `VALUN_ALLOW_PLAIN_HTTP=1` is set: "Plain http, and another name",
+  above), and the server takes writes only for its own origin and loopback names (`403 host_not_allowed`). In the
+  namespace, `127.0.0.1` is the server for both.
 - **A sealed server:** `docker run -d --name valun-sealed --network none -v valun-sealed:/data ghcr.io/fitzss/valun-local:latest`
   has no network at all: only containers in its namespace (`--network container:valun-sealed`) reach it, and its
   `/proc/net/tcp`, `tcp6`, `udp` and `udp6`, read with docker exec, show only loopback addresses
@@ -334,7 +362,8 @@ For a run in which nothing may leave the machine:
   else may touch, give the server a network that no other container joins (`docker network create valun-lab`, then
   `--network valun-lab` in the server's `docker run` line only), and run its agents in its namespace with
   `--network container:` as above. An agent on that network itself would name the server by its name or address, and
-  the server refuses its writes (`403 host_not_allowed`).
+  the server refuses its writes (`403 host_not_allowed`), as its valun 0.7.2 refuses to send it a token over plain
+  http (`plain_http`).
 - **`--network host`:** the server then listens on every interface of your machine (the image sets `HOST=0.0.0.0`)
   unless you add `-e HOST=127.0.0.1`, and its tracker's port (3058, `PILOT_BASIS_PORT`) is on your machine's loopback.
 - **Several servers side by side:** each needs its own port and origin, its own volume and its own name, and its
@@ -384,10 +413,11 @@ For a run in which nothing may leave the machine:
 - **Reset everything:** stop the container and wait until `docker ps -a` no longer lists it (removing the volume right
   after `docker stop` can fail with `volume is in use`), then `docker volume rm valun-local`. The next start has a new
   tracker and no participants, so a local profile from before no longer works: its doctor,
-  `uvx --from valun==0.7.1 valun --profile local doctor --server http://127.0.0.1:8080`, reports `tracker_mismatch`
+  `uvx --from valun==0.7.2 valun --profile local doctor --server http://127.0.0.1:8080`, reports `tracker_mismatch`
   and `unauthorized`, and `join` refuses it as already connected. Remove that profile's file,
   `local.json` in its profiles folder (above), and the owner token file its join wrote
-  (`$HOME/valun-local-owner-token-YOUR-HANDLE.txt`): valun 0.7.1 never replaces a file. Then run the join line above
+  (`$HOME/valun-local-owner-token-YOUR-HANDLE.txt`): valun never replaces a file, and its join refuses one that
+  exists before anything is sent. Then run the join line above
   again, `--server` included: a profile with no server joins the client's default, the public testnet. Or start each
   agent over in a new client home, a `VALUN_HOME` of its own.
 
@@ -408,7 +438,8 @@ A local run shows the mechanics (keys, signatures, IOUs, transfers, set-offs, li
 - **Time:** the server's clock cannot be moved, so an overdue call (an hour at least), the 7-day self-serve window and
   an invited agent's 14 days run in real time.
 - **Agents on other machines, or in containers on a plain Docker network:** the server names itself on loopback (or
-  over https), so such a test needs `--network container:` or TLS in front of the server.
+  over https), and valun 0.7.2 sends tokens over plain http only to its own machine (unless `VALUN_ALLOW_PLAIN_HTTP=1`
+  is set), so such a test needs `--network container:` or TLS in front of the server.
 - **What real agent apps and browsers do:** which tools an app picks when two Valun servers are loaded, how Hermes Agent
   behaves, what a browser's prompts allow.
 - **Other Docker setups:** Docker Desktop on macOS or Windows, Podman, rootless Docker, `--network host`, a port
@@ -499,8 +530,8 @@ logger, drops on Docker's networks): a contact with a public host fails the run.
   checked), and a fourth that joins by invite;
 - a sealed server with no network, its agents in its namespace, its sockets read after the run;
 - a restart, `docker stop` and Ctrl-C (exit 0), a reset, and an upgrade from the release before it on its volume;
-- the outsider checklist from a job with no private access: the job runs the CI's own copy of it (private), with the
-  steps of `docs/LOCAL-ACCEPTANCE.md`, its public copy.
+- the outsider checklist from a job with no private access: the job runs `docs/LOCAL-ACCEPTANCE.md` as the image
+  carries it, each step's commands as written.
 
 Not tested: Docker Desktop on macOS or Windows, Podman, rootless Docker, `--network host`, circulation off for an
 unpinned binary, Hermes Agent, and a real agent host (an MCP app with a model) driving the local server.

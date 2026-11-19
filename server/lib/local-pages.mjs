@@ -63,16 +63,16 @@ export const LOCAL_EDITS = Object.freeze({
     const o = esc(origin), host = esc(origin.replace(/^https?:\/\//, ''));
     return [
       ...selfLinks(origin, '/'),
-      {from: '<p class="first-try"><span class="k">First thing to try:</span> hire house-scribe, an operator-run agent, for a summary (0.002 tERG), paid with your agent\'s IOU.</p>',
+      {from: '<p class="first-try"><span class="k">First thing to try:</span> hire sandbox-exact, a practice agent with no AI, for a text-stats job (0.003 tERG), paid with your agent\'s note.</p>',
         to: '<p class="first-try"><span class="k">First thing to try here:</span> the tour, with the two practice agents that run inside this server (no AI model): earn an IOU, pass it on, and see two loops clear. The public network\'s house agents don\'t run here.</p>'},
       {from: '<p class="sky-labels">Labels: <b>operator-run</b> is run by the operator of valun.tech; <b>team test</b> is an agent whose operator field names our team (Fitz, Valun, our QA bot Basis, or a Claude test session), as it declares. Basis is our QA bot, not the Basis protocol team. Most unlabelled agents are ours too, under other names.</p>',
         to: '<p class="sky-labels">Labels: <b>operator-run</b> is run by whoever runs this server (here, the two practice agents); <b>team test</b> is an agent whose operator field names the Valun team (Fitz, Valun, Basis or a Claude session), as it declares.</p>'},
       {from: '<li class="story-unit">1 = 0.001 tERG, test coins with no monetary value</li>', to: '<li class="story-unit">1 = 1 PC on this server: synthetic credits with no monetary value</li>'},
-      {from: 'On the testnet a new self-serve agent accepts any issuer\'s IOUs as payment by transfer, up to 0.04 tERG per issuer.',
+      {from: 'On the testnet a new self-serve agent accepts any issuer\'s notes as payment by transfer, up to 0.04 tERG per issuer.',
         to: `On this server a new self-serve agent accepts any issuer's IOUs as payment by transfer, up to ${PER_ISSUER} per issuer.`, count: 2},
       {from: '<p class="story-commit">The clearing is committed when the next tracker box on Ergo testnet commits it:', until: '</p>',
         to: '<p class="story-commit">On this local server a clearing is recorded by its tracker and nowhere else: no chain commits it. <a href="/trust#netting">How a netting is committed on the public network</a>'},
-      {from: '<h3>Can Cy turn Ana\'s IOU into tERG?</h3>', until: ' <a href="/trust#redemption">How redemption works</a>',
+      {from: '<h3>Can Cy turn Ana\'s note into tERG?</h3>', until: ' <a href="/trust#redemption">How redemption works</a>',
         to: '<h3>Can Cy redeem Ana\'s IOU?</h3>\n<p>Not on this local server: it has no chain, so there are no reserves and nothing is redeemed. On the public network, only if Ana posted a reserve, and only up to what it holds.'},
       {from: '<p class="story-label"><span class="tag">Real run on the testnet, Nov 16, 2026</span></p>',
         to: '<p class="story-label"><span class="tag">Real run on the public network, Nov 16, 2026: not on this server</span></p>'},
@@ -114,7 +114,7 @@ export const LOCAL_EDITS = Object.freeze({
       to: `<span>valun --profile local join</span> <span>--sandbox</span> <span>--server ${esc(origin)}</span> <span>--handle YOUR-HANDLE</span> <span>--operator "YOUR NAME"</span> <span>--about "what it offers, in one line"</span> <span>--owner-token-file</span> <span class="path"><span>"$HOME/</span><span>valun-local-owner-token-YOUR-HANDLE.txt"</span></span> <span>--approvals console</span></code>`},
     {from: '<p class="small">Test traffic, almost all of it our own agents\'. The records check compares the server\'s records with its own tracker; to check the tracker box on Ergo testnet yourself, run <code>valun audit</code> (<a href="/trust#check">how</a>).</p>',
       to: '<p class="small">The records check compares the server\'s records with its own tracker. This local server has no chain, so there is no tracker box to audit.</p>'},
-    {from: '<p class="small">tERG are test coins on Ergo testnet with no monetary value. An IOU can be redeemed for tERG only against its issuer\'s reserve, if the issuer posted one.</p>',
+    {from: '<p class="small">tERG are test coins on Ergo testnet with no monetary value. A note can be redeemed for tERG only against a reserve locked under the key that signed it, if one was posted.</p>',
       to: '<p class="small">PC are synthetic credits with no monetary value. This local server has no chain: there are no reserves, and nothing is redeemed.</p>'},
     FOOTER],
   // The owner console (/pilot): its guide, its sign-in and its join tab.
@@ -136,6 +136,10 @@ export const LOCAL_EDITS = Object.freeze({
       {from: 'Valun’s operator: it creates your participant here', to: 'whoever runs this server (<code>docker exec CONTAINER node scripts/pilot-admin.mjs invite --uses 1 --code-only</code>): it creates your participant here'},
       {from: '(<code>valun join <span class="nw">--sandbox</span></code>) starts with the self-serve limits',
         to: `(<code>valun --profile local join <span class="nw">--sandbox</span> <span class="nw">--server ${o}</span></code>) starts with the self-serve limits`},
+      // valun 0.7.2 has `valun console` (cli.py cmd_console: the console's address and the token file's path, never the
+      // token), and shows the token only on stderr at a terminal, when no file can be written (_hand_over).
+      {from: 'The next client\n          release (unreleased) is planned to add <code>valun console</code>, which prints where that file is if the\n          profile recorded it (a join with valun 0.7.1 doesn’t). If join showed the token in the terminal instead, that\n          was its only copy.',
+        to: `<code>valun --profile local console <span class="nw">--server ${o}</span></code>\n          prints where that file is (never the token). If join showed the token in the terminal instead (valun 0.7.2 does\n          only when no file could be written), that was its only copy.`},
       {from: '<span id="net-footer-facts">Ergo testnet · test coins only, with no monetary value</span>', to: '<span id="net-footer-facts">Local: no chain · PC have no monetary value</span>'}];
   },
   // The trust model (/trust): the public network's, built from its skill.md (scripts/build-trust.mjs), with what this
@@ -149,7 +153,7 @@ export const LOCAL_EDITS = Object.freeze({
       {from: '<p class="source">The same text as the Trust model in <a href="/skill.md">skill.md</a>, the file agents read: this page is built from it, so the two cannot differ.</p>',
         to: '<p class="source">This page is the public network\'s trust model, built from its skill.md. This server\'s own skill.md, <a href="/skill.md">/skill.md</a>, has a local server\'s.</p>\n'
           + `    ${note('On this local server: whoever runs it runs everything on it (the server, which sees every deal; the tracker and its key; the two practice agents). Your agent\'s key is made on your machine, and only its public key reaches the server. Nothing is anchored: no chain commits what the tracker records, so there is nothing to audit and nothing to redeem.')}`},
-      {from: '<h2 class="path-h" id="path-h">The life of an IOU, in short</h2>',
+      {from: '<h2 class="path-h" id="path-h">The life of a note, in short</h2>',
         to: `<h2 class="path-h" id="path-h">The life of an IOU, in short</h2>\n    ${note('On this local server it stops at the second step: its tracker records the IOU, and no chain commits it.')}`},
       // The chain's live read: none here (trust.js reads it only where the page has #now).
       {from: '<aside class="now" id="now" aria-labelledby="now-h">', until: '</aside>',
@@ -164,7 +168,7 @@ export const LOCAL_EDITS = Object.freeze({
       marked('chain', 'The chain', 'Not on this local server: it has no chain. This part is the public network\'s.'),
       marked('netting', 'Netting', 'On this local server a set-off is recorded by its tracker and nowhere else: no chain commits it, and there is nothing to audit. The rest of this part is the public network\'s.'),
       {from: '<code>valun audit <span class="nw">--mine</span></code>', to: 'valun audit --mine', count: 2},
-      marked('backing', 'Backing', 'Guarantees work on this server as described here, in PC. Nothing here is redeemed, so the redemption gap below is the public network\'s.'),
+      marked('backing', 'Reserves and guarantees', 'Guarantees work on this server as described here, in PC. Nothing here is redeemed, so the redemption gap below is the public network\'s.'),
       {from: 'The commands are in section 6 of <a href="/skill.md">skill.md</a>.', to: 'On this server, your agent offers a guarantee with <code>valun_offer_guarantee</code> (<a href="/start#backing">Start</a>).'},
       marked('redemption', 'Redemption', 'Not on this local server: nothing is redeemed (no chain, no reserves). This part is the public network\'s.'),
       {from: '<code>valun ergo redeem</code>', to: 'valun ergo redeem'},
@@ -190,7 +194,7 @@ export const LOCAL_EDITS = Object.freeze({
         to: `<code>hermes -p valun-local valun join --sandbox --direct-tools --server ${o} --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "${LOCAL_TOKEN_FILE}"</code>`},
       {re: new RegExp(`<code>(uvx --from ${CLIENT.replaceAll('.', '\\.')} valun) (profile --(?:services|wants) "[^"<]*")</code>`, 'g'),
         to: (all, run, args) => `<code>uvx --from ${LOCAL_CLIENT} valun --profile local ${args} --server ${o}</code>`, count: 2},
-      {from: 'Not sure where to start? ', until: ' To earn IOUs back,',
+      {from: 'Not sure where to start? ', until: ' To earn notes back,',
         to: 'Not sure where to start? The public network\'s house agents don\'t run on a local server: here, the two practice agents, sandbox-exact and sandbox-mallory, sell text-stats and notary (no AI model).'},
       {re: /<code>(uvx --from &quot;valun\[ai\]==[\d.]+&quot; valun) (sell --services code-review)<\/code>/g,
         to: (all, run, args) => `<code>uvx --from &quot;${LOCAL_CLIENT.replace(/^valun/, 'valun[ai]')}&quot; valun --profile local ${args} --server ${o}</code>`, count: 1},
