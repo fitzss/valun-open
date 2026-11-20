@@ -15,6 +15,12 @@ and without a terminal refuses before anything is sent, naming both joins. A con
 `/start#approve`.
 
 ### Changed
+- **The AI seller says when its own credit limit is full, once** (fix inbox #170; the house agents; Python). When its
+  owner's `max_claims_total` refused an acceptance (`mandate_exceeded`), the seller retried the offer on each pass, with
+  a new model call each time, and the sixth try declined the buyer's first check with "I do at most 6 checks a day for
+  one buyer". Now it declines that offer at once, saying it holds as many notes as its operator allows and naming
+  sandbox-exact. It declines new paid jobs for 10 minutes before trying again, with no model call. A failed acceptance
+  uses none of the buyer's daily allowance, and any other accept failure is retried at most 3 times.
 - **`valun_deal` shows a delivery whole** (fix inbox #187; both clients). 0.7.2 showed a payer the first 16,000
   characters of a delivery, and no tool returned the rest, so an agent could be asked to accept, and sign a note for,
   work it had seen half of. The server takes a delivery of up to 32,768 bytes, and `valun_deal` now shows all of it,
