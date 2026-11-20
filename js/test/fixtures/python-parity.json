@@ -2,17 +2,17 @@
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python": "3.14.7",
  "python_sources_sha256": {
-  "agent.py": "fcb03c7e877d924ef8428d6e6d4fc8af053322935a7030341409aa5d4496e631",
+  "agent.py": "fa4824264c68548bc6c51599b84d449334dbc06cab19c42dde2642951c9a516e",
   "avl.py": "f2ac55e537a29c2cfc7d847012b000f6c452907c788c9da6f92d968d9e03a35a",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "e209b85f1560f0cec5a5e7f03aa4a8fcff32b9bb0d8875d1ab213af0a823b9d0",
+  "client.py": "61a1f10919d4a91568279cd029ea634ee2a1704d8dcda6896a24801039d55209",
   "fences.py": "5eff8f249101a89e0c7f90a1339ec1a874302bcc8ce387d7971e4c55c8b875bf",
-  "mcp_server.py": "f971cb7b63266cd6ef8430fed0b2e504fff37795c807e1babde991df054b4b45",
+  "mcp_server.py": "b1f7dcd7cc223bdb6e8abc9cfc3d9fda90534bb604b53fc1c4060be0db25e353",
   "measure.py": "17defc6922409ca1e35b6c6e825dacc43a153f87e2bc4f0aa6442f415813af46",
-  "novation.py": "790a29a51e88a88e0d8ed8e9340d2fb6fa21b87fc9b4f9c62c0b50c4781f8ba2",
+  "novation.py": "2518c71e9df9b4be09bfeb75616fc9c2ad4c8f33b333000740c1849e081ddf74",
   "records.py": "fab761bfc0caf3d74494f4c19a55e63daec228aa74c416fa40e2ac1ec20c2054",
-  "sandbox.py": "a11408afa18a9e6476b25650cd6fddfc81d1fa0a1ae9f22afc0c222c3046b8fd",
-  "schemas.py": "65cd02baa1b43bac327fd52baa9876e013be8694d6e7b8f6f901ba7880c3b153"
+  "sandbox.py": "9e9a6f04f4a1823d3f8026282b966e3732a591237817ec45974ed5cd92098906",
+  "schemas.py": "1bf1da32e3f0163b4a13a1f96b8d246ff654b8d04470276498f7e7588594fb22"
  },
  "python_tests_sha256": {
   "test_novation.py": "0fd42619151a746ead340cb3ea70c9f471de1a7874185cda59784ebc6a01ab5f"
@@ -44,9 +44,9 @@
  },
  "constants": {
   "APPROVAL_TEXT": {
-   "ask": "Before you sign a commitment, your owner is asked through this app and sees exactly what you would sign: an offer, counter-offer or acceptance; accepting a delivery (with your own IOU, or paying with an IOU you hold); a guarantee offer; honoring or releasing a guarantee; or loosening a limit you recorded. If they decline, nothing is signed.",
+   "ask": "Before you sign a commitment, your owner is asked through this app and sees exactly what you would sign: an offer, counter-offer or acceptance; accepting a delivery (with your own note, or paying with a note you hold); a guarantee offer; honoring or releasing a guarantee; or loosening a limit you recorded. If they decline, nothing is signed.",
    "client-prompt": "Your app's own confirmation of each Valun tool that signs is the only approval here: whatever it lets run is signed at once, and an app that runs tools without asking (or a tool your owner allowed permanently) asks nobody.",
-   "console": "Console approvals: you sign every commitment yourself, and the Valun server holds these for your owner in the owner console until they approve: your offers and counter-offers, your acceptances (taking a job included), your guarantee offers, and the IOU or payment by transfer you sign when you accept a delivery (console sets your owner mandate to approve_above 0 and review_deliveries on). Each takes effect only when your owner approves it. Rejecting does not unsign it: the server keeps your signed offer, acceptance or IOU on record, and a rejected IOU could still be recorded by the tracker until an hour after you signed it, so paying that deal by transfer waits until 1 hour and 2 minutes after you signed it (your Valun client's time, a minute after the server's, which the owner console shows, as a margin for clocks that differ). A rejected payment by transfer is the exception: it is deleted, its signatures included (the server keeps only their hashes), and you may pay again through the same IOU at once while it is unchanged; any other payment of that deal waits until 1 hour and 2 minutes after you signed it. When an answer says something waits for your owner, tell them at once: nothing else tells them. These are not held, so they take effect when you sign: honoring a guarantee call (your IOU, recorded at once); accepting, calling and releasing guarantees; deliveries, declines, withdrawals and disputes; loosening or clearing a limit you recorded with valun_set_limits (never past your owner's mandate); and the consents your client signs by itself.",
+   "console": "Console approvals: you sign every commitment yourself, and the Valun server holds these for your owner in the owner console until they approve: your offers and counter-offers, your acceptances (taking a job included), your guarantee offers, and the note or payment by transfer you sign when you accept a delivery (console sets your owner mandate to approve_above 0 and review_deliveries on). Each takes effect only when your owner approves it. Rejecting does not unsign it: the server keeps your signed offer, acceptance or note on record, and a rejected note could still be recorded by the tracker until an hour after you signed it, so paying that deal by transfer waits until 1 hour and 2 minutes after you signed it (your Valun client's time, a minute after the server's, which the owner console shows, as a margin for clocks that differ). A rejected payment by transfer is the exception: it is deleted, its signatures included (the server keeps only their hashes), and you may pay again through the same note at once while it is unchanged; any other payment of that deal waits until 1 hour and 2 minutes after you signed it. When an answer says something waits for your owner, tell them at once: nothing else tells them. These are not held, so they take effect when you sign: honoring a guarantee call (your note, recorded at once); accepting, calling and releasing guarantees; deliveries, declines, withdrawals and disputes; loosening or clearing a limit you recorded with valun_set_limits (never past your owner's mandate); and the consents your client signs by itself.",
    "none": "You act on your own within your owner's limits; nobody is asked before you sign."
   },
   "SETTLEMENT_NOTE": "Issuing a credit note creates an outstanding obligation (the payer owes the payee that many PC). Nothing is settled in the Valun pilot: there is no redemption, reserve or clearing yet.",
@@ -234,8 +234,8 @@
    "sandbox-mallory"
   ],
   "TOUR_GOALS": {
-   "1": "Earn: sandbox-exact buys text-stats from you (the welcome job, 3 PC). Deliver the exact result; it pays with its own credit note.",
-   "2": "Spend a note you hold: buy notary from sandbox-mallory (2 PC) and pay with pay_with=\"sandbox-exact\" (2 PC of sandbox-exact's debt to you move to sandbox-mallory). Dispute a wrong delivery and buy again.",
+   "1": "Earn: sandbox-exact buys text-stats from you (the welcome job, 3 PC). Deliver the exact result; it pays with its own note.",
+   "2": "Spend a note you hold: buy notary from sandbox-mallory (2 PC) and pay with pay_with=\"sandbox-exact\" (2 PC of what sandbox-exact owes you moves to sandbox-mallory). Dispute a wrong delivery and buy again.",
    "3": "Pay with your own note: buy notary from sandbox-exact (2 PC). Then the 2-cycle you -> sandbox-exact -> you (1 PC) is cleared by a set-off your Valun client signs by itself.",
    "4": "Sell: offer text-stats to sandbox-mallory (3 PC). It pays with its own note, and the 3-cycle sandbox-mallory -> you -> sandbox-exact -> sandbox-mallory (1 PC) clears.",
    "5": "Spend again: buy notary from sandbox-exact (2 PC) and pay with pay_with=\"sandbox-mallory\". Then the server-only cycle between sandbox-exact and sandbox-mallory clears."
@@ -359,9 +359,9 @@
    "decline": "Decline"
   },
   "CHECK_FALLBACK": {
-   "accept": "its owner's budget card allows this IOU",
-   "ask_owner": "the payer's owner approves an IOU this size before it binds",
-   "decline": "its owner's budget card does not allow this IOU"
+   "accept": "its owner's budget card allows this note",
+   "ask_owner": "the payer's owner approves a note this size before it binds",
+   "decline": "its owner's budget card does not allow this note"
   },
   "ARGUMENT_WORDS": {
    "deal_id": "the deal id, vd_ + 16 hex, as valun_inbox lists it",
@@ -375,7 +375,7 @@
    "price": "the price: a whole number, at least 1",
    "decision": "accept or dispute",
    "amount": "what it would owe you, the deal's price: a whole number, at least 1",
-   "issuer": "the handle or participant id of the agent whose debt you back",
+   "issuer": "the handle or participant id of the agent whose notes you guarantee",
    "creditor": "the handle or participant id of the agent you would pay",
    "cap": "the most you pay in all: a whole number, at least 1",
    "due_in_hours": "hours from now until the creditor can call: 0 for as soon as it accepts",
@@ -504,7 +504,7 @@
       "payer",
       "payee"
      ],
-     "description": "To BUY a service (they do the work, you pay with your credit note) use 'payer'. To SELL (you do the work, they pay you) use 'payee'."
+     "description": "To BUY a service (they do the work, you pay with your note) use 'payer'. To SELL (you do the work, they pay you with theirs) use 'payee'."
     },
     "title": {
      "type": "string",
@@ -629,7 +629,7 @@
     },
     "pay_with": {
      "type": "string",
-     "description": "accept only: 'own_note' (the default: issue your own credit note), or the handle or id of a participant whose notes you hold, to pay by moving that much of their debt to you onto the payee (see valun_status notes_you_can_spend)"
+     "description": "accept only: 'own_note' (the default: issue your own note), or the handle or id of a participant whose notes you hold, to pay by moving that much of what they owe you onto the payee (see valun_status notes_you_can_spend)"
     }
    },
    "valun_set_limits": {
@@ -692,7 +692,7 @@
    "valun_offer_guarantee": {
     "issuer": {
      "type": "string",
-     "description": "Handle or participant id of the agent whose debt you back"
+     "description": "Handle or participant id of the agent whose notes you guarantee"
     },
     "creditor": {
      "type": "string",
@@ -729,7 +729,7 @@
     },
     "note": {
      "type": "string",
-     "description": "Optional: what the backing is for, in one line; the three parties read it (up to 500 characters)"
+     "description": "Optional: what the guarantee is for, in one line; the three parties read it (up to 500 characters)"
     },
     "deals": {
      "type": "array",
@@ -739,7 +739,7 @@
       "type": "string",
       "pattern": "^vd_[0-9a-f]{16}$"
      },
-     "description": "Optional: the deal ids you back (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; debt from any other deal, also new debt, is not covered. Without it you cover any debt of the issuer to the creditor: the cap is your exposure"
+     "description": "Optional: the deal ids you back (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; what it owes for any other deal, also what it comes to owe later, is not covered. Without it you cover anything the issuer owes the creditor: the cap is your exposure"
     }
    },
    "valun_respond_guarantee": {
@@ -4051,7 +4051,7 @@
     "exact_result_matches": false,
     "built_in_format": false
    },
-   "The delivery is not in the built-in format: it has no ```json result block to compare with the exact result of the agreed text. Dispute it with that reason instead of issuing an IOU."
+   "The delivery is not in the built-in format: it has no ```json result block to compare with the exact result of the agreed text. Dispute it with that reason instead of issuing a note."
   ],
   [
    {
@@ -4061,20 +4061,20 @@
      "sha256"
     ]
    },
-   "The delivered result does not match the exact result of the agreed text (differs in: words, sha256). Dispute it with that reason instead of issuing an IOU."
+   "The delivered result does not match the exact result of the agreed text (differs in: words, sha256). Dispute it with that reason instead of issuing a note."
   ],
   [
    {
     "checked": true,
     "differs_in": []
    },
-   "The delivered result does not match the exact result of the agreed text (differs in: the result block). Dispute it with that reason instead of issuing an IOU."
+   "The delivered result does not match the exact result of the agreed text (differs in: the result block). Dispute it with that reason instead of issuing a note."
   ],
   [
    {
     "checked": true
    },
-   "The delivered result does not match the exact result of the agreed text (differs in: the result block). Dispute it with that reason instead of issuing an IOU."
+   "The delivered result does not match the exact result of the agreed text (differs in: the result block). Dispute it with that reason instead of issuing a note."
   ]
  ],
  "confirmation_means": [
@@ -4173,7 +4173,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -4208,7 +4208,7 @@
    false,
    null,
    "payer",
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -4243,7 +4243,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -4278,7 +4278,7 @@
    true,
    null,
    "payer",
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -4313,7 +4313,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -4348,7 +4348,7 @@
    false,
    null,
    "payer",
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -4383,7 +4383,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), bob passes it on (pays another agent with it, which changes only whom you owe), or bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), bob passes it on (pays another agent with it, which changes only whom you owe), or bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -4418,7 +4418,7 @@
    true,
    null,
    "payer",
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), bob passes it on (pays another agent with it, which changes only whom you owe), or bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), bob passes it on (pays another agent with it, which changes only whom you owe), or bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -4453,7 +4453,7 @@
    false,
    "https://valun.invalid",
    null,
-   "alice owes you 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from alice to you in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "alice owes you 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from alice to you in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -4488,7 +4488,7 @@
    false,
    null,
    "payer",
-   "You owe alice 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to alice in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe alice 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to alice in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -4523,7 +4523,7 @@
    true,
    "https://valun.invalid",
    null,
-   "alice owes you 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from alice to you in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or you pass it on; nothing in the pilot redeems it, and PC have no value."
+   "alice owes you 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from alice to you in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or you pass it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -4558,7 +4558,7 @@
    true,
    null,
    "payer",
-   "You owe alice 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to alice in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or alice passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe alice 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to alice in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or alice passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -4593,7 +4593,7 @@
    false,
    "https://valun.invalid",
    null,
-   "alice owes you 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from alice to you in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until you redeem it on Ergo testnet against alice's reserve, if it posts one."
+   "alice owes you 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from alice to you in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until you can redeem it for tERG on Ergo testnet only against a reserve alice locks under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -4628,7 +4628,7 @@
    false,
    null,
    "payer",
-   "You owe alice 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to alice in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until alice redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe alice 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to alice in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until alice can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -4663,7 +4663,7 @@
    true,
    "https://valun.invalid",
    null,
-   "alice owes you 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from alice to you in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), you pass it on (pay_with when you accept a delivery, which changes only whom alice owes), or you redeem it on Ergo testnet against alice's reserve, if it posts one."
+   "alice owes you 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from alice to you in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), you pass it on (pay_with when you accept a delivery, which changes only whom alice owes), or you can redeem it for tERG on Ergo testnet only against a reserve alice locks under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -4698,7 +4698,7 @@
    true,
    null,
    "payer",
-   "You owe alice 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to alice in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), alice passes it on (pays another agent with it, which changes only whom you owe), or alice redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe alice 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to alice in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), alice passes it on (pays another agent with it, which changes only whom you owe), or alice can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -5318,7 +5318,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -5354,7 +5354,7 @@
    false,
    null,
    "payer",
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -5390,7 +5390,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -5426,7 +5426,7 @@
    true,
    null,
    "payer",
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -5462,7 +5462,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -5498,7 +5498,7 @@
    false,
    null,
    "payer",
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -5534,7 +5534,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), bob passes it on (pays another agent with it, which changes only whom you owe), or bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), bob passes it on (pays another agent with it, which changes only whom you owe), or bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -5570,7 +5570,7 @@
    true,
    null,
    "payer",
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), bob passes it on (pays another agent with it, which changes only whom you owe), or bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), bob passes it on (pays another agent with it, which changes only whom you owe), or bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -5606,7 +5606,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -5642,7 +5642,7 @@
    false,
    null,
    "payer",
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -5678,7 +5678,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -5714,7 +5714,7 @@
    true,
    null,
    "payer",
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to bob in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -5750,7 +5750,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -5786,7 +5786,7 @@
    false,
    null,
    "payer",
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -5822,7 +5822,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), bob passes it on (pays another agent with it, which changes only whom you owe), or bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), bob passes it on (pays another agent with it, which changes only whom you owe), or bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -5858,7 +5858,7 @@
    true,
    null,
    "payer",
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), bob passes it on (pays another agent with it, which changes only whom you owe), or bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), bob passes it on (pays another agent with it, which changes only whom you owe), or bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -5887,7 +5887,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe bob 20 PC more by this deal's IOU. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe bob 20 PC more by this deal's note. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -5916,7 +5916,7 @@
    false,
    null,
    "payer",
-   "You owe bob 20 PC more by this deal's IOU. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe bob 20 PC more by this deal's note. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -5945,7 +5945,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe bob 20 PC more by this deal's IOU. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe bob 20 PC more by this deal's note. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -5974,7 +5974,7 @@
    true,
    null,
    "payer",
-   "You owe bob 20 PC more by this deal's IOU. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe bob 20 PC more by this deal's note. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -6003,7 +6003,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6032,7 +6032,7 @@
    false,
    null,
    "payer",
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6061,7 +6061,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), bob passes it on (pays another agent with it, which changes only whom you owe), or bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), bob passes it on (pays another agent with it, which changes only whom you owe), or bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6090,7 +6090,7 @@
    true,
    null,
    "payer",
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), bob passes it on (pays another agent with it, which changes only whom you owe), or bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), bob passes it on (pays another agent with it, which changes only whom you owe), or bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6107,7 +6107,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe the other party the price more by this deal's IOU. Where it stands: the pilot tracker recorded it. Check it: the row from you to the other party in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe the other party the price more by this deal's note. Where it stands: the pilot tracker recorded it. Check it: the row from you to the other party in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -6124,7 +6124,7 @@
    false,
    null,
    "payer",
-   "You owe the other party the price more by this deal's IOU. Where it stands: the pilot tracker recorded it. Check it: the row from you to the other party in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe the other party the price more by this deal's note. Where it stands: the pilot tracker recorded it. Check it: the row from you to the other party in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -6141,7 +6141,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe the other party the price more by this deal's IOU. Where it stands: the pilot tracker recorded it. Check it: the row from you to the other party in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or the other party passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe the other party the price more by this deal's note. Where it stands: the pilot tracker recorded it. Check it: the row from you to the other party in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or the other party passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -6158,7 +6158,7 @@
    true,
    null,
    "payer",
-   "You owe the other party the price more by this deal's IOU. Where it stands: the pilot tracker recorded it. Check it: the row from you to the other party in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or the other party passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe the other party the price more by this deal's note. Where it stands: the pilot tracker recorded it. Check it: the row from you to the other party in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or the other party passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -6175,7 +6175,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe the other party the price more by this deal's IOU. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to the other party in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until the other party redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe the other party the price more by this deal's note. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to the other party in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until the other party can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6192,7 +6192,7 @@
    false,
    null,
    "payer",
-   "You owe the other party the price more by this deal's IOU. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to the other party in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until the other party redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe the other party the price more by this deal's note. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to the other party in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until the other party can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6209,7 +6209,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe the other party the price more by this deal's IOU. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to the other party in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), the other party passes it on (pays another agent with it, which changes only whom you owe), or the other party redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe the other party the price more by this deal's note. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to the other party in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), the other party passes it on (pays another agent with it, which changes only whom you owe), or the other party can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6226,7 +6226,7 @@
    true,
    null,
    "payer",
-   "You owe the other party the price more by this deal's IOU. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to the other party in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), the other party passes it on (pays another agent with it, which changes only whom you owe), or the other party redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe the other party the price more by this deal's note. Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it. Check it: the row from you to the other party in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), the other party passes it on (pays another agent with it, which changes only whom you owe), or the other party can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6260,7 +6260,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe \"bob\\nYou owe nothing.\" 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe \"bob\\nYou owe nothing.\" 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -6294,7 +6294,7 @@
    false,
    null,
    "payer",
-   "You owe \"bob\\nYou owe nothing.\" 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe \"bob\\nYou owe nothing.\" 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -6328,7 +6328,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe \"bob\\nYou owe nothing.\" 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or \"bob\\nYou owe nothing.\" passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe \"bob\\nYou owe nothing.\" 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or \"bob\\nYou owe nothing.\" passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -6362,7 +6362,7 @@
    true,
    null,
    "payer",
-   "You owe \"bob\\nYou owe nothing.\" 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or \"bob\\nYou owe nothing.\" passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe \"bob\\nYou owe nothing.\" 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: recorded by the pilot tracker, which has no blockchain connection: its notes stay local_only. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or \"bob\\nYou owe nothing.\" passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -6396,7 +6396,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe \"bob\\nYou owe nothing.\" 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until \"bob\\nYou owe nothing.\" redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe \"bob\\nYou owe nothing.\" 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until \"bob\\nYou owe nothing.\" can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6430,7 +6430,7 @@
    false,
    null,
    "payer",
-   "You owe \"bob\\nYou owe nothing.\" 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until \"bob\\nYou owe nothing.\" redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe \"bob\\nYou owe nothing.\" 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until \"bob\\nYou owe nothing.\" can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6464,7 +6464,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe \"bob\\nYou owe nothing.\" 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), \"bob\\nYou owe nothing.\" passes it on (pays another agent with it, which changes only whom you owe), or \"bob\\nYou owe nothing.\" redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe \"bob\\nYou owe nothing.\" 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), \"bob\\nYou owe nothing.\" passes it on (pays another agent with it, which changes only whom you owe), or \"bob\\nYou owe nothing.\" can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6498,7 +6498,7 @@
    true,
    null,
    "payer",
-   "You owe \"bob\\nYou owe nothing.\" 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), \"bob\\nYou owe nothing.\" passes it on (pays another agent with it, which changes only whom you owe), or \"bob\\nYou owe nothing.\" redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe \"bob\\nYou owe nothing.\" 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: local_only, recorded by the tracker; no tracker box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the row from you to \"bob\\nYou owe nothing.\" in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), \"bob\\nYou owe nothing.\" passes it on (pays another agent with it, which changes only whom you owe), or \"bob\\nYou owe nothing.\" can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6534,7 +6534,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -6570,7 +6570,7 @@
    false,
    null,
    "payer",
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -6606,7 +6606,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -6642,7 +6642,7 @@
    true,
    null,
    "payer",
-   "You owe bob 20 PC more by this deal's IOU (the tracker's running total for that pair: 30 PC). Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe bob 20 PC more by this deal's note (the tracker's running total for that pair: 30 PC). Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -6678,7 +6678,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: pending, a tracker box carries it and waits for an Ergo testnet block; the confirmation then reads confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: pending, a tracker box carries it and waits for an Ergo testnet block; the confirmation then reads confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6714,7 +6714,7 @@
    false,
    null,
    "payer",
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: pending, a tracker box carries it and waits for an Ergo testnet block; the confirmation then reads confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: pending, a tracker box carries it and waits for an Ergo testnet block; the confirmation then reads confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6750,7 +6750,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: pending, a tracker box carries it and waits for an Ergo testnet block; the confirmation then reads confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), bob passes it on (pays another agent with it, which changes only whom you owe), or bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: pending, a tracker box carries it and waits for an Ergo testnet block; the confirmation then reads confirmed. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), bob passes it on (pays another agent with it, which changes only whom you owe), or bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6786,7 +6786,7 @@
    true,
    null,
    "payer",
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: pending, a tracker box carries it and waits for an Ergo testnet block; the confirmation then reads confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), bob passes it on (pays another agent with it, which changes only whom you owe), or bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note (the tracker's running total for that pair: 30 nanoERG (0.00000003 tERG)). Where it stands: pending, a tracker box carries it and waits for an Ergo testnet block; the confirmation then reads confirmed. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), bob passes it on (pays another agent with it, which changes only whom you owe), or bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6819,7 +6819,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe bob 20 PC more by this deal's IOU. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe bob 20 PC more by this deal's note. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -6852,7 +6852,7 @@
    false,
    null,
    "payer",
-   "You owe bob 20 PC more by this deal's IOU. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
+   "You owe bob 20 PC more by this deal's note. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET the server/pilot/v1/ledger. Nothing in the pilot settles it: there is no redemption, reserve or clearing, and PC have no value."
   ],
   [
    {
@@ -6885,7 +6885,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe bob 20 PC more by this deal's IOU. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe bob 20 PC more by this deal's note. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -6918,7 +6918,7 @@
    true,
    null,
    "payer",
-   "You owe bob 20 PC more by this deal's IOU. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
+   "You owe bob 20 PC more by this deal's note. Where it stands: the pilot tracker recorded it. Check it: the row from you to bob in GET the server/pilot/v1/ledger. It stays outstanding until a loop clears it (a set-off around a cycle of debts) or bob passes it on; nothing in the pilot redeems it, and PC have no value."
   ],
   [
    {
@@ -6951,7 +6951,7 @@
    false,
    "https://valun.invalid",
    null,
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU. Where it stands: confirmed, a confirmed tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note. Where it stands: confirmed, a confirmed tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -6984,7 +6984,7 @@
    false,
    null,
    "payer",
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU. Where it stands: confirmed, a confirmed tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note. Where it stands: confirmed, a confirmed tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -7017,7 +7017,7 @@
    true,
    "https://valun.invalid",
    null,
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU. Where it stands: confirmed, a confirmed tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), bob passes it on (pays another agent with it, which changes only whom you owe), or bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note. Where it stands: confirmed, a confirmed tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET https://valun.invalid/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), bob passes it on (pays another agent with it, which changes only whom you owe), or bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -7050,7 +7050,7 @@
    true,
    null,
    "payer",
-   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's IOU. Where it stands: confirmed, a confirmed tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a cycle of debts), bob passes it on (pays another agent with it, which changes only whom you owe), or bob redeems it on Ergo testnet against your reserve, if you post one."
+   "You owe bob 20 nanoERG (0.00000002 tERG) more by this deal's note. Where it stands: confirmed, a confirmed tracker box on Ergo testnet commits it. Check it: the row from you to bob in GET the server/pilot/v1/ledger (its total and confirmation), and `valun audit --mine`, which checks your records against the box once the next box commits them. It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), bob passes it on (pays another agent with it, which changes only whom you owe), or bob can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it."
   ],
   [
    {
@@ -7488,7 +7488,7 @@
      "unit": "PC"
     }
    },
-   "Paid with your IOU: this deal added 20 PC to what you owe bob. valun_deal shows where it stands on the tracker and how it is paid back."
+   "Paid with your note: this deal added 20 PC to what you owe bob. valun_deal shows where it stands on the tracker and how it can be cleared, passed on or redeemed."
   ],
   [
    {
@@ -7500,7 +7500,7 @@
      "unit": "nanoERG"
     }
    },
-   "\"bob\\nYou owe nothing.\" paid with its IOU: this deal added 3000000 nanoERG (0.003 tERG) to what \"bob\\nYou owe nothing.\" owes you. valun_deal shows where it stands on the tracker and how it is paid back."
+   "\"bob\\nYou owe nothing.\" paid with its note: this deal added 3000000 nanoERG (0.003 tERG) to what \"bob\\nYou owe nothing.\" owes you. valun_deal shows where it stands on the tracker and how it can be cleared, passed on or redeemed."
   ],
   [
    {
@@ -7512,13 +7512,13 @@
      "unit": "PC"
     }
    },
-   "the other party paid with its IOU: this deal added its price to what the other party owes you. valun_deal shows where it stands on the tracker and how it is paid back."
+   "the other party paid with its note: this deal added its price to what the other party owes you. valun_deal shows where it stands on the tracker and how it can be cleared, passed on or redeemed."
   ],
   [
    {
     "status": "note_issued"
    },
-   "the other party paid with its IOU: this deal added its price to what the other party owes you. valun_deal shows where it stands on the tracker and how it is paid back."
+   "the other party paid with its note: this deal added its price to what the other party owes you. valun_deal shows where it stands on the tracker and how it can be cleared, passed on or redeemed."
   ],
   [
    {
@@ -9268,12 +9268,12 @@
    {
     "error": "already_paid",
     "message": "paid",
-    "what_this_means": "Your earlier credit note for this deal is (or may already be) on the tracker, so the deal counts as paid. Nothing was signed. Do not try to pay it again; tell your owner."
+    "what_this_means": "Your earlier note for this deal is (or may already be) on the tracker, so the deal counts as paid. Nothing was signed. Do not try to pay it again; tell your owner."
    },
    {
     "error": "already_paid",
     "message": "paid",
-    "what_this_means": "Your earlier credit note for this deal is (or may already be) on the tracker, so the deal counts as paid. Nothing was signed. Do not try to pay it again; tell your owner."
+    "what_this_means": "Your earlier note for this deal is (or may already be) on the tracker, so the deal counts as paid. Nothing was signed. Do not try to pay it again; tell your owner."
    }
   ],
   [
@@ -9445,12 +9445,12 @@
    {
     "error": "feature_unavailable",
     "message": "no circulation",
-    "what_this_means": "This Valun server does not offer circulating credit (paying with notes you hold, set-offs), or not on the tracker contract your client signs for (tracker v3.2). Nothing was signed. Pay with your own credit note (leave pay_with out); if that fails too, tell your owner: the server must run tracker v3.2."
+    "what_this_means": "This Valun server does not offer circulating credit (paying with notes you hold, set-offs), or not on the tracker contract your client signs for (tracker v3.2). Nothing was signed. Pay with your own note (leave pay_with out); if that fails too, tell your owner: the server must run tracker v3.2."
    },
    {
     "error": "feature_unavailable",
     "message": "no circulation",
-    "what_this_means": "This Valun server does not offer circulating credit (paying with notes you hold, set-offs), or not on the tracker contract your client signs for (tracker v3.2). Nothing was signed. Pay with your own credit note (leave pay_with out); if that fails too, tell your owner: the server must run tracker v3.2."
+    "what_this_means": "This Valun server does not offer circulating credit (paying with notes you hold, set-offs), or not on the tracker contract your client signs for (tracker v3.2). Nothing was signed. Pay with your own note (leave pay_with out); if that fails too, tell your owner: the server must run tracker v3.2."
    }
   ],
   [
@@ -10133,19 +10133,19 @@
    "payer",
    "bob",
    20,
-   "after you accept their delivery you will owe bob 20 PC (your credit note)."
+   "after you accept their delivery you will owe bob 20 PC (your note)."
   ],
   [
    "payee",
    "bob",
    7,
-   "you must deliver; bob would then owe you 7 PC (their credit note)."
+   "you must deliver; bob would then owe you 7 PC (their note)."
   ],
   [
    "anything",
    "\"x\\ny\"",
    0,
-   "you must deliver; \"x\\ny\" would then owe you 0 PC (their credit note)."
+   "you must deliver; \"x\\ny\" would then owe you 0 PC (their note)."
   ]
  ],
  "check_summary": [
@@ -10173,27 +10173,27 @@
     "verdict": "decline",
     "reasons": []
    },
-   "Decline: its owner's budget card does not allow this IOU."
+   "Decline: its owner's budget card does not allow this note."
   ],
   [
    {
     "verdict": "accept"
    },
-   "Accept: its owner's budget card allows this IOU."
+   "Accept: its owner's budget card allows this note."
   ],
   [
    {
     "verdict": "ask_owner",
     "reasons": null
    },
-   "Ask the payer's owner: the payer's owner approves an IOU this size before it binds."
+   "Ask the payer's owner: the payer's owner approves a note this size before it binds."
   ],
   [
    {
     "verdict": "decline",
     "reasons": "above its limit"
    },
-   "Decline: its owner's budget card does not allow this IOU."
+   "Decline: its owner's budget card does not allow this note."
   ],
   [
    {
@@ -10284,7 +10284,7 @@
      "covered": 3
     }
    },
-   "Accept: its owner's budget card allows this IOU, backed for you up to 3."
+   "Accept: its owner's budget card allows this note, backed for you up to 3."
   ],
   [
    {
@@ -10329,7 +10329,7 @@
      "covered": null
     }
    },
-   "Accept: its owner's budget card allows this IOU."
+   "Accept: its owner's budget card allows this note."
   ],
   [
    {
@@ -10338,7 +10338,7 @@
      "covered": 0
     }
    },
-   "Accept: its owner's budget card allows this IOU."
+   "Accept: its owner's budget card allows this note."
   ],
   [
    {
@@ -10347,7 +10347,7 @@
      "covered": -2
     }
    },
-   "Accept: its owner's budget card allows this IOU."
+   "Accept: its owner's budget card allows this note."
   ],
   [
    {
@@ -10356,7 +10356,7 @@
      "covered": 2.5
     }
    },
-   "Accept: its owner's budget card allows this IOU."
+   "Accept: its owner's budget card allows this note."
   ],
   [
    {
@@ -10365,7 +10365,7 @@
      "covered": true
     }
    },
-   "Accept: its owner's budget card allows this IOU."
+   "Accept: its owner's budget card allows this note."
   ],
   [
    {
@@ -10374,7 +10374,7 @@
      "covered": "3"
     }
    },
-   "Accept: its owner's budget card allows this IOU."
+   "Accept: its owner's budget card allows this note."
   ],
   [
    {
@@ -10383,7 +10383,7 @@
      "covered": 9007199254740992
     }
    },
-   "Accept: its owner's budget card allows this IOU."
+   "Accept: its owner's budget card allows this note."
   ],
   [
    {
@@ -10392,14 +10392,14 @@
      "covered": 9007199254740991
     }
    },
-   "Accept: its owner's budget card allows this IOU, backed for you up to 9007199254740991."
+   "Accept: its owner's budget card allows this note, backed for you up to 9007199254740991."
   ],
   [
    {
     "verdict": "accept",
     "cover": 3
    },
-   "Accept: its owner's budget card allows this IOU."
+   "Accept: its owner's budget card allows this note."
   ],
   [
    {
@@ -10408,14 +10408,14 @@
      3
     ]
    },
-   "Accept: its owner's budget card allows this IOU."
+   "Accept: its owner's budget card allows this note."
   ],
   [
    {
     "verdict": "accept",
     "cover": {}
    },
-   "Accept: its owner's budget card allows this IOU."
+   "Accept: its owner's budget card allows this note."
   ],
   [
    {
@@ -10931,7 +10931,7 @@
      ]
     }
    },
-   "Accept: its owner's budget card allows this IOU. Your own side: Your own limits refuse it."
+   "Accept: its owner's budget card allows this note. Your own side: Your own limits refuse it."
   ],
   [
    {
@@ -10940,7 +10940,7 @@
      "verdict": "decline"
     }
    },
-   "Decline: its owner's budget card does not allow this IOU. Your own side: your own limits refuse it."
+   "Decline: its owner's budget card does not allow this note. Your own side: your own limits refuse it."
   ],
   [
    {
@@ -10950,7 +10950,7 @@
      "reasons": null
     }
    },
-   "Accept: its owner's budget card allows this IOU. Your own side: your owner approves it before it binds."
+   "Accept: its owner's budget card allows this note. Your own side: your owner approves it before it binds."
   ],
   [
    {
@@ -10959,7 +10959,7 @@
      "verdict": "constructor"
     }
    },
-   "Accept: its owner's budget card allows this IOU."
+   "Accept: its owner's budget card allows this note."
   ],
   [
    {
@@ -10968,7 +10968,7 @@
      "decline"
     ]
    },
-   "Accept: its owner's budget card allows this IOU."
+   "Accept: its owner's budget card allows this note."
   ],
   [
    {
@@ -14749,7 +14749,7 @@
      "verdict": "accept"
     }
    },
-   "Ask the payer's owner: the payer's owner approves an IOU this size before it binds."
+   "Ask the payer's owner: the payer's owner approves a note this size before it binds."
   ],
   [
    {
@@ -36680,7 +36680,7 @@
    "PC",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not 7; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not 7; nothing was signed"
    ]
   ],
   [
@@ -36690,7 +36690,7 @@
    "nanoERG",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not 7; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not 7; nothing was signed"
    ]
   ],
   [
@@ -36700,7 +36700,7 @@
    "PC",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not 0; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not 0; nothing was signed"
    ]
   ],
   [
@@ -36710,7 +36710,7 @@
    "nanoERG",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not 0; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not 0; nothing was signed"
    ]
   ],
   [
@@ -36720,7 +36720,7 @@
    "PC",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not -3; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not -3; nothing was signed"
    ]
   ],
   [
@@ -36730,7 +36730,7 @@
    "nanoERG",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not -3; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not -3; nothing was signed"
    ]
   ],
   [
@@ -36740,7 +36740,7 @@
    "PC",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not 9007199254740991; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not 9007199254740991; nothing was signed"
    ]
   ],
   [
@@ -36750,7 +36750,7 @@
    "nanoERG",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not 9007199254740991; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not 9007199254740991; nothing was signed"
    ]
   ],
   [
@@ -36760,7 +36760,7 @@
    "PC",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not 1.5; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not 1.5; nothing was signed"
    ]
   ],
   [
@@ -36770,7 +36770,7 @@
    "nanoERG",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not 1.5; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not 1.5; nothing was signed"
    ]
   ],
   [
@@ -36780,7 +36780,7 @@
    "PC",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not true; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not true; nothing was signed"
    ]
   ],
   [
@@ -36790,7 +36790,7 @@
    "nanoERG",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not true; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not true; nothing was signed"
    ]
   ],
   [
@@ -36800,7 +36800,7 @@
    "PC",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not false; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not false; nothing was signed"
    ]
   ],
   [
@@ -36810,7 +36810,7 @@
    "nanoERG",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not false; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not false; nothing was signed"
    ]
   ],
   [
@@ -36820,7 +36820,7 @@
    "PC",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not []; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not []; nothing was signed"
    ]
   ],
   [
@@ -36830,7 +36830,7 @@
    "nanoERG",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not []; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not []; nothing was signed"
    ]
   ],
   [
@@ -36842,7 +36842,7 @@
    "PC",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not [1]; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not [1]; nothing was signed"
    ]
   ],
   [
@@ -36854,7 +36854,7 @@
    "nanoERG",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not [1]; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not [1]; nothing was signed"
    ]
   ],
   [
@@ -36866,7 +36866,7 @@
    "PC",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not [\"vd_6a6a6a6a6a6a6a6a\"]; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not [\"vd_6a6a6a6a6a6a6a6a\"]; nothing was signed"
    ]
   ],
   [
@@ -36878,7 +36878,7 @@
    "nanoERG",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not [\"vd_6a6a6a6a6a6a6a6a\"]; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not [\"vd_6a6a6a6a6a6a6a6a\"]; nothing was signed"
    ]
   ],
   [
@@ -36890,7 +36890,7 @@
    "PC",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not [\"max_total_owed\"]; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not [\"max_total_owed\"]; nothing was signed"
    ]
   ],
   [
@@ -36902,7 +36902,7 @@
    "nanoERG",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not [\"max_total_owed\"]; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not [\"max_total_owed\"]; nothing was signed"
    ]
   ],
   [
@@ -36914,7 +36914,7 @@
    "PC",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not [\"nope\"]; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not [\"nope\"]; nothing was signed"
    ]
   ],
   [
@@ -36926,7 +36926,7 @@
    "nanoERG",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not [\"nope\"]; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not [\"nope\"]; nothing was signed"
    ]
   ],
   [
@@ -36938,7 +36938,7 @@
    "PC",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not {\"a\":1}; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not {\"a\":1}; nothing was signed"
    ]
   ],
   [
@@ -36950,7 +36950,7 @@
    "nanoERG",
    [
     "bad_arguments",
-    "issuer must be a string (the handle or participant id of the agent whose debt you back), not {\"a\":1}; nothing was signed"
+    "issuer must be a string (the handle or participant id of the agent whose notes you guarantee), not {\"a\":1}; nothing was signed"
    ]
   ],
   [
@@ -62048,7 +62048,7 @@
      "paid_deals": {},
      "retry_after_ms": null,
      "needs_read_back": [],
-     "reason": "the template is not for a credit note from your key"
+     "reason": "the template is not for a note from your key"
     },
     "write_ahead": null
    },
@@ -62268,7 +62268,7 @@
      "paid_deals": {},
      "retry_after_ms": null,
      "needs_read_back": [],
-     "reason": "this edge takes bound credit notes only (residue 997)"
+     "reason": "this edge takes bound notes only (residue 997)"
     },
     "write_ahead": null
    },
@@ -62379,7 +62379,7 @@
      "paid_deals": {},
      "retry_after_ms": null,
      "needs_read_back": [],
-     "reason": "this edge takes bound credit notes only (residue 997)"
+     "reason": "this edge takes bound notes only (residue 997)"
     },
     "write_ahead": null
    },
@@ -62486,7 +62486,7 @@
      "paid_deals": {},
      "retry_after_ms": null,
      "needs_read_back": [],
-     "reason": "a bound credit note has a timestamp ending in 997 ms, not 999"
+     "reason": "a bound note has a timestamp ending in 997 ms, not 999"
     },
     "write_ahead": null
    },
@@ -68821,7 +68821,7 @@
      "paid_deals": {},
      "retry_after_ms": null,
      "needs_read_back": [],
-     "reason": "you hold an unapplied ordinary credit note on this edge; a novation is signed only once it is settled either way"
+     "reason": "you hold an unapplied ordinary note on this edge; a novation is signed only once it is settled either way"
     },
     "write_ahead": null
    },
@@ -82457,7 +82457,7 @@
      "paid_deals": {},
      "retry_after_ms": null,
      "needs_read_back": [],
-     "reason": "your claims would fall by 2 PC and your debts by 1 PC"
+     "reason": "the notes you hold would fall by 2 PC and the notes you issued by 1 PC"
     },
     "write_ahead": null
    },
@@ -83634,7 +83634,7 @@
      "paid_deals": {},
      "retry_after_ms": null,
      "needs_read_back": [],
-     "reason": "you hold an unapplied ordinary credit note on this edge; a novation is signed only once it is settled either way"
+     "reason": "you hold an unapplied ordinary note on this edge; a novation is signed only once it is settled either way"
     },
     "write_ahead": null
    },
@@ -84472,7 +84472,7 @@
      "paid_deals": {},
      "retry_after_ms": null,
      "needs_read_back": [],
-     "reason": "this would bring your edge back to the prior a bound credit note of yours acknowledged, which could then still apply; it is signed only once that note is past its maximum age"
+     "reason": "this would bring your edge back to the prior a bound note of yours acknowledged, which could then still apply; it is signed only once that note is past its maximum age"
     },
     "write_ahead": null
    },
@@ -84907,7 +84907,7 @@
      "paid_deals": {},
      "retry_after_ms": null,
      "needs_read_back": [],
-     "reason": "this would bring your edge back to the prior a bound credit note of yours acknowledged, which could then still apply; it is signed only once that note is past its maximum age"
+     "reason": "this would bring your edge back to the prior a bound note of yours acknowledged, which could then still apply; it is signed only once that note is past its maximum age"
     },
     "write_ahead": null
    },
@@ -89087,9 +89087,9 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each",
-     "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each",
-     "payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each"
+     "set-offs that clear loops of notes you hold and issued (your net position does not change), up to 50 PC each",
+     "transfers that move notes you issued to a new holder (what you owe in all does not change), up to 50 PC each",
+     "payments to you by transfer, of notes from issuers your owner accepts, up to 50 PC each"
     ]
    ],
    [
@@ -89118,8 +89118,8 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each",
-     "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each"
+     "set-offs that clear loops of notes you hold and issued (your net position does not change), up to 50 PC each",
+     "transfers that move notes you issued to a new holder (what you owe in all does not change), up to 50 PC each"
     ]
    ],
    [
@@ -89148,7 +89148,7 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each"
+     "transfers that move notes you issued to a new holder (what you owe in all does not change), up to 50 PC each"
     ]
    ],
    [
@@ -89177,9 +89177,9 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 PC each",
-     "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 PC each",
-     "payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 PC each"
+     "set-offs that clear loops of notes you hold and issued (your net position does not change), up to 50 PC each",
+     "transfers that move notes you issued to a new holder (what you owe in all does not change), up to 50 PC each",
+     "payments to you by transfer, of notes from issuers your owner accepts, up to 50 PC each"
     ]
    ],
    [
@@ -89412,7 +89412,7 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 5 PC each"
+     "set-offs that clear loops of notes you hold and issued (your net position does not change), up to 5 PC each"
     ]
    ],
    [
@@ -89437,7 +89437,7 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 5 PC each"
+     "set-offs that clear loops of notes you hold and issued (your net position does not change), up to 5 PC each"
     ]
    ],
    [
@@ -89485,7 +89485,7 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 5 PC each"
+     "set-offs that clear loops of notes you hold and issued (your net position does not change), up to 5 PC each"
     ]
    ],
    [
@@ -89556,7 +89556,7 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "payments to you by debt transfer, of notes from issuers your owner accepts"
+     "payments to you by transfer, of notes from issuers your owner accepts"
     ]
    ],
    [
@@ -89627,7 +89627,7 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "payments to you by debt transfer, of notes from issuers your owner accepts"
+     "payments to you by transfer, of notes from issuers your owner accepts"
     ]
    ]
   ],
@@ -89725,34 +89725,34 @@
    [
     true,
     {
-     "settlement": "not settled until redeemed: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes); a netting is committed once a tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.",
-     "not_settled": "not settled until redeemed: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes); a netting is committed once a tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.",
+     "settlement": "not settled until redeemed: a note is a promise to pay that stays outstanding. With circulating credit it can move to a new holder (a transfer, signed by its issuer and both holders) or be cleared in a loop of notes (set-off, signed by every party; no net position changes); a netting is committed once a tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. Its holder can redeem it on Ergo testnet against a tERG reserve locked under the key that signed it, if one was posted; tERG are test coins with no monetary value.",
+     "not_settled": "not settled until redeemed: a note is a promise to pay that stays outstanding. With circulating credit it can move to a new holder (a transfer, signed by its issuer and both holders) or be cleared in a loop of notes (set-off, signed by every party; no net position changes); a netting is committed once a tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. Its holder can redeem it on Ergo testnet against a tERG reserve locked under the key that signed it, if one was posted; tERG are test coins with no monetary value.",
      "honest_labels": {
-      "what_basis_records": "The Valun testnet Basis tracker keeps one running total per key pair: what the issuer key owes the recipient key, with a timestamp, signed by the issuer, and anchors them on Ergo testnet (a tracker box commits the digest of every total). A credit note raises a total; with circulating credit a debt transfer moves part of it to a new creditor and a set-off lowers the totals around a cycle, each signed by every party whose total changes. A note is backed only by its issuer's reserve on Ergo testnet, if the issuer posted one.",
-      "outstanding_promise": "not settled until redeemed: a credit note is an outstanding obligation. With circulating credit it can move to a new creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation (set-off, signed by every party; no net position changes); a netting is committed once a tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.",
-      "third_party": "Supported: paying a third party with your OWN credit note, or with a note you hold (pay_with: the issuer's debt to you moves to the payee; the issuer, you and the payee each sign, and the issuer's total debt does not change), and set-offs that cancel equal debts around a cycle (every party signs; no net position changes). A payee may require that the claims of whoever issued the note it receives cover it (min_payer_coverage_pct). A creditor redeems a note only against its issuer's reserve on Ergo testnet, in tERG."
+      "what_basis_records": "The Valun testnet Basis tracker keeps one running total per key pair: what the issuer key owes the recipient key, with a timestamp, signed by the issuer, and anchors them on Ergo testnet (a tracker box commits the digest of every total). A note raises a total; with circulating credit a transfer moves part of it to a new holder and a set-off lowers the totals around a loop of notes, each signed by every party whose total changes. A note is backed only by a tERG reserve locked on Ergo testnet under the key that signed it, if one was posted, and only up to what that reserve holds; most notes have none.",
+      "outstanding_promise": "not settled until redeemed: a note is a promise to pay that stays outstanding. With circulating credit it can move to a new holder (a transfer, signed by its issuer and both holders) or be cleared in a loop of notes (set-off, signed by every party; no net position changes); a netting is committed once a tracker box on Ergo testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. Its holder can redeem it on Ergo testnet against a tERG reserve locked under the key that signed it, if one was posted; tERG are test coins with no monetary value.",
+      "third_party": "Supported: paying a third party with your OWN note, or with a note you hold (pay_with: that much of what its issuer owes you moves to the payee; the issuer, you and the payee each sign, and what the issuer owes in all does not change), and set-offs that clear a loop of notes (every party signs; no net position changes). A payee may require that the claims of whoever issued the note it receives cover it (min_payer_coverage_pct). A holder redeems a note only against a tERG reserve locked on Ergo testnet under the key that signed it."
      },
      "real_vs_simulated": {
-      "real": "signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt transfers and set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your client against the signatures) and anchored on Ergo testnet; reserves and redemptions are Ergo testnet transactions",
+      "real": "signatures by each participant's own key; Valun's acceptance and approval records; notes, transfers and set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your client against the signatures) and committed on Ergo testnet by its tracker boxes (committed, not final); reserves and redemptions are Ergo testnet transactions",
       "simulated": "the value: tERG are Ergo testnet coins with no monetary value",
-      "not_proven": "that delivered work is good (Valun records statements, it does not judge work); that any participant will honour a credit note beyond its reserve"
+      "not_proven": "that delivered work is good (Valun records statements, it does not judge work); that any participant will pay a note beyond the reserve locked under the key that signed it"
      }
     }
    ],
    [
     false,
     {
-     "settlement": "not settled until redeemed: issuing a credit note creates an outstanding obligation. Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.",
-     "not_settled": "not settled until redeemed: issuing a credit note creates an outstanding obligation. Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.",
+     "settlement": "not settled until redeemed: issuing a note creates a promise to pay that stays outstanding. Its holder can redeem it on Ergo testnet against a tERG reserve locked under the key that signed it, if one was posted; tERG are test coins with no monetary value.",
+     "not_settled": "not settled until redeemed: issuing a note creates a promise to pay that stays outstanding. Its holder can redeem it on Ergo testnet against a tERG reserve locked under the key that signed it, if one was posted; tERG are test coins with no monetary value.",
      "honest_labels": {
-      "what_basis_records": "The Valun testnet Basis tracker keeps one running total per key pair: what the issuer key owes the recipient key, with a timestamp, signed by the issuer, and anchors them on Ergo testnet (a tracker box commits the digest of every total). A credit note raises a total. A note is backed only by its issuer's reserve on Ergo testnet, if the issuer posted one.",
-      "outstanding_promise": "not settled until redeemed: issuing a credit note creates an outstanding obligation. Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted one; tERG are test coins with no monetary value.",
-      "third_party": "Supported: paying a third party with your OWN credit note; the third party may require that your claims on the tracker cover it (min_payer_coverage_pct). Not supported: transferring, assigning or endorsing a note you hold to someone else, and clearing or netting between participants."
+      "what_basis_records": "The Valun testnet Basis tracker keeps one running total per key pair: what the issuer key owes the recipient key, with a timestamp, signed by the issuer, and anchors them on Ergo testnet (a tracker box commits the digest of every total). A note raises a total. A note is backed only by a tERG reserve locked on Ergo testnet under the key that signed it, if one was posted, and only up to what that reserve holds; most notes have none.",
+      "outstanding_promise": "not settled until redeemed: issuing a note creates a promise to pay that stays outstanding. Its holder can redeem it on Ergo testnet against a tERG reserve locked under the key that signed it, if one was posted; tERG are test coins with no monetary value.",
+      "third_party": "Supported: paying a third party with your OWN note; the third party may require that your claims on the tracker cover it (min_payer_coverage_pct). Not supported: transferring, assigning or endorsing a note you hold to someone else, and clearing or netting between participants."
      },
      "real_vs_simulated": {
-      "real": "signatures by each participant's own key; Valun's acceptance and approval records; credit notes held by a real Basis tracker (read back and reconciled by Valun) and anchored on Ergo testnet; reserves and redemptions are Ergo testnet transactions",
+      "real": "signatures by each participant's own key; Valun's acceptance and approval records; notes held by a real Basis tracker (read back and reconciled by Valun) and committed on Ergo testnet by its tracker boxes (committed, not final); reserves and redemptions are Ergo testnet transactions",
       "simulated": "the value: tERG are Ergo testnet coins with no monetary value",
-      "not_proven": "that delivered work is good (Valun records statements, it does not judge work); that any participant will honour a credit note beyond its reserve"
+      "not_proven": "that delivered work is good (Valun records statements, it does not judge work); that any participant will pay a note beyond the reserve locked under the key that signed it"
      }
     }
    ]
@@ -89958,9 +89958,9 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 nanoERG (0.00000005 tERG) each",
-     "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 nanoERG (0.00000005 tERG) each",
-     "payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 nanoERG (0.00000005 tERG) each"
+     "set-offs that clear loops of notes you hold and issued (your net position does not change), up to 50 nanoERG (0.00000005 tERG) each",
+     "transfers that move notes you issued to a new holder (what you owe in all does not change), up to 50 nanoERG (0.00000005 tERG) each",
+     "payments to you by transfer, of notes from issuers your owner accepts, up to 50 nanoERG (0.00000005 tERG) each"
     ]
    ],
    [
@@ -89989,8 +89989,8 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 nanoERG (0.00000005 tERG) each",
-     "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 nanoERG (0.00000005 tERG) each"
+     "set-offs that clear loops of notes you hold and issued (your net position does not change), up to 50 nanoERG (0.00000005 tERG) each",
+     "transfers that move notes you issued to a new holder (what you owe in all does not change), up to 50 nanoERG (0.00000005 tERG) each"
     ]
    ],
    [
@@ -90019,7 +90019,7 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 nanoERG (0.00000005 tERG) each"
+     "transfers that move notes you issued to a new holder (what you owe in all does not change), up to 50 nanoERG (0.00000005 tERG) each"
     ]
    ],
    [
@@ -90048,9 +90048,9 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 50 nanoERG (0.00000005 tERG) each",
-     "debt transfers that move your own debt to a new creditor (your total owed does not change), up to 50 nanoERG (0.00000005 tERG) each",
-     "payments to you by debt transfer, of notes from issuers your owner accepts, up to 50 nanoERG (0.00000005 tERG) each"
+     "set-offs that clear loops of notes you hold and issued (your net position does not change), up to 50 nanoERG (0.00000005 tERG) each",
+     "transfers that move notes you issued to a new holder (what you owe in all does not change), up to 50 nanoERG (0.00000005 tERG) each",
+     "payments to you by transfer, of notes from issuers your owner accepts, up to 50 nanoERG (0.00000005 tERG) each"
     ]
    ],
    [
@@ -90283,7 +90283,7 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 5 nanoERG (0.000000005 tERG) each"
+     "set-offs that clear loops of notes you hold and issued (your net position does not change), up to 5 nanoERG (0.000000005 tERG) each"
     ]
    ],
    [
@@ -90308,7 +90308,7 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 5 nanoERG (0.000000005 tERG) each"
+     "set-offs that clear loops of notes you hold and issued (your net position does not change), up to 5 nanoERG (0.000000005 tERG) each"
     ]
    ],
    [
@@ -90356,7 +90356,7 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), up to 5 nanoERG (0.000000005 tERG) each"
+     "set-offs that clear loops of notes you hold and issued (your net position does not change), up to 5 nanoERG (0.000000005 tERG) each"
     ]
    ],
    [
@@ -90427,7 +90427,7 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "payments to you by debt transfer, of notes from issuers your owner accepts"
+     "payments to you by transfer, of notes from issuers your owner accepts"
     ]
    ],
    [
@@ -90498,7 +90498,7 @@
      "how_to_change": "your owner changes the local policy with `valun config consents.setoff|consents.as_issuer|consents.as_new_creditor on|off` and `valun config consents.max_PC N`, and the mandate in the owner console; the stricter of the two applies"
     },
     [
-     "payments to you by debt transfer, of notes from issuers your owner accepts"
+     "payments to you by transfer, of notes from issuers your owner accepts"
     ]
    ]
   ],
@@ -90609,25 +90609,25 @@
     1,
     "PC",
     1,
-    "Earn: sandbox-exact buys text-stats from you (the welcome job, 3 PC). Deliver the exact result; it pays with its own credit note."
+    "Earn: sandbox-exact buys text-stats from you (the welcome job, 3 PC). Deliver the exact result; it pays with its own note."
    ],
    [
     1,
     "nanoERG",
     1000000,
-    "Earn: sandbox-exact buys text-stats from you (the welcome job, 3000000 nanoERG (0.003 tERG)). Deliver the exact result; it pays with its own credit note."
+    "Earn: sandbox-exact buys text-stats from you (the welcome job, 3000000 nanoERG (0.003 tERG)). Deliver the exact result; it pays with its own note."
    ],
    [
     2,
     "PC",
     1,
-    "Spend a note you hold: buy notary from sandbox-mallory (2 PC) and pay with pay_with=\"sandbox-exact\" (2 PC of sandbox-exact's debt to you move to sandbox-mallory). Dispute a wrong delivery and buy again."
+    "Spend a note you hold: buy notary from sandbox-mallory (2 PC) and pay with pay_with=\"sandbox-exact\" (2 PC of what sandbox-exact owes you moves to sandbox-mallory). Dispute a wrong delivery and buy again."
    ],
    [
     2,
     "nanoERG",
     1000000,
-    "Spend a note you hold: buy notary from sandbox-mallory (2000000 nanoERG (0.002 tERG)) and pay with pay_with=\"sandbox-exact\" (2000000 nanoERG (0.002 tERG) of sandbox-exact's debt to you move to sandbox-mallory). Dispute a wrong delivery and buy again."
+    "Spend a note you hold: buy notary from sandbox-mallory (2000000 nanoERG (0.002 tERG)) and pay with pay_with=\"sandbox-exact\" (2000000 nanoERG (0.002 tERG) of what sandbox-exact owes you moves to sandbox-mallory). Dispute a wrong delivery and buy again."
    ],
    [
     3,
@@ -90669,10 +90669,22 @@
     null,
     "PC",
     1,
-    "The tour is complete."
+    "No tour step to take now: then says what waits."
    ],
    [
     null,
+    "nanoERG",
+    1000000,
+    "No tour step to take now: then says what waits."
+   ],
+   [
+    "done",
+    "PC",
+    1,
+    "The tour is complete."
+   ],
+   [
+    "done",
     "nanoERG",
     1000000,
     "The tour is complete."
@@ -90684,112 +90696,112 @@
     "PC",
     3,
     false,
-    "after you accept their delivery you will owe bob 3 PC (your credit note)."
+    "after you accept their delivery you will owe bob 3 PC (your note)."
    ],
    [
     "payer",
     "PC",
     3,
     true,
-    "after you accept their delivery you will pay bob 3 PC: with your credit note, or with notes you hold if you choose to."
+    "after you accept their delivery you will pay bob 3 PC: with your own note, or with notes you hold if you choose to."
    ],
    [
     "payer",
     "PC",
     3,
     null,
-    "after you accept their delivery you will owe bob 3 PC (your credit note)."
+    "after you accept their delivery you will owe bob 3 PC (your note)."
    ],
    [
     "payer",
     "PC",
     3,
     1,
-    "after you accept their delivery you will owe bob 3 PC (your credit note)."
+    "after you accept their delivery you will owe bob 3 PC (your note)."
    ],
    [
     "payer",
     "nanoERG",
     3000000,
     false,
-    "after you accept their delivery you will owe bob 3000000 nanoERG (0.003 tERG) (your credit note)."
+    "after you accept their delivery you will owe bob 3000000 nanoERG (0.003 tERG) (your note)."
    ],
    [
     "payer",
     "nanoERG",
     3000000,
     true,
-    "after you accept their delivery you will pay bob 3000000 nanoERG (0.003 tERG): with your credit note, or with notes you hold if you choose to."
+    "after you accept their delivery you will pay bob 3000000 nanoERG (0.003 tERG): with your own note, or with notes you hold if you choose to."
    ],
    [
     "payer",
     "nanoERG",
     3000000,
     null,
-    "after you accept their delivery you will owe bob 3000000 nanoERG (0.003 tERG) (your credit note)."
+    "after you accept their delivery you will owe bob 3000000 nanoERG (0.003 tERG) (your note)."
    ],
    [
     "payer",
     "nanoERG",
     3000000,
     1,
-    "after you accept their delivery you will owe bob 3000000 nanoERG (0.003 tERG) (your credit note)."
+    "after you accept their delivery you will owe bob 3000000 nanoERG (0.003 tERG) (your note)."
    ],
    [
     "payee",
     "PC",
     3,
     false,
-    "you must deliver; bob would then owe you 3 PC (their credit note)."
+    "you must deliver; bob would then owe you 3 PC (their note)."
    ],
    [
     "payee",
     "PC",
     3,
     true,
-    "you must deliver; bob would then owe you 3 PC (their credit note)."
+    "you must deliver; bob would then owe you 3 PC (their note)."
    ],
    [
     "payee",
     "PC",
     3,
     null,
-    "you must deliver; bob would then owe you 3 PC (their credit note)."
+    "you must deliver; bob would then owe you 3 PC (their note)."
    ],
    [
     "payee",
     "PC",
     3,
     1,
-    "you must deliver; bob would then owe you 3 PC (their credit note)."
+    "you must deliver; bob would then owe you 3 PC (their note)."
    ],
    [
     "payee",
     "nanoERG",
     3000000,
     false,
-    "you must deliver; bob would then owe you 3000000 nanoERG (0.003 tERG) (their credit note)."
+    "you must deliver; bob would then owe you 3000000 nanoERG (0.003 tERG) (their note)."
    ],
    [
     "payee",
     "nanoERG",
     3000000,
     true,
-    "you must deliver; bob would then owe you 3000000 nanoERG (0.003 tERG) (their credit note)."
+    "you must deliver; bob would then owe you 3000000 nanoERG (0.003 tERG) (their note)."
    ],
    [
     "payee",
     "nanoERG",
     3000000,
     null,
-    "you must deliver; bob would then owe you 3000000 nanoERG (0.003 tERG) (their credit note)."
+    "you must deliver; bob would then owe you 3000000 nanoERG (0.003 tERG) (their note)."
    ],
    [
     "payee",
     "nanoERG",
     3000000,
     1,
-    "you must deliver; bob would then owe you 3000000 nanoERG (0.003 tERG) (their credit note)."
+    "you must deliver; bob would then owe you 3000000 nanoERG (0.003 tERG) (their note)."
    ]
   ],
   "tracker_words": [

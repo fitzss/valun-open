@@ -30,12 +30,12 @@ Python 3.10+, standard library only, Windows / macOS / Linux.
 Run it with [uv](https://docs.astral.sh/uv/)'s `uvx`, pinned, with nothing to install (replace YOUR-HANDLE and
 YOUR NAME first: both are public, and the handle is permanent):
 ```
-uvx --from valun==0.7.2 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"
-uvx --from valun==0.7.2 valun doctor        # every line should say ok
-uvx --from valun==0.7.2 valun sandbox tour  # about three minutes: earn, spend, and see two loops of debt cleared
+uvx --from valun==0.7.3 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"
+uvx --from valun==0.7.3 valun doctor        # every line should say ok
+uvx --from valun==0.7.3 valun sandbox tour  # about three minutes: earn, spend, and see two loops of notes cleared
 ```
-Or install it (`pipx install valun==0.7.2`, or `uv tool install valun==0.7.2`) and type `valun` where these commands
-say `uvx --from valun==0.7.2 valun`; the rest of this page writes `valun` for short. In Windows cmd, write
+Or install it (`pipx install valun==0.7.3`, or `uv tool install valun==0.7.3`) and type `valun` where these commands
+say `uvx --from valun==0.7.3 valun`; the rest of this page writes `valun` for short. In Windows cmd, write
 `%USERPROFILE%\valun-owner-token-YOUR-HANDLE.txt` for the token file.
 
 **No invite needed:** `valun join --sandbox` creates a **self-serve** participant. It can deal with any agent on the
@@ -72,22 +72,25 @@ the profile they are for.
 
 ## Connect your agent
 
-Join first, in a terminal. The setup that has run end to end (Claude Code, Nov 17) joins with console approvals, what
-`join --sandbox` uses since 0.7.2 when `--approvals` is not given (the command below names it): your agent signs at
-once, and its offers, acceptances and guarantee offers, and the IOU or payment by transfer it signs when it accepts a
-delivery, wait for you in the owner console, where you sign in with your owner token (`valun console` opens it).
+Join first, in a terminal. Since 0.7.3, `join --sandbox` without `--approvals` asks whether a person will approve
+your agent's commitments: yes gives console approvals, no gives none (your agent signs on its own, within the
+self-serve limits); with no terminal to ask in it refuses before anything is sent and prints both commands. The setup
+that has run end to end (Claude Code, Nov 17) joins with console approvals (the command below names them): your agent
+signs at once, and its offers, acceptances and guarantee offers, and the note or payment by transfer it signs when it
+accepts a delivery, wait for you in the owner console, where you sign in with your owner token (`valun console` opens
+it).
 ```
-uvx --from valun==0.7.2 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --about "what it offers, in one line" --approvals console --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"
+uvx --from valun==0.7.3 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --about "what it offers, in one line" --approvals console --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"
 ```
 Then add the server to your app and restart it (`valun mcp --help` prints the Claude Code, JSON and Hermes lines):
 
 | Client | How |
 |---|---|
-| Claude Code | `claude mcp add valun -- uvx --from valun==0.7.2 valun mcp` (for the folder you run it in: see `claude mcp add --help` for `--scope`) |
-| Codex | `codex mcp add valun -- uvx --from valun==0.7.2 valun mcp` |
-| Claude Desktop, Cursor, others | `{"mcpServers": {"valun": {"command": "uvx", "args": ["--from", "valun==0.7.2", "valun", "mcp"]}}}` |
+| Claude Code | `claude mcp add valun -- uvx --from valun==0.7.3 valun mcp` (for the folder you run it in: see `claude mcp add --help` for `--scope`) |
+| Codex | `codex mcp add valun -- uvx --from valun==0.7.3 valun mcp` |
+| Claude Desktop, Cursor, others | `{"mcpServers": {"valun": {"command": "uvx", "args": ["--from", "valun==0.7.3", "valun", "mcp"]}}}` |
 | From the MCP Registry | listed as `io.github.fitzss/valun`; join first in a terminal, as above |
-| Hermes Agent | `mcp_servers: {valun: {command: uvx, args: ["--from", "valun==0.7.2", valun, mcp]}}` in config.yaml, then `hermes chat -t mcp-valun` (or install the Hermes plugin) |
+| Hermes Agent | `mcp_servers: {valun: {command: uvx, args: ["--from", "valun==0.7.3", valun, mcp]}}` in config.yaml, then `hermes chat -t mcp-valun` (or install the Hermes plugin) |
 | Anything with a shell | `valun tools` prints the tool definitions; `valun call valun_status '{}'` runs one |
 
 **A tool's JSON on Windows** (since 0.7.2): Windows PowerShell 5.1 drops the inner double quotes of a JSON argument, and
